@@ -71,3 +71,49 @@ def test_an_idea_file_showing_the_wrong_visibility_is_reported(
         (row["kfin_id"],),
     )
     assert run(settings, fix=False).idea_visibility_mismatch == []  # the writer has it queued: not drift yet
+
+
+def test_a_file_that_cannot_be_fixed_does_not_block_the_rest(
+    world: Any, company_repo: Any, test_database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import index.indexer as ix
+
+    db = world
+    settings = helpers.settings_for(company_repo, test_database, embeddings_mode="hash")
+    gone = [r["repo_path"] for r in db.execute("SELECT repo_path FROM repo_files ORDER BY repo_path LIMIT 2")]
+    db.execute("DELETE FROM repo_files WHERE repo_path = ANY(%s)", (gone,))
+    real = ix.Indexer._upsert
+
+    def flaky(self: Any, conn: Any, rel: str, commit: str) -> bool:
+        if rel == gone[0]:
+            raise ValueError("odd file")
+        return real(self, conn, rel, commit)
+
+    monkeypatch.setattr(ix.Indexer, "_upsert", flaky)
+    drift = run(settings)
+    assert drift.unfixable == [gone[0]] and drift.fixed == 1
+    assert db.execute("SELECT 1 FROM repo_files WHERE repo_path = %s", (gone[1],)).fetchone()
+
+
+def test_no_fix_is_applied_if_the_indexer_moved_on_meanwhile(
+    world: Any, company_repo: Any, test_database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import reconcile as rc
+
+    db = world
+    settings = helpers.settings_for(company_repo, test_database, embeddings_mode="hash")
+    gone = db.execute("SELECT repo_path FROM repo_files ORDER BY repo_path LIMIT 1").fetchone()["repo_path"]
+    db.execute("DELETE FROM repo_files WHERE repo_path = %s", (gone,))
+    real = rc._expected
+
+    def then_the_indexer_commits(git: Any, commit: str) -> Any:
+        out = real(git, commit)
+        db.execute(
+            "UPDATE index_state SET last_commit = %s", ("f" * 40,)
+        )  # a newer commit, indexed meanwhile
+        return out
+
+    monkeypatch.setattr(rc, "_expected", then_the_indexer_commits)
+    drift = run(settings)
+    assert drift.missing_in_index == [gone] and drift.fixed == 0  # found, but left for the next run
+    assert db.execute("SELECT 1 FROM repo_files WHERE repo_path = %s", (gone,)).fetchone() is None

@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import json
+import os
 import random
 import re
 import sys
@@ -19,7 +20,9 @@ from core.db import Conn
 
 ROOT = REPO_ROOT or Path.cwd()
 GOLDEN = ROOT / "eval" / "golden"
-REPORTS = ROOT / "eval" / "reports"
+# UAT keeps reports in its data folder (EVAL_REPORTS_DIR), so the next deploy has a baseline for the
+# regression check and the go/no-go report can read them (B8 review).
+REPORTS = Path(os.environ.get("EVAL_REPORTS_DIR") or ROOT / "eval" / "reports")
 sys.path.insert(0, str(GOLDEN))
 generators = importlib.import_module("generators")
 TAG = re.compile(r"\[\[([A-Z][A-Z_]*)_([0-9]+)\]\]")

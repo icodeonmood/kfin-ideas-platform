@@ -125,8 +125,20 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
     with connect(autocommit=True) as conn:
         ctx = context(conn, seed)
         try:
-            for runner in (gatekeeper, canvas_assist, judge):
-                result = runner.run(ctx)
+            for runner, agent in (
+                (gatekeeper, "gatekeeper"),
+                (canvas_assist, "canvas-assist"),
+                (judge, "judge"),
+            ):
+                try:
+                    result = runner.run(ctx)
+                except (
+                    Exception
+                ) as exc:  # a crash is a failure for that agent; the others still run (B8 review)
+                    print(f"{agent}: the golden set could not run ({type(exc).__name__})")
+                    results.append({"agent": agent, "passed": False})
+                    status = 1
+                    continue
                 passed, failed = _verdict(result, route)
                 result.update({"route": route, "seed": seed, "passed": passed, "failed": failed})
                 path = write_report(result["agent"], result["version"], result)
@@ -152,7 +164,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                     f"{result['agent']} {result['version']} [{route}]: {m['cases']} cases · {detail} · "
                     f"{'PASS' if passed else 'FAIL ' + ', '.join(failed)}{note}"
                 )
-                print(f"  report: {path.relative_to(ROOT)}")
+                print(f"  report: {path}")
                 status |= 0 if passed else 1
                 results.append(result)
             if switch_off:

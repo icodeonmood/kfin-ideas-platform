@@ -96,7 +96,12 @@ def test_kill_switches_follow_who_can_flip(dev_db: Any) -> None:
                 json={"name": name, "state": state, "reason": "access rule test"},
             )
             # The status and the error code together, so an intermittent failure says what happened (BLD-097).
-            return f"{r.status_code} {r.json().get('error', '') if r.headers.get('content-type', '').startswith('application/json') else r.headers.get('content-type')}"
+            try:
+                body = r.json()
+            except ValueError:
+                body = None
+            code = body.get("error", "") if isinstance(body, dict) else r.headers.get("content-type", "")
+            return f"{r.status_code} {code}"
 
         got = {
             "infosec submissions": flip(infosec, "submissions", "on"),

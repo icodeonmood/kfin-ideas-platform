@@ -2,7 +2,8 @@
 
 - `attachments.upload`: the virus scanner has not answered for 5 minutes. Files already uploaded are untouched.
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
-  at least 20 emails in that hour so one bad address cannot stop all mail.
+  at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
+  send time count; the Graph mailbox's delivery reports are not read on day one.
 
 Each flip is audited (`alert.kill_switch_auto`) and logged as an error so the product lead and InfoSec hear of it.
 Nothing switches itself back on: a person checks the cause and flips it back from the Admin page.
@@ -68,10 +69,15 @@ class Watch:
 
     @staticmethod
     def bounces(conn: Conn) -> bool:
+        # Only email since the switch last changed (or the last hour, if later): bounces from before a person
+        # switched email back on must not switch it off again (B8 review). A failed row's `send_after` is its
+        # failure time plus 5 minutes (comms/send.py).
         row = conn.execute(
-            "SELECT count(*) FILTER (WHERE state IN ('sent', 'read') AND sent_at > now() - interval '1 hour') AS sent, "
+            "WITH since AS (SELECT greatest(now() - interval '1 hour', "
+            "(SELECT changed_at FROM kill_switches WHERE name = 'comms.email')) AS t) "
+            "SELECT count(*) FILTER (WHERE state IN ('sent', 'read') AND sent_at > (SELECT t FROM since)) AS sent, "
             "count(*) FILTER (WHERE state = 'failed' AND error_code = ANY(%s) "
-            "AND send_after > now() - interval '65 minutes') AS bounced "
+            "AND send_after - interval '5 minutes' > (SELECT t FROM since)) AS bounced "
             "FROM notifications WHERE channel = 'email'",
             (list(BOUNCE_CODES),),
         ).fetchone()

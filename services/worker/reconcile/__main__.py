@@ -16,6 +16,8 @@ def main() -> int:
     for name, n in drift.counts().items():
         print(f"{name:26} {n}")
     print(f"{'idea_stage_lag (not drift)':26} {len(drift.idea_stage_mismatch)}")
+    if drift.unfixable:
+        print(f"{'could not fix':26} {len(drift.unfixable)}")
     print(f"fixed: {drift.fixed}" if drift.total else "reconcile: no drift")
     return 1 if drift.total else 0
 

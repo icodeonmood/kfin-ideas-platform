@@ -68,6 +68,21 @@ def _mail(db: Any, user: str, sent: int, bounced: int) -> None:
         )
 
 
+def test_old_bounces_do_not_switch_email_off_again_after_it_is_turned_back_on(db: Any) -> None:
+    killswitch.clear_cache()
+    db.execute("DELETE FROM notifications")
+    user = db.execute(
+        "INSERT INTO users (emp_id_hash, name, email, source) VALUES (%s, 'Mail Person', %s, 'hr') RETURNING id",
+        (f"test:{secrets.token_hex(3)}", f"m.{secrets.token_hex(3)}@kfintech.example"),
+    ).fetchone()["id"]
+    _mail(db, user, 19, 2)  # 9.5% bounced
+    assert Watch(ping=lambda: True).bounces(db) is True
+    killswitch.set_switch(db, "comms.email", "on", reason="Fixed the bad addresses", actor="REV-0001")
+    killswitch.clear_cache()
+    assert Watch(ping=lambda: True).bounces(db) is False  # those bounces came before the person's decision
+    assert _state(db, "comms.email") == "on"
+
+
 @pytest.mark.parametrize(
     ("sent", "bounced", "flips"),
     [(30, 1, False), (5, 5, False), (19, 2, True)],  # 3% · fewer than 20 emails · 9.5%
@@ -99,3 +114,37 @@ def test_an_agent_that_fails_its_golden_set_on_deploy_switches_off(db: Any) -> N
     ).fetchone()
     killswitch.set_switch(db, "agent.judge", "on", reason="Reset after the eval test", actor="REV-0001")
     killswitch.clear_cache()
+
+
+def test_send_due_records_a_refused_address_as_a_bounce(db: Any, monkeypatch: Any) -> None:
+    """The watch counts what comms/send.py actually stores for a refused address."""
+    import datetime as dt
+    import smtplib
+
+    from comms.send import send_due
+    from core.watch import BOUNCE_CODES
+
+    killswitch.clear_cache()
+    db.execute("DELETE FROM notifications")
+
+    def refuse(to: str, subject: str, body: str) -> None:
+        raise smtplib.SMTPRecipientsRefused({to: (550, b"no such mailbox")})
+
+    monkeypatch.setattr("comms.send._smtp", refuse)
+    user = db.execute(
+        "INSERT INTO users (emp_id_hash, name, email, source) VALUES (%s, 'Mail Person', %s, 'hr') RETURNING id",
+        (f"test:{secrets.token_hex(3)}", f"m.{secrets.token_hex(3)}@kfintech.example"),
+    ).fetchone()["id"]
+    db.execute(
+        "INSERT INTO notifications (user_id, channel, template, event, urgency, state, send_after, payload) "
+        "VALUES (%s, 'email', 'submitted', 'idea.submitted', 'immediate', 'queued', now() - interval '1 minute', %s)",
+        (user, '{"idea_id": "IDEA-2026-000901"}'),
+    )
+    for minutes in (
+        0,
+        10,
+        20,
+    ):  # three attempts, five minutes apart at least (due a minute ago: no clock skew)
+        send_due(db, now=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=minutes))
+    row = db.execute("SELECT state, error_code FROM notifications").fetchone()
+    assert row["state"] == "failed" and row["error_code"] in BOUNCE_CODES

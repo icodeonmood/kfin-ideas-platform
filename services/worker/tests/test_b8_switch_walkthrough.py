@@ -27,6 +27,9 @@ def dev_db() -> Iterator[Any]:
 
 @contextmanager
 def off(b: Browser, name: str) -> Iterator[None]:
+    """Switch `name` off, then back to the state it was in before (on, normally)."""
+    before = {x["name"]: x["state"] for x in b.get("/api/admin/kill-switches").json()["switches"]}[name]
+
     def flip(state: str) -> None:
         r = b.request(
             "PUT",
@@ -39,8 +42,8 @@ def off(b: Browser, name: str) -> Iterator[None]:
     try:
         yield
     finally:
-        flip("on")
-        time.sleep(CACHE_S)  # let every process see it back on before the next switch
+        flip(before)
+        time.sleep(CACHE_S)  # let every process see it again before the next switch
 
 
 CACHE_S = 10.5  # §7.6: switches are read on every request through a 10-second cache
@@ -64,7 +67,13 @@ def test_every_switch_behaves_as_section_7_6_says(dev_db: Any) -> None:
         draft = person.post("/api/submissions", json={"mode": "full", "canvas": full_canvas()}).json()["id"]
 
         with off(admin, "submissions"):  # read-only mode: browse and track, not submit or edit
-            assert soon(lambda: person.post("/api/submissions", json={"mode": "quick"}).status_code == 503)
+            # Probe with an autosave of the existing draft, so waiting for the cache creates nothing.
+            assert soon(
+                lambda: (
+                    person.request("PUT", f"/api/submissions/{draft}", json={"canvas": {}}).status_code == 503
+                )
+            )
+            assert person.post("/api/submissions", json={"mode": "quick"}).status_code == 503
             assert person.get("/api/me/ideas").status_code == 200
             assert "Sharing and editing ideas is paused" in person.get("/my-ideas").text
 

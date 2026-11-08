@@ -11,7 +11,7 @@ Target: org-wide launch at the new office inauguration, **Friday 20 November 202
 | Block | Target date | Status |
 |---|---|---|
 | B1 Scaffold | Mon 9 Nov | ☑ Done Sun 8 Nov (all 10 ATs pass; see BUILD_LOG) |
-| B2 Identity and shell | Tue 10 Nov | ☑ Done Mon 9 Nov (all 7 ATs pass; see BUILD_LOG) |
+| B2 Identity and shell | Tue 10 Nov | ☑ Done Sun 8 Nov (all 7 ATs pass; see BUILD_LOG) |
 | B3 Canvas and attachments | Wed 11 Nov | ☑ |
 | B4 Gateway and first agents | Thu 12 Nov | ☑ built; real-route numbers for AT-B4-03/07/08 wait for D1 (InfoSec, Fri 13 Nov) |
 | B5 Match | Fri 13 Nov | ☑ built; AT-B5-01 is a UAT test (BGE-M3), AT-B5-04 real-route numbers wait for D1 |

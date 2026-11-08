@@ -81,7 +81,7 @@ step "7/8 Model route"
 if compose exec -T worker python -m bootstrap.preflight ai-route-ready; then
   echo "model route configured: golden sets run on it; an agent that fails switches itself off (§7.6)"
   compose run --rm -T -v "$ROOT/eval/golden:/app/eval/golden:ro" worker python -m evalrunner --switch-off-failing \
-    || echo "golden sets: at least one agent failed; it is switched off and its step goes to the review desk"
+    || echo "golden sets: at least one agent failed or could not run; any switched off is listed above"
 else
   compose exec -T worker python -m core.killswitch set ai.all off \
     --reason "Mode B until InfoSec approves the model route (D1)" --actor ops:uat-deploy
