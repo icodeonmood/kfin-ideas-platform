@@ -6,3 +6,4 @@ src/server/db-types.ts
 next-env.d.ts
 package-lock.json
 src/lib/pii/patterns.json
+src/lib/rbac.json

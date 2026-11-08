@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
-    "sync:patterns": "node scripts/sync-patterns.mjs"
+    "sync:shared": "node scripts/sync-shared.mjs"
   },
   "engines": {
     "node": ">=22"
