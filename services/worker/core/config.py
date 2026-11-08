@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     privacy_notice_version: str = ""
     contributor_hmac_secret: str = ""
     vault_encryption_key: str = ""
+    # Worker only (B8 hardening): the pseudonym vault's own key. The web app never receives it, so a web-side
+    # compromise plus a copy of the database still cannot open the vault. Empty in dev: the shared key is used.
+    pseudonym_vault_key: str = ""
 
     embeddings_mode: str = "hash"
     embeddings_model_path: str = (

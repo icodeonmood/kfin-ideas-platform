@@ -54,7 +54,7 @@ def assign(conn: Conn, scope_id: str, type_: str, value: str, subject_user_id: s
                 tag,
                 type_,
                 digest,
-                encrypt_bytes(value.encode(), f"{scope_id}|{tag}"),
+                encrypt_bytes(value.encode(), f"{scope_id}|{tag}", kind="vault"),
                 subject_user_id,
             ),
         )
@@ -75,7 +75,7 @@ def mapping(conn: Conn, scope_id: str) -> dict[str, tuple[str, str]]:
     return {
         str(r["tag"]): (
             str(r["type"]),
-            decrypt_bytes(bytes(r["value_encrypted"]), f"{scope_id}|{r['tag']}").decode(),
+            decrypt_bytes(bytes(r["value_encrypted"]), f"{scope_id}|{r['tag']}", kind="vault").decode(),
         )
         for r in rows
     }

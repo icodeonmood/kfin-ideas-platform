@@ -34,6 +34,8 @@ services:
       - path: ${UAT_APP_ENV_FILE:?set UAT_APP_ENV_FILE}
     environment:
       DATABASE_URL: postgres://ideas_worker:${DB_WORKER_PASSWORD:?set DB_WORKER_PASSWORD}@postgres:5432/ideas?sslmode=disable
+      # The pseudonym vault's own key, from the database (worker-only) env file: the web app never gets it.
+      PSEUDONYM_VAULT_KEY: ${PSEUDONYM_VAULT_KEY:?set PSEUDONYM_VAULT_KEY in the database env file}
       # The base file points these at the local stand-ins; in UAT they come from the app env file, required.
       S3_ENDPOINT: ${S3_ENDPOINT:?set S3_ENDPOINT in the app env file}
       CLAMAV_HOST: ${CLAMAV_HOST:?set CLAMAV_HOST in the app env file}

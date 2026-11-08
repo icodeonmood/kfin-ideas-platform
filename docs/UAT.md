@@ -10,6 +10,7 @@ For: KFin IT and the product team, deploying The Garage · Ideas to the UAT host
 | Entra app registration for UAT: issuer URL, client ID, client secret, redirect `https://<uat host>/auth/callback` (§9.1 O2) | IT | app env file |
 | Four random secrets of at least 32 characters each: `INTERNAL_API_TOKEN`, `SESSION_SECRET`, `CONTRIBUTOR_HMAC_SECRET`, `VAULT_ENCRYPTION_KEY` | InfoSec (vault) | app env file |
 | Three database passwords of at least 20 random letters and digits (no symbols: they go into connection URLs): `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
+| The worker-only pseudonym vault key: `PSEUDONYM_VAULT_KEY`, at least 32 random letters and digits, different from `VAULT_ENCRYPTION_KEY`. It must never be in the app env file, which the web app also reads | InfoSec (vault) | database env file |
 | KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox or `SMTP_URL` | IT | app env file |
 | Model route decision (D1). Without it the deploy starts in Mode B: `ai.all` off, scans queue | InfoSec | app env file |
 | BGE-M3 model files, mounted at `EMBEDDINGS_MODEL_PATH`, and the worker image built with `--build-arg WITH_BGE=1` (AT-B5-01) | Product team | host folder |
@@ -19,7 +20,7 @@ For: KFin IT and the product team, deploying The Garage · Ideas to the UAT host
 Two files, both readable only by the deploy account (`chmod 600`), never committed:
 
 - **App env file** (`.env.uat`): start from `.env.example`, set `APP_ENV=uat` and every value above. Leave `DATABASE_URL` out; each service gets its own login.
-- **Database env file** (`.env.uat.db`): only `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD`. It builds each service's own connection and is never handed to a container as a whole.
+- **Database env file** (`.env.uat.db`): only `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` and `PSEUDONYM_VAULT_KEY`. It builds each service's own settings and is never handed to a container as a whole.
 
 ## Deploy
 

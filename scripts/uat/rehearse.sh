@@ -43,6 +43,7 @@ cat > "$WORK/db.env" <<ENV
 POSTGRES_PASSWORD=$(rand)
 DB_WEB_PASSWORD=$(rand)
 DB_WORKER_PASSWORD=$(rand)
+PSEUDONYM_VAULT_KEY=$(rand)
 ENV
 chmod 600 "$WORK"/*.env
 

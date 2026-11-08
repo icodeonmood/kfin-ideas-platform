@@ -4,8 +4,8 @@
 #   scripts/uat/deploy.sh <app env file> <database env file>
 #
 # The app env file holds the services' settings (APP_ENV=uat, secrets from the vault, Entra, model route).
-# The database env file holds POSTGRES_PASSWORD, DB_WEB_PASSWORD and DB_WORKER_PASSWORD; it is used to build
-# each service's own connection and is never handed to a container as a whole.
+# The database env file holds POSTGRES_PASSWORD, DB_WEB_PASSWORD, DB_WORKER_PASSWORD and the worker-only
+# PSEUDONYM_VAULT_KEY; it builds each service's own settings and is never handed to a container as a whole.
 #
 # Steps: preflight → build → empty database check → migrations → service logins → company repo seed (no dev
 # overlay outside dev) → start → golden sets on the model route (failing agents switch off), or Mode B if no route
@@ -36,6 +36,10 @@ for name in POSTGRES_PASSWORD DB_WEB_PASSWORD DB_WORKER_PASSWORD; do
   # Letters and digits only: they go into connection URLs, and Compose and this script must read them alike.
   [[ ${#v} -ge 20 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "$name must be 20 or more random letters and digits"
 done
+v="$(value PSEUDONYM_VAULT_KEY "$DB_ENV_FILE")"
+[[ ${#v} -ge 32 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "PSEUDONYM_VAULT_KEY must be 32 or more random letters and digits"
+[[ -z "$(value PSEUDONYM_VAULT_KEY "$APP_ENV_FILE")" ]] \
+  || fail "PSEUDONYM_VAULT_KEY belongs in the database env file only: the app env file also reaches the web app"
 compose build --quiet worker web
 compose run --rm --no-deps -T worker python -m bootstrap.preflight || fail "preflight"
 

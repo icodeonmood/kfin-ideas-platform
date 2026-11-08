@@ -33,6 +33,11 @@ def check(env: Mapping[str, str]) -> tuple[list[str], list[str]]:
             problems.append(f"{name} is not set")
         elif value.startswith("change-me") or value in DEV_VALUES or len(value) < 32:
             problems.append(f"{name} must be a random value of at least 32 characters (from the vault)")
+    vault_key = get("PSEUDONYM_VAULT_KEY")
+    if len(vault_key) < 32:
+        problems.append("PSEUDONYM_VAULT_KEY must be a random value of at least 32 characters (worker only)")
+    elif vault_key == get("VAULT_ENCRYPTION_KEY"):
+        problems.append("PSEUDONYM_VAULT_KEY must differ from VAULT_ENCRYPTION_KEY, which the web app also holds")
     if get("S3_SECRET_KEY") in DEV_VALUES or len(get("S3_SECRET_KEY")) < 16:
         problems.append("S3_SECRET_KEY must be the UAT store's key (at least 16 characters)")
     if not get("S3_ACCESS_KEY") or get("S3_ACCESS_KEY") in DEV_VALUES:
