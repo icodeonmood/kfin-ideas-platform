@@ -1,0 +1,13 @@
+.env
+.data/
+.models/
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+eval/reports/
+coverage/
+playwright-report/
+test-results/
+.DS_Store

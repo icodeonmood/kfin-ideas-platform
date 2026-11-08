@@ -1,0 +1,25 @@
+---
+type: role-family
+title: Information security
+description: 'Role family: information security.'
+tags:
+- taxonomy
+- role
+status: draft
+verified: unverified
+generated:
+  by: human:product-team-draft
+  at: '2026-11-08'
+kfin:
+  id: ROLE-infosec-analyst
+  title_patterns:
+  - security
+  - infosec
+  - soc
+  - data protection
+  patterns_confirmed: false
+---
+
+## Information security
+
+Used to map HR job titles to a role family (case-insensitive keyword match on `jobTitle`; first match in index order wins; unmatched titles go to the review desk as a taxonomy proposal). Role lenses show counts only, never names.

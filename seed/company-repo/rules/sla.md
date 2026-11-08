@@ -1,0 +1,71 @@
+---
+type: rule
+title: Time limits and escalations
+description: Working-day limits for every stage, reminders and who each breach escalates to.
+tags:
+- rules
+- sla
+status: draft
+verified: unverified
+generated:
+  by: human:product-team-draft
+  at: '2026-11-08'
+kfin:
+  id: RULE-sla
+  version: '1.0'
+  approver: null
+---
+
+Timers start when an item enters a stage and stop when it leaves. Working days are counted in IST using `rules/calendar.md`.
+Reminders go to the current owner at 50% and 80% of the limit. A breach notifies the escalation target and is visible on the dashboard.
+
+```yaml
+version: '1.0'
+review:
+  limit_wd: 5
+  remind_at:
+  - 0.5
+  - 0.8
+  escalate_to: core_chair
+veto_window:
+  limit_wd: 5
+needs_info:
+  limit_wd: 7
+  on_breach: withdraw_with_reopen
+cluster_proposal:
+  limit_wd: 5
+  escalate_to: core_chair
+qualify:
+  limit_wd: 10
+  escalate_to: core_chair
+scoring_round:
+  limit_wd: 10
+  escalate_to: core_chair
+invitation_reply:
+  limit_wd: 3
+  on_breach: remind_then_next_session
+deck_upload:
+  due_wd_before_session: 2
+  on_breach: move_to_next_session
+individual_assessment:
+  limit_wd: 2
+  escalate_to: core_chair
+final_decision:
+  limit_wd: 10
+  escalate_to: core_chair
+outcome_message:
+  limit_wd: 2
+  escalate_to: core_chair
+handover:
+  limit_wd: 5
+  escalate_to: sponsor
+appeal_window:
+  limit_wd: 15
+appeal_decision:
+  limit_wd: 15
+  escalate_to: core_chair
+measure_30:
+  limit_days: 30
+measure_90:
+  limit_days: 90
+```

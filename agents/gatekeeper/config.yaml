@@ -1,0 +1,28 @@
+# gatekeeper — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: gatekeeper
+version: 0.1.0
+tier: fast
+model: claude-haiku-5-5
+temperature: 0
+max_tokens: 900
+timeout_s: 4
+latency_budget_s: 2
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- mode
+- submission | attachment_text
+untrusted_blocks:
+- submission
+- attachment_text
+thresholds_from: rules/thresholds.md#gatekeeper
+examples_in_prompt:
+- 01-problem-clean.json
+- 02-investor-tagged-and-address.json
+- 03-it-ticket.json
+fake_mode_default: 01-problem-clean.json
+golden_set: eval/golden/gatekeeper.jsonl
+pass_gates:
+  personal_data_recall: 1.0
+  false_block_rate_max: 0.05
+  kind_accuracy_min: 0.85

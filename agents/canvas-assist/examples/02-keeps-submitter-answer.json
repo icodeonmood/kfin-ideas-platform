@@ -1,0 +1,199 @@
+{
+  "description": "The person chose new revenue for what reads as cost saving. Keep their answer and flag the doubt.",
+  "input": {
+    "canvas_answers": {
+      "kind": "problem_with_solution",
+      "one_line": "Auto-validate CKYC data at entry so ops stop keying it twice",
+      "details": "Ops in AIF and PMS key investor KYC data into our system and again into the CKYC upload. A validation step that pulls CKYC once would remove the double keying for about 400 onboardings a month.",
+      "who": {
+        "segments": [
+          "kfin_teams"
+        ],
+        "frequency_or_reach": "daily",
+        "today_alternative": "Double keying"
+      },
+      "value": {
+        "category": "new_revenue",
+        "play": "process_improvement",
+        "estimate": {
+          "hours_saved_per_month": null,
+          "inr_saved_per_year": null,
+          "inr_revenue_one_time": null,
+          "inr_revenue_per_year": null,
+          "clients_who_would_pay": null,
+          "note": null
+        },
+        "basis": "own_data"
+      },
+      "ecosystem": {
+        "solved_elsewhere": "partly",
+        "references": [
+          {
+            "kind": "note",
+            "value": "Some fintechs prefill from CKYC",
+            "player": "fintech"
+          }
+        ],
+        "our_advantage": null
+      },
+      "solution": {
+        "approach": "Pull CKYC once at onboarding and prefill both screens",
+        "needs": null,
+        "risks": null
+      },
+      "attachments": []
+    },
+    "gatekeeper": {
+      "kind": "idea_solution",
+      "confidence": 0.9
+    },
+    "taxonomy_slice": {
+      "lobs": [
+        {
+          "id": "LOB-mf",
+          "name": "Mutual Fund Solutions"
+        },
+        {
+          "id": "LOB-sif",
+          "name": "Specialised Investment Funds"
+        },
+        {
+          "id": "LOB-alternatives",
+          "name": "AIF and PMS"
+        }
+      ],
+      "areas": [
+        {
+          "id": "AREA-process"
+        },
+        {
+          "id": "AREA-technology"
+        },
+        {
+          "id": "AREA-customer-experience"
+        },
+        {
+          "id": "AREA-compliance"
+        },
+        {
+          "id": "AREA-data-reporting"
+        }
+      ],
+      "systems": [
+        {
+          "id": "GL-sip"
+        },
+        {
+          "id": "GL-nigo"
+        },
+        {
+          "id": "GL-ckyc"
+        }
+      ],
+      "roles": [
+        {
+          "id": "ROLE-ops-executive"
+        },
+        {
+          "id": "ROLE-ops-team-lead"
+        },
+        {
+          "id": "ROLE-client-service"
+        }
+      ]
+    },
+    "past_corrections": []
+  },
+  "output": {
+    "kind": "problem_with_solution",
+    "one_line": "Auto-validate CKYC data at entry so ops stop keying it twice",
+    "neutral_summary": "Investor KYC data is keyed twice during AIF and PMS onboarding; pulling it from CKYC once would remove the rework.",
+    "details": "Ops in AIF and PMS key investor KYC data into our system and again into the CKYC upload. A validation step that pulls CKYC once would remove the double keying for about 400 onboardings a month.",
+    "who": {
+      "segments": [
+        "kfin_teams"
+      ],
+      "frequency_or_reach": "daily",
+      "today_alternative": "Double keying"
+    },
+    "value": {
+      "category": "new_revenue",
+      "play": "process_improvement",
+      "estimate": {
+        "hours_saved_per_month": null,
+        "inr_saved_per_year": null,
+        "inr_revenue_one_time": null,
+        "inr_revenue_per_year": null,
+        "clients_who_would_pay": null,
+        "note": null
+      },
+      "basis": "own_data"
+    },
+    "ecosystem": {
+      "solved_elsewhere": "partly",
+      "references": [
+        {
+          "kind": "note",
+          "value": "Some fintechs prefill from CKYC",
+          "player": "fintech"
+        }
+      ],
+      "our_advantage": null
+    },
+    "solution": {
+      "approach": "Pull CKYC once at onboarding and prefill both screens",
+      "needs": null,
+      "risks": "Any change to how KYC data is fetched or stored may need a compliance check."
+    },
+    "attachments": [],
+    "system": {
+      "scope": "lob",
+      "lobs": [
+        "LOB-alternatives"
+      ],
+      "areas": [
+        "AREA-process",
+        "AREA-compliance"
+      ],
+      "systems": [
+        "GL-ckyc"
+      ],
+      "roles_affected": [
+        "ROLE-ops-executive"
+      ]
+    },
+    "provenance": {
+      "kind": "submitter",
+      "one_line": "submitter",
+      "details": "submitter",
+      "who.segments": "submitter",
+      "who.frequency_or_reach": "submitter",
+      "who.today_alternative": "submitter",
+      "value.category": "submitter",
+      "value.play": "submitter",
+      "value.basis": "submitter",
+      "ecosystem.solved_elsewhere": "submitter",
+      "ecosystem.references": "submitter",
+      "solution.approach": "submitter",
+      "solution.risks": "suggested"
+    },
+    "flags_for_reviewer": [
+      "Category is new revenue, but the text describes saving ops effort; cost saving may fit better.",
+      "Touches investor KYC data; may need a compliance check."
+    ],
+    "confidence": {
+      "value.category": 0.3,
+      "value.play": 0.9,
+      "system.scope": 0.75,
+      "system.areas": 0.85,
+      "system.systems": 0.9
+    },
+    "strength": {
+      "score": 3,
+      "next_best": [
+        "Add a rough figure: hours saved a month",
+        "Say why KFintech can do this better"
+      ]
+    }
+  }
+}

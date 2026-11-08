@@ -1,0 +1,6 @@
+# Fictional client organisations for tests only. Never load these into the production company repo.
+clients:
+  - { id: CLI-test-northstar, type: amc,    name: "Northstar Mutual Fund",  aliases: ["Northstar MF", "Northstar AMC"] }
+  - { id: CLI-test-banyan,    type: amc,    name: "Banyan Asset Management", aliases: ["Banyan AMC", "Banyan MF"] }
+  - { id: CLI-test-kestrel,   type: amc,    name: "Kestrel Mutual Fund",    aliases: ["Kestrel MF"] }
+  - { id: CLI-test-indigoco,  type: issuer, name: "Indigo Cement Ltd",      aliases: ["Indigo Cement"] }

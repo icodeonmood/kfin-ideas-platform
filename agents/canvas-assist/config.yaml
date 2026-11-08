@@ -1,0 +1,37 @@
+# canvas-assist — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: canvas-assist
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+temperature: 0.3
+max_tokens: 2500
+timeout_s: 8
+latency_budget_s: 5
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- canvas_answers
+- details_text
+- attachment_digests
+- taxonomy_slice
+- gatekeeper
+- past_corrections
+untrusted_blocks:
+- canvas_answers
+- details_text
+- attachment_digests
+examples_in_prompt:
+- 01-quick-capture.json
+- 02-keeps-submitter-answer.json
+fake_mode_default: 01-quick-capture.json
+golden_set: eval/golden/canvas_assist.jsonl
+post_checks:
+- submitter fields unchanged
+- system IDs subset of taxonomy_slice
+- neutral_summary has no tags, names or client names
+- only tags that were sent
+pass_gates:
+  submitter_field_changes: 0
+  out_of_slice_ids: 0
+  neutral_summary_leaks: 0
+  area_tag_accuracy_min: 0.8

@@ -1,0 +1,33 @@
+# judge — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: judge
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+temperature: 0
+max_tokens: 2000
+timeout_s: 8
+latency_budget_s: 5
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- card
+- candidates
+- past_corrections
+untrusted_blocks:
+- card
+- candidates
+candidate_token_trim: 120
+max_candidates: 20
+max_corrections: 5
+examples_in_prompt:
+- 01-sip-root-cause.json
+- 02-business-buyer.json
+fake_mode_default: 01-sip-root-cause.json
+golden_set: eval/golden/judge.jsonl
+post_checks:
+- one result per candidate, same order
+- cids copied exactly
+- best_same is a cid labelled same or null
+pass_gates:
+  same_precision_min: 0.85
+  same_recall_min: 0.75

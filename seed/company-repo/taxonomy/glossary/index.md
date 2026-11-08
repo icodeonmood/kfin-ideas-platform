@@ -1,0 +1,57 @@
+
+# Glossary
+
+KFin and industry terms, with aliases used for exact and fuzzy matching (router plan P2). New terms come from weekly mining, approved by the review desk.
+
+- [GL-nigo.md](GL-nigo.md) — NIGO
+- [GL-igo.md](GL-igo.md) — IGO
+- [GL-sip.md](GL-sip.md) — SIP
+- [GL-stp.md](GL-stp.md) — STP
+- [GL-swp.md](GL-swp.md) — SWP
+- [GL-folio.md](GL-folio.md) — Folio
+- [GL-nav.md](GL-nav.md) — NAV
+- [GL-redemption.md](GL-redemption.md) — Redemption
+- [GL-switch.md](GL-switch.md) — Switch
+- [GL-transmission.md](GL-transmission.md) — Transmission
+- [GL-nomination.md](GL-nomination.md) — Nomination
+- [GL-kyc.md](GL-kyc.md) — KYC
+- [GL-ckyc.md](GL-ckyc.md) — CKYC
+- [GL-kra.md](GL-kra.md) — KRA
+- [GL-fatca.md](GL-fatca.md) — FATCA and CRS
+- [GL-cas.md](GL-cas.md) — CAS
+- [GL-mandate.md](GL-mandate.md) — Mandate
+- [GL-nach.md](GL-nach.md) — NACH
+- [GL-penny-drop.md](GL-penny-drop.md) — Penny drop
+- [GL-arn.md](GL-arn.md) — ARN
+- [GL-euin.md](GL-euin.md) — EUIN
+- [GL-mfd.md](GL-mfd.md) — MFD
+- [GL-ria.md](GL-ria.md) — RIA
+- [GL-amc.md](GL-amc.md) — AMC
+- [GL-rta.md](GL-rta.md) — RTA
+- [GL-aum.md](GL-aum.md) — AUM
+- [GL-amfi.md](GL-amfi.md) — AMFI
+- [GL-sebi.md](GL-sebi.md) — SEBI
+- [GL-pfrda.md](GL-pfrda.md) — PFRDA
+- [GL-dpdpa.md](GL-dpdpa.md) — DPDPA
+- [GL-nps.md](GL-nps.md) — NPS
+- [GL-pran.md](GL-pran.md) — PRAN
+- [GL-cra.md](GL-cra.md) — CRA
+- [GL-pop.md](GL-pop.md) — POP
+- [GL-sif.md](GL-sif.md) — SIF
+- [GL-aif.md](GL-aif.md) — AIF
+- [GL-pms.md](GL-pms.md) — PMS
+- [GL-demat.md](GL-demat.md) — Demat
+- [GL-isin.md](GL-isin.md) — ISIN
+- [GL-corporate-action.md](GL-corporate-action.md) — Corporate action
+- [GL-e-voting.md](GL-e-voting.md) — e-Voting
+- [GL-ipo.md](GL-ipo.md) — IPO registrar services
+- [GL-mf-central.md](GL-mf-central.md) — MF Central
+- [GL-kfinkart.md](GL-kfinkart.md) — KFinKart
+- [GL-lamf.md](GL-lamf.md) — LAMF
+- [GL-iris.md](GL-iris.md) — IRIS
+- [GL-guardian.md](GL-guardian.md) — Guardian
+- [GL-finfabrik.md](GL-finfabrik.md) — Finfabrik
+- [GL-convene.md](GL-convene.md) — Convene
+- [GL-niti.md](GL-niti.md) — NITI
+- [GL-arya.md](GL-arya.md) — Arya
+- [GL-tat.md](GL-tat.md) — TAT

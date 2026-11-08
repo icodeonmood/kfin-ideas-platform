@@ -1,0 +1,186 @@
+{
+  "description": "Quick capture: three answers given; the assistant drafts the rest from the details only and never invents rupee figures.",
+  "input": {
+    "canvas_answers": {
+      "kind": null,
+      "one_line": null,
+      "details": "We get about 3,000 SIP forms a day in MF ops. Three people spend about 2 hours a day each re-checking forms for missing bank or nominee fields before keying. NIGO forms go back by courier and registration slips by 1–2 days. SIF forms have the same issue.",
+      "who": {
+        "segments": [
+          "kfin_teams",
+          "investors"
+        ],
+        "frequency_or_reach": null,
+        "today_alternative": null
+      },
+      "value": {
+        "category": "cost_saving",
+        "play": null,
+        "estimate": {
+          "hours_saved_per_month": null,
+          "inr_saved_per_year": null,
+          "inr_revenue_one_time": null,
+          "inr_revenue_per_year": null,
+          "clients_who_would_pay": null,
+          "note": null
+        },
+        "basis": null
+      },
+      "ecosystem": {
+        "solved_elsewhere": "dont_know",
+        "references": [],
+        "our_advantage": null
+      },
+      "solution": {
+        "approach": null,
+        "needs": null,
+        "risks": null
+      },
+      "attachments": []
+    },
+    "gatekeeper": {
+      "kind": "idea_problem",
+      "confidence": 0.93
+    },
+    "taxonomy_slice": {
+      "lobs": [
+        {
+          "id": "LOB-mf",
+          "name": "Mutual Fund Solutions"
+        },
+        {
+          "id": "LOB-sif",
+          "name": "Specialised Investment Funds"
+        },
+        {
+          "id": "LOB-alternatives",
+          "name": "AIF and PMS"
+        }
+      ],
+      "areas": [
+        {
+          "id": "AREA-process"
+        },
+        {
+          "id": "AREA-technology"
+        },
+        {
+          "id": "AREA-customer-experience"
+        },
+        {
+          "id": "AREA-compliance"
+        },
+        {
+          "id": "AREA-data-reporting"
+        }
+      ],
+      "systems": [
+        {
+          "id": "GL-sip"
+        },
+        {
+          "id": "GL-nigo"
+        },
+        {
+          "id": "GL-ckyc"
+        }
+      ],
+      "roles": [
+        {
+          "id": "ROLE-ops-executive"
+        },
+        {
+          "id": "ROLE-ops-team-lead"
+        },
+        {
+          "id": "ROLE-client-service"
+        }
+      ]
+    },
+    "past_corrections": []
+  },
+  "output": {
+    "kind": "problem",
+    "one_line": "SIP registrations slip 1–2 days because ops re-check every form by hand for missing fields",
+    "neutral_summary": "Manual re-checks of SIP forms for missing bank or nominee fields delay registrations by one to two days.",
+    "details": "We get about 3,000 SIP forms a day in MF ops. Three people spend about 2 hours a day each re-checking forms for missing bank or nominee fields before keying. NIGO forms go back by courier and registration slips by 1–2 days. SIF forms have the same issue.",
+    "who": {
+      "segments": [
+        "kfin_teams",
+        "investors"
+      ],
+      "frequency_or_reach": "daily",
+      "today_alternative": "Three people re-check each form by hand; NIGO forms go back by courier."
+    },
+    "value": {
+      "category": "cost_saving",
+      "play": "process_improvement",
+      "estimate": {
+        "hours_saved_per_month": 132,
+        "inr_saved_per_year": null,
+        "inr_revenue_one_time": null,
+        "inr_revenue_per_year": null,
+        "clients_who_would_pay": null,
+        "note": "3 people × 2 hours a day × 22 working days ≈ 132 hours a month, if checks were automated."
+      },
+      "basis": null
+    },
+    "ecosystem": {
+      "solved_elsewhere": "dont_know",
+      "references": [],
+      "our_advantage": null
+    },
+    "solution": {
+      "approach": null,
+      "needs": null,
+      "risks": null
+    },
+    "attachments": [],
+    "system": {
+      "scope": "cross-lob",
+      "lobs": [
+        "LOB-mf",
+        "LOB-sif"
+      ],
+      "areas": [
+        "AREA-process"
+      ],
+      "systems": [
+        "GL-sip",
+        "GL-nigo"
+      ],
+      "roles_affected": [
+        "ROLE-ops-executive"
+      ]
+    },
+    "provenance": {
+      "kind": "suggested",
+      "one_line": "suggested",
+      "details": "submitter",
+      "who.segments": "submitter",
+      "who.frequency_or_reach": "suggested",
+      "who.today_alternative": "suggested",
+      "value.category": "submitter",
+      "value.play": "suggested",
+      "value.estimate.hours_saved_per_month": "suggested",
+      "ecosystem.solved_elsewhere": "submitter"
+    },
+    "flags_for_reviewer": [
+      "Hours estimate is derived from the submitter's own figures; no rupee value given."
+    ],
+    "confidence": {
+      "value.category": 0.9,
+      "value.play": 0.85,
+      "system.scope": 0.8,
+      "system.areas": 0.9,
+      "system.systems": 0.85
+    },
+    "strength": {
+      "score": 2,
+      "next_best": [
+        "Say where the 3,000 forms a day figure comes from",
+        "Tell us if another RTA or AMC solved this"
+      ]
+    }
+  }
+}

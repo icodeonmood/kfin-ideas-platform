@@ -1,0 +1,111 @@
+{
+  "description": "Same root cause across LOBs is same; same process but different cause is related; shared words only is different.",
+  "input": {
+    "card": {
+      "kind": "problem",
+      "one_line": "Ops re-check SIP mandates by hand because bank fields are often missing",
+      "details": "Every morning the SIP desk opens each mandate to see if IFSC or account type is blank...",
+      "who": {
+        "segments": [
+          "kfin_teams"
+        ]
+      },
+      "category": "cost_saving",
+      "play": "process_improvement",
+      "areas": [
+        "AREA-process"
+      ],
+      "lobs": [
+        "LOB-mf"
+      ],
+      "systems": [
+        "GL-sip"
+      ]
+    },
+    "past_corrections": [],
+    "candidates": [
+      {
+        "cid": "CL-0012",
+        "type": "cluster",
+        "title": "Manual NIGO checks on SIP and lumpsum forms",
+        "summary": "Forms arrive with missing bank or nominee fields; ops re-check by hand; registrations slip 1–2 days.",
+        "stage": "in_cluster",
+        "areas": [
+          "AREA-process"
+        ],
+        "lobs": [
+          "LOB-mf",
+          "LOB-sif"
+        ]
+      },
+      {
+        "cid": "IDEA-2026-000201",
+        "type": "idea",
+        "title": "SIP instalments fail when bank mandates expire",
+        "summary": "Investors miss instalments because mandates lapse without a reminder.",
+        "stage": "reviewed",
+        "areas": [
+          "AREA-customer-experience"
+        ],
+        "lobs": [
+          "LOB-mf"
+        ]
+      },
+      {
+        "cid": "SOL-0004",
+        "type": "solution",
+        "title": "Form-completeness check at branch scan",
+        "summary": "Corporate Registry flags blank mandatory fields at scan time so forms are fixed before reaching ops.",
+        "stage": "shipped",
+        "areas": [
+          "AREA-process"
+        ],
+        "lobs": [
+          "LOB-corporate-registry"
+        ]
+      },
+      {
+        "cid": "IDEA-2026-000233",
+        "type": "idea",
+        "title": "Move SIP desk to the new floor",
+        "summary": "The SIP desk team wants seating near the scanning room.",
+        "stage": "reviewed",
+        "areas": [
+          "AREA-facility"
+        ],
+        "lobs": [
+          "LOB-mf"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "results": [
+      {
+        "cid": "CL-0012",
+        "label": "same",
+        "reason": "Same root cause: incomplete bank fields at capture force manual re-checks before registration.",
+        "confidence": 0.9
+      },
+      {
+        "cid": "IDEA-2026-000201",
+        "label": "related",
+        "reason": "Same SIP process, different cause: expired mandates, not missing fields at capture.",
+        "confidence": 0.85
+      },
+      {
+        "cid": "SOL-0004",
+        "label": "same",
+        "reason": "Catches blank mandatory fields at scan, which removes the manual re-check; built for another LOB's equivalent process.",
+        "confidence": 0.72
+      },
+      {
+        "cid": "IDEA-2026-000233",
+        "label": "different",
+        "reason": "Shares the SIP desk name only; about seating, not form completeness.",
+        "confidence": 0.95
+      }
+    ],
+    "best_same": "CL-0012"
+  }
+}

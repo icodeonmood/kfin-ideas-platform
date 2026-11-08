@@ -1,0 +1,31 @@
+{
+  "description": "Personal IT issue, not an improvement idea. Redirect.",
+  "input": {
+    "mode": "submission",
+    "submission": {
+      "one_line": "My laptop VPN disconnects every hour",
+      "details": "Since Monday my VPN drops every hour and I have to log in again. Please fix my laptop, ticket raised already but no reply."
+    }
+  },
+  "output": {
+    "personal_data": {
+      "found": false,
+      "confidence": 0.03,
+      "spans": []
+    },
+    "investor_context_tags": [],
+    "kind": {
+      "value": "it_ticket",
+      "confidence": 0.92
+    },
+    "abuse": {
+      "value": false,
+      "confidence": 0.99
+    },
+    "language": {
+      "primary": "en",
+      "mixed": false
+    },
+    "notes_for_reviewer": null
+  }
+}

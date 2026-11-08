@@ -1,0 +1,31 @@
+{
+  "description": "Clean process problem with a colleague tag and a client tag. Nothing to flag.",
+  "input": {
+    "mode": "submission",
+    "submission": {
+      "one_line": "SIP registrations wait 1–2 days because ops re-check every form by hand for missing fields",
+      "details": "In MF operations we receive about 3,000 SIP forms a day. [[KFIN_EMPLOYEE_1]] and two others re-check each one for missing bank or nominee fields before keying. Forms from [[CLIENT_AMC_1]] branches are the worst. NIGO returns go back by courier."
+    }
+  },
+  "output": {
+    "personal_data": {
+      "found": false,
+      "confidence": 0.05,
+      "spans": []
+    },
+    "investor_context_tags": [],
+    "kind": {
+      "value": "idea_problem",
+      "confidence": 0.93
+    },
+    "abuse": {
+      "value": false,
+      "confidence": 0.98
+    },
+    "language": {
+      "primary": "en",
+      "mixed": false
+    },
+    "notes_for_reviewer": null
+  }
+}

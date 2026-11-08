@@ -1,0 +1,31 @@
+{
+  "description": "Business idea written in Hinglish. Client organisation tags are allowed.",
+  "input": {
+    "mode": "submission",
+    "submission": {
+      "one_line": "AMCs ko distributor churn ka early-warning dashboard bech sakte hain",
+      "details": "Humare paas transaction data hai. [[CLIENT_AMC_1]] jaise clients ko monthly report dena chahiye ki kaun se distributors ka SIP book gir raha hai. Ye paid add-on ho sakta hai."
+    }
+  },
+  "output": {
+    "personal_data": {
+      "found": false,
+      "confidence": 0.08,
+      "spans": []
+    },
+    "investor_context_tags": [],
+    "kind": {
+      "value": "business_idea",
+      "confidence": 0.9
+    },
+    "abuse": {
+      "value": false,
+      "confidence": 0.99
+    },
+    "language": {
+      "primary": "hi",
+      "mixed": true
+    },
+    "notes_for_reviewer": "Uses transaction data for a client product; data-use terms may need a check."
+  }
+}

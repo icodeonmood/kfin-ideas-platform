@@ -1,0 +1,89 @@
+{
+  "description": "Same data product to a different buyer is related, not same.",
+  "input": {
+    "card": {
+      "kind": "business_idea",
+      "one_line": "Sell AMCs a monthly distributor-churn early-warning report",
+      "details": "Use transaction data to show AMCs which distributors' SIP books are shrinking.",
+      "who": {
+        "segments": [
+          "amc_clients"
+        ]
+      },
+      "category": "new_revenue",
+      "play": "upsell",
+      "areas": [
+        "AREA-data-reporting"
+      ],
+      "lobs": [
+        "LOB-mf"
+      ],
+      "systems": []
+    },
+    "past_corrections": [],
+    "candidates": [
+      {
+        "cid": "IDEA-2026-000310",
+        "type": "idea",
+        "title": "Distributor health score for AMC sales teams",
+        "summary": "A paid dashboard for AMCs ranking distributors by SIP book growth and churn risk.",
+        "stage": "scanned",
+        "areas": [
+          "AREA-data-reporting"
+        ],
+        "lobs": [
+          "LOB-mf"
+        ]
+      },
+      {
+        "cid": "IDEA-2026-000322",
+        "type": "idea",
+        "title": "Churn alerts for banks' wealth desks",
+        "summary": "Offer banks an alert when their wealth clients redeem large amounts.",
+        "stage": "scanned",
+        "areas": [
+          "AREA-data-reporting"
+        ],
+        "lobs": [
+          "LOB-mf"
+        ]
+      },
+      {
+        "cid": "DEC-2026-0009",
+        "type": "decision",
+        "title": "Declined: free distributor analytics inside the distributor portal",
+        "summary": "Declined because a free distributor-facing feature had no revenue and overlapped an industry platform.",
+        "stage": "declined",
+        "areas": [
+          "AREA-data-reporting"
+        ],
+        "lobs": [
+          "LOB-mf"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "results": [
+      {
+        "cid": "IDEA-2026-000310",
+        "label": "same",
+        "reason": "Same offering (distributor churn and SIP-book insight) to the same buyer (AMCs), paid.",
+        "confidence": 0.86
+      },
+      {
+        "cid": "IDEA-2026-000322",
+        "label": "related",
+        "reason": "Similar churn analytics but sold to banks about their own clients; different buyer and offering.",
+        "confidence": 0.8
+      },
+      {
+        "cid": "DEC-2026-0009",
+        "label": "related",
+        "reason": "Distributor analytics too, but free and for distributors, not a paid AMC report.",
+        "confidence": 0.75
+      }
+    ],
+    "best_same": "IDEA-2026-000310"
+  }
+}

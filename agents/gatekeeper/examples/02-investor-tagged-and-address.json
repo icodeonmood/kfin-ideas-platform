@@ -1,0 +1,48 @@
+{
+  "description": "A tagged person who is clearly an investor, plus a partial home address the patterns missed. Must block.",
+  "input": {
+    "mode": "submission",
+    "submission": {
+      "one_line": "Redemption requests stuck when the bank proof is a passbook photo",
+      "details": "Last week [[PERSON_1]], an investor from Pune, called five times because her redemption was held. She lives at Flat 12, Sunrise Residency, Baner and sent a blurred passbook photo. We need a better upload check."
+    }
+  },
+  "output": {
+    "personal_data": {
+      "found": true,
+      "confidence": 0.95,
+      "spans": [
+        {
+          "field": "details",
+          "quote": "[[PERSON_1]], an investor from Pune",
+          "data_type": "tagged_person_as_investor",
+          "confidence": 0.95,
+          "reason": "Tagged person is described as an investor"
+        },
+        {
+          "field": "details",
+          "quote": "Flat 12, Sunrise Residency, Baner",
+          "data_type": "address",
+          "confidence": 0.9,
+          "reason": "Home address of an identifiable investor"
+        }
+      ]
+    },
+    "investor_context_tags": [
+      "[[PERSON_1]]"
+    ],
+    "kind": {
+      "value": "idea_problem",
+      "confidence": 0.85
+    },
+    "abuse": {
+      "value": false,
+      "confidence": 0.98
+    },
+    "language": {
+      "primary": "en",
+      "mixed": false
+    },
+    "notes_for_reviewer": "Real problem about bank-proof uploads; resubmit without the investor's details."
+  }
+}

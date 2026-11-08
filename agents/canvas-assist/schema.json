@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/canvas-assist/0.1.0",
+  "title": "canvas-assist output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "one_line",
+    "neutral_summary",
+    "details",
+    "who",
+    "value",
+    "ecosystem",
+    "solution",
+    "attachments",
+    "system",
+    "provenance",
+    "flags_for_reviewer",
+    "confidence",
+    "strength"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "problem",
+        "problem_with_solution",
+        "business_idea"
+      ]
+    },
+    "one_line": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "neutral_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 220
+    },
+    "details": {
+      "type": "string"
+    },
+    "who": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segments",
+        "frequency_or_reach",
+        "today_alternative"
+      ],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "investors",
+              "distributors",
+              "amc_clients",
+              "issuer_clients",
+              "kfin_teams",
+              "other"
+            ]
+          }
+        },
+        "frequency_or_reach": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(daily|weekly|monthly|rarely|unknown|[0-9]+ clients)$"
+        },
+        "today_alternative": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 600
+        }
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "play",
+        "estimate",
+        "basis"
+      ],
+      "properties": {
+        "category": {
+          "enum": [
+            "cost_saving",
+            "new_revenue",
+            "both",
+            "not_sure"
+          ]
+        },
+        "play": {
+          "enum": [
+            "process_improvement",
+            "upsell",
+            "cross_sell",
+            "new_product",
+            "other",
+            null
+          ]
+        },
+        "estimate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hours_saved_per_month",
+            "inr_saved_per_year",
+            "inr_revenue_one_time",
+            "inr_revenue_per_year",
+            "clients_who_would_pay",
+            "note"
+          ],
+          "properties": {
+            "hours_saved_per_month": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "inr_saved_per_year": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "inr_revenue_one_time": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "inr_revenue_per_year": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "clients_who_would_pay": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 400
+            }
+          }
+        },
+        "basis": {
+          "enum": [
+            "own_data",
+            "document",
+            "conversation",
+            "hunch",
+            null
+          ]
+        }
+      }
+    },
+    "ecosystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "solved_elsewhere",
+        "references",
+        "our_advantage"
+      ],
+      "properties": {
+        "solved_elsewhere": {
+          "enum": [
+            "yes",
+            "partly",
+            "no",
+            "dont_know"
+          ]
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "player"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "link",
+                  "note",
+                  "attachment"
+                ]
+              },
+              "value": {
+                "type": "string"
+              },
+              "player": {
+                "enum": [
+                  "rta",
+                  "amc",
+                  "fintech",
+                  "bank",
+                  "global",
+                  "internal",
+                  "other"
+                ]
+              }
+            }
+          }
+        },
+        "our_advantage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 800
+        }
+      }
+    },
+    "solution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approach",
+        "needs",
+        "risks"
+      ],
+      "properties": {
+        "approach": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "risks": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "state",
+          "digest"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^ATT-[0-9]{4}-[0-9]{6}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "processing",
+              "awaiting_check",
+              "clean",
+              "rejected"
+            ]
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "lobs",
+        "areas",
+        "systems",
+        "roles_affected"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "lob",
+            "cross-lob",
+            "org-wide"
+          ]
+        },
+        "lobs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^LOB-[a-z0-9-]+$"
+          }
+        },
+        "areas": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 3,
+          "items": {
+            "type": "string",
+            "pattern": "^AREA-[a-z0-9-]+$"
+          }
+        },
+        "systems": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^GL-[a-z0-9-]+$"
+          }
+        },
+        "roles_affected": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^ROLE-[a-z0-9-]+$"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z_]+(\\.[a-z_]+)*$"
+      },
+      "additionalProperties": {
+        "enum": [
+          "submitter",
+          "suggested",
+          "accepted"
+        ]
+      }
+    },
+    "flags_for_reviewer": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "maxLength": 160
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value.category",
+        "value.play",
+        "system.scope",
+        "system.areas",
+        "system.systems"
+      ],
+      "properties": {
+        "value.category": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "value.play": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "system.scope": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "system.areas": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "system.systems": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "strength": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "score",
+        "next_best"
+      ],
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "next_best": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "maxLength": 90
+          }
+        }
+      }
+    }
+  }
+}

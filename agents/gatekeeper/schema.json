@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/gatekeeper/0.1.0",
+  "title": "gatekeeper output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "personal_data",
+    "investor_context_tags",
+    "kind",
+    "abuse",
+    "language",
+    "notes_for_reviewer"
+  ],
+  "properties": {
+    "personal_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "confidence",
+        "spans"
+      ],
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "spans": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "quote",
+              "data_type",
+              "confidence",
+              "reason"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "data_type": {
+                "enum": [
+                  "investor_or_customer_name",
+                  "tagged_person_as_investor",
+                  "individual_distributor_details",
+                  "address",
+                  "account_or_folio_number",
+                  "government_id",
+                  "date_of_birth",
+                  "phone",
+                  "personal_email",
+                  "sensitive_detail",
+                  "other"
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 120
+              }
+            }
+          }
+        }
+      }
+    },
+    "investor_context_tags": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "pattern": "^\\[\\[[A-Z][A-Z_]*_[0-9]+\\]\\]$"
+      }
+    },
+    "kind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "confidence"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "idea_problem",
+            "idea_solution",
+            "business_idea",
+            "it_ticket",
+            "hr_grievance",
+            "complaint",
+            "question",
+            "spam",
+            "not_applicable"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "abuse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "confidence"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "language": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary",
+        "mixed"
+      ],
+      "properties": {
+        "primary": {
+          "type": "string",
+          "pattern": "^[a-z]{2}$"
+        },
+        "mixed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "notes_for_reviewer": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    }
+  }
+}
