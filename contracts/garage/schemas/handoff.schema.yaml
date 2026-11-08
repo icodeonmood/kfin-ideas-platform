@@ -1,0 +1,48 @@
+# inherited-from: Product-Manager-Skills/config/schemas/handoff.schema.yaml @ b7138ec on 2026-11-08; do not edit by hand, re-run the inheritance step
+# handoff.schema.yaml — Authoritative field list for delivery/[feature-slug]/handoff.md
+#
+# Layer 0 path convention: all delivery-root paths in reconcile-config.yaml are absolute.
+# Format: /absolute/path/to/delivery-root/
+#
+# Write authority: PM only. Pipeline reads but never overwrites.
+# Audit trail: git history on this file — no additional versioning field needed.
+
+feature-slug:              # kebab-case · must match delivery folder name · cross-checked at Phase 04 startup check 1
+feature-name:              # human-readable display name
+owner:                     # PM identifier — required for gate routing, notifications, and audit trail in multi-user contexts
+
+product:                   # iris | lamf | guardian | api-marketplace | ai-tooling | sif-aif-pms | mf-central | other
+feature-type:              # ai-tooling | kfintech-product
+
+mode:                      # gated | autonomous
+compliance-tier:           # standard | express
+                           # standard: touches transaction flows, investor data, regulatory APIs, AMC integrations,
+                           #   SEBI/PFRDA/RBI surface, or any regulated product (LAMF, NPS, SIF, IRIS transaction flows)
+                           #   carve-out: internal tooling + regulated data surface = standard always
+                           # express: UI changes, content, internal tooling, skills/agents/automation, non-regulated surfaces
+tier-reviewed-date:        # YYYY-MM-DD · must be current at every /showtime invocation · re-evaluated each run
+
+skill-selection-mode:      # evaluated | quick
+                           # evaluated: 4-dimension assessment from feature brief (scope, novelty, audience, UX weight)
+                           # quick: hardcoded matrix by feature type — lower latency, fewer skill permutations
+
+target-product-os:         # absolute path to product OS repo | "product-manager-skills" for ai-tooling features
+target-branch:             # git branch to merge into at Phase 09 · default: main
+target-type:               # skill | claude-agent | app · Phase 09 deploy logic forks on this value
+
+dev-environment-required:  # true | false · startup check 5 halts if true and env unavailable
+test-suite-available:      # true | false · Phase 06 degrades to claude-assertions if false
+
+notification-channel:      # slack | whatsapp
+notification-recipient:    # Slack channel name or WhatsApp group name · used by n8n for gate and sync notifications
+
+assisted-ship:             # true | false
+                           # false (default for kfintech-product): pipeline packages delivery/ and hands off to dev team
+                           # true (PM-declared): Claude builds and raises PR · human deploys · set when pipeline trust established
+
+spec-version:              # semver string matching spec.md version frontmatter · e.g. "1.0"
+prior-spec-version:        # blank for v1.0 · required and validated at Phase 04 if build-mode: delta
+build-mode:                # full | delta
+                           # full: build from scratch (v1.0 always full)
+                           # delta: build against approved delta.md only (v2.0+)
+breaking-change:           # true | false · true overrides build-mode to full regardless of version

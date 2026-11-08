@@ -1416,7 +1416,7 @@ Park and decline need a reason code from `rules/reason-codes.md` and a note. `re
 | Track: Garage (build, reuse or integrate), fix track (non-tech), or procurement (buy or partner, through KFin's procurement process; any integration work comes back to the Garage as its own entry) | Follows the route chosen at selection; owner confirms |
 | Garage `product` | One of: iris, lamf, guardian, api-marketplace, ai-tooling, sif-aif-pms, mf-central, other |
 | Garage `feature-type` | `kfintech-product` or `ai-tooling` |
-| Compliance tier | `rules/compliance-tier.md`: **standard** if it touches transaction flows, investor data, regulated APIs or any IRIS transaction surface (internal tooling that reads regulated data is also standard); otherwise **express** |
+| Compliance tier | `rules/compliance-tier.md` (copied from the Garage contract): **standard** if it touches transaction flows, investor data, regulated APIs, AMC integrations, a SEBI, PFRDA or RBI surface, or any regulated product (LAMF, NPS, SIF, IRIS transaction flows); internal tooling that reads regulated data is always standard; otherwise **express**. The Garage PM confirms the tier in `handoff.md` |
 
 **Step 2 — Complete the checklist.** All of these must be true:
 - Sponsor named and has approved.
@@ -1440,10 +1440,14 @@ Park and decline need a reason code from `rules/reason-codes.md` and a note. `re
 | `current-phase` | `01-discover` |
 | `compliance-tier` | From the pack |
 | `mode` | `gated` |
-| `pipeline-started`, `last-updated` | Today |
+| `gate-status` | `clear` |
+| `last-updated` | Today |
+| `pipeline-started` | Left empty. The Garage sets it when Phase 04 starts (BLD-008) |
 | `source-cluster` | `CL-0012` — **new text property; a one-time change to the Garage database** |
 
-**The Garage contract wins.** Property names and allowed values above must match the Garage's own handoff contract (`config/schemas` in the Garage project, copied into `contracts/garage/` in the app repo; see `docs/GARAGE_INHERITANCE.md`). Where they differ, follow the contract and record the difference in `docs/DECISIONS.md`.
+**The Garage contract wins.** Property names and allowed values above must match the Garage's own handoff contract (`config/schemas` in the Garage project, copied into `contracts/garage/` in the app repo; see `docs/GARAGE_INHERITANCE.md`). Where they differ, follow the contract and record the difference in `docs/DECISIONS.md`. Checked on 8 Nov 2026 (`docs/inherited/REPORT.md`):
+- The Garage looks up its page by `feature-slug` when the spec is approved (Phase 03) and updates the page it finds, so the page created here is adopted, not duplicated. The Garage's delivery folder must use the same slug. From then on `mode`, `compliance-tier`, `product` and `feature-type` come from the PM's `handoff.md` and overwrite what the platform wrote (BLD-009).
+- The handover pack must name the Garage `owner` (the PM who takes the feature); `handoff.md` and `status.md` are written only by the Garage PM and pipeline (BLD-011).
 
 The page body holds the feature brief and links to the cluster and handover files. A `garage_links` row records the page ID.
 

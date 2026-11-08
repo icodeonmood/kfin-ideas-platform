@@ -1,0 +1,76 @@
+# inherited-from: Product-Manager-Skills/config/schemas/spec.schema.yaml @ b7138ec on 2026-11-08; do not edit by hand, re-run the inheritance step
+# spec.schema.yaml — Authoritative structure for delivery/[feature-slug]/spec.md
+#
+# spec.md is a Markdown file with YAML frontmatter. This schema defines both.
+# Write authority: PM (via PM Pipeline phases 01–03) · pipeline reads but never writes.
+# Hash authority: spec-hash recorded in frontmatter at Phase 03 gate · checked at every phase boundary.
+# Lock rule: /showtime halts on any open question with blocking: true.
+
+# ── FRONTMATTER ──────────────────────────────────────────────────────────────
+
+frontmatter:
+  version:          # semver string · e.g. "1.0" · matches handoff.md spec-version
+  prior-version:    # blank for v1.0 · e.g. "1.0" for v2.0 · used by Phase 04 delta assessment
+  status:           # s3-gated · set by Phase 03 · /showtime requires this value
+  gated-date:       # YYYY-MM-DD · date Phase 03 gate was approved
+  spec-hash:        # SHA-256 of spec.md body content · recorded by Phase 03 · checked at every phase boundary
+                    # mismatch output: "HALT: spec.md hash mismatch — spec may have been edited after Phase 03 gate"
+
+# ── MARKDOWN BODY ─────────────────────────────────────────────────────────────
+# All sections below are required in spec.md. Sequence must match.
+
+sections:
+
+  changelog:
+    required_when: version >= 2.0   # omit for v1.0
+    format: markdown-table
+    columns: [Section, "Change type", Summary]
+    change-types: [Added, Modified, Removed]
+
+  problem-statement:
+    required: true
+    guidance: one clear paragraph · root cause and user impact · no solution language
+
+  user:
+    required: true
+    sub-fields:
+      persona: # proto-persona output from Phase 01
+      jtbd:    # jobs-to-be-done output from Phase 01
+
+  opportunity:
+    required: true
+    guidance: why now · market or platform condition that makes this worth building
+
+  scope:
+    required: true
+    format: markdown-table
+    columns: [In, Out]
+    guidance: explicit out-of-scope prevents scope creep during build
+
+  user-stories-and-acceptance-criteria:
+    required: true
+    format: markdown-table
+    columns: [Story, Criterion, Blocking, "Test Input", "Expected Output / Fixture path"]
+    notes:
+      - blocking: "true | false · /showtime halts if any open question has blocking: true"
+      - fixture-path: "relative path under delivery/[slug]/fixtures/ for complex QA criteria"
+
+  architecture-notes:
+    required: true   # both ai-tooling and kfintech-product features
+    guidance: key design decisions · dependencies · integration points · not a full HLD
+
+  edge-cases:
+    required: true
+    guidance: named failure modes with expected system behaviour
+
+  success-metrics:
+    required: true
+    guidance: measurable outcomes · leading and lagging indicators where relevant
+
+  open-questions:
+    required: true   # table must exist even if empty
+    format: markdown-table
+    columns: [Question, Owner, Deadline, Blocking]
+    notes:
+      - blocking: "true | false · /showtime startup check 3 halts if any row has Blocking: true"
+      - empty-state: "include table header with no rows when no open questions"

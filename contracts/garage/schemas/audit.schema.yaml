@@ -1,0 +1,47 @@
+# inherited-from: Product-Manager-Skills/config/schemas/audit.schema.yaml @ b7138ec on 2026-11-08; do not edit by hand, re-run the inheritance step
+# audit.schema.yaml — Authoritative field list for delivery/[feature-slug]/audit.md
+#
+# Write authority: phase agents only · each phase appends one entry on completion.
+# Read authority: notion-sync-agent reads and flattens skills/mcps/tools for Notion update.
+# Rule: sync agent reads · sync agent never writes to audit.md.
+# On failure: phase writes status: failed with whatever was recorded up to failure point.
+#
+# Phases that write: 02-shape · 03-gate · 04-handoff · 05-build · 06-test · 07-review · 08-qa · 09-deploy
+# Phase 01-discover does not write an audit entry.
+
+# ── ENTRY STRUCTURE ──────────────────────────────────────────────────────────
+# audit.md is a YAML list. Each phase appends one entry before returning to /showtime.
+# Write before returning is a hard contract — phase agent must not return without writing.
+
+entry:
+  phase:    # phase identifier · one of: 02-shape | 03-gate | 04-handoff | 05-build |
+            #   06-test | 07-review | 08-qa | 09-deploy
+  status:   # completed | failed | incomplete
+            # completed: phase finished successfully and returned status: completed
+            # failed: phase returned status: failed · record what was recorded up to failure
+            # incomplete: phase was interrupted before it could return (edge case)
+  skills:   # list of skill names invoked during this phase · empty list [] if none
+            # e.g. [prd-development, user-story-mapping, epic-hypothesis]
+  mcps:     # list of MCP server names used · empty list [] if none
+            # e.g. [notion, figma]
+  tools:    # list of Claude tool names used · empty list [] if none
+            # e.g. [Read, Write, WebSearch, Bash]
+
+# ── EXAMPLE ENTRY ─────────────────────────────────────────────────────────────
+# - phase: 05-build
+#   status: completed
+#   skills: [prd-development, user-story, epic-hypothesis]
+#   mcps: [notion]
+#   tools: [Read, Write, Bash, Glob]
+
+# ── NOTION SYNC PROTOCOL ─────────────────────────────────────────────────────
+# notion-sync-agent flattens audit.md on audit-sync event:
+#   skills-used  = unique union of all skills[] values across all entries
+#   mcps-used    = unique union of all mcps[] values across all entries
+#   tools-used   = unique union of all tools[] values across all entries
+# Flattened values written to Notion fields 15–17 (multi-select).
+# Sync agent reads audit.md once per audit-sync event — never writes.
+
+# ── SCHEMA VERSIONING ────────────────────────────────────────────────────────
+# Schema versioning deferred — not needed until audit schema evolves (see deferred items).
+# When schema changes: update this file first, then update notion-sync-agent read logic.

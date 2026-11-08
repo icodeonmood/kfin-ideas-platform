@@ -1,0 +1,54 @@
+# inherited-from: Product-Manager-Skills/config/schemas/status.schema.yaml, Product-Manager-Skills/config/schemas/audit.schema.yaml, Product-Manager-Skills/.claude/agents/notion-setup-agent.md and Product-Manager-Skills/docs/plans/garage-whitepaper.md (§2, §4) @ b7138ec on 2026-11-08; do not edit by hand, re-run the inheritance step
+#
+# Phase list and status values copied exactly from the Garage contract.
+# `shown_as` is the Ideas Platform's plain-language label (ARCHITECTURE §4.9); it is ours, not the Garage's.
+
+phases:
+  - { id: 01-discover, pipeline: pm,  garage_stage: S2, name: Discovery,     shown_as: Discovery }
+  - { id: 02-shape,    pipeline: pm,  garage_stage: S2, name: Specification, shown_as: Writing the spec }
+  - { id: 03-gate,     pipeline: pm,  garage_stage: S3, name: Validation,    shown_as: Spec review }
+  - { id: 04-handoff,  pipeline: dev, garage_stage: S4, name: Startup and fork, shown_as: "Building: handoff" }
+  - { id: 05-build,    pipeline: dev, garage_stage: S4, name: Build,         shown_as: "Building: build" }
+  - { id: 06-test,     pipeline: dev, garage_stage: S4, name: Test,          shown_as: "Building: test" }
+  - { id: 07-review,   pipeline: dev, garage_stage: S4, name: Review,        shown_as: "Building: review" }
+  - { id: 08-qa,       pipeline: dev, garage_stage: S4, name: QA,            shown_as: "Building: QA" }
+  - { id: 09-deploy,   pipeline: dev, garage_stage: S4, name: Deploy,        shown_as: "Building: deploy" }
+  - { id: handed-off,  terminal: true, shown_as: With the development team }
+  - { id: shipped,     terminal: true, shown_as: Shipped }
+
+# Notion `gate-status` (Select) — what garage.sync reads.
+gate_status: [clear, blocked]
+
+# status.md gate-log entries: one per gated phase.
+gate_log:
+  phases: [03-gate, 04-delta-review, 07-review, 08-qa]   # 04-delta-review only for build-mode: delta (v2.0+)
+  status: [approved, rejected, pending]
+
+# Gate map (whitepaper §4): who must approve at each gate.
+gates:
+  "03->04":          { gated: pm_approval, autonomous: pm_approval }
+  "04-delta-review": { gated: pm_approves_delta, autonomous: pm_notified_30_min_halt_window }
+  "07->08":          { gated: pm_approval, autonomous: pm_approval_if_major_or_above }
+  "08->09":          { gated: pm_signoff, autonomous: pm_signoff }
+
+# audit.md entry status.
+audit_entry_status: [completed, failed, incomplete]
+
+# Phase agent output contract (whitepaper §9).
+phase_output:
+  status: [completed, failed]
+  gate_recommendation: [pass, conditional, blocked]
+
+# Review finding severity (phase-07-review).
+review_severity: [critical, major, minor]
+
+# status.md notion-sync block.
+notion_sync_status: [ok, failed, dead]
+notion_sync_dead_tiers: { 0: active, 1: 24h_backoff, 2: 48h_backoff, 3: 96h_backoff, 4: halted }
+
+# Other enumerations from handoff.schema.yaml used by the handover pack (week 6).
+mode: [gated, autonomous]
+compliance_tier: [standard, express]
+build_mode: [full, delta]
+feature_type: [ai-tooling, kfintech-product]
+product: [iris, lamf, guardian, api-marketplace, ai-tooling, sif-aif-pms, mf-central, other]

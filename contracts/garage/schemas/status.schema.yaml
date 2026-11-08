@@ -1,0 +1,74 @@
+# inherited-from: Product-Manager-Skills/config/schemas/status.schema.yaml @ b7138ec on 2026-11-08; do not edit by hand, re-run the inheritance step
+# status.schema.yaml — Authoritative field list for delivery/[feature-slug]/status.md
+#
+# Write authority: pipeline only. PM never writes directly.
+# Source of truth for pipeline state — Notion is a tracking layer, not a control plane.
+# notion-page-id stored here as pipeline plumbing — not a tracking field.
+
+current-phase:    # 01-discover | 02-shape | 03-gate | 04-handoff | 05-build |
+                  # 06-test | 07-review | 08-qa | 09-deploy | shipped | handed-off
+last-updated:     # ISO timestamp · updated by pipeline on every write
+mode:             # gated | autonomous · mirrors handoff.md at pipeline start
+
+gate-log:
+  - phase: 03-gate
+    status:        # approved | rejected | pending
+    timestamp:     # ISO timestamp
+    approved-by:   # PM identifier · required for audit trail · populate at approval time
+    note:          # optional context
+
+  # 04-delta-review entry written only for v2.0+ features (build-mode: delta)
+  - phase: 04-delta-review
+    status:        # approved | rejected | pending
+    timestamp:
+    approved-by:
+    note:
+
+  - phase: 07-review
+    status:        # approved | rejected | pending
+    timestamp:
+    approved-by:
+    note:
+
+  # 08-qa: PM sign-off always required regardless of mode
+  - phase: 08-qa
+    status:        # approved | rejected | pending
+    timestamp:
+    approved-by:
+    note:
+
+iteration-counts:
+  06-test: 0      # incremented each retry · cap: 3 · halt and surface to PM at cap
+  07-review: 0    # incremented each retry · cap: 3 · halt and surface to PM at cap
+
+blockers:
+  - blocker:      # description of what blocked the pipeline
+    owner:        # team or person responsible for resolution
+    raised:       # ISO timestamp
+
+# Populated by /showtime fork logic for kfintech-product + assisted-ship: false
+handoff-package-path:  # absolute path to zipped delivery/ package · set at hand-off · pipeline ends after this
+
+# Populated by Phase 04 for build-mode: delta in autonomous mode
+delta-review-deadline:  # ISO timestamp · halt.flag checked until this time · proceeds if no flag
+
+notion-sync:
+  status:          # ok | failed | dead
+  page-id:         # Notion page ID · stored on first successful CREATE · used for all subsequent UPDATEs
+  last-event:      # last event type attempted (spec-approved | in-build | delta-review | gate-approved |
+                   #   gate-blocked | audit-sync | shipped)
+  fields-snapshot: # YAML snapshot of fields sent on last sync attempt · used by reconcile agent for replay
+  last-attempted:  # ISO timestamp of last sync attempt
+  last-synced:     # ISO timestamp of last successful sync
+  retry-count: 0   # incremented by reconcile agent on each failure
+  dead-tier: 0     # 0=active | 1=24h backoff | 2=48h | 3=96h | 4=halted (manual intervention required)
+  dead-since:      # ISO timestamp · set when status first becomes dead (tier 4)
+                   # PM resets by setting dead-tier: 0 + status: failed
+
+# Section 7 — B→C Evolution: orchestration-lock supports future pipeline-orchestrator agent
+# /showtime checks this at startup (between check 1 and check 2)
+# TTL guard: if locked-since > 2h, orchestrator auto-clears on next run and logs warning
+orchestration-lock:
+  locked: false
+  locked-by:       # "pipeline-orchestrator" | "[PM identifier]" · distinguishes concurrent sessions
+  locked-since:    # ISO timestamp · used for TTL guard
