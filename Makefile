@@ -51,7 +51,7 @@ test-web:
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
 	$(WEB) npx playwright test
 
-eval: ## Golden sets for every agent (harness only until B4)
+eval: up ## Golden sets for every agent (model gates enforced on a real route only, BLD-076)
 	$(PY) python -m evalrunner
 
 lint: lint-py lint-web lint-ci ## Linters, OKF validator, no-SDK rule, log scrubber

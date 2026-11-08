@@ -69,6 +69,9 @@ class ValidatedOutput:
     outcome: str
     flags: list[str] = field(default_factory=list)
     latency_ms: int = 0
+    sent: dict[str, Any] = field(
+        default_factory=dict
+    )  # the tagged inputs the model saw (for evals and checks)
 
 
 # ---- helpers -----------------------------------------------------------------------------------------------
@@ -240,19 +243,27 @@ def run_agent(
     agents_dir: Path | None = None,
     wait_s: float = 2.0,
     d: Directory | None = None,
+    use_cache: bool = True,
 ) -> ValidatedOutput:
-    """Run one agent on `inputs` (real values) for the idea or cluster `ref_id`. Returns tagged output."""
+    """Run one agent on `inputs` (real values) for the idea or cluster `ref_id`. Returns tagged output.
+    `use_cache=False` is for the eval runner, which measures the model, not the cache."""
     own = conn is None
     c = conn or connect(autocommit=True)
     try:
-        return _run(c, load(name, agents_dir), inputs, ref_id, wait_s, d)
+        return _run(c, load(name, agents_dir), inputs, ref_id, wait_s, d, use_cache)
     finally:
         if own:
             c.close()
 
 
 def _run(
-    conn: Conn, spec: AgentSpec, inputs: dict[str, Any], ref_id: str, wait_s: float, d: Directory | None
+    conn: Conn,
+    spec: AgentSpec,
+    inputs: dict[str, Any],
+    ref_id: str,
+    wait_s: float,
+    d: Directory | None,
+    use_cache: bool = True,
 ) -> ValidatedOutput:
     started = time.monotonic()
     unknown = set(inputs) - set(spec.input_blocks)
@@ -284,14 +295,16 @@ def _run(
     route = get_route()
     model = spec.model
     k = cache.key(spec, model, tagged.payload)
-    hit = cache.get(conn, k)
+    hit = cache.get(conn, k) if use_cache else None
     if hit is not None:
         latency = int((time.monotonic() - started) * 1000)
         _record(
             conn, spec, outcome="cached", ref_id=ref_id, latency_ms=latency, model=model,
             tags_by_type=tagged.counts(), input_tokens=0, output_tokens=0, cost_inr=0,
         )  # fmt: skip
-        return ValidatedOutput(spec.name, spec.version, hit, tagged.tags, "cached", [], latency)
+        return ValidatedOutput(
+            spec.name, spec.version, hit, tagged.tags, "cached", [], latency, tagged.payload
+        )
     system = system_prompt(spec)
     messages: list[dict[str, Any]] = [{"role": "user", "content": render_blocks(spec, tagged.payload)}]
 
@@ -367,9 +380,11 @@ def _run(
     if leak_hits(data):
         flags.append("pattern_in_output")
     outcome = "tag_mismatch" if flags else ("ok" if attempts == 1 else "ok_after_retry")
-    if not flags:
+    if not flags and use_cache:
         cache.put(conn, k, spec, data)
     # 9. Log.
     _record(conn, spec, outcome=outcome, error_code=flags[0] if flags else None, **common)
     # 8. Tagged output back to the caller, which stores it tagged and restores on view.
-    return ValidatedOutput(spec.name, spec.version, data, tagged.tags, outcome, flags, latency)
+    return ValidatedOutput(
+        spec.name, spec.version, data, tagged.tags, outcome, flags, latency, tagged.payload
+    )

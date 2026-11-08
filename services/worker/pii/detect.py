@@ -226,6 +226,9 @@ def _analyzer() -> Any:
             ]
             return results
 
+    import logging
+
+    logging.getLogger("presidio-analyzer").setLevel(logging.ERROR)  # its setup warnings carry no signal
     provider = NlpEngineProvider(
         nlp_configuration={
             "nlp_engine_name": "spacy",

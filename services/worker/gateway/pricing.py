@@ -15,6 +15,8 @@ PRICES = {
 def cost_inr(
     model: str, input_tokens: int, output_tokens: int, cache_write: int = 0, cache_read: int = 0
 ) -> float:
+    if model.startswith("fake-"):
+        return 0.0  # fake mode spends nothing
     base = model.removeprefix("anthropic.")
     p_in, p_out, p_write, p_read = PRICES.get(base, PRICES["claude-sonnet-5-5"])  # unknown: price high
     usd = (
