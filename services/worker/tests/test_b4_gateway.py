@@ -115,14 +115,20 @@ def test_a_missed_identifier_aborts_alerts_and_three_switch_ai_off(gw: Any, monk
     db, spy, d = gw
     monkeypatch.setattr(tagger_mod, "detect", lambda *a, **k: [])  # detection misses everything
     rng = random.Random(92)
+    # One idea's repeated aborts count once: a single bad idea cannot switch AI off for everyone.
     for i in range(3):
         with pytest.raises(core.LeakAbort):
             core.run_agent(
                 "gatekeeper", submission(f"Investor PAN {g.pan(rng)} again ({i})"), SCOPE, conn=db, d=d
             )
+    killswitch.clear_cache()
+    assert db.execute("SELECT state FROM kill_switches WHERE name = 'ai.all'").fetchone()["state"] == "on"
+    for n in (2, 3):  # aborts on three different ideas within the hour do
+        with pytest.raises(core.LeakAbort):
+            core.run_agent("gatekeeper", submission(f"PAN {g.pan(rng)}"), f"IDEA-2026-00032{n}", conn=db, d=d)
     assert spy.calls == []  # nothing reached the route
     rows = calls(db)
-    assert [r["outcome"] for r in rows] == ["leak_abort"] * 3 and rows[0]["error_code"] == "pan"
+    assert [r["outcome"] for r in rows] == ["leak_abort"] * 5 and rows[0]["error_code"] == "pan"
     alerts = db.execute("SELECT count(*) AS n FROM audit_log WHERE action = 'alert.leak_check'").fetchone()[
         "n"
     ]
@@ -174,7 +180,7 @@ def test_unknown_tags_are_flagged_and_left_unrestored(gw: Any) -> None:
     result = core.run_agent("gatekeeper", submission(f"{SENTENCE}, says {stranger}."), SCOPE, conn=db, d=d)
     assert result.outcome == "tag_mismatch" and result.flags == ["unknown_tags"]
     shown = restore(result.data, vault.mapping(db, SCOPE), "real")["notes_for_reviewer"]
-    assert shown == f"Mentions {stranger} and [[PERSON_7]]"
+    assert shown == f"Mentions {stranger} and [ [PERSON_7] ]"  # defused: can never be restored
     assert db.execute("SELECT count(*) AS n FROM llm_cache").fetchone()["n"] == 0  # flagged output not cached
 
 
@@ -225,3 +231,23 @@ def test_a_saturated_tier_is_refused_for_the_queue(gw: Any, monkeypatch: Any) ->
 def test_routes_are_selected_by_setting(monkeypatch: Any) -> None:
     routes._routes.clear()
     assert routes.get_route().name == "fake"
+
+
+def test_identifier_like_output_is_retried_then_refused(gw: Any) -> None:
+    db, spy, d = gw
+    rng = random.Random(94)
+    out = dict(load("gatekeeper").example("01-problem-clean.json").output)
+    out["notes_for_reviewer"] = f"PAN {g.pan(rng)} mentioned"
+    FAKE_SCRIPT.extend([out, out])
+    with pytest.raises(core.AgentFailed):
+        core.run_agent("gatekeeper", submission(SENTENCE), SCOPE, conn=db, d=d)
+    assert "looks like an identifier" in spy.calls[1][1][2]["content"]
+
+
+def test_tag_numbers_are_never_reused_after_erasure(gw: Any) -> None:
+    db, _spy, _d = gw
+    rng = random.Random(95)
+    a, b = g.person_name(rng), g.person_name(rng)
+    vault.assign(db, SCOPE, "PERSON", a)
+    db.execute("DELETE FROM pseudonym_vault WHERE scope_id = %s AND tag = '[[PERSON_1]]'", (SCOPE,))
+    assert vault.assign(db, SCOPE, "PERSON", b) == "[[PERSON_2]]"

@@ -168,6 +168,8 @@ class _SdkRoute:
             raise RouteError("server_error" if exc.status_code >= 500 else "api_error") from None
         except anthropic.APIConnectionError:
             raise RouteError("connection") from None
+        except Exception:  # anything else from the SDK: a code only, never its message
+            raise RouteError("sdk_error") from None
         return _result_from(response)
 
 

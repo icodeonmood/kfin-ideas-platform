@@ -85,3 +85,24 @@ def scan_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
     from scan import pipeline
 
     pipeline.give_up(conn, str(payload["idea_uuid"]))
+
+
+@on_dead("scan.run")
+def scan_run_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """The sync scan job itself kept failing: hand the idea to the async schedule (then the desk)."""
+    from scan import pipeline
+
+    idea_uuid = str(payload["idea_uuid"])
+    row = conn.execute("SELECT state FROM scans WHERE idea_uuid = %s", (idea_uuid,)).fetchone()
+    if row is None:
+        conn.execute("INSERT INTO scans (idea_uuid) VALUES (%s) ON CONFLICT DO NOTHING", (idea_uuid,))
+    if row is None or row["state"] in ("queued", "running"):
+        pipeline.go_async(conn, idea_uuid, "scan_job_dead")
+
+
+@handler("vault.purge_scope")
+def vault_purge_scope(conn: Conn, payload: dict[str, Any]) -> None:
+    """An idea went back to edit after a block: drop the values held for it (re-tagged on the next submit)."""
+    from pii import vault
+
+    vault.purge_scope(conn, str(payload["scope_id"]))

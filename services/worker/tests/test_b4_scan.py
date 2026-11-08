@@ -5,6 +5,7 @@ realistic fake latency; the step is recorded as it moves) and AT-B4-10 (route do
 
 from __future__ import annotations
 
+import json
 import random
 import statistics
 import threading
@@ -20,6 +21,7 @@ from core.crypto import encrypt_json
 from core.db import connect
 from gateway import limits
 from gateway.routes import FAKE_SCRIPT, RouteError
+from gateway.spec import load
 from jobs import handlers  # noqa: F401 - registers handlers
 from jobs.runner import run_one
 from scan import pipeline
@@ -113,18 +115,96 @@ def test_investor_details_block_and_only_the_owner_sees_them(db: Any) -> None:
     assert person not in str(other) and "a person" in other["blocked"]["spans"][0]["quote"]
     assert [r["agent"] for r in db.execute("SELECT agent FROM llm_calls").fetchall()] == ["gatekeeper"]
 
-    # "This is not personal data": it goes through (flagged for the reviewer) without a second gatekeeper call.
+    # Investor details cannot be waved through with "This is not personal data" (non-negotiable 4, BLD-082).
+    assert owner["blocked"]["can_contest"] is False
     db.execute(
         "UPDATE scans SET overrides = '{\"not_personal_data\": true}', state = 'queued' WHERE idea_uuid = %s",
         (idea,),
     )
     db.execute("UPDATE ideas SET stage = 'scanning' WHERE id = %s", (idea,))
     pipeline.run(db, idea)
+    assert scan_row(db, idea)["outcome"] == "blocked"
+
+
+def test_a_contestable_block_goes_through_when_contested(db: Any) -> None:
+    text = f"{SENTENCE}. Forms come back from Flat 12, Green Park, Pune every week."
+    idea = submitted(db, canvas(text))
+    gk = load("gatekeeper").example("01-problem-clean.json").output
+    span = {
+        "field": "details",
+        "quote": "Flat 12, Green Park, Pune",
+        "data_type": "address",
+        "confidence": 0.7,
+        "reason": "Looks like a home address",
+    }
+    FAKE_SCRIPT.append({**gk, "personal_data": {"found": True, "confidence": 0.7, "spans": [span]}})
+    pipeline.run(db, idea)
+    shown = view(db, idea, "real")
+    assert shown and shown["outcome"] == "blocked" and shown["blocked"]["can_contest"] is True
+    db.execute(
+        "UPDATE scans SET overrides = '{\"not_personal_data\": true}', state = 'queued' WHERE idea_uuid = %s",
+        (idea,),
+    )
+    db.execute("UPDATE ideas SET stage = 'scanning' WHERE id = %s", (idea,))
+    pipeline.run(db, idea)  # the gatekeeper's result is kept: no second call
     assert scan_row(db, idea)["outcome"] == "ready"
-    assert [r["agent"] for r in db.execute("SELECT agent FROM llm_calls ORDER BY id").fetchall()] == [
-        "gatekeeper",
-        "canvas-assist",
+    agents = [
+        r["agent"]
+        for r in db.execute(
+            "SELECT agent FROM llm_calls WHERE ref_id = (SELECT idea_id FROM ideas WHERE id = %s) ORDER BY id",
+            (idea,),
+        ).fetchall()
     ]
+    assert agents == ["gatekeeper", "canvas-assist"]
+
+
+def test_a_leak_abort_goes_to_the_desk_without_retrying(db: Any, monkeypatch: Any) -> None:
+    from pii import tagger
+
+    db.execute("DELETE FROM jobs")
+    monkeypatch.setattr(tagger, "detect", lambda *a, **k: [])
+    rng = random.Random(103)
+    idea = submitted(db, canvas(f"{SENTENCE}. Investor PAN {g.pan(rng)}."))
+    assert pipeline.run(db, idea) == "manual"
+    row = scan_row(db, idea)
+    assert (row["state"], row["error_code"]) == ("manual", "leak_check")
+    assert db.execute("SELECT count(*) AS n FROM jobs WHERE type = 'scan.async'").fetchone()["n"] == 0
+
+
+def test_unexpected_errors_never_leave_a_scan_running(db: Any, monkeypatch: Any) -> None:
+    db.execute("DELETE FROM jobs")
+    idea = submitted(db, canvas(SENTENCE))
+
+    def boom(*a: Any, **k: Any) -> Any:
+        raise KeyError("thresholds")
+
+    monkeypatch.setattr(pipeline, "decide", boom)
+    assert pipeline.run(db, idea) == "waiting"
+    assert scan_row(db, idea)["error_code"] == "scan_error"
+    assert db.execute("SELECT count(*) AS n FROM jobs WHERE type = 'scan.async'").fetchone()["n"] == 1
+
+
+def test_dead_sync_job_and_stale_jobs_recover(db: Any, monkeypatch: Any) -> None:
+    from jobs.runner import reap_stale
+
+    db.execute("DELETE FROM jobs")
+    idea = submitted(db, canvas(SENTENCE))
+    db.execute(
+        "INSERT INTO jobs (type, payload, max_attempts) VALUES ('scan.run', %s, 1)",
+        (json.dumps({"idea_uuid": idea}),),
+    )
+
+    def crash(*a: Any, **k: Any) -> Any:
+        raise RuntimeError("worker fell over")
+
+    monkeypatch.setattr(pipeline, "run", crash)  # the job itself fails before the pipeline can catch anything
+    assert run_one(db, "test-worker")
+    assert scan_row(db, idea)["state"] == "waiting"  # the dead-job handler moved it to the async schedule
+    db.execute(
+        "INSERT INTO jobs (type, state, locked_by, locked_at) VALUES ('drafts.purge', 'running', 'gone', "
+        "now() - interval '1 hour')"
+    )
+    assert reap_stale(db) == 1
 
 
 def test_redirect_and_override_and_hold(db: Any) -> None:

@@ -13,7 +13,7 @@ type Status = {
   step: "queued" | "gatekeeper" | "canvas_assist" | "matching" | "done";
   outcome: "ready" | "blocked" | "redirect" | "held" | "redirected" | null;
   idea_id: string;
-  blocked?: { spans: Span[]; investor_context: boolean };
+  blocked?: { spans: Span[]; investor_context: boolean; can_contest: boolean };
   redirect?: {
     team: string;
     url: string | null;
@@ -60,6 +60,10 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
   const [reason, setReason] = useState("");
   const [overriding, setOverriding] = useState(false);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [unreachable, setUnreachable] = useState(false);
+  const failures = useRef(0);
+  const inFlight = useRef(false);
   const running = !status || status.state === "queued" || status.state === "running";
   const waiting = status?.state === "waiting";
 
@@ -67,10 +71,19 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
     if (!running && !waiting) return;
     const timer = setInterval(
       async () => {
+        if (inFlight.current) return; // one request at a time
+        inFlight.current = true;
         const res = await fetch(`/api/submissions/${id}/scan-status`, { cache: "no-store" }).catch(
           () => null,
         );
-        if (res?.ok) setStatus((await res.json()) as Status);
+        inFlight.current = false;
+        if (res?.ok) {
+          failures.current = 0;
+          setUnreachable(false);
+          setStatus((await res.json()) as Status);
+        } else if (++failures.current >= 5) {
+          setUnreachable(true);
+        }
       },
       running ? 1500 : 30_000,
     );
@@ -109,12 +122,25 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
     setOverriding(false);
     const next = await fetch(`/api/submissions/${id}/scan-status`, { cache: "no-store" }).catch(() => null);
     if (next?.ok) setStatus((await next.json()) as Status);
+    titleRef.current?.focus(); // the button that had focus is gone; land somewhere that says where we are
   }
 
   const currentIndex = STEPS.findIndex((s) => s.key === status?.step);
   return (
     <section aria-labelledby="scan-title" className="scan">
-      <h2 id="scan-title">Where your idea is now</h2>
+      <h2 id="scan-title" ref={titleRef} tabIndex={-1}>
+        Where your idea is now
+      </h2>
+      {/* Always in the page, so screen readers announce each change of text. */}
+      <p role="status" aria-live="polite" className="muted">
+        {unreachable
+          ? "We can't reach the checks right now. Your idea is saved; this page keeps trying."
+          : running
+            ? currentIndex >= 0
+              ? `${STEPS[currentIndex]!.text}…`
+              : "Starting the checks…"
+            : ""}
+      </p>
       {running ? (
         <>
           <ol className="scan-steps">
@@ -136,9 +162,6 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
               );
             })}
           </ol>
-          <p role="status" aria-live="polite" className="muted">
-            {currentIndex >= 0 ? `${STEPS[currentIndex]!.text}…` : "Starting the checks…"}
-          </p>
         </>
       ) : null}
 
@@ -208,17 +231,21 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             <button type="button" className="button" disabled={busy} onClick={() => void choose("edit")}>
               Edit my idea
             </button>
-            <button
-              type="button"
-              className="button button-secondary"
-              disabled={busy}
-              onClick={() => void choose("not_personal_data")}
-            >
-              This is not personal data
-            </button>
+            {status.blocked.can_contest ? (
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={busy}
+                onClick={() => void choose("not_personal_data")}
+              >
+                This is not personal data
+              </button>
+            ) : null}
           </div>
           <p className="muted">
-            If you choose &quot;This is not personal data&quot;, the review desk will check it.
+            {status.blocked.can_contest
+              ? 'If you choose "This is not personal data", the review desk will check it.'
+              : "Details about an investor or customer can't be waved through. Please edit them out."}
           </p>
         </div>
       ) : null}

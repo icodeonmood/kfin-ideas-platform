@@ -63,6 +63,9 @@ def test_blocked_goes_back_to_edit_with_the_same_ids(me: Any) -> None:
     draft, idea_id = submit(b, f"The investor {name} called five times because her SIP registration slipped.")
     status = settled(b, draft)
     assert status["outcome"] == "blocked" and name in status["blocked"]["spans"][0]["quote"]
+    assert status["blocked"]["can_contest"] is False  # an investor named: cannot be waved through
+    contest = b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "not_personal_data"})
+    assert contest.status_code == 409
     assert b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "edit"}).json() == {
         "next": f"/share/{draft}"
     }

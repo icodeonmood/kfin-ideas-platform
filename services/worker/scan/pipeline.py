@@ -18,12 +18,21 @@ from core.config import get_settings
 from core.crypto import decrypt_json, encrypt_json
 from core.db import Conn
 from core.logging import get_logger
-from gateway import AgentFailed, AgentSwitchedOff, run_agent
+from gateway import AgentFailed, AgentSwitchedOff, LeakAbort, run_agent
 from rules import load_rule
 from scan.inputs import canvas_answers, gatekeeper_input, taxonomy_slice
 
 log = get_logger("scan")
 REDIRECT_KINDS = ("it_ticket", "hr_grievance", "complaint", "question")
+# Spans that identify an investor or customer: a person cannot wave these through (non-negotiable 4, BLD-082).
+INVESTOR_SPANS = frozenset({"tagged_person_as_investor", "investor_or_customer_name"})
+
+
+def contestable(gk: dict[str, Any]) -> bool:
+    """May the person say "this is not personal data"? Not when the block is about an investor or customer."""
+    if gk["investor_context_tags"]:
+        return False
+    return not any(s["data_type"] in INVESTOR_SPANS for s in gk["personal_data"]["spans"])
 
 
 class TooSlow(Exception):
@@ -134,7 +143,9 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
                 "UPDATE ideas SET language = %s WHERE id = %s", (gk.data["language"]["primary"], idea_uuid)
             )
         decision = decide(result["gatekeeper"], th)
-        if decision == "blocked" and not overrides.get("not_personal_data"):
+        if decision == "blocked" and not (
+            overrides.get("not_personal_data") and contestable(result["gatekeeper"])
+        ):
             return finish("blocked", "blocked")
         if decision == "redirect" and not overrides.get("is_an_idea"):
             return finish("redirect")
@@ -161,13 +172,24 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
         if mode == "sync" and time.monotonic() - started > limit:
             raise TooSlow()
         return finish("ready")
+    except LeakAbort:
+        # Detection missed something in this idea: retrying would only repeat it. A person takes over.
+        give_up(conn, idea_uuid, code="leak_check")
+        return "manual"
     except AgentSwitchedOff as exc:
         if mode == "sync":
             go_async(conn, idea_uuid, exc.code)
             return "waiting"
+        _set(conn, idea_uuid, state="waiting", error_code=exc.code[:60])
         raise
-    except (AgentFailed, TooSlow) as exc:
-        code = exc.code if isinstance(exc, AgentFailed) else "too_slow"
+    except Exception as exc:  # agent failures, a slow scan, and anything unexpected: never leave it running
+        code = (
+            exc.code
+            if isinstance(exc, AgentFailed)
+            else ("too_slow" if isinstance(exc, TooSlow) else "scan_error")
+        )
+        if code == "scan_error":
+            log.error("scan.error", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         if mode == "sync":
             go_async(conn, idea_uuid, code)
             return "waiting"
@@ -175,9 +197,9 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
         raise
 
 
-def give_up(conn: Conn, idea_uuid: str) -> None:
-    """Every async retry failed: the review desk handles this scan by hand."""
-    _set(conn, idea_uuid, state="manual", error_code="retries_exhausted")
+def give_up(conn: Conn, idea_uuid: str, code: str = "retries_exhausted") -> None:
+    """Every async retry failed, or retrying cannot help: the review desk handles this scan by hand."""
+    _set(conn, idea_uuid, state="manual", error_code=code)
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity) VALUES ('process:scan', 'alert.scan_manual', %s)",
         (f"idea:{idea_uuid}",),

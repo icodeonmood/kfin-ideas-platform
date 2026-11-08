@@ -41,7 +41,7 @@ export async function scanStatus(me: CurrentUser, id: string) {
   return (await res.json()) as Record<string, unknown>;
 }
 
-async function requeue(trx: Transaction<DB>, id: string) {
+async function requeue(trx: Transaction<DB>, id: string, attempts: number) {
   await trx
     .updateTable("scans")
     .set({ state: "queued", step: "queued", outcome: null, finished_at: null })
@@ -52,38 +52,64 @@ async function requeue(trx: Transaction<DB>, id: string) {
     .values({
       type: "scan.run",
       payload: JSON.stringify({ idea_uuid: id }),
-      dedupe_key: `scan:${id}:${Date.now()}`,
+      dedupe_key: `scan-requeue:${id}:${attempts}`, // a double click queues one scan, not two
     })
+    .onConflict((oc) => oc.doNothing())
     .execute();
 }
 
+/**
+ * The person's choice when a scan stops. One transaction with the scan row locked, so two clicks (or two
+ * buttons) cannot both act; every change is guarded by the stage it expects (B4 review, BLD-081).
+ */
 export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
   const row = await ownedSubmitted(me, id);
   const body = (input ?? {}) as { choice?: unknown; reason?: unknown };
   const choice = CHOICES.find((c) => c === body.choice);
   if (!choice) throw new SubmissionError(400, "choice_required");
-  const scan = await getDb()
-    .selectFrom("scans")
-    .select(["outcome", "state", "overrides"])
-    .where("idea_uuid", "=", id)
-    .executeTakeFirst();
-  const outcome = scan?.outcome ?? null;
+  // What the person was shown: whether they may contest, and the reason length from rules/redirects.md.
+  const view = (await scanStatus(me, id)) as {
+    blocked?: { can_contest?: boolean };
+    redirect?: { override_reason_min_chars?: number };
+  };
   const needs: Record<ScanChoice, string> = {
     edit: "blocked",
     not_personal_data: "blocked",
     take_redirect: "redirect",
     is_an_idea: "redirect",
   };
-  if (outcome !== needs[choice] || scan?.state !== "done")
-    throw new SubmissionError(409, "not_available_now");
-  const overrides = { ...((scan.overrides as Record<string, unknown>) ?? {}) };
+  let reason = "";
+  if (choice === "not_personal_data" && view.blocked?.can_contest !== true)
+    throw new SubmissionError(409, "not_available_now"); // investor or customer details cannot be waved through
+  if (choice === "is_an_idea") {
+    reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
+    if (reason.length < (view.redirect?.override_reason_min_chars ?? 15))
+      throw new SubmissionError(422, "reason_too_short");
+    const probe = { ...emptyCanvas("full"), details: reason };
+    if (blocks(personalData(probe, kfinDomains()).filter((h) => h.field === "details")))
+      throw new SubmissionError(422, "personal_data");
+  }
 
   return getDb()
     .transaction()
     .execute(async (trx) => {
+      const scan = await trx
+        .selectFrom("scans")
+        .select(["outcome", "state", "overrides", "attempts"])
+        .where("idea_uuid", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!scan || scan.state !== "done" || scan.outcome !== needs[choice])
+        throw new SubmissionError(409, "not_available_now");
+      const overrides = { ...((scan.overrides as Record<string, unknown>) ?? {}) };
+      const expect = (stage: string, n: bigint | number) => {
+        if (Number(n) !== 1) throw new SubmissionError(409, "not_available_now");
+        return stage;
+      };
+
       if (choice === "edit") {
-        // Back to a draft with the same IDs; the scan starts again on the next submit.
-        await trx
+        // Back to a draft with the same IDs; values held for it are dropped and re-tagged on the next submit.
+        const moved = await trx
           .updateTable("ideas")
           .set({
             stage: "draft",
@@ -93,32 +119,49 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
           })
           .where("id", "=", id)
           .where("stage", "=", "blocked")
-          .execute();
+          .executeTakeFirst();
+        expect("blocked", moved.numUpdatedRows);
         await trx.deleteFrom("scans").where("idea_uuid", "=", id).execute();
+        if (row.idea_id)
+          await trx
+            .insertInto("jobs")
+            .values({
+              type: "vault.purge_scope",
+              payload: JSON.stringify({ scope_id: row.idea_id }),
+              dedupe_key: `vault-purge:${row.idea_id}:${scan.attempts}`,
+            })
+            .onConflict((oc) => oc.doNothing())
+            .execute();
         return { next: `/share/${id}` };
       }
       if (choice === "take_redirect") {
-        await trx.updateTable("ideas").set({ stage: "redirected" }).where("id", "=", id).execute();
+        const moved = await trx
+          .updateTable("ideas")
+          .set({ stage: "redirected" })
+          .where("id", "=", id)
+          .where("stage", "=", "scanning")
+          .executeTakeFirst();
+        expect("scanning", moved.numUpdatedRows);
         await trx.updateTable("scans").set({ outcome: "redirected" }).where("idea_uuid", "=", id).execute();
         return { next: null };
       }
       if (choice === "not_personal_data") {
         overrides.not_personal_data = true; // goes through, flagged for the reviewer (§4.2 step 3)
-        await trx.updateTable("ideas").set({ stage: "scanning" }).where("id", "=", id).execute();
+        const moved = await trx
+          .updateTable("ideas")
+          .set({ stage: "scanning" })
+          .where("id", "=", id)
+          .where("stage", "=", "blocked")
+          .executeTakeFirst();
+        expect("blocked", moved.numUpdatedRows);
         await trx
           .updateTable("scans")
           .set({ overrides: JSON.stringify(overrides) })
           .where("idea_uuid", "=", id)
           .execute();
-        await requeue(trx, id);
+        await requeue(trx, id, scan.attempts);
         return { next: null };
       }
-      // is_an_idea: a reason of at least 15 characters, checked for personal data like any canvas text.
-      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
-      if (reason.length < 15) throw new SubmissionError(422, "reason_too_short");
-      const probe = { ...emptyCanvas("full"), details: reason };
-      if (blocks(personalData(probe, kfinDomains()).filter((h) => h.field === "details")))
-        throw new SubmissionError(422, "personal_data");
       overrides.is_an_idea = true;
       await trx
         .updateTable("scans")
@@ -128,7 +171,7 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
         })
         .where("idea_uuid", "=", id)
         .execute();
-      await requeue(trx, id);
+      await requeue(trx, id, scan.attempts);
       return { next: null };
     });
 }

@@ -40,9 +40,12 @@ def assign(conn: Conn, scope_id: str, type_: str, value: str, subject_user_id: s
         if row:
             return str(row["tag"])
         n = conn.execute(
-            "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s AND type = %s", (scope_id, type_)
+            "INSERT INTO vault_counters (scope_id, type, last) VALUES (%s, %s, 1) "
+            "ON CONFLICT (scope_id, type) DO UPDATE SET last = vault_counters.last + 1 RETURNING last",
+            (scope_id, type_),
         ).fetchone()
-        tag = f"[[{type_}_{int(n['n']) + 1 if n else 1}]]"
+        assert n is not None
+        tag = f"[[{type_}_{int(n['last'])}]]"  # never reused, even after a row is erased (BLD-081)
         conn.execute(
             "INSERT INTO pseudonym_vault (scope_id, tag, type, value_hmac, value_encrypted, subject_user_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
@@ -76,3 +79,8 @@ def mapping(conn: Conn, scope_id: str) -> dict[str, tuple[str, str]]:
         )
         for r in rows
     }
+
+
+def purge_scope(conn: Conn, scope_id: str) -> int:
+    """Remove every value held for a scope (an idea sent back to edit after a block: BLD-081). Counters stay."""
+    return conn.execute("DELETE FROM pseudonym_vault WHERE scope_id = %s", (scope_id,)).rowcount

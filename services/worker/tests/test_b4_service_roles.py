@@ -13,7 +13,7 @@ from core.db import connect
 pytestmark = pytest.mark.stack
 WEB = "postgres://ideas_web:dev-web-only@localhost:5432/ideas?sslmode=disable"
 WORKER = "postgres://ideas_worker:dev-worker-only@localhost:5432/ideas?sslmode=disable"
-HIDDEN_FROM_WEB = {"pseudonym_vault", "llm_cache", "schema_migrations"}
+HIDDEN_FROM_WEB = {"pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations"}
 
 
 def test_web_role_cannot_touch_the_vault_or_cache() -> None:
@@ -27,6 +27,9 @@ def test_web_role_cannot_touch_the_vault_or_cache() -> None:
             )
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             web.execute("UPDATE contributor_map SET contributor_code = contributor_code WHERE false")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            web.execute("UPDATE scans SET result_encrypted = NULL WHERE false")  # results are the worker's
+        web.execute("UPDATE scans SET overrides = overrides WHERE false")  # a person's choice is allowed
         assert web.execute("SELECT count(*) FROM ideas").fetchone() is not None
         assert web.execute("SELECT count(*) FROM llm_calls").fetchone() is not None
 

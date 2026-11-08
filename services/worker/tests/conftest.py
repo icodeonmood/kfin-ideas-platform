@@ -72,7 +72,7 @@ def db(test_database: str) -> Iterator[object]:
     conn = connect(helpers.db_url(test_database), autocommit=True)
     conn.execute(
         "TRUNCATE outbox, ideas, idea_links, chunks, links, terms, repo_files, users, review_items, "
-        "llm_calls, llm_cache, pseudonym_vault "
+        "llm_calls, llm_cache, pseudonym_vault, vault_counters "
         "RESTART IDENTITY CASCADE; "
         "UPDATE index_state SET last_commit = NULL; UPDATE kill_switches SET state = 'on'"
     )

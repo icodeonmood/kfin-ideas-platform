@@ -87,6 +87,18 @@ def _strings(node: Any) -> list[str]:
     return []
 
 
+def _defuse_tags(node: Any, tags: set[str]) -> Any:
+    if isinstance(node, str):
+        for t in tags:
+            node = node.replace(t, t.replace("[[", "[ [").replace("]]", "] ]"))
+        return node
+    if isinstance(node, list):
+        return [_defuse_tags(x, tags) for x in node]
+    if isinstance(node, dict):
+        return {k: _defuse_tags(v, tags) for k, v in node.items()}
+    return node
+
+
 def leak_hits(payload: Any) -> list[str]:
     """Pattern ids still present after tagging. Any hit means detection missed something."""
     return sorted({m.pattern_id for text in _strings(payload) for m in scan(text, kfin_domains=[])})
@@ -203,7 +215,8 @@ def _maybe_switch_off(conn: Conn, name: str, reason: str) -> None:
 def _after_leak(conn: Conn) -> None:
     limit = int(_thresholds().get("leak_hits_per_hour_for_ai_all", 3))
     n = conn.execute(
-        "SELECT count(*) AS n FROM llm_calls WHERE outcome = 'leak_abort' AND created_at > now() - %s::interval",
+        "SELECT count(DISTINCT ref_id) AS n FROM llm_calls WHERE outcome = 'leak_abort' "
+        "AND ref_id NOT LIKE 'DRAFT-%%' AND created_at > now() - %s::interval",
         (LEAK_WINDOW,),
     ).fetchone()
     if n and int(n["n"]) >= limit:
@@ -214,7 +227,8 @@ def _after_error(conn: Conn, spec: AgentSpec) -> None:
     rate = float(_thresholds().get("agent_error_rate_15min", 0.2))
     row = conn.execute(
         "SELECT count(*) AS total, count(*) FILTER (WHERE outcome IN ('agent_failed', 'route_error')) AS failed "
-        "FROM llm_calls WHERE agent = %s AND outcome <> 'switched_off' AND created_at > now() - %s::interval",
+        "FROM llm_calls WHERE agent = %s AND outcome <> 'switched_off' AND coalesce(ref_id, '') NOT LIKE 'DRAFT-%%' "
+        "AND created_at > now() - %s::interval",
         (spec.name, ERROR_WINDOW),
     ).fetchone()
     if row and int(row["total"]) >= ERROR_MIN_CALLS and int(row["failed"]) / int(row["total"]) > rate:
@@ -276,7 +290,11 @@ def _run(
         raise AgentSwitchedOff("switched_off")
     if _spent_today(conn) >= get_settings().llm_daily_budget_inr:
         _record(conn, spec, outcome="switched_off", ref_id=ref_id, error_code="daily_budget")
-        _alert(conn, "alert.llm_budget", f"agent:{spec.name}", {"budget": "daily"})
+        recent = conn.execute(
+            "SELECT 1 FROM audit_log WHERE action = 'alert.llm_budget' AND at > now() - interval '1 hour' LIMIT 1"
+        ).fetchone()
+        if recent is None:  # one alert an hour, not one per refused call
+            _alert(conn, "alert.llm_budget", "gateway", {"budget": "daily"})
         raise AgentSwitchedOff("daily_budget")
 
     # 1. Tag. 2. Leak check.
@@ -332,6 +350,10 @@ def _run(
                     problems = ["the output was cut off; return a shorter JSON object", *problems]
                 if not problems:
                     problems = checks.run(spec.name, tagged.payload, data, d)
+                if not problems and leak_hits(data):
+                    problems = [
+                        "the output contains a value that looks like an identifier; use the tags or leave it out"
+                    ]
                 if not problems:
                     break
                 messages = [
@@ -373,12 +395,13 @@ def _run(
         _after_error(conn, spec)
         raise AgentFailed("invalid_output")
 
-    # 7. Tag check: only tags that were sent may come back; unknown ones stay unrestored and are flagged.
+    # 7. Tag check: only tags that were sent may come back. Others are flagged and defused, so a tag the model
+    # invented can never be restored, even if the idea's vault happens to hold that number (BLD-081).
     flags: list[str] = []
-    if tags_in(data) - set(tagged.tags):
+    unknown = tags_in(data) - set(tagged.tags)
+    if unknown:
         flags.append("unknown_tags")
-    if leak_hits(data):
-        flags.append("pattern_in_output")
+        data = _defuse_tags(data, unknown)
     outcome = "tag_mismatch" if flags else ("ok" if attempts == 1 else "ok_after_retry")
     if not flags and use_cache:
         cache.put(conn, k, spec, data)

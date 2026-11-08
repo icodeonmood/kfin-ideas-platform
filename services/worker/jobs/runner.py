@@ -92,10 +92,29 @@ def run_one(conn: Conn, worker_id: str) -> bool:
     return True
 
 
+STALE_AFTER = "10 minutes"
+
+
+def reap_stale(conn: Conn) -> int:
+    """Jobs left `running` by a worker that died mid-job go back to the queue (attempts are kept)."""
+    n = conn.execute(
+        "UPDATE jobs SET state = 'queued', locked_by = NULL WHERE state = 'running' "
+        "AND locked_at < now() - %s::interval",
+        (STALE_AFTER,),
+    ).rowcount
+    if n:
+        log.warning("jobs.reaped", job_count=n)
+    return n
+
+
 def run_forever(stop: Any = None, poll_seconds: float = 1.0) -> None:
     worker_id = f"{socket.gethostname()}:{id(stop)}"
     log.info("jobs.started", job_types=sorted(HANDLERS))
     with connect(autocommit=True) as conn:
+        last_reap = 0.0
         while stop is None or not stop.is_set():
+            if time.monotonic() - last_reap > 60:
+                reap_stale(conn)
+                last_reap = time.monotonic()
             if not run_one(conn, worker_id):
                 time.sleep(poll_seconds)

@@ -15,6 +15,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY services/worker/pyproject.toml services/worker/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
+# UAT and prod images: `--build-arg WITH_BGE=1` adds sentence-transformers for BGE-M3 (BLD-080); the model files
+# are mounted at EMBEDDINGS_MODEL_PATH, never baked in or downloaded at run time.
+ARG WITH_BGE=0
+RUN if [ "$WITH_BGE" = "1" ]; then uv pip install --python /opt/venv/bin/python "sentence-transformers>=3,<6"; fi
 
 COPY services/worker/ ./
 COPY agents/ ./agents/

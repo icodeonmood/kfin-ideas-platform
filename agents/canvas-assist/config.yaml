@@ -1,6 +1,6 @@
 # canvas-assist — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: canvas-assist
-version: 0.2.0
+version: 0.2.1
 tier: reasoning
 model: claude-sonnet-5-5
 effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
@@ -21,6 +21,7 @@ untrusted_blocks:
 - canvas_answers
 - details_text
 - attachment_digests
+- past_corrections
 examples_in_prompt:
 - 01-quick-capture.json
 - 02-keeps-submitter-answer.json
