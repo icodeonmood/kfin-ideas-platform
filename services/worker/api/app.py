@@ -229,3 +229,19 @@ def review_item_view(item_id: int, mode: str = "neutral") -> JSONResponse:
     if body is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/review/desk-decisions", dependencies=[Depends(require_token)])
+def review_desk_decisions() -> JSONResponse:
+    from review.veto import desk_decisions
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse(desk_decisions(conn), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/review/items/{item_id}/veto", dependencies=[Depends(require_token)])
+def review_veto(item_id: int, body: dict[str, Any]) -> JSONResponse:
+    """A core committee member's veto (the web app checked `veto_desk_decision`)."""
+    from review.veto import veto
+
+    return _review_call(veto, item_id, str(body.get("member_user_id") or ""), str(body.get("reason") or ""))

@@ -105,7 +105,9 @@ describe("every day-one endpoint × every role column (generated from rbac.yaml)
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/action").kind).toBe("allow");
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/veto").kind).toBe("deny");
     expect(decide(rolesOf("core_committee"), "POST", "/api/review/items/7/veto").kind).toBe("allow");
-    expect(decide(rolesOf("core_committee"), "POST", "/api/review/items/7/action").kind).toBe("deny");
+    // A member may act only on an item they vetoed; the proxy lets the request through and the handler checks (BLD-092).
+    expect(decide(rolesOf("core_committee"), "POST", "/api/review/items/7/action").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "POST", "/api/review/items/7/action").kind).toBe("deny");
     expect(decide(rolesOf("contributor"), "GET", "/api/review/items").kind).toBe("deny");
   });
 });

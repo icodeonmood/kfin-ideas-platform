@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { can } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
-import { itemView } from "@/server/review";
+import { itemView, mayAct } from "@/server/review";
 import { SubmissionError } from "@/server/submissions";
 
 import { Actions, type ItemView } from "./actions";
@@ -213,7 +212,7 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
         </ol>
       </section>
 
-      {can(me.roles, "work_review_queue") ? <Actions id={id} view={view} me={me.id} /> : null}
+      {(await mayAct(me, id)) ? <Actions id={id} view={view} me={me.id} /> : null}
     </>
   );
 }

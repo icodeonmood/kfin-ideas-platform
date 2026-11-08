@@ -4,6 +4,8 @@
  */
 import { sql } from "kysely";
 
+import { can } from "@/lib/rbac";
+
 import type { CurrentUser } from "./auth/current";
 import { getDb } from "./db";
 import { restoreMode } from "./restore";
@@ -115,8 +117,21 @@ export async function itemView(me: CurrentUser, id: string) {
 
 const ACTIONS = ["decide", "redirect", "ask", "visibility", "hold", "confirm_hold"] as const;
 
+/** Who may act on an item: the desk, or a core committee member on an item they vetoed and now hold (§4.3). */
+export async function mayAct(me: CurrentUser, id: string): Promise<boolean> {
+  if (can(me.roles, "work_review_queue")) return true;
+  if (!can(me.roles, "veto_desk_decision")) return false;
+  const row = await getDb()
+    .selectFrom("review_items")
+    .select(["assigned_to", "vetoed_by"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  return Boolean(row && row.assigned_to === me.id && row.vetoed_by === me.id);
+}
+
 export async function act(me: CurrentUser, id: string, input: unknown) {
   if (!/^[0-9]{1,12}$/.test(id)) throw new SubmissionError(404, "not_found");
+  if (!(await mayAct(me, id))) throw new SubmissionError(403, "forbidden");
   const body = (input ?? {}) as Record<string, unknown>;
   const action = ACTIONS.find((a) => a === body.action);
   if (!action) throw new SubmissionError(400, "action_required");
@@ -129,5 +144,62 @@ export async function act(me: CurrentUser, id: string, input: unknown) {
   });
   const out = (await res.json().catch(() => ({ error: "action_failed" }))) as Record<string, unknown>;
   if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "action_failed"));
+  return out;
+}
+
+export type DeskDecision = {
+  item_id: number;
+  idea_id: string;
+  summary: string | null;
+  stage: string;
+  decision: Record<string, unknown> | null;
+  decided_at: string;
+  decided_by: string | null;
+  note: string | null;
+  vetoed: boolean;
+  veto_open: boolean;
+  veto_until: string | null;
+};
+
+export async function deskDecisions(): Promise<{
+  decisions: DeskDecision[];
+  disagreements: { item_id: number; idea_id: string; summary: string | null; at: string }[];
+}> {
+  const res = await workerFetch("/internal/review/desk-decisions");
+  if (!res.ok) throw new SubmissionError(502, "desk_decisions_unavailable");
+  return (await res.json()) as Awaited<ReturnType<typeof deskDecisions>>;
+}
+
+export async function vetoItem(me: CurrentUser, id: string, input: unknown) {
+  if (!/^[0-9]{1,12}$/.test(id)) throw new SubmissionError(404, "not_found");
+  const reason =
+    typeof (input as { reason?: unknown })?.reason === "string" ? (input as { reason: string }).reason : "";
+  const res = await workerFetch(`/internal/review/items/${id}/veto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_user_id: me.id, reason: reason.slice(0, 2000) }),
+  });
+  const out = (await res.json().catch(() => ({ error: "veto_failed" }))) as Record<string, unknown>;
+  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "veto_failed"));
+  return out;
+}
+
+/** The submitter answers a question, or says "Disagree with this?" (§4.12 day one). */
+export async function ideaWrite(
+  me: CurrentUser,
+  ideaUuid: string,
+  kind: "answer" | "disagree",
+  input: unknown,
+) {
+  if (!/^[0-9a-f-]{36}$/.test(ideaUuid) || !me.contributorCode) throw new SubmissionError(404, "not_found");
+  const text =
+    typeof (input as { text?: unknown })?.text === "string" ? (input as { text: string }).text : "";
+  const res = await workerFetch(`/internal/ideas/${ideaUuid}/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contributor_code: me.contributorCode, text: text.slice(0, 2000) }),
+  });
+  const out = (await res.json().catch(() => ({ error: `${kind}_failed` }))) as Record<string, unknown>;
+  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? `${kind}_failed`));
   return out;
 }

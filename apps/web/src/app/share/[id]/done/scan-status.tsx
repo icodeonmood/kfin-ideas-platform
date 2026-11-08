@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Crew, type Ready } from "./crew";
+import { FollowUp } from "./follow-up";
 
 type Span = { field: string; quote: string; label: string };
 type Status = {
@@ -26,6 +27,8 @@ type Status = {
   ready?: Ready;
   stage: string;
   final?: string;
+  question?: { text: string; due: string };
+  can_disagree?: boolean;
 };
 
 const FINAL: Record<string, { title: string; text: string }> = {
@@ -44,6 +47,12 @@ const FINAL: Record<string, { title: string; text: string }> = {
   },
 };
 const MOVED_ON = { title: "Your idea has moved on", text: "Track where it is in My ideas." };
+FINAL.needs_info = { title: "The review desk has a question", text: "Your answer helps them decide sooner." };
+FINAL.reviewed = { title: "Your idea has been reviewed", text: "Check Messages for what happens next." };
+FINAL.in_cluster = {
+  title: "Your idea is grouped with similar ones",
+  text: "Check Messages for what happens next.",
+};
 
 const STEPS = [
   { key: "gatekeeper", text: "Checking for personal details" },
@@ -201,6 +210,12 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             {(FINAL[status.final] ?? MOVED_ON).title}
           </h3>
           <p>{(FINAL[status.final] ?? MOVED_ON).text}</p>
+          <FollowUp
+            id={id}
+            question={status.question ?? null}
+            canDisagree={Boolean(status.can_disagree)}
+            onChanged={refresh}
+          />
         </div>
       ) : null}
 

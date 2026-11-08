@@ -49,7 +49,8 @@ def queue() -> Iterator[Any]:
             made.append((idea_id, rid))
         reviewer = make((("reviewer", None),)).browser()
         contributor = make().browser()
-        yield reviewer, contributor, made
+        core = make((("core_committee", None),)).browser()
+        yield reviewer, contributor, made, core
         for idea_id, rid in made:
             conn.execute("DELETE FROM sla_timers WHERE entity_id = %s", (str(rid),))
             conn.execute("DELETE FROM review_items WHERE id = %s", (rid,))
@@ -63,7 +64,7 @@ def ids(b: Any, query: str = "") -> list[str]:
 
 
 def test_sort_and_filters(queue: Any) -> None:
-    reviewer, contributor, _ = queue
+    reviewer, contributor, made, core = queue
     # Due soonest first; on the same due date the lower confidence first (0.3 before 0.9).
     assert ids(reviewer) == ["IDEA-2026-990993", "IDEA-2026-990992", "IDEA-2026-990991"]
     assert ids(reviewer, "?kind=business_idea") == ["IDEA-2026-990992"]
@@ -74,3 +75,9 @@ def test_sort_and_filters(queue: Any) -> None:
     assert ids(reviewer, "?age=5") == ["IDEA-2026-990993"]
     assert ids(reviewer, "?type=disagreement") == []
     assert contributor.get("/api/review/items").status_code == 403
+
+    # A core committee member sees the queue but may act only on an item they vetoed (BLD-092).
+    assert core.get("/api/review/items").status_code == 200
+    item = made[0][1]
+    r = core.post(f"/api/review/items/{item}/action", json={"action": "decide"})
+    assert r.status_code == 403

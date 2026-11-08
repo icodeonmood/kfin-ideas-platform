@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from core import killswitch
 from core.config import get_settings
+from core.crypto import decrypt_json
 from core.db import Conn
 from pii import vault
 from pii.restore import restore
@@ -100,6 +101,18 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
         }
     elif row["outcome"] == "ready" and row["stage"] != "scanning":
         out["final"] = row["stage"]  # saved, joined, withdrawn or moved on: nothing more to choose here
+        q = conn.execute(
+            "SELECT id, question_encrypted, due_at FROM idea_questions WHERE idea_uuid = %s AND answered_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (idea_uuid,),
+        ).fetchone()
+        if q is not None and row["stage"] in ("needs_info", "withdrawn"):
+            text = decrypt_json(bytes(q["question_encrypted"]), f"question:{q['id']}").get("text")
+            out["question"] = {
+                "text": restore(text, vault.mapping(conn, row["idea_id"]), mode),
+                "due": q["due_at"].isoformat(),
+            }
+        out["can_disagree"] = row["stage"] in ("reviewed", "in_cluster", "declined", "redirected", "parked")
     elif row["outcome"] == "ready" and "canvas_assist" in result:
         ca = result.get("confirmed") or result["canvas_assist"]
         out["ready"] = {

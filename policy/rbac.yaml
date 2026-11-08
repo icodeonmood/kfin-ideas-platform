@@ -93,7 +93,7 @@ endpoints:
   - POST /api/clusters/{id}/join                      submit
   - GET /api/review/items                             view_review_queue
   - GET /api/review/items/{id}                        view_review_queue
-  - POST /api/review/items/{id}/action                work_review_queue
+  - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
   - GET /api/wall                                     see_org_ideas
@@ -106,7 +106,7 @@ endpoints:
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
-  - /review                    work_review_queue
+  - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /desk-decisions            view_review_queue
   - /admin                     manage_kill_switches grant_roles     # any of these
 

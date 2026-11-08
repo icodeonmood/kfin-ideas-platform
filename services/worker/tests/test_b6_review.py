@@ -168,3 +168,56 @@ def test_question_answer_and_disagree(desk: Any) -> None:
     d = service.disagree(db, desk["idea"], desk["code"], "The desk missed that this affects SIF too")
     row = db.execute("SELECT item_type, ref_id FROM review_items WHERE id = %s", (d["item_id"],)).fetchone()
     assert row == {"item_type": "disagreement", "ref_id": desk["idea_id"]}
+
+
+def test_core_committee_veto_within_the_window(desk: Any) -> None:
+
+    from review import veto as v
+
+    db, item = desk["db"], desk["item"]
+    member = _user(db, "core_committee")
+    service.act(db, item, desk["r1"], {"action": "decide"})
+    listed = next(d for d in v.desk_decisions(db)["decisions"] if d["item_id"] == item)
+    assert listed["veto_open"] and listed["decided_by"].startswith("REV-")
+    with pytest.raises(service.ActionRefused) as short:
+        v.veto(db, item, member, "no")
+    assert short.value.code == "text_too_short"
+    out = v.veto(db, item, member, "The committee wants this grouped with the SIF work")
+    assert out == {"state": "open", "assigned_to": member}
+    assert db.execute(
+        "SELECT 1 FROM audit_log WHERE action = 'review.veto' AND entity = %s", (f"review_item:{item}",)
+    ).fetchone()
+    assert db.execute(
+        "SELECT 1 FROM corrections WHERE review_item_id = %s AND field = 'desk_decision'", (item,)
+    ).fetchone()
+    with pytest.raises(service.ActionRefused) as desk_blocked:
+        service.act(db, item, desk["r1"], {"action": "decide"})
+    assert desk_blocked.value.code == "assigned_to_someone_else"
+    db.execute("DELETE FROM jobs WHERE type = 'comms.route'")
+    service.act(db, item, member, {"action": "decide", "system": {"areas": ["AREA-technology"]}})
+    events = [
+        r["payload"]["event"]
+        for r in db.execute("SELECT payload FROM jobs WHERE type = 'comms.route'").fetchall()
+    ]
+    assert events == ["idea.reconsidered"]  # only the final outcome, saying it was reconsidered
+    windows = db.execute(
+        "SELECT count(*) AS n FROM sla_timers WHERE entity_id = %s AND stage = 'veto_window' AND state = 'running'",
+        (str(item),),
+    ).fetchone()["n"]
+    assert windows == 0  # a member's final call is not vetoed again
+
+
+def test_veto_after_the_window_answers_409(desk: Any) -> None:
+    import datetime as dt
+
+    from review import veto as v
+
+    db, item = desk["db"], desk["item"]
+    member = _user(db, "core_committee")
+    service.act(db, item, desk["r1"], {"action": "decide"})
+    due = db.execute(
+        "SELECT due_at FROM sla_timers WHERE entity_id = %s AND stage = 'veto_window'", (str(item),)
+    ).fetchone()["due_at"]
+    with pytest.raises(service.ActionRefused) as late:
+        v.veto(db, item, member, "Reconsider this decision please", now=due + dt.timedelta(minutes=1))
+    assert late.value.code == "veto_window_closed"

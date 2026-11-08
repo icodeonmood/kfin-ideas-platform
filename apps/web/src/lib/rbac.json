@@ -189,7 +189,7 @@
     "POST /api/clusters/{id}/join                      submit",
     "GET /api/review/items                             view_review_queue",
     "GET /api/review/items/{id}                        view_review_queue",
-    "POST /api/review/items/{id}/action                work_review_queue",
+    "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
     "GET /api/wall                                     see_org_ideas",
@@ -201,7 +201,7 @@
     "POST /api/admin/reveal                            reveal_identity"
   ],
   "pages": [
-    "/review                    work_review_queue",
+    "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",
     "/admin                     manage_kill_switches grant_roles"
   ],

@@ -230,7 +230,13 @@ def _close(conn: Conn, item: dict[str, Any], reviewer: str, final: dict[str, Any
         (reviewer, now, Jsonb(final), item["id"]),
     )
     engine.stop(conn, "review_item", str(item["id"]), "review")
-    engine.start(conn, "review_item", str(item["id"]), "veto_window", now=now)
+    if item.get("vetoed_by") is None:  # a committee member's final call after a veto is not vetoed again
+        engine.start(conn, "review_item", str(item["id"]), "veto_window", now=now)
+
+
+def _same_outcome(before: dict[str, Any] | None, after: dict[str, Any]) -> bool:
+    keys = ("stage", "attach", "system")
+    return bool(before) and all((before or {}).get(k) == after.get(k) for k in keys)
 
 
 def _reviewed_event(conn: Conn, idea_id: str, rev: str, word: str, verify: bool = True) -> None:
@@ -253,7 +259,8 @@ def _decide(
     now: dt.datetime,
 ) -> dict[str, Any]:
     _open_for_action(item, reviewer)
-    if idea["stage"] not in ("scanned", "merged", "adoption_requested", "reviewed", "in_cluster"):
+    allowed = ("scanned", "merged", "adoption_requested", "reviewed", "in_cluster")
+    if idea["stage"] not in allowed + (("redirected", "declined") if item.get("vetoed_by") else ()):
         raise ActionRefused(409, "not_ready_for_review")
     idea_id = idea["idea_id"]
     proposal = (item["proposal"] or {}).get("system") or {}
@@ -336,6 +343,18 @@ def _decide(
         now,
     )  # fmt: skip
     _reviewed_event(conn, idea_id, rev, "reviewed")
+    if item.get("vetoed_by") is not None:
+        # After a veto the person hears only the final outcome, and only if it changed (§4.3).
+        decided = {"stage": stage, "attach": attach, "system": final_system}
+        if not _same_outcome((item.get("reasons") or {}).get("vetoed_decision"), decided):
+            emit(
+                conn,
+                "idea.reconsidered",
+                {"idea_id": idea_id, "review_item_id": item["id"], "outcome": "changed", "member_user_id": reviewer,
+                 "next_step": "clustered" if outcome == "grouped" else "qualify"},
+            )  # fmt: skip
+        log.info("review.final_after_veto", review_item_id=item["id"], stage_name=stage)
+        return {"state": "decided", "stage": stage}
     emit(
         conn,
         "idea.reviewed",

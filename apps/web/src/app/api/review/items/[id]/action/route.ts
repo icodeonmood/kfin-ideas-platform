@@ -6,7 +6,7 @@ import { act } from "@/server/review";
 
 /** POST /api/review/items/{id}/action — decide, redirect, ask, visibility, hold or confirm_hold (§4.3). */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await authorize("work_review_queue");
+  const me = await authorize("view_review_queue"); // who may act on this item is checked in `act` (BLD-092)
   if (me instanceof NextResponse) return me;
   const body = await request.json().catch(() => null);
   try {
