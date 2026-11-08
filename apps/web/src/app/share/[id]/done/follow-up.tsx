@@ -8,12 +8,15 @@ export function FollowUp({
   question,
   canDisagree,
   onChanged,
+  headingLevel = 4,
 }: {
   id: string;
   question: { text: string; due: string } | null;
   canDisagree: boolean;
   onChanged: () => Promise<void>;
+  headingLevel?: 3 | 4;
 }) {
+  const QuestionHeading = headingLevel === 3 ? "h3" : "h4";
   const [answer, setAnswer] = useState("");
   const [reason, setReason] = useState("");
   const [open, setOpen] = useState(false);
@@ -58,7 +61,7 @@ export function FollowUp({
             void post("answer", answer, "Thanks. Your answer is with the review desk.");
           }}
         >
-          <h4>The review desk asked</h4>
+          <QuestionHeading>The review desk asked</QuestionHeading>
           <p>{question.text}</p>
           <div className="field">
             <label htmlFor="fu-answer">Your answer</label>

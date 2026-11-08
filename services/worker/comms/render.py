@@ -97,7 +97,7 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             "strength": idea["strength"] if idea["strength"] is not None else 0,
             "next_best": list(((card.get("strength") or {}).get("next_best") or [])[:2]),
         }
-        data["links"]["idea"] = f"{base}/share/{idea['id']}/done" if own else f"{base}/my-ideas"
+        data["links"]["idea"] = f"{base}/ideas/{idea['idea_id']}" if own else f"{base}/my-ideas"
         due = conn.execute(
             "SELECT t.due_at FROM sla_timers t JOIN review_items r ON t.entity_id = r.id::text "
             "WHERE r.ref_id = %s AND t.stage = 'review' ORDER BY t.id DESC LIMIT 1",

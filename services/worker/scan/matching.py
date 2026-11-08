@@ -121,7 +121,7 @@ def run_matching(conn: Conn, idea_id: str, ca: dict[str, Any]) -> dict[str, Any]
     }
 
 
-def _safe_summary(conn: Conn, summary: str | None) -> str | None:
+def safe_summary(conn: Conn, summary: str | None) -> str | None:
     """Shown only if it holds no tag, no pattern match and no name or client the detector recognises."""
     if not summary or TAG_RE.search(summary) or scan(summary, kfin_domains=[]):
         return None
@@ -212,7 +212,7 @@ def submitter_cards(
                 "kind": kind,
                 "label": c["label"],
                 "heading": heading,
-                "summary": _safe_summary(conn, row["summary"]),
+                "summary": safe_summary(conn, row["summary"]),
                 "area": next((areas.get(a) for a in row["area_ids"] or [] if a in areas), None),
                 "stage": STAGE_WORDS.get(c["stage"] or "", "With the review desk"),
                 "colleagues": _colleagues(conn, c["cid"], kind),

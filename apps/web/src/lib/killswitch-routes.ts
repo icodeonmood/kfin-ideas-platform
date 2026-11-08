@@ -29,7 +29,6 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
-  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/(?:answer|disagree)\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer|disagree)\/?$/,
@@ -67,6 +66,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
+  /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
 ];
 

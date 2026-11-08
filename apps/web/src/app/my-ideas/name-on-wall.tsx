@@ -1,0 +1,48 @@
+"use client";
+
+/** Whether the person's name may appear on the wall next to ideas they shared (`public_name_consent`, off by
+ * default). Names never appear anywhere else. */
+import { useState } from "react";
+
+export function NameOnWall({ initial }: { initial: boolean }) {
+  const [on, setOn] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  async function change(next: boolean) {
+    setBusy(true);
+    setMessage(null);
+    const res = await fetch("/api/me/comms-prefs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name_on_wall: next }),
+    }).catch(() => null);
+    setBusy(false);
+    if (res?.ok) {
+      setOn(next);
+      setMessage({
+        text: next ? "Your name will show on the wall." : "Your name will not show on the wall.",
+        error: false,
+      });
+    } else {
+      setMessage({ text: "That did not go through. Please try again.", error: true });
+    }
+  }
+
+  return (
+    <section aria-labelledby="mi-name">
+      <h2 id="mi-name">Your name on the wall</h2>
+      <p>
+        Ideas on the wall show a short summary, never your own words. You can also choose to show your name
+        next to ideas you shared. You can change this at any time.
+      </p>
+      <label className="choice">
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => void change(e.target.checked)} />
+        Show my name on the wall
+      </label>
+      <p role="status" aria-live="polite" className={message?.error ? "field-error" : "muted"}>
+        {message?.text ?? ""}
+      </p>
+    </section>
+  );
+}

@@ -245,3 +245,46 @@ def review_veto(item_id: int, body: dict[str, Any]) -> JSONResponse:
     from review.veto import veto
 
     return _review_call(veto, item_id, str(body.get("member_user_id") or ""), str(body.get("reason") or ""))
+
+
+@app.get("/internal/wall", dependencies=[Depends(require_token)])
+def wall_view() -> JSONResponse:
+    """The public wall (§4.13). Everything on it has passed review and its summary check."""
+    from views.wall import wall
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse(wall(conn), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/me/{user_id}/ideas", dependencies=[Depends(require_token)])
+def my_ideas_view(user_id: str) -> JSONResponse:
+    """My ideas (AT-B7-02); the web app vouches for who the person is."""
+    from views.mine import my_ideas
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse(my_ideas(conn, user_id), headers={"Cache-Control": "no-store"})
+
+
+@app.put("/internal/me/{user_id}/name-on-wall", dependencies=[Depends(require_token)])
+def name_on_wall(user_id: str, body: dict[str, Any]) -> JSONResponse:
+    from views.mine import set_name_on_wall
+
+    if not isinstance(body.get("on"), bool):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        return JSONResponse(set_name_on_wall(conn, user_id, body["on"]))
+
+
+@app.get("/internal/ideas/{idea_id}/page", dependencies=[Depends(require_token)])
+def idea_page_view(idea_id: str, view: str, mode: str, user_id: str) -> JSONResponse:
+    """The idea page in the view and restore mode the web app chose from §3.1 (AT-B7-03)."""
+    from views.idea_page import page
+    from views.mine import viewer_codes
+
+    if view not in ("full", "public") or mode not in ("real", "neutral"):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        out = page(conn, idea_id, view, mode, viewer_codes(conn, user_id))  # type: ignore[arg-type]
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})

@@ -799,3 +799,20 @@ blockquote {
   color: var(--muted);
   font-size: 0.9em;
 }
+
+.crew-card h2,
+.crew-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+}
+
+.timeline {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
