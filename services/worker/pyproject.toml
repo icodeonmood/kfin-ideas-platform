@@ -77,4 +77,4 @@ module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 # Test code indexes rows it has just inserted; Optional checks there add noise, not safety.
-disable_error_code = ["index", "union-attr", "attr-defined"]
+disable_error_code = ["index", "union-attr", "attr-defined", "no-any-return"]
