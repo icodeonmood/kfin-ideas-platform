@@ -216,10 +216,16 @@ export async function submit(me: CurrentUser, id: string, input: unknown) {
       const year = (
         await sql<{ y: string }>`SELECT to_char(now() AT TIME ZONE ${IST}, 'YYYY') AS y`.execute(trx)
       ).rows[0]!.y;
-      const n = (await sql<{ n: number }>`SELECT next_number('IDEA', ${year}) AS n`.execute(trx)).rows[0]!.n;
-      const number = String(n).padStart(6, "0");
-      const ideaId = `IDEA-${year}-${number}`;
-      const submissionId = `SUB-${year}-${number}`;
+      // A draft that was submitted before (and sent back to edit) keeps its IDs.
+      let ideaId = row.idea_id;
+      let submissionId = ideaId ? `SUB-${ideaId.slice(5)}` : null;
+      if (!ideaId) {
+        const n = (await sql<{ n: number }>`SELECT next_number('IDEA', ${year}) AS n`.execute(trx)).rows[0]!
+          .n;
+        const number = String(n).padStart(6, "0");
+        ideaId = `IDEA-${year}-${number}`;
+        submissionId = `SUB-${year}-${number}`;
+      }
       const updated = await trx
         .updateTable("ideas")
         .set({

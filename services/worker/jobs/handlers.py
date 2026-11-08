@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
+
+from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from core.logging import get_logger
@@ -50,3 +53,35 @@ def attachment_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
     from attachments import service
 
     service.give_up(conn, str(payload["attachment_id"]))
+
+
+@handler("scan.run")
+def scan_run(conn: Conn, payload: dict[str, Any]) -> None:
+    """The scan straight after submit (§4.2); falls back to `scan.async` on any failure."""
+    from scan import pipeline
+
+    pipeline.run(conn, str(payload["idea_uuid"]), mode="sync")
+
+
+@handler("scan.async")
+def scan_async(conn: Conn, payload: dict[str, Any]) -> None:
+    """Retry a scan (1, 5, 15, 60 minutes). While `ai.all` or the agent is off, wait without using a retry."""
+    from gateway import AgentSwitchedOff
+    from scan import pipeline
+
+    idea_uuid = str(payload["idea_uuid"])
+    try:
+        pipeline.run(conn, idea_uuid, mode="async")
+    except AgentSwitchedOff:
+        conn.execute(
+            "INSERT INTO jobs (type, payload, run_at, dedupe_key) VALUES ('scan.async', %s, "
+            "now() + interval '5 minutes', %s) ON CONFLICT DO NOTHING",
+            (Jsonb({"idea_uuid": idea_uuid}), f"scan-async:{idea_uuid}:switched-off:{int(time.time())}"),
+        )
+
+
+@on_dead("scan.async")
+def scan_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    from scan import pipeline
+
+    pipeline.give_up(conn, str(payload["idea_uuid"]))

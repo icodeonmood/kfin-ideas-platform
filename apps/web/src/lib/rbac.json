@@ -170,6 +170,7 @@
     "PUT /api/submissions/{id}                         submit",
     "POST /api/submissions/{id}/submit                 submit",
     "GET /api/submissions/{id}/scan-status             submit",
+    "POST /api/submissions/{id}/scan-choice            submit",
     "POST /api/submissions/{id}/confirm-card           submit",
     "POST /api/submissions/{id}/choose                 submit",
     "POST /api/submissions/{id}/attachments            submit",

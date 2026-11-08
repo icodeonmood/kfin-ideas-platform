@@ -109,6 +109,16 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         words = str(out.get("details") or "").split()
         out["one_line"] = " ".join(words[:20]) or "An improvement idea"
         provenance["one_line"] = "suggested"
+    eco = out.setdefault("ecosystem", {})
+    if not eco.get("solved_elsewhere"):
+        eco["solved_elsewhere"] = (
+            "dont_know"  # the schema needs a value; a person's blank reads as don't know
+        )
+        provenance["ecosystem.solved_elsewhere"] = "suggested"
+    value = out.setdefault("value", {})
+    if not value.get("category"):
+        value["category"] = "not_sure"
+        provenance["value.category"] = "suggested"
     out["neutral_summary"] = "An idea to improve a KFintech process."
     out.setdefault("attachments", [])
     slice_ = inputs.get("taxonomy_slice") or {}

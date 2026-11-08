@@ -138,6 +138,11 @@ def people(conn: Conn) -> Iterator[Any]:
         if created:
             # Ideas are keyed by contributor code (no FK, so erasure keeps them): remove test drafts explicitly.
             conn.execute(
+                "DELETE FROM pseudonym_vault WHERE scope_id IN (SELECT idea_id FROM ideas WHERE contributor_code IN "
+                "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])))",
+                (created,),
+            )
+            conn.execute(
                 "DELETE FROM ideas WHERE contributor_code IN "
                 "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[]))",
                 (created,),

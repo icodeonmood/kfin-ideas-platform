@@ -237,10 +237,21 @@ export interface Links {
   to_path: string;
 }
 
+export interface LlmCache {
+  agent: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  key: Buffer;
+  output_encrypted: Buffer;
+  version: string;
+}
+
 export interface LlmCalls {
   agent: string;
+  cache_read_tokens: number | null;
   cost_inr: Numeric | null;
   created_at: Generated<Timestamp>;
+  error_code: string | null;
   id: Generated<Int8>;
   input_tokens: number | null;
   latency_ms: number | null;
@@ -346,6 +357,23 @@ export interface RoleGrants {
   valid_to: Timestamp | null;
 }
 
+export interface Scans {
+  attempts: Generated<number>;
+  created_at: Generated<Timestamp>;
+  duration_ms: number | null;
+  error_code: string | null;
+  finished_at: Timestamp | null;
+  idea_uuid: string;
+  outcome: string | null;
+  override_reason_encrypted: Buffer | null;
+  overrides: Generated<Json>;
+  result_encrypted: Buffer | null;
+  started_at: Timestamp | null;
+  state: Generated<string>;
+  step: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Sessions {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -419,6 +447,7 @@ export interface DB {
   jobs: Jobs;
   kill_switches: KillSwitches;
   links: Links;
+  llm_cache: LlmCache;
   llm_calls: LlmCalls;
   notifications: Notifications;
   outbox: Outbox;
@@ -428,6 +457,7 @@ export interface DB {
   repo_files: RepoFiles;
   review_items: ReviewItems;
   role_grants: RoleGrants;
+  scans: Scans;
   sessions: Sessions;
   sla_timers: SlaTimers;
   terms: Terms;

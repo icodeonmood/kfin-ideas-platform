@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { currentUser } from "@/server/auth/current";
+import { scanStatus } from "@/server/scan";
 import { getDraft, SubmissionError } from "@/server/submissions";
+
+import { ScanStatus } from "./scan-status";
 
 export const metadata: Metadata = { title: "Your idea is in" };
 export const dynamic = "force-dynamic";
@@ -20,10 +23,13 @@ export default async function Done({ params }: { params: Promise<{ id: string }>
     throw err;
   }
   if (row.stage === "draft") redirect(`/share/${id}`);
+  const initial = await scanStatus(me, id).catch(() => null);
   return (
     <>
       <h1>Your idea is in: {row.idea_id}</h1>
       <p className="lead">Thank you. Here is what happens next.</p>
+      <ScanStatus id={id} initial={initial as Parameters<typeof ScanStatus>[0]["initial"]} />
+      <h2>What happens next</h2>
       <ol className="steps">
         <li>We check it for personal data and suggest answers for anything you left blank.</li>
         <li>We look for colleagues who raised the same thing, so you can team up.</li>

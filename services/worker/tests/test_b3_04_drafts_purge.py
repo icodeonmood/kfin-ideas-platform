@@ -45,7 +45,7 @@ def test_schedule_enqueues_once_a_day(db: Any) -> None:
 
 def test_jobs_for_later_blocks_wait_instead_of_failing(db: Any) -> None:
     db.execute("DELETE FROM jobs")
-    db.execute("INSERT INTO jobs (type) VALUES ('scan.run')")
+    db.execute("INSERT INTO jobs (type) VALUES ('match.weekly')")
     assert run_one(db, "test-worker") is False
-    row = db.execute("SELECT state, attempts FROM jobs WHERE type = 'scan.run'").fetchone()
+    row = db.execute("SELECT state, attempts FROM jobs WHERE type = 'match.weekly'").fetchone()
     assert (row["state"], row["attempts"]) == ("queued", 0)

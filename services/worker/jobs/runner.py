@@ -52,7 +52,7 @@ def enqueue(
 def run_one(conn: Conn, worker_id: str) -> bool:
     """Claim the next due job and run it. Returns False when nothing is due."""
     with conn.transaction():
-        # Only types this worker can run: a job for a later block (scan.run before B4) waits instead of failing.
+        # Only types this worker can run: a job for a later block waits instead of failing.
         job = conn.execute(
             "SELECT id, type, payload, attempts, max_attempts FROM jobs WHERE state = 'queued' AND run_at <= now() "
             "AND type = ANY(%s) ORDER BY run_at, id LIMIT 1 FOR UPDATE SKIP LOCKED",

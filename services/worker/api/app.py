@@ -100,3 +100,17 @@ def delete_attachment(att_id: str) -> Response:
     with connect(autocommit=True) as conn:
         attachments.remove(conn, att_id)
     return Response(status_code=204)
+
+
+@app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])
+def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
+    """The scan as one viewer may see it. The web app decides `mode` from §3.1 (owner: real)."""
+    from scan.view import view
+
+    if mode not in ("real", "neutral"):
+        return JSONResponse({"error": "bad_mode"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        body = view(conn, idea_uuid, "real" if mode == "real" else "neutral")
+    if body is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})

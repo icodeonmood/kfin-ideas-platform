@@ -1,1 +1,1 @@
-"""Scan pipeline (ARCHITECTURE §4.2): validate, pattern check, gatekeeper, canvas-assist, scan.async fallback. Built in B4."""
+"""The scan (ARCHITECTURE §4.2): gatekeeper, then canvas assist; matching joins in B5."""
