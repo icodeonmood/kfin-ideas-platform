@@ -8,7 +8,7 @@ COMPOSE := docker compose -f infra/docker-compose.yml --project-directory . --en
 PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 
-.PHONY: help setup build up down health migrate db-users seed test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data
+.PHONY: help setup build up down health migrate db-users seed test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -90,3 +90,9 @@ killswitch: ## Flip a kill switch: make killswitch NAME=submissions STATE=off RE
 
 clean-data: ## Delete the local company repo (not the database)
 	rm -rf .data/kfin-ideas
+
+uat-deploy: ## UAT from a clean database: make uat-deploy APP_ENV_FILE=… DB_ENV_FILE=… (docs/UAT.md)
+	scripts/uat/deploy.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-rehearsal: ## Rehearse the UAT deploy here with throwaway secrets, then tear it down (pauses the dev stack)
+	scripts/uat/rehearse.sh

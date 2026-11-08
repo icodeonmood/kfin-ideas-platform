@@ -39,3 +39,43 @@ def grant(conn: Conn, user_id: str, role: str, scope: str | None, *, actor: str,
             ),
         )
     return True
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Ops CLI for UAT and prod, where there are no dev personas: grant the first admin, who then uses the Admin page.
+
+    python -m identity.grants grant --employee-id <ID> --role admin --reason "…" --actor ops:<staff code>
+    """
+    import argparse
+
+    from core.db import connect
+    from identity.codes import emp_id_hash
+
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    g = sub.add_parser("grant")
+    g.add_argument("--employee-id", required=True)
+    g.add_argument("--role", required=True, choices=sorted(ROLES))
+    g.add_argument("--scope")
+    g.add_argument("--reason", required=True)
+    g.add_argument("--actor", required=True)
+    args = parser.parse_args(argv)
+    if len(args.reason.strip()) < 10:
+        print("reason: at least 10 characters")
+        return 2
+    with connect(autocommit=True) as conn:
+        user = conn.execute(
+            "SELECT id FROM users WHERE emp_id_hash = %s AND active", (emp_id_hash(args.employee_id),)
+        ).fetchone()
+        if user is None:
+            print("no active person with that employee ID (they sign in once, or come in with the HR import)")
+            return 1
+        created = grant(conn, str(user["id"]), args.role, args.scope, actor=args.actor, reason=args.reason)
+    print("granted" if created else "already granted")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

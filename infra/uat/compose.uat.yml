@@ -1,0 +1,51 @@
+# UAT-shaped stack (AT-B7-06), layered over infra/docker-compose.yml by scripts/uat/deploy.sh. Synthetic data only.
+#
+# Differences from dev: its own project name and volumes (dev data is never touched); APP_ENV and every secret come
+# from the UAT env files, never `.env`; each service connects with its own password; only the web app is
+# published; no mock sign-in (Entra in UAT); dev-only settings cleared. KFin's own S3, scanner and mail service
+# replace s3, clamav and mailpit on the UAT host by setting S3_ENDPOINT, CLAMAV_HOST and EMAIL_MODE=graph.
+name: kfin-ideas-uat
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the database env file}
+    ports: !reset []
+    volumes: !override [uat_pgdata:/var/lib/postgresql/data]
+
+  s3:
+    ports: !reset []
+    volumes: !override [uat_s3data:/data]
+
+  clamav:
+    ports: !reset []
+
+  mailpit:
+    ports: !reset []
+
+  mock-oidc:
+    profiles: [dev-only]   # never started here
+
+  worker:
+    env_file: !override
+      - path: ${UAT_APP_ENV_FILE:?set UAT_APP_ENV_FILE}
+    environment:
+      DATABASE_URL: postgres://ideas_worker:${DB_WORKER_PASSWORD:?set DB_WORKER_PASSWORD}@postgres:5432/ideas?sslmode=disable
+    volumes: !override ["${UAT_DATA_DIR:?set UAT_DATA_DIR}:/data"]
+    ports: !reset []
+
+  web:
+    env_file: !override
+      - path: ${UAT_APP_ENV_FILE}
+    environment:
+      DATABASE_URL: postgres://ideas_web:${DB_WEB_PASSWORD:?set DB_WEB_PASSWORD}@postgres:5432/ideas?sslmode=disable
+      OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
+    ports: !override ["${UAT_WEB_PORT:-3100}:3000"]
+
+  dbmate:
+    environment:
+      DATABASE_URL: postgres://ideas:${POSTGRES_PASSWORD}@postgres:5432/ideas?sslmode=disable
+
+volumes:
+  uat_pgdata:
+  uat_s3data:
