@@ -1,16 +1,14 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("home page loads, is keyboard reachable and has no serious or critical axe issues", async ({ page }) => {
+import { expectNoSeriousAxeIssues } from "./helpers";
+
+test("signed-out visitors land on sign in, which is keyboard reachable and passes axe", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/sign-in\?next=%2F/);
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  const blocking = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  expect(blocking.map((v) => v.id)).toEqual([]);
+  await expectNoSeriousAxeIssues(page);
 });
 
 test("health endpoint answers 200", async ({ request }) => {

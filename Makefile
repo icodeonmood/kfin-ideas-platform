@@ -48,7 +48,7 @@ test-py:
 test-web:
 	$(WEB) npx vitest run
 
-e2e: up ## Playwright end-to-end and accessibility checks
+e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
 	$(WEB) npx playwright test
 
 eval: ## Golden sets for every agent (harness only until B4)

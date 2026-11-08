@@ -1,12 +1,39 @@
-export default function Home() {
+import Link from "next/link";
+
+import { currentUser } from "@/server/auth/current";
+
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const me = await currentUser();
+  const firstName = me?.name.split(" ")[0];
   return (
     <>
-      <h1>Ideas from everyone at KFintech</h1>
+      <h1>{firstName ? `Hello, ${firstName}` : "Ideas from everyone at KFintech"}</h1>
       <p className="lead">
-        Spot a problem, think of a fix, or see a new business we could build? This is where you share it, find
-        colleagues working on the same thing, and follow it all the way to the Garage.
+        Spot a problem, think of a fix, or see a new business we could build? Share it here, find colleagues
+        working on the same thing, and follow it all the way to the Garage.
       </p>
-      <p>Sign-in and the idea canvas open soon.</p>
+      <ul className="cards" aria-label="Where to start">
+        <li className="card">
+          <h2>
+            <Link href="/share">Share an idea</Link>
+          </h2>
+          <p>A quick capture takes about a minute. The full canvas helps you make it stronger.</p>
+        </li>
+        <li className="card">
+          <h2>
+            <Link href="/my-ideas">My ideas</Link>
+          </h2>
+          <p>See where each of your ideas is and what happens next.</p>
+        </li>
+        <li className="card">
+          <h2>
+            <Link href="/wall">Wall</Link>
+          </h2>
+          <p>Ideas from across KFintech, and what is already in the Garage.</p>
+        </li>
+      </ul>
     </>
   );
 }
