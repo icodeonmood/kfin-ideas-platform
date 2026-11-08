@@ -6,6 +6,7 @@ import hashlib
 import math
 import re
 from itertools import pairwise
+from typing import Any
 
 from core.config import get_settings
 
@@ -42,5 +43,26 @@ def embed(texts: list[str]) -> list[list[float]]:
     if mode == "hash":
         return [hash_embed(t) for t in texts]
     if mode == "bge-m3":
-        raise NotImplementedError("BGE-M3 embeddings arrive in B5; use EMBEDDINGS_MODE=hash until then")
+        return _bge_m3(texts)
     raise ValueError(f"unknown EMBEDDINGS_MODE {mode!r}")
+
+
+_model: Any = None
+
+
+def _bge_m3(texts: list[str]) -> list[list[float]]:
+    """BGE-M3 dense vectors (1,024 dimensions, normalised), self-hosted in the worker (BLD-080). The model files
+    come from `EMBEDDINGS_MODEL_PATH` (never fetched at run time, never in Git); the library is installed only in
+    images built with `--build-arg WITH_BGE=1` (UAT and prod). AT-B5-01 is checked with `python -m embeddings.check`."""
+    global _model
+    if _model is None:
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+        except ImportError:
+            raise RuntimeError("EMBEDDINGS_MODE=bge-m3 needs an image built with WITH_BGE=1") from None
+        path = get_settings().embeddings_model_path
+        if not path:
+            raise RuntimeError("EMBEDDINGS_MODEL_PATH is not set")
+        _model = SentenceTransformer(path, device="cpu", local_files_only=True)
+    vectors = _model.encode(texts, normalize_embeddings=True, batch_size=16)
+    return [[float(x) for x in v] for v in vectors]

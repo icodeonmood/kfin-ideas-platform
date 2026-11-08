@@ -80,6 +80,19 @@ def split_sections(body: str) -> list[tuple[str, str]]:
     return sections
 
 
+CARD_TYPES = frozenset({"idea", "cluster", "solution", "decision"})
+
+
+def card_summary(file_type: str, meta: dict[str, Any], kfin: dict[str, Any]) -> str | None:
+    """The one line other employees may see on a match card (BLD-079): an idea's `neutral_summary`, or the
+    description of a cluster, solution or decision. Ideas without a neutral summary get none."""
+    if file_type not in CARD_TYPES:
+        return None
+    if file_type == "idea":
+        return _text(kfin.get("neutral_summary"))
+    return _text(meta.get("description"))
+
+
 def build_chunks(meta: dict[str, Any], body: str) -> list[tuple[str, str]]:
     title = str(meta.get("title") or "")
     sections = split_sections(body)
@@ -220,10 +233,13 @@ class Indexer:
         stage = _text(kfin.get("stage"))
         self._delete(conn, rel)
         conn.execute(
-            "INSERT INTO repo_files (repo_path, kfin_id, file_type, trust, stage, visibility, commit_sha) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (rel, own_id, file_type, trust, stage, visibility, commit),
-        )
+            "INSERT INTO repo_files (repo_path, kfin_id, file_type, trust, stage, visibility, commit_sha, summary, "
+            "area_ids, lobs) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                rel, own_id, file_type, trust, stage, visibility, commit, card_summary(file_type, meta, kfin),
+                _texts(kfin.get("areas")), _texts(kfin.get("lobs")),
+            ),
+        )  # fmt: skip
         chunks = build_chunks(meta, doc.body)
         vectors = embed([text for _, text in chunks])
         for ordinal, ((section, text), vec) in enumerate(zip(chunks, vectors, strict=True)):

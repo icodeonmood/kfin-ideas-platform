@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     vault_encryption_key: str = ""
 
     embeddings_mode: str = "hash"
+    embeddings_model_path: str = (
+        ""  # bge-m3 only: local folder with the model files (never fetched at run time)
+    )
     llm_mode: str = "fake"  # fake | anthropic | bedrock (route per InfoSec, D1)
     llm_fast_model: str = "claude-haiku-5-5"
     llm_reasoning_model: str = "claude-sonnet-5-5"

@@ -180,6 +180,7 @@ def render_idea(
         "cluster": idea["cluster_id"],
         "visibility": idea["visibility"],
         "language": idea["language"] or "en",
+        "neutral_summary": canvas.get("neutral_summary"),  # the only text a match card shows (BLD-079)
         "attachments": [
             {k: a[k] for k in ("id", "name", "sha256", "bytes") if k in a}
             for a in (canvas.get("attachments") or [])
