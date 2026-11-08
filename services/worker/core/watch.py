@@ -28,15 +28,15 @@ BOUNCE_MIN_SENT = 20
 BOUNCE_CODES = ("smtprecipientsrefused", "smtpdataerror")
 
 
-def switch_off(conn: Conn, name: str, reason: str) -> bool:
+def switch_off(conn: Conn, name: str, reason: str, actor: str = ACTOR) -> bool:
     killswitch.clear_cache()
     if not killswitch.is_on(name, conn):
         return False
-    killswitch.set_switch(conn, name, "off", reason=reason, actor=ACTOR)
+    killswitch.set_switch(conn, name, "off", reason=reason, actor=actor)
     killswitch.clear_cache()
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'alert.kill_switch_auto', %s, %s)",
-        (ACTOR, f"kill_switch:{name}", Jsonb({"state": "off"})),
+        (actor, f"kill_switch:{name}", Jsonb({"state": "off"})),
     )
     log.error("watch.switched_off", switch=name)
     return True

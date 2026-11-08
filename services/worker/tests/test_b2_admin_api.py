@@ -89,19 +89,27 @@ def test_kill_switches_follow_who_can_flip(dev_db: Any) -> None:
         admin = make((("admin", None),)).browser()
         hr = make((("hr", None),)).browser()
 
-        def flip(b: Any, name: str, state: str) -> int:
-            return b.request(
+        def flip(b: Any, name: str, state: str) -> str:
+            r = b.request(
                 "PUT",
                 "/api/admin/kill-switches",
                 json={"name": name, "state": state, "reason": "access rule test"},
-            ).status_code
+            )
+            # The status and the error code together, so an intermittent failure says what happened (BLD-097).
+            return f"{r.status_code} {r.json().get('error', '') if r.headers.get('content-type', '').startswith('application/json') else r.headers.get('content-type')}"
 
-        assert flip(infosec, "submissions", "on") == 403
-        assert flip(admin, "attachments.open", "on") == 403
-        assert flip(hr, "ai.all", "on") == 403
-        assert flip(hr, "wall.public", "on") == 200
-        assert flip(infosec, "attachments.open", "on") == 200
-        assert flip(admin, "agent.judge", "on") == 200
+        got = {
+            "infosec submissions": flip(infosec, "submissions", "on"),
+            "admin attachments.open": flip(admin, "attachments.open", "on"),
+            "hr ai.all": flip(hr, "ai.all", "on"),
+            "hr wall.public": flip(hr, "wall.public", "on"),
+            "infosec attachments.open": flip(infosec, "attachments.open", "on"),
+            "admin agent.judge": flip(admin, "agent.judge", "on"),
+        }
+        assert {k: v.split()[0] for k, v in got.items()} == {
+            "infosec submissions": "403", "admin attachments.open": "403", "hr ai.all": "403",
+            "hr wall.public": "200", "infosec attachments.open": "200", "admin agent.judge": "200",
+        }, got  # fmt: skip
         listed = {
             s["name"]: s["can_flip"] for s in infosec.get("/api/admin/kill-switches").json()["switches"]
         }

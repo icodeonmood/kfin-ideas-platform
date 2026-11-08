@@ -95,13 +95,33 @@ def _pct(v: Any) -> str:
     return "n/a" if v is None else f"{v * 100:.0f}%"
 
 
-def run_agents(seed: int) -> int:
+def switch_off_failing(conn: Any, results: list[dict[str, Any]], route: str) -> list[str]:
+    """§7.6: an agent whose golden set fails or regresses on deploy switches itself off (audited). Only on a real
+    route; fake mode measures the harness, not the agent. Returns the switches turned off."""
+    from core.watch import switch_off
+
+    if route == "fake":
+        return []
+    names = []
+    for r in results:
+        if not r["passed"] and switch_off(
+            conn,
+            f"agent.{r['agent']}",
+            "Golden set failed or regressed on deploy (automatic)",
+            actor="process:eval",
+        ):
+            names.append(f"agent.{r['agent']}")
+    return names
+
+
+def run_agents(seed: int, switch_off: bool = False) -> int:
     from core.db import connect
     from evalrunner import canvas_assist, gatekeeper, judge
     from evalrunner.common import context, route_name, write_report
 
     route = route_name()
     status = 0
+    results: list[dict[str, Any]] = []
     with connect(autocommit=True) as conn:
         ctx = context(conn, seed)
         try:
@@ -134,6 +154,10 @@ def run_agents(seed: int) -> int:
                 )
                 print(f"  report: {path.relative_to(ROOT)}")
                 status |= 0 if passed else 1
+                results.append(result)
+            if switch_off:
+                for name in switch_off_failing(conn, results, route):
+                    print(f"  switched off: {name}")
         finally:
             ctx.cleanup()
     return status
@@ -145,6 +169,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Golden sets for every agent")
     parser.add_argument("--seed", type=int, default=int(os.environ.get("GOLDEN_SEED", "42")))
     parser.add_argument("--harness-only", action="store_true")
+    parser.add_argument(
+        "--switch-off-failing",
+        action="store_true",
+        help="on deploy: switch off agents that fail (real route only)",
+    )
     args = parser.parse_args(argv)
     problems = check_golden() + check_agents()
     for p in problems:
@@ -156,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.harness_only:
         return 0
-    return run_agents(args.seed)
+    return run_agents(args.seed, switch_off=args.switch_off_failing)
 
 
 if __name__ == "__main__":

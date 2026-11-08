@@ -8,7 +8,8 @@
 # each service's own connection and is never handed to a container as a whole.
 #
 # Steps: preflight → build → empty database check → migrations → service logins → company repo seed (no dev
-# overlay outside dev) → start → Mode B if no model route is approved → smoke tests. Stops at the first failure.
+# overlay outside dev) → start → golden sets on the model route (failing agents switch off), or Mode B if no route
+# is approved → smoke tests. Stops at the first failure.
 # Optional: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
 set -euo pipefail
 
@@ -74,7 +75,9 @@ compose up -d --wait --wait-timeout 240
 
 step "7/8 Model route"
 if compose exec -T worker python -m bootstrap.preflight ai-route-ready; then
-  echo "model route configured: ai.all stays on"
+  echo "model route configured: golden sets run on it; an agent that fails switches itself off (§7.6)"
+  compose run --rm -T -v "$ROOT/eval/golden:/app/eval/golden:ro" worker python -m evalrunner --switch-off-failing \
+    || echo "golden sets: at least one agent failed; it is switched off and its step goes to the review desk"
 else
   compose exec -T worker python -m core.killswitch set ai.all off \
     --reason "Mode B until InfoSec approves the model route (D1)" --actor ops:uat-deploy

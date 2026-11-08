@@ -84,3 +84,18 @@ def test_bounces_over_five_percent_turn_email_off(db: Any, sent: int, bounced: i
     assert _state(db, "comms.email") == ("off" if flips else "on")
     killswitch.set_switch(db, "comms.email", "on", reason="Reset after the bounce test", actor="REV-0001")
     killswitch.clear_cache()
+
+
+def test_an_agent_that_fails_its_golden_set_on_deploy_switches_off(db: Any) -> None:
+    from evalrunner.__main__ import switch_off_failing
+
+    killswitch.clear_cache()
+    results = [{"agent": "judge", "passed": False}, {"agent": "gatekeeper", "passed": True}]
+    assert switch_off_failing(db, results, "fake") == []  # fake mode cannot measure a model
+    assert switch_off_failing(db, results, "anthropic") == ["agent.judge"]
+    assert _state(db, "agent.judge") == "off" and _state(db, "agent.gatekeeper") == "on"
+    assert db.execute(
+        "SELECT 1 FROM audit_log WHERE action = 'alert.kill_switch_auto' AND actor = 'process:eval'"
+    ).fetchone()
+    killswitch.set_switch(db, "agent.judge", "on", reason="Reset after the eval test", actor="REV-0001")
+    killswitch.clear_cache()
