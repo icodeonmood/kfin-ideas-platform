@@ -69,6 +69,7 @@ export function CanvasForm(props: Props) {
   const summaryRef = useRef<HTMLDivElement>(null);
   // The last answers the server has; autosave sends whatever differs (even if typing continued mid-save).
   const lastSaved = useRef(JSON.stringify(props.initial));
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
 
   const hits = useMemo(() => personalData(canvas, props.kfinDomains), [canvas, props.kfinDomains]);
   const blocked = blocks(hits);
@@ -82,20 +83,24 @@ export function CanvasForm(props: Props) {
   useEffect(() => {
     const json = JSON.stringify(canvas);
     if (blocked || json === lastSaved.current) return;
-    const timer = setTimeout(async () => {
-      setSaveState("saving");
-      const res = await fetch(`/api/submissions/${props.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ canvas: JSON.parse(json) }),
-      }).catch(() => null);
-      if (res?.ok) {
-        lastSaved.current = json;
-        setSaveState("saved");
-        setSavedAt(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
-      } else {
-        setSaveState("error");
-      }
+    const timer = setTimeout(() => {
+      // One save at a time, in order: a slow earlier save can never land after (and undo) a later one.
+      saveChain.current = saveChain.current.then(async () => {
+        if (json === lastSaved.current) return;
+        setSaveState("saving");
+        const res = await fetch(`/api/submissions/${props.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ canvas: JSON.parse(json) }),
+        }).catch(() => null);
+        if (res?.ok) {
+          lastSaved.current = json;
+          setSaveState("saved");
+          setSavedAt(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+        } else {
+          setSaveState("error");
+        }
+      });
     }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [canvas, blocked, props.id]);
@@ -616,11 +621,7 @@ function Choices(p: {
   const id = fid(p.path);
   const describedBy = [p.why ? `${id}-why` : "", p.error ? `${id}-error` : ""].filter(Boolean).join(" ");
   return (
-    <fieldset
-      className="field"
-      aria-describedby={describedBy || undefined}
-      aria-invalid={p.error ? true : undefined}
-    >
+    <fieldset className="field" aria-describedby={describedBy || undefined}>
       <legend>
         {p.label}
         {p.required ? <span className="req"> (required)</span> : null}
@@ -639,6 +640,7 @@ function Choices(p: {
               name={p.path}
               value={value}
               checked={p.values.includes(value)}
+              aria-invalid={p.error ? true : undefined}
               onChange={(e) => {
                 if (p.type === "radio") p.onChange([value]);
                 else

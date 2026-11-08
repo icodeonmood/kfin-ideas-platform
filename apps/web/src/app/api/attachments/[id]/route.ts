@@ -17,7 +17,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (row.state !== "clean")
     return NextResponse.json({ error: "not_available", state: row.state }, { status: 403 });
-  const res = await workerFetch(`/internal/attachments/${encodeURIComponent(id)}/content`);
+  // The timer also bounds the body stream, so allow for a 20 MB file on a slow link.
+  const res = await workerFetch(`/internal/attachments/${encodeURIComponent(id)}/content`, {
+    signal: AbortSignal.timeout(300_000),
+  });
   if (!res.ok) return NextResponse.json({ error: "not_available" }, { status: 403 });
   await getDb()
     .insertInto("audit_log")

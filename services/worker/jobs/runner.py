@@ -19,12 +19,21 @@ log = get_logger("jobs")
 
 Handler = Callable[[Conn, dict[str, Any]], None]
 HANDLERS: dict[str, Handler] = {}
+DEAD_HANDLERS: dict[str, Handler] = {}  # run once when a job of that type goes dead, to tell people
 BACKOFF_MINUTES = (1, 5, 15, 60)
 
 
 def handler(job_type: str) -> Callable[[Handler], Handler]:
     def register(fn: Handler) -> Handler:
         HANDLERS[job_type] = fn
+        return fn
+
+    return register
+
+
+def on_dead(job_type: str) -> Callable[[Handler], Handler]:
+    def register(fn: Handler) -> Handler:
+        DEAD_HANDLERS[job_type] = fn
         return fn
 
     return register
@@ -71,6 +80,11 @@ def run_one(conn: Conn, worker_id: str) -> bool:
             ("dead" if dead else "queued", delay, code[:120], job["id"]),
         )
         log.error("jobs.failed", job_id=job["id"], job_type=job["type"], error_code=code[:120], dead=dead)
+        if dead and job["type"] in DEAD_HANDLERS:
+            try:
+                DEAD_HANDLERS[job["type"]](conn, job["payload"])
+            except Exception as dead_exc:
+                log.error("jobs.dead_handler_failed", job_id=job["id"], error_type=type(dead_exc).__name__)
         return True
     conn.execute(
         "UPDATE jobs SET state = 'done', locked_by = NULL, last_error = NULL WHERE id = %s", (job["id"],)

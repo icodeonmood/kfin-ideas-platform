@@ -7,25 +7,31 @@ import struct
 import zlib
 
 
-def pdf(pages: list[str]) -> bytes:
+def pdf(pages: list[str], comment: str | None = None) -> bytes:
     """A small valid PDF with one text line per page (a real text layer). An empty string makes a page with no
-    text layer, which the checks treat as scanned."""
+    text layer, which the checks treat as scanned. `comment` adds a sticky-note annotation to page 1."""
     objects: list[bytes] = []
     n_pages = len(pages)
     font_obj = 3 + 2 * n_pages
+    annot_obj = font_obj + 1
     kids = " ".join(f"{3 + 2 * i} 0 R" for i in range(n_pages))
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {n_pages} >>".encode())
     for i, text in enumerate(pages):
         content_obj = 4 + 2 * i
+        annots = f" /Annots [{annot_obj} 0 R]" if comment and i == 0 else ""
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_obj} 0 R "
-            f"/Resources << /Font << /F1 {font_obj} 0 R >> >> >>".encode()
+            f"/Resources << /Font << /F1 {font_obj} 0 R >> >>{annots} >>".encode()
         )
         safe = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         stream = f"BT /F1 12 Tf 72 720 Td ({safe}) Tj ET".encode() if text else b"0 0 1 rg 72 72 100 100 re f"
         objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    if comment:
+        objects.append(
+            f"<< /Type /Annot /Subtype /Text /Rect [72 600 92 620] /Contents ({comment}) >>".encode()
+        )
     out = io.BytesIO()
     out.write(b"%PDF-1.4\n")
     offsets = []
@@ -83,6 +89,20 @@ def xlsx(rows: list[list[str]], sheet: str = "Data") -> bytes:
 
 def csv(rows: list[list[str]]) -> bytes:
     return ("\n".join(",".join(r) for r in rows) + "\n").encode()
+
+
+def with_part(office: bytes, name: str, xml: str) -> bytes:
+    """Add (or replace) one XML part inside an Office file."""
+    import zipfile
+
+    src = zipfile.ZipFile(io.BytesIO(office))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for item in src.infolist():
+            if item.filename != name:
+                z.writestr(item, src.read(item.filename))
+        z.writestr(name, xml)
+    return out.getvalue()
 
 
 def eicar_docx() -> bytes:

@@ -58,6 +58,10 @@ function stateText(a: AttachmentItem): string {
       return "Checked. Ready for the committee.";
     case "rejected": {
       const code = a.rejection?.code;
+      if (code === "too_big")
+        return "Not accepted: this file is too big for us to check fully. It has been deleted. Attach a smaller extract.";
+      if (code === "check_failed")
+        return "We couldn't finish checking this file, so it has been deleted. Please attach it again later.";
       if (code === "virus") return "Not accepted: our virus check flagged this file. It has been deleted.";
       if (code === "unreadable")
         return "Not accepted: we couldn't open this file to check it. It has been deleted. Try saving it again or as a PDF.";
@@ -117,11 +121,22 @@ export function Attachments(p: {
           return u ? { ...f, state: u.state, rejection: u.rejection } : f;
         }),
       );
+      // Say each finished check out loud through the status line (the list itself is not a live region).
+      const finished = updates.filter(
+        (u): u is AttachmentItem => !!u && u.state !== "quarantine" && u.state !== "processing",
+      );
+      if (finished.length) {
+        setMessage({
+          text: finished.map((u) => `${u.name}: ${stateText(u)}`).join(" "),
+          error: finished.some((u) => u.state === "rejected"),
+        });
+      }
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [pendingKey, onChange]);
 
   async function attach(file: File) {
+    if (busy) return;
     setMessage(null);
     if (file.size > p.limits.max_mb_each * 1024 * 1024) {
       setMessage({ text: uploadError("file_too_large", p.limits, kinds), error: true });
@@ -154,6 +169,8 @@ export function Attachments(p: {
     if (res?.status === 204) {
       onChange((prev) => prev.filter((f) => f.id !== a.id));
       setMessage({ text: `${a.name} is removed.`, error: false });
+      input.current?.focus(); // the button that had focus is gone
+      return;
     } else {
       setMessage({ text: "We couldn't remove that file just now. Please try again.", error: true });
     }
@@ -174,7 +191,19 @@ export function Attachments(p: {
         type="file"
         accept={p.limits.allowed.map((k) => ACCEPT[k] ?? "").join(",")}
         aria-describedby="f-attachments-hint"
-        disabled={busy || full}
+        aria-disabled={busy || full ? true : undefined}
+        onClick={(e) => {
+          // Not `disabled`: that would drop keyboard focus while a file uploads.
+          if (busy || full) {
+            e.preventDefault();
+            setMessage({
+              text: full
+                ? uploadError("too_many_files", p.limits, kinds)
+                : "Please wait until this file is attached.",
+              error: full,
+            });
+          }
+        }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void attach(file);

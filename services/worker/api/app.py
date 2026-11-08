@@ -65,11 +65,12 @@ def post_commit() -> dict[str, Any]:
 
 
 @app.post("/internal/attachments", dependencies=[Depends(require_token)])
-async def upload_attachment(
+def upload_attachment(
     file: UploadFile, idea_uuid: str = Form(...), uploaded_by_code: str = Form(...)
 ) -> JSONResponse:
+    # A plain def: FastAPI runs it in a thread, so the store and database calls never block the event loop.
     limit = attachments.limits().max_bytes_each
-    data = await file.read(limit + 1)
+    data = file.file.read(limit + 1)
     try:
         with connect(autocommit=True) as conn:
             body = attachments.accept(

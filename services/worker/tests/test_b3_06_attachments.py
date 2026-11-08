@@ -226,7 +226,7 @@ def test_word_tables_and_spreadsheet_columns_are_checked(setup: Any) -> None:
     )
     r = settle(b, upload(b, draft, "owners.xlsx", sheet, "xlsx").json()["id"])
     assert r["state"] == "rejected"
-    assert r["rejection"]["code"] == "column" and r["rejection"]["location"] == "sheet Data, column A"
+    assert r["rejection"]["code"] == "column" and r["rejection"]["location"] == "sheet 1, column A"
 
     ok = files.xlsx(
         [["Week", "Forms", "Minutes"]] + [[f"W{i}", str(100 + i), str(14 * (100 + i))] for i in range(8)]

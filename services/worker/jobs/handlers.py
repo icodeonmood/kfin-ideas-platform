@@ -6,24 +6,35 @@ from typing import Any
 
 from core.db import Conn
 from core.logging import get_logger
-from jobs.runner import handler
+from jobs.runner import handler, on_dead
 
 log = get_logger("jobs.handlers")
 
 
 @handler("drafts.purge")
 def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
-    """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store."""
+    """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.
+    Each draft is locked and its expiry re-checked, so a save that just extended it keeps its files."""
     from attachments import service
 
-    files = conn.execute(
-        "SELECT a.id FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
-        "WHERE i.stage = 'draft' AND i.draft_expires_at < now()"
+    candidates = conn.execute(
+        "SELECT id FROM ideas WHERE stage = 'draft' AND draft_expires_at < now()"
     ).fetchall()
-    for f in files:
-        service.remove(conn, f["id"])
-    deleted = conn.execute("DELETE FROM ideas WHERE stage = 'draft' AND draft_expires_at < now()").rowcount
-    log.info("drafts.purged", deleted_count=deleted, file_count=len(files))
+    deleted = files = 0
+    for c in candidates:
+        with conn.transaction():
+            live = conn.execute(
+                "SELECT id FROM ideas WHERE id = %s AND stage = 'draft' AND draft_expires_at < now() FOR UPDATE",
+                (c["id"],),
+            ).fetchone()
+            if live is None:
+                continue
+            for f in conn.execute("SELECT id FROM attachments WHERE idea_uuid = %s", (c["id"],)).fetchall():
+                service.remove(conn, f["id"])
+                files += 1
+            conn.execute("DELETE FROM ideas WHERE id = %s", (c["id"],))
+            deleted += 1
+    log.info("drafts.purged", deleted_count=deleted, file_count=files)
 
 
 @handler("attachment.process")
@@ -32,3 +43,10 @@ def process_attachment(conn: Conn, payload: dict[str, Any]) -> None:
     from attachments import service
 
     service.process(conn, str(payload["attachment_id"]))
+
+
+@on_dead("attachment.process")
+def attachment_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    from attachments import service
+
+    service.give_up(conn, str(payload["attachment_id"]))

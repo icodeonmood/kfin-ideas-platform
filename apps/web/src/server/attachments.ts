@@ -60,7 +60,7 @@ export async function upload(me: CurrentUser, ideaUuid: string, file: File) {
     body: form,
     signal: AbortSignal.timeout(60_000),
   });
-  const body = (await res.json()) as Record<string, unknown>;
+  const body = (await res.json().catch(() => ({ error: "upload_failed" }))) as Record<string, unknown>;
   if (!res.ok) throw new SubmissionError(res.status, String(body.error ?? "upload_failed"));
   return body;
 }

@@ -9,8 +9,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const me = await authorize("submit");
   if (me instanceof NextResponse) return me;
   // Refuse oversize uploads before reading the body (the proxy would otherwise buffer and truncate it).
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > MAX_UPLOAD_BYTES + 64 * 1024)
+  const header = request.headers.get("content-length");
+  if (header === null) return NextResponse.json({ error: "length_required" }, { status: 411 }); // no chunked bodies
+  if (Number(header) > MAX_UPLOAD_BYTES + 64 * 1024)
     return NextResponse.json({ error: "file_too_large" }, { status: 413 });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");

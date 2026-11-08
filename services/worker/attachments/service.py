@@ -16,8 +16,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from attachments import clamav, store
-from attachments.extract import EXTRACTORS
+from attachments import clamav, sandbox, store
 from attachments.filetype import sniff
 from core.config import get_settings
 from core.db import Conn
@@ -91,9 +90,11 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data
         raise AttachmentRefused(415, "type_not_allowed")
     s = get_settings()
     with conn.transaction():
-        conn.execute(
-            "SELECT id FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)
-        )  # serialise uploads per idea
+        idea = conn.execute(
+            "SELECT stage FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)
+        ).fetchone()  # serialise uploads per idea; files can only change while it is a draft
+        if idea is None or idea["stage"] != "draft":
+            raise AttachmentRefused(409, "not_a_draft")
         used = conn.execute(
             "SELECT count(*) AS n, coalesce(sum(bytes), 0) AS total FROM attachments "
             "WHERE idea_uuid = %s AND state <> 'rejected'",
@@ -181,14 +182,12 @@ def process(conn: Conn, att_id: str) -> str:
     if kind in lim.held:
         conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
         return "awaiting_check"
-    extractor = EXTRACTORS.get(kind or "")
-    if extractor is None:
-        return reject({"type": "unreadable", "code": "unreadable", "location": "the whole file"})
     try:
-        extracted = extractor(data)
-    except Exception as exc:
-        log.warning("attachments.unreadable", attachment_id=att_id, error_type=type(exc).__name__)
-        return reject({"type": "unreadable", "code": "unreadable", "location": "the whole file"})
+        extracted = sandbox.extract(kind or "", data)
+    except sandbox.ExtractionFailed as exc:
+        log.warning("attachments.unreadable", attachment_id=att_id, reason_code=exc.code)
+        code = "too_big" if exc.code == "too_big" else "unreadable"
+        return reject({"type": code, "code": code, "location": "the whole file"})
     if extracted.scanned:
         conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
         return "awaiting_check"
@@ -196,9 +195,14 @@ def process(conn: Conn, att_id: str) -> str:
     if finding:
         return reject(finding)
 
-    store.put(s.s3_bucket_clean, row["store_key"], data)
-    store.delete(s.s3_bucket_quarantine, row["store_key"])
-    conn.execute("UPDATE attachments SET state = 'clean', rejection = NULL WHERE id = %s", (att_id,))
+    # Commit under the row lock: a file removed (or its draft purged) during the checks is never copied to clean.
+    with conn.transaction():
+        live = conn.execute("SELECT state FROM attachments WHERE id = %s FOR UPDATE", (att_id,)).fetchone()
+        if live is None or live["state"] != "processing":
+            return live["state"] if live else "missing"
+        store.put(s.s3_bucket_clean, row["store_key"], data)
+        store.delete(s.s3_bucket_quarantine, row["store_key"])
+        conn.execute("UPDATE attachments SET state = 'clean', rejection = NULL WHERE id = %s", (att_id,))
     log.info("attachments.clean", attachment_id=att_id, file_type=kind)
     return "clean"
 
@@ -215,9 +219,25 @@ def content(conn: Conn, att_id: str) -> tuple[bytes, str, str]:
 
 def remove(conn: Conn, att_id: str) -> None:
     s = get_settings()
-    row = conn.execute("SELECT store_key FROM attachments WHERE id = %s", (att_id,)).fetchone()
-    if row is None:
+    with conn.transaction():  # waits for a check that is committing this file, then removes every copy
+        row = conn.execute("SELECT store_key FROM attachments WHERE id = %s FOR UPDATE", (att_id,)).fetchone()
+        if row is None:
+            return
+        for bucket in (s.s3_bucket_quarantine, s.s3_bucket_clean):
+            store.delete(bucket, row["store_key"])
+        conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))
+
+
+def give_up(conn: Conn, att_id: str) -> None:
+    """The checks could not finish after every retry (for example the scanner stayed down): reject the file
+    so the person is told, and delete the quarantine copy."""
+    s = get_settings()
+    row = conn.execute("SELECT store_key, state FROM attachments WHERE id = %s", (att_id,)).fetchone()
+    if row is None or row["state"] not in ("quarantine", "processing"):
         return
-    for bucket in (s.s3_bucket_quarantine, s.s3_bucket_clean):
-        store.delete(bucket, row["store_key"])
-    conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))
+    store.delete(s.s3_bucket_quarantine, row["store_key"])
+    reason = {"type": "check_failed", "code": "check_failed", "location": "the whole file"}
+    conn.execute(
+        "UPDATE attachments SET state = 'rejected', rejection = %s WHERE id = %s", (Jsonb(reason), att_id)
+    )
+    log.warning("attachments.check_failed", attachment_id=att_id)
