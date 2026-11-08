@@ -24,10 +24,12 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from gateway import run_agent
 from pii.patterns import scan
 from pii.tagger import tag_payload
 from rules import load_rule
-from scan.pipeline import load_result
+from scan.matching import shown
+from scan.pipeline import decide, load_result, thresholds
 from sla.calendar import add_working_days, limit_wd
 
 log = get_logger("scan.save")
@@ -44,57 +46,80 @@ def _hook_after_idea_update(conn: Conn, idea_uuid: str) -> None:
     """Test seam for AT-B5-08 (an injected failure after the ideas update must roll everything back)."""
 
 
-def _target(result: dict[str, Any], ref: str | None) -> dict[str, Any] | None:
-    if not ref or not ref.startswith("m"):
+def _target(conn: Conn, result: dict[str, Any], ref: str | None, owner_code: str) -> dict[str, Any] | None:
+    """The candidate behind a card the person was actually shown (same list and numbering as the view)."""
+    if not ref:
         return None
-    try:
-        i = int(ref[1:]) - 1
-    except ValueError:
-        return None
-    cands = (result.get("match") or {}).get("candidates") or []
-    if not 0 <= i < len(cands):
-        return None
-    c: dict[str, Any] = cands[i]
-    # Only what the person was shown: same or related, never committee-only.
-    return c if c["label"] in ("same", "related") and c["visibility"] != "committee" else None
+    items, _ = shown(conn, result.get("match") or {}, owner_code)
+    return next((c for r, c, _row in items if r == ref), None)
+
+
+def _owned_by(conn: Conn, cid: str, contributor_code: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM idea_links WHERE idea_id = %s AND contributor_code = %s AND link_type = 'originator' "
+        "UNION SELECT 1 FROM ideas WHERE idea_id = %s AND contributor_code = %s LIMIT 1",
+        (cid, contributor_code, cid, contributor_code),
+    ).fetchone()
+    return row is not None
+
+
+def _already_linked(conn: Conn, cid: str, contributor_code: str, link_type: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM idea_links WHERE coalesce(idea_id, cluster_id, solution_id) = %s AND contributor_code = %s "
+        "AND link_type = %s LIMIT 1",
+        (cid, contributor_code, link_type),
+    ).fetchone()
+    return row is not None
+
+
+def _checked_text(conn: Conn, idea_id: str, text: str) -> str:
+    """The person's free text on a choice: patterns, then the gatekeeper (outside any transaction), then tags."""
+    if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
+        raise SaveRefused(422, "personal_data")
+    gk = run_agent(
+        "gatekeeper", {"mode": "submission", "submission": {"choice_text": text}}, idea_id, conn=conn
+    )
+    if decide(gk.data, thresholds()) == "blocked":
+        raise SaveRefused(422, "personal_data")
+    return str(tag_payload(conn, idea_id, {"t": text}).payload["t"])
 
 
 def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]) -> dict[str, Any]:
     choice = body.get("choice")
     if choice not in CHOICES:
         raise SaveRefused(400, "choice_required")
-    text = str(body.get("text") or "").strip()[:1000]
+    needs_text = choice in ("team_up", "different", "something_changed")
+    text = str(body.get("text") or "").strip()[:1000] if needs_text else ""
     canvas_rules = load_rule(get_settings().company_repo_path, "thresholds").data["canvas"]
 
-    with conn.transaction():
-        idea = conn.execute(
-            "SELECT id, idea_id, stage, contributor_code, visibility FROM ideas WHERE id = %s FOR UPDATE",
-            (idea_uuid,),
-        ).fetchone()
-        if idea is None or idea["contributor_code"] != contributor_code:
-            raise SaveRefused(404, "not_found")
-        scan_row = conn.execute(
-            "SELECT * FROM scans WHERE idea_uuid = %s FOR UPDATE", (idea_uuid,)
-        ).fetchone()
-        if idea["stage"] != "scanning" or scan_row is None or scan_row["outcome"] != "ready":
-            raise SaveRefused(409, "not_available_now")
-        result = load_result(scan_row)
-        idea_id = idea["idea_id"]
-
-        if choice == "withdraw":
-            conn.execute(
-                "UPDATE ideas SET stage = 'withdrawn', raw_encrypted = NULL WHERE id = %s", (idea_uuid,)
-            )
-            conn.execute("UPDATE scans SET result_encrypted = NULL WHERE idea_uuid = %s", (idea_uuid,))
-            log.info("scan.saved", idea_uuid=idea_uuid, choice=choice)
-            return {"stage": "withdrawn", "idea_id": idea_id}
-
-        card = result.get("confirmed")
-        if card is None:
+    # Checks first, with no lock held: they may call the gatekeeper.
+    idea = conn.execute(
+        "SELECT id, idea_id, stage, contributor_code FROM ideas WHERE id = %s", (idea_uuid,)
+    ).fetchone()
+    if idea is None or idea["contributor_code"] != contributor_code:
+        raise SaveRefused(404, "not_found")
+    scan_row = conn.execute("SELECT * FROM scans WHERE idea_uuid = %s", (idea_uuid,)).fetchone()
+    if idea["stage"] != "scanning" or scan_row is None or scan_row["outcome"] != "ready":
+        raise SaveRefused(409, "not_available_now")
+    idea_id = idea["idea_id"]
+    result = load_result(scan_row)
+    target: dict[str, Any] | None = None
+    tagged_text: str | None = None
+    if choice != "withdraw":
+        if result.get("confirmed") is None:
             raise SaveRefused(409, "confirm_first")
-        target = _target(result, body.get("ref"))
-        if choice in ("team_up", "plus_one", "different", "something_changed") and target is None:
-            raise SaveRefused(400, "match_required")
+        if choice in ("team_up", "plus_one", "different", "something_changed"):
+            target = _target(conn, result, body.get("ref"), contributor_code)
+            if target is None:
+                raise SaveRefused(400, "match_required")
+            if target["type"] == "idea" and _owned_by(conn, target["cid"], contributor_code):
+                raise SaveRefused(409, "own_idea")
+            kind = {
+                "team_up": "adoption" if target["type"] == "solution" else "joiner",
+                "plus_one": "plus_one",
+            }
+            if choice in kind and _already_linked(conn, target["cid"], contributor_code, kind[choice]):
+                raise SaveRefused(409, "already_on_it")
         if (
             choice == "team_up"
             and target
@@ -106,9 +131,31 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
             raise SaveRefused(422, "one_line_required")
         if choice == "team_up" and target and target["type"] == "decision":
             raise SaveRefused(400, "not_for_decisions")
-        if text and any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
-            raise SaveRefused(422, "personal_data")
-        tagged_text = tag_payload(conn, idea_id, {"t": text}).payload["t"] if text else None
+        if text:
+            tagged_text = _checked_text(conn, idea_id, text)
+
+    with conn.transaction():
+        locked = conn.execute(
+            "SELECT i.stage, s.outcome, s.updated_at FROM ideas i JOIN scans s ON s.idea_uuid = i.id "
+            "WHERE i.id = %s FOR UPDATE OF i, s",
+            (idea_uuid,),
+        ).fetchone()
+        if (
+            locked is None
+            or locked["stage"] != "scanning"
+            or locked["outcome"] != "ready"
+            or (locked["updated_at"] != scan_row["updated_at"])
+        ):
+            raise SaveRefused(409, "not_available_now")  # saved, withdrawn or re-confirmed meanwhile
+
+        if choice == "withdraw":
+            conn.execute(
+                "UPDATE ideas SET stage = 'withdrawn', raw_encrypted = NULL WHERE id = %s", (idea_uuid,)
+            )
+            conn.execute("UPDATE scans SET result_encrypted = NULL WHERE idea_uuid = %s", (idea_uuid,))
+            log.info("scan.saved", idea_uuid=idea_uuid, choice=choice)
+            return {"stage": "withdrawn", "idea_id": idea_id}
+        card = result["confirmed"]
 
         stage = "scanned"
         link: tuple[str, str] | None = None  # (link_type, target column)

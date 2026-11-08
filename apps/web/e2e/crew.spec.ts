@@ -36,7 +36,7 @@ async function quickCapture(page: Page, persona: string, noticed: string) {
 
 test("a colleague's idea shows as a card with nothing of theirs on it; teaming up (AT-B5-05, AT-B5-06)", async ({
   browser,
-}) => {
+}, testInfo) => {
   test.setTimeout(90_000);
   const stamp = Date.now().toString(36);
   const theirs = `${SHARED}. Pune team note ${stamp}: forms wait in the outward register for a day.`;
@@ -54,7 +54,9 @@ test("a colleague's idea shows as a card with nothing of theirs on it; teaming u
 
   const ctxB = await browser.newContext();
   const b = await ctxB.newPage();
-  await quickCapture(b, PERSONAS.reviewer, `${SHARED}. Our Jaipur branch sees the same delay.`);
+  // A different colleague per viewport, so the two runs never compete for the same join.
+  const joiner = testInfo.project.name === "desktop" ? PERSONAS.reviewer : PERSONAS.core;
+  await quickCapture(b, joiner, `${SHARED}. Our Jaipur branch sees the same delay.`);
   await expectNoSeriousAxeIssues(b);
   await b.getByRole("button", { name: "Looks right" }).click();
   const crew = b.getByRole("heading", { level: 3, name: "Find your crew" });

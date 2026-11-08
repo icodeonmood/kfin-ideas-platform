@@ -97,6 +97,7 @@ def _graph(conn: Conn, gl_ids: list[str]) -> list[str]:
 
 
 def _keyword_query(text: str) -> str:
+    text = re.sub(r"\[\s?\[[A-Z_]+_[0-9]+\]\s?\]", " ", text)  # tags carry no topic words
     words = [w for w in dict.fromkeys(re.findall(r"[A-Za-z][A-Za-z0-9]{2,}", text.lower())) if w not in STOP]
     return " or ".join(words[:40])
 

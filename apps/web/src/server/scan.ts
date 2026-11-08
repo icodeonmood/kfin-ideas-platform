@@ -210,7 +210,7 @@ export async function chooseMatch(me: CurrentUser, id: string, input: unknown) {
   const body = (input ?? {}) as { choice?: unknown; ref?: unknown; text?: unknown };
   const choice = SAVE_CHOICES.find((c) => c === body.choice);
   if (!choice) throw new SubmissionError(400, "choice_required");
-  const ref = typeof body.ref === "string" && /^m[0-9]{1,2}$/.test(body.ref) ? body.ref : null;
+  const ref = typeof body.ref === "string" && /^m[0-9a-f]{10}$/.test(body.ref) ? body.ref : null;
   const text = typeof body.text === "string" ? body.text.slice(0, 1000) : "";
   const res = await workerFetch(`/internal/scans/${encodeURIComponent(id)}/save`, {
     method: "POST",

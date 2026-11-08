@@ -128,3 +128,11 @@ def test_uncaught_exceptions_log_the_type_only() -> None:
     combined = out.stdout + out.stderr
     assert "SIP forms" not in combined and "example.com" not in combined
     assert '"error_type":"ValueError"' in combined
+
+
+def test_row_uuids_with_digit_runs_are_safe_values() -> None:
+    """A random UUID can contain a run like 998877665544 (a phone-shaped number); it is an ID, not personal data."""
+    from pii.log_rules import scan_log_line
+
+    line = '{"event":"scan.saved","idea_uuid":"1b2c3d4e-5f60-4a1b-9c2d-998877665544"}'
+    assert list(scan_log_line(line, 1)) == []

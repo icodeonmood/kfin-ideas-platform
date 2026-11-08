@@ -229,7 +229,9 @@ class Indexer:
         kfin: dict[str, Any] = meta.get("kfin") if isinstance(meta.get("kfin"), dict) else {}  # type: ignore[assignment]
         own_id = _text(kfin.get("id"))
         trust = trust_tier(meta)
-        visibility = kfin.get("visibility") if kfin.get("visibility") in ("org", "committee") else "org"
+        visibility = (
+            "org" if kfin.get("visibility", "org") == "org" else "committee"
+        )  # unknown values fail closed
         stage = _text(kfin.get("stage"))
         self._delete(conn, rel)
         conn.execute(

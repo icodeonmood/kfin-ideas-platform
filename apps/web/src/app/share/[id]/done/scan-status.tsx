@@ -25,7 +25,25 @@ type Status = {
   };
   ready?: Ready;
   stage: string;
+  final?: string;
 };
+
+const FINAL: Record<string, { title: string; text: string }> = {
+  scanned: {
+    title: "Your idea is with the review desk",
+    text: "You will hear from us within 5 working days.",
+  },
+  merged: { title: "You have teamed up", text: "We have added you to the idea. You will hear at each step." },
+  adoption_requested: {
+    title: "We have asked the team that runs it",
+    text: "They will get in touch about taking it to your area.",
+  },
+  withdrawn: {
+    title: "Your idea is withdrawn",
+    text: "Thanks for sharing it. You can share a new idea any time.",
+  },
+};
+const MOVED_ON = { title: "Your idea has moved on", text: "Track where it is in My ideas." };
 
 const STEPS = [
   { key: "gatekeeper", text: "Checking for personal details" },
@@ -88,7 +106,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
     return () => clearInterval(timer);
   }, [id, running, waiting]);
 
-  const outcomeKey = status?.state === "done" ? status.outcome : status?.state;
+  const outcomeKey = status?.state === "done" ? `${status.outcome}:${status.final ?? ""}` : status?.state;
   useEffect(() => {
     if (outcomeKey && outcomeKey !== "queued" && outcomeKey !== "running") outcomeRef.current?.focus();
   }, [outcomeKey]);
@@ -177,15 +195,17 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
         </div>
       ) : null}
 
+      {status?.state === "done" && status.outcome === "ready" && status.final ? (
+        <div className="notice">
+          <h3 ref={outcomeRef} tabIndex={-1}>
+            {(FINAL[status.final] ?? MOVED_ON).title}
+          </h3>
+          <p>{(FINAL[status.final] ?? MOVED_ON).text}</p>
+        </div>
+      ) : null}
+
       {status?.state === "done" && status.outcome === "ready" && status.ready ? (
-        <Crew
-          id={id}
-          ready={status.ready}
-          stage={status.stage}
-          labelFor={label}
-          headingRef={outcomeRef}
-          onChanged={refresh}
-        />
+        <Crew id={id} ready={status.ready} labelFor={label} headingRef={outcomeRef} onChanged={refresh} />
       ) : null}
 
       {status?.state === "done" && status.outcome === "blocked" && status.blocked ? (

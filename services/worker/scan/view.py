@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from core import killswitch
 from core.config import get_settings
 from core.db import Conn
 from pii import vault
@@ -46,7 +47,8 @@ def _suggested(canvas: dict[str, Any]) -> list[dict[str, Any]]:
 
 def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[str, Any] | None:
     row = conn.execute(
-        "SELECT s.*, i.idea_id, i.stage FROM scans s JOIN ideas i ON i.id = s.idea_uuid WHERE s.idea_uuid = %s",
+        "SELECT s.*, i.idea_id, i.stage, i.contributor_code FROM scans s JOIN ideas i ON i.id = s.idea_uuid "
+        "WHERE s.idea_uuid = %s",
         (idea_uuid,),
     ).fetchone()
     if row is None:
@@ -96,6 +98,8 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "override_label": rules.get("override_label", "No, this is an idea"),
             "override_reason_min_chars": int(rules.get("override_reason_min_chars", 15)),
         }
+    elif row["outcome"] == "ready" and row["stage"] != "scanning":
+        out["final"] = row["stage"]  # saved, joined, withdrawn or moved on: nothing more to choose here
     elif row["outcome"] == "ready" and "canvas_assist" in result:
         ca = result.get("confirmed") or result["canvas_assist"]
         out["ready"] = {
@@ -104,6 +108,9 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "suggested": _suggested(ca),
             "neutral_summary": ca["neutral_summary"],
             "next_best": ca["strength"]["next_best"],
-            "matches": submitter_cards(conn, result["match"]) if "match" in result else [],
+            "matches": submitter_cards(conn, result["match"], row["contributor_code"])
+            if "match" in result
+            else [],
+            "matches_hidden": not killswitch.is_on("matching.show", conn),
         }
     return out

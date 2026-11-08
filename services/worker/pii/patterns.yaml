@@ -116,5 +116,6 @@ log_rules:
   forbidden_field_names: [name, full_name, first_name, last_name, user_name, display_name, person_name, employee_name, html, markdown]
   allowed_field_names: [reason_code, reason_codes]   # codes from rules/reason-codes.md, never free text
   # Values that cannot be personal data and are skipped by the value scan: commit and file hashes (32+ hex
-  # characters with at least one letter, so a bare number never qualifies) and the platform's coded IDs.
-  safe_value_regex: '^(?:(?=[0-9a-f]*[a-f])[0-9a-f]{32,64}|(?:IDEA|SUB|ATT)-[0-9]{4}-[0-9]{6}|CTR-[0-9a-f]{6,8}|REV-[0-9]{4}|(?:CL|SOL|WG)-[0-9]{4}|(?:DEC|HO|APL)-[0-9]{4}-[0-9]{4}|TH-[0-9]{3})$'
+  # characters with at least one letter, so a bare number never qualifies), row UUIDs (a random UUID can hold a
+  # digit run that looks like a phone or account number) and the platform's coded IDs.
+  safe_value_regex: '^(?:(?=[0-9a-f]*[a-f])[0-9a-f]{32,64}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:IDEA|SUB|ATT)-[0-9]{4}-[0-9]{6}|CTR-[0-9a-f]{6,8}|REV-[0-9]{4}|(?:CL|SOL|WG)-[0-9]{4}|(?:DEC|HO|APL)-[0-9]{4}-[0-9]{4}|TH-[0-9]{3})$'

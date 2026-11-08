@@ -16,7 +16,7 @@ from pii.patterns import scan
 from pii.tagger import tag_payload
 from rules import load_rule
 from scan.matching import card_text, run_matching
-from scan.pipeline import _save_result, contestable, decide, load_result, thresholds
+from scan.pipeline import _save_result, decide, load_result, thresholds
 
 EMPTY: dict[str, Any] = {
     "one_line": None,
@@ -58,9 +58,12 @@ def edit_share(before: str, after: str) -> float:
 
 
 def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM scans WHERE idea_uuid = %s", (idea_uuid,)).fetchone()
-    if row is None or row["state"] != "done" or row["outcome"] != "ready":
-        raise ConfirmRefused(409, "not_available_now")
+    row = conn.execute(
+        "SELECT s.*, i.stage FROM scans s JOIN ideas i ON i.id = s.idea_uuid WHERE s.idea_uuid = %s",
+        (idea_uuid,),
+    ).fetchone()
+    if row is None or row["state"] != "done" or row["outcome"] != "ready" or row["stage"] != "scanning":
+        raise ConfirmRefused(409, "not_available_now")  # only before the person has chosen
     result = load_result(row)
     card: dict[str, Any] = dict(result.get("confirmed") or result["canvas_assist"])
     provenance: dict[str, str] = dict(card.get("provenance") or {})
@@ -96,7 +99,7 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
             raise ConfirmRefused(422, "personal_data", [{"field": field, "label": hits[0].label}])
     if edits:
         gk = run_agent("gatekeeper", {"mode": "submission", "submission": edits}, idea_id, conn=conn)
-        if decide(gk.data, thresholds()) == "blocked" and not contestable(gk.data):
+        if decide(gk.data, thresholds()) == "blocked":  # any block: edits are taken out, not contested
             raise ConfirmRefused(
                 422, "personal_data", [{"field": s["field"]} for s in gk.data["personal_data"]["spans"]]
             )
@@ -115,5 +118,14 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
     if rerun:
         result["match"] = run_matching(conn, idea_id, card)
     result["confirmed"] = card
-    _save_result(conn, idea_uuid, result)
+    # Write only if nothing changed since we read it (no lock is held across the model calls above).
+    with conn.transaction():
+        live = conn.execute(
+            "SELECT s.updated_at, i.stage FROM scans s JOIN ideas i ON i.id = s.idea_uuid "
+            "WHERE s.idea_uuid = %s FOR UPDATE OF s, i",
+            (idea_uuid,),
+        ).fetchone()
+        if live is None or live["stage"] != "scanning" or live["updated_at"] != row["updated_at"]:
+            raise ConfirmRefused(409, "changed_meanwhile")
+        _save_result(conn, idea_uuid, result)
     return {"rerun_match": rerun}

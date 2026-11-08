@@ -120,6 +120,7 @@ def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
 def scan_confirm(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     """The owner keeps or clears suggestions and may edit the one line and details (the web app checked
     ownership). Re-runs the match when the text changed by more than the rule's share (AT-B5-07)."""
+    from gateway import AgentFailed
     from scan.confirm import ConfirmRefused, confirm
     from scan.view import view
 
@@ -131,6 +132,8 @@ def scan_confirm(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
             out = confirm(conn, idea_uuid, idea["idea_id"], body)
         except ConfirmRefused as exc:
             return JSONResponse({"error": exc.code, "details": exc.details}, status_code=exc.status)
+        except AgentFailed as exc:  # switched off, leak check, route down: a clean answer, never a 500
+            return JSONResponse({"error": "checks_unavailable", "code": exc.code}, status_code=503)
         return JSONResponse(
             {**out, "view": view(conn, idea_uuid, "real")}, headers={"Cache-Control": "no-store"}
         )
@@ -139,6 +142,7 @@ def scan_confirm(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
 @app.post("/internal/scans/{idea_uuid}/save", dependencies=[Depends(require_token)])
 def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     """The person's choice and the one-transaction save (§4.2 step 8)."""
+    from gateway import AgentFailed
     from scan.save import SaveRefused, save
 
     code = str(body.get("contributor_code") or "")
@@ -147,4 +151,6 @@ def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
             out = save(conn, idea_uuid, code, body)
         except SaveRefused as exc:
             return JSONResponse({"error": exc.code}, status_code=exc.status)
+        except AgentFailed as exc:
+            return JSONResponse({"error": "checks_unavailable", "code": exc.code}, status_code=503)
     return JSONResponse(out)

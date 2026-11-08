@@ -19,8 +19,9 @@ CODE = "CTR-0a1b2c"
 CONTEXT = "Our branch sees the same thing with every lumpsum form too"
 
 
-def ready(db: Any, suffix: str = "") -> tuple[str, str, dict[str, str]]:
+def ready(db: Any, suffix: str = "", code: str = CODE) -> tuple[str, str, dict[str, str]]:
     idea = submitted(db, canvas(TEXT + suffix + "."))
+    db.execute("UPDATE ideas SET contributor_code = %s WHERE id = %s", (code, idea))
     assert pipeline.run(db, idea) == "done"
     idea_id = db.execute("SELECT idea_id FROM ideas WHERE id = %s", (idea,)).fetchone()["idea_id"]
     shown = view(db, idea, "real")
@@ -83,10 +84,10 @@ def test_plus_one_adoption_different_and_withdraw(world: Any) -> None:
         == "plus_one"
     )
 
-    idea, idea_id, refs = ready(db, " (b)")
+    idea, idea_id, refs = ready(db, " (b)", "CTR-0b0b0b")
     confirm(db, idea, idea_id, {})
     assert (
-        save.save(db, idea, CODE, {"choice": "team_up", "ref": refs["solution"]})["stage"]
+        save.save(db, idea, "CTR-0b0b0b", {"choice": "team_up", "ref": refs["solution"]})["stage"]
         == "adoption_requested"
     )
     assert (
@@ -99,15 +100,15 @@ def test_plus_one_adoption_different_and_withdraw(world: Any) -> None:
         "SELECT 1 FROM comms_log WHERE event = 'adoption.requested' AND message_ref LIKE %s", (f"{idea_id}%",)
     ).fetchone()
 
-    idea, idea_id, refs = ready(db, " (c)")
+    idea, idea_id, refs = ready(db, " (c)", "CTR-0c0c0c")
     confirm(db, idea, idea_id, {})
     with pytest.raises(save.SaveRefused) as needs_line:
-        save.save(db, idea, CODE, {"choice": "different", "ref": refs["idea"]})
+        save.save(db, idea, "CTR-0c0c0c", {"choice": "different", "ref": refs["idea"]})
     assert needs_line.value.code == "one_line_required"
     out = save.save(
         db,
         idea,
-        CODE,
+        "CTR-0c0c0c",
         {"choice": "different", "ref": refs["idea"], "text": "Mine is about lumpsum forms only"},
     )
     assert out["stage"] == "scanned"

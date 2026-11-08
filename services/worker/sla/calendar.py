@@ -19,10 +19,16 @@ def add_working_days(start: dt.datetime, n: int) -> dt.datetime:
     holidays = {dt.date.fromisoformat(str(h["date"])) for h in cal.get("holidays") or []}
     local = start.astimezone(tz)
     day = local.date()
+
+    def working(d: dt.date) -> bool:
+        return d.weekday() not in weekend and d not in holidays
+
+    while not working(day):  # a start on a weekend or holiday counts from the next working day
+        day += dt.timedelta(days=1)
     added = 0
     while added < n:
         day += dt.timedelta(days=1)
-        if day.weekday() not in weekend and day not in holidays:
+        if working(day):
             added += 1
     return dt.datetime.combine(day, local.timetz())
 

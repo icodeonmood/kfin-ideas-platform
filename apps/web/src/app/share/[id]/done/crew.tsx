@@ -24,24 +24,9 @@ export type Ready = {
   neutral_summary: string;
   next_best: string[];
   matches: MatchCard[];
+  matches_hidden?: boolean;
   card: { one_line: string | null; details: string | null };
   confirmed: boolean;
-};
-
-const FINAL: Record<string, { title: string; text: string }> = {
-  scanned: {
-    title: "Your idea is with the review desk",
-    text: "You will hear from us within 5 working days.",
-  },
-  merged: { title: "You have teamed up", text: "We have added you to the idea. You will hear at each step." },
-  adoption_requested: {
-    title: "We have asked the team that runs it",
-    text: "They will get in touch about taking it to your area.",
-  },
-  withdrawn: {
-    title: "Your idea is withdrawn",
-    text: "Thanks for sharing it. You can share a new idea any time.",
-  },
 };
 
 const ERRORS: Record<string, string> = {
@@ -50,6 +35,10 @@ const ERRORS: Record<string, string> = {
   personal_data: "Please take out personal details first.",
   one_line_too_long: "Please keep the one line to 20 words or fewer.",
   details_too_short: "Please tell us a little more (at least 50 characters).",
+  own_idea: "That idea is yours already.",
+  already_on_it: "You are already on this one.",
+  checks_unavailable: "We can't check that just now. Please try again in a few minutes.",
+  changed_meanwhile: "Something changed while you were working. Please check the page and try again.",
 };
 
 function show(value: unknown): string {
@@ -80,14 +69,12 @@ function actionsFor(card: MatchCard): Action[] {
 export function Crew({
   id,
   ready,
-  stage,
   labelFor,
   onChanged,
   headingRef,
 }: {
   id: string;
   ready: Ready;
-  stage: string;
   labelFor: (path: string) => string;
   onChanged: () => Promise<void>;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
@@ -101,13 +88,7 @@ export function Crew({
   const [open, setOpen] = useState<Action | null>(null);
   const [text, setText] = useState("");
   const crewRef = useRef<HTMLHeadingElement>(null);
-  const finalRef = useRef<HTMLHeadingElement>(null);
   const wantCrewFocus = useRef(false);
-  const final = FINAL[stage];
-
-  useEffect(() => {
-    if (final) finalRef.current?.focus();
-  }, [final]);
 
   // After "Looks right", move focus to Find your crew once it has rendered.
   useEffect(() => {
@@ -149,22 +130,16 @@ export function Crew({
   }
 
   async function choose(action: Action) {
-    const out = await post("choose", { choice: action.choice, ref: action.ref, text });
+    const out = await post("choose", {
+      choice: action.choice,
+      ref: action.ref,
+      text: action.needs ? text : "",
+    });
     if (!out) return;
     setOpen(null);
     setText("");
     await onChanged();
   }
-
-  if (final)
-    return (
-      <div className="notice">
-        <h3 ref={finalRef} tabIndex={-1}>
-          {final.title}
-        </h3>
-        <p>{final.text}</p>
-      </div>
-    );
 
   return (
     <div>
@@ -242,12 +217,16 @@ export function Crew({
           <h3 id="crew-title" ref={crewRef} tabIndex={-1}>
             Find your crew
           </h3>
-          {note ? <p className="muted">{note}</p> : null}
-          {ready.matches.length ? (
+          <p className="muted" role="status" aria-live="polite">
+            {note}
+          </p>
+          {ready.matches_hidden ? (
+            <p>We will show you colleagues working on the same thing a little later.</p>
+          ) : ready.matches.length ? (
             <ul className="crew-cards">
               {ready.matches.map((card, i) => (
                 <li key={card.ref ?? `desk-${i}`} className="crew-card">
-                  <h4>{card.heading}</h4>
+                  <h4 id={`crew-card-${card.ref ?? "desk"}`}>{card.heading}</h4>
                   {card.kind !== "with_desk" ? (
                     <>
                       <p>{card.summary ?? "A related idea."}</p>
@@ -285,10 +264,17 @@ export function Crew({
                               type="button"
                               className="button button-secondary"
                               disabled={busy}
+                              aria-describedby={`crew-card-${card.ref}`}
                               aria-expanded={
                                 a.needs ? open?.ref === a.ref && open?.choice === a.choice : undefined
                               }
-                              onClick={() => (a.needs ? setOpen(a) : void choose(a))}
+                              aria-controls={a.needs ? `crew-form-${card.ref}` : undefined}
+                              onClick={() => {
+                                if (a.needs) {
+                                  setText("");
+                                  setOpen(a);
+                                } else void choose(a);
+                              }}
                             >
                               {a.label}
                             </button>
@@ -299,6 +285,7 @@ export function Crew({
                       )}
                       {open && open.ref === card.ref ? (
                         <form
+                          id={`crew-form-${card.ref}`}
                           onSubmit={(e) => {
                             e.preventDefault();
                             void choose(open);
