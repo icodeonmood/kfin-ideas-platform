@@ -11,14 +11,15 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from core import killswitch
 from core.config import get_settings
 from core.crypto import decrypt_json
 from core.db import Conn
 from pii import vault
 from pii.restore import restore
 from repo_writer.render import existing_state
-from views.common import PUBLIC_WORDS, first_area, is_public, public_card, taxonomy_names
-from views.mine import owner_status
+from views.common import first_area, is_public, public_card, taxonomy_names
+from views.mine import OWNER_WORDS, owner_status
 
 EVENT_WORDS = {
     "submitted": "Shared",
@@ -94,8 +95,8 @@ def page(
         return None
     areas, _ = taxonomy_names()
     if view == "public":
-        if not is_public(idea):
-            return None
+        if not is_public(idea) or not killswitch.is_on("wall.public", conn):
+            return None  # the wall switch hides everyone else's view of ideas too (B7 review)
         card = public_card(conn, idea, areas)
         if card is None:
             return None
@@ -114,7 +115,11 @@ def page(
         "strength": idea["strength"],
         "status": owner_status(conn, idea)
         if owner
-        else {"stage": PUBLIC_WORDS.get(idea["stage"], idea["stage"]), "next_step": None, "due": None},
+        else {
+            "stage": OWNER_WORDS.get(idea["stage"], ("With the review desk", ""))[0],
+            "next_step": None,
+            "due": None,
+        },
         "timeline": timeline(idea, "full", viewer_codes),
     }
     if owner:

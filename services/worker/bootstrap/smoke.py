@@ -4,7 +4,7 @@ python -m bootstrap.smoke --web-url http://web:3000
 
 Checks that the services answer, signed-out people are sent to sign in, the database and kill switches are in
 place, the company repo is valid OKF without any dev-only files, the index is at the repo's head, the rules load,
-the people are synthetic and no dev persona roles exist. Prints one line per check; exits 1 if any fails.
+the people are synthetic and no dev persona roles exist. Reports which scanner and file store are in use. Prints one line per check; exits 1 if any fails.
 Never prints data, only counts and states.
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -21,7 +22,7 @@ from core.config import get_settings
 from core.db import connect
 from okf.validate import validate_bundle
 from repo_writer.git import Git
-from rules.loader import load_all
+from rules.loader import RULE_PATHS, load_all
 
 DEV_ONLY = (
     "taxonomy/clients/CLI-northwind-amc.md",
@@ -80,9 +81,16 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         return code in (302, 303, 307) and "/sign-in" in where, f"HTTP {code}"
 
     def internal_token() -> tuple[bool, str]:
-        code, _ = _get(f"{worker}/internal/wall", {"X-Internal-Token": s.internal_api_token})
-        bad, _ = _get(f"{worker}/internal/wall", {"X-Internal-Token": "not-the-token"})
-        return code == 200 and bad in (401, 403), f"right token HTTP {code}, wrong token HTTP {bad}"
+        """The web app's own token reaches the worker (deep health), and a wrong token is refused."""
+        code, _ = _get(f"{web}/api/health?deep=1")
+        bad, _ = _get(f"{worker}/internal/token-check", {"X-Internal-Token": "not-the-token"})
+        return code == 200 and bad in (401, 403), f"web deep health HTTP {code}, wrong token HTTP {bad}"
+
+    def scanner() -> tuple[bool, str]:
+        from attachments.clamav import ping
+
+        host = urllib.parse.urlparse(s.s3_endpoint).hostname
+        return ping(), f"scanner {s.clamav_host}:{s.clamav_port}; file store {host}"
 
     def kill_switches() -> tuple[bool, str]:
         with connect(autocommit=True) as conn:
@@ -99,7 +107,8 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         return not errors and not dev, f"{len(errors)} OKF errors; {len(dev)} dev-only files"
 
     def rules() -> tuple[bool, str]:
-        return True, f"{len(load_all(repo))} rule files"
+        loaded = load_all(repo)
+        return set(RULE_PATHS) <= set(loaded), f"{len(loaded)} of {len(RULE_PATHS)} rule files"
 
     def index_at_head() -> tuple[bool, str]:
         head = Git(repo, s.repo_writer_author).head()
@@ -132,6 +141,7 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         ("API needs a session", api_needs_session),
         ("pages send people to sign in", pages_need_session),
         ("web-to-worker token", internal_token),
+        ("virus scanner answers", scanner),
         ("kill switches in place", kill_switches),
         ("company repo valid, no dev files", company_repo),
         ("rules load", rules),

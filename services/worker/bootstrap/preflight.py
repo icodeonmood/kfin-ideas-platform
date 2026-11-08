@@ -35,6 +35,11 @@ def check(env: Mapping[str, str]) -> tuple[list[str], list[str]]:
             problems.append(f"{name} must be a random value of at least 32 characters (from the vault)")
     if get("S3_SECRET_KEY") in DEV_VALUES or len(get("S3_SECRET_KEY")) < 16:
         problems.append("S3_SECRET_KEY must be the UAT store's key (at least 16 characters)")
+    if not get("S3_ACCESS_KEY") or get("S3_ACCESS_KEY") in DEV_VALUES:
+        problems.append("S3_ACCESS_KEY must be the UAT store's access key")
+    for name in ("S3_ENDPOINT", "CLAMAV_HOST"):
+        if not get(name):
+            problems.append(f"{name} is not set (KFin's file store and virus scanner in UAT)")
     if get("OIDC_MODE") != "entra":
         problems.append("OIDC_MODE must be entra (the mock sign-in is for dev only)")
     for name in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"):

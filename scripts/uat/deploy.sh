@@ -32,7 +32,8 @@ value() { { grep -E "^$1=" "$2" || true; } | tail -1 | cut -d= -f2- | sed -E 's/
 step "1/8 Preflight: no dev settings, no weak secrets"
 for name in POSTGRES_PASSWORD DB_WEB_PASSWORD DB_WORKER_PASSWORD; do
   v="$(value "$name" "$DB_ENV_FILE")"
-  [[ ${#v} -ge 20 && "$v" != change-me* ]] || fail "$name must be a random value of at least 20 characters"
+  # Letters and digits only: they go into connection URLs, and Compose and this script must read them alike.
+  [[ ${#v} -ge 20 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "$name must be 20 or more random letters and digits"
 done
 compose build --quiet worker web
 compose run --rm --no-deps -T worker python -m bootstrap.preflight || fail "preflight"
@@ -52,13 +53,17 @@ compose run --rm -T dbmate up
 compose run --rm -T dbmate status | tee /dev/stderr | grep -q "Pending: 0" || fail "migrations pending"
 
 step "4/8 Service logins (each service has its own password)"
-compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U ideas -d ideas \
-  -v web_pw="$(value DB_WEB_PASSWORD "$DB_ENV_FILE")" -v worker_pw="$(value DB_WORKER_PASSWORD "$DB_ENV_FILE")" <<'SQL'
+# The passwords travel on stdin (\set), never as arguments, so they do not show in process lists.
+{
+  printf '\\set web_pw %s\n\\set worker_pw %s\n' \
+    "'$(value DB_WEB_PASSWORD "$DB_ENV_FILE")'" "'$(value DB_WORKER_PASSWORD "$DB_ENV_FILE")'"
+  cat <<'SQL'
 SELECT format('CREATE ROLE ideas_web LOGIN IN ROLE ideas_web_svc PASSWORD %L', :'web_pw')
  WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ideas_web') \gexec
 SELECT format('CREATE ROLE ideas_worker LOGIN IN ROLE ideas_worker_svc PASSWORD %L', :'worker_pw')
  WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ideas_worker') \gexec
 SQL
+} | compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U ideas -d ideas
 
 step "5/8 Company repo: seed, validate, index; synthetic people"
 compose run --rm -T -v "$ROOT/seed:/seed:ro" -v "$ROOT/eval/golden:/app/eval/golden:ro" worker \

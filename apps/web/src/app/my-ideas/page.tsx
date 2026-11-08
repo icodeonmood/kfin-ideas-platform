@@ -9,6 +9,9 @@ import { myIdeas } from "@/server/ideas";
 import { NameOnWall } from "./name-on-wall";
 
 export const metadata: Metadata = { title: "My ideas" };
+
+/** Shared, but the person still has a step to take on the scan page (choose, or take something out). */
+const WAITING_ON_YOU = new Set(["scanning", "blocked"]);
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
@@ -30,6 +33,8 @@ export default async function Page() {
                   <h2>
                     {i.draft ? (
                       <Link href={`/share/${i.id}`}>Your draft from {day(i.shared_on)}</Link>
+                    ) : WAITING_ON_YOU.has(i.stage_key) ? (
+                      <Link href={`/share/${i.id}/done`}>{i.one_line ?? `Your idea ${i.idea_id ?? ""}`}</Link>
                     ) : i.idea_id ? (
                       <Link href={`/ideas/${i.idea_id}`}>{i.one_line ?? `Your idea ${i.idea_id}`}</Link>
                     ) : (

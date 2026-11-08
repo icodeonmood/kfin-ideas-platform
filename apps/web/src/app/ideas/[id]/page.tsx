@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { day } from "@/lib/dates";
+import { day, historyTime } from "@/lib/dates";
 import { currentUser } from "@/server/auth/current";
 import { ideaPage, type IdeaPage, type TimelineRow } from "@/server/ideas";
 import { SubmissionError } from "@/server/submissions";
@@ -32,7 +32,7 @@ function Timeline({ rows, full }: { rows: TimelineRow[]; full: boolean }) {
         <ol className="timeline">
           {rows.map((r, n) => (
             <li key={`${r.when}-${n}`}>
-              <strong>{r.what}</strong> <span className="muted">· {r.when} IST</span>
+              <strong>{r.what}</strong> <span className="muted">· {historyTime(r.when)}</span>
               {full && r.by ? <span className="muted"> · {r.by}</span> : null}
               {full && r.note ? <p className="muted">{r.note}</p> : null}
             </li>
@@ -146,7 +146,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       </section>
       <Timeline rows={p.timeline} full />
       <p>
-        <Link href="/my-ideas">Back to My ideas</Link>
+        {p.owner ? (
+          <Link href="/my-ideas">Back to My ideas</Link>
+        ) : (
+          <Link href="/wall">Back to the wall</Link>
+        )}
       </p>
     </>
   );

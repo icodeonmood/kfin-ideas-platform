@@ -12,14 +12,14 @@ from psycopg.types.json import Jsonb
 from core.db import Conn
 from pii import vault
 from pii.restore import restore
-from views.common import PUBLIC_WORDS, checked_summary, first_area, taxonomy_names
+from views.common import PUBLIC_WORDS, checked_summary, first_area, is_public, taxonomy_names
 
 # (stage in plain words, next step). The owner sees their own idea's stage more precisely than everyone else.
 # Drafts for HR to sign off with the other screen wording (BLD-094).
 OWNER_WORDS: dict[str, tuple[str, str]] = {
     "draft": ("Draft, not shared yet", "Finish it and share it. We keep drafts until"),
-    "scanning": ("Being checked", "We check it for personal data and look for colleagues on the same thing"),
-    "blocked": ("Needs a change", "Take out the details we flagged, then share it again"),
+    "scanning": ("Being checked", "Open it to see the result and choose what happens next"),
+    "blocked": ("Needs a change", "Open it to take out the details we flagged, then share it again"),
     "redirected": ("Sent to the right team", "That team picks it up from here"),
     "scanned": ("With the review desk", "The review desk decides by"),
     "merged": ("Teamed up with colleagues", "The review desk looks at the idea you joined"),
@@ -47,6 +47,7 @@ OWNER_WORDS: dict[str, tuple[str, str]] = {
     "closed": ("Closed", "Nothing more to do. Thank you"),
 }
 
+BEFORE_DECISION = ("scanning", "scanned", "merged", "adoption_requested", "needs_info")
 LINK_WORDS = {"joiner": "You joined", "plus_one": "You added +1", "adoption": "You asked to use it"}
 
 
@@ -59,31 +60,40 @@ def viewer_codes(conn: Conn, user_id: str) -> list[str]:
     ]
 
 
-def _due(conn: Conn, idea: dict[str, Any]) -> dt.datetime | None:
-    if idea["stage"] == "draft":
-        return idea["draft_expires_at"]  # type: ignore[no-any-return]
+def _timer(conn: Conn, idea: dict[str, Any]) -> dict[str, Any] | None:
+    """The open timer behind the next step: running, or breached (overdue) but not yet stopped."""
     if idea["stage"] == "needs_info":
-        row = conn.execute(
-            "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'needs_info' "
-            "AND state = 'running' ORDER BY id DESC LIMIT 1",
+        return conn.execute(
+            "SELECT due_at, state FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s "
+            "AND stage = 'needs_info' AND state IN ('running', 'breached') ORDER BY id DESC LIMIT 1",
             (idea["idea_id"],),
         ).fetchone()
-        return row["due_at"] if row else None
     if idea["stage"] == "scanned":
-        row = conn.execute(
-            "SELECT t.due_at FROM sla_timers t JOIN review_items r ON t.entity_type = 'review_item' "
+        return conn.execute(
+            "SELECT t.due_at, t.state FROM sla_timers t JOIN review_items r ON t.entity_type = 'review_item' "
             "AND t.entity_id = r.id::text WHERE r.ref_id = %s AND r.item_type = 'idea' AND t.stage = 'review' "
-            "AND t.state = 'running' ORDER BY t.id DESC LIMIT 1",
+            "AND t.state IN ('running', 'breached') ORDER BY t.id DESC LIMIT 1",
             (idea["idea_id"],),
         ).fetchone()
-        return row["due_at"] if row else None
     return None
 
 
 def owner_status(conn: Conn, idea: dict[str, Any]) -> dict[str, Any]:
     stage, step = OWNER_WORDS.get(idea["stage"], ("With the review desk", "We will let you know"))
-    due = _due(conn, idea)
-    return {"stage": stage, "next_step": step, "due": due.isoformat() if due else None}
+    due: dt.datetime | None = idea.get("draft_expires_at") if idea["stage"] == "draft" else None
+    timer = _timer(conn, idea)
+    if timer is not None and timer["state"] == "breached" and idea["stage"] == "scanned":
+        step, due = "The review is taking longer than planned. The review desk has been reminded", None
+    elif timer is not None:
+        due = timer["due_at"]
+    elif step.endswith(" by"):
+        step = step.removesuffix(" by")  # no date to finish the sentence with
+    return {
+        "stage": stage,
+        "next_step": step,
+        "due": due.isoformat() if due else None,
+        "stage_key": idea["stage"],
+    }
 
 
 def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
@@ -122,17 +132,23 @@ def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
         "ORDER BY l.idea_id, l.created_at DESC",
         (codes, codes),
     ).fetchall():
-        visible = link["visibility"] == "org"
+        # As everyone else sees it (BLD-094): the summary only once the desk has accepted it and it is open to
+        # everyone; before that "with the review desk"; after a decision that took it out, just "closed".
+        public = is_public(dict(link))
         joined.append(
             {
                 "how": LINK_WORDS.get(link["link_type"], "You joined"),
                 "summary": checked_summary(conn, (link["canvas"] or {}).get("neutral_summary"))
-                if visible
+                if public
                 else None,
-                "with_desk": not visible,
-                "area": first_area(link["area_ids"], areas) if visible else None,
-                "stage": PUBLIC_WORDS.get(link["stage"], "With the review desk"),
-                "idea_id": link["idea_id"] if visible and link["stage"] in PUBLIC_WORDS else None,
+                "with_desk": not public and link["stage"] in BEFORE_DECISION,
+                "area": first_area(link["area_ids"], areas) if public else None,
+                "stage": PUBLIC_WORDS[link["stage"]]
+                if public
+                else "With the review desk"
+                if link["stage"] in BEFORE_DECISION
+                else "Closed",
+                "idea_id": link["idea_id"] if public else None,
             }
         )
     pref = conn.execute(

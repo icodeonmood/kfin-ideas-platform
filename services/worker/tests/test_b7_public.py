@@ -43,6 +43,11 @@ def _write_repo(desk: Any) -> None:  # noqa: F811
         writer.release()
 
 
+def _wall(db: Any) -> dict[str, Any]:
+    wall.clear_cache()  # the wall is cached for 30 seconds; each check here wants it fresh
+    return wall.wall(db)
+
+
 def _ids(cards: list[dict[str, Any]]) -> list[str | None]:
     return [c.get("idea_id") for c in cards]
 
@@ -50,10 +55,10 @@ def _ids(cards: list[dict[str, Any]]) -> list[str | None]:
 def test_the_wall_shows_reviewed_org_ideas_and_names_only_with_consent(desk: Any) -> None:  # noqa: F811
     db = desk["db"]
     killswitch.clear_cache()
-    assert desk["idea_id"] not in _ids(wall.wall(db)["recent"])  # not yet looked at by the desk
+    assert desk["idea_id"] not in _ids(_wall(db)["recent"])  # not yet looked at by the desk
 
     service.act(db, desk["item"], desk["r1"], {"action": "decide"})
-    w = wall.wall(db)
+    w = _wall(db)
     card = next(c for c in w["recent"] if c["idea_id"] == desk["idea_id"])
     assert card["summary"] == "An idea to improve a KFintech process."  # the neutral summary, nothing else
     assert card["stage"] == "Reviewed" and card["colleagues"] == 1 and card["names"] == []
@@ -61,18 +66,18 @@ def test_the_wall_shows_reviewed_org_ideas_and_names_only_with_consent(desk: Any
 
     mine.set_name_on_wall(db, desk["owner"], True)
     name = db.execute("SELECT name FROM users WHERE id = %s", (desk["owner"],)).fetchone()["name"]
-    card = next(c for c in wall.wall(db)["recent"] if c["idea_id"] == desk["idea_id"])
+    card = next(c for c in _wall(db)["recent"] if c["idea_id"] == desk["idea_id"])
     assert card["names"] == [name]
     assert db.execute("SELECT 1 FROM audit_log WHERE action = 'prefs.name_on_wall'").fetchone()
 
     db.execute("UPDATE ideas SET visibility = 'committee' WHERE idea_id = %s", (desk["idea_id"],))
-    assert desk["idea_id"] not in _ids(wall.wall(db)["recent"])  # committee-only: never on the wall
+    assert desk["idea_id"] not in _ids(_wall(db)["recent"])  # committee-only: never on the wall
     assert idea_page.page(db, desk["idea_id"], "public", "neutral", []) is None
 
     db.execute(
         "UPDATE ideas SET visibility = 'org', stage = 'declined' WHERE idea_id = %s", (desk["idea_id"],)
     )
-    assert desk["idea_id"] not in _ids(wall.wall(db)["recent"])  # declined (or held as spam): never shown
+    assert desk["idea_id"] not in _ids(_wall(db)["recent"])  # declined (or held as spam): never shown
 
 
 def test_my_ideas_show_stage_next_step_and_date(desk: Any) -> None:  # noqa: F811
@@ -116,7 +121,8 @@ def test_my_ideas_show_stage_next_step_and_date(desk: Any) -> None:  # noqa: F81
     )
     theirs = mine.my_ideas(db, joiner)
     assert theirs["ideas"] == [] and theirs["joined"][0]["how"] == "You joined"
-    assert theirs["joined"][0]["summary"] == "An idea to improve a KFintech process."
+    assert theirs["joined"][0]["summary"] is None  # not yet accepted by the desk: no summary (BLD-094)
+    assert theirs["joined"][0]["stage"] == "With the review desk"
     assert TEXT not in json.dumps(theirs)
 
     words = " ".join(" ".join(v) for v in mine.OWNER_WORDS.values()).lower()
@@ -171,7 +177,101 @@ def test_the_showcase_lists_solutions_and_the_switch_hides_the_wall(desk: Any) -
     killswitch.set_switch(db, "wall.public", "off", reason="Testing the wall switch", actor="REV-0001")
     killswitch.clear_cache()
     try:
-        assert wall.wall(db) == {"paused": True}
+        assert _wall(db) == {"paused": True}
     finally:
         killswitch.set_switch(db, "wall.public", "on", reason="Testing the wall switch", actor="REV-0001")
         killswitch.clear_cache()
+
+
+# --- B7 review regressions -------------------------------------------------------------------------------------
+
+
+def _person(db: Any, consent: bool) -> tuple[str, str]:
+    uid = _user(db, None)
+    code = f"CTR-{secrets.token_hex(3)}"
+    db.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, uid))
+    if consent:
+        mine.set_name_on_wall(db, uid, True)
+    return uid, code
+
+
+def test_only_the_person_who_shared_it_is_named(desk: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    service.act(db, desk["item"], desk["r1"], {"action": "decide"})
+    _joiner, jcode = _person(db, consent=True)  # said yes, but only joined
+    db.execute(
+        "INSERT INTO idea_links (idea_id, contributor_code, link_type) VALUES (%s, %s, 'joiner')",
+        (desk["idea_id"], jcode),
+    )
+    card = next(c for c in _wall(db)["recent"] if c["idea_id"] == desk["idea_id"])
+    assert card["names"] == [] and card["colleagues"] == 2  # counted, never named
+
+
+def test_a_committee_only_member_is_never_named_on_a_cluster(desk: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    _owner, code = _person(db, consent=True)
+    db.execute("INSERT INTO clusters (id, stage, distinct_contributors) VALUES ('CL-0901', 'picked', 2)")
+    db.execute(
+        "INSERT INTO repo_files (repo_path, kfin_id, file_type, trust, visibility, commit_sha, summary) VALUES "
+        "('clusters/CL-0901.md', 'CL-0901', 'cluster', 'human', 'org', 'x', 'Forms wait at branch desks.')"
+    )
+    db.execute(
+        "INSERT INTO ideas (idea_id, submission_id, stage, contributor_code, visibility, cluster_id, canvas, "
+        "submitted_at) VALUES ('IDEA-2026-000902', 'SUB-2026-000902', 'picked', %s, 'committee', 'CL-0901', '{}', now())",
+        (code,),
+    )
+    db.execute(
+        "INSERT INTO idea_links (cluster_id, from_idea_id, contributor_code, link_type) "
+        "VALUES ('CL-0901', 'IDEA-2026-000902', %s, 'joiner')",
+        (code,),
+    )
+    cluster = next(c for c in _wall(db)["picked"] if c.get("cluster_id") == "CL-0901")
+    assert cluster["names"] == []
+    assert "IDEA-2026-000902" not in _ids(_wall(db)["picked"])  # members show through their cluster
+
+
+def test_the_wall_switch_also_hides_other_peoples_view_of_an_idea(desk: Any, repo_settings: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    service.act(db, desk["item"], desk["r1"], {"action": "decide"})
+    assert idea_page.page(db, desk["idea_id"], "public", "neutral", []) is not None
+    killswitch.set_switch(db, "wall.public", "off", reason="Testing the wall switch", actor="REV-0001")
+    killswitch.clear_cache()
+    try:
+        assert idea_page.page(db, desk["idea_id"], "public", "neutral", []) is None
+        assert (
+            idea_page.page(db, desk["idea_id"], "full", "real", [desk["code"]]) is not None
+        )  # owner keeps it
+    finally:
+        killswitch.set_switch(db, "wall.public", "on", reason="Testing the wall switch", actor="REV-0001")
+        killswitch.clear_cache()
+
+
+def test_overdue_reviews_and_closed_joined_ideas_read_plainly(desk: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    db.execute(
+        "UPDATE sla_timers SET state = 'breached' WHERE entity_id = %s AND stage = 'review'",
+        (str(desk["item"]),),
+    )
+    mine_now = next(i for i in mine.my_ideas(db, desk["owner"])["ideas"] if i["idea_id"] == desk["idea_id"])
+    assert (
+        mine_now["next_step"].startswith("The review is taking longer than planned")
+        and mine_now["due"] is None
+    )
+
+    joiner, jcode = _person(db, consent=False)
+    db.execute(
+        "INSERT INTO idea_links (idea_id, contributor_code, link_type) VALUES (%s, %s, 'joiner')",
+        (desk["idea_id"], jcode),
+    )
+    waiting = mine.my_ideas(db, joiner)["joined"][0]
+    assert waiting["stage"] == "With the review desk" and waiting["summary"] is None and waiting["with_desk"]
+    db.execute("UPDATE ideas SET stage = 'declined' WHERE idea_id = %s", (desk["idea_id"],))
+    closed = mine.my_ideas(db, joiner)["joined"][0]
+    assert closed["stage"] == "Closed" and closed["summary"] is None and closed["idea_id"] is None
+
+
+def test_desk_members_see_stage_words_not_keys(desk: Any, repo_settings: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    db.execute("UPDATE ideas SET stage = 'already_solved' WHERE idea_id = %s", (desk["idea_id"],))
+    out = idea_page.page(db, desk["idea_id"], "full", "neutral", [])
+    assert out is not None and out["status"]["stage"] == "In the Garage"

@@ -9,8 +9,8 @@ For: KFin IT and the product team, deploying The Garage · Ideas to the UAT host
 | A Linux host with Docker Engine and Compose v2.24 or later, and a checkout of this repo at the release tag | IT | — |
 | Entra app registration for UAT: issuer URL, client ID, client secret, redirect `https://<uat host>/auth/callback` (§9.1 O2) | IT | app env file |
 | Four random secrets of at least 32 characters each: `INTERNAL_API_TOKEN`, `SESSION_SECRET`, `CONTRIBUTOR_HMAC_SECRET`, `VAULT_ENCRYPTION_KEY` | InfoSec (vault) | app env file |
-| Three database passwords of at least 20 characters: `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
-| S3 bucket credentials, scanner host, Graph service mailbox (or SMTP relay) | IT | app env file |
+| Three database passwords of at least 20 random letters and digits (no symbols: they go into connection URLs): `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
+| KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox or `SMTP_URL` | IT | app env file |
 | Model route decision (D1). Without it the deploy starts in Mode B: `ai.all` off, scans queue | InfoSec | app env file |
 | BGE-M3 model files, mounted at `EMBEDDINGS_MODEL_PATH`, and the worker image built with `--build-arg WITH_BGE=1` (AT-B5-01) | Product team | host folder |
 
@@ -39,9 +39,9 @@ The script stops at the first problem and says which. Its eight steps:
 | 5 Seed | Company repo from `seed/company-repo/` (no dev overlay outside dev), OKF check, rules, index; 200 synthetic people | the repo is not valid OKF or a rule file fails |
 | 6 Start | Every service up and healthy | a service does not become healthy in 4 minutes |
 | 7 Model route | Leaves `ai.all` on if a route is configured, else switches it off (Mode B), audited | — |
-| 8 Smoke tests | Eleven checks, listed below | any check fails |
+| 8 Smoke tests | Twelve checks, listed below | any check fails |
 
-Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answer; the sign-in page loads; the API refuses requests without a session; pages send signed-out people to sign in; the web app's token reaches the worker and a wrong token is refused; all kill switches exist; the company repo is valid OKF with no dev-only files; the rules load; the index is at the repo's head; only synthetic people exist and nobody has a role yet.
+Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answer; the sign-in page loads; the API refuses requests without a session; pages send signed-out people to sign in; the web app's own token reaches the worker and a wrong token is refused; the virus scanner answers (the report names the scanner and file store in use); all kill switches exist; the company repo is valid OKF with no dev-only files; the rules load; the index is at the repo's head; only synthetic people exist and nobody has a role yet.
 
 ## After the deploy
 

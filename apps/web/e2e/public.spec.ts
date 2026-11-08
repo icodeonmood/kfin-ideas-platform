@@ -42,7 +42,7 @@ async function shareQuickIdea(page: Page, words: string): Promise<string> {
 test("a reviewed idea reaches the wall, My ideas and its page, each as §3.1 allows (AT-B7-01..05)", async ({
   browser,
 }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const words = `Branch scanners for KYC forms jam every afternoon at the ${testInfo.project.name} counter, so forms wait overnight.`;
 
   // The person shares an idea; My ideas shows it with the desk's due date.
@@ -97,7 +97,16 @@ test("a reviewed idea reaches the wall, My ideas and its page, each as §3.1 all
   await expectNoSeriousAxeIssues(b);
   await expect(b.getByText(words)).toHaveCount(0);
   const onWall = b.locator(`a[href="/ideas/${ideaId}"]`);
-  await expect(onWall).toHaveCount(1); // reviewed and open to everyone: on the wall as its summary
+  // Reviewed and open to everyone: on the wall as its summary (the wall is rebuilt at most every 30 seconds).
+  await expect
+    .poll(
+      async () => {
+        await b.reload();
+        return onWall.count();
+      },
+      { timeout: 45_000, intervals: [2_000, 5_000] },
+    )
+    .toBe(1);
   await onWall.focus();
   await b.keyboard.press("Enter");
   await b.waitForURL(new RegExp(`/ideas/${ideaId}$`));

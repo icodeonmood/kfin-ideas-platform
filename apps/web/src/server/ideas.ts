@@ -56,6 +56,7 @@ export type MyIdea = {
   stage: string;
   next_step: string;
   due: string | null;
+  stage_key: string;
 };
 
 export type Joined = {

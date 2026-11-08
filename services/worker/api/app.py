@@ -43,6 +43,12 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "roles": sorted(get_settings().roles)}
 
 
+@app.get("/internal/token-check", dependencies=[Depends(require_token)])
+def token_check() -> dict[str, bool]:
+    """For the web app's deep health check: the caller's internal token is the right one."""
+    return {"ok": True}
+
+
 @app.post("/internal/index", dependencies=[Depends(require_token)])
 def index_now() -> dict[str, Any]:
     result = Indexer().run_once()
