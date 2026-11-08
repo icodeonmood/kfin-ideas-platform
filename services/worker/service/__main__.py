@@ -14,7 +14,9 @@ from attachments.store import ensure_buckets
 from core.config import get_settings
 from core.logging import get_logger
 from index.indexer import Indexer
+from jobs import handlers as _handlers  # noqa: F401 - registers job handlers
 from jobs import runner as jobs
+from jobs import schedule
 from repo_writer.writer import RepoWriter
 
 log = get_logger("service")
@@ -46,6 +48,8 @@ def main() -> None:
         _guard("indexer", Indexer(settings).run_forever)
     if "jobs" in roles:
         _guard("jobs", jobs.run_forever)
+    if "scheduler" in roles:
+        _guard("scheduler", schedule.run_forever)
     if "api" in roles:
         uvicorn.run(
             "api.app:app",

@@ -63,7 +63,7 @@ def test_web_refuses_submissions_when_switched_off() -> None:
 
     with connect(autocommit=True) as conn, people(conn) as make:
         token = make().token
-        assert _request("POST", "/api/submissions", token)[0] == 501  # on: reaches the route (built in B3)
+        assert _request("POST", "/api/submissions", token)[0] == 201  # on: reaches the route (starts a draft)
         killswitch.set_switch(conn, "submissions", "off", reason="AT-B1-08 automated test", actor="REV-0001")
         try:
             deadline = time.monotonic() + 15  # web caches switch states for up to 10 seconds
@@ -84,6 +84,10 @@ def test_web_refuses_submissions_when_switched_off() -> None:
             killswitch.set_switch(
                 conn, "submissions", "on", reason="AT-B1-08 automated test done", actor="REV-0001"
             )
+            # Leave the stack as we found it: wait out the web app's 10-second switch cache.
+            deadline = time.monotonic() + 15
+            while _request("POST", "/api/submissions", token)[0] == 503 and time.monotonic() < deadline:
+                time.sleep(0.5)
         audit = conn.execute(
             "SELECT count(*) AS n FROM audit_log WHERE entity = 'kill_switch:submissions' AND reason LIKE 'AT-B1-08%%'"
         ).fetchone()
