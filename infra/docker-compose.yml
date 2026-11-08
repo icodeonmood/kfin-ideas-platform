@@ -1,0 +1,128 @@
+# Local stack for The Garage · Ideas. Synthetic data only.
+# Run through the Makefile (`make up`), which sets the project directory to the repo root and loads `.env`.
+name: kfin-ideas
+
+x-db-url: &db_url postgres://ideas:ideas@postgres:5432/ideas?sslmode=disable
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg16
+    environment:
+      POSTGRES_USER: ideas
+      POSTGRES_PASSWORD: ideas
+      POSTGRES_DB: ideas
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ideas -d ideas"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible file store. MinIO no longer publishes public images (BLD-017); Versity S3 Gateway
+  # speaks the same S3 API. Buckets are created by the worker on start (`attachments.store.ensure_buckets`).
+  s3:
+    image: versity/versitygw:v1.10.0
+    command: ["--port", ":9000", "--health", "/health", "posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      ROOT_SECRET_KEY: ${S3_SECRET_KEY:-minio-secret}
+    ports: ["9000:9000"]
+    volumes: [s3data:/data]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  clamav:
+    image: clamav/clamav-debian:1.4   # the Alpine image has no arm64 build
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"   # dev: use the signatures baked into the image; no outbound updates
+    ports: ["3310:3310"]
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8080"
+    ports: ["${MOCK_OIDC_PORT:-8090}:8080"]
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["1025:1025", "8025:8025"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: *db_url
+      COMPANY_REPO_PATH: /data/kfin-ideas
+      S3_ENDPOINT: http://s3:9000
+      CLAMAV_HOST: clamav
+      SMTP_URL: smtp://mailpit:1025
+      WORKER_ROLES: api,repo_writer,indexer,jobs
+    volumes: ["./.data:/data"]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/internal/health',timeout=2).status==200 else 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: *db_url
+      WORKER_URL: http://worker:8000
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+
+  # One-shot tool, not part of `make up`: `make migrate` runs it.
+  dbmate:
+    image: ghcr.io/amacneil/dbmate:2.28
+    profiles: [tools]
+    environment:
+      DATABASE_URL: *db_url
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes: ["./db:/db:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  s3data:

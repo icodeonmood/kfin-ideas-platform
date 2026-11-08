@@ -1,7 +1,5 @@
 ---
 okf_version: "0.2"
-title: KFintech Ideas — company knowledge bundle
-description: Everything KFintech learns through The Garage · Ideas — ideas, clusters, decisions, appeals, solutions, rules, taxonomy and guidance.
 ---
 
 # KFintech Ideas — company knowledge bundle

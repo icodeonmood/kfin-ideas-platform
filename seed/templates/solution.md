@@ -4,8 +4,8 @@ title: <What it is, in plain words>
 description: <One sentence: what problem it fixed and for whom.>
 tags: [solution]
 status: stable
-verified: unverified            # set to human:<staff code> when the owner confirms
-stale_after: <YYYY-MM-DD, six months from today>
+# verified: omit until the owner confirms; then add  verified: [{ by: "human:<staff code>", at: "<YYYY-MM-DDTHH:MM:SS+05:30>" }]
+stale_after: <YYYY-MM-DDT00:00:00+05:30, six months from today>
 kfin:
   id: SOL-NNNN                  # next free number
   owner_team: LOB-<slug>        # from taxonomy/lobs

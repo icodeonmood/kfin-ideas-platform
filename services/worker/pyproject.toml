@@ -1,0 +1,77 @@
+[project]
+name = "kfin-ideas-worker"
+version = "0.1.0"
+description = "The Garage · Ideas — agent worker, repo writer, indexer and job runner"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "psycopg[binary]>=3.2",
+  "pyyaml>=6.0.2",
+  "jsonschema>=4.23",
+  "pydantic-settings>=2.6",
+  "boto3>=1.35",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "types-PyYAML",
+  "types-jsonschema",
+  "httpx>=0.28",
+  "boto3-stubs[s3]",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../../eval/golden"]
+addopts = "-p no:cacheprovider"
+markers = [
+  "stack: needs the running local stack (make up)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "S"]
+ignore = [
+  "S101",   # assert is fine in tests and invariants
+  "S603",   # subprocess without shell is how we call git
+  "S607",   # git is resolved from PATH on purpose
+  "RUF001", # en dashes and the rupee sign are intended in user-facing text
+  "RUF002",
+  "RUF003",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Non-negotiable 1: model SDKs only inside services/worker/gateway/ (also checked by scripts/ci/check_no_model_sdk.py).
+"anthropic".msg = "Model SDKs are allowed only in services/worker/gateway/ (use gateway.run_agent)."
+"openai".msg = "Model SDKs are allowed only in services/worker/gateway/ (use gateway.run_agent)."
+"google.generativeai".msg = "Model SDKs are allowed only in services/worker/gateway/."
+"langchain".msg = "Model SDKs are allowed only in services/worker/gateway/."
+"litellm".msg = "Model SDKs are allowed only in services/worker/gateway/."
+
+[tool.ruff.lint.per-file-ignores]
+"gateway/**" = ["TID251"]
+"tests/**" = ["S105", "S106", "S108", "S311"]
+"bootstrap/**" = ["S311"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+exclude = ["^\\.venv/", "^tests/fixtures/"]
+mypy_path = "../../eval/golden"
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false

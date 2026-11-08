@@ -11,3 +11,12 @@ coverage/
 playwright-report/
 test-results/
 .DS_Store
+
+# Local tooling
+.uv-cache/
+*.log
+logs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+apps/web/next-env.d.ts

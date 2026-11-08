@@ -5,10 +5,9 @@ description: 'Know Your Customer: verifying an investor''s identity and address 
 tags:
 - glossary
 status: draft
-verified: unverified
 generated:
   by: human:product-team-draft
-  at: '2026-11-08'
+  at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: GL-kyc
   term: KYC

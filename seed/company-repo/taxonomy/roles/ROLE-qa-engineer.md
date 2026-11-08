@@ -6,10 +6,9 @@ tags:
 - taxonomy
 - role
 status: draft
-verified: unverified
 generated:
   by: human:product-team-draft
-  at: '2026-11-08'
+  at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: ROLE-qa-engineer
   title_patterns:

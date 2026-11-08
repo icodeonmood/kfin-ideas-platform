@@ -211,7 +211,7 @@ Rules for the layout:
 
 OKF requires `type`. It recommends `title`, `description`, `resource` and `tags`, and v0.2 adds optional trust fields (`sources`, `generated`, `verified`, `status`, `stale_after`). Everything KFin-specific sits under one `kfin:` key so it never collides with OKF fields.
 
-> Build note: field shapes for `generated`, `verified` and `status` must match SPEC.md v0.2 in `GoogleCloudPlatform/knowledge-catalog`. The examples below show intent. Check them against the spec and run a conformance validator in CI (for example the `okf` Rust crate's `validate_bundle`, or a small Python check written from the spec).
+> Build note: field shapes for `generated`, `verified` and `status` follow SPEC.md v0.2 in `GoogleCloudPlatform/knowledge-catalog` (checked 8 Nov 2026, BLD-019). `verified` is omitted while a file is unverified (absence means unverified), and is a list of `{ by, at }` events once someone or something confirms it; `by` is an actor (`human:<id>`, `process:<id>` or `<tool>/<version>`); every timestamp is an ISO 8601 datetime with a UTC offset; `sources` entries are mappings with a `resource`. The validator (`python -m okf.validate`, run by `make lint`) enforces these shapes.
 
 **Idea**
 ```yaml
@@ -221,9 +221,9 @@ title: SIP registrations held up by manual NIGO checks
 description: Ops executives re-check SIP forms by hand for missing fields, delaying registration by 1–2 days.
 tags: [process, mf, sif, nigo, sip]
 status: draft                      # OKF lifecycle: draft until human-reviewed
-generated: { by: "agent:scan@1.3", at: "2026-11-21T10:02:11+05:30" }
-verified: unverified               # → human:REV-0007 after review
-sources: ["submission:SUB-2026-000142"]
+generated: { by: "canvas-assist/0.1.0", at: "2026-11-21T10:02:11+05:30" }
+# verified: omitted while unverified; after review →  verified: [{ by: "human:REV-0007", at: "2026-11-24T15:40:00+05:30" }]
+sources: [{ id: SUB-2026-000142, resource: "submission:SUB-2026-000142" }]
 kfin:
   id: IDEA-2026-000142
   stage: in_cluster                # workflow stage, see §2.4
@@ -287,8 +287,8 @@ title: Manual NIGO checks on SIP and lumpsum forms
 description: Same problem raised by 4 people across MF and SIF operations.
 tags: [process, nigo, sip]
 status: stable
-verified: human:REV-0007
-generated: { by: "agent:cluster-summary@1.1", at: "…" }
+verified: [{ by: "human:REV-0007", at: "…" }]
+generated: { by: "cluster-summary/1.1.0", at: "…" }
 kfin:
   id: CL-0012
   stage: ready_for_scoring

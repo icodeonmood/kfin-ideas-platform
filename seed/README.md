@@ -2,7 +2,7 @@
 
 `company-repo/` becomes the company repo (`kfin-ideas`) the first time `make seed` runs. After that, the company repo is the source of truth and this folder is only used for fresh environments (dev, UAT, tests).
 
-Every file here is a **draft** (`verified: unverified`). The product team signs it off by **Monday 16 November** (§9.1). Sign-off means: check the content, then set `verified: human:<staff code>` and `status: stable`.
+Every file here is a **draft** (no `verified` key, which OKF v0.2 reads as unverified). The product team signs it off by **Monday 16 November** (§9.1). Sign-off means: check the content, then add `verified: [{ by: "human:<staff code>", at: "<ISO datetime with +05:30>" }]` and set `status: stable`. `make lint` runs the OKF validator, which rejects any other shape.
 
 ## Sign-off checklist
 

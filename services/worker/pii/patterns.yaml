@@ -1,0 +1,117 @@
+# Personal-data patterns, level 1 (ARCHITECTURE §4.2 step 2), and the log rules (non-negotiable 3).
+# ONE source for TypeScript (browser and server) and Python (BLD-005). Do not copy these regexes elsewhere.
+#
+# Regex rules so both engines agree: no named groups, no inline flags, fixed-width lookbehind only.
+# `flags: i` means ignore case. Context keywords are matched case-insensitively as whole words within
+# `context_window_chars` before or after the match. Checksums: verhoeff (Aadhaar), luhn (cards).
+# Test values are generated at run time (eval/golden/generators.py); never commit real-looking identifiers.
+version: "0.1"
+context_window_chars: 30
+
+patterns:
+  - id: pan
+    label: PAN
+    data_type: government_id
+    regex: '(?<![A-Za-z0-9])[A-Za-z]{3}[ABCFGHJLPTabcfghjlpt][A-Za-z][0-9]{4}[A-Za-z](?![A-Za-z0-9])'
+    action: block
+
+  - id: aadhaar
+    label: Aadhaar number
+    data_type: government_id
+    regex: '(?<![0-9])[2-9][0-9]{3}[ -]?[0-9]{4}[ -]?[0-9]{4}(?![0-9])'
+    checksum: verhoeff
+    action: block            # masked form "XXXX XXXX 1234" never matches, so it is allowed
+
+  - id: mobile
+    label: Mobile number
+    data_type: contact
+    regex: '(?<![0-9+])(?:\+91[ -]?|91[ -]|0)?[6-9][0-9]{4}[ -]?[0-9]{5}(?![0-9])'
+    action: block
+
+  - id: email
+    label: Email address
+    data_type: contact
+    regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+    action: block
+    warn_if_domain_in_env: KFIN_EMAIL_DOMAINS   # a KFin address only warns
+
+  - id: bank_account
+    label: Bank account number
+    data_type: financial_account
+    regex: '(?<![0-9])[0-9]{9,18}(?![0-9])'
+    context: ["a/c", "a/c no", "account", "acct", "bank", "ac no"]
+    action: block
+
+  - id: card
+    label: Card number
+    data_type: financial_account
+    regex: '(?<![0-9])[0-9](?:[ -]?[0-9]){12,18}(?![0-9])'
+    checksum: luhn
+    action: block
+
+  - id: folio
+    label: Folio number
+    data_type: investor_account
+    regex: '(?<![0-9])[0-9]{6,15}(?:/[0-9]{1,2})?(?![0-9])'
+    context: ["folio", "folio no", "folio number"]
+    action: block
+
+  - id: demat_in
+    label: Demat account (NSDL)
+    data_type: investor_account
+    regex: '(?<![A-Za-z0-9])IN[0-9]{14}(?![0-9])'
+    action: block
+
+  - id: demat_16
+    label: Demat account (16 digits)
+    data_type: investor_account
+    regex: '(?<![0-9])[0-9]{16}(?![0-9])'
+    context: ["demat", "dp", "dp id", "bo", "bo id", "client id"]
+    action: block
+
+  - id: pran
+    label: PRAN
+    data_type: government_id
+    regex: '(?<![0-9])[0-9]{12}(?![0-9])'
+    context: ["pran"]
+    action: block
+
+  - id: dob
+    label: Date of birth
+    data_type: personal_detail
+    regex: '(?<![0-9])(?:[0-9]{1,2}[/.-][0-9]{1,2}[/.-](?:19|20)[0-9]{2}|[0-9]{1,2}[ -](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*[ -](?:19|20)[0-9]{2}|(?:19|20)[0-9]{2}-[0-9]{2}-[0-9]{2})(?![0-9])'
+    flags: i
+    context: ["dob", "d.o.b", "born", "birth", "birthday", "date of birth"]
+    action: block
+
+  - id: ifsc
+    label: IFSC
+    data_type: bank_code
+    regex: '(?<![A-Za-z0-9])[A-Z]{4}0[A-Z0-9]{6}(?![A-Za-z0-9])'
+    action: warn
+    block_if_also: [bank_account]
+    log_ok: true             # a bank branch code is not personal data on its own
+
+  - id: arn
+    label: ARN (distributor code)
+    data_type: business_identifier
+    regex: '(?<![A-Za-z0-9])ARN-?[0-9]{3,7}(?![0-9])'
+    flags: i
+    action: warn
+    log_ok: true
+
+  - id: euin
+    label: EUIN
+    data_type: business_identifier
+    regex: '(?<![A-Za-z0-9])E[0-9]{6}(?![0-9])'
+    action: warn
+    log_ok: true
+
+# Log rules (non-negotiable 3): logs carry IDs only. A field whose name looks like free text or personal
+# data is refused, and every string value is scanned with the patterns above (except `log_ok` ones).
+log_rules:
+  event_name_regex: '^[a-z0-9_]+(?:[.][a-z0-9_]+)*$'
+  forbidden_field_regex: '(?:^|_)(?:text|texts|one_?line|details?|canvas|body|content|summary|prompt|response|answers?|context|notes?|original|description|title|email|phone|mobile|pan|aadhaar|address|dob|query|spans?|values?|reason|comment|statement|digest)(?:_|$)'
+  forbidden_field_flags: i
+  forbidden_field_names: [name, full_name, first_name, last_name, user_name, display_name, person_name, employee_name, html, markdown]
+  allowed_field_names: [reason_code, reason_codes]   # codes from rules/reason-codes.md, never free text

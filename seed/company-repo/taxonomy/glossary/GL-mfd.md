@@ -5,10 +5,9 @@ description: 'Mutual Fund Distributor: an individual or firm that sells mutual f
 tags:
 - glossary
 status: draft
-verified: unverified
 generated:
   by: human:product-team-draft
-  at: '2026-11-08'
+  at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: GL-mfd
   term: MFD

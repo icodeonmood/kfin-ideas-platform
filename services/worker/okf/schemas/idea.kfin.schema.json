@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/okf/idea.kfin",
+  "title": "kfin block of an idea file (ARCHITECTURE §2.2)",
+  "type": "object",
+  "required": ["id", "stage", "kind", "category", "contributor", "visibility"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^IDEA-[0-9]{4}-[0-9]{6}$" },
+    "stage": {
+      "enum": [
+        "draft", "scanning", "blocked", "redirected", "scanned", "merged", "adoption_requested", "reviewed",
+        "needs_info", "withdrawn", "in_cluster", "ready_for_scoring", "already_solved", "already_planned",
+        "parked", "declined", "scored", "shortlisted", "presenting", "picked", "appealed", "handover",
+        "in_garage", "in_fix_track", "shipped", "resolved", "measuring", "closed"
+      ]
+    },
+    "kind": { "enum": ["problem", "problem_with_solution", "business_idea"] },
+    "category": { "enum": ["cost_saving", "new_revenue", "both", "not_sure"] },
+    "play": { "enum": ["process_improvement", "upsell", "cross_sell", "new_product", "other", null] },
+    "basis": { "enum": ["own_data", "document", "conversation", "hunch", null] },
+    "strength": { "type": "integer", "minimum": 0, "maximum": 5 },
+    "scope": { "enum": ["lob", "cross-lob", "org-wide", null] },
+    "areas": { "type": "array", "items": { "type": "string", "pattern": "^AREA-[a-z0-9-]+$" } },
+    "lobs": { "type": "array", "items": { "type": "string", "pattern": "^LOB-[a-z0-9-]+$" } },
+    "systems": { "type": "array", "items": { "type": "string", "pattern": "^GL-[a-z0-9-]+$" } },
+    "roles_affected": { "type": "array", "items": { "type": "string", "pattern": "^ROLE-[a-z0-9-]+$" } },
+    "contributor": { "type": "string", "pattern": "^CTR-[0-9a-f]{6,8}$" },
+    "co_contributors": { "type": "array", "items": { "type": "string", "pattern": "^CTR-[0-9a-f]{6,8}$" } },
+    "cluster": { "type": ["string", "null"], "pattern": "^CL-[0-9]{4}$" },
+    "visibility": { "enum": ["org", "committee"] },
+    "language": { "type": "string" },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "sha256", "bytes"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^ATT-[0-9]{4}-[0-9]{6}$" },
+          "name": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "digest": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "properties": {
+          "kind": { "enum": ["link", "note", "attachment"] },
+          "value": { "type": "string" },
+          "player": { "enum": ["rta", "amc", "fintech", "bank", "global", "internal", "other", null] }
+        }
+      }
+    }
+  }
+}
