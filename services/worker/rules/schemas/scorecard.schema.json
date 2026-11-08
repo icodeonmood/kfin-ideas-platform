@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/scorecard",
+  "title": "rules: scorecard",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "scale": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": 1
+        },
+        {
+          "const": 5
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "dimensions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "weight": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "measure": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "weight"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "financial_bands_inr_per_year": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ]
+      },
+      "minProperties": 5,
+      "additionalProperties": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "confidence_multiplier": {
+      "type": "object",
+      "properties": {
+        "data_backed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "estimate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "anecdote": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "data_backed",
+        "estimate",
+        "anecdote"
+      ],
+      "additionalProperties": false
+    },
+    "divergence_flag_points": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "version",
+    "scale",
+    "dimensions",
+    "financial_bands_inr_per_year",
+    "confidence_multiplier",
+    "divergence_flag_points"
+  ],
+  "additionalProperties": false
+}

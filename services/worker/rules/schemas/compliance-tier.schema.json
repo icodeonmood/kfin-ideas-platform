@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/compliance-tier",
+  "title": "rules: compliance-tier",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "source": {
+      "type": "string"
+    },
+    "standard_if_any": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "regulated_products": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "regulator_surfaces": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "express_if_only": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "platform_standard_if_any": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "otherwise": {
+      "enum": [
+        "express",
+        "standard"
+      ]
+    },
+    "default_mode": {
+      "type": "object",
+      "properties": {
+        "standard": {
+          "enum": [
+            "gated",
+            "autonomous"
+          ]
+        },
+        "express": {
+          "enum": [
+            "gated",
+            "autonomous"
+          ]
+        }
+      },
+      "required": [
+        "standard",
+        "express"
+      ],
+      "additionalProperties": false
+    },
+    "tier_review": {
+      "type": "string"
+    },
+    "compliance_reviewer_limit_wd": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "version",
+    "source",
+    "standard_if_any",
+    "otherwise",
+    "compliance_reviewer_limit_wd",
+    "outcomes"
+  ],
+  "additionalProperties": false
+}

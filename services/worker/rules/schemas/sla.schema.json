@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/sla",
+  "title": "rules: sla",
+  "type": "object",
+  "required": [
+    "version",
+    "review",
+    "veto_window",
+    "needs_info"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "minProperties": 1,
+    "properties": {
+      "limit_wd": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "limit_days": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "due_wd_before_session": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "remind_at": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      },
+      "escalate_to": {
+        "enum": [
+          "core_chair",
+          "sponsor"
+        ]
+      },
+      "on_breach": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/redirects",
+  "title": "rules: redirects",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "targets": {
+      "type": "object",
+      "properties": {
+        "it_ticket": {
+          "type": "object",
+          "properties": {
+            "team": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^https://"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "required": [
+            "team",
+            "url",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "hr_grievance": {
+          "type": "object",
+          "properties": {
+            "team": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^https://"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "required": [
+            "team",
+            "url",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "complaint": {
+          "type": "object",
+          "properties": {
+            "team": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^https://"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "required": [
+            "team",
+            "url",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "question": {
+          "type": "object",
+          "properties": {
+            "team": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^https://"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "required": [
+            "team",
+            "url",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "it_ticket",
+        "hr_grievance",
+        "complaint",
+        "question"
+      ],
+      "additionalProperties": false
+    },
+    "override_label": {
+      "type": "string"
+    },
+    "override_reason_min_chars": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "version",
+    "targets",
+    "override_label",
+    "override_reason_min_chars"
+  ],
+  "additionalProperties": false
+}

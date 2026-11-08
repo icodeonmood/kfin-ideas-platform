@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/priority",
+  "title": "rules: priority",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "weights": {
+      "type": "object",
+      "properties": {
+        "impact": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "right_to_win": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "competitive": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "value_chain_fit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "build_buy_fit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "urgency": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "impact",
+        "value",
+        "right_to_win",
+        "competitive",
+        "value_chain_fit",
+        "build_buy_fit",
+        "urgency"
+      ],
+      "additionalProperties": false
+    },
+    "value_chain_fit_rating": {
+      "type": "object",
+      "properties": {
+        "direct": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "adjacent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "new": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
+      },
+      "required": [
+        "direct",
+        "adjacent",
+        "new"
+      ],
+      "additionalProperties": false
+    },
+    "competitive_positions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "parity_gap",
+          "white_space",
+          "crowded"
+        ]
+      }
+    },
+    "classes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "propertyNames": {
+        "pattern": "^P[0-9]_[a-z_]+$"
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "type": "string"
+          },
+          "then": {
+            "type": "string",
+            "pattern": "^(at_least|at_most) P[0-9]"
+          }
+        },
+        "required": [
+          "when",
+          "then"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "weights",
+    "value_chain_fit_rating",
+    "competitive_positions",
+    "classes",
+    "overrides"
+  ],
+  "additionalProperties": false
+}

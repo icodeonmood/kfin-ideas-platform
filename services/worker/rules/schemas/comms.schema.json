@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/comms",
+  "title": "rules: comms",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "non_urgent_emails_per_person_per_day": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hold_non_urgent_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "track_email_opens": {
+          "const": false
+        },
+        "fallback_on_email_failure": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "non_urgent_emails_per_person_per_day",
+        "hold_non_urgent_on",
+        "track_email_opens",
+        "fallback_on_email_failure"
+      ],
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z_]+\\.[a-z_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "day_one": {
+            "type": "boolean"
+          },
+          "audiences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "template": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "in_app",
+                "email",
+                "digest",
+                "teams",
+                "calendar_hold",
+                "manager_note"
+              ]
+            },
+            "minItems": 1
+          },
+          "urgency": {
+            "enum": [
+              "immediate",
+              "routine"
+            ]
+          },
+          "approval": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signer": {
+            "type": "string"
+          },
+          "reminders_wd": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "send_only_if_outcome_changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "day_one",
+          "audiences",
+          "template",
+          "channels",
+          "urgency",
+          "approval",
+          "signer"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "limits",
+    "events"
+  ],
+  "additionalProperties": false
+}

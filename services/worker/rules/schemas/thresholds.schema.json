@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/thresholds",
+  "title": "rules: thresholds",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "gatekeeper": {
+      "type": "object",
+      "properties": {
+        "personal_data_block": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "redirect_suggest": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "spam_hold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "personal_data_block",
+        "redirect_suggest",
+        "spam_hold"
+      ],
+      "additionalProperties": false
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "cosine_floor": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "top_k_each": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "final_k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rrf_k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reserve_solved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reserve_declined": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rerun_if_edit_share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "cosine_floor",
+        "top_k_each",
+        "final_k",
+        "rrf_k",
+        "reserve_solved",
+        "reserve_declined",
+        "rerun_if_edit_share"
+      ],
+      "additionalProperties": false
+    },
+    "trust_boost": {
+      "type": "object",
+      "properties": {
+        "human": {
+          "type": "number",
+          "minimum": 0
+        },
+        "machine": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unverified": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "human",
+        "machine",
+        "unverified"
+      ],
+      "additionalProperties": false
+    },
+    "cluster": {
+      "type": "object"
+    },
+    "working_group_trigger": {
+      "type": "object",
+      "properties": {
+        "min_contributors": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_lobs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "min_contributors",
+        "min_lobs"
+      ],
+      "additionalProperties": false
+    },
+    "autonomy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "promote_at": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "demote_below": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "window": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spot_check_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "enabled",
+        "promote_at",
+        "demote_below",
+        "window",
+        "spot_check_rate"
+      ],
+      "additionalProperties": false
+    },
+    "consistency": {
+      "type": "object",
+      "properties": {
+        "similarity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "score_gap": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "similarity",
+        "score_gap"
+      ],
+      "additionalProperties": false
+    },
+    "canvas": {
+      "type": "object",
+      "properties": {
+        "one_line_max_words": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "details_min_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "join_context_min_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "draft_retention_days": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nudge_days_after_quick_capture": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "nudge_max": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "one_line_max_words",
+        "details_min_chars",
+        "join_context_min_chars",
+        "draft_retention_days",
+        "nudge_days_after_quick_capture",
+        "nudge_max"
+      ],
+      "additionalProperties": false
+    },
+    "canvas_strength": {
+      "type": "object",
+      "required": [
+        "what_it_is",
+        "who_it_touches",
+        "whats_it_worth",
+        "evidence",
+        "solved_elsewhere",
+        "strong_canvas_min",
+        "nudge_below"
+      ]
+    },
+    "attachments": {
+      "type": "object",
+      "properties": {
+        "max_files": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_mb_each": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_mb_per_idea": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "day_one_checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "day_one_held": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "column_block_share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rejected_retention_hours": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "max_files",
+        "max_mb_each",
+        "max_mb_per_idea",
+        "allowed",
+        "day_one_checked",
+        "day_one_held",
+        "column_block_share",
+        "rejected_retention_hours"
+      ],
+      "additionalProperties": false
+    },
+    "scan": {
+      "type": "object",
+      "properties": {
+        "budget_s_p95": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fallback_after_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "async_retry_minutes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1
+        },
+        "poll_interval_s": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "budget_s_p95",
+        "fallback_after_s",
+        "async_retry_minutes",
+        "poll_interval_s"
+      ],
+      "additionalProperties": false
+    },
+    "kill_switch_triggers": {
+      "type": "object",
+      "properties": {
+        "leak_hits_per_hour_for_ai_all": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "agent_error_rate_15min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "virus_scanner_down_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "email_bounce_rate_hour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "leak_hits_per_hour_for_ai_all",
+        "agent_error_rate_15min",
+        "virus_scanner_down_minutes",
+        "email_bounce_rate_hour"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "gatekeeper",
+    "match",
+    "trust_boost",
+    "cluster",
+    "working_group_trigger",
+    "autonomy",
+    "consistency",
+    "canvas",
+    "canvas_strength",
+    "attachments",
+    "scan",
+    "kill_switch_triggers"
+  ],
+  "additionalProperties": false
+}

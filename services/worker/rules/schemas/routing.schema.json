@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/rules/routing",
+  "title": "rules: routing",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "review_desk": {
+      "type": "object",
+      "properties": {
+        "decides": {
+          "type": "boolean"
+        },
+        "veto_by": {
+          "type": "string"
+        },
+        "veto_needs_reason": {
+          "const": true
+        }
+      },
+      "required": [
+        "decides",
+        "veto_by",
+        "veto_needs_reason"
+      ],
+      "additionalProperties": false
+    },
+    "scope_routes": {
+      "type": "object",
+      "properties": {
+        "lob": {
+          "type": "string"
+        },
+        "cross-lob": {
+          "type": "string"
+        },
+        "org-wide": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lob",
+        "cross-lob",
+        "org-wide"
+      ],
+      "additionalProperties": false
+    },
+    "business_idea_route": {
+      "type": "string"
+    },
+    "lob_comment_window_wd": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nomination_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "shortlist_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "chair_may_shortlist_below_with_reason": {
+      "type": "boolean"
+    },
+    "finance_check_inr": {
+      "type": "number",
+      "minimum": 0
+    },
+    "presentation": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "slot_minutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 5
+        },
+        "quorum": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_slots_before_not_presented": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "format",
+        "slot_minutes",
+        "quorum",
+        "max_slots_before_not_presented"
+      ],
+      "additionalProperties": false
+    },
+    "cycle": {
+      "type": "object",
+      "properties": {
+        "cadence": {
+          "enum": [
+            "monthly",
+            "quarterly"
+          ]
+        }
+      },
+      "required": [
+        "cadence"
+      ],
+      "additionalProperties": false
+    },
+    "appeals": {
+      "type": "object",
+      "properties": {
+        "outside_seat": {
+          "type": "boolean"
+        },
+        "panel_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "panel_from": {
+          "type": "string"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "must_include_member_not_in_original_majority": {
+          "type": "boolean"
+        },
+        "desk_decision_appeals_heard_by": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "outside_seat",
+        "panel_size",
+        "panel_from",
+        "exclude",
+        "must_include_member_not_in_original_majority",
+        "desk_decision_appeals_heard_by"
+      ],
+      "additionalProperties": false
+    },
+    "resubmission_after_months": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "parked": {
+      "type": "object",
+      "properties": {
+        "return_next_cycle": {
+          "type": "boolean"
+        },
+        "archive_after_cycles_without_joiners": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "return_next_cycle",
+        "archive_after_cycles_without_joiners"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "review_desk",
+    "scope_routes",
+    "business_idea_route",
+    "lob_comment_window_wd",
+    "nomination_threshold",
+    "shortlist_threshold",
+    "chair_may_shortlist_below_with_reason",
+    "finance_check_inr",
+    "presentation",
+    "cycle",
+    "appeals",
+    "resubmission_after_months",
+    "parked"
+  ],
+  "additionalProperties": false
+}
