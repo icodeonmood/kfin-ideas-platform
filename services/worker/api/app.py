@@ -114,3 +114,37 @@ def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
     if body is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/scans/{idea_uuid}/confirm", dependencies=[Depends(require_token)])
+def scan_confirm(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    """The owner keeps or clears suggestions and may edit the one line and details (the web app checked
+    ownership). Re-runs the match when the text changed by more than the rule's share (AT-B5-07)."""
+    from scan.confirm import ConfirmRefused, confirm
+    from scan.view import view
+
+    with connect(autocommit=True) as conn:
+        idea = conn.execute("SELECT idea_id FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
+        if idea is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        try:
+            out = confirm(conn, idea_uuid, idea["idea_id"], body)
+        except ConfirmRefused as exc:
+            return JSONResponse({"error": exc.code, "details": exc.details}, status_code=exc.status)
+        return JSONResponse(
+            {**out, "view": view(conn, idea_uuid, "real")}, headers={"Cache-Control": "no-store"}
+        )
+
+
+@app.post("/internal/scans/{idea_uuid}/save", dependencies=[Depends(require_token)])
+def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    """The person's choice and the one-transaction save (§4.2 step 8)."""
+    from scan.save import SaveRefused, save
+
+    code = str(body.get("contributor_code") or "")
+    with connect(autocommit=True) as conn:
+        try:
+            out = save(conn, idea_uuid, code, body)
+        except SaveRefused as exc:
+            return JSONResponse({"error": exc.code}, status_code=exc.status)
+    return JSONResponse(out)

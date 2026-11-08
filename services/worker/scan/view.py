@@ -34,7 +34,7 @@ DATA_TYPE_LABELS = {
 def _suggested(canvas: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     for path, who in sorted((canvas.get("provenance") or {}).items()):
-        if who != "suggested":
+        if who not in ("suggested", "accepted"):
             continue
         node: Any = canvas
         for key in path.split("."):
@@ -97,8 +97,10 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "override_reason_min_chars": int(rules.get("override_reason_min_chars", 15)),
         }
     elif row["outcome"] == "ready" and "canvas_assist" in result:
-        ca = result["canvas_assist"]
+        ca = result.get("confirmed") or result["canvas_assist"]
         out["ready"] = {
+            "card": {"one_line": ca.get("one_line"), "details": ca.get("details")},
+            "confirmed": "confirmed" in result,
             "suggested": _suggested(ca),
             "neutral_summary": ca["neutral_summary"],
             "next_best": ca["strength"]["next_best"],

@@ -237,7 +237,8 @@ class Indexer:
             "area_ids, lobs) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 rel, own_id, file_type, trust, stage, visibility, commit, card_summary(file_type, meta, kfin),
-                _texts(kfin.get("areas")), _texts(kfin.get("lobs")),
+                _texts(kfin.get("areas")),
+                _texts(kfin.get("lobs")) or _texts([kfin.get("owner_team"), *(_texts(kfin.get("lobs_in_use")))]),
             ),
         )  # fmt: skip
         chunks = build_chunks(meta, doc.body)

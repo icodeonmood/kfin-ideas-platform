@@ -179,3 +179,46 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
 export function isChoice(v: unknown): v is ScanChoice {
   return typeof v === "string" && (CHOICES as readonly string[]).includes(v);
 }
+
+/** "Looks right": keep or clear each suggestion, and the owner's edits to the one line and details. */
+export async function confirmCard(me: CurrentUser, id: string, input: unknown) {
+  await ownedSubmitted(me, id);
+  const body = (input ?? {}) as { one_line?: unknown; details?: unknown; keep?: unknown };
+  const keep: Record<string, boolean> = {};
+  if (body.keep && typeof body.keep === "object")
+    for (const [k, v] of Object.entries(body.keep as Record<string, unknown>))
+      if (/^[a-z_.]{1,60}$/.test(k) && typeof v === "boolean") keep[k] = v;
+  const payload: Record<string, unknown> = { keep };
+  if (typeof body.one_line === "string") payload.one_line = body.one_line.slice(0, 400);
+  if (typeof body.details === "string") payload.details = body.details.slice(0, 10_000);
+  const res = await workerFetch(`/internal/scans/${encodeURIComponent(id)}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const out = (await res.json().catch(() => ({ error: "confirm_failed" }))) as Record<string, unknown>;
+  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "confirm_failed"), out.details);
+  return out;
+}
+
+const SAVE_CHOICES = ["team_up", "plus_one", "different", "something_changed", "new", "withdraw"] as const;
+
+/** Find your crew: the person's choice, saved in one transaction by the worker (§4.2 step 8). */
+export async function chooseMatch(me: CurrentUser, id: string, input: unknown) {
+  await ownedSubmitted(me, id);
+  const body = (input ?? {}) as { choice?: unknown; ref?: unknown; text?: unknown };
+  const choice = SAVE_CHOICES.find((c) => c === body.choice);
+  if (!choice) throw new SubmissionError(400, "choice_required");
+  const ref = typeof body.ref === "string" && /^m[0-9]{1,2}$/.test(body.ref) ? body.ref : null;
+  const text = typeof body.text === "string" ? body.text.slice(0, 1000) : "";
+  const res = await workerFetch(`/internal/scans/${encodeURIComponent(id)}/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ choice, ref, text, contributor_code: me.contributorCode }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const out = (await res.json().catch(() => ({ error: "save_failed" }))) as Record<string, unknown>;
+  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "save_failed"));
+  return out;
+}

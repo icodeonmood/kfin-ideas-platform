@@ -6,6 +6,8 @@ import io
 import logging
 import os
 from collections.abc import Iterator
+from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -72,7 +74,7 @@ def db(test_database: str) -> Iterator[object]:
     conn = connect(helpers.db_url(test_database), autocommit=True)
     conn.execute(
         "TRUNCATE outbox, ideas, idea_links, chunks, links, terms, repo_files, users, review_items, "
-        "llm_calls, llm_cache, pseudonym_vault, vault_counters "
+        "llm_calls, llm_cache, pseudonym_vault, vault_counters, sla_timers, comms_log "
         "RESTART IDENTITY CASCADE; "
         "UPDATE index_state SET last_commit = NULL; UPDATE kill_switches SET state = 'on'"
     )
@@ -85,3 +87,29 @@ def company_repo(tmp_path_factory: pytest.TempPathFactory) -> object:
     from tests import helpers
 
     return helpers.seeded_repo(tmp_path_factory.mktemp("repo") / "kfin-ideas")
+
+
+MATCH_TEXT = "Ops re-check every SIP mandate by hand because bank fields are often missing at capture"
+
+
+@pytest.fixture
+def world(db: object, company_repo: object, test_database: str) -> Iterator[object]:
+    """An indexed repo with a matching idea, a committee-only idea, a solution and an unrelated idea (B5)."""
+    from core import killswitch
+    from gateway import limits
+    from gateway.routes import FAKE_SCRIPT
+    from tests import repo_fixtures as rf
+
+    killswitch.clear_cache()
+    limits.reset()
+    FAKE_SCRIPT.clear()
+    repo = cast(Path, company_repo)
+    rf.idea(repo, 11, MATCH_TEXT, "Manual checks on SIP mandates delay registration", systems=["GL-sip"])
+    rf.idea(repo, 12, MATCH_TEXT + " at the desk", "Committee-only summary text", visibility="committee")
+    rf.concept(
+        repo, "solution", 4, MATCH_TEXT + "; an automated capture check fixed it", "Automated mandate checks"
+    )
+    rf.idea(repo, 13, "Canteen seating is cramped at lunch on the fourth floor", "Canteen seating")
+    rf.commit_and_index(repo, test_database)
+    yield db
+    killswitch.clear_cache()

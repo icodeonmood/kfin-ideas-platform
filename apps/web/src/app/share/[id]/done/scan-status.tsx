@@ -7,6 +7,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { Crew, type Ready } from "./crew";
+
 type Span = { field: string; quote: string; label: string };
 type Status = {
   state: "queued" | "running" | "waiting" | "done" | "manual";
@@ -21,7 +23,8 @@ type Status = {
     override_label: string;
     override_reason_min_chars: number;
   };
-  ready?: { suggested: { path: string; value: unknown }[]; neutral_summary: string; next_best: string[] };
+  ready?: Ready;
+  stage: string;
 };
 
 const STEPS = [
@@ -46,12 +49,6 @@ const FIELD_LABELS: Record<string, string> = {
 };
 const label = (path: string) =>
   FIELD_LABELS[path] ?? (path.startsWith("ecosystem.references") ? "Your research" : "Your answers");
-
-function show(value: unknown): string {
-  if (Array.isArray(value)) return value.join(", ");
-  if (value && typeof value === "object") return Object.values(value).filter(Boolean).join(", ");
-  return String(value ?? "").replace(/_/g, " ");
-}
 
 export function ScanStatus({ id, initial }: { id: string; initial: Status | null }) {
   const router = useRouter();
@@ -95,6 +92,11 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
   useEffect(() => {
     if (outcomeKey && outcomeKey !== "queued" && outcomeKey !== "running") outcomeRef.current?.focus();
   }, [outcomeKey]);
+
+  async function refresh() {
+    const res = await fetch(`/api/submissions/${id}/scan-status`, { cache: "no-store" }).catch(() => null);
+    if (res?.ok) setStatus((await res.json()) as Status);
+  }
 
   async function choose(choice: string, extra: Record<string, string> = {}) {
     setBusy(true);
@@ -176,40 +178,14 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "ready" && status.ready ? (
-        <div>
-          <h3 ref={outcomeRef} tabIndex={-1}>
-            Your summary is ready
-          </h3>
-          <p>
-            <strong>In short:</strong> {status.ready.neutral_summary}
-          </p>
-          {status.ready.suggested.length ? (
-            <>
-              <p>We suggested answers for some questions you left blank:</p>
-              <dl className="suggestions">
-                {status.ready.suggested.map((s) => (
-                  <div key={s.path}>
-                    <dt>{label(s.path)}</dt>
-                    <dd>{show(s.value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
-          ) : null}
-          {status.ready.next_best.length ? (
-            <>
-              <h4>Most useful to add next</h4>
-              <ul>
-                {status.ready.next_best.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-          <p className="muted">
-            Next, you can check these suggestions and find colleagues working on the same thing.
-          </p>
-        </div>
+        <Crew
+          id={id}
+          ready={status.ready}
+          stage={status.stage}
+          labelFor={label}
+          headingRef={outcomeRef}
+          onChanged={refresh}
+        />
       ) : null}
 
       {status?.state === "done" && status.outcome === "blocked" && status.blocked ? (

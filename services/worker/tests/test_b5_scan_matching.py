@@ -10,15 +10,13 @@ from typing import Any
 import pytest
 
 from core import killswitch
-from gateway import limits
-from gateway.routes import FAKE_SCRIPT
 from scan import pipeline
 from scan.view import view
-from tests import repo_fixtures as rf
+from tests.conftest import MATCH_TEXT as TEXT
 from tests.test_b4_scan import canvas, scan_row, submitted
 
 pytestmark = pytest.mark.stack
-TEXT = "Ops re-check every SIP mandate by hand because bank fields are often missing at capture"
+
 ALLOWED_CARD_KEYS = {
     "ref",
     "kind",
@@ -30,26 +28,6 @@ ALLOWED_CARD_KEYS = {
     "colleagues",
     "owning_lob",
 }
-
-
-@pytest.fixture
-def world(db: Any, company_repo: Any, test_database: str) -> Any:
-    killswitch.clear_cache()
-    limits.reset()
-    FAKE_SCRIPT.clear()
-    rf.idea(company_repo, 11, TEXT, "Manual checks on SIP mandates delay registration", systems=["GL-sip"])
-    rf.idea(company_repo, 12, TEXT + " at the desk", "Committee-only summary text", visibility="committee")
-    rf.concept(
-        company_repo,
-        "solution",
-        4,
-        TEXT + "; an automated capture check fixed it",
-        "Automated mandate checks",
-    )
-    rf.idea(company_repo, 13, "Canteen seating is cramped at lunch on the fourth floor", "Canteen seating")
-    rf.commit_and_index(company_repo, test_database)
-    yield db
-    killswitch.clear_cache()
 
 
 def test_find_your_crew_shows_only_what_is_allowed(world: Any) -> None:
