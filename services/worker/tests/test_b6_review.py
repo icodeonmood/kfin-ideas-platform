@@ -165,9 +165,16 @@ def test_question_answer_and_disagree(desk: Any) -> None:
     with pytest.raises(service.ActionRefused):
         service.answer(db, desk["idea"], desk["code"], "again")  # no open question now
 
+    with pytest.raises(service.ActionRefused) as early:  # nothing has been decided yet
+        service.disagree(db, desk["idea"], desk["code"], "The desk missed that this affects SIF too")
+    assert early.value.code == "nothing_to_disagree_with"
+    service.act(db, item, desk["r1"], {"action": "decide"})
     d = service.disagree(db, desk["idea"], desk["code"], "The desk missed that this affects SIF too")
     row = db.execute("SELECT item_type, ref_id FROM review_items WHERE id = %s", (d["item_id"],)).fetchone()
     assert row == {"item_type": "disagreement", "ref_id": desk["idea_id"]}
+    with pytest.raises(service.ActionRefused) as again:  # one open disagreement per idea
+        service.disagree(db, desk["idea"], desk["code"], "And it affects NPS as well, I think")
+    assert again.value.code == "already_raised"
 
 
 def test_core_committee_veto_within_the_window(desk: Any) -> None:
@@ -221,3 +228,78 @@ def test_veto_after_the_window_answers_409(desk: Any) -> None:
     with pytest.raises(service.ActionRefused) as late:
         v.veto(db, item, member, "Reconsider this decision please", now=due + dt.timedelta(minutes=1))
     assert late.value.code == "veto_window_closed"
+
+
+# --- B6 review regressions -------------------------------------------------------------------------------------
+
+
+def test_nothing_else_changes_while_a_hold_waits(desk: Any) -> None:
+    db, item = desk["db"], desk["item"]
+    service.act(db, item, desk["r1"], {"action": "hold", "kind": "abuse"})
+    for body in (
+        {"action": "decide"},
+        {"action": "ask", "question": "Can you say which team this is?"},
+        {"action": "redirect", "kind": "it_ticket"},
+        {"action": "hold", "kind": "spam"},
+    ):
+        with pytest.raises(service.ActionRefused) as locked:
+            service.act(db, item, desk["r2"], body)
+        assert locked.value.code == "awaiting_hold_confirmation", body["action"]
+    assert (
+        db.execute("SELECT stage FROM ideas WHERE id = %s", (desk["idea"],)).fetchone()["stage"] == "scanned"
+    )
+
+
+def test_nobody_reviews_or_vetoes_their_own_idea(desk: Any) -> None:
+    from review import veto as v
+
+    db, item = desk["db"], desk["item"]
+    db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (desk["owner"],))
+    db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'core_committee')", (desk["owner"],))
+    with pytest.raises(service.ActionRefused) as own:
+        service.act(db, item, desk["owner"], {"action": "decide"})
+    assert (own.value.status, own.value.code) == (409, "own_idea")
+    service.act(db, item, desk["r1"], {"action": "decide"})
+    with pytest.raises(service.ActionRefused) as own_veto:
+        v.veto(db, item, desk["owner"], "I would like this looked at again")
+    assert own_veto.value.code == "own_idea"
+    audits = db.execute(
+        "SELECT after FROM audit_log WHERE action = 'review.own_idea_refused' AND entity = %s ORDER BY id",
+        (f"idea:{desk['idea_id']}",),
+    ).fetchall()
+    assert [a["after"]["action"] for a in audits] == ["decide", "veto"]  # kept although the work was undone
+    assert (
+        db.execute("SELECT state FROM review_items WHERE id = %s", (item,)).fetchone()["state"] == "decided"
+    )
+
+
+def test_decisions_only_use_known_tags_and_choices(desk: Any) -> None:
+    db, item = desk["db"], desk["item"]
+    for body, code in (
+        ({"system": {"areas": ["AREA-made-up"]}}, "unknown_areas"),
+        ({"system": {"lobs": ["LOB-nowhere"]}}, "unknown_lobs"),
+        ({"system": {"scope": "galaxy"}}, "bad_scope"),
+        ({"category": "free_money", "note": "Changed for testing only"}, "bad_category"),
+        ({"play": "moonshot", "note": "Changed for testing only"}, "bad_play"),
+        ({"system": "AREA-technology"}, "bad_request"),
+    ):
+        with pytest.raises(service.ActionRefused) as bad:
+            service.act(db, item, desk["r1"], {"action": "decide", **body})
+        assert bad.value.code == code
+    assert (
+        db.execute("SELECT state FROM review_items WHERE id = %s", (item,)).fetchone()["state"] != "decided"
+    )
+
+
+def test_a_decision_ends_the_wait_for_an_answer(desk: Any) -> None:
+    db, item = desk["db"], desk["item"]
+    service.act(db, item, desk["r1"], {"action": "ask", "question": "Which branches see this the most?"})
+    service.act(db, item, desk["r1"], {"action": "redirect", "kind": "it_ticket"})
+    states = {
+        r["stage"]: r["state"]
+        for r in db.execute(
+            "SELECT stage, state FROM sla_timers WHERE entity_id IN (%s, %s) AND stage IN ('review', 'needs_info')",
+            (str(item), desk["idea_id"]),
+        ).fetchall()
+    }
+    assert states == {"review": "stopped", "needs_info": "stopped"}  # no withdrawal message can follow

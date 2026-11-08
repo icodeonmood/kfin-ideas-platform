@@ -56,3 +56,21 @@ def working_seconds(a: dt.datetime, b: dt.datetime) -> float:
             total += max(0.0, (end - start).total_seconds())
         day += dt.timedelta(days=1)
     return total
+
+
+def add_working_seconds(start: dt.datetime, seconds: float) -> dt.datetime:
+    """The moment `seconds` of working time after `start` (weekends and holidays are skipped whole)."""
+    cal = load_rule(get_settings().company_repo_path, "calendar").data
+    tz = ZoneInfo(str(cal.get("timezone", "Asia/Kolkata")))
+    weekend = {DAYS.index(d) for d in cal.get("weekend", ["sat", "sun"])}
+    holidays = {dt.date.fromisoformat(str(h["date"])) for h in cal.get("holidays") or []}
+    t = start.astimezone(tz)
+    left = max(0.0, seconds)
+    while True:
+        day_end = dt.datetime.combine(t.date() + dt.timedelta(days=1), dt.time.min, tzinfo=tz)
+        if t.date().weekday() not in weekend and t.date() not in holidays:
+            room = (day_end - t).total_seconds()
+            if left <= room:
+                return t + dt.timedelta(seconds=left)
+            left -= room
+        t = day_end

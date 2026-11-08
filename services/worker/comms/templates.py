@@ -16,8 +16,7 @@ from typing import Any
 from core.config import get_settings
 from okf.frontmatter import parse
 
-_SECTION = re.compile(r"\{\{#([a-z_.0-9]+)\}\}(.*?)\{\{/\1\}\}", re.S)
-_VAR = re.compile(r"\{\{([a-z_.0-9]+)\}\}")
+_TOKEN = re.compile(r"\{\{#([a-z_.0-9]+)\}\}(.*?)\{\{/\1\}\}|\{\{([a-z_.0-9]+)\}\}", re.S)
 _COMMENT = re.compile(r"<!--.*?-->", re.S)
 
 
@@ -42,13 +41,16 @@ def _lookup(data: Any, path: str) -> Any:
 
 
 def render_text(text: str, data: dict[str, Any]) -> str:
-    def section(m: re.Match[str]) -> str:
-        return render_text(m.group(2), data) if _lookup(data, m.group(1)) else ""
+    """One left-to-right pass over the template: an inserted value is never scanned again, so `{{…}}` inside a
+    value stays as typed (B6 review: a value inside a section used to be expanded twice)."""
 
-    out = _SECTION.sub(section, text)
-    return _VAR.sub(
-        lambda m: "" if _lookup(data, m.group(1)) is None else str(_lookup(data, m.group(1))), out
-    )
+    def token(m: re.Match[str]) -> str:
+        if m.group(1) is not None:  # a section: its inner text is template text, rendered the same way
+            return render_text(m.group(2), data) if _lookup(data, m.group(1)) else ""
+        v = _lookup(data, m.group(3))
+        return "" if v is None else str(v)
+
+    return _TOKEN.sub(token, text)
 
 
 @lru_cache(maxsize=64)

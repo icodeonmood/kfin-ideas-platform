@@ -13,6 +13,8 @@ Free text from reviewers (notes, questions, reasons) is tagged with the idea's s
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -39,12 +41,37 @@ IDEA_COLUMNS = {
     "scope": "scope",
 }
 REDIRECT_KINDS = ("it_ticket", "hr_grievance", "complaint", "question")
+CATEGORIES = ("cost_saving", "new_revenue", "both", "not_sure")
+PLAYS = ("process_improvement", "upsell", "cross_sell", "new_product", "other", None)
+
+
+def _known_ids() -> dict[str, set[str]]:
+    from scan.inputs import _taxonomy
+
+    t = _taxonomy(get_settings().company_repo_path)
+    return {k: {str(x["id"]) for x in t[k]} for k in ("areas", "lobs", "roles", "glossary")}
 
 
 class ActionRefused(Exception):
-    def __init__(self, status: int, code: str):
+    def __init__(self, status: int, code: str, audit: tuple[str, str, str, dict[str, Any]] | None = None):
         super().__init__(code)
         self.status, self.code = status, code
+        self.audit = audit  # (actor, action, entity, after): written after the rollback, so it survives
+
+
+@contextmanager
+def audited(conn: Conn) -> Iterator[None]:
+    """Wrap outside `conn.transaction()`: a refusal that must leave a trace is audited once the work is undone."""
+    try:
+        yield
+    except ActionRefused as exc:
+        if exc.audit:
+            actor, action, entity, after = exc.audit
+            conn.execute(
+                "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, %s, %s, %s)",
+                (actor, action, entity, Jsonb(after)),
+            )
+        raise
 
 
 def staff_code(conn: Conn, user_id: str) -> str:
@@ -68,6 +95,20 @@ def _tagged(conn: Conn, idea_id: str, text: str, min_chars: int = 0) -> str:
     if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
         raise ActionRefused(422, "personal_data")
     return str(tag_payload(conn, idea_id, {"t": text[:2000]}).payload["t"])
+
+
+def refuse_own(conn: Conn, user_id: str, idea: dict[str, Any], action: str) -> None:
+    """Nobody reviews, holds or vetoes their own idea (conflict of interest); the attempt is audited."""
+    own = conn.execute(
+        "SELECT 1 FROM contributor_map WHERE user_id = %s AND contributor_code = %s",
+        (user_id, idea["contributor_code"]),
+    ).fetchone()
+    if own:
+        raise ActionRefused(
+            409,
+            "own_idea",
+            (f"user:{user_id}", "review.own_idea_refused", f"idea:{idea['idea_id']}", {"action": action}),
+        )
 
 
 def _load(conn: Conn, item_id: int) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -107,6 +148,8 @@ def _correction(
 def _open_for_action(item: dict[str, Any], reviewer: str) -> None:
     if item["state"] in ("decided", "closed"):
         raise ActionRefused(409, "already_decided")
+    if item["state"] == "awaiting_second_reviewer":
+        raise ActionRefused(409, "awaiting_hold_confirmation")  # only a second reviewer's confirmation now
     if item["assigned_to"] and str(item["assigned_to"]) != reviewer:
         raise ActionRefused(409, "assigned_to_someone_else")  # e.g. a vetoing core committee member
 
@@ -116,8 +159,9 @@ def act(
 ) -> dict[str, Any]:
     now = now or dt.datetime.now(dt.UTC)
     action = body.get("action")
-    with conn.transaction():
+    with audited(conn), conn.transaction():
         item, idea = _load(conn, item_id)
+        refuse_own(conn, reviewer, idea, str(action))
         rev = staff_code(conn, reviewer)
         idea_id = idea["idea_id"]
         if action == "decide":
@@ -206,8 +250,9 @@ def act(
 def confirm_hold(conn: Conn, item_id: int, reviewer: str, now: dt.datetime | None = None) -> dict[str, Any]:
     """A second, different reviewer confirms a spam or abuse hold (AT-B6-05)."""
     now = now or dt.datetime.now(dt.UTC)
-    with conn.transaction():
+    with audited(conn), conn.transaction():
         item, idea = _load(conn, item_id)
+        refuse_own(conn, reviewer, idea, "confirm_hold")
         rev = staff_code(conn, reviewer)
         final = item["final"] or {}
         if item["state"] != "awaiting_second_reviewer" or "hold" not in final:
@@ -230,6 +275,7 @@ def _close(conn: Conn, item: dict[str, Any], reviewer: str, final: dict[str, Any
         (reviewer, now, Jsonb(final), item["id"]),
     )
     engine.stop(conn, "review_item", str(item["id"]), "review")
+    engine.stop(conn, "idea", str(item["ref_id"]), "needs_info")  # a decision ends any wait for an answer
     if item.get("vetoed_by") is None:  # a committee member's final call after a veto is not vetoed again
         engine.start(conn, "review_item", str(item["id"]), "veto_window", now=now)
 
@@ -264,7 +310,26 @@ def _decide(
         raise ActionRefused(409, "not_ready_for_review")
     idea_id = idea["idea_id"]
     proposal = (item["proposal"] or {}).get("system") or {}
-    final_system = {k: body.get("system", {}).get(k, proposal.get(k)) for k in SYSTEM_FIELDS}
+    given = body.get("system") or {}
+    if not isinstance(given, dict) or not isinstance(body.get("attach") or {}, dict):
+        raise ActionRefused(400, "bad_request")
+    final_system = {k: given.get(k, proposal.get(k)) for k in SYSTEM_FIELDS}
+    known = _known_ids()
+    for k, group in (
+        ("areas", "areas"),
+        ("lobs", "lobs"),
+        ("roles_affected", "roles"),
+        ("systems", "glossary"),
+    ):
+        values = final_system[k] or []
+        if not isinstance(values, list) or any(
+            str(v) not in known[group] and v not in (proposal.get(k) or []) for v in values
+        ):
+            raise ActionRefused(400, f"unknown_{k}")
+    enums: dict[str, tuple[str | None, ...]] = {"category": CATEGORIES, "play": PLAYS}
+    for f, choices in enums.items():
+        if f in body and body[f] not in choices:
+            raise ActionRefused(400, f"bad_{f}")
     for k in ("areas", "lobs", "systems", "roles_affected"):
         final_system[k] = [str(x) for x in (final_system[k] or [])]
     if final_system["scope"] not in (None, "lob", "cross-lob", "org-wide"):
@@ -359,10 +424,18 @@ def _decide(
         conn,
         "idea.reviewed",
         {"idea_id": idea_id, "outcome": outcome, "cluster_id": cluster_id, "reviewer_user_id": reviewer,
+         "cluster_other_count": _others_in(conn, cluster_id, idea_id) if cluster_id else 0,
          "next_step": "clustered" if outcome == "grouped" else "qualify", "note_correction_id": note_id},
     )  # fmt: skip
     log.info("review.decided", review_item_id=item["id"], stage_name=stage, correction_count=len(changes))
     return {"state": "decided", "stage": stage}
+
+
+def _others_in(conn: Conn, cluster_id: str, idea_id: str) -> int:
+    row = conn.execute(
+        "SELECT count(*) AS n FROM ideas WHERE cluster_id = %s AND idea_id <> %s", (cluster_id, idea_id)
+    ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def _award(conn: Conn, contributor_code: str, event: str, ref_id: str) -> None:
@@ -418,6 +491,20 @@ def disagree(conn: Conn, idea_uuid: str, contributor_code: str, text: str) -> di
         ).fetchone()
         if idea is None or idea["contributor_code"] != contributor_code or not idea["idea_id"]:
             raise ActionRefused(404, "not_found")
+        stage = conn.execute("SELECT stage FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
+        if stage is None or stage["stage"] not in (
+            "reviewed",
+            "in_cluster",
+            "declined",
+            "redirected",
+            "parked",
+        ):
+            raise ActionRefused(409, "nothing_to_disagree_with")
+        if conn.execute(
+            "SELECT 1 FROM review_items WHERE item_type = 'disagreement' AND ref_id = %s AND state = 'open'",
+            (idea["idea_id"],),
+        ).fetchone():
+            raise ActionRefused(409, "already_raised")  # one open disagreement per idea
         reason = _tagged(conn, idea["idea_id"], text, min_chars=15)
         row = conn.execute(
             "INSERT INTO review_items (item_type, ref_id, reasons) VALUES ('disagreement', %s, %s) RETURNING id",

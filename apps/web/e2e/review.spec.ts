@@ -57,6 +57,12 @@ test("a reviewer opens an item, sees every panel and saves a decision (AT-B6-02)
   await expect(r.getByText(/\(suggested/).first()).toBeVisible(); // suggested, or suggested and accepted
   await expect(r.getByText(/confidence 0\.\d/).first()).toBeVisible();
   await expectNoSeriousAxeIssues(r);
+  // A hold asks first (B6 review): one click alone never takes an idea out of the queue.
+  await r.getByRole("button", { name: "Hold as spam" }).click();
+  await expect(r.getByRole("button", { name: "Yes, hold as spam" })).toBeVisible();
+  await expectNoSeriousAxeIssues(r);
+  await r.getByRole("button", { name: "Cancel" }).click();
+  await expect(r.getByRole("button", { name: "Hold as spam" })).toBeVisible();
   await r.getByRole("button", { name: "Save decision" }).click();
   await expect(r.getByRole("status").filter({ hasText: "Decision saved" })).toBeVisible();
   await expect(r.getByText("This item has been decided.")).toBeVisible();

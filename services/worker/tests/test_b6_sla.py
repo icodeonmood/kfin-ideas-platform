@@ -126,3 +126,45 @@ def test_needs_info_pauses_review_and_withdraws_after_seven_working_days(item: A
         db, users["owner"]["id"], "idea.withdrawn_no_answer", "withdrawn-no-answer", withdrawn[0]["refs"]
     )
     assert "Forms wait a day" in body and "Reopen" in body
+
+
+# --- B6 review regressions -------------------------------------------------------------------------------------
+
+
+def test_pause_and_resume_count_working_time_only(item: Any) -> None:
+    """Paused on Friday, resumed on Monday: the one working day that was left is still left (not three)."""
+    db, _users, rid, _ = item
+    tid = engine.start(db, "review_item", rid, "review", now=MONDAY)  # due Mon 23 Nov 10:00
+    engine.pause(db, "review_item", rid, "review", now=MONDAY + dt.timedelta(days=4))  # Fri 20 Nov 10:00
+    engine.resume(db, "review_item", rid, "review", now=MONDAY + dt.timedelta(days=7))  # Mon 23 Nov 10:00
+    row = db.execute("SELECT due_at, paused_total FROM sla_timers WHERE id = %s", (tid,)).fetchone()
+    assert row["due_at"].astimezone(IST) == dt.datetime(2026, 11, 24, 10, 0, tzinfo=IST)
+    assert row["paused_total"] == dt.timedelta(days=1)  # the weekend is not counted as pause
+
+
+def test_the_veto_window_closes_quietly(item: Any) -> None:
+    db, _users, rid, _ = item
+    tid = engine.start(db, "review_item", rid, "veto_window", now=MONDAY)
+    due = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (tid,)).fetchone()["due_at"]
+    counts = engine.tick(db, now=due + dt.timedelta(minutes=1))
+    assert counts["expired"] == 1 and counts["breaches"] == 0
+    assert db.execute("SELECT state FROM sla_timers WHERE id = %s", (tid,)).fetchone()["state"] == "stopped"
+    assert jobs(db, "sla.breached") == [] and jobs(db, "sla.reminder") == []
+
+
+def test_an_answer_that_lands_first_wins_over_the_withdrawal(item: Any) -> None:
+    """The needs_info timer is due, but the person has answered (the idea is no longer waiting): no withdrawal."""
+    db, _users, _rid, idea_uuid = item
+    tid = engine.start(db, "idea", "IDEA-2026-000951", "needs_info", now=MONDAY)
+    due = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (tid,)).fetchone()["due_at"]
+    db.execute("UPDATE ideas SET stage = 'scanned' WHERE id = %s", (idea_uuid,))  # answered
+    counts = engine.tick(db, now=due + dt.timedelta(minutes=1))
+    assert counts["withdrawn"] == 0
+    assert db.execute("SELECT stage FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()["stage"] == "scanned"
+    assert jobs(db, "idea.withdrawn_no_answer") == []
+
+    # And a timer stopped by the answer is never looked at again.
+    t2 = engine.start(db, "idea", "IDEA-2026-000951", "needs_info", now=MONDAY)
+    engine.stop(db, "idea", "IDEA-2026-000951", "needs_info")
+    engine.tick(db, now=due + dt.timedelta(days=1))
+    assert db.execute("SELECT state FROM sla_timers WHERE id = %s", (t2,)).fetchone()["state"] == "stopped"

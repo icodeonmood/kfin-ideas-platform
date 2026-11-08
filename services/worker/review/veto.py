@@ -17,7 +17,15 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from embeddings import embed
-from review.service import ActionRefused, _card_text, _correction, _tagged, staff_code
+from review.service import (
+    ActionRefused,
+    _card_text,
+    _correction,
+    _tagged,
+    audited,
+    refuse_own,
+    staff_code,
+)
 from sla import engine
 
 
@@ -33,13 +41,15 @@ def desk_decisions(conn: Conn, limit: int = 200) -> dict[str, Any]:
         "WHERE r.item_type = 'idea' AND r.decided_at IS NOT NULL ORDER BY r.decided_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
+    ids = [r["id"] for r in rows]
     notes = {
         r["review_item_id"]: r["note"]
         for r in conn.execute(
-            "SELECT DISTINCT ON (review_item_id) review_item_id, note FROM corrections WHERE note IS NOT NULL "
-            "ORDER BY review_item_id, id DESC"
+            "SELECT DISTINCT ON (review_item_id) review_item_id, note FROM corrections WHERE review_item_id = ANY(%s) "
+            "AND note IS NOT NULL AND field LIKE 'value.%%' ORDER BY review_item_id, id",
+            (ids,),
         ).fetchall()
-    }
+    }  # the desk's note to the person, never a veto reason
     disagreements = conn.execute(
         "SELECT r.id, r.ref_id, r.created_at, i.canvas->>'neutral_summary' AS summary FROM review_items r "
         "JOIN ideas i ON i.idea_id = r.ref_id WHERE r.item_type = 'disagreement' AND r.state = 'open' "
@@ -67,7 +77,7 @@ def veto(
     conn: Conn, item_id: int, member: str, reason: str, now: dt.datetime | None = None
 ) -> dict[str, Any]:
     now = now or dt.datetime.now(dt.UTC)
-    with conn.transaction():
+    with audited(conn), conn.transaction():
         item = conn.execute("SELECT * FROM review_items WHERE id = %s FOR UPDATE", (item_id,)).fetchone()
         if item is None or item["item_type"] != "idea":
             raise ActionRefused(404, "not_found")
@@ -85,6 +95,7 @@ def veto(
             raise ActionRefused(409, "veto_window_closed")
         idea = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (item["ref_id"],)).fetchone()
         assert idea is not None
+        refuse_own(conn, member, dict(idea), "veto")
         tagged = _tagged(conn, idea["idea_id"], reason, min_chars=10)
         code = staff_code(conn, member)
         conn.execute(

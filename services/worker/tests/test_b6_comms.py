@@ -38,6 +38,8 @@ def test_template_variables_sections_and_no_reinterpretation() -> None:
     assert render_text(
         "{{a.b}} {{items.1}} {{#flag}}yes{{/flag}}{{#missing}}no{{/missing}} {{evil}}", data
     ) == ("x two yes {{a.b}}")
+    # Inside a section too: an inserted value is never expanded a second time (B6 review).
+    assert render_text("{{#flag}}[{{evil}}]{{/flag}}", data) == "[{{a.b}}]"
 
 
 def test_quiet_hours_weekends_and_holidays() -> None:
@@ -197,3 +199,92 @@ def test_one_non_urgent_email_a_day_and_the_email_switch(people: Any) -> None:
     )
     killswitch.set_switch(db, "comms.email", "on", reason="Testing the email switch", actor="REV-0001")
     killswitch.clear_cache()
+
+
+# --- B6 review regressions -------------------------------------------------------------------------------------
+
+
+def _queue(
+    db: Any, user_id: str, channel: str, urgency: str, send_after: dt.datetime | None, state: str
+) -> int:
+    return int(
+        db.execute(
+            "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, send_after) "
+            "VALUES (%s, %s, 'quick-capture-nudge', %s, 'canvas.nudge', %s, %s, %s) RETURNING id",
+            (user_id, channel, json.dumps({"idea_id": "IDEA-2026-000901"}), urgency, state, send_after),
+        ).fetchone()["id"]
+    )
+
+
+def _state(db: Any, nid: int) -> dict[str, Any]:
+    return dict(
+        db.execute(
+            "SELECT channel, state, error_code, send_after FROM notifications WHERE id = %s", (nid,)
+        ).fetchone()
+    )
+
+
+def test_people_who_have_left_get_no_email(people: Any, monkeypatch: Any) -> None:
+    db, users, _refs = people
+    sent: list[str] = []
+    monkeypatch.setattr("comms.send._smtp", lambda to, subject, body: sent.append(to))
+    mail = _queue(db, users["owner"]["id"], "email", "immediate", WORKDAY_NOON, "queued")
+    held = _queue(db, users["owner"]["id"], "digest", "routine", None, "held")
+    db.execute("UPDATE users SET active = false WHERE id = %s", (users["owner"]["id"],))
+    send_due(db, now=WORKDAY_NOON)
+    send_digests(db, now=WORKDAY_NOON)
+    assert sent == []
+    assert _state(db, mail)["state"] == "failed" and _state(db, mail)["error_code"] == "recipient_inactive"
+    assert _state(db, held)["state"] == "failed"
+
+
+def test_routine_email_is_checked_again_when_it_is_sent(people: Any, monkeypatch: Any) -> None:
+    """A backlog released at night (say, `comms.email` back on at 22:00) still waits for working hours, and a
+    second routine email on the same day goes to the digest."""
+    db, users, _refs = people
+    sent: list[str] = []
+    monkeypatch.setattr("comms.send._smtp", lambda to, subject, body: sent.append(to))
+    night = dt.datetime(2026, 11, 18, 22, 0, tzinfo=IST)
+    late = _queue(db, users["owner"]["id"], "email", "routine", WORKDAY_NOON, "queued")
+    urgent = _queue(db, users["owner"]["id"], "email", "immediate", WORKDAY_NOON, "queued")
+    assert send_due(db, now=night) == 1 and _state(db, urgent)["state"] == "sent"  # urgent mail goes at once
+    assert _state(db, late)["state"] == "queued"
+    assert _state(db, late)["send_after"] == dt.datetime(2026, 11, 19, 8, 0, tzinfo=IST)
+
+    morning = dt.datetime(2026, 11, 19, 9, 0, tzinfo=IST)
+    second = _queue(db, users["owner"]["id"], "email", "routine", morning, "queued")
+    assert send_due(db, now=morning) == 1  # the first routine email of the day
+    assert {_state(db, late)["state"], _state(db, second)["state"]} == {"sent", "held"}
+    capped = late if _state(db, late)["state"] == "held" else second
+    assert _state(db, capped)["channel"] == "digest"
+
+
+def test_one_bad_digest_does_not_hold_back_the_others(people: Any, monkeypatch: Any) -> None:
+    db, users, _refs = people
+    sent: list[str] = []
+
+    def smtp(to: str, subject: str, body: str) -> None:
+        if to == users["owner"]["email"]:
+            raise OSError("mailbox unavailable")
+        sent.append(to)
+
+    monkeypatch.setattr("comms.send._smtp", smtp)
+    bad = _queue(db, users["owner"]["id"], "digest", "routine", None, "held")
+    good = _queue(db, users["joiner"]["id"], "digest", "routine", None, "held")
+    assert send_digests(db, now=WORKDAY_NOON) == 1
+    assert sent == [users["joiner"]["email"]]
+    assert _state(db, good)["state"] == "sent" and _state(db, bad)["state"] == "held"  # tried again next time
+
+
+def test_a_message_that_cannot_be_shown_does_not_hide_the_rest(people: Any) -> None:
+    db, users, _refs = people
+    _queue(db, users["owner"]["id"], "in_app", "routine", None, "sent")
+    db.execute(
+        "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state) "
+        "VALUES (%s, 'in_app', 'no-such-template', '{}', 'canvas.nudge', 'routine', 'sent')",
+        (users["owner"]["id"],),
+    )
+    messages = inbox(db, users["owner"]["id"])
+    assert len(messages) == 2
+    assert any(m["subject"] == "A message we can't show just now" for m in messages)
+    assert any(ONE_LINE in m["body"] for m in messages)

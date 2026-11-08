@@ -63,6 +63,20 @@ const ERRORS: Record<string, string> = {
   cluster_not_found: "That cluster does not exist.",
   idea_not_found: "That idea does not exist.",
   not_ready_for_review: "This idea is not ready for a decision yet.",
+  awaiting_hold_confirmation: "A hold is waiting for a second reviewer. Nothing else can change until then.",
+  no_hold_to_confirm: "There is no hold waiting to be confirmed.",
+  own_idea: "You cannot act on an idea you shared or are linked to. Another reviewer will take it.",
+  visibility_required: "Please choose who can see it, and give a reason.",
+  redirect_kind_required: "Please choose where it should go.",
+  hold_kind_required: "Please choose spam or abuse.",
+  unknown_areas: "One of the area tags is not in the list. Please refresh and try again.",
+  unknown_lobs: "One of the LOBs is not in the list. Please refresh and try again.",
+  unknown_systems: "One of the systems is not in the list. Please refresh and try again.",
+  unknown_roles_affected: "One of the roles is not in the list. Please refresh and try again.",
+  bad_category: "Please choose a category from the list.",
+  bad_play: "Please choose a play from the list.",
+  bad_scope: "Please choose a scope from the list.",
+  bad_request: "Something in the form was not right. Please refresh and try again.",
 };
 
 function toggle(list: string[], id: string, on: boolean) {
@@ -92,6 +106,9 @@ export function Actions({ id, view, me }: { id: string; view: ItemView; me: stri
   const changed = category !== (value.category ?? "not_sure") || play !== (value.play ?? "");
   const open = ["open", "in_progress", "awaiting_second_reviewer"].includes(view.item.state);
   const mine = !view.item.assigned_to || view.item.assigned_to === me;
+  const holding = view.item.state === "awaiting_second_reviewer";
+  const holdBy = String(view.item.final?.requested_by ?? "");
+  const [pendingHold, setPendingHold] = useState<"spam" | "abuse" | null>(null);
 
   async function send(body: Record<string, unknown>, done: string) {
     setBusy(true);
@@ -111,6 +128,40 @@ export function Actions({ id, view, me }: { id: string; view: ItemView; me: stri
     statusRef.current?.focus();
     if (res?.ok) router.refresh();
   }
+
+  if (holding)
+    return (
+      <section aria-labelledby="p-actions" className="panel">
+        <h2 id="p-actions">Actions</h2>
+        <p
+          ref={statusRef}
+          tabIndex={-1}
+          role="status"
+          aria-live="polite"
+          className={message?.error ? "field-error" : "muted"}
+        >
+          {message?.text ?? ""}
+        </p>
+        <div className="notice">
+          <p>
+            A reviewer has asked to hold this as {String(view.item.final?.hold ?? "spam")}. A second reviewer
+            confirms. Nothing else can change until then.
+          </p>
+          {holdBy === me ? (
+            <p>You asked for this hold, so a different reviewer has to confirm it.</p>
+          ) : (
+            <button
+              type="button"
+              className="button"
+              disabled={busy}
+              onClick={() => void send({ action: "confirm_hold" }, "Hold confirmed.")}
+            >
+              Confirm the hold
+            </button>
+          )}
+        </div>
+      </section>
+    );
 
   if (!open || !mine)
     return (
@@ -141,23 +192,6 @@ export function Actions({ id, view, me }: { id: string; view: ItemView; me: stri
       >
         {message?.text ?? ""}
       </p>
-
-      {view.item.state === "awaiting_second_reviewer" ? (
-        <div className="notice">
-          <p>
-            A reviewer has asked to hold this as {String(view.item.final?.hold ?? "spam")}. A second reviewer
-            confirms.
-          </p>
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={() => void send({ action: "confirm_hold" }, "Hold confirmed.")}
-          >
-            Confirm the hold
-          </button>
-        </div>
-      ) : null}
 
       <form
         onSubmit={(e) => {
@@ -356,17 +390,43 @@ export function Actions({ id, view, me }: { id: string; view: ItemView; me: stri
         </button>
       </form>
 
-      {view.item.state !== "awaiting_second_reviewer" ? (
-        <div>
-          <h3>Hold</h3>
+      <div>
+        <h3>Hold</h3>
+        {pendingHold ? (
+          <div className="notice" role="group" aria-labelledby="hold-confirm">
+            <p id="hold-confirm">
+              Hold this as {pendingHold}? It leaves the queue until a second reviewer confirms.
+            </p>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button"
+                disabled={busy}
+                onClick={() => {
+                  const kind = pendingHold;
+                  setPendingHold(null);
+                  void send({ action: "hold", kind }, "Hold requested. A second reviewer confirms.");
+                }}
+              >
+                Yes, hold as {pendingHold}
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={busy}
+                onClick={() => setPendingHold(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
           <div className="button-row">
             <button
               type="button"
               className="button button-secondary"
               disabled={busy}
-              onClick={() =>
-                void send({ action: "hold", kind: "spam" }, "Hold requested. A second reviewer confirms.")
-              }
+              onClick={() => setPendingHold("spam")}
             >
               Hold as spam
             </button>
@@ -374,15 +434,13 @@ export function Actions({ id, view, me }: { id: string; view: ItemView; me: stri
               type="button"
               className="button button-secondary"
               disabled={busy}
-              onClick={() =>
-                void send({ action: "hold", kind: "abuse" }, "Hold requested. A second reviewer confirms.")
-              }
+              onClick={() => setPendingHold("abuse")}
             >
               Hold as abuse
             </button>
           </div>
-        </div>
-      ) : null}
+        )}
+      </div>
     </section>
   );
 }

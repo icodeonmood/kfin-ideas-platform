@@ -11,12 +11,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from comms.render import variables
-from comms.route import next_send_time
+from comms.route import IST, next_send_time
 from comms.templates import render
 from core import killswitch
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from rules import load_rule
 
 log = get_logger("comms.send")
 FROM = "The Garage <garage@kfintech.example>"
@@ -44,13 +45,16 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
     now = now or dt.datetime.now(dt.UTC)
     sent = 0
     with conn.transaction():
+        _drop_inactive(conn)
         rows = conn.execute(
-            "SELECT n.id, n.user_id, n.event, n.template, n.payload, n.attempts, u.email FROM notifications n "
-            "JOIN users u ON u.id = n.user_id WHERE n.channel = 'email' AND n.state = 'queued' AND n.send_after <= %s "
-            "ORDER BY n.send_after, n.id LIMIT %s FOR UPDATE OF n SKIP LOCKED",
+            "SELECT n.id, n.user_id, n.event, n.template, n.payload, n.attempts, n.urgency, u.email "
+            "FROM notifications n JOIN users u ON u.id = n.user_id WHERE n.channel = 'email' AND n.state = 'queued' "
+            "AND n.send_after <= %s AND u.active ORDER BY n.send_after, n.id LIMIT %s FOR UPDATE OF n SKIP LOCKED",
             (now, limit),
         ).fetchall()
         for r in rows:
+            if r["urgency"] == "routine" and _hold_back(conn, r, now):
+                continue
             try:
                 subject, body, _ = message_for(
                     conn, str(r["user_id"]), r["event"], r["template"], r["payload"]
@@ -65,11 +69,44 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
                 )
                 log.warning("comms.send_failed", notification_id=r["id"], error_type=type(exc).__name__)
                 continue
-            conn.execute("UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = %s", (r["id"],))
+            conn.execute(
+                "UPDATE notifications SET state = 'sent', sent_at = %s WHERE id = %s", (now, r["id"])
+            )
             sent += 1
     if sent:
         log.info("comms.sent", sent_count=sent)
     return sent
+
+
+def _drop_inactive(conn: Conn) -> None:
+    """People who have left get nothing by email, even mail queued while they were here (B6 review)."""
+    conn.execute(
+        "UPDATE notifications n SET state = 'failed', error_code = 'recipient_inactive' FROM users u "
+        "WHERE u.id = n.user_id AND NOT u.active AND n.channel IN ('email', 'digest') AND n.state IN ('queued', 'held')"
+    )
+
+
+def _hold_back(conn: Conn, r: dict[str, Any], now: dt.datetime) -> bool:
+    """Routine mail is checked again at send time: a backlog (say, `comms.email` back on at night) still waits for
+    working hours, and a second routine email on the same day goes to the digest instead."""
+    at = next_send_time(now, "routine")
+    if at != now:
+        conn.execute("UPDATE notifications SET send_after = %s WHERE id = %s", (at, r["id"]))
+        return True
+    cap = int(
+        (load_rule(get_settings().company_repo_path, "comms").data.get("limits") or {}).get(
+            "non_urgent_emails_per_person_per_day", 1
+        )
+    )
+    sent = conn.execute(
+        "SELECT count(*) AS n FROM notifications WHERE user_id = %s AND channel = 'email' AND urgency = 'routine' "
+        "AND state IN ('sent', 'read') AND (sent_at AT TIME ZONE 'Asia/Kolkata')::date = %s",
+        (r["user_id"], now.astimezone(IST).date()),
+    ).fetchone()
+    if sent and int(sent["n"]) >= cap:
+        conn.execute("UPDATE notifications SET channel = 'digest', state = 'held' WHERE id = %s", (r["id"],))
+        return True
+    return False
 
 
 def send_digests(conn: Conn, now: dt.datetime | None = None) -> int:
@@ -79,29 +116,39 @@ def send_digests(conn: Conn, now: dt.datetime | None = None) -> int:
     now = now or dt.datetime.now(dt.UTC)
     if next_send_time(now, "routine") != now:
         return 0
+    with conn.transaction():
+        _drop_inactive(conn)
     users = conn.execute(
         "SELECT DISTINCT n.user_id, u.email FROM notifications n JOIN users u ON u.id = n.user_id "
-        "WHERE n.channel = 'digest' AND n.state = 'held'"
+        "WHERE n.channel = 'digest' AND n.state = 'held' AND u.active"
     ).fetchall()
     count = 0
     for u in users:
-        items = conn.execute(
-            "SELECT id, event, template, payload FROM notifications WHERE user_id = %s AND channel = 'digest' "
-            "AND state = 'held' ORDER BY created_at",
-            (u["user_id"],),
-        ).fetchall()
-        parts = []
-        for it in items:
-            subject, body, _ = message_for(
-                conn, str(u["user_id"]), it["event"], it["template"], it["payload"]
-            )
-            parts.append(f"## {subject}\n\n{body}")
-        _smtp(u["email"], f"Your Garage update: {len(parts)} new", "\n\n".join(parts))
-        conn.execute(
-            "UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = ANY(%s)",
-            ([it["id"] for it in items],),
-        )
-        count += 1
+        try:
+            with conn.transaction():
+                count += _send_digest(conn, u)
+        except Exception as exc:  # one person's failure must not hold back everyone else's digest
+            log.warning("comms.batched_failed", error_type=type(exc).__name__)
     if count:
         log.info("comms.batched_sent", person_count=count)
     return count
+
+
+def _send_digest(conn: Conn, u: dict[str, Any]) -> int:
+    items = conn.execute(
+        "SELECT id, event, template, payload FROM notifications WHERE user_id = %s AND channel = 'digest' "
+        "AND state = 'held' ORDER BY created_at FOR UPDATE SKIP LOCKED",
+        (u["user_id"],),
+    ).fetchall()
+    if not items:
+        return 0
+    parts = []
+    for it in items:
+        subject, body, _ = message_for(conn, str(u["user_id"]), it["event"], it["template"], it["payload"])
+        parts.append(f"## {subject}\n\n{body}")
+    _smtp(u["email"], f"Your Garage update: {len(parts)} new", "\n\n".join(parts))
+    conn.execute(
+        "UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = ANY(%s)",
+        ([it["id"] for it in items],),
+    )
+    return 1

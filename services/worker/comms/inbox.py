@@ -6,6 +6,9 @@ from typing import Any
 
 from comms.send import message_for
 from core.db import Conn
+from core.logging import get_logger
+
+log = get_logger("comms.inbox")
 
 
 def inbox(conn: Conn, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
@@ -16,7 +19,11 @@ def inbox(conn: Conn, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
     ).fetchall()
     out = []
     for r in rows:
-        subject, body, _ = message_for(conn, user_id, r["event"], r["template"], r["payload"])
+        try:
+            subject, body, _ = message_for(conn, user_id, r["event"], r["template"], r["payload"])
+        except Exception as exc:  # one message we cannot show must not hide all the others
+            log.warning("comms.inbox_render_failed", notification_id=r["id"], error_type=type(exc).__name__)
+            subject, body = "A message we can't show just now", "Please look again later.\n"
         out.append(
             {
                 "id": r["id"],
