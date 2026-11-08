@@ -186,6 +186,16 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         data["requester"] = {"lob_name": (link["hr_department"] if link else None) or "another team"}
         data["request"] = {"context": context}
         data["links"]["request"] = f"{base}/review"
+    if event == "sla.reminder":
+        timer = conn.execute(
+            "SELECT due_at FROM sla_timers WHERE id = %s", (refs.get("timer_id"),)
+        ).fetchone()
+        data["item"] = {
+            "label": refs.get("idea_id") or "An item",
+            "due_date": _date(timer["due_at"]) if timer else "",
+        }
+        data["reminder"] = {"share_percent": int(float(refs.get("share") or 0) * 100)}
+        data["links"]["item"] = f"{base}/review"
     if event == "sla.breached":
         data["breach"] = {"days_late": refs.get("days_late", 0), "limit_wd": refs.get("limit_wd", 0)}
         data["item"] = {

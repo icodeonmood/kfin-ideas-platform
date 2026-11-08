@@ -66,6 +66,40 @@ def _copy_overlay(overlay_dir: Path, dest: Path) -> int:
     return added
 
 
+REFRESH_MESSAGE = "Dev: refresh seed content\n\nactor: system\nevent: repo.dev_seed_refresh\n"
+
+
+def refresh_seed_files(seed_dir: Path, dest: Path, author: str) -> int:
+    """Dev and test only: bring seed-owned files (rules, templates, taxonomy, examples) in an existing company
+    repo up to date with `seed/company-repo/`, in one commit. Files the platform writes (ideas, clusters…) are
+    not in the seed and are never touched. UAT and prod change these files through reviewed commits instead."""
+    if get_settings().is_production_like:
+        return 0
+    changed = 0
+    for src in sorted(p for p in seed_dir.rglob("*") if p.is_file()):
+        rel = src.relative_to(seed_dir)
+        if rel.parts[0] in (
+            "ideas",
+            "clusters",
+            "decisions",
+            "solutions",
+            "learning",
+            "appeals",
+            "handovers",
+        ) or rel.name in ("log.md",):
+            continue
+        target = dest / rel
+        data = src.read_bytes()
+        if target.exists() and target.read_bytes() == data:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        changed += 1
+    if changed:
+        Git(dest, author).commit_all(REFRESH_MESSAGE)
+    return changed
+
+
 def apply_dev_overlay(overlay_dir: Path, dest: Path, author: str) -> int:
     """For a company repo created before the overlay existed: add missing dev-only files in one commit. Never
     outside dev and test. Returns the number of files added."""
@@ -85,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
     overlay_dir = args.seed_dir.parent / "dev-overlay"
     created = create_company_repo(args.seed_dir, dest, settings.repo_writer_author, overlay_dir)
     print(f"company repo: {'created' if created else 'already exists'} at {dest}")
+    if not created:
+        refreshed = refresh_seed_files(args.seed_dir, dest, settings.repo_writer_author)
+        if refreshed:
+            print(f"dev seed refresh: {refreshed} seed files updated")
     overlay = 0 if created else apply_dev_overlay(overlay_dir, dest, settings.repo_writer_author)
     if overlay:
         print(f"dev overlay: {overlay} synthetic files added")

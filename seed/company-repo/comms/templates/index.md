@@ -11,3 +11,5 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [redirected.md](redirected.md) — Where to take this: {{redirect.team}}
 - [reconsidered.md](reconsidered.md) — Update on {{idea.id}}: reconsidered by the core committee
 - [sla-breached.md](sla-breached.md) — Overdue: {{item.label}}
+- [sla-reminder.md](sla-reminder.md) — Reminder: {{item.label}} is due {{item.due_date}}
+- [withdrawn-no-answer.md](withdrawn-no-answer.md) — We have paused {{idea.id}}

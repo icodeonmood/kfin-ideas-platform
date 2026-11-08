@@ -36,3 +36,23 @@ def add_working_days(start: dt.datetime, n: int) -> dt.datetime:
 def limit_wd(stage: str) -> int:
     data = load_rule(get_settings().company_repo_path, "sla").data
     return int(data[stage]["limit_wd"])
+
+
+def working_seconds(a: dt.datetime, b: dt.datetime) -> float:
+    """Seconds between two moments that fall on working days (whole days; weekends and holidays count zero)."""
+    if b <= a:
+        return 0.0
+    cal = load_rule(get_settings().company_repo_path, "calendar").data
+    tz = ZoneInfo(str(cal.get("timezone", "Asia/Kolkata")))
+    weekend = {DAYS.index(d) for d in cal.get("weekend", ["sat", "sun"])}
+    holidays = {dt.date.fromisoformat(str(h["date"])) for h in cal.get("holidays") or []}
+    a, b = a.astimezone(tz), b.astimezone(tz)
+    total = 0.0
+    day = a.date()
+    while day <= b.date():
+        if day.weekday() not in weekend and day not in holidays:
+            start = max(a, dt.datetime.combine(day, dt.time.min, tzinfo=tz))
+            end = min(b, dt.datetime.combine(day + dt.timedelta(days=1), dt.time.min, tzinfo=tz))
+            total += max(0.0, (end - start).total_seconds())
+        day += dt.timedelta(days=1)
+    return total

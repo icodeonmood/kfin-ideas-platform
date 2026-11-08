@@ -123,6 +123,27 @@ events:
     approval: null
     signer: vetoing_member
     send_only_if_outcome_changed: true
+  sla.reminder:
+    day_one: true
+    audiences:
+    - current_owner
+    template: sla-reminder
+    channels:
+    - in_app
+    urgency: routine
+    approval: null
+    signer: system
+  idea.withdrawn_no_answer:
+    day_one: true
+    audiences:
+    - submitter
+    template: withdrawn-no-answer
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: garage_team
   sla.breached:
     day_one: true
     audiences:

@@ -1,0 +1,179 @@
+"""Time limits (§3.6, AT-B6-07). Timers live in `sla_timers`, limits in `rules/sla.md`, working days in
+`rules/calendar.md`.
+
+- `start` sets the due time `limit_wd` working days ahead; `stop` ends a timer when its stage ends.
+- `pause`/`resume`: `needs_info` pauses the review timer; on resume the due time moves on by the pause.
+- `tick` (every minute, from the worker's ticker): reminders to the current owner at each `remind_at` share of
+  the limit (50% and 80% for review), and on breach the timer turns `breached`, the escalation target is told
+  (`sla.breached`) and the idea's history gets a line. A `needs_info` breach withdraws the idea; the person can
+  reopen it from the message.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+
+from psycopg.types.json import Jsonb
+
+from comms.route import emit
+from core.config import get_settings
+from core.db import Conn
+from core.logging import get_logger
+from rules import load_rule
+from sla.calendar import add_working_days, working_seconds
+
+log = get_logger("sla")
+
+
+def _rule(stage: str) -> dict[str, Any]:
+    return dict(load_rule(get_settings().company_repo_path, "sla").data[stage])
+
+
+def start(conn: Conn, entity_type: str, entity_id: str, stage: str, now: dt.datetime | None = None) -> int:
+    now = now or dt.datetime.now(dt.UTC)
+    due = add_working_days(now, int(_rule(stage)["limit_wd"]))
+    row = conn.execute(
+        "INSERT INTO sla_timers (entity_type, entity_id, stage, started_at, due_at) VALUES (%s, %s, %s, %s, %s) "
+        "RETURNING id",
+        (entity_type, entity_id, stage, now, due),
+    ).fetchone()
+    assert row is not None
+    return int(row["id"])
+
+
+def _open(conn: Conn, entity_type: str, entity_id: str, stage: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM sla_timers WHERE entity_type = %s AND entity_id = %s AND stage = %s "
+        "AND state IN ('running', 'paused') ORDER BY id DESC LIMIT 1 FOR UPDATE",
+        (entity_type, entity_id, stage),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def stop(conn: Conn, entity_type: str, entity_id: str, stage: str) -> None:
+    conn.execute(
+        "UPDATE sla_timers SET state = 'stopped', stopped_at = now() WHERE entity_type = %s AND entity_id = %s "
+        "AND stage = %s AND state IN ('running', 'paused')",
+        (entity_type, entity_id, stage),
+    )
+
+
+def pause(conn: Conn, entity_type: str, entity_id: str, stage: str, now: dt.datetime | None = None) -> None:
+    conn.execute(
+        "UPDATE sla_timers SET state = 'paused', paused_at = %s WHERE entity_type = %s AND entity_id = %s "
+        "AND stage = %s AND state = 'running'",
+        (now or dt.datetime.now(dt.UTC), entity_type, entity_id, stage),
+    )
+
+
+def resume(conn: Conn, entity_type: str, entity_id: str, stage: str, now: dt.datetime | None = None) -> None:
+    now = now or dt.datetime.now(dt.UTC)
+    conn.execute(
+        "UPDATE sla_timers SET state = 'running', due_at = due_at + (%s - paused_at), "
+        "paused_total = paused_total + (%s - paused_at), paused_at = NULL "
+        "WHERE entity_type = %s AND entity_id = %s AND stage = %s AND state = 'paused'",
+        (now, now, entity_type, entity_id, stage),
+    )
+
+
+def _fraction(t: dict[str, Any], now: dt.datetime) -> float:
+    """Share of the limit used, in working time (a weekend does not bring a reminder closer)."""
+    if now >= t["due_at"]:
+        return 1.0
+    paused = t["paused_total"].total_seconds()
+    total = working_seconds(t["started_at"], t["due_at"]) - paused
+    spent = working_seconds(t["started_at"], now) - paused
+    return max(0.0, spent / total) if total > 0 else 1.0
+
+
+def _owner_and_idea(conn: Conn, t: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Who owns the timer now, and which idea it is about."""
+    if t["entity_type"] == "review_item":
+        row = conn.execute(
+            "SELECT assigned_to, ref_id FROM review_items WHERE id = %s", (int(t["entity_id"]),)
+        ).fetchone()
+        if row is None:
+            return [], None
+        if row["assigned_to"]:
+            return [str(row["assigned_to"])], row["ref_id"]
+        desk = conn.execute(
+            "SELECT DISTINCT g.user_id FROM role_grants g JOIN users u ON u.id = g.user_id "
+            "WHERE g.role = 'reviewer' AND g.valid_to IS NULL AND u.active"
+        ).fetchall()
+        return [str(r["user_id"]) for r in desk], row["ref_id"]
+    if t["entity_type"] == "idea":
+        return [], t["entity_id"]
+    return [], None
+
+
+def _escalation(conn: Conn, target: str | None) -> list[str]:
+    if not target:
+        return []
+    roles = ["core_chair", "core_committee"] if target == "core_chair" else [target]
+    for role in roles:  # the chair if one is named, else the core committee
+        rows = conn.execute(
+            "SELECT DISTINCT g.user_id FROM role_grants g JOIN users u ON u.id = g.user_id "
+            "WHERE g.role = %s AND g.valid_to IS NULL AND u.active",
+            (role,),
+        ).fetchall()
+        if rows:
+            return [str(r["user_id"]) for r in rows]
+    return []
+
+
+def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
+    now = now or dt.datetime.now(dt.UTC)
+    counts = {"reminders": 0, "breaches": 0, "withdrawn": 0}
+    timers = conn.execute("SELECT * FROM sla_timers WHERE state = 'running' ORDER BY id").fetchall()
+    for t in (dict(x) for x in timers):
+        rule = _rule(t["stage"])
+        f = _fraction(t, now)
+        owners, idea_id = _owner_and_idea(conn, t)
+        sent = [float(x) for x in t["reminders_sent"] or []]
+        for share in [float(x) for x in rule.get("remind_at") or []]:
+            if f >= share and share not in sent and f < 1:
+                conn.execute(
+                    "UPDATE sla_timers SET reminders_sent = array_append(reminders_sent, %s) WHERE id = %s",
+                    (share, t["id"]),
+                )
+                emit(
+                    conn,
+                    "sla.reminder",
+                    {"timer_id": t["id"], "share": share, "current_owner_ids": owners, "idea_id": idea_id},
+                )
+                counts["reminders"] += 1
+        if f < 1:
+            continue
+        with conn.transaction():
+            conn.execute(
+                "UPDATE sla_timers SET state = 'breached', escalated_at = now() WHERE id = %s AND state = 'running'",
+                (t["id"],),
+            )
+            days_late = max(0, (now - t["due_at"]).days)
+            emit(
+                conn,
+                "sla.breached",
+                {
+                    "timer_id": t["id"], "item_label": idea_id or t["entity_id"], "days_late": days_late,
+                    "limit_wd": rule.get("limit_wd"), "current_owner_ids": owners,
+                    "escalation_target_ids": _escalation(conn, rule.get("escalate_to")),
+                    "owner_user_id": owners[0] if owners else None, "idea_id": idea_id,
+                },
+            )  # fmt: skip
+            if idea_id:
+                conn.execute(
+                    "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('idea.stage_changed', %s, "
+                    "'process:sla', %s)",
+                    (idea_id, Jsonb({"history": [{"event": f"{t['stage']}_overdue", "by": "process:sla"}]})),
+                )
+            if rule.get("on_breach") == "withdraw_with_reopen" and t["entity_type"] == "idea":
+                conn.execute(
+                    "UPDATE ideas SET stage = 'withdrawn' WHERE idea_id = %s AND stage = 'needs_info'",
+                    (t["entity_id"],),
+                )
+                emit(conn, "idea.withdrawn_no_answer", {"idea_id": t["entity_id"]})
+                counts["withdrawn"] += 1
+            counts["breaches"] += 1
+            log.warning("sla.breached", timer_id=t["id"], stage_name=t["stage"])
+    return counts

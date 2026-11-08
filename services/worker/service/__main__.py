@@ -37,14 +37,20 @@ def _guard(name: str, target: object) -> threading.Thread:
     return t
 
 
-def comms_loop(poll_seconds: float = 20.0) -> None:
-    """Send email that has come due (quiet hours and the daily cap were applied when it was queued)."""
+def ticker(poll_seconds: float = 20.0) -> None:
+    """Send email that has come due (quiet hours and the daily cap were applied when it was queued) and, every
+    minute, check time limits: reminders, breaches, escalations (§3.6, §3.7)."""
     from comms.send import send_due
     from core.db import connect
+    from sla.engine import tick
 
+    last_sla = 0.0
     with connect(autocommit=True) as conn:
         while True:
             send_due(conn)
+            if time.monotonic() - last_sla >= 60:
+                tick(conn)
+                last_sla = time.monotonic()
             time.sleep(poll_seconds)
 
 
@@ -68,8 +74,8 @@ def main() -> None:
         _guard("jobs", jobs.run_forever)
     if "scheduler" in roles:
         _guard("scheduler", schedule.run_forever)
-    if "comms" in roles:
-        _guard("comms", comms_loop)
+    if "ticker" in roles:
+        _guard("ticker", ticker)
     if "api" in roles:
         uvicorn.run(
             "api.app:app",
