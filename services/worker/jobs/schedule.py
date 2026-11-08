@@ -18,6 +18,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 # job type -> time of day (IST). §3.5 times where given; drafts.purge is ours.
 DAILY: dict[str, clock] = {
+    "reconcile": clock(2, 0),  # §3.5
     "drafts.purge": clock(3, 30),
     "comms.nudges": clock(10, 0),  # quick captures still weak on day 2 and day 7 (§3.7)
     "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)

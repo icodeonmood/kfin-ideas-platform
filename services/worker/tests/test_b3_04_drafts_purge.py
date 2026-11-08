@@ -37,10 +37,11 @@ def test_purge_removes_only_expired_drafts(db: Any) -> None:
 def test_schedule_enqueues_once_a_day(db: Any) -> None:
     db.execute("DELETE FROM jobs")
     ist = ZoneInfo("Asia/Kolkata")
-    assert enqueue_due(db, datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == []  # before 03:30
+    assert enqueue_due(db, datetime(2026, 11, 20, 1, 59, tzinfo=ist)) == []  # before 02:00 (reconcile)
+    assert enqueue_due(db, datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.purge at 03:30
     assert enqueue_due(db, datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.purge"]
     assert enqueue_due(db, datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == []  # already today
-    assert enqueue_due(db, datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["drafts.purge"]
+    assert enqueue_due(db, datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.purge"]
 
 
 def test_jobs_for_later_blocks_wait_instead_of_failing(db: Any) -> None:

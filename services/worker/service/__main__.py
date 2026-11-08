@@ -38,18 +38,21 @@ def _guard(name: str, target: object) -> threading.Thread:
 
 
 def ticker(poll_seconds: float = 20.0) -> None:
-    """Send email that has come due (quiet hours and the daily cap were applied when it was queued) and, every
-    minute, check time limits: reminders, breaches, escalations (§3.6, §3.7)."""
+    """Send email that has come due and, every minute, check time limits (reminders, breaches, escalations,
+    §3.6) and the automatic switch-offs for the scanner and email bounces (§7.6)."""
     from comms.send import send_due
     from core.db import connect
+    from core.watch import Watch
     from sla.engine import tick
 
     last_sla = 0.0
+    watch = Watch()
     with connect(autocommit=True) as conn:
         while True:
             send_due(conn)
             if time.monotonic() - last_sla >= 60:
                 tick(conn)
+                watch.run(conn)  # scanner and bounce switch-offs (§7.6)
                 last_sla = time.monotonic()
             time.sleep(poll_seconds)
 

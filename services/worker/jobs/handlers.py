@@ -140,3 +140,11 @@ def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
 
     if dt.datetime.now(ZoneInfo("Asia/Kolkata")).weekday() == 0 or payload.get("force"):
         send_digests(conn)
+
+
+@handler("reconcile")
+def reconcile_job(conn: Conn, payload: dict[str, Any]) -> None:
+    """Nightly: compare the company repo with the read model, fix the index, log the drift (§3.5)."""
+    from reconcile import run
+
+    run()

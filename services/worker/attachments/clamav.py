@@ -44,3 +44,14 @@ def scan_bytes(data: bytes, timeout: float = 60.0) -> ScanResult:
     if text.endswith("FOUND"):
         return ScanResult(clean=False, signature=text.split(":", 1)[-1].removesuffix("FOUND").strip())
     raise ScannerUnavailable("unexpected_reply")
+
+
+def ping(timeout: float = 3.0) -> bool:
+    """Whether the scanner answers (`zPING` → `PONG`). Used by the scanner watch (§7.6)."""
+    s = get_settings()
+    try:
+        with socket.create_connection((s.clamav_host, s.clamav_port), timeout=timeout) as sock:
+            sock.sendall(b"zPING\0")
+            return sock.recv(16).startswith(b"PONG")
+    except OSError:
+        return False
