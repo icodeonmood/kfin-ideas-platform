@@ -146,13 +146,13 @@ export async function exchangeCode(code: string, verifier: string, nonce: string
   if (!idToken) throw new OidcError("no_id_token");
 
   let payload: JWTPayload;
+  // RS256 only: Entra and the mock both sign with it, and an allowlist stops algorithm-confusion tricks.
+  const options = { issuer: cfg.issuer, audience: cfg.clientId, algorithms: ["RS256"] };
   try {
-    payload = (await jwtVerify(idToken, await keys(), { issuer: cfg.issuer, audience: cfg.clientId }))
-      .payload;
+    payload = (await jwtVerify(idToken, await keys(), options)).payload;
   } catch {
     // Keys may have rotated: refresh once, then give up.
-    payload = (await jwtVerify(idToken, await keys(true), { issuer: cfg.issuer, audience: cfg.clientId }))
-      .payload;
+    payload = (await jwtVerify(idToken, await keys(true), options)).payload;
   }
   if (payload.nonce !== nonce) throw new OidcError("nonce_mismatch");
   if (!payload.sub) throw new OidcError("no_subject");

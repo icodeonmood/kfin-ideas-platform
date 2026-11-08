@@ -16,10 +16,8 @@ export class SecretMissing extends Error {}
 function secret(): string {
   const value = process.env.CONTRIBUTOR_HMAC_SECRET;
   if (!value) throw new SecretMissing("CONTRIBUTOR_HMAC_SECRET is not set");
-  if (
-    ["uat", "prod"].includes(process.env.APP_ENV ?? "dev") &&
-    (value === "change-me" || value.length < 32)
-  ) {
+  // Fail closed: only dev and test may use the placeholder.
+  if (!["dev", "test"].includes(process.env.APP_ENV ?? "") && (value === "change-me" || value.length < 32)) {
     throw new SecretMissing("CONTRIBUTOR_HMAC_SECRET is a placeholder or too short for this environment");
   }
   return value;

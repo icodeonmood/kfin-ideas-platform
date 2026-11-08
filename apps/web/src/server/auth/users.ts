@@ -1,8 +1,11 @@
 /**
- * First and later sign-ins (§3.1 step 2, AT-B2-01): match the person to the HR record by employee ID, or by
- * email when SSO does not release the employee ID (open point O2). Someone not yet in the HR export gets a
- * `users` row from the claims (source "sign_in"); the next HR import adopts them. People HR has marked as
- * leavers cannot sign in.
+ * First and later sign-ins (§3.1 step 2, AT-B2-01).
+ * - An employee ID claim is matched on the employee ID only. If it matches nobody but the email belongs to an
+ *   existing person, sign-in is refused: the claims disagree about who this is.
+ * - Without an employee ID claim (open point O2), the email is matched, but only for KFin email domains, so a
+ *   guest account carrying a look-alike address cannot sign in as a colleague.
+ * - Someone not yet in the HR export gets a `users` row from the claims (source "sign_in"); the next HR import
+ *   adopts them by email. People HR has marked as leavers cannot sign in.
  */
 import { sql } from "kysely";
 
@@ -11,8 +14,14 @@ import { getDb } from "../db";
 import { assignContributorCode, emailKeyHash, empIdHash } from "../identity/codes";
 import type { Claims } from "./oidc";
 
+const kfinDomains = () =>
+  (process.env.KFIN_EMAIL_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+
 export class SignInRefused extends Error {
-  constructor(public code: "no_email" | "inactive") {
+  constructor(public code: "no_email" | "inactive" | "identity_mismatch" | "email_not_kfin") {
     super(code);
   }
 }
@@ -24,19 +33,24 @@ export async function userFromClaims(claims: Claims): Promise<{ id: string; crea
   const email = claims.email?.toLowerCase();
 
   return db.transaction().execute(async (trx) => {
-    let row = employeeId
-      ? await trx
-          .selectFrom("users")
-          .select(["id", "active", "email", "name"])
-          .where("emp_id_hash", "=", empIdHash(employeeId))
-          .executeTakeFirst()
-      : undefined;
-    if (!row && email) {
+    const byEmail = (address: string) =>
+      trx
+        .selectFrom("users")
+        .select(["id", "active", "email", "name"])
+        .where(sql`lower(email)`, "=", address)
+        .executeTakeFirst();
+    let row;
+    if (employeeId) {
       row = await trx
         .selectFrom("users")
         .select(["id", "active", "email", "name"])
-        .where(sql`lower(email)`, "=", email)
+        .where("emp_id_hash", "=", empIdHash(employeeId))
         .executeTakeFirst();
+      if (!row && email && (await byEmail(email))) throw new SignInRefused("identity_mismatch");
+    } else if (email) {
+      const domain = email.split("@").pop() ?? "";
+      if (!kfinDomains().includes(domain)) throw new SignInRefused("email_not_kfin");
+      row = await byEmail(email);
     }
 
     if (row) {

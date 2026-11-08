@@ -20,3 +20,4 @@ logs/
 .ruff_cache/
 .pytest_cache/
 apps/web/next-env.d.ts
+apps/web/tsconfig.tsbuildinfo

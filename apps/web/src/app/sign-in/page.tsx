@@ -8,6 +8,8 @@ const ERRORS: Record<string, string> = {
     "Your account is not active in the HR directory. If you have just joined, please try again tomorrow.",
   no_email: "We couldn't read your work email from the sign-in service. Please contact the IT helpdesk.",
   idp_unavailable: "The sign-in service is not answering. Please try again in a minute.",
+  identity_mismatch: "Your account details don't match the HR directory. Please contact the IT helpdesk.",
+  email_not_kfin: "Please sign in with your KFintech work account.",
 };
 const DEFAULT_ERROR = "Signing in didn't work. Please try again.";
 

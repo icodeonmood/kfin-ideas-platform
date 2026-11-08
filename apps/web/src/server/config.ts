@@ -6,8 +6,9 @@ function required(name: string): string {
   return value;
 }
 
-export const appEnv = () => process.env.APP_ENV ?? "dev";
-export const isProductionLike = () => ["uat", "prod"].includes(appEnv());
+/** APP_ENV must be set. Anything other than dev or test gets production rules (fail closed). */
+export const appEnv = () => required("APP_ENV");
+export const isProductionLike = () => !["dev", "test"].includes(process.env.APP_ENV ?? "");
 
 export function appBaseUrl(): URL {
   return new URL(process.env.APP_BASE_URL ?? "http://localhost:3000");
@@ -28,9 +29,12 @@ export function privacyNoticeVersion(): string {
 export type OidcMode = "mock" | "entra";
 
 export function oidcConfig() {
-  const mode = (process.env.OIDC_MODE ?? "mock") as OidcMode;
+  const mode = required("OIDC_MODE") as OidcMode;
   if (mode !== "mock" && mode !== "entra") throw new Error("OIDC_MODE must be mock or entra");
   if (mode === "mock" && isProductionLike()) throw new Error("OIDC_MODE=mock is not allowed in UAT or prod");
+  if (process.env.OIDC_INTERNAL_BASE && isProductionLike()) {
+    throw new Error("OIDC_INTERNAL_BASE is a dev-only setting and is refused in UAT and prod");
+  }
   return {
     mode,
     issuer: required("OIDC_ISSUER").replace(/\/$/, ""),

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_env: str = "dev"
+    app_env: str = ""  # must be set; anything but dev or test gets production rules (fail closed)
     database_url: str = "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable"
 
     company_repo_path: Path = Path("./.data/kfin-ideas")
@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     smtp_url: str = "smtp://localhost:1025"
 
     worker_roles: str = "api,repo_writer,indexer,jobs"
+    internal_api_token: str = ""
     worker_port: int = 8000
     index_poll_seconds: float = 2.0
     repo_writer_poll_seconds: float = 1.0
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
 
     @property
     def is_production_like(self) -> bool:
-        return self.app_env in {"uat", "prod"}
+        return self.app_env not in {"dev", "test"}
 
     @property
     def kfin_domains(self) -> list[str]:

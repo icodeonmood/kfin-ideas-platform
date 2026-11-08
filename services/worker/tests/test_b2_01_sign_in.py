@@ -103,8 +103,51 @@ def test_a_forged_state_is_refused() -> None:
 def test_next_cannot_leave_the_site() -> None:
     from tests.web import Browser
 
-    for evil in ("https://example.com", "//example.com", "/\\example.com"):
+    for evil in (
+        "https://example.com",
+        "//example.com",
+        "/\\example.com",
+        "/%09/example.com",
+        "/%0A/example.com",
+    ):
         b = Browser()
         b.get(f"/auth/login?next={evil}")
         page = b.get(f"/sign-in?next={evil}")
         assert "/auth/login?next=%2F" in page.text
+
+
+def test_conflicting_claims_are_refused(dev_db: Any) -> None:
+    """Review finding: an unknown employee ID with a colleague's email must not sign in as that colleague."""
+    colleague_email = dev_db.execute(
+        "SELECT email FROM users WHERE emp_id_hash = %s", (emp_id_hash("SYN-00017"),)
+    ).fetchone()["email"]
+    stranger = f"SYN-X{secrets.token_hex(3).upper()}"
+    _, callback = sign_in_with_mock(
+        stranger, {"employeeId": stranger, "email": colleague_email, "name": "Someone"}
+    )
+    assert callback.headers["location"].endswith("/sign-in?error=identity_mismatch")
+    assert (
+        dev_db.execute(
+            "SELECT count(*) AS n FROM users WHERE emp_id_hash = %s", (emp_id_hash(stranger),)
+        ).fetchone()["n"]
+        == 0
+    )
+
+
+def test_double_slash_lookalikes_never_reach_a_handler() -> None:
+    """Review question: can "//api/…" be treated as a page? Next.js answers every such path with a 308 to the
+    clean path, which then gets the normal session, privacy and policy checks (the proxy also refuses "//")."""
+    import httpx
+
+    from tests.web import WEB
+
+    for path, clean in (
+        ("//api/admin/roles", "/api/admin/roles"),
+        ("/api//admin/roles", "/api/admin/roles"),
+        ("//admin", "/admin"),
+    ):
+        r = httpx.get(WEB + path, timeout=10, follow_redirects=False)
+        assert r.status_code == 308 and r.headers["location"] in (clean, WEB + clean), path
+        assert httpx.get(WEB + clean, timeout=10, follow_redirects=False).status_code in (302, 307, 401), (
+            clean
+        )

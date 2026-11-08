@@ -135,3 +135,31 @@ def test_synthetic_directory_is_complete(company_repo: Path) -> None:
     unmapped = {p["job_title"] for p in people if tax.role_for(p["job_title"]) is None}
     assert unmapped <= {"Marketing Manager", "Content Specialist"}
     assert generate(company_repo, seed=42) == people  # deterministic
+
+
+def test_someone_who_signed_in_first_is_adopted_by_email(db: Any, company_repo: Path, tmp_path: Path) -> None:
+    """Review finding: an email-keyed sign-in user must not make the next HR import collide on email."""
+    from identity.codes import email_key_hash
+
+    person = _people()[2]
+    db.execute(
+        "INSERT INTO users (emp_id_hash, name, email, source) VALUES (%s, %s, %s, 'sign_in')",
+        (email_key_hash(person["email"]), person["name"], person["email"]),
+    )
+    r = import_rows(db, read_csv(_csv(tmp_path / "hr.csv", _people())), load(company_repo))
+    assert (r.created, r.updated) == (5, 1)
+    adopted = _user(db, person["employee_id"])
+    assert adopted["source"] == "hr" and adopted["role_family"] == "ROLE-ops-executive"
+    assert (
+        db.execute("SELECT count(*) AS n FROM users WHERE lower(email) = %s", (person["email"],)).fetchone()[
+            "n"
+        ]
+        == 1
+    )
+
+
+def test_duplicate_emails_are_rejected(tmp_path: Path) -> None:
+    people = _people()
+    people[1]["email"] = people[0]["email"].upper()
+    with pytest.raises(ValueError, match="same email"):
+        read_csv(_csv(tmp_path / "dup.csv", people))

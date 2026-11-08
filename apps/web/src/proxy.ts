@@ -28,6 +28,7 @@ const redirect = (path: string) => NextResponse.redirect(new URL(path, appBaseUr
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const method = request.method.toUpperCase();
+  if (pathname.includes("//")) return json(400, { error: "bad_path" }); // no "//api/…" lookalikes
   const isApi = pathname.startsWith("/api/");
 
   // CSRF defence on top of SameSite=Lax: a browser always sends Origin on a cross-site write.

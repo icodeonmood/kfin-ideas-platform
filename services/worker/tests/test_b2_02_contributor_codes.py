@@ -87,3 +87,15 @@ def test_collision_extends_to_eight_characters(db: Any, secret: None) -> None:
     )
     assert codes.assign_contributor_code(db, str(me), "SYN-90001") == VECTOR["code8"]
     assert codes.assign_contributor_code(db, str(me), "SYN-90001") == VECTOR["code8"]  # stable afterwards
+
+
+def test_missing_app_env_gets_production_rules(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CONTRIBUTOR_HMAC_SECRET", "change-me")
+    monkeypatch.setenv("APP_ENV", "")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().is_production_like
+        with pytest.raises(codes.SecretMissing):
+            codes.contributor_code("SYN-90001")
+    finally:
+        get_settings.cache_clear()

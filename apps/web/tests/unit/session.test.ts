@@ -16,6 +16,17 @@ describe("sign-in helpers", () => {
     for (const evil of ["https://example.com", "//example.com", "/\\example.com", "", null, undefined]) {
       expect(safeNext(evil)).toBe("/");
     }
+    // Review finding: the URL parser strips tabs and newlines, so "/\t/evil" would become "//evil".
+    for (const evil of [
+      "/\t/evil.example",
+      "/\n/evil.example",
+      "/\r/evil.example",
+      "/ /evil.example",
+      "/\u0000x",
+    ]) {
+      expect(safeNext(evil)).toBe("/");
+    }
+    expect(safeNext("/wall#top")).toBe("/wall#top");
   });
 
   it("seals the sign-in transaction against tampering and expiry", () => {

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 
 from core.db import Conn
 
@@ -27,10 +26,12 @@ class SecretMissing(RuntimeError):
 def _secret() -> bytes:
     from core.config import get_settings  # reads the environment (and .env for local runs)
 
-    value = get_settings().contributor_hmac_secret
+    settings = get_settings()
+    value = settings.contributor_hmac_secret
     if not value:
         raise SecretMissing("CONTRIBUTOR_HMAC_SECRET is not set")
-    if os.environ.get("APP_ENV", "dev") in {"uat", "prod"} and (
+    # Fail closed: only dev and test may use the placeholder.
+    if settings.is_production_like and (
         value == DEV_PLACEHOLDER or len(value) < MIN_SECRET_CHARS_OUTSIDE_DEV
     ):
         raise SecretMissing("CONTRIBUTOR_HMAC_SECRET is a placeholder or too short for this environment")

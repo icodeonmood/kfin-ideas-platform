@@ -12,6 +12,7 @@ import { getDb } from "../db";
 
 export const SESSION_COOKIE = "ideas_session";
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
+export const SESSION_ABSOLUTE_HOURS = 12; // sliding refresh never extends a session past a working day
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
 
 export const cookieOptions = (maxAge = SESSION_TTL_SECONDS) => ({
@@ -64,6 +65,7 @@ export async function readSession(token: string | undefined): Promise<SessionInf
                        AND (g.valid_to IS NULL OR g.valid_to > now())), '[]'::json) AS grants
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND s.expires_at > now()
+      AND s.created_at > now() - make_interval(hours => ${SESSION_ABSOLUTE_HOURS})
   `.execute(getDb());
   const r = row.rows[0];
   if (!r || !r.active) return null;
@@ -118,8 +120,21 @@ export function openTx(value: string | undefined): SignInTx | null {
   return Date.now() / 1000 - tx.iat > TX_TTL_SECONDS ? null : tx;
 }
 
-/** Only same-site relative paths, so `next` cannot send anyone to another site after sign-in. */
+/**
+ * Only same-site relative paths, so `next` cannot send anyone to another site after sign-in. Control characters
+ * and whitespace are refused before parsing, because the URL parser strips tabs and newlines ("/\t/evil" would
+ * otherwise become "//evil"). The parsed path is returned, never the raw string.
+ */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/";
-  return next.length > 512 ? "/" : next;
+  if (!next || next.length > 512 || !next.startsWith("/") || next.startsWith("//")) return "/";
+  if (/[\u0000-\u0020\u007f\\]/.test(next)) return "/";
+  const base = "http://same-site.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== base || url.pathname.startsWith("//")) return "/";
+  return url.pathname + url.search + url.hash;
 }

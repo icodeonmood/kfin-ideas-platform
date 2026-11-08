@@ -20,6 +20,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from core.config import get_settings
@@ -74,6 +75,9 @@ def read_csv(path: Path) -> list[HrRow]:
     ids = [r.employee_id.upper() for r in rows]
     if len(ids) != len(set(ids)):
         raise ValueError("HR CSV has the same employee_id more than once")
+    emails = [r.email.strip().lower() for r in rows]
+    if len(emails) != len(set(emails)):
+        raise ValueError("HR CSV has the same email more than once (ignoring case)")
     return rows
 
 
@@ -123,6 +127,13 @@ def import_rows(conn: Conn, rows: list[HrRow], tax: TaxonomyMap, *, force: bool 
                 )
             if role is None and r.job_title:
                 result.unmapped_titles[r.job_title] = result.unmapped_titles.get(r.job_title, 0) + 1
+            # Adopt someone who signed in before HR listed them (email-keyed, source "sign_in"): give their row
+            # the HR employee hash first, so the upsert below updates it instead of colliding on email.
+            conn.execute(
+                "UPDATE users SET emp_id_hash = %s WHERE lower(email) = lower(%s) AND emp_id_hash <> %s "
+                "AND NOT EXISTS (SELECT 1 FROM users WHERE emp_id_hash = %s)",
+                (hashes[r.employee_id], r.email, hashes[r.employee_id], hashes[r.employee_id]),
+            )
             row = conn.execute(
                 """
                 INSERT INTO users (emp_id_hash, name, email, lob_id, role_title, role_family, location,
@@ -197,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         except ImportRefused as exc:
             print(f"refused: {exc}")
             return 2
+        except psycopg.Error as exc:
+            # Database messages can quote a row (names, emails): print the type only (non-negotiable 3).
+            print(f"failed: {type(exc).__name__}; nothing was changed")
+            return 3
     print(
         f"hr import: {r.rows} rows, {r.created} created, {r.updated} updated, {r.deactivated} deactivated, "
         f"{len(r.unmapped_departments)} unmapped departments, {len(r.unmapped_titles)} unmapped titles, "

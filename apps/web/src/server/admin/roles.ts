@@ -34,6 +34,7 @@ export class RoleError extends Error {
 }
 
 export const REASON_MIN_CHARS = 10;
+const ROLE_LOCK = 4_201_109_002; // pg advisory lock: one role change at a time
 
 export async function listGrants() {
   return getDb()
@@ -66,6 +67,7 @@ export async function grantRole(input: {
   return getDb()
     .transaction()
     .execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(${ROLE_LOCK})`.execute(trx);
       const user = await trx
         .selectFrom("users")
         .select(["id", "active"])
@@ -106,6 +108,8 @@ export async function revokeRole(input: { grantId: string; reason: string; actor
   await getDb()
     .transaction()
     .execute(async (trx) => {
+      // One role change at a time: two admins revoking each other at once cannot leave zero admins.
+      await sql`SELECT pg_advisory_xact_lock(${ROLE_LOCK})`.execute(trx);
       const grant = await trx
         .selectFrom("role_grants")
         .select(["id", "user_id", "role", "scope_id"])
@@ -115,11 +119,14 @@ export async function revokeRole(input: { grantId: string; reason: string; actor
         .executeTakeFirst();
       if (!grant) throw new RoleError("no_such_grant", 404);
       if (grant.role === "admin") {
+        // Only admins who can still sign in count.
         const admins = await trx
-          .selectFrom("role_grants")
+          .selectFrom("role_grants as g")
+          .innerJoin("users as u", "u.id", "g.user_id")
           .select(sql<number>`count(*)::int`.as("n"))
-          .where("role", "=", "admin")
-          .where((eb) => eb.or([eb("valid_to", "is", null), eb("valid_to", ">", new Date())]))
+          .where("g.role", "=", "admin")
+          .where("u.active", "=", true)
+          .where((eb) => eb.or([eb("g.valid_to", "is", null), eb("g.valid_to", ">", new Date())]))
           .executeTakeFirstOrThrow();
         if (admins.n <= 1) throw new RoleError("last_admin", 409);
       }
