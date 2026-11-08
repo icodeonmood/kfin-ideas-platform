@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     repo_writer_poll_seconds: float = 1.0
     log_level: str = "INFO"
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def _no_comment_values(cls, value: object) -> object:
+        """Some dotenv readers turn `KEY=   # note` into the value "# note". Treat that as empty."""
+        if isinstance(value, str) and value.strip().startswith("#"):
+            return ""
+        return value
+
     @field_validator("company_repo_path", mode="after")
     @classmethod
     def _resolve_repo_path(cls, value: Path) -> Path:

@@ -44,6 +44,8 @@ log = get_logger("repo_writer")
 WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
 IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
 NOTE_MAX = 120
+PUSH_BACKOFF_S = (2, 5, 15, 60)
+PUSH_ALERT_AFTER_S = 15 * 60
 
 
 class EventError(Exception):
@@ -86,6 +88,9 @@ class RepoWriter:
         self._lock_conn: Conn | None = None
         self._commits_this_run = 0
         self._crash_after = _fault_after_commits()
+        self._next_push_at = 0.0
+        self._push_failures = 0
+        self._push_failing_since: float | None = None
 
     # ---- single-writer lock ----------------------------------------------------------------------
     def acquire(self) -> bool:
@@ -127,7 +132,7 @@ class RepoWriter:
                     self._record_failure(conn, event["id"], "git_error")
                     break
                 done.append(outcome)
-        if done:
+        if done or self._push_failures:
             self._push()
         return done
 
@@ -290,16 +295,27 @@ class RepoWriter:
         log.error("repo_writer.event_failed", outbox_id=outbox_id, error_code=code)
 
     def _push(self) -> None:
-        if not self.settings.company_repo_remote:
+        """Push without ever blocking the commit loop (§2.7): one attempt per loop when due, backing off
+        2, 5, 15, then 60 seconds between attempts; an alert once pushes have failed for 15 minutes."""
+        if not self.settings.company_repo_remote or time.monotonic() < self._next_push_at:
             return
-        for delay in (0, 2, 5, 15):
-            time.sleep(delay)
-            try:
-                self.git.push()
-                return
-            except GitError:
+        try:
+            self.git.push()
+        except GitError:
+            self._push_failures += 1
+            if self._push_failing_since is None:
+                self._push_failing_since = time.monotonic()
+            delay = PUSH_BACKOFF_S[min(self._push_failures - 1, len(PUSH_BACKOFF_S) - 1)]
+            self._next_push_at = time.monotonic() + delay
+            failing_for = time.monotonic() - self._push_failing_since
+            if failing_for >= PUSH_ALERT_AFTER_S:
+                log.error("repo_writer.push_failing", failing_for_s=int(failing_for), retry_in_s=delay)
+            else:
                 log.warning("repo_writer.push_failed", retry_in_s=delay)
-        log.error("repo_writer.push_gave_up")  # commits stay local; the next batch tries again
+            return
+        if self._push_failures:
+            log.info("repo_writer.push_recovered", failed_attempts=self._push_failures)
+        self._push_failures, self._push_failing_since, self._next_push_at = 0, None, 0.0
 
 
 def commits_for(repo: Path) -> list[tuple[str, str]]:

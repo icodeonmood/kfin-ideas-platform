@@ -1,0 +1,59 @@
+# CI for kfin-ideas-platform. The Makefile is the contract; this file only calls it, so the same gates can
+# move to KFin's own CI (GitLab, Azure DevOps) unchanged when IT provides the internal repo (BLD-026).
+# Synthetic data only. No secrets are needed: LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.27"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd services/worker && uv sync --frozen
+          cd ../../apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+
+      - name: Lint (ruff, mypy, eslint, prettier, tsc, OKF validator, no model SDK outside the gateway, log scrubber)
+        run: make lint
+
+      - name: Start the local stack (AT-B1-01)
+        run: make up
+
+      - name: Seed the company repo
+        run: make seed
+
+      - name: Unit and integration tests (B1 acceptance tests)
+        run: make test
+
+      - name: End-to-end and accessibility (axe)
+        run: make e2e
+
+      - name: Golden sets
+        run: make eval
+
+      - name: Container logs carry no idea text or personal data
+        if: always()
+        run: |
+          docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
+            logs --no-color --no-log-prefix worker web > container.log
+          cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../container.log
