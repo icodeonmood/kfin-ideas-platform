@@ -215,3 +215,17 @@ def idea_disagree(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     return _review_call(
         disagree, idea_uuid, str(body.get("contributor_code") or ""), str(body.get("text") or "")
     )
+
+
+@app.get("/internal/review/items/{item_id}/view", dependencies=[Depends(require_token)])
+def review_item_view(item_id: int, mode: str = "neutral") -> JSONResponse:
+    """The item screen as one viewer may see it; the web app decides `mode` from the restore policy."""
+    from review.view import item_view
+
+    if mode not in ("real", "neutral"):
+        return JSONResponse({"error": "bad_mode"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        body = item_view(conn, item_id, "real" if mode == "real" else "neutral")
+    if body is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})

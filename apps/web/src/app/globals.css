@@ -744,3 +744,58 @@ blockquote {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.queue td,
+.queue th,
+.panel table td,
+.panel table th {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--border);
+}
+
+.panel {
+  margin: 1.5rem 0;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem 2rem;
+}
+
+.original {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.canvas-view div {
+  padding: 0.2rem 0;
+}
+
+.canvas-view dt {
+  font-weight: 600;
+}
+
+.canvas-view dd {
+  margin: 0 0 0 1rem;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  color: var(--muted);
+  font-size: 0.9em;
+}

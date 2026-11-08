@@ -66,6 +66,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
+  /^\/api\/review\/items\/[^/]+\/action\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
