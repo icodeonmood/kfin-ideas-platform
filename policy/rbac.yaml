@@ -68,6 +68,7 @@ endpoints:
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
   - GET /api/inbox                                    signed_in
+  - POST /api/inbox/{id}/read                         signed_in       # mark one message read (addition to §8)
   - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
@@ -114,6 +115,7 @@ navigation:
   - { label: Share an idea,   href: /share }
   - { label: My ideas,        href: /my-ideas }
   - { label: Wall,            href: /wall }
+  - { label: Messages,        href: /inbox }
   - { label: Review,          href: /review,          roles: [reviewer] }
   - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee] }
   - { label: Admin,           href: /admin,           roles: [admin, infosec, hr] }

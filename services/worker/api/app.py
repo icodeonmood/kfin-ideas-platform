@@ -154,3 +154,21 @@ def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
         except AgentFailed as exc:
             return JSONResponse({"error": "checks_unavailable", "code": exc.code}, status_code=503)
     return JSONResponse(out)
+
+
+@app.get("/internal/inbox/{user_id}", dependencies=[Depends(require_token)])
+def inbox_list(user_id: str) -> JSONResponse:
+    """The person's in-app messages, rendered for them (the web app vouches for who they are)."""
+    from comms.inbox import inbox
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse({"messages": inbox(conn, user_id)}, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/inbox/{user_id}/{notification_id}/read", dependencies=[Depends(require_token)])
+def inbox_read(user_id: str, notification_id: int) -> JSONResponse:
+    from comms.inbox import mark_read
+
+    with connect(autocommit=True) as conn:
+        ok = mark_read(conn, user_id, notification_id)
+    return JSONResponse({"ok": ok}, status_code=200 if ok else 404)

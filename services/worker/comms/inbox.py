@@ -1,0 +1,40 @@
+"""The in-app inbox (§3.7): every message lands here, rendered for the person viewing it."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from comms.send import message_for
+from core.db import Conn
+
+
+def inbox(conn: Conn, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT id, event, template, payload, created_at, read_at FROM notifications WHERE user_id = %s "
+        "AND channel = 'in_app' ORDER BY created_at DESC, id DESC LIMIT %s",
+        (user_id, limit),
+    ).fetchall()
+    out = []
+    for r in rows:
+        subject, body, _ = message_for(conn, user_id, r["event"], r["template"], r["payload"])
+        out.append(
+            {
+                "id": r["id"],
+                "subject": subject,
+                "body": body,
+                "at": r["created_at"].isoformat(),
+                "read": r["read_at"] is not None,
+            }
+        )
+    return out
+
+
+def mark_read(conn: Conn, user_id: str, notification_id: int) -> bool:
+    return (
+        conn.execute(
+            "UPDATE notifications SET read_at = coalesce(read_at, now()), state = CASE WHEN state = 'sent' "
+            "THEN 'read' ELSE state END WHERE id = %s AND user_id = %s AND channel = 'in_app'",
+            (notification_id, user_id),
+        ).rowcount
+        == 1
+    )

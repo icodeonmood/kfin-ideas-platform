@@ -97,7 +97,9 @@ def test_plus_one_adoption_different_and_withdraw(world: Any) -> None:
         == "SOL-0004"
     )
     assert db.execute(
-        "SELECT 1 FROM comms_log WHERE event = 'adoption.requested' AND message_ref LIKE %s", (f"{idea_id}%",)
+        "SELECT 1 FROM jobs WHERE type = 'comms.route' AND payload->>'event' = 'adoption.requested' "
+        "AND payload->'refs'->>'idea_id' = %s",
+        (idea_id,),
     ).fetchone()
 
     idea, idea_id, refs = ready(db, " (c)", "CTR-0c0c0c")

@@ -720,3 +720,27 @@ blockquote {
 .suggested-value {
   overflow-wrap: anywhere;
 }
+
+.inbox {
+  list-style: none;
+  padding: 0;
+}
+
+.inbox li {
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+
+.inbox-subject {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.inbox li.unread .inbox-subject .link-button {
+  font-weight: 700;
+}
+
+.inbox-body p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

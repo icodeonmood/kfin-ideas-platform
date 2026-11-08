@@ -72,8 +72,9 @@ class Settings(BaseSettings):
     clamav_host: str = "localhost"
     clamav_port: int = 3310
     smtp_url: str = "smtp://localhost:1025"
+    app_base_url: str = "http://localhost:3000"
 
-    worker_roles: str = "api,repo_writer,indexer,jobs,scheduler"
+    worker_roles: str = "api,repo_writer,indexer,jobs,scheduler,comms"
     internal_api_token: str = ""
     worker_port: int = 8000
     index_poll_seconds: float = 2.0

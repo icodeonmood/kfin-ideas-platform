@@ -16,6 +16,14 @@ export async function authorize(capability: string): Promise<CurrentUser | NextR
   return me;
 }
 
+/** Any signed-in person who has accepted the current privacy notice (routes marked `signed_in` in the policy). */
+export async function signedIn(): Promise<CurrentUser | NextResponse> {
+  const me = await currentUser();
+  if (!me) return NextResponse.json({ error: "sign_in_required" }, { status: 401 });
+  if (!me.privacyAccepted) return NextResponse.json({ error: "privacy_notice_required" }, { status: 403 });
+  return me;
+}
+
 /** The client address for audit rows, only when a trusted edge sets it (otherwise anyone can forge it). */
 export function auditIp(headers: Headers): string | null {
   if (process.env.TRUST_PROXY_HEADERS !== "true") return null;

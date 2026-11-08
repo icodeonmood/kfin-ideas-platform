@@ -21,6 +21,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from comms.route import emit
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
@@ -236,12 +237,29 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
             "VALUES ('review_item', %s, 'review', %s, %s)",
             (str(item["id"]), now, due),
         )
+        emit(conn, "idea.submitted", {"idea_id": idea_id})
+        if link and target and link[0] in ("joiner", "plus_one"):
+            emit(
+                conn,
+                "idea.joined",
+                {"target_id": target["cid"], "joiner_code": contributor_code, "idea_id": idea_id},
+            )
         if stage == "adoption_requested" and target:
-            conn.execute(
-                "INSERT INTO comms_log (event, template_version, recipients, channel, state, message_ref) "
-                "VALUES ('adoption.requested', 'TPL-adoption-requested@1.0', '{}', 'in_app', 'pending', %s)",
-                (f"{idea_id}->{target['cid']}",),
-            )  # routed to the owning team by the comms module (BLD-085)
+            row = conn.execute(
+                "SELECT l.id, (SELECT lobs[1] FROM repo_files WHERE kfin_id = %s LIMIT 1) AS team FROM idea_links l "
+                "WHERE l.from_idea_id = %s AND l.solution_id = %s",
+                (target["cid"], idea_id, target["cid"]),
+            ).fetchone()
+            emit(
+                conn,
+                "adoption.requested",
+                {
+                    "idea_id": idea_id,
+                    "solution_id": target["cid"],
+                    "owner_team": row["team"] if row else None,
+                    "link_id": row["id"] if row else None,
+                },
+            )  # routed to the owning team's LOB committee, else the review desk (BLD-088)
         conn.execute(
             "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('idea.submitted', %s, %s, %s)",
             (idea_id, contributor_code, Jsonb({"idea_uuid": idea_uuid, "choice": choice})),

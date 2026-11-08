@@ -106,3 +106,37 @@ def vault_purge_scope(conn: Conn, payload: dict[str, Any]) -> None:
     from pii import vault
 
     vault.purge_scope(conn, str(payload["scope_id"]))
+
+
+@handler("comms.route")
+def comms_route(conn: Conn, payload: dict[str, Any]) -> None:
+    """Turn an event into notifications (§3.7 steps 2–3, 6)."""
+    from comms.route import route
+
+    route(conn, str(payload["event"]), dict(payload.get("refs") or {}))
+
+
+@handler("comms.nudges")
+def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
+    """Quick captures still below strength 3 on day 2 and day 7 after submit get the two most useful additions."""
+    from comms.route import emit
+
+    rows = conn.execute(
+        "SELECT idea_id FROM ideas WHERE capture_mode = 'quick' AND coalesce(strength, 0) < 3 "
+        "AND stage NOT IN ('draft', 'withdrawn', 'blocked', 'redirected') "
+        "AND ((now() AT TIME ZONE 'Asia/Kolkata')::date - (submitted_at AT TIME ZONE 'Asia/Kolkata')::date) IN (2, 7)"
+    ).fetchall()
+    for r in rows:
+        emit(conn, "canvas.nudge", {"idea_id": r["idea_id"]})
+    log.info("comms.nudges_queued", idea_count=len(rows))
+
+
+@handler("comms.digest")
+def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from comms.send import send_digests
+
+    if dt.datetime.now(ZoneInfo("Asia/Kolkata")).weekday() == 0 or payload.get("force"):
+        send_digests(conn)

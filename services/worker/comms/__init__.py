@@ -1,1 +1,5 @@
-"""Communication module v1 (§3.7): route from comms/rules.md, render comms/templates/, quiet hours, daily cap, in-app and email. Built in B6."""
+"""Communication module v1 (§3.7): route events, render templates, in-app inbox, email and digests."""
+
+from comms.route import emit
+
+__all__ = ["emit"]

@@ -37,6 +37,17 @@ def _guard(name: str, target: object) -> threading.Thread:
     return t
 
 
+def comms_loop(poll_seconds: float = 20.0) -> None:
+    """Send email that has come due (quiet hours and the daily cap were applied when it was queued)."""
+    from comms.send import send_due
+    from core.db import connect
+
+    with connect(autocommit=True) as conn:
+        while True:
+            send_due(conn)
+            time.sleep(poll_seconds)
+
+
 def main() -> None:
     settings = get_settings()
     roles = settings.roles
@@ -57,6 +68,8 @@ def main() -> None:
         _guard("jobs", jobs.run_forever)
     if "scheduler" in roles:
         _guard("scheduler", schedule.run_forever)
+    if "comms" in roles:
+        _guard("comms", comms_loop)
     if "api" in roles:
         uvicorn.run(
             "api.app:app",

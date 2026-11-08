@@ -1,5 +1,5 @@
 /**
- * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall; review desk — plus Review; core
+ * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
  * committee — plus Desk decisions; admin — plus Admin.
  * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
  * keyboard with a visible focus ring.
@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, navLabels, PERSONAS, signIn } from "./helpers";
 
-const BASE = ["Share an idea", "My ideas", "Wall"];
+const BASE = ["Share an idea", "My ideas", "Wall", "Messages"];
 
 test.describe("navigation by role (AT-B2-06)", () => {
   const cases: Array<[keyof typeof PERSONAS, string[]]> = [
@@ -30,7 +30,7 @@ test("every navigation item works by keyboard with a visible focus ring (AT-B2-0
   await signIn(page, PERSONAS.admin);
   const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
   const count = await links.count();
-  expect(count).toBe(4);
+  expect(count).toBe(5);
   for (let i = 0; i < count; i++) {
     await page.goto("/");
     const target = links.nth(i);

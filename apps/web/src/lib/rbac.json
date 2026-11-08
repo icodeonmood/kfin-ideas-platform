@@ -164,6 +164,7 @@
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
     "GET /api/inbox                                    signed_in",
+    "POST /api/inbox/{id}/read                         signed_in",
     "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
@@ -216,6 +217,10 @@
     {
       "label": "Wall",
       "href": "/wall"
+    },
+    {
+      "label": "Messages",
+      "href": "/inbox"
     },
     {
       "label": "Review",

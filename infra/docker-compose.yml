@@ -78,7 +78,7 @@ services:
       S3_ENDPOINT: http://s3:9000
       CLAMAV_HOST: clamav
       SMTP_URL: smtp://mailpit:1025
-      WORKER_ROLES: api,repo_writer,indexer,jobs,scheduler
+      WORKER_ROLES: api,repo_writer,indexer,jobs,scheduler,comms
     volumes: ["./.data:/data"]
     ports: ["8000:8000"]
     depends_on:
