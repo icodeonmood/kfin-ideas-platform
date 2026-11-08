@@ -130,7 +130,13 @@ def run(ctx: Context) -> dict[str, Any]:
         problems: list[str] = []
         for section in SUBMITTER_SECTIONS:
             _diff(section, sent["canvas_answers"].get(section), data.get(section), problems)
-        allowed = {x["id"] for g in sent["taxonomy_slice"].values() if isinstance(g, list) for x in g}
+        allowed = {
+            x["id"]
+            for g in sent["taxonomy_slice"].values()
+            if isinstance(g, list)
+            for x in g
+            if isinstance(x, dict)
+        }
         system_ids = [v for k in ("lobs", "areas", "systems", "roles_affected") for v in data["system"][k]]
         row["submitter_changes"] = len(problems)
         row["out_of_slice"] = sum(v not in allowed for v in system_ids)

@@ -13,6 +13,7 @@ from core.db import Conn
 from pii import vault
 from pii.restore import restore
 from rules import load_rule
+from scan.matching import submitter_cards
 from scan.pipeline import contestable, load_result
 
 DATA_TYPE_LABELS = {
@@ -101,5 +102,6 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "suggested": _suggested(ca),
             "neutral_summary": ca["neutral_summary"],
             "next_best": ca["strength"]["next_best"],
+            "matches": submitter_cards(conn, result["match"]) if "match" in result else [],
         }
     return out

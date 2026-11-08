@@ -55,7 +55,13 @@ def canvas_assist(sent: dict[str, Any], out: dict[str, Any], d: Directory | None
     for key in SUBMITTER_SECTIONS:
         _diff(key, answers.get(key), out.get(key), problems)
     slice_ = sent.get("taxonomy_slice") or {}
-    allowed = {x["id"] for group in slice_.values() if isinstance(group, list) for x in group if "id" in x}
+    allowed = {
+        x["id"]
+        for group in slice_.values()
+        if isinstance(group, list)
+        for x in group
+        if isinstance(x, dict) and "id" in x
+    }
     for key in ("lobs", "areas", "systems", "roles_affected"):
         for value in out["system"][key]:
             if value not in allowed:

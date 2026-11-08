@@ -305,4 +305,4 @@ def test_p95_under_15_seconds_with_realistic_latency(db: Any, test_database: str
     assert len(rows) == 20 and all(r["outcome"] == "ready" for r in rows)
     p95 = statistics.quantiles([r["duration_ms"] for r in rows], n=20)[18]
     assert p95 <= 15_000, p95
-    assert steps == ["gatekeeper", "canvas_assist", "done"]  # the waiting screen shows each step
+    assert steps == ["gatekeeper", "canvas_assist", "matching", "done"]  # the waiting screen shows each step

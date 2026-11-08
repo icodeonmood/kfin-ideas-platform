@@ -27,6 +27,7 @@ type Status = {
 const STEPS = [
   { key: "gatekeeper", text: "Checking for personal details" },
   { key: "canvas_assist", text: "Drafting a summary and suggestions" },
+  { key: "matching", text: "Looking for colleagues on the same thing" },
 ] as const;
 
 const FIELD_LABELS: Record<string, string> = {

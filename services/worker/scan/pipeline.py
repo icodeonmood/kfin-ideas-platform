@@ -18,9 +18,13 @@ from core.config import get_settings
 from core.crypto import decrypt_json, encrypt_json
 from core.db import Conn
 from core.logging import get_logger
+from embeddings import embed
 from gateway import AgentFailed, AgentSwitchedOff, LeakAbort, run_agent
+from router.corrections import corrections_for
+from router.taxonomy import taxonomy_slice
 from rules import load_rule
-from scan.inputs import canvas_answers, gatekeeper_input, taxonomy_slice
+from scan.inputs import canvas_answers, gatekeeper_input
+from scan.matching import run_matching
 
 log = get_logger("scan")
 REDIRECT_KINDS = ("it_ticket", "hr_grievance", "complaint", "question")
@@ -153,21 +157,27 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
             return finish("held")
         if mode == "sync" and time.monotonic() - started > limit:
             raise TooSlow()
-        _set(conn, idea_uuid, step="canvas_assist")
-        text = " ".join(str(v) for v in gatekeeper_input(canvas)["submission"].values())
-        gk_out = result["gatekeeper"]
-        ca = run_agent(
-            "canvas-assist",
-            {
-                "canvas_answers": canvas_answers(canvas, _attachments(conn, idea_uuid)),
-                "taxonomy_slice": taxonomy_slice(text),
-                "gatekeeper": {"kind": gk_out["kind"], "language": gk_out["language"]},
-                "past_corrections": [],
-            },
-            ref,
-            conn=conn,
-        )
-        result["canvas_assist"] = ca.data
+        if "canvas_assist" not in result:
+            _set(conn, idea_uuid, step="canvas_assist")
+            text = " ".join(str(v) for v in gatekeeper_input(canvas)["submission"].values())
+            gk_out = result["gatekeeper"]
+            ca = run_agent(
+                "canvas-assist",
+                {
+                    "canvas_answers": canvas_answers(canvas, _attachments(conn, idea_uuid)),
+                    "taxonomy_slice": taxonomy_slice(conn, text),
+                    "gatekeeper": {"kind": gk_out["kind"], "language": gk_out["language"]},
+                    "past_corrections": corrections_for(conn, embed([text])[0]),
+                },
+                ref,
+                conn=conn,
+            )
+            result["canvas_assist"] = ca.data
+            _save_result(conn, idea_uuid, result)
+        if mode == "sync" and time.monotonic() - started > limit:
+            raise TooSlow()
+        _set(conn, idea_uuid, step="matching")
+        result["match"] = run_matching(conn, ref, result["canvas_assist"])
         _save_result(conn, idea_uuid, result)
         if mode == "sync" and time.monotonic() - started > limit:
             raise TooSlow()
