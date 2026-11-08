@@ -26,4 +26,13 @@ describe("column encryption", () => {
     process.env.APP_ENV = "prod";
     expect(() => encryptJson({}, "row")).toThrow(/placeholder/);
   });
+
+  it("opens the shared cross-language vector (Python reads the same bytes: test_b4_crypto_vector.py)", () => {
+    process.env.VAULT_ENCRYPTION_KEY = "vector-key-for-tests-only-0001";
+    const blob = Buffer.from(
+      "01000102030405060708090a0b076facb600f662c34d073089a2d0f0976a161c3c1fd2c6c1df6e276d9679ce3bd4384df6689c769b8af50708bdb7eecadf5f54722a3c19d698",
+      "hex",
+    );
+    expect(decryptJson(blob, "ROW-VECTOR-1")).toEqual({ details: "Synthetic vector text", n: 1 });
+  });
 });

@@ -27,10 +27,14 @@ from rules import RulesConfigError, load_all
 SEED_MESSAGE = (
     "Seed company repo from kfin-ideas-platform/seed/company-repo\n\nactor: system\nevent: repo.seeded\n"
 )
+OVERLAY_MESSAGE = (
+    "Dev overlay: synthetic content for dev and test\n\nactor: system\nevent: repo.dev_overlay\n"
+)
 
 
-def create_company_repo(seed_dir: Path, dest: Path, author: str) -> bool:
-    """Copy the seed into `dest` and make one commit. Returns False if a company repo already exists."""
+def create_company_repo(seed_dir: Path, dest: Path, author: str, overlay_dir: Path | None = None) -> bool:
+    """Copy the seed (plus, in dev and test, the dev overlay) into `dest` and make one commit. Returns False if
+    a company repo already exists."""
     git = Git(dest, author)
     if git.is_repo():
         if git.head() is None:
@@ -39,9 +43,36 @@ def create_company_repo(seed_dir: Path, dest: Path, author: str) -> bool:
     if dest.exists() and any(dest.iterdir()):
         raise SystemExit(f"{dest} exists and is not empty; refusing to overwrite it")
     shutil.copytree(seed_dir, dest, dirs_exist_ok=True)
+    if overlay_dir is not None:
+        _copy_overlay(overlay_dir, dest)
     git.init()
     git.commit_all(SEED_MESSAGE)
     return True
+
+
+def _copy_overlay(overlay_dir: Path, dest: Path) -> int:
+    if get_settings().is_production_like or not overlay_dir.exists():
+        return 0
+    added = 0
+    for src in sorted(overlay_dir.rglob("*.md")):
+        rel = src.relative_to(overlay_dir)
+        if rel == Path("README.md"):
+            continue
+        target = dest / rel
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+            added += 1
+    return added
+
+
+def apply_dev_overlay(overlay_dir: Path, dest: Path, author: str) -> int:
+    """For a company repo created before the overlay existed: add missing dev-only files in one commit. Never
+    outside dev and test. Returns the number of files added."""
+    added = _copy_overlay(overlay_dir, dest)
+    if added:
+        Git(dest, author).commit_all(OVERLAY_MESSAGE)
+    return added
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,8 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     dest = Path(settings.company_repo_path)
 
-    created = create_company_repo(args.seed_dir, dest, settings.repo_writer_author)
+    overlay_dir = args.seed_dir.parent / "dev-overlay"
+    created = create_company_repo(args.seed_dir, dest, settings.repo_writer_author, overlay_dir)
     print(f"company repo: {'created' if created else 'already exists'} at {dest}")
+    overlay = 0 if created else apply_dev_overlay(overlay_dir, dest, settings.repo_writer_author)
+    if overlay:
+        print(f"dev overlay: {overlay} synthetic files added")
 
     errors = [i for i in validate_bundle(dest) if i.level == "error"]
     if errors:

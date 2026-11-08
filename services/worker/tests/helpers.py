@@ -61,7 +61,7 @@ def seeded_repo(dest: Path) -> Path:
     """A company repo exactly as `make seed` creates it, in a temp folder."""
     from bootstrap.seed import create_company_repo
 
-    create_company_repo(SEED, dest, "Ideas Platform Bot <ideas-bot@localhost>")
+    create_company_repo(SEED, dest, "Ideas Platform Bot <ideas-bot@localhost>", SEED.parent / "dev-overlay")
     return dest
 
 
