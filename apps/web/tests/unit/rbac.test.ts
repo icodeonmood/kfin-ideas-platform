@@ -112,8 +112,9 @@ describe("every day-one endpoint × every role column (generated from rbac.yaml)
 
 describe("navigation and pages (AT-B2-06)", () => {
   const labels = (role: string) => navFor(rolesOf(role)).map((n) => n.label);
-  const base = ["Share an idea", "My ideas", "Wall"];
-  it("everyone gets Share an idea, My ideas and Wall", () => expect(labels("contributor")).toEqual(base));
+  const base = ["Share an idea", "My ideas", "Wall", "Messages"];
+  it("everyone gets Share an idea, My ideas, Wall and Messages", () =>
+    expect(labels("contributor")).toEqual(base));
   it("review desk adds Review", () => expect(labels("reviewer")).toEqual([...base, "Review"]));
   it("core committee adds Desk decisions", () =>
     expect(labels("core_committee")).toEqual([...base, "Desk decisions"]));

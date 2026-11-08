@@ -1,5 +1,6 @@
 # Worker image: API, repo writer, indexer and job runner. Build context is the repo root.
 FROM python:3.12-slim
+LABEL org.kfin.project="kfin-ideas"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

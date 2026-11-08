@@ -65,6 +65,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/me\/privacy-notice\/?$/, // accepting the notice must work in read-only mode, or nobody could browse
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
+  /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

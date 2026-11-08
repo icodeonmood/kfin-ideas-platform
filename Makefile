@@ -29,6 +29,7 @@ up: .env ## Start the local stack and wait until every service is healthy
 	$(COMPOSE) run --rm dbmate up
 	$(MAKE) --no-print-directory db-users
 	$(COMPOSE) up -d --build --wait --wait-timeout 180
+	@docker image prune -f --filter label=org.kfin.project=kfin-ideas >/dev/null  # only this project's old builds
 	$(PY) python -m core.health --timeout 120
 
 down: ## Stop the local stack (data volumes are kept)

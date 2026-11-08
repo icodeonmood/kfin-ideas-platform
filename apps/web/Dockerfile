@@ -1,10 +1,12 @@
 # Web app image (Next.js standalone). Build context is the repo root.
 FROM node:22-alpine AS deps
+LABEL org.kfin.project="kfin-ideas"
 WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 FROM node:22-alpine AS build
+LABEL org.kfin.project="kfin-ideas"
 WORKDIR /app/apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/apps/web/node_modules ./node_modules
@@ -12,6 +14,7 @@ COPY apps/web/ ./
 RUN npm run build
 
 FROM node:22-alpine AS run
+LABEL org.kfin.project="kfin-ideas"
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 RUN addgroup -S web && adduser -S web -G web
