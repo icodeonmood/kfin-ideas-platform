@@ -49,8 +49,15 @@ def event_name_ok(event: str) -> bool:
     return bool(_compiled()[2].match(event))
 
 
+@lru_cache(maxsize=1)
+def _safe_value() -> re.Pattern[str]:
+    return re.compile(load_rules().log_rules["safe_value_regex"])
+
+
 def value_patterns(value: str) -> list[str]:
-    """Pattern IDs found in a value, ignoring business identifiers marked `log_ok`."""
+    """Pattern IDs found in a value, ignoring business identifiers marked `log_ok` and safe values (hashes, IDs)."""
+    if _safe_value().match(value):
+        return []
     rules = _compiled()[3]
     ok = {p.id for p in rules.patterns if p.log_ok}
     # Every email is personal data in a log, KFin domain or not, so no domain exemption here.

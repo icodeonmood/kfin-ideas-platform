@@ -42,3 +42,44 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 @pytest.fixture
 def captured_logs() -> Iterator[io.StringIO]:
     yield _CAPTURE
+
+
+@pytest.fixture(scope="session")
+def test_database() -> Iterator[str]:
+    """A fresh database for this test run, migrated with the real dbmate container (needs `make up`)."""
+    from tests import helpers
+
+    try:
+        name = helpers.create_database()
+    except Exception as exc:
+        pytest.fail(
+            f"Postgres is not reachable on localhost:5432; run `make up` first ({type(exc).__name__})"
+        )
+    result = helpers.dbmate(name, "up")
+    if result.returncode != 0:
+        helpers.drop_database(name)
+        pytest.fail(f"dbmate up failed with exit code {result.returncode}")
+    yield name
+    helpers.drop_database(name)
+
+
+@pytest.fixture
+def db(test_database: str) -> Iterator[object]:
+    """Autocommit connection to the test database; outbox, ideas and index tables are emptied first."""
+    from core.db import connect
+    from tests import helpers
+
+    conn = connect(helpers.db_url(test_database), autocommit=True)
+    conn.execute(
+        "TRUNCATE outbox, ideas, idea_links, chunks, links, terms, repo_files RESTART IDENTITY CASCADE; "
+        "UPDATE index_state SET last_commit = NULL; UPDATE kill_switches SET state = 'on'"
+    )
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def company_repo(tmp_path_factory: pytest.TempPathFactory) -> object:
+    from tests import helpers
+
+    return helpers.seeded_repo(tmp_path_factory.mktemp("repo") / "kfin-ideas")

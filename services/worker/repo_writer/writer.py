@@ -1,0 +1,309 @@
+"""The repo writer: the only process allowed to commit to the company repo (§2.7).
+
+It reads `outbox` rows in ID order and turns each into exactly one commit:
+
+    [IDEA-2026-000142] submitted
+    actor: CTR-7f3a91
+    event: idea.submitted
+    outbox: 88213
+
+Exactly once, even across crashes: the `outbox:` trailer is the idempotency key. If the process dies after
+`git commit` but before the database records it, the next run finds the trailer and records that SHA
+instead of committing again. A half-written working tree is discarded (the writer owns it) and re-rendered
+from the database. A Postgres advisory lock keeps it to one writer at a time.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from core.config import Settings, get_settings
+from core.db import Conn, connect
+from core.logging import get_logger
+from okf.frontmatter import parse
+from okf.validate import check_concept_meta
+from pii.patterns import scan
+from repo_writer.git import Git, GitError
+from repo_writer.render import (
+    HistoryRow,
+    existing_state,
+    index_line,
+    ist,
+    render_idea,
+    repo_path_for,
+)
+
+log = get_logger("repo_writer")
+
+WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
+IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
+NOTE_MAX = 120
+
+
+class EventError(Exception):
+    """An event that cannot be written. `code` goes to outbox.last_error (codes only, never text)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class Outcome:
+    outbox_id: int
+    commit_sha: str
+    recovered: bool
+
+
+def _fault_after_commits() -> int | None:
+    """Test-only fault injection (AT-B1-05). Ignored outside dev and test."""
+    spec = os.environ.get("REPO_WRITER_FAULT", "")
+    if os.environ.get("APP_ENV", "dev") not in {"dev", "test"} or not spec.startswith("crash_after_commit:"):
+        return None
+    return int(spec.split(":", 1)[1])
+
+
+def _safe_note(note: Any) -> str:
+    """History notes are written by our code ("proposed CL-0012 (high)"), never by people. Enforce it."""
+    text = str(note or "").strip()
+    if len(text) > NOTE_MAX or "\n" in text or "|" in text or scan(text):
+        raise EventError("note_rejected")
+    return text
+
+
+class RepoWriter:
+    def __init__(self, settings: Settings | None = None, database_url: str | None = None) -> None:
+        self.settings = settings or get_settings()
+        self.database_url = database_url or self.settings.database_url
+        self.repo = Path(self.settings.company_repo_path)
+        self.git = Git(self.repo, self.settings.repo_writer_author)
+        self._lock_conn: Conn | None = None
+        self._commits_this_run = 0
+        self._crash_after = _fault_after_commits()
+
+    # ---- single-writer lock ----------------------------------------------------------------------
+    def acquire(self) -> bool:
+        if self._lock_conn is None:
+            self._lock_conn = connect(self.database_url, autocommit=True)
+        row = self._lock_conn.execute("SELECT pg_try_advisory_lock(%s) AS ok", (WRITER_LOCK_KEY,)).fetchone()
+        return bool(row and row["ok"])
+
+    def release(self) -> None:
+        if self._lock_conn is not None:
+            self._lock_conn.close()
+            self._lock_conn = None
+
+    # ---- main loop -------------------------------------------------------------------------------
+    def run_once(self, limit: int = 100) -> list[Outcome]:
+        """Commit up to `limit` pending events in order. Stops at the first event that fails."""
+        if not self.git.is_repo():
+            raise GitError("company repo not found; run `make seed` first")
+        if self.git.is_dirty():
+            log.warning("repo_writer.dirty_tree_reset")
+            self.git.reset_hard()
+        done: list[Outcome] = []
+        recovered = self.git.outbox_commits()
+        # autocommit: each event's `conn.transaction()` below is a real commit, not a savepoint.
+        with connect(self.database_url, autocommit=True) as conn:
+            pending = conn.execute(
+                "SELECT id, event_type, aggregate_id, actor, payload, created_at, attempts "
+                "FROM outbox WHERE committed_at IS NULL ORDER BY id LIMIT %s",
+                (limit,),
+            ).fetchall()
+            for event in pending:
+                try:
+                    outcome = self._one(conn, event, recovered)
+                except EventError as exc:
+                    self._record_failure(conn, event["id"], exc.code)
+                    break
+                except GitError:
+                    self.git.reset_hard()
+                    self._record_failure(conn, event["id"], "git_error")
+                    break
+                done.append(outcome)
+        if done:
+            self._push()
+        return done
+
+    def run_forever(self, stop: Any = None) -> None:
+        while not self.acquire():
+            log.info("repo_writer.waiting_for_lock")
+            time.sleep(5)
+        log.info("repo_writer.started")
+        try:
+            while stop is None or not stop.is_set():
+                outcomes = self.run_once()
+                if not outcomes:
+                    time.sleep(self.settings.repo_writer_poll_seconds)
+        finally:
+            self.release()
+
+    # ---- one event -------------------------------------------------------------------------------
+    def _one(self, conn: Conn, event: dict[str, Any], recovered: dict[int, str]) -> Outcome:
+        outbox_id = int(event["id"])
+        sha = recovered.get(outbox_id)
+        idea_row: dict[str, Any] | None = None
+        rel: str | None = None
+        if event["event_type"] in IDEA_EVENTS:
+            idea_row = self._load_idea(conn, event)
+            rel = repo_path_for(idea_row["idea_id"], idea_row["submitted_at"])
+        if sha is None:
+            if event["event_type"] not in IDEA_EVENTS:
+                raise EventError("unknown_event")
+            assert idea_row is not None and rel is not None
+            message = self._write_idea_files(event, idea_row, rel)
+            sha = self.git.commit_all(message)
+            self._commits_this_run += 1
+            if self._crash_after is not None and self._commits_this_run >= self._crash_after:
+                os._exit(137)  # simulate a crash after the commit, before the database knows
+            was_recovered = False
+        else:
+            was_recovered = True
+            log.warning("repo_writer.recovered_commit", outbox_id=outbox_id, commit_sha=sha)
+        with conn.transaction():
+            conn.execute(
+                "UPDATE outbox SET committed_at = now(), commit_sha = %s, attempts = attempts + 1, last_error = NULL "
+                "WHERE id = %s AND committed_at IS NULL",
+                (sha, outbox_id),
+            )
+            if idea_row is not None:
+                conn.execute(
+                    "UPDATE ideas SET repo_path = %s, repo_commit = %s WHERE id = %s",
+                    (rel, sha, idea_row["id"]),
+                )
+        log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
+        return Outcome(outbox_id, sha, was_recovered)
+
+    def _load_idea(self, conn: Conn, event: dict[str, Any]) -> dict[str, Any]:
+        idea_id = (event["payload"] or {}).get("idea_id") or event["aggregate_id"]
+        row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (idea_id,)).fetchone()
+        if row is None:
+            raise EventError("idea_not_found")
+        if row["submitted_at"] is None or row["stage"] == "draft":
+            raise EventError("idea_not_submitted")  # drafts never reach the repo
+        if row["canvas"] is None:
+            raise EventError("idea_has_no_card")
+        co = conn.execute(
+            "SELECT DISTINCT contributor_code FROM idea_links WHERE idea_id = %s AND link_type IN ('joiner','originator') "
+            "AND contributor_code <> %s ORDER BY 1",
+            (idea_id, row["contributor_code"]),
+        ).fetchall()
+        row["co_contributors"] = [r["contributor_code"] for r in co]
+        return dict(row)
+
+    def _write_idea_files(self, event: dict[str, Any], idea: dict[str, Any], rel: str) -> str:
+        payload: dict[str, Any] = event["payload"] or {}
+        path = self.repo / rel
+        previous = path.read_text(encoding="utf-8") if path.exists() else None
+        history, verified = existing_state(previous)
+        when = ist(event["created_at"]).strftime("%Y-%m-%d %H:%M")
+        rows = payload.get("history") or [{"event": event["event_type"].split(".", 1)[1], "note": ""}]
+        for r in rows:
+            by = str(r.get("by") or event["actor"])
+            if not re.match(r"^[A-Za-z0-9:@/._-]+$", by):
+                raise EventError("history_actor_invalid")
+            history.append(HistoryRow(when, str(r.get("event", "")), by, _safe_note(r.get("note"))))
+        reviewer = payload.get("verified_by")
+        if reviewer:
+            if not re.match(r"^REV-[0-9]{4}$", str(reviewer)):
+                raise EventError("verified_by_invalid")
+            verified.append(
+                {"by": f"human:{reviewer}", "at": ist(event["created_at"]).isoformat(timespec="seconds")}
+            )
+        canvas = idea.get("canvas") or {}
+        assisted = any(v in ("suggested", "accepted") for v in (canvas.get("provenance") or {}).values())
+        generated_by = (
+            str(canvas.get("generated_by") or "canvas-assist/unknown")
+            if assisted
+            else f"human:{idea['contributor_code']}"
+        )
+
+        text = render_idea(idea, history=history, verified=verified, generated_by=generated_by)
+        doc = parse(text)
+        problems = [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]
+        if problems:
+            log.error(
+                "repo_writer.invalid_file", outbox_id=event["id"], error_codes=[i.code for i in problems]
+            )
+            raise EventError("invalid_idea_file")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._update_indexes(rel, idea["idea_id"], str((doc.meta or {}).get("description", "")))
+
+        stage_word = rows[-1].get("event") or event["event_type"].split(".", 1)[1]
+        note = rows[-1].get("note") or ""
+        subject = f"[{idea['idea_id']}] {stage_word}" + (f" — {note}" if note else "")
+        return f"{subject}\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+
+    def _update_indexes(self, rel: str, idea_id: str, description: str) -> None:
+        """Keep ideas/index.md → YYYY/index.md → MM/index.md listing every file (§2.1)."""
+        _, year, month, _ = rel.split("/")
+        month_name = datetime(int(year), int(month), 1, tzinfo=UTC).strftime("%B %Y")
+        self._upsert_index_line(
+            self.repo / "ideas" / year / month / "index.md",
+            f"# Ideas, {month_name}",
+            idea_id,
+            index_line(idea_id, description),
+        )
+        self._upsert_index_line(
+            self.repo / "ideas" / year / "index.md",
+            f"# Ideas, {year}",
+            f"]({month}/)",
+            f"* [{month_name}]({month}/) - ideas submitted in {month_name}",
+        )
+        self._upsert_index_line(
+            self.repo / "ideas" / "index.md",
+            None,
+            f"]({year}/)",
+            f"* [{year}]({year}/) - ideas submitted in {year}",
+        )
+
+    @staticmethod
+    def _upsert_index_line(path: Path, title: str | None, key: str, line: str) -> None:
+        if path.exists():
+            lines = path.read_text(encoding="utf-8").rstrip("\n").split("\n")
+        else:
+            lines = [title or "# Ideas", ""]
+        lines = [ln for ln in lines if ln.strip() != "No entries yet."]
+        match_key = f"[{key}]" if not key.startswith("]") else key
+        for i, ln in enumerate(lines):
+            if match_key in ln:
+                lines[i] = line
+                break
+        else:
+            lines.append(line)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # ---- failures and push -----------------------------------------------------------------------
+    def _record_failure(self, conn: Conn, outbox_id: int, code: str) -> None:
+        with conn.transaction():
+            conn.execute(
+                "UPDATE outbox SET attempts = attempts + 1, last_error = %s WHERE id = %s", (code, outbox_id)
+            )
+        log.error("repo_writer.event_failed", outbox_id=outbox_id, error_code=code)
+
+    def _push(self) -> None:
+        if not self.settings.company_repo_remote:
+            return
+        for delay in (0, 2, 5, 15):
+            time.sleep(delay)
+            try:
+                self.git.push()
+                return
+            except GitError:
+                log.warning("repo_writer.push_failed", retry_in_s=delay)
+        log.error("repo_writer.push_gave_up")  # commits stay local; the next batch tries again
+
+
+def commits_for(repo: Path) -> list[tuple[str, str]]:
+    """(sha, subject) for every commit, oldest first. Used by tests and `reconcile`."""
+    git = Git(repo)
+    out = git.run("log", "--reverse", "--format=%H%x09%s")
+    return [tuple(line.split("\t", 1)) for line in out.split("\n") if "\t" in line]  # type: ignore[misc]

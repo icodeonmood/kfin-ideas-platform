@@ -89,3 +89,27 @@ def test_logger_drops_text_fields_in_prod(monkeypatch: pytest.MonkeyPatch) -> No
     assert data["dropped_fields"] == ["one_line"]
     assert "one_line" not in data
     assert scan_log_line(line) == []
+
+
+def test_third_party_messages_are_not_logged() -> None:
+    import logging
+
+    stream = io.StringIO()
+    klog.configure("INFO", stream)
+    try:
+        logging.getLogger("uvicorn.error").info("Started server for %s", "someone@example.com")
+    finally:
+        klog.configure("INFO")
+    data = json.loads(stream.getvalue().strip())
+    assert data["event"] == "external.uvicorn.error"
+    assert "example.com" not in stream.getvalue()
+
+
+def test_hashes_and_coded_ids_are_not_personal_data() -> None:
+    """Regression: a commit SHA with a 10-digit run starting 6-9 once tripped the mobile pattern."""
+    sha = "4cda907afa77" + "9" + "123456789" + "0ff112c308a468c2d3"  # 40 hex chars, built at run time
+    assert len(sha) == 40
+    for safe in (sha, "IDEA-2026-000142", "CTR-7f3a91", "REV-0007", "ATT-2026-000311"):
+        assert scan_log_line(json.dumps({"event": "x.y", "ref": safe})) == [], safe
+    bare_mobile = g.mobile(g.default_rng(11)).replace(" ", "").replace("+91", "")
+    assert any(v.kind == "pattern" for v in scan_log_line(json.dumps({"event": "x.y", "ref": bare_mobile})))

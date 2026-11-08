@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import UTC, datetime
 from typing import Any
@@ -20,6 +21,7 @@ from typing import Any
 from pii.log_rules import event_name_ok, field_is_forbidden, value_patterns
 
 _SAFE_SCALARS = (int, float, bool, type(None))
+_EXTERNAL = re.compile(r"[^a-z0-9_.]")
 
 
 class LogPolicyError(ValueError):
@@ -56,11 +58,13 @@ def _clean(fields: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        ours = hasattr(record, "fields")
         line: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname.lower(),
             "logger": record.name,
-            "event": record.getMessage(),
+            # Libraries write free text (and sometimes request data). Keep that they logged, not what.
+            "event": record.getMessage() if ours else "external." + _EXTERNAL.sub("_", record.name.lower()),
         }
         line.update(getattr(record, "fields", {}))
         if record.exc_info and record.exc_info[0] is not None:

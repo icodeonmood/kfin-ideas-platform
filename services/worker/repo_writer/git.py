@@ -1,0 +1,144 @@
+"""Thin wrapper over the git CLI for the company repo. Only the repo writer commits; others read."""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+_AUTHOR = re.compile(r"^\s*(?P<name>[^<]+?)\s*<(?P<email>[^>]+)>\s*$")
+
+
+class GitError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Change:
+    status: str  # A, M, D
+    path: str
+
+
+class Git:
+    def __init__(self, path: Path, author: str = "Ideas Platform Bot <ideas-bot@localhost>") -> None:
+        self.path = path
+        m = _AUTHOR.match(author)
+        if not m:
+            raise ValueError("REPO_WRITER_AUTHOR must look like 'Name <email>'")
+        self.name, self.email = m.group("name"), m.group("email")
+
+    def run(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
+        cmd = [
+            "git",
+            "-c", f"safe.directory={self.path}",
+            "-c", f"user.name={self.name}",
+            "-c", f"user.email={self.email}",
+            "-c", "core.quotepath=off",
+            "-C", str(self.path),
+            *args,
+        ]  # fmt: skip
+        out = subprocess.run(cmd, capture_output=True, text=True, input=input_text, check=False)
+        if check and out.returncode != 0:
+            # stderr can echo file names; raise with the git subcommand only.
+            raise GitError(f"git {args[0]} failed with exit code {out.returncode}")
+        return out.stdout
+
+    # ---- state -------------------------------------------------------------------------------------
+    def is_repo(self) -> bool:
+        return (self.path / ".git").exists()
+
+    def head(self) -> str | None:
+        out = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={self.path}",
+                "-C",
+                str(self.path),
+                "rev-parse",
+                "--verify",
+                "-q",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return out.stdout.strip() or None
+
+    def has_commit(self, sha: str) -> bool:
+        out = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={self.path}",
+                "-C",
+                str(self.path),
+                "cat-file",
+                "-e",
+                f"{sha}^{{commit}}",
+            ],
+            capture_output=True,
+            check=False,
+        )
+        return out.returncode == 0
+
+    def is_dirty(self) -> bool:
+        return bool(self.run("status", "--porcelain").strip())
+
+    def commit_count(self) -> int:
+        return int(self.run("rev-list", "--count", "HEAD").strip()) if self.head() else 0
+
+    # ---- writes ------------------------------------------------------------------------------------
+    def init(self) -> None:
+        self.path.mkdir(parents=True, exist_ok=True)
+        self.run("init", "-q", "-b", "main")
+
+    def reset_hard(self) -> None:
+        """The working tree belongs to the writer alone; anything uncommitted is a half-done write."""
+        if self.head():
+            self.run("reset", "-q", "--hard", "HEAD")
+        self.run("clean", "-q", "-fd")
+
+    def commit_all(self, message: str) -> str:
+        self.run("add", "-A")
+        self.run("commit", "-q", "--allow-empty", "-F", "-", input_text=message)
+        sha = self.head()
+        if sha is None:
+            raise GitError("commit produced no HEAD")
+        return sha
+
+    def push(self, remote: str = "origin", branch: str = "main") -> None:
+        self.run("push", "-q", remote, branch)
+
+    # ---- reads -------------------------------------------------------------------------------------
+    def show(self, rev: str, rel: str) -> str:
+        return self.run("show", f"{rev}:{rel}")
+
+    def ls_files(self, rev: str = "HEAD") -> list[str]:
+        return [p for p in self.run("ls-tree", "-r", "--name-only", rev).split("\n") if p]
+
+    def diff(self, a: str, b: str) -> list[Change]:
+        out = self.run("diff", "--name-status", "--no-renames", a, b)
+        changes = []
+        for line in out.split("\n"):
+            if line.strip():
+                status, rel = line.split("\t", 1)
+                changes.append(Change(status[0], rel))
+        return changes
+
+    def outbox_commits(self, limit: int = 1000) -> dict[int, str]:
+        """outbox ID -> commit SHA, from the `outbox:` trailer of recent commits (crash recovery)."""
+        if not self.head():
+            return {}
+        out = self.run("log", f"-n{limit}", "--format=%H%x09%(trailers:key=outbox,valueonly,separator=%x2C)")
+        found: dict[int, str] = {}
+        for line in out.split("\n"):
+            if "\t" not in line:
+                continue
+            sha, values = line.split("\t", 1)
+            for v in values.split(","):
+                if v.strip().isdigit():
+                    found[int(v.strip())] = sha
+        return found

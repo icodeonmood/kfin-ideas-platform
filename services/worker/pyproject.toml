@@ -43,6 +43,7 @@ extend-exclude = [".venv"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "TID", "S"]
 ignore = [
+  "E501",   # ruff format owns line length; long SQL literals are fine
   "S101",   # assert is fine in tests and invariants
   "S603",   # subprocess without shell is how we call git
   "S607",   # git is resolved from PATH on purpose
@@ -61,7 +62,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "gateway/**" = ["TID251"]
-"tests/**" = ["S105", "S106", "S108", "S311"]
+"tests/**" = ["S105", "S106", "S108", "S310", "S311"]
 "bootstrap/**" = ["S311"]
 
 [tool.mypy]
@@ -75,3 +76,5 @@ mypy_path = "../../eval/golden"
 module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+# Test code indexes rows it has just inserted; Optional checks there add noise, not safety.
+disable_error_code = ["index", "union-attr", "attr-defined"]
