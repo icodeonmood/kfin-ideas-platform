@@ -15,7 +15,7 @@ Target: org-wide launch at the new office inauguration, **Friday 20 November 202
 | B3 Canvas and attachments | Wed 11 Nov | ☑ |
 | B4 Gateway and first agents | Thu 12 Nov | ☑ built; real-route numbers for AT-B4-03/07/08 wait for D1 (InfoSec, Fri 13 Nov) |
 | B5 Match | Fri 13 Nov | ☑ built; AT-B5-01 is a UAT test (BGE-M3), AT-B5-04 real-route numbers wait for D1 |
-| B6 Review console | Mon 16 Nov | ☐ |
+| B6 Review console | Mon 16 Nov | ☑ built |
 | B7 Public pages, deploy to UAT | Tue 17 Nov (go/no-go 1 at 17:00) | ☐ |
 | B8 Hardening | Wed 18 – Thu 19 Nov (freeze and go/no-go 2 at 17:00) | ☐ |
 
