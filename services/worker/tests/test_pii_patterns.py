@@ -50,3 +50,11 @@ def test_near_misses_do_not_block() -> None:
         "Invoice 5023 from the vendor",
     ):
         assert _ids(text) == set(), text
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_mobile_written_as_91_plus_ten_digits(seed: int) -> None:
+    rng = g.default_rng(100 + seed)
+    ten = "".join(rng.choice("6789") if i == 0 else rng.choice("0123456789") for i in range(10))
+    assert "mobile" in _ids(f"call 91{ten} today")
+    assert "mobile" in _ids(f"call +91{ten} today")

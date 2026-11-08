@@ -34,3 +34,45 @@ describe("kill switch route map (§7.6)", () => {
       expect(text).not.toMatch(/duplicate|rejected|kill switch|503/i);
   });
 });
+
+describe("kill switch coverage", () => {
+  it("gates HEAD exactly like GET (Next.js runs the GET handler for HEAD)", () => {
+    expect(switchesFor("HEAD", "/api/attachments/ATT-2026-000001")).toEqual(["attachments.open"]);
+    expect(switchesFor("head", "/api/wall")).toEqual(["wall.public"]);
+  });
+
+  it("every write route file is guarded or explicitly listed as unguarded", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const path = await import("node:path");
+    const { UNGUARDED_WRITES } = await import("@/lib/killswitch-routes");
+    const apiRoot = path.resolve(__dirname, "../../src/app/api");
+    const routeFiles: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (name === "route.ts") routeFiles.push(full);
+      }
+    };
+    walk(apiRoot);
+    const ungated: string[] = [];
+    for (const file of routeFiles) {
+      // Turn the file path into a concrete sample URL: [id] segments become "x".
+      const url =
+        "/api/" +
+        path
+          .relative(apiRoot, path.dirname(file))
+          .split(path.sep)
+          .map((seg) => (seg.startsWith("[") ? "x" : seg))
+          .join("/");
+      const source = readFileSync(file, "utf8");
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+        if (!new RegExp(`export (async )?function ${method}\\b`).test(source)) continue;
+        const guarded = switchesFor(method, url).length > 0;
+        const listed = UNGUARDED_WRITES.some((re) => re.test(url));
+        if (!guarded && !listed) ungated.push(`${method} ${url}`);
+      }
+    }
+    expect(ungated).toEqual([]);
+  });
+});

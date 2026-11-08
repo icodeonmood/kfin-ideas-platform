@@ -45,7 +45,13 @@ WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
 IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
+RETRY_BACKOFF_S = (1, 5, 15, 60)
+STUCK_AFTER_ATTEMPTS = 5
 PUSH_ALERT_AFTER_S = 15 * 60
+
+
+class LockLost(RuntimeError):
+    """The single-writer lock is not held; continuing could commit an event twice."""
 
 
 class EventError(Exception):
@@ -89,6 +95,7 @@ class RepoWriter:
         self._commits_this_run = 0
         self._crash_after = _fault_after_commits()
         self._next_push_at = 0.0
+        self._retry_at: dict[int, float] = {}
         self._push_failures = 0
         self._push_failing_since: float | None = None
 
@@ -105,10 +112,22 @@ class RepoWriter:
             self._lock_conn = None
 
     # ---- main loop -------------------------------------------------------------------------------
+    def _assert_lock(self) -> None:
+        """Exactly-once depends on being the only writer: refuse to run unless our lock session is alive."""
+        if self._lock_conn is None:
+            raise LockLost("acquire() the writer lock before run_once()")
+        try:
+            self._lock_conn.execute("SELECT 1")
+        except Exception as exc:
+            self._lock_conn = None
+            raise LockLost("writer lock session dropped") from exc
+
     def run_once(self, limit: int = 100) -> list[Outcome]:
         """Commit up to `limit` pending events in order. Stops at the first event that fails."""
+        self._assert_lock()
         if not self.git.is_repo():
             raise GitError("company repo not found; run `make seed` first")
+        self.git.clear_stale_locks()  # safe: we hold the only writer lock
         if self.git.is_dirty():
             log.warning("repo_writer.dirty_tree_reset")
             self.git.reset_hard()
@@ -122,15 +141,21 @@ class RepoWriter:
                 (limit,),
             ).fetchall()
             for event in pending:
+                if time.monotonic() < self._retry_at.get(int(event["id"]), 0.0):
+                    break  # still backing off on the event at the head of the queue
                 try:
                     outcome = self._one(conn, event, recovered)
                 except EventError as exc:
-                    self._record_failure(conn, event["id"], exc.code)
+                    self._record_failure(conn, event, exc.code)
                     break
                 except GitError:
                     self.git.reset_hard()
-                    self._record_failure(conn, event["id"], "git_error")
+                    self._record_failure(conn, event, "git_error")
                     break
+                except Exception as exc:  # anything else: record the type, never the message
+                    self._record_failure(conn, event, type(exc).__name__)
+                    break
+                self._retry_at.pop(outcome.outbox_id, None)
                 done.append(outcome)
         if done or self._push_failures:
             self._push()
@@ -143,7 +168,14 @@ class RepoWriter:
         log.info("repo_writer.started")
         try:
             while stop is None or not stop.is_set():
-                outcomes = self.run_once()
+                try:
+                    outcomes = self.run_once()
+                except LockLost:
+                    log.error("repo_writer.lock_lost")
+                    raise  # the service exits and restarts with a fresh lock
+                except Exception:
+                    log.exception("repo_writer.loop_error")
+                    outcomes = []
                 if not outcomes:
                     time.sleep(self.settings.repo_writer_poll_seconds)
         finally:
@@ -153,37 +185,48 @@ class RepoWriter:
     def _one(self, conn: Conn, event: dict[str, Any], recovered: dict[int, str]) -> Outcome:
         outbox_id = int(event["id"])
         sha = recovered.get(outbox_id)
-        idea_row: dict[str, Any] | None = None
-        rel: str | None = None
-        if event["event_type"] in IDEA_EVENTS:
-            idea_row = self._load_idea(conn, event)
-            rel = repo_path_for(idea_row["idea_id"], idea_row["submitted_at"])
-        if sha is None:
-            if event["event_type"] not in IDEA_EVENTS:
-                raise EventError("unknown_event")
-            assert idea_row is not None and rel is not None
-            message = self._write_idea_files(event, idea_row, rel)
-            sha = self.git.commit_all(message)
-            self._commits_this_run += 1
-            if self._crash_after is not None and self._commits_this_run >= self._crash_after:
-                os._exit(137)  # simulate a crash after the commit, before the database knows
-            was_recovered = False
-        else:
-            was_recovered = True
+        if sha is not None:
+            # Committed before a crash: record the SHA. The idea row is optional here, so a row deleted since
+            # (erasure) cannot block the queue.
             log.warning("repo_writer.recovered_commit", outbox_id=outbox_id, commit_sha=sha)
+            idea_id = (event["payload"] or {}).get("idea_id") or event["aggregate_id"]
+            with conn.transaction():
+                self._mark_committed(conn, outbox_id, sha)
+                if event["event_type"] in IDEA_EVENTS:
+                    row = conn.execute(
+                        "SELECT idea_id, submitted_at FROM ideas WHERE idea_id = %s", (idea_id,)
+                    ).fetchone()
+                    if row is not None and row["submitted_at"] is not None:
+                        conn.execute(
+                            "UPDATE ideas SET repo_path = %s, repo_commit = %s WHERE idea_id = %s",
+                            (repo_path_for(row["idea_id"], row["submitted_at"]), sha, idea_id),
+                        )
+            return Outcome(outbox_id, sha, True)
+
+        if event["event_type"] not in IDEA_EVENTS:
+            raise EventError("unknown_event")
+        idea_row = self._load_idea(conn, event)
+        rel = repo_path_for(idea_row["idea_id"], idea_row["submitted_at"])
+        message = self._write_idea_files(event, idea_row, rel)
+        sha = self.git.commit_all(message)
+        self._commits_this_run += 1
+        if self._crash_after is not None and self._commits_this_run >= self._crash_after:
+            os._exit(137)  # simulate a crash after the commit, before the database knows
         with conn.transaction():
+            self._mark_committed(conn, outbox_id, sha)
             conn.execute(
-                "UPDATE outbox SET committed_at = now(), commit_sha = %s, attempts = attempts + 1, last_error = NULL "
-                "WHERE id = %s AND committed_at IS NULL",
-                (sha, outbox_id),
+                "UPDATE ideas SET repo_path = %s, repo_commit = %s WHERE id = %s", (rel, sha, idea_row["id"])
             )
-            if idea_row is not None:
-                conn.execute(
-                    "UPDATE ideas SET repo_path = %s, repo_commit = %s WHERE id = %s",
-                    (rel, sha, idea_row["id"]),
-                )
         log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
-        return Outcome(outbox_id, sha, was_recovered)
+        return Outcome(outbox_id, sha, False)
+
+    @staticmethod
+    def _mark_committed(conn: Conn, outbox_id: int, sha: str) -> None:
+        conn.execute(
+            "UPDATE outbox SET committed_at = now(), commit_sha = %s, attempts = attempts + 1, last_error = NULL "
+            "WHERE id = %s AND committed_at IS NULL",
+            (sha, outbox_id),
+        )
 
     def _load_idea(self, conn: Conn, event: dict[str, Any]) -> dict[str, Any]:
         idea_id = (event["payload"] or {}).get("idea_id") or event["aggregate_id"]
@@ -211,12 +254,15 @@ class RepoWriter:
         rows = payload.get("history") or [{"event": event["event_type"].split(".", 1)[1], "note": ""}]
         for r in rows:
             by = str(r.get("by") or event["actor"])
-            if not re.match(r"^[A-Za-z0-9:@/._-]+$", by):
+            if not re.fullmatch(r"[A-Za-z0-9:@/._-]+", by):
                 raise EventError("history_actor_invalid")
-            history.append(HistoryRow(when, str(r.get("event", "")), by, _safe_note(r.get("note"))))
+            word = str(r.get("event", ""))
+            if not re.fullmatch(r"[a-z_]+", word):
+                raise EventError("history_event_invalid")
+            history.append(HistoryRow(when, word, by, _safe_note(r.get("note"))))
         reviewer = payload.get("verified_by")
         if reviewer:
-            if not re.match(r"^REV-[0-9]{4}$", str(reviewer)):
+            if not re.fullmatch(r"REV-[0-9]{4}", str(reviewer)):
                 raise EventError("verified_by_invalid")
             verified.append(
                 {"by": f"human:{reviewer}", "at": ist(event["created_at"]).isoformat(timespec="seconds")}
@@ -287,12 +333,22 @@ class RepoWriter:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     # ---- failures and push -----------------------------------------------------------------------
-    def _record_failure(self, conn: Conn, outbox_id: int, code: str) -> None:
+    def _record_failure(self, conn: Conn, event: dict[str, Any], code: str) -> None:
+        """Record the code, back off before retrying this event, and alert once it looks stuck. Later events
+        wait behind it: the repo is written in order (BLD-031)."""
+        outbox_id = int(event["id"])
+        attempts = int(event["attempts"]) + 1
+        code = re.sub(r"[^A-Za-z0-9_.:-]", "_", code)[:120] or "error"
         with conn.transaction():
             conn.execute(
-                "UPDATE outbox SET attempts = attempts + 1, last_error = %s WHERE id = %s", (code, outbox_id)
+                "UPDATE outbox SET attempts = %s, last_error = %s WHERE id = %s", (attempts, code, outbox_id)
             )
-        log.error("repo_writer.event_failed", outbox_id=outbox_id, error_code=code)
+        delay = RETRY_BACKOFF_S[min(attempts - 1, len(RETRY_BACKOFF_S) - 1)]
+        self._retry_at[outbox_id] = time.monotonic() + delay
+        if attempts >= STUCK_AFTER_ATTEMPTS:
+            log.error("repo_writer.event_stuck", outbox_id=outbox_id, error_code=code, attempts=attempts)
+        else:
+            log.error("repo_writer.event_failed", outbox_id=outbox_id, error_code=code, retry_in_s=delay)
 
     def _push(self) -> None:
         """Push without ever blocking the commit loop (§2.7): one attempt per loop when due, backing off

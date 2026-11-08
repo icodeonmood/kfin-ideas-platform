@@ -87,3 +87,53 @@ def test_rebuild_matches_incremental(db, company_repo: Path, test_database: str)
     after = db.execute("SELECT count(*) AS n, count(DISTINCT repo_path) AS f FROM chunks").fetchone()
     assert result.rebuilt and before == after
     assert db.execute("SELECT count(*) AS n FROM terms WHERE glossary_id = 'GL-nigo'").fetchone()["n"] >= 2
+
+
+def test_odd_files_are_skipped_not_fatal(db, company_repo: Path, test_database: str) -> None:
+    """A malformed concept file is logged and skipped; the index still advances (review finding)."""
+    settings = helpers.settings_for(company_repo, test_database)
+    Indexer(settings).run_once()
+    (company_repo / "solutions" / "SOL-0001.md").write_text(
+        "---\ntype: solution\nkfin:\n  id: SOL-0001\n  areas: 5\n  stage: {odd: 1}\n---\n## What it does\nA fix.\n",
+        encoding="utf-8",
+    )
+    (company_repo / "solutions" / "SOL-0002.md").write_bytes(
+        b"---\ntype: solution\n---\n\xff\xfe not utf-8\n"
+    )
+    git = Git(company_repo)
+    git.run("add", "-A")
+    git.run("commit", "-q", "-m", "test: odd files", "--author", "Test <t@localhost>")
+    result = Indexer(settings).run_once()
+    assert result.to_commit == git.head()
+    assert db.execute("SELECT last_commit FROM index_state").fetchone()["last_commit"] == git.head()
+    row = db.execute(
+        "SELECT area_ids, stage FROM chunks WHERE repo_path = 'solutions/SOL-0001.md'"
+    ).fetchone()
+    assert row["area_ids"] == ["5"] and row["stage"] is None
+
+
+def test_deleting_a_target_reverts_links_to_ids(db, company_repo: Path, test_database: str) -> None:
+    settings = helpers.settings_for(company_repo, test_database)
+    Indexer(settings).run_once()
+    idea_id = helpers.insert_idea(db)
+    helpers.insert_event(db, idea_id)
+    writer = RepoWriter(settings)
+    assert writer.acquire()
+    try:
+        writer.run_once()
+    finally:
+        writer.release()
+    Indexer(settings).run_once()
+    rel = db.execute("SELECT repo_path FROM ideas WHERE idea_id = %s", (idea_id,)).fetchone()["repo_path"]
+    assert db.execute(
+        "SELECT 1 FROM links WHERE from_path = %s AND to_path = 'taxonomy/glossary/GL-nigo.md'", (rel,)
+    ).fetchone()
+    git = Git(company_repo)
+    git.run("rm", "-q", "taxonomy/glossary/GL-nigo.md")
+    git.run("commit", "-q", "-m", "test: delete a glossary term", "--author", "Test <t@localhost>")
+    Indexer(settings).run_once()
+    targets = {
+        r["to_path"] for r in db.execute("SELECT to_path FROM links WHERE from_path = %s", (rel,)).fetchall()
+    }
+    assert "taxonomy/glossary/GL-nigo.md" not in targets
+    assert "id:GL-nigo" in targets

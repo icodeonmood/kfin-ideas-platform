@@ -113,3 +113,18 @@ def test_hashes_and_coded_ids_are_not_personal_data() -> None:
         assert scan_log_line(json.dumps({"event": "x.y", "ref": safe})) == [], safe
     bare_mobile = g.mobile(g.default_rng(11)).replace(" ", "").replace("+91", "")
     assert any(v.kind == "pattern" for v in scan_log_line(json.dumps({"event": "x.y", "ref": bare_mobile})))
+
+
+def test_uncaught_exceptions_log_the_type_only() -> None:
+    import subprocess
+    import sys
+
+    code = (
+        "from core.logging import get_logger; get_logger('t'); "
+        "raise ValueError('Failing row contains (SIP forms are slow, someone@example.com)')"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert out.returncode == 1
+    combined = out.stdout + out.stderr
+    assert "SIP forms" not in combined and "example.com" not in combined
+    assert '"error_type":"ValueError"' in combined

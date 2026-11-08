@@ -95,6 +95,13 @@ class Git:
         self.path.mkdir(parents=True, exist_ok=True)
         self.run("init", "-q", "-b", "main")
 
+    def clear_stale_locks(self) -> None:
+        """A writer killed inside `git add` or `git commit` leaves lock files that block every later write.
+        Only call this while holding the single-writer lock."""
+        git_dir = self.path / ".git"
+        for lock in [git_dir / "index.lock", git_dir / "HEAD.lock", *git_dir.glob("refs/heads/*.lock")]:
+            lock.unlink(missing_ok=True)
+
     def reset_hard(self) -> None:
         """The working tree belongs to the writer alone; anything uncommitted is a half-done write."""
         if self.head():

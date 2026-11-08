@@ -14,17 +14,27 @@ from pathlib import Path
 
 ALLOWED_DIR = Path("services/worker/gateway")
 SKIP_DIRS = {".git", "node_modules", ".venv", ".next", ".data", "__pycache__", "playwright-report", "test-results", ".mypy_cache"}
-CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx"}
+CODE_SUFFIXES = {".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"}
 
-PY_IMPORT = re.compile(
-    r"^\s*(?:from|import)\s+(anthropic|openai|google\.generativeai|google\.genai|langchain\w*|litellm|cohere|mistralai)\b",
+_PY_MODULES = r"(?:anthropic|openai|google\.generativeai|google\.genai|langchain\w*|litellm|cohere|mistralai)"
+PY_PATTERNS = [
+    # from anthropic import X  /  from openai.types import Y
+    re.compile(rf"^\s*from\s+({_PY_MODULES})\b", re.MULTILINE),
+    # import anthropic  /  import os, anthropic as a
+    re.compile(rf"^\s*import\s+(?:[\w.]+(?:\s+as\s+\w+)?\s*,\s*)*({_PY_MODULES})\b", re.MULTILINE),
+    # from google import genai, generativeai
+    re.compile(r"^\s*from\s+google\s+import\s+[^\n]*\b(genai|generativeai)\b", re.MULTILINE),
+    # __import__("anthropic") / importlib.import_module("openai")
+    re.compile(rf"""(?:__import__|import_module)\(\s*[rbu]?["']({_PY_MODULES})(?:\.[\w.]*)?["']"""),
+]
+BEDROCK = re.compile(r"""["'`]bedrock-runtime["'`]|bedrock_runtime|BedrockRuntime""")
+_JS_PACKAGES = r"(@anthropic-ai/[\w-]+|openai|@aws-sdk/client-bedrock[\w-]*|@ai-sdk/[\w-]+|ai|@google/generative-ai|@google/genai)"
+JS_IMPORT = re.compile(
+    rf"""(?:\bfrom\s+|\brequire\(\s*|\bimport\(\s*|^\s*import\s+)["'`]{_JS_PACKAGES}(?:/[^"'`]*)?["'`]""",
     re.MULTILINE,
 )
-BEDROCK = re.compile(r"""["']bedrock-runtime["']|bedrock_runtime|BedrockRuntime""")
-JS_IMPORT = re.compile(
-    r"""(?:from\s+|require\(\s*|import\(\s*)["'](@anthropic-ai/[\w-]+|openai|@aws-sdk/client-bedrock[\w-]*|@ai-sdk/[\w-]+|ai|@google/generative-ai|@google/genai)["']"""
-)
 JS_PACKAGES = re.compile(r"^(@anthropic-ai/.+|openai|@aws-sdk/client-bedrock.*|@ai-sdk/.+|ai|@google/generative-ai|@google/genai)$")
+DEPENDENCY_KEYS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 
 
 def violations(root: Path) -> list[str]:
@@ -39,13 +49,15 @@ def violations(root: Path) -> list[str]:
         if path.suffix in CODE_SUFFIXES:
             text = path.read_text(encoding="utf-8", errors="ignore")
             if path.suffix == ".py":
-                hits = [m.group(1) for m in PY_IMPORT.finditer(text)] + (["bedrock-runtime"] if BEDROCK.search(text) else [])
+                hits = [m.group(1) for pat in PY_PATTERNS for m in pat.finditer(text)]
+                hits += ["bedrock-runtime"] if BEDROCK.search(text) else []
             else:
                 hits = [m.group(1) for m in JS_IMPORT.finditer(text)]
+                hits += ["bedrock-runtime"] if BEDROCK.search(text) else []
             found.extend(f"{rel}: imports {h}" for h in sorted(set(hits)))
         elif path.name == "package.json":
             manifest = json.loads(path.read_text(encoding="utf-8"))
-            deps = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
+            deps = {name: v for key in DEPENDENCY_KEYS for name, v in (manifest.get(key) or {}).items()}
             found.extend(f"{rel}: depends on {name}" for name in sorted(deps) if JS_PACKAGES.match(name))
     return found
 

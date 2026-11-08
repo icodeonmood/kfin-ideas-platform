@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from datetime import UTC, datetime
 from typing import Any
 
@@ -123,7 +124,30 @@ def configure(level: str = "INFO", stream: Any = None) -> None:
     # Third-party loggers can echo request bodies; keep them quiet.
     for noisy in ("uvicorn.access", "botocore", "urllib3", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    _install_excepthooks()
     _configured = True
+
+
+def _install_excepthooks() -> None:
+    """Uncaught exceptions would print their message and traceback to stderr, and a database error message
+    can quote a failing row (idea text). Log the exception type only."""
+
+    def report(exc_type: type[BaseException], where: str) -> None:
+        logging.getLogger("uncaught").error(
+            "process.uncaught_exception", extra={"fields": {"error_type": exc_type.__name__, "where": where}}
+        )
+
+    def sys_hook(exc_type: type[BaseException], exc: BaseException, tb: Any) -> None:
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc, tb)
+            return
+        report(exc_type, "main")
+
+    def thread_hook(args: threading.ExceptHookArgs) -> None:
+        report(args.exc_type, "thread")
+
+    sys.excepthook = sys_hook
+    threading.excepthook = thread_hook
 
 
 def get_logger(name: str) -> Log:

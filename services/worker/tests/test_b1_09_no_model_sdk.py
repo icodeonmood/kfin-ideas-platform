@@ -38,6 +38,15 @@ def test_the_repo_itself_is_clean() -> None:
         ("apps/web/src/server/ai.ts", 'import Anthropic from "@anthropic-ai/sdk";\n'),
         ("apps/web/src/server/ai2.ts", 'const o = require("openai");\n'),
         ("apps/web/package.json", '{"dependencies": {"@anthropic-ai/sdk": "1.0.0"}}'),
+        # Gaps found in review:
+        ("services/worker/scan/a.py", "import os, anthropic\n"),
+        ("services/worker/scan/b.py", "from google import genai\n"),
+        ("services/worker/scan/c.py", "mod = importlib.import_module" + "('anthropic')\n"),
+        ("services/worker/scan/d.py", "mod = __import__" + "('openai')\n"),
+        ("apps/web/src/server/e.ts", 'import OpenAI from "openai/resources";\n'),
+        ("apps/web/src/server/f.mts", "const m = await import(`@anthropic-ai/sdk`);\n"),
+        ("apps/web/src/server/g.ts", 'import "@anthropic-ai/sdk/shims/node";\n'),
+        ("apps/web/package.json", '{"peerDependencies": {"openai": "4.0.0"}}'),
     ],
 )
 def test_sdk_outside_gateway_fails(tmp_path: Path, rel: str, text: str) -> None:

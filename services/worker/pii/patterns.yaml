@@ -25,7 +25,7 @@ patterns:
   - id: mobile
     label: Mobile number
     data_type: contact
-    regex: '(?<![0-9+])(?:\+91[ -]?|91[ -]|0)?[6-9][0-9]{4}[ -]?[0-9]{5}(?![0-9])'
+    regex: '(?<![0-9+])(?:\+?91[ -]?|0)?[6-9][0-9]{4}[ -]?[0-9]{5}(?![0-9])'   # also 91 + ten digits, no separator
     action: block
 
   - id: email

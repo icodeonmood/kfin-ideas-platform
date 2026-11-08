@@ -38,7 +38,19 @@ class IndexResult:
     to_commit: str | None
     upserted: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
     rebuilt: bool = False
+
+
+def _text(value: Any) -> str | None:
+    """A scalar from frontmatter as text; anything else (lists, mappings) as None."""
+    return str(value) if isinstance(value, str | int | float) and not isinstance(value, bool) else None
+
+
+def _texts(value: Any) -> list[str]:
+    """A list of scalars from frontmatter as text; a lone scalar becomes a one-item list."""
+    items = value if isinstance(value, list) else ([value] if value is not None else [])
+    return [t for t in (_text(v) for v in items) if t is not None]
 
 
 def trust_tier(meta: dict[str, Any]) -> str:
@@ -140,11 +152,17 @@ class Indexer:
                 for rel, status in paths:
                     if not rel.endswith(".md") or posixpath.basename(rel) in RESERVED:
                         continue
-                    if status == "D":
-                        self._delete(conn, rel)
-                        result.deleted.append(rel)
-                    elif self._upsert(conn, rel, head):
-                        result.upserted.append(rel)
+                    try:
+                        # One savepoint per file: an odd file is skipped and logged, never blocks the rest.
+                        with conn.transaction():
+                            if status == "D":
+                                self._delete(conn, rel)
+                                result.deleted.append(rel)
+                            elif self._upsert(conn, rel, head):
+                                result.upserted.append(rel)
+                    except Exception as exc:
+                        result.failed.append(rel)
+                        log.error("indexer.file_failed", repo_path=rel, error_type=type(exc).__name__)
                 self._resolve_links(conn)
                 conn.execute(
                     "UPDATE index_state SET last_commit = %s, updated_at = now() WHERE id = 1", (head,)
@@ -154,6 +172,7 @@ class Indexer:
             commit_sha=head,
             upserted_count=len(result.upserted),
             deleted_count=len(result.deleted),
+            failed_count=len(result.failed),
             rebuilt=result.rebuilt,
         )
         return result
@@ -169,6 +188,16 @@ class Indexer:
 
     # ---- per file ----------------------------------------------------------------------------------
     def _delete(self, conn: Conn, rel: str) -> None:
+        # Links that had resolved to this file go back to their `id:<ID>` form, so they re-resolve if the
+        # concept returns under another path and never point at a file that no longer exists.
+        conn.execute(
+            "INSERT INTO links (from_path, to_path, link_type) "
+            "SELECT l.from_path, 'id:' || f.kfin_id, l.link_type FROM links l JOIN repo_files f "
+            "ON f.repo_path = l.to_path WHERE l.to_path = %s AND l.link_type = 'frontmatter' "
+            "AND f.kfin_id IS NOT NULL ON CONFLICT DO NOTHING",
+            (rel,),
+        )
+        conn.execute("DELETE FROM links WHERE to_path = %s AND link_type = 'frontmatter'", (rel,))
         conn.execute("DELETE FROM chunks WHERE repo_path = %s", (rel,))
         conn.execute("DELETE FROM links WHERE from_path = %s", (rel,))
         conn.execute("DELETE FROM terms WHERE repo_path = %s", (rel,))
@@ -177,7 +206,7 @@ class Indexer:
     def _upsert(self, conn: Conn, rel: str, commit: str) -> bool:
         try:
             doc = parse(self.git.show(commit, rel))
-        except FrontmatterError:
+        except (FrontmatterError, UnicodeDecodeError):
             log.warning("indexer.unparseable", repo_path=rel)
             return False
         meta = doc.meta or {}
@@ -185,10 +214,10 @@ class Indexer:
         if not file_type:
             return False
         kfin: dict[str, Any] = meta.get("kfin") if isinstance(meta.get("kfin"), dict) else {}  # type: ignore[assignment]
-        own_id = kfin.get("id")
+        own_id = _text(kfin.get("id"))
         trust = trust_tier(meta)
         visibility = kfin.get("visibility") if kfin.get("visibility") in ("org", "committee") else "org"
-        stage = kfin.get("stage")
+        stage = _text(kfin.get("stage"))
         self._delete(conn, rel)
         conn.execute(
             "INSERT INTO repo_files (repo_path, kfin_id, file_type, trust, stage, visibility, commit_sha) "
@@ -204,7 +233,7 @@ class Indexer:
                 "VALUES (%s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     rel, file_type, section, ordinal, text, vector_literal(vec), trust, stage,
-                    list(kfin.get("lobs") or []), kfin.get("category"), list(kfin.get("areas") or []),
+                    _texts(kfin.get("lobs")), _text(kfin.get("category")), _texts(kfin.get("areas")),
                     visibility, commit,
                 ),
             )  # fmt: skip
@@ -220,7 +249,7 @@ class Indexer:
             )
         if file_type == "glossary-term" and own_id:
             term = str(kfin.get("term") or meta.get("title") or own_id)
-            for alias in dict.fromkeys([term, *[str(a) for a in kfin.get("aliases") or []]]):
+            for alias in dict.fromkeys([term, *_texts(kfin.get("aliases"))]):
                 conn.execute(
                     "INSERT INTO terms (glossary_id, term, alias, repo_path) VALUES (%s, %s, %s, %s) "
                     "ON CONFLICT (glossary_id, alias) DO NOTHING",

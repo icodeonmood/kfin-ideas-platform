@@ -58,3 +58,11 @@ describe("pattern engine (TypeScript side)", () => {
     expect(luhnValid("4000000000000001")).toBe(false);
   });
 });
+
+describe("mobile numbers written as 91 plus ten digits", () => {
+  it("blocks the twelve-digit form with no separator", () => {
+    const ten = rnd(10, "6789");
+    expect(scan(`call 91${ten} today`).map((m) => m.patternId)).toContain("mobile");
+    expect(scan(`call +91${ten} today`).map((m) => m.patternId)).toContain("mobile");
+  });
+});

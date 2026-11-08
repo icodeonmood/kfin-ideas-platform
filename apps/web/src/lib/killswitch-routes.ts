@@ -56,10 +56,19 @@ export const BANNERS: Record<SwitchName, string> = {
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
 };
 
+/**
+ * Write routes that deliberately need no kill switch (each one reviewed). A unit test fails if a route
+ * file exports POST, PUT, PATCH or DELETE and its path is neither guarded above nor listed here, so a new
+ * write route cannot ship ungated by accident.
+ */
+export const UNGUARDED_WRITES: readonly RegExp[] = [];
+
 export function switchesFor(method: string, pathname: string): SwitchName[] {
+  // Next.js answers HEAD by running the GET handler, so HEAD must meet the same gates as GET.
+  const m = method.toUpperCase() === "HEAD" ? "GET" : method.toUpperCase();
   const needed = new Set<SwitchName>();
   for (const rule of ROUTE_RULES) {
-    if (rule.methods.includes(method.toUpperCase()) && rule.pattern.test(pathname)) {
+    if (rule.methods.includes(m) && rule.pattern.test(pathname)) {
       rule.switches.forEach((s) => needed.add(s));
     }
   }
