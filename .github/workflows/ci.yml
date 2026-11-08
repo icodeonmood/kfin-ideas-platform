@@ -3,9 +3,10 @@
 # Synthetic data only. No secrets are needed: LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock.
 name: ci
 
+# Manual for now: the test Mac runs `make verify` (BLD-034). Switch to `push` and `pull_request` once a
+# first manual run passes on GitHub's Linux runners and Actions minutes are budgeted.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

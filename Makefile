@@ -8,7 +8,7 @@ COMPOSE := docker compose -f infra/docker-compose.yml --project-directory . --en
 PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 
-.PHONY: help setup build up down health migrate seed test test-py test-web e2e eval lint lint-py lint-web lint-ci db-types killswitch clean-data
+.PHONY: help setup build up down health migrate seed test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -70,6 +70,9 @@ lint-ci:
 	$(PY) python -m okf.validate ../../seed/company-repo
 	$(PY) python ../../scripts/ci/check_no_model_sdk.py ../..
 	$(PY) pytest -q tests/test_log_scrubber.py
+
+verify: up seed lint test e2e eval ## Every gate a block must pass, in one go (use on the test Mac)
+	@echo "verify: all gates passed"
 
 db-types: ## Regenerate Kysely types from the migrated dev database
 	$(WEB) npx kysely-codegen --dialect postgres --url "postgres://ideas:ideas@localhost:5432/ideas" --out-file src/server/db-types.ts --exclude-pattern "public.schema_migrations"

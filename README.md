@@ -22,3 +22,14 @@ Needs Docker (Colima or Docker Desktop), `uv` and Node 22 or later. Everything r
 
 Web app: http://localhost:3000 · Mailpit: http://localhost:8025 · mock OIDC: http://localhost:8090
 
+## Test Mac (full gates)
+
+Day-to-day work happens on the development Mac. The full stack and every gate run on the test Mac (Apple silicon, 24 GB), which also takes the B8 load test (BLD-034).
+
+1. `brew install gh && gh auth login`
+2. `gh repo clone icodeonmood/kfin-ideas-platform ~/rome/kfin-ideas-platform && cd ~/rome/kfin-ideas-platform`
+3. `scripts/setup-mac.sh --check` to see what is missing, then `scripts/setup-mac.sh` to set it up (installs missing Homebrew packages, creates a Colima VM sized to half the RAM, at most 12 GB; never resizes an existing one)
+4. `make verify` runs up, seed, lint, test, e2e and eval, and stops at the first failure
+
+After each push from the development Mac: `git pull && make verify`. `make down && colima stop` hands the VM's memory back when you are done.
+

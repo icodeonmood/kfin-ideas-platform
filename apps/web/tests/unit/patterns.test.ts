@@ -54,8 +54,18 @@ describe("pattern engine (TypeScript side)", () => {
   });
 
   it("knows Luhn", () => {
-    expect(luhnValid("4000000000000002")).toBe(true);
-    expect(luhnValid("4000000000000001")).toBe(false);
+    // Test-range prefix plus random digits, check digit computed here: no card-shaped literal in the repo.
+    const body = "400000" + rnd(9);
+    let total = 0;
+    [...body].reverse().forEach((ch, i) => {
+      let n = Number(ch);
+      if (i % 2 === 0) n = n * 2 > 9 ? n * 2 - 9 : n * 2;
+      total += n;
+    });
+    const card = body + String((10 - (total % 10)) % 10);
+    const wrong = body + String((Number(card.at(-1)) + 1) % 10);
+    expect(luhnValid(card)).toBe(true);
+    expect(luhnValid(wrong)).toBe(false);
   });
 });
 
