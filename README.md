@@ -7,3 +7,18 @@ KFintech's org-wide ideas platform, a sub-brand under The Garage. Launch: Friday
 - Diagrams: open [docs/diagrams/ideas-platform-diagrams.html](docs/diagrams/ideas-platform-diagrams.html) in a browser.
 
 Internal. Synthetic data only in this repo.
+
+## Run it locally
+
+Needs Docker (Colima or Docker Desktop), `uv` and Node 22 or later. Everything runs on synthetic data.
+
+| Command | Does |
+|---|---|
+| `make setup` | Install Python and Node dependencies and the Playwright browser |
+| `make up` | Start Postgres, S3 store, ClamAV, mock OIDC, Mailpit, worker and web; waits until every health check passes |
+| `make seed` | Create the local company repo in `.data/kfin-ideas`, validate it, index it |
+| `make test` / `make e2e` / `make lint` / `make eval` | The gates every block must pass |
+| `make killswitch NAME=submissions STATE=off REASON="…" ACTOR=REV-0001` | Flip a kill switch (audited) |
+
+Web app: http://localhost:3000 · Mailpit: http://localhost:8025 · mock OIDC: http://localhost:8090
+
