@@ -8,7 +8,7 @@ COMPOSE := docker compose -f infra/docker-compose.yml --project-directory . --en
 PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 
-.PHONY: help setup build up down health migrate seed test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data
+.PHONY: help setup build up down health migrate db-users seed test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ build: .env ## Build the worker and web images
 	$(COMPOSE) build
 
 up: .env ## Start the local stack and wait until every service is healthy
+	$(COMPOSE) up -d --wait --wait-timeout 120 postgres
+	$(COMPOSE) run --rm dbmate up
+	$(MAKE) --no-print-directory db-users
 	$(COMPOSE) up -d --build --wait --wait-timeout 180
 	$(PY) python -m core.health --timeout 120
 
@@ -36,6 +39,10 @@ health: ## Check every service health endpoint
 
 migrate: .env ## Apply database migrations (dbmate); a second run changes nothing
 	$(COMPOSE) run --rm dbmate up
+	$(MAKE) --no-print-directory db-users
+
+db-users: ## Dev only: login users for the web and worker roles (UAT/prod: ops, from the vault)
+	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U ideas -d ideas < infra/dev/db-users.sql
 
 seed: migrate ## Create the local company repo, validate it, index it, load synthetic users
 	$(PY) python -m bootstrap.seed

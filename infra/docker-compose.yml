@@ -3,6 +3,9 @@
 name: kfin-ideas
 
 x-db-url: &db_url postgres://ideas:ideas@postgres:5432/ideas?sslmode=disable
+# Each service connects as its own role (BLD-077); dbmate keeps the owner for migrations.
+x-db-worker-url: &db_worker_url postgres://ideas_worker:dev-worker-only@postgres:5432/ideas?sslmode=disable
+x-db-web-url: &db_web_url postgres://ideas_web:dev-web-only@postgres:5432/ideas?sslmode=disable
 
 services:
   postgres:
@@ -70,7 +73,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: *db_url
+      DATABASE_URL: *db_worker_url
       COMPANY_REPO_PATH: /data/kfin-ideas
       S3_ENDPOINT: http://s3:9000
       CLAMAV_HOST: clamav
@@ -96,7 +99,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: *db_url
+      DATABASE_URL: *db_web_url
       WORKER_URL: http://worker:8000
       # Dev only: the server reaches the mock IdP inside Docker; the browser uses OIDC_ISSUER (BLD-042).
       OIDC_INTERNAL_BASE: http://mock-oidc:8080

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 
 import uvicorn
 
@@ -47,6 +48,12 @@ def main() -> None:
     if "indexer" in roles:
         _guard("indexer", Indexer(settings).run_forever)
     if "jobs" in roles:
+        # Load the name model before the first scan: a cold load can take longer than the scan's whole budget.
+        from pii.detect import warm_up
+
+        started = time.monotonic()
+        warm_up()
+        log.info("service.ner_ready", duration_ms=int((time.monotonic() - started) * 1000))
         _guard("jobs", jobs.run_forever)
     if "scheduler" in roles:
         _guard("scheduler", schedule.run_forever)
