@@ -47,3 +47,23 @@ def ensure_buckets(wait_seconds: float = 30.0) -> bool:
                 log.error("store.unavailable", error_type=type(exc).__name__)
                 return False
             time.sleep(2)
+
+
+def put(bucket: str, key: str, data: bytes) -> None:
+    client().put_object(Bucket=bucket, Key=key, Body=data)
+
+
+def get(bucket: str, key: str) -> bytes:
+    return client().get_object(Bucket=bucket, Key=key)["Body"].read()
+
+
+def delete(bucket: str, key: str) -> None:
+    client().delete_object(Bucket=bucket, Key=key)
+
+
+def exists(bucket: str, key: str) -> bool:
+    try:
+        client().head_object(Bucket=bucket, Key=key)
+        return True
+    except ClientError:
+        return False

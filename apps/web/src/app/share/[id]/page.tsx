@@ -33,6 +33,8 @@ export default async function Draft({ params }: { params: Promise<{ id: string }
       rubric={config.canvas_strength}
       examples={config.examples.map(({ slug, section }) => ({ slug, section }))}
       kfinDomains={kfinDomains()}
+      attachments={draft.attachments}
+      attachmentLimits={config.attachments}
     />
   );
 }

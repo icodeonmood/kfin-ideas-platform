@@ -214,3 +214,40 @@ test("content survives 200% zoom: no sideways scrolling (AT-B3-09)", async ({ pa
   expect(overflow).toBeLessThanOrEqual(0);
   await expectNoSeriousAxeIssues(page);
 });
+
+test("research files: upload, plain-words check result, remove; axe clean (AT-B3-06/07 UI)", async ({
+  page,
+}) => {
+  await start(page, "full");
+  const picker = page.getByLabel("Attach a file (optional)");
+  await picker.setInputFiles({
+    name: "volumes.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("week,forms\nW1,120\nW2,131\n"),
+  });
+  const list = page.getByRole("list", { name: "Attached files" });
+  await expect(list.getByText("Checked. Ready for the committee.")).toBeVisible({ timeout: 60_000 });
+
+  await picker.setInputFiles({
+    name: "sample.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(`step,example\nverify,${syntheticPan()}\n`),
+  });
+  await expect(
+    list.getByText(/Not accepted: this file has what looks like a PAN \(row 2, column B\)/),
+  ).toBeVisible({
+    timeout: 60_000,
+  });
+  await expectNoSeriousAxeIssues(page);
+
+  await picker.setInputFiles({
+    name: "tool.exe",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("MZ...."),
+  });
+  await expect(page.getByText(/We can't take this type of file/)).toBeVisible();
+
+  await list.getByRole("button", { name: "Remove sample.csv" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "sample.csv is removed." })).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+});

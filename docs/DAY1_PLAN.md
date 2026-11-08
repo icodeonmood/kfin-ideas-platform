@@ -12,7 +12,7 @@ Target: org-wide launch at the new office inauguration, **Friday 20 November 202
 |---|---|---|
 | B1 Scaffold | Mon 9 Nov | ☑ Done Sun 8 Nov (all 10 ATs pass; see BUILD_LOG) |
 | B2 Identity and shell | Tue 10 Nov | ☑ Done Mon 9 Nov (all 7 ATs pass; see BUILD_LOG) |
-| B3 Canvas and attachments | Wed 11 Nov | ☐ |
+| B3 Canvas and attachments | Wed 11 Nov | ☑ |
 | B4 Gateway and first agents | Thu 12 Nov | ☐ |
 | B5 Match | Fri 13 Nov | ☐ |
 | B6 Review console | Mon 16 Nov | ☐ |

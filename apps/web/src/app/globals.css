@@ -621,3 +621,31 @@ blockquote {
 .steps li {
   margin-bottom: 0.5rem;
 }
+
+.attachment-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.attachment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.attachment-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.attachment-state {
+  flex: 1 1 16rem;
+}
+
+.attachment-rejected .attachment-state {
+  color: #8a1c12;
+}

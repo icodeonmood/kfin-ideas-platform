@@ -21,6 +21,8 @@ import {
   type StrengthRubric,
 } from "@/lib/canvas/rules";
 
+import { Attachments, type AttachmentItem, type AttachmentLimits } from "./attachments";
+
 type Example = { slug: string; section: string };
 type Props = {
   id: string;
@@ -30,6 +32,8 @@ type Props = {
   rubric: StrengthRubric;
   examples: Example[];
   kfinDomains: string[];
+  attachments: AttachmentItem[];
+  attachmentLimits: AttachmentLimits;
 };
 
 const fid = (path: string) => "f-" + path.replace(/[.]/g, "-");
@@ -61,13 +65,15 @@ export function CanvasForm(props: Props) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savedAt, setSavedAt] = useState<string>("");
   const [submitState, setSubmitState] = useState<"idle" | "sending" | "failed">("idle");
+  const [files, setFiles] = useState<AttachmentItem[]>(props.attachments);
   const summaryRef = useRef<HTMLDivElement>(null);
   // The last answers the server has; autosave sends whatever differs (even if typing continued mid-save).
   const lastSaved = useRef(JSON.stringify(props.initial));
 
   const hits = useMemo(() => personalData(canvas, props.kfinDomains), [canvas, props.kfinDomains]);
   const blocked = blocks(hits);
-  const score = useMemo(() => strength(canvas, props.rubric), [canvas, props.rubric]);
+  const cleanFiles = files.filter((f) => f.state === "clean").length;
+  const score = useMemo(() => strength(canvas, props.rubric, cleanFiles), [canvas, props.rubric, cleanFiles]);
   const isQuick = props.mode === "quick";
 
   const update = (path: string, value: unknown) => setCanvas((c) => setPath(c, path, value));
@@ -390,9 +396,12 @@ export function CanvasForm(props: Props) {
                   hits={hits}
                   onChange={(refs) => update("ecosystem.references", refs)}
                 />
-                <p className="muted">
-                  Attaching files arrives with the next update; links and notes work now.
-                </p>
+                <Attachments
+                  ideaId={props.id}
+                  files={files}
+                  onChange={setFiles}
+                  limits={props.attachmentLimits}
+                />
               </section>
             </>
           )}

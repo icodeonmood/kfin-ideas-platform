@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   serverExternalPackages: ["pg"],
+  experimental: {
+    // The proxy buffers request bodies and silently truncates past this size (default 10 MB). Research files
+    // are up to 20 MB (rules/thresholds.md); uploads larger than that are refused by Content-Length first.
+    proxyClientMaxBodySize: "21mb",
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -1,0 +1,223 @@
+"""Research attachments, day one (§4.2 "Attachments", D3, AT-B3-06/07).
+
+1. Accept: size, per-idea total and count limits; type by signature (`filetype.sniff`); store in quarantine.
+2. Process (job `attachment.process`): virus scan → images held as `awaiting_check` → text-layer extraction
+   → the level-1 personal-data patterns per location, plus the spreadsheet column check → `rejected` (with the
+   data type and where; the quarantine copy is deleted at once) or `clean` (moved to the clean bucket).
+3. Nobody can open a file that is not `clean`. File contents never go into Git.
+OCR, the gatekeeper pass over file text and attachment-digest arrive in week 3.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from typing import Any
+
+from psycopg.types.json import Jsonb
+
+from attachments import clamav, store
+from attachments.extract import EXTRACTORS
+from attachments.filetype import sniff
+from core.config import get_settings
+from core.db import Conn
+from core.logging import get_logger
+from pii.patterns import scan
+from rules import load_rule
+
+log = get_logger("attachments")
+
+MIME = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "csv": "text/csv",
+}
+
+
+class AttachmentRefused(Exception):
+    def __init__(self, status: int, code: str) -> None:
+        super().__init__(code)
+        self.status = status
+        self.code = code
+
+
+@dataclass(frozen=True)
+class Limits:
+    max_files: int
+    max_bytes_each: int
+    max_bytes_per_idea: int
+    allowed: frozenset[str]
+    held: frozenset[str]
+    column_block_share: float
+
+
+def limits() -> Limits:
+    a = load_rule(store_repo(), "thresholds").data["attachments"]
+    mb = 1024 * 1024
+    return Limits(
+        max_files=int(a["max_files"]),
+        max_bytes_each=int(a["max_mb_each"]) * mb,
+        max_bytes_per_idea=int(a["max_mb_per_idea"]) * mb,
+        allowed=frozenset(a["allowed"]),
+        held=frozenset(k for k in a["day_one_held"] if k in {"png", "jpg"}),
+        column_block_share=float(a["column_block_share"]),
+    )
+
+
+def store_repo() -> Any:
+    from pathlib import Path
+
+    return Path(get_settings().company_repo_path)
+
+
+def _key(att_id: str) -> str:
+    return f"att/{att_id}"
+
+
+def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data: bytes) -> dict[str, Any]:
+    lim = limits()
+    if not data:
+        raise AttachmentRefused(400, "file_empty")
+    if len(data) > lim.max_bytes_each:
+        raise AttachmentRefused(413, "file_too_large")
+    if any(m.action == "block" for m in scan(name, kfin_domains=get_settings().kfin_domains)):
+        raise AttachmentRefused(422, "name_has_personal_data")  # the name is shown on screens; never stored
+    kind = sniff(data)
+    if kind is None or kind not in lim.allowed:
+        raise AttachmentRefused(415, "type_not_allowed")
+    s = get_settings()
+    with conn.transaction():
+        conn.execute(
+            "SELECT id FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)
+        )  # serialise uploads per idea
+        used = conn.execute(
+            "SELECT count(*) AS n, coalesce(sum(bytes), 0) AS total FROM attachments "
+            "WHERE idea_uuid = %s AND state <> 'rejected'",
+            (idea_uuid,),
+        ).fetchone()
+        assert used is not None
+        if used["n"] >= lim.max_files:
+            raise AttachmentRefused(409, "too_many_files")
+        if used["total"] + len(data) > lim.max_bytes_per_idea:
+            raise AttachmentRefused(413, "idea_total_too_large")
+        year = conn.execute("SELECT to_char(now() AT TIME ZONE 'Asia/Kolkata', 'YYYY') AS y").fetchone()["y"]  # type: ignore[index]
+        n = conn.execute("SELECT next_number('ATT', %s) AS n", (year,)).fetchone()["n"]  # type: ignore[index]
+        att_id = f"ATT-{year}-{n:06d}"
+        store.put(s.s3_bucket_quarantine, _key(att_id), data)
+        conn.execute(
+            "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, sha256, store_key, state) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'quarantine')",
+            (
+                att_id,
+                idea_uuid,
+                uploaded_by_code,
+                name[:200],
+                MIME[kind],
+                len(data),
+                hashlib.sha256(data).hexdigest(),
+                _key(att_id),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.process', %s, %s)",
+            (Jsonb({"attachment_id": att_id}), f"attachment:{att_id}"),
+        )
+    log.info("attachments.accepted", attachment_id=att_id, file_type=kind, byte_count=len(data))
+    return {"id": att_id, "state": "quarantine", "name": name[:200], "bytes": len(data)}
+
+
+def _personal_data(
+    pieces: list[tuple[str, str]], columns: list[tuple[str, list[str]]], share: float
+) -> dict[str, str] | None:
+    """The first blocking finding as {type, location}; values are never recorded."""
+    domains = get_settings().kfin_domains
+    for location, text in pieces:
+        for m in scan(text, kfin_domains=domains):
+            if m.action == "block":
+                return {"type": m.label, "code": m.pattern_id, "location": location}
+    for location, values in columns:
+        if not values:
+            continue
+        # Any pattern counts here, warn-level ones too: a column of work emails or ARNs is a list of people.
+        hits = [v for v in values if scan(v, kfin_domains=domains)]
+        if len(hits) / len(values) > share:
+            return {"type": "personal data in a column", "code": "column", "location": location}
+    return None
+
+
+def process(conn: Conn, att_id: str) -> str:
+    """Run the day-one checks. Returns the final state. Raises ScannerUnavailable to retry later."""
+    s = get_settings()
+    row = conn.execute(
+        "SELECT id, mime, store_key, state FROM attachments WHERE id = %s", (att_id,)
+    ).fetchone()
+    if row is None or row["state"] not in ("quarantine", "processing"):
+        return row["state"] if row else "missing"
+    conn.execute("UPDATE attachments SET state = 'processing' WHERE id = %s", (att_id,))
+    data = store.get(s.s3_bucket_quarantine, row["store_key"])
+    lim = limits()
+
+    def reject(reason: dict[str, str]) -> str:
+        store.delete(s.s3_bucket_quarantine, row["store_key"])  # well inside the 24-hour rule
+        conn.execute(
+            "UPDATE attachments SET state = 'rejected', rejection = %s WHERE id = %s", (Jsonb(reason), att_id)
+        )
+        log.info("attachments.rejected", attachment_id=att_id, reason_code=reason.get("code", reason["type"]))
+        return "rejected"
+
+    try:
+        result = clamav.scan_bytes(data)
+    except clamav.ScannerUnavailable:
+        conn.execute("UPDATE attachments SET state = 'quarantine' WHERE id = %s", (att_id,))
+        raise
+    if not result.clean:
+        return reject({"type": "virus", "code": "virus", "location": "the whole file"})
+
+    kind = sniff(data)
+    if kind in lim.held:
+        conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
+        return "awaiting_check"
+    extractor = EXTRACTORS.get(kind or "")
+    if extractor is None:
+        return reject({"type": "unreadable", "code": "unreadable", "location": "the whole file"})
+    try:
+        extracted = extractor(data)
+    except Exception as exc:
+        log.warning("attachments.unreadable", attachment_id=att_id, error_type=type(exc).__name__)
+        return reject({"type": "unreadable", "code": "unreadable", "location": "the whole file"})
+    if extracted.scanned:
+        conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
+        return "awaiting_check"
+    finding = _personal_data(extracted.pieces, extracted.columns, lim.column_block_share)
+    if finding:
+        return reject(finding)
+
+    store.put(s.s3_bucket_clean, row["store_key"], data)
+    store.delete(s.s3_bucket_quarantine, row["store_key"])
+    conn.execute("UPDATE attachments SET state = 'clean', rejection = NULL WHERE id = %s", (att_id,))
+    log.info("attachments.clean", attachment_id=att_id, file_type=kind)
+    return "clean"
+
+
+def content(conn: Conn, att_id: str) -> tuple[bytes, str, str]:
+    """A clean file's bytes, MIME type and name. Anything not clean is refused."""
+    row = conn.execute(
+        "SELECT mime, name, store_key, state FROM attachments WHERE id = %s", (att_id,)
+    ).fetchone()
+    if row is None or row["state"] != "clean":
+        raise AttachmentRefused(403, "not_available")
+    return store.get(get_settings().s3_bucket_clean, row["store_key"]), row["mime"], row["name"]
+
+
+def remove(conn: Conn, att_id: str) -> None:
+    s = get_settings()
+    row = conn.execute("SELECT store_key FROM attachments WHERE id = %s", (att_id,)).fetchone()
+    if row is None:
+        return
+    for bucket in (s.s3_bucket_quarantine, s.s3_bucket_clean):
+        store.delete(bucket, row["store_key"])
+    conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))

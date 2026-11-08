@@ -162,7 +162,9 @@ async function loadOwned(me: CurrentUser, id: string) {
 
 export async function getDraft(me: CurrentUser, id: string) {
   const row = await loadOwned(me, id);
+  const { listFor } = await import("./attachments");
   return {
+    attachments: await listFor(row.id),
     id: row.id,
     stage: row.stage,
     mode: row.capture_mode as Mode,
@@ -200,7 +202,13 @@ export async function submit(me: CurrentUser, id: string, input: unknown) {
   const errors: FieldError[] = validate(canvas, config.canvas);
   if (errors.length) throw new SubmissionError(422, "invalid", errors);
   const warnings = personalDataGuard(canvas);
-  const score = strength(canvas, config.canvas_strength);
+  const clean = await getDb()
+    .selectFrom("attachments")
+    .select(sql<number>`count(*)::int`.as("n"))
+    .where("idea_uuid", "=", row.id)
+    .where("state", "=", "clean")
+    .executeTakeFirst();
+  const score = strength(canvas, config.canvas_strength, clean?.n ?? 0);
 
   return getDb()
     .transaction()

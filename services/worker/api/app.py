@@ -8,10 +8,11 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi.responses import JSONResponse, Response
 
 from api.canvas_config import canvas_config
+from attachments import service as attachments
 from core.config import get_settings
 from core.db import connect
 from core.logging import get_logger
@@ -61,3 +62,40 @@ def scan() -> JSONResponse:
 @app.post("/hooks/git-post-commit", dependencies=[Depends(require_token)])
 def post_commit() -> dict[str, Any]:
     return index_now()
+
+
+@app.post("/internal/attachments", dependencies=[Depends(require_token)])
+async def upload_attachment(
+    file: UploadFile, idea_uuid: str = Form(...), uploaded_by_code: str = Form(...)
+) -> JSONResponse:
+    limit = attachments.limits().max_bytes_each
+    data = await file.read(limit + 1)
+    try:
+        with connect(autocommit=True) as conn:
+            body = attachments.accept(
+                conn,
+                idea_uuid=idea_uuid,
+                uploaded_by_code=uploaded_by_code,
+                name=file.filename or "file",
+                data=data,
+            )
+    except attachments.AttachmentRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    return JSONResponse(body, status_code=201)
+
+
+@app.get("/internal/attachments/{att_id}/content", dependencies=[Depends(require_token)])
+def attachment_content(att_id: str) -> Response:
+    try:
+        with connect(autocommit=True) as conn:
+            data, mime, _name = attachments.content(conn, att_id)
+    except attachments.AttachmentRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    return Response(content=data, media_type=mime)
+
+
+@app.delete("/internal/attachments/{att_id}", dependencies=[Depends(require_token)])
+def delete_attachment(att_id: str) -> Response:
+    with connect(autocommit=True) as conn:
+        attachments.remove(conn, att_id)
+    return Response(status_code=204)
