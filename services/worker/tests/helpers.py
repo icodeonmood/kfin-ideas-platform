@@ -118,3 +118,23 @@ def git_log(repo: Path) -> list[str]:
         ["git", "-C", str(repo), "log", "--format=%H%x1f%B%x1e"], capture_output=True, text=True, check=True
     )
     return [c.strip() for c in out.stdout.split("\x1e") if c.strip()]
+
+
+def tables_containing(conn: Conn, needle: str) -> list[str]:
+    """Every `table.column` in the public schema whose value contains `needle` as plain text (AT-B4-06).
+    Text and JSON columns are searched as text; bytea columns as UTF-8 bytes."""
+    cols = conn.execute(
+        "SELECT table_name, column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND data_type IN ('text', 'character varying', 'jsonb', 'json', 'bytea', "
+        "'ARRAY') AND table_name NOT LIKE 'schema_migrations%%'"
+    ).fetchall()
+    found = []
+    for c in cols:
+        t, col, typ = c["table_name"], c["column_name"], c["data_type"]
+        if typ == "bytea":
+            sql = f'SELECT 1 FROM "{t}" WHERE position(convert_to(%s, \'UTF8\') in "{col}") > 0 LIMIT 1'  # noqa: S608
+        else:
+            sql = f"SELECT 1 FROM \"{t}\" WHERE \"{col}\"::text LIKE '%%' || %s || '%%' LIMIT 1"  # noqa: S608
+        if conn.execute(sql, (needle,)).fetchone():
+            found.append(f"{t}.{col}")
+    return found

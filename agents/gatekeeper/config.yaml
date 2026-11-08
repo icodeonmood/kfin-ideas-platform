@@ -1,9 +1,10 @@
 # gatekeeper — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: gatekeeper
-version: 0.1.0
+version: 0.2.0
 tier: fast
 model: claude-haiku-5-5
-temperature: 0
+effort: low          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"          # off for the latency budget: disabled on Haiku, between_tools on Sonnet 5.5
 max_tokens: 900
 timeout_s: 4
 latency_budget_s: 2

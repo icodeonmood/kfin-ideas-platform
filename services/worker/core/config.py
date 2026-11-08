@@ -46,7 +46,19 @@ class Settings(BaseSettings):
     vault_encryption_key: str = ""
 
     embeddings_mode: str = "hash"
-    llm_mode: str = "fake"
+    llm_mode: str = "fake"  # fake | anthropic | bedrock (route per InfoSec, D1)
+    llm_fast_model: str = "claude-haiku-5-5"
+    llm_reasoning_model: str = "claude-sonnet-5-5"
+    aws_region: str = "ap-south-1"
+    llm_max_reasoning_concurrency: int = 20
+    llm_max_fast_concurrency: int = 50
+    llm_requests_per_minute_fast: int = 600
+    llm_requests_per_minute_reasoning: int = 300
+    llm_daily_budget_inr: float = 5000.0
+    llm_usd_to_inr: float = 88.0  # finance sets the rate used for cost logging
+    llm_refusal_fallback: bool = True  # Claude API route only: server-side fallback on a policy decline
+    llm_fake_latency: str = "none"  # none | realistic (AT-B4-09)
+    agents_dir: Path = Path("./agents")
 
     s3_endpoint: str = "http://localhost:9000"
     s3_access_key: str = "minio"
@@ -73,7 +85,7 @@ class Settings(BaseSettings):
             return ""
         return value
 
-    @field_validator("company_repo_path", mode="after")
+    @field_validator("company_repo_path", "agents_dir", mode="after")
     @classmethod
     def _resolve_repo_path(cls, value: Path) -> Path:
         if value.is_absolute():

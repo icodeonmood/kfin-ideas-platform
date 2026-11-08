@@ -17,6 +17,7 @@ COPY services/worker/pyproject.toml services/worker/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY services/worker/ ./
+COPY agents/ ./agents/
 RUN useradd --create-home --uid 10001 worker && chown -R worker /app
 USER worker
 
