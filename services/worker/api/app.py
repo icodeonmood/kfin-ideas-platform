@@ -172,3 +172,46 @@ def inbox_read(user_id: str, notification_id: int) -> JSONResponse:
     with connect(autocommit=True) as conn:
         ok = mark_read(conn, user_id, notification_id)
     return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+
+def _review_call(fn: Any, *args: Any) -> JSONResponse:
+    from review.service import ActionRefused
+
+    with connect(autocommit=True) as conn:
+        try:
+            return JSONResponse(fn(conn, *args))
+        except ActionRefused as exc:
+            return JSONResponse({"error": exc.code}, status_code=exc.status)
+
+
+@app.post("/internal/review/items/{item_id}/action", dependencies=[Depends(require_token)])
+def review_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
+    """A review desk action; the web app has checked `work_review_queue` and passes who is acting."""
+    from review.service import act
+
+    return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)
+
+
+@app.post("/internal/review/items/{item_id}/confirm-hold", dependencies=[Depends(require_token)])
+def review_confirm_hold(item_id: int, body: dict[str, Any]) -> JSONResponse:
+    from review.service import confirm_hold
+
+    return _review_call(confirm_hold, item_id, str(body.get("reviewer_user_id") or ""))
+
+
+@app.post("/internal/ideas/{idea_uuid}/answer", dependencies=[Depends(require_token)])
+def idea_answer(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    from review.service import answer
+
+    return _review_call(
+        answer, idea_uuid, str(body.get("contributor_code") or ""), str(body.get("text") or "")
+    )
+
+
+@app.post("/internal/ideas/{idea_uuid}/disagree", dependencies=[Depends(require_token)])
+def idea_disagree(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    from review.service import disagree
+
+    return _review_call(
+        disagree, idea_uuid, str(body.get("contributor_code") or ""), str(body.get("text") or "")
+    )

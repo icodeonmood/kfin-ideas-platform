@@ -156,7 +156,9 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
             conn.execute("UPDATE scans SET result_encrypted = NULL WHERE idea_uuid = %s", (idea_uuid,))
             log.info("scan.saved", idea_uuid=idea_uuid, choice=choice)
             return {"stage": "withdrawn", "idea_id": idea_id}
-        card = result["confirmed"]
+        card = dict(result["confirmed"])
+        # The person's own words as first submitted (tagged), shown beside the confirmed card on review (§4.3).
+        card["original_text"] = (result.get("canvas_assist") or {}).get("details")
 
         stage = "scanned"
         link: tuple[str, str] | None = None  # (link_type, target column)
