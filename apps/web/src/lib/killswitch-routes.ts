@@ -61,7 +61,9 @@ export const BANNERS: Record<SwitchName, string> = {
  * file exports POST, PUT, PATCH or DELETE and its path is neither guarded above nor listed here, so a new
  * write route cannot ship ungated by accident.
  */
-export const UNGUARDED_WRITES: readonly RegExp[] = [];
+export const UNGUARDED_WRITES: readonly RegExp[] = [
+  /^\/api\/me\/privacy-notice\/?$/, // accepting the notice must work in read-only mode, or nobody could browse
+];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
   // Next.js answers HEAD by running the GET handler, so HEAD must meet the same gates as GET.

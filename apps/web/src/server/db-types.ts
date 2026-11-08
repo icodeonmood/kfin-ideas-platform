@@ -286,6 +286,12 @@ export interface PointsLedger {
   ref_id: string | null;
 }
 
+export interface PrivacyAcceptances {
+  accepted_at: Generated<Timestamp>;
+  notice_version: string;
+  user_id: string;
+}
+
 export interface PseudonymVault {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp | null;
@@ -340,6 +346,15 @@ export interface RoleGrants {
   valid_to: Timestamp | null;
 }
 
+export interface Sessions {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id_hash: Buffer;
+  last_seen_at: Generated<Timestamp>;
+  revoked_at: Timestamp | null;
+  user_id: string;
+}
+
 export interface SlaTimers {
   created_at: Generated<Timestamp>;
   due_at: Timestamp;
@@ -371,13 +386,18 @@ export interface Users {
   email: string;
   emp_id_hash: string;
   entra_oid: string | null;
+  hr_department: string | null;
+  hr_job_title: string | null;
   id: Generated<string>;
+  last_seen_in_hr_at: Timestamp | null;
+  last_sign_in_at: Timestamp | null;
   lob_id: string | null;
   location: string | null;
   manager_user_id: string | null;
   name: string;
   role_family: string | null;
   role_title: string | null;
+  source: Generated<string>;
   staff_code: string | null;
   updated_at: Generated<Timestamp>;
 }
@@ -403,10 +423,12 @@ export interface DB {
   notifications: Notifications;
   outbox: Outbox;
   points_ledger: PointsLedger;
+  privacy_acceptances: PrivacyAcceptances;
   pseudonym_vault: PseudonymVault;
   repo_files: RepoFiles;
   review_items: ReviewItems;
   role_grants: RoleGrants;
+  sessions: Sessions;
   sla_timers: SlaTimers;
   terms: Terms;
   users: Users;

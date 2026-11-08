@@ -17,9 +17,11 @@ pytestmark = pytest.mark.stack
 WEB = "http://localhost:3000"
 
 
-def _request(method: str, path: str) -> tuple[int, dict[str, object]]:
+def _request(method: str, path: str, token: str | None = None) -> tuple[int, dict[str, object]]:
     req = urllib.request.Request(WEB + path, method=method, data=b"{}" if method != "GET" else None)
     req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Cookie", f"ideas_session={token}")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status, json.loads(resp.read() or b"{}")
@@ -55,23 +57,27 @@ def test_python_cache_is_ten_seconds() -> None:
 
 
 def test_web_refuses_submissions_when_switched_off() -> None:
-    """Against the running stack: flips the dev database's switch and always restores it."""
-    assert _request("POST", "/api/submissions")[0] == 501  # on: reaches the route (built in B3)
-    with connect(autocommit=True) as conn:
+    """Against the running stack: flips the dev database's switch and always restores it. Since B2 every
+    /api call needs a session, so a synthetic person with a session makes the requests."""
+    from tests.web import people
+
+    with connect(autocommit=True) as conn, people(conn) as make:
+        token = make().token
+        assert _request("POST", "/api/submissions", token)[0] == 501  # on: reaches the route (built in B3)
         killswitch.set_switch(conn, "submissions", "off", reason="AT-B1-08 automated test", actor="REV-0001")
         try:
             deadline = time.monotonic() + 15  # web caches switch states for up to 10 seconds
-            status, body = _request("POST", "/api/submissions")
+            status, body = _request("POST", "/api/submissions", token)
             while status != 503 and time.monotonic() < deadline:
                 time.sleep(0.5)
-                status, body = _request("POST", "/api/submissions")
+                status, body = _request("POST", "/api/submissions", token)
             assert status == 503
             assert body["switch"] == "submissions"
             assert "paused" in str(body["banner"]).lower()
-            assert _request("PUT", "/api/submissions/any-draft")[0] == 503
+            assert _request("PUT", "/api/submissions/any-draft", token)[0] == 503
 
             assert _request("GET", "/api/health") == (200, {"status": "ok"})
-            status, body = _request("GET", "/api/status")
+            status, body = _request("GET", "/api/status", token)
             assert status == 200
             assert any(p["switch"] == "submissions" for p in body["paused"])
         finally:

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     repo_writer_author: str = "Ideas Platform Bot <ideas-bot@localhost>"
 
     kfin_email_domains: str = "kfintech.com"
+    privacy_notice_version: str = ""
     contributor_hmac_secret: str = ""
     vault_encryption_key: str = ""
 
