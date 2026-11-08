@@ -97,7 +97,7 @@ def _pct(v: Any) -> str:
 
 def run_agents(seed: int) -> int:
     from core.db import connect
-    from evalrunner import canvas_assist, gatekeeper
+    from evalrunner import canvas_assist, gatekeeper, judge
     from evalrunner.common import context, route_name, write_report
 
     route = route_name()
@@ -105,7 +105,7 @@ def run_agents(seed: int) -> int:
     with connect(autocommit=True) as conn:
         ctx = context(conn, seed)
         try:
-            for runner in (gatekeeper, canvas_assist):
+            for runner in (gatekeeper, canvas_assist, judge):
                 result = runner.run(ctx)
                 passed, failed = _verdict(result, route)
                 result.update({"route": route, "seed": seed, "passed": passed, "failed": failed})
@@ -116,6 +116,11 @@ def run_agents(seed: int) -> int:
                         f"personal-data recall {_pct(m['personal_data_recall'])} · false blocks "
                         f"{_pct(m['false_block_rate'])} · kind accuracy {_pct(m['kind_accuracy'])} · pattern layer "
                         f"{_pct(m['pattern_layer_recall'])}"
+                    )
+                elif result["agent"] == "judge":
+                    detail = (
+                        f"{m['labels']} labels · same precision {_pct(m['same_precision'])} · same recall "
+                        f"{_pct(m['same_recall'])} · labelled {_pct(m['labelled_share'])}"
                     )
                 else:
                     detail = (
@@ -131,7 +136,6 @@ def run_agents(seed: int) -> int:
                 status |= 0 if passed else 1
         finally:
             ctx.cleanup()
-    print("judge: golden set runs from B5, when the judge has a caller")
     return status
 
 

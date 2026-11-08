@@ -76,7 +76,24 @@ def canvas_assist(sent: dict[str, Any], out: dict[str, Any], d: Directory | None
     return problems
 
 
-CHECKS: dict[str, Check] = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist}
+def judge(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    cids = [str(c.get("cid")) for c in sent.get("candidates") or []]
+    got = [r["cid"] for r in out["results"]]
+    if got != cids:
+        problems.append(
+            "results must have exactly one entry per candidate, with the cids copied, in input order"
+        )
+    for i, r in enumerate(out["results"]):
+        if len(r["reason"].split()) > 25:
+            problems.append(f"results[{i}].reason must be 25 words or fewer")
+    best = out["best_same"]
+    if best is not None and not any(r["cid"] == best and r["label"] == "same" for r in out["results"]):
+        problems.append("best_same must be a cid labelled same, or null")
+    return problems
+
+
+CHECKS: dict[str, Check] = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist, "judge": judge}
 
 
 def run(name: str, sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:

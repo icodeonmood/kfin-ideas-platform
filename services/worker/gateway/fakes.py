@@ -146,7 +146,57 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-BUILDERS = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist}
+_WORD = re.compile(r"[a-z][a-z0-9]{2,}")
+_COMMON = frozenset(
+    [
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "are",
+        "was",
+        "were",
+        "have",
+        "has",
+        "into",
+        "their",
+        "they",
+        "our",
+        "ops",
+    ]
+)
+
+
+def _words(*texts: Any) -> set[str]:
+    return {w for t in texts for w in _WORD.findall(str(t or "").lower()) if w not in _COMMON}
+
+
+def judge(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """Word overlap stands in for meaning: same at Jaccard 0.35+, related at 0.15+ (dev and tests only)."""
+    card = inputs.get("card") or {}
+    mine = _words(card.get("one_line"), card.get("details"))
+    results = []
+    for c in inputs.get("candidates") or []:
+        theirs = _words(c.get("title"), c.get("summary"))
+        overlap = len(mine & theirs) / max(1, len(mine | theirs))
+        label = "same" if overlap >= 0.35 else "related" if overlap >= 0.15 else "different"
+        reason = {
+            "same": "Describes the same problem in the same process.",
+            "related": "Touches the same process but a different cause.",
+            "different": "A different problem.",
+        }[label]
+        results.append(
+            {"cid": c["cid"], "label": label, "reason": reason, "confidence": round(0.5 + overlap / 2, 2)}
+        )
+    same = [r for r in results if r["label"] == "same"]
+    best = max(same, key=lambda r: r["confidence"])["cid"] if same else None
+    return {"results": results, "best_same": best}
+
+
+BUILDERS = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist, "judge": judge}
 
 
 def output_for(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:

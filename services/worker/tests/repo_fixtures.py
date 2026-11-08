@@ -48,8 +48,7 @@ def idea(
 def concept(
     repo: Path, kind: str, n: int, text: str, summary: str, *, systems: list[str] | None = None
 ) -> str:
-    prefix = {"solution": "SOL", "decision": "DEC", "cluster": "CL"}[kind]
-    kid = f"{prefix}-{n:04d}"
+    kid = f"DEC-2026-{n:04d}" if kind == "decision" else f"{'SOL' if kind == 'solution' else 'CL'}-{n:04d}"
     folder = {"solution": "solutions", "decision": "decisions", "cluster": "clusters"}[kind]
     meta: dict[str, Any] = {
         "type": kind, "title": text[:60], "description": summary, "tags": [kind], "status": "stable",
