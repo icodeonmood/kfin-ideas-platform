@@ -1,0 +1,67 @@
+/**
+ * Which kill switches guard which API routes (§7.6, §8). Pure data so it is easy to test and review.
+ * A request is refused with 503 when any switch it needs is "off". GET routes that only read stay open,
+ * except the ones whose whole purpose a switch removes (opening files, the public wall).
+ */
+
+export type SwitchName =
+  | "ai.all"
+  | "submissions"
+  | "attachments.upload"
+  | "attachments.open"
+  | "matching.show"
+  | "comms.email"
+  | "wall.public";
+
+interface Rule {
+  methods: readonly string[];
+  pattern: RegExp;
+  switches: readonly SwitchName[];
+}
+
+const WRITE = ["POST", "PUT", "PATCH", "DELETE"] as const;
+
+export const ROUTE_RULES: readonly Rule[] = [
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/submissions\/[^/]+\/attachments\/?$/,
+    switches: ["attachments.upload"],
+  },
+  { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
+  { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer|disagree)\/?$/,
+    switches: ["submissions"],
+  },
+  { methods: ["POST"], pattern: /^\/api\/clusters\/[^/]+\/join\/?$/, switches: ["submissions"] },
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
+    switches: ["attachments.open"],
+  },
+  { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
+];
+
+/** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
+export const BANNERS: Record<SwitchName, string> = {
+  "ai.all": "The assistant is taking a break. Your idea is saved and we will check it shortly.",
+  submissions:
+    "Sharing and editing ideas is paused for a short while. You can still browse and track your ideas.",
+  "attachments.upload":
+    "Adding research files is paused for now. You can still share your idea and add links.",
+  "attachments.open": "Research files can't be opened right now. Please try again later.",
+  "matching.show": "We will show you colleagues with similar ideas a little later.",
+  "comms.email": "Emails are paused for now. Your messages are in your in-app inbox.",
+  "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
+};
+
+export function switchesFor(method: string, pathname: string): SwitchName[] {
+  const needed = new Set<SwitchName>();
+  for (const rule of ROUTE_RULES) {
+    if (rule.methods.includes(method.toUpperCase()) && rule.pattern.test(pathname)) {
+      rule.switches.forEach((s) => needed.add(s));
+    }
+  }
+  return [...needed];
+}
