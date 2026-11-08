@@ -1,0 +1,38 @@
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+
+import { emptyCanvas } from "@/lib/canvas/model";
+import { currentUser } from "@/server/auth/current";
+import { canvasConfig, kfinDomains } from "@/server/canvas-config";
+import { getDraft, SubmissionError } from "@/server/submissions";
+
+import { CanvasForm } from "./canvas-form";
+
+export const metadata: Metadata = { title: "Share an idea" };
+export const dynamic = "force-dynamic";
+
+export default async function Draft({ params }: { params: Promise<{ id: string }> }) {
+  const me = await currentUser();
+  if (!me) redirect("/sign-in");
+  const id = (await params).id;
+  let draft;
+  try {
+    draft = await getDraft(me, id);
+  } catch (err) {
+    if (err instanceof SubmissionError && err.status === 404) notFound();
+    throw err;
+  }
+  if (draft.stage !== "draft") redirect(`/share/${id}/done`);
+  const config = await canvasConfig();
+  return (
+    <CanvasForm
+      id={id}
+      mode={draft.mode}
+      initial={draft.canvas ?? emptyCanvas(draft.mode)}
+      limits={config.canvas}
+      rubric={config.canvas_strength}
+      examples={config.examples.map(({ slug, section }) => ({ slug, section }))}
+      kfinDomains={kfinDomains()}
+    />
+  );
+}
