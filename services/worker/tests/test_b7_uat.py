@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from bootstrap import preflight, smoke
+from core.config import get_settings
+from tests.web import WEB
 
 GOOD = {
     "APP_ENV": "uat",
@@ -82,7 +84,7 @@ def test_preflight_never_prints_a_secret(capsys: pytest.CaptureFixture[str], mon
 
 @pytest.mark.stack
 def test_smoke_checks_pass_on_the_dev_stack() -> None:
-    results = {name: run() for name, run in smoke.checks("http://localhost:3000", "http://localhost:8000")}
+    results = {name: run() for name, run in smoke.checks(WEB, get_settings().worker_url.rstrip("/"))}
     failed = {name: detail for name, (ok, detail) in results.items() if not ok}
     assert failed == {}
 

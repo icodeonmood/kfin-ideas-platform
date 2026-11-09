@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     smtp_url: str = "smtp://localhost:1025"
     app_base_url: str = "http://localhost:3000"
 
+    # Dev and test only: where host-side tools and tests reach the local stack. A second stack in a worktree
+    # sets these in its own `.env` (BLD-200); the defaults are the first stack's ports.
+    worker_url: str = "http://localhost:8000"
+    oidc_issuer: str = "http://localhost:8090/default"
+    postgres_port: int = 5432
+    mailpit_ui_host_port: int = 8025
+
     worker_roles: str = "api,repo_writer,indexer,jobs,scheduler,ticker"
     internal_api_token: str = ""
     worker_port: int = 8000

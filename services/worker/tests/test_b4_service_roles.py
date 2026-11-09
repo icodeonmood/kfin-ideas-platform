@@ -8,11 +8,13 @@ from __future__ import annotations
 import psycopg
 import pytest
 
+from core.config import get_settings
 from core.db import connect
 
 pytestmark = pytest.mark.stack
-WEB = "postgres://ideas_web:dev-web-only@localhost:5432/ideas?sslmode=disable"
-WORKER = "postgres://ideas_worker:dev-worker-only@localhost:5432/ideas?sslmode=disable"
+_PORT = get_settings().postgres_port
+WEB = f"postgres://ideas_web:dev-web-only@localhost:{_PORT}/ideas?sslmode=disable"
+WORKER = f"postgres://ideas_worker:dev-worker-only@localhost:{_PORT}/ideas?sslmode=disable"
 HIDDEN_FROM_WEB = {"pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations"}
 
 

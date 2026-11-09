@@ -11,10 +11,9 @@ import pytest
 from core import killswitch
 from core.db import connect
 from tests import helpers
+from tests.web import WEB
 
 pytestmark = pytest.mark.stack
-
-WEB = "http://localhost:3000"
 
 
 def _request(method: str, path: str, token: str | None = None) -> tuple[int, dict[str, object]]:

@@ -6,7 +6,6 @@ python -m core.health [--timeout 120]   exits 0 when every check passes within t
 from __future__ import annotations
 
 import argparse
-import os
 import socket
 import sys
 import time
@@ -54,15 +53,14 @@ def _postgres(url: str) -> Callable[[], bool]:
 
 def checks() -> dict[str, Callable[[], bool]]:
     s = get_settings()
-    oidc_port = os.environ.get("MOCK_OIDC_PORT", "8090")
     return {
         "postgres": _postgres(s.database_url),
         "s3": _http(f"{s.s3_endpoint.rstrip('/')}/health"),
         "clamav": _clamd(s.clamav_host, s.clamav_port),
-        "mock-oidc": _http(f"http://localhost:{oidc_port}/default/.well-known/openid-configuration"),
-        "mailpit": _http("http://localhost:8025/readyz"),
-        "worker": _http("http://localhost:8000/internal/health"),
-        "web": _http("http://localhost:3000/api/health"),
+        "mock-oidc": _http(f"{s.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"),
+        "mailpit": _http(f"http://localhost:{s.mailpit_ui_host_port}/readyz"),
+        "worker": _http(f"{s.worker_url.rstrip('/')}/internal/health"),
+        "web": _http(f"{s.app_base_url.rstrip('/')}/api/health"),
     }
 
 

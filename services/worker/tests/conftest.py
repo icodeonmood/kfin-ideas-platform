@@ -49,13 +49,15 @@ def captured_logs() -> Iterator[io.StringIO]:
 @pytest.fixture(scope="session")
 def test_database() -> Iterator[str]:
     """A fresh database for this test run, migrated with the real dbmate container (needs `make up`)."""
+    from core.config import get_settings
     from tests import helpers
 
     try:
         name = helpers.create_database()
     except Exception as exc:
         pytest.fail(
-            f"Postgres is not reachable on localhost:5432; run `make up` first ({type(exc).__name__})"
+            f"Postgres is not reachable on localhost:{get_settings().postgres_port}; run `make up` first "
+            f"({type(exc).__name__})"
         )
     result = helpers.dbmate(name, "up")
     if result.returncode != 0:

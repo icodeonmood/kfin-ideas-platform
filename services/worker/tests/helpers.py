@@ -29,14 +29,17 @@ COMPOSE = [
     "--env-file",
     ".env",
 ]
+PG_PORT = Settings().postgres_port  # host port of the dev stack's Postgres (BLD-200)
 ADMIN_URL = os.environ.get(
-    "TEST_ADMIN_DATABASE_URL", "postgres://ideas:ideas@localhost:5432/postgres?sslmode=disable"
+    "TEST_ADMIN_DATABASE_URL", f"postgres://ideas:ideas@localhost:{PG_PORT}/postgres?sslmode=disable"
 )
 CANVAS_EXAMPLE = ROOT / "agents" / "canvas-assist" / "examples" / "01-quick-capture.json"
 
 
 def db_url(name: str, host: str = "localhost") -> str:
-    return f"postgres://ideas:ideas@{host}:5432/{name}?sslmode=disable"
+    """`localhost` is the host side of the dev stack; `postgres` is the name inside its Docker network."""
+    port = 5432 if host == "postgres" else PG_PORT
+    return f"postgres://ideas:ideas@{host}:{port}/{name}?sslmode=disable"
 
 
 def create_database(prefix: str = "ideas_test") -> str:

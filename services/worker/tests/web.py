@@ -20,7 +20,8 @@ import httpx
 from core.config import get_settings
 from core.db import Conn
 
-WEB = "http://localhost:3000"
+WEB = get_settings().app_base_url.rstrip("/")
+OIDC_ISSUER = get_settings().oidc_issuer.rstrip("/")
 
 
 def set_cookies(response: httpx.Response) -> dict[str, dict[str, str]]:
@@ -74,7 +75,7 @@ def sign_in_with_mock(
     start = b.get(f"/auth/login?next={next_path}")
     assert start.status_code in (302, 307), start.status_code
     authorize = start.headers["location"]
-    assert authorize.startswith("http://localhost:8090/default/authorize?")
+    assert authorize.startswith(f"{OIDC_ISSUER}/authorize?")
     form = httpx.post(
         authorize,
         data={"username": username, "claims": json.dumps(claims) if claims else ""},

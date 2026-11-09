@@ -8,7 +8,7 @@ from core.config import get_settings
 
 pytestmark = pytest.mark.stack
 
-WORKER = "http://localhost:8000"
+WORKER = get_settings().worker_url.rstrip("/")
 
 
 def test_internal_api_needs_the_token() -> None:
