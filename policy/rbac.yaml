@@ -49,6 +49,7 @@ kill_switch_flippers:
   wall.public: [admin, hr]
   clusters.batch: [admin]
   attachments.deep_check: [admin, infosec]
+  scan.live: [admin]
 
 # No session needed.
 public:
@@ -77,6 +78,7 @@ endpoints:
   - PUT /api/submissions/{id}                         submit
   - POST /api/submissions/{id}/submit                 submit
   - GET /api/submissions/{id}/scan-status             submit
+  - GET /api/submissions/{id}/scan-events             submit          # live progress, server-sent events (§8 week 3; behind scan.live)
   - POST /api/submissions/{id}/scan-choice            submit          # edit, contest, redirect or override (addition to §8, BLD-075)
   - POST /api/submissions/{id}/confirm-card           submit
   - POST /api/submissions/{id}/choose                 submit

@@ -233,3 +233,24 @@ export async function chooseMatch(me: CurrentUser, id: string, input: unknown) {
   if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "save_failed"));
   return out;
 }
+
+/** A cheap fingerprint of the scan and the idea's stage: the event stream sends the full view only when it moves. */
+export async function scanVersion(id: string): Promise<string | null> {
+  const row = await getDb()
+    .selectFrom("scans as s")
+    .innerJoin("ideas as i", "i.id", "s.idea_uuid")
+    .select([
+      "s.state",
+      "s.step",
+      "s.outcome",
+      "s.attempts",
+      "s.updated_at",
+      "i.stage",
+      "i.updated_at as idea_updated",
+    ])
+    .where("s.idea_uuid", "=", id)
+    .executeTakeFirst();
+  if (!row) return null;
+  return [row.state, row.step, row.outcome, row.attempts, row.stage, new Date(row.updated_at).getTime(),
+    new Date(row.idea_updated).getTime()].join("|"); // prettier-ignore
+}

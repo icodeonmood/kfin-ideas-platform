@@ -92,8 +92,33 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
   const running = !status || status.state === "queued" || status.state === "running";
   const waiting = status?.state === "waiting";
 
+  // Live progress over server-sent events while `scan.live` is on (§8, week 3). Any error (switch off, a proxy
+  // that buffers, an old browser) closes it for this page and the polling below takes over. A stream the server
+  // ends while the scan is still moving (it closes every 5 minutes) is opened again.
+  const [sseOff, setSseOff] = useState(false);
+  const [sseRound, setSseRound] = useState(0);
+  const streamOff = sseOff || typeof EventSource === "undefined"; // only used in effects (client side)
   useEffect(() => {
-    if (!running && !waiting) return;
+    if ((!running && !waiting) || streamOff) return;
+    const source = new EventSource(`/api/submissions/${id}/scan-events`);
+    source.addEventListener("status", (e) => {
+      failures.current = 0;
+      setUnreachable(false);
+      setStatus(JSON.parse((e as MessageEvent<string>).data) as Status);
+    });
+    source.addEventListener("end", () => {
+      source.close();
+      setSseRound((n) => n + 1);
+    });
+    source.onerror = () => {
+      source.close();
+      setSseOff(true);
+    };
+    return () => source.close();
+  }, [id, running, waiting, streamOff, sseRound]);
+
+  useEffect(() => {
+    if ((!running && !waiting) || !streamOff) return;
     const timer = setInterval(
       async () => {
         if (inFlight.current) return; // one request at a time
@@ -113,7 +138,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       running ? 1500 : 30_000,
     );
     return () => clearInterval(timer);
-  }, [id, running, waiting]);
+  }, [id, running, waiting, streamOff]);
 
   const outcomeKey = status?.state === "done" ? `${status.outcome}:${status.final ?? ""}` : status?.state;
   useEffect(() => {

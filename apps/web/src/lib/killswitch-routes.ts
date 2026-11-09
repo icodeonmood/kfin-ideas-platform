@@ -12,7 +12,8 @@ export type SwitchName =
   | "matching.show"
   | "comms.email"
   | "wall.public"
-  | "clusters.batch";
+  | "clusters.batch"
+  | "scan.live";
 
 interface Rule {
   methods: readonly string[];
@@ -43,6 +44,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
+  { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -57,6 +59,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "comms.email": "Emails are paused for now. Your messages are in your in-app inbox.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
   "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
+  "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
 };
 
 /**
