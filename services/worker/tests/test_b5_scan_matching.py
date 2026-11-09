@@ -44,7 +44,7 @@ def test_find_your_crew_shows_only_what_is_allowed(world: Any) -> None:
     assert real and all(set(c) == ALLOWED_CARD_KEYS for c in real)
     assert {c["kind"] for c in real} >= {"idea", "solution"}
     solution = next(c for c in real if c["kind"] == "solution")
-    assert solution["heading"] == "In the Garage" and solution["owning_lob"]
+    assert solution["heading"] == "Already running" and solution["owning_lob"]
     page = str(cards)
     for forbidden in (
         "IDEA-2026-000011",

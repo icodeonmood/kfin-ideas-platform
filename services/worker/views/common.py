@@ -24,7 +24,7 @@ IN_GARAGE = ("handover", "in_garage", "in_fix_track")
 SHIPPED = ("shipped", "resolved", "measuring", "closed")
 PUBLIC_STAGES = RECENT + PICKED + IN_GARAGE + SHIPPED
 
-# What everyone else sees. Never "duplicate", "rejected" or "already solved" (CLAUDE.md, words on screen).
+# What everyone else sees. Never "duplicate", "rejected", "already solved" or "Garage" (CLAUDE.md, DEC-035/038).
 PUBLIC_WORDS = {
     "reviewed": "Reviewed",
     "in_cluster": "Grouped with similar ideas",
@@ -32,9 +32,9 @@ PUBLIC_WORDS = {
     "scored": "Being assessed",
     "shortlisted": "Shortlisted",
     "presenting": "Being presented",
-    "picked": "Picked for the Garage",
-    "handover": "In the Garage",
-    "in_garage": "In the Garage",
+    "picked": "Picked",
+    "handover": "Being built",
+    "in_garage": "Being built",
     "in_fix_track": "Being fixed",
     "shipped": "Shipped",
     "resolved": "Fixed",

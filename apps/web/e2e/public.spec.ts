@@ -93,7 +93,7 @@ test("a reviewed idea reaches the wall, My ideas and its page, each as §3.1 all
   await signIn(b, testInfo.project.name === "desktop" ? "SYN-00031" : "SYN-00032");
   await b.goto("/wall");
   await expect(b.getByRole("heading", { level: 2, name: "Recent ideas" })).toBeVisible();
-  await expect(b.getByRole("heading", { level: 2, name: "Garage showcase" })).toBeVisible();
+  await expect(b.getByRole("heading", { level: 2, name: "Already running" })).toBeVisible();
   await expectNoSeriousAxeIssues(b);
   await expect(b.getByText(words)).toHaveCount(0);
   const onWall = b.locator(`a[href="/ideas/${ideaId}"]`);

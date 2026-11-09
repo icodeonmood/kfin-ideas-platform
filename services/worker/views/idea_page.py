@@ -30,7 +30,7 @@ EVENT_WORDS = {
     "needs_info_overdue": "Set aside: no answer yet",
     "clustered": "Grouped with similar ideas",
     "shortlisted": "Shortlisted",
-    "picked": "Picked for the Garage",
+    "picked": "Picked",
     "shipped": "Shipped",
     "resolved": "Fixed",
 }

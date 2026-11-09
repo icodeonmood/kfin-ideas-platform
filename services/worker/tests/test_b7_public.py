@@ -1,7 +1,7 @@
 """Public pages (B7): AT-B7-01 (the wall lists org-visible ideas by `neutral_summary`, names only with
 `public_name_consent`, committee-only items never), AT-B7-02 (My ideas: stage in plain words and the next step
 with a date), AT-B7-03 (the idea page timeline is the repo file's history; tags restored only in the mode the web
-app chose), AT-B7-04 (the Garage showcase lists solutions; `wall.public` off hides the wall)."""
+app chose), AT-B7-04 (the showcase of what already runs lists solutions; `wall.public` off hides the wall)."""
 
 from __future__ import annotations
 
@@ -274,4 +274,4 @@ def test_desk_members_see_stage_words_not_keys(desk: Any, repo_settings: Any) ->
     db = desk["db"]
     db.execute("UPDATE ideas SET stage = 'already_solved' WHERE idea_id = %s", (desk["idea_id"],))
     out = idea_page.page(db, desk["idea_id"], "full", "neutral", [])
-    assert out is not None and out["status"]["stage"] == "In the Garage"
+    assert out is not None and out["status"]["stage"] == "Already running"

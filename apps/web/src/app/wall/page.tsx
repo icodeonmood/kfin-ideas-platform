@@ -43,7 +43,7 @@ export default async function Page() {
   return (
     <>
       <h1>Wall</h1>
-      <p className="lead">Ideas from across KFintech, and what is already in the Garage.</p>
+      <p className="lead">Ideas from across KFintech, what is being built and what has shipped.</p>
       {w === null ? (
         <p className="notice">We can&apos;t load the wall just now. Please try again in a minute.</p>
       ) : w.paused ? (
@@ -56,16 +56,11 @@ export default async function Page() {
             empty="The wall fills up as the review desk looks at new ideas."
             cards={w.recent}
           />
-          <Section id="w-picked" title="Picked for the Garage" empty="Nothing picked yet." cards={w.picked} />
-          <Section
-            id="w-garage"
-            title="In the Garage"
-            empty="Nothing in the Garage yet."
-            cards={w.in_garage}
-          />
+          <Section id="w-picked" title="Picked" empty="Nothing picked yet." cards={w.picked} />
+          <Section id="w-building" title="Being built" empty="Nothing being built yet." cards={w.in_garage} />
           <Section id="w-shipped" title="Shipped" empty="Nothing shipped yet." cards={w.shipped} />
           <section aria-labelledby="w-showcase">
-            <h2 id="w-showcase">Garage showcase</h2>
+            <h2 id="w-showcase">Already running</h2>
             {w.showcase.length ? (
               <ul className="crew-cards">
                 {w.showcase.map((s) => (

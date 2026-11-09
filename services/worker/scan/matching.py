@@ -34,13 +34,13 @@ STAGE_WORDS = {
     "scored": "Being assessed",
     "shortlisted": "Shortlisted",
     "presenting": "Being presented",
-    "picked": "Picked for the Garage",
-    "handover": "In the Garage",
-    "in_garage": "In the Garage",
+    "picked": "Picked",
+    "handover": "Being built",
+    "in_garage": "Being built",
     "in_fix_track": "Being fixed",
-    "shipped": "In the Garage",
+    "shipped": "Already running",
     "resolved": "Fixed",
-    "measuring": "In the Garage",
+    "measuring": "Already running",
     "declined": "Looked at before",
     "parked": "Looked at before",
 }
@@ -198,11 +198,11 @@ def submitter_cards(
     for ref, c, row in items:
         kind = c["type"]
         heading = (
-            "In the Garage"
+            "Already running"
             if kind == "solution"
             else "Looked at before"
             if kind == "decision"
-            else "In the Garage: colleagues are on this"
+            else "Colleagues are on this"
             if c["label"] == "same"
             else "Related"
         )

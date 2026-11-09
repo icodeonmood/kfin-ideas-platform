@@ -1,5 +1,5 @@
 """The public wall (§4.13 "Public wall (Day 1)", AT-B7-01/04): recent org-visible ideas, recently picked
-clusters, what is in the Garage, what has shipped, and the Garage showcase from `solutions/` in the company repo.
+clusters, what is being built, what has shipped, and what already runs (`solutions/` in the company repo).
 `wall.public` off: nothing (the web app shows the banner instead)."""
 
 from __future__ import annotations
