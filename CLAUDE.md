@@ -36,7 +36,7 @@ Stop and ask the user before changing any of these.
 1. **Every model call goes through the gateway** (`run_agent` in `services/worker/gateway/`). No model SDK import anywhere else; CI enforces it.
 2. **Tag before sending.** Personal and sensitive values become typed tags (`[[KFIN_EMPLOYEE_1]]`, `[[CLIENT_AMC_1]]`…) before any model call. The leak check re-runs the patterns on the tagged payload and aborts on any hit. Real values are restored only for viewers allowed to see them (§3.2).
 3. **No idea text, attachment text or personal data in logs, traces, error messages, analytics or `llm_calls`.** Logs carry IDs only. A log-scrubber test must pass.
-4. **Investor and customer identifiers are blocked at submission** (patterns in §4.2 step 2, then `gatekeeper`).
+4. **Investor and customer identifiers are blocked at submission** (patterns in §4.2 step 2, then `gatekeeper`). Pattern blocks are absolute. A `gatekeeper` block, investor and customer ones included, can be contested ("This is not personal data") and then goes through flagged for the review desk to check first (BLD-082, option B).
 5. **Agents propose; people decide.** Agents never write to the company repo or change a stage on their own on day one. Autonomy (§5.6) is off at launch.
 6. **Database only, never the repo or the search index:** core briefs, sealed scores, assessments, decision sheets, the people view, the pseudonym vault, contributor-to-employee mapping. Use row-level security where §2.5 says so.
 7. **Submitters never see another person's raw text, files or name.** Match cards show `neutral_summary`, area tag, stage and count only (§4.2 step 7).
