@@ -256,8 +256,8 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
           </div>
           <p className="muted">
             {status.blocked.can_contest
-              ? 'If you choose "This is not personal data", the review desk will check it.'
-              : "Details about an investor or customer can't be waved through. Please edit them out."}
+              ? 'If you choose "This is not personal data", your idea goes ahead and the review desk checks these details first.'
+              : "Please edit these details out."}
           </p>
         </div>
       ) : null}

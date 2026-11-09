@@ -69,7 +69,7 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
   if (!choice) throw new SubmissionError(400, "choice_required");
   // What the person was shown: whether they may contest, and the reason length from rules/redirects.md.
   const view = (await scanStatus(me, id)) as {
-    blocked?: { can_contest?: boolean };
+    blocked?: { can_contest?: boolean; investor_context?: boolean };
     redirect?: { override_reason_min_chars?: number };
   };
   const needs: Record<ScanChoice, string> = {
@@ -79,8 +79,9 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
     is_an_idea: "redirect",
   };
   let reason = "";
+  // Every gatekeeper block can be contested (BLD-082 option B); the worker still says so per scan.
   if (choice === "not_personal_data" && view.blocked?.can_contest !== true)
-    throw new SubmissionError(409, "not_available_now"); // investor or customer details cannot be waved through
+    throw new SubmissionError(409, "not_available_now");
   if (choice === "is_an_idea") {
     reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
     if (reason.length < (view.redirect?.override_reason_min_chars ?? 15))
@@ -158,6 +159,16 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
           .updateTable("scans")
           .set({ overrides: JSON.stringify(overrides) })
           .where("idea_uuid", "=", id)
+          .execute();
+        // IDs and a code only: never the flagged words (non-negotiable 3).
+        await trx
+          .insertInto("audit_log")
+          .values({
+            actor: `user:${me.id}`,
+            action: "scan.contest",
+            entity: `idea:${row.idea_id}`,
+            after: JSON.stringify({ investor_or_customer: view.blocked?.investor_context === true }),
+          })
           .execute();
         await requeue(trx, id, scan.attempts);
         return { next: null };

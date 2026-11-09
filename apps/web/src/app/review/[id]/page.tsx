@@ -145,6 +145,16 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
             <dd>{text(view.proposals.suggested_action)}</dd>
           </div>
         </dl>
+        {view.proposals.contested === "investor_or_customer" ? (
+          <div className="notice notice-error">
+            <p>
+              <strong>Check this first.</strong> The person said this is not personal data. The check thought
+              it named an investor or customer.
+            </p>
+          </div>
+        ) : view.proposals.contested === "personal_data" ? (
+          <p className="notice">The person said a personal-data block was wrong. Please check it.</p>
+        ) : null}
         {view.proposals.flags.length ? (
           <>
             <h3>The assistant&apos;s doubts</h3>

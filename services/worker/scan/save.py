@@ -30,7 +30,7 @@ from pii.patterns import scan
 from pii.tagger import tag_payload
 from rules import load_rule
 from scan.matching import shown
-from scan.pipeline import decide, load_result, thresholds
+from scan.pipeline import about_investor, decide, load_result, thresholds
 from sla.calendar import add_working_days, limit_wd
 
 log = get_logger("scan.save")
@@ -198,8 +198,12 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
 
         overrides = scan_row["overrides"] or {}
         flags = list(ca.get("flags_for_reviewer") or [])
+        # A contested block (§4.2 step 3, BLD-082 option B): a code only. The desk sees it in plain words, and an
+        # item the check read as naming an investor or customer goes to the top of the queue.
+        contested = None
         if overrides.get("not_personal_data"):
-            flags.append("The person said a personal-data block was wrong; please check.")
+            gk = result.get("gatekeeper")
+            contested = "investor_or_customer" if gk and about_investor(gk) else "personal_data"
         if overrides.get("is_an_idea"):
             flags.append("The person said this is an idea, not a request for another team.")
         now = dt.datetime.now(dt.UTC)
@@ -226,6 +230,7 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
                 Jsonb(
                     {
                         "flags_for_reviewer": flags,
+                        "contested": contested,
                         "person_says": tagged_text,
                         "edited_after_scan": bool(result.get("confirmed") is not None),
                     }

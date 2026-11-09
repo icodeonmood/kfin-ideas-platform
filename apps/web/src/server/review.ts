@@ -35,6 +35,8 @@ export type QueueRow = {
   confidence: number | null;
   band: "low" | "medium" | "high" | null;
   age_days: number;
+  /** The person contested a block the check read as naming an investor or customer (BLD-082). */
+  check_first: boolean;
 };
 
 const OPEN = ["open", "in_progress", "awaiting_second_reviewer"];
@@ -44,7 +46,8 @@ function band(c: number | null): QueueRow["band"] {
   return c < 0.5 ? "low" : c < 0.8 ? "medium" : "high";
 }
 
-/** Open items, soonest due first, then lowest confidence first (AT-B6-01). */
+/** Open items: contested investor or customer blocks first (BLD-082), then soonest due, then lowest confidence
+ * (AT-B6-01). */
 export async function queue(f: QueueFilters): Promise<QueueRow[]> {
   let q = getDb()
     .selectFrom("review_items as r")
@@ -63,6 +66,7 @@ export async function queue(f: QueueFilters): Promise<QueueRow[]> {
       sql<Date | null>`(SELECT t.due_at FROM sla_timers t WHERE t.entity_type = 'review_item'
         AND t.entity_id = r.id::text AND t.stage = 'review' ORDER BY t.id DESC LIMIT 1)`.as("due_at"),
       sql<number | null>`(SELECT min(value::numeric) FROM jsonb_each_text(r.confidence))`.as("confidence"),
+      sql<boolean>`coalesce(r.reasons->>'contested' = 'investor_or_customer', false)`.as("check_first"),
     ])
     .where("r.state", "in", OPEN);
   if (f.type) q = q.where("r.item_type", "=", f.type);
@@ -87,9 +91,11 @@ export async function queue(f: QueueFilters): Promise<QueueRow[]> {
     confidence: r.confidence === null ? null : Number(r.confidence),
     band: band(r.confidence === null ? null : Number(r.confidence)),
     age_days: Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000),
+    check_first: r.check_first === true,
   }));
   const filtered = f.band ? out.filter((r) => r.band === f.band) : out;
   return filtered.sort((a, b) => {
+    if (a.check_first !== b.check_first) return a.check_first ? -1 : 1;
     const da = a.due_at ?? "9999";
     const db = b.due_at ?? "9999";
     if (da !== db) return da < db ? -1 : 1;

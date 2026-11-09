@@ -113,6 +113,12 @@ export default async function Review({
                       {r.idea_id}
                       {r.type !== "idea" ? ` (${r.type})` : ""}
                     </Link>
+                    {r.check_first ? (
+                      <>
+                        <br />
+                        <strong>Check first</strong>
+                      </>
+                    ) : null}
                   </th>
                   <td>{r.summary ?? "—"}</td>
                   <td>{r.kind?.replace(/_/g, " ") ?? "—"}</td>

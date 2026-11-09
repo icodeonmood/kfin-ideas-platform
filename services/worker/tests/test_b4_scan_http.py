@@ -5,12 +5,14 @@ reason; taking a redirect ends there."""
 from __future__ import annotations
 
 import random
+import secrets
 import time
 from collections.abc import Iterator
 from typing import Any
 
 import generators as g
 import pytest
+from psycopg.types.json import Jsonb
 
 from core.db import connect
 from tests.test_b3_submissions_api import full_canvas
@@ -63,9 +65,7 @@ def test_blocked_goes_back_to_edit_with_the_same_ids(me: Any) -> None:
     draft, idea_id = submit(b, f"The investor {name} called five times because her SIP registration slipped.")
     status = settled(b, draft)
     assert status["outcome"] == "blocked" and name in status["blocked"]["spans"][0]["quote"]
-    assert status["blocked"]["can_contest"] is False  # an investor named: cannot be waved through
-    contest = b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "not_personal_data"})
-    assert contest.status_code == 409
+    assert status["blocked"]["can_contest"] is True  # BLD-082 option B: the person may choose to edit instead
     assert b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "edit"}).json() == {
         "next": f"/share/{draft}"
     }
@@ -74,6 +74,78 @@ def test_blocked_goes_back_to_edit_with_the_same_ids(me: Any) -> None:
     resent = b.post(f"/api/submissions/{draft}/submit", json={"canvas": full_canvas(details=clean)})
     assert resent.status_code == 202 and resent.json()["idea_id"] == idea_id
     assert settled(b, draft)["outcome"] == "ready"
+
+
+def test_an_investor_block_can_be_contested_and_is_audited(me: Any) -> None:
+    """BLD-082 option B (9 Nov 2026): "This is not personal data" works on an investor block too, and the contest is
+    audited with IDs and a code only. (The review item's flag is checked in test_b4_scan.py: saving here would leave
+    an outbox event for an idea the cleanup deletes.)"""
+    person, _, conn = me
+    b = person.browser()
+    name = g.person_name(random.Random(111))
+    draft, idea_id = submit(b, f"The investor {name} called five times because her SIP registration slipped.")
+    status = settled(b, draft)
+    assert status["outcome"] == "blocked" and status["blocked"]["investor_context"] is True
+    assert status["blocked"]["can_contest"] is True
+    contest = b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "not_personal_data"})
+    assert contest.status_code == 200, contest.text
+    assert settled(b, draft)["outcome"] == "ready"
+
+    audit = conn.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'scan.contest' AND entity = %s",
+        (f"idea:{idea_id}",),
+    ).fetchall()
+    assert [a["after"] for a in audit] == [{"investor_or_customer": True}]
+    assert audit[0]["actor"] == f"user:{person.user_id}"
+    assert name not in str(audit) and name.split()[0] not in str(audit)
+
+
+def test_the_desk_sees_contested_investor_items_first(me: Any) -> None:
+    """The queue puts contested investor or customer blocks first, ahead of an item due sooner (BLD-082)."""
+    _, make, conn = me
+    refs = [f"IDEA-TEST-{secrets.token_hex(3)}" for _ in range(2)]
+    plain = conn.execute(
+        "INSERT INTO review_items (item_type, ref_id) VALUES ('idea', %s) RETURNING id", (refs[0],)
+    ).fetchone()["id"]
+    flagged = conn.execute(
+        "INSERT INTO review_items (item_type, ref_id, reasons) VALUES ('idea', %s, %s) RETURNING id",
+        (refs[1], Jsonb({"contested": "investor_or_customer"})),
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO sla_timers (entity_type, entity_id, stage, started_at, due_at) "
+        "VALUES ('review_item', %s, 'review', now() - interval '9 days', now() - interval '8 days')",
+        (str(plain),),
+    )  # overdue, so it would lead the queue on due date alone
+    try:
+        items = make((("reviewer", None),)).browser().get("/api/review/items").json()["items"]
+        order = [i["id"] for i in items if i["id"] in (plain, flagged)]
+        assert order == [flagged, plain]
+        assert next(i for i in items if i["id"] == flagged)["check_first"] is True
+        assert next(i for i in items if i["id"] == plain)["check_first"] is False
+        flags = [i["check_first"] for i in items]
+        assert flags == sorted(flags, reverse=True), "check-first items come before the rest"
+    finally:
+        conn.execute(
+            "DELETE FROM sla_timers WHERE entity_type = 'review_item' AND entity_id IN (%s, %s)",
+            (str(plain), str(flagged)),
+        )
+        conn.execute("DELETE FROM review_items WHERE id IN (%s, %s)", (plain, flagged))
+
+
+def test_a_pattern_block_cannot_be_contested(me: Any) -> None:
+    """Pattern hits (PAN, Aadhaar, mobile, folio and the rest, §4.2 step 2) stay absolute: refused at submit, so
+    there is no scan to contest."""
+    person, _, conn = me
+    b = person.browser()
+    pan = g.pan(random.Random(9))
+    leaked = f"Ops re-key the same nominee details twice; investor PAN {pan} came up again."
+    draft = b.post("/api/submissions", json={"mode": "full"}).json()["id"]
+    sent = b.post(f"/api/submissions/{draft}/submit", json={"canvas": full_canvas(details=leaked)})
+    assert sent.status_code == 422 and sent.json()["error"] == "personal_data"
+    contest = b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "not_personal_data"})
+    assert contest.status_code in (404, 409)
+    assert conn.execute("SELECT stage FROM ideas WHERE id = %s", (draft,)).fetchone()["stage"] == "draft"
+    assert conn.execute("SELECT 1 FROM scans WHERE idea_uuid = %s", (draft,)).fetchone() is None
 
 
 def test_redirect_override_needs_a_reason(me: Any) -> None:

@@ -1,6 +1,7 @@
 /**
  * The scan in the browser (B4): the waiting screen names each step and ends in a plain-words outcome
- * (AT-B4-09/10 screens), the redirect card offers "No, this is an idea" with a reason (AT-B4-07 screens).
+ * (AT-B4-09/10 screens), the redirect card offers "No, this is an idea" with a reason (AT-B4-07 screens), and
+ * any gatekeeper block, investor ones included, offers "This is not personal data" (BLD-082 option B).
  * axe runs on each state. Fake mode: keyword rules pick the outcome (BLD-073).
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -60,6 +61,23 @@ test("an IT issue gets a redirect card, and 'No, this is an idea' carries on (AT
     .getByLabel("Tell us why it is an idea")
     .fill("VPN drops cost the whole ops floor about two hours every day");
   await page.getByRole("button", { name: "Carry on with my idea" }).click();
+  await expect(page.getByRole("heading", { level: 3, name: "Your summary is ready" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectNoSeriousAxeIssues(page);
+});
+
+test("an investor block can be contested and the idea carries on (BLD-082 option B)", async ({ page }) => {
+  await quickCapture(
+    page,
+    "The investor Pranav Menon called five times because the SIP registration slipped twice this month.",
+  );
+  const blocked = page.getByRole("heading", { level: 3, name: "Please take out some details first" });
+  await expect(blocked).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Edit my idea" })).toBeVisible();
+  await expect(page.getByText("the review desk checks these details first")).toBeVisible();
+  await expectNoSeriousAxeIssues(page);
+  await page.getByRole("button", { name: "This is not personal data" }).click();
   await expect(page.getByRole("heading", { level: 3, name: "Your summary is ready" })).toBeVisible({
     timeout: 20_000,
   });

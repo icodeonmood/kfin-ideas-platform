@@ -16,7 +16,7 @@ from pii import vault
 from pii.restore import restore
 from rules import load_rule
 from scan.matching import submitter_cards
-from scan.pipeline import contestable, load_result
+from scan.pipeline import about_investor, load_result
 
 DATA_TYPE_LABELS = {
     "investor_or_customer_name": "an investor's or customer's name",
@@ -84,8 +84,8 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
                 }
                 for s in spans
             ],
-            "investor_context": bool(result["gatekeeper"]["investor_context_tags"]),
-            "can_contest": contestable(result["gatekeeper"]),
+            "investor_context": about_investor(result["gatekeeper"]),
+            "can_contest": True,  # every gatekeeper block (BLD-082 option B); pattern blocks never reach a scan
         }
     elif row["outcome"] == "redirect":
         kind = result["gatekeeper"]["kind"]["value"]

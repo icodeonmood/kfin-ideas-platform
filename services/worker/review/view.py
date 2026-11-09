@@ -77,6 +77,7 @@ def item_view(conn: Conn, item_id: int, mode: Literal["real", "neutral"]) -> dic
         "proposals": {
             "system": proposal.get("system") or {}, "confidence": item["confidence"] or {},
             "flags": show((item["reasons"] or {}).get("flags_for_reviewer") or []),
+            "contested": (item["reasons"] or {}).get("contested"),
             "person_says": show((item["reasons"] or {}).get("person_says")),
             "best_same": proposal.get("best_same"), "suggested_action": proposal.get("suggested_action"),
             "choice": proposal.get("choice"),

@@ -37,6 +37,7 @@ export type ItemView = {
     };
     confidence: Record<string, number>;
     flags: string[];
+    contested: "investor_or_customer" | "personal_data" | null;
     person_says: string | null;
     best_same: string | null;
     suggested_action: string | null;

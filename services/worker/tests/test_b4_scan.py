@@ -101,6 +101,30 @@ def test_ready_scan_keeps_text_out_of_plain_columns(db: Any) -> None:
     assert tables_containing(db, stranger) == []
 
 
+def contest(db: Any, idea: str) -> None:
+    """What the web app does on "This is not personal data" (apps/web/src/server/scan.ts)."""
+    db.execute(
+        "UPDATE scans SET overrides = '{\"not_personal_data\": true}', state = 'queued' WHERE idea_uuid = %s",
+        (idea,),
+    )
+    db.execute("UPDATE ideas SET stage = 'scanning' WHERE id = %s", (idea,))
+
+
+def saved_item(db: Any, idea: str) -> dict[str, Any]:
+    """Confirm the card and share it as new; returns the review item the desk gets."""
+    from review.view import item_view
+    from scan import save
+    from scan.confirm import confirm
+
+    idea_id = db.execute("SELECT idea_id FROM ideas WHERE id = %s", (idea,)).fetchone()["idea_id"]
+    confirm(db, idea, idea_id, {})
+    assert save.save(db, idea, "CTR-0a1b2c", {"choice": "new"})["stage"] == "scanned"
+    item = db.execute("SELECT id, reasons FROM review_items WHERE ref_id = %s", (idea_id,)).fetchone()
+    shown = item_view(db, int(item["id"]), "neutral")
+    assert shown is not None
+    return {"reasons": item["reasons"], "view": shown}
+
+
 def test_investor_details_block_and_only_the_owner_sees_them(db: Any) -> None:
     rng = random.Random(102)
     person = g.person_name(rng)
@@ -115,15 +139,16 @@ def test_investor_details_block_and_only_the_owner_sees_them(db: Any) -> None:
     assert person not in str(other) and "a person" in other["blocked"]["spans"][0]["quote"]
     assert [r["agent"] for r in db.execute("SELECT agent FROM llm_calls").fetchall()] == ["gatekeeper"]
 
-    # Investor details cannot be waved through with "This is not personal data" (non-negotiable 4, BLD-082).
-    assert owner["blocked"]["can_contest"] is False
-    db.execute(
-        "UPDATE scans SET overrides = '{\"not_personal_data\": true}', state = 'queued' WHERE idea_uuid = %s",
-        (idea,),
-    )
-    db.execute("UPDATE ideas SET stage = 'scanning' WHERE id = %s", (idea,))
-    pipeline.run(db, idea)
-    assert scan_row(db, idea)["outcome"] == "blocked"
+    # BLD-082 option B (9 Nov 2026): an investor block can be contested too. It goes through, and the desk is told
+    # to check it first.
+    assert owner["blocked"]["can_contest"] is True and owner["blocked"]["investor_context"] is True
+    contest(db, idea)
+    pipeline.run(db, idea)  # the gatekeeper's result is kept: no second call
+    assert scan_row(db, idea)["outcome"] == "ready"
+    item = saved_item(db, idea)
+    assert item["reasons"]["contested"] == "investor_or_customer"
+    assert item["view"]["proposals"]["contested"] == "investor_or_customer"
+    assert person not in json.dumps(item["reasons"])  # the reasons carry a code, never the flagged words
 
 
 def test_a_contestable_block_goes_through_when_contested(db: Any) -> None:
@@ -141,11 +166,8 @@ def test_a_contestable_block_goes_through_when_contested(db: Any) -> None:
     pipeline.run(db, idea)
     shown = view(db, idea, "real")
     assert shown and shown["outcome"] == "blocked" and shown["blocked"]["can_contest"] is True
-    db.execute(
-        "UPDATE scans SET overrides = '{\"not_personal_data\": true}', state = 'queued' WHERE idea_uuid = %s",
-        (idea,),
-    )
-    db.execute("UPDATE ideas SET stage = 'scanning' WHERE id = %s", (idea,))
+    assert shown["blocked"]["investor_context"] is False
+    contest(db, idea)
     pipeline.run(db, idea)  # the gatekeeper's result is kept: no second call
     assert scan_row(db, idea)["outcome"] == "ready"
     agents = [
@@ -156,6 +178,7 @@ def test_a_contestable_block_goes_through_when_contested(db: Any) -> None:
         ).fetchall()
     ]
     assert agents == ["gatekeeper", "canvas-assist"]
+    assert saved_item(db, idea)["reasons"]["contested"] == "personal_data"
 
 
 def test_a_leak_abort_goes_to_the_desk_without_retrying(db: Any, monkeypatch: Any) -> None:

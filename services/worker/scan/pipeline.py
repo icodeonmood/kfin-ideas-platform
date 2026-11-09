@@ -28,15 +28,17 @@ from scan.matching import run_matching
 
 log = get_logger("scan")
 REDIRECT_KINDS = ("it_ticket", "hr_grievance", "complaint", "question")
-# Spans that identify an investor or customer: a person cannot wave these through (non-negotiable 4, BLD-082).
+# Spans that identify an investor or customer. Since BLD-082 (option B, 9 Nov 2026) a person can contest these like
+# any other gatekeeper block; the item then reaches the review desk marked "check first" (scan/save.py).
+# Pattern blocks (§4.2 step 2: PAN, Aadhaar, mobile, folio and the rest) are refused at submit and never get here.
 INVESTOR_SPANS = frozenset({"tagged_person_as_investor", "investor_or_customer_name"})
 
 
-def contestable(gk: dict[str, Any]) -> bool:
-    """May the person say "this is not personal data"? Not when the block is about an investor or customer."""
+def about_investor(gk: dict[str, Any]) -> bool:
+    """Did the gatekeeper read the block as naming an investor or customer?"""
     if gk["investor_context_tags"]:
-        return False
-    return not any(s["data_type"] in INVESTOR_SPANS for s in gk["personal_data"]["spans"])
+        return True
+    return any(s["data_type"] in INVESTOR_SPANS for s in gk["personal_data"]["spans"])
 
 
 class TooSlow(Exception):
@@ -147,9 +149,8 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
                 "UPDATE ideas SET language = %s WHERE id = %s", (gk.data["language"]["primary"], idea_uuid)
             )
         decision = decide(result["gatekeeper"], th)
-        if decision == "blocked" and not (
-            overrides.get("not_personal_data") and contestable(result["gatekeeper"])
-        ):
+        # A contested block goes through, flagged for the reviewer (§4.2 step 3).
+        if decision == "blocked" and not overrides.get("not_personal_data"):
             return finish("blocked", "blocked")
         if decision == "redirect" and not overrides.get("is_an_idea"):
             return finish("redirect")
