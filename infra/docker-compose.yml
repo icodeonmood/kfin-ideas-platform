@@ -1,5 +1,7 @@
 # Local stack for The Garage · Ideas. Synthetic data only.
 # Run through the Makefile (`make up`), which sets the project directory to the repo root and loads `.env`.
+# Host ports and the project name can be overridden from `.env` for a second stack (BLD-200); the defaults are
+# the ports below.
 name: kfin-ideas
 
 x-db-url: &db_url postgres://ideas:ideas@postgres:5432/ideas?sslmode=disable
@@ -30,7 +32,7 @@ services:
     environment:
       ROOT_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
       ROOT_SECRET_KEY: ${S3_SECRET_KEY:-minio-secret}
-    ports: ["9000:9000"]
+    ports: ["${S3_HOST_PORT:-9000}:9000"]
     volumes: [s3data:/data]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
@@ -42,7 +44,7 @@ services:
     image: clamav/clamav-debian:1.4   # the Alpine image has no arm64 build
     environment:
       CLAMAV_NO_FRESHCLAMD: "true"   # dev: use the signatures baked into the image; no outbound updates
-    ports: ["3310:3310"]
+    ports: ["${CLAMAV_HOST_PORT:-3310}:3310"]
     healthcheck:
       test: ["CMD", "clamdcheck.sh"]
       interval: 5s
@@ -58,7 +60,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.27
-    ports: ["1025:1025", "8025:8025"]
+    ports: ["${MAILPIT_SMTP_HOST_PORT:-1025}:1025", "${MAILPIT_UI_HOST_PORT:-8025}:8025"]
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 3s
@@ -76,11 +78,15 @@ services:
       DATABASE_URL: *db_worker_url
       COMPANY_REPO_PATH: /data/kfin-ideas
       S3_ENDPOINT: http://s3:9000
-      CLAMAV_HOST: clamav
+      # A second stack on a small dev VM may borrow another stack's scanner (BLD-200):
+      # WORKER_CLAMAV_HOST=host.docker.internal and that stack's published port.
+      CLAMAV_HOST: ${WORKER_CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${WORKER_CLAMAV_PORT:-3310}
       SMTP_URL: smtp://mailpit:1025
       WORKER_ROLES: api,repo_writer,indexer,jobs,scheduler,ticker
     volumes: ["./.data:/data"]
-    ports: ["8000:8000"]
+    ports: ["${WORKER_HOST_PORT:-8000}:8000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       postgres: { condition: service_healthy }
       s3: { condition: service_healthy }
@@ -105,7 +111,7 @@ services:
       OIDC_INTERNAL_BASE: http://mock-oidc:8080
       PORT: "3000"
       HOSTNAME: 0.0.0.0
-    ports: ["3000:3000"]
+    ports: ["${WEB_HOST_PORT:-3000}:3000"]
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:

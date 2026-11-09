@@ -11,7 +11,7 @@ import pytest
 from core.config import get_settings
 from core.db import connect
 from identity.codes import emp_id_hash
-from tests.web import sign_in_with_mock
+from tests.web import WEB, sign_in_with_mock
 
 pytestmark = pytest.mark.stack
 
@@ -30,7 +30,7 @@ def test_first_sign_in_of_someone_not_yet_in_hr(dev_db: Any) -> None:
         browser, callback = sign_in_with_mock(
             employee_id, {"email": email, "name": name, "employeeId": employee_id}
         )
-        assert callback.headers["location"].startswith("http://localhost:3000/privacy-notice")
+        assert callback.headers["location"].startswith(f"{WEB}/privacy-notice")
 
         user = dev_db.execute(
             "SELECT u.*, m.contributor_code FROM users u JOIN contributor_map m ON m.user_id = u.id "

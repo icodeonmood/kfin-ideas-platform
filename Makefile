@@ -4,7 +4,16 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-COMPOSE := docker compose -f infra/docker-compose.yml --project-directory . --env-file .env
+# Per-checkout settings read from `.env`, so a second stack in a worktree can run beside the first (BLD-200).
+# A value already in the shell environment wins. Defaults are the first stack's.
+env_get = $(shell sed -n 's/^$(1)=//p' .env 2>/dev/null | tail -1 | sed 's/[[:space:]]*\#.*//')
+COMPOSE_PROJECT_NAME ?= $(or $(call env_get,COMPOSE_PROJECT_NAME),kfin-ideas)
+POSTGRES_PORT        ?= $(or $(call env_get,POSTGRES_PORT),5432)
+E2E_BASE_URL         ?= $(or $(call env_get,E2E_BASE_URL),http://localhost:3000)
+OIDC_ISSUER          ?= $(or $(call env_get,OIDC_ISSUER),http://localhost:8090/default)
+STACK_UP_FLAGS       ?= $(call env_get,STACK_UP_FLAGS)
+
+COMPOSE := docker compose -p $(COMPOSE_PROJECT_NAME) -f infra/docker-compose.yml --project-directory . --env-file .env
 PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 
@@ -28,7 +37,7 @@ up: .env ## Start the local stack and wait until every service is healthy
 	$(COMPOSE) up -d --wait --wait-timeout 120 postgres
 	$(COMPOSE) run --rm dbmate up
 	$(MAKE) --no-print-directory db-users
-	$(COMPOSE) up -d --build --wait --wait-timeout 180
+	$(COMPOSE) up -d --build --wait --wait-timeout 180 $(STACK_UP_FLAGS)
 	@docker image prune -f --filter label=org.kfin.project=kfin-ideas --filter until=24h >/dev/null  # old builds only (BLD-105)
 	$(PY) python -m core.health --timeout 120
 
@@ -63,7 +72,7 @@ test-web:
 	$(WEB) npx vitest run
 
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
-	$(WEB) npx playwright test
+	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" npx playwright test
 
 eval: up ## Golden sets for every agent (model gates enforced on a real route only, BLD-076)
 	$(PY) python -m evalrunner
@@ -89,7 +98,7 @@ verify: up seed lint test e2e eval ## Every gate a block must pass, in one go (u
 	@echo "verify: all gates passed"
 
 db-types: ## Regenerate Kysely types from the migrated dev database
-	$(WEB) npx kysely-codegen --dialect postgres --url "postgres://ideas:ideas@localhost:5432/ideas" --out-file src/server/db-types.ts --exclude-pattern "public.schema_migrations"
+	$(WEB) npx kysely-codegen --dialect postgres --url "postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas" --out-file src/server/db-types.ts --exclude-pattern "public.schema_migrations"
 
 killswitch: ## Flip a kill switch: make killswitch NAME=submissions STATE=off REASON="…" ACTOR=REV-0001
 	$(PY) python -m core.killswitch set "$(NAME)" "$(STATE)" --reason "$(REASON)" --actor "$(ACTOR)"

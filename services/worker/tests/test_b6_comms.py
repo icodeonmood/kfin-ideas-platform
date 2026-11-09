@@ -22,13 +22,14 @@ from comms.route import next_send_time, route
 from comms.send import send_digests, send_due
 from comms.templates import render_text
 from core import killswitch
+from core.config import get_settings
 from core.crypto import encrypt_json
 from jobs import handlers  # noqa: F401
 from jobs.runner import run_one
 from tests.helpers import tables_containing
 
 IST = ZoneInfo("Asia/Kolkata")
-MAILPIT = "http://localhost:8025/api/v1"
+MAILPIT = f"http://localhost:{get_settings().mailpit_ui_host_port}/api/v1"
 ONE_LINE = "Branch forms wait a day in the outward register"
 WORKDAY_NOON = dt.datetime(2026, 11, 18, 12, 0, tzinfo=IST)  # a Wednesday, not a holiday
 
