@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { day } from "@/lib/dates";
 import { currentUser } from "@/server/auth/current";
 import { myIdeas } from "@/server/ideas";
+import { myOne, myTeam } from "@/server/ones";
 
 import { NameOnWall } from "./name-on-wall";
+import { OneDashboard } from "./one-dashboard";
 
 export const metadata: Metadata = { title: "My ideas" };
 
@@ -17,11 +19,21 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const mine = await myIdeas(me).catch(() => null);
+  const [mine, one, team] = await Promise.all([
+    myIdeas(me).catch(() => null),
+    myOne(me).catch(() => null),
+    myTeam(me).catch(() => null),
+  ]);
   return (
     <>
       <h1>My ideas</h1>
       <p className="lead">Every idea you share is listed here with where it is now and what happens next.</p>
+      {one ? <OneDashboard one={one} /> : null}
+      {team && team.people.length ? (
+        <p>
+          <Link href="/my-team">Your team&apos;s ideas</Link> ({team.people.length} people report to you)
+        </p>
+      ) : null}
       {mine === null ? (
         <p className="notice">We can&apos;t load your ideas just now. Please try again in a minute.</p>
       ) : (

@@ -10,7 +10,7 @@ version: "1.0"
 roles: [contributor, reviewer, lob_committee, core_committee, appeal_panel, working_group, sponsor, admin]
 role_aliases:
   core_chair: core_committee          # the chair is a core committee member
-extra_roles: [infosec, hr]            # only for kill switches (§7.6); not columns in §3.1
+extra_roles: [infosec, hr, ceo]       # not columns in §3.1: kill switches (§7.6) and the CEO's sponsorships (DEC-042)
 
 capabilities:
   signed_in:                  { contributor: yes }
@@ -36,6 +36,11 @@ capabilities:
   reveal_identity:            { admin: with_reason_logged }
   grant_roles:                { admin: yes }
   manage_kill_switches:       { admin: per_switch, infosec: per_switch, hr: per_switch }
+  # The Ones (DEC-040 to DEC-086): propose, approve (chair or a recorded majority), carry out (admin member).
+  view_ones_console:          { core_committee: yes, admin: yes, ceo: yes }
+  propose_ones:               { core_committee: yes, ceo: yes }
+  decide_ones:                { core_committee: yes }
+  carry_out_ones:             { admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -47,6 +52,7 @@ kill_switch_flippers:
   matching.show: [admin]
   comms.email: [admin]
   wall.public: [admin, hr]
+  ones.public: [admin, hr]
 
 # No session needed.
 public:
@@ -103,6 +109,31 @@ endpoints:
   - GET /api/admin/kill-switches                      manage_kill_switches
   - PUT /api/admin/kill-switches                      manage_kill_switches
   - POST /api/admin/reveal                            reveal_identity
+  # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
+  # the person's own record, or need an invitation the worker checks.
+  - GET /api/ones                                     see_org_ideas
+  - GET /api/ones/constellation                       see_org_ideas
+  - GET /api/ones/leaderboard                         signed_in       # Ones only (DEC-077)
+  - GET /api/ones/console                             view_ones_console
+  - POST /api/ones/proposals                          propose_ones
+  - POST /api/ones/proposals/{id}/decide              decide_ones
+  - POST /api/ones/proposals/{id}/carry-out           carry_out_ones
+  - POST /api/ones/proposals/{id}/withdraw            propose_ones
+  - GET /api/ones/proposals/{id}/invite               signed_in       # an invited colleague's view of what to write
+  - POST /api/ones/proposals/{id}/messages            signed_in       # committee, CEO or an invited colleague
+  - POST /api/ones/proposals/{id}/invites             decide_ones
+  - PUT /api/ones/{id}/measures                       carry_out_ones
+  - POST /api/ones/{id}/awards                        carry_out_ones
+  - GET /api/ones/{id}/showcase                       view_ones_console
+  - PUT /api/ones/screen-mode                         carry_out_ones
+  - POST /api/ones/announce                           carry_out_ones
+  - GET /api/me/one                                   signed_in
+  - POST /api/me/one/number                           signed_in
+  - POST /api/me/one/brief                            signed_in
+  - POST /api/me/one/glow-up/{id}/seen                signed_in
+  - GET /api/me/one/showcase                          signed_in
+  - PUT /api/me/one/showcase                          signed_in
+  - GET /api/me/team                                  signed_in
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
@@ -110,6 +141,8 @@ pages:
   - /desk-decisions            view_review_queue
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
+  - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
+  - /ones/console              view_ones_console                    # the committee console's Ones module
 
 # Navigation (AT-B2-06): everyone gets the first three; the rest by role.
 navigation:
@@ -119,4 +152,5 @@ navigation:
   - { label: Messages,        href: /inbox }
   - { label: Review,          href: /review,          roles: [reviewer] }
   - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee] }
+  - { label: Ones,            href: /ones/console,    roles: [core_committee, admin, ceo] }
   - { label: Admin,           href: /admin,           roles: [admin, infosec, hr] }

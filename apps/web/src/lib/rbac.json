@@ -15,7 +15,8 @@
   },
   "extra_roles": [
     "infosec",
-    "hr"
+    "hr",
+    "ceo"
   ],
   "capabilities": {
     "signed_in": {
@@ -116,6 +117,21 @@
       "admin": "per_switch",
       "infosec": "per_switch",
       "hr": "per_switch"
+    },
+    "view_ones_console": {
+      "core_committee": "yes",
+      "admin": "yes",
+      "ceo": "yes"
+    },
+    "propose_ones": {
+      "core_committee": "yes",
+      "ceo": "yes"
+    },
+    "decide_ones": {
+      "core_committee": "yes"
+    },
+    "carry_out_ones": {
+      "admin": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -143,6 +159,10 @@
       "admin"
     ],
     "wall.public": [
+      "admin",
+      "hr"
+    ],
+    "ones.public": [
       "admin",
       "hr"
     ]
@@ -198,13 +218,38 @@
     "DELETE /api/admin/roles/{id}                      grant_roles",
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
-    "POST /api/admin/reveal                            reveal_identity"
+    "POST /api/admin/reveal                            reveal_identity",
+    "GET /api/ones                                     see_org_ideas",
+    "GET /api/ones/constellation                       see_org_ideas",
+    "GET /api/ones/leaderboard                         signed_in",
+    "GET /api/ones/console                             view_ones_console",
+    "POST /api/ones/proposals                          propose_ones",
+    "POST /api/ones/proposals/{id}/decide              decide_ones",
+    "POST /api/ones/proposals/{id}/carry-out           carry_out_ones",
+    "POST /api/ones/proposals/{id}/withdraw            propose_ones",
+    "GET /api/ones/proposals/{id}/invite               signed_in",
+    "POST /api/ones/proposals/{id}/messages            signed_in",
+    "POST /api/ones/proposals/{id}/invites             decide_ones",
+    "PUT /api/ones/{id}/measures                       carry_out_ones",
+    "POST /api/ones/{id}/awards                        carry_out_ones",
+    "GET /api/ones/{id}/showcase                       view_ones_console",
+    "PUT /api/ones/screen-mode                         carry_out_ones",
+    "POST /api/ones/announce                           carry_out_ones",
+    "GET /api/me/one                                   signed_in",
+    "POST /api/me/one/number                           signed_in",
+    "POST /api/me/one/brief                            signed_in",
+    "POST /api/me/one/glow-up/{id}/seen                signed_in",
+    "GET /api/me/one/showcase                          signed_in",
+    "PUT /api/me/one/showcase                          signed_in",
+    "GET /api/me/team                                  signed_in"
   ],
   "pages": [
     "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",
     "/admin                     manage_kill_switches grant_roles",
-    "/launch                    grant_roles"
+    "/launch                    grant_roles",
+    "/ones/showcase             view_ones_console",
+    "/ones/console              view_ones_console"
   ],
   "navigation": [
     {
@@ -235,6 +280,15 @@
       "href": "/desk-decisions",
       "roles": [
         "core_committee"
+      ]
+    },
+    {
+      "label": "Ones",
+      "href": "/ones/console",
+      "roles": [
+        "core_committee",
+        "admin",
+        "ceo"
       ]
     },
     {

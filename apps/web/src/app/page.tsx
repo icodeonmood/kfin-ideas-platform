@@ -1,12 +1,15 @@
 import Link from "next/link";
 
+import { OnesCarousel } from "@/components/ones-carousel";
 import { currentUser } from "@/server/auth/current";
+import { publicOnes } from "@/server/ones";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const me = await currentUser();
   const firstName = me?.name.split(" ")[0];
+  const ones = me?.privacyAccepted ? await publicOnes().catch(() => null) : null;
   return (
     <>
       <h1>{firstName ? `Hello, ${firstName}` : "Ideas from everyone at KFintech"}</h1>
@@ -34,6 +37,7 @@ export default async function Home() {
           <p>Ideas from across KFintech, what is being built and what has shipped.</p>
         </li>
       </ul>
+      {ones && !ones.paused ? <OnesCarousel ones={ones.ones} /> : null}
     </>
   );
 }

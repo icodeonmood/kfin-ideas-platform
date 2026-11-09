@@ -1057,3 +1057,494 @@ blockquote {
   opacity: 1;
   transform: none;
 }
+
+/* ---- The Ones (DEC-068 to DEC-086). Tier colours always sit on Zed or Graphite (DEC-075). ---------------------- */
+
+.ones-band {
+  background: var(--zed);
+  color: var(--white);
+  box-shadow: 0 0 0 100vmax var(--zed);
+  clip-path: inset(0 -100vmax);
+  margin: -2rem 0 2rem;
+  padding: 0.5rem 0 2.5rem;
+}
+
+.ones-band :focus-visible,
+.one-dashboard :focus-visible,
+.sky :focus-visible,
+.glow-up :focus-visible {
+  outline-color: var(--white);
+}
+
+.ones-band h2 {
+  margin: 0 0 0.375rem;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  letter-spacing: -0.045em;
+}
+
+.lead-dark {
+  color: var(--ash);
+  margin: 0 0 1.25rem;
+}
+
+.one-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.one-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: var(--graphite);
+  border: 1px solid var(--line-dark);
+  color: var(--white);
+}
+
+.one-card-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.one-number {
+  margin: 0;
+  font-weight: 800;
+  font-size: 4rem;
+  line-height: 0.85;
+  letter-spacing: -0.05em;
+}
+
+.one-tag,
+.one-line,
+.one-tier,
+.one-muted {
+  margin: 0;
+  color: var(--ash);
+  font-size: 0.9375rem;
+}
+
+.one-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.one-brief {
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-dark);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  line-height: 1.45;
+}
+
+.tier-dot {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.375rem;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+
+.measure-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.measure-chips li {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--line-dark);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--white);
+}
+
+.measure-chips span {
+  color: var(--ash);
+}
+
+/* Home: "What the Ones are up to" (DEC-072). Manual by default; it only moves if someone presses Play. */
+.ones-carousel {
+  background: var(--zed);
+  color: var(--white);
+  box-shadow: 0 0 0 100vmax var(--zed);
+  clip-path: inset(0 -100vmax);
+  margin: 2.5rem 0 1rem;
+  padding: 2rem 0 2.5rem;
+}
+
+.ones-carousel :focus-visible {
+  outline-color: var(--white);
+}
+
+.ones-carousel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.ones-carousel h2 {
+  margin: 0 0 0.25rem;
+  font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+  letter-spacing: -0.04em;
+}
+
+.carousel-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.round-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--line-dark);
+  background: var(--graphite);
+  color: var(--white);
+  cursor: pointer;
+}
+
+.round-button:hover {
+  border-color: var(--ash);
+}
+
+.ones-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.5rem;
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.ones-strip > li {
+  flex: 0 0 min(22rem, 85%);
+  scroll-snap-align: start;
+}
+
+/* A One's dashboard on My ideas: Zed, with their tier colour as the accent (DEC-075). */
+.one-dashboard {
+  background: var(--zed);
+  color: var(--white);
+  border-radius: 1rem;
+  border-top: 6px solid var(--tier, var(--spark));
+  padding: 1.5rem;
+  margin: 0 0 2rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.one-dashboard h2,
+.one-dashboard h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.one-dashboard .lead-dark {
+  margin: 0;
+}
+
+.one-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.one-hero .one-number {
+  font-size: 5rem;
+}
+
+.one-dashboard label {
+  color: var(--white);
+}
+
+.one-dashboard .hint,
+.one-dashboard .muted {
+  color: var(--ash);
+}
+
+.one-dashboard input,
+.one-dashboard textarea {
+  background: var(--white);
+  color: var(--zed);
+}
+
+.one-dashboard .field-error {
+  color: #ffb4a8; /* 9.9:1 on Zed */
+}
+
+.one-section {
+  display: grid;
+  gap: 0.625rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-dark);
+}
+
+.coming-soon {
+  display: inline-block;
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px dashed var(--ash);
+  color: var(--ash);
+  font-size: 0.875rem;
+}
+
+.coming-soon-light {
+  border-color: var(--slate);
+  color: var(--slate);
+}
+
+/* The glow-up (DEC-084): a native modal dialog; the spark heats from the old tier colour to the new one. */
+.glow-up {
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 2rem;
+  border: 1px solid var(--line-dark);
+  border-radius: 1.25rem;
+  background: var(--zed);
+  color: var(--white);
+}
+
+.glow-up::backdrop {
+  background: rgba(10, 10, 12, 0.85);
+}
+
+.glow-up h2 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: -0.045em;
+}
+
+.glow-spark polygon,
+.glow-spark circle {
+  transition: fill 2400ms ease;
+}
+
+.glow-up blockquote {
+  margin: 0;
+  padding: 0.75rem 0 0.75rem 1rem;
+  border-left: 3px solid var(--line-dark);
+  color: var(--white);
+}
+
+.glow-up .glow-from {
+  color: var(--ash);
+  font-size: 0.875rem;
+  margin: 0.25rem 0 0;
+}
+
+.glow-up .story {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.story-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0;
+}
+
+.story-counts div {
+  display: grid;
+}
+
+.story-counts dt {
+  color: var(--ash);
+  font-size: 0.875rem;
+}
+
+.story-counts dd {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+}
+
+/* The office screen (DEC-069, DEC-074): fixed, full window, silent. */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--zed);
+  color: var(--white);
+}
+
+.sky-spark {
+  position: absolute;
+  transform-origin: 0 50%;
+}
+
+.sky-spark.is-glowing {
+  filter: drop-shadow(0 0 0.75rem currentColor);
+}
+
+.sky-words {
+  position: absolute;
+  left: 4vw;
+  right: 4vw;
+  bottom: 5vh;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sky-words h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 7vw, 6rem);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.sky-glow-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  color: var(--white);
+  white-space: nowrap;
+}
+
+.sky-card {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 4vw;
+  padding: 6vh 6vw;
+}
+
+.sky-card .one-number {
+  font-size: clamp(8rem, 26vw, 26rem);
+}
+
+.sky-card h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  letter-spacing: -0.045em;
+}
+
+.sky-card .one-brief {
+  font-size: clamp(1.5rem, 2.8vw, 2.5rem);
+  line-height: 1.15;
+  border-top: 0;
+  padding: 0;
+}
+
+.sky-controls {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* The Showcase brief (DEC-086), on screen and on paper. */
+.showcase-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.showcase-parts li {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.showcase-parts h2 {
+  margin: 0 0 0.375rem;
+  font-size: 1.125rem;
+}
+
+.showcase-parts .record {
+  color: var(--slate);
+  font-size: 0.9375rem;
+}
+
+@media print {
+  .site-header,
+  .site-footer,
+  .banners,
+  .skip-link,
+  .no-print {
+    display: none !important;
+  }
+
+  .showcase-parts li {
+    break-inside: avoid;
+  }
+}
+
+/* The console's Ones module (DEC-040): a white working screen. */
+.console-grid {
+  display: grid;
+  gap: 2rem;
+}
+
+.proposal {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.proposal h3 {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.proposal .meta {
+  margin: 0;
+  color: var(--slate);
+  font-size: 0.875rem;
+}
+
+.preview {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.9375rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  margin-right: 0.375rem;
+  vertical-align: -0.125rem;
+  border: 2px solid var(--zed);
+}

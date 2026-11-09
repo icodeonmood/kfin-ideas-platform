@@ -8,7 +8,7 @@ from core.db import Conn
 
 ROLES = {
     "reviewer", "lob_committee", "core_committee", "core_chair", "appeal_panel",
-    "working_group", "sponsor", "admin", "infosec", "hr",
+    "working_group", "sponsor", "admin", "infosec", "hr", "ceo",
 }  # fmt: skip
 
 

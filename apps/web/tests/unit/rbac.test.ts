@@ -118,15 +118,32 @@ describe("navigation and pages (AT-B2-06)", () => {
   it("everyone gets Share an idea, My ideas, Wall and Messages", () =>
     expect(labels("contributor")).toEqual(base));
   it("review desk adds Review", () => expect(labels("reviewer")).toEqual([...base, "Review"]));
-  it("core committee adds Desk decisions", () =>
-    expect(labels("core_committee")).toEqual([...base, "Desk decisions"]));
-  it("admin adds Admin", () => expect(labels("admin")).toEqual([...base, "Admin"]));
+  it("core committee adds Desk decisions and Ones", () =>
+    expect(labels("core_committee")).toEqual([...base, "Desk decisions", "Ones"]));
+  it("admin adds Ones and Admin", () => expect(labels("admin")).toEqual([...base, "Ones", "Admin"]));
+  it("the CEO adds Ones (DEC-042)", () => expect(labels("ceo")).toEqual([...base, "Ones"]));
   it("pages follow the same rules", () => {
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
     expect(canSeePage(rolesOf("core_committee"), "/desk-decisions")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/ones/console")).toBe(false);
+    expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
+    expect(canSeePage(rolesOf("core_committee"), "/ones/console")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
+  });
+
+  it("the Ones console: who may propose, approve and carry out (DEC-040)", () => {
+    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals").kind).toBe("allow");
+    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals").kind).toBe("deny");
+    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/decide").kind).toBe("allow");
+    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals/4/decide").kind).toBe("deny");
+    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("allow");
+    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("deny");
+    expect(decide(rolesOf("contributor"), "GET", "/api/ones/console").kind).toBe("deny");
+    expect(decide(rolesOf("contributor"), "GET", "/api/ones").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });
 });
 

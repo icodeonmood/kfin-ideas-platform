@@ -11,7 +11,8 @@ export type SwitchName =
   | "attachments.open"
   | "matching.show"
   | "comms.email"
-  | "wall.public";
+  | "wall.public"
+  | "ones.public";
 
 interface Rule {
   methods: readonly string[];
@@ -41,6 +42,7 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["attachments.open"],
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
+  { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -54,6 +56,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "matching.show": "We will show you colleagues with similar ideas a little later.",
   "comms.email": "Emails are paused for now. Your messages are in your in-app inbox.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
+  "ones.public": "The Ones are resting from the wall for a little while.",
 };
 
 /**
@@ -68,6 +71,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
+  // The Ones console keeps working whatever is paused: it is the committee's own record (DEC-040). Text checks
+  // inside these calls answer 503 on their own when the assistant is off.
+  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode|announce)\/?$/,
+  // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
+  /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

@@ -352,6 +352,17 @@ def ones_withdraw(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
     return _ones_call(withdraw, _actor(body), proposal_id)
 
 
+@app.get("/internal/ones/proposals/{proposal_id}/invite/{user_id}", dependencies=[Depends(require_token)])
+def ones_invite_view(proposal_id: int, user_id: str) -> JSONResponse:
+    from ones.views import invite_view
+
+    with connect(autocommit=True) as conn:
+        out = invite_view(conn, proposal_id, user_id)
+    if out is None:
+        return JSONResponse({"error": "not_invited"}, status_code=403)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
 @app.post("/internal/ones/proposals/{proposal_id}/messages", dependencies=[Depends(require_token)])
 def ones_message(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
     from ones.service import add_message

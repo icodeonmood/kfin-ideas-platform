@@ -14,6 +14,7 @@ export const GRANTABLE_ROLES = [
   "admin",
   "infosec",
   "hr",
+  "ceo",
 ] as const;
 export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
 

@@ -1,6 +1,6 @@
 /**
  * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
- * committee — plus Desk decisions; admin — plus Admin.
+ * committee — plus Desk decisions and Ones; admin — plus Ones and Admin (the Ones console, DEC-040).
  * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
  * keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
@@ -15,8 +15,8 @@ test.describe("navigation by role (AT-B2-06)", () => {
   const cases: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", BASE],
     ["reviewer", [...BASE, "Review"]],
-    ["core", [...BASE, "Desk decisions"]],
-    ["admin", [...BASE, "Admin"]],
+    ["core", [...BASE, "Desk decisions", "Ones"]],
+    ["admin", [...BASE, "Ones", "Admin"]],
   ];
   for (const [persona, expected] of cases) {
     test(`${persona} sees ${expected.join(", ")}`, async ({ page }) => {

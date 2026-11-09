@@ -476,3 +476,42 @@ def team(conn: Conn, manager_id: str) -> dict[str, Any]:
         )
     totals = {k: sum(p[k] for p in out) for k in ("shared", "building", "shipped")}
     return {"people": out, "totals": totals, "ones": sum(1 for p in out if p["one"])}
+
+
+def invite_view(conn: Conn, proposal_id: int, user_id: str) -> dict[str, Any] | None:
+    """What a person is asked to write for a One's tier change, and as whom (DEC-084). None if they may not."""
+    from ones.service import roles
+
+    p = conn.execute(
+        "SELECT p.*, o.number, u.name, coalesce(c.public_name_consent, false) AS consent FROM one_proposals p "
+        "JOIN ones o ON o.id = p.one_id JOIN users u ON u.id = o.user_id "
+        "LEFT JOIN comms_prefs c ON c.user_id = o.user_id WHERE p.id = %s AND p.kind IN ('tier_up', 'tier_down')",
+        (proposal_id,),
+    ).fetchone()
+    if p is None or p["state"] not in ("proposed", "approved") or str(p["subject_user_id"]) == user_id:
+        return None
+    have = roles(conn, user_id)
+    invited = conn.execute(
+        "SELECT 1 FROM one_message_invites WHERE proposal_id = %s AND user_id = %s", (proposal_id, user_id)
+    ).fetchone()
+    as_role = (
+        "committee"
+        if have & {"core_committee", "core_chair"}
+        else "ceo"
+        if "ceo" in have
+        else "peer"
+        if invited
+        else None
+    )
+    if as_role is None:
+        return None
+    written = conn.execute(
+        "SELECT 1 FROM one_messages WHERE proposal_id = %s AND author_user_id = %s", (proposal_id, user_id)
+    ).fetchone()
+    display = f"No. {p['number']}, {p['name']}" if p["consent"] else f"One No. {p['number']}"
+    return {
+        "one_display": display,
+        "tier_to_name": tier_name(p["tier_to"]),
+        "as": as_role,
+        "written": written is not None,
+    }
