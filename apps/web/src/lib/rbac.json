@@ -203,7 +203,8 @@
   "pages": [
     "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",
-    "/admin                     manage_kill_switches grant_roles"
+    "/admin                     manage_kill_switches grant_roles",
+    "/launch                    grant_roles"
   ],
   "navigation": [
     {

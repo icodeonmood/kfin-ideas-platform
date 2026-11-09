@@ -894,3 +894,162 @@ blockquote {
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* Launch screen for the lamp-lighting go-live (DEC-046). Covers the whole window; Zed with white text. */
+.launch {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: var(--zed);
+  color: var(--white);
+}
+
+.launch :focus-visible {
+  outline-color: var(--white);
+}
+
+.launch-intro {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.launch-intro p {
+  color: var(--ash);
+}
+
+.launch-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.launch .launch-ghost {
+  border-color: var(--white);
+  background: transparent;
+  color: var(--white);
+}
+
+.launch .launch-ghost:hover {
+  background: var(--graphite);
+}
+
+.launch-stage {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 2rem;
+  min-height: 100%;
+  padding: 3rem clamp(1.5rem, 5vw, 5rem);
+}
+
+.launch-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+
+.launch-mark {
+  width: auto;
+  height: min(42vh, 26rem);
+  overflow: visible;
+  color: var(--white);
+}
+
+.launch-words h1 {
+  margin: 0;
+  font-size: clamp(3rem, 9vw, 9rem);
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.launch-tagline {
+  margin: 1rem 0 0;
+  font-size: clamp(1.5rem, 3.2vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.launch-invite {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 3vw, 2.5rem);
+}
+
+.launch-qr {
+  width: clamp(7rem, 18vh, 13rem);
+  height: auto;
+  border-radius: 8px;
+}
+
+.launch-invite-line {
+  margin: 0;
+  font-size: clamp(1.75rem, 3.5vw, 3.25rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.launch-url {
+  margin: 0.5rem 0 0;
+  color: var(--ash);
+  font-size: clamp(1rem, 1.6vw, 1.5rem);
+}
+
+.launch-back {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line-dark);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ash);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+/* The reveal: each part waits hidden until its moment, then moves once. Reduced motion skips to the end. */
+.launch-spark,
+.launch-ember,
+.launch-zero,
+.launch-name,
+.launch-tagline,
+.launch-invite {
+  opacity: 0;
+  transition:
+    opacity 900ms ease,
+    transform 1600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.launch-spark {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  transform: scale(0.02);
+}
+
+.launch-ember {
+  transition-delay: 1300ms;
+}
+
+.launch-zero {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transform: scale(0.6);
+}
+
+.launch-name,
+.launch-tagline,
+.launch-invite {
+  transform: translateY(0.5rem);
+}
+
+.launch .is-on {
+  opacity: 1;
+  transform: none;
+}

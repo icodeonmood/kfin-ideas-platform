@@ -109,6 +109,7 @@ pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /desk-decisions            view_review_queue
   - /admin                     manage_kill_switches grant_roles     # any of these
+  - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
 
 # Navigation (AT-B2-06): everyone gets the first three; the rest by role.
 navigation:
