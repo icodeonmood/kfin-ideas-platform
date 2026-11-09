@@ -42,7 +42,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
    - **Suresh Patil's** removal, approved at yesterday's meeting and waiting for the admin. As Sana, use "Carry out and send"; the thank-you message goes to him.
 
    The roster shows No. 7 as resting after Gaurav retired. Each One has their own Showcase brief; Ananya's is partly filled in.
-10. **Leaderboard** (Ananya): Menu, My ideas, then "The Ones leaderboard". Only Ones can see it.
+10. **Leaderboard** (Ananya): Menu, My ideas, then "The Ones leaderboard". Only Ones can see it, and a One who has not agreed to be named shows as their number (BLD-109).
 11. **Manager view** (Rahul): `/my-team`, his four direct reports, counts only.
 12. **Office screen** (anyone): `/constellation`, the sky of sparks, alternating with impact cards. As Sana, "Switch to ambient mode" in the console makes one spark glow every ten seconds.
 13. **Launch screen** (Sana): `/launch`, then Start, with sound.
