@@ -10,7 +10,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
-import { openProposalHolding, runGroupingNow } from "./proposals";
+import { nameTheGroup, openProposalHolding, runGroupingNow } from "./proposals";
 import { withSwitchLock } from "./switch-lock";
 
 async function share(page: Page, words: string): Promise<string> {
@@ -117,7 +117,7 @@ test("the desk runs the weekly grouping and approves a proposal", async ({ brows
         await expect(r.getByRole("link", { name: ideaId })).toBeVisible();
       }
       await expectNoSeriousAxeIssues(r);
-      await r.getByLabel("Name (8 words or fewer)").fill("Ledger matched by hand");
+      await nameTheGroup(r, "Ledger matched by hand");
       await r.getByRole("button", { name: "Approve this group" }).click();
       await expect(
         r.getByRole("status").filter({ hasText: /Approved\. The group is CL-\d{4}\./ }),

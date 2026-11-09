@@ -35,3 +35,20 @@ export async function runGroupingNow(page: Page, timeout = 45_000): Promise<void
     });
   }).toPass({ timeout, intervals: [2_000] });
 }
+
+/**
+ * If the assistant could not draft the group's summary (in fake mode the dev database's older proposals can trip
+ * its checks, and the gateway then switches it off for a while), the desk writes the name, description and
+ * problem itself, as it would in production. Otherwise only the name is set when one is given.
+ */
+export async function nameTheGroup(page: Page, name: string): Promise<void> {
+  await page.getByLabel("Name (8 words or fewer)").fill(name);
+  if (await page.getByText("The assistant could not draft the group's name and statement").count()) {
+    await page
+      .getByLabel("Description (everyone can see this)")
+      .fill("Paper forms wait at branch counters for a second check.");
+    await page
+      .getByLabel("Combined problem")
+      .fill("Paper forms wait at branch counters for a second check every day.");
+  }
+}

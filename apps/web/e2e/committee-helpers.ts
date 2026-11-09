@@ -7,7 +7,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
-import { openProposalHolding, runGroupingNow } from "./proposals";
+import { nameTheGroup, openProposalHolding, runGroupingNow } from "./proposals";
 
 export const CHAIR = "SYN-00006";
 export const MEMBERS = ["SYN-00007", "SYN-00008", "SYN-00009", "SYN-00010"];
@@ -128,17 +128,7 @@ export async function toRevealedRound(
   for (const ideaId of [first, second]) await waitUntilIndexed(ideaId);
   await runGroupingNow(r);
   await openProposalHolding(r, [first, second]);
-  // If the assistant could not draft the summary (the dev database's older proposals can trip its checks and
-  // switch it off for a while), the desk writes the name and description itself, as it would in production.
-  if (await r.getByText("The assistant could not draft the group's name and statement").count()) {
-    await r.getByLabel("Name (8 words or fewer)").fill("Paper forms pile up at the counter");
-    await r
-      .getByLabel("Description (everyone can see this)")
-      .fill("Paper forms wait at branch counters for a second check.");
-    await r
-      .getByLabel("Combined problem")
-      .fill("Paper forms wait at branch counters for a second check every day.");
-  }
+  await nameTheGroup(r, "Paper forms pile up at the counter");
   await r.getByRole("button", { name: "Approve this group" }).click();
   await expect(r.getByRole("status").filter({ hasText: /The group is (CL-\d{4})/ })).toBeVisible();
   const cluster = /CL-\d{4}/.exec(await r.getByRole("status").innerText())![0];
