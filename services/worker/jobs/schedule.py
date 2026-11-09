@@ -22,6 +22,8 @@ DAILY: dict[str, clock] = {
     "drafts.purge": clock(3, 30),
     "comms.nudges": clock(10, 0),  # quick captures still weak on day 2 and day 7 (§3.7)
     "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)
+    "learning.run": clock(5, 30),  # §5: the handler decides which loops are due today
+    "delivery.tick": clock(9, 30),  # §4.9 to §4.11: reminders and escalations
 }
 
 # job type -> (ISO weekday, time of day IST). Enqueued once per ISO week, on that day at or after that time.
@@ -30,6 +32,7 @@ WEEKLY: dict[str, tuple[int, clock]] = {
         7,
         clock(22, 0),
     ),  # §3.5: Sunday 22:00; the job skips itself while `clusters.batch` is off
+    "lenses.build": (1, clock(5, 0)),  # §4.14 and the §6 job table: Monday 05:00, counts only
 }
 
 

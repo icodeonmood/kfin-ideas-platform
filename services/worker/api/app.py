@@ -556,3 +556,179 @@ def cluster_proposal_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
     from cluster.proposals import act
 
     return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)
+
+
+# --- Delivery (§4.8 to §4.11), lenses (§4.14) and learning (§5). The web checks the capability and passes who is
+# acting; the worker checks each person's part in the delivery again. Refusals answer with a code only.
+
+
+def _delivery_call(fn: Any, *args: Any, status: int = 200) -> JSONResponse:
+    from gateway import AgentFailed
+    from ones.text import OnesRefused
+
+    with connect(autocommit=True) as conn:
+        try:
+            return JSONResponse(fn(conn, *args), status_code=status, headers={"Cache-Control": "no-store"})
+        except OnesRefused as exc:
+            code, _, rest = exc.code.partition(":")
+            body: dict[str, Any] = {"error": code}
+            if rest:
+                body["missing"] = rest.split(",")
+            return JSONResponse(body, status_code=exc.status)
+        except AgentFailed as exc:
+            return JSONResponse({"error": "checks_unavailable", "code": exc.code}, status_code=503)
+
+
+@app.get("/internal/delivery/console/{user_id}", dependencies=[Depends(require_token)])
+def delivery_console(user_id: str) -> JSONResponse:
+    from delivery.views import console
+
+    return _delivery_call(console, user_id)
+
+
+@app.post("/internal/delivery", dependencies=[Depends(require_token)])
+def delivery_start(body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import start
+
+    return _delivery_call(start, _actor(body), body, status=201)
+
+
+@app.get("/internal/delivery/{delivery_id}/view/{user_id}", dependencies=[Depends(require_token)])
+def delivery_view(delivery_id: str, user_id: str) -> JSONResponse:
+    from delivery.views import detail
+
+    with connect(autocommit=True) as conn:
+        out = detail(conn, user_id, delivery_id)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.put("/internal/delivery/{delivery_id}/pack", dependencies=[Depends(require_token)])
+def delivery_pack(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import save_pack
+
+    return _delivery_call(save_pack, _actor(body), delivery_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/submit", dependencies=[Depends(require_token)])
+def delivery_submit(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import submit
+
+    return _delivery_call(submit, _actor(body), delivery_id)
+
+
+@app.post("/internal/delivery/{delivery_id}/approve", dependencies=[Depends(require_token)])
+def delivery_approve(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import approve
+
+    return _delivery_call(approve, _actor(body), delivery_id)
+
+
+@app.post("/internal/delivery/{delivery_id}/send-back", dependencies=[Depends(require_token)])
+def delivery_send_back(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import send_back
+
+    return _delivery_call(send_back, _actor(body), delivery_id)
+
+
+@app.post("/internal/delivery/{delivery_id}/link", dependencies=[Depends(require_token)])
+def delivery_link(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import link_page
+
+    return _delivery_call(link_page, _actor(body), delivery_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/phase", dependencies=[Depends(require_token)])
+def delivery_phase(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import set_phase
+
+    return _delivery_call(set_phase, _actor(body), delivery_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/milestones", dependencies=[Depends(require_token)])
+def delivery_milestone_add(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import add_milestone
+
+    return _delivery_call(add_milestone, _actor(body), delivery_id, body, status=201)
+
+
+@app.post("/internal/delivery/{delivery_id}/milestones/{milestone_id}", dependencies=[Depends(require_token)])
+def delivery_milestone_set(delivery_id: str, milestone_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import set_milestone
+
+    return _delivery_call(set_milestone, _actor(body), delivery_id, milestone_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/complete", dependencies=[Depends(require_token)])
+def delivery_complete(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import complete_fix
+
+    return _delivery_call(complete_fix, _actor(body), delivery_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/approve-completion", dependencies=[Depends(require_token)])
+def delivery_approve_completion(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import approve_completion
+
+    return _delivery_call(approve_completion, _actor(body), delivery_id)
+
+
+@app.put("/internal/delivery/{delivery_id}/measurements/{mark}", dependencies=[Depends(require_token)])
+def delivery_measure_fill(delivery_id: str, mark: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import fill
+
+    return _delivery_call(fill, _actor(body), delivery_id, mark, body)
+
+
+@app.post(
+    "/internal/delivery/{delivery_id}/measurements/{mark}/confirm", dependencies=[Depends(require_token)]
+)
+def delivery_measure_confirm(delivery_id: str, mark: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import confirm
+
+    return _delivery_call(confirm, _actor(body), delivery_id, mark)
+
+
+@app.post(
+    "/internal/delivery/{delivery_id}/measurements/{mark}/finance", dependencies=[Depends(require_token)]
+)
+def delivery_measure_finance(delivery_id: str, mark: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.service import finance_confirm
+
+    return _delivery_call(finance_confirm, _actor(body), delivery_id, mark)
+
+
+@app.get("/internal/lenses/{user_id}", dependencies=[Depends(require_token)])
+def lenses_view(user_id: str) -> JSONResponse:
+    from lenses import view
+
+    return _delivery_call(view, user_id)
+
+
+@app.post("/internal/lenses/rebuild", dependencies=[Depends(require_token)])
+def lenses_rebuild(body: dict[str, Any]) -> JSONResponse:
+    from lenses import rebuild
+
+    return _delivery_call(rebuild, _actor(body))
+
+
+@app.get("/internal/learning/{user_id}", dependencies=[Depends(require_token)])
+def learning_view(user_id: str) -> JSONResponse:
+    from learning.run import view
+
+    return _delivery_call(view, user_id)
+
+
+@app.post("/internal/learning/proposals/{proposal_id}/decide", dependencies=[Depends(require_token)])
+def learning_decide(proposal_id: str, body: dict[str, Any]) -> JSONResponse:
+    from learning.proposals import decide
+
+    return _delivery_call(decide, _actor(body), proposal_id, body)
+
+
+@app.post("/internal/learning/run", dependencies=[Depends(require_token)])
+def learning_run(body: dict[str, Any]) -> JSONResponse:
+    from learning.run import run_now
+
+    return _delivery_call(run_now, _actor(body), body)

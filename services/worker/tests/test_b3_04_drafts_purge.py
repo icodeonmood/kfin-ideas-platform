@@ -44,7 +44,10 @@ def test_schedule_enqueues_once_a_day(db: Any) -> None:
     assert daily(datetime(2026, 11, 20, 1, 59, tzinfo=ist)) == []  # before 02:00 (reconcile)
     assert daily(datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.purge at 03:30
     assert daily(datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.purge"]
-    assert daily(datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == []  # already today
+    assert daily(datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == [
+        "learning.run"
+    ]  # 05:30; the rest already today
+    assert daily(datetime(2026, 11, 20, 9, 31, tzinfo=ist)) == ["delivery.tick"]  # 09:30
     assert daily(datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.purge"]
 
 
@@ -54,6 +57,8 @@ def test_weekly_and_every_few_minutes(db: Any) -> None:
     sunday = datetime(2026, 11, 22, 21, 59, tzinfo=ist)
     assert "cluster.batch" not in enqueue_due(db, sunday)
     assert "cluster.batch" in enqueue_due(db, datetime(2026, 11, 22, 22, 0, tzinfo=ist))  # §3.5 Sunday 22:00
+    assert "lenses.build" in enqueue_due(db, datetime(2026, 11, 23, 5, 0, tzinfo=ist))  # Monday 05:00 (§4.14)
+    assert "lenses.build" not in enqueue_due(db, datetime(2026, 11, 23, 7, 0, tzinfo=ist))
     assert "cluster.batch" not in enqueue_due(db, datetime(2026, 11, 22, 23, 0, tzinfo=ist))  # once a week
     assert "attachments.recheck" in enqueue_due(db, datetime(2026, 11, 23, 10, 0, tzinfo=ist))
     assert "attachments.recheck" not in enqueue_due(db, datetime(2026, 11, 23, 10, 5, tzinfo=ist))

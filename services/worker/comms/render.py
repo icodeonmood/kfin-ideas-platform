@@ -229,6 +229,8 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         data["links"]["item"] = f"{base}/review"
     if event.startswith("ones."):
         _ones_variables(conn, data, event, refs, base)
+    if event.startswith("delivery."):
+        _delivery_variables(conn, data, refs, base, user_id)
     if event == "sla.breached":
         data["breach"] = {"days_late": refs.get("days_late", 0), "limit_wd": refs.get("limit_wd", 0)}
         data["item"] = {
@@ -330,3 +332,56 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
             "count_word": "colleague" if len(lines) == 1 else "colleagues",
             "list": "\n\n".join(lines),
         }
+
+
+MARK_WORDS = {"day_30": "30 days after it went live", "day_90": "90 days after it went live"}
+
+
+def _delivery_variables(
+    conn: Conn, data: dict[str, Any], refs: dict[str, Any], base: str, user_id: str
+) -> None:
+    """Variables for the delivery messages (§4.8 to §4.11): the idea's checked neutral summary (or a group's ID),
+    the plain phase words, and which sentence applies. IDs and codes in, never idea text beyond the summary."""
+    from delivery.phases import shown_as
+    from views.common import checked_summary
+
+    subject = str(refs.get("subject_id") or "")
+    label = subject
+    if subject.startswith("IDEA-"):
+        row = conn.execute("SELECT canvas FROM ideas WHERE idea_id = %s", (subject,)).fetchone()
+        label = (
+            checked_summary(conn, ((row["canvas"] if row else None) or {}).get("neutral_summary")) or subject
+        )
+    elif subject.startswith("CL-"):
+        label = f"the group {subject}"
+    phase = str(refs.get("phase") or "")
+    reason = str(refs.get("reason") or "")
+    data["delivery"] = {
+        "label": label,
+        "phase_words": shown_as(phase) or {"started": "Started", "measured_30": "First results in",
+                                           "closed": "Closed", "resolved": "Fixed"}.get(phase, ""),
+        "started": phase == "started",
+        "building": phase not in ("", "started", "shipped", "resolved", "measured_30", "closed"),
+        "shipped": phase == "shipped",
+        "resolved": phase == "resolved",
+        "measured": phase == "measured_30",
+        "closed": phase == "closed",
+        "outcome_words": "it met its target" if refs.get("outcome") == "target_met"
+        else "it closed short of its target, with the lessons written down",
+        "mark_words": MARK_WORDS.get(str(refs.get("mark") or ""), ""),
+        "milestone": reason == "milestone",
+        "plan_late": reason == "plan_late",
+        "blocked": reason == "blocked",
+    }  # fmt: skip
+    # Contributors are told about their idea, not given the delivery page (it is for the people doing the work):
+    # anyone who cannot see the delivery gets My ideas instead.
+    link = f"{base}/my-ideas"
+    if refs.get("delivery_id"):
+        from delivery.service import Refused, _delivery, can_see
+
+        try:
+            if can_see(conn, _delivery(conn, refs["delivery_id"]), user_id):
+                link = f"{base}/delivery/{int(refs['delivery_id'])}"
+        except Refused:
+            pass
+    data["links"]["delivery"] = link

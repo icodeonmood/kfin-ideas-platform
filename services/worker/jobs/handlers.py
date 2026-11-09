@@ -172,3 +172,27 @@ def attachments_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     from attachments import service
 
     log.info("attachments.recheck_queued", file_count=service.recheck(conn))
+
+
+@handler("delivery.tick")
+def delivery_tick(conn: Conn, payload: dict[str, Any]) -> None:
+    """Daily: measurement reminders, fix-track check-ins, overdue milestones and blocked work (§4.9 to §4.11)."""
+    from delivery.jobs import tick
+
+    tick(conn)
+
+
+@handler("lenses.build")
+def lenses_build(conn: Conn, payload: dict[str, Any]) -> None:
+    """Weekly on Mondays (or on request): the LOB and role lenses, counts only (§4.14)."""
+    from lenses import build
+
+    build(conn)
+
+
+@handler("learning.run")
+def learning_run(conn: Conn, payload: dict[str, Any]) -> None:
+    """Daily: whichever learning loops are due today (§5); nothing while `learning.jobs` is off."""
+    from learning.run import run
+
+    run(conn)

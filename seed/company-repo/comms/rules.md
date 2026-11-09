@@ -258,4 +258,84 @@ events:
     urgency: routine
     approval: null
     signer: club_team
+  delivery.approval_needed:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-approval-needed
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.phase_changed:
+    day_one: true
+    audiences:
+    - submitter
+    - existing_contributors
+    - current_owner
+    template: delivery-phase-changed
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.completion_to_approve:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-completion
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.measure_due:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-measure-due
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.measure_to_confirm:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-measure-confirm
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.fix_checkin:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-fix-checkin
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.overdue:
+    day_one: true
+    audiences:
+    - current_owner
+    - escalation_target
+    template: delivery-overdue
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
 ```

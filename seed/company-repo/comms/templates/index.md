@@ -19,3 +19,10 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
 - [cluster-approved.md](cluster-approved.md) — Your idea is now part of {{cluster.id}} (draft for HR sign-off)
+- [delivery-approval-needed.md](delivery-approval-needed.md) — Your approval: the handover for {{delivery.label}} (draft for HR sign-off)
+- [delivery-phase-changed.md](delivery-phase-changed.md) — {{delivery.label}}: {{delivery.phase_words}} (draft for HR sign-off)
+- [delivery-completion.md](delivery-completion.md) — Fixed? Please confirm {{delivery.label}} (draft for HR sign-off)
+- [delivery-measure-due.md](delivery-measure-due.md) — Results due: {{delivery.label}}, {{delivery.mark_words}} (draft for HR sign-off)
+- [delivery-measure-confirm.md](delivery-measure-confirm.md) — Please confirm the results for {{delivery.label}} (draft for HR sign-off)
+- [delivery-fix-checkin.md](delivery-fix-checkin.md) — Friday check-in: {{delivery.label}} (draft for HR sign-off)
+- [delivery-overdue.md](delivery-overdue.md) — Needs attention: {{delivery.label}} (draft for HR sign-off)
