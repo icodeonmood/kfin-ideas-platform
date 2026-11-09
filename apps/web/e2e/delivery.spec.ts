@@ -17,7 +17,15 @@ test("the admin sees Delivery, Lenses and Learning, each with its coming-soon no
   await page.goto("/lenses");
   await expect(page.getByRole("heading", { level: 1, name: "Lenses" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "People around each group" })).toBeVisible();
-  await expect(page.getByText("Recurring friction themes for each role: coming soon")).toBeVisible();
+  // BLD-139: the real section, with approved themes or "No approved themes yet." (the demo seeds one set).
+  const themes = page.getByRole("heading", { level: 3, name: "Recurring friction themes for each role" });
+  await expect(themes).toBeVisible();
+  await expect(
+    page
+      .getByText("No approved themes yet.")
+      .or(page.getByRole("table", { name: /friction themes by role/ })),
+  ).toBeVisible();
+  await expect(page.getByText("Recurring friction themes for each role: coming soon")).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
 
   await page.goto("/admin");
