@@ -21,6 +21,7 @@ const ERRORS: Record<string, string> = {
   already_appealed: "This decision has already been appealed.",
   window_closed: "The time to appeal this decision has passed.",
   not_appealable: "This decision can't be appealed.",
+  superseded: "The committee has made a later decision on this group, so this one can no longer be appealed.",
   checks_unavailable: "We couldn't check your statement just now. Please try again in a few minutes.",
   no_panel_available:
     "There is no committee member free of a link to this group. Please contact the 1% Club team.",

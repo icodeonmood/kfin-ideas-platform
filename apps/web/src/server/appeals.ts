@@ -30,9 +30,8 @@ export const decideAppeal = (me: CurrentUser, id: string, body: Record<string, u
   if (!APL.test(id)) throw new SubmissionError(404, "not_found");
   return call<Record<string, unknown>>(`/internal/appeals/${id}/decision`, post({ ...body, user_id: me.id }));
 };
-export const report = (kind: "fairness" | "calibration", from?: string, to?: string) => {
-  const q = new URLSearchParams();
-  if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) q.set("start", from);
-  if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) q.set("end", to);
+export const report = (me: CurrentUser, kind: "fairness" | "calibration", quarter?: string) => {
+  const q = new URLSearchParams({ user_id: me.id });
+  if (quarter && /^\d{4}-Q[1-4]$/.test(quarter)) q.set("quarter", quarter);
   return call<Record<string, unknown>>(`/internal/reports/${kind}?${q.toString()}`);
 };

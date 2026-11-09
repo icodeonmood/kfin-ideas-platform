@@ -52,6 +52,8 @@ const ERRORS: Record<string, string> = {
   own_idea: "You can't take part in deciding a group that holds an idea you shared or joined.",
   conflict_of_interest: "You have a conflict on this group, so you can't take part in its review.",
   already_collated: "The assessments are already collated.",
+  overturned_on_appeal:
+    "The appeal panel overturned the earlier decision: pick the group, or park it for capacity until the next cycle.",
   chair_only: "Only the chair can do this.",
 };
 

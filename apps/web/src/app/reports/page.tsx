@@ -74,6 +74,8 @@ function Table({ caption, rows }: { caption: string; rows: Row[] }) {
 
 type Fairness = {
   period: { from: string; to: string };
+  quarter: string;
+  quarters: string[];
   breaches: Row[];
   appeals: Row[];
   by_lob: Row[];
@@ -85,34 +87,32 @@ type Fairness = {
 };
 type Calibration = { prescore_vs_committee: Row[]; desk_corrections: Row[]; reviews: Cell };
 
-export default async function Reports({
-  searchParams,
-}: {
-  searchParams: Promise<{ from?: string; to?: string }>;
-}) {
+export default async function Reports({ searchParams }: { searchParams: Promise<{ quarter?: string }> }) {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const { from, to } = await searchParams;
+  const { quarter } = await searchParams;
   const [fair, cal] = (await Promise.all([
-    report("fairness", from, to),
-    report("calibration", from, to),
+    report(me, "fairness", quarter),
+    report(me, "calibration", quarter),
   ])) as [Fairness, Calibration];
   return (
     <>
       <h1>Fairness and calibration</h1>
       <p>
         Counts only, with names removed. Any count under 5 shows as &quot;fewer than 5&quot;, and a rate based
-        on fewer than 5 shows as &quot;too few to show&quot;. Period: {fair.period.from.slice(0, 10)} to{" "}
-        {fair.period.to.slice(0, 10)} (the current quarter unless you choose dates).
+        on fewer than 5 shows as &quot;too few to show&quot;. Reports cover whole quarters, so that no single
+        person can be worked out by comparing periods.
       </p>
-      <form method="get" aria-label="Choose the period">
+      <form method="get" aria-label="Choose the quarter">
         <div className="field">
-          <label htmlFor="r-from">From</label>
-          <input id="r-from" name="from" type="date" defaultValue={from ?? ""} />
-        </div>
-        <div className="field">
-          <label htmlFor="r-to">To</label>
-          <input id="r-to" name="to" type="date" defaultValue={to ?? ""} />
+          <label htmlFor="r-quarter">Quarter</label>
+          <select id="r-quarter" name="quarter" defaultValue={fair.quarter}>
+            {fair.quarters.map((q) => (
+              <option key={q} value={q}>
+                {q.replace("-", " ")}
+              </option>
+            ))}
+          </select>
         </div>
         <button type="submit" className="button button-secondary">
           Show
