@@ -148,3 +148,11 @@ def reconcile_job(conn: Conn, payload: dict[str, Any]) -> None:
     from reconcile import run
 
     run()
+
+
+@handler("cluster.batch")
+def cluster_batch(conn: Conn, payload: dict[str, Any]) -> None:
+    """The weekly clustering run (§4.4 B); proposals only. Skips itself while `clusters.batch` is off."""
+    from cluster.batch import run_batch
+
+    run_batch(conn, manual_by=payload.get("manual_by"))

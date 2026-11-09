@@ -1,0 +1,67 @@
+{
+  "description": "Three colleagues in two LOBs raise manual NIGO checks on SIP forms; two propose fixes.",
+  "input": {
+    "mode": "cluster",
+    "existing": null,
+    "members": [
+      {
+        "ref": "M1",
+        "kind": "problem_with_solution",
+        "one_line": "Branch staff re-check every SIP form by hand for missing fields",
+        "details": "At the Hyderabad branch we open each physical SIP form and tick 14 fields on a printed checklist. About one in five forms comes back NIGO a day later anyway. A validation step at scanning would catch most of these.",
+        "who": {"segments": ["investors", "kfin_teams"], "frequency_or_reach": "daily"},
+        "category": "cost_saving",
+        "play": "process_improvement",
+        "areas": ["AREA-process"],
+        "lobs": ["LOB-mf"],
+        "roles_affected": ["ROLE-ops-executive"],
+        "fix": "Validate the mandatory fields when the form is scanned, before it reaches the processing queue."
+      },
+      {
+        "ref": "M2",
+        "kind": "problem",
+        "one_line": "SIF subscription forms bounce for missing nominee details",
+        "details": "In SIF operations the same manual check happens on subscription forms. The most common miss is nominee details. Each bounce costs a call to the distributor.",
+        "who": {"segments": ["distributors", "kfin_teams"], "frequency_or_reach": "weekly"},
+        "category": "cost_saving",
+        "play": "process_improvement",
+        "areas": ["AREA-process"],
+        "lobs": ["LOB-sif"],
+        "roles_affected": ["ROLE-ops-executive"],
+        "fix": null
+      },
+      {
+        "ref": "M3",
+        "kind": "problem_with_solution",
+        "one_line": "NIGO forms found too late, after the cut-off",
+        "details": "We only learn a form is NIGO after the NAV cut-off, so the investor loses a day. A checklist inside the scanning app would flag gaps while the distributor is still at the counter.",
+        "who": {"segments": ["investors", "distributors"], "frequency_or_reach": "daily"},
+        "category": "cost_saving",
+        "play": "process_improvement",
+        "areas": ["AREA-process", "AREA-customer-experience"],
+        "lobs": ["LOB-mf"],
+        "roles_affected": ["ROLE-ops-executive", "ROLE-client-service"],
+        "fix": "Show missing fields in the scanning app while the distributor is still at the counter."
+      }
+    ]
+  },
+  "output": {
+    "name": "Manual NIGO checks on subscription forms",
+    "description": "Operations teams check subscription forms for missing fields by hand, and gaps are found too late; raised by three colleagues in two LOBs.",
+    "problem": "Physical SIP and SIF subscription forms are checked by hand against a printed list of mandatory fields. Gaps such as missing nominee details are still found only after processing, often after the NAV cut-off. Investors lose a day and branches spend time calling distributors back.",
+    "variations": [
+      {"member": "M2", "note": "The same manual check happens in SIF operations; missing nominee details are the most common gap."},
+      {"member": "M3", "note": "The cost is timing: gaps found after the cut-off cost the investor a day."}
+    ],
+    "solution": [
+      {"text": "Validate mandatory fields at scanning, before the form reaches the processing queue.", "credit": ["M1"]},
+      {"text": "Show missing fields in the scanning app while the distributor is still at the counter.", "credit": ["M3"]}
+    ],
+    "lobs": ["LOB-mf", "LOB-sif"],
+    "roles_affected": ["ROLE-ops-executive", "ROLE-client-service"],
+    "open_questions": [
+      "What share of NIGO cases come from fields a scanner could check?",
+      "Does the SIF form use the same scanning app as MF?"
+    ]
+  }
+}

@@ -186,6 +186,25 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         data["requester"] = {"lob_name": (link["hr_department"] if link else None) or "another team"}
         data["request"] = {"context": context}
         data["links"]["request"] = f"{base}/review"
+    if event == "cluster.approved" and refs.get("cluster_id"):
+        # The name and description are checked to hold no tags, names or identifiers (cluster-summary), so every
+        # contributor may read them as written.
+        row = conn.execute(
+            "SELECT id, title, summary, member_count FROM clusters WHERE id = %s", (refs["cluster_id"],)
+        ).fetchone()
+        mine = conn.execute(
+            "SELECT i.idea_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
+            "WHERE i.cluster_id = %s AND m.user_id = %s ORDER BY i.idea_id LIMIT 1",
+            (refs["cluster_id"], user_id),
+        ).fetchone()
+        count = int(row["member_count"]) if row else 0
+        data["cluster"] = {
+            "id": refs["cluster_id"],
+            "name": (row["title"] if row else None) or refs["cluster_id"],
+            "description": ((row["summary"] or {}).get("description") if row else None) or "",
+            "other_count": max(count - 1, 0),
+        }
+        data["links"]["idea"] = f"{base}/ideas/{mine['idea_id']}" if mine else f"{base}/my-ideas"
     if event == "sla.reminder":
         timer = conn.execute(
             "SELECT due_at FROM sla_timers WHERE id = %s", (refs.get("timer_id"),)

@@ -145,6 +145,9 @@
     "wall.public": [
       "admin",
       "hr"
+    ],
+    "clusters.batch": [
+      "admin"
     ]
   },
   "public": [
@@ -192,6 +195,10 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
+    "GET /api/review/cluster-runs                      view_review_queue",
+    "POST /api/review/cluster-runs                     approve_cluster_proposals",
+    "GET /api/review/cluster-proposals/{id}            view_review_queue",
+    "POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",

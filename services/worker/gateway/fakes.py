@@ -196,7 +196,49 @@ def judge(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     return {"results": results, "best_same": best}
 
 
-BUILDERS = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist, "judge": judge}
+def _clip(text: Any, words: int) -> str:
+    return " ".join(str(text or "").split()[:words])
+
+
+def _untagged(text: Any) -> str:
+    return " ".join(TAG_RE.sub("", str(text or "")).split())
+
+
+def cluster_summary(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """Built from the members' own words: the first member's one-line as the name, each later member as a
+    variation, every proposed fix credited to its member (dev and tests only)."""
+    members = [m for m in inputs.get("members") or [] if isinstance(m, dict)][:30]
+    existing = inputs.get("existing") or {}
+    first = members[0] if members else {}
+    name = _clip(existing.get("name") or _untagged(first.get("one_line")) or "Shared problem", 8)
+    lobs = sorted({x for m in members for x in m.get("lobs") or []})[:12]
+    roles = sorted({x for m in members for x in m.get("roles_affected") or []})[:12]
+    problem = " ".join(str(m.get("one_line") or "").strip().rstrip(".") + "." for m in members[:5])
+    return {
+        "name": name if len(name) >= 3 else "Shared problem",
+        "description": _clip(
+            f"{_untagged(first.get('one_line')) or 'A shared problem'}; raised by {len(members)} colleagues.",
+            25,
+        ),
+        "problem": problem if len(problem) >= 20 else "Several colleagues describe the same problem.",
+        "variations": [
+            {"member": m["ref"], "note": _clip(m.get("one_line"), 30) or "Same problem."} for m in members[1:]
+        ],
+        "solution": [{"text": _clip(m["fix"], 90), "credit": [m["ref"]]} for m in members if m.get("fix")][
+            :4
+        ],
+        "lobs": lobs,
+        "roles_affected": roles,
+        "open_questions": ["How often does this happen across the LOBs named?"],
+    }
+
+
+BUILDERS = {
+    "gatekeeper": gatekeeper,
+    "canvas-assist": canvas_assist,
+    "judge": judge,
+    "cluster-summary": cluster_summary,
+}
 
 
 def output_for(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:

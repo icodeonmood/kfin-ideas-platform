@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
+from psycopg.types.json import Jsonb
 
 from api.canvas_config import canvas_config
 from attachments import service as attachments
@@ -294,3 +295,61 @@ def idea_page_view(idea_id: str, view: str, mode: str, user_id: str) -> JSONResp
     if out is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+# ---- weekly clustering (§4.4 B) -------------------------------------------------------------------------------
+
+
+@app.post("/internal/cluster-runs", dependencies=[Depends(require_token)])
+def cluster_run_now(body: dict[str, Any]) -> JSONResponse:
+    """The desk asks for a run now (the web app checked `approve_cluster_proposals` and the `clusters.batch`
+    switch). The run itself is a job, so the request returns at once."""
+    from core import killswitch
+
+    user = str(body.get("user_id") or "")
+    with connect(autocommit=True) as conn:
+        if not killswitch.is_on("clusters.batch", conn):
+            return JSONResponse({"error": "switched_off"}, status_code=503)
+        busy = conn.execute(
+            "SELECT 1 FROM jobs WHERE type = 'cluster.batch' AND state IN ('queued', 'running') LIMIT 1"
+        ).fetchone()
+        if busy:
+            return JSONResponse({"error": "run_in_progress"}, status_code=409)
+        row = conn.execute(
+            "INSERT INTO jobs (type, payload) VALUES ('cluster.batch', %s) RETURNING id",
+            (Jsonb({"manual_by": user}),),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, entity) VALUES (%s, 'cluster.run_requested', 'cluster_runs')",
+            (f"user:{user}",),
+        )
+    return JSONResponse({"job_id": row["id"] if row else None}, status_code=202)
+
+
+@app.get("/internal/cluster-runs", dependencies=[Depends(require_token)])
+def cluster_runs_list() -> JSONResponse:
+    from cluster.view import runs
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse(runs(conn), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/cluster-proposals/{item_id}/view", dependencies=[Depends(require_token)])
+def cluster_proposal_view(item_id: int, mode: str = "neutral") -> JSONResponse:
+    from cluster.view import proposal_view
+
+    if mode not in ("real", "neutral"):
+        return JSONResponse({"error": "bad_mode"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        body = proposal_view(conn, item_id, "real" if mode == "real" else "neutral")
+    if body is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/cluster-proposals/{item_id}/action", dependencies=[Depends(require_token)])
+def cluster_proposal_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
+    """Approve, remove a member or reject (the web app checked `approve_cluster_proposals`)."""
+    from cluster.proposals import act
+
+    return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)

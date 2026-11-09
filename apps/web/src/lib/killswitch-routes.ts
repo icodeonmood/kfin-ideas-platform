@@ -11,7 +11,8 @@ export type SwitchName =
   | "attachments.open"
   | "matching.show"
   | "comms.email"
-  | "wall.public";
+  | "wall.public"
+  | "clusters.batch";
 
 interface Rule {
   methods: readonly string[];
@@ -41,6 +42,7 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["attachments.open"],
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
+  { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -54,6 +56,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "matching.show": "We will show you colleagues with similar ideas a little later.",
   "comms.email": "Emails are paused for now. Your messages are in your in-app inbox.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
+  "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
 };
 
 /**
@@ -68,6 +71,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
+  /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

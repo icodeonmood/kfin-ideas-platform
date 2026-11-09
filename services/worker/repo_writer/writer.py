@@ -38,11 +38,14 @@ from repo_writer.render import (
     render_idea,
     repo_path_for,
 )
+from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
 
 log = get_logger("repo_writer")
 
 WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
 IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
+CLUSTER_EVENTS = {"cluster.approved", "cluster.retired", "cluster.updated"}
+RUN_EVENT = "cluster.run_recorded"
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
 RETRY_BACKOFF_S = (1, 5, 15, 60)
@@ -203,6 +206,8 @@ class RepoWriter:
                         )
             return Outcome(outbox_id, sha, True)
 
+        if event["event_type"] in CLUSTER_EVENTS or event["event_type"] == RUN_EVENT:
+            return self._one_cluster(conn, event)
         if event["event_type"] not in IDEA_EVENTS:
             raise EventError("unknown_event")
         idea_row = self._load_idea(conn, event)
@@ -219,6 +224,119 @@ class RepoWriter:
             )
         log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
         return Outcome(outbox_id, sha, False)
+
+    # ---- clusters and clustering runs (§4.4 B) -----------------------------------------------------
+    def _one_cluster(self, conn: Conn, event: dict[str, Any]) -> Outcome:
+        outbox_id = int(event["id"])
+        if event["event_type"] == RUN_EVENT:
+            rel, message = self._write_run(conn, event)
+        else:
+            rel, message = self._write_cluster(conn, event)
+        sha = self.git.commit_all(message)
+        with conn.transaction():
+            self._mark_committed(conn, outbox_id, sha)
+            if event["event_type"] in CLUSTER_EVENTS:
+                conn.execute(
+                    "UPDATE clusters SET repo_path = %s, repo_commit = %s WHERE id = %s",
+                    (rel, sha, event["aggregate_id"]),
+                )
+        log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
+        return Outcome(outbox_id, sha, False)
+
+    def _write_cluster(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:
+        cid = str(event["aggregate_id"])
+        if not re.fullmatch(r"CL-[0-9]{4}", cid):
+            raise EventError("cluster_id_invalid")
+        cluster = conn.execute("SELECT * FROM clusters WHERE id = %s", (cid,)).fetchone()
+        if cluster is None:
+            raise EventError("cluster_not_found")
+        members = [
+            r["idea_id"]
+            for r in conn.execute(
+                "SELECT idea_id FROM ideas WHERE cluster_id = %s ORDER BY idea_id", (cid,)
+            ).fetchall()
+        ]
+        summary = cluster["summary"] or {}
+        refs: dict[str, str] = summary.get("refs") or {}
+        owners = {
+            r["idea_id"]: r["contributor_code"]
+            for r in conn.execute(
+                "SELECT idea_id, contributor_code FROM ideas WHERE idea_id = ANY(%s)", (list(refs.values()),)
+            ).fetchall()
+        }
+        credits = {ref: owners[i] for ref, i in refs.items() if i in owners}
+        rel = f"clusters/{cid}.md"
+        path = self.repo / rel
+        previous = path.read_text(encoding="utf-8") if path.exists() else None
+        history, verified = existing_state(previous)
+        payload: dict[str, Any] = event["payload"] or {}
+        when = ist(event["created_at"]).strftime("%Y-%m-%d %H:%M")
+        word = {"cluster.approved": "approved", "cluster.retired": "merged", "cluster.updated": "updated"}[
+            event["event_type"]
+        ]
+        by = str(event["actor"])
+        if not re.fullmatch(r"[A-Za-z0-9:@/._-]+", by):
+            raise EventError("history_actor_invalid")
+        history.append(HistoryRow(when, word, by, _safe_note(payload.get("note"))))
+        reviewer = payload.get("verified_by")
+        if reviewer:
+            if not re.fullmatch(r"REV-[0-9]{4}", str(reviewer)):
+                raise EventError("verified_by_invalid")
+            verified.append(
+                {"by": f"human:{reviewer}", "at": ist(event["created_at"]).isoformat(timespec="seconds")}
+            )
+        text = render_cluster(dict(cluster), members, credits, history=history, verified=verified)
+        doc = parse(text)
+        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+            raise EventError("invalid_cluster_file")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._upsert_index_line(
+            self.repo / "clusters" / "index.md",
+            "# Clusters",
+            cid,
+            cluster_index_line(cid, str((doc.meta or {}).get("description", ""))),
+        )
+        message = f"[{cid}] {word}\n\nactor: {by}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+        return rel, message
+
+    def _write_run(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:
+        run_id = str(event["aggregate_id"])
+        if not re.fullmatch(r"RUN-[0-9]{4}-W[0-9]{2}(-[0-9]+)?", run_id):
+            raise EventError("run_id_invalid")
+        run = conn.execute("SELECT * FROM cluster_runs WHERE id = %s", (run_id,)).fetchone()
+        if run is None:
+            raise EventError("run_not_found")
+        decisions = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT p.kind, p.state, ri.final->>'reason_code' AS reject_code FROM cluster_proposals p "
+                "LEFT JOIN review_items ri ON ri.id = p.review_item_id WHERE p.run_id = %s ORDER BY p.id",
+                (run_id,),
+            ).fetchall()
+        ]
+        rel = f"learning/cluster-runs/{run_id}.md"
+        text = render_run(dict(run), decisions)
+        doc = parse(text)
+        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+            raise EventError("invalid_run_file")
+        path = self.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._upsert_index_line(
+            self.repo / "learning" / "cluster-runs" / "index.md",
+            "# Clustering runs",
+            run_id,
+            run_index_line(run_id, str((doc.meta or {}).get("description", ""))),
+        )
+        self._upsert_index_line(
+            self.repo / "learning" / "index.md",
+            "# Learning",
+            "](cluster-runs/)",
+            "* [Clustering runs](cluster-runs/) - one file per weekly clustering run",
+        )
+        message = f"[{run_id}] recorded\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+        return rel, message
 
     @staticmethod
     def _mark_committed(conn: Conn, outbox_id: int, sha: str) -> None:

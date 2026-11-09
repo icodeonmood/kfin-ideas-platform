@@ -13,3 +13,4 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [sla-breached.md](sla-breached.md) — Overdue: {{item.label}}
 - [sla-reminder.md](sla-reminder.md) — Reminder: {{item.label}} is due {{item.due_date}}
 - [withdrawn-no-answer.md](withdrawn-no-answer.md) — We have paused {{idea.id}}
+- [cluster-approved.md](cluster-approved.md) — Your idea is now part of {{cluster.id}} (draft for HR sign-off)

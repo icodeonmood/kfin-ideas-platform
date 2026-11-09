@@ -116,7 +116,7 @@ def switch_off_failing(conn: Any, results: list[dict[str, Any]], route: str) -> 
 
 def run_agents(seed: int, switch_off: bool = False) -> int:
     from core.db import connect
-    from evalrunner import canvas_assist, gatekeeper, judge
+    from evalrunner import canvas_assist, cluster_summary, gatekeeper, judge
     from evalrunner.common import context, route_name, write_report
 
     route = route_name()
@@ -129,6 +129,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                 (gatekeeper, "gatekeeper"),
                 (canvas_assist, "canvas-assist"),
                 (judge, "judge"),
+                (cluster_summary, "cluster-summary"),
             ):
                 try:
                     result = runner.run(ctx)
@@ -154,10 +155,16 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                         f"{m['labels']} labels · same precision {_pct(m['same_precision'])} · same recall "
                         f"{_pct(m['same_recall'])} · labelled {_pct(m['labelled_share'])}"
                     )
-                else:
+                elif result["agent"] == "canvas-assist":
                     detail = (
                         f"submitter changes {m['submitter_field_changes']} · out-of-slice IDs {m['out_of_slice_ids']} "
                         f"· summary leaks {m['neutral_summary_leaks']} · area tags {_pct(m['area_tag_accuracy'])}"
+                    )
+                else:  # newer agents: every metric, in order
+                    detail = " · ".join(
+                        f"{k.replace('_', ' ')} {_pct(v) if isinstance(v, float) else v}"
+                        for k, v in m.items()
+                        if k != "cases"
                     )
                 note = "" if route != "fake" else " (fake route: model gates reported, not enforced)"
                 print(

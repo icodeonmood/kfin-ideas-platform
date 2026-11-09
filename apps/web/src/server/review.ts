@@ -62,9 +62,13 @@ export async function queue(f: QueueFilters): Promise<QueueRow[]> {
       "i.kind",
       "i.category",
       "i.strength",
-      sql<string | null>`i.canvas->>'neutral_summary'`.as("summary"),
+      // A group proposal's description is checked to be safe for everyone's eyes (no tags, names or IDs).
+      sql<string | null>`coalesce(i.canvas->>'neutral_summary', (SELECT p.summary->>'description'
+        FROM cluster_proposals p WHERE p.review_item_id = r.id))`.as("summary"),
       sql<Date | null>`(SELECT t.due_at FROM sla_timers t WHERE t.entity_type = 'review_item'
-        AND t.entity_id = r.id::text AND t.stage = 'review' ORDER BY t.id DESC LIMIT 1)`.as("due_at"),
+        AND t.entity_id = r.id::text AND t.stage IN ('review', 'cluster_proposal') ORDER BY t.id DESC LIMIT 1)`.as(
+        "due_at",
+      ),
       sql<number | null>`(SELECT min(value::numeric) FROM jsonb_each_text(r.confidence))`.as("confidence"),
       sql<boolean>`coalesce(r.reasons->>'contested' = 'investor_or_customer', false)`.as("check_first"),
     ])

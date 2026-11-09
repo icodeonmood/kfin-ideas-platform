@@ -1,0 +1,31 @@
+# cluster-summary — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: cluster-summary
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 3000
+timeout_s: 60           # batch job, not on anyone's screen
+latency_budget_s: 30
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- members
+- existing
+- mode
+untrusted_blocks:
+- members
+- existing
+max_members: 30
+examples_in_prompt:
+- 01-nigo-sip-forms.json
+fake_mode_default: 01-nigo-sip-forms.json
+golden_set: eval/golden/cluster_summary.jsonl
+post_checks:
+- name 8 words or fewer; description 25 words or fewer with no tags, names or identifiers
+- every member ref in variations and credits exists in the input
+- lobs and roles only from the members'
+pass_gates:
+  credit_accuracy_min: 0.9      # credited refs are members who proposed a fix
+  member_coverage_min: 0.8      # members with a fix are credited somewhere

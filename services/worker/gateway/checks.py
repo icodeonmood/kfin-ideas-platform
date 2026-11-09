@@ -99,7 +99,45 @@ def judge(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> lis
     return problems
 
 
-CHECKS: dict[str, Check] = {"gatekeeper": gatekeeper, "canvas-assist": canvas_assist, "judge": judge}
+def _card_safe(field: str, text: str, max_words: int, d: Directory | None, problems: list[str]) -> None:
+    """Text shown to everyone (cluster descriptions on match cards): no tags, names or identifiers."""
+    if TAG_RE.search(text):
+        problems.append(f"{field} must not contain tags")
+    if len(text.split()) > max_words:
+        problems.append(f"{field} must be {max_words} words or fewer")
+    if d is not None and detect(text, d):
+        problems.append(f"{field} must not name a person, client or organisation, or hold an identifier")
+
+
+def cluster_summary(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    members = [m for m in sent.get("members") or [] if isinstance(m, dict)]
+    refs = {str(m.get("ref")) for m in members}
+    if len(out["name"].split()) > 8:
+        problems.append("name must be 8 words or fewer")
+    if TAG_RE.search(out["name"]):
+        problems.append("name must not contain tags")
+    _card_safe("description", out["description"], 25, d, problems)
+    for i, v in enumerate(out["variations"]):
+        if v["member"] not in refs:
+            problems.append(f"variations[{i}].member is not one of the member refs")
+    for i, part in enumerate(out["solution"]):
+        unknown = [r for r in part["credit"] if r not in refs]
+        if unknown:
+            problems.append(f"solution[{i}].credit names refs that are not members")
+    for key, field in (("lobs", "lobs"), ("roles_affected", "roles_affected")):
+        allowed = {x for m in members for x in m.get(key) or []}
+        if any(x not in allowed for x in out[field]):
+            problems.append(f"{field} may only use the members' own {field}")
+    return problems
+
+
+CHECKS: dict[str, Check] = {
+    "gatekeeper": gatekeeper,
+    "canvas-assist": canvas_assist,
+    "judge": judge,
+    "cluster-summary": cluster_summary,
+}
 
 
 def run(name: str, sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
