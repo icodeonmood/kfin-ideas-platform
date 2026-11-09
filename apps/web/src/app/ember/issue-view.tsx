@@ -34,6 +34,7 @@ function Ones({ ones, id, title, empty }: { ones: EmberOne[]; id: string; title:
 }
 
 export function IssueView({ issue }: { issue: EmberIssue }) {
+  const picked = issue.picked_in_month ? "Picked this month" : "Picked so far";
   const shipped = [
     ...issue.shipped.map((s) => ({ label: s.label, words: s.words })),
     ...issue.results.map((r) => ({
@@ -76,13 +77,13 @@ export function IssueView({ issue }: { issue: EmberIssue }) {
           <div className="table-wrap">
             <table className="table">
               <caption className="visually-hidden">
-                Ideas shared this month and picked so far, by line of business
+                Ideas shared this month and {picked.toLowerCase()}, by line of business
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Line of business</th>
                   <th scope="col">Shared this month</th>
-                  <th scope="col">Picked so far</th>
+                  <th scope="col">{picked}</th>
                 </tr>
               </thead>
               <tbody>

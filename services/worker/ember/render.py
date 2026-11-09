@@ -99,8 +99,10 @@ def sections(issue: dict[str, Any]) -> list[tuple[str, list[tuple[str, list[str]
     shipped += [
         (r["label"], [f"Measured at {r['mark']}: " + _measures_text(r["measures"])]) for r in issue["results"]
     ]
+    # Issues before stage history (BLD-137) counted ideas picked so far; later ones, ideas picked within the month.
+    picked_words = "Picked this month" if issue.get("picked_in_month") else "Picked so far"
     by_lob = [
-        (r["lob"], [f"Shared this month: {r['shared']}. Picked so far: {r['picked']}."])
+        (r["lob"], [f"Shared this month: {r['shared']}. {picked_words}: {r['picked']}."])
         for r in issue["by_lob"]
     ]
     return [

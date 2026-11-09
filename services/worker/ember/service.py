@@ -192,10 +192,13 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
             "picked": int(r["picked"]),
         }
         for r in conn.execute(
+            # Picked this month: when an idea first reached a picked (or later) stage, from its stage history.
             "SELECT lob, count(*) FILTER (WHERE submitted_at >= %s AND submitted_at < %s AND stage = ANY(%s)) "
-            "AS shared, count(*) FILTER (WHERE stage = ANY(%s)) AS picked FROM ideas, unnest(lobs) AS lob "
-            "WHERE visibility = 'org' AND stage <> 'draft' GROUP BY lob ORDER BY lob",
-            (start, end, list(PUBLIC_STAGES), list(PICKED + IN_GARAGE + SHIPPED)),
+            "AS shared, count(*) FILTER (WHERE picked_at >= %s AND picked_at < %s) AS picked FROM ("
+            "SELECT i.lobs, i.stage, i.submitted_at, (SELECT min(h.at) FROM idea_stage_history h "
+            "WHERE h.idea_uuid = i.id AND h.to_stage = ANY(%s)) AS picked_at FROM ideas i "
+            "WHERE i.visibility = 'org' AND i.stage <> 'draft') x, unnest(x.lobs) AS lob GROUP BY lob ORDER BY lob",
+            (start, end, list(PUBLIC_STAGES), start, end, list(PICKED + IN_GARAGE + SHIPPED)),
         ).fetchall()
         if int(r["shared"]) or int(r["picked"])
     ]
@@ -215,7 +218,7 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
     return {
         "month": month.isoformat(), "month_label": month_label(month), "ones_paused": ones["paused"],
         "impact": impact, "new_ones": new_ones, "shipped": shipped, "results": results, "by_lob": by_lob,
-        "managers": managers, "coming_soon": ["Ideas picked this month, by line of business"],
+        "managers": managers, "picked_in_month": True, "coming_soon": [],
     }  # fmt: skip
 
 

@@ -64,7 +64,6 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 
 - **Automatic tiers and lapse proposals** (console): today the committee decides each one.
 - **Points for presenting, for a working group's shipped work, and restored after an appeal** (My ideas).
-- **Ideas picked within the month, by line of business** (The Ember shows ideas picked so far).
 - **Impact weights** (leaderboard).
 - **Manager notes and nudges** (manager view).
 - **Live sync with the delivery pipeline** (Delivery): steps are recorded by hand until then.

@@ -36,6 +36,7 @@ ISSUE: dict[str, Any] = {
     "shipped": [],
     "results": [],
     "by_lob": [{"lob": "Mutual fund operations", "shared": 12, "picked": 3}],
+    "picked_in_month": True,
     "managers": ["Rahul Deshpande"],
     "note": NOTE,
 }
@@ -52,6 +53,11 @@ def test_the_email_reads_in_order_and_says_when_a_section_is_empty() -> None:
     assert order == sorted(order)
     assert "One No. 17" in email.html and "No. 1, Rohit Menon" in email.html  # a name only with consent
     assert "Nothing shipped this month." in email.html and "Effort: 420 corrections a year" in email.text
+    assert "Picked this month: 3." in email.text
+    older = render.compose(
+        {**ISSUE, "picked_in_month": None}, "https://ideas.example", "https://x.example/e/1"
+    )
+    assert "Picked so far: 3." in older.text  # issues sent before stage history keep their meaning
     assert (
         email.html.count("1% spark. 99% sweat.") == 1 and 'href="https://ideas.example/ember/1"' in email.html
     )
@@ -235,3 +241,31 @@ def test_managers_are_thanked_only_for_people_who_share_with_them(ones_db: Any, 
         db.execute("UPDATE ideas SET submitted_at = %s WHERE idea_id = %s", (NOW, idea))
     managers = service.build(db, dt.date(2026, 12, 1))["managers"]
     assert "Synthetic Manager Kiran" in managers and "Synthetic Manager Leela" not in managers
+
+
+@pytest.mark.stack
+def test_picked_this_month_comes_from_stage_history(ones_db: Any, cast: Any) -> None:
+    """BLD-137: an idea counts as picked in the month it first reached a picked stage, not every month after."""
+    from tests import helpers
+
+    db = ones_db
+
+    def picked(month: dt.date) -> int:
+        return sum(r["picked"] for r in service.build(db, month)["by_lob"])
+
+    idea = helpers.insert_idea(db, stage="scanned")
+    nov0, dec0 = picked(dt.date(2026, 11, 1)), picked(dt.date(2026, 12, 1))
+    db.execute("UPDATE ideas SET stage = 'picked' WHERE idea_id = %s", (idea,))
+    db.execute(
+        "UPDATE idea_stage_history SET at = '2026-11-20T10:00:00Z' WHERE to_stage = 'picked' "
+        "AND idea_uuid = (SELECT id FROM ideas WHERE idea_id = %s)",
+        (idea,),
+    )
+    db.execute(
+        "UPDATE ideas SET stage = 'in_garage' WHERE idea_id = %s", (idea,)
+    )  # moving on is not a new pick
+    lobs = db.execute("SELECT lobs FROM ideas WHERE idea_id = %s", (idea,)).fetchone()["lobs"]
+    assert picked(dt.date(2026, 11, 1)) == nov0 + len(lobs)
+    assert picked(dt.date(2026, 12, 1)) == dec0
+    built = service.build(db, dt.date(2026, 11, 1))
+    assert built["picked_in_month"] and not built["coming_soon"]

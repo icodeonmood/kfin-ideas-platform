@@ -40,6 +40,8 @@ export type EmberIssue = {
   shipped: { label: string; words: string }[];
   results: { label: string; mark: string; measures: Measures }[];
   by_lob: { lob: string; shared: number; picked: number }[];
+  /** True from BLD-137: `picked` counts ideas picked within the month; older issues counted picked so far. */
+  picked_in_month?: boolean;
   managers: string[];
   coming_soon: string[];
 };
