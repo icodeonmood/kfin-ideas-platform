@@ -38,3 +38,5 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [accepted.md](accepted.md) — {{cluster.id}} is picked (draft for HR review)
 - [not-accepted.md](not-accepted.md) — An update on {{cluster.id}} (draft for HR review)
 - [not-presented.md](not-presented.md) — An update on {{cluster.id}} (draft for HR review)
+- [appeal-filed.md](appeal-filed.md) — An appeal for your panel: {{cluster.id}} (draft for HR review)
+- [appeal-decided.md](appeal-decided.md) — Your appeal on {{cluster.id}} has been heard (draft for HR review)

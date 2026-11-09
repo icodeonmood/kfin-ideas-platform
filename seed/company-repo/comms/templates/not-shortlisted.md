@@ -27,9 +27,11 @@ The committee reviewed **{{cluster.name}}** and has not shortlisted it this time
 
 {{outcome.text}}
 
-You keep full credit as a contributor, and you can appeal within 15 working days from your idea page.
+You keep full credit as a contributor. {{decision.appeal_text}}
 
 [See your idea]({{links.idea}})
+
+[Appeals]({{links.appeals}})
 
 The 1% Club core committee chair
 

@@ -994,3 +994,51 @@ def working_group_view(wg: str, user_id: str) -> JSONResponse:
 
     with connect(autocommit=True) as conn:
         return _json(working_group(conn, wg, user_id))
+
+
+# ---- appeals (§4.12) and reports (§3.8, §5.4) ---------------------------------------------------------------------
+
+
+@app.get("/internal/appeals", dependencies=[Depends(require_token)])
+def appeals_mine(user_id: str) -> JSONResponse:
+    from committee.appeals import mine, panel_list
+
+    with connect(autocommit=True) as conn:
+        return _json({"decisions": mine(conn, user_id), "panel": panel_list(conn, user_id)})
+
+
+@app.post("/internal/appeals", dependencies=[Depends(require_token)])
+def appeals_file(body: dict[str, Any]) -> JSONResponse:
+    from committee.appeals import file
+
+    return _review_call(file, str(body.get("user_id") or ""), body)
+
+
+@app.get("/internal/appeals/{aid}", dependencies=[Depends(require_token)])
+def appeals_view(aid: str, user_id: str) -> JSONResponse:
+    from committee.appeals import panel_view
+
+    with connect(autocommit=True) as conn:
+        return _json(panel_view(conn, aid, user_id))
+
+
+@app.post("/internal/appeals/{aid}/decision", dependencies=[Depends(require_token)])
+def appeals_decide(aid: str, body: dict[str, Any]) -> JSONResponse:
+    from committee.appeals import decide
+
+    return _review_call(decide, aid, str(body.get("user_id") or ""), body)
+
+
+@app.get("/internal/reports/{kind}", dependencies=[Depends(require_token)])
+def reports_view(kind: str, start: str | None = None, end: str | None = None) -> JSONResponse:
+    from committee import reports
+
+    if kind not in ("fairness", "calibration"):
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    try:
+        frm, to = reports.period(start, end)
+    except ValueError:
+        return JSONResponse({"error": "bad_period"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        body = reports.fairness(conn, frm, to) if kind == "fairness" else reports.calibration(conn, frm, to)
+    return _json(body)

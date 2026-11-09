@@ -305,7 +305,7 @@ def test_the_whole_way_to_picked_and_a_working_group(qualified: Any) -> None:
     assert "## Preliminary review" in text
 
 
-def test_park_needs_a_reason_and_opens_the_appeal_window(qualified: Any) -> None:
+def test_park_needs_a_reason_and_a_first_park_opens_no_appeal_window(qualified: Any) -> None:
     db = qualified["db"]
     pid = _shortlist(qualified)
     owner = db.execute(
@@ -330,11 +330,16 @@ def test_park_needs_a_reason_and_opens_the_appeal_window(qualified: Any) -> None
         "action": "decide", "outcome": "parked", "reason_code": "INSUFFICIENT_EVIDENCE",
         "plain_reason": "The committee wants one month of NIGO counts by branch before it decides.",
         "what_would_change": "A month of counts and a two-branch pilot plan."})  # fmt: skip
+    # §4.12: a decline can be appealed, a park only the second time (BLD-222).
     timer = db.execute(
         "SELECT state FROM sla_timers WHERE entity_type = 'decision' AND entity_id = %s AND stage = 'appeal_window'",
         (out["decision_id"],),
     ).fetchone()
-    assert timer["state"] == "running"
+    assert timer is None
+    window = db.execute(
+        "SELECT appeal_window_closes FROM decisions WHERE id = %s", (out["decision_id"],)
+    ).fetchone()
+    assert window["appeal_window_closes"] is None
 
 
 def test_sealed_tables_are_out_of_the_web_apps_reach(test_database: str) -> None:

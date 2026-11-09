@@ -210,6 +210,28 @@ events:
     urgency: immediate
     approval: core_chair
     signer: core_chair
+  appeal.filed:
+    day_one: true   # live with appeals (switch appeals.filing); to the panel that hears it (BLD-222)
+    audiences:
+    - round_members
+    template: appeal-filed
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: core_chair
+    signer: core_chair
+  appeal.decided:
+    day_one: true   # the panel chair's recorded outcome is the approval (BLD-222)
+    audiences:
+    - cluster_contributors
+    template: appeal-decided
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: core_chair
+    signer: core_chair
   ones.inducted:
     day_one: true
     audiences:

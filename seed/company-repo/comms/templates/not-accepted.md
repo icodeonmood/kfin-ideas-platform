@@ -29,9 +29,11 @@ Thank you for presenting **{{cluster.name}}**. The committee has decided not to 
 
 **What would change this:** {{decision.what_would_change}}
 
-A committee member can take you through the feedback in a 15-minute call. You can appeal within 15 working days from your idea page.
+A committee member can take you through the feedback in a 15-minute call. {{decision.appeal_text}}
 
 [See your idea]({{links.idea}})
+
+[Appeals]({{links.appeals}})
 
 The 1% Club core committee chair
 
