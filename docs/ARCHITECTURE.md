@@ -1899,6 +1899,7 @@ Stored in `kill_switches`, read on every request (10-second cache). Every change
 | `comms.email` | Emails queue; in-app messages continue | Admin | Bounce rate over 5% in an hour |
 | `wall.public` | Public wall hidden | Admin, HR | — |
 | `ones.public` | The Ones hidden from the wall, home carousel and office screens (DEC-068) | Admin, HR | — |
+| `learning.jobs` | Every learning loop's job stops (§5: reports and proposals), and so does running one by hand; proposals already made can still be decided (BLD-122) | Admin | — |
 
 ### 7.7 Accessibility **[Day 1]**
 

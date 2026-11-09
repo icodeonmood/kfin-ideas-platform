@@ -32,6 +32,7 @@ Flip from **Admin → Kill switches** with a reason of at least 10 characters. E
 | `comms.email` | Bounces, wrong content, or mail service trouble | Admin | Emails queue; in-app messages carry on | `notifications` with `channel = 'email'` stay `queued` |
 | `wall.public` | A bad summary on the wall, or an HR request | Admin, HR | The wall and everyone else's view of idea pages are hidden; owners and the desk keep theirs | `/api/wall` answers 503 |
 | `ones.public` | A brief or name that should not be public, or an HR request | Admin, HR | The Ones disappear from the wall, the home carousel and the office screens; the console and each One's own dashboard keep working | `/api/ones` answers 503; the screen says the Ones are resting |
+| `learning.jobs` | A learning report or proposal looks wrong, or the jobs load the database at a bad time | Admin | Nobody outside the product team notices; the Learning page shows "Off" and "Run it now" is disabled. Proposals already made can still be decided | `POST /api/learning/run` answers 503; no new `learning_reports` rows next morning |
 
 **Walkthrough (AT-B8-07).** In UAT, flip each switch off and on again in the order above and tick the "Check it worked" column. The automated version runs in `make test` (`tests/test_b8_switch_walkthrough.py`).
 
@@ -43,6 +44,16 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 
 **Founding Ones** (DEC-053): the product lead sends names and one-line citations. The CEO, or a core committee member on the CEO's behalf, proposes each one as "Founding One", the chair approves, and the admin carries it out. Numbers 1 to 6 then follow in order, as long as nobody has been inducted before.
 
+## 2b. Delivery, lenses and learning (BLD-115 to BLD-124)
+
+**Delivery** (`/delivery`). A core committee member or an admin starts the handover for a picked idea from "Picked, waiting for a handover". The owner fills in the pack and sends it; the named sponsor approves it. Until live sync is built, an admin pastes the delivery pipeline's page ID ("Link the pipeline page") and the delivery PM records each step ("Record the current step"); choosing Shipped opens the 30- and 90-day results. On the fix track the owner keeps the action plan and sends the before-and-after numbers for the sponsor. Results: the owner fills them in, the sponsor confirms; for money, an admin presses "Finance has confirmed the money" only after Finance has confirmed it in writing. Nobody else can do these steps for them; if a sponsor leaves, an admin names a new one in the pack (it must still be waiting for approval) or grants the sponsor role.
+
+**Stuck deliveries.** `delivery.tick` (09:30) reminds owners of results due within 3 days, sponsors of results waiting 5 working days, fix-track owners every Friday, and flags overdue milestones (once), plans 10 working days late (to the chair, once) and builds blocked for 10 working days (to the sponsor, once). To see what it did: `SELECT action, count(*) FROM audit_log WHERE action LIKE 'delivery.%' AND at > now() - interval '1 day' GROUP BY 1`.
+
+**Lenses** (`/lenses`) rebuild on Mondays at 05:00; an admin can press "Rebuild now". Counts only; to name the colleagues behind a count, use Admin's reveal (with a reason; it is logged).
+
+**Learning** (Admin, then "Learning reports and proposals"). Approve or decline each proposed glossary term or area-tag group; approving records the decision only, and the product team then adds the term or tag to the company repo by hand. Acceptance rates are for information: nothing switches to automatic at launch.
+
 ## 3. Scheduled jobs to watch
 
 | Job | When (IST) | Healthy when |
@@ -50,6 +61,9 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 | `reconcile` | 02:00 | Log `reconcile.clean`; any `reconcile.drift` is read the same morning |
 | `drafts.purge` | 03:30 | Drafts older than 30 days gone |
 | `comms.nudges`, `comms.digest` | 10:00, 10:30 (digest Mondays) | No `comms.send_failed` bursts |
+| `learning.run` | 05:30 (each loop on its own day: daily, Mondays, the 1st, quarter starts) | Log `learning.ran` per loop, or `learning.switched_off` while `learning.jobs` is off; any `alert.drift_*` row is read the same morning |
+| `lenses.build` | Mondays 05:00 | Log `lenses.built` with the LOB and role counts |
+| `delivery.tick` | 09:30 | Log `delivery.tick` with its counts |
 | Ticker (every 20 s, checks every minute) | Continuous | Email goes out; reminders and breaches appear; the watches run |
 
 ## 4. Incidents
