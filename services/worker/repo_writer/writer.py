@@ -39,8 +39,8 @@ from repo_writer.render import (
     repo_path_for,
 )
 from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
-from repo_writer.render_docs import doc_index_line, render_area_tag, render_glossary_term, render_solution
 from repo_writer.render_decision import cluster_sections, decision_index_line, render_decision
+from repo_writer.render_docs import doc_index_line, render_area_tag, render_glossary_term, render_solution
 
 log = get_logger("repo_writer")
 
