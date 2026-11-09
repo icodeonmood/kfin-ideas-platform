@@ -13,7 +13,7 @@ import pytest
 from comms import render, templates
 from core import killswitch
 from delivery import jobs, service, views
-from learning import proposals
+from learning import proposals, reports
 from learning import run as learning_run
 from ones import service as ones_service
 from tests import helpers, test_ones
@@ -34,7 +34,14 @@ def code_of(db: Any, uid: str) -> str:
 
 
 @pytest.fixture
-def crew(ones_db: Any, cast: dict[str, str]) -> dict[str, str]:
+def crew(
+    ones_db: Any, cast: dict[str, str], company_repo: Any, test_database: str, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, str]:
+    import lenses
+
+    settings = helpers.settings_for(company_repo, test_database)
+    for module in (lenses, proposals, reports):  # the taxonomy and the budget come from the test repo
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
     db = ones_db
     return {
         **cast,
@@ -69,12 +76,17 @@ def started(db: Any, crew: dict[str, str], track: str = "build") -> tuple[str, i
     return idea, did
 
 
-def approved(db: Any, crew: dict[str, str], track: str = "build", **over: Any) -> tuple[str, int]:
+def approved(
+    db: Any, crew: dict[str, str], track: str = "build", sponsor: str | None = None, **over: Any
+) -> tuple[str, int]:
     idea, did = started(db, crew, track)
+    sponsor = sponsor or crew["sponsor"]
     extra = {"objective": "Every AMC dividend file reconciled the same day"} if track == "fix" else {}
-    service.save_pack(db, crew["member"], did, full_pack(db, crew, **extra, **over))
+    service.save_pack(
+        db, crew["member"], did, full_pack(db, crew, sponsor_email=email(db, sponsor), **extra, **over)
+    )
     service.submit(db, crew["owner"], did)
-    service.approve(db, crew["sponsor"], did, now=NOW)
+    service.approve(db, sponsor, did, now=NOW)
     return idea, did
 
 
@@ -210,7 +222,7 @@ def test_build_track_from_phase_to_closed_feeds_the_ones(ones_db: Any, crew: Any
 def test_a_sponsor_never_confirms_their_own_entry(ones_db: Any, crew: Any) -> None:
     db = ones_db
     both = person(db, "sponsor", "admin")
-    _, did = approved(db, crew, sponsor_email=email(db, both))
+    _, did = approved(db, crew, sponsor=both)
     service.set_phase(db, crew["pm"], did, {"phase": "shipped"}, now=NOW)
     service.fill(db, both, did, "day_30", {"metric_actual": 20}, now=NOW)  # as an admin
     refused("own_entry", service.confirm, db, both, did, "day_30")
@@ -243,7 +255,7 @@ def test_fix_track_milestones_reminders_and_completion(ones_db: Any, crew: Any) 
     refused("not_in_delivery", service.set_phase, db, crew["admin"], did, {"phase": "05-build"})
     m = service.add_milestone(db, crew["owner"], did, {"title": "Agree the new checklist with MF Ops",
                               "due_on": (NOW.date() - dt.timedelta(days=20)).isoformat()}, now=NOW)  # fmt: skip
-    refused("forbidden", service.add_milestone, db, crew["pm"], did, {"title": "Something else to do",
+    refused("not_found", service.add_milestone, db, crew["pm"], did, {"title": "Something else to do",
             "due_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
 
     db.execute("DELETE FROM jobs")
