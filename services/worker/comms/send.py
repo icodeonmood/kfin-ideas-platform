@@ -20,7 +20,7 @@ from core.logging import get_logger
 from rules import load_rule
 
 log = get_logger("comms.send")
-FROM = "The Garage <garage@kfintech.example>"
+FROM = "1% Club <onepercentclub@kfintech.example>"
 MAX_ATTEMPTS = 3
 
 
@@ -146,7 +146,7 @@ def _send_digest(conn: Conn, u: dict[str, Any]) -> int:
     for it in items:
         subject, body, _ = message_for(conn, str(u["user_id"]), it["event"], it["template"], it["payload"])
         parts.append(f"## {subject}\n\n{body}")
-    _smtp(u["email"], f"Your Garage update: {len(parts)} new", "\n\n".join(parts))
+    _smtp(u["email"], f"Your 1% Club update: {len(parts)} new", "\n\n".join(parts))
     conn.execute(
         "UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = ANY(%s)",
         ([it["id"] for it in items],),

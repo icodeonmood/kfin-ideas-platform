@@ -53,11 +53,11 @@ codes:
 - code: ALREADY_SOLVED
   used_for:
   - gate
-  plain_words: 'In the Garage: a team has already built this. Team up to bring it to your area.'
+  plain_words: 'Already running: a team has already built this. Team up to bring it to your area.'
 - code: ALREADY_PLANNED
   used_for:
   - gate
-  plain_words: 'In the Garage: this is already planned. Follow its progress here.'
+  plain_words: 'Planned by a team: follow its progress here.'
 - code: DUPLICATE
   used_for:
   - review

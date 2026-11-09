@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-adoption-requested
-  version: '1.0'
+  version: '1.1'
   events:
   - adoption.requested
   subject: A team wants to adopt {{solution.title}}
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -31,4 +31,6 @@ Could you have a short conversation with them? They'll be credited for taking it
 
 [Open the request]({{links.request}})
 
-The Garage · Ideas
+The 1% Club team
+
+A KFintech programme

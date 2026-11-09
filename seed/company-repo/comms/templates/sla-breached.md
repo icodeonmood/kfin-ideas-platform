@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-sla-breached
-  version: '1.0'
+  version: '1.1'
   events:
   - sla.breached
   subject: 'Overdue: {{item.label}}'
-  signed_as: The Garage platform
+  signed_as: 1% Club
   hr_signed_off: false
 ---
 
@@ -26,3 +26,5 @@ Hi {{recipient.first_name}},
 **{{item.label}}** is {{breach.days_late}} working day(s) past its limit of {{breach.limit_wd}} working days. Current owner: {{item.owner_name}}.
 
 [Open it]({{links.item}})
+
+1% Club, a KFintech programme

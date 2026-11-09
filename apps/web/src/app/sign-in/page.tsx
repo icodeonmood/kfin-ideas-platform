@@ -29,7 +29,7 @@ export default async function SignIn({
           {error}
         </p>
       ) : null}
-      <p className="lead">Use your KFintech account. There is no separate password for this site.</p>
+      <p className="lead">Use your KFintech account to open 1% Club. There is no separate password.</p>
       <p>
         <a className="button" href={`/auth/login?next=${encodeURIComponent(next)}`}>
           Sign in with your KFintech account

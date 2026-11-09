@@ -21,7 +21,7 @@ NEXT_STEPS = {
     "review": "The review desk looks at it next.",
     "clustered": "It will be looked at together with the similar ideas.",
     "qualify": "The core committee looks at the most promising ideas each month.",
-    "garage": "It goes to the Garage for delivery.",
+    "garage": "A team builds it next.",
     "fix_track": "It goes to the team that can fix it.",
     "closed": "No further steps are planned.",
 }

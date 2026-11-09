@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-question
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.question
   subject: A quick question about {{idea.id}}
@@ -31,4 +31,6 @@ Please reply in the app by **{{question.due_date}}**. The review clock pauses un
 
 [Reply here]({{links.idea}})
 
-{{reviewer.name}}, review desk, The Garage · Ideas
+{{reviewer.name}}, review desk, 1% Club
+
+A KFintech programme

@@ -9,8 +9,8 @@ import { currentUser } from "@/server/auth/current";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "The Garage · Ideas", template: "%s · The Garage · Ideas" },
-  description: "KFintech's ideas platform. Share a problem, a fix or a business idea.",
+  title: { default: "1% Club", template: "%s · 1% Club" },
+  description: "1% Club, a KFintech programme. Share a problem, a fix or a business idea.",
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
@@ -27,11 +27,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <header className="site-header">
           <div className="inner">
             <Link href="/" className="lockup">
-              The Garage
-              <span className="divider" aria-hidden="true">
-                ·
-              </span>
-              Ideas
+              1% Club
             </Link>
             {showShell && me ? <MainNav items={me.nav} /> : null}
             {me ? (

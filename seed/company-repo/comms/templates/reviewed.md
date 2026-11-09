@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-reviewed
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.reviewed
   subject: '{{idea.id}} has been reviewed'
@@ -33,4 +33,6 @@ Your idea **"{{idea.one_line}}"** has been reviewed.
 
 [See your idea]({{links.idea}})
 
-{{reviewer.name}}, review desk
+{{reviewer.name}}, review desk, 1% Club
+
+A KFintech programme

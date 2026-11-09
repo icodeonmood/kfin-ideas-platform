@@ -11,11 +11,11 @@ generated:
   at: '2026-11-10T00:00:00+05:30'
 kfin:
   id: TPL-withdrawn-no-answer
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.withdrawn_no_answer
   subject: 'We have paused {{idea.id}}'
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -29,4 +29,6 @@ You can pick it up again at any time: answer the question and it goes straight b
 
 [Reopen your idea]({{links.idea}})
 
-The Garage · Ideas
+The 1% Club team
+
+A KFintech programme

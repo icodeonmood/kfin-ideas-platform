@@ -43,7 +43,7 @@ def test_first_sign_in_of_someone_not_yet_in_hr(dev_db: Any) -> None:
         assert user["contributor_code"].startswith("CTR-")
 
         page = browser.get("/privacy-notice?next=%2F")
-        assert page.status_code == 200 and "How The Garage · Ideas uses your information" in page.text
+        assert page.status_code == 200 and "How 1% Club uses your information" in page.text
         assert browser.get("/").status_code in (302, 307), "pages wait for the notice"
 
         version = get_settings().privacy_notice_version

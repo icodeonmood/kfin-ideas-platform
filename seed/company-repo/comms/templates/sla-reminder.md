@@ -11,11 +11,11 @@ generated:
   at: '2026-11-10T00:00:00+05:30'
 kfin:
   id: TPL-sla-reminder
-  version: '1.0'
+  version: '1.1'
   events:
   - sla.reminder
   subject: 'Reminder: {{item.label}} is due {{item.due_date}}'
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -27,4 +27,6 @@ Hi {{recipient.first_name}},
 
 [Open the review desk]({{links.item}})
 
-The Garage · Ideas
+The 1% Club team
+
+A KFintech programme

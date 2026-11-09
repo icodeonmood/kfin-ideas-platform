@@ -5,7 +5,7 @@
  */
 export const PRIVACY_NOTICE = {
   version: "0.1-draft",
-  title: "How The Garage · Ideas uses your information",
+  title: "How 1% Club uses your information",
   draft: true,
   sections: [
     {

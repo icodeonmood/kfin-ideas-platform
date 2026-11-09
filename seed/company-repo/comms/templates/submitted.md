@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-submitted
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.submitted
   subject: 'Your idea is in: {{idea.id}}'
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -33,4 +33,6 @@ Thanks for sharing **"{{idea.one_line}}"** ({{idea.id}}).
 
 [Track or improve your idea]({{links.idea}})
 
-The Garage · Ideas
+The 1% Club team
+
+A KFintech programme

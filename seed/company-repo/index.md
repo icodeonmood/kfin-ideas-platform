@@ -16,7 +16,7 @@ Open Knowledge Format (OKF v0.2) bundle. One concept per file; file names are ID
 | [decisions/](decisions/index.md) | Committee and gate outcomes, with reasons |
 | [handovers/](handovers/index.md) | Packs sent to the Garage or the fix track |
 | [appeals/](appeals/index.md) | Appeals and their outcomes |
-| [solutions/](solutions/index.md) | What KFin already runs: the "In the Garage" catalogue |
+| [solutions/](solutions/index.md) | What KFin already runs: the "Already running" catalogue |
 | [guidance/](guidance/index.md) | Committee guidance and canvas examples |
 | [comms/](comms/index.md) | Communication rules and message templates |
 | [lenses/](lenses/index.md) | Weekly LOB and role views (counts only) |

@@ -1,6 +1,6 @@
 # Message templates
 
-Day-one templates. Week 3–8 templates (cluster approved, invitations, decisions, appeals, Garage Pulse) are added as those stages go live.
+Day-one templates. Week 3–8 templates (cluster approved, invitations, decisions, appeals, 1% Club Pulse) are added as those stages go live.
 
 - [submitted.md](submitted.md) — Your idea is in: {{idea.id}}
 - [quick-capture-nudge.md](quick-capture-nudge.md) — Two quick additions for {{idea.id}}

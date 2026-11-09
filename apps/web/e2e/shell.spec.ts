@@ -101,7 +101,7 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   await page.locator('input[type="submit"]').click();
   await page.waitForURL(/\/privacy-notice/);
   await expect(
-    page.getByRole("heading", { level: 1, name: /How The Garage · Ideas uses your information/ }),
+    page.getByRole("heading", { level: 1, name: /How 1% Club uses your information/ }),
   ).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);

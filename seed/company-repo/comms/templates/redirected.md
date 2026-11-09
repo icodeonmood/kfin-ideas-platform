@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-redirected
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.redirected
   subject: 'Where to take this: {{redirect.team}}'
@@ -29,4 +29,6 @@ Thanks for raising **"{{idea.one_line}}"**. {{redirect.message}}
 
 If you think this is really an idea for changing how KFintech works, reply in the app and tell us why. We'll look again.
 
-{{reviewer.name}}, review desk
+{{reviewer.name}}, review desk, 1% Club
+
+A KFintech programme

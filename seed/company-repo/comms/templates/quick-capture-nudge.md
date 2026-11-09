@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-quick-capture-nudge
-  version: '1.0'
+  version: '1.1'
   events:
   - canvas.nudge
   subject: Two quick additions for {{idea.id}}
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -29,4 +29,8 @@ Your idea **"{{idea.one_line}}"** is with the review desk. Ideas with a bit more
 
 It takes a couple of minutes. [Add them now]({{links.idea}})
 
-We'll only remind you twice. The Garage · Ideas
+We'll only remind you twice.
+
+The 1% Club team
+
+A KFintech programme

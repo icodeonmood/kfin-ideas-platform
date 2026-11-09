@@ -12,7 +12,7 @@ export default async function Home() {
       <h1>{firstName ? `Hello, ${firstName}` : "Ideas from everyone at KFintech"}</h1>
       <p className="lead">
         Spot a problem, think of a fix, or see a new business we could build? Share it here, find colleagues
-        working on the same thing, and follow it all the way to the Garage.
+        working on the same thing, and follow it all the way until it ships.
       </p>
       <ul className="cards" aria-label="Where to start">
         <li className="card">
@@ -31,7 +31,7 @@ export default async function Home() {
           <h2>
             <Link href="/wall">Wall</Link>
           </h2>
-          <p>Ideas from across KFintech, and what is already in the Garage.</p>
+          <p>Ideas from across KFintech, what is being built and what has shipped.</p>
         </li>
       </ul>
     </>

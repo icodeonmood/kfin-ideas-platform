@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-joined
-  version: '1.0'
+  version: '1.1'
   events:
   - idea.joined
   subject: '{{join.count}} more colleagues raised the same thing'
-  signed_as: The Garage team
+  signed_as: The 1% Club team
   hr_signed_off: false
 ---
 
@@ -29,4 +29,6 @@ Good news: **{{join.count}}** more {{join.count_word}} raised the same thing as 
 
 [See your crew]({{links.idea}})
 
-The Garage · Ideas
+The 1% Club team
+
+A KFintech programme

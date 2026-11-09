@@ -3,7 +3,7 @@
 /**
  * After the scan (§4.2 steps 4 and 7): the person checks the canvas ("Looks right"), then Find your crew.
  * Match cards show only what the server sends: heading, neutral summary, area, stage, colleague count and, for
- * solutions, the owning team. Never another person's text, file or name. Platform words only: "In the Garage",
+ * solutions, the owning team. Never another person's text, file or name. Platform words only: "Already running",
  * "Team up", never "duplicate" or "already solved".
  */
 import { useEffect, useRef, useState } from "react";
