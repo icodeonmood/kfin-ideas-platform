@@ -31,8 +31,17 @@ Flip from **Admin → Kill switches** with a reason of at least 10 characters. E
 | `matching.show` | Matches look wrong or revealing | Admin | Submitters see "we will show you colleagues a little later"; the desk still sees matches | A new scan shows no crew cards |
 | `comms.email` | Bounces, wrong content, or mail service trouble | Admin | Emails queue; in-app messages carry on | `notifications` with `channel = 'email'` stay `queued` |
 | `wall.public` | A bad summary on the wall, or an HR request | Admin, HR | The wall and everyone else's view of idea pages are hidden; owners and the desk keep theirs | `/api/wall` answers 503 |
+| `ones.public` | A brief or name that should not be public, or an HR request | Admin, HR | The Ones disappear from the wall, the home carousel and the office screens; the console and each One's own dashboard keep working | `/api/ones` answers 503; the screen says the Ones are resting |
 
 **Walkthrough (AT-B8-07).** In UAT, flip each switch off and on again in the order above and tick the "Check it worked" column. The automated version runs in `make test` (`tests/test_b8_switch_walkthrough.py`).
+
+## 2a. The Ones (DEC-040 to DEC-087)
+
+Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, or "Record a meeting majority" with the meeting date), then "Carry out and send" by the admin member. A tier change needs the committee's message before it can be carried out. After a committee meeting, the admin member presses **Announce new Ones**, which emails everyone. Measured impact (time, money, effort, scale) is entered against each One; money shows publicly only with "Finance confirmed" ticked. For The Ones Night, mark the four impact awards in the roster; the legend number goes through its own proposal (one a year).
+
+**Office screens:** open `/constellation` signed in on the screen's account and choose Full screen. It shows the static sky and alternates with impact cards. Switch to ambient mode for events from the console ("Switch to ambient mode"). Pause is on the screen itself.
+
+**Founding Ones** (DEC-053): the product lead sends names and one-line citations. The CEO, or a core committee member on the CEO's behalf, proposes each one as "Founding One", the chair approves, and the admin carries it out. Numbers 1 to 6 then follow in order, as long as nobody has been inducted before.
 
 ## 3. Scheduled jobs to watch
 

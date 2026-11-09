@@ -71,6 +71,22 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 
 **Member sparks:** each One gets a spark of their own, generated from their permanent induction record, never from personal data. Used on the pin, certificate and constellation wall. Their angle varies from 38° to 71°, along with their length and where the ember sits.
 
+## 4a. Spark tiers (DEC-075, DEC-080 to DEC-083)
+
+Only Ones have a tier. The spark is lit at Tier 1 on induction, and the committee moves it up or down through the console (propose, approve, carry out). The tier colour is the One's spark, badge, number and dashboard accent. It always sits on Zed or Graphite, never on white; on a white screen, show it as a swatch with a Zed ring. The Spark mark (logo) stays orange whatever anyone's tier.
+
+| Tier | Name | Colour |
+|---|---|---|
+| 1 | Spark | `#FF5B14` |
+| 2 | Glow | `#FF8A1F` |
+| 3 | Flame | `#FFC21F` |
+| 4 | Blaze | `#FFE58A` |
+| 5 | White heat | `#F4F6FA` |
+| 6 | Blue flame | `#9DBEFF` |
+| 7 | Star | `#6E9BFF` |
+
+A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once. Every colour pairing above passes AA as text on Zed.
+
 ## 5. Motion and sound
 
 One orchestrated moment: the **logo introduction** on the launch screen (DEC-046). It plays like this:
