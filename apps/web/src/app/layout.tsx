@@ -1,3 +1,5 @@
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -19,7 +21,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const me = await currentUser().catch(() => null);
   const showShell = Boolean(me?.privacyAccepted);
   return (
-    <html lang="en-IN">
+    <html lang="en-IN" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
         <a className="skip-link" href="#main">
           Skip to main content
@@ -46,6 +48,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <main id="main" tabIndex={-1}>
           {children}
         </main>
+        <footer className="site-footer">
+          <div className="inner">
+            <p>1% Club</p>
+            <p>A KFintech programme</p>
+          </div>
+        </footer>
       </body>
     </html>
   );

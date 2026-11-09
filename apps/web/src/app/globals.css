@@ -1,14 +1,28 @@
-/* Neutral styling until The Garage's brand tokens exist (BLD-013). Contrast checked for WCAG 2.1 AA. */
+/* 1% Club brand tokens (docs/BRAND.md, DEC-028, DEC-031). Every text pairing is checked for WCAG 2.1 AA. */
 :root {
-  --bg: #ffffff;
-  --surface: #f6f8fa;
-  --text: #1f2328; /* 15.8:1 on --bg */
-  --muted: #57606a; /* 6.4:1 on --bg */
-  --accent: #0b5cad; /* 6.6:1 on --bg */
-  --border: #d0d7de;
-  --focus: #0b5cad;
-  --radius: 8px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --zed: #0a0a0c; /* white on it 19.7:1 */
+  --white: #ffffff;
+  --electric: #2b5bff; /* only things you can press; white on it 5.2:1, on white 5.2:1 */
+  --electric-dark: #1e46d9; /* hover; white on it 7.2:1 */
+  --spark: #ff5b14; /* the outlier: only on "the one" (the mark's spark, a One) */
+  --graphite: #17181c; /* raised surfaces on Zed */
+  --ash: #9ea3ad; /* secondary text on Zed, 7.8:1; never on white */
+  --slate: #5c6270; /* secondary text on white, 6.1:1 */
+  --line-dark: #2a2c33;
+  --line-light: #dcdfe5;
+
+  --bg: var(--white);
+  --surface: #f4f5f7; /* Zed on it 18.2:1, Slate 5.6:1, Electric 4.8:1 */
+  --text: var(--zed);
+  --muted: var(--slate);
+  --accent: var(--electric);
+  --border: var(--line-light);
+  --focus: var(--electric);
+  --radius: 10px;
+  --font:
+    var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 *,
@@ -34,6 +48,18 @@ a {
   color: var(--accent);
 }
 
+h1 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
@@ -56,12 +82,21 @@ a {
   top: 1rem;
 }
 
-.site-header {
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+/* Brand moments are Zed with white text (DEC-031): the header, the footer, the wall hero, the launch screen. */
+.site-header,
+.site-footer {
+  background: var(--zed);
+  color: var(--white);
+}
+
+.site-header :focus-visible,
+.site-footer :focus-visible,
+.brand-band :focus-visible {
+  outline-color: var(--white);
 }
 
 .site-header .inner,
+.site-footer .inner,
 main,
 .banners {
   max-width: 64rem;
@@ -77,9 +112,13 @@ main,
 }
 
 .lockup {
-  font-weight: 700;
-  font-size: 1.125rem;
-  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+  color: var(--white);
   text-decoration: none;
 }
 
@@ -96,17 +135,17 @@ main,
   display: inline-block;
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--white);
   text-decoration: none;
 }
 
 .main-nav a:hover {
-  background: var(--bg);
+  background: var(--graphite);
 }
 
 .main-nav a[aria-current="page"] {
-  background: var(--bg);
-  box-shadow: inset 0 -3px 0 var(--accent); /* plus aria-current: not colour alone */
+  background: var(--graphite);
+  box-shadow: inset 0 -3px 0 var(--electric); /* 3.4:1 on Graphite, plus weight and aria-current */
   font-weight: 600;
 }
 
@@ -118,6 +157,44 @@ main,
 }
 
 .account form {
+  margin: 0;
+}
+
+.site-header .link-button {
+  color: var(--white);
+}
+
+.site-footer .inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  justify-content: space-between;
+  color: var(--ash);
+  font-size: 0.9375rem;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+/* A full-width Zed band inside the page column, without a horizontal scrollbar. */
+.brand-band {
+  background: var(--zed);
+  color: var(--white);
+  box-shadow: 0 0 0 100vmax var(--zed);
+  clip-path: inset(0 -100vmax);
+  margin: -1rem 0 2rem;
+  padding: 2.5rem 0 2rem;
+}
+
+.brand-band h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  letter-spacing: -0.045em;
+}
+
+.brand-band .lead {
+  color: var(--ash);
   margin: 0;
 }
 
@@ -302,11 +379,6 @@ textarea[aria-invalid="true"] {
   color: var(--muted);
 }
 
-.lockup .divider {
-  color: var(--muted);
-  padding: 0 0.25rem;
-}
-
 .lead {
   color: var(--muted);
   max-width: 40rem;
@@ -328,7 +400,7 @@ textarea[aria-invalid="true"] {
   border: 2px solid var(--accent);
   border-radius: var(--radius);
   background: var(--accent);
-  color: #ffffff; /* 6.6:1 on --accent */
+  color: var(--white); /* 5.2:1 on Electric */
   font: inherit;
   font-weight: 600;
   text-decoration: none;
@@ -336,7 +408,8 @@ textarea[aria-invalid="true"] {
 }
 
 .button:hover {
-  background: #094b8d;
+  border-color: var(--electric-dark);
+  background: var(--electric-dark);
 }
 
 .button[disabled] {
@@ -346,6 +419,11 @@ textarea[aria-invalid="true"] {
 
 .button-secondary {
   background: var(--bg);
+  color: var(--accent);
+}
+
+.button-secondary:hover {
+  background: var(--surface); /* Electric on it 4.8:1 */
   color: var(--accent);
 }
 

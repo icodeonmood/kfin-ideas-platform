@@ -42,8 +42,10 @@ export default async function Page() {
   const w = await wall().catch(() => null);
   return (
     <>
-      <h1>Wall</h1>
-      <p className="lead">Ideas from across KFintech, what is being built and what has shipped.</p>
+      <div className="brand-band">
+        <h1>Wall</h1>
+        <p className="lead">Ideas from across KFintech, what is being built and what has shipped.</p>
+      </div>
       {w === null ? (
         <p className="notice">We can&apos;t load the wall just now. Please try again in a minute.</p>
       ) : w.paused ? (
