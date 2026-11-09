@@ -19,7 +19,23 @@ export default async function Launch() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
   if (!can(me.roles, "grant_roles")) redirect("/");
-  const base = appBaseUrl();
+  let base: URL;
+  try {
+    base = appBaseUrl();
+  } catch {
+    // Never a QR code for an address we don't know (review A1): tell the admin what to fix instead.
+    return (
+      <div className="launch">
+        <div className="launch-intro">
+          <h1>Launch screen</h1>
+          <p role="alert">
+            APP_BASE_URL is not set, so there is no address to put in the QR code. Ask IT to set it to the
+            address people should open, then reload this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
   const url = base.toString();
   const shown = `${base.host}${base.pathname === "/" ? "" : base.pathname}`;
   return <LaunchStage url={url} shownUrl={shown} qr={qrPath(url)} />;

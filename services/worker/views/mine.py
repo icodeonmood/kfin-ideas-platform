@@ -14,9 +14,10 @@ from pii import vault
 from pii.restore import restore
 from views.common import PUBLIC_WORDS, checked_summary, first_area, is_public, taxonomy_names
 
-# (stage in plain words, next step). The owner sees their own idea's stage more precisely than everyone else.
+# (stage in plain words, next step). The owner sees their own idea's stage more precisely than everyone else, but
+# a stage everyone can see reads the same for its owner: the word comes from the shared table (review A5).
 # Drafts for HR to sign off with the other screen wording (BLD-094).
-OWNER_WORDS: dict[str, tuple[str, str]] = {
+_OWNER: dict[str, tuple[str, str]] = {
     "draft": ("Draft, not shared yet", "Finish it and share it. We keep drafts until"),
     "scanning": ("Being checked", "Open it to see the result and choose what happens next"),
     "blocked": ("Needs a change", "Open it to take out the details we flagged, then share it again"),
@@ -44,7 +45,10 @@ OWNER_WORDS: dict[str, tuple[str, str]] = {
     "shipped": ("Shipped", "We measure what changed"),
     "resolved": ("Fixed", "We measure what changed"),
     "measuring": ("Shipped", "We measure what changed"),
-    "closed": ("Closed", "Nothing more to do. Thank you"),
+    "closed": ("Shipped", "Nothing more to do. Thank you"),
+}
+OWNER_WORDS: dict[str, tuple[str, str]] = {
+    stage: (PUBLIC_WORDS.get(stage, label), next_step) for stage, (label, next_step) in _OWNER.items()
 }
 
 BEFORE_DECISION = ("scanning", "scanned", "merged", "adoption_requested", "needs_info")

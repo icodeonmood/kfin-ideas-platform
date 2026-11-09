@@ -392,6 +392,10 @@ textarea[aria-invalid="true"] {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  .launch-ember {
+    transition-delay: 0s !important; /* the ember's 1300 ms wait would survive the duration reset (review A2) */
+  }
 }
 
 .button {

@@ -10,8 +10,17 @@ function required(name: string): string {
 export const appEnv = () => required("APP_ENV");
 export const isProductionLike = () => !["dev", "test"].includes(process.env.APP_ENV ?? "");
 
+/**
+ * This environment's own address (sign-in redirects, the launch QR code). Dev and test fall back to the local
+ * stack; anywhere else it must be set, or every phone that scans the launch QR would open localhost (review A1).
+ */
 export function appBaseUrl(): URL {
-  return new URL(process.env.APP_BASE_URL ?? "http://localhost:3000");
+  const value = process.env.APP_BASE_URL;
+  if (!value) {
+    if (isProductionLike()) throw new Error("APP_BASE_URL is not set");
+    return new URL("http://localhost:3000");
+  }
+  return new URL(value);
 }
 
 export function sessionSecret(): string {

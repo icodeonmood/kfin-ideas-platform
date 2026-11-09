@@ -41,7 +41,7 @@ events:
     - email
     urgency: immediate
     approval: null
-    signer: garage_team
+    signer: club_team
   canvas.nudge:
     day_one: true
     audiences:
@@ -52,7 +52,7 @@ events:
     - email
     urgency: routine
     approval: null
-    signer: garage_team
+    signer: club_team
   idea.joined:
     day_one: true
     audiences:
@@ -143,7 +143,7 @@ events:
     - email
     urgency: immediate
     approval: null
-    signer: garage_team
+    signer: club_team
   sla.breached:
     day_one: true
     audiences:

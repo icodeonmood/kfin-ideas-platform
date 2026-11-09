@@ -15,6 +15,7 @@ from typing import Any
 
 from core.config import get_settings
 from core.db import Conn
+from core.stage_words import PUBLIC_WORDS as STAGE_WORDS
 from scan.inputs import _taxonomy
 from scan.matching import safe_summary
 
@@ -24,23 +25,8 @@ IN_GARAGE = ("handover", "in_garage", "in_fix_track")
 SHIPPED = ("shipped", "resolved", "measuring", "closed")
 PUBLIC_STAGES = RECENT + PICKED + IN_GARAGE + SHIPPED
 
-# What everyone else sees. Never "duplicate", "rejected", "already solved" or "Garage" (CLAUDE.md, DEC-035/038).
-PUBLIC_WORDS = {
-    "reviewed": "Reviewed",
-    "in_cluster": "Grouped with similar ideas",
-    "ready_for_scoring": "Being assessed",
-    "scored": "Being assessed",
-    "shortlisted": "Shortlisted",
-    "presenting": "Being presented",
-    "picked": "Picked",
-    "handover": "Being built",
-    "in_garage": "Being built",
-    "in_fix_track": "Being fixed",
-    "shipped": "Shipped",
-    "resolved": "Fixed",
-    "measuring": "Shipped",
-    "closed": "Shipped",
-}
+# What everyone else sees: the one shared stage-word table (core/stage_words.py).
+PUBLIC_WORDS = STAGE_WORDS
 
 _SAFE_TTL_S = 600
 _safe_cache: dict[str, tuple[float, str | None]] = {}

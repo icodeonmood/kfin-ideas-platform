@@ -16,8 +16,11 @@ const CRACKLE_AT_S = 4;
 
 type Props = { url: string; shownUrl: string; qr: { size: number; d: string } };
 
-/** One bell tone (a few inharmonic, decaying sine partials), then a soft crackle of short noise bursts. */
-function playSignature(ctx: AudioContext) {
+/**
+ * One bell tone (a few inharmonic, decaying sine partials), then a soft crackle of short noise bursts. With reduced
+ * motion the screen jumps to its last frame, so only the bell plays: no crackle over a still picture (review A4).
+ */
+function playSignature(ctx: AudioContext, crackle: boolean) {
   const t0 = ctx.currentTime + 0.05;
   const master = ctx.createGain();
   master.gain.value = 0.32;
@@ -42,6 +45,7 @@ function playSignature(ctx: AudioContext) {
     osc.start(t0);
     osc.stop(t0 + decay + 0.1);
   }
+  if (!crackle) return;
 
   const noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
   const data = noise.getChannelData(0);
@@ -79,8 +83,13 @@ function on(base: string, shown: boolean) {
   return shown ? `${base} is-on` : base;
 }
 
+/** How long an announcement stays in the live region before it is cleared, so the reading order never holds the
+ * same words twice (review A3). */
+const ANNOUNCE_FOR_MS = 2500;
+
 export function LaunchStage({ url, shownUrl, qr }: Props) {
   const [step, setStep] = useState<number | null>(null);
+  const [clearedStep, setClearedStep] = useState<number | null>(null);
   const timers = useRef<number[]>([]);
   const audio = useRef<AudioContext | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -109,17 +118,28 @@ export function LaunchStage({ url, shownUrl, qr }: Props) {
     (started ? backButton : startButton).current?.focus();
   }, [started]);
 
+  // Say what just appeared, then clear it: the visible words are in the reading order once they show.
+  const fresh = step === null ? "" : (ANNOUNCE[step] ?? "");
+  const announcement = clearedStep === step ? "" : fresh;
+  useEffect(() => {
+    if (!fresh) return;
+    const t = window.setTimeout(() => setClearedStep(step), ANNOUNCE_FOR_MS);
+    return () => window.clearTimeout(t);
+  }, [step, fresh]);
+
   function start() {
     stop();
+    setClearedStep(null);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (typeof window.AudioContext === "function") {
       try {
         audio.current = new window.AudioContext();
-        playSignature(audio.current);
+        playSignature(audio.current, !reduced);
       } catch {
         audio.current = null; // no sound is better than no launch
       }
     }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (reduced) {
       setStep(FINAL);
       return;
     }
@@ -131,6 +151,7 @@ export function LaunchStage({ url, shownUrl, qr }: Props) {
 
   function back() {
     stop();
+    setClearedStep(null);
     setStep(null);
   }
 
@@ -190,12 +211,17 @@ export function LaunchStage({ url, shownUrl, qr }: Props) {
               />
               <circle className={on("launch-ember", s >= 1)} cx="171.6" cy="11.8" r="7" fill={SPARK} />
             </svg>
+            {/* Each part stays out of the accessibility tree until its moment (review A3). */}
             <div className="launch-words">
-              <h1 className={on("launch-name", s >= 3)}>1% Club</h1>
-              <p className={on("launch-tagline", s >= 4)}>1% spark. 99% sweat.</p>
+              <h1 className={on("launch-name", s >= 3)} aria-hidden={s < 3 ? true : undefined}>
+                1% Club
+              </h1>
+              <p className={on("launch-tagline", s >= 4)} aria-hidden={s < 4 ? true : undefined}>
+                1% spark. 99% sweat.
+              </p>
             </div>
           </div>
-          <div className={on("launch-invite", s >= 5)}>
+          <div className={on("launch-invite", s >= 5)} aria-hidden={s < 5 ? true : undefined}>
             <svg
               className="launch-qr"
               viewBox={`-4 -4 ${qr.size + 8} ${qr.size + 8}`}
@@ -212,7 +238,7 @@ export function LaunchStage({ url, shownUrl, qr }: Props) {
             </div>
           </div>
           <p className="visually-hidden" aria-live="polite">
-            {ANNOUNCE[s] ?? ""}
+            {announcement}
           </p>
           <button ref={backButton} type="button" className="launch-back" onClick={back}>
             Back to start

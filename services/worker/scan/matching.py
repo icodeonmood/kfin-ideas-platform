@@ -15,6 +15,7 @@ from typing import Any
 from core import killswitch
 from core.crypto import keyed_hash
 from core.db import Conn
+from core.stage_words import MATCH_CARD_WORDS
 from embeddings import embed
 from gateway import run_agent
 from pii.detect import detect, directory
@@ -25,25 +26,7 @@ from router.match import Candidate, match
 from router.taxonomy import glossary_ids
 from scan.inputs import _taxonomy
 
-STAGE_WORDS = {
-    "scanned": "With the review desk",
-    "reviewed": "Reviewed",
-    "needs_info": "With the review desk",
-    "in_cluster": "Grouped with similar ideas",
-    "ready_for_scoring": "Being assessed",
-    "scored": "Being assessed",
-    "shortlisted": "Shortlisted",
-    "presenting": "Being presented",
-    "picked": "Picked",
-    "handover": "Being built",
-    "in_garage": "Being built",
-    "in_fix_track": "Being fixed",
-    "shipped": "Already running",
-    "resolved": "Fixed",
-    "measuring": "Already running",
-    "declined": "Looked at before",
-    "parked": "Looked at before",
-}
+STAGE_WORDS = MATCH_CARD_WORDS  # the shared table, with the Find your crew exception (BLD-104)
 
 
 def card_text(card: dict[str, Any]) -> str:
