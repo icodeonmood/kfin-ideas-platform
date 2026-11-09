@@ -33,7 +33,7 @@ The owner's workspace folder ("the Garage" workspace) is `~/the-garage` on this 
 | 5 | Product Agent OS conventions | The Garage `CLAUDE.md` and the `delivery/` folder conventions: folder layout, how work moves between phases, review gates, naming | `docs/inherited/product-agent-os.md` (summary) | How this repo's `CLAUDE.md`, agents and pull requests are organised | Note it; follow this repo's `CLAUDE.md` |
 | 6 | PM skills conventions | Spec, PRD or feature-brief templates and writing rules | `docs/inherited/pm-conventions.md` (summary) plus the brief template under `contracts/garage/templates/` (exact copy) | `brief-writer` (week 6); handover pack | Use §4.8 fields |
 | 7 | Claude Playbook conventions | Prompt structure, examples, eval and versioning rules | `docs/inherited/claude-playbook.md` (summary) | `agents/*` prompts, `CHANGELOG.md`, `eval/golden/` | Keep the drafts in `agents/` |
-| 8 | The Garage brand assets (if they exist) | Logo files, colour and type tokens for The Garage | `apps/web/public/brand/garage/` and `apps/web/src/styles/garage-tokens.css` | UI header and the sub-brand lockup "The Garage · Ideas" | Plain neutral styling; flag for design. Do **not** substitute any other design system |
+| 8 | ~~The Garage brand assets (if they exist)~~ **Superseded 9 Nov 2026:** nothing is copied. The platform carries its own brand, 1% Club (DEC-027 to DEC-052): rules in `docs/BRAND.md`, mark files in `apps/web/public/brand/`, tokens in `apps/web/src/app/globals.css` | — | — | UI header lockup "1% Club" with the Spark mark. Employees never see "Garage" (DEC-035) | — |
 
 ## After copying
 
