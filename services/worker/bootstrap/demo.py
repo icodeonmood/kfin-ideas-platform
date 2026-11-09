@@ -652,6 +652,43 @@ def _deliveries(conn: Conn, p: dict[str, dict[str, str]], idea_at: dict[tuple[st
             )  # fmt: skip
 
 
+CHAIR_NOTE = (
+    "The ideas that stood out this month named who feels the problem, and how often. Start there, then say what "
+    "changes on the day it works."
+)
+
+
+def _ember_and_points(conn: Conn, p: dict[str, dict[str, str]]) -> None:
+    """The Ember (BLD-128): last month's issue in the archive and this month's draft with the chair's note, so the
+    archive and Write The Ember are not empty. Then the private points (BLD-130) from everything above."""
+    from ember.service import IST, build
+    from points.ledger import sync
+
+    chair, admin = p["DEMO-00004"]["id"], p["DEMO-00006"]["id"]
+    local = NOW.astimezone(IST)
+    this_month = dt.date(local.year, local.month, 1)
+    last_month = dt.date(local.year - (local.month == 1), (local.month - 2) % 12 + 1, 1)
+    with conn.transaction():
+        if not conn.execute("SELECT 1 FROM ember_issues WHERE month = %s", (last_month,)).fetchone():
+            content = {**build(conn, last_month), "note": CHAIR_NOTE}
+            conn.execute(
+                "INSERT INTO ember_issues (month, state, content, created_by, sent_by, sent_at, chair_note_by) "
+                "VALUES (%s, 'sent', %s, %s, %s, %s, %s)",
+                (last_month, Jsonb(content), admin, admin, NOW - dt.timedelta(days=9), chair),
+            )
+        if not conn.execute("SELECT 1 FROM ember_issues WHERE month = %s", (this_month,)).fetchone():
+            row = conn.execute(
+                "INSERT INTO ember_issues (month, created_by, chair_note_by) VALUES (%s, %s, %s) RETURNING id",
+                (this_month, admin, chair),
+            ).fetchone()
+            assert row is not None
+            conn.execute(
+                "UPDATE ember_issues SET chair_note_encrypted = %s WHERE id = %s",
+                (seal(CHAIR_NOTE, f"ember:{row['id']}:note"), row["id"]),
+            )
+    sync(conn)
+
+
 def _insights(conn: Conn) -> None:
     """The lenses and the learning reports, so their screens are not empty. Counts and rates only."""
     import lenses
@@ -726,12 +763,20 @@ def remove(conn: Conn) -> None:
                 "DELETE FROM deliveries d WHERE (d.subject_type = 'idea' AND d.subject_id = ANY(%s)) "
                 "OR d.owner_user_id = ANY(%s::uuid[]) OR d.sponsor_user_id = ANY(%s::uuid[]) "
                 "OR d.pm_user_id = ANY(%s::uuid[]) OR d.created_by = ANY(%s::uuid[]) "
-                "OR d.sponsor_approved_by = ANY(%s::uuid[]) "
+                "OR d.sponsor_approved_by = ANY(%s::uuid[]) OR d.submitted_by = ANY(%s::uuid[]) "
+                "OR d.completed_by = ANY(%s::uuid[]) "
                 "OR EXISTS (SELECT 1 FROM delivery_milestones m WHERE m.delivery_id = d.id "
                 "AND m.owner_user_id = ANY(%s::uuid[])) "
                 "OR EXISTS (SELECT 1 FROM delivery_measurements m WHERE m.delivery_id = d.id AND (m.filled_by = ANY(%s::uuid[]) "
                 "OR m.confirmed_by = ANY(%s::uuid[]) OR m.finance_confirmed_by = ANY(%s::uuid[])))",
-                (ideas, *([users] * 9)),
+                (ideas, *([users] * 11)),
+            )
+        if _has_table(conn, "ember_issues"):
+            # Issues a demo person drafted, wrote the note for or sent (BLD-128).
+            conn.execute(
+                "DELETE FROM ember_issues WHERE created_by = ANY(%s::uuid[]) OR sent_by = ANY(%s::uuid[]) "
+                "OR chair_note_by = ANY(%s::uuid[])",
+                (users, users, users),
             )
         if _has_table(conn, "learning_proposals"):
             # Proposals drawn from demo ideas, or decided by a demo person; the next run proposes again if due.
@@ -795,6 +840,8 @@ def load(conn: Conn) -> None:
             emit(conn, "ones.inducted", {"current_owner_ids": [people[emp]["id"]], "one_id": one_ids[emp]})
         _deliveries(conn, people, idea_at)
     _insights(conn)
+    if _has_table(conn, "ember_issues"):
+        _ember_and_points(conn, people)
 
 
 def main(argv: list[str] | None = None) -> int:

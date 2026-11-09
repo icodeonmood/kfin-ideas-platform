@@ -39,6 +39,7 @@ WEEKLY: dict[str, tuple[int, clock]] = {
 # job type -> minutes. Enqueued once per slot of that many minutes.
 EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
+    "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
 }
 
 

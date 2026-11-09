@@ -1585,3 +1585,41 @@ blockquote {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* The journey page (BLD-130): isometric blocks on Zed, the spark the only colour. */
+.journey-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1.5rem;
+}
+
+.journey-steps h2 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+.journey-art {
+  display: block;
+  width: 100%;
+  max-width: 16rem;
+  height: auto;
+  border-radius: 14px;
+  background: var(--graphite);
+}
+
+.points-panel {
+  margin: 1.5rem 0;
+}
+
+.points-total {
+  margin: 0.5rem 0 1rem;
+}
+
+.points-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}

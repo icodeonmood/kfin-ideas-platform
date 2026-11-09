@@ -3,7 +3,7 @@
 /**
  * A One's own dashboard on My ideas (DEC-067, DEC-073, DEC-075, DEC-078): their number and tier in the tier's
  * colour on Zed, the 30-day window to choose a number, their impact brief (the committee approves it), measured
- * impact, and private points (coming soon). After a tier change the glow-up plays once (DEC-084).
+ * impact; private points are on My ideas for everyone (BLD-130). After a tier change the glow-up plays once (DEC-084).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -199,12 +199,6 @@ export function OneDashboard({ one }: { one: MyOne }) {
         ) : (
           <p className="muted">Measured 30 and 90 days after your idea ships.</p>
         )}
-      </div>
-
-      <div className="one-section">
-        <h3>Your points</h3>
-        <p className="coming-soon">Coming soon</p>
-        <p className="muted">Only you will see your points. They never decide who becomes a One.</p>
       </div>
 
       <div className="one-section">

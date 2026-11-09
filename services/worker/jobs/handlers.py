@@ -182,6 +182,14 @@ def delivery_tick(conn: Conn, payload: dict[str, Any]) -> None:
     tick(conn)
 
 
+@handler("points.sync")
+def points_sync(conn: Conn, payload: dict[str, Any]) -> None:
+    """Hourly: turn what has happened into private points, each award once (DEC-078, BLD-130)."""
+    from points.ledger import sync
+
+    sync(conn)
+
+
 @handler("lenses.build")
 def lenses_build(conn: Conn, payload: dict[str, Any]) -> None:
     """Weekly on Mondays (or on request): the LOB and role lenses, counts only (§4.14)."""

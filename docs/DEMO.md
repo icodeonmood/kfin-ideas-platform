@@ -56,11 +56,15 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 19. **Finance's confirmation** (Sana): Delivery, then the investor service request status page (closed, target met). The money waits for Finance: "Finance has confirmed the money" puts it on the wall with the Ones' impact.
 20. **Lenses** (Meera or Sana): Menu, then Lenses. Ideas by line of business and by role, and the colleagues around each group, as counts only.
 21. **Learning** (Sana): Admin, then "Learning reports and proposals". A new glossary term found in three ideas (IFSC) waits for the product team: approve or decline. The review desk's acceptance rates are shown, and every kind stays with a person.
+22. **Points and the journey** (Kavya): My ideas, "Your points" (only she sees them), then "How an idea becomes a One": the four steps drawn as isometric blocks.
+23. **The Ember** (anyone): the footer's "The Ember" link. Last month's issue is in the archive.
+24. **Write The Ember** (Vivek, then Sana): "Work on this month's issue". Vivek edits "What the committee looks for"; Sana reads the preview and sends it in two steps ("Send to everyone", then "Yes, send to everyone"). The email arrives in Mailpit (http://localhost:8025) in the branded HTML, light or dark depending on the mail app.
 
 ## Shows "Coming soon"
 
 - **Automatic tiers and lapse proposals** (console): today the committee decides each one.
-- **Your points** (a One's dashboard).
+- **Points for presenting, for a working group's shipped work, and restored after an appeal** (My ideas).
+- **Ideas picked within the month, by line of business** (The Ember shows ideas picked so far).
 - **Impact weights** (leaderboard).
 - **Manager notes and nudges** (manager view).
 - **Live sync with the delivery pipeline** (Delivery): steps are recorded by hand until then.

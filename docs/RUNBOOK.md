@@ -65,6 +65,7 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 | `learning.run` | 05:30 (each loop on its own day: daily, Mondays, the 1st, quarter starts) | Log `learning.ran` per loop, or `learning.switched_off` while `learning.jobs` is off; any `alert.drift_*` row is read the same morning |
 | `lenses.build` | Mondays 05:00 | Log `lenses.built` with the LOB and role counts |
 | `delivery.tick` | 09:30 | Log `delivery.tick` with its counts |
+| `points.sync` | Every hour | Log `points.synced` with a count when it adds anything. Points are private: nobody reads anyone else's |
 | Ticker (every 20 s, checks every minute) | Continuous | Email goes out; reminders and breaches appear; the watches run |
 
 ## 4. Incidents

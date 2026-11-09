@@ -421,6 +421,14 @@ def ones_announce(body: dict[str, Any]) -> JSONResponse:
 # archive for everyone. Same refusal handling as the Ones.
 
 
+@app.get("/internal/me/{user_id}/points", dependencies=[Depends(require_token)])
+def my_points(user_id: str) -> JSONResponse:
+    """A person's own points (DEC-078): the web app passes the signed-in person; nobody reads anyone else's."""
+    from points.ledger import mine
+
+    return _ones_call(mine, user_id)
+
+
 @app.get("/internal/ember", dependencies=[Depends(require_token)])
 def ember_archive() -> JSONResponse:
     from ember.service import archive
