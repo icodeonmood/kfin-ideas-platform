@@ -39,7 +39,12 @@ test("a colleague's idea shows as a card with nothing of theirs on it; teaming u
 }, testInfo) => {
   test.setTimeout(90_000);
   const stamp = Date.now().toString(36);
-  const theirs = `${SHARED}. Pune team note ${stamp}: forms wait in the outward register for a day.`;
+  // A sentence only this run's two ideas share. Earlier runs leave many look-alike ideas in the dev database,
+  // including the joiner's own (which are never shown to them); without it they can crowd this pair out of
+  // the top twenty candidates.
+  const pair = `q${Math.random().toString(36).slice(2, 9)}`; // never contains `stamp`, which must not leak
+  const together = `Forms for ${pair} queue at the ${pair} inward desk`;
+  const theirs = `${SHARED}. ${together}. Pune team note ${stamp}: forms wait in the outward register for a day.`;
   const ctxA = await browser.newContext();
   const a = await ctxA.newPage();
   await quickCapture(a, PERSONAS.contributor, theirs);
@@ -56,7 +61,7 @@ test("a colleague's idea shows as a card with nothing of theirs on it; teaming u
   const b = await ctxB.newPage();
   // A different colleague per viewport, so the two runs never compete for the same join.
   const joiner = testInfo.project.name === "desktop" ? PERSONAS.reviewer : PERSONAS.core;
-  await quickCapture(b, joiner, `${SHARED}. Our Jaipur branch sees the same delay.`);
+  await quickCapture(b, joiner, `${SHARED}. ${together}, and our branch sees the same delay.`);
   await expectNoSeriousAxeIssues(b);
   await b.getByRole("button", { name: "Looks right" }).click();
   const crew = b.getByRole("heading", { level: 3, name: "Find your crew" });
