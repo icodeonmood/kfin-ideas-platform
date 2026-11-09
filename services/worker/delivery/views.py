@@ -60,8 +60,9 @@ def _label(conn: Conn, subject_type: str, subject_id: str) -> str:
 
 def _next_measurement(conn: Conn, delivery_id: int) -> dict[str, Any] | None:
     row = conn.execute(
-        "SELECT mark, due_at, filled_at, confirmed_at FROM delivery_measurements WHERE delivery_id = %s "
-        "AND confirmed_at IS NULL ORDER BY due_at LIMIT 1",
+        "SELECT m.mark, m.due_at, m.filled_at, m.confirmed_at FROM delivery_measurements m "
+        "JOIN deliveries d ON d.id = m.delivery_id WHERE m.delivery_id = %s AND m.confirmed_at IS NULL "
+        "AND d.state IN ('shipped', 'resolved') ORDER BY m.due_at LIMIT 1",
         (delivery_id,),
     ).fetchone()
     if row is None:

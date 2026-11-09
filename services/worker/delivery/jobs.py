@@ -93,12 +93,14 @@ def _overdue_milestones(conn: Conn, now: dt.datetime, today: dt.date) -> tuple[i
         due = dt.datetime.combine(r["due_on"], dt.time(18, 0), tzinfo=IST)
         if r["escalated_on"] is None and add_working_days(due, 10) <= now:
             chairs = chairs if chairs is not None else _role_users(conn, "core_chair")
-            if chairs:
+            if chairs:  # no chair yet: try again on the next run rather than mark it escalated (BLD-127)
                 emit(
                     conn, "delivery.overdue", {**refs, "reason": "plan_late", "escalation_target_ids": chairs}
                 )
-            conn.execute("UPDATE delivery_milestones SET escalated_on = %s WHERE id = %s", (today, r["id"]))
-            escalated += 1
+                conn.execute(
+                    "UPDATE delivery_milestones SET escalated_on = %s WHERE id = %s", (today, r["id"])
+                )
+                escalated += 1
     return overdue, escalated
 
 

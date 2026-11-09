@@ -26,6 +26,7 @@ import datetime as dt
 import re
 from typing import Any
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from comms.route import emit
@@ -41,6 +42,7 @@ from delivery.phases import (
 )
 from ones.service import MAX_MEASURE, MEASURE_UNITS, roles
 from ones.text import OnesRefused, checked, seal
+from sla.calendar import add_working_days
 
 Refused = OnesRefused  # one refusal type across the committee's tools: a safe code, never text
 
@@ -50,10 +52,15 @@ SPEND_REF = re.compile(r"^[A-Z0-9][A-Z0-9/-]{2,30}$")
 COMMITTEE = {"core_committee", "core_chair"}
 SPONSOR_ROLES = {"sponsor", "ceo"}
 FLOW_STAGES = (
-    "ready_for_scoring", "scored", "shortlisted", "presenting", "picked", "handover", "in_garage", "in_fix_track",
+    "in_cluster", "ready_for_scoring", "scored", "shortlisted", "presenting", "picked", "handover", "in_garage", "in_fix_track",
     "shipped", "resolved", "measuring",
 )  # fmt: skip
 MAX_NUMBER = 10**12
+PACK_FIELDS = frozenset({
+    "track", "product", "feature_type", "compliance_tier", "unit", "baseline", "target", "spend", "checklist",
+    "owner_email", "sponsor_email", "pm_email", "metric", "objective",
+})  # fmt: skip
+FILL_EARLY_WD = 2  # a result can be entered from two working days before its mark (BLD-127)
 
 
 # --- Helpers ---------------------------------------------------------------------------------------------------
@@ -236,7 +243,11 @@ def start(conn: Conn, actor: str, body: dict[str, Any]) -> dict[str, Any]:
             raise Refused(409, "already_started")
         if stage != "picked":
             raise Refused(409, "not_picked")
-        d = _insert(conn, st, sid, str(track), actor)
+        try:
+            with conn.transaction():  # a savepoint: a start that lost a race answers 409, not 500
+                d = _insert(conn, st, sid, str(track), actor)
+        except psycopg.errors.UniqueViolation:
+            raise Refused(409, "already_started") from None
         _audit(conn, actor, "delivery.started", f"delivery:{d['id']}", {"subject": sid, "track": track})
     return {"id": d["id"]}
 
@@ -341,7 +352,13 @@ def save_pack(conn: Conn, actor: str, delivery_id: Any, body: dict[str, Any]) ->
             sets.append("objective_encrypted = %s")
             args.append(seal(objective, f"delivery:{d['id']}:objective"))
         conn.execute(f"UPDATE deliveries SET {', '.join(sets)} WHERE id = %s", (*args, d["id"]))  # noqa: S608
-        _audit(conn, actor, "delivery.pack_saved", f"delivery:{d['id']}", {"keys": sorted(body)})
+        _audit(
+            conn,
+            actor,
+            "delivery.pack_saved",
+            f"delivery:{d['id']}",
+            {"keys": sorted(PACK_FIELDS & set(body))},
+        )
     return {"id": d["id"], "state": "drafting"}
 
 
@@ -384,7 +401,10 @@ def submit(conn: Conn, actor: str, delivery_id: Any) -> dict[str, Any]:
         gaps = missing(d)
         if gaps:
             raise Refused(422, "pack_incomplete:" + ",".join(gaps))
-        conn.execute("UPDATE deliveries SET state = 'awaiting_sponsor' WHERE id = %s", (d["id"],))
+        conn.execute(
+            "UPDATE deliveries SET state = 'awaiting_sponsor', submitted_by = %s WHERE id = %s",
+            (actor, d["id"]),
+        )
         emit(
             conn,
             "delivery.approval_needed",
@@ -414,6 +434,8 @@ def approve(conn: Conn, actor: str, delivery_id: Any, now: dt.datetime | None = 
         _sponsor_check(conn, d, actor, have)
         if d["state"] != "awaiting_sponsor":
             raise Refused(409, "not_awaiting_sponsor")
+        if str(d.get("submitted_by")) == actor:
+            raise Refused(403, "own_submission")  # the person who sent the pack never approves it (BLD-126)
         gaps = missing(d)
         if gaps:
             raise Refused(422, "pack_incomplete:" + ",".join(gaps))
@@ -487,6 +509,7 @@ def set_phase(
             raise Refused(409, "not_in_delivery")
         if phase == d["phase"] and gate == d["gate_status"]:
             return {"id": d["id"], "phase": phase, "unchanged": True}
+        previous_phase = d["phase"]
         blocked_since = (d["blocked_since"] or now) if gate == "blocked" else None
         conn.execute(
             "UPDATE deliveries SET phase = %s, gate_status = %s, blocked_since = %s, phase_updated_at = %s, "
@@ -499,7 +522,9 @@ def set_phase(
         )
         if phase == "shipped":
             _close_delivery_work(conn, d, "shipped", now)
-        else:
+        elif (
+            phase != previous_phase
+        ):  # a gate going blocked or clear is the team's business, not news (BLD-127)
             _notify(conn, d, "delivery.phase_changed", {"phase": phase, "gate_status": gate})
     return {"id": d["id"], "phase": phase}
 
@@ -622,10 +647,11 @@ def complete_fix(
         d = _delivery(conn, d["id"], lock=True)
         _fix_owner_check(conn, d, actor, have)
         conn.execute(
-            "UPDATE deliveries SET completion = %s, completion_notes = %s, completed_at = %s WHERE id = %s",
+            "UPDATE deliveries SET completion = %s, completion_notes = %s, completed_at = %s, completed_by = %s "
+            "WHERE id = %s",
             (
                 Jsonb({"before": before, "after": after, "unit": (d["pack"] or {}).get("unit")}),
-                seal(notes, f"delivery:{d['id']}:completion") if notes else None, now, d["id"],
+                seal(notes, f"delivery:{d['id']}:completion") if notes else None, now, actor, d["id"],
             ),
         )  # fmt: skip
         emit(
@@ -651,6 +677,8 @@ def approve_completion(
         _sponsor_check(conn, d, actor, have)
         if d["track"] != "fix" or d["state"] != "in_delivery" or d["completed_at"] is None:
             raise Refused(409, "nothing_to_approve")
+        if str(d.get("completed_by")) == actor:
+            raise Refused(403, "own_entry")  # whoever submitted the numbers never approves them (BLD-126)
         _close_delivery_work(conn, d, "resolved", now)
         _audit(conn, actor, "delivery.resolved", f"delivery:{d['id']}", {})
     return {"id": d["id"], "state": "resolved"}
@@ -704,13 +732,12 @@ def fill(
         m = _measurement(conn, d, mark)
         if m["confirmed_at"] is not None:
             raise Refused(409, "already_confirmed")
+        if add_working_days(now, FILL_EARLY_WD) < m["due_at"]:
+            raise Refused(409, "not_due_yet")  # results come at 30 and 90 days, not on the day it ships
         pack = d["pack"] or {}
         results["target_met"] = target_met(pack.get("baseline"), pack.get("target"), results["metric_actual"])
-        target = pack.get("target")
-        results["actual_vs_target"] = (
-            round(float(results["metric_actual"]) / float(target), 3)
-            if target not in (None, 0, 0.0)
-            else None
+        results["actual_vs_target"] = progress_ratio(
+            pack.get("baseline"), pack.get("target"), results["metric_actual"]
         )
         conn.execute(
             "UPDATE delivery_measurements SET results = %s, notes_encrypted = %s, filled_by = %s, filled_at = %s, "
@@ -745,11 +772,18 @@ def confirm(
             raise Refused(409, "already_confirmed")
         if str(m["filled_by"]) == actor:
             raise Refused(403, "own_entry")
+        if mark == "day_90":
+            first = conn.execute(
+                "SELECT confirmed_at FROM delivery_measurements WHERE delivery_id = %s AND mark = 'day_30'",
+                (d["id"],),
+            ).fetchone()
+            if first is None or first["confirmed_at"] is None:
+                raise Refused(409, "day_30_first")
         conn.execute(
             "UPDATE delivery_measurements SET confirmed_by = %s, confirmed_at = %s WHERE id = %s",
             (actor, now, m["id"]),
         )
-        feed_ones(conn, d, m["results"] or {}, finance_ok=m["finance_confirmed_at"] is not None)
+        feed_latest(conn, d)
         if mark == "day_30":
             _set_stage(conn, d, "measuring")
             _notify(conn, d, "delivery.phase_changed", {"phase": "measured_30"})
@@ -777,14 +811,43 @@ def finance_confirm(
         m = _measurement(conn, d, mark)
         if "money" not in (m["results"] or {}):
             raise Refused(409, "no_money_figure")
+        if m["finance_confirmed_at"] is not None:
+            raise Refused(409, "already_finance_confirmed")
+        if str(m["filled_by"]) == actor:
+            raise Refused(403, "own_entry")  # the admin who typed the figure never vouches for it (BLD-126)
         conn.execute(
             "UPDATE delivery_measurements SET finance_confirmed_by = %s, finance_confirmed_at = %s WHERE id = %s",
             (actor, now, m["id"]),
         )
-        if m["confirmed_at"] is not None:
-            feed_ones(conn, d, m["results"] or {}, finance_ok=True)
+        feed_latest(conn, d)
         _audit(conn, actor, "delivery.finance_confirmed", f"delivery:{d['id']}", {"mark": mark})
     return {"id": d["id"], "mark": mark, "finance_confirmed": True}
+
+
+def progress_ratio(baseline: Any, target: Any, actual: Any) -> float | None:
+    """How far the result went from the baseline towards the target: 1.0 is the target met exactly, for an
+    increase or a reduction alike (BLD-127). None without a baseline, or when the target is the baseline."""
+    try:
+        b, t, a = float(baseline), float(target), float(actual)
+    except (TypeError, ValueError):
+        return None
+    if t == b:
+        return None
+    return round((a - b) / (t - b), 3)
+
+
+def feed_latest(conn: Conn, d: dict[str, Any]) -> int:
+    """The Ones' measured impact always comes from the latest confirmed result (the 90-day one once it exists),
+    with money shown only if Finance confirmed that same result. A late Finance confirmation of the 30-day result
+    never overwrites 90-day values (BLD-126)."""
+    m = conn.execute(
+        "SELECT results, finance_confirmed_at FROM delivery_measurements WHERE delivery_id = %s "
+        "AND confirmed_at IS NOT NULL ORDER BY CASE mark WHEN 'day_90' THEN 0 ELSE 1 END LIMIT 1",
+        (d["id"],),
+    ).fetchone()
+    if m is None:
+        return 0
+    return feed_ones(conn, d, m["results"] or {}, finance_ok=m["finance_confirmed_at"] is not None)
 
 
 def feed_ones(conn: Conn, d: dict[str, Any], results: dict[str, Any], *, finance_ok: bool) -> int:

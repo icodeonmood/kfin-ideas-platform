@@ -25,6 +25,8 @@ cast = test_ones.cast
 
 pytestmark = pytest.mark.stack
 NOW = dt.datetime(2026, 12, 14, 10, 0, tzinfo=dt.UTC)
+D30 = NOW + dt.timedelta(days=30)  # results come at their marks (BLD-127)
+D90 = NOW + dt.timedelta(days=90)
 METRIC = "Minutes to reconcile one AMC dividend file"
 
 
@@ -191,18 +193,19 @@ def test_build_track_from_phase_to_closed_feeds_the_ones(ones_db: Any, crew: Any
     assert [r["mark"] for r in marks.fetchall()] == ["day_30", "day_90"]
 
     refused("forbidden", service.fill, db, crew["sponsor"], did, "day_30", {"metric_actual": 12})
+    refused("not_due_yet", service.fill, db, crew["owner"], did, "day_30", {"metric_actual": 12}, now=NOW)
     out = service.fill(db, crew["owner"], did, "day_30", {"metric_actual": 12,
-                       "time": {"value": 300, "unit": "hours a month"}}, now=NOW)  # fmt: skip
+                       "time": {"value": 300, "unit": "hours a month"}}, now=D30)  # fmt: skip
     assert out["target_met"] is False
     refused("sponsor_only", service.confirm, db, crew["owner"], did, "day_30")
-    service.confirm(db, crew["sponsor"], did, "day_30", now=NOW)
+    service.confirm(db, crew["sponsor"], did, "day_30", now=D30)
     assert stage(db, idea) == "measuring"
     measures = db.execute("SELECT measures FROM ones WHERE id = %s", (one["one_id"],)).fetchone()["measures"]
     assert measures["time"] == {"value": 300, "unit": "hours a month"}
 
     service.fill(db, crew["owner"], did, "day_90", {"metric_actual": 9, "capex_inr": 0, "opex_inr": 120000,
-                 "money": {"value": 1800000, "unit": "rupees a year"}}, now=NOW)  # fmt: skip
-    service.confirm(db, crew["sponsor"], did, "day_90", now=NOW)
+                 "money": {"value": 1800000, "unit": "rupees a year"}}, now=D90)  # fmt: skip
+    service.confirm(db, crew["sponsor"], did, "day_90", now=D90)
     d = db.execute("SELECT state, outcome FROM deliveries WHERE id = %s", (did,)).fetchone()
     assert (d["state"], d["outcome"]) == ("closed", "target_met") and stage(db, idea) == "closed"
     money = db.execute("SELECT measures FROM ones WHERE id = %s", (one["one_id"],)).fetchone()["measures"][
@@ -211,7 +214,8 @@ def test_build_track_from_phase_to_closed_feeds_the_ones(ones_db: Any, crew: Any
     assert money["finance_confirmed"] is False  # money shows only after Finance confirms (DEC-071)
     refused("forbidden", service.finance_confirm, db, crew["sponsor"], did, "day_90")
     refused("no_money_figure", service.finance_confirm, db, crew["admin"], did, "day_30")
-    service.finance_confirm(db, crew["admin"], did, "day_90", now=NOW)
+    service.finance_confirm(db, crew["admin"], did, "day_90", now=D90)
+    refused("already_finance_confirmed", service.finance_confirm, db, crew["admin"], did, "day_90")
     money = db.execute("SELECT measures FROM ones WHERE id = %s", (one["one_id"],)).fetchone()["measures"][
         "money"
     ]
@@ -224,10 +228,10 @@ def test_a_sponsor_never_confirms_their_own_entry(ones_db: Any, crew: Any) -> No
     both = person(db, "sponsor", "admin")
     _, did = approved(db, crew, sponsor=both)
     service.set_phase(db, crew["pm"], did, {"phase": "shipped"}, now=NOW)
-    service.fill(db, both, did, "day_30", {"metric_actual": 20}, now=NOW)  # as an admin
+    service.fill(db, both, did, "day_30", {"metric_actual": 20}, now=D30)  # as an admin
     refused("own_entry", service.confirm, db, both, did, "day_30")
-    service.fill(db, crew["owner"], did, "day_30", {"metric_actual": 20}, now=NOW)
-    assert service.confirm(db, both, did, "day_30", now=NOW)["closed"] is False
+    service.fill(db, crew["owner"], did, "day_30", {"metric_actual": 20}, now=D30)
+    assert service.confirm(db, both, did, "day_30", now=D30)["closed"] is False
 
 
 def test_the_submitter_hears_about_progress_but_is_sent_to_my_ideas(ones_db: Any, crew: Any) -> None:
@@ -243,6 +247,83 @@ def test_the_submitter_hears_about_progress_but_is_sent_to_my_ideas(ones_db: Any
     assert subject_line.endswith(": Started") and "has started" in body
     for word in ("Garage", "duplicate", "rejected", "already solved"):
         assert word not in body and word not in subject_line
+
+
+def test_nobody_approves_their_own_submission_or_completion(ones_db: Any, crew: Any) -> None:
+    """BLD-126: an admin who is also the named sponsor can't send a pack and approve it, or submit a fix's numbers
+    and approve them."""
+    db = ones_db
+    both = person(db, "sponsor", "admin")
+    _, did = started(db, crew)
+    service.save_pack(db, crew["member"], did, full_pack(db, crew, sponsor_email=email(db, both)))
+    service.submit(db, both, did)  # as an admin
+    refused("own_submission", service.approve, db, both, did)
+    service.send_back(db, both, did)
+    service.submit(db, crew["owner"], did)
+    assert service.approve(db, both, did, now=NOW)["state"] == "in_delivery"
+
+    _, fix = approved(db, crew, "fix", pm_email="", sponsor=both)
+    service.complete_fix(db, both, fix, {"before": 40, "after": 15}, now=NOW)  # as an admin
+    refused("own_entry", service.approve_completion, db, both, fix)
+    service.complete_fix(db, crew["owner"], fix, {"before": 40, "after": 14}, now=NOW)
+    assert service.approve_completion(db, both, fix, now=NOW)["state"] == "resolved"
+
+
+def test_results_follow_their_marks_and_finance_never_rolls_back(ones_db: Any, crew: Any) -> None:
+    """BLD-126/127: no 90-day confirmation before the 30-day one; Finance confirming a late 30-day money figure
+    doesn't replace the 90-day values the Ones show; the admin who typed a figure never vouches for it."""
+    db = ones_db
+    idea, did = approved(db, crew)
+    pid = ones_service.induct_from_decision(db, idea, crew["chair"], NOW.date(), now=NOW)
+    assert pid is not None
+    one = ones_service.carry_out(db, crew["admin"], pid, now=NOW)
+    service.set_phase(db, crew["pm"], did, {"phase": "shipped"}, now=NOW)
+    service.fill(db, crew["admin"], did, "day_30", {"metric_actual": 30,
+                 "money": {"value": 100000, "unit": "rupees a year"}}, now=D30)  # fmt: skip
+    service.fill(db, crew["owner"], did, "day_90", {"metric_actual": 12,
+                 "money": {"value": 900000, "unit": "rupees a year"}}, now=D90)  # fmt: skip
+    refused("day_30_first", service.confirm, db, crew["sponsor"], did, "day_90")
+    service.confirm(db, crew["sponsor"], did, "day_30", now=D30)
+    service.confirm(db, crew["sponsor"], did, "day_90", now=D90)
+    refused("own_entry", service.finance_confirm, db, crew["admin"], did, "day_30")  # they typed it
+    other = person(db, "admin")
+    service.finance_confirm(db, other, did, "day_30", now=D90)
+    money = db.execute("SELECT measures FROM ones WHERE id = %s", (one["one_id"],)).fetchone()["measures"][
+        "money"
+    ]
+    assert money["value"] == 900000 and money["finance_confirmed"] is False  # still the 90-day figure
+    service.finance_confirm(db, other, did, "day_90", now=D90)
+    money = db.execute("SELECT measures FROM ones WHERE id = %s", (one["one_id"],)).fetchone()["measures"][
+        "money"
+    ]
+    assert money == {"value": 900000, "unit": "rupees a year", "finance_confirmed": True}
+
+
+def test_a_group_delivery_moves_grouped_ideas_but_not_withdrawn_ones(ones_db: Any, crew: Any) -> None:
+    """BLD-126: member ideas still `in_cluster` move with their group; withdrawn and parked ones stay put."""
+    db = ones_db
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(9100, 9999) if f"CL-{n}" not in taken)
+    db.execute("INSERT INTO clusters (id, stage, distinct_contributors) VALUES (%s, 'picked', 3)", (cl,))
+    grouped = helpers.insert_idea(db, contributor=code_of(db, crew["submitter"]), stage="in_cluster")
+    left = helpers.insert_idea(db, contributor=code_of(db, crew["owner"]), stage="withdrawn")
+    parked = helpers.insert_idea(db, contributor=code_of(db, crew["pm"]), stage="parked")
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = ANY(%s)", (cl, [grouped, left, parked]))
+    did = service.start(db, crew["member"], {"subject_type": "cluster", "subject_id": cl, "track": "build"})[
+        "id"
+    ]
+    service.save_pack(db, crew["member"], did, full_pack(db, crew))
+    service.submit(db, crew["owner"], did)
+    service.approve(db, crew["sponsor"], did, now=NOW)
+    assert stage(db, grouped) == "in_garage"
+    assert (stage(db, left), stage(db, parked)) == ("withdrawn", "parked")
+
+
+def test_progress_ratio_reads_reductions_and_increases_alike() -> None:
+    assert service.progress_ratio(40, 10, 10) == 1.0  # a reduction, met
+    assert service.progress_ratio(40, 10, 25) == 0.5
+    assert service.progress_ratio(10, 40, 40) == 1.0  # an increase, met
+    assert service.progress_ratio(10, 10, 12) is None and service.progress_ratio(None, 10, 5) is None
 
 
 # --- Fix track and reminders -------------------------------------------------------------------------------------------
@@ -268,6 +349,9 @@ def test_fix_track_milestones_reminders_and_completion(ones_db: Any, crew: Any) 
     refused("nothing_to_approve", service.approve_completion, db, crew["sponsor"], did)
     service.complete_fix(db, crew["owner"], did, {"before": 40, "after": 15}, now=NOW)
     assert events(db, "delivery.completion_to_approve")[-1]["current_owner_ids"] == [crew["sponsor"]]
+    refused(
+        "own_entry", service.approve_completion, db, crew["owner"], did
+    )  # not a sponsor, and their numbers
     service.approve_completion(db, crew["sponsor"], did, now=NOW)
     assert stage(db, idea) == "resolved"
 
