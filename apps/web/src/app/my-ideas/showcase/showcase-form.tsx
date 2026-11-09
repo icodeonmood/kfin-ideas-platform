@@ -8,6 +8,8 @@ import type { ShowcaseBrief } from "@/server/ones";
 
 const ERRORS: Record<string, string> = {
   personal_data: "Please take out any personal details (numbers, addresses, investor names) and try again.",
+  text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
+  names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   text_too_long: "Please keep each part under 600 characters.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
 };

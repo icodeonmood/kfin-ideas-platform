@@ -211,19 +211,21 @@ def test_only_the_right_people_propose_approve_and_carry_out(ones_db: Any, cast:
     assert one["way_in"] == "founding" and one["tier"] == 1 and one["status"] == "active"
     assert one["swap_until"] == NOW + numbers.SWAP_WINDOW
 
-    # The chair never approves their own proposal alone; a recorded majority can.
+    # Nobody decides their own proposal: not alone as chair, and not by recording a meeting majority either
+    # (BLD-110). Another member records the majority instead.
     own = service.propose(db, cast["chair"], {**body, "email": email(db, person(db))}, now=NOW)
-    refused(
-        "own_proposal",
-        service.decide,
-        db,
-        cast["chair"],
-        own["id"],
-        {"verdict": "approve", "how": "chair"},
-        now=NOW,
-    )
-    service.decide(db, cast["chair"], own["id"], {"verdict": "approve", "how": "majority",
-                                                  "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
+    for how in ({"how": "chair"}, {"how": "majority", "meeting_on": NOW.date().isoformat()}):
+        refused(
+            "own_proposal",
+            service.decide,
+            db,
+            cast["chair"],
+            own["id"],
+            {"verdict": "approve", **how},
+            now=NOW,
+        )
+    service.decide(db, cast["member"], own["id"], {"verdict": "approve", "how": "majority",
+                                                   "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
     decided = db.execute(
         "SELECT approval, meeting_on FROM one_proposals WHERE id = %s", (own["id"],)
     ).fetchone()
@@ -498,3 +500,172 @@ def test_the_committee_flow_can_propose_the_owner_of_an_accepted_idea(ones_db: A
     out = service.carry_out(db, cast["admin"], pid, now=NOW)
     assert db.execute("SELECT way_in, idea_id FROM ones WHERE id = %s", (out["one_id"],)).fetchone() == {
         "way_in": "accepted_idea", "idea_id": idea_id}  # fmt: skip
+
+
+# --- Ones review fixes (BLD-110 to BLD-113) ---------------------------------------------------------------------------
+
+
+def test_one_person_cannot_propose_decide_and_carry_out_alone(ones_db: Any, cast: Any) -> None:
+    """Separation of duties (BLD-110): someone holding core_committee, core_chair and admin still needs others."""
+    db = ones_db
+    everything = person(db, "core_committee", "core_chair", "admin")
+    other_member = cast["member"]
+    body = {"kind": "include", "way_in": "founding", "email": email(db, person(db)), "title": TITLE,
+            "reason": CITATION}  # fmt: skip
+    p = service.propose(db, everything, body, now=NOW)
+    refused(
+        "own_proposal",
+        service.decide,
+        db,
+        everything,
+        p["id"],
+        {"verdict": "approve", "how": "chair"},
+        now=NOW,
+    )
+    refused("own_proposal", service.decide, db, everything, p["id"],
+            {"verdict": "approve", "how": "majority", "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
+
+    # Someone else decides; the proposer still cannot carry it out, nor can the decider.
+    service.decide(db, other_member, p["id"], {"verdict": "approve", "how": "majority",
+                                               "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
+    refused("own_proposal", service.carry_out, db, everything, p["id"], now=NOW)
+    decider_admin = person(db, "core_committee", "admin")
+    q = service.propose(db, cast["member"], {**body, "email": email(db, person(db))}, now=NOW)
+    service.decide(db, decider_admin, q["id"], {"verdict": "approve", "how": "majority",
+                                                "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
+    refused("own_proposal", service.carry_out, db, decider_admin, q["id"], now=NOW)
+    assert service.carry_out(db, cast["admin"], q["id"], now=NOW)["state"] == "carried_out"
+
+    # The committee flow's own decision: the decider is never the admin member who carries it out.
+    idea_owner = person(db)
+    code = db.execute(
+        "SELECT contributor_code FROM contributor_map WHERE user_id = %s", (idea_owner,)
+    ).fetchone()
+    idea_id = helpers.insert_idea(db, contributor=code["contributor_code"], stage="picked")
+    pid = service.induct_from_decision(db, idea_id, decider_admin, NOW.date(), now=NOW)
+    assert pid is not None
+    refused("own_proposal", service.carry_out, db, decider_admin, pid, now=NOW)
+
+
+def test_text_the_gatekeeper_would_hold_is_refused(ones_db: Any) -> None:
+    """Abuse or spam that the gatekeeper holds for a person is refused like personal data (BLD-111)."""
+    from ones import text
+
+    gk = {"personal_data": {"found": False, "confidence": 0.0}, "investor_context_tags": [],
+          "kind": {"value": "spam", "confidence": 0.99}, "abuse": {"value": False, "confidence": 0.0}}  # fmt: skip
+    with pytest.raises(OnesRefused) as exc:
+        text._verdict(gk)
+    assert exc.value.code == "text_needs_review"
+    gk["kind"] = {"value": "idea", "confidence": 0.99}
+    gk["abuse"] = {"value": True, "confidence": 0.99}
+    with pytest.raises(OnesRefused) as exc:
+        text._verdict(gk)
+    assert exc.value.code == "text_needs_review"
+
+
+def test_public_text_may_not_name_colleagues_and_is_checked_again_before_it_shows(
+    ones_db: Any, cast: Any
+) -> None:
+    """Titles and impact briefs reach everyone, so they pass the colleague and client detector when written and
+    again before display (BLD-111)."""
+    db = ones_db
+    named = person(db, name="Zubin Varghese Demoperson")
+    body = {"kind": "include", "way_in": "sponsored", "email": email(db, person(db)), "reason": CITATION,
+            "title": "Built with Zubin Varghese Demoperson for every AMC"}  # fmt: skip
+    refused("names_not_allowed", service.propose, db, cast["member"], body, now=NOW)
+    assert named
+    one = induct(db, cast, person(db))
+    db.execute("UPDATE ones SET brief_encrypted = %s, brief_approved_at = %s WHERE id = %s",
+               (service.seal("If this works: Zubin Varghese Demoperson stops retyping forms.",
+                             f"one:{one['one_id']}:brief"), NOW, one["one_id"]))  # fmt: skip
+    shown = [o for o in views.public(db)["ones"] if o["number"] == one["number"]]
+    assert shown and shown[0]["brief"] is None  # a name that slipped in never shows
+
+
+def test_the_announcement_waits_while_the_ones_are_off_the_wall(ones_db: Any, cast: Any) -> None:
+    db = ones_db
+    induct(db, cast, person(db))
+    killswitch.set_switch(db, "ones.public", "off", reason="test the announcement hold", actor="test")
+    killswitch.clear_cache()
+    try:
+        refused("ones_paused", service.announce, db, cast["admin"], now=NOW)
+    finally:
+        killswitch.set_switch(db, "ones.public", "on", reason="test over, back on", actor="test")
+        killswitch.clear_cache()
+    assert service.announce(db, cast["admin"], now=NOW)["announced"] >= 1
+
+
+def test_the_team_view_honours_opt_outs_and_counts_only_ideas_everyone_can_see(
+    ones_db: Any, cast: Any
+) -> None:
+    db = ones_db
+    manager = person(db)
+    shares = person(db, manager=manager, name="Synthetic Sharer")
+    opted_out = person(db, manager=manager, name="Synthetic Private")
+    db.execute("INSERT INTO comms_prefs (user_id, manager_notes) VALUES (%s, false)", (opted_out,))
+    code = db.execute("SELECT contributor_code FROM contributor_map WHERE user_id = %s", (shares,)).fetchone()
+    for stage, visibility in (
+        ("reviewed", "org"),
+        ("reviewed", "committee"),
+        ("blocked", "org"),
+        ("draft", "org"),
+    ):
+        db.execute(
+            "INSERT INTO ideas (stage, contributor_code, visibility) VALUES (%s, %s, %s)",
+            (stage, code["contributor_code"], visibility),
+        )
+    out = views.team(db, manager)
+    names = [p["name"] for p in out["people"]]
+    assert names == ["Synthetic Sharer"]  # the opted-out colleague is neither counted nor listed (BLD-113)
+    assert out["people"][0]["shared"] == 1  # only the org-visible idea in a public stage
+
+
+def test_a_glow_up_plays_only_for_a_step_up_and_all_are_marked_seen_together(ones_db: Any, cast: Any) -> None:
+    db = ones_db
+    subject = person(db)
+    one = induct(db, cast, subject)
+
+    def change(kind: str, tier_to: int) -> None:
+        p = service.propose(db, cast["member"], {"kind": kind, "one_id": one["one_id"], "tier_to": tier_to,
+                                                "reason": "Measured impact changed this quarter"}, now=NOW)  # fmt: skip
+        service.add_message(
+            db, cast["member"], p["id"], {"from": "committee", "text": "Thank you for the work."}
+        )
+        service.decide(db, cast["chair"], p["id"], {"verdict": "approve", "how": "chair"}, now=NOW)
+        service.carry_out(db, cast["admin"], p["id"], now=NOW)
+
+    change("tier_up", 3)
+    change("tier_down", 2)
+    change("tier_up", 4)
+    glows = db.execute(
+        "SELECT id, tier_to FROM one_glow_ups WHERE one_id = %s ORDER BY id", (one["one_id"],)
+    ).fetchall()
+    assert [g["tier_to"] for g in glows] == [3, 4]  # none for the step down
+    assert service.glow_up_seen(db, subject, glows[-1]["id"], now=NOW)
+    unseen = db.execute("SELECT count(*) AS n FROM one_glow_ups WHERE one_id = %s AND seen_at IS NULL",
+                        (one["one_id"],)).fetchone()  # fmt: skip
+    assert unseen["n"] == 0
+
+
+def test_a_second_legend_in_the_same_year_is_refused_by_the_database_too(ones_db: Any, cast: Any) -> None:
+    import psycopg
+
+    db = ones_db
+    a, b = induct(db, cast, person(db)), induct(db, cast, person(db))
+    db.execute("INSERT INTO one_legend_numbers (number, one_id, retired_on) VALUES (%s, %s, %s)",
+               (a["number"], a["one_id"], NOW.date()))  # fmt: skip
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        db.execute("INSERT INTO one_legend_numbers (number, one_id, retired_on) VALUES (%s, %s, %s)",
+                   (b["number"], b["one_id"], NOW.date()))  # fmt: skip
+
+
+def test_a_number_race_answers_try_again_not_500(
+    ones_db: Any, cast: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import psycopg
+
+    def clash(*_a: Any, **_k: Any) -> Any:
+        raise psycopg.errors.UniqueViolation("duplicate key")
+
+    monkeypatch.setattr(service, "_carry_out", clash)
+    refused("try_again", service.carry_out, ones_db, cast["admin"], 1, now=NOW)

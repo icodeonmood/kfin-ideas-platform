@@ -24,6 +24,8 @@ const ERRORS: Record<string, string> = {
   text_too_long: "Please keep your brief to 30 words or fewer.",
   text_too_short: "Please write at least a short sentence.",
   personal_data: "Please take out any personal details (numbers, addresses, investor names) and try again.",
+  text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
+  names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
 };
 

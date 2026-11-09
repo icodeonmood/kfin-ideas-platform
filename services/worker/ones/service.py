@@ -23,6 +23,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from comms.route import emit
+from core import killswitch
 from core.db import Conn
 from ones import numbers
 from ones.text import OnesRefused, checked, checked_parts, seal, seal_json, unseal
@@ -122,7 +123,7 @@ def propose(conn: Conn, actor: str, body: dict[str, Any], now: dt.datetime | Non
             if owner is None:
                 raise OnesRefused(422, "idea_not_theirs")
         else:
-            title = checked(conn, body.get("title"), min_chars=10, max_chars=120)
+            title = checked(conn, body.get("title"), min_chars=10, max_chars=120, public=True)
         current = conn.execute("SELECT status FROM ones WHERE user_id = %s", (subject,)).fetchone()
         if current and current["status"] == "active":
             raise OnesRefused(409, "already_a_one")
@@ -176,7 +177,7 @@ def propose_brief(conn: Conn, user_id: str, text: Any, now: dt.datetime | None =
     one = conn.execute("SELECT * FROM ones WHERE user_id = %s AND status = 'active'", (user_id,)).fetchone()
     if one is None:
         raise OnesRefused(403, "not_a_one")
-    brief = checked(conn, text, min_chars=10, max_chars=240, max_words=30)
+    brief = checked(conn, text, min_chars=10, max_chars=240, max_words=30, public=True)
     with conn.transaction():
         # A new draft replaces one still waiting for the committee.
         conn.execute(
@@ -301,8 +302,10 @@ def decide(
             raise OnesRefused(404, "not_found")
         if p["state"] != "proposed":
             raise OnesRefused(409, "not_open")
-        if how == "chair" and str(p["proposed_by"]) == actor:
-            raise OnesRefused(409, "own_proposal")  # the chair never approves their own proposal alone
+        if str(p["proposed_by"]) == actor:
+            # Nobody decides their own proposal, alone as chair or by recording a meeting majority (Ones review,
+            # BLD-110): the person who proposes, the person who decides and the person who carries out differ.
+            raise OnesRefused(409, "own_proposal")
         if str(p["subject_user_id"]) == actor:
             raise OnesRefused(409, "own_proposal")
         state = "approved" if verdict == "approve" else "declined"
@@ -354,6 +357,14 @@ def carry_out(conn: Conn, actor: str, proposal_id: int, now: dt.datetime | None 
     """The admin member carries out an approved proposal: the change, its audit row and the message, at once."""
     now = now or dt.datetime.now(dt.UTC)
     _need(conn, actor, {"admin"})
+    try:
+        return _carry_out(conn, actor, proposal_id, now)
+    except psycopg.errors.UniqueViolation:
+        # Two inductions claimed the same number, or two legends the same year, in the same moment (BLD-112).
+        raise OnesRefused(409, "try_again") from None
+
+
+def _carry_out(conn: Conn, actor: str, proposal_id: int, now: dt.datetime) -> dict[str, Any]:
     with conn.transaction():
         p = conn.execute("SELECT * FROM one_proposals WHERE id = %s FOR UPDATE", (proposal_id,)).fetchone()
         if p is None:
@@ -361,8 +372,8 @@ def carry_out(conn: Conn, actor: str, proposal_id: int, now: dt.datetime | None 
         p = dict(p)
         if p["state"] != "approved" or p["kind"] == "impact_brief":
             raise OnesRefused(409, "not_approved")
-        if str(p["subject_user_id"]) == actor:
-            raise OnesRefused(409, "own_proposal")
+        if actor in {str(p["subject_user_id"]), str(p["proposed_by"]), str(p["decided_by"])}:
+            raise OnesRefused(409, "own_proposal")  # separation of duties (BLD-110)
         out: dict[str, Any]
         if p["kind"] == "include":
             out = _induct(conn, p, now)
@@ -441,10 +452,12 @@ def _change_tier(conn: Conn, p: dict[str, Any], now: dt.datetime) -> dict[str, A
     if has_committee_message is None:
         raise OnesRefused(409, "committee_message_required")  # DEC-084
     conn.execute("UPDATE ones SET tier = %s WHERE id = %s", (p["tier_to"], one["id"]))
-    conn.execute(
-        "INSERT INTO one_glow_ups (one_id, proposal_id, tier_from, tier_to, created_at) VALUES (%s, %s, %s, %s, %s)",
-        (one["id"], p["id"], one["tier"], p["tier_to"], now),
-    )
+    if p["tier_to"] > one["tier"]:  # a glow-up plays only for a step up (DEC-084, Ones review)
+        conn.execute(
+            "INSERT INTO one_glow_ups (one_id, proposal_id, tier_from, tier_to, created_at) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (one["id"], p["id"], one["tier"], p["tier_to"], now),
+        )
     emit(
         conn,
         "ones.tier_changed",
@@ -457,8 +470,10 @@ def _legend(conn: Conn, p: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
     one = _one(conn, int(p["one_id"]), lock=True)
     if one["status"] != "active" or one["number"] is None:
         raise OnesRefused(409, "not_active")
+    # One a year (DEC-041), safe under concurrency: a lock here and a unique year column (BLD-112).
+    conn.execute("LOCK TABLE one_legend_numbers IN SHARE ROW EXCLUSIVE MODE")
     this_year = conn.execute(
-        "SELECT 1 FROM one_legend_numbers WHERE date_part('year', retired_on) = %s", (now.year,)
+        "SELECT 1 FROM one_legend_numbers WHERE retired_year = %s", (now.year,)
     ).fetchone()
     if this_year:
         raise OnesRefused(409, "legend_this_year")  # at most one a year (DEC-041)
@@ -536,14 +551,20 @@ def swap_number(conn: Conn, user_id: str, number: Any, now: dt.datetime | None =
 
 
 def glow_up_seen(conn: Conn, user_id: str, glow_id: int, now: dt.datetime | None = None) -> bool:
-    """The One has watched their glow-up; it does not play again."""
+    """The One has watched their glow-up; it does not play again. Only the latest one plays, so every unseen
+    glow-up of theirs is marked seen together (Ones review)."""
     now = now or dt.datetime.now(dt.UTC)
-    row = conn.execute(
-        "UPDATE one_glow_ups g SET seen_at = %s FROM ones o WHERE g.id = %s AND g.one_id = o.id AND o.user_id = %s "
-        "AND g.seen_at IS NULL RETURNING g.id",
-        (now, glow_id, user_id),
+    owned = conn.execute(
+        "SELECT g.one_id FROM one_glow_ups g JOIN ones o ON o.id = g.one_id WHERE g.id = %s AND o.user_id = %s "
+        "AND g.seen_at IS NULL",
+        (glow_id, user_id),
     ).fetchone()
-    return row is not None
+    if owned is None:
+        return False
+    conn.execute(
+        "UPDATE one_glow_ups SET seen_at = %s WHERE one_id = %s AND seen_at IS NULL", (now, owned["one_id"])
+    )
+    return True
 
 
 # --- Admin member: measures, screens, announcements ----------------------------------------------------------------
@@ -592,6 +613,8 @@ def announce(conn: Conn, actor: str, now: dt.datetime | None = None) -> dict[str
     """After a committee meeting: tell everyone about the Ones inducted since the last announcement (DEC-056)."""
     now = now or dt.datetime.now(dt.UTC)
     _need(conn, actor, {"admin"})
+    if not killswitch.is_on("ones.public", conn):
+        raise OnesRefused(503, "ones_paused")  # nothing about the Ones goes out while they are off the wall
     with conn.transaction():
         rows = conn.execute(
             "SELECT id FROM ones WHERE status = 'active' AND announced_at IS NULL ORDER BY inducted_at, id FOR UPDATE"

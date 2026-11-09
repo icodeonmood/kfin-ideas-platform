@@ -8,7 +8,7 @@ For: the product lead, walking through the app on the test Mac. Everything you'l
 make up migrate seed demo
 ```
 
-Open **http://localhost:3000**. `make demo` runs only on the local dev stack (`APP_ENV=dev`), and a second run changes nothing. **`make demo-reset`** starts the demo afresh. It also removes every One in the local database, so run it to see the glow-up again; it only plays once.
+Open **http://localhost:3000**. `make demo` runs only on the local dev stack (`APP_ENV=dev`, and only against the local `ideas` database), and a second run changes nothing. **`make demo-reset`** starts the demo afresh: it removes only the demo's own people and everything that is theirs (their Ones records, proposals, deliveries and ideas) and takes the demo ideas' files out of the local company repo, so Find your crew has nothing left over. Run it to see the glow-up again; it only plays once.
 
 ## Sign in
 

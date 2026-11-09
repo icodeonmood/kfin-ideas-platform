@@ -53,6 +53,13 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             (now, limit),
         ).fetchall()
         for r in rows:
+            if r["event"] == "ones.announced" and not killswitch.is_on("ones.public", conn):
+                # The Ones are off the wall: the announcement waits instead of failing (Ones review).
+                conn.execute(
+                    "UPDATE notifications SET send_after = %s WHERE id = %s",
+                    (now + dt.timedelta(minutes=15), r["id"]),
+                )
+                continue
             if r["urgency"] == "routine" and _hold_back(conn, r, now):
                 continue
             try:

@@ -46,6 +46,10 @@ WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
 IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
 CLUSTER_EVENTS = {"cluster.approved", "cluster.retired", "cluster.updated"}
 RUN_EVENT = "cluster.run_recorded"
+# `make demo-reset` takes the demo's own idea files out of the local dev repo (Ones review). Refused anywhere but
+# APP_ENV=dev, and only for a path the event names exactly.
+DEMO_REMOVED = "idea.demo_removed"
+DEMO_PATH = re.compile(r"ideas/[0-9]{4}/[0-9]{2}/(IDEA-[0-9]{4}-[0-9]{6})\.md")
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
 RETRY_BACKOFF_S = (1, 5, 15, 60)
@@ -208,6 +212,13 @@ class RepoWriter:
 
         if event["event_type"] in CLUSTER_EVENTS or event["event_type"] == RUN_EVENT:
             return self._one_cluster(conn, event)
+        if event["event_type"] == DEMO_REMOVED:
+            message = self._remove_demo_file(event)
+            sha = self.git.commit_all(message)
+            with conn.transaction():
+                self._mark_committed(conn, outbox_id, sha)
+            log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=DEMO_REMOVED)
+            return Outcome(outbox_id, sha, True)
         if event["event_type"] not in IDEA_EVENTS:
             raise EventError("unknown_event")
         idea_row = self._load_idea(conn, event)
@@ -409,6 +420,26 @@ class RepoWriter:
         note = rows[-1].get("note") or ""
         subject = f"[{idea['idea_id']}] {stage_word}" + (f" — {note}" if note else "")
         return f"{subject}\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+
+    def _remove_demo_file(self, event: dict[str, Any]) -> str:
+        payload: dict[str, Any] = event["payload"] or {}
+        rel = str(payload.get("path") or "")
+        m = DEMO_PATH.fullmatch(rel)
+        if (
+            self.settings.app_env != "dev"
+            or payload.get("demo") is not True
+            or not m
+            or m.group(1) != event["aggregate_id"]
+        ):
+            raise EventError("demo_remove_refused")
+        path = self.repo / rel
+        if path.exists():
+            path.unlink()
+        index = path.parent / "index.md"
+        if index.exists():
+            kept = [ln for ln in index.read_text(encoding="utf-8").split("\n") if f"[{m.group(1)}]" not in ln]
+            index.write_text("\n".join(kept), encoding="utf-8")
+        return f"[{m.group(1)}] demo_removed\n\nactor: {event['actor']}\nevent: {DEMO_REMOVED}\noutbox: {event['id']}\n"
 
     def _update_indexes(self, rel: str, idea_id: str, description: str) -> None:
         """Keep ideas/index.md → YYYY/index.md → MM/index.md listing every file (§2.1)."""

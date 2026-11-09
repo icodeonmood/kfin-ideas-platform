@@ -148,6 +148,7 @@ INSERT INTO kill_switches (name) VALUES ('ones.public') ON CONFLICT (name) DO NO
 
 -- migrate:down
 DELETE FROM kill_switches WHERE name = 'ones.public';
+DELETE FROM id_counters WHERE kind IN ('ONE', 'ONE-NO');   -- induction and jersey-number counters (Ones review)
 DROP TABLE IF EXISTS screen_settings;
 DROP TABLE IF EXISTS one_showcase_briefs;
 DROP TABLE IF EXISTS one_awards;

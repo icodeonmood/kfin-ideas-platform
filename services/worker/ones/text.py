@@ -35,13 +35,39 @@ class OnesRefused(Exception):
         self.status, self.code = status, code
 
 
-def checked(
-    conn: Conn, text: Any, *, min_chars: int = 10, max_chars: int = 400, max_words: int | None = None
-) -> str:
-    """The text, whitespace tidied, if it passes the length rules, the patterns and the gatekeeper. Run it before
-    any transaction opens: the gatekeeper is a model call."""
+def _verdict(gk_data: dict[str, Any]) -> None:
+    """The gatekeeper's reading, as a refusal: personal data is blocked, and text it would hold for a person (abuse
+    or spam, BLD-074) is refused too, so the writer can change it (Ones review, BLD-111)."""
     from scan.pipeline import decide, thresholds  # the scan's own reading of the gatekeeper's output
 
+    verdict = decide(gk_data, thresholds())
+    if verdict == "blocked":
+        raise OnesRefused(422, "personal_data")
+    if verdict == "held":
+        raise OnesRefused(422, "text_needs_review")
+
+
+def no_names(conn: Conn, text: str) -> None:
+    """Text that will be shown to everyone (a One's title or impact brief) may not name a colleague or a client:
+    the same detector the wall's summaries pass (BLD-111)."""
+    from pii.detect import detect, directory
+
+    if detect(text, directory(conn)):
+        raise OnesRefused(422, "names_not_allowed")
+
+
+def checked(
+    conn: Conn,
+    text: Any,
+    *,
+    min_chars: int = 10,
+    max_chars: int = 400,
+    max_words: int | None = None,
+    public: bool = False,
+) -> str:
+    """The text, whitespace tidied, if it passes the length rules, the patterns and the gatekeeper (and, for text
+    everyone will see, the colleague and client detector). Run it before any transaction opens: the gatekeeper is
+    a model call."""
     clean = " ".join(str(text or "").split())
     if len(clean) < min_chars:
         raise OnesRefused(422, "text_too_short")
@@ -49,6 +75,8 @@ def checked(
         raise OnesRefused(422, "text_too_long")
     if any(m.action == "block" for m in scan(clean, kfin_domains=get_settings().kfin_domains)):
         raise OnesRefused(422, "personal_data")
+    if public:
+        no_names(conn, clean)
     # A fresh draft scope: any tags the gateway makes for this check never mix with an idea's own tags.
     gk = run_agent(
         "gatekeeper",
@@ -56,8 +84,7 @@ def checked(
         _draft_scope(),
         conn=conn,
     )
-    if decide(gk.data, thresholds()) == "blocked":
-        raise OnesRefused(422, "personal_data")
+    _verdict(gk.data)
     return clean
 
 
@@ -66,8 +93,6 @@ def checked_parts(
 ) -> dict[str, str]:
     """Several short texts at once (the Showcase brief): patterns on each, then one gatekeeper call for all of
     them. Empty parts are allowed and stay empty."""
-    from scan.pipeline import decide, thresholds
-
     clean: dict[str, str] = {}
     for key in keys:
         text = " ".join(str(parts.get(key) or "").split())
@@ -79,8 +104,7 @@ def checked_parts(
     filled = {k: v for k, v in clean.items() if v}
     if filled:
         gk = run_agent("gatekeeper", {"mode": "submission", "submission": filled}, _draft_scope(), conn=conn)
-        if decide(gk.data, thresholds()) == "blocked":
-            raise OnesRefused(422, "personal_data")
+        _verdict(gk.data)
     return clean
 
 

@@ -69,6 +69,8 @@ def _idea_line(conn: Conn, one: dict[str, Any], public: bool) -> tuple[str | Non
             summary = checked_summary(conn, summary)
         return summary, PUBLIC_WORDS.get(idea["stage"])
     title = unseal(one["title_encrypted"], f"one:{one['id']}:title")
+    if public:  # checked when it was written; checked again before everyone sees it (Ones review, BLD-111)
+        title = checked_summary(conn, title)
     return title, None
 
 
@@ -210,6 +212,7 @@ def public(conn: Conn) -> dict[str, Any]:
         o = dict(r)
         line, stage = _idea_line(conn, o, public=True)
         brief = unseal(o["brief_encrypted"], f"one:{o['id']}:brief") if o["brief_approved_at"] else None
+        brief = checked_summary(conn, brief)  # defence in depth: no name or client reaches the wall (BLD-111)
         out.append(
             {
                 "number": o["number"], "induction_no": o["induction_no"], **_tier(o["tier"]),
@@ -453,31 +456,34 @@ def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
 
 
 def team(conn: Conn, manager_id: str) -> dict[str, Any]:
-    """A manager's direct reports: counts of what they shared and built, never the ideas' text (DEC-079)."""
-    reports = conn.execute(
-        "SELECT u.id, u.name FROM users u WHERE u.manager_user_id = %s AND u.active ORDER BY u.name",
-        (manager_id,),
+    """A manager's direct reports: counts of what they shared and built, never the ideas' text (DEC-079).
+
+    Only people who allow manager notes are counted or listed; anyone who opted out is left out entirely, with no
+    count that could point to them (BLD-113). Only ideas everyone can see count: `visibility = 'org'` in a public
+    stage, so committee-only, blocked, withdrawn and draft ideas never show. One query, not one per person."""
+    rows = conn.execute(
+        "SELECT u.id, u.name, o.number, o.tier, "
+        "count(i.id) FILTER (WHERE i.stage = ANY(%s)) AS shared, "
+        "count(i.id) FILTER (WHERE i.stage = ANY(%s)) AS building, "
+        "count(i.id) FILTER (WHERE i.stage = ANY(%s)) AS shipped "
+        "FROM users u LEFT JOIN comms_prefs c ON c.user_id = u.id "
+        "LEFT JOIN ones o ON o.user_id = u.id AND o.status = 'active' "
+        "LEFT JOIN contributor_map m ON m.user_id = u.id "
+        "LEFT JOIN ideas i ON i.contributor_code = m.contributor_code AND i.visibility = 'org' "
+        "WHERE u.manager_user_id = %s AND u.active AND coalesce(c.manager_notes, true) "
+        "GROUP BY u.id, u.name, o.number, o.tier ORDER BY u.name",
+        (list(PUBLIC_STAGES), list(PICKED + IN_GARAGE), list(SHIPPED), manager_id),
     ).fetchall()
-    out = []
-    for r in reports:
-        counts = conn.execute(
-            "SELECT count(*) FILTER (WHERE i.stage <> 'draft') AS shared, "
-            "count(*) FILTER (WHERE i.stage = ANY(%s)) AS building, count(*) FILTER (WHERE i.stage = ANY(%s)) AS shipped "
-            "FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code WHERE m.user_id = %s",
-            (list(PICKED + IN_GARAGE), list(SHIPPED), r["id"]),
-        ).fetchone()
-        one = conn.execute(
-            "SELECT number, tier FROM ones WHERE user_id = %s AND status = 'active'", (r["id"],)
-        ).fetchone()
-        out.append(
-            {
-                "name": r["name"],
-                "shared": int(counts["shared"]) if counts else 0,
-                "building": int(counts["building"]) if counts else 0,
-                "shipped": int(counts["shipped"]) if counts else 0,
-                "one": {"number": one["number"], **_tier(one["tier"])} if one else None,
-            }
-        )
+    out = [
+        {
+            "name": r["name"],
+            "shared": int(r["shared"]),
+            "building": int(r["building"]),
+            "shipped": int(r["shipped"]),
+            "one": {"number": r["number"], **_tier(r["tier"])} if r["number"] is not None else None,
+        }
+        for r in rows
+    ]
     totals = {k: sum(p[k] for p in out) for k in ("shared", "building", "shipped")}
     return {"people": out, "totals": totals, "ones": sum(1 for p in out if p["one"])}
 

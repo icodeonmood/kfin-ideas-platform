@@ -12,8 +12,9 @@ measures marked `"demo": true`. It is never used by the golden sets (those live 
   whose removal is approved (No. 20), plus a sponsored inclusion waiting for the chair, a tier-up waiting for
   approval, a glow-up waiting for No. 17's first sign-in and a Showcase brief partly filled.
 
-`--reset` removes the demo, and every One in the local database, then loads it again. The glow-up plays once,
-so reset to see it again.
+`--reset` removes the demo's own rows (its people, their Ones records, proposals, deliveries and ideas) and its
+idea files from the local company repo, then loads it again. Nobody else's rows are touched. The glow-up plays
+once, so reset to see it again.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from psycopg.types.json import Jsonb
 
@@ -209,15 +211,18 @@ ONES: list[dict[str, Any]] = [
      "inducted_days_ago": 400},
 ]  # fmt: skip
 
-ONE_TABLES = (
-    "one_showcase_briefs", "one_awards", "one_glow_ups", "one_message_invites", "one_messages", "one_proposals",
-    "one_legend_numbers", "one_number_history",
-)  # fmt: skip
+LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres"}
 
 
 def _dev_only() -> None:
-    if get_settings().app_env != "dev":
+    """Dev only, twice over: the process says APP_ENV=dev, and the database it would write to is the local dev
+    stack's (a local host and the `ideas` database), never a UAT or production server (Ones review)."""
+    settings = get_settings()
+    if settings.app_env != "dev":
         raise SystemExit("make demo is for the local dev stack only (APP_ENV=dev); nothing was changed")
+    url = urlparse(settings.database_url)
+    if (url.hostname or "") not in LOCAL_DB_HOSTS or url.path.lstrip("/") != "ideas":
+        raise SystemExit("make demo writes only to the local dev database; nothing was changed")
 
 
 # --- People ------------------------------------------------------------------------------------------------------
@@ -511,7 +516,7 @@ def _console(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int]) 
     emit(conn, "ones.message_invited", {"current_owner_ids": [p["DEMO-00001"]["id"]], "proposal_id": tid})
     # Approved at a meeting, waiting for the admin member: No. 20's removal after a lapse.
     _proposal(conn, kind="remove", one_id=one_ids["DEMO-00019"], subject_user_id=p["DEMO-00019"]["id"],
-              proposed_by=member, state="approved", approval="majority", meeting_on=yesterday, decided_by=member,
+              proposed_by=member, state="approved", approval="majority", meeting_on=yesterday, decided_by=chair,
               decided_at=NOW, reason="Membership lapsed after twelve months without a delivery, mentoring or a new idea.")  # fmt: skip
 
     # No. 17's Showcase brief, partly filled.
@@ -536,20 +541,56 @@ def _demo_user_ids(conn: Conn) -> list[str]:
 
 
 def remove(conn: Conn) -> None:
-    """Every One in the local database (they are only ever demo or test data in dev), then the demo's people and
-    their ideas."""
+    """The demo's people and everything that is theirs: their Ones records, proposals, messages, deliveries and
+    ideas. Nobody else's rows are touched (Ones review). The demo ideas' files leave the company repo through the
+    repo writer (`idea.demo_removed`), so the indexer drops their chunks and Find your crew has no orphans."""
+    from repo_writer.render import repo_path_for
+
     with conn.transaction():
-        for table in ONE_TABLES:
-            conn.execute(f"DELETE FROM {table}")  # noqa: S608 (fixed table names)
-        conn.execute("DELETE FROM ones")
-        conn.execute("UPDATE id_counters SET last_value = 0 WHERE kind IN ('ONE', 'ONE-NO') AND period = ''")
         users = _demo_user_ids(conn)
         if not users:
             return
+        one_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM ones WHERE user_id = ANY(%s::uuid[])", (users,)).fetchall()]  # fmt: skip
+        proposals = [r["id"] for r in conn.execute(
+            "SELECT id FROM one_proposals WHERE subject_user_id = ANY(%s::uuid[]) OR proposed_by = ANY(%s::uuid[]) "
+            "OR decided_by = ANY(%s::uuid[]) OR carried_out_by = ANY(%s::uuid[]) OR one_id = ANY(%s)",
+            (users, users, users, users, one_ids)).fetchall()]  # fmt: skip
+        conn.execute("DELETE FROM one_messages WHERE proposal_id = ANY(%s) OR author_user_id = ANY(%s::uuid[])",
+                     (proposals, users))  # fmt: skip
+        conn.execute(
+            "DELETE FROM one_message_invites WHERE proposal_id = ANY(%s) OR user_id = ANY(%s::uuid[]) "
+            "OR invited_by = ANY(%s::uuid[])",
+            (proposals, users, users),
+        )
+        conn.execute(
+            "DELETE FROM one_glow_ups WHERE one_id = ANY(%s) OR proposal_id = ANY(%s)", (one_ids, proposals)
+        )
+        conn.execute("DELETE FROM one_proposals WHERE id = ANY(%s)", (proposals,))
+        conn.execute(
+            "DELETE FROM one_awards WHERE one_id = ANY(%s) OR awarded_by = ANY(%s::uuid[])", (one_ids, users)
+        )
+        conn.execute("DELETE FROM one_legend_numbers WHERE one_id = ANY(%s)", (one_ids,))
+        conn.execute("DELETE FROM one_showcase_briefs WHERE one_id = ANY(%s)", (one_ids,))
+        conn.execute("DELETE FROM ones WHERE id = ANY(%s)", (one_ids,))  # number history goes with them
+        if not conn.execute("SELECT 1 FROM ones LIMIT 1").fetchone():
+            # Counters restart only when no One is left at all, so nobody else's numbers can collide.
+            conn.execute(
+                "UPDATE id_counters SET last_value = 0 WHERE kind IN ('ONE', 'ONE-NO') AND period = ''"
+            )
         codes = [r["contributor_code"] for r in conn.execute(
             "SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])", (users,)).fetchall()]  # fmt: skip
-        ideas = [r["idea_id"] for r in conn.execute(
-            "SELECT idea_id FROM ideas WHERE contributor_code = ANY(%s) AND idea_id IS NOT NULL", (codes,)).fetchall()]  # fmt: skip
+        idea_rows = conn.execute(
+            "SELECT idea_id, submitted_at FROM ideas WHERE contributor_code = ANY(%s) AND idea_id IS NOT NULL",
+            (codes,),
+        ).fetchall()
+        ideas = [r["idea_id"] for r in idea_rows]
+        if _has_table(conn, "deliveries"):
+            conn.execute(
+                "DELETE FROM deliveries WHERE (subject_type = 'idea' AND subject_id = ANY(%s)) "
+                "OR owner_user_id = ANY(%s::uuid[]) OR sponsor_user_id = ANY(%s::uuid[]) OR pm_user_id = ANY(%s::uuid[])",
+                (ideas, users, users, users),
+            )  # milestones and measurements go with them
         items = [r["id"] for r in conn.execute(
             "SELECT id FROM review_items WHERE ref_id = ANY(%s)", (ideas,)).fetchall()]  # fmt: skip
         conn.execute("DELETE FROM corrections WHERE review_item_id = ANY(%s)", (items,))
@@ -562,11 +603,28 @@ def remove(conn: Conn) -> None:
             "DELETE FROM idea_links WHERE idea_id = ANY(%s) OR contributor_code = ANY(%s)", (ideas, codes)
         )
         conn.execute("DELETE FROM pseudonym_vault WHERE scope_id = ANY(%s)", (ideas,))
+        # Events still waiting for these ideas would block the writer once the rows are gone; then each idea's
+        # file is removed through the writer itself.
+        conn.execute("DELETE FROM outbox WHERE committed_at IS NULL AND aggregate_id = ANY(%s)", (ideas,))
+        for r in idea_rows:
+            if r["submitted_at"] is None:
+                continue
+            conn.execute(
+                "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('idea.demo_removed', %s, "
+                "'process:demo', %s)",
+                (r["idea_id"], Jsonb({"demo": True, "path": repo_path_for(r["idea_id"], r["submitted_at"])})),
+            )
         conn.execute("DELETE FROM ideas WHERE contributor_code = ANY(%s)", (codes,))
         conn.execute(
             "UPDATE users SET manager_user_id = NULL WHERE manager_user_id = ANY(%s::uuid[])", (users,)
         )
+        conn.execute("DELETE FROM role_grants WHERE user_id = ANY(%s::uuid[])", (users,))
         conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
+
+
+def _has_table(conn: Conn, name: str) -> bool:
+    row = conn.execute("SELECT to_regclass(%s) AS t", (f"public.{name}",)).fetchone()
+    return bool(row and row["t"])
 
 
 def load(conn: Conn) -> None:
@@ -589,7 +647,7 @@ def load(conn: Conn) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--reset", action="store_true", help="remove the demo (and every One) and load it again"
+        "--reset", action="store_true", help="remove the demo's own rows and files and load it again"
     )
     args = parser.parse_args(argv)
     _dev_only()

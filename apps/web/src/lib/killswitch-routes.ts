@@ -47,6 +47,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
   { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
+  // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
+  { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -79,7 +81,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
   // The Ones console keeps working whatever is paused: it is the committee's own record (DEC-040). Text checks
   // inside these calls answer 503 on their own when the assistant is off.
-  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode|announce)\/?$/,
+  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
   /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch

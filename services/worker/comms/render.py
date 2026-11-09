@@ -303,6 +303,12 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
         }
         data["links"]["write"] = f"{base}/ones/write/{proposal['id']}"
     if event == "ones.announced":
+        from core import killswitch
+        from views.common import checked_summary
+
+        if not killswitch.is_on("ones.public", conn):
+            # Checked again when it is read or sent: nothing about the Ones goes out while they are off the wall.
+            raise RuntimeError("ones_paused")
         ids = [int(i) for i in refs.get("one_ids") or []]
         rows = conn.execute(
             "SELECT o.id, o.number, o.brief_encrypted, o.brief_approved_at, u.name, "
@@ -314,6 +320,9 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
         lines = []
         for r in rows:
             brief = unseal(r["brief_encrypted"], f"one:{r['id']}:brief") if r["brief_approved_at"] else None
+            brief = checked_summary(
+                conn, brief
+            )  # no colleague or client named in an org-wide email (BLD-111)
             who = _one_display(r["number"], r["name"], r["consent"])
             lines.append(f"{who}." + (f" {brief}" if brief else ""))
         data["ones"] = {

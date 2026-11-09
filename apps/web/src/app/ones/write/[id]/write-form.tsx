@@ -5,6 +5,8 @@ import { useId, useState } from "react";
 
 const ERRORS: Record<string, string> = {
   personal_data: "Please take out any personal details (numbers, addresses, investor names).",
+  text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
+  names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   text_too_short: "Please write at least a short sentence.",
   text_too_long: "Please keep it under 600 characters.",
   already_written: "You've already written a message for this.",
