@@ -267,15 +267,21 @@ def test_the_whole_way_to_picked_and_a_working_group(qualified: Any) -> None:
                                                               "sponsor_id": qualified["members"][0],
                                                               "plain_reason": draft["draft"]["reason"]})  # fmt: skip
     assert out["outcome"] == "picked" and out["working_group"].startswith("WG-")
+    # Picked, and the delivery handover opens at once (§4.8), which moves the group on to `handover`.
     assert (
         db.execute("SELECT stage FROM clusters WHERE id = %s", (qualified["cid"],)).fetchone()["stage"]
-        == "picked"
+        == "handover"
     )
     wg = db.execute(
         "SELECT members, sponsor_id FROM working_groups WHERE id = %s", (out["working_group"],)
     ).fetchone()
     assert {m["contributor_code"] for m in wg["members"]} >= {owner["contributor_code"]}
     assert str(wg["sponsor_id"]) == qualified["members"][0]
+    handover = db.execute(
+        "SELECT track, state FROM deliveries WHERE subject_type = 'cluster' AND subject_id = %s",
+        (qualified["cid"],),
+    ).fetchone()
+    assert handover is not None and (handover["track"], handover["state"]) == ("build", "drafting")
     # The repo gets the decision with counts only, and the cluster file its medians; never who voted what.
     writer = RepoWriter(helpers.settings_for(qualified["repo"], qualified["database"]))
     assert writer.acquire()

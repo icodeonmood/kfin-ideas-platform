@@ -19,8 +19,8 @@
    chair's casting vote breaks a tie); moving past the cycle's Garage slots needs a 50-character reason; park and
    decline need a reason code, and `reason-writer` drafts the plain-language reason and "what would change this
    decision" for the chair to edit. The decision file holds counts, themes and reasons, never who voted what.
-7. **On acceptance**: stage `picked` and a working group (`WG-`) with the presenters, the originators and the
-   sponsor. Induction into the 1% Club, protected time and handover are "Coming soon" here (the Ones module and
+7. **On acceptance**: stage `picked`, a working group (`WG-`) with the presenters, the originators and the
+   sponsor, and the delivery handover (§4.8: build, or procurement to buy or partner). Induction into the 1% Club, protected time and handover are "Coming soon" here (the Ones module and
    handover own them). Park and decline start the 15-working-day appeal window.
 """
 
@@ -50,6 +50,7 @@ ROUTES = ("reuse", "build", "buy", "partner")
 PARK = {"NOT_FEASIBLE_NOW", "INSUFFICIENT_EVIDENCE", "CAPACITY", "NOT_PRESENTED"}
 DECLINE = {"LOW_VALUE", "NOT_FEASIBLE_NOW", "REG_CONFLICT", "OUT_OF_SCOPE"}
 OVERRIDE_MIN = 50
+DELIVERY_TRACK = {"build": "build", "reuse": "build", "buy": "procurement", "partner": "procurement"}
 
 
 def _scope(conn: Conn, cluster_id: str) -> str:
@@ -638,6 +639,10 @@ def _record(
     wg = None
     if d["outcome"] == "picked":
         wg = _working_group(conn, p, did, d.get("sponsor_id"), user_id, now)
+        from delivery.service import start_from_pick
+
+        # The handover opens in the same transaction (§4.8); the owner can change the track in the pack.
+        start_from_pick(conn, "cluster", cid, DELIVERY_TRACK.get(str(d.get("route")), "build"))
     else:
         engine.start(conn, "decision", did, "appeal_window", now=now)
     outbox = "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES (%s, %s, %s, %s)"
