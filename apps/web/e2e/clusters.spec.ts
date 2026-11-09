@@ -9,8 +9,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
-import { openProposalHolding } from "./proposals";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
+import { openProposalHolding, runGroupingNow } from "./proposals";
 import { withSwitchLock } from "./switch-lock";
 
 async function share(page: Page, words: string): Promise<string> {
@@ -104,14 +104,10 @@ test("the desk runs the weekly grouping and approves a proposal", async ({ brows
       await r.goto("/review");
       await expect(r.getByRole("heading", { level: 2, name: "Weekly grouping" })).toBeVisible();
       await expectNoSeriousAxeIssues(r);
-      // Switch states are cached for 10 seconds (BLD-006): reload until the desk's button shows.
-      const runButton = r.getByRole("button", { name: "Run the grouping now" });
-      await expect(async () => {
-        await r.goto("/review");
-        await expect(runButton).toBeVisible({ timeout: 1_000 });
-      }).toPass({ timeout: 30_000, intervals: [2_000] });
-      await runButton.click();
-      await expect(r.getByRole("status").filter({ hasText: /run has started|already going/ })).toBeVisible();
+      // Switch states are cached for 10 seconds (BLD-006): press until the desk confirms a run.
+      // A run only takes ideas already in the index: wait for both, or the run can start without them.
+      for (const ideaId of [first, second]) await waitUntilIndexed(ideaId);
+      await runGroupingNow(r);
       await openProposalHolding(r, [first, second]);
       await r.waitForURL(/\/review\/clusters\/\d+$/);
       for (const panel of ["What the batch found", "Suggested summary", "Members", "Actions"]) {

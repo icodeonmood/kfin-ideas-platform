@@ -8,8 +8,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
-import { openProposalHolding } from "./proposals";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
+import { openProposalHolding, runGroupingNow } from "./proposals";
 import { withSwitchLock } from "./switch-lock";
 
 const CHAIR = "SYN-00006";
@@ -121,12 +121,9 @@ async function committeeFlow(browser: Browser) {
       await r.getByRole("button", { name: "Save decision" }).click();
       await expect(r.getByRole("status").filter({ hasText: "Decision saved" })).toBeVisible();
     }
-    const runButton = r.getByRole("button", { name: "Run the grouping now" });
-    await expect(async () => {
-      await r.goto("/review");
-      await expect(runButton).toBeVisible({ timeout: 1_000 });
-    }).toPass({ timeout: 30_000, intervals: [2_000] });
-    await runButton.click();
+    // A run only takes ideas already in the index: wait for both, or the run can start without them.
+    for (const ideaId of [first, second]) await waitUntilIndexed(ideaId);
+    await runGroupingNow(r);
     await openProposalHolding(r, [first, second]);
     await r.getByRole("button", { name: "Approve this group" }).click();
     await expect(r.getByRole("status").filter({ hasText: /The group is (CL-\d{4})/ })).toBeVisible();

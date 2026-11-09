@@ -21,3 +21,17 @@ export async function openProposalHolding(page: Page, ideaIds: string[], timeout
     throw new Error(`no open proposal holds ${ideaIds.join(" and ")} yet`);
   }).toPass({ timeout, intervals: [3_000] });
 }
+
+/**
+ * Press "Run the grouping now" until the desk confirms a run. The route guard keeps its own 10-second switch
+ * cache, so a click just after another spec switched `clusters.batch` back on can be refused: try again.
+ */
+export async function runGroupingNow(page: Page, timeout = 45_000): Promise<void> {
+  await expect(async () => {
+    await page.goto("/review");
+    await page.getByRole("button", { name: "Run the grouping now" }).click({ timeout: 2_000 });
+    await expect(page.getByRole("status").filter({ hasText: /run has started|already going/ })).toBeVisible({
+      timeout: 3_000,
+    });
+  }).toPass({ timeout, intervals: [2_000] });
+}
