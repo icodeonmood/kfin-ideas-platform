@@ -81,13 +81,20 @@ def load_result(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _attachments(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
+    """Research files for canvas assist, with any digest that is ready. Digests are stored tagged under the
+    idea's scope; they are restored here so the gateway tags them again consistently (§3.2 step 1)."""
+    from pii import vault
+    from pii.restore import restore
+
     rows = conn.execute(
-        "SELECT id, name, state FROM attachments WHERE idea_uuid = %s AND state <> 'rejected' ORDER BY created_at",
+        "SELECT a.id, a.name, a.state, a.digest, i.idea_id FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
+        "WHERE a.idea_uuid = %s AND a.state <> 'rejected' ORDER BY a.created_at",
         (idea_uuid,),
     ).fetchall()
+    mapping = vault.mapping(conn, rows[0]["idea_id"]) if rows and rows[0]["idea_id"] else {}
     return [
         {"id": r["id"], "name": r["name"], "state": "processing" if r["state"] == "quarantine" else r["state"],
-         "digest": None}
+         "digest": restore(r["digest"], mapping, "real") if r["state"] == "clean" and r["digest"] else None}
         for r in rows
     ]  # fmt: skip
 

@@ -8,8 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     PATH=/opt/venv/bin:$PATH
 
+# Tesseract (English and Hindi) reads images and scanned PDF pages for the week-3 file checks (§4.2, D3).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir uv==0.9.27
 

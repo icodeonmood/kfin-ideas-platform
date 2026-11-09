@@ -116,7 +116,7 @@ def switch_off_failing(conn: Any, results: list[dict[str, Any]], route: str) -> 
 
 def run_agents(seed: int, switch_off: bool = False) -> int:
     from core.db import connect
-    from evalrunner import canvas_assist, cluster_summary, gatekeeper, judge
+    from evalrunner import attachment_digest, canvas_assist, cluster_summary, gatekeeper, judge
     from evalrunner.common import context, route_name, write_report
 
     route = route_name()
@@ -130,6 +130,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                 (canvas_assist, "canvas-assist"),
                 (judge, "judge"),
                 (cluster_summary, "cluster-summary"),
+                (attachment_digest, "attachment-digest"),
             ):
                 try:
                     result = runner.run(ctx)

@@ -117,6 +117,23 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
                     <li key={a.id}>
                       {a.state === "clean" ? <a href={`/api/attachments/${a.id}`}>{a.name}</a> : a.name} —{" "}
                       {a.state.replace(/_/g, " ")}
+                      {a.patterns_only
+                        ? " (checked by the pattern rules only; the assistant was unavailable)"
+                        : ""}
+                      {a.digest ? (
+                        <>
+                          <p className="muted">Assistant&apos;s summary: {a.digest}</p>
+                          {a.claims?.length ? (
+                            <ul>
+                              {a.claims.map((c, i) => (
+                                <li key={i}>
+                                  {c.text} <span className="muted">({c.location})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

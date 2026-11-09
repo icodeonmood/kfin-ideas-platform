@@ -53,11 +53,17 @@ def item_view(conn: Conn, item_id: int, mode: Literal["real", "neutral"]) -> dic
         (str(item_id),),
     ).fetchone()
     attachments = [
-        {"id": a["id"], "name": a["name"], "state": a["state"]}
+        {"id": a["id"], "name": a["name"], "state": a["state"],
+         # Week 3 (D3): the digest and its claims, tagged under the idea's scope and restored like the canvas.
+         "digest": show(a["digest"]) if a["state"] == "clean" else None,
+         "claims": show((a["digest_meta"] or {}).get("claims") or []) if a["state"] == "clean" else [],
+         "patterns_only": bool((a["checks"] or {}).get("gatekeeper_skipped"))}
         for a in conn.execute(
-            "SELECT id, name, state FROM attachments WHERE idea_uuid = %s ORDER BY created_at", (idea["id"],)
+            "SELECT id, name, state, digest, digest_meta, checks FROM attachments WHERE idea_uuid = %s "
+            "ORDER BY created_at",
+            (idea["id"],),
         ).fetchall()
-    ]
+    ]  # fmt: skip
     tax = _taxonomy(get_settings().company_repo_path)
     return {
         "item": {

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/attachment-digest/0.1.0",
+  "title": "attachment-digest output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "claims", "kind_of_evidence"],
+  "properties": {
+    "summary": { "type": "string", "minLength": 10, "maxLength": 1200 },
+    "claims": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "figure", "location"],
+        "properties": {
+          "text": { "type": "string", "minLength": 3, "maxLength": 240 },
+          "figure": { "type": ["string", "null"], "maxLength": 60 },
+          "location": { "type": "string", "minLength": 3, "maxLength": 80 }
+        }
+      }
+    },
+    "kind_of_evidence": { "enum": ["data", "document", "presentation", "image", "other"] }
+  }
+}

@@ -1,0 +1,30 @@
+# attachment-digest — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: attachment-digest
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 1500
+timeout_s: 60           # async, ≤ 60 s (§3.2 agent registry)
+latency_budget_s: 60
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- file
+- text
+untrusted_blocks:
+- text
+max_text_chars: 60000
+examples_in_prompt:
+- 01-volumes-sheet.json
+fake_mode_default: 01-volumes-sheet.json
+golden_set: eval/golden/attachment_digest.jsonl
+post_checks:
+- summary 150 words or fewer; claims 25 words or fewer
+- every claim location is one of the input locations
+- every figure appears in the input text exactly
+pass_gates:
+  figure_fidelity_min: 1.0      # figures copied exactly from the text
+  location_accuracy_min: 1.0    # locations copied from the pieces
+  expected_figure_recall_min: 0.6

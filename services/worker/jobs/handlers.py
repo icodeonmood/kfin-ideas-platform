@@ -156,3 +156,19 @@ def cluster_batch(conn: Conn, payload: dict[str, Any]) -> None:
     from cluster.batch import run_batch
 
     run_batch(conn, manual_by=payload.get("manual_by"))
+
+
+@handler("attachment.digest")
+def attachment_digest(conn: Conn, payload: dict[str, Any]) -> None:
+    """attachment-digest and the file text in the index, once the idea is submitted (§4.2 attachments step 6)."""
+    from attachments import service
+
+    service.digest(conn, str(payload["attachment_id"]))
+
+
+@handler("attachments.recheck")
+def attachments_recheck(conn: Conn, payload: dict[str, Any]) -> None:
+    """Files held for OCR or the gatekeeper go back through the checks while `attachments.deep_check` is on."""
+    from attachments import service
+
+    log.info("attachments.recheck_queued", file_count=service.recheck(conn))

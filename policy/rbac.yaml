@@ -54,6 +54,7 @@ kill_switch_flippers:
   wall.public: [admin, hr]
   ones.public: [admin, hr]
   clusters.batch: [admin]
+  attachments.deep_check: [admin, infosec]
 
 # No session needed.
 public:

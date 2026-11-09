@@ -12,6 +12,7 @@ from multiprocessing.connection import Connection
 from typing import Any
 
 from attachments.extract import EXTRACTORS, Extracted, TooBigToCheck
+from attachments.ocr import OcrFailed
 
 TIMEOUT_S = 90.0
 MEMORY_MB = 768
@@ -37,6 +38,9 @@ def _child(kind: str, data: bytes, memory_mb: int, conn: Connection) -> None:
         result = ("too_big", str(exc))
     except MemoryError:
         result = ("too_big", "memory")
+    except OcrFailed as exc:
+        # OCR that is not installed is our problem, not the file's: the file waits, it is not refused.
+        result = ("unavailable" if exc.code == "ocr_not_installed" else "error", exc.code)
     except Exception as exc:  # hostile or broken files: report the type only, never the message
         result = ("error", type(exc).__name__)
     try:
@@ -70,4 +74,6 @@ def extract(kind: str, data: bytes, *, timeout_s: float = TIMEOUT_S, memory_mb: 
     if status == "ok":
         assert isinstance(value, Extracted)
         return value
+    if status == "unavailable":
+        raise ExtractionFailed("ocr_unavailable")
     raise ExtractionFailed("too_big" if status == "too_big" else "unreadable")
