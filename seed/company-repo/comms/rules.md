@@ -274,6 +274,7 @@ events:
     audiences:
     - submitter
     - existing_contributors
+    - cluster_contributors
     - current_owner
     template: delivery-phase-changed
     channels:

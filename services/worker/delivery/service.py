@@ -164,6 +164,8 @@ def _notify(conn: Conn, d: dict[str, Any], event: str, extra: dict[str, Any] | N
     }  # fmt: skip
     if d["subject_type"] == "idea":
         refs["idea_id"] = d["subject_id"]
+    else:
+        refs["cluster_id"] = d["subject_id"]  # every member idea's owner and everyone who joined the group
     emit(conn, event, refs)
 
 
