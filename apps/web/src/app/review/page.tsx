@@ -38,17 +38,20 @@ const TYPES: [string, string][] = [
   ["disagreement", "Disagreement"],
   ["cluster_proposal", "Group proposal"],
   ["working_group_trigger", "Working group"],
+  ["qualify", "Qualify a group"],
 ];
 
 const TYPE_WORDS: Record<string, string> = {
   disagreement: "disagreement",
   cluster_proposal: "group proposal",
   working_group_trigger: "working group",
+  qualify: "qualify",
 };
 
 function href(type: string, id: number) {
   if (type === "cluster_proposal") return `/review/clusters/${id}`;
   if (type === "working_group_trigger") return `/review/working-groups/${id}`;
+  if (type === "qualify") return `/review/qualify/${id}`;
   return `/review/${id}`;
 }
 

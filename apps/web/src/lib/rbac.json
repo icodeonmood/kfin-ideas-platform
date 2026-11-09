@@ -197,6 +197,9 @@
     "clusters.batch": [
       "admin"
     ],
+    "committee.flow": [
+      "admin"
+    ],
     "attachments.deep_check": [
       "admin",
       "infosec"
@@ -265,6 +268,17 @@
     "POST /api/review/cluster-runs                     approve_cluster_proposals",
     "GET /api/review/cluster-proposals/{id}            view_review_queue",
     "POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals",
+    "GET /api/review/qualify/{id}                      view_review_queue",
+    "POST /api/review/qualify/{id}                     work_review_queue",
+    "GET /api/committee/rounds                         score",
+    "GET /api/committee/rounds/{id}                    score",
+    "POST /api/committee/rounds/{id}/action            score",
+    "POST /api/committee/cycles                        decide",
+    "GET /api/committee/presentations/{id}             decide",
+    "POST /api/committee/presentations/{id}/action     decide",
+    "GET /api/presentations/{id}                       present",
+    "POST /api/presentations/{id}/action               present",
+    "GET /api/working-groups/{id}                      signed_in",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",
@@ -347,6 +361,7 @@
   "pages": [
     "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",
+    "/committee                 score decide",
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",

@@ -44,6 +44,11 @@ export default async function DeskDecisions() {
         Everything the review desk has decided. You can reconsider a decision within 5 working days, with a
         reason.
       </p>
+      {can(me.roles, "score") ? (
+        <p>
+          <Link href="/committee">The committee&apos;s reviews and decisions</Link>
+        </p>
+      ) : null}
       {data === null ? (
         <p className="notice">We can&apos;t load the decisions just now. Please try again in a minute.</p>
       ) : (

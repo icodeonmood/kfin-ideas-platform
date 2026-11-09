@@ -17,7 +17,8 @@ export type SwitchName =
   | "scan.live"
   | "learning.jobs"
   | "ember.send"
-  | "solutions.publish";
+  | "solutions.publish"
+  | "committee.flow";
 
 interface Rule {
   methods: readonly string[];
@@ -72,6 +73,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  {
+    methods: ["POST"],
+    pattern:
+      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+)\/?$/,
+    switches: ["committee.flow"],
+  },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -92,6 +99,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "ember.send": "Sending The Ember is paused for now. Past issues are still here to read.",
   "solutions.publish":
     "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",
+  "committee.flow": "The committee's reviews and decisions are switched off for now.",
 };
 
 /**

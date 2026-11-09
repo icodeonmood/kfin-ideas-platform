@@ -64,6 +64,7 @@ kill_switch_flippers:
   wall.public: [admin, hr]
   ones.public: [admin, hr]
   clusters.batch: [admin]
+  committee.flow: [admin]
   attachments.deep_check: [admin, infosec]
   scan.live: [admin]
   learning.jobs: [admin]
@@ -124,6 +125,17 @@ endpoints:
   - POST /api/review/cluster-runs                     approve_cluster_proposals  # run now (behind clusters.batch)
   - GET /api/review/cluster-proposals/{id}            view_review_queue
   - POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals  # approve, remove a member, reject
+  - GET /api/review/qualify/{id}                      view_review_queue          # qualify (§4.5; addition to §8)
+  - POST /api/review/qualify/{id}                     work_review_queue
+  - GET /api/committee/rounds                         score                      # §4.6 (the worker checks the roster)
+  - GET /api/committee/rounds/{id}                    score
+  - POST /api/committee/rounds/{id}/action            score                      # score, revise, step aside, reveal, decide
+  - POST /api/committee/cycles                        decide                     # the chair opens a cycle (worker checks the chair)
+  - GET /api/committee/presentations/{id}             decide                     # §4.7 (worker checks the core committee)
+  - POST /api/committee/presentations/{id}/action     decide                     # session, sealed assessment, collation, decision
+  - GET /api/presentations/{id}                       present                    # a contributor's invitation (worker checks the cluster)
+  - POST /api/presentations/{id}/action               present                    # accept with presenters and a slot; edit the outline
+  - GET /api/working-groups/{id}                      signed_in                  # members, the sponsor, the committee and admins
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
@@ -213,6 +225,7 @@ membership_scoped:
 pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /desk-decisions            view_review_queue
+  - /committee                 score decide                         # any of these (§4.6–§4.7)
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
