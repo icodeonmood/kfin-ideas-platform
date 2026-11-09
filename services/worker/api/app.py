@@ -887,6 +887,8 @@ def learning_run(body: dict[str, Any]) -> JSONResponse:
     from learning.run import run_now
 
     return _delivery_call(run_now, _actor(body), body)
+
+
 # ---- committee flow (§4.5–§4.7) -----------------------------------------------------------------------------------
 # The web app has checked the capability for the route; these handlers check the chair, the roster, the
 # cluster's contributors and conflicts of interest, and keep sealed scores and assessments sealed.
