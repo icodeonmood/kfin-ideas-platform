@@ -37,3 +37,4 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [presentation-confirmed.md](presentation-confirmed.md) — Presentation confirmed: {{cluster.id}} (draft for HR review)
 - [accepted.md](accepted.md) — {{cluster.id}} is picked (draft for HR review)
 - [not-accepted.md](not-accepted.md) — An update on {{cluster.id}} (draft for HR review)
+- [not-presented.md](not-presented.md) — An update on {{cluster.id}} (draft for HR review)

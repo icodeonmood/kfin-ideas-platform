@@ -204,3 +204,35 @@ def learning_run(conn: Conn, payload: dict[str, Any]) -> None:
     from learning.run import run
 
     run(conn)
+
+
+@handler("qualify.start")
+def qualify_start(conn: Conn, payload: dict[str, Any]) -> None:
+    """The qualify item for a newly approved group (§4.5 trigger), after the approval has committed."""
+    from committee import qualify
+
+    qualify.start_job(conn, str(payload["cluster_id"]))
+
+
+@handler("qualify.backfill")
+def qualify_backfill(conn: Conn, payload: dict[str, Any]) -> None:
+    """Approved groups still waiting for qualify, once `committee.flow` is on."""
+    from committee import qualify
+
+    log.info("qualify.backfill_done", cluster_count=qualify.backfill(conn))
+
+
+@handler("round.prescore")
+def round_prescore(conn: Conn, payload: dict[str, Any]) -> None:
+    """`prescore` for a newly opened round, outside the cycle's transaction."""
+    from committee import rounds
+
+    rounds.prescore_round(conn, str(payload["round_id"]))
+
+
+@handler("presentation.outline")
+def presentation_outline(conn: Conn, payload: dict[str, Any]) -> None:
+    """The `pitch-prep` outline for a new invitation, outside the shortlist's transaction."""
+    from committee import decide
+
+    decide.write_outline(conn, str(payload["presentation_id"]))

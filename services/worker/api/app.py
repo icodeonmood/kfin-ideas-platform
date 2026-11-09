@@ -937,6 +937,18 @@ def committee_round_action(round_id: str, body: dict[str, Any]) -> JSONResponse:
     return _review_call(act, round_id, str(body.get("user_id") or ""), body)
 
 
+@app.get("/internal/committee/conflicts", dependencies=[Depends(require_token)])
+def committee_conflicts(user_id: str) -> JSONResponse:
+    """Manager flags waiting for an admin (BLD-221); the round action `clear_conflict` clears one."""
+    from committee.rounds import open_flags
+
+    with connect(autocommit=True) as conn:
+        flags = open_flags(conn, user_id)
+    if flags is None:
+        return JSONResponse({"error": "admin_only"}, status_code=403)
+    return _json({"flags": flags})
+
+
 @app.post("/internal/committee/cycles", dependencies=[Depends(require_token)])
 def committee_cycle(body: dict[str, Any]) -> JSONResponse:
     from committee.rounds import open_cycle

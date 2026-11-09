@@ -5,9 +5,12 @@
 2. **Accept** (a contributor of the cluster): up to 3 presenters from the cluster's contributors and a slot. The
    outline is theirs to edit. Deck upload is "Coming soon" (presenters bring the deck to the session).
 3. **Session** (the chair): mark it held and record the Q&A; blind mode ends here. "Not presented" parks the
-   cluster with `NOT_PRESENTED` (moving to the next session automatically is "Coming soon").
+   cluster with `NOT_PRESENTED` and its own message (moving to the next session automatically is "Coming soon").
+   Members with a conflict on the cluster (§3.1, checked live) see neither the group nor the sheet and take no
+   part; the counts below are of the members without one.
 4. **Sealed assessments** within 2 working days: the six dimensions, a vote, the preferred route, up to three
-   strengths and concerns, conditions, unanswered questions, willingness to sponsor. Nobody sees another's.
+   strengths and concerns, conditions, unanswered questions, willingness to sponsor. Nobody sees another's, and
+   none are taken once the sheet is collated.
 5. **Collation** (the chair, when everyone has assessed or at the deadline with quorum): the rules count votes,
    take medians and spreads, the change from the preliminary review, route preferences and divergence flags; the
    `collation` agent groups strengths and concerns into themes with counts and merges conditions. Precedents
@@ -30,7 +33,7 @@ from zoneinfo import ZoneInfo
 
 from psycopg.types.json import Jsonb
 
-from committee.rounds import _cluster_card, _contributor_users, _tagged, is_chair, scorecard
+from committee.rounds import _cluster_card, _tagged, conflict, is_chair, scorecard
 from comms.route import emit
 from core.db import Conn
 from core.logging import get_logger
@@ -80,6 +83,11 @@ def _roster(conn: Conn) -> list[str]:
     return [str(r["user_id"]) for r in rows]
 
 
+def _voting(conn: Conn, cluster_id: str) -> list[str]:
+    """Core committee members without a conflict on this cluster: the ones who assess and count."""
+    return [m for m in _roster(conn) if conflict(conn, cluster_id, m) is None]
+
+
 # ---- 1. invitation ----------------------------------------------------------------------------------------------
 
 
@@ -105,11 +113,25 @@ def invite(conn: Conn, cluster_id: str, round_id: str, cycle_id: str | None, now
         (pid, cluster_id, round_id, cycle_id, slot_options(now), due),
     )
     engine.start(conn, "presentation", pid, "invitation_reply", now=now)
-    _outline(conn, pid, cluster_id)
+    from jobs.runner import enqueue
+
+    # After commit, so the model call never holds the shortlist's transaction (BLD-221).
+    enqueue(conn, "presentation.outline", {"presentation_id": pid}, dedupe_key=f"outline:{pid}")
     return pid
 
 
-def _outline(conn: Conn, pid: str, cluster_id: str) -> None:
+def write_outline(conn: Conn, pid: str) -> bool:
+    """The `presentation.outline` job: a draft outline while the invitation is open and nobody has written one."""
+    row = conn.execute(
+        "SELECT cluster_id, state, outline FROM presentations WHERE id = %s", (pid,)
+    ).fetchone()
+    if row is None or row["state"] != "invited" or row["outline"]:
+        return False
+    with conn.transaction():
+        return _outline(conn, pid, str(row["cluster_id"]))
+
+
+def _outline(conn: Conn, pid: str, cluster_id: str) -> bool:
     """`pitch-prep` drafts an outline for the 8-slide deck from the cluster; the presenters own and edit it."""
     from gateway import AgentFailed, run_agent
 
@@ -123,11 +145,12 @@ def _outline(conn: Conn, pid: str, cluster_id: str) -> None:
         )
     except AgentFailed as exc:
         log.warning("presentation.outline_unavailable", presentation_id=pid, error_code=exc.code)
-        return
+        return False
     conn.execute(
-        "UPDATE presentations SET outline = %s, outline_by = %s WHERE id = %s",
+        "UPDATE presentations SET outline = %s, outline_by = %s WHERE id = %s AND outline IS NULL",
         (Jsonb(out.data), f"pitch-prep/{out.version}", pid),
     )
+    return True
 
 
 # ---- views -------------------------------------------------------------------------------------------------------
@@ -146,8 +169,9 @@ def _pres(conn: Conn, pid: str, lock: bool = False) -> dict[str, Any]:
 
 
 def contributor_view(conn: Conn, pid: str, user_id: str) -> dict[str, Any] | None:
-    """What a contributor of the cluster sees: the invitation, the slots, the presenters (as codes they chose),
-    their own outline (real values: it is their own cluster's text, §3.1 "own cluster")."""
+    """What a contributor of the cluster sees: the invitation, the slots, the presenters (as codes they chose)
+    and the outline. The outline is drawn from every idea in the group, so it comes back in neutral mode: no
+    contributor sees another's names or values (non-negotiable 7, BLD-221)."""
     try:
         p = _pres(conn, pid)
     except ActionRefused:
@@ -158,25 +182,29 @@ def contributor_view(conn: Conn, pid: str, user_id: str) -> dict[str, Any] | Non
     title = conn.execute("SELECT title FROM clusters WHERE id = %s", (p["cluster_id"],)).fetchone()
     mine = sorted(_codes_of(conn, user_id) & _cluster_codes(conn, p["cluster_id"]))
     return {
-        "id": pid, "cluster_id": p["cluster_id"], "name": restore((title or {}).get("title"), mapping, "real"),
+        "id": pid, "cluster_id": p["cluster_id"], "name": restore((title or {}).get("title"), mapping, "neutral"),
         "state": p["state"], "reply_due": p["reply_due"].isoformat() if p["reply_due"] else None,
         "slot_options": [s.isoformat() for s in p["slot_options"] or []],
         "slot_at": p["slot_at"].isoformat() if p["slot_at"] else None,
         "presenters": list(p["presenters"] or []), "my_codes": mine,
         "contributors": sorted(_cluster_codes(conn, p["cluster_id"])),
-        "outline": restore(p["outline"], mapping, "real"), "outline_by": p["outline_by"],
+        "outline": restore(p["outline"], mapping, "neutral"), "outline_by": p["outline_by"],
     }  # fmt: skip
 
 
 def committee_view(conn: Conn, pid: str, user_id: str) -> dict[str, Any] | None:
     """The core committee's view: the cluster (blind until the session, real after), the state, the user's own
-    sealed assessment, and the decision sheet once collated."""
+    sealed assessment, and the decision sheet once collated. A member with a conflict sees only that."""
     if user_id not in _roster(conn) and not is_chair(conn, user_id):
         return None
     try:
         p = _pres(conn, pid)
     except ActionRefused:
         return None
+    why = conflict(conn, p["cluster_id"], user_id)
+    if why is not None:
+        return {"id": pid, "cluster_id": p["cluster_id"], "state": p["state"], "conflict": why,
+                "chair": is_chair(conn, user_id)}  # fmt: skip
     held = p["state"] in ("held", "decided")
     mapping = vault.mapping(conn, _scope(conn, p["cluster_id"]))
     mine = conn.execute(
@@ -198,31 +226,37 @@ def committee_view(conn: Conn, pid: str, user_id: str) -> dict[str, Any] | None:
         "cluster": _cluster_card(conn, p["cluster_id"], "real" if held else "blind"),
         "qna_notes": restore(p["qna_notes"], mapping, "real") if held else None,
         "assessments_due": p["assessments_due"].isoformat() if p["assessments_due"] else None,
-        "assessed": int(count["n"] if count else 0), "members": len(_roster(conn)),
+        "assessed": int(count["n"] if count else 0), "members": len(_voting(conn, p["cluster_id"])), "conflict": None,
         "my_assessment": restore({k: mine[k] for k in ("dimension_scores", "vote", "route_pref", "strengths",
                                   "concerns", "conditions", "open_questions", "will_sponsor")}, mapping, "real")
         if mine else None,
         "dimensions": [{"name": n, "label": d.get("label", n), "weight": d["weight"], "anchors": d.get("anchors", {})}
                        for n, d in sc["dimensions"].items()],
         "sheet": restore({k: sheet[k] for k in ("tallies", "medians", "spread", "change_from_prelim", "route_prefs",
-                          "themes", "conditions", "divergence_flags", "sponsors_willing", "final_score")}, mapping, "real")
+                          "themes", "conditions", "divergence_flags", "sponsors_willing")}, mapping, "real")
+        | {"final_score": float(sheet["final_score"]) if sheet["final_score"] is not None else None}
         if sheet else None,
         "decision": dict(decision) | {"decided_at": decision["decided_at"].isoformat()} if decision else None,
         "chair": is_chair(conn, user_id),
-        "sponsor_options": _sponsor_options(conn, pid) if is_chair(conn, user_id) else [],
+        "sponsor_options": _sponsor_options(conn, pid, p["cluster_id"], collated=sheet is not None) if is_chair(conn, user_id) else [],
     }  # fmt: skip
 
 
-def _sponsor_options(conn: Conn, pid: str) -> list[dict[str, Any]]:
-    """For the chair: core committee members, those willing to sponsor first (names are fine inside the committee)."""
-    willing = {
-        str(r["member_id"])
-        for r in conn.execute(
-            "SELECT member_id FROM assessments WHERE presentation_id = %s AND will_sponsor", (pid,)
-        ).fetchall()
-    }
+def _sponsor_options(conn: Conn, pid: str, cluster_id: str, *, collated: bool) -> list[dict[str, Any]]:
+    """For the chair: core committee members (names are fine inside the committee). Who offered to sponsor is
+    part of a sealed assessment, so it shows only once the sheet is collated."""
+    willing = (
+        {
+            str(r["member_id"])
+            for r in conn.execute(
+                "SELECT member_id FROM assessments WHERE presentation_id = %s AND will_sponsor", (pid,)
+            ).fetchall()
+        }
+        if collated
+        else set()
+    )
     rows = conn.execute(
-        "SELECT id, name FROM users WHERE id = ANY(%s::uuid[]) ORDER BY name", (_roster(conn),)
+        "SELECT id, name FROM users WHERE id = ANY(%s::uuid[]) ORDER BY name", (_voting(conn, cluster_id),)
     ).fetchall()
     out = [{"id": str(r["id"]), "name": r["name"], "willing": str(r["id"]) in willing} for r in rows]
     return sorted(out, key=lambda o: (not o["willing"], o["name"]))
@@ -297,10 +331,15 @@ def committee_act(
     action = body.get("action")
     with audited(conn), conn.transaction():
         p = _pres(conn, pid, lock=True)
-        if user_id in _contributor_users(conn, p["cluster_id"]):
+        why = conflict(conn, p["cluster_id"], user_id)
+        if why == "own_idea":
             raise ActionRefused(
                 409, "own_idea", (f"user:{user_id}", "review.own_idea_refused", f"presentation:{pid}", {})
             )
+        if why is not None:
+            raise ActionRefused(
+                409, "conflict_of_interest"
+            )  # a recusal carries into this stage (§4.7 step 3)
         chair = is_chair(conn, user_id)
         if action == "assess":
             return _assess(conn, p, user_id, body, now)
@@ -323,8 +362,7 @@ def committee_act(
         if action == "not_presented":
             if p["state"] not in ("invited", "scheduled"):
                 raise ActionRefused(409, "not_open")
-            return _record(conn, p, rev, user_id, {"outcome": "parked", "reason_code": "NOT_PRESENTED",
-                                                   "plain_reason": None, "votes": {}}, now)  # fmt: skip
+            return _record(conn, p, rev, user_id, {"outcome": "parked", "reason_code": "NOT_PRESENTED", "votes": {}}, now)  # fmt: skip
         if action == "collate":
             return _collate(conn, p, now)
         if action == "draft_reasons":
@@ -341,6 +379,8 @@ def _assess(
         raise ActionRefused(409, "not_held")
     if user_id not in _roster(conn):
         raise ActionRefused(403, "committee_only")
+    if conn.execute("SELECT 1 FROM decision_sheets WHERE presentation_id = %s", (p["id"],)).fetchone():
+        raise ActionRefused(409, "already_collated")  # the sheet and the decision use the same assessments
     if conn.execute(
         "SELECT 1 FROM assessments WHERE presentation_id = %s AND member_id = %s", (p["id"], user_id)
     ).fetchone():
@@ -384,7 +424,11 @@ def _assess(
 def _tally(conn: Conn, p: dict[str, Any]) -> dict[str, Any]:
     rows = [
         dict(r)
-        for r in conn.execute("SELECT * FROM assessments WHERE presentation_id = %s", (p["id"],)).fetchall()
+        # Ordered by a hash, not by submission, so "Member n" in the collation says nothing about who was first.
+        for r in conn.execute(
+            "SELECT * FROM assessments WHERE presentation_id = %s ORDER BY md5(member_id::text || presentation_id)",
+            (p["id"],),
+        ).fetchall()
     ]
     sc = scorecard()
     tallies = {v: sum(1 for r in rows if r["vote"] == v) for v in VOTES}
@@ -420,8 +464,10 @@ def _collate(conn: Conn, p: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
 
     if p["state"] != "held":
         raise ActionRefused(409, "not_held")
+    if conn.execute("SELECT 1 FROM decision_sheets WHERE presentation_id = %s", (p["id"],)).fetchone():
+        raise ActionRefused(409, "already_collated")
     t = _tally(conn, p)
-    members = len(_roster(conn))
+    members = len(_voting(conn, p["cluster_id"]))
     everyone = len(t["rows"]) >= members
     quorum = len(t["rows"]) >= 0.6 * members
     late = p["assessments_due"] is not None and now >= p["assessments_due"]
@@ -547,7 +593,7 @@ def _decide(
         decision |= {"route": route, "sponsor_id": sponsor, "casting_vote": casting and yes * 2 == n,
                      "override_reason": override,
                      "conditions": [c for c in (_tagged(conn, cid, x) for x in (body.get("conditions") or [])[:10]) if c],
-                     "plain_reason": _tagged(conn, cid, body.get("plain_reason"))}  # fmt: skip
+                     "plain_reason": _tagged(conn, cid, body.get("plain_reason"), min_chars=30)}  # fmt: skip
     elif outcome in ("parked", "declined"):
         code = body.get("reason_code")
         if code not in (PARK if outcome == "parked" else DECLINE):
@@ -568,9 +614,7 @@ def _record(
     assert n is not None
     did = f"DEC-{now.year}-{int(n['n']):04d}"
     present = sum((d.get("votes") or {}).values())
-    recused = conn.execute(
-        "SELECT count(*) AS n FROM coi_flags WHERE round_id = %s AND status = 'recused'", (p["round_id"],)
-    ).fetchone()
+    conflicted = len(_roster(conn)) - len(_voting(conn, cid))
     window = add_working_days(now, 15) if d["outcome"] in ("parked", "declined") else None
     conn.execute(
         "INSERT INTO decisions (id, cluster_id, presentation_id, cycle_id, outcome, route, reason_code, plain_reason, "
@@ -579,7 +623,7 @@ def _record(
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (did, cid, p["id"], p["cycle_id"], d["outcome"], d.get("route"), d.get("reason_code"), d.get("plain_reason"),
          d.get("what_would_change"), Jsonb(d.get("conditions") or []), Jsonb(d.get("votes") or {}), present,
-         int(recused["n"] if recused else 0), d.get("sponsor_id") or None, bool(d.get("casting_vote")),
+         conflicted, d.get("sponsor_id") or None, bool(d.get("casting_vote")),
          d.get("override_reason"), rev, now, window),
     )  # fmt: skip
     conn.execute("UPDATE presentations SET state = 'decided' WHERE id = %s", (p["id"],))
@@ -602,8 +646,14 @@ def _record(
     for m in conn.execute("SELECT idea_id FROM ideas WHERE cluster_id = %s", (cid,)).fetchall():
         conn.execute(outbox, ("idea.stage_changed", m["idea_id"], rev,
                               Jsonb({"history": [{"event": d["outcome"], "by": rev, "note": did}]})))  # fmt: skip
-    emit(conn, "decision.accepted" if d["outcome"] == "picked" else "decision.not_accepted",
-         {"cluster_id": cid, "decision_id": did})  # fmt: skip
+    event = (
+        "decision.accepted"
+        if d["outcome"] == "picked"
+        else "decision.not_presented"
+        if d.get("reason_code") == "NOT_PRESENTED"
+        else "decision.not_accepted"
+    )
+    emit(conn, event, {"cluster_id": cid, "decision_id": did})
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'decision.recorded', %s, %s)",
         (rev, f"decision:{did}", Jsonb({"outcome": d["outcome"], "reason_code": d.get("reason_code"),

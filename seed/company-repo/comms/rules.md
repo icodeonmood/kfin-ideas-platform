@@ -199,6 +199,17 @@ events:
     urgency: immediate
     approval: core_chair
     signer: core_chair
+  decision.not_presented:
+    day_one: true   # live with the committee flow; the chair records that the session did not take place (BLD-221)
+    audiences:
+    - cluster_contributors
+    template: not-presented
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: core_chair
+    signer: core_chair
   ones.inducted:
     day_one: true
     audiences:

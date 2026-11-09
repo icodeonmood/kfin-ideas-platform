@@ -62,6 +62,13 @@ ROLE_WORDS = frozenset(
     }
 )  # fmt: skip
 
+# The platform's own IDs are never names, though the NER model sometimes reads one as a PERSON ("CL-0010"
+# tagged as a person broke the judge's candidate IDs, BLD-221). Only an exact match is skipped.
+PLATFORM_ID = re.compile(
+    r"(?:IDEA|SUB)-[0-9]{4}-[0-9]{6}|(?:CL|SOL|REV|WG)-[0-9]{4}|(?:DEC|RND|PRS|APL)-[0-9]{4}-[0-9]{4}"
+    r"|CYC-[0-9]{4}-[0-9]{2}(?:-[0-9]+)?|RUN-[0-9]{4}-W[0-9]{2}(?:-[0-9]+)?"
+)
+
 
 @dataclass(frozen=True)
 class Found:
@@ -265,6 +272,8 @@ def _people(text: str, never: set[str]) -> list[Found]:
             words = words[1:]  # "Customer Aditya Khan": keep the role word in the text, tag only the name
         value = " ".join(words) if len(words) < len(value.split()) else value
         if not value or value.casefold() in never or not any(ch.isalpha() for ch in value):
+            continue
+        if PLATFORM_ID.fullmatch(value):
             continue
         start = text.index(value, r.start)
         out.append(Found(start, start + len(value), "PERSON", value, priority=5))

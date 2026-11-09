@@ -40,6 +40,7 @@ WEEKLY: dict[str, tuple[int, clock]] = {
 EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
     "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
+    "qualify.backfill": 60,  # approved groups waiting for qualify (the job does nothing while `committee.flow` is off)
 }
 
 
