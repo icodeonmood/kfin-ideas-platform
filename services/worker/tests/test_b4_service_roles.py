@@ -18,6 +18,7 @@ WORKER = f"postgres://ideas_worker:dev-worker-only@localhost:{_PORT}/ideas?sslmo
 HIDDEN_FROM_WEB = {
     "pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations",
     "sealed_scores", "ai_prescores", "assessments", "decision_sheets",  # sealed committee records (§4.6–§4.7)
+    "appeals",  # statements reach the panel through the worker only (§4.12, BLD-222)
 }  # fmt: skip
 
 

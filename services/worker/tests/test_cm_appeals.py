@@ -3,6 +3,7 @@ on the committee flow so the decision being appealed is real (BLD-222, BLD-223).
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from collections.abc import Iterator
 from typing import Any
@@ -174,11 +175,17 @@ def test_overturning_a_decision_after_the_presentation_returns_it_to_the_chair(q
     assert a["heard_by"] == "panel" and qualified["chair"] not in {str(p) for p in a["panel"]}
     appeals.decide(db, aid, str(a["panel"][0]), {"outcome": "overturned", "reasons": REASONS})
     assert db.execute("SELECT state FROM presentations WHERE id = %s", (pid,)).fetchone()["state"] == "held"
+    with pytest.raises(ActionRefused) as again_declined:
+        decide.committee_act(db, pid, qualified["chair"], {
+            "action": "decide", "outcome": "declined", "reason_code": "LOW_VALUE",
+            "plain_reason": "The committee still does not see enough value in this right now.",
+            "what_would_change": "Evidence that more branches face it."})  # fmt: skip
+    assert again_declined.value.code == "overturned_on_appeal"
+    # Picked although the original votes were to decline: the panel overturned them (§4.12 step 4).
     again = decide.committee_act(db, pid, qualified["chair"], {
-        "action": "decide", "outcome": "parked", "reason_code": "CAPACITY",
-        "plain_reason": "Worth doing, but there is no capacity this cycle; it comes back next cycle.",
-        "what_would_change": "A free Garage slot next cycle."})  # fmt: skip
-    assert again["decision_id"] != first
+        "action": "decide", "outcome": "picked", "route": "build", "sponsor_id": qualified["members"][0],
+        "plain_reason": "The appeal panel found the problem reaches every branch; it is picked this cycle."})  # fmt: skip
+    assert again["decision_id"] != first and again["outcome"] == "picked"
     view = decide.committee_view(db, pid, qualified["members"][0])
     assert view is not None and view["decision"]["id"] == again["decision_id"]  # the latest decision shows
 
@@ -237,7 +244,9 @@ def test_the_repo_gets_the_appeal_linked_from_the_decision_and_the_counts(qualif
     assert f"[{aid}](../../appeals/{year}/{aid}.md), upheld" in dfile.read_text(encoding="utf-8")
     assert "A preliminary review" in dfile.read_text(encoding="utf-8")
     index = (repo / "appeals" / "index.md").read_text(encoding="utf-8")
-    assert "| The core committee | 1 | 0 | 1 | 0 | 0 |" in index
+    assert (
+        "| The core committee | fewer than 5 | 0 | fewer than 5 | 0 | 0 |" in index
+    )  # small counts suppressed
     names = [r["name"] for r in db.execute("SELECT name FROM users").fetchall()]
     assert not any(n in afile.read_text(encoding="utf-8") + index for n in names)
 
@@ -268,7 +277,7 @@ def test_appeal_messages_render_for_the_panel_and_the_colleagues(qualified: Any,
 def test_reports_count_without_naming_anyone(qualified: Any) -> None:  # noqa: F811
     db = qualified["db"]
     _round_decision(qualified, "declined", "LOW_VALUE")
-    start, end = reports.period("2020-01-01", "2100-01-01")
+    start, end = dt.datetime(2020, 1, 1, tzinfo=dt.UTC), dt.datetime(2100, 1, 1, tzinfo=dt.UTC)
     fair = reports.fairness(db, start, end)
     cal = reports.calibration(db, start, end)
     names = [r["name"] for r in db.execute("SELECT name FROM users").fetchall()]
@@ -283,9 +292,68 @@ def test_reports_count_without_naming_anyone(qualified: Any) -> None:  # noqa: F
     )  # one round: suppressed
 
 
-def test_admins_reach_reports_only_through_the_worker(qualified: Any) -> None:  # noqa: F811
-    with pytest.raises(ValueError):
-        reports.period("not-a-date", "2026-01-01")
-    _grant(qualified["db"], qualified["members"][0], "admin")  # grants do not change what a report shows
-    start, end = reports.period(None, None)
-    assert start <= end
+def test_report_periods_are_whole_quarters_in_ist() -> None:
+    now = dt.datetime(2026, 11, 10, 6, 0, tzinfo=dt.UTC)
+    assert reports.current_quarter(now) == "2026-Q4"
+    start, end = reports.period("2026-Q3", now)
+    assert start == dt.datetime(2026, 6, 30, 18, 30, tzinfo=dt.UTC)  # 1 July 00:00 IST
+    assert end == dt.datetime(2026, 9, 30, 18, 30, tzinfo=dt.UTC)
+    assert reports.period(None, now)[1] == now  # the current quarter runs up to now
+    assert reports.recent_quarters(3, now) == ["2026-Q4", "2026-Q3", "2026-Q2"]
+    for bad in ("2026-13-01", "2026-Q5", "2027-Q1"):
+        with pytest.raises(ValueError):
+            reports.period(bad, now)
+
+
+def test_links_are_checked_for_personal_data_too(qualified: Any) -> None:  # noqa: F811
+    did = _round_decision(qualified, "declined", "LOW_VALUE")
+    with pytest.raises(ActionRefused) as refused:
+        _file(qualified, did, links=["https://intranet.example/report?pan=QXRPK4821M"])
+    assert refused.value.code == "personal_data"
+
+
+def test_only_the_latest_decision_can_be_appealed(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    did = _round_decision(qualified, "declined", "LOW_VALUE")
+    db.execute(
+        "INSERT INTO decisions (id, cluster_id, body, outcome, votes, members_present, decided_by, decided_at) "
+        "SELECT 'DEC-2099-0001', cluster_id, body, 'picked', '{}', 0, decided_by, decided_at + interval '1 day' "
+        "FROM decisions WHERE id = %s",
+        (did,),
+    )
+    with pytest.raises(ActionRefused) as refused:
+        _file(qualified, did)
+    assert refused.value.code == "superseded"
+
+
+def test_the_next_member_records_the_outcome_if_the_chair_cannot(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    did = _round_decision(qualified, "declined", "LOW_VALUE")
+    aid = _file(qualified, did)["appeal_id"]
+    panel = [
+        str(p) for p in db.execute("SELECT panel FROM appeals WHERE id = %s", (aid,)).fetchone()["panel"]
+    ]
+    db.execute("UPDATE users SET active = false WHERE id = %s", (panel[0],))  # the chair has left
+    assert appeals.panel_view(db, aid, panel[1])["i_chair"]
+    assert appeals.decide(db, aid, panel[1], {"outcome": "upheld", "reasons": REASONS})["stage"] == "declined"
+
+
+def test_rotation_keeps_a_member_who_did_not_vote_for_the_outcome(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    pid = _held(qualified)
+    for m in [qualified["chair"], *qualified["members"]]:
+        decide.committee_act(db, pid, m, {"action": "assess", "vote": "decline",
+                                          "scores": {d: 2 for d in rounds.scorecard()["dimensions"]}})  # fmt: skip
+    decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
+    did = decide.committee_act(db, pid, qualified["chair"], {
+        "action": "decide", "outcome": "declined", "reason_code": "LOW_VALUE",
+        "plain_reason": "The committee does not see enough value for KFintech in this right now.",
+        "what_would_change": "Evidence that more branches face it."})["decision_id"]  # fmt: skip
+    newcomers = [
+        _user(db, "core_committee")[0] for _ in range(2)
+    ]  # joined after the vote: did not vote decline
+    aid = _file(qualified, did)["appeal_id"]
+    panel = {
+        str(p) for p in db.execute("SELECT panel FROM appeals WHERE id = %s", (aid,)).fetchone()["panel"]
+    }
+    assert len(panel) == 3 and qualified["chair"] not in panel and panel & set(newcomers)

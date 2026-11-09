@@ -572,9 +572,16 @@ def _decide(
     yes = t["tallies"]["accept"] + t["tallies"]["accept_with_conditions"]
     cid = p["cluster_id"]
     decision: dict[str, Any] = {"outcome": outcome, "votes": t["tallies"]}
+    # After the appeal panel overturned this presentation's decision (§4.12 step 4): the group is picked if capacity
+    # allows, or waits for the next cycle (parked, CAPACITY); it is not declined again, and needs no majority.
+    overturned = _overturned(conn, p["id"])
+    if overturned and (
+        outcome == "declined" or (outcome == "parked" and body.get("reason_code") != "CAPACITY")
+    ):
+        raise ActionRefused(409, "overturned_on_appeal")
     if outcome == "picked":
         casting = bool(body.get("casting_vote"))
-        if yes * 2 < n or (yes * 2 == n and not casting):
+        if not overturned and (yes * 2 < n or (yes * 2 == n and not casting)):
             raise ActionRefused(409, "no_majority")  # a tie needs the chair's casting vote
         route = body.get("route")
         if route not in ROUTES:
@@ -608,6 +615,16 @@ def _decide(
     return _record(conn, p, rev, user_id, decision, now)
 
 
+def _overturned(conn: Conn, pid: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM appeals a JOIN decisions d ON d.id = a.decision_id "
+            "WHERE d.presentation_id = %s AND a.outcome = 'overturned' LIMIT 1",
+            (pid,),
+        ).fetchone()
+    )
+
+
 def _record(
     conn: Conn, p: dict[str, Any], rev: str, user_id: str, d: dict[str, Any], now: dt.datetime
 ) -> dict[str, Any]:
@@ -620,7 +637,11 @@ def _record(
     from committee.appeals import WINDOW_WD, appealable
 
     # The appeal window opens only for a decision that can be appealed: a decline, or a second park (§4.12).
-    window = add_working_days(now, WINDOW_WD) if appealable(conn, cid, d["outcome"]) else None
+    window = (
+        add_working_days(now, WINDOW_WD)
+        if appealable(conn, cid, d["outcome"]) and not _overturned(conn, p["id"])
+        else None
+    )  # a decision after an overturned appeal is not appealed again (one appeal per decision, §4.12)
     conn.execute(
         "INSERT INTO decisions (id, cluster_id, presentation_id, cycle_id, outcome, route, reason_code, plain_reason, "
         "what_would_change, conditions, votes, members_present, recused, sponsor_id, casting_vote, override_reason, "

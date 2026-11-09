@@ -1,7 +1,9 @@
 """Fairness and calibration reports (§3.8, §4.12 step 6, §5.4, §5.9 step 5), for admins and the core committee.
 
 Names are removed and every count under 5 shows as "fewer than 5", so no person can be picked out of a small
-group (BLD-223). Personal attributes are used only in aggregate: the contributor's LOB and location from the HR
+group (BLD-223). The groups by LOB and location are suppressed on distinct people, not contributions, so one person
+with several ideas cannot be read off. Periods are whole calendar quarters (IST), never free dates, so two
+overlapping periods cannot be subtracted to expose a single event. Personal attributes are used only in aggregate: the contributor's LOB and location from the HR
 directory (grade is "Coming soon": the HR export has no grade field yet).
 
 - **Fairness** for a period: time-limit breaches by stage, overrides (capacity and below-threshold shortlists),
@@ -15,12 +17,16 @@ Measured outcomes against estimates (§5.4) need the measure-and-close stage and
 from __future__ import annotations
 
 import datetime as dt
+import re
 import statistics
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from core.db import Conn
 
 SMALL = 5
+IST = ZoneInfo("Asia/Kolkata")
+QUARTER = re.compile(r"([0-9]{4})-Q([1-4])")
 
 
 def _n(value: int) -> int | str:
@@ -33,16 +39,38 @@ def _rate(part: int, whole: int) -> float | str:
     return round(part / whole, 3)
 
 
-def period(start: str | None, end: str | None) -> tuple[dt.datetime, dt.datetime]:
-    """Defaults to the current quarter (IST calendar quarters, as KFintech reports)."""
-    now = dt.datetime.now(dt.UTC)
-    if start and end:
-        return dt.datetime.fromisoformat(start).replace(tzinfo=dt.UTC), dt.datetime.fromisoformat(
-            end
-        ).replace(tzinfo=dt.UTC)
-    q = (now.month - 1) // 3
-    begin = dt.datetime(now.year, 3 * q + 1, 1, tzinfo=dt.UTC)
-    return begin, now
+def _quarter_start(year: int, q: int) -> dt.datetime:
+    if q == 5:
+        year, q = year + 1, 1
+    return dt.datetime(year, 3 * (q - 1) + 1, 1, tzinfo=IST)
+
+
+def current_quarter(now: dt.datetime | None = None) -> str:
+    local = (now or dt.datetime.now(dt.UTC)).astimezone(IST)
+    return f"{local.year}-Q{(local.month - 1) // 3 + 1}"
+
+
+def recent_quarters(count: int = 8, now: dt.datetime | None = None) -> list[str]:
+    """The current quarter and the ones before it, newest first (the choices on the reports page)."""
+    year, q = (int(x) for x in current_quarter(now).replace("Q", "").split("-"))
+    out = []
+    for _ in range(count):
+        out.append(f"{year}-Q{q}")
+        year, q = (year, q - 1) if q > 1 else (year - 1, 4)
+    return out
+
+
+def period(quarter: str | None, now: dt.datetime | None = None) -> tuple[dt.datetime, dt.datetime]:
+    """A whole calendar quarter in IST, as KFintech reports (default: the current one, up to now)."""
+    m = QUARTER.fullmatch(quarter or current_quarter(now))
+    if not m:
+        raise ValueError("bad_quarter")
+    year, q = int(m.group(1)), int(m.group(2))
+    start, end = _quarter_start(year, q), _quarter_start(year, q + 1)
+    now = now or dt.datetime.now(dt.UTC)
+    if start > now:
+        raise ValueError("future_quarter")
+    return start.astimezone(dt.UTC), min(end, now).astimezone(dt.UTC)
 
 
 def fairness(conn: Conn, start: dt.datetime, end: dt.datetime) -> dict[str, Any]:
@@ -86,7 +114,7 @@ def fairness(conn: Conn, start: dt.datetime, end: dt.datetime) -> dict[str, Any]
               JOIN contributor_map m ON m.contributor_code = i.contributor_code
               WHERE r.revealed_at BETWEEN %s AND %s
             )
-            SELECT coalesce(u.{attr}, 'not recorded') AS grp, count(*) AS scored,
+            SELECT coalesce(u.{attr}, 'not recorded') AS grp, count(*) AS scored, count(DISTINCT p.user_id) AS people,
                    count(*) FILTER (WHERE EXISTS (SELECT 1 FROM scoring_rounds s WHERE s.cluster_id = p.cluster_id
                                                   AND s.outcome = 'shortlisted')) AS shortlisted,
                    count(*) FILTER (WHERE EXISTS (SELECT 1 FROM decisions d WHERE d.cluster_id = p.cluster_id
@@ -95,8 +123,20 @@ def fairness(conn: Conn, start: dt.datetime, end: dt.datetime) -> dict[str, Any]
             """,  # noqa: S608 - attr is one of two fixed column names
             (start, end),
         ).fetchall()
-        return [{"group": r["grp"], "scored": _n(int(r["scored"])), "shortlist_rate": _rate(int(r["shortlisted"]), int(r["scored"])),
-                 "pick_rate": _rate(int(r["picked"]), int(r["scored"]))} for r in rows]  # fmt: skip
+        out = []
+        for r in rows:
+            few = int(r["people"]) < SMALL  # suppress on people, so one person's many ideas show nothing
+            out.append(
+                {
+                    "group": r["grp"],
+                    "scored": "fewer than 5" if few else _n(int(r["scored"])),
+                    "shortlist_rate": "too few to show"
+                    if few
+                    else _rate(int(r["shortlisted"]), int(r["scored"])),
+                    "pick_rate": "too few to show" if few else _rate(int(r["picked"]), int(r["scored"])),
+                }
+            )
+        return out
 
     return {
         "period": {"from": start.isoformat(), "to": end.isoformat()},

@@ -1030,15 +1030,25 @@ def appeals_decide(aid: str, body: dict[str, Any]) -> JSONResponse:
 
 
 @app.get("/internal/reports/{kind}", dependencies=[Depends(require_token)])
-def reports_view(kind: str, start: str | None = None, end: str | None = None) -> JSONResponse:
+def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONResponse:
+    """Fairness or calibration for a whole quarter (§3.8, §5.4); the web app checked `view_fairness_reports`.
+    Each view is written to the audit log."""
+    from psycopg.types.json import Jsonb
+
     from committee import reports
 
     if kind not in ("fairness", "calibration"):
         return JSONResponse({"error": "not_found"}, status_code=404)
     try:
-        frm, to = reports.period(start, end)
-    except ValueError:
-        return JSONResponse({"error": "bad_period"}, status_code=400)
+        frm, to = reports.period(quarter)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     with connect(autocommit=True) as conn:
         body = reports.fairness(conn, frm, to) if kind == "fairness" else reports.calibration(conn, frm, to)
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'report.viewed', %s, %s)",
+            (f"user:{user_id}", f"report:{kind}", Jsonb({"quarter": quarter or reports.current_quarter()})),
+        )
+    body["quarter"] = quarter or reports.current_quarter()
+    body["quarters"] = reports.recent_quarters()
     return _json(body)

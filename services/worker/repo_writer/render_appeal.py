@@ -74,9 +74,13 @@ def appeal_index_line(aid: str, description: str) -> str:
 
 def appeals_index(stats: list[dict[str, Any]], years: list[str]) -> str:
     """`appeals/index.md`: appeals filed and their outcomes by deciding body, counts only (§4.12 step 6)."""
+
+    def n(v: Any) -> str:  # the same suppression as the fairness report: no one picked out of a small group
+        return str(int(v)) if int(v) == 0 or int(v) >= 5 else "fewer than 5"
+
     rows = [
-        f"| {BODY_WORDS.get(str(s['body']), cell(s['body']))} | {int(s['filed'])} | {int(s['open'])} | "
-        f"{int(s['upheld'])} | {int(s['re_score'])} | {int(s['overturned'])} |"
+        f"| {BODY_WORDS.get(str(s['body']), cell(s['body']))} | {n(s['filed'])} | {n(s['open'])} | "
+        f"{n(s['upheld'])} | {n(s['re_score'])} | {n(s['overturned'])} |"
         for s in stats
     ]
     lines = [
@@ -86,7 +90,7 @@ def appeals_index(stats: list[dict[str, Any]], years: list[str]) -> str:
         "",
         "## Statistics",
         "",
-        "Counts only, names removed. Updated with every appeal.",
+        'Counts only, names removed; any count under 5 shows as "fewer than 5". Updated with every appeal.',
         "",
         "| Decided by | Filed | Open | Upheld | Back to scoring | Overturned |",
         "|---|---|---|---|---|---|",

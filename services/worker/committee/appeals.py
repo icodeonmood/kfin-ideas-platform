@@ -88,21 +88,23 @@ def _cluster_codes(conn: Conn, cluster_id: str) -> set[str]:
     }
 
 
-def _statement_checked(conn: Conn, cluster_id: str, statement: str) -> None:
-    """Both personal-data checks (§4.12): the patterns, then the gatekeeper. Run before any transaction opens, so
-    the model call never holds a lock. If the assistant is unavailable the appeal waits: it is never stored
-    unchecked."""
+def _statement_checked(conn: Conn, cluster_id: str, statement: str, links: list[str]) -> None:
+    """Both personal-data checks (§4.12) on the statement and the evidence links: the patterns, then the
+    gatekeeper. Run before any transaction opens, so the model call never holds a lock. If the assistant is
+    unavailable the appeal waits: it is never stored unchecked. A block is final here: the colleague rewrites the
+    statement (there is no "this is not personal data" route for appeals, BLD-222)."""
     from gateway import AgentFailed, run_agent
     from scan.pipeline import decide as gate
     from scan.pipeline import thresholds
 
-    if any(m.action == "block" for m in scan(statement, kfin_domains=get_settings().kfin_domains)):
-        raise ActionRefused(422, "personal_data")
+    for text in (statement, *links):
+        if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
+            raise ActionRefused(422, "personal_data")
     scope = conn.execute("SELECT tag_scope FROM clusters WHERE id = %s", (cluster_id,)).fetchone()
     try:
         gk = run_agent(
             "gatekeeper",
-            {"mode": "submission", "submission": {"details": statement}},
+            {"mode": "submission", "submission": {"details": statement, "references": "\n".join(links)}},
             (scope or {}).get("tag_scope") or cluster_id,
             conn=conn,
         )
@@ -135,7 +137,7 @@ def file(conn: Conn, user_id: str, body: dict[str, Any], now: dt.datetime | None
     d = conn.execute("SELECT cluster_id FROM decisions WHERE id = %s", (did,)).fetchone()
     if d is None or not (_codes(conn, user_id) & _cluster_codes(conn, d["cluster_id"])):
         raise ActionRefused(404, "not_found")
-    _statement_checked(conn, d["cluster_id"], statement)
+    _statement_checked(conn, d["cluster_id"], statement, links)
 
     with audited(conn), conn.transaction():
         d = conn.execute("SELECT * FROM decisions WHERE id = %s FOR UPDATE", (did,)).fetchone()
@@ -147,8 +149,16 @@ def file(conn: Conn, user_id: str, body: dict[str, Any], now: dt.datetime | None
             raise ActionRefused(409, "window_closed")
         if conn.execute("SELECT 1 FROM appeals WHERE decision_id = %s", (did,)).fetchone():
             raise ActionRefused(409, "already_appealed")  # one appeal per decision
+        if conn.execute(
+            "SELECT 1 FROM decisions WHERE cluster_id = %s AND decided_at > %s LIMIT 1",
+            (cid, d["decided_at"]),
+        ).fetchone():
+            raise ActionRefused(409, "superseded")  # a later decision on the group replaced this one
         scope = conn.execute("SELECT tag_scope FROM clusters WHERE id = %s", (cid,)).fetchone()
-        tagged = str(tag_payload(conn, (scope or {}).get("tag_scope") or cid, {"t": statement}).payload["t"])
+        stored = tag_payload(
+            conn, (scope or {}).get("tag_scope") or cid, {"t": statement, "links": links}
+        ).payload
+        tagged, links = str(stored["t"]), list(stored["links"])
         heard_by, panel = _panel(conn, dict(d))
         if not panel:
             raise ActionRefused(409, "no_panel_available")
@@ -261,6 +271,16 @@ def _decision_scores(conn: Conn, d: dict[str, Any]) -> dict[str, Any]:
     return {"medians": None, "spread": None, "final_score": None}
 
 
+def acting_chair(conn: Conn, a: dict[str, Any]) -> str | None:
+    """The panel member who records the outcome: the chair (the first, most senior member) or, if the chair has
+    since gained a conflict or left, the next member who is still active and free of one."""
+    for member in (str(m) for m in a["panel"]):
+        active = conn.execute("SELECT 1 FROM users WHERE id = %s AND active", (member,)).fetchone()
+        if active and conflict(conn, a["cluster_id"], member) is None:
+            return member
+    return None
+
+
 def panel_view(conn: Conn, aid: str, user_id: str) -> dict[str, Any] | None:
     a = conn.execute("SELECT * FROM appeals WHERE id = %s", (aid,)).fetchone()
     if a is None or user_id not in {str(p) for p in a["panel"]}:
@@ -281,7 +301,7 @@ def panel_view(conn: Conn, aid: str, user_id: str) -> dict[str, Any] | None:
                      "what_would_change": restore(d["what_would_change"], mapping, "blind"),
                      "votes": d["votes"], "decided_at": d["decided_at"].isoformat(),
                      **_decision_scores(conn, dict(d))},
-        "panel_size": len(a["panel"]), "i_chair": str(a["panel"][0]) == user_id,
+        "panel_size": len(a["panel"]), "i_chair": acting_chair(conn, dict(a)) == user_id,
         "outcome": a["outcome"], "reasons": restore(a["reasons"], mapping, "blind"),
     }  # fmt: skip
 
@@ -312,10 +332,10 @@ def decide(
         a = conn.execute("SELECT * FROM appeals WHERE id = %s FOR UPDATE", (aid,)).fetchone()
         if a is None or user_id not in {str(p) for p in a["panel"]}:
             raise ActionRefused(404, "not_found")
-        if str(a["panel"][0]) != user_id:
-            raise ActionRefused(403, "panel_chair_only")
         if conflict(conn, a["cluster_id"], user_id) is not None:
             raise ActionRefused(409, "conflict_of_interest")
+        if acting_chair(conn, dict(a)) != user_id:
+            raise ActionRefused(403, "panel_chair_only")
         if a["state"] != "open":
             raise ActionRefused(409, "already_decided")
         outcome = body.get("outcome")
