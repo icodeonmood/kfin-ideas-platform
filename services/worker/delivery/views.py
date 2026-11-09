@@ -9,7 +9,7 @@ import datetime as dt
 from typing import Any
 
 from core.db import Conn
-from delivery import service
+from delivery import extras, service
 from delivery.phases import (
     COMPLIANCE_TIERS,
     FEATURE_TYPES,
@@ -187,6 +187,8 @@ def detail(
         "completion_notes": unseal(d["completion_notes"], f"delivery:{d['id']}:completion"),
         "completed_at": _iso(d["completed_at"]),
         "milestones": milestones, "measurements": measurements, "outcome": d["outcome"],
+        "evidence": extras.evidence(conn, d, viewer_id, have),
+        "checkins": extras.checkins(conn, d, viewer_id, have, now) if d["track"] == "fix" else None,
         "shipped_at": _iso(d["shipped_at"]), "resolved_at": _iso(d["resolved_at"]),
         "closed_at": _iso(d["closed_at"]),
         "options": {
@@ -204,5 +206,6 @@ def detail(
             "add_milestone": in_fix and (admin or owner),
             "complete": in_fix and (admin or owner),
             "approve_completion": in_fix and sponsor and d["completed_at"] is not None,
+            "add_evidence": d["state"] in ("in_delivery", "shipped", "resolved") and (admin or owner),
         },
     }  # fmt: skip

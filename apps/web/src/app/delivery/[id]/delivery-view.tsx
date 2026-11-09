@@ -5,9 +5,9 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { day } from "@/lib/dates";
 import { measureText, MEASURE_LABELS } from "@/lib/measures";
-import type { DeliveryDetail, Measurement, Milestone } from "@/server/delivery";
+import type { Checkins, DeliveryDetail, EvidenceFile, Measurement, Milestone } from "@/server/delivery";
 
-import { Err, missingText, Status, useAction, useDone } from "../actions";
+import { ERRORS, Err, missingText, Status, useAction, useDone } from "../actions";
 
 const PRODUCT_WORDS: Record<string, string> = {
   iris: "IRIS",
@@ -126,6 +126,180 @@ export function DeliveryView({ d }: { d: DeliveryDetail }) {
           ))}
           <p className="coming-soon coming-soon-light">A write-up other teams can adopt: coming soon</p>
         </section>
+      ) : null}
+
+      {started || d.evidence.length ? <EvidenceSection d={d} onDone={done} /> : null}
+    </>
+  );
+}
+
+const KB = 1024;
+const size = (bytes: number) =>
+  bytes >= KB * KB ? `${(bytes / (KB * KB)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / KB))} KB`;
+
+function EvidenceSection({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [uploadError, setUploadError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const inputId = useId();
+  async function upload(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const input = form.elements.namedItem("file") as HTMLInputElement | null;
+    const file = input?.files?.[0];
+    if (!file) {
+      setUploadError(ERRORS.file_required ?? "Choose a file first.");
+      return;
+    }
+    setUploading(true);
+    const body = new FormData();
+    body.set("file", file);
+    const res = await fetch(`/api/delivery/${d.id}/evidence`, { method: "POST", body }).catch(() => null);
+    setUploading(false);
+    if (res?.ok) {
+      setUploadError("");
+      form.reset();
+      onDone("File added. It opens once the checks finish.");
+      return;
+    }
+    const out = res ? ((await res.json().catch(() => ({}))) as { error?: string }) : {};
+    setUploadError(ERRORS[String(out.error ?? "")] ?? "That didn't work. Please try again.");
+  }
+  return (
+    <section aria-labelledby="s-evidence">
+      <h2 id="s-evidence">Evidence</h2>
+      <p className="muted">
+        Files that back the numbers. Every file is checked for viruses and personal details before anyone can
+        open it.
+      </p>
+      {d.evidence.length ? (
+        <ul className="timeline">
+          {d.evidence.map((f) => (
+            <EvidenceRow key={f.id} d={d} f={f} busy={busy} run={run} />
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No files yet.</p>
+      )}
+      <Err text={error} />
+      {d.can.add_evidence ? (
+        <form className="stack-form" onSubmit={upload}>
+          <label htmlFor={inputId}>Add a file</label>
+          <input id={inputId} name="file" type="file" />
+          <div className="button-row">
+            <button type="submit" className="button button-secondary" disabled={uploading}>
+              {uploading ? "Adding…" : "Add the file"}
+            </button>
+          </div>
+          <Err text={uploadError} />
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function EvidenceRow({
+  d,
+  f,
+  busy,
+  run,
+}: {
+  d: DeliveryDetail;
+  f: EvidenceFile;
+  busy: boolean;
+  run: (url: string, body: Record<string, unknown>, done: string, method?: string) => Promise<boolean>;
+}) {
+  return (
+    <li>
+      {f.can_open ? <a href={`/api/delivery/${d.id}/evidence/${f.id}`}>{f.name}</a> : <span>{f.name}</span>}{" "}
+      <span className="muted">
+        ({size(f.bytes)}. {f.state_words}
+        {f.rejection_words ? `: ${f.rejection_words}` : ""})
+      </span>
+      {f.can_remove ? (
+        <>
+          {" "}
+          <button
+            type="button"
+            className="link-button"
+            disabled={busy}
+            aria-label={`Remove ${f.name}`}
+            onClick={() => run(`/api/delivery/${d.id}/evidence/${f.id}`, {}, "File removed.", "DELETE")}
+          >
+            Remove
+          </button>
+        </>
+      ) : null}
+    </li>
+  );
+}
+
+function CheckinSection({ d, c, onDone }: { d: DeliveryDetail; c: Checkins; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [status, setStatus] = useState<string>("");
+  const [note, setNote] = useState("");
+  const groupId = useId();
+  return (
+    <>
+      <h3>Friday check-in</h3>
+      {c.recent.length ? (
+        <ul className="timeline">
+          {c.recent.map((r) => (
+            <li key={r.week_of}>
+              Week of {day(r.week_of)}: {r.status_words}
+              {r.note ? `. ${r.note}` : "."}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No check-ins yet.</p>
+      )}
+      {c.can_reply ? (
+        <form
+          className="stack-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (await run(`/api/delivery/${d.id}/checkin`, { status, note }, "Check-in saved.")) setNote("");
+          }}
+        >
+          <fieldset>
+            <legend id={groupId}>
+              {c.replied_this_week ? "Update this week's check-in" : "How is it going this week?"}
+            </legend>
+            <div className="choices">
+              {c.statuses.map((s) => (
+                <label key={s.id} className="choice">
+                  <input
+                    type="radio"
+                    name="checkin-status"
+                    value={s.id}
+                    checked={status === s.id}
+                    onChange={() => setStatus(s.id)}
+                  />{" "}
+                  {s.words}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <Field label="A short note (optional)" hint="What changed, or what would unblock it.">
+            {(id, hint) => (
+              <textarea
+                id={id}
+                value={note}
+                maxLength={400}
+                rows={3}
+                aria-describedby={hint}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            )}
+          </Field>
+          <div className="button-row">
+            <button type="submit" className="button button-secondary" disabled={busy}>
+              Save the check-in
+            </button>
+          </div>
+          <Err text={error} />
+        </form>
       ) : null}
     </>
   );
@@ -536,7 +710,7 @@ function FixTrack({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => voi
         <p className="muted">No milestones yet.</p>
       )}
       {d.can.add_milestone ? <MilestoneForm d={d} onDone={onDone} /> : null}
-      <p className="coming-soon coming-soon-light">Replies to the Friday check-in from here: coming soon</p>
+      {d.checkins ? <CheckinSection d={d} c={d.checkins} onDone={onDone} /> : null}
 
       <h3>Completion</h3>
       {d.completion ? (
@@ -560,7 +734,7 @@ function FixTrack({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => voi
         </div>
       ) : null}
       <Err text={error} />
-      <p className="coming-soon coming-soon-light">Evidence files with the numbers: coming soon</p>
+      <p className="muted">Add the files that back these numbers under Evidence below.</p>
     </section>
   );
 }

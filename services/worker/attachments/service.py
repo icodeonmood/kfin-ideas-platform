@@ -81,8 +81,8 @@ def _key(att_id: str) -> str:
     return f"att/{att_id}"
 
 
-def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data: bytes) -> dict[str, Any]:
-    lim = limits()
+def _screen(name: str, data: bytes, lim: Limits) -> str:
+    """The checks before anything is stored: size, a name with no personal data, and a type by signature."""
     if not data:
         raise AttachmentRefused(400, "file_empty")
     if len(data) > lim.max_bytes_each:
@@ -92,7 +92,42 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data
     kind = sniff(data)
     if kind is None or kind not in lim.allowed:
         raise AttachmentRefused(415, "type_not_allowed")
+    return kind
+
+
+def _store_and_queue(conn: Conn, owner: dict[str, Any], name: str, data: bytes, kind: str) -> str:
+    """Inside the caller's transaction: next ATT number, the quarantine copy, the row and the check job."""
     s = get_settings()
+    year = conn.execute("SELECT to_char(now() AT TIME ZONE 'Asia/Kolkata', 'YYYY') AS y").fetchone()["y"]  # type: ignore[index]
+    n = conn.execute("SELECT next_number('ATT', %s) AS n", (year,)).fetchone()["n"]  # type: ignore[index]
+    att_id = f"ATT-{year}-{n:06d}"
+    store.put(s.s3_bucket_quarantine, _key(att_id), data)
+    conn.execute(
+        "INSERT INTO attachments (id, idea_uuid, delivery_id, uploaded_by_code, uploaded_by_user, name, mime, bytes, "
+        "sha256, store_key, state) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine')",
+        (
+            att_id,
+            owner.get("idea_uuid"),
+            owner.get("delivery_id"),
+            owner.get("uploaded_by_code"),
+            owner.get("uploaded_by_user"),
+            name[:200],
+            MIME[kind],
+            len(data),
+            hashlib.sha256(data).hexdigest(),
+            _key(att_id),
+        ),
+    )
+    conn.execute(
+        "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.process', %s, %s)",
+        (Jsonb({"attachment_id": att_id}), f"attachment:{att_id}"),
+    )
+    return att_id
+
+
+def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data: bytes) -> dict[str, Any]:
+    lim = limits()
+    kind = _screen(name, data, lim)
     with conn.transaction():
         idea = conn.execute(
             "SELECT stage FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)
@@ -109,29 +144,42 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data
             raise AttachmentRefused(409, "too_many_files")
         if used["total"] + len(data) > lim.max_bytes_per_idea:
             raise AttachmentRefused(413, "idea_total_too_large")
-        year = conn.execute("SELECT to_char(now() AT TIME ZONE 'Asia/Kolkata', 'YYYY') AS y").fetchone()["y"]  # type: ignore[index]
-        n = conn.execute("SELECT next_number('ATT', %s) AS n", (year,)).fetchone()["n"]  # type: ignore[index]
-        att_id = f"ATT-{year}-{n:06d}"
-        store.put(s.s3_bucket_quarantine, _key(att_id), data)
-        conn.execute(
-            "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, sha256, store_key, state) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'quarantine')",
-            (
-                att_id,
-                idea_uuid,
-                uploaded_by_code,
-                name[:200],
-                MIME[kind],
-                len(data),
-                hashlib.sha256(data).hexdigest(),
-                _key(att_id),
-            ),
-        )
-        conn.execute(
-            "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.process', %s, %s)",
-            (Jsonb({"attachment_id": att_id}), f"attachment:{att_id}"),
+        att_id = _store_and_queue(
+            conn, {"idea_uuid": idea_uuid, "uploaded_by_code": uploaded_by_code}, name, data, kind
         )
     log.info("attachments.accepted", attachment_id=att_id, file_type=kind, byte_count=len(data))
+    return {"id": att_id, "state": "quarantine", "name": name[:200], "bytes": len(data)}
+
+
+EVIDENCE_MAX_FILES = 10  # per delivery (BLD-131); each file still obeys the per-file size and type rules
+EVIDENCE_STATES = ("in_delivery", "shipped", "resolved")  # while work or results are being shown
+
+
+def accept_evidence(conn: Conn, *, delivery_id: int, user_id: str, name: str, data: bytes) -> dict[str, Any]:
+    """An evidence file for a delivery (BLD-131): the same checks as research files, then quarantine. The caller
+    has checked that `user_id` may add evidence to this delivery."""
+    lim = limits()
+    kind = _screen(name, data, lim)
+    with conn.transaction():
+        d = conn.execute("SELECT state FROM deliveries WHERE id = %s FOR UPDATE", (delivery_id,)).fetchone()
+        if d is None:
+            raise AttachmentRefused(404, "not_found")
+        if d["state"] not in EVIDENCE_STATES:
+            raise AttachmentRefused(409, "not_open_for_evidence")
+        used = conn.execute(
+            "SELECT count(*) AS n, coalesce(sum(bytes), 0) AS total FROM attachments "
+            "WHERE delivery_id = %s AND state <> 'rejected'",
+            (delivery_id,),
+        ).fetchone()
+        assert used is not None
+        if used["n"] >= EVIDENCE_MAX_FILES:
+            raise AttachmentRefused(409, "too_many_files")
+        if used["total"] + len(data) > lim.max_bytes_per_idea * 2:
+            raise AttachmentRefused(413, "delivery_total_too_large")
+        att_id = _store_and_queue(
+            conn, {"delivery_id": delivery_id, "uploaded_by_user": user_id}, name, data, kind
+        )
+    log.info("attachments.evidence_accepted", attachment_id=att_id, delivery_id=delivery_id, file_type=kind)
     return {"id": att_id, "state": "quarantine", "name": name[:200], "bytes": len(data)}
 
 
@@ -158,7 +206,7 @@ def process(conn: Conn, att_id: str) -> str:
     """Run the day-one checks. Returns the final state. Raises ScannerUnavailable to retry later."""
     s = get_settings()
     row = conn.execute(
-        "SELECT id, mime, store_key, state FROM attachments WHERE id = %s", (att_id,)
+        "SELECT id, mime, store_key, state, idea_uuid FROM attachments WHERE id = %s", (att_id,)
     ).fetchone()
     if row is None or row["state"] not in ("quarantine", "processing"):
         return row["state"] if row else "missing"
@@ -239,7 +287,7 @@ def process(conn: Conn, att_id: str) -> str:
             "UPDATE attachments SET state = 'clean', rejection = NULL, checks = %s WHERE id = %s",
             (Jsonb(checks), att_id),
         )
-        if deep:
+        if deep and row["idea_uuid"] is not None:  # delivery evidence is checked, never digested or indexed
             conn.execute(
                 "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.digest', %s, %s) "
                 "ON CONFLICT DO NOTHING",
@@ -260,6 +308,8 @@ def digest(conn: Conn, att_id: str) -> str:
     ).fetchone()
     if att is None or att["state"] != "clean":
         return "not_clean"
+    if att["idea_uuid"] is None:
+        return "not_an_idea_file"
     idea = conn.execute(
         "SELECT idea_id, stage, visibility, lobs, area_ids, category, canvas FROM ideas WHERE id = %s",
         (att["idea_uuid"],),

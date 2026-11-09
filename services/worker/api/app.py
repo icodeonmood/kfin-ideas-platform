@@ -753,6 +753,48 @@ def delivery_measure_finance(delivery_id: str, mark: str, body: dict[str, Any]) 
     return _delivery_call(finance_confirm, _actor(body), delivery_id, mark)
 
 
+@app.post("/internal/delivery/{delivery_id}/evidence", dependencies=[Depends(require_token)])
+def delivery_evidence_add(delivery_id: str, file: UploadFile, actor_user_id: str = Form(...)) -> JSONResponse:
+    """An evidence file (BLD-131): the owner or an admin; the same checks as research files, then quarantine."""
+    from delivery.extras import add_evidence
+
+    limit = attachments.limits().max_bytes_each
+    data = file.file.read(limit + 1)
+    return _delivery_call(add_evidence, actor_user_id, delivery_id, file.filename or "file", data, status=201)
+
+
+@app.get(
+    "/internal/delivery/{delivery_id}/evidence/{att_id}/content/{user_id}",
+    dependencies=[Depends(require_token)],
+)
+def delivery_evidence_content(delivery_id: str, att_id: str, user_id: str) -> Response:
+    """A clean evidence file for someone who can see the delivery; anything not clean is refused."""
+    from delivery.extras import evidence_content
+    from ones.text import OnesRefused
+
+    try:
+        with connect(autocommit=True) as conn:
+            data, mime, _name = evidence_content(conn, user_id, delivery_id, att_id)
+    except OnesRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/delivery/{delivery_id}/evidence/{att_id}/remove", dependencies=[Depends(require_token)])
+def delivery_evidence_remove(delivery_id: str, att_id: str, body: dict[str, Any]) -> JSONResponse:
+    from delivery.extras import remove_evidence
+
+    return _delivery_call(remove_evidence, _actor(body), delivery_id, att_id)
+
+
+@app.post("/internal/delivery/{delivery_id}/checkin", dependencies=[Depends(require_token)])
+def delivery_checkin(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The fix track's Friday check-in, answered on the page (BLD-132)."""
+    from delivery.extras import check_in
+
+    return _delivery_call(check_in, _actor(body), delivery_id, body)
+
+
 @app.get("/internal/lenses/{user_id}", dependencies=[Depends(require_token)])
 def lenses_view(user_id: str) -> JSONResponse:
     from lenses import view

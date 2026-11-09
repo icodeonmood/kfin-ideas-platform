@@ -43,7 +43,8 @@ export interface Attachments {
   created_at: Generated<Timestamp>;
   digest: string | null;
   id: string;
-  idea_uuid: string;
+  delivery_id: Int8 | null;
+  idea_uuid: string | null;
   mime: string | null;
   name: string;
   rejection: Json | null;
@@ -51,7 +52,8 @@ export interface Attachments {
   state: Generated<string>;
   store_key: string;
   updated_at: Generated<Timestamp>;
-  uploaded_by_code: string;
+  uploaded_by_code: string | null;
+  uploaded_by_user: string | null;
 }
 
 export interface AuditLog {

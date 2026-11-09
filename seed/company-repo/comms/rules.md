@@ -338,6 +338,17 @@ events:
     urgency: routine
     approval: null
     signer: club_team
+  delivery.checkin_blocked:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-checkin-blocked
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: club_team
   delivery.overdue:
     day_one: true
     audiences:

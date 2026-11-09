@@ -68,6 +68,27 @@ export type Milestone = {
   can_set: boolean;
 };
 
+export type EvidenceFile = {
+  id: string;
+  name: string;
+  bytes: number;
+  state: "quarantine" | "processing" | "awaiting_check" | "clean" | "rejected";
+  state_words: string;
+  rejection_words: string | null;
+  can_open: boolean;
+  can_remove: boolean;
+  added_at: string | null;
+};
+
+export type CheckinStatus = "on_track" | "at_risk" | "blocked";
+export type Checkins = {
+  recent: { week_of: string; status: CheckinStatus; status_words: string; note: string | null }[];
+  this_week: string;
+  replied_this_week: boolean;
+  can_reply: boolean;
+  statuses: { id: CheckinStatus; words: string }[];
+};
+
 export type DeliveryDetail = {
   id: number;
   subject_id: string;
@@ -105,6 +126,8 @@ export type DeliveryDetail = {
   completed_at: string | null;
   milestones: Milestone[];
   measurements: Measurement[];
+  evidence: EvidenceFile[];
+  checkins: Checkins | null;
   outcome: "target_met" | "target_not_met" | null;
   shipped_at: string | null;
   resolved_at: string | null;
@@ -126,7 +149,8 @@ export type DeliveryDetail = {
     | "link"
     | "add_milestone"
     | "complete"
-    | "approve_completion",
+    | "approve_completion"
+    | "add_evidence",
     boolean
   >;
 };
@@ -269,3 +293,37 @@ export const learning = (me: CurrentUser) => call<Learning>(`/internal/learning/
 export const decideLearning = (me: CurrentUser, proposalId: string, input: unknown) =>
   send(me, `/internal/learning/proposals/${id(proposalId)}/decide`, input);
 export const runLearning = (me: CurrentUser, input: unknown) => send(me, "/internal/learning/run", input);
+
+// --- Evidence files and Friday check-ins (BLD-131, BLD-132) -------------------------------------------------------
+
+const ATT = /^ATT-[0-9]{4}-[0-9]{6}$/;
+
+export async function uploadEvidence(me: CurrentUser, deliveryId: string, file: File) {
+  const form = new FormData();
+  form.set("actor_user_id", me.id);
+  form.set("file", file, file.name.slice(0, 200));
+  const res = await workerFetch(`${base(deliveryId)}/evidence`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const out = (await res.json().catch(() => ({ error: "upload_failed" }))) as Record<string, unknown>;
+  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "upload_failed"));
+  return out;
+}
+
+/** The worker checks that the person can see the delivery and that the file is clean. */
+export async function evidenceContent(me: CurrentUser, deliveryId: string, attId: string) {
+  if (!ATT.test(attId)) throw new SubmissionError(404, "not_found");
+  return workerFetch(`${base(deliveryId)}/evidence/${attId}/content/${me.id}`, {
+    signal: AbortSignal.timeout(300_000),
+  });
+}
+
+export const removeEvidence = (me: CurrentUser, deliveryId: string, attId: string) => {
+  if (!ATT.test(attId)) throw new SubmissionError(404, "not_found");
+  return send(me, `${base(deliveryId)}/evidence/${attId}/remove`);
+};
+
+export const checkIn = (me: CurrentUser, deliveryId: string, input: unknown) =>
+  send(me, `${base(deliveryId)}/checkin`, input);
