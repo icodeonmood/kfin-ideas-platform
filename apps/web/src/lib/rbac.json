@@ -98,7 +98,8 @@
       "admin": "yes"
     },
     "approve_handover": {
-      "sponsor": "yes"
+      "sponsor": "yes",
+      "ceo": "yes"
     },
     "see_people_view": {
       "contributor": "own_history",
@@ -131,6 +132,26 @@
       "core_committee": "yes"
     },
     "carry_out_ones": {
+      "admin": "yes"
+    },
+    "work_delivery": {
+      "contributor": "as_party",
+      "core_committee": "yes",
+      "admin": "yes"
+    },
+    "start_handover": {
+      "core_committee": "yes",
+      "admin": "yes"
+    },
+    "manage_delivery": {
+      "admin": "yes"
+    },
+    "view_lenses": {
+      "lob_committee": "yes",
+      "core_committee": "yes",
+      "admin": "yes"
+    },
+    "review_learning": {
       "admin": "yes"
     }
   },
@@ -174,6 +195,9 @@
       "infosec"
     ],
     "scan.live": [
+      "admin"
+    ],
+    "learning.jobs": [
       "admin"
     ]
   },
@@ -256,7 +280,28 @@
     "POST /api/me/one/glow-up/{id}/seen                signed_in",
     "GET /api/me/one/showcase                          signed_in",
     "PUT /api/me/one/showcase                          signed_in",
-    "GET /api/me/team                                  signed_in"
+    "GET /api/me/team                                  signed_in",
+    "GET /api/delivery                                 work_delivery",
+    "POST /api/delivery                                start_handover",
+    "GET /api/delivery/{id}                            work_delivery",
+    "PUT /api/delivery/{id}/pack                       work_delivery",
+    "POST /api/delivery/{id}/submit                    work_delivery",
+    "POST /api/delivery/{id}/approve                   approve_handover",
+    "POST /api/delivery/{id}/send-back                 approve_handover",
+    "POST /api/delivery/{id}/link                      manage_delivery",
+    "POST /api/delivery/{id}/phase                     work_delivery",
+    "POST /api/delivery/{id}/milestones                work_delivery",
+    "POST /api/delivery/{id}/milestones/{ms}           work_delivery",
+    "POST /api/delivery/{id}/complete                  work_delivery",
+    "POST /api/delivery/{id}/approve-completion        approve_handover",
+    "PUT /api/delivery/{id}/measurements/{mark}        work_delivery",
+    "POST /api/delivery/{id}/measurements/{mark}/confirm  approve_handover",
+    "POST /api/delivery/{id}/measurements/{mark}/finance  manage_delivery",
+    "GET /api/lenses                                   view_lenses",
+    "POST /api/lenses/rebuild                          review_learning",
+    "GET /api/learning                                 review_learning",
+    "POST /api/learning/proposals/{id}/decide          review_learning",
+    "POST /api/learning/run                            review_learning"
   ],
   "membership_scoped": {
     "ones": [
@@ -273,7 +318,10 @@
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
-    "/ones/console              view_ones_console"
+    "/ones/console              view_ones_console",
+    "/delivery                  work_delivery",
+    "/lenses                    view_lenses",
+    "/learning                  review_learning"
   ],
   "navigation": [
     {
@@ -313,6 +361,26 @@
         "core_committee",
         "admin",
         "ceo"
+      ]
+    },
+    {
+      "label": "Delivery",
+      "href": "/delivery",
+      "roles": [
+        "working_group",
+        "sponsor",
+        "core_committee",
+        "admin",
+        "ceo"
+      ]
+    },
+    {
+      "label": "Lenses",
+      "href": "/lenses",
+      "roles": [
+        "lob_committee",
+        "core_committee",
+        "admin"
       ]
     },
     {

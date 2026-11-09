@@ -20,11 +20,13 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 | `DEMO-00002` | Nikhil Rao, review desk | The review desk |
 | `DEMO-00003` | Meera Pillai, core committee | Desk decisions; proposing in the console |
 | `DEMO-00004` | Vivek Shenoy, core committee chair | Approving in the console |
-| `DEMO-00005` | Demo CEO | Sponsoring a One |
+| `DEMO-00005` | Demo CEO | Sponsoring a One; approving a handover pack; confirming results |
 | `DEMO-00006` | Sana Qureshi, admin | Carrying out, screens, launch, kill switches |
 | `DEMO-00007` | Rahul Deshpande, a manager | The manager's team view |
-| `DEMO-00008` | Ananya Rao, One No. 17 | The glow-up (her tier-up to Glow has just gone through), her dashboard, the leaderboard |
+| `DEMO-00008` | Ananya Rao, One No. 17 | The glow-up (her tier-up to Glow has just gone through), her dashboard, the leaderboard; owner of two deliveries |
 | `DEMO-00009` | Rohit Menon, founding One No. 1, tier 4 (Blaze) | A founding One's dashboard |
+| `DEMO-00013` | Deepa Joshi, delivery PM | Recording each step of a build |
+| `DEMO-00017` | Vikram Bhat, fix-track owner | A non-tech fix: the action plan and the numbers |
 
 ## The tour
 
@@ -46,7 +48,14 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 11. **Manager view** (Rahul): `/my-team`, his four direct reports, counts only.
 12. **Office screen** (anyone): `/constellation`, the sky of sparks, alternating with impact cards. As Sana, "Switch to ambient mode" in the console makes one spark glow every ten seconds.
 13. **Launch screen** (Sana): `/launch`, then Start, with sound.
-14. **Kill switches** (Sana): Admin. `ones.public` hides the Ones from the wall, home and screens.
+14. **Kill switches** (Sana): Admin. `ones.public` hides the Ones from the wall, home and screens. `learning.jobs` stops the learning reports.
+15. **Delivery** (Meera): Menu, then Delivery. Every delivery, one in each state, and "Picked, waiting for a handover": Lakshmi's transmission-documents idea. Choose a track and "Start the handover", then fill in the pack.
+16. **The sponsor** (Demo CEO): Delivery, then "Show distributors on IRIS why an SIP registration is stuck…": Ananya has sent the pack. "Approve the pack" starts the work, and Ananya, Farhan and Deepa hear about it. Then the brokerage statements: the 90-day results are in. "Confirm these results" closes it as target met.
+17. **The delivery PM** (Deepa): Delivery, then Ananya's nominee idea. "Record the current step", for example "Building: test". Choosing Shipped opens the 30- and 90-day results.
+18. **A non-tech fix** (Vikram): Delivery, then the change-of-bank checklist. The action plan has one overdue milestone; "Mark done", then "It's done: send the numbers" for the sponsor to approve.
+19. **Finance's confirmation** (Sana): Delivery, then the investor service request status page (closed, target met). The money waits for Finance: "Finance has confirmed the money" puts it on the wall with the Ones' impact.
+20. **Lenses** (Meera or Sana): Menu, then Lenses. Ideas by line of business and by role, and the colleagues around each group, as counts only.
+21. **Learning** (Sana): Admin, then "Learning reports and proposals". A new glossary term found in three ideas (IFSC) waits for the product team: approve or decline. The review desk's acceptance rates are shown, and every kind stays with a person.
 
 ## Shows "Coming soon"
 
@@ -54,6 +63,10 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 - **Your points** (a One's dashboard).
 - **Impact weights** (leaderboard).
 - **Manager notes and nudges** (manager view).
+- **Live sync with the delivery pipeline** (Delivery): steps are recorded by hand until then.
+- **A drafted pack**, **evidence files**, **replies to the Friday check-in** and **a write-up other teams can adopt** (a delivery).
+- **Recurring friction themes for each role** and **your own view of your groups** (Lenses).
+- **Writing an approved term or tag into the company repo**, **proposed changes to scoring bands**, **learning from the core committee's decisions**, and **switching a kind of suggestion to automatic** (off at launch) (Learning).
 
 ## Good to know
 

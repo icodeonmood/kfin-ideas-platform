@@ -1,0 +1,878 @@
+"use client";
+
+import Link from "next/link";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
+
+import { day } from "@/lib/dates";
+import { measureText, MEASURE_LABELS } from "@/lib/measures";
+import type { DeliveryDetail, Measurement, Milestone } from "@/server/delivery";
+
+import { Err, missingText, Status, useAction, useDone } from "../actions";
+
+const PRODUCT_WORDS: Record<string, string> = {
+  iris: "IRIS",
+  lamf: "Loans against mutual funds",
+  guardian: "Guardian",
+  "api-marketplace": "API marketplace",
+  "ai-tooling": "AI tooling",
+  "sif-aif-pms": "SIF, AIF and PMS",
+  "mf-central": "MF Central",
+  other: "Other",
+};
+const FEATURE_WORDS: Record<string, string> = {
+  "kfintech-product": "A change to a KFintech product",
+  "ai-tooling": "An internal AI tool",
+};
+const TIER_WORDS: Record<string, string> = { standard: "Standard", express: "Express (low risk)" };
+const TRACK_WORDS: Record<string, string> = {
+  build: "Build",
+  fix: "Non-tech fix",
+  procurement: "Buy or partner",
+};
+const CHECKLIST: [string, string, (d: DeliveryDetail, featureType: string) => boolean][] = [
+  ["working_group_formed", "The working group is formed", () => true],
+  ["baseline_captured", "The baseline number is captured", () => true],
+  ["build_slot_confirmed", "A build slot is confirmed", (d) => d.track !== "fix"],
+  [
+    "dev_slot_confirmed",
+    "A development slot is confirmed (product changes only)",
+    (d, featureType) => d.track !== "fix" && featureType === "kfintech-product",
+  ],
+];
+const MARK_WORDS = { day_30: "Results at 30 days", day_90: "Results at 90 days" } as const;
+const KEYS = ["time", "money", "effort", "scale"] as const;
+
+export function DeliveryView({ d }: { d: DeliveryDetail }) {
+  const { status, done } = useDone();
+  const building = d.track !== "fix";
+  const started = !["drafting", "awaiting_sponsor"].includes(d.state);
+  return (
+    <>
+      <p>
+        <Link href="/delivery">Back to Delivery</Link>
+      </p>
+      <h1>{d.label}</h1>
+      <p className="lead">
+        {d.subject_id}. {d.track_words}. {d.state_words}
+        {d.state === "in_delivery" && d.phase_words ? `: ${d.phase_words}` : ""}.
+        {d.outcome
+          ? ` ${d.outcome === "target_met" ? "It met its target." : "It closed short of its target."}`
+          : ""}
+      </p>
+      <Status text={status} />
+      <dl className="crew-facts">
+        <div>
+          <dt>Owner</dt>
+          <dd>{d.owner?.name ?? "Not named yet"}</dd>
+        </div>
+        <div>
+          <dt>Sponsor</dt>
+          <dd>{d.sponsor?.name ?? "Not named yet"}</dd>
+        </div>
+        {building ? (
+          <div>
+            <dt>Delivery PM</dt>
+            <dd>{d.pm?.name ?? "Not named yet"}</dd>
+          </div>
+        ) : null}
+        {d.sponsor_approved_at ? (
+          <div>
+            <dt>Sponsor approved</dt>
+            <dd>{day(d.sponsor_approved_at)}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <section aria-labelledby="s-pack">
+        <h2 id="s-pack">Handover pack</h2>
+        {d.can.edit ? <PackForm d={d} onDone={done} /> : <PackSummary d={d} />}
+        {d.missing.length && !started ? (
+          <p className="notice">Still needed before the sponsor can approve: {missingText(d.missing)}.</p>
+        ) : null}
+        <PackActions d={d} onDone={done} />
+        <p className="coming-soon coming-soon-light">
+          A drafted pack from the idea and its group: coming soon
+        </p>
+      </section>
+
+      {started && building ? (
+        <section aria-labelledby="s-status">
+          <h2 id="s-status">Where the build is</h2>
+          <p>
+            {d.phase_words ?? "Not started"}
+            {d.gate_status === "blocked"
+              ? `. Blocked${d.blocked_since ? ` since ${day(d.blocked_since)}` : ""}.`
+              : "."}
+            {d.link_state === "linked" ? " Linked to the delivery pipeline's page." : ""}
+            {d.link_state === "manual" ? " Steps are recorded here by hand." : ""}
+          </p>
+          <p className="coming-soon coming-soon-light">Live sync with the delivery pipeline: coming soon</p>
+          {d.can.set_phase ? <PhaseForm d={d} onDone={done} /> : null}
+          {d.can.link ? <LinkForm d={d} onDone={done} /> : null}
+        </section>
+      ) : null}
+
+      {started && !building ? <FixTrack d={d} onDone={done} /> : null}
+
+      {d.measurements.length ? (
+        <section aria-labelledby="s-results">
+          <h2 id="s-results">Results</h2>
+          <p className="muted">
+            The owner fills these in at 30 and 90 days. The sponsor confirms them. Money shows on the wall
+            only after Finance confirms it.
+          </p>
+          {d.measurements.map((m) => (
+            <MeasurementCard key={m.mark} d={d} m={m} onDone={done} />
+          ))}
+          <p className="coming-soon coming-soon-light">A write-up other teams can adopt: coming soon</p>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: (id: string, describedBy: string | undefined) => ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      {hint ? (
+        <p className="hint" id={`${id}-hint`}>
+          {hint}
+        </p>
+      ) : null}
+      {children(id, hint ? `${id}-hint` : undefined)}
+    </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  options,
+  words,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  words?: Record<string, string>;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      {(id) => (
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {words?.[o] ?? o}
+            </option>
+          ))}
+        </select>
+      )}
+    </Field>
+  );
+}
+
+function PackSummary({ d }: { d: DeliveryDetail }) {
+  const p = d.pack;
+  return (
+    <dl className="crew-facts">
+      <div>
+        <dt>Success metric</dt>
+        <dd>{d.metric ?? "Not set"}</dd>
+      </div>
+      <div>
+        <dt>From and to</dt>
+        <dd>
+          {p.baseline ?? "?"} to {p.target ?? "?"} {p.unit ?? ""}
+        </dd>
+      </div>
+      {d.track === "fix" ? (
+        <div>
+          <dt>Objective</dt>
+          <dd>{d.objective ?? "Not set"}</dd>
+        </div>
+      ) : (
+        <div>
+          <dt>Product</dt>
+          <dd>
+            {PRODUCT_WORDS[p.product ?? ""] ?? "Not set"}, {FEATURE_WORDS[p.feature_type ?? ""] ?? ""}
+          </dd>
+        </div>
+      )}
+      <div>
+        <dt>Spend reference</dt>
+        <dd>{p.spend === "none" ? "No spend" : (p.spend ?? "Not set")}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function PackForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const p = d.pack;
+  const [track, setTrack] = useState<string>(d.track);
+  const [product, setProduct] = useState(p.product ?? "other");
+  const [featureType, setFeatureType] = useState(p.feature_type ?? "kfintech-product");
+  const [tier, setTier] = useState(p.compliance_tier ?? "standard");
+  const [owner, setOwner] = useState(d.owner?.email ?? "");
+  const [sponsor, setSponsor] = useState(d.sponsor?.email ?? "");
+  const [pm, setPm] = useState(d.pm?.email ?? "");
+  const [metric, setMetric] = useState(d.metric ?? "");
+  const [objective, setObjective] = useState(d.objective ?? "");
+  const [baseline, setBaseline] = useState(p.baseline == null ? "" : String(p.baseline));
+  const [target, setTarget] = useState(p.target == null ? "" : String(p.target));
+  const [unit, setUnit] = useState<string>(p.unit ?? d.options.metric_units[0] ?? "");
+  const [spend, setSpend] = useState(p.spend === "none" ? "NONE" : (p.spend ?? ""));
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({ ...(p.checklist ?? {}) });
+  const legendId = useId();
+  const fix = track === "fix";
+
+  function save(e: FormEvent) {
+    e.preventDefault();
+    const body: Record<string, unknown> = {
+      track, product, feature_type: featureType, compliance_tier: tier, unit, baseline, target, spend, checklist,
+      owner_email: owner, sponsor_email: sponsor, pm_email: fix ? "" : pm,
+    }; // prettier-ignore
+    if (metric.trim() && metric !== d.metric) body.metric = metric.trim();
+    if (fix && objective.trim() && objective !== d.objective) body.objective = objective.trim();
+    void run(`/api/delivery/${d.id}/pack`, body, "Pack saved.", "PUT");
+  }
+
+  return (
+    <form className="stack-form" onSubmit={save} noValidate>
+      <h3>Fill in the pack</h3>
+      <p className="hint">
+        Names are looked up by work email. Free text is checked for personal details before it is saved.
+      </p>
+      <Select
+        label="Track"
+        value={track}
+        options={d.options.tracks}
+        words={TRACK_WORDS}
+        onChange={setTrack}
+      />
+      <Field
+        label="Owner's work email"
+        hint="The person who sees it through. They fill in the results later."
+      >
+        {(id, hint) => (
+          <input
+            id={id}
+            type="email"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      <Field label="Sponsor's work email" hint="A sponsor approves the pack and confirms the results.">
+        {(id, hint) => (
+          <input
+            id={id}
+            type="email"
+            value={sponsor}
+            onChange={(e) => setSponsor(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      {!fix ? (
+        <Field label="Delivery PM's work email" hint="The person who records each step of the build.">
+          {(id, hint) => (
+            <input
+              id={id}
+              type="email"
+              value={pm}
+              onChange={(e) => setPm(e.target.value)}
+              aria-describedby={hint}
+            />
+          )}
+        </Field>
+      ) : null}
+      <Field
+        label="Success metric"
+        hint="What you will measure, in a few words. For example: minutes to reconcile one file."
+      >
+        {(id, hint) => (
+          <input
+            id={id}
+            value={metric}
+            maxLength={120}
+            onChange={(e) => setMetric(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      <Field label="Starting number (baseline)">
+        {(id) => (
+          <input id={id} inputMode="decimal" value={baseline} onChange={(e) => setBaseline(e.target.value)} />
+        )}
+      </Field>
+      <Field label="Target">
+        {(id) => (
+          <input id={id} inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} />
+        )}
+      </Field>
+      <Select label="Unit" value={unit} options={d.options.metric_units} onChange={setUnit} />
+      {fix ? (
+        <Field label="Objective" hint="What will be different when this is fixed.">
+          {(id, hint) => (
+            <textarea
+              id={id}
+              rows={2}
+              maxLength={400}
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+              aria-describedby={hint}
+            />
+          )}
+        </Field>
+      ) : (
+        <>
+          <Select
+            label="Product"
+            value={product}
+            options={d.options.products}
+            words={PRODUCT_WORDS}
+            onChange={setProduct}
+          />
+          <Select
+            label="Type of change"
+            value={featureType}
+            options={d.options.feature_types}
+            words={FEATURE_WORDS}
+            onChange={setFeatureType}
+          />
+          <Select
+            label="Compliance level"
+            value={tier}
+            options={d.options.compliance_tiers}
+            words={TIER_WORDS}
+            onChange={setTier}
+          />
+        </>
+      )}
+      <Field label="Spend reference" hint="The cost centre or budget code, or NONE if nothing is spent.">
+        {(id, hint) => (
+          <input
+            id={id}
+            value={spend}
+            maxLength={31}
+            onChange={(e) => setSpend(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      <fieldset className="field" aria-labelledby={legendId}>
+        <legend id={legendId}>Ready to start</legend>
+        {CHECKLIST.filter(([, , shown]) =>
+          shown({ ...d, track: track as DeliveryDetail["track"] }, featureType),
+        ).map(([key, words]) => (
+          <label key={key} className="choice">
+            <input
+              type="checkbox"
+              checked={Boolean(checklist[key])}
+              onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
+            />{" "}
+            {words}
+          </label>
+        ))}
+      </fieldset>
+      <div className="button-row">
+        <button type="submit" className="button" disabled={busy}>
+          Save the pack
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}
+
+function PackActions({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  if (!d.can.submit && !d.can.approve) {
+    return d.state === "awaiting_sponsor" ? (
+      <p>Sent to {d.sponsor?.name ?? "the sponsor"} for approval.</p>
+    ) : null;
+  }
+  const url = `/api/delivery/${d.id}`;
+  return (
+    <div>
+      <div className="button-row">
+        {d.can.submit ? (
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => run(`${url}/submit`, {}, "Sent to the sponsor.")}
+          >
+            Send to the sponsor
+          </button>
+        ) : null}
+        {d.can.approve ? (
+          <>
+            <button
+              type="button"
+              className="button"
+              disabled={busy}
+              onClick={() => run(`${url}/approve`, {}, "Approved. The work starts.")}
+            >
+              Approve the pack
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={busy}
+              onClick={() => run(`${url}/send-back`, {}, "Sent back to the owner.")}
+            >
+              Send it back to the owner
+            </button>
+          </>
+        ) : null}
+      </div>
+      <Err text={error} />
+    </div>
+  );
+}
+
+function PhaseForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [phase, setPhase] = useState<string>(d.phase ?? d.options.phases[0]?.id ?? "01-discover");
+  const [gate, setGate] = useState<string>(d.gate_status ?? "clear");
+  const words = Object.fromEntries(d.options.phases.map((p) => [p.id, p.words]));
+  return (
+    <form
+      className="stack-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run(`/api/delivery/${d.id}/phase`, { phase, gate_status: gate }, "Step recorded.");
+      }}
+    >
+      <h3>Record the current step</h3>
+      <Select
+        label="Step"
+        value={phase}
+        options={d.options.phases.map((p) => p.id)}
+        words={words}
+        onChange={setPhase}
+      />
+      <Select
+        label="Gate"
+        value={gate}
+        options={["clear", "blocked"]}
+        words={{ clear: "Clear", blocked: "Blocked" }}
+        onChange={setGate}
+      />
+      <p className="hint">Choosing Shipped opens the 30- and 90-day results.</p>
+      <div className="button-row">
+        <button type="submit" className="button" disabled={busy}>
+          Save the step
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}
+
+function LinkForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [page, setPage] = useState(d.pipeline_page_id ?? "");
+  return (
+    <form
+      className="stack-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run(`/api/delivery/${d.id}/link`, { page_id: page }, "Page linked.");
+      }}
+    >
+      <h3>Link the pipeline page</h3>
+      <Field
+        label="Page ID"
+        hint="The ID of this delivery's page in the delivery pipeline. Links are never opened."
+      >
+        {(id, hint) => (
+          <input
+            id={id}
+            value={page}
+            maxLength={64}
+            onChange={(e) => setPage(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      <div className="button-row">
+        <button type="submit" className="button button-secondary" disabled={busy}>
+          Save the link
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}
+
+function FixTrack({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  return (
+    <section aria-labelledby="s-plan">
+      <h2 id="s-plan">Action plan</h2>
+      {d.objective ? <p>Objective: {d.objective}</p> : null}
+      {d.milestones.length ? (
+        <ul className="timeline">
+          {d.milestones.map((m) => (
+            <MilestoneRow key={m.id} d={d} m={m} onDone={onDone} />
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No milestones yet.</p>
+      )}
+      {d.can.add_milestone ? <MilestoneForm d={d} onDone={onDone} /> : null}
+      <p className="coming-soon coming-soon-light">Replies to the Friday check-in from here: coming soon</p>
+
+      <h3>Completion</h3>
+      {d.completion ? (
+        <p>
+          Before: {d.completion.before}, after: {d.completion.after} {d.completion.unit ?? ""}.
+          {d.completion_notes ? ` ${d.completion_notes}` : ""}
+          {d.state === "in_delivery" ? " Waiting for the sponsor." : ""}
+        </p>
+      ) : null}
+      {d.can.complete ? <CompleteForm d={d} onDone={onDone} /> : null}
+      {d.can.approve_completion ? (
+        <div className="button-row">
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => run(`/api/delivery/${d.id}/approve-completion`, {}, "Approved. It's fixed.")}
+          >
+            Approve: it&apos;s fixed
+          </button>
+        </div>
+      ) : null}
+      <Err text={error} />
+      <p className="coming-soon coming-soon-light">Evidence files with the numbers: coming soon</p>
+    </section>
+  );
+}
+
+function MilestoneRow({ d, m, onDone }: { d: DeliveryDetail; m: Milestone; onDone: (msg: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const next = m.status === "open" ? "done" : "open";
+  return (
+    <li>
+      <strong>{m.title}</strong>, {m.owner ?? "the owner"}, due {day(m.due_on)}.{" "}
+      {m.status === "done" ? "Done." : m.overdue ? "Overdue." : "Open."}
+      {m.can_set && d.state === "in_delivery" ? (
+        <>
+          {" "}
+          <button
+            type="button"
+            className="link-button"
+            disabled={busy}
+            onClick={() =>
+              run(
+                `/api/delivery/${d.id}/milestones/${m.id}`,
+                { status: next },
+                next === "done" ? "Marked done." : "Opened again.",
+              )
+            }
+          >
+            {next === "done" ? "Mark done" : "Open again"}
+          </button>
+        </>
+      ) : null}
+      <Err text={error} />
+    </li>
+  );
+}
+
+function MilestoneForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+  const [owner, setOwner] = useState("");
+  return (
+    <form
+      className="stack-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (
+          await run(
+            `/api/delivery/${d.id}/milestones`,
+            { title, due_on: due, owner_email: owner },
+            "Milestone added.",
+          )
+        ) {
+          setTitle("");
+          setDue("");
+          setOwner("");
+        }
+      }}
+    >
+      <h3>Add a milestone</h3>
+      <Field label="What will be done">
+        {(id) => <input id={id} value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} />}
+      </Field>
+      <Field label="Due on">
+        {(id) => <input id={id} type="date" value={due} onChange={(e) => setDue(e.target.value)} />}
+      </Field>
+      <Field label="Who does it (work email)" hint="Leave empty for the owner.">
+        {(id, hint) => (
+          <input
+            id={id}
+            type="email"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            aria-describedby={hint}
+          />
+        )}
+      </Field>
+      <div className="button-row">
+        <button type="submit" className="button button-secondary" disabled={busy}>
+          Add the milestone
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}
+
+function CompleteForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [before, setBefore] = useState(d.pack.baseline == null ? "" : String(d.pack.baseline));
+  const [after, setAfter] = useState("");
+  const [notes, setNotes] = useState("");
+  return (
+    <form
+      className="stack-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run(
+          `/api/delivery/${d.id}/complete`,
+          { before, after, ...(notes.trim() ? { notes: notes.trim() } : {}) },
+          "Sent to the sponsor.",
+        );
+      }}
+    >
+      <h3>It&apos;s done: send the numbers</h3>
+      <Field label={`Before (${d.pack.unit ?? "the metric"})`}>
+        {(id) => (
+          <input id={id} inputMode="decimal" value={before} onChange={(e) => setBefore(e.target.value)} />
+        )}
+      </Field>
+      <Field label={`After (${d.pack.unit ?? "the metric"})`}>
+        {(id) => (
+          <input id={id} inputMode="decimal" value={after} onChange={(e) => setAfter(e.target.value)} />
+        )}
+      </Field>
+      <Field label="Notes (optional)">
+        {(id) => (
+          <textarea
+            id={id}
+            rows={2}
+            maxLength={600}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="button-row">
+        <button type="submit" className="button" disabled={busy}>
+          Send to the sponsor
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}
+
+function MeasurementCard({
+  d,
+  m,
+  onDone,
+}: {
+  d: DeliveryDetail;
+  m: Measurement;
+  onDone: (msg: string) => void;
+}) {
+  const { error, busy, run } = useAction(onDone);
+  const r = m.results;
+  const filled = Boolean(m.filled_at);
+  const url = `/api/delivery/${d.id}/measurements/${m.mark}`;
+  return (
+    <div className="card">
+      <h3>{MARK_WORDS[m.mark]}</h3>
+      <p className="meta">
+        Due {day(m.due_at)}.{" "}
+        {m.confirmed_at
+          ? `Confirmed on ${day(m.confirmed_at)}.`
+          : filled
+            ? "Filled in, waiting for the sponsor."
+            : "Not filled in yet."}
+      </p>
+      {filled ? (
+        <ul>
+          <li>
+            {d.metric ?? "The metric"}: {r.metric_actual} {d.pack.unit ?? ""} (target {d.pack.target ?? "?"}).{" "}
+            {r.target_met === true ? "Target met." : r.target_met === false ? "Not at target yet." : ""}
+          </li>
+          {r.capex_inr != null || r.opex_inr != null ? (
+            <li>
+              Cost: ₹{new Intl.NumberFormat("en-IN").format(r.capex_inr ?? 0)} one-time, ₹
+              {new Intl.NumberFormat("en-IN").format(r.opex_inr ?? 0)} running.
+            </li>
+          ) : null}
+          {r.adoption != null ? <li>People using it: {r.adoption}</li> : null}
+          {KEYS.flatMap((k) => {
+            const value = r[k];
+            return value ? [[k, value] as const] : [];
+          }).map(([k, value]) => (
+            <li key={k}>
+              {MEASURE_LABELS[k]}: {measureText(k, value)}
+              {k === "money"
+                ? m.finance_confirmed
+                  ? ", confirmed by Finance"
+                  : ", waiting for Finance"
+                : ""}
+            </li>
+          ))}
+          {m.notes ? <li>Notes: {m.notes}</li> : null}
+        </ul>
+      ) : null}
+      <div className="button-row">
+        {m.can_confirm ? (
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => run(`${url}/confirm`, {}, "Confirmed.")}
+          >
+            Confirm these results
+          </button>
+        ) : null}
+        {m.can_finance_confirm ? (
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={busy}
+            onClick={() => run(`${url}/finance`, {}, "Finance's confirmation recorded.")}
+          >
+            Finance has confirmed the money
+          </button>
+        ) : null}
+      </div>
+      <Err text={error} />
+      {m.can_fill ? <FillForm d={d} m={m} onDone={onDone} /> : null}
+    </div>
+  );
+}
+
+function FillForm({ d, m, onDone }: { d: DeliveryDetail; m: Measurement; onDone: (msg: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const r = m.results;
+  const [actual, setActual] = useState(r.metric_actual == null ? "" : String(r.metric_actual));
+  const [capex, setCapex] = useState(r.capex_inr == null ? "" : String(r.capex_inr));
+  const [opex, setOpex] = useState(r.opex_inr == null ? "" : String(r.opex_inr));
+  const [adoption, setAdoption] = useState(r.adoption == null ? "" : String(r.adoption));
+  const [notes, setNotes] = useState("");
+  const [values, setValues] = useState<Record<string, string>>(
+    Object.fromEntries(KEYS.map((k) => [k, r[k] ? String(r[k]?.value) : ""])),
+  );
+  const [units, setUnits] = useState<Record<string, string>>(
+    Object.fromEntries(KEYS.map((k) => [k, r[k]?.unit ?? d.options.measure_units[k][0] ?? ""])),
+  );
+  const legendId = useId();
+  function save(e: FormEvent) {
+    e.preventDefault();
+    const body: Record<string, unknown> = {
+      metric_actual: actual,
+      capex_inr: capex,
+      opex_inr: opex,
+      adoption,
+    };
+    for (const k of KEYS) {
+      const v = (values[k] ?? "").trim();
+      if (v) body[k] = { value: Number(v), unit: units[k] };
+    }
+    if (notes.trim()) body.notes = notes.trim();
+    void run(
+      `/api/delivery/${d.id}/measurements/${m.mark}`,
+      body,
+      "Results saved. The sponsor is asked to confirm.",
+      "PUT",
+    );
+  }
+  return (
+    <form className="stack-form" onSubmit={save} noValidate>
+      <h3>{m.filled_at ? "Correct the results" : "Fill in the results"}</h3>
+      <Field label={`${d.metric ?? "The metric"} now (${d.pack.unit ?? "number"})`}>
+        {(id) => (
+          <input id={id} inputMode="decimal" value={actual} onChange={(e) => setActual(e.target.value)} />
+        )}
+      </Field>
+      <Field label="One-time cost so far (₹, optional)">
+        {(id) => (
+          <input id={id} inputMode="numeric" value={capex} onChange={(e) => setCapex(e.target.value)} />
+        )}
+      </Field>
+      <Field label="Running cost a year (₹, optional)">
+        {(id) => <input id={id} inputMode="numeric" value={opex} onChange={(e) => setOpex(e.target.value)} />}
+      </Field>
+      <Field label="People using it (optional)">
+        {(id) => (
+          <input id={id} inputMode="numeric" value={adoption} onChange={(e) => setAdoption(e.target.value)} />
+        )}
+      </Field>
+      <fieldset className="field" aria-labelledby={legendId}>
+        <legend id={legendId}>What it changed (shown with the Ones&apos; impact once confirmed)</legend>
+        {KEYS.map((k) => (
+          <div key={k} className="choice-row">
+            <Field label={`${MEASURE_LABELS[k]} (optional)`}>
+              {(id) => (
+                <input
+                  id={id}
+                  inputMode="numeric"
+                  value={values[k] ?? ""}
+                  onChange={(e) => setValues({ ...values, [k]: e.target.value })}
+                />
+              )}
+            </Field>
+            <Select
+              label={`${MEASURE_LABELS[k]} unit`}
+              value={units[k] ?? ""}
+              options={d.options.measure_units[k]}
+              onChange={(v) => setUnits({ ...units, [k]: v })}
+            />
+          </div>
+        ))}
+      </fieldset>
+      <Field label="Notes (optional)">
+        {(id) => (
+          <textarea
+            id={id}
+            rows={2}
+            maxLength={600}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="button-row">
+        <button type="submit" className="button" disabled={busy}>
+          Save the results
+        </button>
+      </div>
+      <Err text={error} />
+    </form>
+  );
+}

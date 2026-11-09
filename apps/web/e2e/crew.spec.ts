@@ -6,7 +6,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
 
 const SHARED = "Branch staff photocopy every SIP mandate twice before couriering the batch to Hyderabad";
 
@@ -55,7 +55,7 @@ test("a colleague's idea shows as a card with nothing of theirs on it; teaming u
   await a.getByRole("button", { name: /share mine as a new idea|Share my idea/ }).click();
   await expect(a.getByRole("heading", { level: 3, name: "Your idea is with the review desk" })).toBeVisible();
   await ctxA.close();
-  await new Promise((r) => setTimeout(r, 8_000)); // repo writer (1 s) then indexer (2 s) pick the idea up
+  await waitUntilIndexed(theirId); // repo writer, then indexer: wait for the card, not a fixed time
 
   const ctxB = await browser.newContext();
   const b = await ctxB.newPage();

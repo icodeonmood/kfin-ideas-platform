@@ -31,7 +31,7 @@ capabilities:
   decide:                     { lob_committee: park_or_decline_own_lob, core_committee: yes }
   hear_appeals:               { core_committee: lob_appeals, appeal_panel: yes }
   run_action_plans:           { working_group: yes, sponsor: yes, admin: yes }
-  approve_handover:           { sponsor: yes }
+  approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
   see_people_view:            { contributor: own_history, reviewer: yes, lob_committee: own_lob, core_committee: yes, admin: yes }
   reveal_identity:            { admin: with_reason_logged }
   grant_roles:                { admin: yes }
@@ -41,6 +41,13 @@ capabilities:
   propose_ones:               { core_committee: yes, ceo: yes }
   decide_ones:                { core_committee: yes }
   carry_out_ones:             { admin: yes }
+  # Delivery (§4.8 to §4.11), lenses (§4.14) and learning (§5). The worker checks each person's part again: an
+  # owner, sponsor, delivery PM or milestone owner acts only on their own deliveries.
+  work_delivery:              { contributor: as_party, core_committee: yes, admin: yes }
+  start_handover:             { core_committee: yes, admin: yes }
+  manage_delivery:            { admin: yes }                           # link the pipeline page; Finance's confirmation
+  view_lenses:                { lob_committee: yes, core_committee: yes, admin: yes }   # counts only
+  review_learning:            { admin: yes }                           # the product team's proposals and reports
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -56,6 +63,7 @@ kill_switch_flippers:
   clusters.batch: [admin]
   attachments.deep_check: [admin, infosec]
   scan.live: [admin]
+  learning.jobs: [admin]
 
 # No session needed.
 public:
@@ -142,6 +150,28 @@ endpoints:
   - GET /api/me/one/showcase                          signed_in
   - PUT /api/me/one/showcase                          signed_in
   - GET /api/me/team                                  signed_in
+  # Delivery, lenses and learning (BLD-115 to BLD-122).
+  - GET /api/delivery                                 work_delivery   # your own deliveries; committees and admins see all
+  - POST /api/delivery                                start_handover
+  - GET /api/delivery/{id}                            work_delivery
+  - PUT /api/delivery/{id}/pack                       work_delivery
+  - POST /api/delivery/{id}/submit                    work_delivery
+  - POST /api/delivery/{id}/approve                   approve_handover
+  - POST /api/delivery/{id}/send-back                 approve_handover
+  - POST /api/delivery/{id}/link                      manage_delivery
+  - POST /api/delivery/{id}/phase                     work_delivery   # the delivery PM or an admin
+  - POST /api/delivery/{id}/milestones                work_delivery
+  - POST /api/delivery/{id}/milestones/{ms}           work_delivery
+  - POST /api/delivery/{id}/complete                  work_delivery
+  - POST /api/delivery/{id}/approve-completion        approve_handover
+  - PUT /api/delivery/{id}/measurements/{mark}        work_delivery
+  - POST /api/delivery/{id}/measurements/{mark}/confirm  approve_handover
+  - POST /api/delivery/{id}/measurements/{mark}/finance  manage_delivery
+  - GET /api/lenses                                   view_lenses
+  - POST /api/lenses/rebuild                          review_learning
+  - GET /api/learning                                 review_learning
+  - POST /api/learning/proposals/{id}/decide          review_learning
+  - POST /api/learning/run                            review_learning
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
@@ -163,6 +193,9 @@ pages:
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /ones/console              view_ones_console                    # the committee console's Ones module
+  - /delivery                  work_delivery                        # each person sees only their own deliveries
+  - /lenses                    view_lenses
+  - /learning                  review_learning
 
 # Navigation (AT-B2-06): everyone gets the first three; the rest by role.
 navigation:
@@ -173,4 +206,6 @@ navigation:
   - { label: Review,          href: /review,          roles: [reviewer] }
   - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee] }
   - { label: Ones,            href: /ones/console,    roles: [core_committee, admin, ceo] }
+  - { label: Delivery,        href: /delivery,        roles: [working_group, sponsor, core_committee, admin, ceo] }
+  - { label: Lenses,          href: /lenses,          roles: [lob_committee, core_committee, admin] }
   - { label: Admin,           href: /admin,           roles: [admin, infosec, hr] }

@@ -20,6 +20,8 @@ const DEMO = {
   manager: "DEMO-00007",
   one: "DEMO-00008",
   founding: "DEMO-00009",
+  pm: "DEMO-00013",
+  fixer: "DEMO-00017",
 } as const;
 
 async function as(browser: Browser, username: string): Promise<Page> {
@@ -138,4 +140,50 @@ test("13-14: the launch screen and the kill switches", async ({ browser }) => {
   await admin.goto("/admin");
   await expect(admin.getByText("ones.public")).toBeVisible();
   await expectNoSeriousAxeIssues(admin);
+});
+
+test("15-21: delivery, lenses and learning (read only, so the demo stays ready)", async ({ browser }) => {
+  const meera = await as(browser, DEMO.member);
+  await meera.goto("/delivery");
+  await expect(
+    meera.getByRole("heading", { level: 2, name: "Picked, waiting for a handover" }),
+  ).toBeVisible();
+  await expect(meera.getByRole("button", { name: "Start the handover" }).first()).toBeVisible();
+  await expect(meera.getByText("Live sync with the delivery pipeline: coming soon")).toBeVisible();
+  await expectNoSeriousAxeIssues(meera);
+  await meera.goto("/lenses");
+  await expect(meera.getByRole("heading", { level: 2, name: "By line of business" })).toBeVisible();
+  await expectNoSeriousAxeIssues(meera);
+
+  const ceo = await as(browser, DEMO.ceo);
+  await ceo.goto("/delivery");
+  await ceo.getByRole("link", { name: /why an SIP registration is stuck/ }).click();
+  await expect(ceo.getByRole("button", { name: "Approve the pack" })).toBeVisible();
+  await expectNoSeriousAxeIssues(ceo);
+  await ceo.goto("/delivery");
+  await ceo.getByRole("link", { name: /brokerage statements/ }).click();
+  await expect(ceo.getByRole("button", { name: "Confirm these results" })).toBeVisible();
+  await expectNoSeriousAxeIssues(ceo);
+
+  const deepa = await as(browser, DEMO.pm);
+  await deepa.goto("/delivery");
+  await deepa.getByRole("link", { name: /nominee details from CKYC/ }).click();
+  await expect(deepa.getByRole("heading", { level: 3, name: "Record the current step" })).toBeVisible();
+  await expectNoSeriousAxeIssues(deepa);
+
+  const vikram = await as(browser, DEMO.fixer);
+  await vikram.goto("/delivery");
+  await vikram.getByRole("link", { name: /change-of-bank requests/ }).click();
+  await expect(vikram.getByRole("heading", { level: 2, name: "Action plan" })).toBeVisible();
+  await expect(vikram.getByText("Overdue.")).toBeVisible();
+  await expectNoSeriousAxeIssues(vikram);
+
+  const sana = await as(browser, DEMO.admin);
+  await sana.goto("/delivery");
+  await sana.getByRole("link", { name: /where each service request is/ }).click();
+  await expect(sana.getByRole("button", { name: "Finance has confirmed the money" })).toBeVisible();
+  await expectNoSeriousAxeIssues(sana);
+  await sana.goto("/learning");
+  await expect(sana.getByRole("heading", { level: 3, name: "IFSC" })).toBeVisible();
+  await expectNoSeriousAxeIssues(sana);
 });

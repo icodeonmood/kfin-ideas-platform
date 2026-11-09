@@ -1,6 +1,7 @@
 /**
  * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
- * committee — plus Desk decisions and Ones; admin — plus Ones and Admin (the Ones console, DEC-040).
+ * committee — plus Desk decisions, Ones, Delivery and Lenses; admin — plus Ones, Delivery, Lenses and Admin (the Ones
+ * console, DEC-040; delivery and lenses, BLD-115 to BLD-122).
  * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
  * keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
@@ -15,8 +16,8 @@ test.describe("navigation by role (AT-B2-06)", () => {
   const cases: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", BASE],
     ["reviewer", [...BASE, "Review"]],
-    ["core", [...BASE, "Desk decisions", "Ones"]],
-    ["admin", [...BASE, "Ones", "Admin"]],
+    ["core", [...BASE, "Desk decisions", "Ones", "Delivery", "Lenses"]],
+    ["admin", [...BASE, "Ones", "Delivery", "Lenses", "Admin"]],
   ];
   for (const [persona, expected] of cases) {
     test(`${persona} sees ${expected.join(", ")}`, async ({ page }) => {
@@ -29,11 +30,12 @@ test.describe("navigation by role (AT-B2-06)", () => {
 test("every navigation item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {
   await signIn(page, PERSONAS.admin);
   const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
-  // The admin sees every item but Review and Desk decisions: the four for everyone, the Ones console, Admin.
-  expect(await navLabels(page)).toEqual([...BASE, "Ones", "Admin"]);
+  // The admin sees every item but Review and Desk decisions: the four for everyone, the Ones console, Delivery,
+  // Lenses and Admin.
+  expect(await navLabels(page)).toEqual([...BASE, "Ones", "Delivery", "Lenses", "Admin"]);
   await expect(links.filter({ hasText: "Ones" })).toHaveAttribute("href", "/ones/console");
   const count = await links.count();
-  expect(count).toBe(6);
+  expect(count).toBe(8);
   for (let i = 0; i < count; i++) {
     await page.goto("/");
     const target = links.nth(i);

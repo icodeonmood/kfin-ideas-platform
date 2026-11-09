@@ -52,16 +52,23 @@ PEOPLE: list[tuple[str, str, str, tuple[str, ...], str, bool]] = [
     ("DEMO-00005", "Demo CEO", "LOB-technology", ("ceo",), "CEO", False),
     ("DEMO-00006", "Sana Qureshi", "LOB-technology", ("admin",), "Admin", False),
     ("DEMO-00007", "Rahul Deshpande", "LOB-mf", (), "Manager with a team", False),
-    ("DEMO-00008", "Ananya Rao", "LOB-mf", (), "One No. 17 (glow-up waiting)", True),
+    (
+        "DEMO-00008",
+        "Ananya Rao",
+        "LOB-mf",
+        ("working_group",),
+        "One No. 17 (glow-up waiting), delivery owner",
+        True,
+    ),
     ("DEMO-00009", "Rohit Menon", "LOB-mf", (), "Founding One No. 1, tier 4", True),
     ("DEMO-00010", "Priya Nair", "LOB-shared-operations", (), "", True),
     ("DEMO-00011", "Karthik Subramanian", "LOB-corporate-registry", (), "", False),
     ("DEMO-00012", "Sneha Kulkarni", "LOB-sales", (), "", True),
-    ("DEMO-00013", "Deepa Joshi", "LOB-technology", (), "", True),
+    ("DEMO-00013", "Deepa Joshi", "LOB-technology", ("working_group",), "Delivery PM", True),
     ("DEMO-00014", "Imran Shaikh", "LOB-mf", (), "", True),
     ("DEMO-00015", "Farhan Qureshi", "LOB-sales", (), "", True),
     ("DEMO-00016", "Lakshmi Iyer", "LOB-shared-operations", (), "", False),
-    ("DEMO-00017", "Vikram Bhat", "LOB-mf", (), "", False),
+    ("DEMO-00017", "Vikram Bhat", "LOB-mf", (), "Fix-track owner", False),
     ("DEMO-00018", "Gaurav Sethi", "LOB-technology", (), "", False),
     ("DEMO-00019", "Suresh Patil", "LOB-mf", (), "", False),
     ("DEMO-00020", "Pooja Iyer", "LOB-mf", (), "", True),
@@ -81,7 +88,7 @@ IDEAS: list[tuple[str, str, str, str]] = [
     ),
     (
         "DEMO-00010",
-        "shipped",
+        "closed",
         "One status page for every investor service request",
         "Give investors one page that shows where each service request is, so fewer people call to ask.",
     ),
@@ -99,9 +106,16 @@ IDEAS: list[tuple[str, str, str, str]] = [
     ),
     (
         "DEMO-00015",
-        "in_garage",
+        "handover",
         "One page where distributors can see why an SIP registration is stuck",
         "Show distributors on IRIS why an SIP registration is stuck, before they need to call.",
+    ),
+    (
+        "DEMO-00017",
+        "in_fix_track",
+        "One checklist for change-of-bank requests at service centres",
+        "Give service centres one checklist for change-of-bank requests, with the IFSC and a cancelled cheque, so "
+        "fewer requests are sent back.",
     ),
     (
         "DEMO-00016",
@@ -145,9 +159,12 @@ HISTORY = {
     "in_cluster": ["reviewed", "grouped"],
     "ready_for_scoring": ["reviewed", "grouped", "assessed"],
     "picked": ["reviewed", "assessed", "picked"],
+    "handover": ["reviewed", "assessed", "picked", "handover"],
     "in_garage": ["reviewed", "assessed", "picked", "building"],
+    "in_fix_track": ["reviewed", "assessed", "picked", "in_fix_track"],
     "shipped": ["reviewed", "picked", "building", "shipped"],
     "measuring": ["reviewed", "picked", "building", "shipped"],
+    "closed": ["reviewed", "picked", "building", "shipped", "closed"],
     "parked": ["reviewed", "parked"],
 }
 
@@ -209,6 +226,41 @@ ONES: list[dict[str, Any]] = [
      "title": "Weekly reconciliation of unclaimed redemptions",
      "brief": "If this works: unclaimed redemptions are traced and paid sooner.", "measures": {},
      "inducted_days_ago": 400},
+]  # fmt: skip
+
+# Deliveries (§4.8 to §4.11), one in each state: (idea owner, idea stage, track, state, owner, sponsor, delivery PM,
+# metric, baseline, target, unit, product, days since the sponsor approved, extra). Numbers are made up.
+CHECKED = {"working_group_formed": True, "baseline_captured": True, "build_slot_confirmed": True,
+           "dev_slot_confirmed": True}  # fmt: skip
+DELIVERIES: list[dict[str, Any]] = [
+    {"idea": ("DEMO-00015", "handover"), "track": "build", "state": "awaiting_sponsor", "owner": "DEMO-00008",
+     "sponsor": "DEMO-00005", "pm": "DEMO-00013", "metric": "Calls a month asking why an SIP is stuck",
+     "baseline": 900, "target": 300, "unit": "calls a month", "product": "iris"},
+    {"idea": ("DEMO-00008", "in_garage"), "track": "build", "state": "in_delivery", "owner": "DEMO-00008",
+     "sponsor": "DEMO-00005", "pm": "DEMO-00013", "metric": "Minutes to open a folio with a nominee",
+     "baseline": 12, "target": 4, "unit": "minutes per case", "product": "other", "approved_days_ago": 18,
+     "phase": "05-build"},
+    {"idea": ("DEMO-00012", "measuring"), "track": "build", "state": "shipped", "owner": "DEMO-00012",
+     "sponsor": "DEMO-00005", "pm": "DEMO-00013", "metric": "Calls a month about brokerage statements",
+     "baseline": 1200, "target": 400, "unit": "calls a month", "product": "iris", "approved_days_ago": 150,
+     "shipped_days_ago": 92,
+     "results": {"day_30": ({"metric_actual": 700, "effort": {"value": 500, "unit": "calls avoided a month"}}, True),
+                 "day_90": ({"metric_actual": 380, "effort": {"value": 820, "unit": "calls avoided a month"},
+                             "scale": {"value": 5000, "unit": "distributors"}}, False)}},
+    {"idea": ("DEMO-00010", "closed"), "track": "build", "state": "closed", "owner": "DEMO-00010",
+     "sponsor": "DEMO-00005", "pm": "DEMO-00013", "metric": "Calls a month asking where a service request is",
+     "baseline": 5000, "target": 2000, "unit": "calls a month", "product": "other", "approved_days_ago": 220,
+     "shipped_days_ago": 100,
+     "results": {"day_30": ({"metric_actual": 3100}, True),
+                 "day_90": ({"metric_actual": 1800, "time": {"value": 60, "unit": "hours a month"},
+                             "money": {"value": 600000, "unit": "rupees a year"}}, True)}},
+    {"idea": ("DEMO-00017", "in_fix_track"), "track": "fix", "state": "in_delivery", "owner": "DEMO-00017",
+     "sponsor": "DEMO-00005", "pm": None, "metric": "Change-of-bank requests sent back a month",
+     "baseline": 220, "target": 50, "unit": "cases a month", "product": "other", "approved_days_ago": 21,
+     "objective": "Every change-of-bank request is complete the first time it reaches a service centre",
+     "milestones": [("Agree the checklist with two service centres", -12, "done"),
+                    ("Train service centre staff on the checklist", -3, "open"),
+                    ("Put the checklist on the intranet and the forms page", 10, "open")]},
 ]  # fmt: skip
 
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres"}
@@ -530,6 +582,88 @@ def _console(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int]) 
     )
 
 
+# --- Delivery, lenses and learning ----------------------------------------------------------------------------------
+
+
+def _deliveries(conn: Conn, p: dict[str, dict[str, str]], idea_at: dict[tuple[str, str], str]) -> None:
+    """One delivery in each state, written straight to the database (the ideas are already at their stage)."""
+    from delivery.service import target_met
+
+    for f in DELIVERIES:
+        idea = idea_at[f["idea"]]
+        approved = NOW - dt.timedelta(days=int(f.get("approved_days_ago", 0)))
+        shipped = NOW - dt.timedelta(days=int(f["shipped_days_ago"])) if "shipped_days_ago" in f else None
+        pack = {"product": f["product"], "feature_type": "kfintech-product", "compliance_tier": "standard",
+                "unit": f["unit"], "baseline": f["baseline"], "target": f["target"], "spend": "CC-OPS/2026",
+                "checklist": dict(CHECKED), "demo": True}  # fmt: skip
+        started = f["state"] != "awaiting_sponsor"
+        build = f["track"] != "fix"
+        row = conn.execute(
+            "INSERT INTO deliveries (subject_type, subject_id, track, state, owner_user_id, sponsor_user_id, "
+            "pm_user_id, pack, sponsor_approved_by, sponsor_approved_at, slug, link_state, phase, gate_status, "
+            "phase_updated_at, shipped_at, closed_at, outcome, created_by, created_at) VALUES ('idea', %s, %s, %s, "
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (idea, f["track"], f["state"], p[f["owner"]]["id"], p[f["sponsor"]]["id"],
+             p[f["pm"]]["id"] if f["pm"] else None, Jsonb(pack),
+             p[f["sponsor"]]["id"] if started else None, approved if started else None, idea.lower(),
+             "manual" if started and build else "none",
+             (f.get("phase") or ("shipped" if shipped else None)) if build and started else None,
+             "clear" if build and started else None, approved if started else None, shipped,
+             shipped + dt.timedelta(days=91) if shipped and f["state"] == "closed" else None,
+             "target_met" if f["state"] == "closed" else None, p["DEMO-00003"]["id"],
+             approved - dt.timedelta(days=5)),
+        ).fetchone()  # fmt: skip
+        assert row is not None
+        did = int(row["id"])
+        conn.execute(
+            "UPDATE deliveries SET metric_encrypted = %s, objective_encrypted = %s WHERE id = %s",
+            (seal(f["metric"], f"delivery:{did}:metric"),
+             seal(f["objective"], f"delivery:{did}:objective") if f.get("objective") else None, did),
+        )  # fmt: skip
+        for title, due_in, status in f.get("milestones", []):
+            m = conn.execute(
+                "INSERT INTO delivery_milestones (delivery_id, title_encrypted, owner_user_id, due_on, status, "
+                "done_at) VALUES (%s, '\\x00', %s, %s, %s, %s) RETURNING id",
+                (did, p[f["owner"]]["id"], (NOW + dt.timedelta(days=due_in)).date(), status,
+                 NOW + dt.timedelta(days=due_in) if status == "done" else None),
+            ).fetchone()  # fmt: skip
+            assert m is not None
+            conn.execute(
+                "UPDATE delivery_milestones SET title_encrypted = %s WHERE id = %s",
+                (seal(title, f"milestone:{m['id']}"), m["id"]),
+            )
+        if shipped is None:
+            continue
+        for mark, days in (("day_30", 30), ("day_90", 90)):
+            given = f.get("results", {}).get(mark)
+            results: dict[str, Any] | None = None
+            if given:
+                results = {**given[0], "demo": True}
+                results["target_met"] = target_met(f["baseline"], f["target"], results["metric_actual"])
+                results["actual_vs_target"] = round(results["metric_actual"] / f["target"], 3)
+            filled = shipped + dt.timedelta(days=days) if given else None
+            confirmed = filled + dt.timedelta(days=1) if filled is not None and given and given[1] else None
+            conn.execute(
+                "INSERT INTO delivery_measurements (delivery_id, mark, due_at, results, filled_by, filled_at, "
+                "confirmed_by, confirmed_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (did, mark, shipped + dt.timedelta(days=days), Jsonb(results or {}),
+                 p[f["owner"]]["id"] if given else None, filled,
+                 p[f["sponsor"]]["id"] if confirmed else None, confirmed),
+            )  # fmt: skip
+
+
+def _insights(conn: Conn) -> None:
+    """The lenses and the learning reports, so their screens are not empty. Counts and rates only."""
+    import lenses
+    from learning import proposals, reports
+
+    lenses.build(conn)
+    reports.autonomy(conn, NOW)
+    reports.drift(conn, NOW)
+    reports.canvas(conn, NOW)
+    proposals.glossary(conn, NOW, NOW.strftime("%G-W%V"))
+
+
 # --- Load and reset ------------------------------------------------------------------------------------------------
 
 
@@ -586,11 +720,26 @@ def remove(conn: Conn) -> None:
         ).fetchall()
         ideas = [r["idea_id"] for r in idea_rows]
         if _has_table(conn, "deliveries"):
+            # Every delivery a demo person is named on or signed: owner, sponsor, PM, creator, approver, a
+            # milestone's owner, or whoever filled or confirmed a result. Milestones and results go with them.
             conn.execute(
-                "DELETE FROM deliveries WHERE (subject_type = 'idea' AND subject_id = ANY(%s)) "
-                "OR owner_user_id = ANY(%s::uuid[]) OR sponsor_user_id = ANY(%s::uuid[]) OR pm_user_id = ANY(%s::uuid[])",
-                (ideas, users, users, users),
-            )  # milestones and measurements go with them
+                "DELETE FROM deliveries d WHERE (d.subject_type = 'idea' AND d.subject_id = ANY(%s)) "
+                "OR d.owner_user_id = ANY(%s::uuid[]) OR d.sponsor_user_id = ANY(%s::uuid[]) "
+                "OR d.pm_user_id = ANY(%s::uuid[]) OR d.created_by = ANY(%s::uuid[]) "
+                "OR d.sponsor_approved_by = ANY(%s::uuid[]) "
+                "OR EXISTS (SELECT 1 FROM delivery_milestones m WHERE m.delivery_id = d.id "
+                "AND m.owner_user_id = ANY(%s::uuid[])) "
+                "OR EXISTS (SELECT 1 FROM delivery_measurements m WHERE m.delivery_id = d.id AND (m.filled_by = ANY(%s::uuid[]) "
+                "OR m.confirmed_by = ANY(%s::uuid[]) OR m.finance_confirmed_by = ANY(%s::uuid[])))",
+                (ideas, *([users] * 9)),
+            )
+        if _has_table(conn, "learning_proposals"):
+            # Proposals drawn from demo ideas, or decided by a demo person; the next run proposes again if due.
+            conn.execute(
+                "DELETE FROM learning_proposals WHERE decided_by = ANY(%s::uuid[]) "
+                "OR (payload -> 'idea_ids') ?| %s::text[]",
+                (users, ideas),
+            )
         items = [r["id"] for r in conn.execute(
             "SELECT id FROM review_items WHERE ref_id = ANY(%s)", (ideas,)).fetchall()]  # fmt: skip
         conn.execute("DELETE FROM corrections WHERE review_item_id = ANY(%s)", (items,))
@@ -631,9 +780,11 @@ def load(conn: Conn) -> None:
     with conn.transaction():
         people = _people(conn)
         idea_of: dict[str, str] = {}
+        idea_at: dict[tuple[str, str], str] = {}
         for owner, stage, one_line, summary in IDEAS:
             idea_id = _idea(conn, people[owner], stage, one_line, summary)
-            if stage in ("in_garage", "picked"):
+            idea_at[(owner, stage)] = idea_id
+            if stage in ("in_garage", "handover", "picked"):
                 idea_of[owner] = idea_id
     _wait_for_repo(conn)
     _own_ideas(conn, people["DEMO-00001"], people["DEMO-00002"]["id"])
@@ -642,6 +793,8 @@ def load(conn: Conn) -> None:
         _console(conn, people, one_ids)
         for emp in ("DEMO-00009", "DEMO-00015"):
             emit(conn, "ones.inducted", {"current_owner_ids": [people[emp]["id"]], "one_id": one_ids[emp]})
+        _deliveries(conn, people, idea_at)
+    _insights(conn)
 
 
 def main(argv: list[str] | None = None) -> int:

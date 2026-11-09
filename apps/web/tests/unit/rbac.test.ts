@@ -118,10 +118,17 @@ describe("navigation and pages (AT-B2-06)", () => {
   it("everyone gets Share an idea, My ideas, Wall and Messages", () =>
     expect(labels("contributor")).toEqual(base));
   it("review desk adds Review", () => expect(labels("reviewer")).toEqual([...base, "Review"]));
-  it("core committee adds Desk decisions and Ones", () =>
-    expect(labels("core_committee")).toEqual([...base, "Desk decisions", "Ones"]));
-  it("admin adds Ones and Admin", () => expect(labels("admin")).toEqual([...base, "Ones", "Admin"]));
-  it("the CEO adds Ones (DEC-042)", () => expect(labels("ceo")).toEqual([...base, "Ones"]));
+  it("core committee adds Desk decisions, Ones, Delivery and Lenses", () =>
+    expect(labels("core_committee")).toEqual([...base, "Desk decisions", "Ones", "Delivery", "Lenses"]));
+  it("admin adds Ones, Delivery, Lenses and Admin", () =>
+    expect(labels("admin")).toEqual([...base, "Ones", "Delivery", "Lenses", "Admin"]));
+  it("the CEO adds Ones (DEC-042) and Delivery", () =>
+    expect(labels("ceo")).toEqual([...base, "Ones", "Delivery"]));
+  it("sponsors and working groups add Delivery; LOB committees add Lenses", () => {
+    expect(labels("sponsor")).toEqual([...base, "Delivery"]);
+    expect(labels("working_group")).toEqual([...base, "Delivery"]);
+    expect(labels("lob_committee")).toEqual([...base, "Lenses"]);
+  });
   it("pages follow the same rules", () => {
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
@@ -145,6 +152,30 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(decide(rolesOf("contributor"), "GET", "/api/ones").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });
+
+  it("delivery, lenses and learning (BLD-115 to BLD-122)", () => {
+    // Anyone may be named owner, PM or milestone owner: the worker serves only their own deliveries.
+    expect(decide(rolesOf("contributor"), "GET", "/api/delivery").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "PUT", "/api/delivery/4/measurements/day_30").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "POST", "/api/delivery").kind).toBe("deny");
+    expect(decide(rolesOf("core_committee"), "POST", "/api/delivery").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "POST", "/api/delivery/4/approve").kind).toBe("deny");
+    expect(decide(rolesOf("sponsor"), "POST", "/api/delivery/4/approve").kind).toBe("allow");
+    expect(decide(rolesOf("ceo"), "POST", "/api/delivery/4/measurements/day_90/confirm").kind).toBe("allow");
+    expect(decide(rolesOf("sponsor"), "POST", "/api/delivery/4/measurements/day_90/finance").kind).toBe(
+      "deny",
+    );
+    expect(decide(rolesOf("admin"), "POST", "/api/delivery/4/measurements/day_90/finance").kind).toBe(
+      "allow",
+    );
+    expect(decide(rolesOf("contributor"), "GET", "/api/lenses").kind).toBe("deny");
+    expect(decide(rolesOf("lob_committee"), "GET", "/api/lenses").kind).toBe("allow");
+    expect(decide(rolesOf("core_committee"), "GET", "/api/learning").kind).toBe("deny");
+    expect(decide(rolesOf("admin"), "POST", "/api/learning/proposals/3/decide").kind).toBe("allow");
+    expect(canSeePage(rolesOf("contributor"), "/delivery/4")).toBe(true); // their own, or not found
+    expect(canSeePage(rolesOf("contributor"), "/lenses")).toBe(false);
+    expect(canSeePage(rolesOf("admin"), "/learning")).toBe(true);
+  });
 });
 
 describe("kill switch flippers (§7.6)", () => {
@@ -157,6 +188,8 @@ describe("kill switch flippers (§7.6)", () => {
     expect(canFlip(r("hr"), "wall.public")).toBe(true);
     expect(canFlip(r("admin"), "agent.gatekeeper")).toBe(true);
     expect(canFlip(r("reviewer"), "ai.all")).toBe(false);
+    expect(canFlip(r("admin"), "learning.jobs")).toBe(true);
+    expect(canFlip(r("infosec"), "learning.jobs")).toBe(false);
   });
 });
 

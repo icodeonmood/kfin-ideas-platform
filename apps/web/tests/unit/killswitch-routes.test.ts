@@ -29,6 +29,10 @@ describe("kill switch route map (§7.6)", () => {
     // The org-wide announcement names Ones, so it waits while they are off the wall (Ones review).
     expect(switchesFor("POST", "/api/ones/announce")).toEqual(["ones.public"]);
     expect(switchesFor("POST", "/api/ones/proposals")).toEqual([]);
+    // Running a learning loop by hand stops with the scheduled ones; deciding a proposal does not (§5).
+    expect(switchesFor("POST", "/api/learning/run")).toEqual(["learning.jobs"]);
+    expect(switchesFor("POST", "/api/learning/proposals/3/decide")).toEqual([]);
+    expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
   });
 
   it("has plain-words banner text for every switch it uses", () => {

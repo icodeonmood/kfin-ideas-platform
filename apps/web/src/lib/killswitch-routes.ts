@@ -14,7 +14,8 @@ export type SwitchName =
   | "wall.public"
   | "ones.public"
   | "clusters.batch"
-  | "scan.live";
+  | "scan.live"
+  | "learning.jobs";
 
 interface Rule {
   methods: readonly string[];
@@ -49,6 +50,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
   { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
+  // Running a learning loop by hand stops with the scheduled ones (§5); the worker refuses it too.
+  { methods: ["POST"], pattern: /^\/api\/learning\/run\/?$/, switches: ["learning.jobs"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -65,6 +68,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "ones.public": "The Ones are resting from the wall for a little while.",
   "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
   "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
+  "learning.jobs": "Learning reports and proposals are paused for now. Nothing changes without a person.",
 };
 
 /**
@@ -85,6 +89,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
   /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
+  // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
+  // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
+  /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
+  /^\/api\/lenses\/rebuild\/?$/, // counts only, from the database; §7.6 has no lens switch
+  /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
