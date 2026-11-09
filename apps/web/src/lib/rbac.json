@@ -160,6 +160,10 @@
     },
     "send_ember": {
       "admin": "yes"
+    },
+    "view_fairness_reports": {
+      "core_committee": "yes",
+      "admin": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -198,6 +202,9 @@
       "admin"
     ],
     "committee.flow": [
+      "admin"
+    ],
+    "appeals.filing": [
       "admin"
     ],
     "attachments.deep_check": [
@@ -287,6 +294,11 @@
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "POST /api/admin/reveal                            reveal_identity",
     "POST /api/admin/conflicts                         grant_roles",
+    "GET /api/appeals                                  signed_in",
+    "POST /api/appeals                                 submit",
+    "GET /api/appeals/{id}                             hear_appeals",
+    "POST /api/appeals/{id}/decision                   hear_appeals",
+    "GET /api/reports/{kind}                           view_fairness_reports",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/ones/leaderboard                         signed_in",
@@ -365,6 +377,7 @@
     "/committee                 score decide",
     "/admin                     manage_kill_switches grant_roles",
     "/admin/conflicts           grant_roles",
+    "/reports                   view_fairness_reports",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
     "/ones/console              view_ones_console",

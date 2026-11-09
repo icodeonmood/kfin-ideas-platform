@@ -50,6 +50,9 @@ export default async function Committee() {
         Groups of ideas ready for the committee&apos;s written, blind review. Scores stay sealed until
         everyone has scored.
       </p>
+      <p>
+        <Link href="/appeals">Appeals</Link> · <Link href="/reports">Fairness and calibration</Link>
+      </p>
       {data.chair ? <OpenCycle /> : null}
       <section aria-labelledby="c-rounds" className="panel">
         <h2 id="c-rounds">Reviews</h2>
