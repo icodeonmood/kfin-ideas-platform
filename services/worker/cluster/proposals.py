@@ -54,11 +54,13 @@ def _load(conn: Conn, item_id: int) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _refuse_linked(conn: Conn, user_id: str, idea_ids: list[str], action: str, item_id: int) -> None:
-    """Nobody decides a group that holds their own idea (conflict of interest); the attempt is audited."""
+    """Nobody decides a group that holds an idea they shared or are linked to (joined, +1, BLD-093); the attempt
+    is audited."""
     own = conn.execute(
-        "SELECT 1 FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
-        "WHERE m.user_id = %s AND i.idea_id = ANY(%s) LIMIT 1",
-        (user_id, idea_ids),
+        "SELECT 1 FROM contributor_map m WHERE m.user_id = %s AND m.contributor_code IN ("
+        "SELECT contributor_code FROM ideas WHERE idea_id = ANY(%s) UNION SELECT contributor_code FROM idea_links "
+        "WHERE idea_id = ANY(%s) OR from_idea_id = ANY(%s)) LIMIT 1",
+        (user_id, idea_ids, idea_ids, idea_ids),
     ).fetchone()
     if own:
         raise ActionRefused(
@@ -101,8 +103,9 @@ def _edited_text(conn: Conn, prop: dict[str, Any], body: dict[str, Any]) -> dict
             raise ActionRefused(422, f"{key}_length")
         if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
             raise ActionRefused(422, "personal_data")
-        if key == "description" and (TAG_RE.search(text) or detect(text, directory(conn))):
-            raise ActionRefused(422, "description_not_card_safe")
+        # The name and description reach every contributor's inbox and match cards: no tags, names or IDs.
+        if key in ("name", "description") and (TAG_RE.search(text) or detect(text, directory(conn))):
+            raise ActionRefused(422, f"{key}_not_card_safe")
         if key == "name" and len(text.split()) > 8:
             raise ActionRefused(422, "name_too_long")
         summary[key] = str(tag_payload(conn, prop["tag_scope"], {"t": text}).payload["t"])
@@ -198,12 +201,14 @@ def _approve(
     ).fetchall()
     if len(live) != len(targets):
         raise ActionRefused(409, "cluster_changed")  # a target was merged or retired since the run
+    # Still open, still visible to everyone, and not taken into another cluster since the run (a new group takes
+    # only ideas on their own; grow and merge also keep their targets' own members).
     eligible = [
         r["idea_id"]
         for r in conn.execute(
             "SELECT idea_id FROM ideas WHERE idea_id = ANY(%s) AND visibility = 'org' AND stage = ANY(%s) "
-            "ORDER BY idea_id FOR UPDATE",
-            (list(prop["members"]), list(ELIGIBLE_STAGES)),
+            "AND (cluster_id IS NULL OR cluster_id = ANY(%s)) ORDER BY idea_id FOR UPDATE",
+            (list(prop["members"]), list(ELIGIBLE_STAGES), targets),
         ).fetchall()
     ]
     if kind == "new" and len(eligible) < 2:

@@ -162,3 +162,18 @@ def test_long_text_is_split_into_gatekeeper_pieces_and_sheets_stop_at_200_rows()
     assert [len(g[0][1]) for g in groups] == [8_000, 8_000, 4_000]
     assert deep.batches([("p1", "a"), ("p2", "b")], 10) == [[("p1", "a"), ("p2", "b")]]
     assert Extracted().pieces == []
+
+
+def test_the_200_row_limit_reads_real_spreadsheet_locations() -> None:
+    from attachments import extract
+
+    rows = [["Branch", "Forms"]] + [[f"Branch {n}", str(n)] for n in range(1, 300)]
+    pieces = extract.xlsx(files.xlsx(rows)).pieces
+    assert any("cell" in loc for loc, _ in pieces)
+    kept = [loc for loc, _ in pieces if deep._within_rows(loc)]
+    assert kept and len(kept) < len(pieces)
+    assert all(
+        int(loc.rsplit("cell ", 1)[1].lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) <= 200
+        for loc in kept
+        if "cell" in loc
+    )

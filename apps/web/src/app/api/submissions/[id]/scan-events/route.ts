@@ -27,7 +27,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return asResponse(err);
   }
   const encoder = new TextEncoder();
+  let cancelled = false; // the browser went away: stop polling at once, whatever the request signal does
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
     async start(controller) {
       const send = (text: string) => controller.enqueue(encoder.encode(text));
       const status = (view: Record<string, unknown>) =>
@@ -37,7 +41,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       let version = await scanVersion(id).catch(() => null);
       status(first);
       try {
-        while (!request.signal.aborted && Date.now() - opened < MAX_OPEN_MS) {
+        while (!cancelled && !request.signal.aborted && Date.now() - opened < MAX_OPEN_MS) {
           if (!MOVING.has(String(first.state))) break; // settled: what changes next is the person's own doing
           await new Promise((r) => setTimeout(r, TICK_MS));
           const next = await scanVersion(id).catch(() => null);
@@ -50,11 +54,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             send(": keep-alive\n\n");
           }
         }
-        send("event: end\ndata: {}\n\n");
+        if (!cancelled) send("event: end\ndata: {}\n\n");
       } catch {
-        send('event: error\ndata: {"error":"scan_unavailable"}\n\n');
+        if (!cancelled) send('event: error\ndata: {"error":"scan_unavailable"}\n\n');
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
   });

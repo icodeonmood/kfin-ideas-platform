@@ -105,10 +105,26 @@ export async function proposalView(me: CurrentUser, id: string): Promise<Proposa
 
 const ACTIONS = ["approve", "reject", "remove_member"] as const;
 
+/** The same restore mode as the screen: a viewer who sees labels in place of names may approve the text as it
+ * is, but never edit it, or the labels would be saved over the tags for good (area 1 review). */
+async function modeFor(me: CurrentUser, id: string): Promise<"real" | "neutral"> {
+  const row = await getDb()
+    .selectFrom("review_items")
+    .select(["assigned_to", "state"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!row) throw new SubmissionError(404, "not_found");
+  return restoreMode(
+    { id: me.id, contributorCode: null, roles: [...me.roles] },
+    { contributorCode: "", reviewItem: { assignedTo: row.assigned_to, state: row.state } },
+  );
+}
+
 export async function act(me: CurrentUser, id: string, input: unknown) {
   if (!ID.test(id)) throw new SubmissionError(404, "not_found");
   if (!can(me.roles, "approve_cluster_proposals")) throw new SubmissionError(403, "forbidden");
   const body = (input ?? {}) as Record<string, unknown>;
+  const editable = (await modeFor(me, id)) === "real";
   const action = ACTIONS.find((a) => a === body.action);
   if (!action) throw new SubmissionError(400, "action_required");
   const pick = (k: string, max: number) =>
@@ -118,9 +134,9 @@ export async function act(me: CurrentUser, id: string, input: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action,
-      name: pick("name", 200),
-      description: pick("description", 400),
-      problem: pick("problem", 3000),
+      name: editable ? pick("name", 200) : undefined,
+      description: editable ? pick("description", 400) : undefined,
+      problem: editable ? pick("problem", 3000) : undefined,
       reason_code: pick("reason_code", 40),
       note: pick("note", 2000),
       idea_id: pick("idea_id", 20),

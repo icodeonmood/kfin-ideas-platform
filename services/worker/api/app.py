@@ -514,9 +514,12 @@ def cluster_run_now(body: dict[str, Any]) -> JSONResponse:
         if busy:
             return JSONResponse({"error": "run_in_progress"}, status_code=409)
         row = conn.execute(
-            "INSERT INTO jobs (type, payload) VALUES ('cluster.batch', %s) RETURNING id",
+            "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('cluster.batch', %s, 'cluster.batch:manual') "
+            "ON CONFLICT DO NOTHING RETURNING id",
             (Jsonb({"manual_by": user}),),
         ).fetchone()
+        if row is None:
+            return JSONResponse({"error": "run_in_progress"}, status_code=409)
         conn.execute(
             "INSERT INTO audit_log (actor, action, entity) VALUES (%s, 'cluster.run_requested', 'cluster_runs')",
             (f"user:{user}",),

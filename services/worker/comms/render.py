@@ -190,8 +190,20 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         # The name and description are checked to hold no tags, names or identifiers (cluster-summary), so every
         # contributor may read them as written.
         row = conn.execute(
-            "SELECT id, title, summary, member_count FROM clusters WHERE id = %s", (refs["cluster_id"],)
+            "SELECT id, title, summary, member_count, tag_scope FROM clusters WHERE id = %s",
+            (refs["cluster_id"],),
         ).fetchone()
+        if row and row["tag_scope"]:  # belt and braces: any tag that slipped in reads as a neutral label
+            from pii import vault
+            from pii.restore import restore
+
+            mapping = vault.mapping(conn, row["tag_scope"])
+            row = dict(row) | {
+                "title": restore(row["title"], mapping, "neutral"),
+                "summary": {
+                    "description": restore((row["summary"] or {}).get("description"), mapping, "neutral")
+                },
+            }
         mine = conn.execute(
             "SELECT i.idea_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
             "WHERE i.cluster_id = %s AND m.user_id = %s ORDER BY i.idea_id LIMIT 1",

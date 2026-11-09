@@ -368,3 +368,73 @@ def test_the_outlier_check_drops_a_different_member(pool: Any) -> None:
         if set(pool["a"]) <= set(p["members"]) or odd in [d["idea_id"] for d in p["dropped"]]
     )
     assert odd not in prop["members"] and odd in [d["idea_id"] for d in prop["dropped"]]
+
+
+# ---- area 1 review fixes --------------------------------------------------------------------------------------
+
+
+@pytestmark_stack
+def test_an_edited_name_must_be_safe_for_everyone_too(pool: Any) -> None:
+    db = pool["db"]
+    batch.run_batch(db)
+    prop = next(p for p in _items(db) if p["members"] == pool["a"])
+    db.execute("UPDATE users SET name = 'Meera Venkataraman' WHERE id = %s", (pool["reviewer2"],))
+    from pii import detect
+
+    detect.clear_cache()
+    with pytest.raises(ActionRefused) as refused:
+        proposals.act(
+            db,
+            prop["review_item_id"],
+            pool["reviewer"],
+            {"action": "approve", "name": "Meera Venkataraman forms"},
+        )
+    assert refused.value.code == "name_not_card_safe"
+
+
+@pytestmark_stack
+def test_a_new_group_does_not_take_an_idea_another_cluster_took_meanwhile(pool: Any) -> None:
+    db = pool["db"]
+    batch.run_batch(db)
+    prop = next(p for p in _items(db) if p["members"] == pool["a"])
+    other = next(p for p in _items(db) if p["members"] == pool["b"])
+    cid = proposals.act(db, other["review_item_id"], pool["reviewer"], {"action": "approve"})["cluster_id"]
+    db.execute(
+        "UPDATE ideas SET cluster_id = %s, stage = 'in_cluster' WHERE idea_id = %s", (cid, pool["a"][2])
+    )
+    out = proposals.act(db, prop["review_item_id"], pool["reviewer2"], {"action": "approve"})
+    assert out["members"] == pool["a"][:2]
+    assert (
+        db.execute("SELECT cluster_id FROM ideas WHERE idea_id = %s", (pool["a"][2],)).fetchone()[
+            "cluster_id"
+        ]
+        == cid
+    )
+
+
+@pytestmark_stack
+def test_someone_who_joined_a_member_idea_cannot_decide_the_group(pool: Any) -> None:
+    db = pool["db"]
+    batch.run_batch(db)
+    prop = next(p for p in _items(db) if p["members"] == pool["a"])
+    code = db.execute(
+        "SELECT contributor_code FROM contributor_map WHERE user_id = %s", (pool["reviewer"],)
+    ).fetchone()["contributor_code"]
+    db.execute(
+        "INSERT INTO idea_links (idea_id, contributor_code, link_type) VALUES (%s, %s, 'plus_one')",
+        (pool["a"][1], code),
+    )
+    with pytest.raises(ActionRefused) as refused:
+        proposals.act(db, prop["review_item_id"], pool["reviewer"], {"action": "approve"})
+    assert refused.value.code == "own_idea"
+
+
+@pytestmark_stack
+def test_one_batch_at_a_time(pool: Any, test_database: str) -> None:
+    from core.db import connect
+
+    with connect(helpers.db_url(test_database), autocommit=True) as other:
+        other.execute("SELECT pg_advisory_lock(%s)", (batch.BATCH_LOCK,))
+        assert batch.run_batch(pool["db"]) == {"state": "skipped", "reason": "already_running"}
+        other.execute("SELECT pg_advisory_unlock(%s)", (batch.BATCH_LOCK,))
+    assert batch.run_batch(pool["db"])["state"] == "done"

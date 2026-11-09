@@ -53,6 +53,7 @@ POOL_WEEKS = 26
 CHANGED_WEEKS = 4
 MAX_SUMMARY_MEMBERS = 30
 MAX_JUDGE_CANDIDATES = 20
+BATCH_LOCK = 4_201_114_201  # pg advisory lock id for "cluster batch"
 
 
 @dataclass
@@ -407,6 +408,17 @@ def run_batch(conn: Conn, now: dt.datetime | None = None, *, manual_by: str | No
     if not killswitch.is_on("clusters.batch", conn):
         log.info("cluster.batch_skipped", reason_code="switched_off")
         return {"state": "skipped", "reason": "switched_off"}
+    # One run at a time, across workers: a second job (weekly and manual together) skips itself.
+    if not conn.execute("SELECT pg_try_advisory_lock(%s) AS ok", (BATCH_LOCK,)).fetchone()["ok"]:  # type: ignore[index]
+        log.info("cluster.batch_skipped", reason_code="already_running")
+        return {"state": "skipped", "reason": "already_running"}
+    try:
+        return _run_locked(conn, now, manual_by)
+    finally:
+        conn.execute("SELECT pg_advisory_unlock(%s)", (BATCH_LOCK,))
+
+
+def _run_locked(conn: Conn, now: dt.datetime, manual_by: str | None) -> dict[str, Any]:
     run_id = run_id_for(conn, now)
     params = {
         **thresholds(),

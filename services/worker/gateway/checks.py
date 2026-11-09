@@ -113,10 +113,7 @@ def cluster_summary(sent: dict[str, Any], out: dict[str, Any], d: Directory | No
     problems: list[str] = []
     members = [m for m in sent.get("members") or [] if isinstance(m, dict)]
     refs = {str(m.get("ref")) for m in members}
-    if len(out["name"].split()) > 8:
-        problems.append("name must be 8 words or fewer")
-    if TAG_RE.search(out["name"]):
-        problems.append("name must not contain tags")
+    _card_safe("name", out["name"], 8, d, problems)  # the name goes into every contributor's message
     _card_safe("description", out["description"], 25, d, problems)
     for i, v in enumerate(out["variations"]):
         if v["member"] not in refs:

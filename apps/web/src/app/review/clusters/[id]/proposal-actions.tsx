@@ -17,6 +17,8 @@ const ERRORS: Record<string, string> = {
   problem_required: "Please write the combined problem.",
   name_length: "The name should be 3 to 80 characters.",
   name_too_long: "Please keep the name to 8 words or fewer.",
+  name_not_card_safe:
+    "Everyone in the group sees the name, so it cannot name a person, client or company, or hold an ID.",
   description_length: "The description should be 10 to 220 characters.",
   problem_length: "The problem should be 20 to 1,500 characters.",
   description_not_card_safe:
@@ -106,6 +108,16 @@ export function ProposalActions({ id, view }: { id: string; view: ProposalView }
     );
 
   const editable = view.kind !== "split";
+  const real = view.mode === "real";
+  // Only what the desk changed is sent; untouched text stays exactly as stored (tags included).
+  const changes = () => {
+    const out: Record<string, string> = {};
+    if (!real) return out;
+    if (name !== (view.summary?.name ?? "")) out.name = name;
+    if (description !== (view.summary?.description ?? "")) out.description = description;
+    if (problem !== (view.summary?.problem ?? "")) out.problem = problem;
+    return out;
+  };
   return (
     <section aria-labelledby="p-actions" className="panel">
       <h2 id="p-actions">Actions</h2>
@@ -114,35 +126,44 @@ export function ProposalActions({ id, view }: { id: string; view: ProposalView }
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void send({ action: "approve", name, description, problem }, "Approved.");
+            void send({ action: "approve", ...changes() }, "Approved.");
           }}
         >
           <h3>Approve</h3>
           <p className="muted">Edit the text first if it needs it. Contributors are told once you approve.</p>
-          <div className="field">
-            <label htmlFor="cp-name">Name (8 words or fewer)</label>
-            <input id="cp-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="cp-description">Description (everyone can see this)</label>
-            <textarea
-              id="cp-description"
-              rows={2}
-              maxLength={220}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="cp-problem">Combined problem</label>
-            <textarea
-              id="cp-problem"
-              rows={5}
-              maxLength={1500}
-              value={problem}
-              onChange={(e) => setProblem(e.target.value)}
-            />
-          </div>
+          {real ? (
+            <>
+              <div className="field">
+                <label htmlFor="cp-name">Name (8 words or fewer)</label>
+                <input id="cp-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="cp-description">Description (everyone can see this)</label>
+                <textarea
+                  id="cp-description"
+                  rows={2}
+                  maxLength={220}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="cp-problem">Combined problem</label>
+                <textarea
+                  id="cp-problem"
+                  rows={5}
+                  maxLength={1500}
+                  value={problem}
+                  onChange={(e) => setProblem(e.target.value)}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="notice">
+              You see labels in place of names, so you can approve the text as it is but not edit it. The
+              reviewer handling this proposal can edit it.
+            </p>
+          )}
           <button type="submit" className="button" disabled={busy}>
             Approve this group
           </button>

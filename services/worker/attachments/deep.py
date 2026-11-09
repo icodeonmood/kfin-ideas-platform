@@ -33,7 +33,9 @@ INDEX_PIECE_CHARS = 3_200  # about 800 tokens
 MAX_GATEKEEPER_CALLS = 40
 SHEET_ROWS = 200
 DIGEST_MAX_CHARS = 60_000
-_ROW = re.compile(r"\brow (\d+)\b")
+_ROW = re.compile(
+    r"\brow (\d+)\b|\bcell [A-Z]{1,3}(\d+)\b"
+)  # CSV and Word tables: "row 4"; sheets: "cell B4"
 
 
 class Unavailable(Exception):
@@ -42,7 +44,7 @@ class Unavailable(Exception):
 
 def _within_rows(location: str) -> bool:
     m = _ROW.search(location)
-    return m is None or int(m.group(1)) <= SHEET_ROWS
+    return m is None or int(m.group(1) or m.group(2)) <= SHEET_ROWS
 
 
 def batches(pieces: list[tuple[str, str]], limit: int) -> list[list[tuple[str, str]]]:
