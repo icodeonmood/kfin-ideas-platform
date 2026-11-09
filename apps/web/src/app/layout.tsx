@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import { PausedBanners } from "@/components/banners";
 import { MainNav } from "@/components/nav";
+import { SparkMark } from "@/components/spark-mark";
 import { currentUser } from "@/server/auth/current";
 
 import "./globals.css";
@@ -29,6 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <header className="site-header">
           <div className="inner">
             <Link href="/" className="lockup">
+              <SparkMark height={28} />
               1% Club
             </Link>
             {showShell && me ? <MainNav items={me.nav} /> : null}
