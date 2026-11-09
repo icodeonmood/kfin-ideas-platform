@@ -57,9 +57,15 @@ def test_an_approved_term_reaches_the_repo_only_through_the_writer(
     assert out["doc_id"] == "GL-paychk"
     refused("already_published", proposals.publish, db, crew["admin"], pid, body)
     event = db.execute(
-        "SELECT payload FROM outbox WHERE event_type = 'taxonomy.glossary_added' AND aggregate_id = 'GL-paychk'"
+        "SELECT actor, payload FROM outbox WHERE event_type = 'taxonomy.glossary_added' AND aggregate_id = 'GL-paychk'"
     ).fetchone()
     assert dict(event["payload"]) == {"proposal_id": pid}  # IDs only
+    assert event["actor"] == "process:learning-approval"  # the outbox CHECK allows no user IDs (BLD-143)
+    who = db.execute(
+        "SELECT actor FROM audit_log WHERE action = 'learning.published' AND entity = %s ORDER BY id DESC",
+        (f"learning_proposal:{pid}",),
+    ).fetchone()
+    assert who["actor"] == f"user:{crew['admin']}"  # the person is on record in audit_log
     assert not (company_repo / "taxonomy" / "glossary" / "GL-paychk.md").exists()  # nothing written here
 
     writer = RepoWriter(helpers.settings_for(company_repo, test_database))
@@ -90,6 +96,10 @@ def test_a_tag_never_overwrites_one_the_product_team_wrote(ones_db: Any, crew: A
         now=NOW,
     )  # fmt: skip
     assert out["doc_id"] == "AREA-payout-files"
+    event = db.execute(
+        "SELECT actor FROM outbox WHERE event_type = 'taxonomy.area_added' AND aggregate_id = 'AREA-payout-files'"
+    ).fetchone()
+    assert event["actor"] == "process:learning-approval"
 
 
 @pytest.mark.stack

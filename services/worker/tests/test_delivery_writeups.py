@@ -92,9 +92,16 @@ def test_owner_drafts_sponsor_approves_and_the_writer_publishes(
     out = writeups.approve(db, crew["sponsor"], did)
     sol = out["solution_id"]
     event = db.execute(
-        "SELECT payload FROM outbox WHERE event_type = 'solution.published' AND aggregate_id = %s", (sol,)
+        "SELECT actor, payload FROM outbox WHERE event_type = 'solution.published' AND aggregate_id = %s",
+        (sol,),
     ).fetchone()
     assert set(event["payload"]) == {"writeup_id"}  # IDs only: the writer reads the text from the database
+    assert event["actor"] == "process:solution-approval"  # the outbox CHECK allows no user IDs (BLD-143)
+    who = db.execute(
+        "SELECT actor FROM audit_log WHERE action = 'delivery.writeup_approved' AND entity = %s ORDER BY id DESC",
+        (f"delivery:{did}",),
+    ).fetchone()
+    assert who["actor"] == f"user:{crew['sponsor']}"  # the person is on record in audit_log
 
     writer = RepoWriter(helpers.settings_for(company_repo, repo_settings[1]))
     assert writer.acquire()

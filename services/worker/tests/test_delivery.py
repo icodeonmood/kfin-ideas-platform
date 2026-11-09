@@ -42,7 +42,14 @@ def crew(
     import lenses
 
     settings = helpers.settings_for(company_repo, test_database)
-    for module in (lenses, proposals, reports):  # the taxonomy and the budget come from the test repo
+    from learning import role_themes
+
+    for module in (
+        lenses,
+        proposals,
+        reports,
+        role_themes,
+    ):  # the taxonomy and the budget come from the test repo
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     db = ones_db
     return {
@@ -453,7 +460,12 @@ def test_glossary_proposals_wait_for_an_admin_and_stop_with_the_switch(ones_db: 
     killswitch.clear_cache()
     try:
         assert learning_run.run(db, NOW) == []
+        monday = dt.datetime(2026, 12, 14, 0, 30, tzinfo=dt.UTC)
+        themes_before = db.execute("SELECT count(*) AS n FROM role_themes").fetchone()["n"]
+        assert learning_run.run(db, monday) == []  # Monday's loops, role_themes included, stop too (BLD-139)
+        assert db.execute("SELECT count(*) AS n FROM role_themes").fetchone()["n"] == themes_before
         refused("learning_paused", learning_run.run_now, db, crew["admin"], {"kind": "autonomy"})
+        refused("learning_paused", learning_run.run_now, db, crew["admin"], {"kind": "role_themes"})
     finally:
         db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'learning.jobs'")
         killswitch.clear_cache()
@@ -462,5 +474,6 @@ def test_glossary_proposals_wait_for_an_admin_and_stop_with_the_switch(ones_db: 
         "autonomy",
         "drift",
         "glossary",
-    ]  # a Monday
+        "role_themes",
+    ]  # a Monday (role themes from BLD-139)
     assert db.execute("SELECT mode FROM autonomy WHERE mode <> 'gated'").fetchone() is None  # still off

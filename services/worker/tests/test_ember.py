@@ -304,19 +304,27 @@ def test_reading_creates_no_draft_and_draft_authors_may_leave(ones_db: Any, cast
     service.archive(db)
     assert count() == before  # nothing opened by looking
 
+    # Months no other test has used in this database: a month that already has an issue would hand back that
+    # issue (and its own author) instead of opening a new one.
+    taken = {r["month"] for r in db.execute("SELECT month FROM ember_issues").fetchall()}
+    free = [f"{y}-{m:02d}" for y in range(2040, 2060) for m in range(1, 13) if dt.date(y, m, 1) not in taken]
+
     leaver = person(db, "admin")
-    issue = service.draft(db, leaver, {"month": "2027-03"}, now=NOW)
+    issue = service.draft(db, leaver, {"month": free[0]}, now=NOW)
+    assert issue["created"]
     db.execute("DELETE FROM users WHERE id = %s", (leaver,))
     row = db.execute("SELECT created_by FROM ember_issues WHERE id = %s", (issue["id"],)).fetchone()
     assert row["created_by"] is None
-    audit = db.execute(
-        "SELECT actor FROM audit_log WHERE action = 'ember.drafted' AND entity = %s",
-        (f"ember:{issue['id']}",),
+    audit = db.execute(  # the drafting row itself, picked by action, entity and month
+        "SELECT actor FROM audit_log WHERE action = 'ember.drafted' AND entity = %s AND after ->> 'month' = %s "
+        "ORDER BY id DESC LIMIT 1",
+        (f"ember:{issue['id']}", f"{free[0]}-01"),
     ).fetchone()
-    assert audit["actor"] == f"user:{leaver}"  # who opened it stays on record
+    assert audit["actor"] == f"user:{leaver}"  # who opened it stays on record after they leave
 
     author = person(db, "admin")
-    sent = service.draft(db, author, {"month": "2027-04"}, now=NOW)
+    sent = service.draft(db, author, {"month": free[1]}, now=NOW)
+    assert sent["created"]
     service.set_note(db, cast["chair"], sent["id"], {"note": NOTE})
     service.approve_note(db, cast["chair"], sent["id"], now=NOW)
     token = {"confirm_token": service.view(db, cast["admin"], sent["id"])["confirm_token"]}
