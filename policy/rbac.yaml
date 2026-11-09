@@ -51,6 +51,8 @@ capabilities:
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
+  # Fairness and calibration (§3.8, §5.4, BLD-223): counts only, small numbers suppressed.
+  view_fairness_reports:      { core_committee: yes, admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -65,6 +67,7 @@ kill_switch_flippers:
   ones.public: [admin, hr]
   clusters.batch: [admin]
   committee.flow: [admin]
+  appeals.filing: [admin]
   attachments.deep_check: [admin, infosec]
   scan.live: [admin]
   learning.jobs: [admin]
@@ -144,6 +147,11 @@ endpoints:
   - PUT /api/admin/kill-switches                      manage_kill_switches
   - POST /api/admin/reveal                            reveal_identity
   - POST /api/admin/conflicts                         grant_roles                # clear a manager's conflict flag with a reason (§3.1, BLD-221)
+  - GET /api/appeals                                  signed_in                  # §4.12: decisions on my groups, appeals I hear (worker checks)
+  - POST /api/appeals                                 submit                     # appeal an own group's decision (worker checks the contributor)
+  - GET /api/appeals/{id}                             hear_appeals               # the panel's blind view (worker checks the panel)
+  - POST /api/appeals/{id}/decision                   hear_appeals               # the panel chair records the outcome
+  - GET /api/reports/{kind}                           view_fairness_reports      # fairness and calibration (§3.8, §5.4)
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.
   - GET /api/ones                                     see_org_ideas
@@ -229,6 +237,7 @@ pages:
   - /committee                 score decide                         # any of these (§4.6–§4.7)
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /admin/conflicts           grant_roles                          # conflict flags waiting for an admin (BLD-221)
+  - /reports                   view_fairness_reports                # fairness and calibration, counts only (BLD-223)
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /ones/console              view_ones_console                    # the committee console's Ones module

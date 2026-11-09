@@ -49,6 +49,11 @@ export default async function Admin() {
           <Link href="/admin/conflicts">Conflict flags on committee reviews</Link>
         </p>
       ) : null}
+      {showRoles ? (
+        <p>
+          <Link href="/reports">Fairness and calibration reports</Link>
+        </p>
+      ) : null}
     </>
   );
 }

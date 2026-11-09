@@ -18,7 +18,8 @@ export type SwitchName =
   | "learning.jobs"
   | "ember.send"
   | "solutions.publish"
-  | "committee.flow";
+  | "committee.flow"
+  | "appeals.filing";
 
 interface Rule {
   methods: readonly string[];
@@ -76,9 +77,10 @@ export const ROUTE_RULES: readonly Rule[] = [
   {
     methods: ["POST"],
     pattern:
-      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts)\/?$/,
+      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts|appeals\/[^/]+\/decision)\/?$/,
     switches: ["committee.flow"],
   },
+  { methods: ["POST"], pattern: /^\/api\/appeals\/?$/, switches: ["appeals.filing"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -100,6 +102,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "solutions.publish":
     "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",
   "committee.flow": "The committee's reviews and decisions are switched off for now.",
+  "appeals.filing": "Appeals are paused for a short while. Please try again later.",
 };
 
 /**
