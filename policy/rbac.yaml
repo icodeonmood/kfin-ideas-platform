@@ -135,6 +135,18 @@ endpoints:
   - PUT /api/me/one/showcase                          signed_in
   - GET /api/me/team                                  signed_in
 
+# Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
+# is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
+# (for "ones": an active One, DEC-077). No role grants membership, so the RBAC matrix test expects 403 for
+# every role column and "allowed" for a member persona. Listing a route here never widens access.
+membership_scoped:
+  ones:
+    - GET /api/ones/leaderboard
+    - POST /api/me/one/number
+    - POST /api/me/one/brief
+    - GET /api/me/one/showcase
+    - PUT /api/me/one/showcase
+
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)

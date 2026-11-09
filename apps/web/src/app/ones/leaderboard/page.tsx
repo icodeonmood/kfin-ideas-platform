@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { measureList } from "@/lib/measures";
+import { measureList, oneName } from "@/lib/measures";
 import { currentUser } from "@/server/auth/current";
 import { leaderboard } from "@/server/ones";
 
@@ -48,7 +48,7 @@ export default async function Page() {
                   <td>{p.rank}</td>
                   <td>{p.number}</td>
                   <td>
-                    {p.name}
+                    {oneName(p.number, p.name)}
                     {p.you ? " (you)" : ""}
                   </td>
                   <td>

@@ -506,6 +506,9 @@ def induct_from_decision(
 def swap_number(conn: Conn, user_id: str, number: Any, now: dt.datetime | None = None) -> dict[str, Any]:
     """A One chooses a free number within 30 days of induction, first come first served (DEC-067)."""
     now = now or dt.datetime.now(dt.UTC)
+    # Membership first, so a non-One never learns what a valid body looks like (BLD-108).
+    if not conn.execute("SELECT 1 FROM ones WHERE user_id = %s AND status = 'active'", (user_id,)).fetchone():
+        raise OnesRefused(403, "not_a_one")
     n = _int(number, "number_required")
     if not numbers.LOW <= n <= numbers.HIGH:
         raise OnesRefused(422, "number_out_of_range")

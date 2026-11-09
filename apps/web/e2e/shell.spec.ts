@@ -29,8 +29,11 @@ test.describe("navigation by role (AT-B2-06)", () => {
 test("every navigation item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {
   await signIn(page, PERSONAS.admin);
   const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
+  // The admin sees every item but Review and Desk decisions: the four for everyone, the Ones console, Admin.
+  expect(await navLabels(page)).toEqual([...BASE, "Ones", "Admin"]);
+  await expect(links.filter({ hasText: "Ones" })).toHaveAttribute("href", "/ones/console");
   const count = await links.count();
-  expect(count).toBe(5);
+  expect(count).toBe(6);
   for (let i = 0; i < count; i++) {
     await page.goto("/");
     const target = links.nth(i);
@@ -39,7 +42,7 @@ test("every navigation item works by keyboard with a visible focus ring (AT-B2-0
     await page.locator("body").press("Tab");
     for (
       let presses = 0;
-      presses < 12 && !(await target.evaluate((el) => el === document.activeElement));
+      presses < 16 && !(await target.evaluate((el) => el === document.activeElement));
       presses++
     ) {
       await page.keyboard.press("Tab");

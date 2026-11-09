@@ -413,8 +413,10 @@ def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
     rows = [
         dict(r)
         for r in conn.execute(
-            "SELECT o.id, o.number, o.tier, o.measures, o.user_id, u.name, u.lob_id FROM ones o "
-            "JOIN users u ON u.id = o.user_id WHERE o.status = 'active'"
+            "SELECT o.id, o.number, o.tier, o.measures, o.user_id, u.name, u.lob_id, "
+            "coalesce(c.public_name_consent, false) AS consent FROM ones o "
+            "JOIN users u ON u.id = o.user_id LEFT JOIN comms_prefs c ON c.user_id = o.user_id "
+            "WHERE o.status = 'active'"
         ).fetchall()
     ]
 
@@ -426,7 +428,9 @@ def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
     _, lobs = taxonomy_names()
     people = [
         {
-            "rank": i + 1, "number": r["number"], "name": r["name"], **_tier(r["tier"]),
+            "rank": i + 1, "number": r["number"], **_tier(r["tier"]),
+            # A name shows only with public-name consent; everyone sees their own (DEC-077, non-negotiable 7).
+            "name": r["name"] if r["consent"] or str(r["user_id"]) == viewer_id else None,
             "measures": _public_measures(r["measures"]), "you": str(r["user_id"]) == viewer_id,
         }
         for i, r in enumerate(rows)

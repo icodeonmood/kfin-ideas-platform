@@ -170,7 +170,7 @@ export async function leaderboard(me: CurrentUser) {
   if (res.status === 403) return null;
   if (!res.ok) throw new SubmissionError(502, "leaderboard_unavailable");
   return (await res.json()) as {
-    people: (Tiered & { rank: number; number: number; name: string; measures: Measures; you: boolean })[];
+    people: (Tiered & { rank: number; number: number; name: string | null; measures: Measures; you: boolean })[];
     teams: {
       rank: number;
       lob: string;

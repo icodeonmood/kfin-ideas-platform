@@ -243,6 +243,15 @@
     "PUT /api/me/one/showcase                          signed_in",
     "GET /api/me/team                                  signed_in"
   ],
+  "membership_scoped": {
+    "ones": [
+      "GET /api/ones/leaderboard",
+      "POST /api/me/one/number",
+      "POST /api/me/one/brief",
+      "GET /api/me/one/showcase",
+      "PUT /api/me/one/showcase"
+    ]
+  },
   "pages": [
     "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",

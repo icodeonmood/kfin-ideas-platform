@@ -121,6 +121,8 @@ def test_numbers_come_in_order_rest_after_retirement_and_swap_only_in_the_first_
     assert not numbers.is_free(db, first, 0, NOW + dt.timedelta(days=29))  # their old number now rests
     refused("swap_window_closed", service.swap_number, db, a, free + 1, now=NOW + dt.timedelta(days=31))
     refused("not_a_one", service.swap_number, db, cast["employee"], free + 1, now=NOW)
+    # Membership is checked before the body (BLD-108).
+    refused("not_a_one", service.swap_number, db, cast["employee"], None, now=NOW)
     actions = [
         r["action"]
         for r in db.execute("SELECT action FROM audit_log WHERE entity LIKE 'one%' ORDER BY id").fetchall()
@@ -423,14 +425,19 @@ def test_the_public_view_respects_consent_finance_and_the_switch(ones_db: Any, c
 
 def test_the_leaderboard_is_for_ones_and_ranks_by_tier_then_impact(ones_db: Any, cast: Any) -> None:
     db = ones_db
-    a, b = person(db, name="Tier One Synthetic"), person(db, name="Tier Four Synthetic")
+    a, b = person(db, name="Tier One Synthetic"), person(db, name="Tier Four Synthetic", consent=True)
+    quiet = person(db, name="Tier Two Quiet Synthetic")
     induct(db, cast, a)
-    one_b = induct(db, cast, b)
+    one_b, one_q = induct(db, cast, b), induct(db, cast, quiet)
     db.execute("UPDATE ones SET tier = 4 WHERE id = %s", (one_b["one_id"],))
+    db.execute("UPDATE ones SET tier = 2 WHERE id = %s", (one_q["one_id"],))
     assert views.leaderboard(db, cast["employee"]) is None
     board = views.leaderboard(db, a)
-    assert [p["name"] for p in board["people"]][:2] == ["Tier Four Synthetic", "Tier One Synthetic"]
-    assert board["people"][1]["you"] and board["teams"][0]["ones"] >= 2
+    # Tier first; a name shows only with consent (the quiet One is a number), and you always see your own.
+    assert [p["name"] for p in board["people"]][:3] == ["Tier Four Synthetic", None, "Tier One Synthetic"]
+    assert board["people"][1]["number"] == one_q["number"]
+    assert board["people"][2]["you"] and board["teams"][0]["ones"] >= 3
+    assert "Tier Two Quiet Synthetic" not in str(board)
 
 
 def test_a_manager_sees_counts_for_their_own_team_only(ones_db: Any, cast: Any) -> None:
