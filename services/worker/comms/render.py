@@ -70,7 +70,23 @@ def _decrypt_text(blob: Any, context: str) -> str | None:
 
 COMMITTEE_EVENTS = {"cluster.gate_outcome", "round.opened", "shortlist.invited", "round.not_shortlisted",
                     "presentation.confirmed", "decision.accepted", "decision.not_accepted",
-                    "decision.not_presented"}  # fmt: skip
+                    "decision.not_presented", "appeal.filed", "appeal.decided"}  # fmt: skip
+APPEAL_OUTCOME_TEXT = {
+    "upheld": "The panel upheld the committee's decision.",
+    "re_score": "The panel sent the group back to be scored again, with a direction for the committee.",
+    "overturned": "The panel overturned the decision. The group goes back to the committee ahead of the others.",
+}
+
+
+def _appeal_text(dec: dict[str, Any] | None) -> str:
+    """Whether a committee decision can be appealed, in plain words (§4.12: a decline, or a second park)."""
+    if not dec or dec.get("outcome") not in ("parked", "declined"):
+        return ""
+    if dec.get("appeal_window_closes"):
+        return (
+            f"You can appeal this decision until {_date(dec['appeal_window_closes'])} from the Appeals page."
+        )
+    return "Parked groups come back for review in a later cycle; a second park can be appealed."
 
 
 def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dict[str, Any]:
@@ -238,6 +254,7 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             (refs["cluster_id"], user_id),
         ).fetchone()
         data["links"]["idea"] = f"{base}/ideas/{mine['idea_id']}" if mine else f"{base}/my-ideas"
+        data["links"]["appeals"] = f"{base}/appeals"
         codes = {
             c["code"]: c["plain_words"]
             for c in load_rule(get_settings().company_repo_path, "reason-codes").data["codes"]
@@ -264,12 +281,30 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             data["links"]["presentation"] = f"{base}/presentations/{pres['id']}"
         if refs.get("decision_id"):
             dec = conn.execute(
-                "SELECT plain_reason, what_would_change FROM decisions WHERE id = %s", (refs["decision_id"],)
+                "SELECT plain_reason, what_would_change, outcome, appeal_window_closes FROM decisions WHERE id = %s",
+                (refs["decision_id"],),
             ).fetchone()
             data["decision"] = {
                 "reason": restore((dec or {}).get("plain_reason"), mapping, "neutral") or "",
                 "what_would_change": restore((dec or {}).get("what_would_change"), mapping, "neutral") or "",
+                "appeal_text": _appeal_text(dec),
             }
+        if refs.get("appeal_id"):
+            apl = conn.execute(
+                "SELECT due_at, hearing_requested, outcome, reasons FROM appeals WHERE id = %s",
+                (refs["appeal_id"],),
+            ).fetchone()
+            reasons = restore((apl or {}).get("reasons"), mapping, "neutral") or ""
+            data["appeal"] = {
+                "due_date": _date(apl["due_at"]) if apl else "",
+                "hearing_text": "The colleagues asked for a 10-minute hearing: please arrange it with them."
+                if apl and apl["hearing_requested"]
+                else "",
+                "outcome_text": " ".join(
+                    x for x in (APPEAL_OUTCOME_TEXT.get(str((apl or {}).get("outcome")), ""), reasons) if x
+                ),
+            }
+            data["links"]["appeal"] = f"{base}/appeals/{refs['appeal_id']}"
     if event == "sla.reminder":
         timer = conn.execute(
             "SELECT due_at FROM sla_timers WHERE id = %s", (refs.get("timer_id"),)

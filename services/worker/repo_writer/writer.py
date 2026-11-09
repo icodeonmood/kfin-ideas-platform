@@ -40,6 +40,7 @@ from repo_writer.render import (
     render_idea,
     repo_path_for,
 )
+from repo_writer.render_appeal import appeal_index_line, appeals_index, render_appeal
 from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
 from repo_writer.render_decision import cluster_sections, decision_index_line, render_decision
 from repo_writer.render_docs import doc_index_line, doc_problem, solution_doc, taxonomy_doc
@@ -60,6 +61,7 @@ AREA_EVENT = "taxonomy.area_added"
 DOC_EVENTS = {SOLUTION_EVENT, GLOSSARY_EVENT, AREA_EVENT}
 DEMO_PATH = re.compile(r"ideas/[0-9]{4}/[0-9]{2}/(IDEA-[0-9]{4}-[0-9]{6})\.md")
 DECISION_EVENT = "decision.recorded"
+APPEAL_EVENTS = {"appeal.filed", "appeal.decided"}
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
 RETRY_BACKOFF_S = (1, 5, 15, 60)
@@ -234,7 +236,11 @@ class RepoWriter:
                         )
             return Outcome(outbox_id, sha, True)
 
-        if event["event_type"] in CLUSTER_EVENTS or event["event_type"] in (RUN_EVENT, DECISION_EVENT):
+        if (
+            event["event_type"] in CLUSTER_EVENTS
+            or event["event_type"] in (RUN_EVENT, DECISION_EVENT)
+            or event["event_type"] in APPEAL_EVENTS
+        ):
             return self._one_cluster(conn, event)
         if event["event_type"] == DEMO_REMOVED:
             message = self._remove_demo_file(event)
@@ -269,6 +275,8 @@ class RepoWriter:
             rel, message = self._write_run(conn, event)
         elif event["event_type"] == DECISION_EVENT:
             rel, message = self._write_decision(conn, event)
+        elif event["event_type"] in APPEAL_EVENTS:
+            rel, message = self._write_appeal(conn, event)
         else:
             rel, message = self._write_cluster(conn, event)
         sha = self.git.commit_all(message)
@@ -282,6 +290,11 @@ class RepoWriter:
             elif event["event_type"] == DECISION_EVENT:
                 conn.execute(
                     "UPDATE decisions SET repo_path = %s, repo_commit = %s WHERE id = %s",
+                    (rel, sha, event["aggregate_id"]),
+                )
+            elif event["event_type"] in APPEAL_EVENTS:
+                conn.execute(
+                    "UPDATE appeals SET repo_path = %s, repo_commit = %s WHERE id = %s",
                     (rel, sha, event["aggregate_id"]),
                 )
         log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
@@ -369,13 +382,22 @@ class RepoWriter:
         sheet = conn.execute(
             "SELECT * FROM decision_sheets WHERE presentation_id = %s", (d["presentation_id"],)
         ).fetchone()
-        round_ = conn.execute(
-            "SELECT r.* FROM scoring_rounds r JOIN presentations p ON p.round_id = r.id WHERE p.id = %s",
-            (d["presentation_id"],),
+        round_ = conn.execute(  # the presentation's round, or the round of a preliminary decision
+            "SELECT r.* FROM scoring_rounds r WHERE r.id = coalesce(%s, "
+            "(SELECT p.round_id FROM presentations p WHERE p.id = %s))",
+            (d["round_id"], d["presentation_id"]),
+        ).fetchone()
+        appeal = conn.execute(
+            "SELECT id, state, outcome FROM appeals WHERE decision_id = %s", (did,)
         ).fetchone()
         year = did.split("-")[1]
         rel = f"decisions/{year}/{did}.md"
-        text = render_decision(dict(d), dict(sheet) if sheet else None, dict(round_) if round_ else None)
+        text = render_decision(
+            dict(d),
+            dict(sheet) if sheet else None,
+            dict(round_) if round_ else None,
+            dict(appeal) if appeal else None,
+        )
         doc = parse(text)
         if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
             raise EventError("invalid_decision_file")
@@ -397,6 +419,47 @@ class RepoWriter:
         return (
             rel,
             f"[{did}] {d['outcome']}\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n",
+        )
+
+    def _write_appeal(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:
+        aid = str(event["aggregate_id"])
+        if not re.fullmatch(r"APL-[0-9]{4}-[0-9]{4}", aid):
+            raise EventError("appeal_id_invalid")
+        a = conn.execute("SELECT * FROM appeals WHERE id = %s", (aid,)).fetchone()
+        if a is None:
+            raise EventError("appeal_not_found")
+        d = conn.execute("SELECT body, outcome FROM decisions WHERE id = %s", (a["decision_id"],)).fetchone()
+        year = aid.split("-")[1]
+        rel = f"appeals/{year}/{aid}.md"
+        text = render_appeal(dict(a), dict(d) if d else {})
+        doc = parse(text)
+        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+            raise EventError("invalid_appeal_file")
+        path = self.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._upsert_index_line(
+            self.repo / "appeals" / year / "index.md",
+            f"# Appeals, {year}",
+            aid,
+            appeal_index_line(aid, str((doc.meta or {}).get("description", ""))),
+        )
+        stats = conn.execute(
+            "SELECT d.body, count(*) AS filed, count(*) FILTER (WHERE a.state = 'open') AS open, "
+            "count(*) FILTER (WHERE a.outcome = 'upheld') AS upheld, "
+            "count(*) FILTER (WHERE a.outcome = 're_score') AS re_score, "
+            "count(*) FILTER (WHERE a.outcome = 'overturned') AS overturned "
+            "FROM appeals a JOIN decisions d ON d.id = a.decision_id GROUP BY d.body ORDER BY d.body"
+        ).fetchall()
+        years = sorted(
+            {r["y"] for r in conn.execute("SELECT DISTINCT split_part(id, '-', 2) AS y FROM appeals")}
+        )
+        (self.repo / "appeals" / "index.md").write_text(
+            appeals_index([dict(s) for s in stats], years), encoding="utf-8"
+        )
+        return (
+            rel,
+            f"[{aid}] {a['outcome'] or 'filed'}\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n",
         )
 
     def _write_run(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:

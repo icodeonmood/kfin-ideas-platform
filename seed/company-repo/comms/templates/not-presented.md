@@ -25,9 +25,11 @@ Hi {{recipient.first_name}},
 
 The committee kept a slot for **{{cluster.name}}**, but the presentation did not take place. The group is parked for now.
 
-If something got in the way, please tell the committee chair. You can also appeal within 15 working days from your idea page.
+If something got in the way, please tell the committee chair. {{decision.appeal_text}}
 
 [See your idea]({{links.idea}})
+
+[Appeals]({{links.appeals}})
 
 The 1% Club core committee chair
 

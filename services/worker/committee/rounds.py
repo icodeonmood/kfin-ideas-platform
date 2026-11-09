@@ -415,6 +415,12 @@ def presentations_for(conn: Conn, user_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def direction_for(conn: Conn, cluster_id: str) -> str | None:
+    from committee.appeals import direction_for as note
+
+    return note(conn, cluster_id)
+
+
 def round_view(conn: Conn, round_id: str, user_id: str) -> dict[str, Any] | None:
     r = conn.execute("SELECT * FROM scoring_rounds WHERE id = %s", (round_id,)).fetchone()
     if r is None:
@@ -468,6 +474,7 @@ def round_view(conn: Conn, round_id: str, user_id: str) -> dict[str, Any] | None
         "progress": {"scored": done, "voting": voting, "quorum_met": met},
         "chair": is_chair(conn, user_id),
         "outcome": r["outcome"], "reason_code": r["reason_code"],
+        "appeal_direction": restore(direction_for(conn, r["cluster_id"]), mapping, "blind"),
     }  # fmt: skip
     if revealed:
         ai = conn.execute(
@@ -753,6 +760,42 @@ OUTCOME_STAGE = {
 REASONS = {"parked": {"NOT_FEASIBLE_NOW", "INSUFFICIENT_EVIDENCE", "CAPACITY"}, "declined": {"LOW_VALUE", "NOT_FEASIBLE_NOW", "REG_CONFLICT", "OUT_OF_SCOPE"}}  # fmt: skip
 
 
+def _record_preliminary(
+    conn: Conn,
+    r: dict[str, Any],
+    outcome: str,
+    reason_code: str | None,
+    note: str | None,
+    rev: str,
+    now: dt.datetime,
+) -> str:
+    """A preliminary review's park or decline is a decision on record (§4.6 step 9): a decision file, and the
+    15-working-day appeal window when it can be appealed (§4.12, BLD-222). It has no votes: members scored."""
+    from committee.appeals import WINDOW_WD, appealable
+
+    n = conn.execute("SELECT next_number('DEC', %s) AS n", (str(now.year),)).fetchone()
+    assert n is not None
+    did = f"DEC-{now.year}-{int(n['n']):04d}"
+    scored = conn.execute(
+        "SELECT count(DISTINCT member_id) AS n FROM sealed_scores WHERE round_id = %s", (r["id"],)
+    ).fetchone()
+    window = add_working_days(now, WINDOW_WD) if appealable(conn, r["cluster_id"], outcome) else None
+    conn.execute(
+        "INSERT INTO decisions (id, cluster_id, round_id, cycle_id, body, outcome, reason_code, plain_reason, votes, "
+        "members_present, recused, decided_by, decided_at, appeal_window_closes) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (did, r["cluster_id"], r["id"], r["cycle_id"], r["body"], outcome, reason_code, note, Jsonb({}),
+         int(scored["n"] if scored else 0), len(r["roster"]) - len(_eligible(conn, r)), rev, now, window),
+    )  # fmt: skip
+    if window:
+        engine.start(conn, "decision", did, "appeal_window", now=now)
+    conn.execute(
+        "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('decision.recorded', %s, %s, %s)",
+        (did, rev, Jsonb({"decision_id": did, "verified_by": rev})),
+    )
+    return did
+
+
 def _decide(
     conn: Conn, r: dict[str, Any], user_id: str, body: dict[str, Any], now: dt.datetime
 ) -> dict[str, Any]:
@@ -830,10 +873,16 @@ def _decide(
             {"cluster_id": r["cluster_id"], "round_id": r["id"], "presentation_id": pid},
         )
     elif outcome in ("parked", "declined"):
+        did = _record_preliminary(conn, r, str(outcome), reason_code, note, rev, now)
         emit(
             conn,
             "round.not_shortlisted",
-            {"cluster_id": r["cluster_id"], "round_id": r["id"], "reason_code": reason_code},
+            {
+                "cluster_id": r["cluster_id"],
+                "round_id": r["id"],
+                "reason_code": reason_code,
+                "decision_id": did,
+            },
         )
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'round.decided', %s, %s)",

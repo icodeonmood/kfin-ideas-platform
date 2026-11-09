@@ -20,12 +20,25 @@ VOTE_WORDS = {
 }
 
 
-def render_decision(d: dict[str, Any], sheet: dict[str, Any] | None, round_: dict[str, Any] | None) -> str:
+APPEAL_WORDS = {"upheld": "upheld", "re_score": "sent back to scoring", "overturned": "overturned"}
+
+
+def render_decision(
+    d: dict[str, Any],
+    sheet: dict[str, Any] | None,
+    round_: dict[str, Any] | None,
+    appeal: dict[str, Any] | None = None,
+) -> str:
     themes = (sheet or {}).get("themes") or {}
+    preliminary = not d.get("presentation_id")
+    who = "The 1% Club core committee's" if d["body"] == "core" else "A LOB committee's"
+    stage = " preliminary review" if preliminary else ""
+    score = (sheet or {}).get("final_score") if sheet else (round_ or {}).get("final_score")
+    medians = (sheet or {}).get("medians") if sheet else (round_ or {}).get("medians")
     meta: dict[str, Any] = {
         "type": "decision",
         "title": f"{OUTCOME_WORDS[d['outcome']]}: {d['cluster_id']}",
-        "description": f"The 1% Club core committee's decision on {d['cluster_id']}: {OUTCOME_WORDS[d['outcome']].lower()}.",
+        "description": f"{who}{stage} decision on {d['cluster_id']}: {OUTCOME_WORDS[d['outcome']].lower()}.",
         "tags": ["decision", d["outcome"]],
         "status": "stable",
         "verified": [{"by": f"human:{d['decided_by']}", "at": iso(d["decided_at"])}],
@@ -37,10 +50,8 @@ def render_decision(d: dict[str, Any], sheet: dict[str, Any] | None, round_: dic
             "route": d.get("route"),
             "reason_code": d.get("reason_code"),
             "scorecard_version": (round_ or {}).get("scorecard_version"),
-            "final_score": float(sheet["final_score"])
-            if sheet and sheet.get("final_score") is not None
-            else None,
-            "dimension_medians": (sheet or {}).get("medians") or {},
+            "final_score": float(score) if score is not None else None,
+            "dimension_medians": medians or {},
             "members_present": int(d["members_present"]),
             "recused": int(d.get("recused") or 0),
             "override": {"used": bool(d.get("override_reason"))},
@@ -70,9 +81,17 @@ def render_decision(d: dict[str, Any], sheet: dict[str, Any] | None, round_: dic
         esc(d.get("what_would_change")) or "Not applicable.",
         "",
         "## Votes",
-        "| Vote | Count |",
-        "|---|---|",
-        *[f"| {VOTE_WORDS.get(k, k)} | {int(v)} |" for k, v in votes.items()],
+        *(
+            [
+                "| Vote | Count |",
+                "|---|---|",
+                *[f"| {VOTE_WORDS.get(k, k)} | {int(v)} |" for k, v in votes.items()],
+            ]
+            if votes
+            else [
+                f"A preliminary review: {int(d['members_present'])} members scored; no vote is taken at this stage."
+            ]
+        ),
         "",
         "## Strengths the committee saw",
         "\n".join(f"- {esc(t['theme'])} ({int(t['count'])})" for t in themes.get("strengths") or [])
@@ -85,8 +104,21 @@ def render_decision(d: dict[str, Any], sheet: dict[str, Any] | None, round_: dic
         "## Conditions",
         "\n".join(f"- {esc(c)}" for c in d.get("conditions") or []) or "None.",
         "",
+        "## Appeal",
+        _appeal_line(d, appeal),
+        "",
     ]
     return dump(meta, "\n" + "\n".join(body))
+
+
+def _appeal_line(d: dict[str, Any], appeal: dict[str, Any] | None) -> str:
+    if appeal:
+        year = str(appeal["id"]).split("-")[1]
+        state = APPEAL_WORDS.get(str(appeal.get("outcome")), "waiting for the panel")
+        return f"Appealed: [{appeal['id']}](../../appeals/{year}/{appeal['id']}.md), {state}."
+    if d.get("appeal_window_closes"):
+        return f"Open to appeal until {iso(d['appeal_window_closes'])[:10]}."
+    return "Not open to appeal." if d["outcome"] != "picked" else "Not applicable."
 
 
 def decision_index_line(did: str, description: str) -> str:

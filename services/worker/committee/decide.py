@@ -216,7 +216,8 @@ def committee_view(conn: Conn, pid: str, user_id: str) -> dict[str, Any] | None:
     ).fetchone()
     sheet = conn.execute("SELECT * FROM decision_sheets WHERE presentation_id = %s", (pid,)).fetchone()
     decision = conn.execute(
-        "SELECT id, outcome, route, reason_code, votes, decided_at FROM decisions WHERE presentation_id = %s",
+        "SELECT id, outcome, route, reason_code, votes, decided_at FROM decisions WHERE presentation_id = %s "
+        "ORDER BY decided_at DESC LIMIT 1",  # an overturned appeal sends it back to the chair: the latest counts
         (pid,),
     ).fetchone()
     sc = scorecard()
@@ -616,7 +617,10 @@ def _record(
     did = f"DEC-{now.year}-{int(n['n']):04d}"
     present = sum((d.get("votes") or {}).values())
     conflicted = len(_roster(conn)) - len(_voting(conn, cid))
-    window = add_working_days(now, 15) if d["outcome"] in ("parked", "declined") else None
+    from committee.appeals import WINDOW_WD, appealable
+
+    # The appeal window opens only for a decision that can be appealed: a decline, or a second park (§4.12).
+    window = add_working_days(now, WINDOW_WD) if appealable(conn, cid, d["outcome"]) else None
     conn.execute(
         "INSERT INTO decisions (id, cluster_id, presentation_id, cycle_id, outcome, route, reason_code, plain_reason, "
         "what_would_change, conditions, votes, members_present, recused, sponsor_id, casting_vote, override_reason, "
@@ -643,7 +647,7 @@ def _record(
 
         # The handover opens in the same transaction (§4.8); the owner can change the track in the pack.
         start_from_pick(conn, "cluster", cid, DELIVERY_TRACK.get(str(d.get("route")), "build"))
-    else:
+    elif window:
         engine.start(conn, "decision", did, "appeal_window", now=now)
     outbox = "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES (%s, %s, %s, %s)"
     conn.execute(outbox, ("decision.recorded", did, rev, Jsonb({"decision_id": did, "verified_by": rev})))
