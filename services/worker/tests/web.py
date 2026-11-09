@@ -16,6 +16,8 @@ from http.cookies import SimpleCookie
 from typing import Any
 
 import httpx
+import psycopg
+from psycopg import sql
 
 from core.config import get_settings
 from core.db import Conn
@@ -148,4 +150,48 @@ def people(conn: Conn) -> Iterator[Any]:
                 "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[]))",
                 (created,),
             )
-            conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (created,))
+            remove_people(conn, created)
+
+
+# Rows that test people may have created and that keep a user from being deleted (RESTRICT or NO ACTION foreign
+# keys to users): Ember drafts and issues, deliveries, write-ups, check-ins, files, proposals and decisions.
+_BLOCKING_FKS = """
+SELECT n.nspname AS schema, t.relname AS tbl, a.attname AS col
+FROM pg_constraint c
+JOIN pg_class t ON t.oid = c.conrelid
+JOIN pg_namespace n ON n.oid = t.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass AND c.confdeltype IN ('r', 'a')
+ORDER BY t.relname, a.attname
+"""
+
+
+def remove_people(conn: Conn, user_ids: list[str], passes: int = 6) -> None:
+    """Delete test people and every row they created that would block it, so teardown never fails (the RBAC HTTP
+    matrix, for example, opens an Ember draft as its admin). Drafts go first; then each blocking table, a few passes
+    so rows that block each other clear in order. Only rows that point at these test people are touched."""
+    conn.execute(
+        "DELETE FROM ember_issues WHERE state <> 'sent' AND (created_by = ANY(%(u)s::uuid[]) "
+        "OR chair_note_by = ANY(%(u)s::uuid[]) OR note_approved_by = ANY(%(u)s::uuid[]))",
+        {"u": user_ids},
+    )
+    fks = conn.execute(_BLOCKING_FKS).fetchall()
+    for _ in range(passes):
+        try:
+            with conn.transaction():
+                conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (user_ids,))
+            return
+        except psycopg.errors.IntegrityError:  # a foreign key (RESTRICT or NO ACTION) still points at them
+            pass
+        for fk in fks:
+            try:
+                with conn.transaction():
+                    conn.execute(
+                        sql.SQL("DELETE FROM {} WHERE {} = ANY(%s::uuid[])").format(
+                            sql.Identifier(fk["schema"], fk["tbl"]), sql.Identifier(fk["col"])
+                        ),
+                        (user_ids,),
+                    )
+            except psycopg.Error:
+                continue  # another of their rows still points here; the next pass clears it
+    conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (user_ids,))  # raises with the real reason

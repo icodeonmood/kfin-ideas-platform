@@ -269,3 +269,38 @@ def test_picked_this_month_comes_from_stage_history(ones_db: Any, cast: Any) -> 
     assert picked(dt.date(2026, 12, 1)) == dec0
     built = service.build(db, dt.date(2026, 11, 1))
     assert built["picked_in_month"] and not built["coming_soon"]
+
+
+@pytest.mark.stack
+def test_reading_creates_no_draft_and_draft_authors_may_leave(ones_db: Any, cast: Any) -> None:
+    """BLD-140: reading never opens a draft; a draft's author can be deleted (kept in audit_log); a sent issue
+    keeps its authors."""
+    db = ones_db
+
+    def count() -> int:
+        return int(db.execute("SELECT count(*) AS n FROM ember_issues").fetchone()["n"])
+
+    before = count()
+    assert service.current_draft(db, cast["admin"]) == {"id": None}
+    service.archive(db)
+    assert count() == before  # nothing opened by looking
+
+    leaver = person(db, "admin")
+    issue = service.draft(db, leaver, {"month": "2027-03"}, now=NOW)
+    db.execute("DELETE FROM users WHERE id = %s", (leaver,))
+    row = db.execute("SELECT created_by FROM ember_issues WHERE id = %s", (issue["id"],)).fetchone()
+    assert row["created_by"] is None
+    audit = db.execute(
+        "SELECT actor FROM audit_log WHERE action = 'ember.drafted' AND entity = %s",
+        (f"ember:{issue['id']}",),
+    ).fetchone()
+    assert audit["actor"] == f"user:{leaver}"  # who opened it stays on record
+
+    author = person(db, "admin")
+    sent = service.draft(db, author, {"month": "2027-04"}, now=NOW)
+    service.set_note(db, cast["chair"], sent["id"], {"note": NOTE})
+    service.approve_note(db, cast["chair"], sent["id"], now=NOW)
+    token = {"confirm_token": service.view(db, cast["admin"], sent["id"])["confirm_token"]}
+    service.send(db, cast["admin"], sent["id"], token, now=NOW)
+    with pytest.raises(Exception, match="keeps its authors"):
+        db.execute("DELETE FROM users WHERE id = %s", (author,))

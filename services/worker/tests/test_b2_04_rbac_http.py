@@ -114,3 +114,52 @@ def test_pages_follow_the_policy(sessions: dict[str, Any]) -> None:
     assert sessions["core_committee"].get("/desk-decisions").status_code not in redirected
     assert sessions["contributor"].get("/admin").status_code in redirected
     assert sessions["admin"].get("/admin").status_code not in redirected
+
+
+# Tables a page or a GET could fill by mistake. Reading never writes (BLD-140).
+_WATCHED = ("ember_issues", "deliveries", "solution_writeups", "delivery_checkins", "role_themes", "outbox")
+
+
+def _counts(conn: Any) -> dict[str, int]:
+    return {t: int(conn.execute(f"SELECT count(*) AS n FROM {t}").fetchone()["n"]) for t in _WATCHED}  # noqa: S608
+
+
+def test_get_requests_and_pages_create_nothing(sessions: dict[str, Any]) -> None:
+    """Every GET in the policy and every page, as an admin and as the core committee chair, writes no row: an
+    Ember draft, for one, is opened only by "Start this month's issue" (POST, audited)."""
+    with connect(autocommit=True) as conn:
+        before = _counts(conn)
+        pages = [
+            "/",
+            "/ember",
+            "/ember/compose",
+            "/my-ideas",
+            "/my-ideas/lens",
+            "/lenses",
+            "/learning",
+            "/delivery",
+        ]
+        for role in ("admin", "core_chair", "core_committee"):
+            if role not in sessions:
+                continue
+            browser = sessions[role]
+            for method, path, _caps in ENDPOINTS:
+                if method == "GET":
+                    browser.get(path)
+            for page in pages:
+                browser.get(page)
+        assert _counts(conn) == before
+
+
+def test_teardown_removes_what_test_people_left_behind() -> None:
+    """A test admin who opened an Ember draft (as the matrix does) or a delivery is still removed (BLD-140)."""
+    with connect(autocommit=True) as conn:
+        with people(conn) as make:
+            admin = make((("admin", None),))
+            conn.execute(
+                "INSERT INTO ember_issues (month, created_by) VALUES ('2031-01-01', %s) ON CONFLICT (month) DO NOTHING",
+                (admin.user_id,),
+            )
+        left = conn.execute("SELECT 1 FROM users WHERE id = %s", (admin.user_id,)).fetchone()
+        assert left is None
+        assert conn.execute("SELECT 1 FROM ember_issues WHERE month = '2031-01-01'").fetchone() is None
