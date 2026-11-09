@@ -306,6 +306,69 @@ def role_themes(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     return {"themes": themes}
 
 
+def prescore(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """3 everywhere, financial value at the suggested band (dev only: fake mode never measures a model)."""
+    band = (inputs.get("impact") or {}).get("suggested_financial_band")
+    scores = []
+    for name in inputs.get("scorecard") or {}:
+        value = band if name == "financial_value" and isinstance(band, int) else 3
+        scores.append({"dimension": name, "value": value, "rationale": "A middle score until the evidence is read.",
+                       "evidence": ["impact" if name == "financial_value" else "problem"]})  # fmt: skip
+    return {"scores": scores}
+
+
+DECK = ["The problem", "Who it touches", "What it's worth", "Solved elsewhere, and why KFintech",
+        "Proposed approach", "What it needs", "Risks", "The ask"]  # fmt: skip
+
+
+def pitch_prep(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """The deck template with the cluster's own words where they fit (dev only)."""
+    c = inputs.get("cluster") or {}
+    problem = _clip(_untagged((c.get("summary") or {}).get("problem")), 15) or "Describe the problem"
+    first = [problem, "Say who raised it and how often"]
+    slides = [{"title": t, "points": first if n == 0 else ["To be written by the presenters", "Find the evidence"]}
+              for n, t in enumerate(DECK)]  # fmt: skip
+    return {"slides": slides}
+
+
+def collation(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """One theme per distinct wording (exact text), with the members who wrote it (dev only)."""
+
+    def themes(key: str) -> list[dict[str, Any]]:
+        seen: dict[str, list[str]] = {}
+        for a in inputs.get("assessments") or []:
+            for text in a.get(key) or []:
+                t = _clip(_untagged(text), 12) or "A point"
+                seen.setdefault(t if len(t) >= 3 else "A point", []).append(str(a.get("member")))
+        return [{"theme": t, "count": len(set(m)), "members": sorted(set(m))} for t, m in seen.items()][:20]
+
+    conditions: dict[str, list[str]] = {}
+    for a in inputs.get("assessments") or []:
+        for text in a.get("conditions") or []:
+            conditions.setdefault(_clip(_untagged(text), 40) or "A condition", []).append(
+                str(a.get("member"))
+            )
+    return {"strengths": themes("strengths"), "concerns": themes("concerns"),
+            "conditions": [{"text": t, "members": sorted(set(m))} for t, m in conditions.items()][:20]}  # fmt: skip
+
+
+def reason_writer(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """A reason built from the top strength and concern (dev only)."""
+    themes = inputs.get("themes") or {}
+    good = ((themes.get("strengths") or [{}])[0] or {}).get("theme") or "the idea's intent"
+    bad = ((themes.get("concerns") or [{}])[0] or {}).get("theme") or "open questions"
+    outcome = (inputs.get("outcome") or {}).get("outcome")
+    reason = (
+        f"The committee valued {_untagged(good).lower()}. It weighed this against {_untagged(bad).lower()}."
+    )
+    change = "Nothing to add." if outcome == "picked" else "More evidence on the concern above would help."
+    return {
+        "reason": reason,
+        "what_would_change": change,
+        "feedback_points": [f"Address: {_untagged(bad).lower()}"],
+    }
+
+
 BUILDERS = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
@@ -314,6 +377,10 @@ BUILDERS = {
     "attachment-digest": attachment_digest,
     "handover-draft": handover_draft,
     "role-themes": role_themes,
+    "prescore": prescore,
+    "pitch-prep": pitch_prep,
+    "collation": collation,
+    "reason-writer": reason_writer,
 }
 
 

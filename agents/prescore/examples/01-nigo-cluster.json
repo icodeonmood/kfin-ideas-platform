@@ -1,0 +1,182 @@
+{
+  "description": "Two-LOB NIGO cluster with an estimate in band 3.",
+  "input": {
+    "cluster": {
+      "name": "Manual NIGO checks on subscription forms",
+      "summary": {
+        "description": "Operations teams check subscription forms by hand and find gaps too late.",
+        "problem": "Physical SIP and SIF subscription forms are checked by hand against a printed list. Gaps are found after the NAV cut-off and investors lose a day.",
+        "variations": [
+          {
+            "member": "Contributor 2",
+            "note": "Same check in SIF operations."
+          }
+        ],
+        "solution": [
+          {
+            "text": "Validate mandatory fields when the form is scanned.",
+            "credit": [
+              "Contributor 1"
+            ]
+          }
+        ],
+        "lobs": [
+          "LOB-mf",
+          "LOB-sif"
+        ],
+        "roles_affected": [
+          "ROLE-ops-executive"
+        ],
+        "open_questions": [
+          "What share of NIGO cases could a scanner catch?"
+        ]
+      },
+      "lobs": [
+        "LOB-mf",
+        "LOB-sif"
+      ],
+      "scope": "cross-lob",
+      "ideas": [
+        {
+          "contributor": "Contributor 1",
+          "kind": "problem_with_solution",
+          "category": "cost_saving",
+          "play": "process_improvement",
+          "one_line": "Branch staff re-check every SIP form by hand",
+          "details": "About one in five forms still comes back NIGO a day later."
+        },
+        {
+          "contributor": "Contributor 2",
+          "kind": "problem",
+          "category": "cost_saving",
+          "play": "process_improvement",
+          "one_line": "SIF forms bounce for missing nominee details",
+          "details": "Each bounce costs a call to the distributor."
+        }
+      ]
+    },
+    "impact": {
+      "fields": {
+        "recurring_saving_inr_per_year": 3600000,
+        "capex_inr": 1500000,
+        "opex_inr_per_year": 200000,
+        "hours_saved_per_month": 420,
+        "weeks_to_first_benefit": 10,
+        "effort_person_weeks": 12,
+        "evidence_type": "estimate"
+      },
+      "annual_net_benefit_inr": 3100000.0,
+      "suggested_financial_band": 3
+    },
+    "scorecard": {
+      "financial_value": {
+        "weight": 30,
+        "label": "Financial value",
+        "anchors": {
+          "1": "Under ₹5 lakh a year of net benefit",
+          "3": "₹25 lakh to ₹1 crore a year",
+          "5": "Over ₹5 crore a year"
+        }
+      },
+      "customer_experience": {
+        "weight": 20,
+        "label": "Customer experience",
+        "anchors": {
+          "1": "Investors, distributors or clients would barely notice",
+          "3": "A clear improvement for one group of customers",
+          "5": "A change many customers would talk about"
+        }
+      },
+      "risk_compliance": {
+        "weight": 15,
+        "label": "Risk and compliance",
+        "anchors": {
+          "1": "Adds regulatory or operational risk",
+          "3": "Neutral on risk",
+          "5": "Removes a known regulatory or operational risk"
+        }
+      },
+      "reach": {
+        "weight": 15,
+        "label": "Reach",
+        "anchors": {
+          "1": "One team or a handful of people",
+          "3": "One LOB or one client segment",
+          "5": "Several LOBs or most of KFintech's clients"
+        }
+      },
+      "time_to_value": {
+        "weight": 10,
+        "label": "Time to value",
+        "anchors": {
+          "1": "More than a year to any benefit",
+          "3": "Benefit within about six months",
+          "5": "Benefit within a month or two"
+        }
+      },
+      "effort": {
+        "weight": 10,
+        "label": "Effort (higher is easier)",
+        "anchors": {
+          "1": "A large programme across many teams",
+          "3": "A few people for a quarter",
+          "5": "A small change one team can make"
+        }
+      }
+    }
+  },
+  "output": {
+    "scores": [
+      {
+        "dimension": "financial_value",
+        "value": 3,
+        "rationale": "About ₹31 lakh a year of net benefit sits in band 3; the figures are estimates, so no move.",
+        "evidence": [
+          "impact"
+        ]
+      },
+      {
+        "dimension": "customer_experience",
+        "value": 4,
+        "rationale": "Investors lose a day when gaps are found after the cut-off; catching them at the counter fixes that.",
+        "evidence": [
+          "problem",
+          "fix"
+        ]
+      },
+      {
+        "dimension": "risk_compliance",
+        "value": 3,
+        "rationale": "Neutral on regulatory risk; fewer NIGO cases slightly lower operational risk.",
+        "evidence": [
+          "problem"
+        ]
+      },
+      {
+        "dimension": "reach",
+        "value": 4,
+        "rationale": "Two LOBs and every branch that takes physical forms.",
+        "evidence": [
+          "variations",
+          "problem"
+        ]
+      },
+      {
+        "dimension": "time_to_value",
+        "value": 3,
+        "rationale": "About ten weeks to first benefit.",
+        "evidence": [
+          "impact"
+        ]
+      },
+      {
+        "dimension": "effort",
+        "value": 3,
+        "rationale": "About twelve person-weeks: a few people for a quarter.",
+        "evidence": [
+          "impact"
+        ]
+      }
+    ]
+  }
+}

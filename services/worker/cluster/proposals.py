@@ -22,6 +22,7 @@ from psycopg.types.json import Jsonb
 from cluster.batch import record_run
 from cluster.linkage import centroid
 from comms.route import emit
+from core import killswitch
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
@@ -289,6 +290,10 @@ def _approve(
         )
     emit(conn, "cluster.approved", {"cluster_id": cid, "member_count": len(facts["members"])})
     wg = _working_group_trigger(conn, cid)
+    if killswitch.is_on("committee.flow", conn):  # §4.5 trigger: an approved cluster goes to qualify
+        from committee.qualify import start as start_qualify
+
+        start_qualify(conn, cid, now)
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'cluster.approved', %s, %s)",
         (rev, f"cluster:{cid}", Jsonb({"proposal": prop["id"], "kind": kind, "members": len(joined)})),

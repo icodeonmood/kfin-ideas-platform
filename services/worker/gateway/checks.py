@@ -195,6 +195,68 @@ def role_themes(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) 
         if seen & set(theme["refs"]) or len(set(theme["refs"])) < len(theme["refs"]):
             problems.append(f"themes[{n}].refs repeats an idea already in a theme")
         seen |= set(theme["refs"])
+def prescore(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    dims = list((sent.get("scorecard") or {}).keys())
+    got = [s["dimension"] for s in out["scores"]]
+    if got != dims:
+        problems.append(
+            "scores must have exactly one entry per scorecard dimension, in the scorecard's order"
+        )
+    band = (sent.get("impact") or {}).get("suggested_financial_band")
+    for i, s in enumerate(out["scores"]):
+        if len(s["rationale"].split()) > 40:
+            problems.append(f"scores[{i}].rationale must be 40 words or fewer")
+        if s["dimension"] == "financial_value" and isinstance(band, int) and abs(s["value"] - band) > 1:
+            problems.append("financial_value must be within one level of suggested_financial_band")
+    return problems
+
+
+SLIDE_TITLES = 8
+BANNED = re.compile(r"\b(rejected|duplicate|already solved|garage)\b", re.I)
+
+
+def pitch_prep(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    if len(out["slides"]) != SLIDE_TITLES:
+        problems.append("slides must have exactly 8 entries, in the deck template's order")
+    for i, s in enumerate(out["slides"]):
+        for j, p in enumerate(s["points"]):
+            if len(p.split()) > 15:
+                problems.append(f"slides[{i}].points[{j}] must be 15 words or fewer")
+    return problems
+
+
+def collation(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    members = {str(a.get("member")) for a in sent.get("assessments") or [] if isinstance(a, dict)}
+    for key in ("strengths", "concerns"):
+        for i, t in enumerate(out[key]):
+            if not set(t["members"]) <= members:
+                problems.append(f"{key}[{i}].members names someone who did not assess")
+            if t["count"] != len(set(t["members"])):
+                problems.append(f"{key}[{i}].count must equal the number of members listed")
+    for i, c in enumerate(out["conditions"]):
+        if not set(c["members"]) <= members:
+            problems.append(f"conditions[{i}].members names someone who did not assess")
+    return problems
+
+
+def reason_writer(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    if len(out["reason"].split()) > 90:
+        problems.append("reason must be 90 words or fewer")
+    for key in ("reason", "what_would_change"):
+        if BANNED.search(out[key]):
+            problems.append(f"{key} must not use the words rejected, duplicate, already solved or Garage")
+    if any(BANNED.search(p) for p in out["feedback_points"]):
+        problems.append(
+            "feedback_points must not use the words rejected, duplicate, already solved or Garage"
+        )
+    if re.search(
+        r"\bMember \d+\b", " ".join([out["reason"], out["what_would_change"], *out["feedback_points"]])
+    ):
+        problems.append("never name or count individual members")
     return problems
 
 
@@ -206,6 +268,10 @@ CHECKS: dict[str, Check] = {
     "attachment-digest": attachment_digest,
     "handover-draft": handover_draft,
     "role-themes": role_themes,
+    "prescore": prescore,
+    "pitch-prep": pitch_prep,
+    "collation": collation,
+    "reason-writer": reason_writer,
 }
 
 

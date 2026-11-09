@@ -1,0 +1,26 @@
+# collation — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: collation
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 2000
+timeout_s: 60           # batch, not on anyone's screen
+latency_budget_s: 30
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- assessments
+untrusted_blocks:
+- assessments
+examples_in_prompt:
+- 01-three-members.json
+fake_mode_default: 01-three-members.json
+golden_set: eval/golden/collation.jsonl
+post_checks:
+- themes cite only members who exist; counts equal the members listed
+- every member's strengths and concerns are covered
+pass_gates:
+  coverage_min: 1.0
+  counts_match_min: 1.0

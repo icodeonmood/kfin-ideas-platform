@@ -15,7 +15,10 @@ pytestmark = pytest.mark.stack
 _PORT = get_settings().postgres_port
 WEB = f"postgres://ideas_web:dev-web-only@localhost:{_PORT}/ideas?sslmode=disable"
 WORKER = f"postgres://ideas_worker:dev-worker-only@localhost:{_PORT}/ideas?sslmode=disable"
-HIDDEN_FROM_WEB = {"pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations"}
+HIDDEN_FROM_WEB = {
+    "pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations",
+    "sealed_scores", "ai_prescores", "assessments", "decision_sheets",  # sealed committee records (§4.6–§4.7)
+}  # fmt: skip
 
 
 def test_web_role_cannot_touch_the_vault_or_cache() -> None:

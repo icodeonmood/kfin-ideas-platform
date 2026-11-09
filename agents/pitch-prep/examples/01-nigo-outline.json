@@ -1,0 +1,111 @@
+{
+  "description": "An outline for a two-LOB NIGO cluster; missing numbers become things to find out.",
+  "input": {
+    "cluster": {
+      "name": "Manual NIGO checks on subscription forms",
+      "summary": {
+        "description": "Operations teams check subscription forms by hand.",
+        "problem": "Physical SIP and SIF forms are checked by hand; gaps are found after the NAV cut-off and investors lose a day.",
+        "variations": [
+          {
+            "member": "Contributor 2",
+            "note": "Same check in SIF operations."
+          }
+        ],
+        "solution": [
+          {
+            "text": "Validate mandatory fields when the form is scanned.",
+            "credit": [
+              "Contributor 1"
+            ]
+          }
+        ],
+        "lobs": [
+          "LOB-mf",
+          "LOB-sif"
+        ],
+        "roles_affected": [
+          "ROLE-ops-executive"
+        ],
+        "open_questions": [
+          "What share of NIGO cases could a scanner catch?"
+        ]
+      },
+      "lobs": [
+        "LOB-mf",
+        "LOB-sif"
+      ],
+      "scope": "cross-lob",
+      "ideas": [
+        {
+          "contributor": "Contributor 1",
+          "kind": "problem_with_solution",
+          "category": "cost_saving",
+          "play": "process_improvement",
+          "one_line": "Branch staff re-check every SIP form by hand",
+          "details": "About one in five forms still comes back NIGO a day later."
+        }
+      ]
+    }
+  },
+  "output": {
+    "slides": [
+      {
+        "title": "The problem",
+        "points": [
+          "SIP and SIF forms are checked by hand",
+          "Gaps are found after the NAV cut-off"
+        ]
+      },
+      {
+        "title": "Who it touches",
+        "points": [
+          "Investors lose a day on NIGO forms",
+          "Branch and SIF operations teams"
+        ]
+      },
+      {
+        "title": "What it's worth",
+        "points": [
+          "Hours saved: to be confirmed",
+          "Find the monthly count of NIGO forms"
+        ]
+      },
+      {
+        "title": "Solved elsewhere, and why KFintech",
+        "points": [
+          "Find out whether other RTAs check at scan",
+          "KFintech owns the scanning step"
+        ]
+      },
+      {
+        "title": "Proposed approach",
+        "points": [
+          "Validate mandatory fields at scanning",
+          "Flag gaps while the distributor is at the counter"
+        ]
+      },
+      {
+        "title": "What it needs",
+        "points": [
+          "Changes to the scanning app",
+          "Field rules for SIP and SIF forms"
+        ]
+      },
+      {
+        "title": "Risks",
+        "points": [
+          "Wrong flags could slow the counter",
+          "Rules must match each AMC's form"
+        ]
+      },
+      {
+        "title": "The ask",
+        "points": [
+          "A pilot at two branches",
+          "Time from the scanning app team"
+        ]
+      }
+    ]
+  }
+}

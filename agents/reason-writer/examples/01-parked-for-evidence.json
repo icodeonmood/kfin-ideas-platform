@@ -1,0 +1,65 @@
+{
+  "description": "Parked for evidence; the reason uses only the collated themes.",
+  "input": {
+    "outcome": {
+      "outcome": "parked",
+      "reason_code": "INSUFFICIENT_EVIDENCE",
+      "reason_words": "We need more evidence before the committee can weigh it."
+    },
+    "themes": {
+      "strengths": [
+        {
+          "theme": "The pain is felt at every branch",
+          "count": 2,
+          "members": [
+            "Member 1",
+            "Member 2"
+          ]
+        },
+        {
+          "theme": "A cheap first step",
+          "count": 2,
+          "members": [
+            "Member 1",
+            "Member 3"
+          ]
+        }
+      ],
+      "concerns": [
+        {
+          "theme": "Forms differ between AMCs",
+          "count": 2,
+          "members": [
+            "Member 1",
+            "Member 2"
+          ]
+        },
+        {
+          "theme": "No volume data yet",
+          "count": 1,
+          "members": [
+            "Member 3"
+          ]
+        }
+      ]
+    },
+    "conditions": [
+      {
+        "text": "Start with a pilot at two branches",
+        "members": [
+          "Member 2",
+          "Member 3"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "reason": "The committee agreed the problem is felt at every branch and that a first step would be cheap. It held back because forms differ between AMCs and there is no volume data yet.",
+    "what_would_change": "A count of NIGO forms by branch and AMC for one month, and a plan for a two-branch pilot.",
+    "feedback_points": [
+      "Collect one month of NIGO counts by branch",
+      "List the AMC form differences that matter",
+      "Propose a two-branch pilot"
+    ]
+  }
+}

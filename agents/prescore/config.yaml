@@ -1,0 +1,29 @@
+# prescore — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: prescore
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 2000
+timeout_s: 60           # batch, at round creation
+latency_budget_s: 30
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- cluster
+- impact
+- scorecard
+untrusted_blocks:
+- cluster
+examples_in_prompt:
+- 01-nigo-cluster.json
+fake_mode_default: 01-nigo-cluster.json
+golden_set: eval/golden/prescore.jsonl
+post_checks:
+- exactly one score per scorecard dimension, in the scorecard's order
+- financial value within one level of the suggested band
+- rationale 40 words or fewer
+pass_gates:
+  financial_within_band_min: 1.0   # also enforced by the gateway
+  expected_range_hit_min: 0.8      # each case's expected range per dimension

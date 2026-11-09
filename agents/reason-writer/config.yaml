@@ -1,0 +1,29 @@
+# reason-writer — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: reason-writer
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 2000
+timeout_s: 60           # batch, not on anyone's screen
+latency_budget_s: 30
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- outcome
+- themes
+- conditions
+untrusted_blocks:
+- themes
+- conditions
+examples_in_prompt:
+- 01-parked-for-evidence.json
+fake_mode_default: 01-parked-for-evidence.json
+golden_set: eval/golden/reason_writer.jsonl
+post_checks:
+- reason 90 words or fewer
+- no banned words (rejected, duplicate, already solved)
+pass_gates:
+  grounded_min: 1.0
+  banned_words_max: 0

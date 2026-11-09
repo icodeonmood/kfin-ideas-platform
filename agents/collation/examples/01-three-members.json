@@ -1,0 +1,94 @@
+{
+  "description": "Three members; two raise the same concern in different words.",
+  "input": {
+    "assessments": [
+      {
+        "member": "Member 1",
+        "vote": "accept",
+        "route_pref": "build",
+        "strengths": [
+          "Clear pain at every branch",
+          "Cheap first step"
+        ],
+        "concerns": [
+          "Needs AMC form rules"
+        ],
+        "conditions": []
+      },
+      {
+        "member": "Member 2",
+        "vote": "accept_with_conditions",
+        "route_pref": "build",
+        "strengths": [
+          "Every branch feels this"
+        ],
+        "concerns": [
+          "AMC-specific forms differ"
+        ],
+        "conditions": [
+          "Pilot at two branches first"
+        ]
+      },
+      {
+        "member": "Member 3",
+        "vote": "park",
+        "route_pref": "reuse",
+        "strengths": [
+          "Low cost"
+        ],
+        "concerns": [
+          "No volume data yet"
+        ],
+        "conditions": [
+          "Start with a two-branch pilot"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "strengths": [
+      {
+        "theme": "The pain is felt at every branch",
+        "count": 2,
+        "members": [
+          "Member 1",
+          "Member 2"
+        ]
+      },
+      {
+        "theme": "A cheap first step",
+        "count": 2,
+        "members": [
+          "Member 1",
+          "Member 3"
+        ]
+      }
+    ],
+    "concerns": [
+      {
+        "theme": "Forms differ between AMCs",
+        "count": 2,
+        "members": [
+          "Member 1",
+          "Member 2"
+        ]
+      },
+      {
+        "theme": "No volume data yet",
+        "count": 1,
+        "members": [
+          "Member 3"
+        ]
+      }
+    ],
+    "conditions": [
+      {
+        "text": "Start with a pilot at two branches",
+        "members": [
+          "Member 2",
+          "Member 3"
+        ]
+      }
+    ]
+  }
+}

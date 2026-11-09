@@ -115,14 +115,18 @@ def switch_off_failing(conn: Any, results: list[dict[str, Any]], route: str) -> 
 
 
 def run_agents(seed: int, switch_off: bool = False) -> int:
+    from types import SimpleNamespace
+
     from core.db import connect
     from evalrunner import (
         attachment_digest,
         canvas_assist,
         cluster_summary,
+        committee,
         gatekeeper,
         handover_draft,
         judge,
+        prescore,
         role_themes,
     )
     from evalrunner.common import context, route_name, write_report
@@ -141,6 +145,10 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                 (attachment_digest, "attachment-digest"),
                 (handover_draft, "handover-draft"),
                 (role_themes, "role-themes"),
+                (prescore, "prescore"),
+                (SimpleNamespace(run=committee.run_pitch_prep), "pitch-prep"),
+                (SimpleNamespace(run=committee.run_collation), "collation"),
+                (SimpleNamespace(run=committee.run_reason_writer), "reason-writer"),
             ):
                 try:
                     result = runner.run(ctx)

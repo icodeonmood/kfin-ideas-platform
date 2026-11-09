@@ -167,38 +167,34 @@ events:
     approval: null
     signer: review_desk
   shortlist.invited:
-    day_one: false
+    day_one: true   # live with the committee flow (switch committee.flow); the chair's recorded decision is the approval (BLD-218)
     audiences:
-    - presenters
-    - presenter_managers
+    - cluster_contributors
     template: invited-to-present
     channels:
+    - in_app
     - email
-    - calendar_hold
-    - manager_note
     urgency: immediate
     approval: core_chair
     signer: core_chair
   decision.accepted:
-    day_one: false
+    day_one: true   # live with the committee flow (switch committee.flow); the chair's recorded decision is the approval (BLD-218)
     audiences:
-    - presenters
-    - contributors
-    - managers
+    - cluster_contributors
     template: accepted
     channels:
+    - in_app
     - email
-    - manager_note
     urgency: immediate
     approval: core_chair
     signer: core_chair
   decision.not_accepted:
-    day_one: false
+    day_one: true   # live with the committee flow (switch committee.flow); the chair's recorded decision is the approval (BLD-218)
     audiences:
-    - presenters
-    - contributors
+    - cluster_contributors
     template: not-accepted
     channels:
+    - in_app
     - email
     urgency: immediate
     approval: core_chair
@@ -383,4 +379,48 @@ events:
     urgency: routine
     approval: null
     signer: club_team
+  cluster.gate_outcome:
+    day_one: true   # live with the committee flow (switch committee.flow); template waits for HR review (DEC-066)
+    audiences:
+    - cluster_contributors
+    template: gate-outcome
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: review_desk
+  round.opened:
+    day_one: true   # live with the committee flow
+    audiences:
+    - round_members
+    template: round-opened
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: core_chair
+  round.not_shortlisted:
+    day_one: true   # live with the committee flow; the chair's recorded decision is the approval (BLD-218)
+    audiences:
+    - cluster_contributors
+    template: not-shortlisted
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: core_chair
+    signer: core_chair
+  presentation.confirmed:
+    day_one: true   # live with the committee flow
+    audiences:
+    - cluster_contributors
+    template: presentation-confirmed
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: core_chair
 ```

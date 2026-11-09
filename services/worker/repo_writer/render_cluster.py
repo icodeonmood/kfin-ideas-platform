@@ -29,7 +29,11 @@ def render_cluster(
     *,
     history: list[HistoryRow],
     verified: list[dict[str, Any]],
+    sections: dict[str, str] | None = None,
 ) -> str:
+    """`sections` fills Evidence, Gates, Impact estimate and Preliminary review once qualify and scoring have run
+    (§4.5 step 6, §4.6 step 10): counts, results and medians only."""
+    extra = sections or {}
     """`credits` maps a member ref (M1…) to the contributor code that proposed that part of the fix."""
     summary: dict[str, Any] = cluster.get("summary") or {}
     retired = cluster.get("state") == "retired"
@@ -65,7 +69,7 @@ def render_cluster(
     def who(refs: list[str]) -> str:
         return ", ".join(dict.fromkeys(credits.get(r, r) for r in refs))
 
-    sections = [
+    body = [
         "## Combined problem statement",
         esc(summary.get("problem")) or "Not written yet.",
         "",
@@ -78,11 +82,17 @@ def render_cluster(
         or "No fix proposed yet.",
         "",
         "## Evidence",
-        "Added when the group is qualified.",
+        extra.get("Evidence", "Added when the group is qualified."),
         "",
+        *(["## Gates", extra["Gates"], ""] if "Gates" in extra else []),
         "## Impact estimate",
-        "Added when the group is qualified.",
+        extra.get("Impact estimate", "Added when the group is qualified."),
         "",
+        *(
+            ["## Preliminary review", extra["Preliminary review"], ""]
+            if "Preliminary review" in extra
+            else []
+        ),
         "## Open questions",
         "\n".join(f"- {esc(q)}" for q in questions) or "None recorded.",
         "",
@@ -92,7 +102,7 @@ def render_cluster(
         *[f"| {r.when} | {r.event} | {r.by} | {r.note} |" for r in history],
         "",
     ]
-    return dump(meta, "\n" + "\n".join(sections))
+    return dump(meta, "\n" + "\n".join(body))
 
 
 def render_run(run: dict[str, Any], decisions: list[dict[str, Any]]) -> str:

@@ -887,3 +887,96 @@ def learning_run(body: dict[str, Any]) -> JSONResponse:
     from learning.run import run_now
 
     return _delivery_call(run_now, _actor(body), body)
+# ---- committee flow (§4.5–§4.7) -----------------------------------------------------------------------------------
+# The web app has checked the capability for the route; these handlers check the chair, the roster, the
+# cluster's contributors and conflicts of interest, and keep sealed scores and assessments sealed.
+
+
+def _json(body: Any) -> JSONResponse:
+    if body is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/qualify/{item_id}", dependencies=[Depends(require_token)])
+def qualify_view_route(item_id: int, user_id: str = "", mode: str = "real") -> JSONResponse:
+    from committee.views import qualify_view
+
+    with connect(autocommit=True) as conn:
+        return _json(qualify_view(conn, item_id, "real" if mode == "real" else "neutral"))
+
+
+@app.post("/internal/qualify/{item_id}/action", dependencies=[Depends(require_token)])
+def qualify_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
+    from committee.qualify import act
+
+    return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)
+
+
+@app.get("/internal/committee/rounds", dependencies=[Depends(require_token)])
+def committee_rounds(user_id: str) -> JSONResponse:
+    from committee.rounds import is_chair, presentations_for, rounds_for
+
+    with connect(autocommit=True) as conn:
+        return _json({"rounds": rounds_for(conn, user_id), "chair": is_chair(conn, user_id),
+                      "presentations": presentations_for(conn, user_id)})  # fmt: skip
+
+
+@app.get("/internal/committee/rounds/{round_id}", dependencies=[Depends(require_token)])
+def committee_round(round_id: str, user_id: str) -> JSONResponse:
+    from committee.rounds import round_view
+
+    with connect(autocommit=True) as conn:
+        return _json(round_view(conn, round_id, user_id))
+
+
+@app.post("/internal/committee/rounds/{round_id}/action", dependencies=[Depends(require_token)])
+def committee_round_action(round_id: str, body: dict[str, Any]) -> JSONResponse:
+    from committee.rounds import act
+
+    return _review_call(act, round_id, str(body.get("user_id") or ""), body)
+
+
+@app.post("/internal/committee/cycles", dependencies=[Depends(require_token)])
+def committee_cycle(body: dict[str, Any]) -> JSONResponse:
+    from committee.rounds import open_cycle
+
+    return _review_call(open_cycle, str(body.get("user_id") or ""), body)
+
+
+@app.get("/internal/committee/presentations/{pid}", dependencies=[Depends(require_token)])
+def committee_presentation(pid: str, user_id: str) -> JSONResponse:
+    from committee.decide import committee_view
+
+    with connect(autocommit=True) as conn:
+        return _json(committee_view(conn, pid, user_id))
+
+
+@app.post("/internal/committee/presentations/{pid}/action", dependencies=[Depends(require_token)])
+def committee_presentation_action(pid: str, body: dict[str, Any]) -> JSONResponse:
+    from committee.decide import committee_act
+
+    return _review_call(committee_act, pid, str(body.get("user_id") or ""), body)
+
+
+@app.get("/internal/presentations/{pid}", dependencies=[Depends(require_token)])
+def contributor_presentation(pid: str, user_id: str) -> JSONResponse:
+    from committee.decide import contributor_view
+
+    with connect(autocommit=True) as conn:
+        return _json(contributor_view(conn, pid, user_id))
+
+
+@app.post("/internal/presentations/{pid}/action", dependencies=[Depends(require_token)])
+def contributor_presentation_action(pid: str, body: dict[str, Any]) -> JSONResponse:
+    from committee.decide import contributor_act
+
+    return _review_call(contributor_act, pid, str(body.get("user_id") or ""), body)
+
+
+@app.get("/internal/working-groups/{wg}", dependencies=[Depends(require_token)])
+def working_group_view(wg: str, user_id: str) -> JSONResponse:
+    from committee.views import working_group
+
+    with connect(autocommit=True) as conn:
+        return _json(working_group(conn, wg, user_id))
