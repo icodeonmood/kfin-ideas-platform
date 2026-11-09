@@ -63,6 +63,9 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/evidence\/[^/]+\/?$/,
     switches: ["attachments.open"],
   },
+  // The assistant drafting a handover pack stops with the assistant; its own `agent.handover-draft` switch is
+  // checked by the gateway, and the page says so (BLD-138).
+  { methods: ["POST"], pattern: /^\/api\/delivery\/[^/]+\/pack-draft\/?$/, switches: ["ai.all"] },
   // Approving a write-up publishes it to everyone's "Already running" matches (BLD-133).
   {
     methods: ["POST"],

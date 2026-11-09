@@ -11,6 +11,7 @@ import type {
   EvidenceFile,
   Measurement,
   Milestone,
+  PackDraft,
   Writeup,
   WriteupPart,
 } from "@/server/delivery";
@@ -98,9 +99,6 @@ export function DeliveryView({ d }: { d: DeliveryDetail }) {
           <p className="notice">Still needed before the sponsor can approve: {missingText(d.missing)}.</p>
         ) : null}
         <PackActions d={d} onDone={done} />
-        <p className="coming-soon coming-soon-light">
-          A drafted pack from the idea and its group: coming soon
-        </p>
       </section>
 
       {started && building ? (
@@ -579,6 +577,38 @@ function PackForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => voi
   const [checklist, setChecklist] = useState<Record<string, boolean>>({ ...(p.checklist ?? {}) });
   const legendId = useId();
   const fix = track === "fix";
+  const [drafting, setDrafting] = useState(false);
+  const [draftNotes, setDraftNotes] = useState<string[] | null>(null);
+  const [draftError, setDraftError] = useState("");
+
+  /** The assistant proposes; the person checks every field and saves (BLD-138). Only empty text is filled. */
+  async function askForDraft() {
+    if (drafting) return;
+    setDrafting(true);
+    setDraftError("");
+    const res = await fetch(`/api/delivery/${d.id}/pack-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => null);
+    const out = (res ? await res.json().catch(() => ({})) : {}) as Partial<PackDraft> & {
+      error?: string;
+      banner?: string;
+    };
+    setDrafting(false);
+    if (!res?.ok || !out.metric) {
+      setDraftError(out.banner ?? ERRORS[String(out.error ?? "")] ?? ERRORS.assistant_unavailable ?? "");
+      return;
+    }
+    if (!metric.trim()) setMetric(out.metric);
+    if (out.unit) setUnit(out.unit);
+    if (out.product) setProduct(out.product);
+    if (out.feature_type) setFeatureType(out.feature_type);
+    if (baseline === "" && out.baseline != null) setBaseline(String(out.baseline));
+    if (target === "" && out.target != null) setTarget(String(out.target));
+    if (fix && !objective.trim() && out.objective) setObjective(out.objective);
+    setDraftNotes(out.notes ?? []);
+  }
 
   function save(e: FormEvent) {
     e.preventDefault();
@@ -597,6 +627,36 @@ function PackForm({ d, onDone }: { d: DeliveryDetail; onDone: (m: string) => voi
       <p className="hint">
         Names are looked up by work email. Free text is checked for personal details before it is saved.
       </p>
+      <div className="button-row">
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={drafting}
+          aria-busy={drafting}
+          onClick={() => void askForDraft()}
+        >
+          Draft it with the assistant
+        </button>
+      </div>
+      <Err text={draftError} />
+      {draftNotes ? (
+        <div className="notice" role="status">
+          <p>
+            The assistant filled in the empty fields and suggested the unit, product and type from the idea.
+            Check every field before you save. It never makes up numbers.
+          </p>
+          {draftNotes.length ? (
+            <>
+              <p>Questions to answer first:</p>
+              <ul>
+                {draftNotes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <Select
         label="Track"
         value={track}

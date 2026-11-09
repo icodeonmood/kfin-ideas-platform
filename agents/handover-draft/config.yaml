@@ -1,0 +1,31 @@
+# handover-draft — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: handover-draft
+version: 0.1.0
+tier: fast
+model: claude-haiku-5-5
+effort: low             # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 1500
+timeout_s: 30           # someone is waiting on the delivery page
+latency_budget_s: 12
+retries_on_invalid: 1
+cache_ttl_days: 7
+input_blocks:
+- members
+- track
+- options
+untrusted_blocks:
+- members
+max_members: 12
+examples_in_prompt:
+- 01-sip-mandate-fields.json
+fake_mode_default: 01-sip-mandate-fields.json
+golden_set: eval/golden/handover_draft.jsonl
+post_checks:
+- unit, product and feature type only from the options given
+- baseline and target are null unless that exact number appears in the members' text
+- metric 20 words or fewer, objective 40 words or fewer (fix track only), no tags in either
+pass_gates:
+  unit_accuracy_min: 0.8         # the expected unit where the golden case names one
+  numbers_grounded_min: 1.0      # never a number nobody gave
+  objective_rule_min: 1.0        # an objective on the fix track, none on the others

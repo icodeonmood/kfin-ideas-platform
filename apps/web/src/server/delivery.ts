@@ -347,6 +347,21 @@ export const removeEvidence = (me: CurrentUser, deliveryId: string, attId: strin
 export const checkIn = (me: CurrentUser, deliveryId: string, input: unknown) =>
   send(me, `${base(deliveryId)}/checkin`, input);
 
+/** What the handover-draft agent proposes for the pack (BLD-138): the person edits it and saves it as usual. */
+export type PackDraft = {
+  metric: string;
+  unit: string;
+  baseline: number | null;
+  target: number | null;
+  product: string;
+  feature_type: string;
+  objective: string | null;
+  notes: string[];
+};
+
+export const draftPack = (me: CurrentUser, deliveryId: string) =>
+  send<PackDraft>(me, `${base(deliveryId)}/pack-draft`);
+
 export const saveWriteup = (me: CurrentUser, deliveryId: string, input: unknown) =>
   send(me, `${base(deliveryId)}/writeup`, input, "PUT");
 

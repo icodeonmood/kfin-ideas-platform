@@ -3,6 +3,7 @@ back to the model on the one retry, so they quote tagged text at most and never 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -146,12 +147,48 @@ def attachment_digest(sent: dict[str, Any], out: dict[str, Any], d: Directory | 
     return problems
 
 
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _numbers(text: str) -> set[float]:
+    return {float(n.replace(",", "")) for n in _NUMBER.findall(TAG_RE.sub(" ", text))}
+
+
+def handover_draft(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    """Values only from the options; numbers only if a member gave them; short, tag-free words (BLD-138)."""
+    problems: list[str] = []
+    opts = sent.get("options") or {}
+    for key, field in (("units", "unit"), ("products", "product"), ("feature_types", "feature_type")):
+        if out[field] not in (opts.get(key) or []):
+            problems.append(f"{field} must be one of options.{key}")
+    members = [m for m in sent.get("members") or [] if isinstance(m, dict)]
+    given = _numbers(" ".join(str(m.get(k) or "") for m in members for k in ("one_line", "details", "fix")))
+    for field in ("baseline", "target"):
+        if out[field] is not None and float(out[field]) not in given:
+            problems.append(f"{field} must be a number a member gave, or null")
+    for field, words in (("metric", 20), ("objective", 40)):
+        text = out[field]
+        if text is None:
+            continue
+        if TAG_RE.search(text):
+            problems.append(f"{field} must not contain tags")
+        if len(text.split()) > words:
+            problems.append(f"{field} must be {words} words or fewer")
+    if (sent.get("track") == "fix") != (out["objective"] is not None):
+        problems.append("objective is for the fix track only, and the fix track needs one")
+    for i, note in enumerate(out["notes"]):
+        if len(note.split()) > 25 or TAG_RE.search(note):
+            problems.append(f"notes[{i}] must be 25 words or fewer with no tags")
+    return problems
+
+
 CHECKS: dict[str, Check] = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
     "judge": judge,
     "cluster-summary": cluster_summary,
     "attachment-digest": attachment_digest,
+    "handover-draft": handover_draft,
 }
 
 

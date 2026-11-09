@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/handover-draft/0.1.0",
+  "title": "handover-draft output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["metric", "unit", "baseline", "target", "product", "feature_type", "objective", "notes"],
+  "properties": {
+    "metric": { "type": "string", "minLength": 5, "maxLength": 160 },
+    "unit": { "type": "string", "minLength": 3, "maxLength": 40 },
+    "baseline": { "type": ["number", "null"], "minimum": 0 },
+    "target": { "type": ["number", "null"], "minimum": 0 },
+    "product": { "type": "string", "pattern": "^[a-z][a-z-]{1,30}$" },
+    "feature_type": { "type": "string", "pattern": "^[a-z][a-z-]{1,30}$" },
+    "objective": { "type": ["string", "null"], "minLength": 10, "maxLength": 320 },
+    "notes": { "type": "array", "maxItems": 4, "items": { "type": "string", "minLength": 5, "maxLength": 200 } }
+  }
+}

@@ -811,6 +811,14 @@ def delivery_checkin(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
     return _delivery_call(check_in, _actor(body), delivery_id, body)
 
 
+@app.post("/internal/delivery/{delivery_id}/pack-draft", dependencies=[Depends(require_token)])
+def delivery_pack_draft(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The handover-draft agent proposes the pack's fields; nothing is saved (BLD-138)."""
+    from delivery.pack_draft import draft
+
+    return _delivery_call(draft, _actor(body), delivery_id)
+
+
 @app.put("/internal/delivery/{delivery_id}/writeup", dependencies=[Depends(require_token)])
 def delivery_writeup_save(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
     """The owner drafts the write-up other teams can adopt (BLD-133); every part is checked before it is kept."""

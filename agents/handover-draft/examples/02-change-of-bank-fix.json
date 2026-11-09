@@ -1,0 +1,81 @@
+{
+  "description": "A group on the fix track: change-of-bank requests sent back from service centres; no numbers given.",
+  "input": {
+    "track": "fix",
+    "options": {
+      "units": [
+        "minutes per case",
+        "hours a month",
+        "days to complete",
+        "cases a month",
+        "errors a month",
+        "calls a month",
+        "per cent",
+        "rupees a month",
+        "rupees a year"
+      ],
+      "products": [
+        "iris",
+        "lamf",
+        "guardian",
+        "api-marketplace",
+        "ai-tooling",
+        "sif-aif-pms",
+        "mf-central",
+        "other"
+      ],
+      "feature_types": [
+        "kfintech-product",
+        "ai-tooling"
+      ]
+    },
+    "members": [
+      {
+        "ref": "M1",
+        "kind": "problem",
+        "one_line": "Change-of-bank requests come back incomplete from service centres",
+        "details": "Investors bring the form without a cancelled cheque, so the request is sent back and they visit again.",
+        "who": {
+          "segments": [
+            "investors"
+          ],
+          "frequency_or_reach": "weekly"
+        },
+        "lobs": [
+          "LOB-mf"
+        ],
+        "fix": null
+      },
+      {
+        "ref": "M2",
+        "kind": "problem_with_solution",
+        "one_line": "A checklist at the counter would stop repeat visits",
+        "details": "Counter staff could tick a short checklist before accepting a change-of-bank form.",
+        "who": {
+          "segments": [
+            "investors",
+            "kfin_teams"
+          ],
+          "frequency_or_reach": "weekly"
+        },
+        "lobs": [
+          "LOB-mf"
+        ],
+        "fix": "A one-page counter checklist for change-of-bank requests."
+      }
+    ]
+  },
+  "output": {
+    "metric": "Change-of-bank requests sent back to investors",
+    "unit": "cases a month",
+    "baseline": null,
+    "target": null,
+    "product": "other",
+    "feature_type": "kfintech-product",
+    "objective": "Every change-of-bank request is complete the first time it reaches a service centre.",
+    "notes": [
+      "How many requests are sent back each month today?",
+      "Which service centres try the checklist first?"
+    ]
+  }
+}

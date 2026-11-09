@@ -1,0 +1,65 @@
+{
+  "description": "A picked idea on the build track: SIP mandate bank fields re-checked by hand; the member gave today's time.",
+  "input": {
+    "track": "build",
+    "options": {
+      "units": [
+        "minutes per case",
+        "hours a month",
+        "days to complete",
+        "cases a month",
+        "errors a month",
+        "calls a month",
+        "per cent",
+        "rupees a month",
+        "rupees a year"
+      ],
+      "products": [
+        "iris",
+        "lamf",
+        "guardian",
+        "api-marketplace",
+        "ai-tooling",
+        "sif-aif-pms",
+        "mf-central",
+        "other"
+      ],
+      "feature_types": [
+        "kfintech-product",
+        "ai-tooling"
+      ]
+    },
+    "members": [
+      {
+        "ref": "M1",
+        "kind": "problem_with_solution",
+        "one_line": "Operations re-check SIP mandate bank fields by hand after capture",
+        "details": "Each mandate form takes about 6 minutes to re-check against the bank master. A check at capture would catch most mismatches before they reach operations.",
+        "who": {
+          "segments": [
+            "kfin_teams",
+            "investors"
+          ],
+          "frequency_or_reach": "daily"
+        },
+        "lobs": [
+          "LOB-mf"
+        ],
+        "fix": "Validate the IFSC and account format when the form is captured."
+      }
+    ]
+  },
+  "output": {
+    "metric": "Minutes to re-check one SIP mandate form",
+    "unit": "minutes per case",
+    "baseline": 6,
+    "target": null,
+    "product": "other",
+    "feature_type": "kfintech-product",
+    "objective": null,
+    "notes": [
+      "What target should we aim for, in minutes per form?",
+      "Who records the time per form after the change?"
+    ]
+  }
+}

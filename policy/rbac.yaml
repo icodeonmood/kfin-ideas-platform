@@ -177,6 +177,7 @@ endpoints:
   - GET /api/delivery/{id}/evidence/{att}            work_delivery   # anyone who can see the delivery; clean files only
   - DELETE /api/delivery/{id}/evidence/{att}         work_delivery   # whoever added it, or an admin
   - POST /api/delivery/{id}/checkin                  work_delivery   # the fix track's owner or an admin (BLD-132)
+  - POST /api/delivery/{id}/pack-draft                work_delivery   # the assistant proposes the pack; nothing is saved (BLD-138)
   - PUT /api/delivery/{id}/writeup                    work_delivery   # the owner or an admin drafts (BLD-133)
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes

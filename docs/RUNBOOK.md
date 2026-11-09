@@ -25,6 +25,7 @@ Flip from **Admin → Kill switches** with a reason of at least 10 characters. E
 |---|---|---|---|---|
 | `ai.all` | Any leak-check hit, a model incident, or the route is withdrawn | Admin, InfoSec | Banner: the assistant is taking a break. Ideas are saved after the pattern check; scans queue and run when it is back on | Banner on the home page; new scans show "waiting" and run when it is back on |
 | `agent.<name>` | One agent misbehaves | Admin | Nothing new; that step goes to the review desk as "manual" | Review items show the step as manual |
+| `agent.handover-draft` | The drafted handover packs are unhelpful or wrong | Admin | "Draft it with the assistant" says the assistant can't draft just now; people fill in the pack themselves | `POST /api/delivery/{id}/pack-draft` answers 503 `assistant_unavailable`; nothing else changes |
 | `attachments.upload` | Scanner down, or a suspicious file wave | Admin, InfoSec | Banner; upload is hidden; files already uploaded stay | Upload answers 503 |
 | `attachments.open` | Any doubt about a stored file | InfoSec | No one can open or download a file | File links answer 503 |
 | `submissions` | Abuse wave, data incident, or maintenance | Admin | Read-only mode: browse and track, not share or edit; banner explains | "Share" answers 503; My ideas still loads |
