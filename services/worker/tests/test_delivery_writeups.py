@@ -202,8 +202,13 @@ def test_a_hand_added_file_dead_letters_the_event_and_later_writes_carry_on(
     """BLD-143, BLD-146: the writer never overwrites a file the product team added by hand, and that event never
     blocks the queue: it is dead-lettered with an alert, and the next event is written."""
     db = ones_db
+    from repo_writer.git import Git
+
     _did, sol, _wid = _approved_writeup(db, crew)
+    # The product team adds files through a commit. An uncommitted file is not "added": the working tree belongs
+    # to the writer, which resets it (and removes untracked files) before every run.
     (company_repo / "solutions" / f"{sol}.md").write_text("hand-written\n", encoding="utf-8")
+    Git(company_repo, "Product Team <product@kfintech.example>").commit_all(f"Add {sol} by hand")
     later = helpers.insert_idea(db, stage="scanned")
     helpers.insert_event(db, later)
     _run_writer(company_repo, repo_settings[1])
