@@ -9,7 +9,7 @@ import pytest
 
 from jobs import handlers  # noqa: F401 - registers handlers
 from jobs.runner import run_one
-from jobs.schedule import enqueue_due
+from jobs.schedule import EVERY, enqueue_due
 
 pytestmark = pytest.mark.stack
 
@@ -37,11 +37,27 @@ def test_purge_removes_only_expired_drafts(db: Any) -> None:
 def test_schedule_enqueues_once_a_day(db: Any) -> None:
     db.execute("DELETE FROM jobs")
     ist = ZoneInfo("Asia/Kolkata")
-    assert enqueue_due(db, datetime(2026, 11, 20, 1, 59, tzinfo=ist)) == []  # before 02:00 (reconcile)
-    assert enqueue_due(db, datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.purge at 03:30
-    assert enqueue_due(db, datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.purge"]
-    assert enqueue_due(db, datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == []  # already today
-    assert enqueue_due(db, datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.purge"]
+
+    def daily(at: datetime) -> list[str]:  # jobs that run every few minutes are tested on their own
+        return [j for j in enqueue_due(db, at) if j not in EVERY]
+
+    assert daily(datetime(2026, 11, 20, 1, 59, tzinfo=ist)) == []  # before 02:00 (reconcile)
+    assert daily(datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.purge at 03:30
+    assert daily(datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.purge"]
+    assert daily(datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == []  # already today
+    assert daily(datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.purge"]
+
+
+def test_weekly_and_every_few_minutes(db: Any) -> None:
+    db.execute("DELETE FROM jobs")
+    ist = ZoneInfo("Asia/Kolkata")
+    sunday = datetime(2026, 11, 22, 21, 59, tzinfo=ist)
+    assert "cluster.batch" not in enqueue_due(db, sunday)
+    assert "cluster.batch" in enqueue_due(db, datetime(2026, 11, 22, 22, 0, tzinfo=ist))  # §3.5 Sunday 22:00
+    assert "cluster.batch" not in enqueue_due(db, datetime(2026, 11, 22, 23, 0, tzinfo=ist))  # once a week
+    assert "attachments.recheck" in enqueue_due(db, datetime(2026, 11, 23, 10, 0, tzinfo=ist))
+    assert "attachments.recheck" not in enqueue_due(db, datetime(2026, 11, 23, 10, 5, tzinfo=ist))
+    assert "attachments.recheck" in enqueue_due(db, datetime(2026, 11, 23, 10, 15, tzinfo=ist))
 
 
 def test_jobs_for_later_blocks_wait_instead_of_failing(db: Any) -> None:
