@@ -291,9 +291,11 @@ def _approve(
     emit(conn, "cluster.approved", {"cluster_id": cid, "member_count": len(facts["members"])})
     wg = _working_group_trigger(conn, cid)
     if killswitch.is_on("committee.flow", conn):  # §4.5 trigger: an approved cluster goes to qualify
-        from committee.qualify import start as start_qualify
+        from jobs.runner import enqueue
 
-        start_qualify(conn, cid, now)
+        # A job, after commit: the pre-check calls a model and must never fail or hold the approval (BLD-221).
+        # Groups approved while the switch is off are picked up by `qualify.backfill` once it is on.
+        enqueue(conn, "qualify.start", {"cluster_id": cid}, dedupe_key=f"qualify:{cid}")
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'cluster.approved', %s, %s)",
         (rev, f"cluster:{cid}", Jsonb({"proposal": prop["id"], "kind": kind, "members": len(joined)})),

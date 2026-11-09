@@ -312,6 +312,37 @@ def start(conn: Conn, cluster_id: str, now: dt.datetime | None = None) -> int | 
     return int(item["id"])
 
 
+def start_job(conn: Conn, cluster_id: str) -> int | None:
+    """The `qualify.start` job, in its own transaction; nothing while `committee.flow` is off."""
+    from core import killswitch
+
+    if not killswitch.is_on("committee.flow", conn):
+        return None
+    with conn.transaction():
+        return start(conn, cluster_id)
+
+
+def backfill(conn: Conn) -> int:
+    """The `qualify.backfill` job: approved groups still waiting for qualify (approved while the switch was off,
+    or a start that failed). Each in its own transaction, so one failure does not stop the rest."""
+    from core import killswitch
+
+    if not killswitch.is_on("committee.flow", conn):
+        return 0
+    waiting = conn.execute(
+        "SELECT c.id FROM clusters c WHERE c.state = 'approved' AND c.stage = 'in_cluster' AND NOT EXISTS "
+        "(SELECT 1 FROM review_items i WHERE i.item_type = 'qualify' AND i.ref_id = c.id) ORDER BY c.id LIMIT 50"
+    ).fetchall()
+    started = 0
+    for row in waiting:
+        try:
+            with conn.transaction():
+                started += 1 if start(conn, str(row["id"])) else 0
+        except Exception as exc:  # one group's failure is logged by ID and retried next time
+            log.warning("qualify.backfill_failed", cluster_id=row["id"], error_type=type(exc).__name__)
+    return started
+
+
 def _finance_required(fields: dict[str, Any], annual: float | None) -> bool:
     limit = float(load_rule(get_settings().company_repo_path, "routing").data["finance_check_inr"])
     capex = fields.get("capex_inr") or 0
@@ -383,8 +414,12 @@ def act(
             if gate == "no_conflict":
                 result = "fail" if detail == "conflict" else "pass"
             note = _tagged_note(conn, cid, body.get("note"))
-            if (detail == "clear_with_conditions" or result == "fail") and not note:
-                raise ActionRefused(422, "note_required")
+            rules_said = conn.execute(
+                "SELECT proposed FROM cluster_gates WHERE cluster_id = %s AND gate = %s", (cid, gate)
+            ).fetchone()
+            overrides = result == "pass" and rules_said is not None and rules_said["proposed"] == "fail"
+            if (detail == "clear_with_conditions" or result == "fail" or overrides) and not note:
+                raise ActionRefused(422, "note_required")  # a pass over the rules' "fail" says why
             conn.execute(
                 "UPDATE cluster_gates SET result = %s, detail = %s, note = %s, confirmed_by = %s, confirmed_at = %s "
                 "WHERE cluster_id = %s AND gate = %s",

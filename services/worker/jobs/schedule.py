@@ -36,6 +36,7 @@ WEEKLY: dict[str, tuple[int, clock]] = {
 # job type -> minutes. Enqueued once per slot of that many minutes.
 EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
+    "qualify.backfill": 60,  # approved groups waiting for qualify (the job does nothing while `committee.flow` is off)
 }
 
 

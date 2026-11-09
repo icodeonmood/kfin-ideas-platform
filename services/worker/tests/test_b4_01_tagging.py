@@ -98,3 +98,23 @@ def test_tags_typed_by_a_person_are_defused(setup: Any) -> None:
     out = tag_payload(db, SCOPE, {"details": "Please send [[KFIN_EMPLOYEE_1]] the file"}, d=d)
     assert not TAG_RE.search(out.payload["details"])
     assert "[ [KFIN_EMPLOYEE_1] ]" in out.payload["details"]
+
+
+def test_the_platforms_own_ids_are_never_names(setup: Any) -> None:
+    """The NER model once read "CL-0010" as a person, which broke the judge's candidate IDs (BLD-221)."""
+    from pii.detect import detect
+
+    _db, d, _text, colleague, *_ = setup
+    ids = [
+        "CL-0010",
+        "IDEA-2026-000308",
+        "SOL-0004",
+        "DEC-2026-0001",
+        "RND-2026-0002",
+        "PRS-2026-0003",
+        "WG-0001",
+    ]
+    for i in ids:
+        assert not [f for f in detect(i, d) if f.type == "PERSON"], i
+    found = detect(f"The group CL-0010 came from {colleague}.", d)
+    assert [f.value for f in found] == [colleague]

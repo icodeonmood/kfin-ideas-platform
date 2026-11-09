@@ -5,6 +5,7 @@ web app's reach. Built on the clustering fixtures so the cluster is real."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -38,6 +39,11 @@ def qualified(pool: Any) -> Any:  # noqa: F811
     batch.run_batch(db)
     prop = next(p for p in _items(db) if p["members"] == pool["a"])
     cid = proposals.act(db, prop["review_item_id"], pool["reviewer"], {"action": "approve"})["cluster_id"]
+    # Qualify starts in a job after the approval commits (BLD-221); run it here as the worker would.
+    assert db.execute(
+        "SELECT 1 FROM jobs WHERE type = 'qualify.start' AND dedupe_key = %s", (f"qualify:{cid}",)
+    ).fetchone()
+    qualify.start_job(db, cid)
     item = db.execute(
         "SELECT id FROM review_items WHERE item_type = 'qualify' AND ref_id = %s", (cid,)
     ).fetchone()
@@ -127,7 +133,9 @@ def _round(q: Any) -> str:
     _qualify(q)
     out = rounds.open_cycle(q["db"], q["chair"], {"presentation_slots": 8})
     assert len(out["rounds"]) == 1
-    return str(out["rounds"][0])
+    rid = str(out["rounds"][0])
+    rounds.prescore_round(q["db"], rid)  # the `round.prescore` job
+    return rid
 
 
 def _score_all(q: Any, rid: str, value: int = 4) -> None:
@@ -215,6 +223,7 @@ def _shortlist(q: Any) -> str:
                                                   "below_threshold_reason": "Worth hearing in person: strong pain at every branch."})  # fmt: skip
     assert out["outcome"] == "shortlisted"
     pres = q["db"].execute("SELECT id FROM presentations WHERE round_id = %s", (rid,)).fetchone()
+    decide.write_outline(q["db"], str(pres["id"]))  # the `presentation.outline` job
     return str(pres["id"])
 
 
@@ -249,6 +258,7 @@ def test_the_whole_way_to_picked_and_a_working_group(qualified: Any) -> None:
     decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
     sheet = db.execute("SELECT * FROM decision_sheets WHERE presentation_id = %s", (pid,)).fetchone()
     assert sheet["tallies"]["accept"] == 4 and sheet["themes"] is not None
+    json.dumps(decide.committee_view(db, pid, qualified["chair"]))  # the API serialises it as plain JSON
     draft = decide.committee_act(
         db, pid, qualified["chair"], {"action": "draft_reasons", "outcome": "picked"}
     )
@@ -338,3 +348,220 @@ def test_nobody_else_sees_a_round(qualified: Any) -> None:
     rid = _round(qualified)
     stranger, _ = _user(qualified["db"])
     assert rounds.round_view(qualified["db"], rid, stranger) is None
+
+
+# ---- review fixes (BLD-221) -----------------------------------------------------------------------------------
+
+
+def _owner_of(q: Any) -> dict[str, Any]:
+    return dict(
+        q["db"]
+        .execute(
+            "SELECT user_id, i.contributor_code FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
+            "WHERE i.idea_id = %s",
+            (q["a"][0],),
+        )
+        .fetchone()
+    )
+
+
+def _held(q: Any) -> str:
+    db = q["db"]
+    pid = _shortlist(q)
+    owner = _owner_of(q)
+    view = decide.contributor_view(db, pid, str(owner["user_id"]))
+    assert view is not None
+    decide.contributor_act(db, pid, str(owner["user_id"]),
+                           {"action": "accept", "presenters": [owner["contributor_code"]], "slot": view["slot_options"][0]})  # fmt: skip
+    decide.committee_act(db, pid, q["chair"], {"action": "held"})
+    return pid
+
+
+def _assess(q: Any, pid: str, member: str, vote: str = "accept") -> dict[str, Any]:
+    return decide.committee_act(q["db"], pid, member, {"action": "assess", "vote": vote,
+                                                       "scores": {d: 4 for d in rounds.scorecard()["dimensions"]}})  # fmt: skip
+
+
+def test_a_recusal_carries_into_the_presentation_and_hides_the_group(qualified: Any) -> None:
+    db = qualified["db"]
+    rid = _round(qualified)
+    stepped_aside = qualified["members"][2]
+    rounds.act(db, rid, stepped_aside, {"action": "declare_conflict"})
+    view = rounds.round_view(db, rid, stepped_aside)
+    assert view is not None and view["conflict"] == "recused" and "cluster" not in view
+    others = [qualified["chair"], *qualified["members"][:2]]
+    sc = rounds.scorecard()
+    band = db.execute("SELECT suggested_band FROM scoring_rounds WHERE id = %s", (rid,)).fetchone()[
+        "suggested_band"
+    ]
+    for m in others:
+        rounds.act(
+            db,
+            rid,
+            m,
+            {
+                "action": "score",
+                "scores": {d: (band if d == "financial_value" and band else 5) for d in sc["dimensions"]},
+            },
+        )
+    with pytest.raises(ActionRefused) as reveal:
+        rounds.act(db, rid, stepped_aside, {"action": "reveal"})
+    assert reveal.value.code in ("conflict_of_interest", "chair_only")
+    rounds.act(db, rid, qualified["chair"], {"action": "decide", "outcome": "shortlisted",
+                                               "below_threshold_reason": "Worth hearing in person: strong pain at every branch."})  # fmt: skip
+    pid = str(db.execute("SELECT id FROM presentations WHERE round_id = %s", (rid,)).fetchone()["id"])
+    owner = _owner_of(qualified)
+    slot = decide.contributor_view(db, pid, str(owner["user_id"]))["slot_options"][0]
+    decide.contributor_act(
+        db,
+        pid,
+        str(owner["user_id"]),
+        {"action": "accept", "presenters": [owner["contributor_code"]], "slot": slot},
+    )
+    decide.committee_act(db, pid, qualified["chair"], {"action": "held"})
+    stripped = decide.committee_view(db, pid, stepped_aside)
+    assert stripped is not None and stripped["conflict"] == "recused" and "cluster" not in stripped
+    with pytest.raises(ActionRefused) as vote:
+        _assess(qualified, pid, stepped_aside)
+    assert vote.value.code == "conflict_of_interest"
+    for m in others:
+        _assess(qualified, pid, m)
+    # Everyone without a conflict has assessed, so the chair can collate before the deadline.
+    decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
+    with pytest.raises(ActionRefused) as late:
+        _assess(qualified, pid, qualified["members"][1])
+    assert late.value.code in ("already_assessed", "already_collated")
+    with pytest.raises(ActionRefused) as again:
+        decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
+    assert again.value.code == "already_collated"
+    chair_view = decide.committee_view(db, pid, qualified["chair"])
+    assert chair_view is not None and stepped_aside not in {o["id"] for o in chair_view["sponsor_options"]}
+
+
+def test_a_manager_of_a_contributor_is_flagged_and_an_admin_can_clear_it(qualified: Any) -> None:
+    db = qualified["db"]
+    owner = str(_owner_of(qualified)["user_id"])
+    manager = qualified["members"][0]
+    db.execute("UPDATE users SET manager_user_id = %s WHERE id = %s", (manager, owner))
+    rid = _round(qualified)
+    flag = db.execute(
+        "SELECT reason, status FROM coi_flags WHERE round_id = %s AND member_id = %s", (rid, manager)
+    ).fetchone()
+    assert (flag["reason"], flag["status"]) == ("manager", "flagged")
+    view = rounds.round_view(db, rid, manager)
+    assert view is not None and view["conflict"] == "flagged" and "cluster" not in view
+    admin, _ = _user(db, "admin")
+    rounds.act(
+        db,
+        rid,
+        admin,
+        {"action": "clear_conflict", "member_id": manager, "reason": "Manages a different team now."},
+    )
+    assert rounds.round_view(db, rid, manager)["conflict"] is None
+    # A contributor's flag is never cleared: they step aside.
+    _grant(db, owner, "core_committee")
+    db.execute(
+        "INSERT INTO coi_flags (round_id, member_id, reason, status) VALUES (%s, %s, 'contributor', 'flagged')",
+        (rid, owner),
+    )
+    with pytest.raises(ActionRefused) as refused:
+        rounds.act(
+            db,
+            rid,
+            admin,
+            {"action": "clear_conflict", "member_id": owner, "reason": "Should not be possible."},
+        )
+    assert refused.value.code == "contributors_recuse"
+
+
+def test_a_no_show_parks_with_its_own_message(qualified: Any) -> None:
+    db = qualified["db"]
+    pid = _shortlist(qualified)
+    out = decide.committee_act(db, pid, qualified["chair"], {"action": "not_presented"})
+    assert out["outcome"] == "parked"
+    events = [
+        j["payload"]["event"]
+        for j in db.execute("SELECT payload FROM jobs WHERE type = 'comms.route'").fetchall()
+    ]
+    assert "decision.not_presented" in events and "decision.not_accepted" not in events
+
+
+def test_picked_needs_a_plain_reason(qualified: Any) -> None:
+    db = qualified["db"]
+    pid = _held(qualified)
+    for m in [qualified["chair"], *qualified["members"]]:
+        _assess(qualified, pid, m)
+    decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
+    with pytest.raises(ActionRefused) as refused:
+        decide.committee_act(db, pid, qualified["chair"], {"action": "decide", "outcome": "picked", "route": "build",
+                                                            "sponsor_id": qualified["members"][0]})  # fmt: skip
+    assert refused.value.code == "reason_required"
+
+
+def test_a_pass_over_the_rules_fail_needs_a_note(qualified: Any) -> None:
+    db, item, rev = qualified["db"], qualified["qualify_item"], qualified["reviewer2"]
+    db.execute(
+        "UPDATE cluster_gates SET proposed = 'fail' WHERE cluster_id = %s AND gate = 'evidence'",
+        (qualified["cid"],),
+    )
+    with pytest.raises(ActionRefused) as refused:
+        qualify.act(db, item, rev, {"action": "confirm_gate", "gate": "evidence", "result": "pass"})
+    assert refused.value.code == "note_required"
+    qualify.act(db, item, rev, {"action": "confirm_gate", "gate": "evidence", "result": "pass",
+                                "note": "Branch counts attached by two contributors."})  # fmt: skip
+
+
+def test_groups_approved_while_the_switch_is_off_are_picked_up_later(qualified: Any) -> None:
+    db = qualified["db"]
+    db.execute("DELETE FROM review_items WHERE item_type = 'qualify' AND ref_id = %s", (qualified["cid"],))
+    killswitch.set_switch(db, "committee.flow", "off", reason="test: committee flow off", actor="test")
+    killswitch.clear_cache()
+    assert qualify.backfill(db) == 0
+    killswitch.set_switch(db, "committee.flow", "on", reason="test: committee flow on again", actor="test")
+    killswitch.clear_cache()
+    assert qualify.backfill(db) == 1
+    assert db.execute(
+        "SELECT 1 FROM review_items WHERE item_type = 'qualify' AND ref_id = %s", (qualified["cid"],)
+    ).fetchone()
+
+
+def test_a_lob_without_a_committee_goes_to_the_core_committee(qualified: Any) -> None:
+    db = qualified["db"]
+    _qualify(qualified)
+    db.execute(
+        "UPDATE clusters SET route_to = 'lob', route_lob = 'LOB-no-committee' WHERE id = %s",
+        (qualified["cid"],),
+    )
+    rid = str(rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})["rounds"][0])
+    r = db.execute("SELECT body, lob_id, roster FROM scoring_rounds WHERE id = %s", (rid,)).fetchone()
+    assert r["body"] == "core" and r["lob_id"] is None and qualified["chair"] in {str(m) for m in r["roster"]}
+    assert (
+        db.execute("SELECT route_to FROM clusters WHERE id = %s", (qualified["cid"],)).fetchone()["route_to"]
+        == "core"
+    )
+
+
+def test_every_committee_message_renders(qualified: Any) -> None:
+    from comms.route import route
+    from comms.send import message_for
+
+    db = qualified["db"]
+    db.execute("TRUNCATE notifications CASCADE")
+    pid = _held(qualified)
+    for m in [qualified["chair"], *qualified["members"]]:
+        _assess(qualified, pid, m, vote="park")
+    decide.committee_act(db, pid, qualified["chair"], {"action": "collate"})
+    decide.committee_act(db, pid, qualified["chair"], {
+        "action": "decide", "outcome": "parked", "reason_code": "INSUFFICIENT_EVIDENCE",
+        "plain_reason": "The committee wants one month of counts by branch before it decides.",
+        "what_would_change": "A month of counts and a two-branch pilot plan."})  # fmt: skip
+    jobs = db.execute("SELECT payload FROM jobs WHERE type = 'comms.route' ORDER BY id").fetchall()
+    events = {j["payload"]["event"] for j in jobs}
+    assert {"round.opened", "shortlist.invited", "presentation.confirmed", "decision.not_accepted"} <= events
+    for j in jobs:
+        route(db, j["payload"]["event"], dict(j["payload"].get("refs") or {}))
+    rows = db.execute("SELECT * FROM notifications WHERE channel = 'email'").fetchall()
+    assert {r["event"] for r in rows} >= {"round.opened", "shortlist.invited", "decision.not_accepted"}
+    for n in rows:
+        subject, body, _ = message_for(db, str(n["user_id"]), n["event"], n["template"], n["payload"])
+        assert "{{" not in subject + body, n["event"]

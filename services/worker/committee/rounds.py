@@ -3,8 +3,11 @@ whose contributors are invited to present.
 
 - **Open a cycle** (the chair): every `ready_for_scoring` cluster joins a round for its committee (core, or the
   LOB committee for `lob` routes). The roster is fixed from active role grants; members who contributed to the
-  cluster are flagged (conflict of interest, §3.1) and must recuse unless an admin clears them. `prescore` runs at
-  open and stays hidden. A 10-working-day timer starts.
+  cluster, and a contributor's direct manager in the HR directory, are flagged (conflict of interest, §3.1,
+  BLD-221). A contributor must recuse; an admin may clear a manager flag with a reason. Conflicts
+  are checked live on every view and action, so a colleague who joins later counts too, and a recusal carries
+  into the presentation stage. `prescore` runs as a job after the round opens and stays hidden. A
+  10-working-day timer starts.
 - **Score**, blind: six dimensions, 1 to 5, the scorecard's anchors on screen; financial value starts from the band
   the impact estimate gives and may move one level with a reason. Contributors read as "Contributor 1…n" and every
   person tag stays a neutral label (restore mode `blind`).
@@ -41,6 +44,7 @@ from sla.calendar import add_working_days
 
 log = get_logger("committee.rounds")
 FLAG_POINTS = 2
+CYCLE_LOCK = 4_201_114_202
 
 
 def scorecard() -> dict[str, Any]:
@@ -90,6 +94,44 @@ def _contributor_users(conn: Conn, cluster_id: str) -> set[str]:
     return {str(r["user_id"]) for r in rows}
 
 
+def _managers_of(conn: Conn, users: set[str], depth: int = 1) -> set[str]:
+    """People up to `depth` levels above these users in the HR manager chain. One level by default: the core
+    committee is senior, so a deeper chain would flag its members on most groups (BLD-221)."""
+    if not users:
+        return set()
+    rows = conn.execute(
+        "WITH RECURSIVE up(id, lvl) AS (SELECT manager_user_id, 1 FROM users WHERE id = ANY(%s::uuid[]) "
+        "AND manager_user_id IS NOT NULL UNION SELECT u.manager_user_id, up.lvl + 1 FROM users u JOIN up ON u.id = up.id "
+        "WHERE u.manager_user_id IS NOT NULL AND up.lvl < %s) SELECT DISTINCT id FROM up",
+        (sorted(users), depth),
+    ).fetchall()
+    return {str(r["id"]) for r in rows}
+
+
+def conflict(conn: Conn, cluster_id: str, user_id: str) -> str | None:
+    """Why this person may not see or act on the cluster's committee work, or None (§3.1). Checked live:
+    `own_idea` (a contributor or joiner), `recused` (stepped aside on any round of the cluster), `flagged` (a flag
+    not yet cleared), `manager` (a contributor's direct manager, unless an admin cleared it)."""
+    contributors = _contributor_users(conn, cluster_id)
+    if user_id in contributors:
+        return "own_idea"
+    statuses = {
+        r["status"]
+        for r in conn.execute(
+            "SELECT f.status FROM coi_flags f JOIN scoring_rounds r ON r.id = f.round_id "
+            "WHERE r.cluster_id = %s AND f.member_id = %s",
+            (cluster_id, user_id),
+        ).fetchall()
+    }
+    if "recused" in statuses:
+        return "recused"
+    if "flagged" in statuses:
+        return "flagged"
+    if "cleared" not in statuses and user_id in _managers_of(conn, contributors):
+        return "manager"
+    return None
+
+
 def is_chair(conn: Conn, user_id: str) -> bool:
     return bool(
         conn.execute(
@@ -110,6 +152,7 @@ def open_cycle(
     with audited(conn), conn.transaction():
         if not is_chair(conn, chair):
             raise ActionRefused(403, "chair_only")
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (CYCLE_LOCK,))  # two chairs at once get distinct ids
         rev = staff_code(conn, chair)
         base = f"CYC-{now.year}-{now.month:02d}"
         taken = {r["id"] for r in conn.execute("SELECT id FROM cycles WHERE id LIKE %s", (base + "%",))}
@@ -148,6 +191,13 @@ def open_round(
     if c is None or c["route_to"] not in ("core", "lob"):
         return None
     body = str(c["route_to"])
+    roster = _roster(conn, body, c["route_lob"])
+    if body == "lob" and not roster:
+        # No LOB committee for this LOB yet: the core committee reviews it, so the group never waits on an empty
+        # roster (BLD-221).
+        body, roster = "core", _roster(conn, "core", None)
+        conn.execute("UPDATE clusters SET route_to = 'core' WHERE id = %s", (cluster_id,))
+        log.info("round.no_lob_committee", cluster_id=cluster_id, lob_id=c["route_lob"])
     if conn.execute(
         "SELECT 1 FROM scoring_rounds WHERE cluster_id = %s AND body = %s AND state IN ('open', 'revealed')",
         (cluster_id, body),
@@ -166,22 +216,26 @@ def open_round(
     n = conn.execute("SELECT next_number('RND', %s) AS n", (str(now.year),)).fetchone()
     assert n is not None
     round_id = f"RND-{now.year}-{int(n['n']):04d}"
-    roster = _roster(conn, body, c["route_lob"])
     conn.execute(
         "INSERT INTO scoring_rounds (id, cluster_id, cycle_id, body, lob_id, scorecard_version, roster, quorum, "
         "evidence_type, suggested_band, confidence_multiplier, opens_at, closes_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (round_id, cluster_id, cycle_id, body, c["route_lob"], str(sc["version"]), roster,
+        (round_id, cluster_id, cycle_id, body, c["route_lob"] if body == "lob" else None, str(sc["version"]), roster,
          float(routing()["presentation"]["quorum"]), evidence, band, multiplier, now, closes),
     )  # fmt: skip
-    for member in sorted(set(roster) & _contributor_users(conn, cluster_id)):
+    contributors = _contributor_users(conn, cluster_id)
+    managers = _managers_of(conn, contributors)
+    for member in sorted(set(roster) & (contributors | managers)):
         conn.execute(
-            "INSERT INTO coi_flags (round_id, member_id, reason, status) VALUES (%s, %s, 'contributor', 'flagged')",
-            (round_id, member),
+            "INSERT INTO coi_flags (round_id, member_id, reason, status) VALUES (%s, %s, %s, 'flagged')",
+            (round_id, member, "contributor" if member in contributors else "manager"),
         )
     conn.execute("UPDATE clusters SET stage = 'ready_for_scoring' WHERE id = %s", (cluster_id,))
     engine.start(conn, "scoring_round", round_id, "scoring_round", now=now)
-    _prescore(conn, round_id, cluster_id, sc, band)
+    from jobs.runner import enqueue
+
+    # After commit, so the model call never holds the cycle's transaction or the cluster's lock (BLD-221).
+    enqueue(conn, "round.prescore", {"round_id": round_id}, dedupe_key=f"prescore:{round_id}")
     emit(conn, "round.opened", {"round_id": round_id, "cluster_id": cluster_id, "member_ids": roster})
     log.info("round.opened", round_id=round_id, cluster_id=cluster_id, member_count=len(roster))
     return round_id
@@ -234,8 +288,21 @@ def _cluster_card(conn: Conn, cluster_id: str, mode: Any) -> dict[str, Any]:
     }
 
 
+def prescore_round(conn: Conn, round_id: str) -> bool:
+    """The `round.prescore` job: `prescore` for an open round that has none yet."""
+    r = conn.execute(
+        "SELECT cluster_id, state, suggested_band FROM scoring_rounds WHERE id = %s", (round_id,)
+    ).fetchone()
+    if r is None or r["state"] != "open":
+        return False
+    if conn.execute("SELECT 1 FROM ai_prescores WHERE round_id = %s LIMIT 1", (round_id,)).fetchone():
+        return True
+    with conn.transaction():
+        return _prescore(conn, round_id, str(r["cluster_id"]), scorecard(), r["suggested_band"])
+
+
 def _prescore(conn: Conn, round_id: str, cluster_id: str, sc: dict[str, Any], band: int | None) -> bool:
-    """`prescore` at round creation; stored tagged under the cluster's scope and hidden until reveal."""
+    """`prescore`, stored tagged under the cluster's scope and hidden until reveal."""
     from gateway import AgentFailed, run_agent
 
     row = conn.execute("SELECT tag_scope FROM clusters WHERE id = %s", (cluster_id,)).fetchone()
@@ -292,24 +359,15 @@ def _prescore(conn: Conn, round_id: str, cluster_id: str, sc: dict[str, Any], ba
 
 
 def _eligible(conn: Conn, r: dict[str, Any]) -> list[str]:
-    """Roster members who may score: not recused, and not flagged unless an admin cleared them."""
-    blocked = {
-        str(f["member_id"])
-        for f in conn.execute(
-            "SELECT member_id, status FROM coi_flags WHERE round_id = %s AND status IN ('flagged', 'recused')",
-            (r["id"],),
-        ).fetchall()
-    }
-    return [str(m) for m in r["roster"] if str(m) not in blocked]
+    """Roster members who may score: no conflict (live, so later joiners and recusals count)."""
+    return [str(m) for m in r["roster"] if conflict(conn, r["cluster_id"], str(m)) is None]
 
 
 def _quorum_met(conn: Conn, r: dict[str, Any]) -> tuple[bool, int, int]:
-    recused = conn.execute(
-        "SELECT count(*) AS n FROM coi_flags WHERE round_id = %s AND status = 'recused'", (r["id"],)
-    ).fetchone()
-    voting = len(r["roster"]) - int(recused["n"] if recused else 0)
+    voting = len(_eligible(conn, r))
     scored = conn.execute(
-        "SELECT count(DISTINCT member_id) AS n FROM sealed_scores WHERE round_id = %s", (r["id"],)
+        "SELECT count(DISTINCT member_id) AS n FROM sealed_scores WHERE round_id = %s AND member_id = ANY(%s::uuid[])",
+        (r["id"], _eligible(conn, r)),
     ).fetchone()
     done = int(scored["n"] if scored else 0)
     return voting > 0 and done >= float(r["quorum"]) * voting, done, voting
@@ -364,6 +422,15 @@ def round_view(conn: Conn, round_id: str, user_id: str) -> dict[str, Any] | None
     r = dict(r)
     if user_id not in {str(m) for m in r["roster"]} and not (r["body"] == "core" and is_chair(conn, user_id)):
         return None
+    why = conflict(conn, r["cluster_id"], user_id)
+    if why is not None:
+        # A conflicted member sees that they are out of this review, never the group, the scores or the AI.
+        flag = conn.execute(
+            "SELECT reason, status FROM coi_flags WHERE round_id = %s AND member_id = %s", (round_id, user_id)
+        ).fetchone()
+        return {"id": round_id, "body": r["body"], "lob_id": r["lob_id"], "state": r["state"],
+                "closes_at": r["closes_at"].isoformat(), "conflict": why, "my_flag": dict(flag) if flag else None,
+                "chair": is_chair(conn, user_id), "outcome": r["outcome"]}  # fmt: skip
     sc = scorecard()
     revealed = r["state"] in ("revealed", "decided")
     mine = {
@@ -397,6 +464,7 @@ def round_view(conn: Conn, round_id: str, user_id: str) -> dict[str, Any] | None
         "my_scores": {d: {"value": s["revised_value"] or s["value"], "first": s["value"], "revised": s["revised_value"] is not None,
                           "comment": restore(s["comment"], mapping, "blind")} for d, s in mine.items()},
         "my_flag": dict(flag) if flag else None,
+        "conflict": None,
         "progress": {"scored": done, "voting": voting, "quorum_met": met},
         "chair": is_chair(conn, user_id),
         "outcome": r["outcome"], "reason_code": r["reason_code"],
@@ -415,6 +483,26 @@ def round_view(conn: Conn, round_id: str, user_id: str) -> dict[str, Any] | None
 
 
 # ---- member actions ------------------------------------------------------------------------------------------
+
+
+def on_roster_ids(r: dict[str, Any]) -> set[str]:
+    return {str(m) for m in r["roster"]}
+
+
+def open_flags(conn: Conn, admin: str) -> list[dict[str, Any]] | None:
+    """For admins: conflict flags waiting on open rounds, with the member's name (admins see people, §3.1).
+    Contributors' own flags are left out: they step aside and are never cleared."""
+    if not conn.execute(
+        "SELECT 1 FROM role_grants WHERE user_id = %s AND role = 'admin' AND valid_to IS NULL", (admin,)
+    ).fetchone():
+        return None
+    rows = conn.execute(
+        "SELECT f.round_id, r.cluster_id, f.member_id, u.name, f.reason, f.created_at FROM coi_flags f "
+        "JOIN scoring_rounds r ON r.id = f.round_id JOIN users u ON u.id = f.member_id "
+        "WHERE f.status = 'flagged' AND f.reason = 'manager' AND r.state = 'open' ORDER BY f.created_at LIMIT 200"
+    ).fetchall()
+    return [{"round_id": x["round_id"], "cluster_id": x["cluster_id"], "member_id": str(x["member_id"]),
+             "name": x["name"], "reason": x["reason"], "flagged_at": x["created_at"].isoformat()} for x in rows]  # fmt: skip
 
 
 def _load(conn: Conn, round_id: str) -> dict[str, Any]:
@@ -473,11 +561,24 @@ def act(
                 raise ActionRefused(403, "admin_only")
             member = str(body.get("member_id") or "")
             reason = _tagged(conn, r["cluster_id"], body.get("reason"), min_chars=10)
+            if member in _contributor_users(conn, r["cluster_id"]):
+                raise ActionRefused(409, "contributors_recuse")  # never cleared to score their own group
             row = conn.execute(
                 "UPDATE coi_flags SET status = 'cleared', cleared_by = %s, clear_reason = %s, updated_at = now() "
                 "WHERE round_id = %s AND member_id = %s AND status = 'flagged' RETURNING 1",
                 (f"user:{user_id}", reason, round_id, member),
             ).fetchone()
+            if (
+                row is None
+                and member in on_roster_ids(r)
+                and conflict(conn, r["cluster_id"], member) == "manager"
+            ):
+                # A manager of a colleague who joined after the round opened has no flag row yet.
+                row = conn.execute(
+                    "INSERT INTO coi_flags (round_id, member_id, reason, status, cleared_by, clear_reason) "
+                    "VALUES (%s, %s, 'manager', 'cleared', %s, %s) RETURNING 1",
+                    (round_id, member, f"user:{user_id}", reason),
+                ).fetchone()
             if row is None:
                 raise ActionRefused(409, "no_flag_to_clear")
             conn.execute(
@@ -496,14 +597,25 @@ def act(
                 raise ActionRefused(403, "chair_only")
             if r["state"] != "open":
                 raise ActionRefused(409, "not_open")
-            met, done, _voting = _quorum_met(conn, r)
-            everyone = done >= len(_eligible(conn, r)) and done > 0
+            _refuse_conflicted(conn, r, user_id)
+            met, done, voting = _quorum_met(conn, r)
+            everyone = done >= voting and done > 0
             if not everyone and not (now >= r["closes_at"] and met):
                 raise ActionRefused(409, "not_ready_to_reveal")
             return _reveal(conn, r, now)
         if action == "decide":
             return _decide(conn, r, user_id, body, now)
         raise ActionRefused(400, "unknown_action")
+
+
+def _refuse_conflicted(conn: Conn, r: dict[str, Any], user_id: str) -> None:
+    why = conflict(conn, r["cluster_id"], user_id)
+    if why == "own_idea":
+        raise ActionRefused(
+            409, "own_idea", (f"user:{user_id}", "review.own_idea_refused", f"round:{r['id']}", {})
+        )
+    if why is not None:
+        raise ActionRefused(409, "conflict_of_interest")
 
 
 def _score(
@@ -542,11 +654,8 @@ def _score(
             (r["id"], user_id, dim, v, comment, now),
         )
     log.info("round.scored", round_id=r["id"])
-    eligible = _eligible(conn, r)
-    done = conn.execute(
-        "SELECT count(DISTINCT member_id) AS n FROM sealed_scores WHERE round_id = %s", (r["id"],)
-    ).fetchone()
-    if done and int(done["n"]) >= len(eligible):
+    _met, done, voting = _quorum_met(conn, r)
+    if done >= voting:
         _reveal(conn, r, now)  # everyone eligible has scored
         return {"scored": True, "revealed": True}
     return {"scored": True, "revealed": False}
@@ -555,9 +664,10 @@ def _score(
 def _aggregate(
     conn: Conn, r: dict[str, Any]
 ) -> tuple[dict[str, float], dict[str, int], dict[str, list[str]]]:
-    rows = conn.execute(
-        "SELECT dimension, coalesce(revised_value, value) AS v FROM sealed_scores WHERE round_id = %s",
-        (r["id"],),
+    rows = conn.execute(  # a member who joined the group after scoring no longer counts
+        "SELECT dimension, coalesce(revised_value, value) AS v FROM sealed_scores WHERE round_id = %s "
+        "AND member_id = ANY(%s::uuid[])",
+        (r["id"], _eligible(conn, r)),
     ).fetchall()
     by: dict[str, list[int]] = {}
     for row in rows:
@@ -662,10 +772,7 @@ def _decide(
             raise ActionRefused(
                 400, "bad_outcome"
             )  # a LOB committee parks, declines or nominates (§4.6 step 8)
-    if user_id in _contributor_users(conn, r["cluster_id"]):
-        raise ActionRefused(
-            409, "own_idea", (f"user:{user_id}", "review.own_idea_refused", f"round:{r['id']}", {})
-        )
+    _refuse_conflicted(conn, r, user_id)
     rev = staff_code(conn, user_id)
     score = float(r["final_score"] or 0)
     reason_code, note, below = None, None, None

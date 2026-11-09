@@ -48,7 +48,13 @@ def render_decision(d: dict[str, Any], sheet: dict[str, Any] | None, round_: dic
         },
     }
     if d["outcome"] == "declined":
-        meta["stale_after"] = iso(d["decided_at"].replace(year=d["decided_at"].year + 1))  # 12 months (§4.12)
+        at = d["decided_at"]
+        # 12 months (§4.12); a decision on 29 February goes stale on 28 February.
+        meta["stale_after"] = iso(
+            at.replace(year=at.year + 1, day=28)
+            if (at.month, at.day) == (2, 29)
+            else at.replace(year=at.year + 1)
+        )
     votes = d.get("votes") or {}
     body = [
         "## Decision",

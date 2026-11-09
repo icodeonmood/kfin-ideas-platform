@@ -69,7 +69,8 @@ def _decrypt_text(blob: Any, context: str) -> str | None:
 
 
 COMMITTEE_EVENTS = {"cluster.gate_outcome", "round.opened", "shortlist.invited", "round.not_shortlisted",
-                    "presentation.confirmed", "decision.accepted", "decision.not_accepted"}  # fmt: skip
+                    "presentation.confirmed", "decision.accepted", "decision.not_accepted",
+                    "decision.not_presented"}  # fmt: skip
 
 
 def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dict[str, Any]:
@@ -198,9 +199,6 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             (refs["cluster_id"],),
         ).fetchone()
         if row and row["tag_scope"]:  # belt and braces: any tag that slipped in reads as a neutral label
-            from pii import vault
-            from pii.restore import restore
-
             mapping = vault.mapping(conn, row["tag_scope"])
             row = dict(row) | {
                 "title": restore(row["title"], mapping, "neutral"),
