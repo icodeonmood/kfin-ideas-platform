@@ -108,6 +108,8 @@ def recipients(conn: Conn, audience: str, refs: dict[str, Any]) -> list[str]:
             (refs["cluster_id"], refs["cluster_id"]),
         ).fetchall()
         return _users_for_codes(conn, [r["contributor_code"] for r in rows])
+    if audience == "round_members":
+        return [str(u) for u in refs.get("member_ids") or []]
     if audience in ("current_owner", "escalation_target"):
         return [str(u) for u in refs.get(f"{audience}_ids") or []]
     if audience == "everyone":  # org-wide announcements (DEC-056)

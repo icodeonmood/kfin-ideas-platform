@@ -114,7 +114,7 @@ def pool(db: Any, company_repo: Any, test_database: str) -> Any:
     db.execute(
         "TRUNCATE cluster_pairs, cluster_proposals, cluster_runs, contributor_map, role_grants, jobs CASCADE"
     )
-    db.execute("DELETE FROM clusters")
+    db.execute("TRUNCATE clusters CASCADE")  # and everything that refers to them (gates, rounds, decisions)
     db.execute("DELETE FROM id_counters WHERE kind IN ('CL', 'REV')")
     people = [_user(db, lob=lob) for lob in ("LOB-mf", "LOB-sif", "LOB-mf", "LOB-nps", "LOB-mf")]
     a = [_reviewed(db, _vec(0, n), people[n][1]) for n in range(3)]  # one group, three people, two LOBs

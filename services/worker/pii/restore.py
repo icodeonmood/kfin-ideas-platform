@@ -10,7 +10,19 @@ from typing import Any, Literal
 
 from pii.tagger import TAG_RE
 
-Mode = Literal["real", "neutral"]
+Mode = Literal["real", "neutral", "blind"]
+# Blind mode (§3.1 "Blind mode", BLD-216): committees scoring a cluster see real client names and figures, but every
+# tag that could stand for a person stays a neutral label, so nobody can tell who raised or is named in an idea.
+PERSON_TYPES = {
+    "KFIN_EMPLOYEE",
+    "CONTRIBUTOR",
+    "REVIEWER",
+    "MEMBER",
+    "PERSON",
+    "INVESTOR_NAME",
+    "EMAIL",
+    "PHONE",
+}
 
 NEUTRAL = {
     "KFIN_EMPLOYEE": "a colleague",
@@ -46,7 +58,9 @@ def restore(payload: Any, mapping: dict[str, tuple[str, str]], mode: Mode) -> An
         if tag not in mapping:
             return str(tag)  # unknown or altered: left unrestored
         type_, value = mapping[tag]
-        return value if mode == "real" else NEUTRAL.get(type_, "a detail")
+        if mode == "real" or (mode == "blind" and type_ not in PERSON_TYPES):
+            return value
+        return NEUTRAL.get(type_, "a detail")
 
     def walk(node: Any) -> Any:
         if isinstance(node, str):

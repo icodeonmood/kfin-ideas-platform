@@ -39,6 +39,7 @@ from repo_writer.render import (
     repo_path_for,
 )
 from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
+from repo_writer.render_decision import cluster_sections, decision_index_line, render_decision
 
 log = get_logger("repo_writer")
 
@@ -46,6 +47,7 @@ WRITER_LOCK_KEY = 4_201_108_001  # pg advisory lock id for "repo writer"
 IDEA_EVENTS = {"idea.submitted", "idea.updated", "idea.scanned", "idea.reviewed", "idea.stage_changed"}
 CLUSTER_EVENTS = {"cluster.approved", "cluster.retired", "cluster.updated"}
 RUN_EVENT = "cluster.run_recorded"
+DECISION_EVENT = "decision.recorded"
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
 RETRY_BACKOFF_S = (1, 5, 15, 60)
@@ -206,7 +208,7 @@ class RepoWriter:
                         )
             return Outcome(outbox_id, sha, True)
 
-        if event["event_type"] in CLUSTER_EVENTS or event["event_type"] == RUN_EVENT:
+        if event["event_type"] in CLUSTER_EVENTS or event["event_type"] in (RUN_EVENT, DECISION_EVENT):
             return self._one_cluster(conn, event)
         if event["event_type"] not in IDEA_EVENTS:
             raise EventError("unknown_event")
@@ -230,6 +232,8 @@ class RepoWriter:
         outbox_id = int(event["id"])
         if event["event_type"] == RUN_EVENT:
             rel, message = self._write_run(conn, event)
+        elif event["event_type"] == DECISION_EVENT:
+            rel, message = self._write_decision(conn, event)
         else:
             rel, message = self._write_cluster(conn, event)
         sha = self.git.commit_all(message)
@@ -238,6 +242,11 @@ class RepoWriter:
             if event["event_type"] in CLUSTER_EVENTS:
                 conn.execute(
                     "UPDATE clusters SET repo_path = %s, repo_commit = %s WHERE id = %s",
+                    (rel, sha, event["aggregate_id"]),
+                )
+            elif event["event_type"] == DECISION_EVENT:
+                conn.execute(
+                    "UPDATE decisions SET repo_path = %s, repo_commit = %s WHERE id = %s",
                     (rel, sha, event["aggregate_id"]),
                 )
         log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
@@ -285,7 +294,22 @@ class RepoWriter:
             verified.append(
                 {"by": f"human:{reviewer}", "at": ist(event["created_at"]).isoformat(timespec="seconds")}
             )
-        text = render_cluster(dict(cluster), members, credits, history=history, verified=verified)
+        gates = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM cluster_gates WHERE cluster_id = %s ORDER BY array_position("
+                "ARRAY['evidence','not_solved','not_planned','no_conflict'], gate)",
+                (cid,),
+            ).fetchall()
+        ]
+        impact = conn.execute("SELECT * FROM impact_estimates WHERE cluster_id = %s", (cid,)).fetchone()
+        round_ = conn.execute(
+            "SELECT * FROM scoring_rounds WHERE cluster_id = %s ORDER BY created_at DESC LIMIT 1", (cid,)
+        ).fetchone()
+        sections = cluster_sections(gates, dict(impact) if impact else None, dict(round_) if round_ else None)
+        text = render_cluster(
+            dict(cluster), members, credits, history=history, verified=verified, sections=sections
+        )
         doc = parse(text)
         if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
             raise EventError("invalid_cluster_file")
@@ -299,6 +323,46 @@ class RepoWriter:
         )
         message = f"[{cid}] {word}\n\nactor: {by}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
         return rel, message
+
+    def _write_decision(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:
+        did = str(event["aggregate_id"])
+        if not re.fullmatch(r"DEC-[0-9]{4}-[0-9]{4}", did):
+            raise EventError("decision_id_invalid")
+        d = conn.execute("SELECT * FROM decisions WHERE id = %s", (did,)).fetchone()
+        if d is None:
+            raise EventError("decision_not_found")
+        sheet = conn.execute(
+            "SELECT * FROM decision_sheets WHERE presentation_id = %s", (d["presentation_id"],)
+        ).fetchone()
+        round_ = conn.execute(
+            "SELECT r.* FROM scoring_rounds r JOIN presentations p ON p.round_id = r.id WHERE p.id = %s",
+            (d["presentation_id"],),
+        ).fetchone()
+        year = did.split("-")[1]
+        rel = f"decisions/{year}/{did}.md"
+        text = render_decision(dict(d), dict(sheet) if sheet else None, dict(round_) if round_ else None)
+        doc = parse(text)
+        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+            raise EventError("invalid_decision_file")
+        path = self.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._upsert_index_line(
+            self.repo / "decisions" / year / "index.md",
+            f"# Decisions, {year}",
+            did,
+            decision_index_line(did, str((doc.meta or {}).get("description", ""))),
+        )
+        self._upsert_index_line(
+            self.repo / "decisions" / "index.md",
+            "# Decisions",
+            f"]({year}/)",
+            f"* [{year}]({year}/) - decisions taken in {year}",
+        )
+        return (
+            rel,
+            f"[{did}] {d['outcome']}\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n",
+        )
 
     def _write_run(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str]:
         run_id = str(event["aggregate_id"])

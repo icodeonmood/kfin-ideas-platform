@@ -34,7 +34,7 @@ def test_every_seed_rule_file_loads() -> None:
         SEED / p for p in RULE_PATHS.values() if p.startswith("rules/")
     }, "a rules/*.md file exists that the loader does not know about"
     assert rules["thresholds"].data["gatekeeper"]["personal_data_block"] == 0.5
-    assert rules["scorecard"].version == "1.0"
+    assert rules["scorecard"].version == "1.1"  # 1.1: draft anchor wording for each level (BLD-216)
 
 
 def test_scorecard_weights_must_sum_to_100(repo: Path) -> None:

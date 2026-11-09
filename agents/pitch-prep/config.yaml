@@ -1,0 +1,26 @@
+# pitch-prep — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: pitch-prep
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 2000
+timeout_s: 60           # batch, not on anyone's screen
+latency_budget_s: 30
+retries_on_invalid: 1
+cache_ttl_days: 30
+input_blocks:
+- cluster
+untrusted_blocks:
+- cluster
+examples_in_prompt:
+- 01-nigo-outline.json
+fake_mode_default: 01-nigo-outline.json
+golden_set: eval/golden/pitch_prep.jsonl
+post_checks:
+- exactly 8 slides in the deck template's order
+- points 15 words or fewer
+pass_gates:
+  eight_slides_in_order_min: 1.0
+  no_invented_figures_min: 1.0

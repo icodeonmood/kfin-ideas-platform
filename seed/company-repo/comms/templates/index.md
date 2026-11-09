@@ -19,3 +19,10 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
 - [cluster-approved.md](cluster-approved.md) — Your idea is now part of {{cluster.id}} (draft for HR sign-off)
+- [gate-outcome.md](gate-outcome.md) — An update on {{cluster.id}} (draft for HR review)
+- [round-opened.md](round-opened.md) — A group is ready for your review: {{cluster.id}} (draft for HR review)
+- [invited-to-present.md](invited-to-present.md) — You're invited to present {{cluster.id}} (draft for HR review)
+- [not-shortlisted.md](not-shortlisted.md) — An update on {{cluster.id}} (draft for HR review)
+- [presentation-confirmed.md](presentation-confirmed.md) — Presentation confirmed: {{cluster.id}} (draft for HR review)
+- [accepted.md](accepted.md) — {{cluster.id}} is picked (draft for HR review)
+- [not-accepted.md](not-accepted.md) — An update on {{cluster.id}} (draft for HR review)

@@ -68,6 +68,10 @@ def _decrypt_text(blob: Any, context: str) -> str | None:
         return None
 
 
+COMMITTEE_EVENTS = {"cluster.gate_outcome", "round.opened", "shortlist.invited", "round.not_shortlisted",
+                    "presentation.confirmed", "decision.accepted", "decision.not_accepted"}  # fmt: skip
+
+
 def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dict[str, Any]:
     base = get_settings().app_base_url.rstrip("/")
     data: dict[str, Any] = {"recipient": {"first_name": _first_name(conn, user_id)}, "links": {}}
@@ -217,6 +221,57 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             "other_count": max(count - 1, 0),
         }
         data["links"]["idea"] = f"{base}/ideas/{mine['idea_id']}" if mine else f"{base}/my-ideas"
+    if event in COMMITTEE_EVENTS and refs.get("cluster_id"):
+        # Committee messages (§3.7). The group's name and description hold no tags, names or IDs (cluster-summary,
+        # BLD-213); any reason text the chair wrote is restored as neutral labels for everyone.
+        cl = conn.execute(
+            "SELECT id, title, summary, tag_scope FROM clusters WHERE id = %s", (refs["cluster_id"],)
+        ).fetchone()
+        mapping = vault.mapping(conn, cl["tag_scope"]) if cl and cl["tag_scope"] else {}
+        data["cluster"] = {
+            "id": refs["cluster_id"],
+            "name": restore((cl or {}).get("title"), mapping, "neutral") or refs["cluster_id"],
+            "description": restore(((cl or {}).get("summary") or {}).get("description"), mapping, "neutral")
+            or "",
+        }
+        mine = conn.execute(
+            "SELECT i.idea_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
+            "WHERE i.cluster_id = %s AND m.user_id = %s ORDER BY i.idea_id LIMIT 1",
+            (refs["cluster_id"], user_id),
+        ).fetchone()
+        data["links"]["idea"] = f"{base}/ideas/{mine['idea_id']}" if mine else f"{base}/my-ideas"
+        codes = {
+            c["code"]: c["plain_words"]
+            for c in load_rule(get_settings().company_repo_path, "reason-codes").data["codes"]
+        }
+        if refs.get("reason_code"):
+            data["outcome"] = {"text": codes.get(str(refs["reason_code"]), "")}
+        if refs.get("round_id"):
+            rnd = conn.execute(
+                "SELECT closes_at FROM scoring_rounds WHERE id = %s", (refs["round_id"],)
+            ).fetchone()
+            data["round"] = {"due_date": _date(rnd["closes_at"]) if rnd else ""}
+            data["links"]["round"] = f"{base}/committee/rounds/{refs['round_id']}"
+        pres = conn.execute(
+            "SELECT id, reply_due, slot_at FROM presentations WHERE cluster_id = %s ORDER BY created_at DESC LIMIT 1",
+            (refs["cluster_id"],),
+        ).fetchone()
+        if pres:
+            data["presentation"] = {
+                "reply_due": _date(pres["reply_due"]) if pres["reply_due"] else "",
+                "slot": pres["slot_at"].astimezone(IST).strftime("%-d %B, %-I:%M %p")
+                if pres["slot_at"]
+                else "",
+            }
+            data["links"]["presentation"] = f"{base}/presentations/{pres['id']}"
+        if refs.get("decision_id"):
+            dec = conn.execute(
+                "SELECT plain_reason, what_would_change FROM decisions WHERE id = %s", (refs["decision_id"],)
+            ).fetchone()
+            data["decision"] = {
+                "reason": restore((dec or {}).get("plain_reason"), mapping, "neutral") or "",
+                "what_would_change": restore((dec or {}).get("what_would_change"), mapping, "neutral") or "",
+            }
     if event == "sla.reminder":
         timer = conn.execute(
             "SELECT due_at FROM sla_timers WHERE id = %s", (refs.get("timer_id"),)
