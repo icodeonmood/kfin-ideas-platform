@@ -172,6 +172,9 @@
     "attachments.deep_check": [
       "admin",
       "infosec"
+    ],
+    "scan.live": [
+      "admin"
     ]
   },
   "public": [
@@ -198,6 +201,7 @@
     "PUT /api/submissions/{id}                         submit",
     "POST /api/submissions/{id}/submit                 submit",
     "GET /api/submissions/{id}/scan-status             submit",
+    "GET /api/submissions/{id}/scan-events             submit",
     "POST /api/submissions/{id}/scan-choice            submit",
     "POST /api/submissions/{id}/confirm-card           submit",
     "POST /api/submissions/{id}/choose                 submit",
