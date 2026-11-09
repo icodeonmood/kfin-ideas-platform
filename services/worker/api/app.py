@@ -803,6 +803,25 @@ def delivery_checkin(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
     return _delivery_call(check_in, _actor(body), delivery_id, body)
 
 
+@app.put("/internal/delivery/{delivery_id}/writeup", dependencies=[Depends(require_token)])
+def delivery_writeup_save(delivery_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The owner drafts the write-up other teams can adopt (BLD-133); every part is checked before it is kept."""
+    from delivery.writeups import save
+
+    return _delivery_call(save, _actor(body), delivery_id, body)
+
+
+@app.post("/internal/delivery/{delivery_id}/writeup/{step}", dependencies=[Depends(require_token)])
+def delivery_writeup_step(delivery_id: str, step: str, body: dict[str, Any]) -> JSONResponse:
+    """Submit (owner), approve or send back (the named sponsor, never the submitter) (BLD-133)."""
+    from delivery import writeups
+
+    steps = {"submit": writeups.submit, "approve": writeups.approve, "send-back": writeups.send_back}
+    if step not in steps:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return _delivery_call(steps[step], _actor(body), delivery_id)
+
+
 @app.get("/internal/lenses/{user_id}", dependencies=[Depends(require_token)])
 def lenses_view(user_id: str) -> JSONResponse:
     from lenses import view

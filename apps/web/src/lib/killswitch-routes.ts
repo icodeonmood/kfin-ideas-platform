@@ -16,7 +16,8 @@ export type SwitchName =
   | "clusters.batch"
   | "scan.live"
   | "learning.jobs"
-  | "ember.send";
+  | "ember.send"
+  | "solutions.publish";
 
 interface Rule {
   methods: readonly string[];
@@ -62,6 +63,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/evidence\/[^/]+\/?$/,
     switches: ["attachments.open"],
   },
+  // Approving a write-up publishes it to everyone's "Already running" matches (BLD-133).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
+    switches: ["solutions.publish"],
+  },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -80,6 +87,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
   "learning.jobs": "Learning reports and proposals are paused for now. Nothing changes without a person.",
   "ember.send": "Sending The Ember is paused for now. Past issues are still here to read.",
+  "solutions.publish":
+    "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",
 };
 
 /**
@@ -102,7 +111,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
-  /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
+  /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
   /^\/api\/lenses\/rebuild\/?$/, // counts only, from the database; §7.6 has no lens switch
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).

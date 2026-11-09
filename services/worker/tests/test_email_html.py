@@ -59,6 +59,7 @@ SAMPLE: dict[str, Any] = {
     "request": {"context": "We run a similar check at the service centres."},
     "requester": {"lob_name": "Investor servicing"},
     "solution": {"id": "SOL-2026-0003", "title": "IFSC look-up on bank forms"},
+    "writeup": {"approved": True, "sent_back": False, "solution_id": "SOL-0007"},
     "one": {
         "number": 17,
         "display": "No. 17, Ananya Rao",

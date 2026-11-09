@@ -68,6 +68,7 @@ kill_switch_flippers:
   scan.live: [admin]
   learning.jobs: [admin]
   ember.send: [admin]
+  solutions.publish: [admin]
 
 # No session needed.
 public:
@@ -175,6 +176,10 @@ endpoints:
   - GET /api/delivery/{id}/evidence/{att}            work_delivery   # anyone who can see the delivery; clean files only
   - DELETE /api/delivery/{id}/evidence/{att}         work_delivery   # whoever added it, or an admin
   - POST /api/delivery/{id}/checkin                  work_delivery   # the fix track's owner or an admin (BLD-132)
+  - PUT /api/delivery/{id}/writeup                    work_delivery   # the owner or an admin drafts (BLD-133)
+  - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
+  - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
+  - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
   - GET /api/lenses                                   view_lenses
   - POST /api/lenses/rebuild                          review_learning
   - GET /api/learning                                 review_learning

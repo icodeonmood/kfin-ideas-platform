@@ -27,4 +27,6 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [delivery-measure-confirm.md](delivery-measure-confirm.md) — Please confirm the results for {{delivery.label}} (draft for HR sign-off)
 - [delivery-fix-checkin.md](delivery-fix-checkin.md) — Friday check-in: {{delivery.label}} (draft for HR sign-off)
 - [delivery-checkin-blocked.md](delivery-checkin-blocked.md) — Blocked: {{delivery.label}} (draft for HR sign-off)
+- [delivery-writeup-decided.md](delivery-writeup-decided.md) — Your write-up: {{delivery.label}} (draft for HR sign-off)
+- [delivery-writeup-submitted.md](delivery-writeup-submitted.md) — A write-up to approve: {{delivery.label}} (draft for HR sign-off)
 - [delivery-overdue.md](delivery-overdue.md) — Needs attention: {{delivery.label}} (draft for HR sign-off)

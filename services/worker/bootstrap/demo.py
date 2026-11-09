@@ -243,7 +243,7 @@ DELIVERIES: list[dict[str, Any]] = [
     {"idea": ("DEMO-00012", "measuring"), "track": "build", "state": "shipped", "owner": "DEMO-00012",
      "sponsor": "DEMO-00005", "pm": "DEMO-00013", "metric": "Calls a month about brokerage statements",
      "baseline": 1200, "target": 400, "unit": "calls a month", "product": "iris", "approved_days_ago": 150,
-     "shipped_days_ago": 92,
+     "shipped_days_ago": 92, "writeup": "submitted",
      "results": {"day_30": ({"metric_actual": 700, "effort": {"value": 500, "unit": "calls avoided a month"}}, True),
                  "day_90": ({"metric_actual": 380, "effort": {"value": 820, "unit": "calls avoided a month"},
                              "scale": {"value": 5000, "unit": "distributors"}}, False)}},
@@ -650,7 +650,28 @@ def _deliveries(conn: Conn, p: dict[str, dict[str, str]], idea_at: dict[tuple[st
                  p[f["owner"]]["id"] if given else None, filled,
                  p[f["sponsor"]]["id"] if confirmed else None, confirmed),
             )  # fmt: skip
+        if f.get("writeup"):  # a write-up waiting for the sponsor (BLD-133), synthetic text
+            w = conn.execute(
+                "INSERT INTO solution_writeups (delivery_id, state, parts_encrypted, drafted_by, submitted_by, "
+                "submitted_at) VALUES (%s, %s, '\\x00', %s, %s, %s) RETURNING id",
+                (did, f["writeup"], p[f["owner"]]["id"], p[f["owner"]]["id"], NOW - dt.timedelta(days=1)),
+            ).fetchone()
+            assert w is not None
+            conn.execute(
+                "UPDATE solution_writeups SET parts_encrypted = %s WHERE id = %s",
+                (seal_json(DEMO_WRITEUP, f"writeup:{w['id']}"), w["id"]),
+            )
 
+
+DEMO_WRITEUP = {
+    "title": "Brokerage statement self-service for distributors",
+    "what_it_does": "Distributors download their brokerage statement for any month themselves, so they stop calling "
+    "the service desk to ask for it.",
+    "where_it_runs": "IRIS, for every empanelled distributor; run by the distributor services team.",
+    "result": "Calls about brokerage statements fell from about 1,200 a month to under 400 in ninety days.",
+    "how_to_adopt": "Talk to the distributor services lead. It needs the statement file feed and about two weeks "
+    "of set-up for a new product line.",
+}
 
 CHAIR_NOTE = (
     "The ideas that stood out this month named who feels the problem, and how often. Start there, then say what "

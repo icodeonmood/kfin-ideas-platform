@@ -5,7 +5,15 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { day } from "@/lib/dates";
 import { measureText, MEASURE_LABELS } from "@/lib/measures";
-import type { Checkins, DeliveryDetail, EvidenceFile, Measurement, Milestone } from "@/server/delivery";
+import type {
+  Checkins,
+  DeliveryDetail,
+  EvidenceFile,
+  Measurement,
+  Milestone,
+  Writeup,
+  WriteupPart,
+} from "@/server/delivery";
 
 import { ERRORS, Err, missingText, Status, useAction, useDone } from "../actions";
 
@@ -124,9 +132,10 @@ export function DeliveryView({ d }: { d: DeliveryDetail }) {
           {d.measurements.map((m) => (
             <MeasurementCard key={m.mark} d={d} m={m} onDone={done} />
           ))}
-          <p className="coming-soon coming-soon-light">A write-up other teams can adopt: coming soon</p>
         </section>
       ) : null}
+
+      {d.writeup ? <WriteupSection d={d} w={d.writeup} onDone={done} /> : null}
 
       {started || d.evidence.length ? <EvidenceSection d={d} onDone={done} /> : null}
     </>
@@ -302,6 +311,166 @@ function CheckinSection({ d, c, onDone }: { d: DeliveryDetail; c: Checkins; onDo
         </form>
       ) : null}
     </>
+  );
+}
+
+const WRITEUP_PARTS: { key: WriteupPart; label: string; hint: string; max: number; rows: number }[] = [
+  { key: "title", label: "Title", hint: "What it is, in plain words.", max: 80, rows: 1 },
+  {
+    key: "what_it_does",
+    label: "What it does",
+    hint: "Two or three sentences. No client or investor details.",
+    max: 600,
+    rows: 4,
+  },
+  {
+    key: "where_it_runs",
+    label: "Where it runs",
+    hint: "Line of business, system, team.",
+    max: 300,
+    rows: 2,
+  },
+  {
+    key: "result",
+    label: "The result",
+    hint: "Before and after, if known: hours saved, errors avoided.",
+    max: 400,
+    rows: 3,
+  },
+  {
+    key: "how_to_adopt",
+    label: "How another team can adopt it",
+    hint: "Who to talk to by role, never by name; what it needs; how much effort.",
+    max: 600,
+    rows: 4,
+  },
+];
+
+/** The write-up other teams can adopt (BLD-133): the owner drafts and submits, the named sponsor approves or sends
+ * it back. Approved, it is published as "Already running", so new ideas can team up with it. */
+function WriteupSection({ d, w, onDone }: { d: DeliveryDetail; w: Writeup; onDone: (m: string) => void }) {
+  const { error, busy, run } = useAction(onDone);
+  const [parts, setParts] = useState<Record<WriteupPart, string>>(
+    w.parts ?? { title: "", what_it_does: "", where_it_runs: "", result: "", how_to_adopt: "" },
+  );
+  const [editing, setEditing] = useState(false);
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void run(`/api/delivery/${d.id}/writeup`, parts, "Write-up saved.", "PUT").then(
+      (ok) => ok && setEditing(false),
+    );
+  };
+  return (
+    <section aria-labelledby="s-writeup">
+      <h2 id="s-writeup">A write-up other teams can adopt</h2>
+      <p className="muted">
+        Status: {w.state_words}.
+        {w.solution_id
+          ? ` Published as ${w.solution_id}: people see it as "Already running" when they share a similar idea.`
+          : ""}
+      </p>
+      {w.state === null && !editing ? (
+        <p>
+          Once it has shipped, write up what it does and how another team can use it. Everyone will be able to
+          read it, so leave out names of colleagues and clients.
+        </p>
+      ) : null}
+      {w.parts && !editing ? (
+        <dl className="crew-facts">
+          {WRITEUP_PARTS.map((f) => (
+            <div key={f.key}>
+              <dt>{f.label}</dt>
+              <dd>{w.parts?.[f.key]}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {editing ? (
+        <form className="stack-form" onSubmit={save}>
+          {WRITEUP_PARTS.map((f) => (
+            <Field key={f.key} label={f.label} hint={f.hint}>
+              {(id, hint) =>
+                f.rows === 1 ? (
+                  <input
+                    id={id}
+                    type="text"
+                    value={parts[f.key]}
+                    maxLength={f.max}
+                    aria-describedby={hint}
+                    onChange={(e) => setParts({ ...parts, [f.key]: e.target.value })}
+                  />
+                ) : (
+                  <textarea
+                    id={id}
+                    value={parts[f.key]}
+                    maxLength={f.max}
+                    rows={f.rows}
+                    aria-describedby={hint}
+                    onChange={(e) => setParts({ ...parts, [f.key]: e.target.value })}
+                  />
+                )
+              }
+            </Field>
+          ))}
+          <div className="button-row">
+            <button type="submit" className="button" disabled={busy} aria-busy={busy}>
+              Save the write-up
+            </button>
+            <button type="button" className="button button-secondary" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+      {!editing ? (
+        <div className="button-row">
+          {w.can_edit ? (
+            <button type="button" className="button button-secondary" onClick={() => setEditing(true)}>
+              {w.parts ? "Edit the write-up" : "Write it up"}
+            </button>
+          ) : null}
+          {w.can_submit ? (
+            <button
+              type="button"
+              className="button"
+              disabled={busy}
+              aria-busy={busy}
+              onClick={() => run(`/api/delivery/${d.id}/writeup/submit`, {}, "Sent to the sponsor.")}
+            >
+              Send to the sponsor
+            </button>
+          ) : null}
+          {w.can_decide ? (
+            <>
+              <button
+                type="button"
+                className="button"
+                disabled={busy}
+                aria-busy={busy}
+                onClick={() =>
+                  run(
+                    `/api/delivery/${d.id}/writeup/approve`,
+                    {},
+                    "Approved and published as Already running.",
+                  )
+                }
+              >
+                Approve and publish
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={busy}
+                onClick={() => run(`/api/delivery/${d.id}/writeup/send-back`, {}, "Sent back to the owner.")}
+              >
+                Send back for changes
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      <Err text={error} />
+    </section>
   );
 }
 

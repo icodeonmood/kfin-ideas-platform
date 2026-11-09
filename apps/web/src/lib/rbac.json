@@ -209,6 +209,9 @@
     ],
     "ember.send": [
       "admin"
+    ],
+    "solutions.publish": [
+      "admin"
     ]
   },
   "public": [
@@ -311,6 +314,10 @@
     "GET /api/delivery/{id}/evidence/{att}            work_delivery",
     "DELETE /api/delivery/{id}/evidence/{att}         work_delivery",
     "POST /api/delivery/{id}/checkin                  work_delivery",
+    "PUT /api/delivery/{id}/writeup                    work_delivery",
+    "POST /api/delivery/{id}/writeup/submit            work_delivery",
+    "POST /api/delivery/{id}/writeup/approve           work_delivery",
+    "POST /api/delivery/{id}/writeup/send-back         work_delivery",
     "GET /api/lenses                                   view_lenses",
     "POST /api/lenses/rebuild                          review_learning",
     "GET /api/learning                                 review_learning",

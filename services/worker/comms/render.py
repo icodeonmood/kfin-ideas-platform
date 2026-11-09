@@ -390,6 +390,12 @@ def _delivery_variables(
         "plan_late": reason == "plan_late",
         "blocked": reason == "blocked",
     }  # fmt: skip
+    decision = str(refs.get("decision") or "")  # solution write-ups (BLD-133)
+    data["writeup"] = {
+        "approved": decision == "approved",
+        "sent_back": decision == "sent_back",
+        "solution_id": str(refs.get("solution_id") or ""),
+    }
     # Contributors are told about their idea, not given the delivery page (it is for the people doing the work):
     # anyone who cannot see the delivery gets My ideas instead.
     link = f"{base}/my-ideas"

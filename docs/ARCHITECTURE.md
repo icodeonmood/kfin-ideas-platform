@@ -1901,6 +1901,7 @@ Stored in `kill_switches`, read on every request (10-second cache). Every change
 | `ones.public` | The Ones hidden from the wall, home carousel and office screens (DEC-068) | Admin, HR | — |
 | `learning.jobs` | Every learning loop's job stops (§5: reports and proposals), and so does running one by hand; proposals already made can still be decided (BLD-122) | Admin | — |
 | `ember.send` | Sending The Ember stops; queued Ember emails wait; drafts, the chair's note and the archive carry on (BLD-128). `ones.public` off stops sending too | Admin | — |
+| `solutions.publish` | Approving a solution write-up stops, so nothing new reaches "Already running" matches; drafting and submitting carry on (BLD-133) | Admin | — |
 
 ### 7.7 Accessibility **[Day 1]**
 

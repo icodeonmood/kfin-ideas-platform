@@ -59,6 +59,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 22. **Points and the journey** (Kavya): My ideas, "Your points" (only she sees them), then "How an idea becomes a One": the four steps drawn as isometric blocks.
 23. **The Ember** (anyone): the footer's "The Ember" link. Last month's issue is in the archive.
 24. **Write The Ember** (Vivek, then Sana): "Work on this month's issue". Vivek, the chair, edits "What the committee looks for" and presses "Approve the note"; the issue is now ready. Sana, an admin who neither wrote nor approved it, reads the preview and sends it in two steps ("Send to everyone", then "Yes, send to everyone"). Changing the note after approval sends it back to the chair. The email arrives in Mailpit (http://localhost:8025) in the branded HTML, light or dark depending on the mail app.
+25. **A write-up other teams can adopt** (Demo CEO, then Sneha): Delivery, then the brokerage statements. Sneha's write-up waits for the sponsor under "A write-up other teams can adopt": "Approve and publish" gives it a SOL- number and, once the repo writer and indexer run, ideas like it show it as "Already running". "Send back for changes" returns it to Sneha, who edits it and sends it again. Switch `solutions.publish` off in the console and approval says publishing is paused.
 
 ## Shows "Coming soon"
 

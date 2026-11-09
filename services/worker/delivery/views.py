@@ -9,7 +9,7 @@ import datetime as dt
 from typing import Any
 
 from core.db import Conn
-from delivery import extras, service
+from delivery import extras, service, writeups
 from delivery.phases import (
     COMPLIANCE_TIERS,
     FEATURE_TYPES,
@@ -189,6 +189,7 @@ def detail(
         "milestones": milestones, "measurements": measurements, "outcome": d["outcome"],
         "evidence": extras.evidence(conn, d, viewer_id, have),
         "checkins": extras.checkins(conn, d, viewer_id, have, now) if d["track"] == "fix" else None,
+        "writeup": writeups.view(conn, d, viewer_id, have),
         "shipped_at": _iso(d["shipped_at"]), "resolved_at": _iso(d["resolved_at"]),
         "closed_at": _iso(d["closed_at"]),
         "options": {

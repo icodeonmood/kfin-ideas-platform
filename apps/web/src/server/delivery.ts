@@ -89,6 +89,18 @@ export type Checkins = {
   statuses: { id: CheckinStatus; words: string }[];
 };
 
+/** The write-up other teams can adopt (BLD-133). `parts` only for the people on the delivery. */
+export type WriteupPart = "title" | "what_it_does" | "where_it_runs" | "result" | "how_to_adopt";
+export type Writeup = {
+  state: "draft" | "submitted" | "approved" | "sent_back" | null;
+  state_words: string;
+  parts: Record<WriteupPart, string> | null;
+  solution_id: string | null;
+  can_edit: boolean;
+  can_submit: boolean;
+  can_decide: boolean;
+};
+
 export type DeliveryDetail = {
   id: number;
   subject_id: string;
@@ -128,6 +140,7 @@ export type DeliveryDetail = {
   measurements: Measurement[];
   evidence: EvidenceFile[];
   checkins: Checkins | null;
+  writeup: Writeup | null;
   outcome: "target_met" | "target_not_met" | null;
   shipped_at: string | null;
   resolved_at: string | null;
@@ -327,3 +340,13 @@ export const removeEvidence = (me: CurrentUser, deliveryId: string, attId: strin
 
 export const checkIn = (me: CurrentUser, deliveryId: string, input: unknown) =>
   send(me, `${base(deliveryId)}/checkin`, input);
+
+export const saveWriteup = (me: CurrentUser, deliveryId: string, input: unknown) =>
+  send(me, `${base(deliveryId)}/writeup`, input, "PUT");
+
+const WRITEUP_STEPS = ["submit", "approve", "send-back"] as const;
+export type WriteupStep = (typeof WRITEUP_STEPS)[number];
+export const writeupStep = (me: CurrentUser, deliveryId: string, step: string) => {
+  if (!(WRITEUP_STEPS as readonly string[]).includes(step)) throw new SubmissionError(404, "not_found");
+  return send(me, `${base(deliveryId)}/writeup/${step}`);
+};

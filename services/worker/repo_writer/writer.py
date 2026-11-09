@@ -39,6 +39,7 @@ from repo_writer.render import (
     repo_path_for,
 )
 from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
+from repo_writer.render_docs import doc_index_line, render_area_tag, render_glossary_term, render_solution
 
 log = get_logger("repo_writer")
 
@@ -49,6 +50,11 @@ RUN_EVENT = "cluster.run_recorded"
 # `make demo-reset` takes the demo's own idea files out of the local dev repo (Ones review). Refused anywhere but
 # APP_ENV=dev, and only for a path the event names exactly.
 DEMO_REMOVED = "idea.demo_removed"
+# Documents written from approved records (BLD-133, BLD-136): payloads carry IDs only; text comes from the database.
+SOLUTION_EVENT = "solution.published"
+GLOSSARY_EVENT = "taxonomy.glossary_added"
+AREA_EVENT = "taxonomy.area_added"
+DOC_EVENTS = {SOLUTION_EVENT, GLOSSARY_EVENT, AREA_EVENT}
 DEMO_PATH = re.compile(r"ideas/[0-9]{4}/[0-9]{2}/(IDEA-[0-9]{4}-[0-9]{6})\.md")
 NOTE_MAX = 120
 PUSH_BACKOFF_S = (2, 5, 15, 60)
@@ -219,6 +225,8 @@ class RepoWriter:
                 self._mark_committed(conn, outbox_id, sha)
             log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=DEMO_REMOVED)
             return Outcome(outbox_id, sha, True)
+        if event["event_type"] in DOC_EVENTS:
+            return self._one_doc(conn, event)
         if event["event_type"] not in IDEA_EVENTS:
             raise EventError("unknown_event")
         idea_row = self._load_idea(conn, event)
@@ -348,6 +356,112 @@ class RepoWriter:
         )
         message = f"[{run_id}] recorded\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
         return rel, message
+
+    # ---- documents from approved records (BLD-133, BLD-136) ------------------------------------------
+    def _one_doc(self, conn: Conn, event: dict[str, Any]) -> Outcome:
+        outbox_id = int(event["id"])
+        if event["event_type"] == SOLUTION_EVENT:
+            rel, message, table, key = self._write_solution(conn, event)
+        else:
+            rel, message, table, key = self._write_taxonomy(conn, event)
+        sha = self.git.commit_all(message)
+        with conn.transaction():
+            self._mark_committed(conn, outbox_id, sha)
+            conn.execute(
+                f"UPDATE {table} SET repo_path = %s, repo_commit = %s WHERE id = %s",  # noqa: S608 (fixed names)
+                (rel, sha, key),
+            )
+        log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
+        return Outcome(outbox_id, sha, False)
+
+    def _checked_doc(self, text: str, rel: str) -> None:
+        doc = parse(text)
+        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+            raise EventError("invalid_doc_file")
+        if any(m.action == "block" for m in scan(text)):
+            raise EventError(
+                "personal_data_in_doc"
+            )  # checked when approved; never written if it slipped through
+
+    def _write_solution(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str, str, int]:
+        from ones.text import unseal_json
+
+        sol = str(event["aggregate_id"])
+        if not re.fullmatch(r"SOL-[0-9]{4}", sol):
+            raise EventError("solution_id_invalid")
+        w = conn.execute(
+            "SELECT w.*, d.subject_type, d.subject_id, d.shipped_at, d.resolved_at FROM solution_writeups w "
+            "JOIN deliveries d ON d.id = w.delivery_id WHERE w.id = %s",
+            ((event["payload"] or {}).get("writeup_id"),),
+        ).fetchone()
+        if w is None or w["state"] != "approved" or w["solution_id"] != sol:
+            raise EventError("writeup_not_approved")
+        parts = unseal_json(w["parts_encrypted"], f"writeup:{w['id']}")
+        if w["subject_type"] == "idea":
+            ideas = conn.execute(
+                "SELECT lobs, area_ids FROM ideas WHERE idea_id = %s", (w["subject_id"],)
+            ).fetchall()
+        else:
+            ideas = conn.execute(
+                "SELECT lobs, area_ids FROM ideas WHERE cluster_id = %s", (w["subject_id"],)
+            ).fetchall()
+        lobs = sorted({x for r in ideas for x in (r["lobs"] or [])})
+        areas = sorted({x for r in ideas for x in (r["area_ids"] or [])})
+        done = w["shipped_at"] or w["resolved_at"]
+        facts = {
+            "approved_at": w["approved_at"], "owner_team": lobs[0] if lobs else None, "lobs": lobs,
+            "areas": areas, "source_cluster": w["subject_id"] if w["subject_type"] == "cluster" else None,
+            "shipped_on": ist(done).date().isoformat() if done else None, "delivery_id": int(w["delivery_id"]),
+        }  # fmt: skip
+        rel = f"solutions/{sol}.md"
+        text = render_solution(sol, parts, facts)
+        self._checked_doc(text, rel)
+        path = self.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self._upsert_index_line(
+            self.repo / "solutions" / "index.md",
+            '# Solutions — "Already running"',
+            f"{sol}.md",
+            doc_index_line(sol, parts["title"]),
+        )
+        message = f"[{sol}] published\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+        return rel, message, "solution_writeups", int(w["id"])
+
+    def _write_taxonomy(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str, str, int]:
+        from ones.text import unseal_json
+
+        p = conn.execute(
+            "SELECT * FROM learning_proposals WHERE id = %s", ((event["payload"] or {}).get("proposal_id"),)
+        ).fetchone()
+        if p is None or p["state"] != "approved" or not p["publish_encrypted"]:
+            raise EventError("proposal_not_approved")
+        doc = unseal_json(p["publish_encrypted"], f"learning-publish:{p['id']}")
+        doc_id = str(event["aggregate_id"])
+        if event["event_type"] == GLOSSARY_EVENT:
+            if p["kind"] != "glossary_term" or not re.fullmatch(r"GL-[a-z0-9-]{2,60}", doc_id):
+                raise EventError("glossary_id_invalid")
+            rel = f"taxonomy/glossary/{doc_id}.md"
+            text = render_glossary_term(
+                doc_id, doc["term"], doc["definition"], list(doc.get("aliases") or []), p["decided_at"]
+            )
+            index, title = self.repo / "taxonomy" / "glossary" / "index.md", "# Glossary"
+            line = doc_index_line(doc_id, doc["term"])
+        else:
+            if p["kind"] != "area_tag" or not re.fullmatch(r"AREA-[a-z0-9-]{2,60}", doc_id):
+                raise EventError("area_id_invalid")
+            rel = f"taxonomy/areas/{doc_id}.md"
+            text = render_area_tag(doc_id, doc["title"], doc["description"], p["decided_at"])
+            index, title = self.repo / "taxonomy" / "areas" / "index.md", "# Area tags"
+            line = doc_index_line(doc_id, doc["title"])
+        if (self.repo / rel).exists():
+            raise EventError("doc_exists")  # never overwrite a file the product team wrote by hand
+        self._checked_doc(text, rel)
+        (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.repo / rel).write_text(text, encoding="utf-8")
+        self._upsert_index_line(index, title, f"{doc_id}.md", line)
+        message = f"[{doc_id}] added\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
+        return rel, message, "learning_proposals", int(p["id"])
 
     @staticmethod
     def _mark_committed(conn: Conn, outbox_id: int, sha: str) -> None:

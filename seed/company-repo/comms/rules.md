@@ -349,6 +349,28 @@ events:
     urgency: immediate
     approval: null
     signer: club_team
+  delivery.writeup_submitted:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-writeup-submitted
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  delivery.writeup_decided:
+    day_one: true
+    audiences:
+    - current_owner
+    template: delivery-writeup-decided
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
   delivery.overdue:
     day_one: true
     audiences:

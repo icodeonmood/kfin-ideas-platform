@@ -77,6 +77,11 @@ export const ERRORS: Record<string, string> = {
   text_too_short: "Please write a little more.",
   status_required: "Pick how it's going.",
   owner_only: "Only the owner (or an admin) can do this.",
+  writeup_locked: "The write-up is with the sponsor or already published, so it can't be changed now.",
+  nothing_to_submit: "Save the write-up first, then submit it.",
+  not_submitted: "There is no write-up waiting for a decision.",
+  publishing_paused: "Publishing new write-ups is paused for now. Your write-up is saved; approve it later.",
+  solution_numbers_full: "We have run out of solution numbers. Please tell the product team.",
   uploader_only: "Only the person who added this file (or an admin) can remove it.",
   closed: "This delivery is closed.",
   not_open_for_evidence: "Files can be added once the work has started, until it closes.",
@@ -108,6 +113,12 @@ export const MISSING_WORDS: Record<string, string> = {
   build_slot_confirmed: "a confirmed build slot",
   dev_slot_confirmed: "a confirmed development slot",
   objective: "the objective",
+  // Parts of a solution write-up (BLD-133): a text check names the part it stopped at.
+  title: "the title",
+  what_it_does: "What it does",
+  where_it_runs: "Where it runs",
+  result: "The result",
+  how_to_adopt: "How another team can adopt it",
 };
 
 export const missingText = (codes: string[]) => codes.map((c) => MISSING_WORDS[c] ?? c).join(", ");
@@ -124,6 +135,9 @@ async function send(url: string, body: Record<string, unknown>, method: string):
   const words = ERRORS[code] ?? "That didn't work. Please try again.";
   if (code === "pack_incomplete" && Array.isArray(out.details)) {
     return `${words} Still needed: ${missingText(out.details.map(String))}.`;
+  }
+  if (Array.isArray(out.details) && out.details.length) {
+    return `${words} Check: ${missingText(out.details.map(String))}.`; // which part a text check stopped at
   }
   return words;
 }
