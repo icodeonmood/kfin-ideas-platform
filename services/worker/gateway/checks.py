@@ -195,6 +195,7 @@ def role_themes(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) 
         if seen & set(theme["refs"]) or len(set(theme["refs"])) < len(theme["refs"]):
             problems.append(f"themes[{n}].refs repeats an idea already in a theme")
         seen |= set(theme["refs"])
+    return problems
 
 
 def prescore(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
