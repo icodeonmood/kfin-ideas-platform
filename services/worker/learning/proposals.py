@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -24,7 +25,7 @@ from psycopg.types.json import Jsonb
 
 from core.config import get_settings
 from core.db import Conn
-from ones.text import OnesRefused, seal, unseal
+from ones.text import OnesRefused, checked, seal, seal_json, unseal
 from pii.detect import detect, directory
 from pii.patterns import scan
 from pii.tagger import TAG_RE
@@ -171,6 +172,91 @@ def decide(
     return {"id": pid, "state": state}
 
 
+# --- Writing an approved term or tag into the company repo (BLD-136) --------------------------------------------------
+PUBLISH_EVENTS = {"glossary_term": "taxonomy.glossary_added", "area_tag": "taxonomy.area_added"}
+MAX_ALIASES = 8
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60].strip("-")
+
+
+def _doc_file(doc_id: str) -> Path:
+    folder = "glossary" if doc_id.startswith("GL-") else "areas"
+    return Path(get_settings().company_repo_path) / "taxonomy" / folder / f"{doc_id}.md"
+
+
+def publish(
+    conn: Conn, actor: str, proposal_id: Any, body: dict[str, Any], now: dt.datetime | None = None
+) -> dict[str, Any]:
+    """An admin writes an approved proposal into the company repo: a glossary term with its definition and aliases,
+    or an area tag with its title and description. Everything is checked like text everyone reads, stored sealed,
+    and queued for the repo writer with IDs only. Nothing is written to the repo here. Audited."""
+    from ones.service import roles
+
+    now = now or dt.datetime.now(dt.UTC)
+    if "admin" not in roles(conn, actor):
+        raise OnesRefused(403, "forbidden")
+    try:
+        pid = int(proposal_id)
+    except (TypeError, ValueError):
+        raise OnesRefused(404, "not_found") from None
+    p = conn.execute("SELECT * FROM learning_proposals WHERE id = %s", (pid,)).fetchone()
+    if p is None:
+        raise OnesRefused(404, "not_found")
+    if p["state"] != "approved":
+        raise OnesRefused(409, "not_approved")
+    if p["doc_id"]:
+        raise OnesRefused(409, "already_published")
+    # Checked before the transaction: the gatekeeper is a model call.
+    if p["kind"] == "glossary_term":
+        term = unseal(p["text_encrypted"], f"learning:{pid}") or ""
+        definition = checked(
+            conn, body.get("definition"), min_chars=20, max_chars=400, max_words=70, public=True
+        )
+        raw = body.get("aliases") or []
+        if isinstance(raw, str):
+            raw = raw.split(",")
+        aliases = sorted({str(a).strip() for a in raw if str(a).strip()})
+        if len(aliases) > MAX_ALIASES or any(len(a) > 40 for a in aliases):
+            raise OnesRefused(422, "aliases_not_valid")
+        if aliases:
+            checked(conn, "; ".join(aliases), min_chars=1, max_chars=400, public=True)
+        doc: dict[str, Any] = {"term": term, "definition": definition, "aliases": aliases}
+        doc_id = f"GL-{slug(term)}"
+    else:
+        title = checked(conn, body.get("title"), min_chars=3, max_chars=40, max_words=6, public=True)
+        description = checked(
+            conn, body.get("description"), min_chars=20, max_chars=300, max_words=50, public=True
+        )
+        doc = {"title": title, "description": description}
+        doc_id = f"AREA-{slug(title)}"
+    if not re.fullmatch(r"(GL|AREA)-[a-z0-9-]{2,60}", doc_id):
+        raise OnesRefused(422, "name_not_valid")
+    if _doc_file(doc_id).exists():
+        raise OnesRefused(409, "doc_exists")  # the product team already has it; never overwritten
+    with conn.transaction():
+        locked = conn.execute("SELECT * FROM learning_proposals WHERE id = %s FOR UPDATE", (pid,)).fetchone()
+        if locked is None or locked["state"] != "approved" or locked["doc_id"]:
+            raise OnesRefused(409, "already_published")
+        if conn.execute("SELECT 1 FROM learning_proposals WHERE doc_id = %s", (doc_id,)).fetchone():
+            raise OnesRefused(409, "doc_exists")
+        conn.execute(
+            "UPDATE learning_proposals SET publish_encrypted = %s, doc_id = %s, published_by = %s, published_at = %s "
+            "WHERE id = %s",
+            (seal_json(doc, f"learning-publish:{pid}"), doc_id, actor, now, pid),
+        )
+        conn.execute(
+            "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES (%s, %s, %s, %s)",
+            (PUBLISH_EVENTS[str(p["kind"])], doc_id, f"user:{actor}", Jsonb({"proposal_id": pid})),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'learning.published', %s, %s)",
+            (f"user:{actor}", f"learning_proposal:{pid}", Jsonb({"kind": p["kind"], "doc_id": doc_id})),
+        )
+    return {"id": pid, "doc_id": doc_id}
+
+
 def listing(conn: Conn) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM learning_proposals ORDER BY (state = 'proposed') DESC, created_at DESC LIMIT 200"
@@ -185,6 +271,8 @@ def listing(conn: Conn) -> list[dict[str, Any]]:
                 "ideas": payload.get("ideas"), "idea_ids": payload.get("idea_ids", [])[:10],
                 "current_tags": payload.get("current_tags"), "lobs": payload.get("lobs"),
                 "decided_at": r["decided_at"].isoformat() if r["decided_at"] else None,
+                "doc_id": r["doc_id"], "in_repo": bool(r["repo_commit"]),
+                "can_publish": r["state"] == "approved" and not r["doc_id"],
             }
         )  # fmt: skip
     return out

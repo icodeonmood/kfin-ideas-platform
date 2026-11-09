@@ -858,6 +858,14 @@ def learning_decide(proposal_id: str, body: dict[str, Any]) -> JSONResponse:
     return _delivery_call(decide, _actor(body), proposal_id, body)
 
 
+@app.post("/internal/learning/proposals/{proposal_id}/publish", dependencies=[Depends(require_token)])
+def learning_publish(proposal_id: str, body: dict[str, Any]) -> JSONResponse:
+    """An admin writes an approved term or tag into the company repo, through the outbox (BLD-136)."""
+    from learning.proposals import publish
+
+    return _delivery_call(publish, _actor(body), proposal_id, body)
+
+
 @app.post("/internal/learning/run", dependencies=[Depends(require_token)])
 def learning_run(body: dict[str, Any]) -> JSONResponse:
     from learning.run import run_now

@@ -117,6 +117,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
   /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
+  // An admin writing an approved term or tag into the company repo (BLD-136): a person's own console step on the
+  // admin page, not employee-facing; the text checks answer 503 on their own when the assistant is off.
+  /^\/api\/learning\/proposals\/[^/]+\/publish\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

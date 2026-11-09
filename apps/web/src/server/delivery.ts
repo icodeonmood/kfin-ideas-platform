@@ -207,6 +207,10 @@ export type LearningProposal = {
   current_tags: Record<string, number> | null;
   lobs: Record<string, number> | null;
   decided_at: string | null;
+  /** BLD-136: the company repo file it was written to (GL-… or AREA-…), and whether the repo writer has run. */
+  doc_id: string | null;
+  in_repo: boolean;
+  can_publish: boolean;
 };
 
 export type Learning = {
@@ -305,6 +309,8 @@ export const rebuildLenses = (me: CurrentUser) =>
 export const learning = (me: CurrentUser) => call<Learning>(`/internal/learning/${me.id}`);
 export const decideLearning = (me: CurrentUser, proposalId: string, input: unknown) =>
   send(me, `/internal/learning/proposals/${id(proposalId)}/decide`, input);
+export const publishProposal = (me: CurrentUser, proposalId: string, input: unknown) =>
+  send(me, `/internal/learning/proposals/${id(proposalId)}/publish`, input);
 export const runLearning = (me: CurrentUser, input: unknown) => send(me, "/internal/learning/run", input);
 
 // --- Evidence files and Friday check-ins (BLD-131, BLD-132) -------------------------------------------------------

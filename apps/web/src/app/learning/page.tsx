@@ -7,7 +7,7 @@ import { can } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
 import { learning } from "@/server/delivery";
 
-import { ProposalActions, RunLoop } from "./learning-actions";
+import { ProposalActions, PublishProposal, RunLoop } from "./learning-actions";
 
 export const metadata: Metadata = { title: "Learning" };
 export const dynamic = "force-dynamic";
@@ -97,9 +97,7 @@ export default async function Page() {
         ) : (
           <p className="muted">Nothing is waiting.</p>
         )}
-        <p className="coming-soon coming-soon-light">
-          Writing an approved term or tag into the company repo, with a drafted definition: coming soon
-        </p>
+        <p className="coming-soon coming-soon-light">A definition drafted by the assistant: coming soon</p>
         {decided.length ? (
           <>
             <h3>Recently decided</h3>
@@ -108,6 +106,10 @@ export default async function Page() {
                 <li key={p.id}>
                   {p.kind === "glossary_term" ? p.term : `Area tag group of ${p.ideas} ideas`}: {p.state}
                   {p.decided_at ? ` on ${day(p.decided_at)}` : ""}
+                  {p.doc_id
+                    ? `. ${p.in_repo ? "In the company repo" : "Being written to the company repo"} as ${p.doc_id}`
+                    : ""}
+                  {p.can_publish ? <PublishProposal id={p.id} kind={p.kind} term={p.term} /> : null}
                 </li>
               ))}
             </ul>
