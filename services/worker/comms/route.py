@@ -101,6 +101,13 @@ def recipients(conn: Conn, audience: str, refs: dict[str, Any]) -> list[str]:
         # Solution files name an owning team, not a person: its LOB committee, else the review desk (BLD-088).
         team = refs.get("owner_team")
         return (_role_users(conn, "lob_committee", team) if team else []) or _role_users(conn, "reviewer")
+    if audience == "cluster_contributors" and refs.get("cluster_id"):
+        rows = conn.execute(
+            "SELECT contributor_code FROM ideas WHERE cluster_id = %s UNION SELECT contributor_code FROM idea_links "
+            "WHERE cluster_id = %s AND link_type IN ('originator', 'joiner')",
+            (refs["cluster_id"], refs["cluster_id"]),
+        ).fetchall()
+        return _users_for_codes(conn, [r["contributor_code"] for r in rows])
     if audience in ("current_owner", "escalation_target"):
         return [str(u) for u in refs.get(f"{audience}_ids") or []]
     if audience == "everyone":  # org-wide announcements (DEC-056)

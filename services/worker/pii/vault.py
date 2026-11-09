@@ -12,7 +12,13 @@ import re
 from core.crypto import decrypt_bytes, encrypt_bytes, keyed_hash
 from core.db import Conn
 
-SCOPE_RE = re.compile(r"^(IDEA-[0-9]{4}-[0-9]{6}|CL-[0-9]{4}|DRAFT-[0-9a-f-]{36})$")
+# Scopes: an idea, a cluster, a cluster proposal from the weekly batch (its text becomes the cluster's on
+# approval, BLD-204), the throwaway scope of one research file's gatekeeper check (purged at once, BLD-210), and
+# the eval runner's drafts.
+SCOPE_RE = re.compile(
+    r"^(IDEA-[0-9]{4}-[0-9]{6}|CL-[0-9]{4}|CLP-RUN-[0-9]{4}-W[0-9]{2}(-[0-9]+)?-[0-9]+"
+    r"|ATTCHK-ATT-[0-9]{4}-[0-9]{6}|DRAFT-[0-9a-f-]{36})$"
+)
 IDENTIFIER_TYPES = {
     "PAN", "AADHAAR", "PHONE", "ACCOUNT_NUMBER", "CARD_NUMBER", "FOLIO_NUMBER", "DEMAT_ACCOUNT", "PRAN",
     "IFSC", "ARN", "EUIN", "CONTRIBUTOR", "REVIEWER",

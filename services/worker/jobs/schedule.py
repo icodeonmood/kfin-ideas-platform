@@ -24,11 +24,33 @@ DAILY: dict[str, clock] = {
     "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)
 }
 
+# job type -> (ISO weekday, time of day IST). Enqueued once per ISO week, on that day at or after that time.
+WEEKLY: dict[str, tuple[int, clock]] = {
+    "cluster.batch": (
+        7,
+        clock(22, 0),
+    ),  # §3.5: Sunday 22:00; the job skips itself while `clusters.batch` is off
+}
+
 
 def enqueue_due(conn: Conn, now: datetime | None = None) -> list[str]:
-    """Enqueue every daily job whose time has passed today and that has not been enqueued today."""
+    """Enqueue every daily job whose time has passed today and that has not been enqueued today, and every weekly
+    job whose day and time have come this week."""
     local = (now or datetime.now(tz=IST)).astimezone(IST)
     queued = []
+    year, week, weekday = local.isocalendar()
+    for job_type, (day, at) in WEEKLY.items():
+        if weekday != day or local.time() < at:
+            continue
+        key = f"{job_type}:{year}-W{week:02d}"
+        row = conn.execute(
+            "INSERT INTO jobs (type, dedupe_key) SELECT %s, %s "
+            "WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE dedupe_key = %s) RETURNING id",
+            (job_type, key, key),
+        ).fetchone()
+        if row:
+            queued.append(job_type)
+            log.info("schedule.enqueued", job_type=job_type, job_id=row["id"])
     for job_type, at in DAILY.items():
         if local.time() < at:
             continue
@@ -45,7 +67,7 @@ def enqueue_due(conn: Conn, now: datetime | None = None) -> list[str]:
 
 
 def run_forever(stop: Any = None, poll_seconds: float = 60.0) -> None:
-    log.info("schedule.started", job_types=sorted(DAILY))
+    log.info("schedule.started", job_types=sorted([*DAILY, *WEEKLY]))
     with connect(autocommit=True) as conn:
         while stop is None or not stop.is_set():
             enqueue_due(conn)

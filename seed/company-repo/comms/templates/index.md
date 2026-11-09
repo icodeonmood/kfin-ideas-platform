@@ -18,3 +18,4 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-tier-changed.md](one-tier-changed.md) — Your spark is hotter: {{tier.to_name}}
 - [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
+- [cluster-approved.md](cluster-approved.md) — Your idea is now part of {{cluster.id}} (draft for HR sign-off)

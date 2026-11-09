@@ -12,7 +12,8 @@ export type SwitchName =
   | "matching.show"
   | "comms.email"
   | "wall.public"
-  | "ones.public";
+  | "ones.public"
+  | "clusters.batch";
 
 interface Rule {
   methods: readonly string[];
@@ -43,6 +44,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
+  { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -57,6 +59,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "comms.email": "Emails are paused for now. Your messages are in your in-app inbox.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
   "ones.public": "The Ones are resting from the wall for a little while.",
+  "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
 };
 
 /**
@@ -76,6 +79,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode|announce)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
+  /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

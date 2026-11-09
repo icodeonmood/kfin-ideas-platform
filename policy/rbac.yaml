@@ -53,6 +53,7 @@ kill_switch_flippers:
   comms.email: [admin]
   wall.public: [admin, hr]
   ones.public: [admin, hr]
+  clusters.batch: [admin]
 
 # No session needed.
 public:
@@ -102,6 +103,10 @@ endpoints:
   - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
+  - GET /api/review/cluster-runs                      view_review_queue          # weekly clustering runs (§4.4 B; addition to §8)
+  - POST /api/review/cluster-runs                     approve_cluster_proposals  # run now (behind clusters.batch)
+  - GET /api/review/cluster-proposals/{id}            view_review_queue
+  - POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals  # approve, remove a member, reject
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles

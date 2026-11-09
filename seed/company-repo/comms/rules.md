@@ -156,7 +156,7 @@ events:
     approval: null
     signer: system
   cluster.approved:
-    day_one: false
+    day_one: true   # live with weekly clustering (switch clusters.batch); template waits for HR sign-off
     audiences:
     - cluster_contributors
     template: cluster-approved

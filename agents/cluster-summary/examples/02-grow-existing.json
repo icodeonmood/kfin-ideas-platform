@@ -1,0 +1,37 @@
+{
+  "description": "A new member grows an approved cluster; the existing name is kept.",
+  "input": {
+    "mode": "cluster",
+    "existing": {
+      "name": "Manual NIGO checks on subscription forms",
+      "problem": "Physical subscription forms are checked by hand for missing fields, and gaps are found too late."
+    },
+    "members": [
+      {
+        "ref": "M1",
+        "kind": "problem",
+        "one_line": "Redemption forms from [[CLIENT_AMC_1]] distributors also come back NIGO",
+        "details": "For [[CLIENT_AMC_1]] the redemption forms show the same pattern: bank details missing, found a day later.",
+        "who": {"segments": ["investors", "amc_clients"], "frequency_or_reach": "weekly"},
+        "category": "cost_saving",
+        "play": "process_improvement",
+        "areas": ["AREA-process"],
+        "lobs": ["LOB-mf"],
+        "roles_affected": ["ROLE-ops-executive"],
+        "fix": null
+      }
+    ]
+  },
+  "output": {
+    "name": "Manual NIGO checks on subscription forms",
+    "description": "Operations teams check transaction forms for missing fields by hand and find gaps too late; now seen on redemption forms as well.",
+    "problem": "Physical transaction forms are checked by hand for missing fields, and gaps are found too late. Redemption forms for [[CLIENT_AMC_1]] distributors show the same pattern, most often missing bank details.",
+    "variations": [
+      {"member": "M1", "note": "Redemption forms show the same gap, mostly missing bank details."}
+    ],
+    "solution": [],
+    "lobs": ["LOB-mf"],
+    "roles_affected": ["ROLE-ops-executive"],
+    "open_questions": ["Should the cluster cover redemptions as well as subscriptions?"]
+  }
+}
