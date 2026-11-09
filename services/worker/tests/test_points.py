@@ -138,6 +138,74 @@ def test_no_milestones_for_members_who_left_and_no_point_before_the_checks(pdb: 
     assert rows(db, waiting) == []
 
 
+def _cluster(db: Any, stage: str = "picked") -> str:
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(9100, 9999) if f"CL-{n}" not in taken)
+    db.execute("INSERT INTO clusters (id, stage, distinct_contributors) VALUES (%s, %s, 2)", (cl, stage))
+    return cl
+
+
+def test_presenters_get_points_once_when_the_session_is_held(pdb: Any) -> None:
+    """BLD-147: each presenter of a held session gets `presented`, dated when it was held; a no-show earns nothing."""
+    db = pdb
+    _, one = person(db)
+    _, two = person(db)
+    _, absent = person(db)
+    held_at = dt.datetime(2026, 12, 10, 11, 0, tzinfo=dt.UTC)
+    taken = {r["id"] for r in db.execute("SELECT id FROM presentations").fetchall()}
+    ids = [f"PRS-2026-{n:04d}" for n in range(9000, 9999) if f"PRS-2026-{n:04d}" not in taken][:2]
+    db.execute(
+        "INSERT INTO presentations (id, cluster_id, presenters, state, held_at) VALUES (%s, %s, %s, 'held', %s)",
+        (ids[0], _cluster(db), [one, two, "not-a-code"], held_at),
+    )
+    db.execute(
+        "INSERT INTO presentations (id, cluster_id, presenters, state) VALUES (%s, %s, %s, 'no_show')",
+        (ids[1], _cluster(db), [absent]),
+    )
+    ledger.sync(db)
+    ledger.sync(db)  # idempotent
+    for code in (one, two):
+        got = db.execute(
+            "SELECT points, created_at FROM points_ledger WHERE contributor_code = %s AND event = 'presented'",
+            (code,),
+        ).fetchall()
+        assert len(got) == 1 and float(got[0]["points"]) == 3.0 and got[0]["created_at"] == held_at
+    assert not any(e == "presented" for e, _ in rows(db, absent))
+
+
+def test_working_group_members_get_points_when_the_group_ships(pdb: Any) -> None:
+    """BLD-147: every member of a working group gets `working_group_member_shipped` once its group delivery ships;
+    nothing while it is still being built."""
+    db = pdb
+    _, lead = person(db)
+    _, member = person(db)
+    cl = _cluster(db)
+    taken = {r["id"] for r in db.execute("SELECT id FROM working_groups").fetchall()}
+    wg = next(f"WG-{n:04d}" for n in range(9000, 9999) if f"WG-{n:04d}" not in taken)
+    db.execute(
+        "INSERT INTO working_groups (id, cluster_id, members, state) VALUES (%s, %s, %s::jsonb, 'active')",
+        (wg, cl, f'[{{"contributor_code": "{lead}", "role": "lead"}}, {{"contributor_code": "{member}"}}]'),
+    )
+    did = db.execute(
+        "INSERT INTO deliveries (subject_type, subject_id, state) VALUES ('cluster', %s, 'in_delivery') RETURNING id",
+        (cl,),
+    ).fetchone()["id"]
+    ledger.sync(db)
+    assert not any(e == "working_group_member_shipped" for e, _ in rows(db, lead))
+    shipped = dt.datetime(2027, 1, 20, 9, 0, tzinfo=dt.UTC)
+    db.execute("UPDATE deliveries SET state = 'shipped', shipped_at = %s WHERE id = %s", (shipped, did))
+    ledger.sync(db)
+    ledger.sync(db)
+    for code in (lead, member):
+        got = db.execute(
+            "SELECT points, ref_id, created_at FROM points_ledger WHERE contributor_code = %s "
+            "AND event = 'working_group_member_shipped'",
+            (code,),
+        ).fetchall()
+        assert len(got) == 1 and float(got[0]["points"]) == 15.0
+        assert got[0]["ref_id"] == wg and got[0]["created_at"] == shipped
+
+
 def test_the_ledger_cannot_be_truncated(pdb: Any) -> None:
     with pytest.raises(Exception, match="append-only"):
         pdb.execute("TRUNCATE points_ledger")

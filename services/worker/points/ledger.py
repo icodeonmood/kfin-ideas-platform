@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import datetime as dt
-from decimal import Decimal
+import re
+from collections.abc import Iterable
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,13 +32,16 @@ WORDS = {
     "shortlisted": "Shortlisted",
     "accepted": "Picked",
     "shipped_or_resolved": "Shipped",
+    "presented": "You presented to the core committee",
+    "working_group_member_shipped": "Your working group shipped",
 }
-# Read as "Points for …" on the screen (Ember review: plain words).
+# Read as "Points for …" on the screen (Ember review: plain words). Appeals land with lane B (§4.12).
 COMING_SOON = [
-    "presenting to the core committee",
-    "helping a working group ship",
     "an appeal that goes your way",
 ]
+CODE = re.compile(r"^CTR-[0-9a-f]{6,8}$")  # the ledger's own check: anything else is skipped, never inserted
+HELD = ("held", "decided")  # a session that took place; 'decided' always follows 'held'
+GROUP_SHIPPED = ("shipped", "resolved", "closed")  # a delivery closes only after it shipped or was resolved
 LOCK = "SELECT pg_advisory_xact_lock(hashtext('points.sync'))"  # the sync and single awards, one at a time
 NO_MILESTONES = ("withdrawn", "declined", "parked")  # a member that left its group earns the group nothing
 NOT_SUBMITTED = ("draft", "scanning", "blocked")  # not shared yet: no submission point
@@ -44,6 +49,32 @@ NOT_SUBMITTED = ("draft", "scanning", "blocked")  # not shared yet: no submissio
 
 def rules() -> dict[str, Any]:
     return dict(load_rule(get_settings().company_repo_path, "points").data)
+
+
+def rule_points(rule: Any, role: str | None = None) -> Decimal | None:
+    """A rule's points from `rules/points.md`: a plain number (`working_group_member_shipped: 15`) or the value for
+    `role` (`presented: {presenter: 3}`). None when the rule or role is missing or not a number."""
+    if rule is None or isinstance(rule, bool):
+        return None
+    if isinstance(rule, dict):
+        if role is None or role not in rule:
+            return None
+        rule = rule[role]
+    try:
+        return Decimal(str(rule))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def contributor_codes(values: Iterable[Any] | None) -> list[str]:
+    """Contributor codes as they appear on a presentation or a working group's members, de-duplicated, in order.
+    Members may be `{"contributor_code": …}` objects or bare codes; anything that is not a code is skipped."""
+    out: list[str] = []
+    for value in values or []:
+        code = value.get("contributor_code") if isinstance(value, dict) else value
+        if isinstance(code, str) and CODE.match(code) and code not in out:
+            out.append(code)
+    return out
 
 
 def _month_key(ts: dt.datetime) -> tuple[int, int]:
@@ -129,6 +160,26 @@ def _candidates(
                               ("shipped_or_resolved", SHIPPED)):  # fmt: skip
             if stage in stages:  # dated at the event (Ember review), never before the person joined
                 out.append((code, event, pts(r[event][role]), subject, max(first(subject, stages), joined)))
+
+    # Committee flow (lane B, §4.7), read from state like everything above so a missed hour catches up (BLD-147).
+    presented = rule_points(r.get("presented"), "presenter")
+    if presented is not None:
+        for row in conn.execute(
+            "SELECT id, presenters, held_at FROM presentations WHERE state = ANY(%s) AND held_at IS NOT NULL",
+            (list(HELD),),
+        ).fetchall():
+            for code in contributor_codes(row["presenters"]):
+                out.append((code, "presented", presented, str(row["id"]), row["held_at"]))
+    group = rule_points(r.get("working_group_member_shipped"))
+    if group is not None:
+        for row in conn.execute(
+            "SELECT w.id, w.members, coalesce(d.shipped_at, d.resolved_at, d.closed_at) AS at "
+            "FROM working_groups w JOIN deliveries d ON d.subject_type = 'cluster' AND d.subject_id = w.cluster_id "
+            "WHERE d.state = ANY(%s)",
+            (list(GROUP_SHIPPED),),
+        ).fetchall():
+            for code in contributor_codes(row["members"]):
+                out.append((code, "working_group_member_shipped", group, str(row["id"]), row["at"] or now))
     return out
 
 
