@@ -6,6 +6,7 @@ import { currentUser } from "@/server/auth/current";
 import { presentationForCommittee } from "@/server/committee";
 import { SubmissionError } from "@/server/submissions";
 
+import { conflictText } from "../../conflict";
 import { PresentationActions, type CommitteePresentation } from "./presentation-actions";
 
 export const metadata: Metadata = { title: "Presentation" };
@@ -28,6 +29,17 @@ export default async function Presentation({ params }: { params: Promise<{ id: s
   } catch (err) {
     if (err instanceof SubmissionError && err.status === 404) notFound();
     throw err;
+  }
+  if (view.conflict) {
+    return (
+      <>
+        <p>
+          <Link href="/committee">Back to the committee</Link>
+        </p>
+        <h1>Presentation {view.id}</h1>
+        <p className="notice">{conflictText(view.conflict)}</p>
+      </>
+    );
   }
   const s = view.sheet;
   return (

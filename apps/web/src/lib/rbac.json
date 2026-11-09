@@ -248,6 +248,7 @@
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "POST /api/admin/reveal                            reveal_identity",
+    "POST /api/admin/conflicts                         grant_roles",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/ones/leaderboard                         signed_in",
@@ -286,6 +287,7 @@
     "/desk-decisions            view_review_queue",
     "/committee                 score decide",
     "/admin                     manage_kill_switches grant_roles",
+    "/admin/conflicts           grant_roles",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
     "/ones/console              view_ones_console"

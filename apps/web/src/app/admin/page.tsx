@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { can, canFlip } from "@/lib/rbac";
 import { listGrants } from "@/server/admin/roles";
@@ -38,6 +39,11 @@ export default async function Admin() {
       <h1>Admin</h1>
       {showSwitches ? <KillSwitches initial={switches} /> : null}
       {showRoles ? <Roles initial={grants} /> : null}
+      {showRoles ? (
+        <p>
+          <Link href="/admin/conflicts">Conflict flags on committee reviews</Link>
+        </p>
+      ) : null}
     </>
   );
 }
