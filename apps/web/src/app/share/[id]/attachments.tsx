@@ -87,7 +87,7 @@ function uploadError(code: string, limits: AttachmentLimits, kinds: string): str
     case "file_empty":
       return "This file is empty.";
     case "name_has_personal_data":
-      return "The file name looks like it has personal details. Rename the file and attach it again.";
+      return "The file name looks like it has personal details or a colleague's or client's name. Rename the file and attach it again.";
     default:
       return "We couldn't attach this file just now. Please try again.";
   }

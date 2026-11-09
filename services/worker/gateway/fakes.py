@@ -263,18 +263,18 @@ _UNIT_HINTS = (
 
 
 def handover_draft(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
-    """The first member's one-line as the metric, a unit from words in the text, no numbers (dev and tests only)."""
+    """From the members' neutral summaries only: the first as the metric, a unit from words in them, no numbers,
+    and an objective in fixed words on the fix track (dev and tests only)."""
     members = [m for m in inputs.get("members") or [] if isinstance(m, dict)][:12]
     opts = inputs.get("options") or {}
     units = [str(u) for u in opts.get("units") or []] or ["cases a month"]
-    text = " ".join(f"{m.get('one_line') or ''} {m.get('details') or ''}" for m in members).lower()
+    text = " ".join(str(m.get("summary") or "") for m in members).lower()
     unit = next((u for hint, u in _UNIT_HINTS if hint in text and u in units), None)
     unit = unit or ("cases a month" if "cases a month" in units else units[0])
     products = [str(x) for x in opts.get("products") or []] or ["other"]
     features = [str(x) for x in opts.get("feature_types") or []] or ["kfintech-product"]
     first = members[0] if members else {}
-    metric = _clip(_untagged(first.get("one_line")), 20)
-    fix = _untagged(first.get("fix") or first.get("one_line"))
+    metric = _clip(_untagged(first.get("summary")), 20)
     return {
         "metric": metric if len(metric) >= 5 else "Cases handled",
         "unit": unit,
@@ -282,7 +282,9 @@ def handover_draft(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         "target": None,
         "product": "other" if "other" in products else products[0],
         "feature_type": "kfintech-product" if "kfintech-product" in features else features[0],
-        "objective": _clip(f"Done when this is fixed: {fix}", 40) if inputs.get("track") == "fix" else None,
+        "objective": "The problem the members describe no longer happens."
+        if inputs.get("track") == "fix"
+        else None,
         "notes": ["What number should we aim for, and who measures it?"],
     }
 

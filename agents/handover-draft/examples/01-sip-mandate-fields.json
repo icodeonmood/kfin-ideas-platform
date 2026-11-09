@@ -1,5 +1,5 @@
 {
-  "description": "A picked idea on the build track: SIP mandate bank fields re-checked by hand; the member gave today's time.",
+  "description": "A picked idea on the build track: SIP mandate bank fields re-checked by hand; the summary gives today's time.",
   "input": {
     "track": "build",
     "options": {
@@ -32,20 +32,10 @@
     "members": [
       {
         "ref": "M1",
-        "kind": "problem_with_solution",
-        "one_line": "Operations re-check SIP mandate bank fields by hand after capture",
-        "details": "Each mandate form takes about 6 minutes to re-check against the bank master. A check at capture would catch most mismatches before they reach operations.",
-        "who": {
-          "segments": [
-            "kfin_teams",
-            "investors"
-          ],
-          "frequency_or_reach": "daily"
-        },
+        "summary": "Operations re-check each SIP mandate's bank fields by hand after capture, about 6 minutes a form.",
         "lobs": [
-          "LOB-mf"
-        ],
-        "fix": "Validate the IFSC and account format when the form is captured."
+          "Mutual fund operations"
+        ]
       }
     ]
   },

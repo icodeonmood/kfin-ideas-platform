@@ -267,6 +267,25 @@ def test_picked_this_month_comes_from_stage_history(ones_db: Any, cast: Any) -> 
     lobs = db.execute("SELECT lobs FROM ideas WHERE idea_id = %s", (idea,)).fetchone()["lobs"]
     assert picked(dt.date(2026, 11, 1)) == nov0 + len(lobs)
     assert picked(dt.date(2026, 12, 1)) == dec0
+    # A marker row for an idea already picked (migration 20261118000700) and a backfilled move inside the group
+    # never count as a new pick (BLD-145).
+    old_pick = helpers.insert_idea(db, stage="in_garage")
+    db.execute(
+        "INSERT INTO idea_stage_history (idea_uuid, from_stage, to_stage, at, source) SELECT id, 'in_garage', "
+        "'in_garage', '2026-12-05T10:00:00Z', 'backfill' FROM ideas WHERE idea_id = %s",
+        (old_pick,),
+    )
+    db.execute(
+        "INSERT INTO idea_stage_history (idea_uuid, from_stage, to_stage, at, source) SELECT id, NULL, 'shipped', "
+        "'2026-12-06T10:00:00Z', 'backfill' FROM ideas WHERE idea_id = %s",
+        (old_pick,),
+    )
+    db.execute(  # its insert row (live, from nothing) belongs to another month
+        "UPDATE idea_stage_history SET at = '2026-01-05T10:00:00Z' WHERE source = 'live' "
+        "AND idea_uuid = (SELECT id FROM ideas WHERE idea_id = %s)",
+        (old_pick,),
+    )
+    assert picked(dt.date(2026, 12, 1)) == dec0
     built = service.build(db, dt.date(2026, 11, 1))
     assert built["picked_in_month"] and not built["coming_soon"]
 

@@ -30,9 +30,7 @@ def run(ctx: Context) -> dict[str, Any]:
         if expected.get("unit"):
             unit_checks += 1
             unit_ok += int(data["unit"] == expected["unit"])
-        source = " ".join(
-            str(m.get(k) or "") for m in sent["members"] for k in ("one_line", "details", "fix")
-        )
+        source = " ".join(str(m.get("summary") or "") for m in sent["members"])
         given = _numbers(source)
         grounded += int(all(v is None or float(v) in given for v in (data["baseline"], data["target"])))
         objective_ok += int((sent["track"] == "fix") == (data["objective"] is not None))

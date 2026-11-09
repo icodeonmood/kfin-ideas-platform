@@ -1,6 +1,6 @@
 # handover-draft — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: handover-draft
-version: 0.1.0
+version: 0.2.0
 tier: fast
 model: claude-haiku-5-5
 effort: low             # no temperature: current models reject non-default sampling (BLD-070)
@@ -23,8 +23,8 @@ fake_mode_default: 01-sip-mandate-fields.json
 golden_set: eval/golden/handover_draft.jsonl
 post_checks:
 - unit, product and feature type only from the options given
-- baseline and target are null unless that exact number appears in the members' text
-- metric 20 words or fewer, objective 40 words or fewer (fix track only), no tags in either
+- baseline and target are null unless that exact number appears in a member's summary
+- metric, objective and notes are card-safe: no tags, names, clients or identifiers; length limits
 pass_gates:
   unit_accuracy_min: 0.8         # the expected unit where the golden case names one
   numbers_grounded_min: 1.0      # never a number nobody gave

@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from core.config import Settings, get_settings
 from core.db import Conn, connect
 from core.logging import get_logger
@@ -40,7 +42,7 @@ from repo_writer.render import (
 )
 from repo_writer.render_cluster import cluster_index_line, render_cluster, render_run, run_index_line
 from repo_writer.render_decision import cluster_sections, decision_index_line, render_decision
-from repo_writer.render_docs import doc_index_line, render_area_tag, render_glossary_term, render_solution
+from repo_writer.render_docs import doc_index_line, doc_problem, solution_doc, taxonomy_doc
 
 log = get_logger("repo_writer")
 
@@ -75,6 +77,11 @@ class EventError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class DeadLetter(EventError):
+    """An event that can never be written as it stands (a hand-added file, personal data that slipped through). It
+    leaves the head of the queue: dead-lettered, alerted, retried only by hand (RUNBOOK §4.8, BLD-143)."""
 
 
 @dataclass(frozen=True)
@@ -152,7 +159,7 @@ class RepoWriter:
         with connect(self.database_url, autocommit=True) as conn:
             pending = conn.execute(
                 "SELECT id, event_type, aggregate_id, actor, payload, created_at, attempts "
-                "FROM outbox WHERE committed_at IS NULL ORDER BY id LIMIT %s",
+                "FROM outbox WHERE committed_at IS NULL AND dead_lettered_at IS NULL ORDER BY id LIMIT %s",
                 (limit,),
             ).fetchall()
             for event in pending:
@@ -160,6 +167,9 @@ class RepoWriter:
                     break  # still backing off on the event at the head of the queue
                 try:
                     outcome = self._one(conn, event, recovered)
+                except DeadLetter as exc:
+                    self._dead_letter(conn, event, exc.code)
+                    continue  # never blocks the events behind it
                 except EventError as exc:
                     self._record_failure(conn, event, exc.code)
                     break
@@ -207,6 +217,12 @@ class RepoWriter:
             idea_id = (event["payload"] or {}).get("idea_id") or event["aggregate_id"]
             with conn.transaction():
                 self._mark_committed(conn, outbox_id, sha)
+                if event["event_type"] in DOC_EVENTS:  # documents keep where they went too (BLD-146)
+                    table, key, rel = self._doc_target(event)
+                    conn.execute(
+                        f"UPDATE {table} SET repo_path = %s, repo_commit = %s WHERE id = %s",  # noqa: S608 (fixed names)
+                        (rel, sha, key),
+                    )
                 if event["event_type"] in IDEA_EVENTS:
                     row = conn.execute(
                         "SELECT idea_id, submitted_at FROM ideas WHERE idea_id = %s", (idea_id,)
@@ -438,47 +454,51 @@ class RepoWriter:
         log.info("repo_writer.committed", outbox_id=outbox_id, commit_sha=sha, event_type=event["event_type"])
         return Outcome(outbox_id, sha, False)
 
+    @staticmethod
+    def _doc_target(event: dict[str, Any]) -> tuple[str, Any, str]:
+        payload, doc_id = event["payload"] or {}, str(event["aggregate_id"])
+        if event["event_type"] == SOLUTION_EVENT:
+            return "solution_writeups", payload.get("writeup_id"), f"solutions/{doc_id}.md"
+        folder = "glossary" if event["event_type"] == GLOSSARY_EVENT else "areas"
+        return "learning_proposals", payload.get("proposal_id"), f"taxonomy/{folder}/{doc_id}.md"
+
     def _checked_doc(self, text: str, rel: str) -> None:
-        doc = parse(text)
-        if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
-            raise EventError("invalid_doc_file")
-        if any(m.action == "block" for m in scan(text)):
-            raise EventError(
-                "personal_data_in_doc"
-            )  # checked when approved; never written if it slipped through
+        """The same check approve and publish ran (BLD-143). Failing here means the record changed since: it can
+        never succeed as it stands, so it is dead-lettered rather than retried."""
+        problem = doc_problem(text, rel, list(self.settings.kfin_domains))
+        if problem:
+            raise DeadLetter(problem)
+
+    def _dead_letter(self, conn: Conn, event: dict[str, Any], code: str) -> None:
+        outbox_id = int(event["id"])
+        code = re.sub(r"[^A-Za-z0-9_.:-]", "_", code)[:120] or "error"
+        with conn.transaction():
+            conn.execute(
+                "UPDATE outbox SET dead_lettered_at = now(), last_error = %s, attempts = attempts + 1 WHERE id = %s",
+                (code, outbox_id),
+            )
+            conn.execute(
+                "INSERT INTO audit_log (actor, action, entity, after) VALUES ('process:repo-writer', "
+                "'alert.repo_writer_dead_letter', %s, %s)",
+                (f"outbox:{outbox_id}", Jsonb({"event_type": event["event_type"], "error_code": code})),
+            )
+        self._retry_at.pop(outbox_id, None)
+        log.error(
+            "repo_writer.dead_lettered", outbox_id=outbox_id, event_type=event["event_type"], error_code=code
+        )
 
     def _write_solution(self, conn: Conn, event: dict[str, Any]) -> tuple[str, str, str, int]:
-        from ones.text import unseal_json
-
         sol = str(event["aggregate_id"])
         if not re.fullmatch(r"SOL-[0-9]{4}", sol):
-            raise EventError("solution_id_invalid")
+            raise DeadLetter("solution_id_invalid")
         w = conn.execute(
-            "SELECT w.*, d.subject_type, d.subject_id, d.shipped_at, d.resolved_at FROM solution_writeups w "
-            "JOIN deliveries d ON d.id = w.delivery_id WHERE w.id = %s",
-            ((event["payload"] or {}).get("writeup_id"),),
+            "SELECT * FROM solution_writeups WHERE id = %s", ((event["payload"] or {}).get("writeup_id"),)
         ).fetchone()
         if w is None or w["state"] != "approved" or w["solution_id"] != sol:
-            raise EventError("writeup_not_approved")
-        parts = unseal_json(w["parts_encrypted"], f"writeup:{w['id']}")
-        if w["subject_type"] == "idea":
-            ideas = conn.execute(
-                "SELECT lobs, area_ids FROM ideas WHERE idea_id = %s", (w["subject_id"],)
-            ).fetchall()
-        else:
-            ideas = conn.execute(
-                "SELECT lobs, area_ids FROM ideas WHERE cluster_id = %s", (w["subject_id"],)
-            ).fetchall()
-        lobs = sorted({x for r in ideas for x in (r["lobs"] or [])})
-        areas = sorted({x for r in ideas for x in (r["area_ids"] or [])})
-        done = w["shipped_at"] or w["resolved_at"]
-        facts = {
-            "approved_at": w["approved_at"], "owner_team": lobs[0] if lobs else None, "lobs": lobs,
-            "areas": areas, "source_cluster": w["subject_id"] if w["subject_type"] == "cluster" else None,
-            "shipped_on": ist(done).date().isoformat() if done else None, "delivery_id": int(w["delivery_id"]),
-        }  # fmt: skip
-        rel = f"solutions/{sol}.md"
-        text = render_solution(sol, parts, facts)
+            raise DeadLetter("writeup_not_approved")
+        rel, text, title = solution_doc(conn, dict(w), sol, w["approved_at"])
+        if (self.repo / rel).exists():
+            raise DeadLetter("doc_exists")  # never overwrite a file the product team wrote by hand (BLD-146)
         self._checked_doc(text, rel)
         path = self.repo / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -487,7 +507,7 @@ class RepoWriter:
             self.repo / "solutions" / "index.md",
             '# Solutions — "Already running"',
             f"{sol}.md",
-            doc_index_line(sol, parts["title"]),
+            doc_index_line(sol, title),
         )
         message = f"[{sol}] published\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
         return rel, message, "solution_writeups", int(w["id"])
@@ -499,31 +519,20 @@ class RepoWriter:
             "SELECT * FROM learning_proposals WHERE id = %s", ((event["payload"] or {}).get("proposal_id"),)
         ).fetchone()
         if p is None or p["state"] != "approved" or not p["publish_encrypted"]:
-            raise EventError("proposal_not_approved")
-        doc = unseal_json(p["publish_encrypted"], f"learning-publish:{p['id']}")
+            raise DeadLetter("proposal_not_approved")
         doc_id = str(event["aggregate_id"])
-        if event["event_type"] == GLOSSARY_EVENT:
-            if p["kind"] != "glossary_term" or not re.fullmatch(r"GL-[a-z0-9-]{2,60}", doc_id):
-                raise EventError("glossary_id_invalid")
-            rel = f"taxonomy/glossary/{doc_id}.md"
-            text = render_glossary_term(
-                doc_id, doc["term"], doc["definition"], list(doc.get("aliases") or []), p["decided_at"]
-            )
-            index, title = self.repo / "taxonomy" / "glossary" / "index.md", "# Glossary"
-            line = doc_index_line(doc_id, doc["term"])
-        else:
-            if p["kind"] != "area_tag" or not re.fullmatch(r"AREA-[a-z0-9-]{2,60}", doc_id):
-                raise EventError("area_id_invalid")
-            rel = f"taxonomy/areas/{doc_id}.md"
-            text = render_area_tag(doc_id, doc["title"], doc["description"], p["decided_at"])
-            index, title = self.repo / "taxonomy" / "areas" / "index.md", "# Area tags"
-            line = doc_index_line(doc_id, doc["title"])
+        wanted = ("glossary_term", r"GL-[a-z0-9-]{2,60}") if event["event_type"] == GLOSSARY_EVENT else (
+            "area_tag", r"AREA-[a-z0-9-]{2,60}")  # fmt: skip
+        if p["kind"] != wanted[0] or not re.fullmatch(wanted[1], doc_id):
+            raise DeadLetter("doc_id_invalid")
+        doc = unseal_json(p["publish_encrypted"], f"learning-publish:{p['id']}")
+        rel, text, title, line = taxonomy_doc(str(p["kind"]), doc_id, doc, p["decided_at"])
         if (self.repo / rel).exists():
-            raise EventError("doc_exists")  # never overwrite a file the product team wrote by hand
+            raise DeadLetter("doc_exists")  # never overwrite a file the product team wrote by hand
         self._checked_doc(text, rel)
         (self.repo / rel).parent.mkdir(parents=True, exist_ok=True)
         (self.repo / rel).write_text(text, encoding="utf-8")
-        self._upsert_index_line(index, title, f"{doc_id}.md", line)
+        self._upsert_index_line(self.repo / Path(rel).parent / "index.md", title, f"{doc_id}.md", line)
         message = f"[{doc_id}] added\n\nactor: {event['actor']}\nevent: {event['event_type']}\noutbox: {event['id']}\n"
         return rel, message, "learning_proposals", int(p["id"])
 

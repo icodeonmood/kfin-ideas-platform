@@ -32,36 +32,17 @@
     "members": [
       {
         "ref": "M1",
-        "kind": "problem",
-        "one_line": "Change-of-bank requests come back incomplete from service centres",
-        "details": "Investors bring the form without a cancelled cheque, so the request is sent back and they visit again.",
-        "who": {
-          "segments": [
-            "investors"
-          ],
-          "frequency_or_reach": "weekly"
-        },
+        "summary": "Change-of-bank requests reach service centres without a cancelled cheque and are sent back.",
         "lobs": [
-          "LOB-mf"
-        ],
-        "fix": null
+          "Mutual fund operations"
+        ]
       },
       {
         "ref": "M2",
-        "kind": "problem_with_solution",
-        "one_line": "A checklist at the counter would stop repeat visits",
-        "details": "Counter staff could tick a short checklist before accepting a change-of-bank form.",
-        "who": {
-          "segments": [
-            "investors",
-            "kfin_teams"
-          ],
-          "frequency_or_reach": "weekly"
-        },
+        "summary": "A short counter checklist could stop repeat visits for change-of-bank requests.",
         "lobs": [
-          "LOB-mf"
-        ],
-        "fix": "A one-page counter checklist for change-of-bank requests."
+          "Mutual fund operations"
+        ]
       }
     ]
   },

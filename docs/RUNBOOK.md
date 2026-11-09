@@ -14,6 +14,7 @@ Alerts are rows in `audit_log` with an `alert.` action and error-level log lines
 | `alert.kill_switch_auto` on `comms.email` | More than 5% of email bounced in an hour (20 or more sent) | Section 4.4 |
 | Log `reconcile.visibility_drift` | An idea file shows a different visibility than the database | Section 4.6, treat as urgent |
 | Log `health.worker_check_failed` | The web app cannot reach the worker with its token | Section 4.5 |
+| `alert.repo_writer_dead_letter` on `outbox:<id>` | The repo writer can never write a document event as it stands (`doc_exists`: a file the product team added by hand; `personal_data_in_doc`; a record no longer approved) | Section 4.8 |
 
 Nothing switches itself back on. A person checks the cause, then flips the switch back with a reason.
 
@@ -98,7 +99,13 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 Run `python -m reconcile --report-only`. Index drift fixes itself at 02:00 or with `python -m reconcile`. `idea_visibility_mismatch` means an idea file in the company repo shows the wrong visibility: switch `wall.public` and `matching.show` off until the repo writer has rewritten the file (any review action on the idea rewrites it), then rerun reconcile.
 
 ### 4.7 Repo writer behind
-`SELECT count(*), min(created_at) FROM outbox WHERE committed_at IS NULL` growing, or rows with `last_error`, means the writer is stuck. The app keeps working; restart the worker. A `last_error` code that repeats needs a fix before restart.
+`SELECT count(*), min(created_at) FROM outbox WHERE committed_at IS NULL AND dead_lettered_at IS NULL` growing, or rows with `last_error`, means the writer is stuck. The app keeps working; restart the worker. A `last_error` code that repeats needs a fix before restart.
+
+### 4.8 A dead-lettered repo event (BLD-143)
+Document events the writer can never commit (solutions, glossary terms, area tags) leave the queue so later writes carry on: `SELECT id, event_type, aggregate_id, last_error FROM outbox WHERE dead_lettered_at IS NOT NULL`. Fix the cause first: for `doc_exists`, decide with the product team whether the hand-added file stays (then leave the event dead) or goes (remove it through a normal repo commit); for `personal_data_in_doc`, have the owner change the write-up or the definition and approve or publish it again, which queues a fresh event. To retry the same event once the cause is gone: `UPDATE outbox SET dead_lettered_at = NULL, attempts = 0, last_error = NULL WHERE id = <id>`, and note who and why in `audit_log` (`INSERT INTO audit_log (actor, action, entity) VALUES ('user:<id>', 'repo_writer.dead_letter_retried', 'outbox:<id>')`). Never edit the event's payload.
+
+### 4.9 Rolling back the delivery evidence migration (`20261118000100`)
+Its down step deletes the delivery attachments' rows but cannot reach the object store, so their files stay in the `quarantine` and `clean` buckets. Before rolling back, list them with `SELECT store_key FROM attachments WHERE delivery_id IS NOT NULL` and remove each key from both buckets (`mc rm <alias>/<bucket>/<key>` in dev; KFin's storage tooling in UAT and prod). Left behind, they are unreachable from the app but still hold the uploaded files.
 
 ## 5. Restore (AT-B8-02, target 4 hours)
 

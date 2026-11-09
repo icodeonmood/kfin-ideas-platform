@@ -37,6 +37,9 @@ def test_your_lens_counts_your_ideas_and_groups_and_nothing_else(ldb: Any) -> No
     helpers.insert_idea(db, contributor=mine, stage="scanned")
     helpers.insert_idea(db, contributor=mine, stage="draft")  # drafts are not counted
     db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = ANY(%s)", (cl, [a, b]))
+    db.execute(  # two area tags on one idea must still count as one idea (BLD-145)
+        "UPDATE ideas SET area_ids = '{AREA-process,AREA-technology}' WHERE idea_id = %s", (a,)
+    )
 
     lens = lenses.mine(db, me)
     assert lens["shared"] == 2

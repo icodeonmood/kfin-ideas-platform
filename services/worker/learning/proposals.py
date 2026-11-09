@@ -29,6 +29,7 @@ from ones.text import OnesRefused, checked, seal, seal_json, unseal
 from pii.detect import detect, directory
 from pii.patterns import scan
 from pii.tagger import TAG_RE
+from repo_writer.render_docs import doc_problem, taxonomy_doc
 from scan.inputs import _taxonomy
 
 TERM_RE = re.compile(r"(?<![A-Za-z0-9])(?:[A-Z]{2,8}|[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+)(?![A-Za-z0-9])")
@@ -210,7 +211,10 @@ def publish(
         raise OnesRefused(409, "already_published")
     # Checked before the transaction: the gatekeeper is a model call.
     if p["kind"] == "glossary_term":
-        term = unseal(p["text_encrypted"], f"learning:{pid}") or ""
+        # The term itself goes on a page everyone reads: patterns, colleague and client names, gatekeeper (BLD-144).
+        term = checked(
+            conn, unseal(p["text_encrypted"], f"learning:{pid}"), min_chars=2, max_chars=60, public=True
+        )
         definition = checked(
             conn, body.get("definition"), min_chars=20, max_chars=400, max_words=70, public=True
         )
@@ -235,6 +239,10 @@ def publish(
         raise OnesRefused(422, "name_not_valid")
     if _doc_file(doc_id).exists():
         raise OnesRefused(409, "doc_exists")  # the product team already has it; never overwritten
+    # The repo writer's exact check, now: anything it would refuse is refused here instead (BLD-143).
+    rel, text, _title, _line = taxonomy_doc(str(p["kind"]), doc_id, doc, p["decided_at"])
+    if doc_problem(text, rel, list(get_settings().kfin_domains)):
+        raise OnesRefused(422, "doc_needs_changes")
     with conn.transaction():
         locked = conn.execute("SELECT * FROM learning_proposals WHERE id = %s FOR UPDATE", (pid,)).fetchone()
         if locked is None or locked["state"] != "approved" or locked["doc_id"]:
@@ -247,8 +255,9 @@ def publish(
             (seal_json(doc, f"learning-publish:{pid}"), doc_id, actor, now, pid),
         )
         conn.execute(
-            "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES (%s, %s, %s, %s)",
-            (PUBLISH_EVENTS[str(p["kind"])], doc_id, f"user:{actor}", Jsonb({"proposal_id": pid})),
+            "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES (%s, %s, 'process:learning-approval', "
+            "%s)",  # who published is in audit_log; the outbox (and the git history) names the process only
+            (PUBLISH_EVENTS[str(p["kind"])], doc_id, Jsonb({"proposal_id": pid})),
         )
         conn.execute(
             "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'learning.published', %s, %s)",

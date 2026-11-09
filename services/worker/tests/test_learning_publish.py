@@ -90,3 +90,18 @@ def test_a_tag_never_overwrites_one_the_product_team_wrote(ones_db: Any, crew: A
         now=NOW,
     )  # fmt: skip
     assert out["doc_id"] == "AREA-payout-files"
+
+
+@pytest.mark.stack
+def test_the_term_itself_is_checked_for_names(ones_db: Any, crew: Any) -> None:
+    """BLD-144: a candidate term that is a colleague's name never reaches the company repo."""
+    from tests.test_ones import person
+
+    db = ones_db
+    person(db, name="Meenakshi Raghavan")
+    pid = _proposal(db, "glossary_term", "Meenakshi Raghavan")
+    proposals.decide(db, crew["admin"], pid, {"verdict": "approve"}, now=NOW)
+    refused(
+        "names_not_allowed", proposals.publish, db, crew["admin"], pid,
+        {"definition": "A daily check of payout files against bank masters before release."},
+    )  # fmt: skip

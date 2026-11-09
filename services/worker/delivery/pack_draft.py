@@ -1,42 +1,45 @@
-"""The handover pack drafted by the assistant (BLD-138). The `handover-draft` agent reads the picked idea, or each
-idea in the picked group, through the gateway (tagged before sending, checked after) and proposes the metric, its
-unit, the product, the feature type and, on the fix track, the objective. Numbers only when a member gave them.
+"""The handover pack drafted by the assistant (BLD-138, BLD-141). The `handover-draft` agent reads the picked idea,
+or each idea in the picked group, through the gateway and proposes the metric, its unit, the product, the feature
+type and, on the fix track, the objective. Numbers only when a member's summary gave them.
+
+What it reads (BLD-141): only org-visible member ideas, and only their checked neutral summaries, the same text
+everyone may already see. Never an idea's one-line, details or proposed fix, and never a committee-only idea, so
+nothing a member could not see shapes the draft (non-negotiable 7).
 
 It proposes; people decide. Nothing is saved here: the draft goes back to the person filling in the pack, who
 edits it and saves it through the normal pack checks, and the sponsor approves the pack as before. Only the
-delivery's editors can ask for a draft, only while the pack is being drafted. Audited with IDs only."""
+delivery's editors can ask for a draft, while the pack is open. Audited with a member count only."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from cluster import cards
 from core.db import Conn
 from delivery import service
 from delivery.phases import FEATURE_TYPES, METRIC_UNITS, PRODUCTS
 from gateway import AgentFailed, run_agent
 from ones.service import roles
+from views.common import checked_summary, taxonomy_names
 
 MAX_MEMBERS = 12
 
 
 def _members(conn: Conn, d: dict[str, Any]) -> list[dict[str, Any]]:
-    if d["subject_type"] == "idea":
-        ids = [str(d["subject_id"])]
-    else:
-        ids = [
-            str(r["idea_id"])
-            for r in conn.execute(
-                "SELECT idea_id FROM ideas WHERE cluster_id = %s AND stage NOT IN ('withdrawn', 'declined', "
-                "'parked', 'draft') ORDER BY submitted_at NULLS LAST, idea_id LIMIT %s",
-                (d["subject_id"], MAX_MEMBERS),
-            ).fetchall()
-        ]
-    found = cards.ideas(conn, ids)
-    out = []
-    for n, idea_id in enumerate(i for i in ids if i in found):
-        card = cards.member_card(conn, f"M{n + 1}", found[idea_id])
-        out.append({k: card[k] for k in ("ref", "kind", "one_line", "details", "who", "lobs", "fix")})
+    """Org-visible member ideas as checked neutral summaries with their lines of business."""
+    rows = conn.execute(
+        "SELECT canvas ->> 'neutral_summary' AS summary, lobs FROM ideas "
+        "WHERE (CASE WHEN %s = 'idea' THEN idea_id ELSE cluster_id END) = %s AND visibility = 'org' "
+        "AND stage NOT IN ('withdrawn', 'declined', 'parked', 'draft') ORDER BY submitted_at NULLS LAST, idea_id "
+        "LIMIT %s",
+        (d["subject_type"], d["subject_id"], MAX_MEMBERS),
+    ).fetchall()
+    _areas, lobs = taxonomy_names()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        summary = checked_summary(conn, r["summary"])
+        if summary:
+            out.append({"ref": f"M{len(out) + 1}", "summary": summary,
+                        "lobs": [lobs.get(x, x) for x in r["lobs"] or []][:3]})  # fmt: skip
     return out
 
 

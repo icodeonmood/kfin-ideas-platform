@@ -125,7 +125,7 @@ def run(settings: Settings | None = None, *, fix: bool = True, wait_s: float = 1
             pending = {
                 r["aggregate_id"]
                 for r in conn.execute(
-                    "SELECT DISTINCT aggregate_id FROM outbox WHERE committed_at IS NULL "
+                    "SELECT DISTINCT aggregate_id FROM outbox WHERE committed_at IS NULL AND dead_lettered_at IS NULL "
                     "AND aggregate_id LIKE 'IDEA-%%'"
                 ).fetchall()
             }

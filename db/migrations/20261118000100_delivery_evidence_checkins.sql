@@ -31,6 +31,8 @@ CREATE TRIGGER delivery_checkins_updated_at BEFORE UPDATE ON delivery_checkins
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- migrate:down
+-- The delivery attachments' files stay in the quarantine and clean buckets: SQL cannot reach the object store.
+-- Remove them first (RUNBOOK §4.9, BLD-146).
 DROP TABLE IF EXISTS delivery_checkins;
 DELETE FROM attachments WHERE delivery_id IS NOT NULL;
 DROP INDEX IF EXISTS attachments_delivery;

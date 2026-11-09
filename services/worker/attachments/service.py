@@ -81,14 +81,19 @@ def _key(att_id: str) -> str:
     return f"att/{att_id}"
 
 
-def _screen(name: str, data: bytes, lim: Limits) -> str:
-    """The checks before anything is stored: size, a name with no personal data, and a type by signature."""
+def _screen(conn: Conn, name: str, data: bytes, lim: Limits) -> str:
+    """The checks before anything is stored: size, a name with no personal data and no colleague's or client's
+    name (it is shown to committees and the people on a delivery, BLD-146), and a type by signature."""
+    from pii.detect import detect, directory
+
     if not data:
         raise AttachmentRefused(400, "file_empty")
     if len(data) > lim.max_bytes_each:
         raise AttachmentRefused(413, "file_too_large")
     if any(m.action == "block" for m in scan(name, kfin_domains=get_settings().kfin_domains)):
         raise AttachmentRefused(422, "name_has_personal_data")  # the name is shown on screens; never stored
+    if detect(name, directory(conn), kfin_domains=get_settings().kfin_domains):
+        raise AttachmentRefused(422, "name_has_personal_data")
     kind = sniff(data)
     if kind is None or kind not in lim.allowed:
         raise AttachmentRefused(415, "type_not_allowed")
@@ -127,7 +132,7 @@ def _store_and_queue(conn: Conn, owner: dict[str, Any], name: str, data: bytes, 
 
 def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data: bytes) -> dict[str, Any]:
     lim = limits()
-    kind = _screen(name, data, lim)
+    kind = _screen(conn, name, data, lim)
     with conn.transaction():
         idea = conn.execute(
             "SELECT stage FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)
@@ -159,7 +164,7 @@ def accept_evidence(conn: Conn, *, delivery_id: int, user_id: str, name: str, da
     """An evidence file for a delivery (BLD-131): the same checks as research files, then quarantine. The caller
     has checked that `user_id` may add evidence to this delivery."""
     lim = limits()
-    kind = _screen(name, data, lim)
+    kind = _screen(conn, name, data, lim)
     with conn.transaction():
         d = conn.execute("SELECT state FROM deliveries WHERE id = %s FOR UPDATE", (delivery_id,)).fetchone()
         if d is None:

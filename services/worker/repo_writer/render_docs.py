@@ -7,7 +7,10 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from okf.frontmatter import dump
+from core.db import Conn
+from okf.frontmatter import dump, parse
+from okf.validate import check_concept_meta
+from pii.patterns import scan
 from repo_writer.render import esc as _esc
 from repo_writer.render import iso
 
@@ -119,3 +122,58 @@ def render_area_tag(area_id: str, title: str, description: str, at: dt.datetime)
         "",
     ]
     return dump(meta, "\n" + "\n".join(body))
+
+
+# --- The writer's own check, also run when a document is approved (BLD-143) ------------------------------------------
+
+
+def doc_problem(text: str, rel: str, kfin_domains: list[str]) -> str | None:
+    """Why the repo writer would refuse this file, or None. The same patterns and `kfin_domains` as `checked()`, plus
+    the OKF concept rules. Approve and publish run it first, so nothing they queue can fail in the writer."""
+    doc = parse(text)
+    if [i for i in check_concept_meta(doc.meta or {}, rel) if i.level == "error"]:
+        return "invalid_doc_file"
+    if any(m.action == "block" for m in scan(text, kfin_domains=kfin_domains)):
+        return "personal_data_in_doc"
+    return None
+
+
+def solution_doc(conn: Conn, w: dict[str, Any], sol: str, approved_at: dt.datetime) -> tuple[str, str, str]:
+    """(path, file text, title) for an approved write-up, from its sealed parts and its delivery's ideas."""
+    from ones.text import unseal_json
+    from repo_writer.render import ist
+
+    d = conn.execute(
+        "SELECT subject_type, subject_id, shipped_at, resolved_at FROM deliveries WHERE id = %s",
+        (w["delivery_id"],),
+    ).fetchone()
+    assert d is not None
+    parts = unseal_json(w["parts_encrypted"], f"writeup:{w['id']}")
+    if d["subject_type"] == "idea":
+        ideas = conn.execute(
+            "SELECT lobs, area_ids FROM ideas WHERE idea_id = %s", (d["subject_id"],)
+        ).fetchall()
+    else:
+        ideas = conn.execute(
+            "SELECT lobs, area_ids FROM ideas WHERE cluster_id = %s", (d["subject_id"],)
+        ).fetchall()
+    lobs = sorted({x for r in ideas for x in (r["lobs"] or [])})
+    areas = sorted({x for r in ideas for x in (r["area_ids"] or [])})
+    done = d["shipped_at"] or d["resolved_at"]
+    facts = {
+        "approved_at": approved_at, "owner_team": lobs[0] if lobs else None, "lobs": lobs, "areas": areas,
+        "source_cluster": d["subject_id"] if d["subject_type"] == "cluster" else None,
+        "shipped_on": ist(done).date().isoformat() if done else None, "delivery_id": int(w["delivery_id"]),
+    }  # fmt: skip
+    return f"solutions/{sol}.md", render_solution(sol, parts, facts), str(parts["title"])
+
+
+def taxonomy_doc(kind: str, doc_id: str, doc: dict[str, Any], at: dt.datetime) -> tuple[str, str, str, str]:
+    """(path, file text, index title, index line) for an approved glossary term or area tag."""
+    if kind == "glossary_term":
+        text = render_glossary_term(
+            doc_id, doc["term"], doc["definition"], list(doc.get("aliases") or []), at
+        )
+        return f"taxonomy/glossary/{doc_id}.md", text, "# Glossary", doc_index_line(doc_id, doc["term"])
+    text = render_area_tag(doc_id, doc["title"], doc["description"], at)
+    return f"taxonomy/areas/{doc_id}.md", text, "# Area tags", doc_index_line(doc_id, doc["title"])

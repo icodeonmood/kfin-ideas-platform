@@ -71,3 +71,48 @@ def test_only_the_editors_get_a_draft_and_nothing_is_saved(ones_db: Any, crew: d
         (f"delivery:{did}",),
     ).fetchone()
     assert audit is not None and set(audit["after"]) == {"members"}
+
+
+@pytest.mark.stack
+def test_only_org_visible_summaries_reach_the_agent(
+    ones_db: Any, crew: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-141: a committee-only member, and every idea's own words, never shape the draft (non-negotiable 7)."""
+    from delivery import pack_draft, service
+    from tests import helpers
+
+    db = ones_db
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(9100, 9999) if f"CL-{n}" not in taken)
+    db.execute("INSERT INTO clusters (id, stage, distinct_contributors) VALUES (%s, 'picked', 2)", (cl,))
+    shown = helpers.insert_idea(db, stage="in_cluster")
+    hidden = helpers.insert_idea(db, stage="in_cluster")
+    db.execute(
+        "UPDATE ideas SET cluster_id = %s, canvas = jsonb_set(jsonb_set(canvas, '{neutral_summary}', "
+        "'\"Payout files are checked twice by hand before release.\"'), '{one_line}', '\"OWN-WORDS-MARKER\"') "
+        "WHERE idea_id = %s",
+        (cl, shown),
+    )
+    db.execute(
+        "UPDATE ideas SET cluster_id = %s, visibility = 'committee', canvas = jsonb_set(canvas, '{neutral_summary}', "
+        "'\"COMMITTEE-ONLY-MARKER payout delays\"') WHERE idea_id = %s",
+        (cl, hidden),
+    )
+    did = service.start(db, crew["member"], {"subject_type": "cluster", "subject_id": cl, "track": "build"})[
+        "id"
+    ]
+    sent: list[dict[str, Any]] = []
+    real = pack_draft.run_agent
+
+    def spy(name: str, inputs: dict[str, Any], ref: str, **kw: Any) -> Any:
+        sent.append(inputs)
+        return real(name, inputs, ref, **kw)
+
+    monkeypatch.setattr(pack_draft, "run_agent", spy)
+    out = pack_draft.draft(db, crew["member"], did)
+    text = json.dumps(sent)
+    assert "COMMITTEE-ONLY-MARKER" not in text and "OWN-WORDS-MARKER" not in text
+    assert [m["summary"] for m in sent[0]["members"]] == [
+        "Payout files are checked twice by hand before release."
+    ]
+    assert "COMMITTEE-ONLY-MARKER" not in json.dumps(out)

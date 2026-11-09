@@ -99,7 +99,12 @@ export const ERRORS: Record<string, string> = {
   file_empty: "That file is empty.",
   file_required: "Choose a file first.",
   type_not_allowed: "That type of file isn't allowed. Use PDF, Word, PowerPoint, Excel, CSV, PNG or JPG.",
-  name_has_personal_data: "The file's name looks like it holds personal details. Rename it and try again.",
+  name_has_personal_data:
+    "The file's name looks like it holds personal details or a colleague's or client's name. Rename it and try again.",
+  writeup_needs_changes:
+    "Something in the write-up can't be published as it stands. Send it back so the owner can check the wording.",
+  doc_needs_changes:
+    "Something in these words can't go into the company repo. Please reword it and try again.",
   text_too_long: "That's too long. Please shorten it.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
   paused: "This is paused by a switch for now. Please try again once it is back on.",

@@ -353,7 +353,9 @@ def _wait_for_repo(conn: Conn, timeout_s: float = 180.0) -> None:
     repo = Path(get_settings().company_repo_path)
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        pending = conn.execute("SELECT count(*) AS n FROM outbox WHERE committed_at IS NULL").fetchone()
+        pending = conn.execute(
+            "SELECT count(*) AS n FROM outbox WHERE committed_at IS NULL AND dead_lettered_at IS NULL"
+        ).fetchone()
         head = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True
         ).stdout.strip()

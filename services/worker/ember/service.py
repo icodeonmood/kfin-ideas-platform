@@ -195,10 +195,21 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
             # Picked this month: when an idea first reached a picked (or later) stage, from its stage history.
             "SELECT lob, count(*) FILTER (WHERE submitted_at >= %s AND submitted_at < %s AND stage = ANY(%s)) "
             "AS shared, count(*) FILTER (WHERE picked_at >= %s AND picked_at < %s) AS picked FROM ("
+            # Only a move into the picked-or-later group counts, never a move inside it or a marker row; a backfilled
+            # row of unknown origin counts only when it is the pick itself (BLD-145).
             "SELECT i.lobs, i.stage, i.submitted_at, (SELECT min(h.at) FROM idea_stage_history h "
-            "WHERE h.idea_uuid = i.id AND h.to_stage = ANY(%s)) AS picked_at FROM ideas i "
+            "WHERE h.idea_uuid = i.id AND h.to_stage = ANY(%s) AND NOT (coalesce(h.from_stage, '') = ANY(%s)) "
+            "AND (h.from_stage IS NOT NULL OR h.source = 'live' OR h.to_stage = 'picked')) AS picked_at FROM ideas i "
             "WHERE i.visibility = 'org' AND i.stage <> 'draft') x, unnest(x.lobs) AS lob GROUP BY lob ORDER BY lob",
-            (start, end, list(PUBLIC_STAGES), start, end, list(PICKED + IN_GARAGE + SHIPPED)),
+            (
+                start,
+                end,
+                list(PUBLIC_STAGES),
+                start,
+                end,
+                list(PICKED + IN_GARAGE + SHIPPED),
+                list(PICKED + IN_GARAGE + SHIPPED),
+            ),
         ).fetchall()
         if int(r["shared"]) or int(r["picked"])
     ]

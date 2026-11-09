@@ -24,6 +24,7 @@ from core.db import Conn
 from delivery import service
 from ones.service import roles
 from ones.text import checked, seal_json, unseal_json
+from repo_writer.render_docs import doc_problem, solution_doc
 
 OPEN_STATES = ("shipped", "resolved", "closed")
 PARTS: dict[str, tuple[int, int]] = {  # (min chars, max chars)
@@ -82,9 +83,11 @@ def save(conn: Conn, actor: str, delivery_id: Any, body: dict[str, Any]) -> dict
             wid = row["id"]
         else:
             wid = current["id"]
-        conn.execute(
-            "UPDATE solution_writeups SET parts_encrypted = %s, state = 'draft', drafted_by = %s WHERE id = %s",
-            (seal_json(parts, f"writeup:{wid}"), actor, wid),
+        conn.execute(  # everyone who ever wrote any of it is kept, and none of them may approve it (BLD-142)
+            "UPDATE solution_writeups SET parts_encrypted = %s, state = 'draft', drafted_by = %s, "
+            "contributors = CASE WHEN %s = ANY(contributors) THEN contributors ELSE contributors || %s::uuid END "
+            "WHERE id = %s",
+            (seal_json(parts, f"writeup:{wid}"), actor, actor, actor, wid),
         )
         service._audit(conn, actor, "delivery.writeup_saved", f"delivery:{d['id']}", {"writeup": wid})
     return {"id": wid, "state": "draft"}
@@ -100,8 +103,10 @@ def submit(conn: Conn, actor: str, delivery_id: Any, now: dt.datetime | None = N
         if w is None or w["state"] != "draft":
             raise service.Refused(409, "nothing_to_submit")
         conn.execute(
-            "UPDATE solution_writeups SET state = 'submitted', submitted_by = %s, submitted_at = %s WHERE id = %s",
-            (actor, now, w["id"]),
+            "UPDATE solution_writeups SET state = 'submitted', submitted_by = %s, submitted_at = %s, "
+            "contributors = CASE WHEN %s = ANY(contributors) THEN contributors ELSE contributors || %s::uuid END "
+            "WHERE id = %s",
+            (actor, now, actor, actor, w["id"]),
         )
         service._audit(conn, actor, "delivery.writeup_submitted", f"delivery:{d['id']}", {"writeup": w["id"]})
         if d["sponsor_user_id"]:
@@ -122,9 +127,15 @@ def _sponsor_decides(conn: Conn, d: dict[str, Any], w: dict[str, Any] | None, ac
         raise service.Refused(403, "sponsor_only")
     if w is None or w["state"] != "submitted":
         raise service.Refused(409, "not_submitted")
-    if actor == str(w.get("submitted_by")):
-        raise service.Refused(403, "own_submission")  # separation of duties (BLD-126)
+    if actor in _writers(w):
+        raise service.Refused(403, "own_submission")  # nobody approves what they wrote (BLD-126, BLD-142)
     return w
+
+
+def _writers(w: dict[str, Any]) -> set[str]:
+    return {str(x) for x in (w.get("contributors") or [])} | {
+        str(x) for x in (w.get("drafted_by"), w.get("submitted_by")) if x
+    }
 
 
 def _repo_has(sol: str) -> bool:
@@ -145,14 +156,19 @@ def approve(conn: Conn, actor: str, delivery_id: Any, now: dt.datetime | None = 
             sol = f"SOL-{n:04d}"
             if not _repo_has(sol):
                 break
+        # The repo writer's exact check, now: anything it would refuse is refused here instead (BLD-143).
+        rel, text, _title = solution_doc(conn, w, sol, now)
+        if doc_problem(text, rel, list(get_settings().kfin_domains)):
+            raise service.Refused(422, "writeup_needs_changes")
         conn.execute(
             "UPDATE solution_writeups SET state = 'approved', approved_by = %s, approved_at = %s, solution_id = %s "
             "WHERE id = %s",
             (actor, now, sol, w["id"]),
         )
-        conn.execute(
-            "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('solution.published', %s, %s, %s)",
-            (sol, f"user:{actor}", Jsonb({"writeup_id": w["id"]})),
+        conn.execute(  # who approved is in audit_log; the outbox (and the git history) names the process only
+            "INSERT INTO outbox (event_type, aggregate_id, actor, payload) VALUES ('solution.published', %s, "
+            "'process:solution-approval', %s)",
+            (sol, Jsonb({"writeup_id": w["id"]})),
         )
         service._audit(
             conn,
@@ -200,5 +216,5 @@ def view(conn: Conn, d: dict[str, Any], viewer_id: str, have: set[str]) -> dict[
         "solution_id": w["solution_id"],
         "can_edit": may_draft and w["state"] in ("draft", "sent_back"),
         "can_submit": may_draft and w["state"] == "draft",
-        "can_decide": sponsor and w["state"] == "submitted" and viewer_id != str(w.get("submitted_by")),
+        "can_decide": sponsor and w["state"] == "submitted" and viewer_id not in _writers(w),
     }  # fmt: skip

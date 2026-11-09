@@ -126,3 +126,24 @@ def test_checkin_is_for_the_fix_track_only(ones_db: Any, crew: dict[str, str]) -
     db = ones_db
     _idea, did = approved(db, crew)  # a build
     refused("owner_only", extras.check_in, db, crew["owner"], did, {"status": "on_track"}, NOW)
+
+
+@pytest.mark.stack
+def test_evidence_names_may_not_name_a_colleague(
+    ones_db: Any, crew: dict[str, str], memory_store: dict[tuple[str, str], bytes]
+) -> None:
+    """BLD-146: file names are shown to committees and the delivery's people, so the colleague and client detector
+    runs on them as well as the patterns."""
+    db = ones_db
+    person(db, name="Ananya Raghunathan")
+    _idea, did = approved(db, crew)
+    db.execute("UPDATE deliveries SET state = 'shipped', shipped_at = now() WHERE id = %s", (did,))
+    refused(
+        "name_has_personal_data",
+        extras.add_evidence,
+        db,
+        crew["owner"],
+        did,
+        "Ananya Raghunathan notes.pdf",
+        PDF,
+    )

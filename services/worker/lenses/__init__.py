@@ -214,7 +214,8 @@ def mine(conn: Conn, user_id: str) -> dict[str, Any]:
         if c is None:
             continue
         member = conn.execute(
-            "SELECT count(*) AS ideas, array_agg(DISTINCT contributor_code) AS codes, "
+            # DISTINCT: the area join gives one row per area tag, and an idea with two tags is still one idea.
+            "SELECT count(DISTINCT ideas.id) AS ideas, array_agg(DISTINCT contributor_code) AS codes, "
             "array_agg(DISTINCT a) FILTER (WHERE a IS NOT NULL) AS areas FROM ideas "
             "LEFT JOIN LATERAL unnest(area_ids) AS a ON true WHERE cluster_id = %s AND stage <> 'draft'",
             (cid,),
