@@ -6,12 +6,13 @@ import { currentUser } from "@/server/auth/current";
 import { emberCurrent, emberIssue } from "@/server/ember";
 
 import { IssueView } from "../issue-view";
-import { NoteForm, SendIssue, StartDraft } from "./actions";
+import { ApproveNote, NoteForm, SendIssue, StartDraft } from "./actions";
 
 export const metadata: Metadata = { title: "Write The Ember" };
 export const dynamic = "force-dynamic";
 
-/** This month's issue: an admin opens it, the chair writes the note, an admin sends it (BLD-128). */
+/** This month's issue: an admin opens it, the chair writes or approves the note, and an admin who did neither
+ * sends it (BLD-128, BLD-134). */
 export default async function Page() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
@@ -49,12 +50,26 @@ export default async function Page() {
       </p>
       <section aria-labelledby="c-note">
         <h2 id="c-note">The chair&apos;s note</h2>
+        <p className="muted">
+          {issue.note_approved
+            ? "The chair has approved this note. Changing it sends it back to the chair."
+            : "Waiting for the chair to approve the note. An admin may draft it; it is the chair's once approved."}
+        </p>
         <NoteForm id={issue.id} initial={issue.note} />
+        {issue.can_approve_note ? <ApproveNote id={issue.id} /> : null}
       </section>
-      {issue.can_send ? (
+      {can(me.roles, "send_ember") ? (
         <section aria-labelledby="c-send">
           <h2 id="c-send">Send</h2>
-          <SendIssue id={issue.id} blocked={blocked} />
+          {issue.can_send && issue.confirm_token ? (
+            <SendIssue id={issue.id} blocked={blocked} confirmToken={issue.confirm_token} />
+          ) : (
+            <p className="notice">
+              {issue.own_note
+                ? "You wrote or approved this note, so another admin sends the issue."
+                : "The issue can go out once the chair has approved the note."}
+            </p>
+          )}
         </section>
       ) : null}
       <h2>Preview</h2>

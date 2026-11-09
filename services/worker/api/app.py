@@ -468,7 +468,15 @@ def ember_note(issue_id: str, body: dict[str, Any]) -> JSONResponse:
 def ember_send(issue_id: str, body: dict[str, Any]) -> JSONResponse:
     from ember.service import send
 
-    return _ones_call(send, _actor(body), issue_id)
+    return _ones_call(send, _actor(body), issue_id, body)
+
+
+@app.post("/internal/ember/{issue_id}/ready", dependencies=[Depends(require_token)])
+def ember_ready(issue_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The core committee chair approves the note; the issue becomes ready to send (Ember review)."""
+    from ember.service import approve_note
+
+    return _ones_call(approve_note, _actor(body), issue_id)
 
 
 @app.get("/internal/ones/public", dependencies=[Depends(require_token)])

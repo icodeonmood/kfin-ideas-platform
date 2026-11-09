@@ -104,8 +104,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
   /^\/api\/lenses\/rebuild\/?$/, // counts only, from the database; §7.6 has no lens switch
-  // Drafting The Ember and writing the chair's note send nothing; sending is behind ember.send (BLD-128).
-  /^\/api\/ember\/(?:drafts|[^/]+\/note)\/?$/,
+  // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
+  // ember.send (BLD-128, BLD-134).
+  /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
   /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
 ];
 

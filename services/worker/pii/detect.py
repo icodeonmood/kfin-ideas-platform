@@ -139,20 +139,30 @@ def build_directory(conn: Conn, repo: Path | None = None) -> Directory:
     return d.compile()
 
 
-_cache: dict[str, tuple[float, Directory]] = {}
+_cache: dict[str, tuple[float, str, Directory]] = {}
 _cache_lock = threading.Lock()
 
 
+def _users_signature(conn: Conn) -> str:
+    """Cheap fingerprint of the people table: a colleague added or renamed a moment ago is caught at once
+    (Ones review: a stale directory let a new colleague's name through the public-text check)."""
+    row = conn.execute(
+        "SELECT count(*) AS n, max(updated_at) AS m, max(created_at) AS c FROM users"
+    ).fetchone()
+    return f"{row['n']}|{row['m']}|{row['c']}" if row else ""
+
+
 def directory(conn: Conn, repo: Path | None = None) -> Directory:
-    """The directory, rebuilt at most once a minute per database and repo."""
+    """The directory, rebuilt when the people table changes and at least once a minute per database and repo."""
     key = f"{conn.info.dsn}|{repo or get_settings().company_repo_path}"
+    sig = _users_signature(conn)
     with _cache_lock:
         hit = _cache.get(key)
-        if hit and time.monotonic() - hit[0] < DIRECTORY_TTL_S:
-            return hit[1]
+        if hit and hit[1] == sig and time.monotonic() - hit[0] < DIRECTORY_TTL_S:
+            return hit[2]
     d = build_directory(conn, repo)
     with _cache_lock:
-        _cache[key] = (time.monotonic(), d)
+        _cache[key] = (time.monotonic(), sig, d)
     return d
 
 

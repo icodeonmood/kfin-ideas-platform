@@ -107,8 +107,9 @@ def test_numbers_come_in_order_rest_after_retirement_and_swap_only_in_the_first_
     removal = service.propose(db, cast["member"], {"kind": "remove", "one_id": induct(db, cast, c)["one_id"],
                                                   "reason": "Membership lapsed after twelve months"}, now=NOW)  # fmt: skip
     third = db.execute("SELECT number FROM ones WHERE user_id = %s", (c,)).fetchone()["number"]
-    service.decide(db, cast["member"], removal["id"], {"verdict": "approve", "how": "majority",
-                                                        "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
+    # Separation of duties (BLD-110): the chair records the meeting majority, an admin carries it out.
+    service.decide(db, cast["chair"], removal["id"], {"verdict": "approve", "how": "majority",
+                                                       "meeting_on": NOW.date().isoformat()}, now=NOW)  # fmt: skip
     service.carry_out(db, cast["admin"], removal["id"], now=NOW)
     assert not numbers.is_free(db, third, 0, NOW + dt.timedelta(days=30))  # resting for six months
     assert numbers.is_free(db, third, 0, NOW + numbers.REST + dt.timedelta(days=1))

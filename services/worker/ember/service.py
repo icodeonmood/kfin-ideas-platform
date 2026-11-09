@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import secrets
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -75,9 +76,70 @@ def can_edit(have: set[str]) -> bool:
 # --- Building an issue -------------------------------------------------------------------------------------------
 
 
+def one_card(o: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "induction_no": int(o["induction_no"]), "number": o["number"], "name": o["name"], "tier": o["tier"],
+        "tier_name": o["tier_name"], "tier_colour": o["tier_colour"], "founding": o["founding"], "line": o["line"],
+        "brief": o["brief"], "measures": o["measures"],
+    }  # fmt: skip
+
+
+def public_label(conn: Conn, subject_type: str, subject_id: str) -> str | None:
+    """A delivery's label for an org-wide issue (Ember review): an idea only if everyone may see it; a group by name
+    only if every member is org-visible, otherwise just its size. None means leave it out."""
+    from delivery.views import _label
+
+    if subject_type == "idea":
+        row = conn.execute("SELECT visibility FROM ideas WHERE idea_id = %s", (subject_id,)).fetchone()
+        return _label(conn, subject_type, subject_id) if row and row["visibility"] == "org" else None
+    row = conn.execute(
+        "SELECT count(*) AS n, coalesce(bool_and(visibility = 'org'), false) AS org FROM ideas WHERE cluster_id = %s",
+        (subject_id,),
+    ).fetchone()
+    if not row or not row["n"]:
+        return None
+    return _label(conn, subject_type, subject_id) if row["org"] else f"A group of {int(row['n'])} ideas"
+
+
+def as_sent(built: dict[str, Any], note: str) -> dict[str, Any]:
+    """What is kept for the archive: Ones as references only (induction numbers), never names or briefs."""
+    return {
+        **built, "note": note,
+        "impact": [{"induction_no": o["induction_no"]} for o in built["impact"]],
+        "new_ones": [{"induction_no": o["induction_no"]} for o in built["new_ones"]],
+    }  # fmt: skip
+
+
+def resolve(conn: Conn, content: dict[str, Any]) -> dict[str, Any]:
+    """A sent issue with its Ones read live (Ember review, DPDPA): names and briefs follow today's consent, so a
+    withdrawal hides the name from the archive too. Older issues that stored names show numbers only."""
+    from ones.views import public
+
+    ones = public(conn)
+    live = {int(o["induction_no"]): o for o in ones["ones"]}
+
+    def cards(refs: list[dict[str, Any]], need_measures: bool) -> list[dict[str, Any]]:
+        out = []
+        for ref in refs or []:
+            n = ref.get("induction_no")
+            o = live.get(int(n)) if n is not None else None
+            if o is not None and (o["measures"] or not need_measures):
+                out.append(one_card(o))
+            elif n is None and ref.get("number") is not None:  # stored before this fix: no name, ever
+                out.append({**{k: ref.get(k) for k in ("number", "tier", "tier_name", "tier_colour", "founding",
+                                                        "measures")}, "name": None, "line": None, "brief": None})  # fmt: skip
+        return out
+
+    return {
+        **content,
+        "ones_paused": ones["paused"],
+        "impact": cards(content.get("impact") or [], True),
+        "new_ones": cards(content.get("new_ones") or [], False),
+    }
+
+
 def build(conn: Conn, month: dt.date) -> dict[str, Any]:
     """Every section of the month's issue, from what everyone may already see."""
-    from delivery.views import _label
     from ones.views import _public_measures, public
     from views.common import IN_GARAGE, PICKED, PUBLIC_STAGES, SHIPPED, taxonomy_names
 
@@ -92,13 +154,6 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
         ).fetchall()
     }
 
-    def one_card(o: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "number": o["number"], "name": o["name"], "tier": o["tier"], "tier_name": o["tier_name"],
-            "tier_colour": o["tier_colour"], "founding": o["founding"], "line": o["line"], "brief": o["brief"],
-            "measures": o["measures"],
-        }  # fmt: skip
-
     impact = [one_card(o) for o in listed if o["measures"]]
     new_ones = [one_card(o) for o in listed if int(o["induction_no"]) in new_nos]
 
@@ -108,8 +163,9 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
         "OR (resolved_at >= %s AND resolved_at < %s) ORDER BY coalesce(shipped_at, resolved_at), id",
         (start, end, start, end),
     ).fetchall():
-        shipped.append({"label": _label(conn, d["subject_type"], d["subject_id"]),
-                        "words": "Fixed" if d["track"] == "fix" else "Shipped"})  # fmt: skip
+        label = public_label(conn, d["subject_type"], d["subject_id"])
+        if label is not None:
+            shipped.append({"label": label, "words": "Fixed" if d["track"] == "fix" else "Shipped"})
     results = []
     for m in conn.execute(
         "SELECT m.mark, m.results, m.finance_confirmed_at, d.subject_type, d.subject_id FROM delivery_measurements m "
@@ -123,9 +179,10 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
             if k in ("time", "money", "effort", "scale") and isinstance(v, dict)
         }
         measures = _public_measures(raw)
-        if measures:
-            results.append({"label": _label(conn, m["subject_type"], m["subject_id"]),
-                            "mark": "30 days" if m["mark"] == "day_30" else "90 days", "measures": measures})  # fmt: skip
+        label = public_label(conn, m["subject_type"], m["subject_id"])
+        if measures and label is not None:
+            results.append({"label": label, "mark": "30 days" if m["mark"] == "day_30" else "90 days",
+                            "measures": measures})  # fmt: skip
 
     _, lob_names = taxonomy_names()
     by_lob = [
@@ -135,10 +192,10 @@ def build(conn: Conn, month: dt.date) -> dict[str, Any]:
             "picked": int(r["picked"]),
         }
         for r in conn.execute(
-            "SELECT lob, count(*) FILTER (WHERE submitted_at >= %s AND submitted_at < %s) AS shared, "
-            "count(*) FILTER (WHERE stage = ANY(%s)) AS picked FROM ideas, unnest(lobs) AS lob "
+            "SELECT lob, count(*) FILTER (WHERE submitted_at >= %s AND submitted_at < %s AND stage = ANY(%s)) "
+            "AS shared, count(*) FILTER (WHERE stage = ANY(%s)) AS picked FROM ideas, unnest(lobs) AS lob "
             "WHERE visibility = 'org' AND stage <> 'draft' GROUP BY lob ORDER BY lob",
-            (start, end, list(PICKED + IN_GARAGE + SHIPPED)),
+            (start, end, list(PUBLIC_STAGES), list(PICKED + IN_GARAGE + SHIPPED)),
         ).fetchall()
         if int(r["shared"]) or int(r["picked"])
     ]
@@ -192,24 +249,51 @@ def set_note(conn: Conn, actor: str, issue_id: Any, body: dict[str, Any]) -> dic
             404, "not_found"
         )  # drafts are only for the chair and admins: to anyone else there is none
     issue = _issue(conn, issue_id)
-    if issue["state"] != "draft":
+    if issue["state"] == "sent":
         raise Refused(409, "already_sent")
     note = checked(conn, body.get("note"), min_chars=20, max_chars=600, max_words=90, public=True)
     with conn.transaction():
         issue = _issue(conn, issue["id"], lock=True)
-        if issue["state"] != "draft":
+        if issue["state"] == "sent":
             raise Refused(409, "already_sent")
-        conn.execute(
-            "UPDATE ember_issues SET chair_note_encrypted = %s, chair_note_by = %s WHERE id = %s",
+        conn.execute(  # a changed note needs the chair's approval again (Ember review)
+            "UPDATE ember_issues SET chair_note_encrypted = %s, chair_note_by = %s, state = 'draft', "
+            "note_approved_by = NULL, note_approved_at = NULL, ready_token = NULL WHERE id = %s",
             (seal(note, f"ember:{issue['id']}:note"), actor, issue["id"]),
         )
-        _audit(conn, actor, "ember.note_saved", int(issue["id"]), {})
+        _audit(conn, actor, "ember.note_saved", int(issue["id"]), {"was_ready": issue["state"] == "ready"})
     return {"id": int(issue["id"]), "note_saved": True}
 
 
-def send(conn: Conn, actor: str, issue_id: Any, now: dt.datetime | None = None) -> dict[str, Any]:
-    """The admin sends the issue to everyone. What it says is kept as sent, for the archive."""
+def approve_note(conn: Conn, actor: str, issue_id: Any, now: dt.datetime | None = None) -> dict[str, Any]:
+    """The core committee chair signs the note (Ember review): the issue becomes `ready` and gets a confirm token
+    that the send must carry. An admin may draft the note; only the chair makes it the chair's."""
     now = now or dt.datetime.now(dt.UTC)
+    if "core_chair" not in roles(conn, actor):
+        raise Refused(403, "chair_only")
+    with conn.transaction():
+        issue = _issue(conn, issue_id, lock=True)
+        if issue["state"] != "draft":
+            raise Refused(409, "already_sent" if issue["state"] == "sent" else "already_ready")
+        if not unseal(issue["chair_note_encrypted"], f"ember:{issue['id']}:note"):
+            raise Refused(422, "note_required")
+        conn.execute(
+            "UPDATE ember_issues SET state = 'ready', note_approved_by = %s, note_approved_at = %s, ready_token = %s "
+            "WHERE id = %s",
+            (actor, now, secrets.token_urlsafe(24), issue["id"]),
+        )
+        _audit(conn, actor, "ember.note_approved", int(issue["id"]), {})
+    return {"id": int(issue["id"]), "state": "ready"}
+
+
+def send(
+    conn: Conn, actor: str, issue_id: Any, body: dict[str, Any] | None = None, now: dt.datetime | None = None
+) -> dict[str, Any]:
+    """An admin sends a `ready` issue to everyone, carrying the confirm token from the chair's approval. The admin
+    may not be the person who wrote or approved the note (Ember review). What it says is kept for the archive,
+    with Ones stored as references so names follow live consent."""
+    now = now or dt.datetime.now(dt.UTC)
+    body = body or {}
     if "admin" not in roles(conn, actor):
         raise Refused(403, "forbidden")
     if not killswitch.is_on("ember.send", conn):
@@ -218,15 +302,22 @@ def send(conn: Conn, actor: str, issue_id: Any, now: dt.datetime | None = None) 
         raise Refused(503, "ones_paused")  # the issue names Ones: nothing about them goes out while they rest
     with conn.transaction():
         issue = _issue(conn, issue_id, lock=True)
-        if issue["state"] != "draft":
+        if issue["state"] == "sent":
             raise Refused(409, "already_sent")
+        if issue["state"] != "ready":
+            raise Refused(409, "not_ready")
+        if actor in (str(issue["chair_note_by"]), str(issue["note_approved_by"])):
+            raise Refused(403, "own_note")
+        token = str(body.get("confirm_token") or "")
+        if not issue["ready_token"] or not secrets.compare_digest(token, str(issue["ready_token"])):
+            raise Refused(409, "confirm_stale")
         note = unseal(issue["chair_note_encrypted"], f"ember:{issue['id']}:note")
         if not note:
             raise Refused(422, "note_required")
-        content = {**build(conn, issue["month"]), "note": note}
+        content = as_sent(build(conn, issue["month"]), note)
         conn.execute(
             "UPDATE ember_issues SET state = 'sent', content = %s, sent_by = %s, sent_at = %s, "
-            "chair_note_encrypted = NULL WHERE id = %s",
+            "chair_note_encrypted = NULL, ready_token = NULL WHERE id = %s",
             (Jsonb(content), actor, now, issue["id"]),
         )
         emit(conn, "ember.issue", {"issue_id": int(issue["id"])})
@@ -257,14 +348,21 @@ def view(conn: Conn, viewer: str, issue_id: Any) -> dict[str, Any]:
             "id": int(issue["id"]),
             "state": "sent",
             "sent_at": issue["sent_at"].isoformat(),
-            **issue["content"],
+            "note_approved": True,
+            **resolve(conn, issue["content"]),
         }
     have = roles(conn, viewer)
     if not can_edit(have):
         raise Refused(404, "not_found")
     note = unseal(issue["chair_note_encrypted"], f"ember:{issue['id']}:note")
+    ready = issue["state"] == "ready"
+    own = viewer in (str(issue["chair_note_by"]), str(issue["note_approved_by"]))
+    can_send = "admin" in have and ready and not own
     return {
-        "id": int(issue["id"]), "state": "draft", "note": note, "can_send": "admin" in have,
+        "id": int(issue["id"]), "state": issue["state"], "note": note, "note_approved": ready,
+        "can_approve_note": "core_chair" in have and issue["state"] == "draft" and bool(note),
+        "can_send": can_send, "confirm_token": issue["ready_token"] if can_send else None,
+        "own_note": "admin" in have and ready and own,
         "ember_paused": not killswitch.is_on("ember.send", conn), **build(conn, issue["month"]),
     }  # fmt: skip
 
@@ -274,6 +372,6 @@ def current_draft(conn: Conn, viewer: str) -> dict[str, Any]:
     if not can_edit(roles(conn, viewer)):
         return {"id": None}  # other committee members see no draft (the chair writes the note)
     row = conn.execute(
-        "SELECT id FROM ember_issues WHERE state = 'draft' ORDER BY month DESC LIMIT 1"
+        "SELECT id FROM ember_issues WHERE state IN ('draft', 'ready') ORDER BY month DESC LIMIT 1"
     ).fetchone()
     return {"id": int(row["id"]) if row else None}

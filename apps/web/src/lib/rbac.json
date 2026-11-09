@@ -321,6 +321,7 @@
     "GET /api/ember/{id}                               signed_in",
     "POST /api/ember/drafts                            send_ember",
     "PUT /api/ember/{id}/note                          write_ember_note",
+    "POST /api/ember/{id}/ready                        write_ember_note",
     "POST /api/ember/{id}/send                         send_ember"
   ],
   "membership_scoped": {

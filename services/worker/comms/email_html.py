@@ -178,12 +178,20 @@ def _blocks(body: str, values: list[str], base: str, colours: dict[str, str]) ->
     return out
 
 
-def _one_block(data: dict[str, Any]) -> str:
+def _one_number(data: dict[str, Any]) -> tuple[Any, Any] | None:
+    """(number, tier) when this message shows the recipient their own number, else None."""
     one = data.get("one") or {}
     number = one.get("number")
-    if number in (None, ""):
+    if number in (None, "") or not one.get("show_number"):
+        return None
+    return number, (data.get("tier") or {}).get("to") or one.get("tier")  # a tier change shows the new tier
+
+
+def _one_block(data: dict[str, Any]) -> str:
+    shown = _one_number(data)
+    if shown is None:
         return ""
-    tier = (data.get("tier") or {}).get("to") or one.get("tier")  # a tier change shows the new tier
+    number, tier = shown
     tier_row = ""
     if isinstance(tier, int) and tier in TIERS:
         name, colour = TIERS[tier]
@@ -202,11 +210,15 @@ def _one_block(data: dict[str, Any]) -> str:
     )
 
 
+def _card_line(data: dict[str, Any], rendered_body: str) -> str:
+    line = str((data.get("idea") or {}).get("one_line") or "").strip()
+    return "" if not line or line in rendered_body else line
+
+
 def _idea_card(data: dict[str, Any], rendered_body: str, colours: dict[str, str]) -> str:
     """The idea in a card, unless the message already quotes it."""
-    idea = data.get("idea") or {}
-    line = str(idea.get("one_line") or "").strip()
-    if not line or line in rendered_body:
+    line = _card_line(data, rendered_body)
+    if not line:
         return ""
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">'
@@ -294,10 +306,26 @@ def message_body(tpl: Template, data: dict[str, Any], base: str, theme: Theme = 
     return [_one_block(data), _idea_card(data, rendered, colours), *_blocks(slotted, values, base, colours)]
 
 
+def text_part(tpl: Template, data: dict[str, Any]) -> str:
+    """The plain-text part with the same blocks as the HTML: the One's number and the idea card first."""
+    rendered = render_text(tpl.body, data)
+    head: list[str] = []
+    shown = _one_number(data)
+    if shown is not None:
+        number, tier = shown
+        words = f"Tier {tier}, {TIERS[tier][0]}" if isinstance(tier, int) and tier in TIERS else ""
+        head.append(f"Your number: No. {number}" + (f" ({words})" if words else ""))
+    line = _card_line(data, rendered)
+    if line:
+        head.append(f"Idea: {line}")
+    return ("\n".join(head) + "\n\n" if head else "") + to_text(rendered)
+
+
 def compose(tpl: Template, data: dict[str, Any], base: str, theme: Theme = "auto") -> Email:
     subject = render_text(tpl.subject, data).strip()
-    text = to_text(render_text(tpl.body, data))
-    return Email(subject, text, shell(subject, message_body(tpl, data, base, theme), base, theme))
+    return Email(
+        subject, text_part(tpl, data), shell(subject, message_body(tpl, data, base, theme), base, theme)
+    )
 
 
 def digest(sections: list[tuple[Template, dict[str, Any]]], base: str, theme: Theme = "auto") -> Email:
@@ -313,5 +341,5 @@ def digest(sections: list[tuple[Template, dict[str, Any]]], base: str, theme: Th
             f'font-weight:bold;color:{colours["text"]};">{html.escape(s)}</h2>'
         )
         inner.extend(message_body(tpl, data, base, theme))
-        texts.append(f"{s}\n\n{to_text(render_text(tpl.body, data))}")
+        texts.append(f"{s}\n\n{text_part(tpl, data)}")
     return Email(subject, "\n\n".join(texts), shell(subject, inner, base, theme))

@@ -21,7 +21,6 @@ SHORTLISTED = ("shortlisted", "presenting", "picked", "handover", "in_garage", "
                "resolved", "measuring", "closed")  # fmt: skip
 ACCEPTED = ("picked", "handover", "in_garage", "in_fix_track", "shipped", "resolved", "measuring", "closed")
 SHIPPED = ("shipped", "resolved", "measuring", "closed")
-REVIEWED_OR_LATER = ("reviewed", "in_cluster", "ready_for_scoring", "scored", *SHORTLISTED)
 
 WORDS = {
     "submission": "You shared an idea",
@@ -32,7 +31,15 @@ WORDS = {
     "accepted": "Picked",
     "shipped_or_resolved": "Shipped",
 }
-COMING_SOON = ["Presenting to the core committee", "Working group shipped", "Points restored after an appeal"]
+# Read as "Points for …" on the screen (Ember review: plain words).
+COMING_SOON = [
+    "presenting to the core committee",
+    "helping a working group ship",
+    "an appeal that goes your way",
+]
+LOCK = "SELECT pg_advisory_xact_lock(hashtext('points.sync'))"  # the sync and single awards, one at a time
+NO_MILESTONES = ("withdrawn", "declined", "parked")  # a member that left its group earns the group nothing
+NOT_SUBMITTED = ("draft", "scanning", "blocked")  # not shared yet: no submission point
 
 
 def rules() -> dict[str, Any]:
@@ -44,21 +51,46 @@ def _month_key(ts: dt.datetime) -> tuple[int, int]:
     return local.year, local.month
 
 
-def _candidates(conn: Conn, r: dict[str, Any]) -> list[tuple[str, str, Decimal, str, dt.datetime]]:
-    """(contributor_code, event, points, ref_id, when) for everything that has happened."""
+def _reached(conn: Conn) -> dict[str, dict[str, dt.datetime]]:
+    """When each idea, and each group through its members, first reached each stage (`idea_stage_history`)."""
+    out: dict[str, dict[str, dt.datetime]] = {}
+    for row in conn.execute(
+        "SELECT i.idea_id, i.cluster_id, h.to_stage, min(h.at) AS at FROM idea_stage_history h "
+        "JOIN ideas i ON i.id = h.idea_uuid GROUP BY i.idea_id, i.cluster_id, h.to_stage"
+    ).fetchall():
+        for subject in (row["idea_id"], row["cluster_id"]):
+            if subject:
+                seen = out.setdefault(str(subject), {})
+                stage = str(row["to_stage"])
+                if stage not in seen or row["at"] < seen[stage]:
+                    seen[stage] = row["at"]
+    return out
+
+
+def _candidates(
+    conn: Conn, r: dict[str, Any], now: dt.datetime | None = None
+) -> list[tuple[str, str, Decimal, str, dt.datetime]]:
+    """(contributor_code, event, points, ref_id, when) for everything that has happened. Milestones are dated when
+    the stage was reached (falling back to now when that is not on record); strong canvases are awarded only by the
+    reviewer who confirms them (review `_award`), never here."""
+    now = now or dt.datetime.now(dt.UTC)
     out: list[tuple[str, str, Decimal, str, dt.datetime]] = []
+    reached = _reached(conn)
 
     def pts(value: Any) -> Decimal:
         return Decimal(str(value))
 
+    def first(subject: str, stages: tuple[str, ...]) -> dt.datetime:
+        times = [t for s, t in reached.get(subject, {}).items() if s in stages]
+        return min(times) if times else now
+
     for row in conn.execute(
-        "SELECT idea_id, contributor_code, submitted_at, strength, stage FROM ideas "
-        "WHERE stage NOT IN ('draft') AND submitted_at IS NOT NULL"
+        "SELECT idea_id, contributor_code, submitted_at FROM ideas WHERE NOT (stage = ANY(%s)) "
+        "AND submitted_at IS NOT NULL",
+        (list(NOT_SUBMITTED),),
     ).fetchall():
-        code, when = str(row["contributor_code"]), row["submitted_at"]
-        out.append((code, "submission", pts(r["submission"]["points"]), str(row["idea_id"]), when))
-        if row["stage"] in REVIEWED_OR_LATER and (row["strength"] or 0) >= 4:
-            out.append((code, "strong_canvas", pts(r["strong_canvas"]["points"]), str(row["idea_id"]), when))
+        out.append((str(row["contributor_code"]), "submission", pts(r["submission"]["points"]),
+                    str(row["idea_id"]), row["submitted_at"]))  # fmt: skip
     for row in conn.execute(
         "SELECT id, contributor_code, created_at FROM idea_links WHERE link_type = 'joiner' "
         "AND coalesce(btrim(context_text), '') <> ''"
@@ -75,6 +107,8 @@ def _candidates(conn: Conn, r: dict[str, Any]) -> list[tuple[str, str, Decimal, 
     ).fetchall():
         subject = str(row["cluster_id"] or row["idea_id"])
         stage = str(row["cluster_stage"] or row["stage"]) if row["cluster_id"] else str(row["stage"])
+        if row["cluster_id"] and row["stage"] in NO_MILESTONES:
+            continue
         people.append((str(row["contributor_code"]), "originator", subject, stage, row["at"]))
         if row["cluster_id"] and row["stage"] not in ("withdrawn", "declined", "parked"):
             out.append((str(row["contributor_code"]), "accepted_into_cluster",
@@ -90,42 +124,75 @@ def _candidates(conn: Conn, r: dict[str, Any]) -> list[tuple[str, str, Decimal, 
         if row["cluster_id"]:
             out.append((str(row["contributor_code"]), "accepted_into_cluster",
                         pts(r["accepted_into_cluster"]["joiner"]), str(row["cluster_id"]), row["created_at"]))  # fmt: skip
-    for code, role, subject, stage, when in people:
+    for code, role, subject, stage, joined in people:
         for event, stages in (("shortlisted", SHORTLISTED), ("accepted", ACCEPTED),
                               ("shipped_or_resolved", SHIPPED)):  # fmt: skip
-            if stage in stages:
-                out.append((code, event, pts(r[event][role]), subject, when))
+            if stage in stages:  # dated at the event (Ember review), never before the person joined
+                out.append((code, event, pts(r[event][role]), subject, max(first(subject, stages), joined)))
     return out
 
 
-def sync(conn: Conn) -> int:
-    """Record every award not yet in the ledger, oldest first, within each monthly cap. Idempotent."""
+def _used(conn: Conn, code: str, event: str, when: dt.datetime) -> Decimal:
+    """Points already given for this rule to this person in the IST month of `when`."""
+    row = conn.execute(
+        "SELECT coalesce(sum(points), 0) AS p FROM points_ledger WHERE contributor_code = %s AND event = %s "
+        "AND date_trunc('month', created_at AT TIME ZONE 'Asia/Kolkata') = "
+        "date_trunc('month', %s::timestamptz AT TIME ZONE 'Asia/Kolkata')",
+        (code, event, when),
+    ).fetchone()
+    return Decimal(str(row["p"])) if row else Decimal(0)
+
+
+def award(conn: Conn, code: str, event: str, ref_id: str, when: dt.datetime | None = None) -> bool:
+    """One award outside the sync (a reviewer confirming a strong canvas). Same rules, same lock: `monthly_cap` is
+    points per rule per person per month (BLD-134); each award is recorded once. True if it was added."""
+    rule = rules()[event]
+    points = Decimal(str(rule["points"]))
+    when = when or dt.datetime.now(dt.UTC)
+    with conn.transaction():
+        conn.execute(LOCK)
+        cap = rule.get("monthly_cap")
+        if cap is not None and _used(conn, code, event, when) + points > Decimal(str(cap)):
+            return False
+        row = conn.execute(
+            "INSERT INTO points_ledger (contributor_code, event, points, ref_id, created_at) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
+            (code, event, points, ref_id, when),
+        ).fetchone()
+    return row is not None
+
+
+def sync(conn: Conn, now: dt.datetime | None = None) -> int:
+    """Record every award not yet in the ledger, oldest first, within each monthly cap (points per rule per person
+    per month, BLD-134). Idempotent."""
     r = rules()
-    caps = {k: int(v["monthly_cap"]) for k, v in r.items() if isinstance(v, dict) and "monthly_cap" in v}
+    caps = {
+        k: Decimal(str(v["monthly_cap"])) for k, v in r.items() if isinstance(v, dict) and "monthly_cap" in v
+    }
     added = 0
     with conn.transaction():
-        conn.execute("SELECT pg_advisory_xact_lock(hashtext('points.sync'))")  # one sync at a time
+        conn.execute(LOCK)
         have = {
             (str(x["contributor_code"]), str(x["event"]), str(x["ref_id"]))
             for x in conn.execute(
                 "SELECT contributor_code, event, ref_id FROM points_ledger WHERE ref_id IS NOT NULL"
             )
         }
-        used: dict[tuple[str, str, int, int], int] = {}
+        used: dict[tuple[str, str, int, int], Decimal] = {}
         for x in conn.execute(
-            "SELECT contributor_code, event, created_at FROM points_ledger WHERE event = ANY(%s)",
+            "SELECT contributor_code, event, points, created_at FROM points_ledger WHERE event = ANY(%s)",
             (list(caps),),
         ).fetchall():
             key = (str(x["contributor_code"]), str(x["event"]), *_month_key(x["created_at"]))
-            used[key] = used.get(key, 0) + 1
-        for code, event, points, ref, when in sorted(_candidates(conn, r), key=lambda c: (c[4], c[3])):
+            used[key] = used.get(key, Decimal(0)) + Decimal(str(x["points"]))
+        for code, event, points, ref, when in sorted(_candidates(conn, r, now), key=lambda c: (c[4], c[3])):
             if (code, event, ref) in have:
                 continue
             if event in caps:
                 key = (code, event, *_month_key(when))
-                if used.get(key, 0) >= caps[event]:
+                if used.get(key, Decimal(0)) + points > caps[event]:
                     continue
-                used[key] = used.get(key, 0) + 1
+                used[key] = used.get(key, Decimal(0)) + points
             conn.execute(
                 "INSERT INTO points_ledger (contributor_code, event, points, ref_id, created_at) "
                 "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",

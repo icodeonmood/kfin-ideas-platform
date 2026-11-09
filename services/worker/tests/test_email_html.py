@@ -110,16 +110,24 @@ def _check_snapshot(name: str, html: str) -> None:
     assert html == path.read_text(encoding="utf-8"), f"{name} changed; UPDATE_SNAPSHOTS=1 if intended"
 
 
+# The renderer sets `show_number` only for the One's own induction and tier change (Ember review).
+NUMBER_TEMPLATES = ("one-inducted", "one-tier-changed")
+
+
+def _sample(name: str) -> dict[str, Any]:
+    return {**SAMPLE, "one": {**SAMPLE["one"], "show_number": name in NUMBER_TEMPLATES}}
+
+
 @pytest.mark.parametrize("name", NAMES)
 @pytest.mark.parametrize("theme", ["auto", "dark"])
 def test_every_template_matches_its_snapshot(name: str, theme: Any) -> None:
-    email = email_html.compose(_load(REPO, name), SAMPLE, BASE, theme)
+    email = email_html.compose(_load(REPO, name), _sample(name), BASE, theme)
     _check_snapshot(f"{name}.html" if theme == "auto" else f"{name}.dark.html", email.html)
 
 
 @pytest.mark.parametrize("name", NAMES)
 def test_every_template_is_safe_and_complete(name: str) -> None:
-    email = email_html.compose(_load(REPO, name), SAMPLE, BASE)
+    email = email_html.compose(_load(REPO, name), _sample(name), BASE)
     html = email.html
     assert "{{" not in html and "" not in html and "<svg" not in html
     assert html.count(email_html.TAGLINE) == 1 and html.count(email_html.ENDORSEMENT) == 1
@@ -152,15 +160,35 @@ def test_unsafe_link_addresses_are_dropped() -> None:
 
 
 def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier() -> None:
-    data = {k: v for k, v in SAMPLE.items() if k != "tier"}  # an induction carries no tier change
-    html = email_html.compose(_load(REPO, "one-inducted"), data, BASE).html
-    assert html.count('bgcolor="#2B5BFF"') == 1
-    assert "No. 17" in html and "Tier 1, Spark" in html and "#FF5B14" in html
+    data = {
+        k: v for k, v in _sample("one-inducted").items() if k != "tier"
+    }  # an induction has no tier change
+    email = email_html.compose(_load(REPO, "one-inducted"), data, BASE)
+    assert email.html.count('bgcolor="#2B5BFF"') == 1
+    assert "No. 17" in email.html and "Tier 1, Spark" in email.html and "#FF5B14" in email.html
+    assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
+
+
+@pytest.mark.parametrize("name", ["one-message-invited", "one-removed", "ones-announced", "submitted"])
+def test_the_number_block_is_only_for_the_ones_own_news(name: str) -> None:
+    """A peer's invitation, a removal or any other message never shows a number (Ember review)."""
+    email = email_html.compose(_load(REPO, name), _sample(name), BASE)
+    assert "Your number" not in email.html and "Your number" not in email.text
+
+
+def test_the_render_sets_show_number_only_for_the_recipient() -> None:
+    from comms import render
+
+    assert render.YOUR_NUMBER_EVENTS == ("ones.inducted", "ones.tier_changed")
 
 
 def test_the_idea_card_shows_only_when_the_message_does_not_quote_the_idea() -> None:
-    quoted = email_html.compose(_load(REPO, "reviewed"), SAMPLE, BASE).html
-    assert ">Idea</p>" not in quoted  # reviewed.md quotes the idea in its first line
+    quoted = email_html.compose(_load(REPO, "reviewed"), SAMPLE, BASE)
+    assert ">Idea</p>" not in quoted.html  # reviewed.md quotes the idea in its first line
+    assert not quoted.text.startswith("Idea: ")
+    card = email_html.compose(_load(REPO, "one-inducted"), _sample("one-inducted"), BASE)
+    if ">Idea</p>" in card.html:  # and the text part carries the card whenever the HTML does
+        assert f"Idea: {SAMPLE['idea']['one_line']}" in card.text
 
 
 def test_plain_text_part() -> None:

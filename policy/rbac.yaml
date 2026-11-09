@@ -185,6 +185,7 @@ endpoints:
   - GET /api/ember/{id}                               signed_in
   - POST /api/ember/drafts                            send_ember
   - PUT /api/ember/{id}/note                          write_ember_note
+  - POST /api/ember/{id}/ready                        write_ember_note   # the worker allows the core committee chair only (BLD-134)
   - POST /api/ember/{id}/send                         send_ember
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above

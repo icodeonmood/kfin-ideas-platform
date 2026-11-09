@@ -439,20 +439,10 @@ def _others_in(conn: Conn, cluster_id: str, idea_id: str) -> int:
 
 
 def _award(conn: Conn, contributor_code: str, event: str, ref_id: str) -> None:
-    rule = load_rule(get_settings().company_repo_path, "points").data[event]
-    cap = rule.get("monthly_cap")
-    if cap is not None:
-        used = conn.execute(
-            "SELECT coalesce(sum(points), 0) AS p FROM points_ledger WHERE contributor_code = %s AND event = %s "
-            "AND date_trunc('month', created_at AT TIME ZONE 'Asia/Kolkata') = date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata')",
-            (contributor_code, event),
-        ).fetchone()
-        if used and float(used["p"]) + float(rule["points"]) > float(cap):
-            return
-    conn.execute(
-        "INSERT INTO points_ledger (contributor_code, event, points, ref_id) VALUES (%s, %s, %s, %s)",
-        (contributor_code, event, rule["points"], ref_id),
-    )
+    """Through the points ledger: the sync's lock, caps in points per month, recorded once (Ember review)."""
+    from points.ledger import award
+
+    award(conn, contributor_code, event, ref_id)
 
 
 def answer(

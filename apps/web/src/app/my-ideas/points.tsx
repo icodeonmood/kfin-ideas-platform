@@ -1,6 +1,13 @@
 import { day } from "@/lib/dates";
 import type { MyPoints } from "@/server/points";
 
+/** "a, b and c": the worker sends each item already worded to follow "points for". */
+export function listWords(items: string[]): string {
+  return items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 const pts = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 /** Your points (DEC-078): only you see them, and they never decide who becomes a One. */
@@ -29,7 +36,7 @@ export function PointsPanel({ points }: { points: MyPoints | null }) {
             <p>Share your first idea and your points start here.</p>
           )}
           {points.coming_soon.length ? (
-            <p className="muted">Coming soon: points for {points.coming_soon.join(", ").toLowerCase()}.</p>
+            <p className="muted">Coming soon: points for {listWords(points.coming_soon)}.</p>
           ) : null}
         </>
       )}

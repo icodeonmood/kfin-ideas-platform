@@ -23,6 +23,8 @@ test("an admin opens Write The Ember", async ({ page }) => {
   await signIn(page, PERSONAS.admin);
   await page.goto("/ember/compose");
   await expect(page.getByRole("heading", { level: 1, name: /Write The Ember/ })).toBeVisible();
+  // The demo draft's note waits for the chair's approval, so there is nothing to send yet (BLD-134).
+  await expect(page.getByRole("button", { name: "Send to everyone" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
 });
 

@@ -58,7 +58,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 21. **Learning** (Sana): Admin, then "Learning reports and proposals". A new glossary term found in three ideas (IFSC) waits for the product team: approve or decline. The review desk's acceptance rates are shown, and every kind stays with a person.
 22. **Points and the journey** (Kavya): My ideas, "Your points" (only she sees them), then "How an idea becomes a One": the four steps drawn as isometric blocks.
 23. **The Ember** (anyone): the footer's "The Ember" link. Last month's issue is in the archive.
-24. **Write The Ember** (Vivek, then Sana): "Work on this month's issue". Vivek edits "What the committee looks for"; Sana reads the preview and sends it in two steps ("Send to everyone", then "Yes, send to everyone"). The email arrives in Mailpit (http://localhost:8025) in the branded HTML, light or dark depending on the mail app.
+24. **Write The Ember** (Vivek, then Sana): "Work on this month's issue". Vivek, the chair, edits "What the committee looks for" and presses "Approve the note"; the issue is now ready. Sana, an admin who neither wrote nor approved it, reads the preview and sends it in two steps ("Send to everyone", then "Yes, send to everyone"). Changing the note after approval sends it back to the chair. The email arrives in Mailpit (http://localhost:8025) in the branded HTML, light or dark depending on the mail app.
 
 ## Shows "Coming soon"
 

@@ -61,8 +61,38 @@ export function NoteForm({ id, initial }: { id: number; initial: string | null }
   );
 }
 
-/** An admin sends the issue to everyone, in two steps so it can't go out by accident. */
-export function SendIssue({ id, blocked }: { id: number; blocked: string | null }) {
+/** The chair approves the note: only then can an admin who did not write it send the issue (BLD-134). */
+export function ApproveNote({ id }: { id: number }) {
+  const { status, done } = useDone();
+  const { error, busy, run } = useAction(done);
+  return (
+    <div>
+      <button
+        type="button"
+        className="button"
+        disabled={busy}
+        aria-busy={busy}
+        onClick={() => run(`/api/ember/${id}/ready`, {}, "Approved. An admin can now send the issue.")}
+      >
+        Approve the note
+      </button>
+      <Err text={error} />
+      <Status text={status} />
+    </div>
+  );
+}
+
+/** An admin sends the issue to everyone, in two steps so it can't go out by accident. The server checks the
+ * chair's approval and the confirm token as well (BLD-134). */
+export function SendIssue({
+  id,
+  blocked,
+  confirmToken,
+}: {
+  id: number;
+  blocked: string | null;
+  confirmToken: string;
+}) {
   const { status, done } = useDone();
   const { error, busy, run } = useAction(done);
   const [confirming, setConfirming] = useState(false);
@@ -76,7 +106,13 @@ export function SendIssue({ id, blocked }: { id: number; blocked: string | null 
             className="button"
             disabled={busy}
             aria-busy={busy}
-            onClick={() => run(`/api/ember/${id}/send`, {}, "Sent. Everyone gets it in their inbox.")}
+            onClick={() =>
+              run(
+                `/api/ember/${id}/send`,
+                { confirm_token: confirmToken },
+                "Sent. Everyone gets it in their inbox.",
+              )
+            }
           >
             Yes, send to everyone
           </button>

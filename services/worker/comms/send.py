@@ -23,6 +23,17 @@ from rules import load_rule
 log = get_logger("comms.send")
 FROM = "1% Club <onepercentclub@kfintech.example>"
 MAX_ATTEMPTS = 3
+# Sent whole and only while their switches are on: never folded into a digest (Ember review).
+NO_DIGEST = ("ember.issue", "ones.announced")
+
+
+def paused(conn: Conn, event: str) -> bool:
+    """The Ones are off the wall, or The Ember is paused: these messages wait instead of going out."""
+    if event == "ones.announced":
+        return not killswitch.is_on("ones.public", conn)
+    if event == "ember.issue":
+        return not (killswitch.is_on("ember.send", conn) and killswitch.is_on("ones.public", conn))
+    return False
 
 
 def build_message(to: str, email: email_html.Email) -> EmailMessage:
@@ -45,13 +56,17 @@ def compose(conn: Conn, user_id: str, event: str, template: str, refs: dict[str,
     base = get_settings().app_base_url
     if event == "ember.issue":  # the whole issue, as sent (BLD-128); the in-app copy is the short template
         from ember.render import compose as ember_email
+        from ember.service import resolve
 
         row = conn.execute(
             "SELECT id, content FROM ember_issues WHERE id = %s AND state = 'sent'", (refs.get("issue_id"),)
         ).fetchone()
         if row is None:
             raise LookupError("ember_issue_missing")
-        return ember_email(row["content"], base, f"{base.rstrip('/')}/ember/{row['id']}")
+        content = resolve(
+            conn, row["content"]
+        )  # names follow live consent, even for a late send (Ember review)
+        return ember_email(content, base, f"{base.rstrip('/')}/ember/{row['id']}")
     data = variables(conn, user_id, event, refs)
     return email_html.compose(load(template), data, base)
 
@@ -76,12 +91,7 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             (now, limit),
         ).fetchall()
         for r in rows:
-            paused = (r["event"] == "ones.announced" and not killswitch.is_on("ones.public", conn)) or (
-                r["event"] == "ember.issue"
-                and not (killswitch.is_on("ember.send", conn) and killswitch.is_on("ones.public", conn))
-            )
-            if paused:
-                # The Ones are off the wall, or The Ember is paused: the message waits instead of failing.
+            if paused(conn, r["event"]):  # the message waits instead of failing
                 conn.execute(
                     "UPDATE notifications SET send_after = %s WHERE id = %s",
                     (now + dt.timedelta(minutes=15), r["id"]),
@@ -135,6 +145,13 @@ def _hold_back(conn: Conn, r: dict[str, Any], now: dt.datetime) -> bool:
         (r["user_id"], now.astimezone(IST).date()),
     ).fetchone()
     if sent and int(sent["n"]) >= cap:
+        if r["event"] in NO_DIGEST:  # sent on its own on the next working day, switches checked again then
+            tomorrow = dt.datetime.combine(now.astimezone(IST).date() + dt.timedelta(days=1), dt.time(), IST)
+            conn.execute(
+                "UPDATE notifications SET send_after = %s WHERE id = %s",
+                (next_send_time(tomorrow, "routine"), r["id"]),
+            )
+            return True
         conn.execute("UPDATE notifications SET channel = 'digest', state = 'held' WHERE id = %s", (r["id"],))
         return True
     return False
@@ -171,6 +188,15 @@ def _send_digest(conn: Conn, u: dict[str, Any]) -> int:
         "AND state = 'held' ORDER BY created_at FOR UPDATE SKIP LOCKED",
         (u["user_id"],),
     ).fetchall()
+    # Anything that must go on its own (held before this rule) goes back to the email queue, where the switches
+    # are checked; nothing paused rides along in a digest (Ember review).
+    alone = [it["id"] for it in items if it["event"] in NO_DIGEST or paused(conn, it["event"])]
+    if alone:
+        conn.execute(
+            "UPDATE notifications SET channel = 'email', state = 'queued', send_after = now() WHERE id = ANY(%s)",
+            (alone,),
+        )
+        items = [it for it in items if it["id"] not in alone]
     if not items:
         return 0
     sections = [

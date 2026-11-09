@@ -659,9 +659,10 @@ CHAIR_NOTE = (
 
 
 def _ember_and_points(conn: Conn, p: dict[str, dict[str, str]]) -> None:
-    """The Ember (BLD-128): last month's issue in the archive and this month's draft with the chair's note, so the
-    archive and Write The Ember are not empty. Then the private points (BLD-130) from everything above."""
-    from ember.service import IST, build
+    """The Ember (BLD-128): last month's issue in the archive and this month's draft with the chair's note, waiting
+    for the chair to approve it before an admin sends it (BLD-134), so the archive and Write The Ember are not
+    empty. Then the private points (BLD-130) from everything above."""
+    from ember.service import IST, as_sent, build
     from points.ledger import sync
 
     chair, admin = p["DEMO-00004"]["id"], p["DEMO-00006"]["id"]
@@ -670,7 +671,8 @@ def _ember_and_points(conn: Conn, p: dict[str, dict[str, str]]) -> None:
     last_month = dt.date(local.year - (local.month == 1), (local.month - 2) % 12 + 1, 1)
     with conn.transaction():
         if not conn.execute("SELECT 1 FROM ember_issues WHERE month = %s", (last_month,)).fetchone():
-            content = {**build(conn, last_month), "note": CHAIR_NOTE}
+            # Ones by number only: names follow live consent.
+            content = as_sent(build(conn, last_month), CHAIR_NOTE)
             conn.execute(
                 "INSERT INTO ember_issues (month, state, content, created_by, sent_by, sent_at, chair_note_by) "
                 "VALUES (%s, 'sent', %s, %s, %s, %s, %s)",

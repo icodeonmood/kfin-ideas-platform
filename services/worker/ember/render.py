@@ -12,14 +12,37 @@ UNITS_ORDER = ("time", "money", "effort", "scale")
 UNIT_WORDS = {"time": "Time", "money": "Money", "effort": "Effort", "scale": "Scale"}
 
 
+def grouped(value: float) -> str:
+    """Indian digit grouping (12,34,567.5), as `Intl.NumberFormat("en-IN")` shows it on the web."""
+    v = float(value)
+    whole, _, frac = f"{abs(v):.3f}".rstrip("0").rstrip(".").partition(".")
+    head, tail = whole[:-3], whole[-3:]
+    groups: list[str] = []
+    while len(head) > 2:
+        groups.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        groups.insert(0, head)
+    return ("-" if v < 0 else "") + ",".join([*groups, tail]) + (f".{frac}" if frac else "")
+
+
+def measure_words(key: str, m: dict[str, Any]) -> str:
+    """The same words as `measureText` in apps/web/src/lib/measures.ts (Ember review)."""
+    value, unit = grouped(m["value"]), str(m.get("unit") or "")
+    if key == "money":
+        unit = unit.removeprefix("rupees ").removeprefix("rupees")
+        return f"₹{value} {unit}".strip()
+    if key == "time":
+        return f"{value} {unit} given back".replace("  ", " ")
+    return f"{value} {unit}".strip()
+
+
 def _measures_text(measures: dict[str, Any]) -> str:
     parts = []
     for key in UNITS_ORDER:
         m = measures.get(key)
         if m and m.get("value") is not None:
-            value = f"₹{int(m['value']):,}" if key == "money" else f"{int(m['value']):,}"
-            unit = m.get("unit") or ""
-            parts.append(f"{UNIT_WORDS[key]}: {value} {unit}".strip())
+            parts.append(f"{UNIT_WORDS[key]}: {measure_words(key, m)}")
     return ". ".join(parts)
 
 

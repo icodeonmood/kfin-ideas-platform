@@ -265,6 +265,46 @@ def test_routine_email_is_checked_again_when_it_is_sent(people: Any, monkeypatch
     assert _state(db, capped)["channel"] == "digest"
 
 
+def _queue_event(db: Any, user_id: str, event: str, channel: str, state: str, send_after: Any) -> int:
+    return int(
+        db.execute(
+            "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, send_after) "
+            "VALUES (%s, %s, 'ember-issue', '{\"issue_id\": 1}', %s, 'routine', %s, %s) RETURNING id",
+            (user_id, channel, event, state, send_after),
+        ).fetchone()["id"]
+    )
+
+
+def test_the_ember_and_announcements_never_ride_in_a_digest(people: Any, monkeypatch: Any) -> None:
+    """Ember review: over the daily cap they wait for the next working day on their own; one held before this rule
+    goes back to the email queue, where the switches are checked; the digest carries only the rest."""
+    db, users, _refs = people
+    sent: list[str] = []
+    monkeypatch.setattr("comms.send._smtp", lambda to, email: sent.append(to))
+    owner = users["owner"]["id"]
+    morning = dt.datetime(2026, 11, 19, 9, 0, tzinfo=IST)
+    _queue(db, owner, "email", "routine", morning, "queued")
+    assert send_due(db, now=morning) == 1  # the day's one routine email
+    killswitch.set_switch(db, "ember.send", "off", reason="test: ember paused", actor="test")
+    killswitch.clear_cache()
+    try:
+        capped = _queue_event(db, owner, "ones.announced", "email", "queued", morning)
+        send_due(db, now=morning)
+        assert _state(db, capped)["channel"] == "email" and _state(db, capped)["state"] == "queued"
+        assert _state(db, capped)["send_after"] == dt.datetime(2026, 11, 20, 8, 0, tzinfo=IST)
+
+        old = _queue_event(db, owner, "ember.issue", "digest", "held", None)
+        nudge = _queue(db, owner, "digest", "routine", None, "held")
+        assert send_digests(db, now=WORKDAY_NOON) == 1
+        assert _state(db, nudge)["state"] == "sent"
+        assert (_state(db, old)["channel"], _state(db, old)["state"]) == ("email", "queued")
+        send_due(db, now=WORKDAY_NOON)
+        assert _state(db, old)["state"] == "queued"  # paused: it waits, it is not sent
+    finally:
+        killswitch.set_switch(db, "ember.send", "on", reason="test: ember back", actor="test")
+        killswitch.clear_cache()
+
+
 def test_one_bad_digest_does_not_hold_back_the_others(people: Any, monkeypatch: Any) -> None:
     db, users, _refs = people
     sent: list[str] = []

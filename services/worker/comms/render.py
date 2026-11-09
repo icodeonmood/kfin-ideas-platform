@@ -228,7 +228,7 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         data["reminder"] = {"share_percent": int(float(refs.get("share") or 0) * 100)}
         data["links"]["item"] = f"{base}/review"
     if event.startswith("ones."):
-        _ones_variables(conn, data, event, refs, base)
+        _ones_variables(conn, data, event, refs, base, user_id)
     if event.startswith("delivery."):
         _delivery_variables(conn, data, refs, base, user_id)
     if event == "ember.issue":  # the in-app note; the email carries the whole issue (BLD-128)
@@ -252,7 +252,14 @@ def _one_display(number: Any, name: str | None, consent: bool) -> str:
     return f"No. {number}, {name}" if consent and name else f"One No. {number}"
 
 
-def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str, Any], base: str) -> None:
+# The "Your number" block shows only to the One it belongs to, and only when the number is the news (Ember review):
+# never in a peer's invitation or in a removal.
+YOUR_NUMBER_EVENTS = ("ones.inducted", "ones.tier_changed")
+
+
+def _ones_variables(
+    conn: Conn, data: dict[str, Any], event: str, refs: dict[str, Any], base: str, user_id: str
+) -> None:
     """Variables for the Ones messages (DEC-034 to DEC-087). Reasons and messages are read back from their sealed
     rows only for the One they concern; the org-wide announcement names a One only with their consent."""
     from ones.text import unseal
@@ -286,6 +293,7 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
                 "tier": int(one["tier"]),
                 "tier_name": tier_name(one["tier"]),
                 "display": _one_display(number, one["name"], one["consent"]),
+                "show_number": event in YOUR_NUMBER_EVENTS and str(one["user_id"]) == str(user_id),
             }
     if event == "ones.removed" and proposal:
         data["removal"] = {

@@ -21,12 +21,18 @@ export type EmberOne = {
 
 export type EmberIssue = {
   id: number;
-  state: "draft" | "sent";
+  state: "draft" | "ready" | "sent";
   month: string;
   month_label: string;
   sent_at?: string;
   note: string | null;
   can_send?: boolean;
+  /** The chair has approved the note (server-side `ready`); a change to it needs approval again. */
+  note_approved?: boolean;
+  can_approve_note?: boolean;
+  /** Given only to an admin who may send: who neither wrote nor approved the note. */
+  confirm_token?: string | null;
+  own_note?: boolean;
   ember_paused?: boolean;
   ones_paused: boolean;
   impact: EmberOne[];
@@ -76,8 +82,14 @@ export const emberNote = (me: CurrentUser, id: string, body: Record<string, unkn
     body: JSON.stringify({ note: body.note ?? "", actor_user_id: me.id }),
   });
 
-export const emberSend = (me: CurrentUser, id: string) =>
+export const emberSend = (me: CurrentUser, id: string, body: Record<string, unknown>) =>
   call<{ id: number; state: string }>(`/internal/ember/${idOf(id)}/send`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_token: String(body.confirm_token ?? ""), actor_user_id: me.id }),
+  });
+
+export const emberReady = (me: CurrentUser, id: string) =>
+  call<{ id: number; state: string }>(`/internal/ember/${idOf(id)}/ready`, {
     method: "POST",
     body: JSON.stringify({ actor_user_id: me.id }),
   });
