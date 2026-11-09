@@ -87,6 +87,7 @@ endpoints:
   - POST /api/me/privacy-notice                       signed_in
   - GET /api/me/ideas                                 signed_in
   - GET /api/me/points                                signed_in
+  - GET /api/me/lens                                  signed_in       # only ever the person's own (BLD-135)
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
   - GET /api/inbox                                    signed_in

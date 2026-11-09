@@ -34,6 +34,8 @@ export default async function Page() {
       {one ? <OneDashboard one={one} /> : null}
       <PointsPanel points={points} />
       <p>
+        <Link href="/my-ideas/lens">Your lens: your ideas and groups in numbers</Link>
+        {" · "}
         <Link href="/journey">How an idea becomes a One</Link>
       </p>
       {team && team.people.length ? (

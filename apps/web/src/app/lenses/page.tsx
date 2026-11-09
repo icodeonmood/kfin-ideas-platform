@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { day } from "@/lib/dates";
@@ -167,8 +168,9 @@ export default async function Page() {
         ) : (
           <p className="muted">No active groups yet.</p>
         )}
-        <p className="coming-soon coming-soon-light">
-          Your own view of the groups you are part of: coming soon
+        <p>
+          Your own view of the groups you are part of is on <Link href="/my-ideas/lens">Your lens</Link>,
+          which only you see.
         </p>
       </section>
     </>

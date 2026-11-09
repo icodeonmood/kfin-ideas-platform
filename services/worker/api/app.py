@@ -429,6 +429,14 @@ def my_points(user_id: str) -> JSONResponse:
     return _ones_call(mine, user_id)
 
 
+@app.get("/internal/me/{user_id}/lens", dependencies=[Depends(require_token)])
+def my_lens(user_id: str) -> JSONResponse:
+    """A person's own lens (BLD-135): their ideas and groups, counts only. The web app passes the signed-in person."""
+    from lenses import mine
+
+    return _ones_call(mine, user_id)
+
+
 @app.get("/internal/ember", dependencies=[Depends(require_token)])
 def ember_archive() -> JSONResponse:
     from ember.service import archive

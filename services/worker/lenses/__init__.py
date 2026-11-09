@@ -165,3 +165,72 @@ def rebuild(conn: Conn, actor: str) -> dict[str, Any]:
         (f"user:{actor}",),
     )
     return counts
+
+
+def _group_of(stage: str) -> str:
+    return next((label for label, members in STAGE_GROUPS if stage in members), "Other")
+
+
+def mine(conn: Conn, user_id: str) -> dict[str, Any]:
+    """A person's own lens (BLD-135): their ideas by plain stage group, and each group they are part of, with how
+    many ideas and colleagues are in it. Counts, IDs and area names only: never another person's name or text.
+    Only ever the signed-in person's own."""
+    from views.common import first_area, taxonomy_names
+
+    codes = [
+        str(r["contributor_code"])
+        for r in conn.execute("SELECT contributor_code FROM contributor_map WHERE user_id = %s", (user_id,))
+    ]
+    if not codes:
+        return {"ideas": group_counts([]), "shared": 0, "groups": [], "teamed_up": 0}
+    own = conn.execute(
+        "SELECT idea_id, stage, cluster_id FROM ideas WHERE contributor_code = ANY(%s) AND stage = ANY(%s)",
+        (codes, list(COUNTED)),
+    ).fetchall()
+    joined = conn.execute(
+        "SELECT DISTINCT coalesce(l.cluster_id, i.cluster_id) AS cluster_id, l.idea_id FROM idea_links l "
+        "LEFT JOIN ideas i ON i.idea_id = l.idea_id WHERE l.contributor_code = ANY(%s) "
+        "AND l.link_type IN ('joiner', 'plus_one')",
+        (codes,),
+    ).fetchall()
+    how: dict[str, str] = {}
+    for r in own:
+        if r["cluster_id"]:
+            how[str(r["cluster_id"])] = "Your idea is in it"
+    for r in joined:
+        if r["cluster_id"]:
+            how.setdefault(str(r["cluster_id"]), "You teamed up")
+    areas, _lobs = taxonomy_names()
+    groups = []
+    for cid in sorted(how):
+        c = conn.execute("SELECT id, stage FROM clusters WHERE id = %s", (cid,)).fetchone()
+        if c is None:
+            continue
+        member = conn.execute(
+            "SELECT count(*) AS ideas, array_agg(DISTINCT contributor_code) AS codes, "
+            "array_agg(DISTINCT a) FILTER (WHERE a IS NOT NULL) AS areas FROM ideas "
+            "LEFT JOIN LATERAL unnest(area_ids) AS a ON true WHERE cluster_id = %s AND stage <> 'draft'",
+            (cid,),
+        ).fetchone()
+        joiners = conn.execute(
+            "SELECT DISTINCT l.contributor_code FROM idea_links l LEFT JOIN ideas i ON i.idea_id = l.idea_id "
+            "WHERE (l.cluster_id = %s OR i.cluster_id = %s) AND l.link_type IN ('joiner', 'plus_one')",
+            (cid, cid),
+        ).fetchall()
+        people = (
+            set(member["codes"] or []) | {str(j["contributor_code"]) for j in joiners} if member else set()
+        )
+        groups.append({
+            "id": cid,
+            "area": first_area(list(member["areas"] or []) if member else [], areas),
+            "stage": _group_of(str(c["stage"])),
+            "ideas": int(member["ideas"]) if member else 0,
+            "colleagues": len(people - set(codes)),  # everyone else in it; never who
+            "how": how[cid],
+        })  # fmt: skip
+    return {
+        "ideas": group_counts([str(r["stage"]) for r in own]),
+        "shared": len(own),
+        "groups": groups,
+        "teamed_up": len({str(r["idea_id"] or r["cluster_id"]) for r in joined}),
+    }
