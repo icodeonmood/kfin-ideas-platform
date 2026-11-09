@@ -13,6 +13,8 @@ export type CommitteePresentation = {
   state: string;
   slot_at: string | null;
   cluster: { name: string | null; summary: { problem?: string } | null };
+  /** Set when the member has a conflict on the group: the rest of the view is then left out. */
+  conflict: string | null;
   qna_notes: string | null;
   assessed: number;
   members: number;
@@ -48,6 +50,8 @@ const ERRORS: Record<string, string> = {
   reason_required: "Please write the reason.",
   assistant_unavailable: "The assistant is unavailable. Please write the reasons yourself.",
   own_idea: "You can't take part in deciding a group that holds an idea you shared or joined.",
+  conflict_of_interest: "You have a conflict on this group, so you can't take part in its review.",
+  already_collated: "The assessments are already collated.",
   chair_only: "Only the chair can do this.",
 };
 
@@ -70,10 +74,9 @@ export function PresentationActions({ id, view }: { id: string; view: CommitteeP
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [notes, setNotes] = useState("");
-  const [scores, setScores] = useState<Record<string, number>>(() =>
-    Object.fromEntries(view.dimensions.map((d) => [d.name, 3])),
-  );
-  const [vote, setVote] = useState("accept");
+  // Nothing is pre-selected: every score and the vote are choices the member makes.
+  const [scores, setScores] = useState<Record<string, number | undefined>>({});
+  const [vote, setVote] = useState("");
   const [route, setRoute] = useState("build");
   const [strengths, setStrengths] = useState("");
   const [concerns, setConcerns] = useState("");
@@ -168,6 +171,11 @@ export function PresentationActions({ id, view }: { id: string; view: CommitteeP
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (view.dimensions.some((d) => scores[d.name] === undefined) || !vote) {
+              setMessage({ text: ERRORS[vote ? "every_dimension_1_to_5" : "vote_required"]!, error: true });
+              statusRef.current?.focus();
+              return;
+            }
             void send(
               { action: "assess", scores, vote, route_pref: route, strengths: lines(strengths), concerns: lines(concerns),
                 conditions: lines(conditions), will_sponsor: sponsorWilling }, // prettier-ignore
@@ -195,6 +203,7 @@ export function PresentationActions({ id, view }: { id: string; view: CommitteeP
           <div className="field">
             <label htmlFor="a-vote">Your vote</label>
             <select id="a-vote" value={vote} onChange={(e) => setVote(e.target.value)}>
+              <option value="">Choose your vote</option>
               {VOTES.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
@@ -278,7 +287,14 @@ export function PresentationActions({ id, view }: { id: string; view: CommitteeP
           <h3>Decide</h3>
           <div className="field">
             <label htmlFor="d-outcome">Outcome</label>
-            <select id="d-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+            <select
+              id="d-outcome"
+              value={outcome}
+              onChange={(e) => {
+                setOutcome(e.target.value);
+                setCode(""); // the reasons differ by outcome
+              }}
+            >
               <option value="picked">Accept (Picked)</option>
               <option value="parked">Park</option>
               <option value="declined">Decline</option>

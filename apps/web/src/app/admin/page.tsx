@@ -44,6 +44,11 @@ export default async function Admin() {
       ) : null}
       {showSwitches ? <KillSwitches initial={switches} /> : null}
       {showRoles ? <Roles initial={grants} /> : null}
+      {showRoles ? (
+        <p>
+          <Link href="/admin/conflicts">Conflict flags on committee reviews</Link>
+        </p>
+      ) : null}
     </>
   );
 }

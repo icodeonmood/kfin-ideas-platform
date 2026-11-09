@@ -6,6 +6,7 @@ import { currentUser } from "@/server/auth/current";
 import { roundView } from "@/server/committee";
 import { SubmissionError } from "@/server/submissions";
 
+import { conflictText } from "../../conflict";
 import { RoundActions, type RoundView } from "./round-actions";
 
 export const metadata: Metadata = { title: "Committee review" };
@@ -25,6 +26,18 @@ export default async function Round({ params }: { params: Promise<{ id: string }
   } catch (err) {
     if (err instanceof SubmissionError && err.status === 404) notFound();
     throw err;
+  }
+  if (view.conflict) {
+    return (
+      <>
+        <p>
+          <Link href="/committee">Back to the committee</Link>
+        </p>
+        <h1>Review {view.id}</h1>
+        <p className="notice">{conflictText(view.conflict)}</p>
+        <RoundActions id={id} view={view} />
+      </>
+    );
   }
   const c = view.cluster;
   const rv = view.revealed;

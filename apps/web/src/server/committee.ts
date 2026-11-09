@@ -42,6 +42,10 @@ export const roundAct = (me: CurrentUser, id: string, body: Record<string, unkno
     `/internal/committee/rounds/${only(ROUND, id)}/action`,
     post({ ...body, user_id: me.id }),
   );
+export const conflictFlags = (me: CurrentUser) =>
+  call<{ flags: unknown[] }>(`/internal/committee/conflicts?user_id=${me.id}`);
+export const clearConflict = (me: CurrentUser, roundId: string, memberId: string, reason: string) =>
+  roundAct(me, roundId, { action: "clear_conflict", member_id: memberId, reason });
 export const openCycle = (me: CurrentUser, body: Record<string, unknown>) =>
   call<Record<string, unknown>>(`/internal/committee/cycles`, post({ ...body, user_id: me.id }));
 

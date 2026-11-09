@@ -25,6 +25,8 @@ export type RoundView = {
   dimensions: Dimension[];
   my_scores: Record<string, { value: number; first: number; revised: boolean; comment: string | null }>;
   my_flag: { reason: string; status: string } | null;
+  /** Set when the member has a conflict on the group: the rest of the view is then left out. */
+  conflict: string | null;
   progress: { scored: number; voting: number; quorum_met: boolean };
   chair: boolean;
   outcome: string | null;
@@ -50,6 +52,8 @@ const ERRORS: Record<string, string> = {
   already_revised: "You've already revised once.",
   reason_code_required: "Please choose a reason.",
   own_idea: "You can't decide on a group that holds an idea you shared or joined.",
+  conflict_of_interest: "You have a conflict on this group, so you can't take part in its review.",
+  bad_scores: "Change at least one score first.",
   below_nomination_threshold: "The score is below the nomination threshold.",
   chair_only: "Only the chair can do this.",
 };
@@ -83,17 +87,17 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
   const statusRef = useRef<HTMLParagraphElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
-  const start = (d: string) => (d === "financial_value" && view.suggested_band ? view.suggested_band : 3);
-  const [scores, setScores] = useState<Record<string, number>>(() =>
-    Object.fromEntries(view.dimensions.map((d) => [d.name, view.my_scores[d.name]?.value ?? start(d.name)])),
+  // Nothing is pre-selected: every score is a choice the member makes (the suggested band is shown, not set).
+  const [scores, setScores] = useState<Record<string, number | undefined>>(() =>
+    Object.fromEntries((view.dimensions ?? []).map((d) => [d.name, view.my_scores?.[d.name]?.value])),
   );
   const [finReason, setFinReason] = useState("");
   const [outcome, setOutcome] = useState(view.body === "core" ? "shortlisted" : "nominated");
   const [code, setCode] = useState("");
   const [note, setNote] = useState("");
   const [below, setBelow] = useState("");
-  const scored = Object.keys(view.my_scores).length > 0;
-  const revised = Object.values(view.my_scores).some((s) => s.revised);
+  const scored = Object.keys(view.my_scores ?? {}).length > 0;
+  const revised = Object.values(view.my_scores ?? {}).some((s) => s.revised);
 
   async function send(body: Record<string, unknown>, done: string) {
     setBusy(true);
@@ -114,7 +118,7 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
     if (res?.ok) router.refresh();
   }
 
-  const scoreFields = view.dimensions.map((d) => (
+  const scoreFields = (view.dimensions ?? []).map((d) => (
     <fieldset key={d.name}>
       <legend>
         {d.label} (weight {d.weight})
@@ -150,7 +154,35 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
       {message?.text ?? ""}
     </p>
   );
-  const finMoved = view.suggested_band !== null && scores.financial_value !== view.suggested_band;
+  const finMoved =
+    view.suggested_band !== null &&
+    scores.financial_value !== undefined &&
+    scores.financial_value !== view.suggested_band;
+  const say = (text: string) => {
+    setMessage({ text, error: true });
+    statusRef.current?.focus();
+  };
+
+  if (view.conflict) {
+    return (
+      <section aria-labelledby="r-actions" className="panel">
+        <h2 id="r-actions">Your part</h2>
+        {status}
+        {view.state === "open" && (view.conflict === "flagged" || view.conflict === "manager") ? (
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={busy}
+            onClick={() => void send({ action: "declare_conflict" }, "You have stepped aside.")}
+          >
+            I have a conflict: step aside
+          </button>
+        ) : (
+          <p>There is nothing for you to do here.</p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section aria-labelledby="r-actions" className="panel">
@@ -172,6 +204,10 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (view.dimensions.some((d) => scores[d.name] === undefined)) {
+              say(ERRORS.every_dimension_required!);
+              return;
+            }
             void send(
               { action: "score", scores, financial_reason: finMoved ? finReason : undefined },
               "Your scores are sealed.",
@@ -225,8 +261,12 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
           onSubmit={(e) => {
             e.preventDefault();
             const changed = Object.fromEntries(
-              Object.entries(scores).filter(([k, v]) => v !== view.my_scores[k]?.value),
+              Object.entries(scores).filter(([k, v]) => v !== undefined && v !== view.my_scores[k]?.value),
             );
+            if (Object.keys(changed).length === 0) {
+              say(ERRORS.bad_scores!);
+              return;
+            }
             void send({ action: "revise", scores: changed }, "Revised. Both values are kept.");
           }}
         >
@@ -257,7 +297,14 @@ export function RoundActions({ id, view }: { id: string; view: RoundView }) {
           <h3>Decide</h3>
           <div className="field">
             <label htmlFor="r-outcome">Outcome</label>
-            <select id="r-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+            <select
+              id="r-outcome"
+              value={outcome}
+              onChange={(e) => {
+                setOutcome(e.target.value);
+                setCode(""); // the reasons differ by outcome
+              }}
+            >
               {(view.body === "core" ? OUTCOMES_CORE : OUTCOMES_LOB).map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
