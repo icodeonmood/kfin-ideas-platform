@@ -31,7 +31,7 @@ export function OnesCarousel({ ones }: { ones: PublicOne[] }) {
   const [held, setHeld] = useState(false);
   const [moved, setMoved] = useState(false);
   const reduced = useReducedMotion();
-  const list = useRef<HTMLUListElement>(null);
+  const strip = useRef<HTMLDivElement>(null);
   const n = ones.length;
 
   useEffect(() => {
@@ -41,8 +41,8 @@ export function OnesCarousel({ ones }: { ones: PublicOne[] }) {
   }, [playing, held, reduced, n]);
 
   useEffect(() => {
-    const el = list.current;
-    const card = el?.children[index] as HTMLElement | undefined;
+    const el = strip.current;
+    const card = el?.querySelectorAll<HTMLElement>(":scope > ul > li")[index];
     if (el && card)
       el.scrollTo({ left: card.offsetLeft - el.offsetLeft, behavior: reduced ? "auto" : "smooth" });
   }, [index, reduced]);
@@ -107,27 +107,32 @@ export function OnesCarousel({ ones }: { ones: PublicOne[] }) {
           </button>
         </div>
       </div>
-      <ul
-        ref={list}
+      {/* The strip scrolls sideways, so it takes keyboard focus too (arrow keys scroll it). */}
+      <div
+        ref={strip}
         className="ones-strip"
-        aria-live={playing ? "off" : "polite"}
+        role="region"
+        aria-label="The Ones, card by card"
+        tabIndex={0}
         onMouseEnter={() => setHeld(true)}
         onMouseLeave={() => setHeld(false)}
         onFocus={() => setHeld(true)}
         onBlur={() => setHeld(false)}
       >
-        {ones.map((o, i) => (
-          <li
-            key={o.number}
-            className="one-card"
-            aria-roledescription="slide"
-            aria-label={`${i + 1} of ${n}`}
-            aria-current={moved && i === index ? "true" : undefined}
-          >
-            <OneCardBody one={o} />
-          </li>
-        ))}
-      </ul>
+        <ul aria-live={playing ? "off" : "polite"}>
+          {ones.map((o, i) => (
+            <li
+              key={o.number}
+              className="one-card"
+              aria-roledescription="slide"
+              aria-label={`${i + 1} of ${n}`}
+              aria-current={moved && i === index ? "true" : undefined}
+            >
+              <OneCardBody one={o} />
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }
