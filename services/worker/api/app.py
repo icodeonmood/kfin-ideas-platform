@@ -495,6 +495,8 @@ def me_team(user_id: str) -> JSONResponse:
     from ones.views import team
 
     return _ones_call(team, user_id)
+
+
 # ---- weekly clustering (§4.4 B) -------------------------------------------------------------------------------
 
 
