@@ -258,6 +258,17 @@ events:
     urgency: routine
     approval: null
     signer: club_team
+  ember.issue:
+    day_one: true
+    audiences:
+    - everyone
+    template: ember
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
   delivery.approval_needed:
     day_one: true
     audiences:

@@ -6,6 +6,15 @@ import { useState } from "react";
 /** Plain words for every refusal the delivery, lenses and learning screens can meet. Never echoed text. */
 export const ERRORS: Record<string, string> = {
   forbidden: "You can't do that from your role.",
+  own_submission: "Someone other than the person who sent the pack needs to approve it.",
+  not_due_yet: "Results can be entered from two working days before they are due.",
+  day_30_first: "Confirm the 30-day result first.",
+  already_finance_confirmed: "Finance has already confirmed this figure.",
+  note_required: "Add the chair's note before sending.",
+  already_sent: "This issue has already gone out.",
+  ember_paused: "Sending The Ember is paused for now.",
+  ones_paused: "The Ones are resting from the wall, so The Ember can't go out just now.",
+  month_not_valid: "Pick a month.",
   not_found: "We can't find that. It may have moved on, or it isn't one of yours.",
   already_started: "The handover for this has already started.",
   not_picked: "Only picked ideas and groups can start a handover.",

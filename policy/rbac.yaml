@@ -48,6 +48,9 @@ capabilities:
   manage_delivery:            { admin: yes }                           # link the pipeline page; Finance's confirmation
   view_lenses:                { lob_committee: yes, core_committee: yes, admin: yes }   # counts only
   review_learning:            { admin: yes }                           # the product team's proposals and reports
+  # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
+  write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
+  send_ember:                 { admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -64,6 +67,7 @@ kill_switch_flippers:
   attachments.deep_check: [admin, infosec]
   scan.live: [admin]
   learning.jobs: [admin]
+  ember.send: [admin]
 
 # No session needed.
 public:
@@ -172,6 +176,12 @@ endpoints:
   - GET /api/learning                                 review_learning
   - POST /api/learning/proposals/{id}/decide          review_learning
   - POST /api/learning/run                            review_learning
+  - GET /api/ember                                    signed_in
+  - GET /api/ember/current                            write_ember_note
+  - GET /api/ember/{id}                               signed_in
+  - POST /api/ember/drafts                            send_ember
+  - PUT /api/ember/{id}/note                          write_ember_note
+  - POST /api/ember/{id}/send                         send_ember
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
@@ -196,6 +206,7 @@ pages:
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /lenses                    view_lenses
   - /learning                  review_learning
+  - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
 # Navigation (AT-B2-06): everyone gets the first three; the rest by role.
 navigation:

@@ -417,6 +417,52 @@ def ones_announce(body: dict[str, Any]) -> JSONResponse:
     return _ones_call(announce, _actor(body))
 
 
+# --- The Ember (DEC-062, DEC-070, BLD-128): drafts and the note for the chair and admins; sending for admins; the
+# archive for everyone. Same refusal handling as the Ones.
+
+
+@app.get("/internal/ember", dependencies=[Depends(require_token)])
+def ember_archive() -> JSONResponse:
+    from ember.service import archive
+
+    return _ones_call(archive)
+
+
+@app.get("/internal/ember/current/{viewer_id}", dependencies=[Depends(require_token)])
+def ember_current(viewer_id: str) -> JSONResponse:
+    from ember.service import current_draft
+
+    return _ones_call(current_draft, viewer_id)
+
+
+@app.get("/internal/ember/{issue_id}/{viewer_id}", dependencies=[Depends(require_token)])
+def ember_view(issue_id: str, viewer_id: str) -> JSONResponse:
+    from ember.service import view
+
+    return _ones_call(view, viewer_id, issue_id)
+
+
+@app.post("/internal/ember/drafts", dependencies=[Depends(require_token)])
+def ember_draft(body: dict[str, Any]) -> JSONResponse:
+    from ember.service import draft
+
+    return _ones_call(draft, _actor(body), body, status=201)
+
+
+@app.put("/internal/ember/{issue_id}/note", dependencies=[Depends(require_token)])
+def ember_note(issue_id: str, body: dict[str, Any]) -> JSONResponse:
+    from ember.service import set_note
+
+    return _ones_call(set_note, _actor(body), issue_id, body)
+
+
+@app.post("/internal/ember/{issue_id}/send", dependencies=[Depends(require_token)])
+def ember_send(issue_id: str, body: dict[str, Any]) -> JSONResponse:
+    from ember.service import send
+
+    return _ones_call(send, _actor(body), issue_id)
+
+
 @app.get("/internal/ones/public", dependencies=[Depends(require_token)])
 def ones_public() -> JSONResponse:
     from ones.views import public

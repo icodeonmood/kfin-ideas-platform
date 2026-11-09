@@ -15,7 +15,8 @@ export type SwitchName =
   | "ones.public"
   | "clusters.batch"
   | "scan.live"
-  | "learning.jobs";
+  | "learning.jobs"
+  | "ember.send";
 
 interface Rule {
   methods: readonly string[];
@@ -52,6 +53,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
   // Running a learning loop by hand stops with the scheduled ones (§5); the worker refuses it too.
   { methods: ["POST"], pattern: /^\/api\/learning\/run\/?$/, switches: ["learning.jobs"] },
+  // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
+  { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
 ];
 
 /** Plain words for the banner when a switch is off. Wording to be confirmed by HR with the message templates. */
@@ -69,6 +72,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
   "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
   "learning.jobs": "Learning reports and proposals are paused for now. Nothing changes without a person.",
+  "ember.send": "Sending The Ember is paused for now. Past issues are still here to read.",
 };
 
 /**
@@ -93,6 +97,8 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
   /^\/api\/lenses\/rebuild\/?$/, // counts only, from the database; §7.6 has no lens switch
+  // Drafting The Ember and writing the chair's note send nothing; sending is behind ember.send (BLD-128).
+  /^\/api\/ember\/(?:drafts|[^/]+\/note)\/?$/,
   /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
 ];
 

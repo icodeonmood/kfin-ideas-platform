@@ -153,6 +153,13 @@
     },
     "review_learning": {
       "admin": "yes"
+    },
+    "write_ember_note": {
+      "core_committee": "yes",
+      "admin": "yes"
+    },
+    "send_ember": {
+      "admin": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -198,6 +205,9 @@
       "admin"
     ],
     "learning.jobs": [
+      "admin"
+    ],
+    "ember.send": [
       "admin"
     ]
   },
@@ -301,7 +311,13 @@
     "POST /api/lenses/rebuild                          review_learning",
     "GET /api/learning                                 review_learning",
     "POST /api/learning/proposals/{id}/decide          review_learning",
-    "POST /api/learning/run                            review_learning"
+    "POST /api/learning/run                            review_learning",
+    "GET /api/ember                                    signed_in",
+    "GET /api/ember/current                            write_ember_note",
+    "GET /api/ember/{id}                               signed_in",
+    "POST /api/ember/drafts                            send_ember",
+    "PUT /api/ember/{id}/note                          write_ember_note",
+    "POST /api/ember/{id}/send                         send_ember"
   ],
   "membership_scoped": {
     "ones": [
@@ -321,7 +337,8 @@
     "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
     "/lenses                    view_lenses",
-    "/learning                  review_learning"
+    "/learning                  review_learning",
+    "/ember/compose             write_ember_note"
   ],
   "navigation": [
     {

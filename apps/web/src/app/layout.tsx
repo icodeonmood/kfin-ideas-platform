@@ -53,6 +53,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <footer className="site-footer">
           <div className="inner">
             <p>1% Club</p>
+            {showShell ? (
+              <p>
+                <Link href="/ember">The Ember</Link>
+              </p>
+            ) : null}
             <p>A KFintech programme</p>
           </div>
         </footer>

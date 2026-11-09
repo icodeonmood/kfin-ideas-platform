@@ -42,8 +42,18 @@ def _smtp(to: str, email: email_html.Email) -> None:
 
 
 def compose(conn: Conn, user_id: str, event: str, template: str, refs: dict[str, Any]) -> email_html.Email:
+    base = get_settings().app_base_url
+    if event == "ember.issue":  # the whole issue, as sent (BLD-128); the in-app copy is the short template
+        from ember.render import compose as ember_email
+
+        row = conn.execute(
+            "SELECT id, content FROM ember_issues WHERE id = %s AND state = 'sent'", (refs.get("issue_id"),)
+        ).fetchone()
+        if row is None:
+            raise LookupError("ember_issue_missing")
+        return ember_email(row["content"], base, f"{base.rstrip('/')}/ember/{row['id']}")
     data = variables(conn, user_id, event, refs)
-    return email_html.compose(load(template), data, get_settings().app_base_url)
+    return email_html.compose(load(template), data, base)
 
 
 def message_for(
@@ -66,8 +76,12 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             (now, limit),
         ).fetchall()
         for r in rows:
-            if r["event"] == "ones.announced" and not killswitch.is_on("ones.public", conn):
-                # The Ones are off the wall: the announcement waits instead of failing (Ones review).
+            paused = (r["event"] == "ones.announced" and not killswitch.is_on("ones.public", conn)) or (
+                r["event"] == "ember.issue"
+                and not (killswitch.is_on("ember.send", conn) and killswitch.is_on("ones.public", conn))
+            )
+            if paused:
+                # The Ones are off the wall, or The Ember is paused: the message waits instead of failing.
                 conn.execute(
                     "UPDATE notifications SET send_after = %s WHERE id = %s",
                     (now + dt.timedelta(minutes=15), r["id"]),

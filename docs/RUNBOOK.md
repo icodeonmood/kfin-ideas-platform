@@ -33,6 +33,7 @@ Flip from **Admin → Kill switches** with a reason of at least 10 characters. E
 | `wall.public` | A bad summary on the wall, or an HR request | Admin, HR | The wall and everyone else's view of idea pages are hidden; owners and the desk keep theirs | `/api/wall` answers 503 |
 | `ones.public` | A brief or name that should not be public, or an HR request | Admin, HR | The Ones disappear from the wall, the home carousel and the office screens; the console and each One's own dashboard keep working | `/api/ones` answers 503; the screen says the Ones are resting |
 | `learning.jobs` | A learning report or proposal looks wrong, or the jobs load the database at a bad time | Admin | Nobody outside the product team notices; the Learning page shows "Off" and "Run it now" is disabled. Proposals already made can still be decided | `POST /api/learning/run` answers 503; no new `learning_reports` rows next morning |
+| `ember.send` | An issue of The Ember has a mistake, or it should wait (for example while the Ones are paused) | Admin | Nothing visible; "Send to everyone" on Write The Ember says sending is paused. Past issues stay readable | `POST /api/ember/{id}/send` answers 503; queued `ember.issue` emails stay queued |
 
 **Walkthrough (AT-B8-07).** In UAT, flip each switch off and on again in the order above and tick the "Check it worked" column. The automated version runs in `make test` (`tests/test_b8_switch_walkthrough.py`).
 
@@ -133,3 +134,10 @@ python -m gonogo --since 2026-11-16 --vapt-open-high <n> --sso-ready yes \
 ```
 
 Copy the load test report and the restore drill result into `/data/loadtest` and `/data/ops` first. It reads the golden-set reports (`EVAL_REPORTS_DIR`), leak aborts since the date, the latest load test and restore drill, and the privacy notice version, then names the launch mode the evidence supports: Mode A only when every criterion is met. Rows marked "confirm" need a person's sign-off at the meeting.
+
+## The Ember, each month
+
+1. In the last week of the month, an admin opens **Write The Ember** (`/ember/compose`) and starts the month's issue.
+2. The core committee chair writes "What the committee looks for" there (up to 90 words, no names of colleagues or clients).
+3. An admin reads the preview and presses **Send to everyone**, then **Yes, send to everyone**. It goes out through the usual email rules (working hours, one routine email a day, then the digest).
+4. Sent issues stay in the archive at `/ember`. To stop a send in progress, switch `ember.send` off: queued Ember emails wait.

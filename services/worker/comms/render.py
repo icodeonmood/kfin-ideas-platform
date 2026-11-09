@@ -231,6 +231,13 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         _ones_variables(conn, data, event, refs, base)
     if event.startswith("delivery."):
         _delivery_variables(conn, data, refs, base, user_id)
+    if event == "ember.issue":  # the in-app note; the email carries the whole issue (BLD-128)
+        row = conn.execute("SELECT month FROM ember_issues WHERE id = %s", (refs.get("issue_id"),)).fetchone()
+        if row:
+            from ember.service import month_label
+
+            data["ember"] = {"month_label": month_label(row["month"])}
+            data["links"]["ember"] = f"{base}/ember/{refs.get('issue_id')}"
     if event == "sla.breached":
         data["breach"] = {"days_late": refs.get("days_late", 0), "limit_wd": refs.get("limit_wd", 0)}
         data["item"] = {
