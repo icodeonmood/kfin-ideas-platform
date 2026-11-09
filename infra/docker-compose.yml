@@ -44,6 +44,11 @@ services:
     image: clamav/clamav-debian:1.4   # the Alpine image has no arm64 build
     environment:
       CLAMAV_NO_FRESHCLAMD: "true"   # dev: use the signatures baked into the image; no outbound updates
+    # Run clamd itself as the container's main process (the image's /init execs clamd when the first
+    # argument starts with "-"), so if the small dev VM's OOM killer takes clamd the container exits
+    # and Docker restarts it, instead of staying "Up (unhealthy)" with no scanner.
+    command: ["--foreground"]
+    restart: unless-stopped
     ports: ["${CLAMAV_HOST_PORT:-3310}:3310"]
     healthcheck:
       test: ["CMD", "clamdcheck.sh"]
