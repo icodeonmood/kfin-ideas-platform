@@ -319,6 +319,23 @@ def test_a_group_delivery_moves_grouped_ideas_but_not_withdrawn_ones(ones_db: An
     assert (stage(db, left), stage(db, parked)) == ("withdrawn", "parked")
 
 
+def test_start_from_pick_is_idempotent_and_moves_the_group(ones_db: Any, crew: Any) -> None:
+    """For the committee flow (lane B): called inside its decision transaction, twice is harmless, and grouped
+    ideas move to handover with their group."""
+    db = ones_db
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(8100, 8999) if f"CL-{n}" not in taken)
+    db.execute("INSERT INTO clusters (id, stage, distinct_contributors) VALUES (%s, 'picked', 2)", (cl,))
+    member = helpers.insert_idea(db, contributor=code_of(db, crew["submitter"]), stage="in_cluster")
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = %s", (cl, member))
+    with db.transaction():
+        first = service.start_from_pick(db, "cluster", cl, "procurement")
+        assert service.start_from_pick(db, "cluster", cl, "procurement") == first
+    assert stage(db, member) == "handover"
+    row = db.execute("SELECT track, state FROM deliveries WHERE id = %s", (first,)).fetchone()
+    assert (row["track"], row["state"]) == ("procurement", "drafting")
+
+
 def test_progress_ratio_reads_reductions_and_increases_alike() -> None:
     assert service.progress_ratio(40, 10, 10) == 1.0  # a reduction, met
     assert service.progress_ratio(40, 10, 25) == 0.5
@@ -350,8 +367,8 @@ def test_fix_track_milestones_reminders_and_completion(ones_db: Any, crew: Any) 
     service.complete_fix(db, crew["owner"], did, {"before": 40, "after": 15}, now=NOW)
     assert events(db, "delivery.completion_to_approve")[-1]["current_owner_ids"] == [crew["sponsor"]]
     refused(
-        "own_entry", service.approve_completion, db, crew["owner"], did
-    )  # not a sponsor, and their numbers
+        "sponsor_only", service.approve_completion, db, crew["owner"], did
+    )  # only the named sponsor approves; own_entry is tested with a sponsor who completed it
     service.approve_completion(db, crew["sponsor"], did, now=NOW)
     assert stage(db, idea) == "resolved"
 

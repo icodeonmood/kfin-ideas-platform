@@ -254,16 +254,31 @@ def start(conn: Conn, actor: str, body: dict[str, Any]) -> dict[str, Any]:
 
 def start_from_pick(conn: Conn, subject_type: str, subject_id: str, track: str = "build") -> int:
     """For the committee flow: open the handover the moment the core committee picks an idea or cluster. Call it
-    inside the transaction that records the decision. Idempotent: returns the existing delivery if there is one."""
+    inside the transaction that records the decision: it opens no transaction of its own and never commits, only
+    a savepoint around the insert. Idempotent: a second call (or one that loses a race) returns the existing
+    delivery. The subject and its member ideas still in the decision flow (`in_cluster` included) move to
+    handover (BLD-126)."""
     st, sid, stage = _subject(conn, subject_type, subject_id)
-    existing = conn.execute(
-        "SELECT id FROM deliveries WHERE subject_type = %s AND subject_id = %s", (st, sid)
-    ).fetchone()
-    if existing:
-        return int(existing["id"])
+
+    def existing() -> int | None:
+        row = conn.execute(
+            "SELECT id FROM deliveries WHERE subject_type = %s AND subject_id = %s", (st, sid)
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    found = existing()
+    if found is not None:
+        return found
     if stage != "picked":
         raise Refused(409, "not_picked")
-    d = _insert(conn, st, sid, track if track in TRACKS else "build", None)
+    try:
+        with conn.transaction():  # a savepoint inside the caller's transaction
+            d = _insert(conn, st, sid, track if track in TRACKS else "build", None)
+    except psycopg.errors.UniqueViolation:
+        found = existing()
+        if found is None:
+            raise Refused(409, "already_started") from None
+        return found
     _audit(
         conn, "process:committee", "delivery.started", f"delivery:{d['id']}", {"subject": sid, "track": track}
     )
