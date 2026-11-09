@@ -131,7 +131,40 @@ export default async function Page() {
         ) : (
           <p className="muted">Nothing yet.</p>
         )}
-        <p className="coming-soon coming-soon-light">Recurring friction themes for each role: coming soon</p>
+        <h3>Recurring friction themes for each role</h3>
+        <p className="muted">
+          Drafted each Monday by the assistant from the role&apos;s recent ideas and approved by the product
+          team. Counts only: never who raised them.
+        </p>
+        {data.role_themes.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <caption className="visually-hidden">
+                Approved friction themes by role, with how many ideas share each
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Role</th>
+                  <th scope="col">Themes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.role_themes.map((t) => (
+                  <tr key={t.id}>
+                    <th scope="row">{t.role}</th>
+                    <td>
+                      {t.themes.length
+                        ? t.themes.map((th) => `${th.name} (${th.ideas} ideas)`).join("; ")
+                        : "Nothing recurs yet"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">No approved themes yet.</p>
+        )}
       </section>
 
       <section aria-labelledby="l-people">

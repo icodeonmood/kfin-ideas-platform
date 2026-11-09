@@ -722,6 +722,36 @@ def _insights(conn: Conn) -> None:
     reports.drift(conn, NOW)
     reports.canvas(conn, NOW)
     proposals.glossary(conn, NOW, NOW.strftime("%G-W%V"))
+    _role_themes(conn)
+
+
+DEMO_THEMES = {  # synthetic; `demo` marks them for `make demo-reset`
+    "ROLE-ops-executive": ("approved", [
+        {"name": "Re-checking records by hand", "description": "Records already captured are checked again by hand "
+         "before they move on.", "ideas": 4, "demo": True},
+        {"name": "Requests sent back for missing documents", "description": "Requests arrive without the documents "
+         "they need, so they go back and forth.", "ideas": 3, "demo": True},
+    ]),
+    "ROLE-client-service": ("proposed", [
+        {"name": "Calls asking where a request is", "description": "Investors and distributors call to ask about "
+         "status that is not shown anywhere they can see.", "ideas": 3, "demo": True},
+    ]),
+}  # fmt: skip
+
+
+def _role_themes(conn: Conn) -> None:
+    """Friction themes by role (BLD-139): one set approved for the lenses page, one waiting on the learning page."""
+    admin = conn.execute(
+        "SELECT id FROM users WHERE emp_id_hash = %s", (emp_id_hash("DEMO-00006"),)
+    ).fetchone()
+    period = NOW.strftime("%G-W%V")
+    for role_id, (state, themes) in DEMO_THEMES.items():
+        conn.execute(
+            "INSERT INTO role_themes (role_id, period, themes, ideas_considered, state, decided_by, decided_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (role_id, period) DO NOTHING",
+            (role_id, period, Jsonb(themes), 9, state, admin["id"] if admin and state == "approved" else None,
+             NOW if state == "approved" else None),
+        )  # fmt: skip
 
 
 # --- Load and reset ------------------------------------------------------------------------------------------------
@@ -805,8 +835,13 @@ def remove(conn: Conn) -> None:
             # Proposals drawn from demo ideas, or decided by a demo person; the next run proposes again if due.
             conn.execute(
                 "DELETE FROM learning_proposals WHERE decided_by = ANY(%s::uuid[]) "
-                "OR (payload -> 'idea_ids') ?| %s::text[]",
-                (users, ideas),
+                "OR published_by = ANY(%s::uuid[]) OR (payload -> 'idea_ids') ?| %s::text[]",
+                (users, users, ideas),
+            )
+        if _has_table(conn, "role_themes"):
+            conn.execute(
+                "DELETE FROM role_themes WHERE decided_by = ANY(%s::uuid[]) OR themes @> '[{\"demo\": true}]'",
+                (users,),
             )
         items = [r["id"] for r in conn.execute(
             "SELECT id FROM review_items WHERE ref_id = ANY(%s)", (ideas,)).fetchall()]  # fmt: skip

@@ -287,6 +287,25 @@ def handover_draft(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def role_themes(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """Ideas grouped by their first area tag; a theme for each area with two or more ideas (dev and tests only)."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for idea in [i for i in inputs.get("ideas") or [] if isinstance(i, dict)][:40]:
+        area = str((idea.get("areas") or ["Other"])[0])
+        groups.setdefault(area, []).append(idea)
+    themes: list[dict[str, Any]] = []
+    for area, ideas in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        if len(ideas) < 2 or len(themes) == 4:
+            continue
+        name = _clip(f"Recurring {_untagged(area).lower()} friction", 8)
+        themes.append({
+            "name": name if len(name) >= 3 else "Recurring friction",
+            "description": f"{len(ideas)} ideas raise the same kind of {_untagged(area).lower()} problem.",
+            "refs": [str(i["ref"]) for i in ideas],
+        })  # fmt: skip
+    return {"themes": themes}
+
+
 BUILDERS = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
@@ -294,6 +313,7 @@ BUILDERS = {
     "cluster-summary": cluster_summary,
     "attachment-digest": attachment_digest,
     "handover-draft": handover_draft,
+    "role-themes": role_themes,
 }
 
 

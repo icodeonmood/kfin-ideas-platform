@@ -874,6 +874,14 @@ def learning_publish(proposal_id: str, body: dict[str, Any]) -> JSONResponse:
     return _delivery_call(publish, _actor(body), proposal_id, body)
 
 
+@app.post("/internal/learning/role-themes/{theme_id}/decide", dependencies=[Depends(require_token)])
+def learning_role_themes_decide(theme_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The product team approves or declines a role's friction themes (BLD-139)."""
+    from learning.role_themes import decide
+
+    return _delivery_call(decide, _actor(body), theme_id, body)
+
+
 @app.post("/internal/learning/run", dependencies=[Depends(require_token)])
 def learning_run(body: dict[str, Any]) -> JSONResponse:
     from learning.run import run_now

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/role-themes/0.1.0",
+  "title": "role-themes output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["themes"],
+  "properties": {
+    "themes": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description", "refs"],
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 80 },
+          "description": { "type": "string", "minLength": 10, "maxLength": 220 },
+          "refs": { "type": "array", "minItems": 2, "maxItems": 40, "items": { "type": "string", "pattern": "^I[0-9]{1,2}$" } }
+        }
+      }
+    }
+  }
+}

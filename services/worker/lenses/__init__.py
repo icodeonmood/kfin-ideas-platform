@@ -138,7 +138,14 @@ def overview(conn: Conn) -> dict[str, Any]:
         "lobs": [{"id": s["key"], **s["data"]} for s in snaps if s["kind"] == "lob"],
         "roles": [{"id": s["key"], **s["data"]} for s in snaps if s["kind"] == "role"],
         "people": people(conn),
+        "role_themes": _approved_themes(conn),
     }
+
+
+def _approved_themes(conn: Conn) -> list[dict[str, Any]]:
+    from learning.role_themes import approved
+
+    return approved(conn)
 
 
 def view(conn: Conn, viewer_id: str) -> dict[str, Any]:

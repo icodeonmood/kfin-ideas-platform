@@ -8,16 +8,24 @@ const LOOPS = [
   ["autonomy", "Acceptance of suggestions"],
   ["drift", "This week's report"],
   ["glossary", "New glossary terms"],
+  ["role_themes", "Friction themes by role"],
   ["canvas", "Last month's canvas report"],
   ["area_tags", "Area tag groups"],
   ["calibration", "Last quarter's results"],
 ] as const;
 
-/** Approve or decline one proposal. The worker records who and when; nothing else changes. */
-export function ProposalActions({ id }: { id: number }) {
+/** Approve or decline one proposal (or one role's friction themes). The worker records who and when; nothing
+ * else changes. */
+export function ProposalActions({
+  id,
+  path = "proposals",
+}: {
+  id: number;
+  path?: "proposals" | "role-themes";
+}) {
   const { status, done } = useDone();
   const { error, busy, run } = useAction(done);
-  const url = `/api/learning/proposals/${id}/decide`;
+  const url = `/api/learning/${path}/${id}/decide`;
   return (
     <div>
       <div className="button-row">

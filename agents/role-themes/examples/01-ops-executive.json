@@ -1,0 +1,78 @@
+{
+  "description": "Operations executive: two clear themes (manual re-checks, missing documents) and one idea that stands alone.",
+  "input": {
+    "role": "Operations executive",
+    "ideas": [
+      {
+        "ref": "I1",
+        "summary": "SIP mandate bank fields are re-checked by hand after capture.",
+        "areas": [
+          "Process"
+        ],
+        "lobs": [
+          "Mutual fund operations"
+        ]
+      },
+      {
+        "ref": "I2",
+        "summary": "Payout files are checked twice by hand before release.",
+        "areas": [
+          "Process"
+        ],
+        "lobs": [
+          "Mutual fund operations"
+        ]
+      },
+      {
+        "ref": "I3",
+        "summary": "Change-of-bank requests arrive without a cancelled cheque and are sent back.",
+        "areas": [
+          "Customer experience"
+        ],
+        "lobs": [
+          "Mutual fund operations"
+        ]
+      },
+      {
+        "ref": "I4",
+        "summary": "Corporate KYC goes back and forth because documents are missing.",
+        "areas": [
+          "Compliance"
+        ],
+        "lobs": [
+          "Corporate registry"
+        ]
+      },
+      {
+        "ref": "I5",
+        "summary": "The canteen menu should change every week.",
+        "areas": [
+          "Facility"
+        ],
+        "lobs": [
+          "Mutual fund operations"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "themes": [
+      {
+        "name": "Re-checking records by hand",
+        "description": "Records already captured are checked again by hand before they move on.",
+        "refs": [
+          "I1",
+          "I2"
+        ]
+      },
+      {
+        "name": "Requests sent back for missing documents",
+        "description": "Requests arrive without the documents they need, so they go back and forth.",
+        "refs": [
+          "I3",
+          "I4"
+        ]
+      }
+    ]
+  }
+}

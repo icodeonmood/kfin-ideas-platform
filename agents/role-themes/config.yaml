@@ -1,0 +1,28 @@
+# role-themes — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
+name: role-themes
+version: 0.1.0
+tier: reasoning
+model: claude-sonnet-5-5
+effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
+thinking: "off"
+max_tokens: 2000
+timeout_s: 90           # weekly batch job, not on anyone's screen
+latency_budget_s: 45
+retries_on_invalid: 1
+cache_ttl_days: 7
+input_blocks:
+- role
+- ideas
+untrusted_blocks:
+- ideas
+max_ideas: 40
+examples_in_prompt:
+- 01-ops-executive.json
+fake_mode_default: 01-ops-executive.json
+golden_set: eval/golden/role_themes.jsonl
+post_checks:
+- every ref exists in the input; a theme groups at least two ideas; no idea in two themes
+- name 8 words or fewer, description 25 words or fewer; no tags, names or identifiers in either
+pass_gates:
+  pair_precision_min: 0.8       # ideas put together belong together
+  coverage_min: 0.6             # ideas in an expected theme land in some theme

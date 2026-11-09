@@ -325,6 +325,7 @@
     "GET /api/learning                                 review_learning",
     "POST /api/learning/proposals/{id}/decide          review_learning",
     "POST /api/learning/proposals/{id}/publish         review_learning",
+    "POST /api/learning/role-themes/{id}/decide       review_learning",
     "POST /api/learning/run                            review_learning",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",

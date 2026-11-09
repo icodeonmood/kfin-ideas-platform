@@ -123,6 +123,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
         gatekeeper,
         handover_draft,
         judge,
+        role_themes,
     )
     from evalrunner.common import context, route_name, write_report
 
@@ -139,6 +140,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                 (cluster_summary, "cluster-summary"),
                 (attachment_digest, "attachment-digest"),
                 (handover_draft, "handover-draft"),
+                (role_themes, "role-themes"),
             ):
                 try:
                     result = runner.run(ctx)

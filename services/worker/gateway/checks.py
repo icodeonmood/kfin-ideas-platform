@@ -182,6 +182,22 @@ def handover_draft(sent: dict[str, Any], out: dict[str, Any], d: Directory | Non
     return problems
 
 
+def role_themes(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    """Refs exist, each idea in one theme at most, and names and descriptions are card-safe (BLD-139)."""
+    problems: list[str] = []
+    refs = {str(i.get("ref")) for i in sent.get("ideas") or [] if isinstance(i, dict)}
+    seen: set[str] = set()
+    for n, theme in enumerate(out["themes"]):
+        _card_safe(f"themes[{n}].name", theme["name"], 8, d, problems)
+        _card_safe(f"themes[{n}].description", theme["description"], 25, d, problems)
+        if any(r not in refs for r in theme["refs"]):
+            problems.append(f"themes[{n}].refs names refs that are not in the input")
+        if seen & set(theme["refs"]) or len(set(theme["refs"])) < len(theme["refs"]):
+            problems.append(f"themes[{n}].refs repeats an idea already in a theme")
+        seen |= set(theme["refs"])
+    return problems
+
+
 CHECKS: dict[str, Check] = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
@@ -189,6 +205,7 @@ CHECKS: dict[str, Check] = {
     "cluster-summary": cluster_summary,
     "attachment-digest": attachment_digest,
     "handover-draft": handover_draft,
+    "role-themes": role_themes,
 }
 
 

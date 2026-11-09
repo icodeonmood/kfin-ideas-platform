@@ -187,6 +187,7 @@ endpoints:
   - GET /api/learning                                 review_learning
   - POST /api/learning/proposals/{id}/decide          review_learning
   - POST /api/learning/proposals/{id}/publish         review_learning   # write an approved term or tag into the company repo (BLD-136)
+  - POST /api/learning/role-themes/{id}/decide       review_learning   # approve or decline a role's friction themes (BLD-139)
   - POST /api/learning/run                            review_learning
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note

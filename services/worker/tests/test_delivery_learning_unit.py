@@ -159,12 +159,12 @@ def test_acceptance_window_stops_at_200_and_eligibility_needs_a_full_window() ->
     ("day", "kinds"),
     [
         (dt.date(2026, 11, 20), ["autonomy"]),  # a Friday
-        (dt.date(2026, 11, 23), ["autonomy", "drift", "glossary"]),  # a Monday
+        (dt.date(2026, 11, 23), ["autonomy", "drift", "glossary", "role_themes"]),  # a Monday (BLD-139)
         (dt.date(2026, 12, 1), ["autonomy", "canvas", "area_tags"]),
         (dt.date(2027, 1, 1), ["autonomy", "canvas", "area_tags", "calibration"]),
         (
             dt.date(2027, 3, 1),
-            ["autonomy", "drift", "glossary", "canvas", "area_tags"],
+            ["autonomy", "drift", "glossary", "role_themes", "canvas", "area_tags"],
         ),  # a Monday and the 1st
     ],
 )

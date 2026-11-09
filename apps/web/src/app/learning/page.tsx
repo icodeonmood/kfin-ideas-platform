@@ -117,6 +117,41 @@ export default async function Page() {
         ) : null}
       </section>
 
+      <section aria-labelledby="p-themes">
+        <h2 id="p-themes">Friction themes by role</h2>
+        <p className="muted">
+          Each Monday the assistant groups each role&apos;s recent ideas into the problems they keep raising.
+          Only the themes you approve show on the lenses page, as counts. No names and no idea text.
+        </p>
+        {data.role_themes.filter((t) => t.state === "proposed").length ? (
+          <ul className="crew-cards" style={{ listStyle: "none", padding: 0 }}>
+            {data.role_themes
+              .filter((t) => t.state === "proposed")
+              .map((t) => (
+                <li key={t.id} className="proposal">
+                  <p className="meta">
+                    {t.role}, {t.period}: from {t.ideas_considered} recent ideas
+                  </p>
+                  {t.themes.length ? (
+                    <ul>
+                      {t.themes.map((th) => (
+                        <li key={th.name}>
+                          <strong>{th.name}</strong> ({th.ideas} ideas). {th.description}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>Nothing recurs for this role yet.</p>
+                  )}
+                  <ProposalActions id={t.id} path="role-themes" />
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <p className="muted">Nothing is waiting.</p>
+        )}
+      </section>
+
       <section aria-labelledby="p-auto">
         <h2 id="p-auto">How often the review desk accepts the suggestions</h2>
         <p className="muted">

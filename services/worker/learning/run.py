@@ -1,5 +1,5 @@
 """`learning.run`, daily at 05:30 IST: decides which loops are due today and runs them. Every day: autonomy.
-Mondays: drift and glossary. The 1st of the month: the canvas report and area tags. The 1st of a quarter:
+Mondays: drift, glossary and friction themes by role (BLD-139). The 1st of the month: the canvas report and area tags. The 1st of a quarter:
 calibration for the quarter just ended. Nothing runs while `learning.jobs` is off. An admin can run one by hand."""
 
 from __future__ import annotations
@@ -11,17 +11,17 @@ from zoneinfo import ZoneInfo
 from core import killswitch
 from core.db import Conn
 from core.logging import get_logger
-from learning import proposals, reports
+from learning import proposals, reports, role_themes
 
 log = get_logger("learning.run")
 IST = ZoneInfo("Asia/Kolkata")
-KINDS = ("autonomy", "drift", "glossary", "canvas", "area_tags", "calibration")
+KINDS = ("autonomy", "drift", "glossary", "canvas", "area_tags", "calibration", "role_themes")
 
 
 def due(day: dt.date) -> list[str]:
     out = ["autonomy"]
     if day.weekday() == 0:
-        out += ["drift", "glossary"]
+        out += ["drift", "glossary", "role_themes"]
     if day.day == 1:
         out += ["canvas", "area_tags"]
         if day.month in (1, 4, 7, 10):
@@ -43,6 +43,8 @@ def run_one(conn: Conn, kind: str, now: dt.datetime) -> Any:
         return proposals.glossary(conn, now, day.strftime("%G-W%V"))
     if kind == "area_tags":
         return proposals.area_tags(conn, now, day.strftime("%Y-%m"))
+    if kind == "role_themes":
+        return role_themes.propose(conn, now, day.strftime("%G-W%V"))
     raise ValueError(kind)
 
 
@@ -97,6 +99,7 @@ def overview(conn: Conn) -> dict[str, Any]:
         "reports": latest,
         "autonomy": autonomy,
         "proposals": proposals.listing(conn),
+        "role_themes": role_themes.listing(conn),
     }
 
 

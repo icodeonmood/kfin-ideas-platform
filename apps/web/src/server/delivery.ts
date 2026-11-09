@@ -193,7 +193,18 @@ export type Lenses = {
     top_areas: { id: string; name: string; ideas: number }[];
   }[];
   people: { id: string; colleagues: number; related_groups: number; could_join: number }[];
+  role_themes: RoleThemes[];
   can_rebuild: boolean;
+};
+
+/** Recurring friction themes for one role (BLD-139): checked words and counts only, never who or which idea. */
+export type RoleThemes = {
+  id: number;
+  role: string;
+  period: string;
+  state: "proposed" | "approved" | "declined";
+  themes: { name: string; description: string; ideas: number }[];
+  ideas_considered: number;
 };
 
 export type LearningProposal = {
@@ -223,6 +234,7 @@ export type Learning = {
   >;
   autonomy: { action_type: string; mode: "gated" | "auto"; rate: number | null; window: number }[];
   proposals: LearningProposal[];
+  role_themes: RoleThemes[];
 };
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -311,6 +323,8 @@ export const decideLearning = (me: CurrentUser, proposalId: string, input: unkno
   send(me, `/internal/learning/proposals/${id(proposalId)}/decide`, input);
 export const publishProposal = (me: CurrentUser, proposalId: string, input: unknown) =>
   send(me, `/internal/learning/proposals/${id(proposalId)}/publish`, input);
+export const decideRoleThemes = (me: CurrentUser, themeId: string, input: unknown) =>
+  send(me, `/internal/learning/role-themes/${id(themeId)}/decide`, input);
 export const runLearning = (me: CurrentUser, input: unknown) => send(me, "/internal/learning/run", input);
 
 // --- Evidence files and Friday check-ins (BLD-131, BLD-132) -------------------------------------------------------

@@ -12,6 +12,7 @@ Fixed test cases every agent must pass before a version reaches UAT or productio
 | `judge.jsonl` | `judge` | 8 sets (19 labels) | 40 sets (about 120 labels) across MF, SIF, AIF/PMS, NPS, Corporate Registry, functions and business ideas | Precision of "same" **≥ 0.85**; recall of "same" **≥ 0.75** |
 | `canvas_assist.jsonl` | `canvas-assist` | 4 | 25 | Submitter-field changes **0**; IDs outside the taxonomy slice **0**; `neutral_summary` leaks **0**; area-tag accuracy **≥ 0.8** |
 | `handover_draft.jsonl` | `handover-draft` (BLD-138) | 6 | 30 across build, fix and procurement, single ideas and groups | Unit accuracy **≥ 0.8**; numbers grounded **100%** (never a number nobody gave); objective on the fix track only **100%** |
+| `role_themes.jsonl` | `role-themes` (BLD-139) | 4 | 20 roles across MF, Corporate Registry, NPS, distribution and functions, including roles where nothing recurs | Pair precision **≥ 0.8**; coverage **≥ 0.6**; names and descriptions card-safe (enforced by the gateway) |
 | `attachments-pii/` (week 3) | attachment pipeline | — | 50 synthetic files across every format | Recall 100% |
 
 Grow the sets by writing synthetic variants of the seed cases: other LOBs, other phrasings, Hinglish, typos, long and short texts. Claude Code can draft them; a product team member checks the expected labels.
