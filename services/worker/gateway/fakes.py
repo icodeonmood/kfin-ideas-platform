@@ -242,10 +242,11 @@ def attachment_digest(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]
     file = inputs.get("file") or {}
     claims: list[dict[str, Any]] = []
     for p in pieces:
-        m = _FIGURE.search(str(p["text"]))
-        if m and len(claims) < 8:
+        plain = _untagged(p["text"])  # a number inside a tag is not a figure
+        m = _FIGURE.search(plain)
+        if m and len(claims) < 8 and len(plain) >= 3:
             claims.append(
-                {"text": _clip(p["text"], 25), "figure": m.group(0), "location": str(p["location"])[:80]}
+                {"text": _clip(plain, 25), "figure": m.group(0), "location": str(p["location"])[:80]}
             )
     words = " ".join(str(p["text"]) for p in pieces[:3])
     summary = _clip(words, 60) or "The file has no readable text."
