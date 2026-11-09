@@ -127,7 +127,7 @@ def test_send_due_records_a_refused_address_as_a_bounce(db: Any, monkeypatch: An
     killswitch.clear_cache()
     db.execute("DELETE FROM notifications")
 
-    def refuse(to: str, subject: str, body: str) -> None:
+    def refuse(to: str, email: Any) -> None:
         raise smtplib.SMTPRecipientsRefused({to: (550, b"no such mailbox")})
 
     monkeypatch.setattr("comms.send._smtp", refuse)

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import secrets
 import time
 import urllib.request
@@ -174,7 +175,11 @@ def test_eight_day_one_events_reach_the_inbox_and_mailpit(people: Any) -> None:
     to_owner = [m for m in msgs if any(t["Address"] == users["owner"]["email"] for t in m["To"])]
     assert len(to_owner) >= 5
     full = _mailpit(f"message/{to_owner[0]['ID']}")
-    assert full["HTML"] == "" and "<img" not in full["Text"]  # plain text: nothing to track opens with
+    # Both parts (DEC-061, BLD-125): plain text and branded HTML. The only image is the hosted mark: no pixel.
+    assert full["Text"].strip() and full["HTML"].strip()
+    imgs = re.findall(r'<img[^>]+src="([^"]+)"', full["HTML"])
+    assert imgs == [f"{get_settings().app_base_url.rstrip('/')}/brand/email-mark-white@2x.png"]
+    assert "<img" not in full["Text"] and "**" not in full["Text"] and "1% spark. 99% sweat." in full["HTML"]
     # Text lives only in templates and source records, never in notifications or the comms log.
     assert tables_containing(db, "Which branches see this most?") == []
     assert "notifications.payload" not in tables_containing(db, ONE_LINE)
@@ -228,7 +233,7 @@ def _state(db: Any, nid: int) -> dict[str, Any]:
 def test_people_who_have_left_get_no_email(people: Any, monkeypatch: Any) -> None:
     db, users, _refs = people
     sent: list[str] = []
-    monkeypatch.setattr("comms.send._smtp", lambda to, subject, body: sent.append(to))
+    monkeypatch.setattr("comms.send._smtp", lambda to, email: sent.append(to))
     mail = _queue(db, users["owner"]["id"], "email", "immediate", WORKDAY_NOON, "queued")
     held = _queue(db, users["owner"]["id"], "digest", "routine", None, "held")
     db.execute("UPDATE users SET active = false WHERE id = %s", (users["owner"]["id"],))
@@ -244,7 +249,7 @@ def test_routine_email_is_checked_again_when_it_is_sent(people: Any, monkeypatch
     second routine email on the same day goes to the digest."""
     db, users, _refs = people
     sent: list[str] = []
-    monkeypatch.setattr("comms.send._smtp", lambda to, subject, body: sent.append(to))
+    monkeypatch.setattr("comms.send._smtp", lambda to, email: sent.append(to))
     night = dt.datetime(2026, 11, 18, 22, 0, tzinfo=IST)
     late = _queue(db, users["owner"]["id"], "email", "routine", WORKDAY_NOON, "queued")
     urgent = _queue(db, users["owner"]["id"], "email", "immediate", WORKDAY_NOON, "queued")
@@ -264,7 +269,7 @@ def test_one_bad_digest_does_not_hold_back_the_others(people: Any, monkeypatch: 
     db, users, _refs = people
     sent: list[str] = []
 
-    def smtp(to: str, subject: str, body: str) -> None:
+    def smtp(to: str, email: Any) -> None:
         if to == users["owner"]["email"]:
             raise OSError("mailbox unavailable")
         sent.append(to)

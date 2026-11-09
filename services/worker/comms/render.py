@@ -276,6 +276,7 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
             data["one"] = {
                 "number": number,
                 "swap_until": _date(one["swap_until"]),
+                "tier": int(one["tier"]),
                 "tier_name": tier_name(one["tier"]),
                 "display": _one_display(number, one["name"], one["consent"]),
             }
@@ -297,6 +298,7 @@ def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str
             ).fetchone()
             message = unseal(m["text_encrypted"], f"one_message:{m['id']}") if m else None
         data["tier"] = {
+            "to": to,
             "to_name": tier_name(to),
             "from_name": tier_name(frm) if frm else "",
             "up": frm is None or to > frm,

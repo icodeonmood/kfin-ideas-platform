@@ -1,5 +1,5 @@
-"""Send email and digests (§3.7 steps 6–7). Plain text only: no tracking pixels, no open tracking, links to the
-app. `comms.email` off: emails stay queued; in-app messages carry on. A failing send retries three times, then
+"""Send email and digests (§3.7 steps 6–7). Each email carries a plain-text part and a branded HTML part (DEC-061,
+BLD-125): no tracking pixels, no open tracking, links to the app. `comms.email` off: emails stay queued; in-app messages carry on. A failing send retries three times, then
 the notification is marked failed (the in-app copy is already there)."""
 
 from __future__ import annotations
@@ -10,9 +10,10 @@ from email.message import EmailMessage
 from typing import Any
 from urllib.parse import urlparse
 
+from comms import email_html
 from comms.render import variables
 from comms.route import IST, next_send_time
-from comms.templates import render
+from comms.templates import load, render
 from core import killswitch
 from core.config import get_settings
 from core.db import Conn
@@ -24,13 +25,25 @@ FROM = "1% Club <onepercentclub@kfintech.example>"
 MAX_ATTEMPTS = 3
 
 
-def _smtp(to: str, subject: str, body: str) -> None:
-    url = urlparse(get_settings().smtp_url)
+def build_message(to: str, email: email_html.Email) -> EmailMessage:
+    """multipart/alternative: the plain-text part first, the HTML part second (mail apps show the last one they
+    can render)."""
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = FROM, to, subject
-    msg.set_content(body)  # text/plain: nothing to track
+    msg["From"], msg["To"], msg["Subject"] = FROM, to, email.subject
+    msg.set_content(email.text)
+    msg.add_alternative(email.html, subtype="html")
+    return msg
+
+
+def _smtp(to: str, email: email_html.Email) -> None:
+    url = urlparse(get_settings().smtp_url)
     with smtplib.SMTP(url.hostname or "localhost", url.port or 25, timeout=10) as s:
-        s.send_message(msg)
+        s.send_message(build_message(to, email))
+
+
+def compose(conn: Conn, user_id: str, event: str, template: str, refs: dict[str, Any]) -> email_html.Email:
+    data = variables(conn, user_id, event, refs)
+    return email_html.compose(load(template), data, get_settings().app_base_url)
 
 
 def message_for(
@@ -63,10 +76,7 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             if r["urgency"] == "routine" and _hold_back(conn, r, now):
                 continue
             try:
-                subject, body, _ = message_for(
-                    conn, str(r["user_id"]), r["event"], r["template"], r["payload"]
-                )
-                _smtp(r["email"], subject, body)
+                _smtp(r["email"], compose(conn, str(r["user_id"]), r["event"], r["template"], r["payload"]))
             except Exception as exc:
                 failed = r["attempts"] + 1 >= MAX_ATTEMPTS
                 conn.execute(
@@ -149,11 +159,10 @@ def _send_digest(conn: Conn, u: dict[str, Any]) -> int:
     ).fetchall()
     if not items:
         return 0
-    parts = []
-    for it in items:
-        subject, body, _ = message_for(conn, str(u["user_id"]), it["event"], it["template"], it["payload"])
-        parts.append(f"## {subject}\n\n{body}")
-    _smtp(u["email"], f"Your 1% Club update: {len(parts)} new", "\n\n".join(parts))
+    sections = [
+        (load(it["template"]), variables(conn, str(u["user_id"]), it["event"], it["payload"])) for it in items
+    ]
+    _smtp(u["email"], email_html.digest(sections, get_settings().app_base_url))
     conn.execute(
         "UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = ANY(%s)",
         ([it["id"] for it in items],),

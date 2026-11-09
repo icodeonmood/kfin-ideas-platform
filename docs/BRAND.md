@@ -87,6 +87,10 @@ Only Ones have a tier. The spark is lit at Tier 1 on induction, and the committe
 
 A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once. Every colour pairing above passes AA as text on Zed.
 
+## 4b. Email (DEC-061, BLD-125)
+
+Every email has a plain-text part and a branded HTML part. HTML: 600 px wide, built from tables, Arial, light colours inline (what Outlook desktop shows) and a dark version for mail apps set to dark. A Zed header band carries the Spark mark as a hosted PNG (`/brand/email-mark-white@2x.png`, shown at 20 x 24; never SVG in email) and "1% Club". One Electric button per email, the first link the template puts on its own line. The One's number sits in a Zed block with its tier swatch. The footer always reads "1% spark. 99% sweat." and "A KFintech programme". No tracking pixels, no web fonts. Links on dark use #7C9BFF, since Electric is too dark to read on Graphite. Wording comes from the templates and HR reviews it; the renderer never changes words.
+
 ## 5. Motion and sound
 
 One orchestrated moment: the **logo introduction** on the launch screen (DEC-046). It plays like this:
