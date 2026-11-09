@@ -13,7 +13,19 @@ import sys
 from pathlib import Path
 
 ALLOWED_DIR = Path("services/worker/gateway")
-SKIP_DIRS = {".git", "node_modules", ".venv", ".next", ".data", "__pycache__", "playwright-report", "test-results", ".mypy_cache"}
+# `.worktrees` holds other checkouts of this repo (parallel builds); each is checked from its own root.
+SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    ".venv",
+    ".next",
+    ".data",
+    "__pycache__",
+    "playwright-report",
+    "test-results",
+    ".mypy_cache",
+    ".worktrees",
+}
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"}
 
 _PY_MODULES = r"(?:anthropic|openai|google\.generativeai|google\.genai|langchain\w*|litellm|cohere|mistralai)"

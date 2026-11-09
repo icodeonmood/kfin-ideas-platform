@@ -69,6 +69,9 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
   ];
   for (const [persona, paths] of pages) {
     test(`${persona}: ${paths.join(" ")}`, async ({ page }) => {
+      // Four pages with axe, and the contributor persona's My ideas grows with every dev run: about 20 s alone,
+      // over 30 s when the whole suite runs in parallel.
+      test.setTimeout(60_000);
       await signIn(page, PERSONAS[persona]);
       for (const path of paths) {
         await page.goto(path);
