@@ -1,0 +1,21 @@
+{
+  "description": "A spreadsheet of NIGO volumes by branch; figures copied as written, with their cells.",
+  "input": {
+    "file": {"kind": "xlsx", "ocr": false},
+    "text": [
+      {"location": "sheet 1, row 1, column A", "text": "Branch | Month | Forms received | NIGO forms"},
+      {"location": "sheet 1, row 2, column A", "text": "Branch: Hyderabad | Month: Sep 2026 | Forms received: 4,120 | NIGO forms: 812"},
+      {"location": "sheet 1, row 3, column A", "text": "Branch: Chennai | Month: Sep 2026 | Forms received: 3,560 | NIGO forms: 655"},
+      {"location": "sheet 1, row 5, column A", "text": "Note: NIGO found after the NAV cut-off in about 40% of cases"}
+    ]
+  },
+  "output": {
+    "summary": "A one-sheet count of physical subscription forms and NIGO forms for two branches in September 2026. Close to one in five forms was NIGO at both branches, and the note says about 40% of NIGO cases were found only after the NAV cut-off.",
+    "claims": [
+      {"text": "Hyderabad received 4,120 forms in September 2026, of which 812 were NIGO.", "figure": "812", "location": "sheet 1, row 2, column A"},
+      {"text": "Chennai received 3,560 forms in September 2026, of which 655 were NIGO.", "figure": "655", "location": "sheet 1, row 3, column A"},
+      {"text": "About 40% of NIGO cases were found after the NAV cut-off.", "figure": "40%", "location": "sheet 1, row 5, column A"}
+    ],
+    "kind_of_evidence": "data"
+  }
+}

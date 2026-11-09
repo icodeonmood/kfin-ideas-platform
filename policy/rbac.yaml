@@ -48,6 +48,7 @@ kill_switch_flippers:
   comms.email: [admin]
   wall.public: [admin, hr]
   clusters.batch: [admin]
+  attachments.deep_check: [admin, infosec]
 
 # No session needed.
 public:

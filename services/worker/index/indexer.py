@@ -160,7 +160,9 @@ class Indexer:
                 paths = [(c.path, c.status) for c in self.git.diff(last, head)]
             with conn.transaction():
                 if full:
-                    for table in ("chunks", "links", "terms", "repo_files"):
+                    # Research-file text is indexed from the file store, not the repo (§4.2 step 6): keep it.
+                    conn.execute("DELETE FROM chunks WHERE attachment_id IS NULL")
+                    for table in ("links", "terms", "repo_files"):
                         conn.execute(f"DELETE FROM {table}")  # noqa: S608 - fixed table names
                 for rel, status in paths:
                     if not rel.endswith(".md") or posixpath.basename(rel) in RESERVED:

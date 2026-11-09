@@ -5,7 +5,8 @@
    → the level-1 personal-data patterns per location, plus the spreadsheet column check → `rejected` (with the
    data type and where; the quarantine copy is deleted at once) or `clean` (moved to the clean bucket).
 3. Nobody can open a file that is not `clean`. File contents never go into Git.
-OCR, the gatekeeper pass over file text and attachment-digest arrive in week 3.
+Week 3, behind `attachments.deep_check` (attachments/deep.py): OCR for images and scanned pages, the gatekeeper
+over file text, then `attachment-digest` and the file text in the search index once the idea is submitted.
 """
 
 from __future__ import annotations
@@ -17,7 +18,9 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from attachments import clamav, sandbox, store
+from attachments import deep as deep_checks
 from attachments.filetype import sniff
+from core import killswitch
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
@@ -25,6 +28,7 @@ from pii.patterns import scan
 from rules import load_rule
 
 log = get_logger("attachments")
+OCR_TIMEOUT_S = 240.0
 
 MIME = {
     "pdf": "application/pdf",
@@ -179,21 +183,50 @@ def process(conn: Conn, att_id: str) -> str:
         return reject({"type": "virus", "code": "virus", "location": "the whole file"})
 
     kind = sniff(data)
-    if kind in lim.held:
-        conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
+    deep = killswitch.is_on("attachments.deep_check", conn)  # week 3: OCR, gatekeeper, digest, index (D3)
+
+    def hold(code: str) -> str:
+        conn.execute(
+            "UPDATE attachments SET state = 'awaiting_check', checks = %s WHERE id = %s",
+            (Jsonb({"waiting_for": code}), att_id),
+        )
         return "awaiting_check"
+
+    extractor = f"{kind}_ocr" if kind in lim.held else (kind or "")
+    if kind in lim.held and not deep:
+        return hold("ocr")
     try:
-        extracted = sandbox.extract(kind or "", data)
+        extracted = sandbox.extract(
+            extractor, data, timeout_s=OCR_TIMEOUT_S if extractor.endswith("_ocr") else 90.0
+        )
+        if extracted.scanned:
+            if not deep:
+                return hold("ocr")
+            extractor = "pdf_ocr"
+            extracted = sandbox.extract(extractor, data, timeout_s=OCR_TIMEOUT_S)
     except sandbox.ExtractionFailed as exc:
+        if exc.code == "ocr_unavailable":
+            log.error("attachments.ocr_unavailable", attachment_id=att_id)
+            return hold("ocr")
         log.warning("attachments.unreadable", attachment_id=att_id, reason_code=exc.code)
         code = "too_big" if exc.code == "too_big" else "unreadable"
         return reject({"type": code, "code": code, "location": "the whole file"})
-    if extracted.scanned:
-        conn.execute("UPDATE attachments SET state = 'awaiting_check' WHERE id = %s", (att_id,))
-        return "awaiting_check"
     finding = _personal_data(extracted.pieces, extracted.columns, lim.column_block_share)
     if finding:
         return reject(finding)
+    checks: dict[str, Any] = {"patterns": True, "ocr": extractor.endswith("_ocr"), "gatekeeper": False}
+    if deep:
+        try:
+            finding = deep_checks.gatekeeper_verdict(conn, att_id, extracted)
+        except deep_checks.Unavailable:
+            if checks["ocr"]:
+                return hold("gatekeeper")  # text read from an image has had no model check yet: keep it held
+            finding = None  # a text-layer file falls back to the day-one check (patterns), and says so
+            checks["gatekeeper_skipped"] = True
+        else:
+            checks["gatekeeper"] = True
+        if finding:
+            return reject(finding)
 
     # Commit under the row lock: a file removed (or its draft purged) during the checks is never copied to clean.
     with conn.transaction():
@@ -202,9 +235,78 @@ def process(conn: Conn, att_id: str) -> str:
             return live["state"] if live else "missing"
         store.put(s.s3_bucket_clean, row["store_key"], data)
         store.delete(s.s3_bucket_quarantine, row["store_key"])
-        conn.execute("UPDATE attachments SET state = 'clean', rejection = NULL WHERE id = %s", (att_id,))
+        conn.execute(
+            "UPDATE attachments SET state = 'clean', rejection = NULL, checks = %s WHERE id = %s",
+            (Jsonb(checks), att_id),
+        )
+        if deep:
+            conn.execute(
+                "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.digest', %s, %s) "
+                "ON CONFLICT DO NOTHING",
+                (Jsonb({"attachment_id": att_id}), f"attachment.digest:{att_id}"),
+            )
     log.info("attachments.clean", attachment_id=att_id, file_type=kind)
     return "clean"
+
+
+def digest(conn: Conn, att_id: str) -> str:
+    """Digest and index one clean file once its idea is submitted (job `attachment.digest`). Before that it waits:
+    the digest is tagged under the idea's scope, which starts at submit."""
+    if not killswitch.is_on("attachments.deep_check", conn):
+        return "switched_off"
+    att = conn.execute(
+        "SELECT a.id, a.store_key, a.state, a.mime, a.idea_uuid, a.checks FROM attachments a WHERE a.id = %s",
+        (att_id,),
+    ).fetchone()
+    if att is None or att["state"] != "clean":
+        return "not_clean"
+    idea = conn.execute(
+        "SELECT idea_id, stage, visibility, lobs, area_ids, category, canvas FROM ideas WHERE id = %s",
+        (att["idea_uuid"],),
+    ).fetchone()
+    if idea is None:
+        return "missing"
+    if idea["idea_id"] is None or idea["stage"] in ("draft", "scanning", "blocked"):
+        conn.execute(  # no dedupe key: this job still holds it while it runs
+            "INSERT INTO jobs (type, payload, run_at) VALUES ('attachment.digest', %s, now() + interval '10 minutes')",
+            (Jsonb({"attachment_id": att_id}),),
+        )
+        return "waiting_for_submit"
+    data = store.get(get_settings().s3_bucket_clean, att["store_key"])
+    kind = sniff(data) or ""
+    extractor = f"{kind}_ocr" if (att["checks"] or {}).get("ocr") else kind
+    try:
+        extracted = sandbox.extract(
+            extractor, data, timeout_s=OCR_TIMEOUT_S if extractor.endswith("_ocr") else 90.0
+        )
+    except sandbox.ExtractionFailed as exc:
+        log.warning("attachments.digest_unreadable", attachment_id=att_id, reason_code=exc.code)
+        return "unreadable"
+    with conn.transaction():
+        out = deep_checks.digest_and_index(conn, dict(att), dict(idea), extracted, extractor)
+    log.info("attachments.digested", attachment_id=att_id, agent_ok=out["digest"], chunk_count=out["indexed"])
+    return "done"
+
+
+def recheck(conn: Conn) -> int:
+    """Files held for OCR or the gatekeeper go back through the checks while the deep check is on (every 15 min)."""
+    if not killswitch.is_on("attachments.deep_check", conn):
+        return 0
+    # Only files whose blocker is gone: OCR is back with the switch; the gatekeeper needs the assistant.
+    waiting = ["ocr"]
+    if killswitch.is_on("ai.all", conn) and killswitch.is_on("agent.gatekeeper", conn):
+        waiting.append("gatekeeper")
+    rows = conn.execute(
+        "UPDATE attachments SET state = 'quarantine' WHERE state = 'awaiting_check' "
+        "AND coalesce(checks->>'waiting_for', 'ocr') = ANY(%s) RETURNING id",
+        (waiting,),
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('attachment.process', %s, %s) ON CONFLICT DO NOTHING",
+            (Jsonb({"attachment_id": r["id"]}), f"attachment:{r['id']}:recheck"),
+        )
+    return len(rows)
 
 
 def content(conn: Conn, att_id: str) -> tuple[bytes, str, str]:

@@ -244,4 +244,51 @@ def csv_text(data: bytes) -> Extracted:
     return out
 
 
-EXTRACTORS = {"pdf": pdf, "docx": docx, "pptx": pptx, "xlsx": xlsx, "csv": csv_text}
+# ---- OCR (week 3): images and scanned PDF pages ------------------------------------------------------------
+
+
+def image_ocr(data: bytes) -> Extracted:
+    from attachments.ocr import read_text
+
+    out = Extracted()
+    text = read_text(data)
+    if text:
+        out.pieces.append(("the image", text))
+    return out
+
+
+def pdf_ocr(data: bytes) -> Extracted:
+    """The text layer, then OCR of the images on every page that has no text layer."""
+    from pypdf import PdfReader
+
+    from attachments.ocr import MAX_IMAGES_PER_PAGE, MAX_SCANNED_PAGES, read_text
+
+    out = pdf(data)
+    out.scanned = False
+    reader = PdfReader(io.BytesIO(data))
+    scanned = 0
+    for i, page in enumerate(reader.pages, start=1):
+        if (page.extract_text() or "").strip():
+            continue
+        scanned += 1
+        if scanned > MAX_SCANNED_PAGES:
+            raise TooBigToCheck("too_many_scanned_pages")
+        for n, image in enumerate(page.images, start=1):
+            if n > MAX_IMAGES_PER_PAGE:
+                raise TooBigToCheck("too_many_images")
+            text = read_text(image.data)
+            if text:
+                out.pieces.append((f"page {i} (scanned)", text))
+    return out
+
+
+EXTRACTORS = {
+    "pdf": pdf,
+    "docx": docx,
+    "pptx": pptx,
+    "xlsx": xlsx,
+    "csv": csv_text,
+    "png_ocr": image_ocr,
+    "jpg_ocr": image_ocr,
+    "pdf_ocr": pdf_ocr,
+}

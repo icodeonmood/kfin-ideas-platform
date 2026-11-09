@@ -1,0 +1,17 @@
+{
+  "description": "A short OCR'd process note with a tagged client name; no figures invented.",
+  "input": {
+    "file": {"kind": "png", "ocr": true},
+    "text": [
+      {"location": "the image", "text": "Process note - redemption payouts for [[CLIENT_AMC_1]]\nPayout file re-keyed by hand twice a day\nErrors found in reconciliation next morning"}
+    ]
+  },
+  "output": {
+    "summary": "A photographed process note on redemption payouts for [[CLIENT_AMC_1]]. It says the payout file is re-keyed by hand twice a day and errors are found only in the next morning's reconciliation.",
+    "claims": [
+      {"text": "The payout file is re-keyed by hand twice a day.", "figure": null, "location": "the image"},
+      {"text": "Errors are found in reconciliation the next morning.", "figure": null, "location": "the image"}
+    ],
+    "kind_of_evidence": "image"
+  }
+}

@@ -12,6 +12,9 @@ from typing import cast
 import pytest
 
 os.environ.setdefault("APP_ENV", "test")
+# Host-side tests have no Tesseract; synthetic images carry their text in metadata (attachments/ocr.py). The
+# worker container keeps the real OCR, which the stack tests reach through the API.
+os.environ.setdefault("OCR_MODE", "fake")
 
 _CAPTURE = io.StringIO()
 

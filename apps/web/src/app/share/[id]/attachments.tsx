@@ -63,6 +63,8 @@ function stateText(a: AttachmentItem): string {
       if (code === "check_failed")
         return "We couldn't finish checking this file, so it has been deleted. Please attach it again later.";
       if (code === "virus") return "Not accepted: our virus check flagged this file. It has been deleted.";
+      if (code === "gatekeeper")
+        return `Not accepted: our check found what looks like details of an investor, customer or other person (${a.rejection?.location ?? "somewhere in the file"}). It has been deleted. Remove those details and attach the file again.`;
       if (code === "unreadable")
         return "Not accepted: we couldn't open this file to check it. It has been deleted. Try saving it again or as a PDF.";
       const what =

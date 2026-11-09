@@ -119,3 +119,31 @@ def eicar_docx() -> bytes:
             z.writestr(item, src.read(item.filename))
         z.writestr("word/embeddings/test.bin", "".join(parts).encode())
     return out.getvalue()
+
+
+def png_with_text(text: str, *, ocr_text: str | None = None) -> bytes:
+    """A PNG that shows `text` in large type (for real Tesseract in the worker image) and carries `ocr_text`
+    (default: the same text) in its metadata for OCR_MODE=fake on hosts without Tesseract. Synthetic only."""
+    from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
+
+    font = ImageFont.load_default(size=44)
+    lines = text.splitlines() or [""]
+    img = Image.new("RGB", (1400, 80 + 70 * len(lines)), "white")
+    draw = ImageDraw.Draw(img)
+    for n, line in enumerate(lines):
+        draw.text((40, 40 + 70 * n), line, fill="black", font=font)
+    meta = PngImagePlugin.PngInfo()
+    meta.add_text("ocr-text", text if ocr_text is None else ocr_text)
+    out = io.BytesIO()
+    img.save(out, format="PNG", pnginfo=meta)
+    return out.getvalue()
+
+
+def scanned_pdf(text: str) -> bytes:
+    """A one-page PDF whose page is only an image of `text` (no text layer), like a scanner's output."""
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png_with_text(text))).convert("RGB")
+    out = io.BytesIO()
+    img.save(out, format="PDF", resolution=150)
+    return out.getvalue()

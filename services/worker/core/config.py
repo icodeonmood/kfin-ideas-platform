@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # compromise plus a copy of the database still cannot open the vault. Empty in dev: the shared key is used.
     pseudonym_vault_key: str = ""
 
+    # OCR for images and scanned PDF pages (§4.2 attachments, week 3): tesseract in the worker image; `fake`
+    # reads the text a synthetic test image carries in its metadata, for host-side tests without Tesseract.
+    ocr_mode: str = "tesseract"
+    ocr_languages: str = "eng+hin"
+
     embeddings_mode: str = "hash"
     embeddings_model_path: str = (
         ""  # bge-m3 only: local folder with the model files (never fetched at run time)

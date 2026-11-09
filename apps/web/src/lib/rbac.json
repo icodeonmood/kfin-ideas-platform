@@ -148,6 +148,10 @@
     ],
     "clusters.batch": [
       "admin"
+    ],
+    "attachments.deep_check": [
+      "admin",
+      "infosec"
     ]
   },
   "public": [

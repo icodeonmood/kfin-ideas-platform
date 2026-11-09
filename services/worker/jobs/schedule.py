@@ -33,11 +33,26 @@ WEEKLY: dict[str, tuple[int, clock]] = {
 }
 
 
+# job type -> minutes. Enqueued once per slot of that many minutes.
+EVERY: dict[str, int] = {
+    "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
+}
+
+
 def enqueue_due(conn: Conn, now: datetime | None = None) -> list[str]:
     """Enqueue every daily job whose time has passed today and that has not been enqueued today, and every weekly
     job whose day and time have come this week."""
     local = (now or datetime.now(tz=IST)).astimezone(IST)
     queued = []
+    for job_type, minutes in EVERY.items():
+        key = f"{job_type}:{int(local.timestamp()) // (minutes * 60)}"
+        row = conn.execute(
+            "INSERT INTO jobs (type, dedupe_key) SELECT %s, %s "
+            "WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE dedupe_key = %s) RETURNING id",
+            (job_type, key, key),
+        ).fetchone()
+        if row:
+            queued.append(job_type)
     year, week, weekday = local.isocalendar()
     for job_type, (day, at) in WEEKLY.items():
         if weekday != day or local.time() < at:
@@ -67,7 +82,7 @@ def enqueue_due(conn: Conn, now: datetime | None = None) -> list[str]:
 
 
 def run_forever(stop: Any = None, poll_seconds: float = 60.0) -> None:
-    log.info("schedule.started", job_types=sorted([*DAILY, *WEEKLY]))
+    log.info("schedule.started", job_types=sorted([*DAILY, *WEEKLY, *EVERY]))
     with connect(autocommit=True) as conn:
         while stop is None or not stop.is_set():
             enqueue_due(conn)

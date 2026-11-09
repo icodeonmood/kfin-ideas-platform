@@ -25,7 +25,14 @@ export type ItemView = {
     card: Record<string, unknown> & { details?: string };
     original_text: string | null;
     provenance: Record<string, string>;
-    attachments: { id: string; name: string; state: string }[];
+    attachments: {
+      id: string;
+      name: string;
+      state: string;
+      digest?: string | null;
+      claims?: { text: string; figure: string | null; location: string }[];
+      patterns_only?: boolean;
+    }[];
   };
   proposals: {
     system: {

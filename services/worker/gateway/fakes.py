@@ -233,11 +233,33 @@ def cluster_summary(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_FIGURE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
+
+
+def attachment_digest(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """The first lines of the file as the summary; numbers copied as written, with their locations (dev only)."""
+    pieces = [p for p in inputs.get("text") or [] if isinstance(p, dict) and p.get("text")]
+    file = inputs.get("file") or {}
+    claims: list[dict[str, Any]] = []
+    for p in pieces:
+        m = _FIGURE.search(str(p["text"]))
+        if m and len(claims) < 8:
+            claims.append(
+                {"text": _clip(p["text"], 25), "figure": m.group(0), "location": str(p["location"])[:80]}
+            )
+    words = " ".join(str(p["text"]) for p in pieces[:3])
+    summary = _clip(words, 60) or "The file has no readable text."
+    kind = "image" if file.get("ocr") else "data" if file.get("kind") in ("xlsx", "csv") else "document"
+    return {"summary": summary if len(summary) >= 10 else "The file has no readable text.", "claims": claims,
+            "kind_of_evidence": kind}  # fmt: skip
+
+
 BUILDERS = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
     "judge": judge,
     "cluster-summary": cluster_summary,
+    "attachment-digest": attachment_digest,
 }
 
 

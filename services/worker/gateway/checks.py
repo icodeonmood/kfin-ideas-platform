@@ -132,11 +132,29 @@ def cluster_summary(sent: dict[str, Any], out: dict[str, Any], d: Directory | No
     return problems
 
 
+def attachment_digest(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    problems: list[str] = []
+    pieces = [p for p in sent.get("text") or [] if isinstance(p, dict)]
+    locations = {str(p.get("location")) for p in pieces}
+    source = "\n".join(str(p.get("text") or "") for p in pieces)
+    if len(out["summary"].split()) > 150:
+        problems.append("summary must be 150 words or fewer")
+    for i, c in enumerate(out["claims"]):
+        if c["location"] not in locations:
+            problems.append(f"claims[{i}].location must be copied exactly from one of the pieces")
+        if c["figure"] is not None and c["figure"] not in source:
+            problems.append(f"claims[{i}].figure must appear in the text exactly as written")
+        if len(c["text"].split()) > 25:
+            problems.append(f"claims[{i}].text must be 25 words or fewer")
+    return problems
+
+
 CHECKS: dict[str, Check] = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
     "judge": judge,
     "cluster-summary": cluster_summary,
+    "attachment-digest": attachment_digest,
 }
 
 
