@@ -5,6 +5,7 @@ host. The switch is put back the way it was."""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -28,6 +29,9 @@ def deep_on() -> Iterator[Any]:
         killswitch.set_switch(
             conn, "attachments.deep_check", "on", reason="stack test: real OCR", actor="test"
         )
+        time.sleep(
+            killswitch.CACHE_SECONDS + 1
+        )  # the worker reads switches through a 10-second cache (BLD-006)
         try:
             yield make, conn
         finally:
