@@ -33,6 +33,15 @@ test("the waiting screen follows the scan over server-sent events", async ({ bro
     const ctx = await browser.newContext();
     const a = await ctx.newPage();
     await signIn(a, PERSONAS.contributor);
+    // The route guard keeps its own 10-second switch cache: wait until it lets the stream through (an unknown
+    // submission then answers 404, not the switch's 503).
+    await expect
+      .poll(
+        async () =>
+          (await a.request.get("/api/submissions/00000000-0000-4000-8000-000000000000/scan-events")).status(),
+        { timeout: 20_000, intervals: [1_000] },
+      )
+      .not.toBe(503);
     await a.goto("/share");
     await a.getByRole("button", { name: "Start a quick capture" }).click();
     await a.waitForURL(/\/share\/[0-9a-f-]{36}$/);

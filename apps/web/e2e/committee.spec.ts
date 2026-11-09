@@ -9,6 +9,8 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { openProposalHolding } from "./proposals";
+import { withSwitchLock } from "./switch-lock";
 
 const CHAIR = "SYN-00006";
 const MEMBERS = ["SYN-00007", "SYN-00008", "SYN-00009", "SYN-00010"];
@@ -65,6 +67,15 @@ async function share(page: Page, words: string): Promise<string> {
   return ideaId;
 }
 
+/** Every score is a choice (nothing is pre-selected): the suggested financial level where there is one. */
+async function chooseScores(page: Page, submit: string, value: string) {
+  const form = page.locator("form").filter({ has: page.getByRole("button", { name: submit }) });
+  for (const group of await form.getByRole("group").all()) {
+    const hint = /suggested: (\d)/.exec(await group.innerText());
+    await group.getByRole("radio", { name: hint ? hint[1] : value, exact: true }).check();
+  }
+}
+
 async function axeBoth(page: Page) {
   await expectNoSeriousAxeIssues(page);
   const size = page.viewportSize();
@@ -75,7 +86,11 @@ async function axeBoth(page: Page) {
 
 test("from a group of ideas to a committee decision", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "shared switches and cycle; the 360 px check is inside");
-  test.setTimeout(420_000);
+  test.setTimeout(900_000); // includes waiting for clusters.spec, which flips the same switch
+  await withSwitchLock("clusters.batch", () => committeeFlow(browser));
+});
+
+async function committeeFlow(browser: Browser) {
   const vocab = ["ledger", "voucher", "mandate", "payout", "register", "cheque", "courier", "stamp", "receipt", "batch",
     "slip", "tray", "binder", "scanner", "printer", "envelope", "token", "queue", "drawer", "stapler", "folder", "ribbon",
     "barcode", "label", "tally", "roster", "docket", "challan", "manifest", "bundle", "carton", "seal"]; // prettier-ignore
@@ -112,22 +127,18 @@ test("from a group of ideas to a committee decision", async ({ browser }, testIn
       await expect(runButton).toBeVisible({ timeout: 1_000 });
     }).toPass({ timeout: 30_000, intervals: [2_000] });
     await runButton.click();
-    const row = r
-      .getByRole("row")
-      .filter({ hasText: `${made[0]} ${made[1]}` })
-      .filter({ hasText: "Group proposal" });
-    await expect(async () => {
-      await r.goto("/review");
-      await expect(row).toHaveCount(1, { timeout: 1_000 });
-    }).toPass({ timeout: 90_000, intervals: [3_000] });
-    await row.getByRole("link", { name: "Group proposal" }).click();
+    await openProposalHolding(r, [first, second]);
     await r.getByRole("button", { name: "Approve this group" }).click();
     await expect(r.getByRole("status").filter({ hasText: /The group is (CL-\d{4})/ })).toBeVisible();
     const cluster = /CL-\d{4}/.exec(await r.getByRole("status").innerText())![0];
 
-    // Qualify: four gates, the impact estimate, finish.
-    await r.goto("/review?type=qualify");
-    await r.getByRole("row").filter({ hasText: cluster }).getByRole("link").click();
+    // Qualify: four gates, the impact estimate, finish. The item comes from a job after the approval commits.
+    const qualifyRow = r.getByRole("row").filter({ hasText: cluster });
+    await expect(async () => {
+      await r.goto("/review?type=qualify");
+      await expect(qualifyRow).toHaveCount(1, { timeout: 1_000 });
+    }).toPass({ timeout: 30_000, intervals: [1_000] });
+    await qualifyRow.getByRole("link").click();
     await r.waitForURL(/\/review\/qualify\/\d+$/);
     await axeBoth(r);
     for (const gate of [
@@ -162,6 +173,7 @@ test("from a group of ideas to a committee decision", async ({ browser }, testIn
       const m = await as(browser, who);
       await m.page.goto(roundHref!);
       if (who === MEMBERS[0]) await axeBoth(m.page);
+      await chooseScores(m.page, "Seal my scores", "4");
       await m.page.getByRole("button", { name: "Seal my scores" }).click();
       await expect(m.page.getByRole("status").filter({ hasText: "Your scores are sealed." })).toBeVisible();
       await m.close();
@@ -197,6 +209,8 @@ test("from a group of ideas to a committee decision", async ({ browser }, testIn
     for (const who of [CHAIR, ...MEMBERS]) {
       const m = await as(browser, who);
       await m.page.goto(`/committee/presentations/${presentation}`);
+      await chooseScores(m.page, "Seal my assessment", "4");
+      await m.page.getByLabel("Your vote").selectOption("accept");
       await m.page.getByLabel("Strengths (up to 3, one per line)").fill("The pain is felt at every branch");
       await m.page.getByLabel(/willing to sponsor/).check();
       await m.page.getByRole("button", { name: "Seal my assessment" }).click();
@@ -219,4 +233,4 @@ test("from a group of ideas to a committee decision", async ({ browser }, testIn
   } finally {
     for (const s of ["committee.flow", "clusters.batch"]) await setSwitch(browser, s, "off");
   }
-});
+}
