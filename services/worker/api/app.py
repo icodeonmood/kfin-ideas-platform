@@ -294,3 +294,192 @@ def idea_page_view(idea_id: str, view: str, mode: str, user_id: str) -> JSONResp
     if out is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+# --- The Ones (DEC-034 to DEC-087). The web app checks the capability and passes who is acting; the worker checks
+# the person's grants again. Refusals answer with a code; text is never echoed or logged.
+
+
+def _ones_call(fn: Any, *args: Any, status: int = 200) -> JSONResponse:
+    from gateway import AgentFailed
+    from ones.text import OnesRefused
+
+    with connect(autocommit=True) as conn:
+        try:
+            return JSONResponse(fn(conn, *args), status_code=status, headers={"Cache-Control": "no-store"})
+        except OnesRefused as exc:
+            return JSONResponse({"error": exc.code}, status_code=exc.status)
+        except AgentFailed as exc:  # the checks could not run: a clean answer, never a 500
+            return JSONResponse({"error": "checks_unavailable", "code": exc.code}, status_code=503)
+
+
+def _actor(body: dict[str, Any]) -> str:
+    return str(body.get("actor_user_id") or "")
+
+
+@app.get("/internal/ones/console", dependencies=[Depends(require_token)])
+def ones_console() -> JSONResponse:
+    from ones.views import console
+
+    return _ones_call(console)
+
+
+@app.post("/internal/ones/proposals", dependencies=[Depends(require_token)])
+def ones_propose(body: dict[str, Any]) -> JSONResponse:
+    from ones.service import propose
+
+    return _ones_call(propose, _actor(body), body, status=201)
+
+
+@app.post("/internal/ones/proposals/{proposal_id}/decide", dependencies=[Depends(require_token)])
+def ones_decide(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import decide
+
+    return _ones_call(decide, _actor(body), proposal_id, body)
+
+
+@app.post("/internal/ones/proposals/{proposal_id}/carry-out", dependencies=[Depends(require_token)])
+def ones_carry_out(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import carry_out
+
+    return _ones_call(carry_out, _actor(body), proposal_id)
+
+
+@app.post("/internal/ones/proposals/{proposal_id}/withdraw", dependencies=[Depends(require_token)])
+def ones_withdraw(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import withdraw
+
+    return _ones_call(withdraw, _actor(body), proposal_id)
+
+
+@app.post("/internal/ones/proposals/{proposal_id}/messages", dependencies=[Depends(require_token)])
+def ones_message(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import add_message
+
+    return _ones_call(add_message, _actor(body), proposal_id, body, status=201)
+
+
+@app.post("/internal/ones/proposals/{proposal_id}/invites", dependencies=[Depends(require_token)])
+def ones_invite(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import invite_peer
+
+    return _ones_call(invite_peer, _actor(body), proposal_id, str(body.get("email") or ""))
+
+
+@app.put("/internal/ones/{one_id}/measures", dependencies=[Depends(require_token)])
+def ones_measures(one_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import set_measures
+
+    return _ones_call(set_measures, _actor(body), one_id, body.get("measures") or {})
+
+
+@app.post("/internal/ones/{one_id}/awards", dependencies=[Depends(require_token)])
+def ones_award(one_id: int, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import award
+
+    return _ones_call(award, _actor(body), one_id, body, status=201)
+
+
+@app.get("/internal/ones/{one_id}/showcase", dependencies=[Depends(require_token)])
+def ones_showcase(one_id: int) -> JSONResponse:
+    from ones.views import showcase
+
+    with connect(autocommit=True) as conn:
+        out = showcase(conn, one_id)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.put("/internal/ones/screen-mode", dependencies=[Depends(require_token)])
+def ones_screen_mode(body: dict[str, Any]) -> JSONResponse:
+    from ones.service import set_screen_mode
+
+    return _ones_call(set_screen_mode, _actor(body), body.get("mode"))
+
+
+@app.post("/internal/ones/announce", dependencies=[Depends(require_token)])
+def ones_announce(body: dict[str, Any]) -> JSONResponse:
+    from ones.service import announce
+
+    return _ones_call(announce, _actor(body))
+
+
+@app.get("/internal/ones/public", dependencies=[Depends(require_token)])
+def ones_public() -> JSONResponse:
+    from ones.views import public
+
+    return _ones_call(public)
+
+
+@app.get("/internal/ones/constellation", dependencies=[Depends(require_token)])
+def ones_constellation() -> JSONResponse:
+    from ones.views import constellation
+
+    return _ones_call(constellation)
+
+
+@app.get("/internal/ones/leaderboard/{user_id}", dependencies=[Depends(require_token)])
+def ones_leaderboard(user_id: str) -> JSONResponse:
+    from ones.views import leaderboard
+
+    with connect(autocommit=True) as conn:
+        out = leaderboard(conn, user_id)
+    if out is None:
+        return JSONResponse({"error": "ones_only"}, status_code=403)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/me/{user_id}/one", dependencies=[Depends(require_token)])
+def me_one(user_id: str) -> JSONResponse:
+    from ones.views import my_one
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse({"one": my_one(conn, user_id)}, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/me/{user_id}/one/number", dependencies=[Depends(require_token)])
+def me_one_number(user_id: str, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import swap_number
+
+    return _ones_call(swap_number, user_id, body.get("number"))
+
+
+@app.post("/internal/me/{user_id}/one/brief", dependencies=[Depends(require_token)])
+def me_one_brief(user_id: str, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import propose_brief
+
+    return _ones_call(propose_brief, user_id, body.get("text"), status=201)
+
+
+@app.post("/internal/me/{user_id}/one/glow-up/{glow_id}/seen", dependencies=[Depends(require_token)])
+def me_one_glow_seen(user_id: str, glow_id: int) -> JSONResponse:
+    from ones.service import glow_up_seen
+
+    with connect(autocommit=True) as conn:
+        return JSONResponse({"ok": glow_up_seen(conn, user_id, glow_id)})
+
+
+@app.get("/internal/me/{user_id}/one/showcase", dependencies=[Depends(require_token)])
+def me_one_showcase(user_id: str) -> JSONResponse:
+    from ones.views import showcase_for_user
+
+    with connect(autocommit=True) as conn:
+        out = showcase_for_user(conn, user_id)
+    if out is None:
+        return JSONResponse({"error": "not_a_one"}, status_code=403)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.put("/internal/me/{user_id}/one/showcase", dependencies=[Depends(require_token)])
+def me_one_showcase_save(user_id: str, body: dict[str, Any]) -> JSONResponse:
+    from ones.service import save_showcase
+
+    return _ones_call(save_showcase, user_id, body)
+
+
+@app.get("/internal/me/{user_id}/team", dependencies=[Depends(require_token)])
+def me_team(user_id: str) -> JSONResponse:
+    from ones.views import team
+
+    return _ones_call(team, user_id)

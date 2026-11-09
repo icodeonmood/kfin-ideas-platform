@@ -196,6 +196,8 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         }
         data["reminder"] = {"share_percent": int(float(refs.get("share") or 0) * 100)}
         data["links"]["item"] = f"{base}/review"
+    if event.startswith("ones."):
+        _ones_variables(conn, data, event, refs, base)
     if event == "sla.breached":
         data["breach"] = {"days_late": refs.get("days_late", 0), "limit_wd": refs.get("limit_wd", 0)}
         data["item"] = {
@@ -204,3 +206,87 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         }
         data["links"]["item"] = f"{base}/review"
     return data
+
+
+def _one_display(number: Any, name: str | None, consent: bool) -> str:
+    return f"No. {number}, {name}" if consent and name else f"One No. {number}"
+
+
+def _ones_variables(conn: Conn, data: dict[str, Any], event: str, refs: dict[str, Any], base: str) -> None:
+    """Variables for the Ones messages (DEC-034 to DEC-087). Reasons and messages are read back from their sealed
+    rows only for the One they concern; the org-wide announcement names a One only with their consent."""
+    from ones.text import unseal
+    from ones.tiers import tier_name
+
+    data["links"]["my_ideas"] = f"{base}/my-ideas"
+    data["links"]["wall"] = f"{base}/wall"
+    proposal = None
+    if refs.get("proposal_id"):
+        proposal = conn.execute(
+            "SELECT * FROM one_proposals WHERE id = %s", (refs["proposal_id"],)
+        ).fetchone()
+    one_id = refs.get("one_id") or (proposal["one_id"] if proposal else None)
+    if one_id:
+        one = conn.execute(
+            "SELECT o.*, u.name, coalesce(p.public_name_consent, false) AS consent FROM ones o "
+            "JOIN users u ON u.id = o.user_id LEFT JOIN comms_prefs p ON p.user_id = o.user_id WHERE o.id = %s",
+            (one_id,),
+        ).fetchone()
+        if one:
+            number = one["number"]
+            if number is None:  # retired: the number they wore last
+                last = conn.execute(
+                    "SELECT number FROM one_number_history WHERE one_id = %s ORDER BY from_at DESC LIMIT 1",
+                    (one_id,),
+                ).fetchone()
+                number = last["number"] if last else ""
+            data["one"] = {
+                "number": number,
+                "swap_until": _date(one["swap_until"]),
+                "tier_name": tier_name(one["tier"]),
+                "display": _one_display(number, one["name"], one["consent"]),
+            }
+    if event == "ones.removed" and proposal:
+        data["removal"] = {
+            "reason": unseal(proposal["reason_encrypted"], f"one_proposal:{proposal['id']}:reason")
+        }
+    if event in ("ones.tier_changed", "ones.message_invited") and proposal:
+        glow = conn.execute(
+            "SELECT tier_from, tier_to FROM one_glow_ups WHERE proposal_id = %s", (proposal["id"],)
+        ).fetchone()
+        to = int(proposal["tier_to"])
+        frm = int(glow["tier_from"]) if glow else None
+        message = None
+        if event == "ones.tier_changed":
+            m = conn.execute(
+                "SELECT id, text_encrypted FROM one_messages WHERE proposal_id = %s AND author_role = 'committee'",
+                (proposal["id"],),
+            ).fetchone()
+            message = unseal(m["text_encrypted"], f"one_message:{m['id']}") if m else None
+        data["tier"] = {
+            "to_name": tier_name(to),
+            "from_name": tier_name(frm) if frm else "",
+            "up": frm is None or to > frm,
+            "down": frm is not None and to < frm,
+            "committee_message": message,
+        }
+        data["links"]["write"] = f"{base}/ones/write/{proposal['id']}"
+    if event == "ones.announced":
+        ids = [int(i) for i in refs.get("one_ids") or []]
+        rows = conn.execute(
+            "SELECT o.id, o.number, o.brief_encrypted, o.brief_approved_at, u.name, "
+            "coalesce(p.public_name_consent, false) AS consent FROM ones o JOIN users u ON u.id = o.user_id "
+            "LEFT JOIN comms_prefs p ON p.user_id = o.user_id WHERE o.id = ANY(%s) AND o.status = 'active' "
+            "ORDER BY o.number",
+            (ids,),
+        ).fetchall()
+        lines = []
+        for r in rows:
+            brief = unseal(r["brief_encrypted"], f"one:{r['id']}:brief") if r["brief_approved_at"] else None
+            who = _one_display(r["number"], r["name"], r["consent"])
+            lines.append(f"{who}." + (f" {brief}" if brief else ""))
+        data["ones"] = {
+            "count": len(lines),
+            "count_word": "colleague" if len(lines) == 1 else "colleagues",
+            "list": "\n\n".join(lines),
+        }

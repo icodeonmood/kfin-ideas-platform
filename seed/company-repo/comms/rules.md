@@ -203,4 +203,59 @@ events:
     urgency: immediate
     approval: core_chair
     signer: core_chair
+  ones.inducted:
+    day_one: true
+    audiences:
+    - current_owner
+    template: one-inducted
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: club_team
+  ones.removed:
+    day_one: true
+    audiences:
+    - current_owner
+    template: one-removed
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: club_team
+  ones.tier_changed:
+    day_one: true
+    audiences:
+    - current_owner
+    template: one-tier-changed
+    channels:
+    - in_app
+    - email
+    urgency: immediate
+    approval: null
+    signer: club_team
+  ones.message_invited:
+    day_one: true
+    audiences:
+    - current_owner
+    template: one-message-invited
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
+  ones.announced:
+    day_one: true
+    audiences:
+    - everyone
+    template: ones-announced
+    channels:
+    - in_app
+    - email
+    urgency: routine
+    approval: null
+    signer: club_team
 ```

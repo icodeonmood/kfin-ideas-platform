@@ -13,3 +13,8 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [sla-breached.md](sla-breached.md) — Overdue: {{item.label}}
 - [sla-reminder.md](sla-reminder.md) — Reminder: {{item.label}} is due {{item.due_date}}
 - [withdrawn-no-answer.md](withdrawn-no-answer.md) — We have paused {{idea.id}}
+- [one-inducted.md](one-inducted.md) — You're No. {{one.number}}.
+- [one-removed.md](one-removed.md) — Thank you, {{recipient.first_name}}
+- [one-tier-changed.md](one-tier-changed.md) — Your spark is hotter: {{tier.to_name}}
+- [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
+- [ones-announced.md](ones-announced.md) — New Ones

@@ -103,6 +103,8 @@ def recipients(conn: Conn, audience: str, refs: dict[str, Any]) -> list[str]:
         return (_role_users(conn, "lob_committee", team) if team else []) or _role_users(conn, "reviewer")
     if audience in ("current_owner", "escalation_target"):
         return [str(u) for u in refs.get(f"{audience}_ids") or []]
+    if audience == "everyone":  # org-wide announcements (DEC-056)
+        return [str(r["id"]) for r in conn.execute("SELECT id FROM users WHERE active").fetchall()]
     return []
 
 
