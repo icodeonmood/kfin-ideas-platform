@@ -14,6 +14,9 @@ import { withSwitchLock } from "./switch-lock";
 
 const CHAIR = "SYN-00006";
 const MEMBERS = ["SYN-00007", "SYN-00008", "SYN-00009", "SYN-00010"];
+// Two colleagues from different LOBs who are not sign-in personas: accepting gives them working-group grants,
+// which would change what a persona sees in other specs. Neither reports to a committee member.
+const CONTRIBUTORS = ["SYN-00031", "SYN-00057"];
 
 async function as(browser: Browser, who: string): Promise<{ page: Page; close: () => Promise<void> }> {
   const ctx = await browser.newContext();
@@ -106,10 +109,10 @@ async function committeeFlow(browser: Browser) {
   for (const s of ["committee.flow", "clusters.batch"]) await setSwitch(browser, s, "on");
   try {
     // Two colleagues' ideas, reviewed and grouped.
-    const a = await as(browser, PERSONAS.contributor);
+    const a = await as(browser, CONTRIBUTORS[0]!);
     const first = await share(a.page, words("Pune"));
     await a.close();
-    const b = await as(browser, "SYN-00016");
+    const b = await as(browser, CONTRIBUTORS[1]!);
     const second = await share(b.page, words("Kochi"));
     await b.close();
     const desk = await as(browser, PERSONAS.reviewer);
@@ -188,7 +191,7 @@ async function committeeFlow(browser: Browser) {
     await chair.page.goto("/committee");
     const presLink = chair.page.getByRole("link", { name: new RegExp(`PRS-\\d{4}-\\d{4} \\(${cluster}\\)`) });
     const presentation = /PRS-\d{4}-\d{4}/.exec(await presLink.innerText())![0];
-    const c = await as(browser, PERSONAS.contributor);
+    const c = await as(browser, CONTRIBUTORS[0]!);
     await c.page.goto(`/presentations/${presentation}`);
     await axeBoth(c.page);
     await c.page.getByRole("button", { name: "Accept the invitation" }).click();
