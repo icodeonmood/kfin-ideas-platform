@@ -10,6 +10,8 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { openProposalHolding } from "./proposals";
+import { withSwitchLock } from "./switch-lock";
 
 async function share(page: Page, words: string): Promise<string> {
   await page.goto("/share");
@@ -60,84 +62,79 @@ async function setSwitch(browser: Browser, state: "on" | "off") {
 
 test("the desk runs the weekly grouping and approves a proposal", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
-  test.setTimeout(180_000);
-  // Ordinary office words picked at random for this run, with little shared filler, so the dev database's
-  // earlier runs never group with these two (dev embeddings measure word overlap, BLD-003) and nothing reads
-  // as a name to the personal-data checks.
-  const vocab = ["ledger", "voucher", "mandate", "payout", "register", "cheque", "courier", "stamp", "receipt",
+  test.setTimeout(900_000); // includes waiting for committee.spec, which flips the same switch
+  await withSwitchLock("clusters.batch", async () => {
+    // Ordinary office words picked at random for this run, with little shared filler, so the dev database's
+    // earlier runs never group with these two (dev embeddings measure word overlap, BLD-003) and nothing reads
+    // as a name to the personal-data checks.
+    const vocab = ["ledger", "voucher", "mandate", "payout", "register", "cheque", "courier", "stamp", "receipt",
     "batch", "slip", "tray", "binder", "scanner", "printer", "envelope", "token", "queue", "drawer", "stapler",
     "folder", "ribbon", "barcode", "label", "tally", "roster", "docket", "challan", "manifest", "bundle", "carton",
     "seal", "clip", "pouch", "logbook", "almirah", "dispatch", "acknowledgement", "photocopy", "signature"]; // prettier-ignore
-  let seed = Date.now();
-  const pick = () => {
-    seed = (seed * 1103515245 + 12345) % 2147483648;
-    return vocab.splice(seed % vocab.length, 1)[0];
-  };
-  const made = Array.from({ length: 7 }, pick);
-  const nonce = `${made[0]} ${made[1]}`;
-  const words = (where: string) =>
-    `${made.join(" ")} pile up at the ${where} counter; ${made.slice(0, 4).join(" ")} again tomorrow.`;
+    let seed = Date.now();
+    const pick = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return vocab.splice(seed % vocab.length, 1)[0];
+    };
+    const made = Array.from({ length: 7 }, pick);
+    const words = (where: string) =>
+      `${made.join(" ")} pile up at the ${where} counter; ${made.slice(0, 4).join(" ")} again tomorrow.`;
 
-  await setSwitch(browser, "on");
-  try {
-    const ctxA = await browser.newContext();
-    const a = await ctxA.newPage();
-    await signIn(a, PERSONAS.contributor);
-    const first = await share(a, words("Hyderabad"));
-    const second = await share(a, words("Chennai"));
-    await ctxA.close();
+    await setSwitch(browser, "on");
+    try {
+      const ctxA = await browser.newContext();
+      const a = await ctxA.newPage();
+      await signIn(a, PERSONAS.contributor);
+      const first = await share(a, words("Hyderabad"));
+      const second = await share(a, words("Chennai"));
+      await ctxA.close();
 
-    const ctxR = await browser.newContext();
-    const r = await ctxR.newPage();
-    await signIn(r, PERSONAS.reviewer);
-    for (const ideaId of [first, second]) {
+      const ctxR = await browser.newContext();
+      const r = await ctxR.newPage();
+      await signIn(r, PERSONAS.reviewer);
+      for (const ideaId of [first, second]) {
+        await r.goto("/review");
+        await r.getByRole("link", { name: ideaId }).click();
+        await r.waitForURL(/\/review\/\d+$/);
+        await r.getByRole("button", { name: "Save decision" }).click();
+        await expect(r.getByRole("status").filter({ hasText: "Decision saved" })).toBeVisible();
+      }
+
+      // The ideas reach the index through the repo writer within seconds; the run is a background job.
       await r.goto("/review");
-      await r.getByRole("link", { name: ideaId }).click();
-      await r.waitForURL(/\/review\/\d+$/);
-      await r.getByRole("button", { name: "Save decision" }).click();
-      await expect(r.getByRole("status").filter({ hasText: "Decision saved" })).toBeVisible();
-    }
-
-    // The ideas reach the index through the repo writer within seconds; the run is a background job.
-    await r.goto("/review");
-    await expect(r.getByRole("heading", { level: 2, name: "Weekly grouping" })).toBeVisible();
-    await expectNoSeriousAxeIssues(r);
-    // Switch states are cached for 10 seconds (BLD-006): reload until the desk's button shows.
-    const runButton = r.getByRole("button", { name: "Run the grouping now" });
-    await expect(async () => {
+      await expect(r.getByRole("heading", { level: 2, name: "Weekly grouping" })).toBeVisible();
+      await expectNoSeriousAxeIssues(r);
+      // Switch states are cached for 10 seconds (BLD-006): reload until the desk's button shows.
+      const runButton = r.getByRole("button", { name: "Run the grouping now" });
+      await expect(async () => {
+        await r.goto("/review");
+        await expect(runButton).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 30_000, intervals: [2_000] });
+      await runButton.click();
+      await expect(r.getByRole("status").filter({ hasText: /run has started|already going/ })).toBeVisible();
+      await openProposalHolding(r, [first, second]);
+      await r.waitForURL(/\/review\/clusters\/\d+$/);
+      for (const panel of ["What the batch found", "Suggested summary", "Members", "Actions"]) {
+        await expect(r.getByRole("heading", { level: 2, name: panel })).toBeVisible();
+      }
+      for (const ideaId of [first, second]) {
+        await expect(r.getByRole("link", { name: ideaId })).toBeVisible();
+      }
+      await expectNoSeriousAxeIssues(r);
+      await r.getByLabel("Name (8 words or fewer)").fill("Ledger matched by hand");
+      await r.getByRole("button", { name: "Approve this group" }).click();
+      await expect(
+        r.getByRole("status").filter({ hasText: /Approved\. The group is CL-\d{4}\./ }),
+      ).toBeVisible();
+      await expect(r.getByText(/This proposal was approved: CL-\d{4}/)).toBeVisible();
+      await expectNoSeriousAxeIssues(r);
+      await r.setViewportSize({ width: 360, height: 740 });
+      await expectNoSeriousAxeIssues(r);
       await r.goto("/review");
-      await expect(runButton).toBeVisible({ timeout: 1_000 });
-    }).toPass({ timeout: 30_000, intervals: [2_000] });
-    await runButton.click();
-    await expect(r.getByRole("status").filter({ hasText: /run has started|already going/ })).toBeVisible();
-    const row = r.getByRole("row").filter({ hasText: nonce }).filter({ hasText: "Group proposal" });
-    await expect(async () => {
-      await r.goto("/review");
-      await expect(row).toHaveCount(1, { timeout: 1_000 });
-    }).toPass({ timeout: 90_000, intervals: [3_000] });
-
-    await row.getByRole("link", { name: "Group proposal" }).click();
-    await r.waitForURL(/\/review\/clusters\/\d+$/);
-    for (const panel of ["What the batch found", "Suggested summary", "Members", "Actions"]) {
-      await expect(r.getByRole("heading", { level: 2, name: panel })).toBeVisible();
+      await expectNoSeriousAxeIssues(r);
+      await ctxR.close();
+    } finally {
+      await setSwitch(browser, "off");
     }
-    for (const ideaId of [first, second]) {
-      await expect(r.getByRole("link", { name: ideaId })).toBeVisible();
-    }
-    await expectNoSeriousAxeIssues(r);
-    await r.getByLabel("Name (8 words or fewer)").fill("Ledger matched by hand");
-    await r.getByRole("button", { name: "Approve this group" }).click();
-    await expect(
-      r.getByRole("status").filter({ hasText: /Approved\. The group is CL-\d{4}\./ }),
-    ).toBeVisible();
-    await expect(r.getByText(/This proposal was approved: CL-\d{4}/)).toBeVisible();
-    await expectNoSeriousAxeIssues(r);
-    await r.setViewportSize({ width: 360, height: 740 });
-    await expectNoSeriousAxeIssues(r);
-    await r.goto("/review");
-    await expectNoSeriousAxeIssues(r);
-    await ctxR.close();
-  } finally {
-    await setSwitch(browser, "off");
-  }
+  });
 });
