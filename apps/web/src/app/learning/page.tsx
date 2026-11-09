@@ -135,9 +135,9 @@ export default async function Page() {
               {data.autonomy.map((a) => (
                 <tr key={a.action_type}>
                   <th scope="row">{ACTION_WORDS[a.action_type] ?? a.action_type}</th>
-                  <td>{pct(a.rate)}</td>
-                  <td>{a.window}</td>
-                  <td>{a.mode === "gated" ? "A person, every time" : "Automatic"}</td>
+                  <td>{pct(a.rate)} accepted unchanged</td>
+                  <td>{a.window} decisions counted</td>
+                  <td>{a.mode === "gated" ? "A person decides every time" : "Automatic"}</td>
                 </tr>
               ))}
             </tbody>

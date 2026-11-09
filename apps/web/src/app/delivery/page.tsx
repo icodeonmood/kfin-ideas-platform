@@ -63,10 +63,8 @@ export default async function Page() {
                   <thead>
                     <tr>
                       <th scope="col">Idea or group</th>
-                      <th scope="col">Track</th>
                       <th scope="col">Where it is</th>
-                      <th scope="col">Owner</th>
-                      <th scope="col">Sponsor</th>
+                      <th scope="col">People</th>
                       <th scope="col">Next results</th>
                     </tr>
                   </thead>
@@ -76,9 +74,10 @@ export default async function Page() {
                         <td>
                           <Link href={`/delivery/${d.id}`}>{d.label}</Link>
                           <br />
-                          <span className="muted">{d.subject_id}</span>
+                          <span className="muted">
+                            {d.subject_id}, {d.track_words.toLowerCase()} track
+                          </span>
                         </td>
-                        <td>{d.track_words}</td>
                         <td>
                           {d.state_words}
                           {d.phase_words && d.state === "in_delivery" ? `: ${d.phase_words}` : ""}
@@ -87,14 +86,17 @@ export default async function Page() {
                             ? `, ${d.outcome === "target_met" ? "target met" : "target not met"}`
                             : ""}
                         </td>
-                        <td>{d.owner ?? "Not named yet"}</td>
-                        <td>{d.sponsor ?? "Not named yet"}</td>
+                        <td>
+                          Owner: {d.owner ?? "not named yet"}
+                          <br />
+                          Sponsor: {d.sponsor ?? "not named yet"}
+                        </td>
                         <td>
                           {d.next_measurement
                             ? `${MARK_WORDS[d.next_measurement.mark]}, due ${day(d.next_measurement.due_at)}${
                                 d.next_measurement.filled ? ", waiting for the sponsor" : ""
                               }`
-                            : "–"}
+                            : "No results due"}
                         </td>
                       </tr>
                     ))}

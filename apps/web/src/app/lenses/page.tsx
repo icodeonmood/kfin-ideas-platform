@@ -9,6 +9,14 @@ import { lenses } from "@/server/delivery";
 import { RebuildLenses } from "./rebuild";
 
 export const metadata: Metadata = { title: "Lenses" };
+
+// Each cell says what its number is, so the table still reads when narrow screens stack its rows.
+const stagesText = (stages: Record<string, number>, groups: string[]) =>
+  groups
+    .filter((g) => stages[g])
+    .map((g) => `${g}: ${stages[g]}`)
+    .join(", ") || "None yet";
+const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 export const dynamic = "force-dynamic";
 
 /**
@@ -41,27 +49,25 @@ export default async function Page() {
                 <tr>
                   <th scope="col">Line of business</th>
                   <th scope="col">Ideas</th>
-                  {data.stage_groups.map((g) => (
-                    <th scope="col" key={g}>
-                      {g}
-                    </th>
-                  ))}
-                  <th scope="col">Waiting over 5 working days</th>
-                  <th scope="col">Groups shared with other lines</th>
-                  <th scope="col">Results that met their target</th>
+                  <th scope="col">Where they are</th>
+                  <th scope="col">Needs attention</th>
+                  <th scope="col">Delivery</th>
                 </tr>
               </thead>
               <tbody>
                 {data.lobs.map((l) => (
                   <tr key={l.id}>
                     <th scope="row">{l.name}</th>
-                    <td>{l.ideas}</td>
-                    {data.stage_groups.map((g) => (
-                      <td key={g}>{l.stages[g] ?? 0}</td>
-                    ))}
-                    <td>{l.ageing}</td>
-                    <td>{l.cross_lob_groups}</td>
-                    <td>{l.adoptable}</td>
+                    <td>{n(l.ideas, "idea", "ideas")}</td>
+                    <td>{stagesText(l.stages, data.stage_groups)}</td>
+                    <td>
+                      {n(l.ageing, "waiting", "waiting")} over 5 working days at the desk;{" "}
+                      {n(l.cross_lob_groups, "group", "groups")} shared with other lines
+                    </td>
+                    <td>
+                      {l.being_built} being built, {l.measuring} being measured,{" "}
+                      {n(l.adoptable, "result", "results")} that met the target
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -101,11 +107,7 @@ export default async function Page() {
                 <tr>
                   <th scope="col">Role</th>
                   <th scope="col">Ideas</th>
-                  {data.stage_groups.map((g) => (
-                    <th scope="col" key={g}>
-                      {g}
-                    </th>
-                  ))}
+                  <th scope="col">Where they are</th>
                   <th scope="col">Most common areas</th>
                 </tr>
               </thead>
@@ -113,11 +115,13 @@ export default async function Page() {
                 {data.roles.map((r) => (
                   <tr key={r.id}>
                     <th scope="row">{r.name}</th>
-                    <td>{r.ideas}</td>
-                    {data.stage_groups.map((g) => (
-                      <td key={g}>{r.stages[g] ?? 0}</td>
-                    ))}
-                    <td>{r.top_areas.map((a) => `${a.name} (${a.ideas})`).join(", ") || "–"}</td>
+                    <td>{n(r.ideas, "idea", "ideas")}</td>
+                    <td>{stagesText(r.stages, data.stage_groups)}</td>
+                    <td>
+                      {r.top_areas.length
+                        ? `Most common areas: ${r.top_areas.map((a) => `${a.name} (${a.ideas})`).join(", ")}`
+                        : "No areas yet"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -152,9 +156,9 @@ export default async function Page() {
                 {data.people.map((p) => (
                   <tr key={p.id}>
                     <th scope="row">{p.id}</th>
-                    <td>{p.colleagues}</td>
-                    <td>{p.related_groups}</td>
-                    <td>{p.could_join}</td>
+                    <td>{n(p.colleagues, "colleague", "colleagues")} in it</td>
+                    <td>{n(p.related_groups, "related group", "related groups")}</td>
+                    <td>{n(p.could_join, "colleague", "colleagues")} who could be asked to join</td>
                   </tr>
                 ))}
               </tbody>
