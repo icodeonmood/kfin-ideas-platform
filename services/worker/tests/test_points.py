@@ -209,3 +209,35 @@ def test_working_group_members_get_points_when_the_group_ships(pdb: Any) -> None
 def test_the_ledger_cannot_be_truncated(pdb: Any) -> None:
     with pytest.raises(Exception, match="append-only"):
         pdb.execute("TRUNCATE points_ledger")
+
+
+def test_an_overturned_decline_restores_the_withheld_milestones_once(pdb: Any) -> None:
+    """BLD-148 (`appeal_overturned: restore_forfeited`): while a group is declined its members earn no group
+    milestones; when an appeal overturns the decline the group goes back above the line (lane B moves the group and
+    its member ideas to `shortlisted`), and the next sync awards what the decline withheld, once, dated when the group
+    got there."""
+    db = pdb
+    _, member = person(db)
+    cl = _cluster(db, stage="declined")
+    idea = helpers.insert_idea(db, contributor=member, stage="declined")
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = %s", (cl, idea))
+    ledger.sync(db)
+    assert not any(e in ("shortlisted", "accepted_into_cluster") for e, _ in rows(db, member))
+
+    # What the overturn does to the group (committee.appeals._apply for a preliminary decision).
+    db.execute("UPDATE clusters SET stage = 'shortlisted' WHERE id = %s", (cl,))
+    db.execute("UPDATE ideas SET stage = 'shortlisted' WHERE cluster_id = %s", (cl,))
+    back = db.execute(
+        "SELECT max(h.at) AS at FROM idea_stage_history h JOIN ideas i ON i.id = h.idea_uuid "
+        "WHERE i.idea_id = %s AND h.to_stage = 'shortlisted'",
+        (idea,),
+    ).fetchone()["at"]
+    ledger.sync(db)
+    ledger.sync(db)  # idempotent
+    got = db.execute(
+        "SELECT event, points, created_at FROM points_ledger WHERE contributor_code = %s AND event = 'shortlisted'",
+        (member,),
+    ).fetchall()
+    assert len(got) == 1 and float(got[0]["points"]) == 5.0 and got[0]["created_at"] == back
+    assert [e for e, _ in rows(db, member)].count("accepted_into_cluster") == 1
+    assert not any(e == "accepted" for e, _ in rows(db, member))  # picked only if the chair later picks it

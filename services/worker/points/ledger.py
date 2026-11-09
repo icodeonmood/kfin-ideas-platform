@@ -35,10 +35,17 @@ WORDS = {
     "presented": "You presented to the core committee",
     "working_group_member_shipped": "Your working group shipped",
 }
-# Read as "Points for …" on the screen (Ember review: plain words). Appeals land with lane B (§4.12).
-COMING_SOON = [
-    "an appeal that goes your way",
-]
+# Read as "Points for …" on the screen (Ember review: plain words). Nothing is waiting any more (BLD-148).
+COMING_SOON: list[str] = []
+# `appeal_overturned: restore_forfeited` (§4.13, BLD-148). The ledger is append-only and never deducts, so what a
+# decline "forfeits" is the milestones it withheld: members of a declined or parked group earn no group milestones
+# while it stays there (NO_MILESTONES, stage lists below). An overturned appeal moves the group and its member ideas
+# back above the line (lane B's `committee.appeals._apply`); the next sync then awards every milestone the decision
+# had withheld, once, dated when the group reached it again (the stage history row the overturn writes). A person's
+# own view says which awards came back this way.
+RESTORED = ", restored after an appeal"
+# The overturn's stage-history row and decided_at share one transaction.
+RESTORE_SLACK = dt.timedelta(minutes=5)
 CODE = re.compile(r"^CTR-[0-9a-f]{6,8}$")  # the ledger's own check: anything else is skipped, never inserted
 HELD = ("held", "decided")  # a session that took place; 'decided' always follows 'held'
 GROUP_SHIPPED = ("shipped", "resolved", "closed")  # a delivery closes only after it shipped or was resolved
@@ -256,6 +263,26 @@ def sync(conn: Conn, now: dt.datetime | None = None) -> int:
     return added
 
 
+def overturned(conn: Conn) -> dict[str, dt.datetime]:
+    """Groups whose decision an appeal overturned, with when (lane B's `appeals`, §4.12)."""
+    return {
+        str(r["cluster_id"]): r["decided_at"]
+        for r in conn.execute(
+            "SELECT cluster_id, max(decided_at) AS decided_at FROM appeals "
+            "WHERE outcome = 'overturned' AND decided_at IS NOT NULL GROUP BY cluster_id"
+        ).fetchall()
+    }
+
+
+def label(event: str, ref_id: str | None, when: dt.datetime, restored: dict[str, dt.datetime]) -> str:
+    """The plain words for one award; a milestone of a group that came back through an appeal says so."""
+    words = WORDS.get(event, "Points")
+    decided = restored.get(str(ref_id)) if ref_id else None
+    if decided is not None and when >= decided - RESTORE_SLACK:
+        return words + RESTORED
+    return words
+
+
 def mine(conn: Conn, user_id: str, now: dt.datetime | None = None) -> dict[str, Any]:
     """A person's own points: the total, the last 12 months and the latest awards. Never anyone else's."""
     now = now or dt.datetime.now(dt.UTC)
@@ -268,14 +295,15 @@ def mine(conn: Conn, user_id: str, now: dt.datetime | None = None) -> dict[str, 
         "FROM points_ledger WHERE contributor_code = ANY(%s)",
         (now - dt.timedelta(days=365), codes),
     ).fetchone()
+    restored = overturned(conn)
     recent = [
         {
-            "what": WORDS.get(str(x["event"]), "Points"),
+            "what": label(str(x["event"]), x["ref_id"], x["created_at"], restored),
             "points": float(x["points"]),
             "on": x["created_at"].isoformat(),
         }
         for x in conn.execute(
-            "SELECT event, points, created_at FROM points_ledger WHERE contributor_code = ANY(%s) "
+            "SELECT event, points, ref_id, created_at FROM points_ledger WHERE contributor_code = ANY(%s) "
             "ORDER BY created_at DESC, id DESC LIMIT 10",
             (codes,),
         ).fetchall()
