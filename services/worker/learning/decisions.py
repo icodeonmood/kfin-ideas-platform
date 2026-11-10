@@ -46,6 +46,13 @@ MIN_OUTCOMES = 5  # closed deliveries of one evidence type before its multiplier
 MULTIPLIER_GAP = 0.1
 POSITIVE_ROUNDS = ("shortlisted", "nominated")
 NEGATIVE_ROUNDS = ("parked", "declined")
+# Each body against its own line (review fix, BLD-151): the core committee shortlists against `shortlist_threshold`,
+# a LOB committee nominates against `nomination_threshold`.
+ABOVE = {"core": "shortlisted", "lob": "nominated"}
+NOT_RECORDED = "not recorded"  # lane B's group for people with no LOB or location on file: never compared
+NOT_ENOUGH = "Not enough people in each group yet to check fairness"
+# A decision an appeal overturned is not what the committee decided in the end: neither it nor its round teaches
+# anything (written into the queries below, BLD-151).
 COMING_SOON = [
     "precedents_in_prescore",
     "guidance_notes",
@@ -139,16 +146,35 @@ def observed_multiplier(ratios: list[float]) -> float:
 
 
 def fairness_reasons(report: dict[str, Any], gap: float = FAIRNESS_GAP) -> list[str]:
-    """Plain reasons a proposal is held: groups whose shortlist or pick rates differ sharply (lane B's report;
-    suppressed groups, written as words, are left out)."""
+    """Plain reasons a proposal is held (lane B's report): groups whose shortlist or pick rates differ sharply.
+    Suppressed groups (rates written as words) and the "not recorded" group are left out. With fewer than two
+    visible groups for LOB or for location, fairness cannot be checked: that is a reason too (`NOT_ENOUGH`)."""
     out = []
+    enough = True
     for attr, label in (("by_lob", "lines of business"), ("by_location", "locations")):
+        groups = [
+            g
+            for g in report.get(attr, [])
+            if g.get("group") != NOT_RECORDED and isinstance(g.get("shortlist_rate"), (int, float))
+        ]
+        if len(groups) < 2:
+            enough = False
+            continue
         for field, what in (("shortlist_rate", "shortlist rate"), ("pick_rate", "pick rate")):
-            rates = [float(g[field]) for g in report.get(attr, []) if isinstance(g.get(field), (int, float))]
+            rates = [float(g[field]) for g in groups if isinstance(g.get(field), (int, float))]
             if len(rates) >= 2 and max(rates) - min(rates) >= gap:
                 points = round((max(rates) - min(rates)) * 100)
                 out.append(f"The {what} differs by {points} points across {label}")
+    if not enough:
+        out.append(NOT_ENOUGH)
     return out
+
+
+def hold_code(reasons: list[str]) -> str | None:
+    """Why an approval is refused, as a code the screen turns into words: a sharp gap first, then too little data."""
+    if any(r != NOT_ENOUGH for r in reasons):
+        return "fairness_hold"
+    return "fairness_unknown" if reasons else None
 
 
 # ---- reading the committee's records -----------------------------------------------------------------------------
@@ -199,29 +225,36 @@ def hold_reasons(conn: Conn, now: dt.datetime) -> list[str]:
 
 
 def agreement(conn: Conn, now: dt.datetime, period: str) -> dict[str, Any]:
-    """Weekly: the AI pre-score against the committee's shortlist decision, and the average gap between the AI's
-    rating and the committee median on each dimension (trailing 90 days; §5.9 step 4, §5.4 step 3)."""
+    """Weekly: the AI pre-score against each body's decision, each against its own line (the core committee's
+    shortlist, a LOB committee's nomination), and the average gap between the AI's rating and the committee median
+    on each dimension (trailing 90 days; §5.9 step 4, §5.4 step 3)."""
     weights = _scorecard()
-    line = float(_routing().get("shortlist_threshold", 65))
+    routing = _routing()
+    lines = {
+        "core": float(routing.get("shortlist_threshold", 65)),
+        "lob": float(routing.get("nomination_threshold", 70)),
+    }
     rows = conn.execute(
-        "SELECT r.id, coalesce(r.lob_id, 'core') AS grp, r.outcome, r.medians, a.dimension, a.value "
+        "SELECT r.id, r.body, coalesce(r.lob_id, 'core') AS grp, r.outcome, r.medians, a.dimension, a.value "
         "FROM scoring_rounds r JOIN ai_prescores a ON a.round_id = r.id "
-        "WHERE r.outcome = ANY(%s) AND r.decided_at BETWEEN %s AND %s",
-        (list(POSITIVE_ROUNDS + NEGATIVE_ROUNDS), now - dt.timedelta(days=90), now),
+        "WHERE ((r.body = 'core' AND r.outcome IN ('shortlisted', 'parked', 'declined')) "
+        "OR (r.body = 'lob' AND r.outcome IN ('nominated', 'parked', 'declined'))) "
+        "AND r.decided_at BETWEEN %s AND %s",
+        (now - dt.timedelta(days=90), now),
     ).fetchall()
     rounds: dict[str, dict[str, Any]] = {}
     for r in rows:
         x = rounds.setdefault(
             str(r["id"]),
-            {"grp": str(r["grp"]), "outcome": str(r["outcome"]), "medians": r["medians"] or {}, "scores": {}},
-        )
+            {"body": str(r["body"]), "grp": str(r["grp"]), "outcome": str(r["outcome"]),
+             "medians": r["medians"] or {}, "scores": {}},
+        )  # fmt: skip
         x["scores"][str(r["dimension"])] = float(r["value"])
     by: dict[str, list[bool]] = {}
     gaps: dict[str, list[float]] = {d: [] for d in weights}
     for x in rounds.values():
-        by.setdefault(x["grp"], []).append(
-            (ai_score(x["scores"], weights) >= line) == (x["outcome"] in POSITIVE_ROUNDS)
-        )
+        above = ai_score(x["scores"], weights) >= lines[x["body"]]
+        by.setdefault(x["grp"], []).append(above == (x["outcome"] == ABOVE[x["body"]]))
         for d in weights:
             if d in x["scores"] and isinstance(x["medians"].get(d), (int, float)):
                 gaps[d].append(x["scores"][d] - float(x["medians"][d]))
@@ -233,7 +266,8 @@ def agreement(conn: Conn, now: dt.datetime, period: str) -> dict[str, Any]:
         "dimension_gap": {
             d: round(sum(v) / len(v), 2) if len(v) >= SMALL else "too few to show" for d, v in gaps.items()
         },
-        "line": line,
+        "line": lines["core"],
+        "nomination_line": lines["lob"],
     }
     with conn.transaction():
         _save(conn, "agreement", period, data, now)
@@ -248,6 +282,7 @@ def rewards(conn: Conn, now: dt.datetime, period: str) -> dict[str, Any]:
         "SELECT DISTINCT ON (d.id) d.outcome, r.medians FROM decisions d "
         "JOIN scoring_rounds r ON r.cluster_id = d.cluster_id AND r.medians IS NOT NULL AND r.body = 'core' "
         "WHERE d.body = 'core' AND d.outcome IN ('picked', 'declined') AND d.decided_at BETWEEN %s AND %s "
+        "AND NOT EXISTS (SELECT 1 FROM appeals ap WHERE ap.decision_id = d.id AND ap.outcome = 'overturned') "
         "ORDER BY d.id, r.revealed_at DESC NULLS LAST",
         (now - dt.timedelta(days=365), now),
     ).fetchall()
@@ -284,15 +319,19 @@ def bands(conn: Conn, now: dt.datetime, period: str) -> dict[str, Any]:
             fairness = hold_reasons(conn, now)
         return fairness
 
-    # The shortlist line.
+    # The shortlist line: the core committee's own rounds only. A LOB committee nominates against a different line
+    # (`nomination_threshold`), which §5.9 does not ask to learn (BLD-151). Rounds whose decision an appeal
+    # overturned are left out.
     current = float(_routing().get("shortlist_threshold", 65))
     rows = conn.execute(
-        "SELECT final_score, outcome FROM scoring_rounds WHERE final_score IS NOT NULL AND outcome = ANY(%s) "
-        "AND decided_at BETWEEN %s AND %s",
-        (list(POSITIVE_ROUNDS + NEGATIVE_ROUNDS), since, now),
+        "SELECT r.final_score, r.outcome FROM scoring_rounds r WHERE r.body = 'core' AND r.final_score IS NOT NULL "
+        "AND r.outcome IN ('shortlisted', 'parked', 'declined') AND r.decided_at BETWEEN %s AND %s "
+        "AND NOT EXISTS (SELECT 1 FROM decisions od JOIN appeals ap ON ap.decision_id = od.id "
+        "WHERE od.round_id = r.id AND ap.outcome = 'overturned')",
+        (since, now),
     ).fetchall()
     scores = [float(r["final_score"]) for r in rows]
-    above = [str(r["outcome"]) in POSITIVE_ROUNDS for r in rows]
+    above = [str(r["outcome"]) == "shortlisted" for r in rows]
     line_data: dict[str, Any] = {"rounds": _n(len(scores)), "needed": MIN_DECISIONS, "current": current}
     proposals: list[dict[str, Any]] = []
     if len(scores) >= MIN_DECISIONS:
@@ -316,7 +355,7 @@ def bands(conn: Conn, now: dt.datetime, period: str) -> dict[str, Any]:
         "JOIN LATERAL (SELECT evidence_type FROM scoring_rounds s "
         "  WHERE s.cluster_id = CASE WHEN d.subject_type = 'cluster' THEN d.subject_id ELSE i.cluster_id END "
         "  AND s.evidence_type IS NOT NULL AND s.decided_at IS NOT NULL ORDER BY s.decided_at DESC LIMIT 1) r ON true "
-        "WHERE d.state = 'closed' AND d.closed_at BETWEEN %s AND %s AND m.results ? 'actual_vs_target'",
+        "WHERE d.state = 'closed' AND d.closed_at BETWEEN %s AND %s AND m.results ->> 'actual_vs_target' IS NOT NULL",
         (since, now),
     ).fetchall()
     by_type: dict[str, list[float]] = {}
@@ -362,7 +401,8 @@ def view(conn: Conn, viewer_id: str) -> dict[str, Any]:
          "decided_at": r["decided_at"].isoformat() if r["decided_at"] else None}
         for r in conn.execute(
             "SELECT id, kind, period, state, payload, decided_at FROM learning_proposals "
-            "WHERE kind IN ('scorecard_weights', 'scoring_band') ORDER BY created_at DESC LIMIT 20"
+            "WHERE kind IN ('scorecard_weights', 'scoring_band') "
+            "ORDER BY (state = 'proposed') DESC, created_at DESC LIMIT 20"  # an open proposal never falls off
         ).fetchall()
     ]  # fmt: skip
     return {"reports": latest, "proposals": proposals, "coming_soon": COMING_SOON}

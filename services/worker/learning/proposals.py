@@ -155,7 +155,7 @@ def decide(
     """A person approves or declines a proposal: the product team (an admin) for glossary terms and area tags, the core
     committee for scorecard weights and the shortlist line (§3.4, §5.9; BLD-149, BLD-150). Recorded and audited;
     nothing else moves. Committee proposals are held while lane B's fairness report shows a sharp gap (§5.9 step 5)."""
-    from learning.decisions import hold_reasons
+    from learning import decisions
     from ones.service import roles
 
     now = now or dt.datetime.now(dt.UTC)
@@ -177,8 +177,10 @@ def decide(
             raise OnesRefused(403, "forbidden")
         if p["state"] != "proposed":
             raise OnesRefused(409, "not_open")
-        if verdict == "approve" and p["kind"] in COMMITTEE_KINDS and hold_reasons(conn, now):
-            raise OnesRefused(409, "fairness_hold")
+        if verdict == "approve" and p["kind"] in COMMITTEE_KINDS:
+            held = decisions.hold_code(decisions.hold_reasons(conn, now))
+            if held:  # a sharp gap, or too few people in each group to check (BLD-151)
+                raise OnesRefused(409, held)
         state = "approved" if verdict == "approve" else "declined"
         conn.execute(
             "UPDATE learning_proposals SET state = %s, decided_by = %s, decided_at = %s WHERE id = %s",

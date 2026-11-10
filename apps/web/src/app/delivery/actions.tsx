@@ -69,6 +69,8 @@ export const ERRORS: Record<string, string> = {
   no_money_figure: "There's no money figure to confirm.",
   verdict_required: "Approve or decline.",
   not_open: "This has already been decided.",
+  fairness_unknown: "Not enough people in each group yet to check fairness; you can still decline.",
+  loop_failed: "That report didn't finish. Nothing else stopped; please try it again later.",
   fairness_hold:
     "On hold: shortlist or pick rates differ sharply between groups. Look at the reasons, then decide again.",
   kind_required: "Pick which report to run.",

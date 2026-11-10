@@ -72,10 +72,18 @@ def run(conn: Conn, now: dt.datetime | None = None, only: str | None = None) -> 
         log.info("learning.switched_off")
         return []
     kinds = [only] if only else due(now.astimezone(IST).date())
+    ran = []
     for kind in kinds:
-        run_one(conn, kind, now)
+        # One loop failing never stops the loops queued after it (the quarterly calibration, say). The worker's
+        # connection is autocommit and each loop writes in its own transaction, so a failure leaves nothing behind.
+        try:
+            run_one(conn, kind, now)
+        except Exception as err:  # logged with the loop and the error's type only, never its text
+            log.error("learning.failed", loop=kind, error_code=type(err).__name__)
+            continue
         log.info("learning.ran", loop=kind)
-    return kinds
+        ran.append(kind)
+    return ran
 
 
 def run_now(conn: Conn, actor: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -90,7 +98,8 @@ def run_now(conn: Conn, actor: str, body: dict[str, Any]) -> dict[str, Any]:
         raise OnesRefused(400, "kind_required")
     if not killswitch.is_on("learning.jobs", conn):
         raise OnesRefused(503, "learning_paused")
-    run(conn, only=str(kind))
+    if kind not in run(conn, only=str(kind)):
+        raise OnesRefused(500, "loop_failed")
     conn.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'learning.run_now', 'learning', "
         "jsonb_build_object('kind', %s::text))",
@@ -99,13 +108,20 @@ def run_now(conn: Conn, actor: str, body: dict[str, Any]) -> dict[str, Any]:
     return {"ran": kind}
 
 
-def overview(conn: Conn) -> dict[str, Any]:
+# What the committee's picks reward and its scoring bands are for the core committee only (BLD-151). The agreement
+# rate stays on the product team's page: a persistent gap leads to a prompt change, which the product lead approves.
+COMMITTEE_ONLY = ("committee_rewards", "scoring_band")
+
+
+def overview(conn: Conn, viewer_roles: set[str] | None = None) -> dict[str, Any]:
+    committee = bool((viewer_roles or set()) & decisions.COMMITTEE)
     latest = {
         r["kind"]: {"period": r["period"], "data": r["data"], "built_at": r["built_at"].isoformat()}
         for r in conn.execute(
             "SELECT DISTINCT ON (kind) kind, period, data, built_at FROM learning_reports "
             "ORDER BY kind, built_at DESC"
         ).fetchall()
+        if committee or r["kind"] not in COMMITTEE_ONLY
     }
     autonomy = [
         {"action_type": r["action_type"], "mode": r["mode"], "rate": float(r["window_accept_rate"])
@@ -126,6 +142,7 @@ def view(conn: Conn, viewer_id: str) -> dict[str, Any]:
     from ones.service import roles
     from ones.text import OnesRefused
 
-    if "admin" not in roles(conn, viewer_id):
+    mine = roles(conn, viewer_id)
+    if "admin" not in mine:
         raise OnesRefused(403, "forbidden")
-    return overview(conn)
+    return overview(conn, mine)

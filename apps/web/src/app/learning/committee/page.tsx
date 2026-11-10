@@ -113,7 +113,7 @@ function Proposal({ p }: { p: CommitteeProposal }) {
               <li key={r}>{r}.</li>
             ))}
           </ul>
-          <p>Approving waits until these gaps close. You can still decline.</p>
+          <p>Approving waits until this clears. You can still decline.</p>
         </div>
       ) : null}
       {p.state === "proposed" ? (
@@ -189,8 +189,10 @@ export default async function Page() {
           <>
             <p>
               Over the last 90 days ({num(agreement.rounds)} scoring rounds), the assistant&apos;s pre-score
-              would have put a group on the same side of the shortlist line ({num(agreement.line)}) as you did{" "}
-              {pct(agreement.agreement)} of the time.
+              would have put a group on the same side of the line as the committee did{" "}
+              {pct(agreement.agreement)} of the time. Each committee is compared with its own line: the core
+              committee&apos;s shortlist line ({num(agreement.line)}) and a LOB committee&apos;s nomination
+              line ({num(agreement.nomination_line)}).
             </p>
             {byBody.length ? (
               <ul>

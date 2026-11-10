@@ -55,3 +55,22 @@ def test_a_group_back_through_an_appeal_says_its_milestones_were_restored() -> N
     assert ledger.label("shortlisted", "CL-9999", decided, restored) == "Shortlisted"
     assert ledger.label("submission", None, decided, restored) == "You shared an idea"
     assert ledger.label("unknown_rule", None, decided, {}) == "Points"
+
+
+def test_only_what_the_overturn_brought_back_says_restored() -> None:
+    """Review fix (BLD-152): a later milestone of a group that once won an appeal reads as usual."""
+    decided = dt.datetime(2027, 2, 3, 10, 0, tzinfo=dt.UTC)
+    restored = {"CL-9123": decided}
+    assert ledger.label("accepted", "CL-9123", decided + dt.timedelta(days=40), restored) == ledger.label(
+        "accepted", "CL-9123", decided, {}
+    )
+    assert ledger.label("accepted", "CL-9123", decided + dt.timedelta(minutes=4), restored).endswith(
+        ledger.RESTORED
+    )
+
+
+def test_an_appeal_or_a_re_score_pending_withholds_group_milestones() -> None:
+    assert "appealed" in ledger.NO_MILESTONES and {"declined", "parked", "withdrawn"} <= set(
+        ledger.NO_MILESTONES
+    )
+    assert ledger.RESCORE_PENDING == ("ready_for_scoring", "scored")

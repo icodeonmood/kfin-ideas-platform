@@ -239,5 +239,70 @@ def test_an_overturned_decline_restores_the_withheld_milestones_once(pdb: Any) -
         (member,),
     ).fetchall()
     assert len(got) == 1 and float(got[0]["points"]) == 5.0 and got[0]["created_at"] == back
+    # The originator's own withheld award is dated when the idea came back too, not when it was shared (BLD-152).
+    joined = db.execute(
+        "SELECT created_at FROM points_ledger WHERE contributor_code = %s AND event = 'accepted_into_cluster'",
+        (member,),
+    ).fetchone()["created_at"]
+    assert joined == back
     assert [e for e, _ in rows(db, member)].count("accepted_into_cluster") == 1
     assert not any(e == "accepted" for e, _ in rows(db, member))  # picked only if the chair later picks it
+
+
+def _appeal(db: Any, cl: str, code: str, user: str, outcome: str | None) -> None:
+    """An appeal on a decline, as lane B records it (only the columns the ledger reads matter here)."""
+    n = secrets.randbelow(9000) + 1000
+    did, aid = f"DEC-2099-{n}", f"APL-2099-{n}"
+    db.execute(
+        "INSERT INTO decisions (id, cluster_id, outcome, votes, members_present, decided_by) "
+        "VALUES (%s, %s, 'declined', '{}'::jsonb, 3, 'REV-0001')",
+        (did, cl),
+    )
+    db.execute(
+        "INSERT INTO appeals (id, decision_id, cluster_id, appellant_code, grounds, statement, heard_by, panel, "
+        "state, outcome, due_at, decided_at) VALUES (%s, %s, %s, %s, ARRAY['new_evidence'], 'Synthetic statement', "
+        "'panel', ARRAY[%s::uuid], %s, %s, now() + interval '15 days', %s)",
+        (
+            aid,
+            did,
+            cl,
+            code,
+            user,
+            "decided" if outcome else "open",
+            outcome,
+            dt.datetime.now(dt.UTC) if outcome else None,
+        ),
+    )
+
+
+def test_nothing_withheld_is_paid_while_an_appeal_or_a_re_score_is_pending(pdb: Any) -> None:
+    """Review fix (BLD-152): a declined group under appeal, or sent back for a re-score and not yet decided again,
+    earns its members nothing the decline withheld; the new round lifting it above the line does."""
+    db = pdb
+    uid, member = person(db)
+    cl = _cluster(db, stage="declined")
+    idea = helpers.insert_idea(db, contributor=member, stage="declined")
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = %s", (cl, idea))
+    _appeal(db, cl, member, uid, None)
+    db.execute("UPDATE clusters SET stage = 'appealed' WHERE id = %s", (cl,))
+    db.execute("UPDATE ideas SET stage = 'appealed' WHERE cluster_id = %s", (cl,))
+    ledger.sync(db)
+    assert "accepted_into_cluster" not in dict(rows(db, member))
+
+    # The panel asks for a re-score: back in scoring, still nothing withheld is paid.
+    db.execute(
+        "UPDATE appeals SET state = 'decided', outcome = 're_score', decided_at = now() WHERE cluster_id = %s",
+        (cl,),
+    )
+    db.execute("UPDATE clusters SET stage = 'ready_for_scoring' WHERE id = %s", (cl,))
+    db.execute("UPDATE ideas SET stage = 'ready_for_scoring' WHERE cluster_id = %s", (cl,))
+    ledger.sync(db)
+    assert "accepted_into_cluster" not in dict(rows(db, member))
+
+    # The new round shortlists it: the withheld award comes, dated then, and it is not "restored after an appeal".
+    db.execute("UPDATE clusters SET stage = 'shortlisted' WHERE id = %s", (cl,))
+    db.execute("UPDATE ideas SET stage = 'shortlisted' WHERE cluster_id = %s", (cl,))
+    ledger.sync(db)
+    got = dict(rows(db, member))
+    assert "accepted_into_cluster" in got and "shortlisted" in got
+    assert not any(x["what"].endswith(ledger.RESTORED) for x in ledger.mine(db, uid)["recent"])

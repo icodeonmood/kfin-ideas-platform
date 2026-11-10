@@ -3,7 +3,10 @@ the pure functions that turn the committee's records into readable findings."""
 
 from __future__ import annotations
 
+import datetime as dt
+
 import numpy as np
+import pytest
 
 from learning import decisions
 from learning.proposals import APPROVER, COMMITTEE_KINDS
@@ -72,19 +75,41 @@ def test_ai_score_uses_the_scorecard_weights() -> None:
     assert decisions.ai_score({"financial_value": 5.0}, weights) == 30.0  # a missing rating counts as 1
 
 
-def test_fairness_holds_on_a_sharp_gap_and_ignores_suppressed_groups() -> None:
+def test_fairness_holds_on_a_sharp_gap_and_ignores_suppressed_and_unrecorded_groups() -> None:
     report = {
         "by_lob": [
             {"group": "LOB-mf", "shortlist_rate": 0.5, "pick_rate": 0.2},
             {"group": "LOB-nps", "shortlist_rate": 0.2, "pick_rate": 0.15},
-            {"group": "LOB-other", "shortlist_rate": "fewer than 5", "pick_rate": "fewer than 5"},
+            {"group": "LOB-other", "shortlist_rate": "too few to show", "pick_rate": "too few to show"},
+            {"group": "not recorded", "shortlist_rate": 0.95, "pick_rate": 0.9},  # never compared (BLD-151)
         ],
-        "by_location": [{"group": "Hyderabad", "shortlist_rate": 0.4, "pick_rate": 0.1}],
+        "by_location": [
+            {"group": "Hyderabad", "shortlist_rate": 0.4, "pick_rate": 0.1},
+            {"group": "Jaipur", "shortlist_rate": 0.35, "pick_rate": 0.12},
+        ],
     }
-    assert decisions.fairness_reasons(report) == [
-        "The shortlist rate differs by 30 points across lines of business"
-    ]
-    assert decisions.fairness_reasons({"by_lob": [], "by_location": []}) == []
+    reasons = decisions.fairness_reasons(report)
+    assert reasons == ["The shortlist rate differs by 30 points across lines of business"]
+    assert decisions.hold_code(reasons) == "fairness_hold"
+
+
+def test_too_few_visible_groups_means_fairness_cannot_be_checked() -> None:
+    """Review fix (BLD-151): fewer than two groups above the suppression size, for LOB or location, refuses an
+    approval in plain words; declining stays open."""
+    one_location = {
+        "by_lob": [
+            {"group": "LOB-mf", "shortlist_rate": 0.3, "pick_rate": 0.1},
+            {"group": "LOB-nps", "shortlist_rate": 0.32, "pick_rate": 0.1},
+        ],
+        "by_location": [
+            {"group": "Hyderabad", "shortlist_rate": 0.3, "pick_rate": 0.1},
+            {"group": "not recorded", "shortlist_rate": 0.31, "pick_rate": 0.1},
+        ],
+    }
+    assert decisions.fairness_reasons(one_location) == [decisions.NOT_ENOUGH]
+    assert decisions.hold_code([decisions.NOT_ENOUGH]) == "fairness_unknown"
+    assert decisions.fairness_reasons({}) == [decisions.NOT_ENOUGH]
+    assert decisions.hold_code([]) is None
 
 
 def test_committee_proposals_wait_for_the_chair_or_the_committee_never_an_admin() -> None:
@@ -95,3 +120,22 @@ def test_committee_proposals_wait_for_the_chair_or_the_committee_never_an_admin(
     assert (
         "apply_rule_version" in decisions.COMING_SOON
     )  # approval records the decision; nothing applies itself
+
+
+def test_one_failing_loop_never_stops_the_loops_after_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review fix (BLD-151): on the 1st of a quarter a failure in, say, the scoring bands still lets the quarterly
+    calibration run; the failure is logged with the loop and the error's type only."""
+    from learning import run as learning_run
+
+    ran: list[str] = []
+
+    def run_one(conn: object, kind: str, now: dt.datetime) -> None:
+        if kind == "scoring_band":
+            raise ValueError("synthetic failure")
+        ran.append(kind)
+
+    monkeypatch.setattr(learning_run.killswitch, "is_on", lambda name, conn=None: True)
+    monkeypatch.setattr(learning_run, "run_one", run_one)
+    quarter_start = dt.datetime(2027, 1, 1, 0, 30, tzinfo=dt.UTC)
+    done = learning_run.run(object(), quarter_start)  # type: ignore[arg-type]
+    assert "scoring_band" not in done and done[-1] == "calibration" and ran == done

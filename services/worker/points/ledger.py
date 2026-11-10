@@ -50,7 +50,12 @@ CODE = re.compile(r"^CTR-[0-9a-f]{6,8}$")  # the ledger's own check: anything el
 HELD = ("held", "decided")  # a session that took place; 'decided' always follows 'held'
 GROUP_SHIPPED = ("shipped", "resolved", "closed")  # a delivery closes only after it shipped or was resolved
 LOCK = "SELECT pg_advisory_xact_lock(hashtext('points.sync'))"  # the sync and single awards, one at a time
-NO_MILESTONES = ("withdrawn", "declined", "parked")  # a member that left its group earns the group nothing
+# A member that left its group, or whose group is declined, parked or under appeal, earns the group nothing; an
+# appeal pending pays nothing the decline withheld (review fix, BLD-152).
+NO_MILESTONES = ("withdrawn", "declined", "parked", "appealed")
+# A re-score is not a win (§4.13 restores only on an overturn): the group waits in scoring again and earns nothing
+# withheld until the new round lifts it above the line.
+RESCORE_PENDING = ("ready_for_scoring", "scored")
 NOT_SUBMITTED = ("draft", "scanning", "blocked")  # not shared yet: no submission point
 
 
@@ -105,6 +110,36 @@ def _reached(conn: Conn) -> dict[str, dict[str, dt.datetime]]:
     return out
 
 
+def _rescoring(conn: Conn) -> set[str]:
+    """Groups an appeal sent back for a re-score that have not been decided again yet."""
+    return {
+        str(x["id"])
+        for x in conn.execute(
+            "SELECT c.id FROM clusters c JOIN LATERAL (SELECT a.outcome FROM appeals a WHERE a.cluster_id = c.id "
+            "AND a.decided_at IS NOT NULL ORDER BY a.decided_at DESC LIMIT 1) last ON true "
+            "WHERE last.outcome = 're_score' AND c.stage = ANY(%s)",
+            (list(RESCORE_PENDING),),
+        ).fetchall()
+    }
+
+
+def _back(conn: Conn) -> dict[str, dt.datetime]:
+    """When each idea last came back above the line after being withheld (declined, parked or under appeal), not
+    counting the wait in a re-score. Ideas never withheld are not listed."""
+    held, waiting = list(NO_MILESTONES), list(NO_MILESTONES + RESCORE_PENDING)
+    return {
+        str(x["idea_id"]): x["at"]
+        for x in conn.execute(
+            "SELECT i.idea_id, max(h.at) AS at FROM idea_stage_history h JOIN ideas i ON i.id = h.idea_uuid "
+            "WHERE h.from_stage = ANY(%(waiting)s) AND NOT (h.to_stage = ANY(%(waiting)s)) "
+            "AND h.at > (SELECT min(x.at) FROM idea_stage_history x WHERE x.idea_uuid = h.idea_uuid "
+            "            AND x.to_stage = ANY(%(held)s)) "
+            "GROUP BY i.idea_id",
+            {"held": held, "waiting": waiting},
+        ).fetchall()
+    }
+
+
 def _candidates(
     conn: Conn, r: dict[str, Any], now: dt.datetime | None = None
 ) -> list[tuple[str, str, Decimal, str, dt.datetime]]:
@@ -138,6 +173,8 @@ def _candidates(
 
     # Groups and later milestones: originators are the ideas' own authors; joiners teamed up after a match.
     people: list[tuple[str, str, str, str, dt.datetime]] = []  # (code, role, subject, stage, when)
+    rescoring = _rescoring(conn)
+    back = _back(conn)
     for row in conn.execute(
         "SELECT i.idea_id, i.cluster_id, i.contributor_code, i.stage, c.stage AS cluster_stage, "
         "coalesce(i.submitted_at, i.created_at) AS at FROM ideas i LEFT JOIN clusters c ON c.id = i.cluster_id "
@@ -145,12 +182,14 @@ def _candidates(
     ).fetchall():
         subject = str(row["cluster_id"] or row["idea_id"])
         stage = str(row["cluster_stage"] or row["stage"]) if row["cluster_id"] else str(row["stage"])
-        if row["cluster_id"] and row["stage"] in NO_MILESTONES:
+        if row["cluster_id"] and (row["stage"] in NO_MILESTONES or str(row["cluster_id"]) in rescoring):
             continue
         people.append((str(row["contributor_code"]), "originator", subject, stage, row["at"]))
-        if row["cluster_id"] and row["stage"] not in ("withdrawn", "declined", "parked"):
+        if row["cluster_id"]:
+            # Withheld by a decline and back again: dated when the idea left the withheld stage (BLD-148).
+            when = max(row["at"], back.get(str(row["idea_id"]), row["at"]))
             out.append((str(row["contributor_code"]), "accepted_into_cluster",
-                        pts(r["accepted_into_cluster"]["originator"]), str(row["cluster_id"]), row["at"]))  # fmt: skip
+                        pts(r["accepted_into_cluster"]["originator"]), str(row["cluster_id"]), when))  # fmt: skip
     for row in conn.execute(
         "SELECT l.contributor_code, coalesce(l.idea_id, l.cluster_id) AS subject, l.created_at, "
         "coalesce(c.stage, i.stage) AS stage, l.cluster_id FROM idea_links l "
@@ -275,10 +314,11 @@ def overturned(conn: Conn) -> dict[str, dt.datetime]:
 
 
 def label(event: str, ref_id: str | None, when: dt.datetime, restored: dict[str, dt.datetime]) -> str:
-    """The plain words for one award; a milestone of a group that came back through an appeal says so."""
+    """The plain words for one award. Only what the overturn itself brought back says so: awards dated at the
+    overturn (its stage-history row and decided_at share a transaction), not later milestones of the same group."""
     words = WORDS.get(event, "Points")
     decided = restored.get(str(ref_id)) if ref_id else None
-    if decided is not None and when >= decided - RESTORE_SLACK:
+    if decided is not None and abs(when - decided) <= RESTORE_SLACK:
         return words + RESTORED
     return words
 
