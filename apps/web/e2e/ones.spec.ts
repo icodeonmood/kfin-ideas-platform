@@ -112,9 +112,14 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await one.getByLabel("Number you'd like").fill(String(700 + Math.floor(Math.random() * 290)));
     await one.getByRole("button", { name: "Choose this number" }).click();
     const dashboard = one.locator(".one-dashboard");
-    await expect(dashboard.getByRole("status").or(dashboard.locator(".field-error"))).toContainText(
-      /You're now No\.|taken/,
-    );
+    // A random number may already be taken on a long-lived test database: either outcome is a correct answer. The
+    // empty live region exists either way, so match each message by its words (strict mode, BLD-154).
+    await expect(
+      dashboard
+        .getByRole("status")
+        .filter({ hasText: /You're now No\./ })
+        .or(dashboard.locator(".field-error").filter({ hasText: /taken/ })),
+    ).toBeVisible();
 
     await one
       .getByLabel(/Write your brief|Propose a new brief/)
