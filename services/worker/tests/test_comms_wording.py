@@ -92,6 +92,11 @@ def test_a_tier_change_down_never_reads_as_a_step_up() -> None:
     subject, body = _render("one-tier-changed", down)
     assert subject == "Your tier has changed" and "from Flame to Glow" in body
     assert "hotter" not in subject + body and "well done" not in body
+    # An event queued before the old tier travelled with it: no blank "from  to".
+    _, body = _render("one-tier-changed", BASE | {"tier": down["tier"] | {"from_name": ""}})
+    assert "has moved your tier to Glow." in body and "from  to" not in body
+    up = BASE | {"tier": {"up": True, "down": False, "from_name": "", "to_name": "Glow"}}
+    assert "Your spark has moved to **Glow**." in _render("one-tier-changed", up)[1]
 
 
 def test_redirect_and_reconsideration_point_to_disagree_on_the_idea_page() -> None:
