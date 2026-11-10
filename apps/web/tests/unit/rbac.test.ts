@@ -137,6 +137,7 @@ describe("navigation and pages (AT-B2-06)", () => {
     // A sub-page's own rule applies, not /admin's: InfoSec flips switches but does not clear conflict flags.
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
     expect(canSeePage(rolesOf("infosec"), "/admin/conflicts")).toBe(false);
+    expect(canSeePage(rolesOf("hr"), "/admin/conflicts")).toBe(false);
     expect(canSeePage(rolesOf("admin"), "/admin/conflicts")).toBe(true);
     expect(canSeePage(rolesOf("core_committee"), "/reports")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/reports")).toBe(false);
@@ -145,6 +146,17 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
     expect(canSeePage(rolesOf("core_committee"), "/ones/console")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
+  });
+
+  it("never lists a page below a page that already covers it (the first matching rule wins)", () => {
+    const paths = (policyJson.pages as string[]).map((line) => line.trim().split(/\s+/)[0]!);
+    const shadowed = paths.flatMap((p, i) =>
+      paths
+        .slice(0, i)
+        .filter((q) => p.startsWith(`${q}/`))
+        .map((q) => `${p} is below ${q}`),
+    );
+    expect(shadowed).toEqual([]);
   });
 
   it("the Ones console: who may propose, approve and carry out (DEC-040)", () => {
