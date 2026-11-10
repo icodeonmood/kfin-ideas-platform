@@ -17,7 +17,7 @@ COMPOSE := docker compose -p $(COMPOSE_PROJECT_NAME) -f infra/docker-compose.yml
 PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 
-.PHONY: help setup build up down health migrate db-users seed demo demo-reset test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal
+.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -62,6 +62,9 @@ demo: ## Dev only: load the synthetic demo for a walkthrough (docs/DEMO.md); a s
 
 demo-reset: ## Dev only: remove the demo and every One in the local database, then load the demo again
 	$(PY) python -m bootstrap.demo --reset
+
+demo-remove: ## Dev only: remove the demo without loading it again; run before e2e on this stack (BLD-154)
+	$(PY) python -m bootstrap.demo --remove
 
 test: up migrate test-py test-web ## Unit and integration tests
 

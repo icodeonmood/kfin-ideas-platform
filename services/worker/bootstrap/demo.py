@@ -15,6 +15,10 @@ measures marked `"demo": true`. It is never used by the golden sets (those live 
 `--reset` removes the demo's own rows (its people, their Ones records, proposals, deliveries and ideas) and its
 idea files from the local company repo, then loads it again. Nobody else's rows are touched. The glow-up plays
 once, so reset to see it again.
+
+`--remove` (`make demo-remove`) removes the same rows and files and stops. Run it before e2e on a stack that holds
+the demo: its core committee personas join every new scoring round's roster, so a round the e2e committee seals
+cannot reveal until its deadline (BLD-154). `make demo` loads it again afterwards.
 """
 
 from __future__ import annotations
@@ -800,9 +804,13 @@ def remove(conn: Conn) -> None:
         conn.execute("DELETE FROM one_showcase_briefs WHERE one_id = ANY(%s)", (one_ids,))
         conn.execute("DELETE FROM ones WHERE id = ANY(%s)", (one_ids,))  # number history goes with them
         if not conn.execute("SELECT 1 FROM ones LIMIT 1").fetchone():
-            # Counters restart only when no One is left at all, so nobody else's numbers can collide.
+            # Counters restart only when no One is left at all, so nobody else's numbers can collide. Numbers
+            # restart after the demo's fixed ones (where `load` leaves the counter), so a One inducted before the
+            # demo loads again (e2e after `make demo-remove`) never takes one of them.
+            conn.execute("UPDATE id_counters SET last_value = 0 WHERE kind = 'ONE' AND period = ''")
             conn.execute(
-                "UPDATE id_counters SET last_value = 0 WHERE kind IN ('ONE', 'ONE-NO') AND period = ''"
+                "UPDATE id_counters SET last_value = %s WHERE kind = 'ONE-NO' AND period = ''",
+                (max(o["number"] for o in ONES),),
             )
         codes = [r["contributor_code"] for r in conn.execute(
             "SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])", (users,)).fetchall()]  # fmt: skip
@@ -872,6 +880,23 @@ def remove(conn: Conn) -> None:
         conn.execute(
             "UPDATE users SET manager_user_id = NULL WHERE manager_user_id = ANY(%s::uuid[])", (users,)
         )
+        # Committee screens a demo persona used while the demo was loaded (the chair sees every core round): their
+        # own scores, step-asides and assessments go; a decision or working group keeps its record without them.
+        if _has_table(conn, "sealed_scores"):
+            conn.execute("DELETE FROM sealed_scores WHERE member_id = ANY(%s::uuid[])", (users,))
+            conn.execute("DELETE FROM coi_flags WHERE member_id = ANY(%s::uuid[])", (users,))
+        if _has_table(conn, "assessments"):
+            conn.execute("DELETE FROM assessments WHERE member_id = ANY(%s::uuid[])", (users,))
+            conn.execute(
+                "UPDATE decisions SET sponsor_id = NULL WHERE sponsor_id = ANY(%s::uuid[])", (users,)
+            )
+            conn.execute(
+                "UPDATE working_groups SET sponsor_id = NULL WHERE sponsor_id = ANY(%s::uuid[])", (users,)
+            )
+            conn.execute(
+                "UPDATE working_groups SET product_owner_id = NULL WHERE product_owner_id = ANY(%s::uuid[])",
+                (users,),
+            )
         conn.execute("DELETE FROM role_grants WHERE user_id = ANY(%s::uuid[])", (users,))
         conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
 
@@ -906,12 +931,26 @@ def load(conn: Conn) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--reset", action="store_true", help="remove the demo's own rows and files and load it again"
+    )
+    mode.add_argument(
+        "--remove",
+        action="store_true",
+        help="remove the demo's own rows and files and stop (before e2e here)",
     )
     args = parser.parse_args(argv)
     _dev_only()
     with connect(autocommit=True) as conn:
+        if args.remove:
+            if not _demo_user_ids(conn):
+                print("demo: not loaded, nothing to remove")
+                return 0
+            remove(conn)
+            _wait_for_repo(conn)  # the demo ideas' files and chunks are gone before anything runs next
+            print("demo: removed. make demo loads it again")
+            return 0
         loaded = bool(_demo_user_ids(conn))
         if loaded and not args.reset:
             print("demo: already loaded (make demo-reset starts it fresh)")
