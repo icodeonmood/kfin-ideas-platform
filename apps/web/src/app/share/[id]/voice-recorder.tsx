@@ -138,8 +138,9 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
       () => null,
     );
     const body = (await res?.json().catch(() => null)) as { id?: string; error?: string } | null;
+    // A 503 is a pause (the proxy says "paused", the worker "voice_paused"): either way, voice notes are paused.
     if (res?.status !== 201 || !body?.id)
-      return fail(body?.error ?? (res?.status === 503 ? "voice_paused" : ""));
+      return fail(res?.status === 503 ? "voice_paused" : (body?.error ?? ""));
     const path = `/api/submissions/${p.ideaId}/voice/${body.id}`;
     const deadline = Date.now() + 5 * 60_000;
     while (!cancelled.current && Date.now() < deadline) {
