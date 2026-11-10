@@ -63,10 +63,14 @@ ROLE_WORDS = frozenset(
 )  # fmt: skip
 
 # The platform's own IDs are never names, though the NER model sometimes reads one as a PERSON ("CL-0010"
-# tagged as a person broke the judge's candidate IDs, BLD-221). Only an exact match is skipped.
+# tagged as a person broke the judge's candidate IDs, BLD-221). Only an exact match is skipped. That includes the
+# short refs the gateway hands agents for the items in a payload, which the NER model reads as people at random
+# ("M13", "M17", "I15", "I28"): tagged, they break the output's refs, so every group of 13 or more ideas failed
+# cluster-summary and switched it off (BLD-160).
 PLATFORM_ID = re.compile(
     r"(?:IDEA|SUB)-[0-9]{4}-[0-9]{6}|(?:CL|SOL|REV|WG)-[0-9]{4}|(?:DEC|RND|PRS|APL)-[0-9]{4}-[0-9]{4}"
     r"|CYC-[0-9]{4}-[0-9]{2}(?:-[0-9]+)?|RUN-[0-9]{4}-W[0-9]{2}(?:-[0-9]+)?"
+    r"|[MI][0-9]{1,2}|Member [0-9]{1,2}"
 )
 
 
