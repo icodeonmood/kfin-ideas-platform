@@ -67,6 +67,19 @@ export async function setSwitch(browser: Browser, name: string, state: SwitchSta
   return before;
 }
 
+/** Put switches back as `setSwitch` found them, newest first, trying every one even if one fails. */
+export async function restoreSwitches(browser: Browser, before: Array<[string, SwitchState]>): Promise<void> {
+  let first: unknown;
+  for (const [name, state] of [...before].reverse()) {
+    try {
+      await setSwitch(browser, name, state);
+    } catch (e) {
+      first ??= e;
+    }
+  }
+  if (first) throw first;
+}
+
 export async function navLabels(page: Page): Promise<string[]> {
   return page.getByRole("navigation", { name: "Main" }).getByRole("link").allInnerTexts();
 }

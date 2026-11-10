@@ -22,26 +22,34 @@ test.describe("navigation by role (AT-B2-06)", () => {
     ["core", async () => [...BASE, await deskOrCommittee(), "Ones", "Delivery", "Lenses"]],
     ["admin", async () => [...BASE, "Ones", "Delivery", "Lenses", "Admin"]],
   ];
+  // Another spec may flip the committee flow while this runs, and the menu reads switches through a 10-second cache:
+  // compare the page and the database again (with a reload) until they agree.
   for (const [persona, expected] of cases) {
     test(`${persona} sees the menu for their roles`, async ({ page }) => {
       await signIn(page, PERSONAS[persona]);
-      expect(await navLabels(page)).toEqual(await expected());
+      await expect(async () => {
+        await page.reload();
+        expect(await navLabels(page)).toEqual(await expected());
+      }).toPass({ timeout: 20_000, intervals: [1_000, 2_000, 5_000] });
     });
   }
 
-  test("My ideas links to committee decisions and appeals while the committee flow runs", async ({
+  test("My ideas links to committee decisions and appeals while the committee flow or appeals run", async ({
     page,
   }) => {
     await signIn(page, PERSONAS.contributor);
-    await page.goto("/my-ideas");
     const link = page.getByRole("link", { name: "Committee decisions on your ideas, and appeals" });
-    if (await switchIsOn("committee.flow")) {
+    let shown = false;
+    await expect(async () => {
+      await page.goto("/my-ideas");
+      shown = (await switchIsOn("committee.flow")) || (await switchIsOn("appeals.filing"));
+      await expect(link).toHaveCount(shown ? 1 : 0, { timeout: 1_000 });
+    }).toPass({ timeout: 20_000, intervals: [1_000, 2_000, 5_000] });
+    if (shown) {
       await expect(link).toHaveAttribute("href", "/appeals");
       await link.click();
       await expect(page.getByRole("heading", { level: 1, name: "Appeals" })).toBeVisible();
       await expectNoSeriousAxeIssues(page);
-    } else {
-      await expect(link).toHaveCount(0);
     }
   });
 });

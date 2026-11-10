@@ -7,7 +7,7 @@
 import { expect, test, type Browser } from "@playwright/test";
 
 import { as, axeBoth, CHAIR, MEMBERS, officeWords, setSwitch, toRevealedRound } from "./committee-helpers";
-import { PERSONAS, type SwitchState } from "./helpers";
+import { PERSONAS, restoreSwitches, type SwitchState } from "./helpers";
 import { withSwitchLock } from "./switch-lock";
 
 // Not sign-in personas, from two LOBs, and neither reports to a committee member.
@@ -22,8 +22,8 @@ test("a declined group is appealed and the panel records the outcome", async ({ 
 
 async function appealFlow(browser: Browser) {
   const before: Array<[string, SwitchState]> = [];
-  for (const s of SWITCHES) before.push([s, await setSwitch(browser, s, "on")]);
   try {
+    for (const s of SWITCHES) before.push([s, await setSwitch(browser, s, "on")]);
     const { cluster, roundHref } = await toRevealedRound(browser, CONTRIBUTORS, officeWords(29), "1", false);
     const chair = await as(browser, CHAIR);
     await chair.page.goto(roundHref);
@@ -98,6 +98,6 @@ async function appealFlow(browser: Browser) {
     await axeBoth(admin.page);
     await admin.close();
   } finally {
-    for (const [s, state] of before) await setSwitch(browser, s, state); // as we found them (DEC-088)
+    await restoreSwitches(browser, before); // as we found them (DEC-088)
   }
 }
