@@ -1,7 +1,8 @@
 """HTTP helpers for stack tests against the web app: real sign-in through the mock IdP, and test sessions.
 
-Session cookies are Secure. Python's cookie jar will not send a Secure cookie to http://localhost (browsers
-will), so these helpers read Set-Cookie and send Cookie headers themselves.
+Session cookies are Secure everywhere but the plain-HTTP local stack (BLD-153). Python's cookie jar will not
+send a Secure cookie to http://localhost (browsers will), so these helpers read Set-Cookie and send Cookie
+headers themselves.
 """
 
 from __future__ import annotations

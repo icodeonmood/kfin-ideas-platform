@@ -1,5 +1,6 @@
-"""AT-B2-05: any /api/* call without a session returns 401; the session cookie is HttpOnly, Secure and
-SameSite=Lax with an 8-hour lifetime. Plus: sign-out revokes, expiry is enforced, cross-site writes refused."""
+"""AT-B2-05: any /api/* call without a session returns 401; the session cookie is HttpOnly, Secure (on HTTPS,
+BLD-153) and SameSite=Lax with an 8-hour lifetime. Plus: sign-out revokes, expiry is enforced, cross-site
+writes refused."""
 
 import re
 from collections.abc import Iterator
@@ -9,6 +10,7 @@ import httpx
 import pytest
 import yaml
 
+from core.config import get_settings
 from core.db import connect
 from tests import helpers
 from tests.web import WEB, people, set_cookies, sign_in_with_mock
@@ -44,7 +46,10 @@ def test_session_cookie_flags() -> None:
     _, callback = sign_in_with_mock("SYN-00017")
     cookie = set_cookies(callback)["ideas_session"]
     assert cookie["httponly"] == "true"
-    assert cookie["secure"] == "true"
+    # The web app's rule (BLD-153): Secure in any production-like environment and on any HTTPS address. Only the
+    # plain-HTTP dev or test stack drops it, because Safari will not keep a Secure cookie on http://localhost.
+    secure = get_settings().app_env not in ("dev", "test") or WEB.startswith("https://")
+    assert cookie["secure"] == ("true" if secure else "")
     assert cookie["samesite"].lower() == "lax"
     assert cookie["max-age"] == str(8 * 60 * 60)
     assert cookie["path"] == "/"

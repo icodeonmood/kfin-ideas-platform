@@ -19,6 +19,14 @@ describe("sign-in cookies", () => {
     expect(cookieOptions().secure).toBe(true);
   });
 
+  it("stay Secure in every production-like environment even on a plain-HTTP address (behind a TLS proxy)", () => {
+    process.env.APP_BASE_URL = "http://ideas.internal";
+    for (const env of ["uat", "prod", "staging"]) {
+      process.env.APP_ENV = env;
+      expect(cookieOptions().secure).toBe(true);
+    }
+  });
+
   it("drop Secure only on the plain-HTTP local stack, so Safari keeps the sign-in state (BLD-153)", () => {
     process.env.APP_ENV = "dev";
     process.env.APP_BASE_URL = "http://localhost:3000";
