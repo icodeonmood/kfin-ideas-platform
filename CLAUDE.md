@@ -103,10 +103,14 @@ kfin-ideas-platform/
 
 1. Work block by block in `docs/DAY1_PLAN.md`. Do not start a block until the previous block's acceptance tests pass, unless the plan says the blocks can overlap.
 2. At the end of each block: run `make lint test e2e` (and `make eval` from B4), tick the block in `DAY1_PLAN.md`, and add a dated entry to `docs/BUILD_LOG.md`: what is done, what was deferred, anything the user must do.
-3. When the spec is unclear, take the simpler reading that keeps every non-negotiable, write it in `docs/DECISIONS.md` (next ID, date, decision, reason, alternative) and carry on. If it touches a non-negotiable, stop and ask.
+3. When the spec is unclear, take the simpler reading that keeps every non-negotiable, write it in `docs/DECISIONS.md` (the next ID in your lane, date, decision, reason, alternative) and carry on. If it touches a non-negotiable, stop and ask.
 4. If a block runs more than half a day late, propose a cut from the drop order in §9.2 rather than squeezing quality.
 5. Small commits with clear messages. Never commit `.env`, data folders, model weights or anything from `~/the-garage` that is not listed for copying.
 6. Agent changes: bump the version in `config.yaml`, add a `CHANGELOG.md` line, and run `make eval` before merging.
+7. Decision IDs while several sessions build at once: read the note at the top of `docs/DECISIONS.md` before you write one.
+   - Build decisions carry your lane's letter (`BLD-A161`, `BLD-C001`). A new session claims the next free letter in the lanes table there, on `main`, before its first build decision.
+   - Product decisions keep one sequence (`DEC-096`, and on). Add them only on `main`, straight after `git pull --rebase`, and push at once.
+   - `make lint` fails on a duplicate, malformed or unregistered ID.
 
 ## Stop and ask the user when
 

@@ -98,6 +98,7 @@ lint-web:
 lint-ci:
 	$(PY) python -m okf.validate ../../seed/company-repo
 	$(PY) python ../../scripts/ci/check_no_model_sdk.py ../..
+	$(PY) python ../../scripts/ci/check_decision_ids.py ../../docs/DECISIONS.md
 	$(PY) pytest -q tests/test_log_scrubber.py
 
 verify: up seed lint test e2e eval ## Every gate a block must pass, in one go (use on the test Mac)
