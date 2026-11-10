@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-adoption-requested
-  version: '1.1'
+  version: '1.2'
   events:
   - adoption.requested
   subject: A team wants to adopt {{solution.title}}
@@ -23,13 +23,13 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-A colleague from **{{requester.lob_name}}** wants to bring **{{solution.title}}** ({{solution.id}}) to their area. Here is their context:
+A colleague from **{{requester.lob_name}}** wants to bring **{{solution.title}}** to their area.{{#request.context}} In their words:{{/request.context}}
 
-> {{request.context}}
+{{#request.context}}> {{request.context}}{{/request.context}}
 
-Could you have a short conversation with them? They'll be credited for taking it to a new area, and you'll be credited for the reuse.
+If your team can help them adopt it, the review desk has their request and can put you in touch.
 
-[Open the request]({{links.request}})
+{{#links.request}}[Open the request]({{links.request}}){{/links.request}}
 
 The 1% Club team
 
