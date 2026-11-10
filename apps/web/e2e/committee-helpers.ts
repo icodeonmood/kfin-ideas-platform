@@ -131,7 +131,12 @@ export async function toRevealedRound(
   await nameTheGroup(r, "Paper forms pile up at the counter");
   await r.getByRole("button", { name: "Approve this group" }).click();
   await expect(r.getByRole("status").filter({ hasText: /The group is (CL-\d{4})/ })).toBeVisible();
-  const cluster = /CL-\d{4}/.exec(await r.getByRole("status").innerText())![0];
+  const cluster = /CL-\d{4}/.exec(
+    await r
+      .getByRole("status")
+      .filter({ hasText: /The group is (CL-\d{4})/ })
+      .innerText(),
+  )![0];
 
   // Qualify: four gates, the impact estimate, finish. The item comes from a job after the approval commits.
   const qualifyRow = r.getByRole("row").filter({ hasText: cluster });

@@ -75,7 +75,7 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expectNoSeriousAxeIssues(chair);
     const card = chair.locator("li.proposal", { hasText: subject.name });
     await card.getByRole("button", { name: "Approve as chair" }).click();
-    await expect(chair.getByRole("status")).toHaveText("Approved.");
+    await expect(chair.getByRole("status").filter({ hasText: "Approved." })).toHaveText("Approved.");
 
     const admin = await as(browser, PERSONAS.admin);
     await admin.goto("/ones/console");
@@ -83,7 +83,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
       .locator("li.proposal", { hasText: subject.name })
       .getByRole("button", { name: "Carry out and send" })
       .click();
-    await expect(admin.getByRole("status")).toHaveText("Carried out. The message is on its way.");
+    await expect(
+      admin.getByRole("status").filter({ hasText: "Carried out. The message is on its way." }),
+    ).toHaveText("Carried out. The message is on its way.");
     await expectNoSeriousAxeIssues(admin);
 
     const roster = (await api(admin, "GET", "/api/ones/console")).body as {
@@ -118,7 +120,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
       .getByLabel(/Write your brief|Propose a new brief/)
       .fill("If this works: synthetic test teams stop reprocessing by hand.");
     await one.getByRole("button", { name: "Send to the committee" }).click();
-    await expect(dashboard.getByRole("status")).toHaveText("Your brief is with the core committee.");
+    await expect(
+      dashboard.getByRole("status").filter({ hasText: "Your brief is with the core committee." }),
+    ).toHaveText("Your brief is with the core committee.");
 
     const chair = await as(browser, CHAIR);
     const proposals = (await api(chair, "GET", "/api/ones/console")).body as {
@@ -191,7 +195,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await one.goto("/my-ideas/showcase");
     await one.getByLabel("Delivery timelines").fill("Synthetic test: pilot in January, every AMC by March");
     await one.getByRole("button", { name: "Save your brief" }).click();
-    await expect(one.getByRole("status")).toHaveText("Saved. The committee sees your latest version.");
+    await expect(
+      one.getByRole("status").filter({ hasText: "Saved. The committee sees your latest version." }),
+    ).toHaveText("Saved. The committee sees your latest version.");
     await expectNoSeriousAxeIssues(one);
     await one.goto("/ones/leaderboard");
     await expect(one.getByRole("heading", { level: 2, name: "People" })).toBeVisible();
