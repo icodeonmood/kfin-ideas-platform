@@ -466,6 +466,7 @@ def test_glossary_proposals_wait_for_an_admin_and_stop_with_the_switch(ones_db: 
         assert db.execute("SELECT count(*) AS n FROM role_themes").fetchone()["n"] == themes_before
         refused("learning_paused", learning_run.run_now, db, crew["admin"], {"kind": "autonomy"})
         refused("learning_paused", learning_run.run_now, db, crew["admin"], {"kind": "role_themes"})
+        refused("learning_paused", learning_run.run_now, db, crew["admin"], {"kind": "scoring_band"})
     finally:
         db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'learning.jobs'")
         killswitch.clear_cache()
@@ -475,5 +476,6 @@ def test_glossary_proposals_wait_for_an_admin_and_stop_with_the_switch(ones_db: 
         "drift",
         "glossary",
         "role_themes",
-    ]  # a Monday (role themes from BLD-139)
+        "agreement",
+    ]  # a Monday (role themes from BLD-139, committee agreement from BLD-149)
     assert db.execute("SELECT mode FROM autonomy WHERE mode <> 'gated'").fetchone() is None  # still off

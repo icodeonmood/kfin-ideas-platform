@@ -38,6 +38,16 @@ AREA_POOL_MIN = 15
 AREA_DISTANCE = 0.30
 AREA_GROUP_MIN = 3
 COMMON = {"OK", "AM", "PM", "US", "UK", "IT", "HR", "CEO", "FAQ", "ID", "NO", "TO", "IN", "ON", "AND", "THE"}
+# Who decides each kind: the product team for the taxonomy, the core committee for the scorecard and the line.
+COMMITTEE_KINDS = ("scorecard_weights", "scoring_band")
+# Who approves each kind: the product team for words, the chair for scorecard weights (§5.9 "chair approves"), the
+# core committee for the shortlist line (§5.9 table, §3.4). BLD-149, BLD-150.
+APPROVER: dict[str, set[str]] = {
+    "glossary_term": {"admin"},
+    "area_tag": {"admin"},
+    "scorecard_weights": {"core_chair"},
+    "scoring_band": {"core_committee", "core_chair"},
+}
 
 
 def candidate_terms(texts_by_idea: dict[str, list[str]], known: set[str]) -> dict[str, set[str]]:
@@ -142,7 +152,10 @@ def area_tags(conn: Conn, now: dt.datetime, period: str) -> int:
 def decide(
     conn: Conn, actor: str, proposal_id: Any, body: dict[str, Any], now: dt.datetime | None = None
 ) -> dict[str, Any]:
-    """The product team (an admin) approves or declines a proposal. Recorded and audited; nothing else moves."""
+    """A person approves or declines a proposal: the product team (an admin) for glossary terms and area tags, the core
+    committee for scorecard weights and the shortlist line (§3.4, §5.9; BLD-149, BLD-150). Recorded and audited;
+    nothing else moves. Committee proposals are held while lane B's fairness report shows a sharp gap (§5.9 step 5)."""
+    from learning.decisions import hold_reasons
     from ones.service import roles
 
     now = now or dt.datetime.now(dt.UTC)
@@ -153,14 +166,19 @@ def decide(
     verdict = body.get("verdict")
     if verdict not in ("approve", "decline"):
         raise OnesRefused(400, "verdict_required")
-    if "admin" not in roles(conn, actor):
+    mine = roles(conn, actor)
+    if not mine & {"admin", "core_committee", "core_chair"}:
         raise OnesRefused(403, "forbidden")
     with conn.transaction():
         p = conn.execute("SELECT * FROM learning_proposals WHERE id = %s FOR UPDATE", (pid,)).fetchone()
         if p is None:
             raise OnesRefused(404, "not_found")
+        if not APPROVER.get(str(p["kind"]), {"admin"}) & mine:
+            raise OnesRefused(403, "forbidden")
         if p["state"] != "proposed":
             raise OnesRefused(409, "not_open")
+        if verdict == "approve" and p["kind"] in COMMITTEE_KINDS and hold_reasons(conn, now):
+            raise OnesRefused(409, "fairness_hold")
         state = "approved" if verdict == "approve" else "declined"
         conn.execute(
             "UPDATE learning_proposals SET state = %s, decided_by = %s, decided_at = %s WHERE id = %s",
@@ -203,7 +221,7 @@ def publish(
     except (TypeError, ValueError):
         raise OnesRefused(404, "not_found") from None
     p = conn.execute("SELECT * FROM learning_proposals WHERE id = %s", (pid,)).fetchone()
-    if p is None:
+    if p is None or p["kind"] not in PUBLISH_EVENTS:  # committee proposals are not written here (Coming soon)
         raise OnesRefused(404, "not_found")
     if p["state"] != "approved":
         raise OnesRefused(409, "not_approved")
@@ -268,7 +286,8 @@ def publish(
 
 def listing(conn: Conn) -> list[dict[str, Any]]:
     rows = conn.execute(
-        "SELECT * FROM learning_proposals ORDER BY (state = 'proposed') DESC, created_at DESC LIMIT 200"
+        "SELECT * FROM learning_proposals WHERE kind IN ('glossary_term', 'area_tag') "
+        "ORDER BY (state = 'proposed') DESC, created_at DESC LIMIT 200"  # committee kinds: learning.decisions.view
     ).fetchall()
     out = []
     for r in rows:

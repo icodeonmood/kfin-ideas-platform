@@ -859,8 +859,17 @@ def learning_view(user_id: str) -> JSONResponse:
     return _delivery_call(view, user_id)
 
 
+@app.get("/internal/learning/committee/{user_id}", dependencies=[Depends(require_token)])
+def learning_committee_view(user_id: str) -> JSONResponse:
+    """The core committee's learning page: agreement, what it rewards, scoring bands (§5.9, BLD-149, BLD-150)."""
+    from learning.decisions import view
+
+    return _delivery_call(view, user_id)
+
+
 @app.post("/internal/learning/proposals/{proposal_id}/decide", dependencies=[Depends(require_token)])
 def learning_decide(proposal_id: str, body: dict[str, Any]) -> JSONResponse:
+    """The product team decides terms and tags; the chair or the core committee decides committee proposals."""
     from learning.proposals import decide
 
     return _delivery_call(decide, _actor(body), proposal_id, body)

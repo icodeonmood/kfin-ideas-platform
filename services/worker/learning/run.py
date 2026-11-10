@@ -1,5 +1,6 @@
 """`learning.run`, daily at 05:30 IST: decides which loops are due today and runs them. Every day: autonomy.
-Mondays: drift, glossary and friction themes by role (BLD-139). The 1st of the month: the canvas report and area tags. The 1st of a quarter:
+Mondays: drift, glossary, friction themes by role (BLD-139) and AI-committee agreement (BLD-149). The 1st of the
+month: the canvas report, area tags, what the committee rewards and where it draws the line (BLD-149, BLD-150). The 1st of a quarter:
 calibration for the quarter just ended. Nothing runs while `learning.jobs` is off. An admin can run one by hand."""
 
 from __future__ import annotations
@@ -11,19 +12,30 @@ from zoneinfo import ZoneInfo
 from core import killswitch
 from core.db import Conn
 from core.logging import get_logger
-from learning import proposals, reports, role_themes
+from learning import decisions, proposals, reports, role_themes
 
 log = get_logger("learning.run")
 IST = ZoneInfo("Asia/Kolkata")
-KINDS = ("autonomy", "drift", "glossary", "canvas", "area_tags", "calibration", "role_themes")
+KINDS = (
+    "autonomy",
+    "drift",
+    "glossary",
+    "canvas",
+    "area_tags",
+    "calibration",
+    "role_themes",
+    "agreement",
+    "committee_rewards",
+    "scoring_band",
+)
 
 
 def due(day: dt.date) -> list[str]:
     out = ["autonomy"]
     if day.weekday() == 0:
-        out += ["drift", "glossary", "role_themes"]
+        out += ["drift", "glossary", "role_themes", "agreement"]
     if day.day == 1:
-        out += ["canvas", "area_tags"]
+        out += ["canvas", "area_tags", "committee_rewards", "scoring_band"]
         if day.month in (1, 4, 7, 10):
             out.append("calibration")
     return out
@@ -45,6 +57,12 @@ def run_one(conn: Conn, kind: str, now: dt.datetime) -> Any:
         return proposals.area_tags(conn, now, day.strftime("%Y-%m"))
     if kind == "role_themes":
         return role_themes.propose(conn, now, day.strftime("%G-W%V"))
+    if kind == "agreement":
+        return decisions.agreement(conn, now, day.strftime("%G-W%V"))
+    if kind == "committee_rewards":
+        return decisions.rewards(conn, now, day.strftime("%Y-%m"))
+    if kind == "scoring_band":
+        return decisions.bands(conn, now, day.strftime("%Y-%m"))
     raise ValueError(kind)
 
 
