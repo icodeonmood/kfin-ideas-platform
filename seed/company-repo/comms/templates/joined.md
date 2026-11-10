@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-joined
-  version: '1.2'
+  version: '1.3'
   events:
   - idea.joined
   subject: '{{#join.one}}A colleague raised the same thing as you{{/join.one}}{{#join.many}}{{join.count}} colleagues have now raised the same thing as you{{/join.many}}'
@@ -23,7 +23,11 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-{{#join.one}}Good news: a colleague has raised the same thing as your idea **"{{idea.one_line}}"**.{{/join.one}}{{#join.many}}Good news: {{join.count}} colleagues have now raised the same thing as your idea **"{{idea.one_line}}"**.{{/join.many}} Ideas raised by more people from more teams carry more weight with the committee.
+{{#join.one}}Good news: a colleague has raised the same thing as you.{{/join.one}}{{#join.many}}Good news: {{join.count}} colleagues have now raised the same thing as you.{{/join.many}}
+
+{{#idea.one_line}}Your idea: **"{{idea.one_line}}"**{{/idea.one_line}}
+
+Ideas raised by more people from more teams carry more weight with the committee.
 
 {{#join.names_visible}}They are: {{join.names}}.{{/join.names_visible}}
 
