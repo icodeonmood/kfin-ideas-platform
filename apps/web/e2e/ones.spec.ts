@@ -58,6 +58,12 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
   let subject: Person;
   let oneId = 0;
 
+  // One run at a time: the projects would otherwise race to choose numbers for the same shared One.
+  // The 360 px check is inside the dashboard test.
+  test.beforeEach(({}, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
+  });
+
   test("the committee proposes, the chair approves and the admin carries it out", async ({ browser }) => {
     const core = await as(browser, PERSONAS.core);
     const { person } = await proposeSomeone(core);
@@ -95,6 +101,11 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expect(one.getByText("Your number", { exact: true }).first()).toBeVisible();
     await expect(one.getByText("Your impact brief", { exact: true }).first()).toBeVisible();
     await expectNoSeriousAxeIssues(one);
+    const desktop = one.viewportSize();
+    await one.setViewportSize({ width: 360, height: 780 });
+    await expect(one.getByText("Your number", { exact: true }).first()).toBeVisible();
+    await expectNoSeriousAxeIssues(one);
+    if (desktop) await one.setViewportSize(desktop);
 
     await one.getByLabel("Number you'd like").fill(String(700 + Math.floor(Math.random() * 290)));
     await one.getByRole("button", { name: "Choose this number" }).click();
