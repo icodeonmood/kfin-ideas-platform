@@ -27,7 +27,7 @@ The review desk has looked at **{{cluster.name}}**, the group your idea is part 
 
 {{outcome.text}}
 
-You keep full credit as a contributor. If you think something was missed, you can ask for it to be looked at again from your idea page.
+You keep full credit as a contributor.
 
 [See your idea]({{links.idea}})
 
