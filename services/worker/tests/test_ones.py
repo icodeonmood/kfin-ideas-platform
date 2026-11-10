@@ -680,6 +680,7 @@ def test_a_step_down_reads_as_a_change_never_as_a_step_up(ones_db: Any, cast: An
         "one-tier-changed", render.variables(db, subject, "ones.tier_changed", older)
     )
     assert subject_line == "Your tier has changed" and "well done" not in body
+    assert "has moved your tier to Glow." in body  # no old tier to name, and no blank "from  to"
 
 
 def test_a_second_legend_in_the_same_year_is_refused_by_the_database_too(ones_db: Any, cast: Any) -> None:
