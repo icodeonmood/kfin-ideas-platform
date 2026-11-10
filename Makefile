@@ -38,7 +38,8 @@ up: .env ## Start the local stack and wait until every service is healthy
 	$(COMPOSE) run --rm dbmate up
 	$(MAKE) --no-print-directory db-users
 	$(COMPOSE) up -d --build --wait --wait-timeout 180 $(STACK_UP_FLAGS)
-	@docker image prune -f --filter label=org.kfin.project=kfin-ideas --filter until=24h >/dev/null  # old builds only (BLD-105)
+	@docker image prune -f --filter label=org.kfin.project=kfin-ideas --filter until=6h >/dev/null  # old builds only (BLD-105, BLD-225)
+	@$(COMPOSE) exec -T postgres df -P /var/lib/postgresql/data 2>/dev/null | awk 'NR == 2 { u = $$5 + 0; if (u >= 80) printf "Warning: the Docker disk is %d%% full. Builds fail when it fills; see BLD-225.\n", u }' || true
 	$(PY) python -m core.health --timeout 120
 
 down: ## Stop the local stack (data volumes are kept)
