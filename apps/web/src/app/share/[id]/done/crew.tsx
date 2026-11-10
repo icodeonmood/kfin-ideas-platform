@@ -20,7 +20,10 @@ export type MatchCard = {
   owning_lob?: string | null;
 };
 export type Ready = {
-  suggested: { path: string; value: unknown }[];
+  /** Each suggestion with the person's own words it came from (DEC-095). */
+  suggested: { path: string; value: unknown; quotes?: string[] }[];
+  /** Questions left blank because the person did not say. */
+  left_blank?: string[];
   neutral_summary: string;
   next_best: string[];
   matches: MatchCard[];
@@ -146,9 +149,11 @@ export function Crew({
       <h3 ref={headingRef} tabIndex={-1}>
         Your summary is ready
       </h3>
-      <p>
-        <strong>In short:</strong> {ready.neutral_summary}
-      </p>
+      {ready.neutral_summary ? (
+        <p>
+          <strong>In short:</strong> {ready.neutral_summary}
+        </p>
+      ) : null}
 
       {!ready.confirmed ? (
         <form onSubmit={(e) => void looksRight(e)}>
@@ -185,6 +190,16 @@ export function Crew({
                   <fieldset key={s.path} className="field suggestion">
                     <legend>{labelFor(s.path)}</legend>
                     <p className="suggested-value">{show(s.value)}</p>
+                    {s.quotes?.length ? (
+                      <div className="from-words">
+                        <p className="hint">From your words:</p>
+                        {s.quotes.map((q, i) => (
+                          <blockquote key={i}>
+                            <p>{q}</p>
+                          </blockquote>
+                        ))}
+                      </div>
+                    ) : null}
                     <label className="choice">
                       <input
                         type="radio"
@@ -207,6 +222,13 @@ export function Crew({
                 );
               })}
             </>
+          ) : null}
+          {ready.left_blank?.length ? (
+            <p className="hint">
+              We left {ready.left_blank.length === 1 ? "this" : "these"} blank because you didn&apos;t say:{" "}
+              {ready.left_blank.map(labelFor).join("; ")}. Add {ready.left_blank.length === 1 ? "it" : "them"}{" "}
+              if you know, under &ldquo;Tell us more&rdquo;.
+            </p>
           ) : null}
           <button type="submit" className="button" disabled={busy}>
             Looks right

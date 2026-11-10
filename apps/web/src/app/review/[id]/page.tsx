@@ -53,6 +53,16 @@ function at(card: Record<string, unknown>, path: string): unknown {
     );
 }
 
+/** The person's own words behind a suggested answer (DEC-095), for the field and any part of it. */
+function quotesFor(card: Record<string, unknown>, path: string): string[] {
+  const evidence = card.evidence;
+  if (!evidence || typeof evidence !== "object") return [];
+  return Object.entries(evidence as Record<string, unknown>)
+    .filter(([key]) => key === path || key.startsWith(`${path}.`))
+    .flatMap(([, quotes]) => (Array.isArray(quotes) ? quotes : []))
+    .filter((q): q is string => typeof q === "string");
+}
+
 export default async function Item({ params }: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
@@ -100,6 +110,16 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
                         {" "}
                         ({WHO[view.idea.provenance[path]] ?? view.idea.provenance[path]})
                       </span>
+                    ) : null}
+                    {quotesFor(card, path).length ? (
+                      <div className="from-words">
+                        <p className="hint">From their words:</p>
+                        {quotesFor(card, path).map((q, i) => (
+                          <blockquote key={i}>
+                            <p>{q}</p>
+                          </blockquote>
+                        ))}
+                      </div>
                     ) : null}
                   </dd>
                 </div>

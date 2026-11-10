@@ -67,6 +67,7 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
     result = load_result(row)
     card: dict[str, Any] = dict(result.get("confirmed") or result["canvas_assist"])
     provenance: dict[str, str] = dict(card.get("provenance") or {})
+    evidence: dict[str, Any] = dict(card.get("evidence") or {})  # the person's words behind each suggestion
 
     # Keep or clear each suggestion. Required enums the person clears fall back to "not sure"/"don't know".
     keep: dict[str, Any] = body.get("keep") or {}
@@ -85,6 +86,7 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
         else:
             _set_path(card, path, _empty_for(path))
         provenance.pop(path, None)
+        evidence.pop(path, None)
 
     # Edits to the one line and details: patterns, then gatekeeper, then tags.
     edits = {k: str(body[k]).strip() for k in ("one_line", "details") if isinstance(body.get(k), str)}
@@ -108,7 +110,9 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
             if value != card.get(field):
                 card[field] = value
                 provenance[field] = "submitter"
+                evidence.pop(field, None)  # their own words now, not a suggestion
     card["provenance"] = provenance
+    card["evidence"] = evidence
 
     share_limit = float(
         load_rule(get_settings().company_repo_path, "thresholds").data["match"]["rerun_if_edit_share"]

@@ -104,7 +104,11 @@ def page(
 
     owner = idea["contributor_code"] in viewer_codes
     mapping = vault.mapping(conn, idea_id)
-    canvas = {k: v for k, v in (idea["canvas"] or {}).items() if k not in ("original_text", "provenance")}
+    canvas = {
+        k: v
+        for k, v in (idea["canvas"] or {}).items()
+        if k not in ("original_text", "provenance", "evidence")
+    }
     out: dict[str, Any] = {
         "view": "full",
         "owner": owner,
