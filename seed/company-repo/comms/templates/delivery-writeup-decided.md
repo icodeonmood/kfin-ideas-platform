@@ -12,7 +12,7 @@ generated:
   at: '2026-11-10T00:00:00+05:30'
 kfin:
   id: TPL-delivery-writeup-decided
-  version: '0.1'
+  version: '0.2'
   events:
   - delivery.writeup_decided
   subject: 'Your write-up: {{delivery.label}}'
@@ -24,7 +24,7 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-{{#writeup.approved}}The sponsor approved your write-up for **{{delivery.label}}**. Other teams now see it as "Already running" ({{writeup.solution_id}}) when they share a similar idea.{{/writeup.approved}}{{#writeup.sent_back}}The sponsor sent your write-up for **{{delivery.label}}** back for changes. Open it, change what is needed and submit it again.{{/writeup.sent_back}}
+{{#writeup.approved}}The sponsor approved your write-up for **{{delivery.label}}**. Other teams now see it as "Already running" when they share a similar idea.{{/writeup.approved}}{{#writeup.sent_back}}The sponsor sent your write-up for **{{delivery.label}}** back for changes. Open it, change what is needed and submit it again.{{/writeup.sent_back}}
 
 [Open the delivery]({{links.delivery}})
 

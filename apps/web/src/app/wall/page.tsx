@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { IdeaCard } from "@/components/idea-card";
 import { OneCardBody } from "@/components/one-card";
 import { day } from "@/lib/dates";
+import { BANNERS } from "@/lib/killswitch-routes";
 import { currentUser } from "@/server/auth/current";
 import { wall, type PublicCard } from "@/server/ideas";
 import { publicOnes, type PublicOne } from "@/server/ones";
@@ -75,7 +76,7 @@ export default async function Page() {
       {w === null ? (
         <p className="notice">We can&apos;t load the wall just now. Please try again in a minute.</p>
       ) : w.paused ? (
-        <p className="notice">The ideas wall is resting for now. Your own ideas are in My ideas.</p>
+        <p className="notice">{BANNERS["wall.public"]}</p>
       ) : (
         <>
           <Section

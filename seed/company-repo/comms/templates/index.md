@@ -3,8 +3,8 @@
 Day-one templates. Week 3–8 templates (cluster approved, invitations, decisions, appeals, 1% Club Pulse) are added as those stages go live.
 
 - [submitted.md](submitted.md) — Your idea is in: {{idea.id}}
-- [quick-capture-nudge.md](quick-capture-nudge.md) — Two quick additions for {{idea.id}}
-- [joined.md](joined.md) — {{join.count}} more colleagues raised the same thing
+- [quick-capture-nudge.md](quick-capture-nudge.md) — Quick additions for {{idea.id}}
+- [joined.md](joined.md) — A colleague (or {{join.count}} colleagues) raised the same thing as you
 - [adoption-requested.md](adoption-requested.md) — A team wants to adopt {{solution.title}}
 - [question.md](question.md) — A quick question about {{idea.id}}
 - [reviewed.md](reviewed.md) — {{idea.id}} has been reviewed
@@ -19,7 +19,7 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
 - [ember.md](ember.md) — The Ember, {{ember.month_label}}
-- [cluster-approved.md](cluster-approved.md) — Your idea is now part of {{cluster.id}} (draft for HR sign-off)
+- [cluster-approved.md](cluster-approved.md) — Your idea is now in a group (with its name, when it has one) (draft for HR sign-off)
 - [delivery-approval-needed.md](delivery-approval-needed.md) — Your approval: the handover for {{delivery.label}} (draft for HR sign-off)
 - [delivery-phase-changed.md](delivery-phase-changed.md) — {{delivery.label}}: {{delivery.phase_words}} (draft for HR sign-off)
 - [delivery-completion.md](delivery-completion.md) — Fixed? Please confirm {{delivery.label}} (draft for HR sign-off)

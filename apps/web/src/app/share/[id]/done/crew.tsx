@@ -8,6 +8,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 
+import { BANNERS } from "@/lib/killswitch-routes";
+
 export type MatchCard = {
   ref: string | null;
   kind: "idea" | "cluster" | "solution" | "decision" | "with_desk";
@@ -243,7 +245,7 @@ export function Crew({
             {note}
           </p>
           {ready.matches_hidden ? (
-            <p>We will show you colleagues working on the same thing a little later.</p>
+            <p>{BANNERS["matching.show"]}</p>
           ) : ready.matches.length ? (
             <ul className="crew-cards">
               {ready.matches.map((card, i) => (

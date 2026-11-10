@@ -43,3 +43,13 @@ METRIC_UNITS = (
 
 def shown_as(phase: str | None) -> str | None:
     return SHOWN_AS.get(phase or "")
+
+
+# The steps from handoff to deploy are one step for contributors and sponsors, "Being built" (§4.9 with BLD-157):
+# messages use these plain words and go out only when they change. The build team keeps the detailed step on the
+# delivery page (`shown_as`).
+BUILDING = ("04-handoff", "05-build", "06-test", "07-review", "08-qa", "09-deploy")
+
+
+def plain_step(phase: str | None) -> str | None:
+    return "Being built" if phase in BUILDING else shown_as(phase)

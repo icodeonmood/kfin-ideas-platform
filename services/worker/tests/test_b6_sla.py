@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import secrets
 import uuid
+from collections.abc import Iterator
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -16,6 +17,7 @@ import pytest
 from comms.route import route
 from comms.send import message_for
 from sla import engine
+from tests import helpers
 
 IST = ZoneInfo("Asia/Kolkata")
 MONDAY = dt.datetime(2026, 11, 16, 10, 0, tzinfo=IST)
@@ -54,6 +56,22 @@ def item(db: Any) -> Any:
     return db, users, str(rid), idea_uuid
 
 
+@pytest.fixture
+def seeded(
+    item: Any, company_repo: Any, test_database: str, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Any]:
+    """Messages rendered from this checkout's templates (a fresh copy of the seed), not the local stack's repo."""
+    from comms import render, templates
+    from comms import route as route_module
+
+    settings = helpers.settings_for(company_repo, test_database)
+    for module in (route_module, render, templates):
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
+    templates._load.cache_clear()
+    yield item
+    templates._load.cache_clear()
+
+
 def jobs(db: Any, event: str) -> list[dict[str, Any]]:
     return [
         r["payload"]
@@ -62,8 +80,8 @@ def jobs(db: Any, event: str) -> list[dict[str, Any]]:
     ]
 
 
-def test_review_timer_reminders_and_breach(item: Any) -> None:
-    db, users, rid, _ = item
+def test_review_timer_reminders_and_breach(seeded: Any) -> None:
+    db, users, rid, _ = seeded
     tid = engine.start(db, "review_item", rid, "review", now=MONDAY)
     due = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (tid,)).fetchone()["due_at"]
     assert due.astimezone(IST) == dt.datetime(
@@ -98,6 +116,49 @@ def test_review_timer_reminders_and_breach(item: Any) -> None:
     assert route(db, "sla.breached", breach) >= 2
     subject, body, _ = message_for(db, users["chair"]["id"], "sla.breached", "sla-breached", breach)
     assert "{{" not in subject + body and "IDEA-2026-000951" in subject + body
+    # BLD-157: sent the moment the limit passes, so it gives the limit, not "0 days late"; nobody had picked the
+    # item up, so no reviewer from the desk is named as its owner.
+    assert breach["owner_user_id"] is None and breach["stage"] == "review"
+    assert "has passed its time limit of 5 working days" in body and "working day(s)" not in body
+    assert "Nobody on the review desk has picked it up yet." in body and "Reviewer Person" not in body
+
+
+def test_an_overdue_item_names_only_the_reviewer_handling_it(seeded: Any) -> None:
+    db, users, rid, _ = seeded
+    db.execute("UPDATE review_items SET assigned_to = %s WHERE id = %s", (users["reviewer"]["id"], int(rid)))
+    tid = engine.start(db, "review_item", rid, "review", now=MONDAY)
+    due = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (tid,)).fetchone()["due_at"]
+    engine.tick(db, now=due + dt.timedelta(hours=1))
+    breach = jobs(db, "sla.breached")[0]["refs"]
+    assert breach["owner_user_id"] == users["reviewer"]["id"]
+    _, body, _ = message_for(db, users["chair"]["id"], "sla.breached", "sla-breached", breach)
+    assert "It is with Reviewer Person." in body and "Nobody on the review desk" not in body
+
+
+def test_an_overdue_committee_step_reads_as_words_not_a_number(seeded: Any) -> None:
+    """BLD-157: a committee step is named by what it is and the group's name, and links to the committee."""
+    db, users, _rid, _ = seeded
+    cl = f"CL-9{secrets.randbelow(1000):03d}"
+    db.execute(
+        "INSERT INTO clusters (id, distinct_contributors, title) VALUES (%s, 2, %s) ON CONFLICT (id) DO UPDATE "
+        "SET title = EXCLUDED.title",
+        (cl, "Branch forms wait in the outward register"),
+    )
+    qid = db.execute(
+        "INSERT INTO review_items (item_type, ref_id) VALUES ('qualify', %s) RETURNING id", (cl,)
+    ).fetchone()["id"]
+    refs = {"stage": "qualify", "entity_type": "review_item", "entity_id": str(qid), "item_label": cl,
+            "limit_wd": 10, "owner_user_id": None, "current_owner_ids": [], "escalation_target_ids": []}  # fmt: skip
+    subject, body, _ = message_for(db, users["chair"]["id"], "sla.breached", "sla-breached", refs)
+    assert (
+        subject
+        == "Overdue: The readiness check for the group \u201cBranch forms wait in the outward register\u201d"
+    )
+    assert cl not in subject + body and "/review" in body
+    refs = {"stage": "scoring_round", "entity_type": "scoring_round", "entity_id": "999999", "limit_wd": 10}
+    subject, body, _ = message_for(db, users["chair"]["id"], "sla.breached", "sla-breached", refs)
+    assert subject == "Overdue: Committee scoring for a group" and "/committee" in body
+    assert "999999" not in subject + body
 
 
 def test_needs_info_pauses_review_and_withdraws_after_seven_working_days(item: Any) -> None:

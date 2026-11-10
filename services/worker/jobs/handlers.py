@@ -118,12 +118,14 @@ def comms_route(conn: Conn, payload: dict[str, Any]) -> None:
 
 @handler("comms.nudges")
 def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
-    """Quick captures still below strength 3 on day 2 and day 7 after submit get the two most useful additions."""
+    """Quick captures still below strength 3 on day 2 and day 7 after submit get the most useful additions. An
+    idea the assistant has no addition for gets no nudge: there would be nothing to ask for (BLD-157)."""
     from comms.route import emit
 
     rows = conn.execute(
         "SELECT idea_id FROM ideas WHERE capture_mode = 'quick' AND coalesce(strength, 0) < 3 "
         "AND stage NOT IN ('draft', 'withdrawn', 'blocked', 'redirected') "
+        "AND canvas #> '{strength,next_best,0}' IS NOT NULL "
         "AND ((now() AT TIME ZONE 'Asia/Kolkata')::date - (submitted_at AT TIME ZONE 'Asia/Kolkata')::date) IN (2, 7)"
     ).fetchall()
     for r in rows:

@@ -1,6 +1,6 @@
 ---
 type: comms-template
-title: '{{join.count}} more colleagues raised the same thing'
+title: '{{#join.one}}A colleague raised the same thing as you{{/join.one}}{{#join.many}}{{join.count}} colleagues have now raised the same thing as you{{/join.many}}'
 description: Message template for idea.joined.
 tags:
 - comms
@@ -11,10 +11,10 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-joined
-  version: '1.1'
+  version: '1.3'
   events:
   - idea.joined
-  subject: '{{join.count}} more colleagues raised the same thing'
+  subject: '{{#join.one}}A colleague raised the same thing as you{{/join.one}}{{#join.many}}{{join.count}} colleagues have now raised the same thing as you{{/join.many}}'
   signed_as: The 1% Club team
   hr_signed_off: false
 ---
@@ -23,7 +23,11 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-Good news: **{{join.count}}** more {{join.count_word}} raised the same thing as your idea **"{{idea.one_line}}"**. Ideas raised by more people from more teams carry more weight with the committee.
+{{#join.one}}Good news: a colleague has raised the same thing as you.{{/join.one}}{{#join.many}}Good news: {{join.count}} colleagues have now raised the same thing as you.{{/join.many}}
+
+{{#idea.one_line}}Your idea: **"{{idea.one_line}}"**{{/idea.one_line}}
+
+Ideas raised by more people from more teams carry more weight with the committee.
 
 {{#join.names_visible}}They are: {{join.names}}.{{/join.names_visible}}
 

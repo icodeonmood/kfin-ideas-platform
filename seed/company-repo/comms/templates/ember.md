@@ -12,7 +12,7 @@ generated:
   at: '2026-11-10T00:00:00+05:30'
 kfin:
   id: TPL-ember
-  version: '1.0'
+  version: '1.1'
   events:
   - ember.issue
   subject: "The Ember, {{ember.month_label}}"
@@ -24,7 +24,7 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-This month's The Ember is out: what the Ones built, what shipped and what it changed, and a note from the core committee.
+This month's issue of The Ember is out: what the Ones built, what shipped and what it changed, and a note from the core committee.
 
 [Read The Ember]({{links.ember}})
 

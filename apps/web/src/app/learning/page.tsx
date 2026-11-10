@@ -62,7 +62,7 @@ export default async function Page() {
         <span className={`state ${data.switched_on ? "state-on" : "state-off"}`}>
           {data.switched_on ? "On" : "Off"}
         </span>{" "}
-        <span className="muted">(the learning.jobs switch on the Admin page)</span>
+        <span className="muted">(an admin turns them on or off on the Admin page)</span>
       </p>
 
       <section aria-labelledby="p-open">

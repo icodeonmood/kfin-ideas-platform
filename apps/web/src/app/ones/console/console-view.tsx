@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { day } from "@/lib/dates";
+import { BANNERS, BECAUSE } from "@/lib/killswitch-routes";
 import { measureList } from "@/lib/measures";
 import type { ConsoleOne, OnesConsole, Proposal } from "@/server/ones";
 
@@ -47,8 +48,8 @@ const ERRORS: Record<string, string> = {
   text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
   names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   try_again: "Someone else took that number in the same moment. Please try again.",
-  ones_paused: "The Ones are off the wall for now, so the announcement waits. Turn the switch back on first.",
-  paused: "This is paused by a switch for now. Please try again once it is back on.",
+  ones_paused: `${BANNERS["ones.public"]} ${BECAUSE.announcementWaitsForOnes}`,
+  paused: "This is paused for now. Please try again later.",
   text_too_short: "Please write at least a short sentence.",
   text_too_long: "That's too long. Please shorten it.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",

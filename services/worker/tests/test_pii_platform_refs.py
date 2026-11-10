@@ -15,6 +15,7 @@ REFS = (
     [f"M{n}" for n in range(1, 100)]
     + [f"I{n}" for n in range(1, 100)]
     + [f"Member {n}" for n in range(1, 100)]
+    + [f"Contributor {n}" for n in range(1, 100)]  # the committee's blind view (committee/rounds.py)
 )
 
 
@@ -24,7 +25,7 @@ def test_no_agent_ref_is_read_as_a_person() -> None:
     assert people == []
 
 
-@pytest.mark.parametrize("value", ["M13", "I15", "Member 7", "CL-0010", "IDEA-2026-000123"])
+@pytest.mark.parametrize("value", ["M13", "I15", "Member 7", "Contributor 4", "CL-0010", "IDEA-2026-000123"])
 def test_only_exact_platform_refs_are_exempt(value: str) -> None:
     assert PLATFORM_ID.fullmatch(value)
 
