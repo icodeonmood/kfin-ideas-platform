@@ -426,4 +426,4 @@ def test_a_group_under_appeal_waits_for_the_panel(qualified: Any) -> None:  # no
     _file(qualified, second)
     out = rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})
     assert out["returned"] == [] and out["archived"] == [] and out["rounds"] == []
-    assert _stage(qualified) == ("parked", None)
+    assert _stage(qualified) == ("appealed", None)  # the panel decides what happens next
