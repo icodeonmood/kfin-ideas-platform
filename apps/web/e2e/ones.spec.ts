@@ -91,7 +91,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     const one = await as(browser, subject.id);
     await one.goto("/my-ideas");
     await expect(one.getByRole("heading", { level: 2, name: /^You're No\. \d+$/ })).toBeVisible();
-    await expect(one.getByText("Coming soon").first()).toBeVisible();
+    // Points are live now (BLD-147, BLD-148), so the dashboard no longer carries a "Coming soon" line.
+    await expect(one.getByText("Your number", { exact: true }).first()).toBeVisible();
+    await expect(one.getByText("Your impact brief", { exact: true }).first()).toBeVisible();
     await expectNoSeriousAxeIssues(one);
 
     await one.getByLabel("Number you'd like").fill(String(700 + Math.floor(Math.random() * 290)));
