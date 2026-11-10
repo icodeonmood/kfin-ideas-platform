@@ -388,11 +388,19 @@ def _ones_variables(
             "reason": unseal(proposal["reason_encrypted"], f"one_proposal:{proposal['id']}:reason")
         }
     if event in ("ones.tier_changed", "ones.message_invited") and proposal:
-        glow = conn.execute(
-            "SELECT tier_from, tier_to FROM one_glow_ups WHERE proposal_id = %s", (proposal["id"],)
-        ).fetchone()
+        # The direction comes from the decision itself; the old tier from the event (BLD-157), else the glow-up
+        # row, which exists only for a step up. A step down must never read as a step up.
         to = int(proposal["tier_to"])
-        frm = int(glow["tier_from"]) if glow else None
+        frm: int | None = None
+        if refs.get("tier_from") is not None:
+            frm = int(refs["tier_from"])
+        else:
+            glow = conn.execute(
+                "SELECT tier_from FROM one_glow_ups WHERE proposal_id = %s", (proposal["id"],)
+            ).fetchone()
+            frm = int(glow["tier_from"]) if glow else None
+        kind = str(proposal.get("kind") or "")
+        up = kind == "tier_up" if kind in ("tier_up", "tier_down") else (frm is None or to > frm)
         message = None
         if event == "ones.tier_changed":
             m = conn.execute(
@@ -404,8 +412,8 @@ def _ones_variables(
             "to": to,
             "to_name": tier_name(to),
             "from_name": tier_name(frm) if frm else "",
-            "up": frm is None or to > frm,
-            "down": frm is not None and to < frm,
+            "up": up,
+            "down": not up,
             "committee_message": message,
         }
         data["links"]["write"] = f"{base}/ones/write/{proposal['id']}"
