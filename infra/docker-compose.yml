@@ -89,6 +89,10 @@ services:
       CLAMAV_PORT: ${WORKER_CLAMAV_PORT:-3310}
       SMTP_URL: smtp://mailpit:1025
       WORKER_ROLES: api,repo_writer,indexer,jobs,scheduler,ticker
+    # On a Linux host the bind-mounted ./.data keeps host file owners, so CI runs the worker as the host user
+    # (WORKER_UID/WORKER_GID in .env) to share the company repo with the host-side seed and tests. The image's
+    # own user (10001) is the default; Docker Desktop and Colima map owners, so Macs need nothing.
+    user: "${WORKER_UID:-10001}:${WORKER_GID:-10001}"
     volumes: ["./.data:/data"]
     ports: ["${WORKER_HOST_PORT:-8000}:8000"]
     extra_hosts: ["host.docker.internal:host-gateway"]

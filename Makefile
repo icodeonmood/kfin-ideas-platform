@@ -34,6 +34,7 @@ build: .env ## Build the worker and web images
 	$(COMPOSE) build
 
 up: .env ## Start the local stack and wait until every service is healthy
+	@mkdir -p .data  # made by this user, not by Docker as root, so host-side seed and tests can write to it (Linux)
 	$(COMPOSE) up -d --wait --wait-timeout 120 postgres
 	$(COMPOSE) run --rm dbmate up
 	$(MAKE) --no-print-directory db-users
