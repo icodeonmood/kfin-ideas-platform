@@ -3,9 +3,14 @@
 # Synthetic data only. No secrets are needed: LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock.
 name: ci
 
-# Manual for now: the test Mac runs `make verify` (BLD-034). Switch to `push` and `pull_request` once a
-# first manual run passes on GitHub's Linux runners and Actions minutes are budgeted.
+# Every code push to main and every pull request runs the full gates (DEC-093, BLD-159); a newer push cancels the
+# run still going for the same branch, and pushes that change only docs skip it. Also by hand (Run workflow).
 on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md"]  # docs and top-level notes only; seed and agent Markdown still run it
+  pull_request:
+    paths-ignore: ["docs/**", "*.md"]  # docs and top-level notes only; seed and agent Markdown still run it
   workflow_dispatch:
 
 concurrency:
