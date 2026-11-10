@@ -458,11 +458,13 @@ def _change_tier(conn: Conn, p: dict[str, Any], now: dt.datetime) -> dict[str, A
             "VALUES (%s, %s, %s, %s, %s)",
             (one["id"], p["id"], one["tier"], p["tier_to"], now),
         )
+    # The old tier travels with the event: a step down has no glow-up row to read it from (BLD-157).
     emit(
         conn,
         "ones.tier_changed",
-        {"current_owner_ids": [str(one["user_id"])], "one_id": one["id"], "proposal_id": p["id"]},
-    )
+        {"current_owner_ids": [str(one["user_id"])], "one_id": one["id"], "proposal_id": p["id"],
+         "tier_from": int(one["tier"])},
+    )  # fmt: skip
     return {"one_id": one["id"], "tier_from": one["tier"], "tier_to": p["tier_to"]}
 
 

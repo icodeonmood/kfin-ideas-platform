@@ -648,6 +648,40 @@ def test_a_glow_up_plays_only_for_a_step_up_and_all_are_marked_seen_together(one
     assert unseen["n"] == 0
 
 
+def test_a_step_down_reads_as_a_change_never_as_a_step_up(ones_db: Any, cast: Any) -> None:
+    """BLD-157: a step down has no glow-up row, so the old tier travels with the event and the direction comes from
+    the decision. It must never say "hotter" or "well done"."""
+    db = ones_db
+    subject = person(db)
+    one = induct(db, cast, subject)
+    for kind, tier_to in (("tier_up", 3), ("tier_down", 2)):
+        p = service.propose(db, cast["member"], {"kind": kind, "one_id": one["one_id"], "tier_to": tier_to,
+                                                "reason": "Measured impact changed this quarter"}, now=NOW)  # fmt: skip
+        service.add_message(
+            db, cast["member"], p["id"], {"from": "committee", "text": "Thank you for the work."}
+        )
+        service.decide(db, cast["chair"], p["id"], {"verdict": "approve", "how": "chair"}, now=NOW)
+        db.execute("DELETE FROM jobs")
+        service.carry_out(db, cast["admin"], p["id"], now=NOW)
+    job = db.execute(
+        "SELECT payload FROM jobs WHERE type = 'comms.route' AND payload->>'event' = 'ones.tier_changed'"
+    ).fetchone()
+    refs = job["payload"]["refs"]
+    assert refs["tier_from"] == 3
+    subject_line, body, _ = templates.render(
+        "one-tier-changed", render.variables(db, subject, "ones.tier_changed", refs)
+    )
+    assert subject_line == "Your tier has changed"
+    assert "has moved your tier from Flame to Glow." in body
+    assert "hotter" not in subject_line + body and "well done" not in body
+    # An event queued before the fix has no old tier: the direction still comes from the decision.
+    older = {k: v for k, v in refs.items() if k != "tier_from"}
+    subject_line, body, _ = templates.render(
+        "one-tier-changed", render.variables(db, subject, "ones.tier_changed", older)
+    )
+    assert subject_line == "Your tier has changed" and "well done" not in body
+
+
 def test_a_second_legend_in_the_same_year_is_refused_by_the_database_too(ones_db: Any, cast: Any) -> None:
     import psycopg
 
