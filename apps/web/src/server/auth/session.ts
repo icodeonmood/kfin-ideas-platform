@@ -7,7 +7,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 
 import { sql } from "kysely";
 
-import { privacyNoticeVersion, sessionSecret } from "../config";
+import { appBaseUrl, isProductionLike, privacyNoticeVersion, sessionSecret } from "../config";
 import { getDb } from "../db";
 
 export const SESSION_COOKIE = "ideas_session";
@@ -15,9 +15,16 @@ export const SESSION_TTL_SECONDS = 8 * 60 * 60;
 export const SESSION_ABSOLUTE_HOURS = 12; // sliding refresh never extends a session past a working day
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
 
+/**
+ * Secure everywhere that matters: UAT and production always, and any HTTPS address. Only the plain-HTTP dev and
+ * test stack on localhost drops the flag, because Safari refuses Secure cookies over http://localhost, which left
+ * the sign-in state cookie behind and sent every Safari sign-in back to the start (BLD-153).
+ */
+export const secureCookies = () => isProductionLike() || appBaseUrl().protocol === "https:";
+
 export const cookieOptions = (maxAge = SESSION_TTL_SECONDS) => ({
   httpOnly: true,
-  secure: true,
+  secure: secureCookies(),
   sameSite: "lax" as const,
   path: "/",
   maxAge,

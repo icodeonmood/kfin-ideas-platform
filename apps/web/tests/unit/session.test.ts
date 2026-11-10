@@ -1,6 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { openTx, safeNext, sealTx } from "@/server/auth/session";
+import { cookieOptions, openTx, safeNext, sealTx } from "@/server/auth/session";
+
+describe("sign-in cookies", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it("are Secure in UAT and production, and on any HTTPS address", () => {
+    process.env.APP_ENV = "uat";
+    process.env.APP_BASE_URL = "https://ideas.uat.example";
+    expect(cookieOptions().secure).toBe(true);
+    process.env.APP_ENV = "prod";
+    expect(cookieOptions(0).secure).toBe(true);
+    process.env.APP_ENV = "dev";
+    process.env.APP_BASE_URL = "https://ideas.dev.example";
+    expect(cookieOptions().secure).toBe(true);
+  });
+
+  it("drop Secure only on the plain-HTTP local stack, so Safari keeps the sign-in state (BLD-153)", () => {
+    process.env.APP_ENV = "dev";
+    process.env.APP_BASE_URL = "http://localhost:3000";
+    expect(cookieOptions().secure).toBe(false);
+    delete process.env.APP_BASE_URL;
+    expect(cookieOptions().secure).toBe(false);
+  });
+});
 
 describe("sign-in helpers", () => {
   const saved = { ...process.env };
