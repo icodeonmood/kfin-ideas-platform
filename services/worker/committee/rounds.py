@@ -94,10 +94,17 @@ def _contributor_users(conn: Conn, cluster_id: str) -> set[str]:
     return {str(r["user_id"]) for r in rows}
 
 
-def _managers_of(conn: Conn, users: set[str], depth: int = 1) -> set[str]:
-    """People up to `depth` levels above these users in the HR manager chain. One level by default: the core
-    committee is senior, so a deeper chain would flag its members on most groups (BLD-221)."""
-    if not users:
+def manager_levels() -> int:
+    """How far up a contributor's reporting line a committee member steps aside: `conflicts.manager_levels` in
+    `rules/routing.md`. 0, the launch setting, checks no manager: the product lead kept managers in for the first
+    quarter, as they are often the people closest to the problem (BLD-226). 1 is the direct manager (BLD-221), 2 the
+    manager's manager as well. A repo without the setting reads as 0."""
+    return int((routing().get("conflicts") or {}).get("manager_levels", 0))
+
+
+def _managers_of(conn: Conn, users: set[str], depth: int) -> set[str]:
+    """People up to `depth` levels above these users in the HR manager chain; nobody when `depth` is 0."""
+    if not users or depth < 1:
         return set()
     rows = conn.execute(
         "WITH RECURSIVE up(id, lvl) AS (SELECT manager_user_id, 1 FROM users WHERE id = ANY(%s::uuid[]) "
@@ -111,7 +118,8 @@ def _managers_of(conn: Conn, users: set[str], depth: int = 1) -> set[str]:
 def conflict(conn: Conn, cluster_id: str, user_id: str) -> str | None:
     """Why this person may not see or act on the cluster's committee work, or None (§3.1). Checked live:
     `own_idea` (a contributor or joiner), `recused` (stepped aside on any round of the cluster), `flagged` (a flag
-    not yet cleared), `manager` (a contributor's direct manager, unless an admin cleared it)."""
+    not yet cleared), `manager` (a contributor's manager, unless an admin cleared it; off at launch, see
+    `manager_levels`)."""
     contributors = _contributor_users(conn, cluster_id)
     if user_id in contributors:
         return "own_idea"
@@ -127,7 +135,7 @@ def conflict(conn: Conn, cluster_id: str, user_id: str) -> str | None:
         return "recused"
     if "flagged" in statuses:
         return "flagged"
-    if "cleared" not in statuses and user_id in _managers_of(conn, contributors):
+    if "cleared" not in statuses and user_id in _managers_of(conn, contributors, manager_levels()):
         return "manager"
     return None
 
@@ -224,7 +232,7 @@ def open_round(
          float(routing()["presentation"]["quorum"]), evidence, band, multiplier, now, closes),
     )  # fmt: skip
     contributors = _contributor_users(conn, cluster_id)
-    managers = _managers_of(conn, contributors)
+    managers = _managers_of(conn, contributors, manager_levels())
     for member in sorted(set(roster) & (contributors | managers)):
         conn.execute(
             "INSERT INTO coi_flags (round_id, member_id, reason, status) VALUES (%s, %s, %s, 'flagged')",

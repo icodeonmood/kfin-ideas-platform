@@ -19,6 +19,7 @@ kfin:
 The review desk decides review items on the core committee's behalf; core committee members can veto within the veto window (`rules/sla.md`).
 LOB-scope clusters go to that LOB's committee, unless the LOB file names the core committee. Everything cross-LOB, org-wide or a business idea goes to the core committee.
 Presentation slot length is not fixed yet (DEC-013). There are no comeback routes after a decline (DEC-018); appeals are the only route.
+A committee member always steps aside from a group they contributed to or joined, and from one they declared or were flagged on. Managers are not asked to step aside for the first quarter after launch, because they are often the people closest to the problem (BLD-226). To turn the manager check on, set `conflicts.manager_levels` to 1 (the contributor's direct manager) or 2 (the manager's manager as well).
 
 ```yaml
 version: '1.0'
@@ -54,6 +55,11 @@ appeals:
   - brief_owner
   must_include_member_not_in_original_majority: true
   desk_decision_appeals_heard_by: uninvolved_core_member
+conflicts:
+  # Who steps aside because they manage a contributor (BLD-226). 0 = no one (launch quarter).
+  # manager_levels: 1   # the contributor's direct manager
+  # manager_levels: 2   # the direct manager and the manager's manager
+  manager_levels: 0
 resubmission_after_months: 12
 parked:
   return_next_cycle: true

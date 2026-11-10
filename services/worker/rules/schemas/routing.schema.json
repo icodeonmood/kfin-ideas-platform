@@ -159,6 +159,23 @@
       ],
       "additionalProperties": false
     },
+    "conflicts": {
+      "type": "object",
+      "properties": {
+        "manager_levels": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        }
+      },
+      "required": [
+        "manager_levels"
+      ],
+      "additionalProperties": false
+    },
     "resubmission_after_months": {
       "type": "integer",
       "minimum": 1

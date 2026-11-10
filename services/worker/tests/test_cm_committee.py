@@ -449,7 +449,55 @@ def test_a_recusal_carries_into_the_presentation_and_hides_the_group(qualified: 
     assert chair_view is not None and stepped_aside not in {o["id"] for o in chair_view["sponsor_options"]}
 
 
-def test_a_manager_of_a_contributor_is_flagged_and_an_admin_can_clear_it(qualified: Any) -> None:
+def test_managers_are_not_asked_to_step_aside_at_launch(qualified: Any) -> None:
+    """BLD-226: the seed rules set `conflicts.manager_levels` to 0, so a contributor's manager scores as usual."""
+    assert rounds.manager_levels() == 0
+    db = qualified["db"]
+    owner = str(_owner_of(qualified)["user_id"])
+    manager = qualified["members"][0]
+    db.execute("UPDATE users SET manager_user_id = %s WHERE id = %s", (manager, owner))
+    rid = _round(qualified)
+    assert (
+        db.execute(
+            "SELECT 1 FROM coi_flags WHERE round_id = %s AND member_id = %s", (rid, manager)
+        ).fetchone()
+        is None
+    )
+    view = rounds.round_view(db, rid, manager)
+    assert view is not None and view["conflict"] is None and "cluster" in view
+
+
+def test_two_manager_levels_flag_the_managers_manager(
+    qualified: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rounds, "manager_levels", lambda: 2)
+    db = qualified["db"]
+    owner = str(_owner_of(qualified)["user_id"])
+    direct, above = qualified["members"][0], qualified["members"][1]
+    db.execute("UPDATE users SET manager_user_id = %s WHERE id = %s", (direct, owner))
+    db.execute("UPDATE users SET manager_user_id = %s WHERE id = %s", (above, direct))
+    rid = _round(qualified)
+    flagged = {
+        str(r["member_id"])
+        for r in db.execute(
+            "SELECT member_id FROM coi_flags WHERE round_id = %s AND reason = 'manager'", (rid,)
+        )
+    }
+    assert flagged == {direct, above}
+    monkeypatch.setattr(
+        rounds, "manager_levels", lambda: 1
+    )  # one level: the manager's manager is not conflicted
+    db.execute("DELETE FROM coi_flags WHERE round_id = %s AND member_id = %s", (rid, above))
+    cid = db.execute("SELECT cluster_id FROM scoring_rounds WHERE id = %s", (rid,)).fetchone()["cluster_id"]
+    assert rounds.conflict(db, cid, direct) == "flagged" and rounds.conflict(db, cid, above) is None
+
+
+def test_a_manager_of_a_contributor_is_flagged_and_an_admin_can_clear_it(
+    qualified: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        rounds, "manager_levels", lambda: 1
+    )  # the check as it works when switched on (BLD-221)
     db = qualified["db"]
     owner = str(_owner_of(qualified)["user_id"])
     manager = qualified["members"][0]
