@@ -19,7 +19,7 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
 - [ember.md](ember.md) — The Ember, {{ember.month_label}}
-- [cluster-approved.md](cluster-approved.md) — Your idea is now in a group: {{cluster.name}} (draft for HR sign-off)
+- [cluster-approved.md](cluster-approved.md) — Your idea is now in a group (with its name, when it has one) (draft for HR sign-off)
 - [delivery-approval-needed.md](delivery-approval-needed.md) — Your approval: the handover for {{delivery.label}} (draft for HR sign-off)
 - [delivery-phase-changed.md](delivery-phase-changed.md) — {{delivery.label}}: {{delivery.phase_words}} (draft for HR sign-off)
 - [delivery-completion.md](delivery-completion.md) — Fixed? Please confirm {{delivery.label}} (draft for HR sign-off)

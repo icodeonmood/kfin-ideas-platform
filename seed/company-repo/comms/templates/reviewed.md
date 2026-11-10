@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-reviewed
-  version: '1.2'
+  version: '1.3'
   events:
   - idea.reviewed
   subject: '{{idea.id}} has been reviewed'
@@ -26,6 +26,7 @@ Hi {{recipient.first_name}},
 Your idea **"{{idea.one_line}}"** has been reviewed.
 
 {{#outcome.grouped}}It's now part of **{{cluster.name}}**, a group of similar ideas from colleagues. Grouped ideas are weighed together, and you keep full credit as a contributor.{{/outcome.grouped}}
+{{#outcome.grouped_unnamed}}It's now part of a group of similar ideas from colleagues. Grouped ideas are weighed together, and you keep full credit as a contributor.{{/outcome.grouped_unnamed}}
 {{#outcome.linked}}It's now linked with a similar idea from a colleague. Linked ideas are weighed together, and you keep full credit as a contributor.{{/outcome.linked}}
 {{#outcome.standalone}}It stays as its own idea for now. If colleagues raise the same thing, we'll group them and tell you.{{/outcome.standalone}}
 {{#reviewer.note}}**Note from the reviewer:** {{reviewer.note}}{{/reviewer.note}}

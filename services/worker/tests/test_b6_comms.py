@@ -370,7 +370,7 @@ def test_joined_counts_everyone_now_on_it_in_plain_plurals(seeded: Any) -> None:
     db, users, refs = seeded
     subject, body = _msg(db, users["owner"]["id"], "idea.joined", "joined", refs["idea.joined"])
     assert subject == "A colleague raised the same thing as you"
-    assert "a colleague has raised the same thing as your idea" in body and ONE_LINE in body
+    assert "a colleague has raised the same thing as you." in body and f'Your idea: **"{ONE_LINE}"**' in body
     assert "more colleague" not in subject + body
     db.execute(
         "INSERT INTO idea_links (idea_id, from_idea_id, contributor_code, link_type) "
@@ -379,7 +379,7 @@ def test_joined_counts_everyone_now_on_it_in_plain_plurals(seeded: Any) -> None:
     )
     subject, body = _msg(db, users["owner"]["id"], "idea.joined", "joined", refs["idea.joined"])
     assert subject == "2 colleagues have now raised the same thing as you"
-    assert "2 colleagues have now raised the same thing as your idea" in body
+    assert "2 colleagues have now raised the same thing as you." in body
     # An earlier joiner counts the person who first raised it and the newcomer, never themselves.
     subject, _ = _msg(db, users["joiner"]["id"], "idea.joined", "joined", refs["idea.joined"])
     assert subject == "2 colleagues have now raised the same thing as you"

@@ -55,7 +55,8 @@ def test_joined_reads_right_for_one_and_for_many() -> None:
     one = BASE | {"idea": IDEA, "join": {"count": 1, "one": True, "many": False}}
     subject, body = _render("joined", one)
     assert subject == "A colleague raised the same thing as you"
-    assert "Good news: a colleague has raised the same thing as your idea" in body
+    assert "Good news: a colleague has raised the same thing as you." in body
+    assert 'Your idea: **"Branch forms wait a day"**' in body
     many = BASE | {"idea": IDEA, "join": {"count": 3, "one": False, "many": True}}
     subject, body = _render("joined", many)
     assert subject == "3 colleagues have now raised the same thing as you"
@@ -63,7 +64,13 @@ def test_joined_reads_right_for_one_and_for_many() -> None:
 
 
 def test_group_messages_name_the_group_and_count_in_plain_plurals() -> None:
-    cluster = {"name": "Outward register delays", "description": "", "other_count": 1, "one_other": True}
+    cluster = {
+        "name": "Outward register delays",
+        "named": True,
+        "description": "",
+        "other_count": 1,
+        "one_other": True,
+    }
     subject, body = _render("cluster-approved", BASE | {"cluster": cluster})
     assert subject == "Your idea is now in a group: Outward register delays"
     assert "It holds one other idea." in body and "1 other ideas" not in body
@@ -73,6 +80,66 @@ def test_group_messages_name_the_group_and_count_in_plain_plurals() -> None:
     data = BASE | {"idea": IDEA, "outcome": {"grouped": True}, "cluster": {"name": "Outward register delays"}}
     _, body = _render("reviewed", data)
     assert "It's now part of **Outward register delays**, a group of similar ideas" in body
+
+
+def test_a_group_without_a_name_yet_reads_naturally() -> None:
+    cluster = {"name": "", "unnamed": True, "description": "", "other_count": 2, "many_others": True}
+    subject, body = _render("cluster-approved", BASE | {"cluster": cluster})
+    assert subject == "Your idea is now in a group of similar ideas"
+    assert "put your idea in a group of similar ideas. It holds 2 other ideas." in body and "****" not in body
+    data = BASE | {"idea": IDEA, "outcome": {"grouped_unnamed": True}, "cluster": {"name": ""}}
+    _, body = _render("reviewed", data)
+    assert "It's now part of a group of similar ideas from colleagues." in body and "****" not in body
+
+
+class _NoRows:
+    """A connection that finds nothing: the renderer's fallbacks, without a database."""
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> _NoRows:
+        return self
+
+    def fetchone(self) -> None:
+        return None
+
+    def fetchall(self) -> list[Any]:
+        return []
+
+
+def test_joined_without_an_idea_of_the_readers_own_leaves_the_line_out() -> None:
+    refs = {"target_id": "CL-0001", "joiner_code": "CTR-000000", "idea_id": "IDEA-2026-000902"}
+    data = render.variables(_NoRows(), "user", "idea.joined", refs)  # type: ignore[arg-type]
+    assert "idea" not in data and data["links"]["idea"].endswith("/my-ideas")
+    subject, body = _render("joined", data)
+    assert subject == "A colleague raised the same thing as you"
+    assert "Your idea" not in body and '""' not in body
+
+
+def test_delivery_labels_open_a_sentence_and_never_show_a_group_number() -> None:
+    conn: Any = _NoRows()
+    assert render._delivery_label(conn, "IDEA-2026-000901") == "IDEA-2026-000901"
+    assert render._delivery_label(conn, "CL-0001") == "Group of similar ideas"
+    for subject_id, label in (
+        ("IDEA-2026-000901", "IDEA-2026-000901"),
+        ("CL-0001", "Group of similar ideas"),
+    ):
+        data = BASE | {"delivery": {"label": render._delivery_label(conn, subject_id), "started": True,
+                                    "phase_words": "Started"}}  # fmt: skip
+        subject, body = _render("delivery-phase-changed", data)
+        assert subject == f"{label}: Started" and "CL-0001" not in subject + body
+
+
+def test_an_overdue_event_queued_before_the_fix_names_no_owner() -> None:
+    """Its owner was the first reviewer on the desk, not necessarily anyone handling it."""
+    refs = {
+        "item_label": "IDEA-2026-000901",
+        "owner_user_id": "first-reviewer",
+        "limit_wd": 5,
+        "days_late": 0,
+    }
+    data = render.variables(_NoRows(), "chair", "sla.breached", refs)  # type: ignore[arg-type]
+    subject, body = _render("sla-breached", data)
+    assert subject == "Overdue: IDEA-2026-000901"
+    assert "It is with" not in body and "Nobody" not in body and "0 working day" not in body
 
 
 def test_suggestions_show_only_the_bullets_that_exist() -> None:
