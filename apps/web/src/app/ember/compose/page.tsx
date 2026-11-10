@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { BANNERS } from "@/lib/killswitch-routes";
+import { BANNERS, BECAUSE } from "@/lib/killswitch-routes";
 import { can } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
 import { emberCurrent, emberIssue } from "@/server/ember";
@@ -38,7 +38,7 @@ export default async function Page() {
   const blocked = issue.ember_paused
     ? BANNERS["ember.send"]
     : issue.ones_paused
-      ? BANNERS["ones.public"]
+      ? `${BANNERS["ones.public"]} ${BECAUSE.emberWaitsForOnes}`
       : !issue.note
         ? "Add the chair's note before sending."
         : null;

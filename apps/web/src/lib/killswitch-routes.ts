@@ -98,15 +98,22 @@ export const BANNERS: Record<SwitchName, string> = {
   "comms.email": "Emails are paused for now. Your messages are on your Messages page.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
   "ones.public": "The Ones are resting from the wall for a little while.",
-  "clusters.batch": "Weekly grouping of similar ideas is switched off for now.",
+  "clusters.batch": "Weekly grouping of similar ideas is paused for now.",
   "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
   "learning.jobs": "Learning reports and proposals are paused for now. Nothing changes without a person.",
   "ember.send": "Sending The Ember is paused for now.",
   "solutions.publish":
     "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",
-  "committee.flow": "The committee's reviews and decisions are switched off for now.",
+  "committee.flow": "The committee's reviews and decisions are paused for now.",
   "appeals.filing": "Appeals are paused for a short while. Please try again later.",
 };
+
+/** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
+export const BECAUSE = {
+  emberWaitsForOnes: "The Ember names them, so it can't go out until they are back.",
+  announcementWaitsForOnes:
+    "The announcement names them, so it waits. Show the Ones on the wall again first (Admin page).",
+} as const;
 
 /**
  * Write routes that deliberately need no kill switch (each one reviewed). A unit test fails if a route
