@@ -294,8 +294,9 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         }
         data["requester"] = {"lob_name": (link["hr_department"] if link else None) or "another team"}
         data["request"] = {"context": context}
-        # The request sits in the review desk's queue. Only people who may open the desk get a link to it; the
-        # owning team's committee is told in words instead (BLD-157).
+        # The request sits in the review desk's queue. Only people who may open the desk get a link to it. Who
+        # asked is not in the message (revealing a name is for admins), so it says the 1% Club team can put them
+        # in touch (BLD-157).
         from ones.service import roles
 
         if roles(conn, user_id) & DESK_VIEWERS:

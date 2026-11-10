@@ -428,7 +428,7 @@ def test_adoption_request_links_only_people_who_can_open_the_desk(seeded: Any) -
         db, users["lob"]["id"], "adoption.requested", "adoption-requested", refs["adoption.requested"]
     )
     assert "/review" not in body and "Open the request" not in body
-    assert "the review desk has their request and can put you in touch" in body
+    assert "the 1% Club team can put you in touch" in body
     assert "credited" not in body and "SOL-0004" not in body and "We would use it in MF ops" in body
     _, body = _msg(
         db, users["reviewer"]["id"], "adoption.requested", "adoption-requested", refs["adoption.requested"]

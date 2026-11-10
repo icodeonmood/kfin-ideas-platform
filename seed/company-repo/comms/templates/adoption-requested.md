@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-adoption-requested
-  version: '1.2'
+  version: '1.3'
   events:
   - adoption.requested
   subject: A team wants to adopt {{solution.title}}
@@ -27,7 +27,7 @@ A colleague from **{{requester.lob_name}}** wants to bring **{{solution.title}}*
 
 {{#request.context}}> {{request.context}}{{/request.context}}
 
-If your team can help them adopt it, the review desk has their request and can put you in touch.
+If your team can help them adopt it, the 1% Club team can put you in touch.
 
 {{#links.request}}[Open the request]({{links.request}}){{/links.request}}
 
