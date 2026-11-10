@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { emptyCanvas } from "@/lib/canvas/model";
 import { currentUser } from "@/server/auth/current";
 import { canvasConfig, kfinDomains } from "@/server/canvas-config";
+import { isOn, switchStates } from "@/server/killswitch";
 import { getDraft, SubmissionError } from "@/server/submissions";
 
 import { CanvasForm } from "./canvas-form";
@@ -24,6 +25,7 @@ export default async function Draft({ params }: { params: Promise<{ id: string }
   }
   if (draft.stage !== "draft") redirect(`/share/${id}/done`);
   const config = await canvasConfig();
+  const states = await switchStates().catch(() => new Map<string, "on" | "off">());
   return (
     <CanvasForm
       id={id}
@@ -35,6 +37,7 @@ export default async function Draft({ params }: { params: Promise<{ id: string }
       kfinDomains={kfinDomains()}
       attachments={draft.attachments}
       attachmentLimits={config.attachments}
+      micHint={isOn(states, "capture.mic_hint")}
     />
   );
 }

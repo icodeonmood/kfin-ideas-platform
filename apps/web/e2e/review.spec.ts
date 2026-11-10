@@ -6,7 +6,7 @@
 import { expect, test } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 test("a reviewer opens an item, sees every panel and saves a decision (AT-B6-02)", async ({
   browser,
@@ -20,17 +20,7 @@ test("a reviewer opens an item, sees every panel and saves a decision (AT-B6-02)
   await a.waitForURL(/\/share\/[0-9a-f-]{36}$/);
   const words = `Courier slips for NAV files are signed twice at the ${testInfo.project.name} desk, adding a day each week.`;
   await a.getByLabel(QUESTIONS.quick_noticed.label).fill(words);
-  await a
-    .getByRole("group", { name: QUESTIONS.quick_who.label })
-    .getByRole("checkbox", { name: "Investors" })
-    .check();
-  await a
-    .getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })
-    .getByRole("radio", { name: "Not sure yet" })
-    .check();
-  for (const label of [/no investor or customer personal data/, /my own work/, /I accept the terms/]) {
-    await a.getByRole("checkbox", { name: label }).check();
-  }
+  await confirmQuickCapture(a);
   await a.getByRole("button", { name: "Share your idea" }).click();
   await a.waitForURL(/\/done$/);
   const ideaId = /IDEA-\d{4}-\d{6}/.exec(await a.getByRole("heading", { level: 1 }).innerText())![0];

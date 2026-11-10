@@ -39,6 +39,15 @@ export async function expectNoSeriousAxeIssues(page: Page) {
   expect(blocking, `axe on ${page.url()}`).toEqual([]);
 }
 
+/**
+ * Quick capture's one confirmation (DEC-094): a single tick covers the three declarations. The category is
+ * optional and saved as "Not sure yet", and nothing else is required, so this is all a quick share needs after the
+ * box is filled.
+ */
+export async function confirmQuickCapture(page: Page) {
+  await page.getByRole("checkbox", { name: /I've left out investor and customer personal details/ }).check();
+}
+
 export type SwitchState = "on" | "off";
 
 /**

@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import { emptyCanvas, type Canvas, type Mode } from "@/lib/canvas/model";
-import { blocks, personalData, strength, validate, type FieldError } from "@/lib/canvas/rules";
+import { blocks, finaliseQuick, personalData, strength, validate, type FieldError } from "@/lib/canvas/rules";
 
 import type { CurrentUser } from "./auth/current";
 import { canvasConfig, kfinDomains } from "./canvas-config";
@@ -198,7 +198,7 @@ export async function submit(me: CurrentUser, id: string, input: unknown) {
   const row = await loadOwned(me, id);
   if (row.stage !== "draft") throw new SubmissionError(409, "already_submitted", { idea_id: row.idea_id });
   const config = await canvasConfig();
-  const canvas = sanitiseCanvas(input, row.capture_mode as Mode);
+  const canvas = finaliseQuick(sanitiseCanvas(input, row.capture_mode as Mode));
   const errors: FieldError[] = validate(canvas, config.canvas);
   if (errors.length) throw new SubmissionError(422, "invalid", errors);
   const warnings = personalDataGuard(canvas);

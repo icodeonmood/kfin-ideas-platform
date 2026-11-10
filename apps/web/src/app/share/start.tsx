@@ -34,7 +34,10 @@ export function StartButtons() {
       <ul className="cards" aria-label="Two ways in">
         <li className="card">
           <h2>Quick capture</h2>
-          <p>About a minute. Three questions; the assistant drafts the rest for you to check later.</p>
+          <p>
+            About a minute. One box: say it your way, in any language, and add files if you have them. The
+            assistant suggests the rest for you to check.
+          </p>
           <button type="button" className="button" onClick={() => start("quick")} disabled={busy !== null}>
             {busy === "quick" ? "Starting…" : "Start a quick capture"}
           </button>

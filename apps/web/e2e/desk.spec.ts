@@ -6,7 +6,7 @@
 import { expect, test, type Browser } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 async function shareIdea(browser: Browser, words: string) {
   const ctx = await browser.newContext();
@@ -16,17 +16,7 @@ async function shareIdea(browser: Browser, words: string) {
   await page.getByRole("button", { name: "Start a quick capture" }).click();
   await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
   await page.getByLabel(QUESTIONS.quick_noticed.label).fill(words);
-  await page
-    .getByRole("group", { name: QUESTIONS.quick_who.label })
-    .getByRole("checkbox", { name: "Investors" })
-    .check();
-  await page
-    .getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })
-    .getByRole("radio", { name: "Not sure yet" })
-    .check();
-  for (const label of [/no investor or customer personal data/, /my own work/, /I accept the terms/]) {
-    await page.getByRole("checkbox", { name: label }).check();
-  }
+  await confirmQuickCapture(page);
   await page.getByRole("button", { name: "Share your idea" }).click();
   await page.waitForURL(/\/done$/);
   const ideaId = /IDEA-\d{4}-\d{6}/.exec(await page.getByRole("heading", { level: 1 }).innerText())![0];

@@ -73,6 +73,7 @@ kill_switch_flippers:
   learning.jobs: [admin]
   ember.send: [admin]
   solutions.publish: [admin]
+  capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
 
 # No session needed.
 public:

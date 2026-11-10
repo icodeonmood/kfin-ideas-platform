@@ -152,3 +152,25 @@ def test_quick_capture_submits_with_three_answers(person: Any) -> None:
         == "quick"
     )
     conn.execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"scan:{r.json()['idea_id']}",))
+
+
+def test_quick_capture_is_one_box_and_saves_not_sure(person: Any) -> None:
+    """DEC-094: no category and one confirmation (all three declarations) are enough; the server saves the
+    unchosen category as "not sure yet", the person's own answer, so the assistant never fills it (DEC-004)."""
+    me, _, conn = person
+    b = me.browser()
+    draft_id = b.post("/api/submissions", json={"mode": "quick"}).json()["id"]
+    details = "Branch staff re-type every change-of-address form because the scan is hard to read."
+    r = b.post(
+        f"/api/submissions/{draft_id}/submit",
+        json={"canvas": {"details": details, "declarations": {"no_personal_data": True}}},
+    )
+    assert r.status_code == 422 and [e["field"] for e in r.json()["details"]] == ["declarations.all"]
+    every = {"no_personal_data": True, "own_work_or_credited": True, "ip_terms": True}
+    r = b.post(
+        f"/api/submissions/{draft_id}/submit", json={"canvas": {"details": details, "declarations": every}}
+    )
+    assert r.status_code == 202, r.text
+    row = conn.execute("SELECT category FROM ideas WHERE id = %s", (draft_id,)).fetchone()
+    assert row["category"] == "not_sure"
+    conn.execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"scan:{r.json()['idea_id']}",))

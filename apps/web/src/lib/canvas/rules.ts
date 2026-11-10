@@ -25,7 +25,13 @@ export type StrengthRubric = {
 
 export type FieldError = { field: string; message: string };
 
-/** Required fields (AT-B3-02). Quick capture asks three questions; the full canvas asks for more. */
+/** The field path of quick capture's single confirmation (its error links to that checkbox). */
+export const QUICK_DECLARATION_FIELD = "declarations.all";
+
+/**
+ * Required fields (AT-B3-02). Quick capture is one box (DEC-094): the details, visibility and one confirmation
+ * covering the three declarations; its category is optional. The full canvas asks for more.
+ */
 export function validate(c: Canvas, limits: CanvasLimits): FieldError[] {
   const errors: FieldError[] = [];
   const add = (field: string, message: string) => errors.push({ field, message });
@@ -41,13 +47,28 @@ export function validate(c: Canvas, limits: CanvasLimits): FieldError[] {
   }
   if (c.details.trim().length < limits.details_min_chars)
     add("details", `Please write at least ${limits.details_min_chars} characters, in any language.`);
-  if (!c.value.category) add("value.category", "Choose cost saving, new revenue, both, or not sure yet.");
+  if (c.mode === "full" && !c.value.category)
+    add("value.category", "Choose cost saving, new revenue, both, or not sure yet.");
   if (c.visibility === "committee" && c.visibility_reason.trim().length < 10)
     add("visibility_reason", "Tell us briefly why only committees should see this.");
-  for (const [key, ok] of Object.entries(c.declarations)) {
-    if (!ok) add(`declarations.${key}`, "Please confirm this before you share.");
+  if (c.mode === "quick") {
+    if (!Object.values(c.declarations).every(Boolean))
+      add(QUICK_DECLARATION_FIELD, "Please confirm this before you share.");
+  } else {
+    for (const [key, ok] of Object.entries(c.declarations)) {
+      if (!ok) add(`declarations.${key}`, "Please confirm this before you share.");
+    }
   }
   return errors;
+}
+
+/**
+ * What a quick capture saves on submit (DEC-094): a category the person did not choose is saved as "Not sure
+ * yet". That is the person's own answer, so the assistant never fills it in for them (DEC-004).
+ */
+export function finaliseQuick(c: Canvas): Canvas {
+  if (c.mode !== "quick" || c.value.category) return c;
+  return { ...c, value: { ...c.value, category: "not_sure" } };
 }
 
 export type PersonalDataHit = { field: string; match: PatternMatch };

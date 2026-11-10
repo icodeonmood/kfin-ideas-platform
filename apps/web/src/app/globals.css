@@ -508,6 +508,20 @@ textarea[aria-invalid="true"] {
   width: 100%;
 }
 
+/* Quick capture's optional extras and what the one confirmation covers (DEC-094): native disclosure, keyboard
+   and screen-reader friendly with the global focus ring. */
+.more-details {
+  margin: 0.5rem 0 1rem;
+}
+.more-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+.more-details > ul {
+  margin: 0.5rem 0 0;
+}
+
 .why {
   margin: 0;
   color: var(--muted);
