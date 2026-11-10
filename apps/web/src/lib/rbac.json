@@ -226,6 +226,13 @@
     "capture.mic_hint": [
       "admin",
       "infosec"
+    ],
+    "capture.voice": [
+      "admin",
+      "infosec"
+    ],
+    "speech.hosted": [
+      "infosec"
     ]
   },
   "public": [
@@ -259,6 +266,9 @@
     "POST /api/submissions/{id}/choose                 submit",
     "POST /api/submissions/{id}/attachments            submit",
     "DELETE /api/submissions/{id}/attachments/{att}    submit",
+    "POST /api/submissions/{id}/voice                  submit",
+    "GET /api/submissions/{id}/voice/{voice}           submit",
+    "DELETE /api/submissions/{id}/voice/{voice}        submit",
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "PUT /api/ideas/{id}/canvas                        submit",

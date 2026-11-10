@@ -19,6 +19,19 @@ describe("kill switch route map (§7.6)", () => {
     ]);
   });
 
+  it("voice notes (DEC-096): a new recording needs capture.voice and submissions; reading or deleting one does not need capture.voice", () => {
+    expect(switchesFor("POST", "/api/submissions/abc/voice").sort()).toEqual([
+      "capture.voice",
+      "submissions",
+    ]);
+    expect(switchesFor("GET", "/api/submissions/abc/voice/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10")).toEqual([]);
+    expect(switchesFor("DELETE", "/api/submissions/abc/voice/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10")).toEqual([
+      "submissions",
+    ]);
+    expect(BANNERS["capture.voice"]).toBe("Voice notes are coming soon.");
+    expect(BANNERS["speech.hosted"]).not.toMatch(/sarvam|vendor|third/i);
+  });
+
   it("leaves reads open, except file downloads and the wall", () => {
     expect(switchesFor("GET", "/api/submissions/abc/scan-status")).toEqual([]);
     expect(switchesFor("GET", "/api/ideas/IDEA-2026-000001")).toEqual([]);

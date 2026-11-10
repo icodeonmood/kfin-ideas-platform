@@ -38,6 +38,7 @@ export default async function Draft({ params }: { params: Promise<{ id: string }
       attachments={draft.attachments}
       attachmentLimits={config.attachments}
       micHint={isOn(states, "capture.mic_hint")}
+      voice={isOn(states, "capture.voice")}
     />
   );
 }

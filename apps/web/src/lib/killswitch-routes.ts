@@ -20,7 +20,9 @@ export type SwitchName =
   | "solutions.publish"
   | "committee.flow"
   | "appeals.filing"
-  | "capture.mic_hint";
+  | "capture.mic_hint"
+  | "capture.voice"
+  | "speech.hosted";
 
 interface Rule {
   methods: readonly string[];
@@ -36,6 +38,8 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/submissions\/[^/]+\/attachments\/?$/,
     switches: ["attachments.upload"],
   },
+  // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
+  { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
@@ -109,6 +113,9 @@ export const BANNERS: Record<SwitchName, string> = {
   "appeals.filing": "Appeals are paused for a short while. Please try again later.",
   // DEC-096: off only hides the hint under the quick capture box; nothing else changes, so no banner shows it.
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
+  "capture.voice": "Voice notes are coming soon.",
+  // Employees never see a vendor's name (DEC-096).
+  "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */

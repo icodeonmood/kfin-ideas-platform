@@ -255,6 +255,11 @@ export async function submit(me: CurrentUser, id: string, input: unknown) {
           dedupe_key: `scan:${ideaId}`,
         })
         .execute();
+      // Voice notes (DEC-096): any recording or text still held for this draft goes now it is shared.
+      await trx
+        .insertInto("jobs")
+        .values({ type: "voice.purge", payload: JSON.stringify({ idea_uuid: id }) })
+        .execute();
       return {
         id,
         idea_id: ideaId,

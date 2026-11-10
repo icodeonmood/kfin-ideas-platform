@@ -232,6 +232,16 @@ describe("kill switch flippers (§7.6)", () => {
     expect(canFlip(r("admin"), "learning.jobs")).toBe(true);
     expect(canFlip(r("infosec"), "learning.jobs")).toBe(false);
   });
+
+  it("voice notes (DEC-096): admin or InfoSec for the tip and voice notes; InfoSec alone for hosted speech", () => {
+    for (const name of ["capture.mic_hint", "capture.voice"]) {
+      expect(canFlip(r("admin"), name)).toBe(true);
+      expect(canFlip(r("infosec"), name)).toBe(true);
+      expect(canFlip(r("hr"), name)).toBe(false);
+    }
+    expect(canFlip(r("infosec"), "speech.hosted")).toBe(true);
+    expect(canFlip(r("admin"), "speech.hosted")).toBe(false);
+  });
 });
 
 describe("shared policy file", () => {

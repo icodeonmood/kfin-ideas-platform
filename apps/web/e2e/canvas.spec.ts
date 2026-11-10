@@ -15,6 +15,7 @@ import {
   setSwitch,
   signIn,
 } from "./helpers";
+import { withSwitchLock } from "./switch-lock";
 
 const DETAILS =
   "Three people re-check every SIP form by hand for missing bank or nominee fields before keying it in.";
@@ -90,27 +91,29 @@ test("quick capture: the category is optional and can be chosen under Add more (
 });
 
 test("quick capture: the keyboard-mic tip follows capture.mic_hint (DEC-096)", async ({ browser }) => {
-  const before = await setSwitch(browser, "capture.mic_hint", "on");
-  try {
-    const ctx = await browser.newContext();
-    const page = await ctx.newPage();
-    await start(page, "quick");
-    await expect(page.getByText(MIC_HINT)).toBeVisible();
-    await setSwitch(browser, "capture.mic_hint", "off");
-    await expect
-      .poll(
-        async () => {
-          await page.reload();
-          return page.getByText(MIC_HINT).count();
-        },
-        { timeout: 20_000 },
-      )
-      .toBe(0);
-    await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toBeVisible();
-    await ctx.close();
-  } finally {
-    await restoreSwitches(browser, [["capture.mic_hint", before]]);
-  }
+  await withSwitchLock("capture.mic_hint", async () => {
+    const before = await setSwitch(browser, "capture.mic_hint", "on");
+    try {
+      const ctx = await browser.newContext();
+      const page = await ctx.newPage();
+      await start(page, "quick");
+      await expect(page.getByText(MIC_HINT)).toBeVisible();
+      await setSwitch(browser, "capture.mic_hint", "off");
+      await expect
+        .poll(
+          async () => {
+            await page.reload();
+            return page.getByText(MIC_HINT).count();
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(0);
+      await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toBeVisible();
+      await ctx.close();
+    } finally {
+      await restoreSwitches(browser, [["capture.mic_hint", before]]);
+    }
+  });
 });
 
 test("full canvas: six sections, exact questions, why-we-ask lines and example links (AT-B3-01)", async ({

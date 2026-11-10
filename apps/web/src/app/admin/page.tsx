@@ -43,6 +43,20 @@ export default async function Admin() {
         </p>
       ) : null}
       {showSwitches ? <KillSwitches initial={switches} /> : null}
+      {showSwitches ? (
+        <section aria-labelledby="speech-title">
+          <h2 id="speech-title">Voice notes</h2>
+          <p>
+            Voice notes in quick capture are turned into text by a speech engine on KFintech&apos;s own
+            server. They start when <code>capture.voice</code> is on, once IT, InfoSec and the DPO have
+            cleared them (DEC-096).
+          </p>
+          <p className="coming-soon coming-soon-light">
+            Hosted speech services for clearer voice notes in more Indian languages: coming soon. They stay
+            off (<code>speech.hosted</code>, InfoSec only) until InfoSec and the DPO approve.
+          </p>
+        </section>
+      ) : null}
       {showRoles ? <Roles initial={grants} /> : null}
       {showRoles ? (
         <p>

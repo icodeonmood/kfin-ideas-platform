@@ -32,6 +32,8 @@ import {
 } from "@/lib/canvas/rules";
 
 import { Attachments, type AttachmentItem, type AttachmentLimits } from "./attachments";
+import { insertTranscript } from "./voice-logic";
+import { VoiceRecorder } from "./voice-recorder";
 
 type Example = { slug: string; section: string };
 type Props = {
@@ -46,6 +48,8 @@ type Props = {
   attachmentLimits: AttachmentLimits;
   /** `capture.mic_hint` (DEC-096): suggest the phone keyboard's mic under the quick capture box. */
   micHint: boolean;
+  /** `capture.voice` (DEC-096): record a voice note that becomes text in the box; off shows "coming soon". */
+  voice: boolean;
 };
 
 const fid = (path: string) => "f-" + path.replace(/[.]/g, "-");
@@ -234,6 +238,13 @@ export function CanvasForm(props: Props) {
                   {MIC_HINT}
                 </p>
               ) : null}
+              <VoiceRecorder
+                ideaId={props.id}
+                enabled={props.voice}
+                onTranscript={(heard) =>
+                  setCanvas((c) => setPath(c, "details", insertTranscript(c.details, heard)))
+                }
+              />
               <Attachments
                 ideaId={props.id}
                 files={files}
