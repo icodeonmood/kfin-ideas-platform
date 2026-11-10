@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { BANNERS } from "@/lib/killswitch-routes";
 import { can } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
 import { emberCurrent, emberIssue } from "@/server/ember";
@@ -35,9 +36,9 @@ export default async function Page() {
   if (issue === null)
     return <p className="notice">We can&apos;t load the draft just now. Please try again in a minute.</p>;
   const blocked = issue.ember_paused
-    ? "Sending The Ember is paused for now."
+    ? BANNERS["ember.send"]
     : issue.ones_paused
-      ? "The Ones are resting from the wall, so The Ember can't go out just now."
+      ? BANNERS["ones.public"]
       : !issue.note
         ? "Add the chair's note before sending."
         : null;
