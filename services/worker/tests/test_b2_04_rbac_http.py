@@ -1,7 +1,8 @@
 """AT-B2-04 (HTTP half): for every role column in §3.1 and every day-one endpoint in §8, the running proxy
 allows or denies exactly as policy/rbac.yaml says. Table-driven, generated from the policy file.
 
-Allowed means "not 401/403" (the route itself may still be unbuilt: 404 or 501). Denied means exactly 403.
+Allowed means "not 401/403" (the route itself may still be unbuilt: 404 or 501), or a 403 the service behind the
+proxy gave for a finer rule than the role (such as `chair_only`). Denied means exactly 403.
 
 Membership-scoped endpoints (BLD-108) are open to everyone signed in at the proxy but served only to members of a
 group (for "ones": an active One, DEC-077). No role grants membership, so every role column expects 403 there,
@@ -46,6 +47,19 @@ MEMBERSHIP: dict[tuple[str, str], str] = {
 }
 
 
+def _service_refusal(response: Any) -> bool:
+    """A 403 from the service behind the proxy, not from the role check: the role was let through and the service
+    applied a finer rule, such as "only the chair opens a cycle" (`chair_only`). The proxy's own denials are
+    `forbidden` and `privacy_notice_required`. Seen once `committee.flow` is on (DEC-088)."""
+    if response.status_code != 403:
+        return False
+    try:
+        error = response.json().get("error")
+    except ValueError:
+        return False
+    return error not in (None, "forbidden", "privacy_notice_required")
+
+
 @pytest.fixture(scope="module")
 def sessions() -> Iterator[dict[str, Any]]:
     with connect(autocommit=True) as conn, people(conn) as make:
@@ -60,9 +74,10 @@ def test_matrix_for_role(role: str, sessions: dict[str, Any]) -> None:
     roles = _effective(role)
     wrong: list[str] = []
     for method, path, capabilities in ENDPOINTS:
-        status = browser.request(method, path, json={} if method != "GET" else None).status_code
+        response = browser.request(method, path, json={} if method != "GET" else None)
+        status = response.status_code
         allowed = _expected(roles, capabilities) and (method, path) not in MEMBERSHIP
-        if allowed and status in (401, 403):
+        if allowed and status in (401, 403) and not _service_refusal(response):
             wrong.append(f"{method} {path}: expected allowed, got {status}")
         if not allowed and status != 403:
             wrong.append(f"{method} {path}: expected 403, got {status}")

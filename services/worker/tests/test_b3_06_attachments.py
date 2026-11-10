@@ -19,6 +19,7 @@ import generators as g
 import pytest
 
 from attachments import store
+from core import killswitch
 from core.config import get_settings
 from core.db import connect
 from tests import files
@@ -148,8 +149,24 @@ def test_eicar_is_rejected_and_deleted(setup: Any) -> None:
     assert b.get(f"/api/attachments/{att}").status_code == 403
 
 
-def test_pdf_pan_rejected_with_page_and_clean_pdf_opens_for_reviewer(setup: Any) -> None:
-    make, conn = setup
+@pytest.fixture
+def deep_off(setup: Any) -> Iterator[Any]:
+    """The day-one behaviour without the deep check: images and scanned pages wait for it (`awaiting_check`).
+    The switch is on from launch (DEC-088), so this test turns it off and puts it back as it found it."""
+    _, conn = setup
+    before = conn.execute("SELECT state FROM kill_switches WHERE name = 'attachments.deep_check'").fetchone()
+    killswitch.set_switch(conn, "attachments.deep_check", "off", reason="test: deep check off", actor="test")
+    time.sleep(killswitch.CACHE_SECONDS + 1)  # the worker reads switches through a 10-second cache (BLD-006)
+    try:
+        yield setup
+    finally:
+        killswitch.set_switch(
+            conn, "attachments.deep_check", before["state"], reason="test: put back", actor="test"
+        )
+
+
+def test_pdf_pan_rejected_with_page_and_clean_pdf_opens_for_reviewer(deep_off: Any) -> None:
+    make, conn = deep_off
     owner = make()
     b = owner.browser()
     draft = new_draft(b)
