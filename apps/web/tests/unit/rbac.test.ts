@@ -129,6 +129,29 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(labels("working_group")).toEqual([...base, "Delivery"]);
     expect(labels("lob_committee")).toEqual([...base, "Lenses"]);
   });
+  it("with the committee flow on, Committee takes Desk decisions' place; LOB committees get it too (BLD-227)", () => {
+    const on = new Set(["committee.flow"]);
+    const withFlow = (role: string) => navFor(rolesOf(role), on).map((n) => n.label);
+    expect(withFlow("core_committee")).toEqual([...base, "Committee", "Ones", "Delivery", "Lenses"]);
+    expect(withFlow("lob_committee")).toEqual([...base, "Committee", "Lenses"]);
+    expect(withFlow("contributor")).toEqual(base);
+    expect(withFlow("admin")).toEqual([...base, "Ones", "Delivery", "Lenses", "Admin"]);
+    expect(navFor(rolesOf("core_committee"), on).find((n) => n.label === "Committee")?.href).toBe(
+      "/committee",
+    );
+    // Another switch does not count; with the flow paused core members keep their direct link.
+    expect(navFor(rolesOf("core_committee"), new Set(["clusters.batch"])).map((n) => n.label)).toContain(
+      "Desk decisions",
+    );
+  });
+  it("only the committee flow pair is tied to a switch, each item by one rule", () => {
+    const rules = policyJson.navigation as Array<{ when_on?: string; when_off?: string }>;
+    for (const r of rules) expect(Boolean(r.when_on && r.when_off)).toBe(false);
+    expect(rules.flatMap((r) => [r.when_on, r.when_off]).filter(Boolean)).toEqual([
+      "committee.flow",
+      "committee.flow",
+    ]);
+  });
   it("pages follow the same rules", () => {
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);

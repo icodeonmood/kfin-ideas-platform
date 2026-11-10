@@ -97,9 +97,17 @@ export function canSeePage(roles: Set<string>, path: string): boolean {
 
 export type NavItem = { label: string; href: string };
 
-export function navFor(roles: Set<string>): NavItem[] {
-  return (policy.navigation as Array<{ label: string; href: string; roles?: string[] }>)
+type NavRule = { label: string; href: string; roles?: string[]; when_on?: string; when_off?: string };
+
+/**
+ * The menu for these roles. `switchesOn` names the kill switches that are on; an item tied to a switch shows only
+ * while it is on (`when_on`) or off (`when_off`). Without it every switch counts as off (fail closed, §7.6).
+ */
+export function navFor(roles: Set<string>, switchesOn: ReadonlySet<string> = new Set()): NavItem[] {
+  return (policy.navigation as NavRule[])
     .filter((item) => !item.roles || item.roles.some((r) => roles.has(r)))
+    .filter((item) => !item.when_on || switchesOn.has(item.when_on))
+    .filter((item) => !item.when_off || !switchesOn.has(item.when_off))
     .map(({ label, href }) => ({ label, href }));
 }
 

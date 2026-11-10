@@ -252,14 +252,19 @@ pages:
   - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
-# Navigation (AT-B2-06): everyone gets the first three; the rest by role.
+# Navigation (AT-B2-06): everyone gets the first four; the rest by role. `when_on` / `when_off` name a kill switch:
+# the item shows only while that switch is on (or off). An unknown switch counts as off, as everywhere (§7.6).
+# BLD-227: with the committee flow on, "Committee" takes Desk decisions' place for the core committee (Desk
+# decisions stays one link away on /committee) and LOB committees get it too; with the flow paused, core members
+# keep their direct Desk decisions link.
 navigation:
   - { label: Share an idea,   href: /share }
   - { label: My ideas,        href: /my-ideas }
   - { label: Wall,            href: /wall }
   - { label: Messages,        href: /inbox }
   - { label: Review,          href: /review,          roles: [reviewer] }
-  - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee] }
+  - { label: Committee,       href: /committee,       roles: [core_committee, lob_committee], when_on: committee.flow }
+  - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee], when_off: committee.flow }
   - { label: Ones,            href: /ones/console,    roles: [core_committee, admin, ceo] }
   - { label: Delivery,        href: /delivery,        roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { label: Lenses,          href: /lenses,          roles: [lob_committee, core_committee, admin] }

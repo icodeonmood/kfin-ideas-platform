@@ -414,11 +414,21 @@
       ]
     },
     {
+      "label": "Committee",
+      "href": "/committee",
+      "roles": [
+        "core_committee",
+        "lob_committee"
+      ],
+      "when_on": "committee.flow"
+    },
+    {
       "label": "Desk decisions",
       "href": "/desk-decisions",
       "roles": [
         "core_committee"
-      ]
+      ],
+      "when_off": "committee.flow"
     },
     {
       "label": "Ones",

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { day } from "@/lib/dates";
 import { currentUser } from "@/server/auth/current";
 import { myIdeas } from "@/server/ideas";
+import { isOn, switchStates } from "@/server/killswitch";
 import { myOne, myTeam } from "@/server/ones";
 import { myPoints } from "@/server/points";
 
@@ -21,12 +22,15 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const [mine, one, team, points] = await Promise.all([
+  const [mine, one, team, points, states] = await Promise.all([
     myIdeas(me).catch(() => null),
     myOne(me).catch(() => null),
     myTeam(me).catch(() => null),
     myPoints(me).catch(() => null),
+    switchStates(),
   ]);
+  // Committee decisions and appeals live on /appeals; the link shows while the committee flow runs (BLD-227).
+  const committeeOn = isOn(states, "committee.flow");
   return (
     <>
       <h1>My ideas</h1>
@@ -37,6 +41,12 @@ export default async function Page() {
         <Link href="/my-ideas/lens">Your lens: your ideas and groups in numbers</Link>
         {" · "}
         <Link href="/journey">How an idea becomes a One</Link>
+        {committeeOn ? (
+          <>
+            {" · "}
+            <Link href="/appeals">Committee decisions on your ideas, and appeals</Link>
+          </>
+        ) : null}
       </p>
       {team && team.people.length ? (
         <p>

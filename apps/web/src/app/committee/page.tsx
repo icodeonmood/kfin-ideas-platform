@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { canSeePage } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
 import { rounds } from "@/server/committee";
 
@@ -36,6 +37,13 @@ export default async function Committee() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
   const data = await rounds(me);
+  // Desk decisions sits here now that Committee has its place in the menu (BLD-227); each link only for those who
+  // may open it, since LOB committees come here too.
+  const links = [
+    { href: "/desk-decisions", label: "Desk decisions" },
+    { href: "/appeals", label: "Appeals" },
+    { href: "/reports", label: "Fairness and calibration" },
+  ].filter((l) => canSeePage(me.roles, l.href));
   const list = data.rounds as Round[];
   const presentations = data.presentations as {
     id: string;
@@ -51,7 +59,12 @@ export default async function Committee() {
         everyone has scored.
       </p>
       <p>
-        <Link href="/appeals">Appeals</Link> · <Link href="/reports">Fairness and calibration</Link>
+        {links.map((l, i) => (
+          <span key={l.href}>
+            {i ? " · " : null}
+            <Link href={l.href}>{l.label}</Link>
+          </span>
+        ))}
       </p>
       {data.chair ? <OpenCycle /> : null}
       <section aria-labelledby="c-rounds" className="panel">

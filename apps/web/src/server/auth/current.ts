@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { effectiveRoles, navFor, type NavItem } from "@/lib/rbac";
 
 import { getDb } from "../db";
+import { switchStates } from "../killswitch";
 import { readSession, SESSION_COOKIE } from "./session";
 
 export type CurrentUser = {
@@ -38,6 +39,9 @@ export async function currentUser(): Promise<CurrentUser | null> {
     .executeTakeFirst();
   if (!user) return null;
   const roles = effectiveRoles(session.grants);
+  // Menu items tied to a switch (BLD-227) follow it; the states are cached for 10 seconds (BLD-006).
+  const states = await switchStates();
+  const switchesOn = new Set([...states].filter(([, state]) => state === "on").map(([name]) => name));
   return {
     id: user.id,
     name: user.name,
@@ -47,7 +51,7 @@ export async function currentUser(): Promise<CurrentUser | null> {
     contributorCode: user.contributor_code,
     grants: session.grants,
     roles,
-    nav: navFor(roles),
+    nav: navFor(roles, switchesOn),
     privacyAccepted: session.privacyAccepted,
   };
 }
