@@ -177,6 +177,7 @@ def open_cycle(
             "INSERT INTO capacity (cycle_id, presentation_slots, declared_by, declared_at) VALUES (%s, %s, %s, %s)",
             (cycle_id, slots, rev, now),
         )
+        parked = _parked_at_cycle(conn, rev, cycle_id, now)
         rounds = [
             open_round(conn, c["id"], cycle_id, now, closes)
             for c in conn.execute(
@@ -185,9 +186,66 @@ def open_cycle(
         ]
         conn.execute(
             "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'cycle.opened', %s, %s)",
-            (rev, f"cycle:{cycle_id}", Jsonb({"rounds": len(rounds), "presentation_slots": slots})),
+            (rev, f"cycle:{cycle_id}", Jsonb({"rounds": len(rounds), "presentation_slots": slots, **parked})),
         )
-    return {"cycle_id": cycle_id, "rounds": [r for r in rounds if r]}
+    return {"cycle_id": cycle_id, "rounds": [r for r in rounds if r], **parked}
+
+
+def _parks_without_joiners(conn: Conn, cluster_id: str) -> int:
+    """Committee parks of the group since a colleague last joined it: a joiner's link, or a new idea in it."""
+    row = conn.execute(
+        "SELECT count(*) AS n FROM decisions d WHERE d.cluster_id = %s AND d.outcome = 'parked' "
+        "AND d.decided_at > coalesce((SELECT max(t) FROM ("
+        "  SELECT l.created_at AS t FROM idea_links l WHERE l.link_type = 'joiner' AND (l.cluster_id = %s "
+        "    OR l.idea_id IN (SELECT idea_id FROM ideas WHERE cluster_id = %s))"
+        "  UNION ALL SELECT i.created_at FROM ideas i WHERE i.cluster_id = %s) j), '-infinity')",
+        (cluster_id, cluster_id, cluster_id, cluster_id),
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def _parked_at_cycle(conn: Conn, rev: str, cycle_id: str, now: dt.datetime) -> dict[str, list[str]]:
+    """Parked groups when a cycle opens (§4.7, BLD-228). Each comes back for a new written round, or, when its park
+    followed an overturned appeal, goes back to the chair to decide again (§4.12 step 4). After
+    `parked.archive_after_cycles_without_joiners` parks with no colleague joining, the group is archived instead:
+    it stays "parked" on screen and can still be appealed. Left where they are: a group with an open appeal (the
+    panel decides), and a park from qualify for missing evidence (no committee decision; it needs new evidence)."""
+    rule = dict(routing()["parked"])
+    if not rule.get("return_next_cycle"):
+        return {"returned": [], "archived": []}
+    rows = conn.execute(
+        "SELECT c.id, d.presentation_id FROM clusters c JOIN LATERAL (SELECT outcome, presentation_id FROM decisions "
+        "WHERE cluster_id = c.id ORDER BY decided_at DESC LIMIT 1) d ON true "
+        "WHERE c.stage = 'parked' AND c.state = 'approved' AND c.archived_at IS NULL AND d.outcome = 'parked' "
+        "AND NOT EXISTS (SELECT 1 FROM appeals a WHERE a.cluster_id = c.id AND a.state = 'open') "
+        "ORDER BY c.id FOR UPDATE OF c"
+    ).fetchall()
+    from committee.decide import _overturned
+
+    returned: list[str] = []
+    archived: list[str] = []
+    for r in rows:
+        cid, pid = str(r["id"]), r["presentation_id"]
+        if pid and _overturned(conn, str(pid)):
+            conn.execute("UPDATE presentations SET state = 'held' WHERE id = %s", (pid,))
+            engine.start(conn, "presentation", str(pid), "final_decision", now=now)
+            conn.execute("UPDATE clusters SET stage = 'presenting' WHERE id = %s", (cid,))
+            returned.append(cid)
+        elif _parks_without_joiners(conn, cid) >= int(rule["archive_after_cycles_without_joiners"]):
+            conn.execute("UPDATE clusters SET archived_at = %s WHERE id = %s", (now, cid))
+            archived.append(cid)
+        else:
+            conn.execute("UPDATE clusters SET stage = 'ready_for_scoring' WHERE id = %s", (cid,))
+            returned.append(cid)
+    for cid in returned + archived:
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, %s, %s, %s)",
+            (rev, "cluster.archived" if cid in archived else "cluster.returned", f"cluster:{cid}",
+             Jsonb({"cycle_id": cycle_id})),
+        )  # fmt: skip
+    if returned or archived:
+        log.info("cycle.parked_groups", cycle_id=cycle_id, returned=len(returned), archived=len(archived))
+    return {"returned": returned, "archived": archived}
 
 
 def open_round(
