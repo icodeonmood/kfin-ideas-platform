@@ -8,7 +8,7 @@ For: the product lead, walking through the app on the test Mac. Everything you'l
 make up migrate seed demo
 ```
 
-Open **http://localhost:3000**. `make demo` runs only on the local dev stack (`APP_ENV=dev`, and only against the local `ideas` database), and a second run changes nothing. **`make demo-reset`** starts the demo afresh: it removes only the demo's own people and everything that is theirs (their Ones records, proposals, deliveries and ideas) and takes the demo ideas' files out of the local company repo, so Find your crew has nothing left over. Run it to see the glow-up again; it only plays once.
+Open **http://localhost:3000**. Every feature is on, as at launch (DEC-088). A stack where older test runs left a feature switched off keeps it off: as Sana, switch it on in Admin. Committee appears in the menu only while the committee flow is on. `make demo` runs only on the local dev stack (`APP_ENV=dev`, and only against the local `ideas` database), and a second run changes nothing. **`make demo-reset`** starts the demo afresh: it removes only the demo's own people and everything that is theirs (their Ones records, proposals, deliveries and ideas) and takes the demo ideas' files out of the local company repo, so Find your crew has nothing left over. Run it to see the glow-up again; it only plays once.
 
 ## Sign in
 
