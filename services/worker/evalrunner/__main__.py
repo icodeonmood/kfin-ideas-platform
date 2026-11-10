@@ -177,7 +177,8 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
                 elif result["agent"] == "canvas-assist":
                     detail = (
                         f"submitter changes {m['submitter_field_changes']} · out-of-slice IDs {m['out_of_slice_ids']} "
-                        f"· summary leaks {m['neutral_summary_leaks']} · area tags {_pct(m['area_tag_accuracy'])}"
+                        f"· summary leaks {m['neutral_summary_leaks']} · area tags {_pct(m['area_tag_accuracy'])} "
+                        f"· unquoted {m['ungrounded_suggestions']} · dropped {m['suggestions_dropped']}"
                     )
                 else:  # newer agents: every metric, in order
                     detail = " · ".join(
