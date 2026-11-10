@@ -894,6 +894,19 @@ flowchart LR
 3. Attachments upload straight to quarantine and start processing (§4.2, "Attachments") while the person keeps writing.
 4. On submit, `POST /api/submissions/{id}/submit` assigns `SUB-` and `IDEA-` IDs, sets stage `scanning` and starts the scan. On day one the browser polls `GET /api/submissions/{id}/scan-status` every 2 seconds and shows a progress spinner with the current step. Server-sent events replace polling in week 3.
 
+**Voice notes in quick capture (DEC-096, behind `capture.voice`).** Under the box, "Record a voice note instead" records up to 3 minutes in the browser (MediaRecorder, 32 kbit/s; keyboard only, a quiet clock, a polite live region, no animation), with play back, record again and delete. The microphone is allowed by `Permissions-Policy` only on `/share` pages.
+1. "Turn it into text" sends the recording to `POST /api/submissions/{id}/voice` (behind `capture.voice` and `submissions`). The worker keeps it in the quarantine bucket only, with no file name, typed by its first bytes (WebM, Ogg, MP4, WAV), 5 MB at most, three waiting per draft at most.
+2. Job `voice.transcribe`: virus scan first, then `gateway.speech`. Its routes, set by `SPEECH_MODE`:
+   - `fake`, in dev and tests;
+   - `local`, on KFin's own server with no network: faster-whisper now, IndicConformer for Indian languages coming soon; image built with `WITH_SPEECH=1`, model files at `SPEECH_MODEL_PATH`;
+   - hosted routes (Sarvam first): built, and refused unless both `SPEECH_HOSTED_APPROVAL` is set and `speech.hosted` is on. Raw voice cannot be tagged before it leaves (non-negotiables 1 and 2).
+3. Spoken numbers become digits (`voice/numbers.py`: English and Hindi, romanised and Devanagari, "double" and "triple"; letters spelled out join too). Every value the level-1 patterns block is then left out ("[PAN left out]"), so investor identifiers are never stored, even encrypted.
+4. The text is held encrypted (context `voice:<id>`) and the recording is deleted at once.
+5. The browser polls `GET /api/submissions/{id}/voice/{voice}` and adds the text to the box for the person to correct; the usual browser check runs on it. The browser then deletes the held copy (`DELETE …/voice/{voice}`).
+6. Anything left goes on share (`voice.purge`), with the draft (`drafts.purge`), or after 24 hours (`voice.sweep`, every 15 minutes). Each deletion is in `audit_log` with IDs and a reason code only.
+
+Reviewers never hear a recording; nobody can open one. The speech golden set (`eval/golden/speech.jsonl`) runs only with `SPEECH_MODE=local`.
+
 ### 4.2 Scan **[Day 1]**
 
 **Trigger:** submission. Target time: 15 seconds at the 95th percentile.
@@ -1903,6 +1916,8 @@ Stored in `kill_switches`, read on every request (10-second cache). Every change
 | `ember.send` | Sending The Ember stops; queued Ember emails wait; drafts, the chair's note and the archive carry on (BLD-128). `ones.public` off stops sending too | Admin | — |
 | `solutions.publish` | Approving a solution write-up stops, so nothing new reaches "Already running" matches; drafting and submitting carry on (BLD-133) | Admin | — |
 | `capture.mic_hint` | The tip under the quick capture box that suggests the phone keyboard's mic is hidden; nothing else changes (DEC-096, BLD-C001). On from day one | Admin, InfoSec | — |
+| `capture.voice` | No new voice notes: the panel under the quick capture box says they are coming soon, and a recording already sent is deleted unheard. Starts **off** until IT's server memory, InfoSec and the DPO clear it (DEC-096, BLD-C002) | Admin, InfoSec | — |
+| `speech.hosted` | Hosted speech services cannot be called, whatever `SPEECH_MODE` says; the approval reference is needed as well. Starts **off** until InfoSec and the DPO approve (DEC-096) | InfoSec | — |
 
 ### 7.7 Accessibility **[Day 1]**
 

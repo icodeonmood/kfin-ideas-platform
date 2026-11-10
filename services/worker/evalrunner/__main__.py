@@ -223,7 +223,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.harness_only:
         return 0
-    return run_agents(args.seed, switch_off=args.switch_off_failing)
+    status = run_agents(args.seed, switch_off=args.switch_off_failing)
+    from evalrunner import speech  # voice notes (DEC-096): runs only with SPEECH_MODE=local
+
+    return status or speech.run()
 
 
 if __name__ == "__main__":

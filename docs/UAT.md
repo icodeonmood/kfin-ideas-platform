@@ -14,6 +14,7 @@ For: KFin IT and the product team, deploying The Garage · Ideas to the UAT host
 | KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox or `SMTP_URL` | IT | app env file |
 | Model route decision (D1). Without it the deploy starts in Mode B: `ai.all` off, scans queue | InfoSec | app env file |
 | BGE-M3 model files, mounted at `EMBEDDINGS_MODEL_PATH`, and the worker image built with `--build-arg WITH_BGE=1` (AT-B5-01) | Product team | host folder |
+| Voice notes (DEC-096): 2–3 GB more memory for the worker; a speech model (faster-whisper, multilingual, CTranslate2 int8) mounted at `SPEECH_MODEL_PATH`; the worker image built with `--build-arg WITH_SPEECH=1`; `SPEECH_MODE=local`. Leave `SPEECH_HOSTED_APPROVAL` and `SPEECH_HOSTED_KEY` empty: hosted speech stays off until InfoSec and the DPO approve | IT (memory), product team (model files) | host folder, app env file |
 
 ## Env files
 
@@ -49,8 +50,9 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 1. Grant the first admin (they then use the Admin page for everyone else):
    `docker compose -p kfin-ideas-uat … exec worker python -m identity.grants grant --employee-id <ID> --role admin --reason "First UAT admin, <ticket>" --actor ops:<staff code>`
    The person must have signed in once, or be in the HR import.
-2. When the model route is approved: set `LLM_MODE` and the key in the app env file, restart the worker, run `make eval` against the route, then switch `ai.all` on from the Admin page with a reason.
-3. Point KFin's reverse proxy (TLS) at the web app's port (`UAT_WEB_PORT`, default 3100). Only the web app is published.
+2. Voice notes start off (`capture.voice`, DEC-096). Switch them on from the Admin page, with a reason, only once all three are true: the host has the memory and the speech model is mounted (`SPEECH_MODE=local`), InfoSec has agreed to the microphone and the model, and the DPO's privacy notice covers voice notes. Then record one synthetic voice note and check that its text reaches the box and the recording is gone from the quarantine bucket.
+3. When the model route is approved: set `LLM_MODE` and the key in the app env file, restart the worker, run `make eval` against the route, then switch `ai.all` on from the Admin page with a reason.
+4. Point KFin's reverse proxy (TLS) at the web app's port (`UAT_WEB_PORT`, default 3100). Only the web app is published.
 
 ## Rehearsal
 
