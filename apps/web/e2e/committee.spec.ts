@@ -17,6 +17,7 @@ import {
   setSwitch,
   toRevealedRound,
 } from "./committee-helpers";
+import type { SwitchState } from "./helpers";
 import { withSwitchLock } from "./switch-lock";
 
 // Two colleagues from different LOBs who are not sign-in personas: accepting gives them working-group grants,
@@ -30,7 +31,8 @@ test("from a group of ideas to a committee decision", async ({ browser }, testIn
 });
 
 async function committeeFlow(browser: Browser) {
-  for (const s of ["committee.flow", "clusters.batch"]) await setSwitch(browser, s, "on");
+  const before: Array<[string, SwitchState]> = [];
+  for (const s of ["committee.flow", "clusters.batch"]) before.push([s, await setSwitch(browser, s, "on")]);
   try {
     const { cluster, roundHref } = await toRevealedRound(browser, CONTRIBUTORS, officeWords(17), "4", true);
     const chair = await as(browser, CHAIR);
@@ -86,6 +88,6 @@ async function committeeFlow(browser: Browser) {
     await axeBoth(chair.page);
     await chair.close();
   } finally {
-    for (const s of ["committee.flow", "clusters.batch"]) await setSwitch(browser, s, "off");
+    for (const [s, state] of before) await setSwitch(browser, s, state); // as we found them (DEC-088)
   }
 }

@@ -1,30 +1,49 @@
 /**
  * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
- * committee — plus Desk decisions, Ones, Delivery and Lenses; admin — plus Ones, Delivery, Lenses and Admin (the Ones
- * console, DEC-040; delivery and lenses, BLD-115 to BLD-122).
+ * committee — plus Committee (Desk decisions while the committee flow is paused, BLD-227), Ones, Delivery and
+ * Lenses; admin — plus Ones, Delivery, Lenses and Admin (the Ones console, DEC-040; delivery and lenses, BLD-115 to
+ * BLD-122). My ideas links to committee decisions and appeals while the committee flow runs.
  * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
  * keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
  */
 import { expect, test } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, navLabels, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, navLabels, PERSONAS, signIn, switchIsOn } from "./helpers";
 
 const BASE = ["Share an idea", "My ideas", "Wall", "Messages"];
 
 test.describe("navigation by role (AT-B2-06)", () => {
-  const cases: Array<[keyof typeof PERSONAS, string[]]> = [
-    ["contributor", BASE],
-    ["reviewer", [...BASE, "Review"]],
-    ["core", [...BASE, "Desk decisions", "Ones", "Delivery", "Lenses"]],
-    ["admin", [...BASE, "Ones", "Delivery", "Lenses", "Admin"]],
+  // The core committee's second item follows the committee flow switch (BLD-227); it is on from day one (DEC-088).
+  const deskOrCommittee = async () => ((await switchIsOn("committee.flow")) ? "Committee" : "Desk decisions");
+  const cases: Array<[keyof typeof PERSONAS, () => Promise<string[]>]> = [
+    ["contributor", async () => BASE],
+    ["reviewer", async () => [...BASE, "Review"]],
+    ["core", async () => [...BASE, await deskOrCommittee(), "Ones", "Delivery", "Lenses"]],
+    ["admin", async () => [...BASE, "Ones", "Delivery", "Lenses", "Admin"]],
   ];
   for (const [persona, expected] of cases) {
-    test(`${persona} sees ${expected.join(", ")}`, async ({ page }) => {
+    test(`${persona} sees the menu for their roles`, async ({ page }) => {
       await signIn(page, PERSONAS[persona]);
-      expect(await navLabels(page)).toEqual(expected);
+      expect(await navLabels(page)).toEqual(await expected());
     });
   }
+
+  test("My ideas links to committee decisions and appeals while the committee flow runs", async ({
+    page,
+  }) => {
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/my-ideas");
+    const link = page.getByRole("link", { name: "Committee decisions on your ideas, and appeals" });
+    if (await switchIsOn("committee.flow")) {
+      await expect(link).toHaveAttribute("href", "/appeals");
+      await link.click();
+      await expect(page.getByRole("heading", { level: 1, name: "Appeals" })).toBeVisible();
+      await expectNoSeriousAxeIssues(page);
+    } else {
+      await expect(link).toHaveCount(0);
+    }
+  });
 });
 
 test("every navigation item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {

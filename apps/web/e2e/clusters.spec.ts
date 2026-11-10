@@ -6,10 +6,10 @@
  * Desktop project only: a second run started by the phone project at the same time would replace this run's
  * proposals (a new run supersedes open ones), so the 360 px check is done inside this test.
  */
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, setSwitch, signIn, waitUntilIndexed } from "./helpers";
 import { nameTheGroup, openProposalHolding, runGroupingNow } from "./proposals";
 import { withSwitchLock } from "./switch-lock";
 
@@ -43,23 +43,6 @@ async function share(page: Page, words: string): Promise<string> {
   return ideaId;
 }
 
-async function setSwitch(browser: Browser, state: "on" | "off") {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  await signIn(page, PERSONAS.admin);
-  await page.goto("/admin");
-  const row = page.getByRole("row", { name: /clusters\.batch/ });
-  const action = state === "on" ? "Switch on" : "Switch off";
-  const toggle = row.getByRole("button", { name: `${action}: clusters.batch` });
-  if (await toggle.isVisible()) {
-    await toggle.click();
-    await row.getByLabel("Reason for this change").fill(`e2e test: weekly grouping ${state}`);
-    await row.getByRole("button", { name: action, exact: true }).click();
-    await expect(row.getByText(state === "on" ? "On" : "Off", { exact: true })).toBeVisible();
-  }
-  await ctx.close();
-}
-
 test("the desk runs the weekly grouping and approves a proposal", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
   test.setTimeout(900_000); // includes waiting for committee.spec, which flips the same switch
@@ -80,7 +63,7 @@ test("the desk runs the weekly grouping and approves a proposal", async ({ brows
     const words = (where: string) =>
       `${made.join(" ")} pile up at the ${where} counter; ${made.slice(0, 4).join(" ")} again tomorrow.`;
 
-    await setSwitch(browser, "on");
+    const before = await setSwitch(browser, "clusters.batch", "on");
     try {
       const ctxA = await browser.newContext();
       const a = await ctxA.newPage();
@@ -130,7 +113,7 @@ test("the desk runs the weekly grouping and approves a proposal", async ({ brows
       await expectNoSeriousAxeIssues(r);
       await ctxR.close();
     } finally {
-      await setSwitch(browser, "off");
+      await setSwitch(browser, "clusters.batch", before); // as we found it (DEC-088)
     }
   });
 });

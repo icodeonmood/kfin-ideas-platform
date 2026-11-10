@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 /** Personas from `make seed` (BLD-039). */
@@ -39,6 +39,34 @@ export async function expectNoSeriousAxeIssues(page: Page) {
   expect(blocking, `axe on ${page.url()}`).toEqual([]);
 }
 
+export type SwitchState = "on" | "off";
+
+/**
+ * Set a kill switch through the admin screen, as an admin would, and return the state it was in, so a test can put
+ * it back exactly as it found it (`finally`). Since DEC-088 every feature starts on, so a test must never leave a
+ * switch off just because it once was the default.
+ */
+export async function setSwitch(browser: Browser, name: string, state: SwitchState): Promise<SwitchState> {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await signIn(page, PERSONAS.admin);
+  await page.goto("/admin");
+  const row = page.getByRole("row", { name: new RegExp(name.replaceAll(".", "\\.")) });
+  const action = state === "on" ? "Switch on" : "Switch off";
+  const toggle = row.getByRole("button", { name: `${action}: ${name}` });
+  await expect(row).toBeVisible(); // the row is there before we read which button it offers
+  let before: SwitchState = state;
+  if (await toggle.isVisible()) {
+    before = state === "on" ? "off" : "on";
+    await toggle.click();
+    await row.getByLabel("Reason for this change").fill(`e2e test: ${name} ${state}`);
+    await row.getByRole("button", { name: action, exact: true }).click();
+    await expect(row.getByText(state === "on" ? "On" : "Off", { exact: true })).toBeVisible();
+  }
+  await ctx.close();
+  return before;
+}
+
 export async function navLabels(page: Page): Promise<string[]> {
   return page.getByRole("navigation", { name: "Main" }).getByRole("link").allInnerTexts();
 }
@@ -46,6 +74,18 @@ export async function navLabels(page: Page): Promise<string[]> {
 /** The dev database (`make e2e` passes it from `.env`; BLD-200). Read-only use: tests only wait on it. */
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
+
+/** Whether a kill switch is on, read from the dev database (one row; writes nothing). */
+export async function switchIsOn(name: string): Promise<boolean> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query("SELECT state FROM kill_switches WHERE name = $1", [name]);
+    return rows[0]?.state === "on";
+  } finally {
+    await client.end();
+  }
+}
 
 /**
  * Wait until the search index holds an idea's card (repo writer, then indexer), instead of a fixed sleep: under

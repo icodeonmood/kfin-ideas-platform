@@ -7,6 +7,8 @@ import { expect, type Browser, type Page } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
+
+export { setSwitch } from "./helpers";
 import { nameTheGroup, openProposalHolding, runGroupingNow } from "./proposals";
 
 export const CHAIR = "SYN-00006";
@@ -17,21 +19,6 @@ export async function as(browser: Browser, who: string): Promise<{ page: Page; c
   const page = await ctx.newPage();
   await signIn(page, who);
   return { page, close: () => ctx.close() };
-}
-
-export async function setSwitch(browser: Browser, name: string, state: "on" | "off") {
-  const { page, close } = await as(browser, PERSONAS.admin);
-  await page.goto("/admin");
-  const row = page.getByRole("row", { name: new RegExp(name.replace(".", "\\.")) });
-  const action = state === "on" ? "Switch on" : "Switch off";
-  const toggle = row.getByRole("button", { name: `${action}: ${name}` });
-  if (await toggle.isVisible()) {
-    await toggle.click();
-    await row.getByLabel("Reason for this change").fill(`e2e test: committee flow ${state}`);
-    await row.getByRole("button", { name: action, exact: true }).click();
-    await expect(row.getByText(state === "on" ? "On" : "Off", { exact: true })).toBeVisible();
-  }
-  await close();
 }
 
 export async function share(page: Page, words: string): Promise<string> {
