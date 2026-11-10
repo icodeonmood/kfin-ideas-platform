@@ -115,7 +115,8 @@ def test_redirect_and_reconsideration_point_to_disagree_on_the_idea_page() -> No
 def test_an_adoption_request_links_only_when_the_reader_can_open_the_desk() -> None:
     data = BASE | {"requester": {"lob_name": "MF Operations"}, "solution": {"title": "Mandate checks"}}
     _, body = _render("adoption-requested", data | {"request": {"context": "We would use it in MF ops"}})
-    assert "Open the request" not in body and "the review desk has their request" in body
+    assert "Open the request" not in body and "the 1% Club team can put you in touch" in body
+    assert "review desk" not in body
     assert "> We would use it in MF ops" in body
     data["links"] = BASE["links"] | {"request": "https://club.example/review"}
     _, body = _render("adoption-requested", data | {"request": {"context": ""}})
