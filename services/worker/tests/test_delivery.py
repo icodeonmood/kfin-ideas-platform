@@ -326,6 +326,33 @@ def test_a_group_delivery_moves_grouped_ideas_but_not_withdrawn_ones(ones_db: An
     assert (stage(db, left), stage(db, parked)) == ("withdrawn", "parked")
 
 
+def test_group_delivery_messages_use_the_group_name_and_plain_step_words(ones_db: Any, crew: Any) -> None:
+    """BLD-157: no group reference number, solution number or build-team step ("Building: QA") in a message."""
+    db = ones_db
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(6100, 6999) if f"CL-{n}" not in taken)
+    db.execute(
+        "INSERT INTO clusters (id, stage, distinct_contributors, title) VALUES (%s, 'picked', 2, %s)",
+        (cl, "Branch forms wait in the outward register"),
+    )
+    member = helpers.insert_idea(db, contributor=code_of(db, crew["submitter"]), stage="in_cluster")
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = %s", (cl, member))
+    did = service.start(db, crew["member"], {"subject_type": "cluster", "subject_id": cl, "track": "build"})[
+        "id"
+    ]
+    refs = {"delivery_id": did, "subject_id": cl, "phase": "08-qa"}
+    data = render.variables(db, crew["submitter"], "delivery.phase_changed", refs)
+    subject_line, body, _ = templates.render("delivery-phase-changed", data)
+    assert subject_line == "Branch forms wait in the outward register: Being built"
+    assert "has moved on to its next step. It is still being built." in body
+    assert cl not in subject_line + body and "QA" not in subject_line + body
+    refs = {"delivery_id": did, "subject_id": cl, "decision": "approved", "solution_id": "SOL-0042"}
+    _, body, _ = templates.render(
+        "delivery-writeup-decided", render.variables(db, crew["owner"], "delivery.writeup_decided", refs)
+    )
+    assert '"Already running" when they share' in body and "SOL-0042" not in body and cl not in body
+
+
 def test_start_from_pick_is_idempotent_and_moves_the_group(ones_db: Any, crew: Any) -> None:
     """For the committee flow (lane B): called inside its decision transaction, twice is harmless, and grouped
     ideas move to handover with their group."""
