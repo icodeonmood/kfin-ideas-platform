@@ -80,3 +80,5 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 - Model calls use the fake route, so the assistant's suggestions on new ideas are sample text.
 - The demo's measured impact is made up and marked as demo data.
 - A check of the whole tour runs with `cd apps/web && DEMO_TOUR=1 npx playwright test e2e/demo-tour.spec.ts`. It leaves the glow-up unplayed.
+- **Running the tests on this Mac:** `make demo-remove`, then `make lint test e2e eval`, then `make demo`. With the demo loaded, Meera and Vivek join every new scoring round, so the committee tests wait for scores that never come (BLD-154).
+- **"Adding research files is paused"** usually means the virus scanner stopped answering and uploads switched themselves off (an admin can also pause them by hand). They stay off until someone switches them back: once ClamAV is healthy, Sana turns `attachments.upload` on in Admin.

@@ -88,7 +88,7 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 
 ### 4.3 Scanner unreachable (`attachments.upload` off)
 1. Check the scanner host in the smoke report (`python -m bootstrap.smoke`), and `CLAMAV_HOST`.
-2. When it answers again, switch uploads back on. Files still in quarantine are checked on their job's next retry; a file whose retries ran out was rejected as "check failed", and the person is told to upload it again.
+2. When it answers again, switch uploads back on: the switch never comes back on by itself. Files still in quarantine are checked on their job's next retry; a file whose retries ran out was rejected as "check failed", and the person is told to upload it again.
 
 ### 4.4 Email bouncing (`comms.email` off)
 1. Look at `notifications` with `state = 'failed'` and `error_code = 'smtprecipientsrefused'` in the last hour (IDs only). Only refusals the mail server gives at send time are seen; delivery reports that arrive later in the Graph mailbox are not read on day one.
