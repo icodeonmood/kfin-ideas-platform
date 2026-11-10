@@ -357,3 +357,73 @@ def test_rotation_keeps_a_member_who_did_not_vote_for_the_outcome(qualified: Any
         str(p) for p in db.execute("SELECT panel FROM appeals WHERE id = %s", (aid,)).fetchone()["panel"]
     }
     assert len(panel) == 3 and qualified["chair"] not in panel and panel & set(newcomers)
+
+
+# ---- parked groups at the next cycle (§4.7, BLD-228) ---------------------------------------------------------------
+
+
+def _park_again(q: Any) -> str:
+    """The next cycle: the parked group is back for a new round, and the committee parks it again."""
+    out = rounds.open_cycle(q["db"], q["chair"], {"presentation_slots": 8})
+    assert out["returned"] == [q["cid"]] and len(out["rounds"]) == 1
+    rid = str(out["rounds"][0])
+    rounds.prescore_round(q["db"], rid)
+    _score_all(q, rid, value=1)
+    rounds.act(q["db"], rid, q["chair"], {"action": "decide", "outcome": "parked", "reason_code": "CAPACITY",
+                                          "note": "Worth doing, but this cycle's capacity is already full."})  # fmt: skip
+    d = (
+        q["db"]
+        .execute(
+            "SELECT id FROM decisions WHERE cluster_id = %s ORDER BY decided_at DESC LIMIT 1", (q["cid"],)
+        )
+        .fetchone()
+    )
+    return str(d["id"])
+
+
+def _stage(q: Any) -> tuple[str, Any]:
+    c = q["db"].execute("SELECT stage, archived_at FROM clusters WHERE id = %s", (q["cid"],)).fetchone()
+    return str(c["stage"]), c["archived_at"]
+
+
+def test_a_parked_group_comes_back_at_the_next_cycle_and_is_archived_after_two_parks(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    _round_decision(qualified, "parked", "NOT_FEASIBLE_NOW")
+    second = _park_again(qualified)
+    assert _stage(qualified) == ("parked", None)
+    # Two parks and no colleague joined: archived at the next cycle, not back for a third round.
+    out = rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})
+    assert out["archived"] == [qualified["cid"]] and out["returned"] == [] and out["rounds"] == []
+    stage, archived_at = _stage(qualified)
+    assert stage == "parked" and archived_at is not None  # still "parked" on screen
+    # The second park can still be appealed; the first never could be.
+    assert {d["decision_id"] for d in appeals.mine(db, _owner(qualified)) if d["can_appeal"]} == {second}
+    audit = db.execute(
+        "SELECT action FROM audit_log WHERE entity = %s ORDER BY id", (f"cluster:{qualified['cid']}",)
+    ).fetchall()
+    assert [a["action"] for a in audit][-2:] == ["cluster.returned", "cluster.archived"]
+    # A later cycle leaves an archived group alone.
+    assert rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})["archived"] == []
+
+
+def test_a_new_joiner_keeps_a_parked_group_coming_back(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    _round_decision(qualified, "parked", "NOT_FEASIBLE_NOW")
+    _park_again(qualified)
+    code = _owner_of(qualified)["contributor_code"]
+    db.execute(
+        "INSERT INTO idea_links (cluster_id, contributor_code, link_type) VALUES (%s, %s, 'joiner')",
+        (qualified["cid"], code),
+    )
+    out = rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})
+    assert out["returned"] == [qualified["cid"]] and out["archived"] == [] and len(out["rounds"]) == 1
+
+
+def test_a_group_under_appeal_waits_for_the_panel(qualified: Any) -> None:  # noqa: F811
+    db = qualified["db"]
+    _round_decision(qualified, "parked", "NOT_FEASIBLE_NOW")
+    second = _park_again(qualified)
+    _file(qualified, second)
+    out = rounds.open_cycle(db, qualified["chair"], {"presentation_slots": 8})
+    assert out["returned"] == [] and out["archived"] == [] and out["rounds"] == []
+    assert _stage(qualified) == ("appealed", None)  # the panel decides what happens next
