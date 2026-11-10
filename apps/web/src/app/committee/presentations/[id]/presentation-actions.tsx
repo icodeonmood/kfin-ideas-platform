@@ -109,7 +109,13 @@ export function PresentationActions({ id, view }: { id: string; view: CommitteeP
     setMessage(
       res?.ok
         ? { text: done, error: false }
-        : { text: ERRORS[String(out?.error)] ?? "That did not go through. Please try again.", error: true },
+        : {
+            text:
+              (typeof out?.banner === "string" ? out.banner : undefined) ??
+              ERRORS[String(out?.error)] ??
+              "That did not go through. Please try again.",
+            error: true,
+          },
     );
     statusRef.current?.focus();
     if (res?.ok && body.action !== "draft_reasons") router.refresh();

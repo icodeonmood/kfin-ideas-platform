@@ -27,10 +27,11 @@ export default async function Page() {
     myOne(me).catch(() => null),
     myTeam(me).catch(() => null),
     myPoints(me).catch(() => null),
-    switchStates(),
+    switchStates().catch(() => new Map<string, "on" | "off">()),
   ]);
-  // Committee decisions and appeals live on /appeals; the link shows while the committee flow runs (BLD-227).
-  const committeeOn = isOn(states, "committee.flow");
+  // Committee decisions and appeals live on /appeals (BLD-227). The link shows while the committee flow runs, and
+  // while appeals can be filed even if the flow is paused, so nobody loses the way to an open appeal window.
+  const committeeOn = isOn(states, "committee.flow") || isOn(states, "appeals.filing");
   return (
     <>
       <h1>My ideas</h1>

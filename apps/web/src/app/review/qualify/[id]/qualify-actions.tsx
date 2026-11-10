@@ -94,14 +94,16 @@ export function QualifyActions({ id, view, mayAct }: { id: string; view: Qualify
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
-    const out = (await res?.json().catch(() => null)) as { error?: string } | null;
+    const out = (await res?.json().catch(() => null)) as { error?: string; banner?: string } | null;
     setBusy(false);
     setMessage(
       res?.ok
         ? { text: done, error: false }
         : {
             text:
-              ERRORS[String(out?.error)] ?? "That did not go through. Please check the form and try again.",
+              out?.banner ??
+              ERRORS[String(out?.error)] ??
+              "That did not go through. Please check the form and try again.",
             error: true,
           },
     );

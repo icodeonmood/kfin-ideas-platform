@@ -39,8 +39,9 @@ export async function currentUser(): Promise<CurrentUser | null> {
     .executeTakeFirst();
   if (!user) return null;
   const roles = effectiveRoles(session.grants);
-  // Menu items tied to a switch (BLD-227) follow it; the states are cached for 10 seconds (BLD-006).
-  const states = await switchStates();
+  // Menu items tied to a switch (BLD-227) follow it; the states are cached for 10 seconds (BLD-006). If they cannot
+  // be read, every switch counts as off for the menu (fail closed, as navFor says), and signing in still works.
+  const states = await switchStates().catch(() => new Map<string, "on" | "off">());
   const switchesOn = new Set([...states].filter(([, state]) => state === "on").map(([name]) => name));
   return {
     id: user.id,

@@ -54,12 +54,15 @@ export function Invitation({ id, view }: { id: string; view: ContributorPresenta
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
-    const out = (await res?.json().catch(() => null)) as { error?: string } | null;
+    const out = (await res?.json().catch(() => null)) as { error?: string; banner?: string } | null;
     setBusy(false);
     setMessage(
       res?.ok
         ? { text: done, error: false }
-        : { text: ERRORS[String(out?.error)] ?? "That did not go through. Please try again.", error: true },
+        : {
+            text: out?.banner ?? ERRORS[String(out?.error)] ?? "That did not go through. Please try again.",
+            error: true,
+          },
     );
     statusRef.current?.focus();
     if (res?.ok) router.refresh();

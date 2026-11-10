@@ -36,7 +36,8 @@ const STATE: Record<string, string> = {
 export default async function Committee() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const data = await rounds(me);
+  // A slow or unreachable worker must not take the links below with it: Desk decisions is reached from here.
+  const data = await rounds(me).catch(() => null);
   // Desk decisions sits here now that Committee has its place in the menu (BLD-227); each link only for those who
   // may open it, since LOB committees come here too.
   const links = [
@@ -44,8 +45,8 @@ export default async function Committee() {
     { href: "/appeals", label: "Appeals" },
     { href: "/reports", label: "Fairness and calibration" },
   ].filter((l) => canSeePage(me.roles, l.href));
-  const list = data.rounds as Round[];
-  const presentations = data.presentations as {
+  const list = (data?.rounds ?? []) as Round[];
+  const presentations = (data?.presentations ?? []) as {
     id: string;
     cluster_id: string;
     state: string;
@@ -66,55 +67,62 @@ export default async function Committee() {
           </span>
         ))}
       </p>
-      {data.chair ? <OpenCycle /> : null}
-      <section aria-labelledby="c-rounds" className="panel">
-        <h2 id="c-rounds">Reviews</h2>
-        {list.length ? (
-          <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">
-            <table>
-              <caption>{list.length} reviews</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Review</th>
-                  <th scope="col">Committee</th>
-                  <th scope="col">Where it is</th>
-                  <th scope="col">Scored</th>
-                  <th scope="col">Closes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r) => (
-                  <tr key={r.id}>
-                    <th scope="row">
-                      <Link href={`/committee/rounds/${r.id}`}>
-                        {r.id} ({r.cluster_id})
-                      </Link>
-                    </th>
-                    <td>{r.body === "core" ? "Core committee" : `LOB committee (${r.lob_id})`}</td>
-                    <td>
-                      {STATE[r.state] ?? r.state}
-                      {r.outcome ? `: ${r.outcome}` : ""}
-                      {r.state === "open" && !r.i_scored ? " (waiting for your scores)" : ""}
-                    </td>
-                    <td>
-                      {r.scored} of {r.voting}
-                    </td>
-                    <td>
-                      {new Date(r.closes_at).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        timeZone: "Asia/Kolkata",
-                      })}
-                    </td>
+      {data === null ? (
+        <p className="notice">
+          We can&apos;t load the committee&apos;s reviews just now. Please try again in a minute.
+        </p>
+      ) : null}
+      {data?.chair ? <OpenCycle /> : null}
+      {data === null ? null : (
+        <section aria-labelledby="c-rounds" className="panel">
+          <h2 id="c-rounds">Reviews</h2>
+          {list.length ? (
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">
+              <table>
+                <caption>{list.length} reviews</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Review</th>
+                    <th scope="col">Committee</th>
+                    <th scope="col">Where it is</th>
+                    <th scope="col">Scored</th>
+                    <th scope="col">Closes</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>No reviews yet. They open when the chair opens a cycle.</p>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {list.map((r) => (
+                    <tr key={r.id}>
+                      <th scope="row">
+                        <Link href={`/committee/rounds/${r.id}`}>
+                          {r.id} ({r.cluster_id})
+                        </Link>
+                      </th>
+                      <td>{r.body === "core" ? "Core committee" : `LOB committee (${r.lob_id})`}</td>
+                      <td>
+                        {STATE[r.state] ?? r.state}
+                        {r.outcome ? `: ${r.outcome}` : ""}
+                        {r.state === "open" && !r.i_scored ? " (waiting for your scores)" : ""}
+                      </td>
+                      <td>
+                        {r.scored} of {r.voting}
+                      </td>
+                      <td>
+                        {new Date(r.closes_at).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          timeZone: "Asia/Kolkata",
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p>No reviews yet. They open when the chair opens a cycle.</p>
+          )}
+        </section>
+      )}
       {presentations.length ? (
         <section aria-labelledby="c-presentations" className="panel">
           <h2 id="c-presentations">Presentations</h2>

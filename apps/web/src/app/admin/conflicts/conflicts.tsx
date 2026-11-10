@@ -37,12 +37,15 @@ export function Conflicts({ initial }: { initial: Flag[] }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ round_id: f.round_id, member_id: f.member_id, reason: reasons[key(f)] ?? "" }),
     }).catch(() => null);
-    const out = (await res?.json().catch(() => null)) as { error?: string } | null;
+    const out = (await res?.json().catch(() => null)) as { error?: string; banner?: string } | null;
     setBusy(false);
     setMessage(
       res?.ok
         ? { text: `Cleared. ${f.name} can now score ${f.cluster_id}.`, error: false }
-        : { text: ERRORS[String(out?.error)] ?? "That did not go through. Please try again.", error: true },
+        : {
+            text: out?.banner ?? ERRORS[String(out?.error)] ?? "That did not go through. Please try again.",
+            error: true,
+          },
     );
     statusRef.current?.focus();
     if (res?.ok) router.refresh();

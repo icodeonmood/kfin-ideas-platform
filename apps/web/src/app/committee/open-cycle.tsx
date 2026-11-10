@@ -17,12 +17,16 @@ export function OpenCycle() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ presentation_slots: Number(slots) }),
     }).catch(() => null);
-    const out = (await res?.json().catch(() => null)) as { cycle_id?: string; rounds?: string[] } | null;
+    const out = (await res?.json().catch(() => null)) as {
+      cycle_id?: string;
+      rounds?: string[];
+      banner?: string;
+    } | null;
     setBusy(false);
     setMessage(
       res?.ok
         ? { text: `Cycle ${out?.cycle_id} is open with ${out?.rounds?.length ?? 0} reviews.`, error: false }
-        : { text: "That did not go through. Please try again.", error: true },
+        : { text: out?.banner ?? "That did not go through. Please try again.", error: true },
     );
     statusRef.current?.focus();
     if (res?.ok) router.refresh();
