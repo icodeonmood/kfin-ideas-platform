@@ -7,10 +7,12 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from gateway import grounding
 from pii.detect import Directory, detect
 from pii.tagger import TAG_RE
 
 Check = Callable[[dict[str, Any], dict[str, Any], Directory | None], list[str]]
+Repair = Callable[[dict[str, Any], dict[str, Any]], tuple[dict[str, Any], list[str]]]
 SUBMITTER_SECTIONS = ("kind", "one_line", "details", "who", "value", "ecosystem", "solution")
 
 
@@ -80,6 +82,8 @@ def canvas_assist(sent: dict[str, Any], out: dict[str, Any], d: Directory | None
         problems.append("one_line must be 20 words or fewer")
     if len(out["strength"]["next_best"]) > 2:
         problems.append("strength.next_best holds at most two items")
+    # Only the person's own words (DEC-095): every suggestion quotes what it came from.
+    problems.extend(grounding.problems(sent, out))
     return problems
 
 
@@ -273,6 +277,16 @@ CHECKS: dict[str, Check] = {
 }
 
 
+# After the one re-ask, problems these can mend are mended by dropping the offending suggestions (DEC-095).
+REPAIRS: dict[str, Repair] = {"canvas-assist": grounding.repair}
+
+
 def run(name: str, sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
     check = CHECKS.get(name)
     return check(sent, out, d) if check else []
+
+
+def repair(name: str, sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], list[str]] | None:
+    """The agent's repair, if it has one: the mended output and the dropped field paths (never text)."""
+    fix = REPAIRS.get(name)
+    return fix(sent, out) if fix else None

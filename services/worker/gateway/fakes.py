@@ -23,6 +23,9 @@ _HR = re.compile(r"\b(my (salary|appraisal|leave|manager)|increment|harass)", re
 _QUESTION = re.compile(r"^\s*(how|what|when|where|who|can|is|does)\b[^.?!]*\?\s*$", re.I)
 _SPAM = re.compile(r"^\s*(test|asdf|qwerty|lorem ipsum)\b", re.I)
 _SOLUTION = re.compile(r"\b(we should|we could|i propose|fix would|automate|build a|add a)\b", re.I)
+# Text that tempts a model to put a rupee figure on a vague cost: the fake does, with a quote that is not in the
+# input, on both asks, so tests and the golden set reach the gateway's drop path (DEC-095).
+_PLANT_FIGURE = re.compile(r"\ba lot of money\b", re.I)
 _KIND_MAP = {
     "idea_problem": "problem",
     "idea_solution": "problem_with_solution",
@@ -103,13 +106,17 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
             provenance[path] = "submitter"
     out: dict[str, Any] = answers
     out.setdefault("details", "")
+    words = str(out.get("details") or "").split()
+    opening = " ".join(words[:12])  # the person's own first words: the quote behind each fake suggestion
+    evidence: dict[str, list[str]] = {}
     if not out.get("kind"):
         out["kind"] = _KIND_MAP.get(str(gk_kind), "problem")
         provenance["kind"] = "suggested"
+        evidence["kind"] = [opening]
     if not out.get("one_line"):
-        words = str(out.get("details") or "").split()
         out["one_line"] = " ".join(words[:20]) or "An improvement idea"
         provenance["one_line"] = "suggested"
+        evidence["one_line"] = [" ".join(words[:20])]
     eco = out.setdefault("ecosystem", {})
     if not eco.get("solved_elsewhere"):
         eco["solved_elsewhere"] = (
@@ -121,6 +128,12 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         value["category"] = "not_sure"
         provenance["value.category"] = "suggested"
     out["neutral_summary"] = "An idea to improve a KFintech process."
+    evidence["neutral_summary"] = [opening]
+    estimate = value.setdefault("estimate", {})
+    if _PLANT_FIGURE.search(str(out.get("details") or "")) and estimate.get("inr_saved_per_year") is None:
+        estimate["inr_saved_per_year"] = 500000
+        provenance["value.estimate.inr_saved_per_year"] = "suggested"
+        evidence["value.estimate.inr_saved_per_year"] = ["saves us five lakh a year"]
     out.setdefault("attachments", [])
     slice_ = inputs.get("taxonomy_slice") or {}
 
@@ -135,6 +148,9 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         "roles_affected": [],
     }
     out["provenance"] = provenance
+    out["evidence"] = {
+        k: v for k, v in evidence.items() if all(len(q.split()) >= 2 or len(q) >= 10 for q in v)
+    }
     out["flags_for_reviewer"] = []
     out["confidence"] = {
         "value.category": 0.5,

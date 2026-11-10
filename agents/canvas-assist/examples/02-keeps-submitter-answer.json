@@ -1,5 +1,5 @@
 {
-  "description": "The person chose new revenue for what reads as cost saving. Keep their answer and flag the doubt.",
+  "description": "The person chose new revenue for what reads as cost saving. Keep their answer and flag the doubt; a risk the person did not name goes to the reviewer as a flag, not into their answers (DEC-095).",
   "input": {
     "canvas_answers": {
       "kind": "problem_with_solution",
@@ -143,7 +143,7 @@
     "solution": {
       "approach": "Pull CKYC once at onboarding and prefill both screens",
       "needs": null,
-      "risks": "Any change to how KYC data is fetched or stored may need a compliance check."
+      "risks": null
     },
     "attachments": [],
     "system": {
@@ -174,8 +174,13 @@
       "value.basis": "submitter",
       "ecosystem.solved_elsewhere": "submitter",
       "ecosystem.references": "submitter",
-      "solution.approach": "submitter",
-      "solution.risks": "suggested"
+      "solution.approach": "submitter"
+    },
+    "evidence": {
+      "neutral_summary": [
+        "key investor KYC data into our system and again into the CKYC upload",
+        "remove the double keying"
+      ]
     },
     "flags_for_reviewer": [
       "Category is new revenue, but the text describes saving ops effort; cost saving may fit better.",
