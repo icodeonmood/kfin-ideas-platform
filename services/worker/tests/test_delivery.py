@@ -344,13 +344,45 @@ def test_group_delivery_messages_use_the_group_name_and_plain_step_words(ones_db
     data = render.variables(db, crew["submitter"], "delivery.phase_changed", refs)
     subject_line, body, _ = templates.render("delivery-phase-changed", data)
     assert subject_line == "Branch forms wait in the outward register: Being built"
-    assert "has moved on to its next step. It is still being built." in body
+    assert "has moved to a new step: Being built." in body
     assert cl not in subject_line + body and "QA" not in subject_line + body
     refs = {"delivery_id": did, "subject_id": cl, "decision": "approved", "solution_id": "SOL-0042"}
     _, body, _ = templates.render(
         "delivery-writeup-decided", render.variables(db, crew["owner"], "delivery.writeup_decided", refs)
     )
     assert '"Already running" when they share' in body and "SOL-0042" not in body and cl not in body
+    # A group with no name yet is named by its first idea's summary, never its reference number.
+    db.execute("UPDATE clusters SET title = NULL WHERE id = %s", (cl,))
+    data = render.variables(db, crew["sponsor"], "delivery.phase_changed", {"delivery_id": did, "subject_id": cl,
+                                                                             "phase": "started"})  # fmt: skip
+    subject_line, _, _ = templates.render("delivery-phase-changed", data)
+    summary = db.execute(
+        "SELECT canvas->>'neutral_summary' AS s FROM ideas WHERE idea_id = %s", (member,)
+    ).fetchone()
+    from views.common import checked_summary
+
+    assert subject_line == f"{checked_summary(db, summary['s']) or 'Group of similar ideas'}: Started"
+    assert cl not in subject_line
+
+
+def test_steps_inside_being_built_send_no_new_message(ones_db: Any, crew: Any) -> None:
+    """BLD-157: contributors and the sponsor hear about a step only when its plain words change."""
+    db = ones_db
+    _, did = approved(db, crew)
+    sent = len(events(db, "delivery.phase_changed"))  # "Started"
+    service.set_phase(db, crew["pm"], did, {"phase": "02-shape"}, now=NOW)  # Discovery -> Writing the spec
+    service.set_phase(db, crew["pm"], did, {"phase": "04-handoff"}, now=NOW)  # -> Being built
+    assert [e["phase"] for e in events(db, "delivery.phase_changed")[sent:]] == ["02-shape", "04-handoff"]
+    service.set_phase(db, crew["pm"], did, {"phase": "05-build"}, now=NOW)
+    service.set_phase(db, crew["pm"], did, {"phase": "08-qa"}, now=NOW)
+    assert len(events(db, "delivery.phase_changed")) == sent + 2  # still "Being built": no new message
+    service.set_phase(db, crew["pm"], did, {"phase": "handed-off"}, now=NOW)
+    assert events(db, "delivery.phase_changed")[-1]["phase"] == "handed-off"
+    refs = events(db, "delivery.phase_changed")[-1]
+    subject_line, _, _ = templates.render(
+        "delivery-phase-changed", render.variables(db, crew["submitter"], "delivery.phase_changed", refs)
+    )
+    assert subject_line.endswith(": With the development team")
 
 
 def test_start_from_pick_is_idempotent_and_moves_the_group(ones_db: Any, crew: Any) -> None:

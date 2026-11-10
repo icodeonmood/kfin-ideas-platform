@@ -39,6 +39,7 @@ from delivery.phases import (
     PHASE_IDS,
     PRODUCTS,
     TRACKS,
+    plain_step,
 )
 from ones.service import MAX_MEASURE, MEASURE_UNITS, roles
 from ones.text import OnesRefused, checked, seal
@@ -537,9 +538,9 @@ def set_phase(
         )
         if phase == "shipped":
             _close_delivery_work(conn, d, "shipped", now)
-        elif (
-            phase != previous_phase
-        ):  # a gate going blocked or clear is the team's business, not news (BLD-127)
+        elif plain_step(phase) != plain_step(previous_phase):
+            # News only when the plain words change: a gate going blocked or clear is the team's business
+            # (BLD-127), and so is a move between build steps inside "Being built" (BLD-157).
             _notify(conn, d, "delivery.phase_changed", {"phase": phase, "gate_status": gate})
     return {"id": d["id"], "phase": phase}
 

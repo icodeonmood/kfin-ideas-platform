@@ -11,7 +11,6 @@ import yaml
 
 from comms import render
 from comms.templates import render_text
-from core.stage_words import PUBLIC_WORDS
 from okf.frontmatter import parse
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -132,16 +131,29 @@ def test_an_overdue_message_gives_the_limit_and_names_only_a_real_owner() -> Non
     assert "It is with Synthetic Reviewer." in body and "Nobody" not in body
 
 
-def test_delivery_step_words_are_the_stage_words_everyone_sees() -> None:
-    words = set(render.PHASE_MESSAGE_WORDS.values()) | {PUBLIC_WORDS["in_garage"]}
-    for word in words:
-        assert ":" not in word and "QA" not in word and "spec" not in word.lower(), word
+def test_delivery_steps_use_the_plain_words_of_the_spec() -> None:
+    """§4.9's words, with every build step from handoff to deploy as one step, "Being built" (BLD-157)."""
+    from delivery.phases import PHASE_IDS, plain_step
+
+    words = {p: plain_step(p) for p in PHASE_IDS}
+    assert words == {
+        "01-discover": "Discovery",
+        "02-shape": "Writing the spec",
+        "03-gate": "Spec review",
+        **{
+            p: "Being built" for p in ("04-handoff", "05-build", "06-test", "07-review", "08-qa", "09-deploy")
+        },
+        "handed-off": "With the development team",
+        "shipped": "Shipped",
+    }
+    for word in [*words.values(), *render.PHASE_MESSAGE_WORDS.values()]:
+        assert word and ":" not in word and "QA" not in word and "deploy" not in word.lower(), word
     data = BASE | {
-        "delivery": {"label": "Outward register delays", "building": True, "phase_words": "Being built"}
+        "delivery": {"label": "Outward register delays", "building": True, "phase_words": "Writing the spec"}
     }
     subject, body = _render("delivery-phase-changed", data)
-    assert subject == "Outward register delays: Being built"
-    assert "has moved on to its next step. It is still being built." in body
+    assert subject == "Outward register delays: Writing the spec"
+    assert "The work on **Outward register delays** has moved to a new step: Writing the spec." in body
 
 
 def test_the_ember_note_reads_as_an_issue() -> None:
