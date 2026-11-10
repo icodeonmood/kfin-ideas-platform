@@ -12,6 +12,7 @@ import secrets
 import time
 import urllib.request
 import uuid
+from collections.abc import Iterator
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -25,8 +26,9 @@ from comms.templates import render_text
 from core import killswitch
 from core.config import get_settings
 from core.crypto import encrypt_json
-from jobs import handlers  # noqa: F401
+from jobs import handlers
 from jobs.runner import run_one
+from tests import helpers
 from tests.helpers import tables_containing
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -334,3 +336,141 @@ def test_a_message_that_cannot_be_shown_does_not_hide_the_rest(people: Any) -> N
     assert len(messages) == 2
     assert any(m["subject"] == "A message we can't show just now" for m in messages)
     assert any(ONE_LINE in m["body"] for m in messages)
+
+
+# --- BLD-157: what the messages promise is what the product does ------------------------------------------------
+
+
+@pytest.fixture
+def seeded(
+    people: Any, company_repo: Any, test_database: str, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Any]:
+    """The people above, with messages rendered from this checkout's templates (a fresh copy of the seed), not
+    from whatever the local stack's company repo holds."""
+    from comms import render, templates
+    from comms import route as route_module
+
+    settings = helpers.settings_for(company_repo, test_database)
+    for module in (route_module, render, templates):
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
+    templates._load.cache_clear()
+    yield people
+    templates._load.cache_clear()
+
+
+def _msg(db: Any, user_id: str, event: str, template: str, refs: dict[str, Any]) -> tuple[str, str]:
+    from comms.send import message_for
+
+    subject, body, _ = message_for(db, user_id, event, template, refs)
+    assert "{{" not in subject + body
+    return subject, body
+
+
+def test_joined_counts_everyone_now_on_it_in_plain_plurals(seeded: Any) -> None:
+    db, users, refs = seeded
+    subject, body = _msg(db, users["owner"]["id"], "idea.joined", "joined", refs["idea.joined"])
+    assert subject == "A colleague raised the same thing as you"
+    assert "a colleague has raised the same thing as your idea" in body and ONE_LINE in body
+    assert "more colleague" not in subject + body
+    db.execute(
+        "INSERT INTO idea_links (idea_id, from_idea_id, contributor_code, link_type) "
+        "VALUES ('IDEA-2026-000901', 'IDEA-2026-000903', %s, 'plus_one')",
+        (users["member"]["code"],),
+    )
+    subject, body = _msg(db, users["owner"]["id"], "idea.joined", "joined", refs["idea.joined"])
+    assert subject == "2 colleagues have now raised the same thing as you"
+    assert "2 colleagues have now raised the same thing as your idea" in body
+    # An earlier joiner counts the person who first raised it and the newcomer, never themselves.
+    subject, _ = _msg(db, users["joiner"]["id"], "idea.joined", "joined", refs["idea.joined"])
+    assert subject == "2 colleagues have now raised the same thing as you"
+
+
+def test_reviewed_and_group_messages_name_the_group_not_its_number(seeded: Any) -> None:
+    db, users, refs = seeded
+    taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
+    cl = next(f"CL-{n}" for n in range(7100, 7999) if f"CL-{n}" not in taken)
+    db.execute(
+        "INSERT INTO clusters (id, distinct_contributors, member_count, title) VALUES (%s, 2, 2, %s)",
+        (cl, "Outward register delays at branches"),
+    )
+    db.execute("UPDATE ideas SET cluster_id = %s WHERE idea_id = 'IDEA-2026-000901'", (cl,))
+    grouped = refs["idea.reviewed"] | {"outcome": "grouped", "cluster_id": cl, "cluster_other_count": 1}
+    _, body = _msg(db, users["owner"]["id"], "idea.reviewed", "reviewed", grouped)
+    assert "It's now part of **Outward register delays at branches**" in body and cl not in body
+    linked = refs["idea.reviewed"] | {"outcome": "grouped", "cluster_id": None}
+    _, body = _msg(db, users["owner"]["id"], "idea.reviewed", "reviewed", linked)
+    assert "linked with a similar idea" in body and "part of" not in body
+    subject, body = _msg(
+        db,
+        users["owner"]["id"],
+        "cluster.approved",
+        "cluster-approved",
+        {"cluster_id": cl, "member_count": 2},
+    )
+    assert subject == "Your idea is now in a group: Outward register delays at branches"
+    assert "It holds one other idea." in body and cl not in subject + body
+
+
+def test_redirected_and_reconsidered_offer_only_what_the_idea_page_has(seeded: Any) -> None:
+    db, users, refs = seeded
+    _, body = _msg(db, users["owner"]["id"], "idea.redirected", "redirected", refs["idea.redirected"])
+    assert "Disagree with this?" in body and "reply in the app" not in body
+    assert "[See your idea](" in body and "/ideas/IDEA-2026-000901" in body
+    assert "Go to" not in body  # no team in rules/redirects.md has a link at launch
+    _, body = _msg(db, users["owner"]["id"], "idea.reconsidered", "reconsidered", refs["idea.reconsidered"])
+    assert "Disagree with this?" in body and "15 working days" not in body and "another look" not in body
+    assert "/ideas/IDEA-2026-000901" in body
+
+
+def test_adoption_request_links_only_people_who_can_open_the_desk(seeded: Any) -> None:
+    db, users, refs = seeded
+    _, body = _msg(
+        db, users["lob"]["id"], "adoption.requested", "adoption-requested", refs["adoption.requested"]
+    )
+    assert "/review" not in body and "Open the request" not in body
+    assert "the review desk has their request and can put you in touch" in body
+    assert "credited" not in body and "SOL-0004" not in body and "We would use it in MF ops" in body
+    _, body = _msg(
+        db, users["reviewer"]["id"], "adoption.requested", "adoption-requested", refs["adoption.requested"]
+    )
+    assert "[Open the request](" in body and "/review" in body
+
+
+def test_suggestions_show_only_the_bullets_that_exist(seeded: Any) -> None:
+    db, users, refs = seeded
+    _, body = _msg(db, users["owner"]["id"], "idea.submitted", "submitted", refs["idea.submitted"])
+    assert "- Add numbers\n- Add evidence" in body
+    db.execute(
+        "UPDATE ideas SET canvas = jsonb_set(canvas, '{strength,next_best}', '[\"Add numbers\"]') "
+        "WHERE idea_id = 'IDEA-2026-000901'"
+    )
+    _, body = _msg(db, users["owner"]["id"], "canvas.nudge", "quick-capture-nudge", refs["canvas.nudge"])
+    assert "- Add numbers\n\n" in body and "\n- \n" not in body and not body.rstrip().endswith("-")
+    db.execute(
+        "UPDATE ideas SET canvas = jsonb_set(canvas, '{strength,next_best}', '[]') WHERE idea_id = 'IDEA-2026-000901'"
+    )
+    _, body = _msg(db, users["owner"]["id"], "idea.submitted", "submitted", refs["idea.submitted"])
+    assert "What would help most" not in body and "\n- " not in body
+
+
+def test_no_nudge_without_a_suggestion_to_make(seeded: Any) -> None:
+    db, _users, _refs = seeded
+    db.execute("UPDATE ideas SET submitted_at = now() - interval '2 days' WHERE idea_id = 'IDEA-2026-000901'")
+    db.execute("DELETE FROM jobs")
+    handlers.comms_nudges(db, {})
+    nudged = [
+        r["payload"]["refs"]["idea_id"]
+        for r in db.execute("SELECT payload FROM jobs WHERE type = 'comms.route'").fetchall()
+        if r["payload"]["event"] == "canvas.nudge"
+    ]
+    assert "IDEA-2026-000901" in nudged
+    db.execute(
+        "UPDATE ideas SET canvas = jsonb_set(canvas, '{strength,next_best}', '[]') WHERE idea_id = 'IDEA-2026-000901'"
+    )
+    db.execute("DELETE FROM jobs")
+    handlers.comms_nudges(db, {})
+    assert not [
+        r
+        for r in db.execute("SELECT payload FROM jobs WHERE type = 'comms.route'").fetchall()
+        if r["payload"]["refs"].get("idea_id") == "IDEA-2026-000901"
+    ]

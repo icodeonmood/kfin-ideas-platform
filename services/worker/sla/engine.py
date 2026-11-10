@@ -95,24 +95,26 @@ def _fraction(t: dict[str, Any], now: dt.datetime) -> float:
     return max(0.0, spent / total) if total > 0 else 1.0
 
 
-def _owner_and_idea(conn: Conn, t: dict[str, Any]) -> tuple[list[str], str | None]:
-    """Who owns the timer now, and which idea it is about."""
+def _owner_and_idea(conn: Conn, t: dict[str, Any]) -> tuple[list[str], str | None, str | None]:
+    """Who hears about the timer (the assigned reviewer, else the whole desk), which idea it is about, and who is
+    handling it. The last is None while nobody has picked the item up: a message never names a reviewer picked
+    from the desk as its owner (BLD-157)."""
     if t["entity_type"] == "review_item":
         row = conn.execute(
             "SELECT assigned_to, ref_id FROM review_items WHERE id = %s", (int(t["entity_id"]),)
         ).fetchone()
         if row is None:
-            return [], None
+            return [], None, None
         if row["assigned_to"]:
-            return [str(row["assigned_to"])], row["ref_id"]
+            return [str(row["assigned_to"])], row["ref_id"], str(row["assigned_to"])
         desk = conn.execute(
             "SELECT DISTINCT g.user_id FROM role_grants g JOIN users u ON u.id = g.user_id "
             "WHERE g.role = 'reviewer' AND g.valid_to IS NULL AND u.active"
         ).fetchall()
-        return [str(r["user_id"]) for r in desk], row["ref_id"]
+        return [str(r["user_id"]) for r in desk], row["ref_id"], None
     if t["entity_type"] == "idea":
-        return [], t["entity_id"]
-    return [], None
+        return [], t["entity_id"], None
+    return [], None, None
 
 
 def _escalation(conn: Conn, target: str | None) -> list[str]:
@@ -156,7 +158,7 @@ def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
                 )
                 counts["expired"] += 1
                 continue
-            owners, idea_id = _owner_and_idea(conn, t)
+            owners, idea_id, handler = _owner_and_idea(conn, t)
             sent = [float(x) for x in t["reminders_sent"] or []]
             for share in [float(x) for x in rule.get("remind_at") or []]:
                 if f >= share and share not in sent and f < 1:
@@ -196,7 +198,8 @@ def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
                         "timer_id": timer_id, "item_label": idea_id or t["entity_id"],
                         "days_late": max(0, (now - t["due_at"]).days), "limit_wd": rule.get("limit_wd"),
                         "current_owner_ids": owners, "escalation_target_ids": _escalation(conn, rule.get("escalate_to")),
-                        "owner_user_id": owners[0] if owners else None, "idea_id": idea_id,
+                        "owner_user_id": handler, "idea_id": idea_id, "stage": t["stage"],
+                        "entity_type": t["entity_type"], "entity_id": t["entity_id"],
                     },
                 )  # fmt: skip
             if idea_id:

@@ -68,6 +68,68 @@ def _decrypt_text(blob: Any, context: str) -> str | None:
         return None
 
 
+# A group's name stands in for its reference number wherever a message names it (BLD-157).
+GROUP_FALLBACK = "Similar ideas"
+# Who may open the review desk: `view_review_queue` in policy/rbac.yaml, with its role aliases (a test keeps the
+# two in step).
+DESK_VIEWERS = frozenset({"reviewer", "core_committee", "core_chair", "admin"})
+# Time limits the review desk works to; the rest are the committee's (rules/sla.md).
+DESK_STAGES = ("review", "cluster_proposal", "qualify")
+BREACH_WORDS = {
+    "review": "The review of {idea}",
+    "cluster_proposal": "A proposed group of similar ideas",
+    "qualify": "The readiness check for {group}",
+    "scoring_round": "Committee scoring for {group}",
+    "individual_assessment": "Committee members' own assessments for {group}",
+    "final_decision": "The committee's decision on {group}",
+    "outcome_message": "The outcome message for {group}",
+    "appeal_decision": "The appeal decision for {group}",
+}
+# Where each kind of timed item lives, to find the group it is about.
+GROUP_OF = {
+    "review_item": "SELECT ref_id AS cluster_id FROM review_items WHERE id::text = %s AND ref_id LIKE 'CL-%%'",
+    "scoring_round": "SELECT cluster_id FROM scoring_rounds WHERE id::text = %s",
+    "presentation": "SELECT cluster_id FROM presentations WHERE id::text = %s",
+    "appeal": "SELECT cluster_id FROM appeals WHERE id::text = %s",
+    "decision": "SELECT cluster_id FROM decisions WHERE id::text = %s",
+}
+
+
+def _group(conn: Conn, cluster_id: Any) -> dict[str, Any] | None:
+    """A group's name and description as every contributor may read them: checked to hold no tags, names or
+    identifiers when written (cluster-summary); any tag that slipped in reads as a neutral label."""
+    if not cluster_id:
+        return None
+    row = conn.execute(
+        "SELECT title, summary, member_count, tag_scope FROM clusters WHERE id = %s", (str(cluster_id),)
+    ).fetchone()
+    if row is None:
+        return None
+    mapping = vault.mapping(conn, row["tag_scope"]) if row["tag_scope"] else {}
+    return {
+        "name": restore(row["title"], mapping, "neutral") or "",
+        "description": restore((row["summary"] or {}).get("description"), mapping, "neutral") or "",
+        "members": int(row["member_count"] or 0),
+    }
+
+
+def _breach_label(conn: Conn, refs: dict[str, Any]) -> str:
+    """What is late, in plain words: the idea's reference for the review desk, the group's name for committee
+    steps, never a bare number (BLD-157). Older events without a stage keep the label they carried."""
+    words = BREACH_WORDS.get(str(refs.get("stage") or ""))
+    if words is None:
+        return str(refs.get("item_label") or "An item")
+    group_name = ""
+    query = GROUP_OF.get(str(refs.get("entity_type") or ""))
+    if query and refs.get("entity_id") is not None:
+        row = conn.execute(query, (str(refs["entity_id"]),)).fetchone()
+        group_name = ((_group(conn, row["cluster_id"]) if row else None) or {}).get("name") or ""
+    return words.format(
+        idea=refs.get("idea_id") or "an idea",
+        group=f"the group “{group_name}”" if group_name else "a group",
+    )
+
+
 COMMITTEE_EVENTS = {"cluster.gate_outcome", "round.opened", "shortlist.invited", "round.not_shortlisted",
                     "presentation.confirmed", "decision.accepted", "decision.not_accepted",
                     "decision.not_presented", "appeal.filed", "appeal.decided"}  # fmt: skip
@@ -99,11 +161,21 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             (refs["idea_id"],),
         ).fetchone()
     target_id = refs.get("target_id")
-    if event == "idea.joined" and target_id and str(target_id).startswith("IDEA-"):
-        idea = conn.execute(
-            "SELECT id, idea_id, contributor_code, canvas, strength FROM ideas WHERE idea_id = %s",
-            (target_id,),
-        ).fetchone()
+    if event == "idea.joined" and target_id:
+        # The idea the recipient is on: the idea that was joined, or their own idea in the group that was joined.
+        # Never the newcomer's idea, which `idea_id` points to (BLD-157).
+        if str(target_id).startswith("IDEA-"):
+            idea = conn.execute(
+                "SELECT id, idea_id, contributor_code, canvas, strength FROM ideas WHERE idea_id = %s",
+                (target_id,),
+            ).fetchone()
+        else:
+            idea = conn.execute(
+                "SELECT i.id, i.idea_id, i.contributor_code, i.canvas, i.strength FROM ideas i JOIN contributor_map m "
+                "ON m.contributor_code = i.contributor_code WHERE i.cluster_id = %s AND m.user_id = %s "
+                "ORDER BY i.idea_id LIMIT 1",
+                (target_id, user_id),
+            ).fetchone()
     if idea:
         card = idea["canvas"] or {}
         own = _owns(conn, user_id, idea)
@@ -139,10 +211,17 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             "due_date": _date(q["due_at"]) if q else "",
         }
     if event == "idea.reviewed":
+        # Put in a group: the group's name, never its reference number (BLD-157). Attached to a single idea that
+        # is not in a group yet: "linked".
         grouped = refs.get("outcome") == "grouped"
-        data["outcome"] = {"grouped": grouped, "standalone": not grouped}
+        group = _group(conn, refs.get("cluster_id")) if grouped else None
+        data["outcome"] = {
+            "grouped": group is not None,
+            "linked": grouped and group is None,
+            "standalone": not grouped,
+        }
         data["cluster"] = {
-            "name": refs.get("cluster_id") or "",
+            "name": (group or {}).get("name") or GROUP_FALLBACK,
             "other_count": refs.get("cluster_other_count") or 0,
         }
         data["next_step"] = {"text": NEXT_STEPS.get(str(refs.get("next_step")), NEXT_STEPS["review"])}
@@ -175,17 +254,26 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         }
         data["next_step"] = {"text": NEXT_STEPS.get(str(refs.get("next_step")), NEXT_STEPS["review"])}
     if event == "idea.joined":
+        # Everyone else on it now: whoever first raised it and everyone who joined or added +1, not counting the
+        # recipient. A running total, so the message says "now", never "more" (BLD-157).
         row = conn.execute(
-            "SELECT count(DISTINCT contributor_code) AS n FROM idea_links WHERE coalesce(idea_id, cluster_id) = %s "
-            "AND link_type IN ('joiner', 'plus_one')",
-            (target_id,),
+            "SELECT count(DISTINCT m.user_id) AS n FROM idea_links l JOIN contributor_map m "
+            "ON m.contributor_code = l.contributor_code WHERE coalesce(l.idea_id, l.cluster_id) = %s "
+            "AND l.link_type IN ('originator', 'joiner', 'plus_one') AND m.user_id <> %s",
+            (target_id, user_id),
         ).fetchone()
-        n = int(row["n"]) if row else 1
+        n = max(int(row["n"]) if row else 1, 1)  # the colleague who has just joined is always one of them
         data["join"] = {
             "count": n,
+            "one": n == 1,
+            "many": n > 1,
             "count_word": "colleague" if n == 1 else "colleagues",
             "names_visible": False,  # names arrive with consent rules in a later block
         }
+        if "idea" not in data:  # on a group without an idea of their own in it: the group's name
+            name = ((_group(conn, target_id) or {}).get("name")) or GROUP_FALLBACK
+            data["idea"] = {"id": "", "one_line": name, "strength": 0, "next_best": []}
+            data["links"]["idea"] = f"{base}/my-ideas"
     if event == "adoption.requested":
         sol = conn.execute(
             "SELECT summary FROM repo_files WHERE kfin_id = %s LIMIT 1", (refs.get("solution_id"),)
@@ -206,33 +294,29 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         }
         data["requester"] = {"lob_name": (link["hr_department"] if link else None) or "another team"}
         data["request"] = {"context": context}
-        data["links"]["request"] = f"{base}/review"
+        # The request sits in the review desk's queue. Only people who may open the desk get a link to it; the
+        # owning team's committee is told in words instead (BLD-157).
+        from ones.service import roles
+
+        if roles(conn, user_id) & DESK_VIEWERS:
+            data["links"]["request"] = f"{base}/review"
     if event == "cluster.approved" and refs.get("cluster_id"):
         # The name and description are checked to hold no tags, names or identifiers (cluster-summary), so every
-        # contributor may read them as written.
-        row = conn.execute(
-            "SELECT id, title, summary, member_count, tag_scope FROM clusters WHERE id = %s",
-            (refs["cluster_id"],),
-        ).fetchone()
-        if row and row["tag_scope"]:  # belt and braces: any tag that slipped in reads as a neutral label
-            mapping = vault.mapping(conn, row["tag_scope"])
-            row = dict(row) | {
-                "title": restore(row["title"], mapping, "neutral"),
-                "summary": {
-                    "description": restore((row["summary"] or {}).get("description"), mapping, "neutral")
-                },
-            }
+        # contributor may read them as written; the name stands in for the reference number (BLD-157).
+        group = _group(conn, refs["cluster_id"]) or {}
         mine = conn.execute(
             "SELECT i.idea_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
             "WHERE i.cluster_id = %s AND m.user_id = %s ORDER BY i.idea_id LIMIT 1",
             (refs["cluster_id"], user_id),
         ).fetchone()
-        count = int(row["member_count"]) if row else 0
+        others = max(int(group.get("members") or 0) - 1, 0)
         data["cluster"] = {
             "id": refs["cluster_id"],
-            "name": (row["title"] if row else None) or refs["cluster_id"],
-            "description": ((row["summary"] or {}).get("description") if row else None) or "",
-            "other_count": max(count - 1, 0),
+            "name": group.get("name") or GROUP_FALLBACK,
+            "description": group.get("description") or "",
+            "other_count": others,
+            "one_other": others == 1,
+            "many_others": others > 1,
         }
         data["links"]["idea"] = f"{base}/ideas/{mine['idea_id']}" if mine else f"{base}/my-ideas"
     if event in COMMITTEE_EVENTS and refs.get("cluster_id"):
@@ -327,12 +411,18 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             data["ember"] = {"month_label": month_label(row["month"])}
             data["links"]["ember"] = f"{base}/ember/{refs.get('issue_id')}"
     if event == "sla.breached":
+        # Sent the moment the limit passes, so the message gives the limit, not a count of days late. It names a
+        # person only when one is handling the item (BLD-157).
+        stage = str(refs.get("stage") or "")
+        owner = refs.get("owner_user_id")
         data["breach"] = {"days_late": refs.get("days_late", 0), "limit_wd": refs.get("limit_wd", 0)}
         data["item"] = {
-            "label": refs.get("item_label") or "",
-            "owner_name": _name(conn, refs.get("owner_user_id")),
+            "label": _breach_label(conn, refs),
+            "owner_name": _name(conn, owner) if owner else "",
+            "unassigned": not owner and stage in DESK_STAGES,
         }
-        data["links"]["item"] = f"{base}/review"
+        committee = bool(stage) and stage not in DESK_STAGES
+        data["links"]["item"] = f"{base}/committee" if committee else f"{base}/review"
     return data
 
 

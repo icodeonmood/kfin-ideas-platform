@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-reconsidered
-  version: '1.1'
+  version: '1.2'
   events:
   - idea.reconsidered
   subject: 'Update on {{idea.id}}: reconsidered by the core committee'
@@ -30,7 +30,9 @@ A member of the 1% Club core committee looked again at your idea **"{{idea.one_l
 
 **What happens next:** {{next_step.text}}
 
-If you disagree, you can ask for another look within 15 working days. [See your idea]({{links.idea}})
+If you disagree, open your idea and use **Disagree with this?** to tell us why.
+
+{{#links.idea}}[See your idea]({{links.idea}}){{/links.idea}}
 
 {{member.name}}, 1% Club core committee
 

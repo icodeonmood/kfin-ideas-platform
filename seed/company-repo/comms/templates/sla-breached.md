@@ -11,7 +11,7 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-sla-breached
-  version: '1.1'
+  version: '1.2'
   events:
   - sla.breached
   subject: 'Overdue: {{item.label}}'
@@ -23,7 +23,7 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-**{{item.label}}** is {{breach.days_late}} working day(s) past its limit of {{breach.limit_wd}} working days. Current owner: {{item.owner_name}}.
+**{{item.label}}** has passed its time limit of {{breach.limit_wd}} working days.{{#item.owner_name}} It is with {{item.owner_name}}.{{/item.owner_name}}{{#item.unassigned}} Nobody on the review desk has picked it up yet.{{/item.unassigned}}
 
 [Open it]({{links.item}})
 
