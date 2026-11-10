@@ -125,8 +125,7 @@ def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
     rows = conn.execute(
         "SELECT idea_id FROM ideas WHERE capture_mode = 'quick' AND coalesce(strength, 0) < 3 "
         "AND stage NOT IN ('draft', 'withdrawn', 'blocked', 'redirected') "
-        "AND jsonb_typeof(canvas->'strength'->'next_best') = 'array' "
-        "AND jsonb_array_length(canvas->'strength'->'next_best') > 0 "
+        "AND canvas #> '{strength,next_best,0}' IS NOT NULL "
         "AND ((now() AT TIME ZONE 'Asia/Kolkata')::date - (submitted_at AT TIME ZONE 'Asia/Kolkata')::date) IN (2, 7)"
     ).fetchall()
     for r in rows:
