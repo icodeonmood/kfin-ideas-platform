@@ -62,17 +62,18 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 25. **A write-up other teams can adopt** (Demo CEO, then Sneha): Delivery, then the brokerage statements. Sneha's write-up waits for the sponsor under "A write-up other teams can adopt": "Approve and publish" gives it a SOL- number and, once the repo writer and indexer run, ideas like it show it as "Already running". "Send back for changes" returns it to Sneha, who edits it and sends it again. Switch `solutions.publish` off in the console and approval says publishing is paused.
 26. **Your lens** (Kavya, or anyone): My ideas, then "Your lens". Her ideas by where they are, and each group she is part of with how many ideas and colleagues are in it. Only she sees it, and it never names anyone.
 27. **Friction themes by role** (Sana, then Meera): Learning, "Friction themes by role": client service's themes wait for approval; approve them. Then Lenses: under "Recurring friction themes for each role", operations executives' approved themes with how many ideas share each. No names, no idea text.
+28. **Learning from the committee's decisions** (Sana, then Vivek): on Learning, "Run a report now" for "The pre-score against the core committee" and "Scoring bands". Then Vivek: Desk decisions, "What the platform learns from your decisions". The demo has only a few scored rounds, so counts read "fewer than 5" and nothing waits; with 30 or more decisions a proposal appears here for the chair or the committee to approve or decline. Approving never changes a rule on its own.
 
 ## Shows "Coming soon"
 
 - **Automatic tiers and lapse proposals** (console): today the committee decides each one.
-- **Points for presenting, for a working group's shipped work, and restored after an appeal** (My ideas).
 - **Impact weights** (leaderboard).
 - **Manager notes and nudges** (manager view).
 - **Live sync with the delivery pipeline** (Delivery): steps are recorded by hand until then.
 - **A drafted pack**, **evidence files**, **replies to the Friday check-in** and **a write-up other teams can adopt** (a delivery).
 - **Recurring friction themes for each role** and **your own view of your groups** (Lenses).
-- **Writing an approved term or tag into the company repo**, **proposed changes to scoring bands**, **learning from the core committee's decisions**, and **switching a kind of suggestion to automatic** (off at launch) (Learning).
+- **Switching a kind of suggestion to automatic** (off at launch) (Learning).
+- **Similar past decisions in the pre-score and briefs**, **guidance notes drafted from the committee's reasons**, **seeing a proposal's effect on the fairness gaps**, **financial band edges** and **writing an approved rule change into the company repo** (Learning from your decisions).
 
 ## Good to know
 

@@ -59,6 +59,8 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 
 **Learning** (Admin, then "Learning reports and proposals"). Approve or decline each proposed glossary term or area-tag group; approving records the decision only, and the product team then adds the term or tag to the company repo by hand. Acceptance rates are for information: nothing switches to automatic at launch.
 
+**Learning from the core committee** (Desk decisions, then "What the platform learns from your decisions"; core committee only). Proposed scorecard weights wait for the chair and proposed scoring bands (the shortlist line, confidence multipliers) for any core committee member. Approving records the decision only: the product team then edits `rules/scorecard.md` or `rules/routing.md`, bumps the version and records the committee's approval in the pull request. If approving answers "On hold", lane B's fairness report (`/reports`) shows a gap of 25 points or more in shortlist or pick rate between LOBs or locations; look there, then decide again or decline. To see what was decided: `SELECT action, entity, at FROM audit_log WHERE action IN ('learning.approved', 'learning.declined') ORDER BY at DESC LIMIT 20`.
+
 ## 3. Scheduled jobs to watch
 
 | Job | When (IST) | Healthy when |
@@ -66,7 +68,7 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 | `reconcile` | 02:00 | Log `reconcile.clean`; any `reconcile.drift` is read the same morning |
 | `drafts.purge` | 03:30 | Drafts older than 30 days gone |
 | `comms.nudges`, `comms.digest` | 10:00, 10:30 (digest Mondays) | No `comms.send_failed` bursts |
-| `learning.run` | 05:30 (each loop on its own day: daily, Mondays, the 1st, quarter starts) | Log `learning.ran` per loop, or `learning.switched_off` while `learning.jobs` is off; any `alert.drift_*` row is read the same morning |
+| `learning.run` | 05:30 (each loop on its own day: daily; Mondays, including committee agreement; the 1st, including what the committee rewards and scoring bands; quarter starts) | Log `learning.ran` per loop, or `learning.switched_off` while `learning.jobs` is off; any `alert.drift_*` row is read the same morning |
 | `lenses.build` | Mondays 05:00 | Log `lenses.built` with the LOB and role counts |
 | `delivery.tick` | 09:30 | Log `delivery.tick` with its counts |
 | `points.sync` | Every hour | Log `points.synced` with a count when it adds anything. Points are private: nobody reads anyone else's |
