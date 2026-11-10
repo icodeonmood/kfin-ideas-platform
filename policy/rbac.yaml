@@ -239,8 +239,9 @@ pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /desk-decisions            view_review_queue
   - /committee                 score decide                         # any of these (§4.6–§4.7)
-  - /admin                     manage_kill_switches grant_roles     # any of these
+  # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin/conflicts           grant_roles                          # conflict flags waiting for an admin (BLD-221)
+  - /admin                     manage_kill_switches grant_roles     # any of these
   - /reports                   view_fairness_reports                # fairness and calibration, counts only (BLD-223)
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee

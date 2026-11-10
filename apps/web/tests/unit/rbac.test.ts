@@ -134,6 +134,12 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
     expect(canSeePage(rolesOf("core_committee"), "/desk-decisions")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
+    // A sub-page's own rule applies, not /admin's: InfoSec flips switches but does not clear conflict flags.
+    expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
+    expect(canSeePage(rolesOf("infosec"), "/admin/conflicts")).toBe(false);
+    expect(canSeePage(rolesOf("admin"), "/admin/conflicts")).toBe(true);
+    expect(canSeePage(rolesOf("core_committee"), "/reports")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/reports")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/console")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
