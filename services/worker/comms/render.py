@@ -538,31 +538,41 @@ def _ones_variables(
 
 
 MARK_WORDS = {"day_30": "30 days after it went live", "day_90": "90 days after it went live"}
+# Step words in messages: the stage words everyone sees (core/stage_words.py), never the build team's own steps
+# such as "Building: QA" (BLD-157). Every step between the start and shipping reads "Being built".
+PHASE_MESSAGE_WORDS = {
+    "started": "Started",
+    "shipped": "Shipped",
+    "resolved": "Fixed",
+    "measured_30": "First results in",
+    "closed": "Closed",
+}
 
 
 def _delivery_variables(
     conn: Conn, data: dict[str, Any], refs: dict[str, Any], base: str, user_id: str
 ) -> None:
-    """Variables for the delivery messages (§4.8 to §4.11): the idea's checked neutral summary (or a group's ID),
-    the plain phase words, and which sentence applies. IDs and codes in, never idea text beyond the summary."""
-    from delivery.phases import shown_as
+    """Variables for the delivery messages (§4.8 to §4.11): the idea's checked neutral summary or the group's
+    name (never a reference number, BLD-157), the plain step words, and which sentence applies. IDs and codes in,
+    never idea text beyond the summary."""
+    from core.stage_words import PUBLIC_WORDS
     from views.common import checked_summary
 
     subject = str(refs.get("subject_id") or "")
-    label = subject
+    label = "this work"
     if subject.startswith("IDEA-"):
         row = conn.execute("SELECT canvas FROM ideas WHERE idea_id = %s", (subject,)).fetchone()
         label = (
-            checked_summary(conn, ((row["canvas"] if row else None) or {}).get("neutral_summary")) or subject
+            checked_summary(conn, ((row["canvas"] if row else None) or {}).get("neutral_summary"))
+            or "an idea"
         )
     elif subject.startswith("CL-"):
-        label = f"the group {subject}"
+        label = ((_group(conn, subject) or {}).get("name")) or "a group of similar ideas"
     phase = str(refs.get("phase") or "")
     reason = str(refs.get("reason") or "")
     data["delivery"] = {
         "label": label,
-        "phase_words": shown_as(phase) or {"started": "Started", "measured_30": "First results in",
-                                           "closed": "Closed", "resolved": "Fixed"}.get(phase, ""),
+        "phase_words": PHASE_MESSAGE_WORDS.get(phase) or (PUBLIC_WORDS["in_garage"] if phase else ""),
         "started": phase == "started",
         "building": phase not in ("", "started", "shipped", "resolved", "measured_30", "closed"),
         "shipped": phase == "shipped",
