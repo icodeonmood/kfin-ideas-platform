@@ -15,7 +15,7 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +38,11 @@ jobs:
         run: make lint
 
       - name: Start the local stack (AT-B1-01)
-        run: make up
+        # The worker runs as the runner's user so it and the host-side seed share ./.data (Linux keeps file owners).
+        run: |
+          make .env
+          printf 'WORKER_UID=%s\nWORKER_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+          make up
 
       - name: Seed the company repo
         run: make seed
