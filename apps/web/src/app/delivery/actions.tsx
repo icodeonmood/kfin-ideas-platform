@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { BANNERS } from "@/lib/killswitch-routes";
+
 /** Plain words for every refusal the delivery, lenses and learning screens can meet. Never echoed text. */
 export const ERRORS: Record<string, string> = {
   forbidden: "You can't do that from your role.",
@@ -17,8 +19,8 @@ export const ERRORS: Record<string, string> = {
   confirm_stale: "The note changed since this page loaded. Reload the page and check it again.",
   chair_only: "Only the core committee chair approves the note.",
   already_ready: "The chair has already approved this note.",
-  ember_paused: "Sending The Ember is paused for now.",
-  ones_paused: "The Ones are resting from the wall, so The Ember can't go out just now.",
+  ember_paused: BANNERS["ember.send"],
+  ones_paused: BANNERS["ones.public"],
   month_not_valid: "Pick a month.",
   not_found: "We can't find that. It may have moved on, or it isn't one of yours.",
   already_started: "The handover for this has already started.",
@@ -74,7 +76,7 @@ export const ERRORS: Record<string, string> = {
   fairness_hold:
     "On hold: shortlist or pick rates differ sharply between groups. Look at the reasons, then decide again.",
   kind_required: "Pick which report to run.",
-  learning_paused: "Learning reports are paused by a switch. Turn it back on first.",
+  learning_paused: BANNERS["learning.jobs"],
   personal_data: "Please take out any personal details (numbers, addresses, investor names).",
   text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
   names_not_allowed: "Leave out the names of colleagues and clients.",
@@ -92,7 +94,7 @@ export const ERRORS: Record<string, string> = {
   writeup_locked: "The write-up is with the sponsor or already published, so it can't be changed now.",
   nothing_to_submit: "Save the write-up first, then submit it.",
   not_submitted: "There is no write-up waiting for a decision.",
-  publishing_paused: "Publishing new write-ups is paused for now. Your write-up is saved; approve it later.",
+  publishing_paused: BANNERS["solutions.publish"],
   solution_numbers_full: "We have run out of solution numbers. Please tell the product team.",
   uploader_only: "Only the person who added this file (or an admin) can remove it.",
   closed: "This delivery is closed.",
@@ -111,7 +113,8 @@ export const ERRORS: Record<string, string> = {
     "Something in these words can't go into the company repo. Please reword it and try again.",
   text_too_long: "That's too long. Please shorten it.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
-  paused: "This is paused by a switch for now. Please try again once it is back on.",
+  // A paused route answers with its own notice (`banner`, from BANNERS); this is only the fallback.
+  paused: "This is paused for now. Please try again later.",
   try_again: "Someone else changed this at the same moment. Please try again.",
 };
 
@@ -147,8 +150,11 @@ async function send(url: string, body: Record<string, unknown>, method: string):
     body: JSON.stringify(body),
   }).catch(() => null);
   if (res?.ok) return null;
-  const out = res ? ((await res.json().catch(() => ({}))) as { error?: string; details?: unknown }) : {};
+  const out = res
+    ? ((await res.json().catch(() => ({}))) as { error?: string; banner?: string; details?: unknown })
+    : {};
   const code = String(out.error ?? "");
+  if (code === "paused" && out.banner) return out.banner; // the paused feature's own notice (BLD-157)
   const words = ERRORS[code] ?? "That didn't work. Please try again.";
   if (code === "pack_incomplete" && Array.isArray(out.details)) {
     return `${words} Still needed: ${missingText(out.details.map(String))}.`;

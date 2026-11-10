@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { BANNERS } from "@/lib/killswitch-routes";
 import { can } from "@/lib/rbac";
 import { currentUser } from "@/server/auth/current";
 import { runs, type ClusterRun } from "@/server/clusters";
@@ -132,9 +133,7 @@ export default async function Review({
             ? `Last run ${lastRun.id}: ${lastRun.state === "done" ? `${lastRun.pool_size ?? 0} ideas looked at, ${lastRun.counts.proposals ?? 0} proposals` : lastRun.state}.`
             : "No run yet."}
         </p>
-        {!batchOn ? (
-          <p className="notice">Weekly grouping of similar ideas is switched off for now.</p>
-        ) : null}
+        {!batchOn ? <p className="notice">{BANNERS["clusters.batch"]}</p> : null}
         {batchOn && can(me.roles, "approve_cluster_proposals") ? <RunNow /> : null}
       </section>
       {rows.length ? (

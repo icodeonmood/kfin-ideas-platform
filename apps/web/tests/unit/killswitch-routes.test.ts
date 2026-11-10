@@ -40,6 +40,33 @@ describe("kill switch route map (§7.6)", () => {
     for (const text of Object.values(BANNERS))
       expect(text).not.toMatch(/duplicate|rejected|kill switch|503/i);
   });
+
+  it("speaks the screens' own words: no switch, no in-app inbox, never Garage (BLD-157)", () => {
+    for (const text of Object.values(BANNERS)) {
+      expect(text).not.toMatch(/\bswitch\b|in-app|inbox|garage/i);
+      expect(text.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("is the one source: no screen copies a notice's wording (BLD-157)", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const path = await import("node:path");
+    const appRoot = path.resolve(__dirname, "../../src/app");
+    const copies: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(name)) {
+          const source = readFileSync(full, "utf8");
+          for (const text of Object.values(BANNERS)) if (source.includes(text)) copies.push(full);
+          if (/paused by a switch/i.test(source)) copies.push(full);
+        }
+      }
+    };
+    walk(appRoot);
+    expect(copies).toEqual([]);
+  });
 });
 
 describe("kill switch coverage", () => {
