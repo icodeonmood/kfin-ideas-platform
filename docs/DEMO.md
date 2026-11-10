@@ -18,7 +18,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 |---|---|---|
 | `DEMO-00001` | Kavya Menon, an employee | Home, sharing, Find your crew, My ideas, Messages |
 | `DEMO-00002` | Nikhil Rao, review desk | The review desk |
-| `DEMO-00003` | Meera Pillai, core committee | Desk decisions; proposing in the console |
+| `DEMO-00003` | Meera Pillai, core committee | Committee and Desk decisions; proposing in the console |
 | `DEMO-00004` | Vivek Shenoy, core committee chair | Approving in the console |
 | `DEMO-00005` | Demo CEO | Sponsoring a One; approving a handover pack; confirming results |
 | `DEMO-00006` | Sana Qureshi, admin | Carrying out, screens, launch, kill switches |
@@ -37,7 +37,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 5. **The wall** (anyone): "The Ones" first, with numbers in tier colours. Names show only for people who agreed; Karthik shows as "One No. 3". Below that are ideas by stage.
 6. **An idea page**: open any idea on the wall.
 7. **Review desk** (Nikhil): the queue, including Kavya's courier-tracking idea, then one item.
-8. **Desk decisions** (Meera): Kavya's decided idea, which can still be reconsidered for five working days.
+8. **Desk decisions** (Meera): Committee in the menu, then Desk decisions. Kavya's decided idea, which can still be reconsidered for five working days.
 9. **The console's Ones** (Menu, then Ones). As Vivek (chair), three items are waiting:
    - **Vikram Bhat**, a sponsored inclusion waiting for the chair: "Approve as chair".
    - **Farhan Qureshi's** tier-up to Glow, waiting for approval. The committee's message is written, and Kavya is invited to add hers at the link in her Messages.
@@ -62,7 +62,7 @@ Choose **Sign in with your KFintech account**. On the mock sign-in page, type th
 25. **A write-up other teams can adopt** (Demo CEO, then Sneha): Delivery, then the brokerage statements. Sneha's write-up waits for the sponsor under "A write-up other teams can adopt": "Approve and publish" gives it a SOL- number and, once the repo writer and indexer run, ideas like it show it as "Already running". "Send back for changes" returns it to Sneha, who edits it and sends it again. Switch `solutions.publish` off in the console and approval says publishing is paused.
 26. **Your lens** (Kavya, or anyone): My ideas, then "Your lens". Her ideas by where they are, and each group she is part of with how many ideas and colleagues are in it. Only she sees it, and it never names anyone.
 27. **Friction themes by role** (Sana, then Meera): Learning, "Friction themes by role": client service's themes wait for approval; approve them. Then Lenses: under "Recurring friction themes for each role", operations executives' approved themes with how many ideas share each. No names, no idea text.
-28. **Learning from the committee's decisions** (Sana, then Vivek): on Learning, "Run a report now" for "The pre-score against the core committee" and "Scoring bands". Then Vivek: Desk decisions, "What the platform learns from your decisions". The demo has only a few scored rounds, so counts read "fewer than 5" and nothing waits; with 30 or more decisions a proposal appears here for the chair or the committee to approve or decline. Approving never changes a rule on its own.
+28. **Learning from the committee's decisions** (Sana, then Vivek): on Learning, "Run a report now" for "The pre-score against the core committee" and "Scoring bands". Then Vivek: Committee, then Desk decisions and "What the platform learns from your decisions". The demo has only a few scored rounds, so counts read "fewer than 5" and nothing waits; with 30 or more decisions a proposal appears here for the chair or the committee to approve or decline. Approving never changes a rule on its own.
 
 ## Shows "Coming soon"
 
