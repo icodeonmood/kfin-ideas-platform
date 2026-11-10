@@ -4,9 +4,11 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { BANNERS } from "@/lib/killswitch-routes";
+
 const ERRORS: Record<string, string> = {
   run_in_progress: "A run is already going. Proposals appear in the queue when it finishes.",
-  switched_off: "Weekly grouping is switched off for now.",
+  switched_off: BANNERS["clusters.batch"],
 };
 
 export function RunNow() {

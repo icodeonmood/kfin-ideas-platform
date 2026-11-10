@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BANNERS } from "@/lib/killswitch-routes";
+import { BANNERS, BECAUSE } from "@/lib/killswitch-routes";
 
 /** Plain words for every refusal the delivery, lenses and learning screens can meet. Never echoed text. */
 export const ERRORS: Record<string, string> = {
@@ -20,7 +20,7 @@ export const ERRORS: Record<string, string> = {
   chair_only: "Only the core committee chair approves the note.",
   already_ready: "The chair has already approved this note.",
   ember_paused: BANNERS["ember.send"],
-  ones_paused: BANNERS["ones.public"],
+  ones_paused: `${BANNERS["ones.public"]} ${BECAUSE.emberWaitsForOnes}`,
   month_not_valid: "Pick a month.",
   not_found: "We can't find that. It may have moved on, or it isn't one of yours.",
   already_started: "The handover for this has already started.",

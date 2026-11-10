@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 
+import { BANNERS } from "@/lib/killswitch-routes";
+
 import { Err, Status, useAction, useDone } from "../delivery/actions";
 
 const LOOPS = [
@@ -177,7 +179,7 @@ export function RunLoop({ disabled }: { disabled: boolean }) {
       <button type="submit" className="button button-secondary" disabled={busy || disabled}>
         Run it now
       </button>
-      {disabled ? <p className="hint">Learning jobs are switched off.</p> : null}
+      {disabled ? <p className="hint">{BANNERS["learning.jobs"]}</p> : null}
       <Err text={error} />
       <Status text={status} />
     </form>

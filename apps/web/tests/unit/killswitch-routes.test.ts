@@ -43,7 +43,7 @@ describe("kill switch route map (§7.6)", () => {
 
   it("speaks the screens' own words: no switch, no in-app inbox, never Garage (BLD-157)", () => {
     for (const text of Object.values(BANNERS)) {
-      expect(text).not.toMatch(/\bswitch\b|in-app|inbox|garage/i);
+      expect(text).not.toMatch(/\bswitch(ed|es)?\b|in-app|inbox|garage/i);
       expect(text.trim().length).toBeGreaterThan(0);
     }
   });
@@ -66,6 +66,36 @@ describe("kill switch route map (§7.6)", () => {
     };
     walk(appRoot);
     expect(copies).toEqual([]);
+  });
+
+  it("no staff or employee screen talks about switches; the Admin page's own controls may (BLD-157)", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const path = await import("node:path");
+    const src = path.resolve(__dirname, "../../src");
+    const allowed = [path.join(src, "app", "admin"), path.join(src, "app", "api")];
+    const word = /\bswitch(ed|es)?\b/i;
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (allowed.some((a) => full.startsWith(a))) continue;
+        if (statSync(full).isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(name)) {
+          const code = readFileSync(full, "utf8")
+            .replace(/\/\*[\s\S]*?\*\//g, "")
+            .replace(/^\s*\/\/.*$/gm, "");
+          // Words people read: string literals and JSX text.
+          const strings = code.match(/(["'`])(?:(?!\1)[^\\\n]|\\.)*\1/g) ?? [];
+          const jsxText = code.match(/>[^<>{}\n]+</g) ?? [];
+          for (const text of [...strings, ...jsxText])
+            if (word.test(text) && !/^["'`]Switch to ambient mode["'`]$/.test(text))
+              found.push(`${path.relative(src, full)}: ${text}`);
+        }
+      }
+    };
+    walk(path.join(src, "app"));
+    walk(path.join(src, "components"));
+    expect(found).toEqual([]);
   });
 });
 
