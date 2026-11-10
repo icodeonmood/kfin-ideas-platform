@@ -227,7 +227,10 @@ class FakeRoute:
                 raise item
             text = item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
         else:
-            text = json.dumps(fakes.output_for(spec, inputs), ensure_ascii=False)
+            # The gateway asks again with the problems it found (step 6). A real model corrects itself, so the
+            # fake does too, where it has a corrected form; otherwise it answers the same and the call fails.
+            retry = len(messages) > 1
+            text = json.dumps(fakes.output_for(spec, inputs, retry=retry), ensure_ascii=False)
         prompt_chars = len(system) + sum(len(str(m.get("content", ""))) for m in messages)
         return RouteResult(
             text=text,

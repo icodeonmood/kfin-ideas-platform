@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Callable
 from typing import Any
 
 from gateway.spec import AgentSpec
@@ -386,10 +387,29 @@ BUILDERS = {
 }
 
 
-def output_for(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+def cluster_summary_corrected(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """The second answer after the gateway reports problems: the same summary with a neutral name and description,
+    the two fields shown to everyone. Copying members' words into them can carry something the card checks refuse
+    (the name model reads some word runs as a person), which a real model would rewrite."""
+    out = cluster_summary(spec, inputs)
+    members = [m for m in inputs.get("members") or [] if isinstance(m, dict)]
+    out["name"] = "Shared problem"
+    out["description"] = f"A shared problem raised by {len(members)} colleagues."
+    return out
+
+
+# The corrected answer for agents whose built output can fail a content check that a model would fix on retry.
+CORRECTED: dict[str, Callable[[AgentSpec, dict[str, Any]], dict[str, Any]]] = {
+    "cluster-summary": cluster_summary_corrected
+}
+
+
+def output_for(spec: AgentSpec, inputs: dict[str, Any], *, retry: bool = False) -> dict[str, Any]:
     for example in spec.examples:
         if example.input == inputs:
             return copy.deepcopy(example.output)
+    if retry and spec.name in CORRECTED:
+        return CORRECTED[spec.name](spec, inputs)
     builder = BUILDERS.get(spec.name)
     if builder is not None:
         return builder(spec, inputs)
