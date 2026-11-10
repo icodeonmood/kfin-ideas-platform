@@ -12,6 +12,9 @@ const LOOPS = [
   ["canvas", "Last month's canvas report"],
   ["area_tags", "Area tag groups"],
   ["calibration", "Last quarter's results"],
+  ["agreement", "The pre-score against the core committee"],
+  ["committee_rewards", "What the core committee's picks reward"],
+  ["scoring_band", "Scoring bands"],
 ] as const;
 
 /** Approve or decline one proposal (or one role's friction themes). The worker records who and when; nothing
@@ -21,7 +24,7 @@ export function ProposalActions({
   path = "proposals",
 }: {
   id: number;
-  path?: "proposals" | "role-themes";
+  path?: "proposals" | "role-themes" | "committee/proposals";
 }) {
   const { status, done } = useDone();
   const { error, busy, run } = useAction(done);

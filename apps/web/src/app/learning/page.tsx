@@ -46,6 +46,7 @@ export default async function Page() {
   const drift = data.reports.drift?.data as Record<string, unknown> | undefined;
   const canvas = data.reports.canvas?.data as Record<string, unknown> | undefined;
   const calibration = data.reports.calibration?.data as Record<string, unknown> | undefined;
+  const agreement = data.reports.agreement?.data as Record<string, unknown> | undefined;
   return (
     <>
       <p>
@@ -234,12 +235,23 @@ export default async function Page() {
         ) : (
           <p className="muted">The quarterly report runs on the 1st of each quarter.</p>
         )}
-        <p className="coming-soon coming-soon-light">
-          Proposed changes to scoring bands from these results: coming soon
+        <p className="muted">
+          Proposed changes to scoring bands and scorecard weights from these results and the core
+          committee&apos;s decisions go to the core committee, which decides them on its own learning page.
         </p>
-        <p className="coming-soon coming-soon-light">
-          Learning from the core committee&apos;s decisions: coming soon
-        </p>
+      </section>
+
+      <section aria-labelledby="p-agree">
+        <h2 id="p-agree">The assistant&apos;s pre-score against the core committee</h2>
+        {agreement ? (
+          <p>
+            Over the last 90 days ({num(agreement.rounds)} scoring rounds), the pre-score put a group on the
+            same side of the shortlist line as the committee {pct(agreement.agreement)} of the time. A gap
+            that persists is a reason to change the prompt, through the test sets.
+          </p>
+        ) : (
+          <p className="muted">The weekly report runs on Monday mornings.</p>
+        )}
       </section>
 
       <section aria-labelledby="p-run">

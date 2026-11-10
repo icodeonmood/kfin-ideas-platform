@@ -210,6 +210,10 @@ endpoints:
   - POST /api/learning/proposals/{id}/publish         review_learning   # write an approved term or tag into the company repo (BLD-136)
   - POST /api/learning/role-themes/{id}/decide       review_learning   # approve or decline a role's friction themes (BLD-139)
   - POST /api/learning/run                            review_learning
+  # Learning from the core committee's decisions (§5.9, BLD-149, BLD-150). The worker lets the chair decide
+  # scorecard weights and any core committee member decide scoring bands.
+  - GET /api/learning/committee                       approve_scorecard_changes
+  - POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note
   - GET /api/ember/{id}                               signed_in
@@ -243,6 +247,7 @@ pages:
   - /ones/console              view_ones_console                    # the committee console's Ones module
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /lenses                    view_lenses
+  - /learning/committee        approve_scorecard_changes            # before /learning: the first match wins (BLD-149)
   - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 

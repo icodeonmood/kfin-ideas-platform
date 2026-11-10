@@ -132,6 +132,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
   /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
   /^\/api\/learning\/role-themes\/[^/]+\/decide\/?$/, // the same for a role's friction themes (BLD-139)
+  /^\/api\/learning\/committee\/proposals\/[^/]+\/decide\/?$/, // the core committee deciding one (BLD-149, BLD-150)
   // An admin writing an approved term or tag into the company repo (BLD-136): a person's own console step on the
   // admin page, not employee-facing; the text checks answer 503 on their own when the assistant is off.
   /^\/api\/learning\/proposals\/[^/]+\/publish\/?$/,

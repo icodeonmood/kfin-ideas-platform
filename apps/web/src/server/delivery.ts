@@ -228,13 +228,47 @@ export type Learning = {
   switched_on: boolean;
   reports: Partial<
     Record<
-      "autonomy" | "drift" | "canvas" | "calibration",
+      "autonomy" | "drift" | "canvas" | "calibration" | "agreement",
       { period: string; data: Record<string, unknown>; built_at: string }
     >
   >;
   autonomy: { action_type: string; mode: "gated" | "auto"; rate: number | null; window: number }[];
   proposals: LearningProposal[];
   role_themes: RoleThemes[];
+};
+
+/** The core committee's learning page (§5.9, BLD-149, BLD-150): counts and rates only, never names or idea text. */
+export type CommitteeProposal = {
+  id: number;
+  kind: "scorecard_weights" | "scoring_band";
+  period: string;
+  state: "proposed" | "approved" | "declined";
+  decided_at: string | null;
+  payload: {
+    key: string;
+    rule?: "routing" | "scorecard";
+    field?: string;
+    current: number | Record<string, number>;
+    proposed?: number;
+    implied?: Record<string, number>;
+    differs?: string[];
+    decisions?: number;
+    rounds?: number;
+    deliveries?: number;
+    agreement_now?: number;
+    agreement_proposed?: number;
+    fairness: string[];
+  };
+};
+export type CommitteeLearning = {
+  reports: Partial<
+    Record<
+      "agreement" | "committee_rewards" | "scoring_band",
+      { period: string; data: Record<string, unknown>; built_at: string }
+    >
+  >;
+  proposals: CommitteeProposal[];
+  coming_soon: string[];
 };
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -319,6 +353,8 @@ export const lenses = (me: CurrentUser) => call<Lenses>(`/internal/lenses/${me.i
 export const rebuildLenses = (me: CurrentUser) =>
   send<{ lobs: number; roles: number }>(me, "/internal/lenses/rebuild");
 export const learning = (me: CurrentUser) => call<Learning>(`/internal/learning/${me.id}`);
+export const committeeLearning = (me: CurrentUser) =>
+  call<CommitteeLearning>(`/internal/learning/committee/${me.id}`);
 export const decideLearning = (me: CurrentUser, proposalId: string, input: unknown) =>
   send(me, `/internal/learning/proposals/${id(proposalId)}/decide`, input);
 export const publishProposal = (me: CurrentUser, proposalId: string, input: unknown) =>

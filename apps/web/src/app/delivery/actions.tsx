@@ -69,6 +69,8 @@ export const ERRORS: Record<string, string> = {
   no_money_figure: "There's no money figure to confirm.",
   verdict_required: "Approve or decline.",
   not_open: "This has already been decided.",
+  fairness_hold:
+    "On hold: shortlist or pick rates differ sharply between groups. Look at the reasons, then decide again.",
   kind_required: "Pick which report to run.",
   learning_paused: "Learning reports are paused by a switch. Turn it back on first.",
   personal_data: "Please take out any personal details (numbers, addresses, investor names).",

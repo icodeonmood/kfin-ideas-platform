@@ -354,6 +354,8 @@
     "POST /api/learning/proposals/{id}/publish         review_learning",
     "POST /api/learning/role-themes/{id}/decide       review_learning",
     "POST /api/learning/run                            review_learning",
+    "GET /api/learning/committee                       approve_scorecard_changes",
+    "POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",
     "GET /api/ember/{id}                               signed_in",
@@ -383,6 +385,7 @@
     "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
     "/lenses                    view_lenses",
+    "/learning/committee        approve_scorecard_changes",
     "/learning                  review_learning",
     "/ember/compose             write_ember_note"
   ],

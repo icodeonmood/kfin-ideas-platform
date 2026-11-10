@@ -49,6 +49,11 @@ export default async function DeskDecisions() {
           <Link href="/committee">The committee&apos;s reviews and decisions</Link>
         </p>
       ) : null}
+      {can(me.roles, "approve_scorecard_changes") ? (
+        <p>
+          <Link href="/learning/committee">What the platform learns from your decisions</Link>
+        </p>
+      ) : null}
       {data === null ? (
         <p className="notice">We can&apos;t load the decisions just now. Please try again in a minute.</p>
       ) : (
