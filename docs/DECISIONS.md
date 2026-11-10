@@ -12,6 +12,16 @@ What has been decided, by whom, and why. Claude Code adds build decisions at the
 
 **Product decisions keep one sequence** (DEC-096, DEC-097, and on), because they are the numbers the product lead refers to. Add a DEC row only on `main`, straight after `git pull --rebase`. Commit that file on its own and push at once.
 
+**From a worktree, do this without touching the main checkout,** which other sessions share:
+
+1. Commit your own work first.
+2. Run `git fetch origin && git switch --detach origin/main`.
+3. Add the row and commit.
+4. Run `git push origin HEAD:main`.
+5. Run `git switch -` and rebase.
+
+Never run `git reset`, `git stash` or a whole-file `git add` in a checkout another session is using.
+
 **A new session claims a lane** by taking the next free letter and adding a row below on `main` before it writes its first build decision.
 
 **`make lint` checks all of this** (`scripts/ci/check_decision_ids.py`). It fails on any of these:
