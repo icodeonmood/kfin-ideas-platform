@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     embeddings_model_path: str = (
         ""  # bge-m3 only: local folder with the model files (never fetched at run time)
     )
+    # Voice notes in quick capture (DEC-096): speech to text. `fake` (dev and tests) reads the text a synthetic test
+    # recording carries, else a fixed sample; `local` runs the engine on KFin's own server (no network), from
+    # `SPEECH_MODEL_PATH` in images built with WITH_SPEECH=1; `sarvam` is a hosted route through the gateway that
+    # refuses to run without `SPEECH_HOSTED_APPROVAL` and the `speech.hosted` switch (both off until InfoSec and
+    # the DPO approve: raw voice cannot be tagged before it leaves).
+    speech_mode: str = "fake"  # fake | local | sarvam
+    speech_local_engine: str = "faster-whisper"  # faster-whisper | indic-conformer (coming soon)
+    speech_model_path: str = ""  # local only: folder with the model files (never fetched at run time)
+    speech_max_seconds: int = 180
+    speech_hosted_approval: str = ""  # the InfoSec and DPO approval reference; empty = hosted routes refuse
+    speech_hosted_key: str = ""
+    speech_hosted_url: str = "https://api.sarvam.ai/speech-to-text"
     llm_mode: str = "fake"  # fake | anthropic | bedrock (route per InfoSec, D1)
     llm_fast_model: str = "claude-haiku-5-5"
     llm_reasoning_model: str = "claude-sonnet-5-5"

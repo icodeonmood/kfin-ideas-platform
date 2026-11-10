@@ -109,6 +109,44 @@ def delete_attachment(att_id: str) -> Response:
     return Response(status_code=204)
 
 
+@app.post("/internal/voice", dependencies=[Depends(require_token)])
+def upload_voice(
+    file: UploadFile, idea_uuid: str = Form(...), uploaded_by_code: str = Form(...)
+) -> JSONResponse:
+    """A voice note for a draft's quick capture (DEC-096). The web app checked the person owns the draft."""
+    from voice import service as voice
+
+    data = file.file.read(voice.MAX_BYTES + 1)
+    try:
+        with connect(autocommit=True) as conn:
+            body = voice.accept(conn, idea_uuid=idea_uuid, uploaded_by_code=uploaded_by_code, data=data)
+    except voice.VoiceRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    return JSONResponse(body, status_code=201)
+
+
+@app.get("/internal/voice/{voice_id}", dependencies=[Depends(require_token)])
+def voice_status(voice_id: str, idea_uuid: str) -> JSONResponse:
+    """The owner's view of one voice note: its state, and its text once ready (the web app checked ownership)."""
+    from voice import service as voice
+
+    with connect(autocommit=True) as conn:
+        body = voice.status(conn, voice_id, idea_uuid)
+    if body is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/internal/voice/{voice_id}", dependencies=[Depends(require_token)])
+def delete_voice(voice_id: str, idea_uuid: str) -> Response:
+    """The person took the text, or threw the note away: the recording and the held text go."""
+    from voice import service as voice
+
+    with connect(autocommit=True) as conn:
+        voice.remove_for(conn, voice_id, idea_uuid)
+    return Response(status_code=204)
+
+
 @app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])
 def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
     """The scan as one viewer may see it. The web app decides `mode` from §3.1 (owner: real)."""

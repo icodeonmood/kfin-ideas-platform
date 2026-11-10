@@ -146,7 +146,7 @@
   ],
   "log_rules": {
     "event_name_regex": "^[a-z0-9_]+(?:[.][a-z0-9_]+)*$",
-    "forbidden_field_regex": "(?:^|_)(?:text|texts|one_?line|details?|canvas|body|content|summary|prompt|response|answers?|context|notes?|original|description|title|email|phone|mobile|pan|aadhaar|address|dob|query|spans?|values?|reason|comment|statement|digest)(?:_|$)",
+    "forbidden_field_regex": "(?:^|_)(?:text|texts|one_?line|details?|canvas|body|content|summary|prompt|response|answers?|context|notes?|original|description|title|email|phone|mobile|pan|aadhaar|address|dob|query|spans?|values?|reason|comment|statement|digest|transcripts?|recording|audio|heard)(?:_|$)",
     "forbidden_field_flags": "i",
     "forbidden_field_names": [
       "name",

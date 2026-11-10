@@ -111,7 +111,7 @@ patterns:
 # data is refused, and every string value is scanned with the patterns above (except `log_ok` ones).
 log_rules:
   event_name_regex: '^[a-z0-9_]+(?:[.][a-z0-9_]+)*$'
-  forbidden_field_regex: '(?:^|_)(?:text|texts|one_?line|details?|canvas|body|content|summary|prompt|response|answers?|context|notes?|original|description|title|email|phone|mobile|pan|aadhaar|address|dob|query|spans?|values?|reason|comment|statement|digest)(?:_|$)'
+  forbidden_field_regex: '(?:^|_)(?:text|texts|one_?line|details?|canvas|body|content|summary|prompt|response|answers?|context|notes?|original|description|title|email|phone|mobile|pan|aadhaar|address|dob|query|spans?|values?|reason|comment|statement|digest|transcripts?|recording|audio|heard)(?:_|$)'
   forbidden_field_flags: i
   forbidden_field_names: [name, full_name, first_name, last_name, user_name, display_name, person_name, employee_name, html, markdown]
   allowed_field_names: [reason_code, reason_codes]   # codes from rules/reason-codes.md, never free text

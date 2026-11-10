@@ -19,6 +19,7 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.
     Each draft is locked and its expiry re-checked, so a save that just extended it keeps its files."""
     from attachments import service
+    from voice import service as voice_service
 
     candidates = conn.execute(
         "SELECT id FROM ideas WHERE stage = 'draft' AND draft_expires_at < now()"
@@ -35,6 +36,7 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
             for f in conn.execute("SELECT id FROM attachments WHERE idea_uuid = %s", (c["id"],)).fetchall():
                 service.remove(conn, f["id"])
                 files += 1
+            voice_service.purge_idea(conn, str(c["id"]), "draft_purged")  # recordings and held text (DEC-096)
             conn.execute("DELETE FROM ideas WHERE id = %s", (c["id"],))
             deleted += 1
     log.info("drafts.purged", deleted_count=deleted, file_count=files)
@@ -238,3 +240,34 @@ def presentation_outline(conn: Conn, payload: dict[str, Any]) -> None:
     from committee import decide
 
     decide.write_outline(conn, str(payload["presentation_id"]))
+
+
+@handler("voice.transcribe")
+def voice_transcribe(conn: Conn, payload: dict[str, Any]) -> None:
+    """Virus scan, then speech to text, spoken numbers to digits and blocked values left out (DEC-096)."""
+    from voice import service
+
+    service.transcribe(conn, str(payload["voice_note_id"]))
+
+
+@on_dead("voice.transcribe")
+def voice_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    from voice import service
+
+    service.give_up(conn, str(payload["voice_note_id"]))
+
+
+@handler("voice.purge")
+def voice_purge(conn: Conn, payload: dict[str, Any]) -> None:
+    """An idea was shared: delete its recordings and any text still held for it at once (DEC-096)."""
+    from voice import service
+
+    service.purge_idea(conn, str(payload["idea_uuid"]), "shared")
+
+
+@handler("voice.sweep")
+def voice_sweep(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 15 minutes: anything held past 24 hours, or for an idea no longer a draft (DEC-096)."""
+    from voice import service
+
+    service.sweep(conn)

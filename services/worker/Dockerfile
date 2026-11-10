@@ -22,6 +22,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # are mounted at EMBEDDINGS_MODEL_PATH, never baked in or downloaded at run time.
 ARG WITH_BGE=0
 RUN if [ "$WITH_BGE" = "1" ]; then uv pip install --python /opt/venv/bin/python "sentence-transformers>=3,<6"; fi
+# Voice notes (DEC-096): `--build-arg WITH_SPEECH=1` adds faster-whisper for SPEECH_MODE=local; the model files are
+# mounted at SPEECH_MODEL_PATH, never baked in or downloaded at run time. About 2–3 GB more memory on the host.
+ARG WITH_SPEECH=0
+RUN if [ "$WITH_SPEECH" = "1" ]; then uv pip install --python /opt/venv/bin/python "faster-whisper>=1.1,<2"; fi
 
 COPY services/worker/ ./
 COPY agents/ ./agents/

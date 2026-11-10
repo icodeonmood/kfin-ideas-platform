@@ -30,6 +30,12 @@ from pii.log_rules import scan_log_line, scan_log_lines
         "response",
         "name",
         "email",
+        # Voice notes (DEC-096): what was heard, and the recording itself, never reach a log.
+        "transcript",
+        "voice_transcript",
+        "recording",
+        "audio",
+        "heard_text",
     ],
 )
 def test_checker_flags_text_like_fields(field: str) -> None:
