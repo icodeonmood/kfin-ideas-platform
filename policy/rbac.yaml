@@ -74,6 +74,8 @@ kill_switch_flippers:
   ember.send: [admin]
   solutions.publish: [admin]
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
+  capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
+  speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
 
 # No session needed.
 public:
@@ -109,6 +111,9 @@ endpoints:
   - POST /api/submissions/{id}/choose                 submit
   - POST /api/submissions/{id}/attachments            submit
   - DELETE /api/submissions/{id}/attachments/{att}    submit
+  - POST /api/submissions/{id}/voice                  submit          # a voice note (DEC-096; behind capture.voice)
+  - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
+  - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit
