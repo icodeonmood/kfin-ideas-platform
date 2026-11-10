@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { oneTag } from "@/components/one-card";
 import { OneSpark } from "@/components/one-spark";
 import { SparkMark } from "@/components/spark-mark";
+import { BANNERS } from "@/lib/killswitch-routes";
 import { measureList, oneName } from "@/lib/measures";
 import { sparkFor } from "@/lib/spark";
 import type { constellation } from "@/server/ones";
@@ -69,7 +70,7 @@ export function Sky({ data }: { data: Data }) {
     return (
       <div className="sky" ref={root}>
         <div className="sky-words">
-          <h1>The Ones are resting for now.</h1>
+          <h1>{BANNERS["ones.public"]}</h1>
         </div>
       </div>
     );

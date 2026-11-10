@@ -70,7 +70,7 @@ ROLE_WORDS = frozenset(
 PLATFORM_ID = re.compile(
     r"(?:IDEA|SUB)-[0-9]{4}-[0-9]{6}|(?:CL|SOL|REV|WG)-[0-9]{4}|(?:DEC|RND|PRS|APL)-[0-9]{4}-[0-9]{4}"
     r"|CYC-[0-9]{4}-[0-9]{2}(?:-[0-9]+)?|RUN-[0-9]{4}-W[0-9]{2}(?:-[0-9]+)?"
-    r"|[MI][0-9]{1,2}|Member [0-9]{1,2}"
+    r"|[MI][0-9]{1,2}|(?:Member|Contributor) [0-9]{1,2}"
 )
 
 

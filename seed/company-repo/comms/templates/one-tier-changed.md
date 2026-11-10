@@ -12,7 +12,7 @@ generated:
   at: '2026-11-09T00:00:00+05:30'
 kfin:
   id: TPL-one-tier-changed
-  version: '1.0'
+  version: '1.1'
   events:
   - ones.tier_changed
   subject: "{{#tier.up}}Your spark is hotter: {{tier.to_name}}{{/tier.up}}{{#tier.down}}Your tier has changed{{/tier.down}}"
@@ -24,8 +24,8 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-{{#tier.up}}Your spark has moved from {{tier.from_name}} to **{{tier.to_name}}**. On behalf of the 1% Club core committee and the CEO: well done.{{/tier.up}}
-{{#tier.down}}The 1% Club core committee has moved your tier from {{tier.from_name}} to {{tier.to_name}}.{{/tier.down}}
+{{#tier.up}}Your spark has moved {{#tier.from_name}}from {{tier.from_name}} {{/tier.from_name}}to **{{tier.to_name}}**. On behalf of the 1% Club core committee and the CEO: well done.{{/tier.up}}
+{{#tier.down}}The 1% Club core committee has moved your tier {{#tier.from_name}}from {{tier.from_name}} {{/tier.from_name}}to {{tier.to_name}}.{{/tier.down}}
 
 {{#tier.committee_message}}**From the core committee:** {{tier.committee_message}}{{/tier.committee_message}}
 
