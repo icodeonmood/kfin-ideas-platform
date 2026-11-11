@@ -42,6 +42,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
   const [say, setSay] = useState("");
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false); // the browser's microphone prompt is open
   const supported = useSyncExternalStore(noSubscription, browserCanRecord, () => true);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -52,6 +53,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
   const nextRef = useRef<HTMLButtonElement>(null);
   const startRef = useRef<HTMLButtonElement>(null);
   const cancelled = useRef(false);
+  const starting = useRef(false); // one microphone request at a time, however often Start is pressed
   // Where focus goes once the next step has rendered (never on first load): set by an action, used once.
   const focusNext = useRef<"stop" | "next" | "start" | null>(null);
 
@@ -63,14 +65,16 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
     }
   }, [step]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    cancelled.current = false; // React's development mode mounts twice: the second mount is live again
+    return () => {
       cancelled.current = true;
       if (timer.current) clearInterval(timer.current);
+      if (recorder.current?.state === "recording") recorder.current.stop();
       stream.current?.getTracks().forEach((t) => t.stop());
-    },
-    [],
-  );
+      stream.current = null;
+    };
+  }, []);
 
   useEffect(() => () => void (audioUrl && URL.revokeObjectURL(audioUrl)), [audioUrl]);
 
@@ -82,15 +86,29 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
   }
 
   async function start() {
+    if (starting.current || step === "recording" || step === "sending") return;
+    starting.current = true;
+    setAsking(true);
     setNote(null);
     let media: MediaStream;
     try {
       media = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      const text = failureMessage("microphone_blocked");
+      setNote({ text, error: true });
+      setSay(text);
       setStep("error");
-      setNote({ text: failureMessage("microphone_blocked"), error: true });
+      focusNext.current = "start";
+      return;
+    } finally {
+      starting.current = false;
+      setAsking(false);
+    }
+    if (cancelled.current) {
+      media.getTracks().forEach((t) => t.stop()); // the page went while the prompt was open
       return;
     }
+    stream.current?.getTracks().forEach((t) => t.stop()); // never two open streams
     stream.current = media;
     const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t));
     const rec = new MediaRecorder(media, {
@@ -183,9 +201,11 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
 
   function fail(code: string) {
     const text = failureMessage(code);
+    const keep = Boolean(blob.current) && code !== "virus";
     setNote({ text, error: true });
     setSay(text);
-    setStep(blob.current && code !== "virus" ? "recorded" : "error");
+    setStep(keep ? "recorded" : "error");
+    focusNext.current = keep ? "next" : "start"; // WCAG 2.4.3: focus lands on the next useful control
   }
 
   return (
@@ -215,12 +235,15 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
                 // The person's own words, played back only to them: no captions needed.
                 <audio controls src={audioUrl} aria-label="Play back your voice note" />
               ) : null}
+              {/* aria-disabled, not disabled: the button keeps focus while the note is sent (WCAG 2.4.3). */}
               <button
                 type="button"
                 className="button"
                 ref={nextRef}
-                onClick={() => void send()}
-                disabled={step === "sending"}
+                onClick={() => {
+                  if (step !== "sending") void send();
+                }}
+                aria-disabled={step === "sending" || undefined}
               >
                 {step === "sending" ? "Turning it into text…" : "Turn it into text"}
               </button>
@@ -228,7 +251,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
                 type="button"
                 className="link-button"
                 onClick={() => void start()}
-                disabled={step === "sending"}
+                disabled={step === "sending" || asking}
               >
                 Record again
               </button>
@@ -247,6 +270,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
               className="button button-secondary"
               ref={startRef}
               onClick={() => void start()}
+              aria-disabled={asking || undefined}
             >
               {step === "done" ? "Record another voice note" : VOICE_START}
             </button>

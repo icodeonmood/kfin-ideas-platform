@@ -82,6 +82,15 @@ describe("recorder helpers", () => {
       expect(text).not.toMatch(/_|\b(error|code|null|undefined)\b/i);
     }
     expect(failureMessage("voice_paused")).toMatch(/type it instead/);
+    // DEC-096 review: the hourly limit has its own words; a refused codec or a broken file reads as unreadable.
+    expect(failureMessage("too_many_this_hour")).toBe(
+      "You've sent several voice notes in the last hour. Please wait a little, or type it instead.",
+    );
+    expect(failureMessage("codec_not_allowed")).toBe(failureMessage("type_not_allowed"));
+    expect(failureMessage("unreadable")).toBe(failureMessage("type_not_allowed"));
+    for (const code of ["too_many_this_hour", "codec_not_allowed", "fake_not_allowed", "engine_timeout"]) {
+      expect(failureMessage(code)).not.toMatch(/_|\b(error|code|null|undefined)\b/i);
+    }
   });
 
   it("uses the platform's words only", () => {

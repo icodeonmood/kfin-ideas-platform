@@ -27,6 +27,20 @@ test.use({
   launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] },
 });
 
+test("the microphone is allowed on the share pages only, in the real headers (DEC-096)", async ({
+  browser,
+}) => {
+  const page = await quickCapture(browser);
+  const share = await page.request.get(page.url());
+  expect(share.headers()["permissions-policy"]).toContain("microphone=(self)");
+  const health = await page.request.head("/api/health");
+  expect(health.headers()["permissions-policy"]).toContain("microphone=()");
+  expect(health.headers()["permissions-policy"]).not.toContain("microphone=(self)");
+  const home = await page.request.get("/");
+  expect(home.headers()["permissions-policy"]).toContain("microphone=()");
+  await page.context().close();
+});
+
 test("voice notes off: coming soon, no recorder, the box still works (DEC-096)", async ({ browser }) => {
   await withSwitchLock("capture.voice", async () => {
     const before = await setSwitch(browser, "capture.voice", "off");

@@ -64,8 +64,10 @@ export async function voiceStatus(me: CurrentUser, ideaUuid: string, voiceId: st
 export async function removeVoice(me: CurrentUser, ideaUuid: string, voiceId: string) {
   await ownedDraft(me, ideaUuid);
   if (!UUID.test(voiceId)) throw new SubmissionError(404, "not_found");
+  // The worker's audit names who deleted it, by contributor code only.
   const res = await workerFetch(
-    `/internal/voice/${encodeURIComponent(voiceId)}?idea_uuid=${encodeURIComponent(ideaUuid)}`,
+    `/internal/voice/${encodeURIComponent(voiceId)}?idea_uuid=${encodeURIComponent(ideaUuid)}` +
+      `&by=${encodeURIComponent(me.contributorCode ?? "")}`,
     { method: "DELETE" },
   );
   if (!res.ok) throw new SubmissionError(502, "delete_failed");

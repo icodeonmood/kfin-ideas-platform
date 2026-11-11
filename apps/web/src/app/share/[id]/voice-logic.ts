@@ -75,7 +75,11 @@ export function failureMessage(code: string): string {
     case "too_long":
       return "That recording is longer than 3 minutes. Please record a shorter one.";
     case "type_not_allowed":
+    case "codec_not_allowed":
+    case "unreadable":
       return "We couldn't read that recording. Please try again, or type it instead.";
+    case "too_many_this_hour":
+      return "You've sent several voice notes in the last hour. Please wait a little, or type it instead.";
     case "too_many_waiting":
       return "Please wait for your last voice note to turn into text before you send another.";
     case "virus":

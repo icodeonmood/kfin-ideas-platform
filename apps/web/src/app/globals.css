@@ -416,7 +416,8 @@ textarea[aria-invalid="true"] {
   background: var(--electric-dark);
 }
 
-.button[disabled] {
+.button[disabled],
+.button[aria-disabled="true"] {
   opacity: 0.7;
   cursor: progress;
 }
