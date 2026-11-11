@@ -79,7 +79,8 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 | `learning.run` | 05:30 (each loop on its own day: daily; Mondays, including committee agreement; the 1st, including what the committee rewards and scoring bands; quarter starts) | Log `learning.ran` per loop, or `learning.switched_off` while `learning.jobs` is off; any `alert.drift_*` row is read the same morning |
 | `lenses.build` | Mondays 05:00 | Log `lenses.built` with the LOB and role counts |
 | `delivery.tick` | 09:30 | Log `delivery.tick` with its counts |
-| `voice.sweep` | Every 15 minutes | Log `voice.swept` with a count when it deletes anything; no `voice_notes` row older than 24 hours without `deleted_at` (DEC-096) |
+| `voice.sweep` | Every 15 minutes | Log `voice.swept` with `deleted_count`, `failed_count` (notes it could not delete this run; they are tried again) and `orphan_count` (bucket objects older than 25 hours that no row was tracking); no `voice_notes` row older than 24 hours without `deleted_at` (DEC-096) |
+| Voice notes, what a person sees and how long text is held | Continuous | A person's browser asks for the text every 2 seconds and stops after 5 minutes ("We couldn't turn that into text just now"); any text it never fetched is deleted by `voice.sweep` within 24 hours. A failed note is deleted at once. The quarantine bucket's own rule expires `voice/` after a day (IT; UAT.md) |
 | `points.sync` | Every hour | Log `points.synced` with a count when it adds anything. Points are private: nobody reads anyone else's |
 | Ticker (every 20 s, checks every minute) | Continuous | Email goes out; reminders and breaches appear; the watches run |
 

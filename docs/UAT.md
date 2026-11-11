@@ -15,6 +15,7 @@ For: KFin IT and the product team, deploying The Garage · Ideas to the UAT host
 | Model route decision (D1). Without it the deploy starts in Mode B: `ai.all` off, scans queue | InfoSec | app env file |
 | BGE-M3 model files, mounted at `EMBEDDINGS_MODEL_PATH`, and the worker image built with `--build-arg WITH_BGE=1` (AT-B5-01) | Product team | host folder |
 | Voice notes (DEC-096): 2–3 GB more memory for the worker; a speech model (faster-whisper, multilingual, CTranslate2 int8) mounted at `SPEECH_MODEL_PATH`; the worker image built with `--build-arg WITH_SPEECH=1`; `SPEECH_MODE=local`. Leave `SPEECH_HOSTED_APPROVAL` and `SPEECH_HOSTED_KEY` empty: hosted speech stays off until InfoSec and the DPO approve | IT (memory), product team (model files) | host folder, app env file |
+| Voice notes, KFin's S3 (DEC-096, BLD-C006): on the **quarantine** bucket, a lifecycle rule `voice-notes-expire-1-day` that expires the prefix `voice/` after 1 day, and **no versioning** on that bucket (a kept version would outlive a delete). The worker tries to set the rule itself at start; where the store refuses, IT sets it. The smoke check fails if the quarantine bucket is versioned | IT | the file store |
 
 ## Env files
 
@@ -41,9 +42,9 @@ The script stops at the first problem and says which. Its eight steps:
 | 5 Seed | Company repo from `seed/company-repo/` (no dev overlay outside dev), OKF check, rules, index; 200 synthetic people | the repo is not valid OKF or a rule file fails |
 | 6 Start | Every service up and healthy | a service does not become healthy in 4 minutes |
 | 7 Model route | Leaves `ai.all` on if a route is configured, else switches it off (Mode B), audited | — |
-| 8 Smoke tests | Twelve checks, listed below | any check fails |
+| 8 Smoke tests | Thirteen checks, listed below | any check fails |
 
-Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answer; the sign-in page loads; the API refuses requests without a session; pages send signed-out people to sign in; the web app's own token reaches the worker and a wrong token is refused; the virus scanner answers (the report names the scanner and file store in use); all kill switches exist; the company repo is valid OKF with no dev-only files; the rules load; the index is at the repo's head; only synthetic people exist and nobody has a role yet.
+Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answer; the sign-in page loads; the API refuses requests without a session; pages send signed-out people to sign in; the web app's own token reaches the worker and a wrong token is refused; the virus scanner answers (the report names the scanner and file store in use); all kill switches exist; the company repo is valid OKF with no dev-only files; the rules load; the index is at the repo's head; only synthetic people exist and nobody has a role yet; voice notes are off or use the engine on KFin's own server, never the fake speech route, and the quarantine bucket is not versioned (DEC-096).
 
 ## After the deploy
 
