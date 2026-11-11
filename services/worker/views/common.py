@@ -28,6 +28,10 @@ PUBLIC_STAGES = RECENT + PICKED + IN_GARAGE + SHIPPED
 # What everyone else sees: the one shared stage-word table (core/stage_words.py).
 PUBLIC_WORDS = STAGE_WORDS
 
+# Shown wherever an idea's short summary is empty (the gateway left it blank and the review desk has not written
+# one yet, BLD-C022, BLD-C027): never the person's own words, never another field of the canvas (non-negotiable 7).
+SUMMARY_PENDING = "A short summary is on its way."
+
 _SAFE_TTL_S = 600
 _safe_cache: dict[str, tuple[float, str | None]] = {}
 
@@ -85,7 +89,10 @@ def is_public(idea: dict[str, Any]) -> bool:
 
 def public_card(conn: Conn, idea: dict[str, Any], areas: dict[str, str]) -> dict[str, Any] | None:
     """The card everyone may see, or None if the summary does not pass its checks (then it is simply left out)."""
-    summary = checked_summary(conn, (idea.get("canvas") or {}).get("neutral_summary"))
+    raw = (idea.get("canvas") or {}).get("neutral_summary")
+    summary = (
+        checked_summary(conn, raw) if raw else SUMMARY_PENDING
+    )  # empty: still on the wall, with a placeholder
     if summary is None:
         return None
     return {

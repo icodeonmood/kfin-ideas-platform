@@ -26,6 +26,8 @@ export type Ready = {
   suggested: { path: string; value: unknown; quotes?: string[] }[];
   /** Questions left blank because the person did not say. */
   left_blank?: string[];
+  /** The basic assumptions behind the suggested figures, in plain words (DEC-097). */
+  assumptions?: string[];
   neutral_summary: string;
   next_best: string[];
   matches: MatchCard[];
@@ -188,13 +190,27 @@ export function Crew({
               {ready.suggested.map((s) => {
                 const name = `keep-${s.path.replace(/\./g, "-")}`;
                 const kept = keep[s.path] ?? true;
+                // The value and the person's words behind it describe both choices (WCAG 1.3.1, 4.1.2).
+                const valueId = `${name}-value`;
+                const wordsId = `${name}-words`;
+                const describedBy = s.quotes?.length ? `${valueId} ${wordsId}` : valueId;
                 return (
-                  <fieldset key={s.path} className="field suggestion">
+                  <fieldset key={s.path} className="field suggestion" aria-describedby={describedBy}>
                     <legend>{labelFor(s.path)}</legend>
-                    <p className="suggested-value">{show(s.value)}</p>
+                    <p id={valueId} className="suggested-value">
+                      <span className="visually-hidden">Our suggestion: </span>
+                      {show(s.value)}
+                    </p>
                     {s.quotes?.length ? (
-                      <div className="from-words">
-                        <p className="hint">From your words:</p>
+                      <div
+                        id={wordsId}
+                        className="from-words"
+                        role="group"
+                        aria-labelledby={`${wordsId}-label`}
+                      >
+                        <p id={`${wordsId}-label`} className="hint">
+                          From your words:
+                        </p>
                         {s.quotes.map((q, i) => (
                           <blockquote key={i}>
                             <p>{q}</p>
@@ -207,6 +223,7 @@ export function Crew({
                         type="radio"
                         name={name}
                         checked={kept}
+                        aria-describedby={describedBy}
                         onChange={() => setKeep((k) => ({ ...k, [s.path]: true }))}
                       />
                       Keep this suggestion
@@ -216,6 +233,7 @@ export function Crew({
                         type="radio"
                         name={name}
                         checked={!kept}
+                        aria-describedby={describedBy}
                         onChange={() => setKeep((k) => ({ ...k, [s.path]: false }))}
                       />
                       Leave it blank
@@ -223,6 +241,18 @@ export function Crew({
                   </fieldset>
                 );
               })}
+              {ready.assumptions?.length ? (
+                <div className="from-words" role="group" aria-labelledby="crew-assumptions">
+                  <p id="crew-assumptions" className="hint">
+                    Assumptions we made:
+                  </p>
+                  <ul>
+                    {ready.assumptions.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </>
           ) : null}
           {ready.left_blank?.length ? (

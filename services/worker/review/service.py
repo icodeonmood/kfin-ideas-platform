@@ -159,6 +159,8 @@ def act(
 ) -> dict[str, Any]:
     now = now or dt.datetime.now(dt.UTC)
     action = body.get("action")
+    # The model call for a written summary runs before any row is locked (BLD-C027).
+    summary = _summary_checked(conn, item_id, body) if action == "summary" else None
     with audited(conn), conn.transaction():
         item, idea = _load(conn, item_id)
         refuse_own(conn, reviewer, idea, str(action))
@@ -166,6 +168,9 @@ def act(
         idea_id = idea["idea_id"]
         if action == "decide":
             return _decide(conn, item, idea, reviewer, rev, body, now)
+        if action == "summary":  # also after the decision: the desk can fill a summary the gateway left blank
+            assert summary is not None
+            return _write_summary(conn, item, idea, rev, summary)
         _open_for_action(item, reviewer)
         if action == "redirect":
             kind = body.get("kind")
@@ -245,6 +250,65 @@ def act(
             )
             return {"state": "awaiting_second_reviewer", "stage": idea["stage"]}
         raise ActionRefused(400, "unknown_action")
+
+
+SUMMARY_MIN_CHARS = 15
+SUMMARY_MAX_WORDS = 25
+SUMMARY_MAX_CHARS = 220
+
+
+def _summary_checked(conn: Conn, item_id: int, body: dict[str, Any]) -> str:
+    """The review desk's short summary for colleagues (DEC-026, BLD-C027): within the card limits, through the
+    patterns, then the gatekeeper, then the card check (no tag, pattern, name or client). Never logged."""
+    from gateway import AgentFailed, run_agent
+    from scan.matching import safe_summary
+    from scan.pipeline import decide, thresholds
+
+    text = " ".join(str(body.get("neutral_summary") or "").split())
+    if len(text) < SUMMARY_MIN_CHARS:
+        raise ActionRefused(422, "text_too_short")
+    if len(text) > SUMMARY_MAX_CHARS or len(text.split()) > SUMMARY_MAX_WORDS:
+        raise ActionRefused(422, "summary_too_long")
+    if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
+        raise ActionRefused(422, "personal_data")
+    row = conn.execute("SELECT ref_id, item_type FROM review_items WHERE id = %s", (item_id,)).fetchone()
+    if row is None or row["item_type"] != "idea":
+        raise ActionRefused(404, "not_found")
+    try:
+        gk = run_agent(
+            "gatekeeper",
+            {"mode": "submission", "submission": {"neutral_summary": text}},
+            row["ref_id"],
+            conn=conn,
+        )
+    except AgentFailed:  # switched off or failing: nothing unchecked reaches colleagues
+        raise ActionRefused(503, "checks_unavailable") from None
+    if decide(gk.data, thresholds()) == "blocked":
+        raise ActionRefused(422, "personal_data")
+    if safe_summary(conn, text) is None:
+        raise ActionRefused(422, "summary_not_neutral")
+    return text
+
+
+def _write_summary(
+    conn: Conn, item: dict[str, Any], idea: dict[str, Any], rev: str, text: str
+) -> dict[str, Any]:
+    """Store it as the reviewer's, audit lengths only (non-negotiables 3 and 9), refresh the idea file."""
+    idea_id = idea["idea_id"]
+    card = dict(idea["canvas"] or {})
+    before = str(card.get("neutral_summary") or "")
+    card["neutral_summary"] = text
+    card["provenance"] = {**(card.get("provenance") or {}), "neutral_summary": "reviewer"}
+    card["evidence"] = {k: v for k, v in (card.get("evidence") or {}).items() if k != "neutral_summary"}
+    conn.execute("UPDATE ideas SET canvas = %s WHERE id = %s", (Jsonb(card), idea["id"]))
+    conn.execute(
+        "INSERT INTO audit_log (actor, action, entity, before, after) "
+        "VALUES (%s, 'review.neutral_summary', %s, %s, %s)",
+        (rev, f"idea:{idea_id}", Jsonb({"length": len(before)}), Jsonb({"length": len(text)})),
+    )
+    _reviewed_event(conn, idea_id, rev, "summary_written", verify=False)
+    log.info("review.neutral_summary", idea_id=idea_id, review_item_id=item["id"])
+    return {"state": item["state"], "stage": idea["stage"]}
 
 
 def confirm_hold(conn: Conn, item_id: int, reviewer: str, now: dt.datetime | None = None) -> dict[str, Any]:
@@ -356,6 +420,12 @@ def _decide(
         value[f] = v
     card["value"] = value
     card.setdefault("provenance", {}).update({f"value.{f}": "reviewer" for f in changes})
+    evidence = dict(card.get("evidence") or {})
+    for (
+        f
+    ) in changes:  # the reviewer's value, not the person's words: no "From their words" beside it (BLD-C028)
+        evidence.pop(f"value.{f}", None)
+    card["evidence"] = evidence
 
     attach = body.get("attach") or {"type": "new"}
     stage, cluster_id, outcome = "reviewed", idea["cluster_id"], "standalone"

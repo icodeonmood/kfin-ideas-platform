@@ -7,6 +7,7 @@ import { itemView, mayAct } from "@/server/review";
 import { SubmissionError } from "@/server/submissions";
 
 import { Actions, type ItemView } from "./actions";
+import { SummaryForm } from "./summary-form";
 
 export const metadata: Metadata = { title: "Review item" };
 export const dynamic = "force-dynamic";
@@ -51,6 +52,15 @@ function at(card: Record<string, unknown>, path: string): unknown {
       (n, k) => (n && typeof n === "object" ? (n as Record<string, unknown>)[k] : undefined),
       card,
     );
+}
+
+/** The basic assumptions behind the suggested figures, in plain words (DEC-097). */
+function assumptionsOf(card: Record<string, unknown>): string[] {
+  const list = card.assumptions;
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((a) => (a && typeof a === "object" ? (a as Record<string, unknown>).says : null))
+    .filter((s): s is string => typeof s === "string" && s.length > 0);
 }
 
 /** The person's own words behind a suggested answer (DEC-095), for the field and any part of it. */
@@ -129,6 +139,16 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
                 <dd>{view.idea.strength ?? 0} of 5</dd>
               </div>
             </dl>
+            {assumptionsOf(card).length ? (
+              <div className="from-words" aria-labelledby="p-assumptions">
+                <h4 id="p-assumptions">Assumptions we made</h4>
+                <ul>
+                  {assumptionsOf(card).map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {view.idea.attachments.length ? (
               <>
                 <h4>Research files</h4>
@@ -259,7 +279,15 @@ export default async function Item({ params }: { params: Promise<{ id: string }>
         </ol>
       </section>
 
-      {(await mayAct(me, id)) ? <Actions id={id} view={view} me={me.id} /> : null}
+      {(await mayAct(me, id)) ? (
+        <>
+          <SummaryForm
+            id={id}
+            current={typeof card.neutral_summary === "string" ? card.neutral_summary : ""}
+          />
+          <Actions id={id} view={view} me={me.id} />
+        </>
+      ) : null}
     </>
   );
 }

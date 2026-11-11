@@ -146,14 +146,15 @@ def render_idea(
     sol = canvas.get("solution") or {}
     provenance: dict[str, str] = canvas.get("provenance") or {}
     one_line = canvas.get("one_line") or ""
-    summary = canvas.get("neutral_summary") or one_line
+    # The description never falls back to the person's own words: an empty summary reads as pending (BLD-C027).
+    summary = canvas.get("neutral_summary") or "A short summary is on its way."
 
     tags = [a.removeprefix("AREA-") for a in idea["area_ids"]]
     tags += [lob.removeprefix("LOB-") for lob in idea["lobs"]]
     tags += [s.removeprefix("GL-") for s in idea["systems"]]
     meta: dict[str, Any] = {
         "type": "idea",
-        "title": one_line,
+        "title": one_line or idea["idea_id"],  # an empty one line (BLD-C026) still gives the file a title
         "description": summary,
         "tags": list(dict.fromkeys(tags)),
         "status": "stable" if any(str(v.get("by", "")).startswith("human:") for v in verified) else "draft",

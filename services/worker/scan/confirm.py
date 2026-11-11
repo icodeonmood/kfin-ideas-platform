@@ -12,9 +12,11 @@ from typing import Any
 from core.config import get_settings
 from core.db import Conn
 from gateway import run_agent
+from gateway.grounding import still_backed
 from pii.patterns import scan
 from pii.tagger import tag_payload
 from rules import load_rule
+from scan.inputs import assumptions
 from scan.matching import card_text, run_matching
 from scan.pipeline import _save_result, decide, load_result, thresholds
 
@@ -113,6 +115,9 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
                 evidence.pop(field, None)  # their own words now, not a suggestion
     card["provenance"] = provenance
     card["evidence"] = evidence
+    # Edited details can leave a quote behind; a cleared figure can leave an assumption unused (BLD-C028).
+    allowed = {a["id"]: float(a["value"]) for a in assumptions()}
+    card["evidence"], card["assumptions"] = still_backed(card, allowed)
 
     share_limit = float(
         load_rule(get_settings().company_repo_path, "thresholds").data["match"]["rerun_if_edit_share"]

@@ -26,6 +26,7 @@ EVENT_WORDS = {
     "reviewed": "Reviewed by the review desk",
     "redirected": "Sent to the right team",
     "visibility_changed": "Who can see it was changed",
+    "summary_written": "The review desk wrote the short summary colleagues see",
     "review_overdue": "The review took longer than planned",
     "needs_info_overdue": "Set aside: no answer yet",
     "clustered": "Grouped with similar ideas",

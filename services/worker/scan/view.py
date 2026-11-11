@@ -154,6 +154,10 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "confirmed": "confirmed" in result,
             "suggested": _suggested(ca),
             "left_blank": _left_blank(ca),
+            # DEC-097: the basic assumptions behind the suggested figures, in plain words.
+            "assumptions": [
+                str(a["says"]) for a in ca.get("assumptions") or [] if isinstance(a, dict) and a.get("says")
+            ],
             "neutral_summary": ca["neutral_summary"],
             "next_best": ca["strength"]["next_best"],
             "matches": submitter_cards(conn, result["match"], row["contributor_code"])
