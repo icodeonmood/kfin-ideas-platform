@@ -147,7 +147,8 @@ def render_idea(
     provenance: dict[str, str] = canvas.get("provenance") or {}
     one_line = canvas.get("one_line") or ""
     # The description never falls back to the person's own words: an empty summary reads as pending (BLD-C027).
-    summary = canvas.get("neutral_summary") or "A short summary is on its way."
+    neutral = str(canvas.get("neutral_summary") or "").strip()  # spaces are no summary (BLD-C057)
+    summary = neutral or "A short summary is on its way."
 
     tags = [a.removeprefix("AREA-") for a in idea["area_ids"]]
     tags += [lob.removeprefix("LOB-") for lob in idea["lobs"]]
@@ -181,7 +182,7 @@ def render_idea(
         "cluster": idea["cluster_id"],
         "visibility": idea["visibility"],
         "language": idea["language"] or "en",
-        "neutral_summary": canvas.get("neutral_summary"),  # the only text a match card shows (BLD-079)
+        "neutral_summary": neutral or None,  # the only text a match card shows (BLD-079)
         "attachments": [
             {k: a[k] for k in ("id", "name", "sha256", "bytes") if k in a}
             for a in (canvas.get("attachments") or [])

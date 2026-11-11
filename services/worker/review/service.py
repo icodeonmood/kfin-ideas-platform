@@ -277,24 +277,23 @@ def _summary_text(body: dict[str, Any]) -> str:
 
 
 def _too_close(conn: Conn, idea: dict[str, Any], text: str) -> bool:
-    """Whether the summary repeats five or more of the person's words in a row (any of their text, as stored and as
-    restored), which would put their words on colleagues' match cards (non-negotiable 7). Never logged."""
-    from gateway.grounding import SOURCE_FIELDS, tokens
+    """Whether the summary repeats five or more of the person's words in a row (any of their text, files' digests
+    included, as stored and as restored), which would put their words on colleagues' match cards (non-negotiable 7).
+    Never logged."""
+    from gateway.grounding import source_pieces, tokens
     from pii import vault
     from pii.restore import restore
 
     card = idea["canvas"] or {}
-    texts: list[str] = [str(card.get("original_text") or "")]
-    for path in SOURCE_FIELDS:
-        node: Any = card
-        for key in path.split("."):
-            node = node.get(key) if isinstance(node, dict) else None
-        if isinstance(node, str):
-            texts.append(node)
+    # Everything of theirs: the original text, every free-text answer, their references and clean files' digests
+    # (BLD-C057), both as the card holds them and as the attachments table does.
+    texts: list[str] = [str(card.get("original_text") or ""), *source_pieces({"canvas_answers": card})]
     texts += [
-        str(r.get("value"))
-        for r in (card.get("ecosystem") or {}).get("references") or []
-        if isinstance(r, dict)
+        str(r["digest"])
+        for r in conn.execute(
+            "SELECT digest FROM attachments WHERE idea_uuid = %s AND state = 'clean' AND digest IS NOT NULL",
+            (idea["id"],),
+        ).fetchall()
     ]
     mapping = vault.mapping(conn, idea["idea_id"])
     runs: set[tuple[str, ...]] = set()

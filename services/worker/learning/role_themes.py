@@ -40,7 +40,8 @@ def propose(conn: Conn, now: dt.datetime, period: str) -> int:
         ).fetchone():
             continue
         rows = conn.execute(
-            "SELECT canvas ->> 'neutral_summary' AS summary, area_ids, lobs FROM ideas WHERE visibility = 'org' "
+            "SELECT nullif(btrim(canvas ->> 'neutral_summary'), '') AS summary, area_ids, lobs FROM ideas "
+            "WHERE visibility = 'org' "
             "AND stage NOT IN ('draft', 'scanning', 'blocked', 'withdrawn') AND %s = ANY(roles_affected) "
             "AND submitted_at >= %s ORDER BY submitted_at DESC LIMIT %s",
             (role_id, now - dt.timedelta(days=WINDOW_DAYS), MAX_IDEAS),
