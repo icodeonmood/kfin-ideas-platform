@@ -115,9 +115,10 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
                 evidence.pop(field, None)  # their own words now, not a suggestion
     card["provenance"] = provenance
     card["evidence"] = evidence
-    # Edited details can leave a quote behind; a cleared figure can leave an assumption unused (BLD-C028).
+    # Every quote checked again against the person's own text only; a figure whose quotes went is cleared with its
+    # assumptions, never left accepted without them (BLD-C028, BLD-C045).
     allowed = {a["id"]: float(a["value"]) for a in assumptions()}
-    card["evidence"], card["assumptions"] = still_backed(card, allowed)
+    card, _cleared = still_backed(card, allowed)
 
     share_limit = float(
         load_rule(get_settings().company_repo_path, "thresholds").data["match"]["rerun_if_edit_share"]

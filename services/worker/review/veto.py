@@ -32,7 +32,7 @@ from sla import engine
 def desk_decisions(conn: Conn, limit: int = 200) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT r.id, r.ref_id, r.final, r.decided_at, r.decided_by, r.vetoed_by, u.staff_code, "
-        "nullif(i.canvas->>'neutral_summary', '') AS summary, i.stage, "
+        "nullif(btrim(i.canvas->>'neutral_summary'), '') AS summary, i.stage, "
         "(SELECT t.state FROM sla_timers t WHERE t.entity_type = 'review_item' AND t.entity_id = r.id::text "
         " AND t.stage = 'veto_window' ORDER BY t.id DESC LIMIT 1) AS window_state, "
         "(SELECT t.due_at FROM sla_timers t WHERE t.entity_type = 'review_item' AND t.entity_id = r.id::text "
@@ -51,7 +51,7 @@ def desk_decisions(conn: Conn, limit: int = 200) -> dict[str, Any]:
         ).fetchall()
     }  # the desk's note to the person, never a veto reason
     disagreements = conn.execute(
-        "SELECT r.id, r.ref_id, r.created_at, nullif(i.canvas->>'neutral_summary', '') AS summary FROM review_items r "
+        "SELECT r.id, r.ref_id, r.created_at, nullif(btrim(i.canvas->>'neutral_summary'), '') AS summary FROM review_items r "
         "JOIN ideas i ON i.idea_id = r.ref_id WHERE r.item_type = 'disagreement' AND r.state = 'open' "
         "ORDER BY r.created_at"
     ).fetchall()

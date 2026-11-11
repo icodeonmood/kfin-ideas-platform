@@ -29,6 +29,7 @@ from views.common import (
     SHIPPED,
     SUMMARY_PENDING,
     checked_summary,
+    public_summary,
     taxonomy_names,
 )
 
@@ -70,15 +71,12 @@ def _idea_line(conn: Conn, one: dict[str, Any], public: bool) -> tuple[str | Non
         ).fetchone()
         if idea is None:
             return None, None
-        raw = (idea["canvas"] or {}).get("neutral_summary")
         if public:
             if idea["visibility"] != "org" or idea["stage"] not in PUBLIC_STAGES:
                 return None, None
-            summary = (
-                checked_summary(conn, raw) if raw else SUMMARY_PENDING
-            )  # an unsafe one is still left out
+            summary = public_summary(conn, idea["canvas"])  # an unsafe one is still left out
         else:
-            summary = raw or SUMMARY_PENDING
+            summary = str((idea["canvas"] or {}).get("neutral_summary") or "").strip() or SUMMARY_PENDING
         return summary, PUBLIC_WORDS.get(idea["stage"])
     title = unseal(one["title_encrypted"], f"one:{one['id']}:title")
     if public:  # checked when it was written; checked again before everyone sees it (Ones review, BLD-111)

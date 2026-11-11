@@ -39,7 +39,7 @@ _safe_cache: dict[str, tuple[float, str | None]] = {}
 def checked_summary(conn: Conn, summary: str | None) -> str | None:
     """The neutral summary if it passes the checks (tags, patterns, names), else None. Cached for ten minutes:
     the wall shows the same few dozen summaries to everyone."""
-    if not summary:
+    if not summary or not summary.strip():
         return None
     key = f"{conn.info.dsn}|{summary}"
     hit = _safe_cache.get(key)
@@ -87,12 +87,17 @@ def is_public(idea: dict[str, Any]) -> bool:
     return idea["visibility"] == "org" and idea["stage"] in PUBLIC_STAGES
 
 
+def public_summary(conn: Conn, canvas: dict[str, Any] | None) -> str | None:
+    """What colleagues see of an idea's short summary: the checked summary; the placeholder while it is empty (or only
+    spaces); None when a written one fails its checks (the caller leaves it out). Never anything else from the canvas
+    (non-negotiable 7, BLD-C027, BLD-C044)."""
+    raw = str((canvas or {}).get("neutral_summary") or "").strip()
+    return checked_summary(conn, raw) if raw else SUMMARY_PENDING
+
+
 def public_card(conn: Conn, idea: dict[str, Any], areas: dict[str, str]) -> dict[str, Any] | None:
     """The card everyone may see, or None if the summary does not pass its checks (then it is simply left out)."""
-    raw = (idea.get("canvas") or {}).get("neutral_summary")
-    summary = (
-        checked_summary(conn, raw) if raw else SUMMARY_PENDING
-    )  # empty: still on the wall, with a placeholder
+    summary = public_summary(conn, idea.get("canvas"))  # empty: still on the wall, with a placeholder
     if summary is None:
         return None
     return {

@@ -51,15 +51,22 @@ FLAG_DROPPED = "Some suggestions were left out because the person's own words di
 MAX_FLAGS = 5
 
 
-def with_drop_flags(ca: dict[str, Any], dropped: list[str]) -> dict[str, Any]:
-    """The canvas-assist output with neutral reviewer flags for what the gateway dropped (paths only, no text)."""
-    if not dropped:
-        return ca
-    flags = [FLAG_SUMMARY_BLANK] if "neutral_summary" in dropped else []
-    if any(p != "neutral_summary" for p in dropped):
+def with_review_flags(ca: dict[str, Any], dropped: list[str]) -> dict[str, Any]:
+    """The canvas-assist output as stored (BLD-C027, BLD-C044): a summary of only spaces becomes "", and the review
+    desk gets neutral flags read from the final answer (a blank summary, whoever left it blank) and from what the
+    gateway dropped (a suggestion left out; not an assumption removed or reworded). Paths only, never text."""
+    summary = ca.get("neutral_summary")
+    blank = not isinstance(summary, str) or not summary.strip()
+    flags = [FLAG_SUMMARY_BLANK] if blank else []
+    if any(p != "neutral_summary" and not p.startswith("assumptions.") for p in dropped):
         flags.append(FLAG_DROPPED)
+    if not flags:
+        return ca
     kept = [f for f in ca.get("flags_for_reviewer") or [] if f not in flags]
-    return {**ca, "flags_for_reviewer": (flags + kept)[:MAX_FLAGS]}
+    out = {**ca, "flags_for_reviewer": (flags + kept)[:MAX_FLAGS]}
+    if blank:
+        out["neutral_summary"] = ""
+    return out
 
 
 def thresholds() -> dict[str, Any]:
@@ -198,7 +205,7 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
                 ref,
                 conn=conn,
             )
-            result["canvas_assist"] = with_drop_flags(ca.data, ca.dropped)
+            result["canvas_assist"] = with_review_flags(ca.data, ca.dropped)
             _save_result(conn, idea_uuid, result)
         if mode == "sync" and time.monotonic() - started > limit:
             raise TooSlow()

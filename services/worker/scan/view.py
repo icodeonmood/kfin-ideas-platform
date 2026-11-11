@@ -158,7 +158,7 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "assumptions": [
                 str(a["says"]) for a in ca.get("assumptions") or [] if isinstance(a, dict) and a.get("says")
             ],
-            "neutral_summary": ca["neutral_summary"],
+            "neutral_summary": str(ca.get("neutral_summary") or "").strip(),
             "next_best": ca["strength"]["next_best"],
             "matches": submitter_cards(conn, result["match"], row["contributor_code"])
             if "match" in result

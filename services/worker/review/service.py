@@ -159,8 +159,8 @@ def act(
 ) -> dict[str, Any]:
     now = now or dt.datetime.now(dt.UTC)
     action = body.get("action")
-    # The model call for a written summary runs before any row is locked (BLD-C027).
-    summary = _summary_checked(conn, item_id, body) if action == "summary" else None
+    if action == "summary":
+        return _summary(conn, item_id, reviewer, body)
     with audited(conn), conn.transaction():
         item, idea = _load(conn, item_id)
         refuse_own(conn, reviewer, idea, str(action))
@@ -168,9 +168,6 @@ def act(
         idea_id = idea["idea_id"]
         if action == "decide":
             return _decide(conn, item, idea, reviewer, rev, body, now)
-        if action == "summary":  # also after the decision: the desk can fill a summary the gateway left blank
-            assert summary is not None
-            return _write_summary(conn, item, idea, rev, summary)
         _open_for_action(item, reviewer)
         if action == "redirect":
             kind = body.get("kind")
@@ -257,13 +254,18 @@ SUMMARY_MAX_WORDS = 25
 SUMMARY_MAX_CHARS = 220
 
 
-def _summary_checked(conn: Conn, item_id: int, body: dict[str, Any]) -> str:
-    """The review desk's short summary for colleagues (DEC-026, BLD-C027): within the card limits, through the
-    patterns, then the gatekeeper, then the card check (no tag, pattern, name or client). Never logged."""
-    from gateway import AgentFailed, run_agent
-    from scan.matching import safe_summary
-    from scan.pipeline import decide, thresholds
+OWN_WORDS_RUN = 5  # tokens in a row shared with the person's text that make a summary a copy (BLD-C046)
 
+
+def _open_for_summary(item: dict[str, Any], reviewer: str) -> None:
+    """Like any action, except that a decided or closed item can still get its summary written (BLD-C044)."""
+    if item["state"] == "awaiting_second_reviewer":
+        raise ActionRefused(409, "awaiting_hold_confirmation")
+    if item["assigned_to"] and str(item["assigned_to"]) != reviewer:
+        raise ActionRefused(409, "assigned_to_someone_else")
+
+
+def _summary_text(body: dict[str, Any]) -> str:
     text = " ".join(str(body.get("neutral_summary") or "").split())
     if len(text) < SUMMARY_MIN_CHARS:
         raise ActionRefused(422, "text_too_short")
@@ -271,15 +273,48 @@ def _summary_checked(conn: Conn, item_id: int, body: dict[str, Any]) -> str:
         raise ActionRefused(422, "summary_too_long")
     if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
         raise ActionRefused(422, "personal_data")
-    row = conn.execute("SELECT ref_id, item_type FROM review_items WHERE id = %s", (item_id,)).fetchone()
-    if row is None or row["item_type"] != "idea":
-        raise ActionRefused(404, "not_found")
+    return text
+
+
+def _too_close(conn: Conn, idea: dict[str, Any], text: str) -> bool:
+    """Whether the summary repeats five or more of the person's words in a row (any of their text, as stored and as
+    restored), which would put their words on colleagues' match cards (non-negotiable 7). Never logged."""
+    from gateway.grounding import SOURCE_FIELDS, tokens
+    from pii import vault
+    from pii.restore import restore
+
+    card = idea["canvas"] or {}
+    texts: list[str] = [str(card.get("original_text") or "")]
+    for path in SOURCE_FIELDS:
+        node: Any = card
+        for key in path.split("."):
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, str):
+            texts.append(node)
+    texts += [
+        str(r.get("value"))
+        for r in (card.get("ecosystem") or {}).get("references") or []
+        if isinstance(r, dict)
+    ]
+    mapping = vault.mapping(conn, idea["idea_id"])
+    runs: set[tuple[str, ...]] = set()
+    for t in texts:
+        for variant in (t, str(restore(t, mapping, "real"))):
+            words = tokens(variant)
+            runs |= {tuple(words[i : i + OWN_WORDS_RUN]) for i in range(len(words) - OWN_WORDS_RUN + 1)}
+    words = tokens(text)
+    return any(tuple(words[i : i + OWN_WORDS_RUN]) in runs for i in range(len(words) - OWN_WORDS_RUN + 1))
+
+
+def _summary_checks(conn: Conn, idea_id: str, text: str) -> None:
+    """The gatekeeper, then the card check (no tag, pattern, name or client): the slow part, run with no lock."""
+    from gateway import AgentFailed, run_agent
+    from scan.matching import safe_summary
+    from scan.pipeline import decide, thresholds
+
     try:
         gk = run_agent(
-            "gatekeeper",
-            {"mode": "submission", "submission": {"neutral_summary": text}},
-            row["ref_id"],
-            conn=conn,
+            "gatekeeper", {"mode": "submission", "submission": {"neutral_summary": text}}, idea_id, conn=conn
         )
     except AgentFailed:  # switched off or failing: nothing unchecked reaches colleagues
         raise ActionRefused(503, "checks_unavailable") from None
@@ -287,7 +322,31 @@ def _summary_checked(conn: Conn, item_id: int, body: dict[str, Any]) -> str:
         raise ActionRefused(422, "personal_data")
     if safe_summary(conn, text) is None:
         raise ActionRefused(422, "summary_not_neutral")
-    return text
+
+
+def _summary(conn: Conn, item_id: int, reviewer: str, body: dict[str, Any]) -> dict[str, Any]:
+    """The review desk's short summary for colleagues (DEC-026, BLD-C027, BLD-C044). Cheap refusals first: the text's
+    limits and patterns, the reviewer's own idea (audited), the item's state and the person's own words. Then the
+    model call, with no row locked. Then, under the lock, the same refusals again and the write."""
+    text = _summary_text(body)
+    with audited(conn):
+        item = conn.execute("SELECT * FROM review_items WHERE id = %s", (item_id,)).fetchone()
+        if item is None or item["item_type"] != "idea":
+            raise ActionRefused(404, "not_found")
+        idea = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (item["ref_id"],)).fetchone()
+        if idea is None:
+            raise ActionRefused(404, "not_found")
+        refuse_own(conn, reviewer, dict(idea), "summary")
+    _open_for_summary(dict(item), reviewer)
+    if _too_close(conn, dict(idea), text):
+        raise ActionRefused(422, "summary_too_close")
+    _summary_checks(conn, idea["idea_id"], text)
+    with audited(conn), conn.transaction():
+        locked, idea_now = _load(conn, item_id)
+        refuse_own(conn, reviewer, idea_now, "summary")
+        _open_for_summary(locked, reviewer)
+        rev = staff_code(conn, reviewer)
+        return _write_summary(conn, locked, idea_now, rev, text)
 
 
 def _write_summary(
