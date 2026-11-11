@@ -142,3 +142,12 @@ def test_row_uuids_with_digit_runs_are_safe_values() -> None:
 
     line = '{"event":"scan.saved","idea_uuid":"1b2c3d4e-5f60-4a1b-9c2d-998877665544"}'
     assert list(scan_log_line(line, 1)) == []
+
+
+def test_voice_note_log_lines_pass_the_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DEC-096: the voice pipeline's own log fields are allowed; `voice_note_id` was not (it reads as a note)."""
+    from pii.log_rules import field_is_forbidden
+
+    for field in ("voice_id", "byte_count", "removed_count", "deleted_count", "reason_code"):
+        assert not field_is_forbidden(field), field
+    assert field_is_forbidden("voice_note_id")

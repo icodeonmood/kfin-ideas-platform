@@ -19,6 +19,7 @@ HIDDEN_FROM_WEB = {
     "pseudonym_vault", "llm_cache", "vault_counters", "schema_migrations",
     "sealed_scores", "ai_prescores", "assessments", "decision_sheets",  # sealed committee records (§4.6–§4.7)
     "appeals",  # statements reach the panel through the worker only (§4.12, BLD-222)
+    "voice_notes",  # recordings and what was heard reach the owner through the worker only (DEC-096, BLD-C002)
 }  # fmt: skip
 
 

@@ -103,7 +103,7 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, data: bytes) ->
             "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('voice.transcribe', %s, %s)",
             (Jsonb({"voice_note_id": voice_id}), f"voice:{voice_id}"),
         )
-    log.info("voice.accepted", voice_note_id=voice_id, byte_count=len(data))
+    log.info("voice.accepted", voice_id=voice_id, byte_count=len(data))
     return {"id": voice_id, "state": "quarantine"}
 
 
@@ -143,7 +143,7 @@ def _fail(conn: Conn, row: dict[str, Any], code: str) -> str:
         "UPDATE voice_notes SET state = 'failed', failure = %s WHERE id = %s AND deleted_at IS NULL",
         (code, row["id"]),
     )
-    log.info("voice.failed", voice_note_id=str(row["id"]), reason_code=code)
+    log.info("voice.failed", voice_id=str(row["id"]), reason_code=code)
     return "failed"
 
 
@@ -195,7 +195,7 @@ def transcribe(conn: Conn, voice_id: str) -> str:
             ),
         )
         _drop_recording(conn, voice_id, row["store_key"], "transcribed")
-    log.info("voice.ready", voice_note_id=voice_id, removed_count=left_out)
+    log.info("voice.ready", voice_id=voice_id, removed_count=left_out)
     return "ready"
 
 
