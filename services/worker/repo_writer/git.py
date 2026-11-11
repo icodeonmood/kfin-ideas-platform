@@ -31,16 +31,32 @@ def seed_in_progress(repo: Path) -> bool:
         return False
 
 
+def seed_marker_age(repo: Path) -> float | None:
+    try:
+        return time.time() - seed_marker(repo).stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
 @contextmanager
 def seeding(repo: Path, settle_s: float = SEED_SETTLE_S) -> Iterator[None]:
-    """Hold the seed marker while the seed writes the company repo."""
+    """Hold the seed marker while the seed writes the company repo. Created exclusively, so two seeds cannot both
+    hold it; removed however the seed ends, an interrupt during the settle wait included. A seed killed outright
+    (SIGKILL) leaves it, and it goes stale after SEED_MARKER_STALE_S."""
     marker = seed_marker(repo)
     marker.parent.mkdir(parents=True, exist_ok=True)
-    if seed_in_progress(repo):
-        raise SystemExit(f"another seed is running ({marker}); wait for it to finish")
-    marker.write_text(f"{os.getpid()}\n", encoding="utf-8")
-    time.sleep(settle_s)
+    if not seed_in_progress(repo):
+        marker.unlink(missing_ok=True)  # stale, from a seed that died
     try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise SystemExit(
+            f"another seed is running ({marker}). Wait for it to finish; if no seed is running, delete that file"
+        ) from None
+    try:
+        os.write(fd, f"{os.getpid()}\n".encode())
+        os.close(fd)
+        time.sleep(settle_s)
         yield
     finally:
         marker.unlink(missing_ok=True)

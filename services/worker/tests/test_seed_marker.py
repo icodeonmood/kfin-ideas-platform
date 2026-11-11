@@ -29,6 +29,20 @@ def test_the_marker_is_held_while_seeding_and_removed_after(tmp_path: Path) -> N
     assert not seed_in_progress(repo) and not seed_marker(repo).exists()
 
 
+def test_an_interrupt_during_the_settle_wait_removes_the_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "kfin-ideas"
+
+    def interrupted(_: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("repo_writer.git.time.sleep", interrupted)
+    with pytest.raises(KeyboardInterrupt), seeding(repo):
+        pass
+    assert not seed_marker(repo).exists()
+
+
 def test_a_marker_left_by_a_seed_that_died_goes_stale(tmp_path: Path) -> None:
     repo = tmp_path / "kfin-ideas"
     seed_marker(repo).write_text("1\n", encoding="utf-8")
