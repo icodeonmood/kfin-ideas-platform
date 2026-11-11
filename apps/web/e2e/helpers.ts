@@ -37,6 +37,29 @@ export async function expectNoSeriousAxeIssues(page: Page) {
     .filter((v) => v.impact === "serious" || v.impact === "critical")
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
   expect(blocking, `axe on ${page.url()}`).toEqual([]);
+  await expectNoSidewaysScroll(page);
+}
+
+/** WCAG 1.4.10 reflow (BLD-A163): no sideways page scroll at the page's own width, nor at 320 CSS px (a 1280 px
+ * screen at 400%). Runs with every axe check, so every screen the suites open is covered. A strip or table that
+ * scrolls inside its own box is fine; only the page itself must not. */
+export async function expectNoSidewaysScroll(page: Page) {
+  const size = page.viewportSize();
+  const over = () =>
+    page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(
+    await over(),
+    `sideways scroll at ${size?.width ?? "default"} px on ${page.url()}`,
+  ).toBeLessThanOrEqual(0);
+  if (!size || size.width <= 320) return;
+  await page.setViewportSize({ width: 320, height: size.height });
+  try {
+    await expect
+      .poll(over, { message: `sideways scroll at 320 px on ${page.url()}`, timeout: 3_000 })
+      .toBeLessThanOrEqual(0);
+  } finally {
+    await page.setViewportSize(size);
+  }
 }
 
 /**

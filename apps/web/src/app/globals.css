@@ -286,6 +286,7 @@ section + section {
   .table td {
     border: 0;
     padding: 0.25rem 0;
+    overflow-wrap: anywhere; /* a long email or reference wraps instead of pushing the row sideways (BLD-A163) */
   }
 }
 
@@ -339,6 +340,9 @@ textarea {
   background: var(--bg);
   color: var(--text);
   max-width: 100%;
+  /* A grid or flex item's minimum is its content by default, so a file input or a long option would push the
+     form, and the page, wider than a phone screen (WCAG 1.4.10, BLD-A163). */
+  min-width: 0;
 }
 
 input[aria-invalid="true"],
@@ -1243,6 +1247,9 @@ blockquote {
 }
 
 .ones-strip {
+  /* The containing block for the cards' hidden labels (position: absolute), so the strip clips them instead of
+     the whole page scrolling sideways (WCAG 1.4.10, BLD-A163). */
+  position: relative;
   padding: 0 0 0.5rem;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
@@ -1340,6 +1347,7 @@ blockquote {
 .glow-up {
   width: min(44rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem); /* the visible height on phones, under the browser's own bars (BLD-A163) */
   overflow: auto;
   padding: 2rem;
   border: 1px solid var(--line-dark);
