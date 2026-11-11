@@ -83,6 +83,18 @@ def canvas_answers(canvas: dict[str, Any], attachments: list[dict[str, Any]]) ->
     }
 
 
+def assumptions(repo: Path | None = None) -> list[dict[str, Any]]:
+    """The fixed list of basic assumptions canvas-assist may use (DEC-097), from `rules/thresholds.md`. An older
+    company repo without the key allows none."""
+    from rules import load_rule
+
+    data = load_rule(repo or get_settings().company_repo_path, "thresholds").data
+    return [
+        {"id": str(a["id"]), "value": a["value"], "says": str(a["says"])}
+        for a in data.get("assumptions") or []
+    ]
+
+
 _slice_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 

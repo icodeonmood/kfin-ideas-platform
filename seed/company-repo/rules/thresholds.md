@@ -11,16 +11,17 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: RULE-thresholds
-  version: '1.0'
+  version: '1.1'
   approver: null
 ---
 
 All tunable numbers live here so they can change without code. Changes go through a pull request approved by an admin.
 The canvas strength meter is computed by code from `canvas_strength`, identically in the browser, the server and the review console.
 A suggested answer counts towards strength only after the person accepts it.
+`assumptions` is the fixed list of basic assumptions the assistant may use to turn a person's own figures into the canvas's units (DEC-097). Each one it uses is shown to the person and the review desk under "Assumptions we made", in the words of `says`. Add one only with the product lead's agreement.
 
 ```yaml
-version: '1.0'
+version: '1.1'
 gatekeeper:
   personal_data_block: 0.5
   redirect_suggest: 0.8
@@ -132,6 +133,16 @@ scan:
   - 15
   - 60
   poll_interval_s: 2
+assumptions:  # DEC-097: the only basic assumptions the assistant may use, to turn a person's own figures into the canvas's units
+- id: working_days_per_month
+  value: 22
+  says: 22 working days in a month
+- id: working_hours_per_day
+  value: 8
+  says: 8 working hours in a day
+- id: months_per_year
+  value: 12
+  says: 12 months in a year
 kill_switch_triggers:
   leak_hits_per_hour_for_ai_all: 3
   agent_error_rate_15min: 0.2

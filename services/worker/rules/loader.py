@@ -122,6 +122,9 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
             problems.append("autonomy.demote_below must be below autonomy.promote_at")
         if data["match"]["final_k"] > data["match"]["top_k_each"]:
             problems.append("match.final_k cannot exceed match.top_k_each")
+        ids = [a["id"] for a in data.get("assumptions") or []]
+        if len(ids) != len(set(ids)):
+            problems.append("assumptions: each id may appear only once")
     elif name == "calendar":
         for h in data["holidays"]:
             try:
