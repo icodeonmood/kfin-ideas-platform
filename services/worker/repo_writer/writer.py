@@ -31,7 +31,7 @@ from core.logging import get_logger
 from okf.frontmatter import parse
 from okf.validate import check_concept_meta
 from pii.patterns import scan
-from repo_writer.git import Git, GitError
+from repo_writer.git import Git, GitError, seed_in_progress
 from repo_writer.render import (
     HistoryRow,
     existing_state,
@@ -151,6 +151,9 @@ class RepoWriter:
         self._assert_lock()
         if not self.git.is_repo():
             raise GitError("company repo not found; run `make seed` first")
+        if seed_in_progress(self.git.path) or self.git.head() is None:
+            log.info("repo_writer.waiting_for_seed")  # a seed is writing the repo: never reset it (BLD-A167)
+            return []
         self.git.clear_stale_locks()  # safe: we hold the only writer lock
         if self.git.is_dirty():
             log.warning("repo_writer.dirty_tree_reset")
@@ -167,6 +170,8 @@ class RepoWriter:
             for event in pending:
                 if time.monotonic() < self._retry_at.get(int(event["id"]), 0.0):
                     break  # still backing off on the event at the head of the queue
+                if seed_in_progress(self.git.path):
+                    break  # a seed started during this round; the rest wait for the next one (BLD-A167)
                 try:
                     outcome = self._one(conn, event, recovered)
                 except DeadLetter as exc:
