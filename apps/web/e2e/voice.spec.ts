@@ -33,7 +33,16 @@ test("voice notes off: coming soon, no recorder, the box still works (DEC-096)",
     try {
       const page = await quickCapture(browser);
       const panel = page.getByRole("group", { name: "Or record a voice note" });
-      await expect(panel.getByText(VOICE_COMING_SOON)).toBeVisible();
+      // The web app reads switches through a 10-second cache: reload until it sees the switch off.
+      await expect
+        .poll(
+          async () => {
+            await page.reload();
+            return panel.getByText(VOICE_COMING_SOON).count();
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(1);
       await expect(panel.getByText(VOICE_NEW)).toBeVisible();
       await expect(panel.getByRole("button")).toHaveCount(0);
       await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toBeEditable();
@@ -64,6 +73,9 @@ test("voice notes on: record by keyboard, play back, turn it into text in the bo
           { timeout: 20_000 },
         )
         .toBe(1);
+      // The worker keeps its own 10-second cache of the switches. Until it too has seen voice notes on, it answers
+      // a recording with "paused" (correctly), so give it a full cache period from the change before sending.
+      await page.waitForTimeout(11_000);
       await expect(panel.getByText(VOICE_NEW)).toBeVisible();
       await panel.getByRole("button", { name: VOICE_START }).focus();
       await page.keyboard.press("Enter");
