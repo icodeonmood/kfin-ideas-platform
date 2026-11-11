@@ -78,6 +78,8 @@ export function failureMessage(code: string): string {
     case "codec_not_allowed":
     case "unreadable":
       return "We couldn't read that recording. Please try again, or type it instead.";
+    case "deleted_by_person":
+      return "Your voice note is deleted.";
     case "too_many_this_hour":
       return "You've sent several voice notes in the last hour. Please wait a little, or type it instead.";
     case "too_many_waiting":

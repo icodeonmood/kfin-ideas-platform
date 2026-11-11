@@ -53,7 +53,8 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
   const nextRef = useRef<HTMLButtonElement>(null);
   const startRef = useRef<HTMLButtonElement>(null);
   const cancelled = useRef(false);
-  const starting = useRef(false); // one microphone request at a time, however often Start is pressed
+  const starting = useRef(false);
+  const urlRef = useRef<string | null>(null); // the playback URL in use, revoked on cleanup // one microphone request at a time, however often Start is pressed
   // Where focus goes once the next step has rendered (never on first load): set by an action, used once.
   const focusNext = useRef<"stop" | "next" | "start" | null>(null);
 
@@ -73,6 +74,8 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
       if (recorder.current?.state === "recording") recorder.current.stop();
       stream.current?.getTracks().forEach((t) => t.stop());
       stream.current = null;
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
     };
   }, []);
 
@@ -121,8 +124,11 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
     };
     rec.onstop = () => {
       release();
+      if (cancelled.current) return; // stopped because the page went: no recording, no URL to leak
       blob.current = new Blob(chunks.current, { type: rec.mimeType || mimeType || "audio/webm" });
-      setAudioUrl(URL.createObjectURL(blob.current));
+      const url = URL.createObjectURL(blob.current);
+      urlRef.current = url;
+      setAudioUrl(url);
       setStep("recorded");
       focusNext.current = "next";
     };
@@ -251,7 +257,8 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
                 type="button"
                 className="link-button"
                 onClick={() => void start()}
-                disabled={step === "sending" || asking}
+                disabled={step === "sending"}
+                aria-disabled={asking || undefined}
               >
                 Record again
               </button>
