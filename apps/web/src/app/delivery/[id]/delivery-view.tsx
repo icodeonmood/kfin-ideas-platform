@@ -63,7 +63,7 @@ export function DeliveryView({ d }: { d: DeliveryDetail }) {
       <h1>{d.label}</h1>
       <p className="lead">
         {d.subject_id}. {d.track_words} track. {d.state_words}
-        {d.state === "in_delivery" && d.phase_words ? ` (${d.phase_words})` : ""}.
+        {d.state === "in_delivery" && d.phase_words ? `. Current step: ${d.phase_words}` : ""}.
         {d.outcome
           ? ` ${d.outcome === "target_met" ? "It met its target." : "It closed short of its target."}`
           : ""}
