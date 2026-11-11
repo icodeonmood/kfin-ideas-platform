@@ -6,7 +6,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { MIC_HINT, QUESTIONS } from "../src/lib/canvas/model";
+import { MIC_HINT, QUESTIONS, QUICK_STRENGTH_NOTE } from "../src/lib/canvas/model";
 import {
   confirmQuickCapture,
   expectNoSeriousAxeIssues,
@@ -54,6 +54,11 @@ test("quick capture: one box, files, one tick, and it shares (AT-B3-01, DEC-094)
   await expect(page.getByText(QUESTIONS.quick_noticed.why, { exact: false })).toBeVisible();
   await expect(page.getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })).toBeHidden();
   await expect(page.getByText("Add more if you like")).toBeVisible();
+  // No score and no prompts for questions quick capture does not ask (BLD-C050).
+  await expect(page.getByRole("complementary", { name: "What happens next" })).toHaveText(
+    QUICK_STRENGTH_NOTE,
+  );
+  await expect(page.locator(".strength-score")).toHaveCount(0);
   // Files can be added here too, with the same checks as the full canvas.
   await expect(page.getByLabel("Attach a file (optional)")).toBeVisible();
   // One confirmation, not three.
@@ -66,7 +71,9 @@ test("quick capture: one box, files, one tick, and it shares (AT-B3-01, DEC-094)
   await expect(summary).toBeFocused();
   await expect(summary.getByRole("link")).toHaveCount(1);
   await summary.getByRole("link", { name: "Please confirm this before you share." }).click();
-  await expect(page.getByRole("checkbox", { name: /I've left out investor and customer/ })).toBeFocused();
+  await expect(
+    page.getByRole("checkbox", { name: /in this idea or its files, it is my own work/ }),
+  ).toBeFocused();
   await confirmQuickCapture(page);
   await page.getByRole("button", { name: "Share your idea" }).click();
   await page.waitForURL(/\/done$/);

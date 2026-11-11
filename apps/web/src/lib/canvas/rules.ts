@@ -5,7 +5,7 @@
  */
 import { scan, type PatternMatch } from "@/lib/pii/patterns";
 
-import { ESTIMATE_FIELDS, textFields, wordCount, type Canvas } from "./model";
+import { ESTIMATE_FIELDS, QUICK_STRENGTH_NOTE, textFields, wordCount, type Canvas } from "./model";
 
 export type CanvasLimits = {
   one_line_max_words: number;
@@ -44,6 +44,11 @@ export function validate(c: Canvas, limits: CanvasLimits): FieldError[] {
       add("one_line", `Keep the one line to ${limits.one_line_max_words} words or fewer (it has ${words}).`);
     if (c.kind === "problem_with_solution" && !c.solution.approach.trim())
       add("solution.approach", "Tell us how you would solve it, since you have a fix in mind.");
+  } else {
+    // Quick capture never asks for the one line, but a direct API call may send one: same limit (BLD-C053).
+    const words = wordCount(c.one_line);
+    if (words > limits.one_line_max_words)
+      add("one_line", `Keep the one line to ${limits.one_line_max_words} words or fewer (it has ${words}).`);
   }
   if (c.details.trim().length < limits.details_min_chars)
     add("details", `Please write at least ${limits.details_min_chars} characters, in any language.`);
@@ -142,6 +147,18 @@ export function strength(c: Canvas, rubric: StrengthRubric, cleanAttachments = 0
     solved_elsewhere: solved,
   };
   return { score: Object.values(points).filter(Boolean).length, points, nextBest: prompts.slice(0, 2) };
+}
+
+export type StrengthPanel = { kind: "meter"; strength: Strength } | { kind: "note"; note: string };
+
+/**
+ * What the canvas's side panel shows (DEC-005, DEC-094, BLD-C050). The full canvas shows the strength meter.
+ * Quick capture shows one line and no score: its one box cannot earn the rubric's points, and the meter's
+ * prompts would ask for answers quick capture never asks for.
+ */
+export function strengthPanel(c: Canvas, rubric: StrengthRubric, cleanAttachments = 0): StrengthPanel {
+  if (c.mode === "quick") return { kind: "note", note: QUICK_STRENGTH_NOTE };
+  return { kind: "meter", strength: strength(c, rubric, cleanAttachments) };
 }
 
 /** Number inputs: blank is null; negatives and junk are refused rather than guessed. */
