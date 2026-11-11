@@ -77,7 +77,7 @@ def _serve_api(settings: Any) -> None:
         sock.listen(2048)
         sock.set_inheritable(True)
         sockets.append(sock)
-    log.info("service.api_listening", address_count=len(sockets), everywhere=len(hosts) == 1)
+    log.info("service.api_listening", socket_count=len(sockets), everywhere=len(hosts) == 1)
     config = uvicorn.Config(
         "api.app:app",
         port=settings.worker_port,

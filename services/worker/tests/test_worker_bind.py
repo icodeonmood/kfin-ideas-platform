@@ -101,3 +101,21 @@ def test_outside_dev_the_speech_url_must_be_the_internal_service(
     monkeypatch.setenv("APP_ENV", "test")  # dev and test may point anywhere (the contract test)
     assert Settings().speech_engine_url == url
     os.environ.pop("SPEECH_ENGINE_URL", None)
+
+
+def test_the_workers_start_up_log_lines_pass_the_log_rules() -> None:
+    """The API's start-up line must not be refused by the log rules in dev and test (it was, once: `address_count`)."""
+    import ast
+    from pathlib import Path
+
+    from pii.log_rules import field_is_forbidden
+
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "service" / "__main__.py").read_text())
+    fields = {
+        kw.arg
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") in ("info", "warning", "error")
+        for kw in node.keywords
+        if kw.arg
+    }
+    assert fields and not [f for f in fields if field_is_forbidden(f)]
