@@ -189,3 +189,20 @@ The renderer (`services/worker/comms/email_html.py`; The Ember in `services/work
 | Long single-scroll desks | Delivery, review item, console | Section nav (in-page tabs or a sticky outline) without changing routes, names or forms |
 | Hard-coded brand and status hex | Shell, Ones, journey, emails | Tokens only; tier colour as a scoped `--tier` property on Zed |
 | Electric on things you can't press | Strength bar, nav marker | Strength bar in Zed/Slate with words; nav marker in Zed |
+
+---
+
+## Live defects seen in the "before" screenshots (11 Nov 2026, demo at `2bb00cf`)
+
+62 full-page screenshots at 1440 and 360 px, taken read-only as the demo personas, are kept outside the repo (lane D's scratchpad). They are uploaded only to the design artifacts. Defects found, reported to lane A (and lane C for item 3) the same day:
+
+| # | Defect | Where | Owner |
+|---|---|---|---|
+| 1 | The home page scrolls sideways: scrollWidth 5398 at 1440 px and 4165 at 360 px. The Ones strip overflows the viewport, and the dark band is wider than the header (WCAG 1.4.10) | `/`, `ones-carousel.tsx` | Lane A |
+| 2 | The demo home shows e2e leftover Ones (Nos. 759, 836, 923, "Synthetic test: …") ahead of the demo's own, and most wall cards read "An idea to improve a KFintech process." (fake-mode summaries) | `/`, `/wall` (demo data) | Lane A |
+| 3 | Find your crew shows the same "Colleagues are on this" card four times | `/share/[id]/done` | Lane C / lane A |
+| 4 | The non-tech fix delivery page scrolls sideways at 360 px (scrollWidth 420, from the evidence file input) | `/delivery/[id]` | Lane A |
+| 5 | Delivery status copy reads "Build. Being built: Building: build." | `/delivery/[id]` | Lane A |
+| 6 | At 360 px the glow-up dialog's content looks clipped at the bottom (to check that it scrolls) | `/my-ideas` (glow-up) | Lane A |
+| 7 | At 360 px the review queue table is cramped inside its scroll box; a group proposal stacks to 20,445 px | `/review`, `/review/clusters/[id]` | Lane D (P1 design) |
+| 8 | No committee round is linked from any committee page, so a round could not be captured | `/committee` | Lane D (P1 design) |
