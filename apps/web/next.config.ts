@@ -26,6 +26,9 @@ export function headerRules(): HeaderRule[] {
 }
 
 const nextConfig: NextConfig = {
+  // `next dev` would otherwise write apps/web/AGENTS.md, an instructions file for coding agents, into every
+  // checkout and worktree; this repo's agent guidance lives in CLAUDE.md (BLD-A169).
+  agentRules: false,
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
