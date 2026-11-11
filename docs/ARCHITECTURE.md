@@ -1469,7 +1469,7 @@ The Garage runs unchanged apart from the new `source-cluster` property. The plat
    | `01-discover` | Discovery |
    | `02-shape` | Writing the spec |
    | `03-gate` | Spec review |
-   | `04-handoff` to `09-deploy` | Being built, as one step for contributors and sponsors (BLD-157). The delivery page shows the build team the step itself: Handed to the developers, In development, Testing, Code review, Quality checks, Going live (BLD-A164) |
+   | `04-handoff` to `09-deploy` | Being built, as one step for contributors and sponsors (BLD-157). The delivery page shows the build team the step itself: Handover to developers, Development, Testing, Code review, Quality checks, Going live (BLD-A164) |
    | `handed-off` | With the development team |
    | `shipped` | Shipped |
 
