@@ -73,19 +73,21 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 
 ## 4a. Spark tiers (DEC-075, DEC-080 to DEC-083)
 
-Only Ones have a tier. The spark is lit at Tier 1 on induction, and the committee moves it up or down through the console (propose, approve, carry out). The tier colour is the One's spark, badge, number and dashboard accent. It always sits on Zed or Graphite, never on white; on a white screen, show it as a swatch with a Zed ring. The Spark mark (logo) stays orange whatever anyone's tier.
+Only Ones have a tier. The spark is lit at Tier 1 on induction, and the committee moves it up or down through the console (propose, approve, carry out). The colours are DEC-098's; the names and order are unchanged.
 
 | Tier | Name | Colour |
 |---|---|---|
-| 1 | Spark | `#FF5B14` |
-| 2 | Glow | `#FF8A1F` |
-| 3 | Flame | `#FFC21F` |
-| 4 | Blaze | `#FFE58A` |
-| 5 | White heat | `#F4F6FA` |
-| 6 | Blue flame | `#9DBEFF` |
-| 7 | Star | `#6E9BFF` |
+| 1 | Spark | `#FF7F14` |
+| 2 | Glow | `#FF4313` |
+| 3 | Flame | `#FF2E6B` |
+| 4 | Blaze | `#FF0000` |
+| 5 | White heat | `#27D57F` |
+| 6 | Blue flame | `#8C2FF1` |
+| 7 | Star | `#1E46D9` |
 
-A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once. Every colour pairing above passes AA as text on Zed.
+A tier colour is light and fill only, never small text: the One's spark, badge, swatch and dashboard accent. A One's number is drawn from a pale core (`heat-core`) to the tier colour, because Tiers 6 and 7 fail as text on Zed (Star is about 2.8:1). In email the number stays white and the tier shows as a filled swatch beside its name. On white screens, a tier colour never sits beside an error, a success mark or a control, so Blaze is not read as an error, White heat as success or Star as something to press. The Spark mark (logo) keeps `#FF5B14` whatever anyone's tier.
+
+A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once.
 
 ## 4b. Email (DEC-061, BLD-125)
 
