@@ -26,14 +26,16 @@ CREATE INDEX voice_notes_due ON voice_notes (delete_after) WHERE deleted_at IS N
 -- Only the worker handles recordings and their text; the web app goes through /internal/voice.
 REVOKE ALL ON voice_notes FROM ideas_web_svc;
 
--- Two switches (§7.6). Every feature is on from day one (DEC-088), but these two start off, with their reasons:
+-- Two switches (§7.6), OFF BY DESIGN: the first exceptions to DEC-088 (every feature on from day one). They start
+-- off with these reasons, the go/no-go report prints them as "off as expected", and nobody switches them on until
+-- the approvals in the reasons land:
 -- capture.voice waits for IT's server memory, InfoSec (the microphone and the model) and the DPO's privacy notice
 -- by go/no-go 2 (DEC-096); speech.hosted stays off until InfoSec and the DPO approve a hosted speech service, since
 -- raw voice cannot be tagged before it leaves (non-negotiables 1 and 2; the same position as D1).
 WITH added AS (
   INSERT INTO kill_switches (name, state, reason, changed_by) VALUES
-    ('capture.voice', 'off', 'Waiting for IT server memory, InfoSec and the DPO (DEC-096)', 'migration'),
-    ('speech.hosted', 'off', 'Waiting for InfoSec and DPO approval (DEC-096)', 'migration')
+    ('capture.voice', 'off', 'Off until IT deploys the isolated speech service and the memory, InfoSec agrees to the microphone and the model, and the DPO''s privacy notice covers voice notes (DEC-096)', 'migration'),
+    ('speech.hosted', 'off', 'Off until InfoSec and the DPO approve a hosted route (DEC-096)', 'migration')
   ON CONFLICT (name) DO NOTHING
   RETURNING name, reason
 )

@@ -41,6 +41,17 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
     return data
 
 
+# Switches that start off on purpose (the first exceptions to DEC-088): the report shows them as expected, not as
+# a problem, so nobody "fixes" them on. The wording matches their reasons in migration 20261121300110.
+OFF_BY_DESIGN = {
+    "capture.voice": (
+        "Off until IT deploys the isolated speech service and the memory, InfoSec agrees to the microphone and "
+        "the model, and the DPO's privacy notice covers voice notes (DEC-096)"
+    ),
+    "speech.hosted": "Off until InfoSec and the DPO approve a hosted route (DEC-096)",
+}
+
+
 def _row(name: str, state: str, evidence: str) -> dict[str, str]:
     return {"criterion": name, "state": state, "evidence": evidence}
 
@@ -181,9 +192,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         on = row is not None and row["state"] == "on"
         name = "Voice notes: off, or on with the engine on KFin's own server (DEC-096)"
         if not on:
-            rows.append(
-                _row(name, "met", "off: paused with its reason; the screen says voice notes are coming")
-            )
+            rows.append(_row(name, "met", f"off as expected: {OFF_BY_DESIGN['capture.voice']}"))
         elif s.speech_mode == "local" and s.speech_engine_url:
             rows.append(
                 _row(name, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
@@ -198,6 +207,22 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 )
             )
             reasons_b.append("voice notes on without the engine on KFin's own server")
+        with connect(autocommit=True) as conn:
+            hosted = conn.execute("SELECT state FROM kill_switches WHERE name = 'speech.hosted'").fetchone()
+        hosted_name = "Hosted speech: off, unless InfoSec and the DPO have approved a hosted route (DEC-096)"
+        if hosted is None or hosted["state"] != "on":
+            rows.append(_row(hosted_name, "met", f"off as expected: {OFF_BY_DESIGN['speech.hosted']}"))
+        elif s.speech_hosted_approval.strip():
+            rows.append(
+                _row(
+                    hosted_name,
+                    "confirm",
+                    "on with an approval reference: check it against InfoSec's and the DPO's",
+                )
+            )
+        else:
+            rows.append(_row(hosted_name, "not met", "on without an approval reference; switch it off"))
+            reasons_b.append("hosted speech on without InfoSec and DPO approval")
 
     switches_off: list[str] = []
     section("Gatekeeper: personal-data recall 100%, false blocks under 5%", gatekeeper)
@@ -274,7 +299,13 @@ def render(r: dict[str, Any]) -> str:
     lines += ["", f"**Mode the evidence supports:** {r['mode']}"]
     if r["why"]:
         lines.append(f"**Because:** {'; '.join(r['why'])}.")
-    lines.append(f"**Switches off now:** {', '.join(r['switches_off']) or 'none'}.")
+    by_design = [n for n in r["switches_off"] if n in OFF_BY_DESIGN]
+    other = [n for n in r["switches_off"] if n not in OFF_BY_DESIGN]
+    lines.append(f"**Switches off now:** {', '.join(other) or 'none'}.")
+    if (
+        by_design
+    ):  # the first exceptions to DEC-088: off on purpose until their approvals land; do not switch on
+        lines.append(f"**Off as expected (by design, DEC-096):** {', '.join(by_design)}.")
     lines += [
         "",
         "**canvas-assist answers (DEC-095, DEC-097):** check on the first real-route golden-set run and before launch;",
