@@ -327,7 +327,7 @@ def test_a_group_delivery_moves_grouped_ideas_but_not_withdrawn_ones(ones_db: An
 
 
 def test_group_delivery_messages_use_the_group_name_and_plain_step_words(ones_db: Any, crew: Any) -> None:
-    """BLD-157: no group reference number, solution number or build-team step ("Building: QA") in a message."""
+    """BLD-157: no group reference number, solution number or build-team step ("Quality checks") in a message."""
     db = ones_db
     taken = {r["id"] for r in db.execute("SELECT id FROM clusters").fetchall()}
     cl = next(f"CL-{n}" for n in range(6100, 6999) if f"CL-{n}" not in taken)
@@ -345,7 +345,7 @@ def test_group_delivery_messages_use_the_group_name_and_plain_step_words(ones_db
     subject_line, body, _ = templates.render("delivery-phase-changed", data)
     assert subject_line == "Branch forms wait in the outward register: Being built"
     assert "has moved to a new step: Being built." in body
-    assert cl not in subject_line + body and "QA" not in subject_line + body
+    assert cl not in subject_line + body and "Quality checks" not in subject_line + body
     refs = {"delivery_id": did, "subject_id": cl, "decision": "approved", "solution_id": "SOL-0042"}
     _, body, _ = templates.render(
         "delivery-writeup-decided", render.variables(db, crew["owner"], "delivery.writeup_decided", refs)

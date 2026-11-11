@@ -7,12 +7,12 @@ phases:
   - { id: 01-discover, pipeline: pm,  garage_stage: S2, name: Discovery,     shown_as: Discovery }
   - { id: 02-shape,    pipeline: pm,  garage_stage: S2, name: Specification, shown_as: Writing the spec }
   - { id: 03-gate,     pipeline: pm,  garage_stage: S3, name: Validation,    shown_as: Spec review }
-  - { id: 04-handoff,  pipeline: dev, garage_stage: S4, name: Startup and fork, shown_as: "Building: handoff" }
-  - { id: 05-build,    pipeline: dev, garage_stage: S4, name: Build,         shown_as: "Building: build" }
-  - { id: 06-test,     pipeline: dev, garage_stage: S4, name: Test,          shown_as: "Building: test" }
-  - { id: 07-review,   pipeline: dev, garage_stage: S4, name: Review,        shown_as: "Building: review" }
-  - { id: 08-qa,       pipeline: dev, garage_stage: S4, name: QA,            shown_as: "Building: QA" }
-  - { id: 09-deploy,   pipeline: dev, garage_stage: S4, name: Deploy,        shown_as: "Building: deploy" }
+  - { id: 04-handoff,  pipeline: dev, garage_stage: S4, name: Startup and fork, shown_as: Handed to the developers }
+  - { id: 05-build,    pipeline: dev, garage_stage: S4, name: Build,         shown_as: In development }
+  - { id: 06-test,     pipeline: dev, garage_stage: S4, name: Test,          shown_as: Testing }
+  - { id: 07-review,   pipeline: dev, garage_stage: S4, name: Review,        shown_as: Code review }
+  - { id: 08-qa,       pipeline: dev, garage_stage: S4, name: QA,            shown_as: Quality checks }
+  - { id: 09-deploy,   pipeline: dev, garage_stage: S4, name: Deploy,        shown_as: Going live }
   - { id: handed-off,  terminal: true, shown_as: With the development team }
   - { id: shipped,     terminal: true, shown_as: Shipped }
 
