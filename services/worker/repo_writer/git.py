@@ -2,12 +2,48 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 _AUTHOR = re.compile(r"^\s*(?P<name>[^<]+?)\s*<(?P<email>[^>]+)>\s*$")
+
+# While `make seed` creates or refreshes the company repo it leaves a marker beside it (in the folder the worker
+# also mounts). The repo writer skips its rounds while the marker is there, so it never takes a seed half-way
+# through for a crashed write and resets it (BLD-A167). A marker older than this is from a seed that died.
+SEED_MARKER_STALE_S = 600
+SEED_SETTLE_S = 2.0  # a writer round that began just before the marker finishes its start-up steps
+
+
+def seed_marker(repo: Path) -> Path:
+    return repo.parent / f".{repo.name}.seeding"
+
+
+def seed_in_progress(repo: Path) -> bool:
+    try:
+        return time.time() - seed_marker(repo).stat().st_mtime < SEED_MARKER_STALE_S
+    except FileNotFoundError:
+        return False
+
+
+@contextmanager
+def seeding(repo: Path, settle_s: float = SEED_SETTLE_S) -> Iterator[None]:
+    """Hold the seed marker while the seed writes the company repo."""
+    marker = seed_marker(repo)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if seed_in_progress(repo):
+        raise SystemExit(f"another seed is running ({marker}); wait for it to finish")
+    marker.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    time.sleep(settle_s)
+    try:
+        yield
+    finally:
+        marker.unlink(missing_ok=True)
 
 
 class GitError(RuntimeError):
