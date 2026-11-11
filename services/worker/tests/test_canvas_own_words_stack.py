@@ -248,3 +248,21 @@ def test_a_decided_item_can_still_get_its_summary(desk: Any) -> None:  # noqa: F
     service.act(db, item, desk["r1"], {"action": "summary", "neutral_summary": SUMMARY})
     card = db.execute("SELECT canvas FROM ideas WHERE idea_id = %s", (desk["idea_id"],)).fetchone()["canvas"]
     assert card["neutral_summary"] == SUMMARY
+
+
+def test_a_summary_copied_from_the_persons_file_is_refused_too(desk: Any) -> None:  # noqa: F811
+    """BLD-C057: the person's clean files' digests count as their words."""
+    db, idea_id = desk["db"], desk["idea_id"]
+    digest = "Courier receipts for returned mandates pile up at the branch until the month ends"
+    db.execute(
+        "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, bytes, store_key, state, digest) "
+        "VALUES ('ATT-2026-977001', %s, %s, 'receipts.pdf', 10, 'test/receipts.pdf', 'clean', %s)",
+        (desk["idea"], desk["code"], digest),
+    )
+    before = _gatekeeper_calls(db, idea_id)
+    with pytest.raises(service.ActionRefused) as close:
+        service.act(
+            db, desk["item"], desk["r1"],
+            {"action": "summary", "neutral_summary": "Returned mandates pile up at the branch until the month ends."},
+        )  # fmt: skip
+    assert close.value.code == "summary_too_close" and _gatekeeper_calls(db, idea_id) == before

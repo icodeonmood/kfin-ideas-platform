@@ -461,6 +461,8 @@ def _figure_card(details: str, quotes: list[str]) -> dict[str, Any]:
     )
     card["provenance"]["value.estimate.hours_saved_per_month"] = "accepted"  # the person kept it
     card["assumptions"] = listed("working_days_per_month")
+    for path in ("kind", "one_line", "neutral_summary"):
+        card["evidence"][path] = ["address changes"]
     return card
 
 
@@ -726,3 +728,104 @@ def test_correcting_an_assumptions_words_mends_without_a_drop() -> None:
     spec = load("canvas-assist")
     mended = core._repaired(spec, sent_for(a), out, checks.canvas_assist(sent_for(a), out, None), None)
     assert mended is not None and mended[1] == []
+
+
+# ---- round 4: every suggested field after an edit (BLD-C056) ------------------------------------------------------
+
+
+def _suggestions_card(details: str) -> dict[str, Any]:
+    a = answers(details=TEN_PEOPLE)
+    card = output(
+        a,
+        solution__approach=("Pull the address from the scanned PDF", ["arrive as scanned PDFs"]),
+        who__segments=(["kfin_teams"], ["In the investor service team"]),
+        who__today_alternative=("Re-keyed by hand", ["re-keying address changes", "10 people each spend"]),
+    )
+    card["details"] = TEN_PEOPLE + " They arrive as scanned PDFs."
+    for path in ("kind", "one_line", "neutral_summary"):
+        card["evidence"][path] = ["investor service team"]
+    card["provenance"]["one_line"] = "accepted"  # the person kept the suggested line
+    card["details"] = details
+    return card
+
+
+def test_an_edit_that_removes_a_quote_clears_its_suggestion_and_never_shows_the_persons_words() -> None:
+    card = _suggestions_card("Address changes are typed in again from the forms. It wastes the morning.")
+    fixed, cleared = grounding.still_backed(card, ALLOWED_VALUES)
+    assert {"solution.approach", "who.segments", "one_line", "kind", "neutral_summary"} <= set(cleared)
+    assert fixed["solution"]["approach"] is None and "solution.approach" not in fixed["provenance"]
+    assert fixed["who"]["segments"] == [] and "who.segments" not in fixed["provenance"]
+    assert fixed["neutral_summary"] == ""  # blank, never the person's text
+    assert fixed["kind"] == "problem" and "kind" not in fixed["provenance"]
+    # The one line falls back to the person's own (edited) first sentence, backed by itself (BLD-C028).
+    assert fixed["one_line"] == "Address changes are typed in again from the forms."
+    assert (
+        fixed["evidence"]["one_line"] == [fixed["one_line"]]
+        and fixed["provenance"]["one_line"] == "suggested"
+    )
+    assert (
+        fixed["details"] == card["details"] and fixed["value"]["category"] == "cost_saving"
+    )  # theirs, untouched
+
+
+def test_an_edit_that_keeps_a_quote_keeps_its_suggestion_and_drops_only_the_quotes_that_went() -> None:
+    card = _suggestions_card(TEN_PEOPLE + " They arrive as scanned PDFs.")
+    fixed, cleared = grounding.still_backed(card, ALLOWED_VALUES)
+    assert cleared == []
+    assert fixed["solution"]["approach"] == "Pull the address from the scanned PDF"
+    assert fixed["who"]["segments"] == ["kfin_teams"]
+    partly = _suggestions_card("In the investor service team, we keep re-keying address changes by hand.")
+    fixed, cleared = grounding.still_backed(partly, ALLOWED_VALUES)
+    assert "who.today_alternative" not in cleared  # one of its two quotes is still the person's words
+    assert fixed["evidence"]["who.today_alternative"] == ["re-keying address changes"]
+    assert "solution.approach" in cleared
+
+
+def test_compound_number_words_read_once() -> None:
+    """BLD-C058: "twenty five" and "twenty-five" are 25, "two hundred" is 200, and no word is read twice."""
+    assert [x.value for x in q("twenty five people re-key it")] == [25.0]
+    assert [x.value for x in q("twenty-five people re-key it")] == [25.0]
+    assert [x.value for x in q("two hundred forms a day")] == [200.0]
+    assert [x.value for x in q("one lakh rupees a year")] == [
+        100000.0
+    ]  # "one" with a multiplier is a quantity
+    assert [x.value for x in q("one analyst")] == []
+
+
+def test_a_note_may_show_its_working_steps_in_any_order() -> None:
+    """BLD-C058: intermediate results of the figure's own factors are allowed; any other new number is not."""
+    a = answers(details="5 people re-key change-of-address requests by hand all day, every working day.")
+    quotes = ["5 people re-key change-of-address requests"]
+    for note, ok in (
+        ("5 people × 22 days = 110 days, × 8 hours = 880 hours a month", True),
+        ("5 × 8 = 40 hours a day, × 22 = 880 hours a month", True),
+        ("5 × 22 = 110, × 8 = 880, about ₹2,64,000 at ₹300 an hour", False),
+    ):
+        out = output(
+            a,
+            value__estimate__hours_saved_per_month=(880, quotes),
+            value__estimate__note=(note, quotes),
+        )
+        for path in ("kind", "one_line", "neutral_summary"):
+            out["evidence"][path] = ["re-key change-of-address requests"]
+        out["assumptions"] = listed("working_days_per_month", "working_hours_per_day")
+        bad = grounding.ungrounded(sent_for(a), out)
+        assert ("value.estimate.note" not in bad) is ok, (note, bad)
+
+
+def test_repair_runs_until_nothing_changes() -> None:
+    """BLD-C059: dropping a figure frees its assumption and its note in later passes, all in one repair."""
+    a = answers(details=TEN_PEOPLE)
+    quotes = ["10 people each spend 2 hours a day"]
+    out = output(
+        a,
+        value__estimate__hours_saved_per_month=(999, quotes),  # does not follow
+        value__estimate__note=("2 hours a day × 10 people × 22 working days = 999 hours a month", quotes),
+    )
+    for path in ("kind", "one_line", "neutral_summary"):
+        out["evidence"][path] = ["re-keying address changes"]
+    out["assumptions"] = listed("working_days_per_month")
+    fixed, dropped = grounding.repair(sent_for(a), out)
+    assert grounding.ungrounded(sent_for(a), fixed) == {}
+    assert fixed["assumptions"] == [] and fixed["value"]["estimate"]["note"] is None
+    assert {"value.estimate.hours_saved_per_month", "value.estimate.note"} <= set(dropped)
