@@ -26,8 +26,10 @@ function text(value: unknown): string {
 
 function Timeline({ rows, full }: { rows: TimelineRow[]; full: boolean }) {
   return (
-    <section aria-labelledby="ip-timeline">
-      <h2 id="ip-timeline">Timeline</h2>
+    <section className="glass idea-pane" aria-labelledby="ip-timeline">
+      <h2 id="ip-timeline" className="t-h2">
+        Timeline
+      </h2>
       {rows.length ? (
         <ol className="timeline">
           {rows.map((r, n) => (
@@ -60,8 +62,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (p.view === "public") {
     return (
       <>
-        <h1>{p.card.summary}</h1>
-        <dl className="crew-facts">
+        <p className="back-row">
+          <Link className="back" href="/wall">
+            Back to the wall
+          </Link>
+        </p>
+        <h1 className="page-display idea-headline">{p.card.summary}</h1>
+        <dl className="facts idea-facts">
           {p.card.area ? (
             <div>
               <dt>Area</dt>
@@ -77,13 +84,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             <dd>{p.card.colleagues}</dd>
           </div>
         </dl>
-        <p className="muted">
+        <p className="muted idea-note">
           This is a short summary. The person&apos;s own words stay with them and the review desk.
         </p>
         <Timeline rows={p.timeline} full={false} />
-        <p>
-          <Link href="/wall">Back to the wall</Link>
-        </p>
       </>
     );
   }
@@ -96,13 +100,26 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   };
   return (
     <>
-      <h1>{card.one_line || p.idea_id}</h1>
-      <p className="lead">
+      <p className="back-row">
+        {p.owner ? (
+          <Link className="back" href="/my-ideas">
+            Back to My ideas
+          </Link>
+        ) : (
+          <Link className="back" href="/wall">
+            Back to the wall
+          </Link>
+        )}
+      </p>
+      <h1 className="page-display idea-headline">{card.one_line || p.idea_id}</h1>
+      <p className="lead page-lead">
         {p.idea_id}
         {p.area ? ` · ${p.area}` : ""}
       </p>
-      <section aria-labelledby="ip-status" className="panel">
-        <h2 id="ip-status">Where it is</h2>
+      <section aria-labelledby="ip-status" className="glass idea-pane">
+        <h2 id="ip-status" className="t-h2">
+          Where it is
+        </h2>
         <p>
           <strong>{p.status.stage}.</strong>{" "}
           {p.status.next_step ? (
@@ -116,10 +133,12 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <FollowUpPanel uuid={p.uuid} question={p.question ?? null} canDisagree={Boolean(p.can_disagree)} />
         ) : null}
       </section>
-      <section aria-labelledby="ip-canvas">
-        <h2 id="ip-canvas">{p.owner ? "Your canvas" : "The canvas"}</h2>
+      <section aria-labelledby="ip-canvas" className="glass idea-pane">
+        <h2 id="ip-canvas" className="t-h2">
+          {p.owner ? "Your canvas" : "The canvas"}
+        </h2>
         {card.details ? <p className="original">{card.details}</p> : null}
-        <dl className="crew-facts">
+        <dl className="facts idea-facts">
           {text(card.who?.segments) ? (
             <div>
               <dt>Who it affects</dt>
@@ -145,13 +164,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </dl>
       </section>
       <Timeline rows={p.timeline} full />
-      <p>
-        {p.owner ? (
-          <Link href="/my-ideas">Back to My ideas</Link>
-        ) : (
-          <Link href="/wall">Back to the wall</Link>
-        )}
-      </p>
     </>
   );
 }

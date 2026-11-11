@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { IdeaCard } from "@/components/idea-card";
+import { Status } from "@/components/status";
 import { jerseyProps, OneCardBody } from "@/components/one-card";
 import { day } from "@/lib/dates";
 import { BANNERS } from "@/lib/killswitch-routes";
@@ -24,10 +25,12 @@ function Section({
   cards: PublicCard[];
 }) {
   return (
-    <section aria-labelledby={id}>
-      <h2 id={id}>{title}</h2>
+    <section className="wall-section" aria-labelledby={id}>
+      <h2 id={id} className="t-h2">
+        {title}
+      </h2>
       {cards.length ? (
-        <ul className="crew-cards">
+        <ul className="idea-list">
           {cards.map((c) => (
             <IdeaCard key={c.idea_id ?? c.cluster_id} card={c} />
           ))}
@@ -43,7 +46,9 @@ function Section({
 function OnesSection({ ones }: { ones: PublicOne[] }) {
   return (
     <section className="ones-band" aria-labelledby="w-ones">
-      <h2 id="w-ones">The Ones</h2>
+      <h2 id="w-ones" className="t-display ones-band-title">
+        The Ones
+      </h2>
       <p className="lead-dark">
         Colleagues building what they noticed. If their ideas work, this is what changes.
       </p>
@@ -68,15 +73,22 @@ export default async function Page() {
   const [w, ones] = await Promise.all([wall().catch(() => null), publicOnes().catch(() => null)]);
   return (
     <>
-      <div className="brand-band">
-        <h1>Wall</h1>
-        <p className="lead">Ideas from across KFintech, what is being built and what has shipped.</p>
+      <div className="band stage wall-top" data-theme="zed" data-glow="1">
+        <div className="band-inner wall-top-inner">
+          <h1 className="t-display wall-title">Wall</h1>
+          <p className="lead wall-lead">
+            Ideas from across KFintech, what is being built and what has shipped.
+          </p>
+          {ones && !ones.paused ? <OnesSection ones={ones.ones} /> : null}
+        </div>
       </div>
-      {ones && !ones.paused ? <OnesSection ones={ones.ones} /> : null}
       {w === null ? (
-        <p className="notice">We can&apos;t load the wall just now. Please try again in a minute.</p>
+        <Status
+          kind="error"
+          title={<>We can&apos;t load the wall just now. Please try again in a minute.</>}
+        />
       ) : w.paused ? (
-        <p className="notice">{BANNERS["wall.public"]}</p>
+        <p className="paused paused-inline">{BANNERS["wall.public"]}</p>
       ) : (
         <>
           <Section
@@ -88,15 +100,17 @@ export default async function Page() {
           <Section id="w-picked" title="Picked" empty="Nothing picked yet." cards={w.picked} />
           <Section id="w-building" title="Being built" empty="Nothing being built yet." cards={w.in_garage} />
           <Section id="w-shipped" title="Shipped" empty="Nothing shipped yet." cards={w.shipped} />
-          <section aria-labelledby="w-showcase">
-            <h2 id="w-showcase">Already running</h2>
+          <section className="wall-section" aria-labelledby="w-showcase">
+            <h2 id="w-showcase" className="t-h2">
+              Already running
+            </h2>
             {w.showcase.length ? (
-              <ul className="crew-cards">
+              <ul className="idea-list">
                 {w.showcase.map((s) => (
-                  <li key={s.solution_id} className="crew-card">
-                    <h3>{s.title}</h3>
-                    <p>{s.description}</p>
-                    <dl className="crew-facts">
+                  <li key={s.solution_id} className="idea" data-shipped="">
+                    <h3 className="idea-title">{s.title}</h3>
+                    <p className="idea-desc">{s.description}</p>
+                    <dl className="facts">
                       {s.owner_team ? (
                         <div>
                           <dt>Team that runs it</dt>

@@ -17,9 +17,11 @@ export function IdeaCard({ card, headingLevel = 3 }: { card: PublicCard; heading
   const H = headingLevel === 2 ? "h2" : "h3";
   const by = people(card);
   return (
-    <li className="crew-card">
-      <H>{card.idea_id ? <Link href={`/ideas/${card.idea_id}`}>{card.summary}</Link> : card.summary}</H>
-      <dl className="crew-facts">
+    <li className="idea" data-lit="">
+      <H className="idea-title">
+        {card.idea_id ? <Link href={`/ideas/${card.idea_id}`}>{card.summary}</Link> : card.summary}
+      </H>
+      <dl className="facts">
         {card.area ? (
           <div>
             <dt>Area</dt>
