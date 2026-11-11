@@ -18,7 +18,7 @@ from pii.tagger import tag_payload
 from rules import load_rule
 from scan.inputs import assumptions
 from scan.matching import card_text, run_matching
-from scan.pipeline import _save_result, decide, load_result, thresholds
+from scan.pipeline import _save_result, decide, load_result, thresholds, with_review_flags
 
 EMPTY: dict[str, Any] = {
     "one_line": None,
@@ -119,6 +119,9 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
     # assumptions, never left accepted without them (BLD-C028, BLD-C045).
     allowed = {a["id"]: float(a["value"]) for a in assumptions()}
     card, _cleared = still_backed(card, allowed)
+    card = with_review_flags(
+        card, []
+    )  # a summary the edit left blank is flagged for the review desk (BLD-C056)
 
     share_limit = float(
         load_rule(get_settings().company_repo_path, "thresholds").data["match"]["rerun_if_edit_share"]

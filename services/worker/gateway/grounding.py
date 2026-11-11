@@ -323,7 +323,14 @@ def quantities(text: str) -> list[Quantity]:
     clean = _CURRENCY.sub(" ", TAG_RE.sub(" ", _prepare(text)))
     for pattern in _NOT_QUANTITIES:
         clean = pattern.sub(" ", clean)
-    words = [w for w in (raw.strip(_QTY_EDGES) for raw in clean.split()) if w]
+    words: list[str] = []
+    for raw in clean.split():
+        word = raw.strip(_QTY_EDGES)
+        parts = word.casefold().split("-")
+        if len(parts) == 2 and all(x in _WORD_NUMBERS for x in parts):
+            words += parts  # "twenty-five" reads as "twenty five"
+        elif word:
+            words.append(word)
     out: list[Quantity] = []
     i = 0
     while i < len(words):
@@ -342,17 +349,37 @@ def quantities(text: str) -> list[Quantity]:
             values = [float(m.group(1)) * _MULTIPLIER[m.group(2).casefold()]]
         elif m := _RANGE.match(word):
             values = [float(m.group(1)), float(m.group(2))]
-        elif low in _WORD_NUMBERS and low not in NOT_OPERANDS:
+        elif low in _WORD_NUMBERS:
             in_words = True
-            if nxt in _MULTIPLIER and nxt != "l":
-                values, used = [_WORD_NUMBERS[low] * _MULTIPLIER[nxt]], 2
-            elif nxt and nxt not in STOPWORDS and nxt not in _WORD_NUMBERS:
-                values = [_WORD_NUMBERS[low]]  # a quantity phrase: the number word names a count of something
+            values, used = _word_quantity(words, i)
         if values:
             unit = words[i + used].casefold() if i + used < len(words) else ""
             out += [Quantity(v, unit, in_words) for v in values]
         i += used
     return out
+
+
+_TENS = frozenset({"twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"})
+_UNITS = frozenset({"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"})
+
+
+def _word_quantity(words: list[str], i: int) -> tuple[list[float], int]:
+    """A number in words starting at `i`, and how many words it takes. "twenty five" is 25, "two hundred" is 200,
+    "five lakh" is 500,000; each word is read once. It counts only before a multiplier or a noun (a quantity
+    phrase), and "one", "a", "half" and the like on their own never do (BLD-C042, BLD-C058)."""
+    low = [w.casefold() for w in words]
+    value, j = _WORD_NUMBERS[low[i]], i + 1
+    if low[i] in _TENS and j < len(low) and low[j] in _UNITS:
+        value, j = value + _WORD_NUMBERS[low[j]], j + 1
+    multiplied = False
+    while j < len(low) and low[j] in _MULTIPLIER and low[j] != "l":
+        value, j, multiplied = value * _MULTIPLIER[low[j]], j + 1, True
+    nxt = low[j] if j < len(low) else ""
+    if not multiplied and (j == i + 1 and low[i] in NOT_OPERANDS):
+        return [], j - i
+    if multiplied or (nxt and nxt not in STOPWORDS and nxt not in _WORD_NUMBERS):
+        return [value], j - i
+    return [], j - i
 
 
 def numbers(text: str) -> set[float]:
@@ -370,14 +397,14 @@ def _division_shown(note: Any) -> bool:
     return isinstance(note, str) and bool(re.search(r"÷|\s/\s|\bdivided\b|\bper\s+(?:client|person)\b", note))
 
 
-def reproduces(
+def _solve(
     value: Any,
     quoted: list[Quantity],
     assumed: dict[str, float],
     field: str = "value.estimate.hours_saved_per_month",
     division_shown: bool = False,
-) -> set[str] | None:
-    """The assumption IDs a figure needs, if it follows from what the person stated (BLD-C042, C043); None if not.
+) -> tuple[set[str], list[float]] | None:
+    """The assumption IDs a figure needs, and the factors it multiplies (BLD-C058), if it follows from what the person stated (BLD-C042, C043); None if not.
 
     It must be one of their quantities as it stands, or their quantities multiplied together (each once, at least
     one that is not 1), times or divided by allowed assumptions only in the direction the field's unit allows, and
@@ -391,8 +418,9 @@ def reproduces(
     theirs = [q for q in quoted if q.value > 0][:MAX_QUOTED]
     if not any(q.value != 1 for q in theirs):
         return None
-    if any(q.value != 1 and _close(float(value), q.value) for q in theirs):
-        return set()
+    for q in theirs:
+        if q.value != 1 and _close(float(value), q.value):
+            return set(), [q.value]
     extras: list[tuple[str | None, float, tuple[int, ...]]] = []
     for aid, v in sorted(assumed.items()):
         signs = rules["signs"].get(aid, rules["default"])
@@ -413,10 +441,29 @@ def reproduces(
                         for es in product(*(signs for _, _, signs in chosen)):
                             operands = [(q.value, s) for q, s in zip(picked, qs, strict=True)]
                             operands += [(v, s) for (_, v, _), s in zip(chosen, es, strict=True)]
-                            result = math.prod(x if s > 0 else 1 / x for x, s in operands)
+                            factors = [x if s > 0 else 1 / x for x, s in operands]
+                            result = math.prod(factors)
                             if result >= 1 and _close(float(value), result):
-                                return {aid for aid, _, _ in chosen if aid is not None}
+                                return {aid for aid, _, _ in chosen if aid is not None}, factors
     return None
+
+
+def reproduces(
+    value: Any,
+    quoted: list[Quantity],
+    assumed: dict[str, float],
+    field: str = "value.estimate.hours_saved_per_month",
+    division_shown: bool = False,
+) -> set[str] | None:
+    """The assumption IDs a figure needs, if it follows from what the person stated (see `_solve`); None if not."""
+    solved = _solve(value, quoted, assumed, field, division_shown)
+    return solved[0] if solved else None
+
+
+def working_steps(factors: list[float]) -> set[float]:
+    """Every product of some of a figure's factors: the intermediate results a note may show, in any order
+    ("5 × 22 = 110, × 8 = 880"), BLD-C058."""
+    return {math.prod(c) for n in range(1, len(factors) + 1) for c in combinations(factors, n)}
 
 
 # ---- assumptions -------------------------------------------------------------------------------------------------
@@ -504,6 +551,7 @@ def ungrounded(sent: dict[str, Any], out: dict[str, Any]) -> dict[str, str]:
         set()
     )  # the person's figures behind every suggested estimate, for the note's working
     minutes = False  # whether any of them is in minutes (then the note may show the 60)
+    steps: set[float] = set()  # intermediate results of every figure's working
     note = _get(out, "value.estimate.note")
     for path in paths:
         if path != "neutral_summary" and provenance.get(path) != "suggested":
@@ -521,11 +569,12 @@ def ungrounded(sent: dict[str, Any], out: dict[str, Any]) -> dict[str, str]:
             if not any(q.value != 1 for q in theirs):
                 bad[path] = "no_figure"
                 continue
-            need = reproduces(value, theirs, assumed, path, _division_shown(note))
-            if need is None:
+            solved = _solve(value, theirs, assumed, path, _division_shown(note))
+            if solved is None:
                 bad[path] = "new_number"
                 continue
-            used |= need
+            used |= solved[0]
+            steps |= working_steps(solved[1])
             figures |= {q.value for q in theirs}
             minutes = minutes or any(q.unit in MINUTE_UNITS for q in theirs)
         elif path in PROSE and isinstance(value, str) and not numbers(value) <= numbers(joined):
@@ -536,7 +585,8 @@ def ungrounded(sent: dict[str, Any], out: dict[str, Any]) -> dict[str, str]:
             float(v) for p in NUMERIC_ESTIMATES if p not in bad and isinstance(v := _get(out, p), int | float)
         }
         units = {MINUTES_PER_HOUR} if minutes else set()
-        if not numbers(note) <= own | figures | results | set(assumed.values()) | units:
+        allowed_numbers = own | figures | results | set(assumed.values()) | units
+        if any(n not in allowed_numbers and not any(_close(n, x) for x in steps) for n in numbers(note)):
             bad["value.estimate.note"] = "new_number"
     if _empty(_get(answers, "ecosystem.references")) and not _empty(_get(out, "ecosystem.references")):
         bad["ecosystem.references"] = "not_given"
@@ -582,26 +632,27 @@ def first_sentence(details: str) -> tuple[str, str]:
     return (quote + "…" if len(words) > FIRST_SENTENCE_WORDS else quote), quote
 
 
-def _drop(fixed: dict[str, Any], sent: dict[str, Any], path: str, code: str) -> None:
-    evidence: dict[str, Any] = fixed["evidence"]
+def _empty_field(
+    fixed: dict[str, Any], path: str, details: str, padded: list[str], answers: dict[str, Any]
+) -> None:
+    """What a field becomes when nothing of the person's backs it (BLD-C028, BLD-C056): empty, except the one line
+    (the person's own first sentence, backed by itself, or ""), the kind (the default "problem", unclaimed), the
+    no-answer values, and the neutral summary ("" and never the person's words)."""
     provenance: dict[str, Any] = fixed["provenance"]
-    answers = sent.get("canvas_answers") or {}
-    evidence.pop(path, None)
-    if code == "stray_evidence":
-        return
+    evidence: dict[str, Any] = fixed["evidence"]
     provenance.pop(path, None)
+    evidence.pop(path, None)
     if path == "neutral_summary":
         fixed["neutral_summary"] = ""
     elif path == "one_line":
-        line, quote = first_sentence(str(answers.get("details") or ""))
-        usable = quote and not trivial(quote) and _found(quote, _padded(source_pieces(sent)))
+        line, quote = first_sentence(details)
+        usable = bool(quote) and not trivial(quote) and _found(quote, padded)
         fixed["one_line"] = line if usable else ""
         if usable:
             provenance["one_line"] = "suggested"
             evidence["one_line"] = [quote]
     elif path == "kind":
-        if sent.get("mode") != "attachment":
-            fixed["kind"] = DEFAULT_KIND  # no provenance: the platform's default, shown to nobody as a guess
+        fixed["kind"] = DEFAULT_KIND  # no provenance: the platform's default, shown to nobody as a guess
     elif path in NO_ANSWER:
         _set(fixed, path, NO_ANSWER[path])
     elif path in ("who.segments", "ecosystem.references"):
@@ -610,6 +661,19 @@ def _drop(fixed: dict[str, Any], sent: dict[str, Any], path: str, code: str) -> 
         _set(fixed, path, None)
 
 
+def _drop(fixed: dict[str, Any], sent: dict[str, Any], path: str, code: str) -> None:
+    if code == "stray_evidence":
+        fixed["evidence"].pop(path, None)
+        return
+    if path == "kind" and sent.get("mode") == "attachment":
+        fixed["evidence"].pop(path, None)
+        fixed["provenance"].pop(path, None)
+        return  # attachment mode keeps its kind
+    answers = sent.get("canvas_answers") or {}
+    _empty_field(fixed, path, str(answers.get("details") or ""), _padded(source_pieces(sent)), answers)
+
+
+REPAIR_PASSES = 6
 # Changes that mend without taking anything the person would see away: not counted as dropped (BLD-C048).
 NOT_DROPS = frozenset({"assumption_words", "stray_evidence"})
 
@@ -626,7 +690,7 @@ def repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], l
     dropped: list[str] = []
     changed = False
     allowed = allowed_assumptions(sent)
-    for _ in range(4):
+    for _ in range(REPAIR_PASSES):  # until nothing changes; `_repaired` validates the result again
         bad = ungrounded(sent, fixed)
         if not bad:
             break
@@ -676,25 +740,31 @@ def _own_pieces(card: dict[str, Any]) -> list[str]:
 
 
 def still_backed(card: dict[str, Any], allowed_values: dict[str, float]) -> tuple[dict[str, Any], list[str]]:
-    """After an edit (BLD-C045): the canvas with every quote checked again against the person's own text only. A
-    figure (or its note) whose quotes went, or that no longer follows from them, is cleared with its provenance; the
-    assumptions are only those a remaining figure needs. Returns the new canvas and the cleared paths."""
+    """After an edit (BLD-C045, BLD-C056): every quote checked again against the person's own text only. For any
+    suggested or accepted field, quotes no longer found are dropped; a field left with none is emptied with its
+    provenance (`_empty_field`: the one line and kind fallbacks, a blank neutral summary, never the person's words).
+    A figure that no longer follows from its quotes goes too, and so does the note of a figure no longer there. The
+    person's own answers are never touched; the assumptions kept are those a remaining figure needs. Returns the
+    new canvas and the cleared paths."""
     fixed = copy.deepcopy(card)
     provenance = _dict(fixed.get("provenance"))
-    padded = _padded(_own_pieces(fixed))
+    old_evidence = _dict(fixed.get("evidence"))
     evidence: dict[str, Any] = {}
+    fixed["provenance"], fixed["evidence"] = provenance, evidence
+    padded = _padded(_own_pieces(fixed))
     cleared: list[str] = []
-    figure_paths = (*NUMERIC_ESTIMATES, "value.estimate.note")
-    for path, quotes in _dict(fixed.get("evidence")).items():
-        if (
-            isinstance(quotes, list)
-            and quotes
-            and all(isinstance(q, str) and _found(q, padded) for q in quotes)
-        ):
-            evidence[path] = quotes
-        elif path in figure_paths and provenance.get(path) in ("suggested", "accepted"):
-            _set(fixed, path, None)
-            provenance.pop(path, None)
+    for path, quotes in old_evidence.items():
+        if provenance.get(path) == "submitter":
+            continue  # the person's own answer
+        kept = (
+            [q for q in quotes if isinstance(q, str) and _found(q, padded)]
+            if isinstance(quotes, list)
+            else []
+        )
+        if kept:
+            evidence[path] = kept
+        elif path == "neutral_summary" or provenance.get(path) in ("suggested", "accepted"):
+            _empty_field(fixed, path, str(fixed.get("details") or ""), padded, {})
             cleared.append(path)
     listed = [a for a in fixed.get("assumptions") or [] if isinstance(a, dict)]
     assumed = {a["id"]: allowed_values[a["id"]] for a in listed if a.get("id") in allowed_values}

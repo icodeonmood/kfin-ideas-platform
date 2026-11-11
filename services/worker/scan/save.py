@@ -197,7 +197,8 @@ def save(conn: Conn, idea_uuid: str, contributor_code: str, body: dict[str, Any]
             )
 
         overrides = scan_row["overrides"] or {}
-        flags = list(ca.get("flags_for_reviewer") or [])
+        # The confirmed card's flags: they include any the confirm step added (a summary its edit left blank).
+        flags = list(card.get("flags_for_reviewer") or ca.get("flags_for_reviewer") or [])
         # A contested block (§4.2 step 3, BLD-082 option B): a code only. The desk sees it in plain words, and an
         # item the check read as naming an investor or customer goes to the top of the queue.
         contested = None
