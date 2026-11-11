@@ -11,7 +11,7 @@ from gateway.checks import SUBMITTER_SECTIONS, _diff
 from gateway.spec import load
 from pii.detect import detect, directory
 from pii.tagger import TAG_RE
-from scan.inputs import taxonomy_slice
+from scan.inputs import assumptions, taxonomy_slice
 
 SKELETON: dict[str, Any] = {
     "kind": None,
@@ -62,6 +62,7 @@ def _inputs(case_input: Any) -> dict[str, Any]:
             "language": {"primary": "en", "mixed": False},
         },
         "past_corrections": case_input.get("past_corrections") or [],
+        "assumptions": case_input["assumptions"] if "assumptions" in case_input else assumptions(),
     }
 
 
@@ -115,6 +116,8 @@ def _properties(exp: dict[str, Any], sent: dict[str, Any], out: dict[str, Any], 
             sent_tags = set(TAG_RE.findall(grounding.source_text(sent)))
             quoted = {t for qs in (out.get("evidence") or {}).values() for q in qs for t in TAG_RE.findall(q)}
             res[key] = quoted <= sent_tags
+        elif key == "assumptions_used":  # DEC-097: exactly these assumption IDs listed, in any order
+            res[key] = sorted(a.get("id") for a in out.get("assumptions") or []) == sorted(want)
         elif key.endswith("_may_suggest"):
             continue  # informational
         else:
