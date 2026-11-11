@@ -9,6 +9,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from core.crypto import CryptoError, decrypt_json
 from core.db import Conn
 from pii import vault
 from pii.restore import restore
@@ -100,11 +101,37 @@ def owner_status(conn: Conn, idea: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+TITLE_WORDS = 12
+
+
+def own_title(raw_blob: bytes, idea_uuid: str) -> str | None:
+    """A title for an idea with no confirmed canvas yet (a draft, or a scanned idea the person has not confirmed),
+    from what they typed: their one line, or the first words of a quick capture (BLD-A166). Their own words, shown
+    only to them on My ideas. A draft's answers (`draft_encrypted`) and a shared idea's text (`raw_encrypted`) are
+    both sealed to the idea's row ID; the raw text is cleared when they confirm, and the canvas's one line takes
+    over."""
+    try:
+        raw = decrypt_json(raw_blob, idea_uuid)
+    except (CryptoError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    line = raw.get("one_line")
+    if isinstance(line, str) and line.strip():
+        return line.strip()
+    words = str(raw.get("details") or "").split()
+    if not words:
+        return None
+    return " ".join(words[:TITLE_WORDS]) + ("…" if len(words) > TITLE_WORDS else "")
+
+
 def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
     codes = viewer_codes(conn, user_id)
     areas, _ = taxonomy_names()
     rows = conn.execute(
-        "SELECT id, idea_id, stage, canvas, area_ids, created_at, submitted_at, draft_expires_at FROM ideas "
+        "SELECT id, idea_id, stage, canvas, area_ids, created_at, submitted_at, draft_expires_at, "
+        "CASE WHEN canvas->>'one_line' IS NULL THEN coalesce(raw_encrypted, draft_encrypted) END AS own_text "
+        "FROM ideas "
         "WHERE contributor_code = ANY(%s) AND (stage <> 'draft' OR draft_expires_at > now()) "
         "ORDER BY coalesce(submitted_at, created_at) DESC",
         (codes,),
@@ -117,6 +144,8 @@ def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
             one_line = restore(
                 canvas["one_line"], vault.mapping(conn, r["idea_id"]), "real"
             )  # their own words
+        elif r["own_text"] is not None:
+            one_line = own_title(bytes(r["own_text"]), str(r["id"]))
         ideas.append(
             {
                 "id": str(r["id"]),
