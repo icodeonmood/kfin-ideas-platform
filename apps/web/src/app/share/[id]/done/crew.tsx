@@ -289,7 +289,7 @@ export function Crew({
               {error}
             </p>
           ) : null}
-          <button type="submit" className="button" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
             Looks right
           </button>
         </form>
@@ -306,12 +306,12 @@ export function Crew({
           ) : ready.matches.length ? (
             <ul className="crew-cards">
               {ready.matches.map((card, i) => (
-                <li key={card.ref ?? `desk-${i}`} className="crew-card">
+                <li key={card.ref ?? `desk-${i}`} className="match crew-card">
                   <h4 id={`crew-card-${card.ref ?? "desk"}`}>{card.heading}</h4>
                   {card.kind !== "with_desk" ? (
                     <>
                       <p>{card.summary ?? "A related idea."}</p>
-                      <dl className="crew-facts">
+                      <dl className="facts crew-facts">
                         {card.area ? (
                           <div>
                             <dt>Area</dt>
@@ -338,12 +338,12 @@ export function Crew({
                         ) : null}
                       </dl>
                       {actionsFor(card).length ? (
-                        <div className="button-row">
+                        <div className="btn-row">
                           {actionsFor(card).map((a) => (
                             <button
                               key={a.choice}
                               type="button"
-                              className="button button-secondary"
+                              className="btn btn-secondary"
                               disabled={busy}
                               aria-describedby={`crew-card-${card.ref}`}
                               aria-expanded={
@@ -391,7 +391,7 @@ export function Crew({
                               onChange={(e) => setText(e.target.value)}
                             />
                           </div>
-                          <button type="submit" className="button" disabled={busy}>
+                          <button type="submit" className="btn btn-primary" disabled={busy}>
                             {open.label}
                           </button>
                         </form>
@@ -409,10 +409,10 @@ export function Crew({
           ) : (
             <p>No one has raised this yet. You are the first.</p>
           )}
-          <div className="button-row">
+          <div className="btn-row">
             <button
               type="button"
-              className="button"
+              className="btn btn-primary"
               disabled={busy}
               onClick={() => void choose({ ref: null, choice: "new", label: "" })}
             >
@@ -420,7 +420,7 @@ export function Crew({
             </button>
             <button
               type="button"
-              className="button button-secondary"
+              className="btn btn-secondary"
               disabled={busy}
               onClick={() => void choose({ ref: null, choice: "withdraw", label: "" })}
             >

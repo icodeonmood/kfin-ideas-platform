@@ -1085,3 +1085,243 @@ main > .entry {
     border-radius: var(--r-card);
   }
 }
+
+/* ---------- After sharing: the checks, the outcome and Find your crew (share/[id]/done) ---------- */
+.done-title {
+  font-size: clamp(34px, 5vw, 60px);
+  overflow-wrap: anywhere;
+}
+
+.scan {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 56rem;
+  padding: var(--space-6);
+}
+
+.scan h2,
+.scan > h3 {
+  margin: 0;
+}
+
+/* The checks: each step carries a slash, filled when done, breathing while it runs. */
+.scan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.scan-steps li {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 16px;
+  color: var(--ink-muted);
+}
+
+/* The text glyphs (✓ … ○) are aria-hidden; the slash replaces them on screen. */
+.scan-steps li > span[aria-hidden="true"] {
+  display: none;
+}
+
+.scan-steps li::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  width: 9px;
+  height: 24px;
+  border-radius: 2px;
+  transform: skewX(var(--slash-skew));
+  box-shadow: inset 0 0 0 1.5px var(--line-control);
+}
+
+.scan-steps li.done {
+  color: var(--ink);
+}
+
+.scan-steps li.done::before {
+  background: linear-gradient(to top, var(--ink) 0 58%, var(--heat) 100%);
+  box-shadow: none;
+}
+
+.scan-steps li.now {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.scan-steps li.now::before {
+  background: linear-gradient(to top, var(--ink) 0 58%, var(--heat) 100%);
+  box-shadow: 0 -6px 14px -4px color-mix(in srgb, var(--heat) 70%, transparent);
+  animation: scan-breathe 1.1s var(--ease-move) infinite;
+}
+
+@keyframes scan-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-steps li.now::before {
+    animation: none;
+  }
+}
+
+/* The outcome panels inside the scan pane */
+.scan-notice {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.scan-notice h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.scan-notice h3:focus {
+  outline: none;
+}
+
+.scan-notice p {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+.scan-notice-error {
+  padding: var(--space-5);
+  border: 2px solid var(--error);
+  border-radius: var(--r-card);
+  background: var(--error-wash);
+}
+
+.scan-notice-error h3 {
+  color: var(--error);
+}
+
+/* Check your canvas: each suggestion beside the person's own words (DEC-095). Ink on paper keeps full contrast. */
+.scan .suggestion {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.scan .suggestion > legend {
+  padding: 0;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.scan .suggested-value {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.scan .from-words {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-well);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.scan .from-words blockquote {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--line-control);
+}
+
+.scan .from-words blockquote p {
+  margin: 0;
+}
+
+/* Find your crew: match cards (DEC-026: neutral summary, area, stage and count only) */
+.crew-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.crew-card {
+  margin: 0;
+}
+
+.crew-card > h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.crew-card > p {
+  margin: 0;
+  max-width: 52ch;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.32;
+}
+
+.crew-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  font-size: 14px;
+}
+
+.crew-facts > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.crew-facts dt {
+  color: var(--ink-muted);
+}
+
+.crew-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* What happens next */
+.next-title {
+  margin: var(--space-7) 0 var(--space-3);
+}
+
+.next-steps {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  max-width: var(--measure);
+}
+
+@media (max-width: 40rem) {
+  .scan {
+    padding: var(--space-5) var(--space-4);
+    border-radius: var(--r-card);
+  }
+}
+
+/* Headings that receive focus from script (tabindex="-1", to move a screen reader to the result) are not in the
+   tab order; they need no ring. Everything you can Tab to keeps its 3 px ring. */
+.scan h3[tabindex="-1"]:focus,
+.canvas h2[tabindex="-1"]:focus {
+  outline: none;
+}

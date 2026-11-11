@@ -26,11 +26,11 @@ export default async function Done({ params }: { params: Promise<{ id: string }>
   const initial = await scanStatus(me, id).catch(() => null);
   return (
     <>
-      <h1>Your idea is in: {row.idea_id}</h1>
-      <p className="lead">Thank you. Here is what happens next.</p>
+      <h1 className="page-display done-title">Your idea is in: {row.idea_id}</h1>
+      <p className="lead page-lead">Thank you. Here is what happens next.</p>
       <ScanStatus id={id} initial={initial as Parameters<typeof ScanStatus>[0]["initial"]} />
-      <h2>What happens next</h2>
-      <ol className="steps">
+      <h2 className="t-h2 next-title">What happens next</h2>
+      <ol className="next-steps">
         <li>We check it for personal data and suggest answers for anything you left blank.</li>
         <li>We look for colleagues who raised the same thing, so you can team up.</li>
         <li>The review desk looks at it within 5 working days. You will hear from us at each step.</li>

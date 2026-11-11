@@ -192,7 +192,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
 
   const currentIndex = STEPS.findIndex((s) => s.key === status?.step);
   return (
-    <section aria-labelledby="scan-title" className="scan">
+    <section aria-labelledby="scan-title" className="glass scan">
       <h2 id="scan-title" ref={titleRef} tabIndex={-1}>
         Where your idea is now
       </h2>
@@ -231,7 +231,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "waiting" || status?.state === "manual" ? (
-        <div className="notice">
+        <div className="scan-notice">
           <h3 ref={outcomeRef} tabIndex={-1}>
             Your idea is saved
           </h3>
@@ -240,7 +240,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "ready" && status.final ? (
-        <div className="notice">
+        <div className="scan-notice">
           <h3 ref={outcomeRef} tabIndex={-1}>
             {(FINAL[status.final] ?? MOVED_ON).title}
           </h3>
@@ -259,7 +259,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "blocked" && status.blocked ? (
-        <div className="notice notice-error">
+        <div className="scan-notice scan-notice-error">
           <h3 ref={outcomeRef} tabIndex={-1}>
             Please take out some details first
           </h3>
@@ -274,14 +274,19 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
               </li>
             ))}
           </ul>
-          <div className="button-row">
-            <button type="button" className="button" disabled={busy} onClick={() => void choose("edit")}>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void choose("edit")}
+            >
               Edit my idea
             </button>
             {status.blocked.can_contest ? (
               <button
                 type="button"
-                className="button button-secondary"
+                className="btn btn-secondary"
                 disabled={busy}
                 onClick={() => void choose("not_personal_data")}
               >
@@ -298,7 +303,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "redirect" && status.redirect ? (
-        <div className="notice">
+        <div className="scan-notice">
           <h3 ref={outcomeRef} tabIndex={-1}>
             Where to take this: {status.redirect.team}
           </h3>
@@ -310,10 +315,10 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
               </a>
             </p>
           ) : null}
-          <div className="button-row">
+          <div className="btn-row">
             <button
               type="button"
-              className="button"
+              className="btn btn-primary"
               disabled={busy}
               onClick={() => void choose("take_redirect")}
             >
@@ -321,7 +326,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             </button>
             <button
               type="button"
-              className="button button-secondary"
+              className="btn btn-secondary"
               aria-expanded={overriding}
               aria-controls="override-form"
               onClick={() => setOverriding((v) => !v)}
@@ -351,7 +356,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
                   onChange={(e) => setReason(e.target.value)}
                 />
               </div>
-              <button type="submit" className="button" disabled={busy}>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
                 Carry on with my idea
               </button>
             </form>
@@ -360,7 +365,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "held" ? (
-        <div className="notice">
+        <div className="scan-notice">
           <h3 ref={outcomeRef} tabIndex={-1}>
             Thanks. The review desk will look at this first
           </h3>
@@ -369,7 +374,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
       ) : null}
 
       {status?.state === "done" && status.outcome === "redirected" ? (
-        <div className="notice">
+        <div className="scan-notice">
           <h3 ref={outcomeRef} tabIndex={-1}>
             Thanks for taking it to the right team
           </h3>

@@ -67,7 +67,7 @@ export function FollowUp({
             <label htmlFor="fu-answer">Your answer</label>
             <textarea id="fu-answer" rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)} />
           </div>
-          <button type="submit" className="button" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
             Send my answer
           </button>
         </form>
@@ -85,14 +85,14 @@ export function FollowUp({
               <label htmlFor="fu-reason">What should the committee know? (at least 15 characters)</label>
               <textarea id="fu-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
             </div>
-            <button type="submit" className="button button-secondary" disabled={busy}>
+            <button type="submit" className="btn btn-secondary" disabled={busy}>
               Send to the core committee
             </button>
           </form>
         ) : (
           <button
             type="button"
-            className="link-button"
+            className="btn btn-quiet"
             aria-expanded={false}
             aria-controls="fu-disagree"
             onClick={() => setOpen(true)}
