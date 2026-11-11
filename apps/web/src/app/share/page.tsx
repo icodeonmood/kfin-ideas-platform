@@ -23,19 +23,21 @@ export default async function Share() {
     : [];
   return (
     <>
-      <h1>Share an idea</h1>
-      <p className="lead">
+      <h1 className="t-display page-display">Share an idea</h1>
+      <p className="lead page-lead">
         Tell us about a problem you face, a fix you have thought of, or a new business idea. A missing answer
         never stops you sharing.
       </p>
       <StartButtons />
       {drafts.length ? (
-        <section aria-labelledby="drafts-title">
-          <h2 id="drafts-title">Your drafts</h2>
+        <section className="drafts" aria-labelledby="drafts-title">
+          <h2 id="drafts-title" className="t-h2">
+            Your drafts
+          </h2>
           <p className="muted">Drafts save as you type and are kept for 30 days.</p>
-          <ul>
+          <ul className="draft-list">
             {drafts.map((d) => (
-              <li key={d.id}>
+              <li key={d.id} className="glass draft-row" data-lit="">
                 <Link href={`/share/${d.id}`}>
                   {d.capture_mode === "quick" ? "Quick capture" : "Full canvas"}, last saved{" "}
                   {new Date(d.updated_at).toLocaleString("en-IN", {

@@ -231,7 +231,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
               <p className="voice-clock" role="timer" aria-live="off">
                 Recording {formatElapsed(seconds)} of {formatElapsed(MAX_SECONDS)}
               </p>
-              <button type="button" className="button" ref={stopRef} onClick={stop}>
+              <button type="button" className="btn btn-primary" ref={stopRef} onClick={stop}>
                 Stop recording
               </button>
             </div>
@@ -244,7 +244,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
               {/* aria-disabled, not disabled: the button keeps focus while the note is sent (WCAG 2.4.3). */}
               <button
                 type="button"
-                className="button"
+                className="btn btn-primary"
                 ref={nextRef}
                 onClick={() => {
                   if (step !== "sending") void send();
@@ -255,7 +255,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
               </button>
               <button
                 type="button"
-                className="link-button"
+                className="btn btn-quiet"
                 onClick={() => void start()}
                 disabled={step === "sending"}
                 aria-disabled={asking || undefined}
@@ -264,7 +264,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
               </button>
               <button
                 type="button"
-                className="link-button"
+                className="btn btn-quiet"
                 onClick={() => discard("Your voice note is deleted.")}
                 disabled={step === "sending"}
               >
@@ -274,7 +274,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
           ) : (
             <button
               type="button"
-              className="button button-secondary"
+              className="btn btn-secondary"
               ref={startRef}
               onClick={() => void start()}
               aria-disabled={asking || undefined}

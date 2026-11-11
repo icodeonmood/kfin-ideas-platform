@@ -222,7 +222,7 @@ export function Attachments(p: {
                 {a.name} <span className="muted">({size(a.bytes)})</span>
               </span>
               <span className="attachment-state">{stateText(a)}</span>
-              <button type="button" className="link-button" onClick={() => void removeFile(a)}>
+              <button type="button" className="btn btn-quiet" onClick={() => void removeFile(a)}>
                 Remove<span className="visually-hidden"> {a.name}</span>
               </button>
             </li>

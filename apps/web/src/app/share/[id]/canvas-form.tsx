@@ -207,13 +207,13 @@ export function CanvasForm(props: Props) {
 
       {problems.length && submitState !== "sending" ? (
         <div
-          className="error-summary"
+          className="summary error-summary"
           role="alert"
           tabIndex={-1}
           ref={summaryRef}
           aria-labelledby="summary-title"
         >
-          <h2 id="summary-title">
+          <h2 id="summary-title" className="summary-title">
             {problems.length === 1
               ? "One thing to fix before you share"
               : `${problems.length} things to fix before you share`}
@@ -236,7 +236,7 @@ export function CanvasForm(props: Props) {
       <div className="canvas-layout">
         <div className="canvas-sections">
           {isQuick ? (
-            <section aria-labelledby="quick-title" className="canvas-section">
+            <section aria-labelledby="quick-title" className="glass canvas-section">
               <h2 id="quick-title">Your idea</h2>
               {text("details", QUESTIONS.quick_noticed.label, "", {
                 multiline: true,
@@ -277,7 +277,7 @@ export function CanvasForm(props: Props) {
             </section>
           ) : (
             <>
-              <section aria-labelledby="s1-title" className="canvas-section">
+              <section aria-labelledby="s1-title" className="glass canvas-section">
                 <h2 id="s1-title">1. What is it?</h2>
                 {example("what-is-it")}
                 <Choices
@@ -302,7 +302,7 @@ export function CanvasForm(props: Props) {
                 })}
               </section>
 
-              <section aria-labelledby="s2-title" className="canvas-section">
+              <section aria-labelledby="s2-title" className="glass canvas-section">
                 <h2 id="s2-title">2. Who does it touch?</h2>
                 {example("who-it-touches")}
                 <Choices
@@ -333,7 +333,7 @@ export function CanvasForm(props: Props) {
                 )}
               </section>
 
-              <section aria-labelledby="s3-title" className="canvas-section">
+              <section aria-labelledby="s3-title" className="glass canvas-section">
                 <h2 id="s3-title">3. What&apos;s it worth to KFintech?</h2>
                 {example("whats-it-worth")}
                 <Choices
@@ -396,7 +396,7 @@ export function CanvasForm(props: Props) {
                 />
               </section>
 
-              <section aria-labelledby="s4-title" className="canvas-section">
+              <section aria-labelledby="s4-title" className="glass canvas-section">
                 <h2 id="s4-title">4. Has anyone solved this?</h2>
                 {example("solved-elsewhere")}
                 <Choices
@@ -417,7 +417,7 @@ export function CanvasForm(props: Props) {
                 })}
               </section>
 
-              <section aria-labelledby="s5-title" className="canvas-section">
+              <section aria-labelledby="s5-title" className="glass canvas-section">
                 <h2 id="s5-title">5. Your solution</h2>
                 {example("your-solution")}
                 {text("solution.approach", QUESTIONS.approach.label, QUESTIONS.approach.why, {
@@ -428,7 +428,7 @@ export function CanvasForm(props: Props) {
                 {text("solution.risks", QUESTIONS.risks.label, QUESTIONS.risks.why, { multiline: true })}
               </section>
 
-              <section aria-labelledby="s6-title" className="canvas-section">
+              <section aria-labelledby="s6-title" className="glass canvas-section">
                 <h2 id="s6-title">6. Your research</h2>
                 {example("your-research")}
                 <p className="why">Why we ask: {QUESTIONS.research.why}</p>
@@ -447,7 +447,7 @@ export function CanvasForm(props: Props) {
             </>
           )}
 
-          <section aria-labelledby="before-title" className="canvas-section">
+          <section aria-labelledby="before-title" className="glass canvas-section">
             <h2 id="before-title">Before you share</h2>
             <Choices
               type="radio"
@@ -507,7 +507,7 @@ export function CanvasForm(props: Props) {
           </section>
 
           <div className="submit-row">
-            <button type="submit" className="button" disabled={submitState === "sending"}>
+            <button type="submit" className="btn btn-primary btn-lg" disabled={submitState === "sending"}>
               {submitState === "sending" ? "Sharing…" : "Share your idea"}
             </button>
             <p className="save-status" role="status" aria-live="polite">
@@ -525,18 +525,20 @@ export function CanvasForm(props: Props) {
         </div>
 
         {panel.kind === "note" ? (
-          <aside className="strength" aria-label="What happens next">
+          <aside className="glass strength" aria-label="What happens next">
             <p>{panel.note}</p>
           </aside>
         ) : (
-          <aside className="strength" aria-labelledby="strength-title">
+          <aside className="glass strength" aria-labelledby="strength-title">
             <h2 id="strength-title">How ready is this for a committee?</h2>
             <p className="strength-score" aria-live="polite">
               <strong>{panel.strength.score} of 5</strong>
             </p>
-            <div className="strength-bar" aria-hidden="true">
-              <span style={{ width: `${panel.strength.score * 20}%` }} />
-            </div>
+            <span className="slashes strength-slashes" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <i key={i} className="slash" data-state={i < panel.strength.score ? undefined : "empty"} />
+              ))}
+            </span>
             <ul className="strength-points">
               {Object.entries(panel.strength.points).map(([key, done]) => (
                 <li key={key} className={done ? "done" : "todo"}>
@@ -847,7 +849,7 @@ function References(p: {
             </div>
             <button
               type="button"
-              className="button button-secondary"
+              className="btn btn-secondary"
               onClick={() => p.onChange(p.value.filter((_, j) => j !== i))}
               aria-label={`Remove ${ref.kind} ${i + 1}`}
             >
@@ -859,7 +861,7 @@ function References(p: {
       {p.value.length < 20 ? (
         <button
           type="button"
-          className="button button-secondary"
+          className="btn btn-secondary"
           onClick={() => p.onChange([...p.value, { kind: "link", value: "", player: null }])}
         >
           Add a link or note
