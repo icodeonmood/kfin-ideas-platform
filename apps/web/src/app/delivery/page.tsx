@@ -80,7 +80,7 @@ export default async function Page() {
                         </td>
                         <td>
                           {d.state_words}
-                          {d.phase_words && d.state === "in_delivery" ? `: ${d.phase_words}` : ""}
+                          {d.phase_words && d.state === "in_delivery" ? ` (${d.phase_words})` : ""}
                           {d.blocked ? " (blocked)" : ""}
                           {d.outcome
                             ? `, ${d.outcome === "target_met" ? "target met" : "target not met"}`
