@@ -68,7 +68,7 @@ export function Sky({ data }: { data: Data }) {
 
   if (!data || data.paused) {
     return (
-      <div className="sky" ref={root}>
+      <div className="sky stage" data-theme="zed" ref={root}>
         <div className="sky-words">
           <h1>{BANNERS["ones.public"]}</h1>
         </div>
@@ -80,41 +80,57 @@ export function Sky({ data }: { data: Data }) {
   const glowCard = glowing ? cards.find((c) => c.induction_no === glowing.induction_no) : undefined;
   const shown = card >= 0 ? cards[card] : undefined;
   return (
-    <div className="sky" ref={root} aria-label="The Ones, in the sky">
+    <div
+      className="sky stage"
+      data-theme="zed"
+      data-glow="1"
+      ref={root}
+      role="region"
+      aria-label="The Ones, in the sky"
+    >
       <div className="sky-controls">
         <button
           type="button"
-          className="round-button"
+          className="round-btn"
           aria-label={paused ? "Play the screen" : "Pause the screen"}
           onClick={() => setPaused((p) => !p)}
         >
-          {paused ? "▶" : "❚❚"}
+          <svg
+            className={paused ? "glyph glyph-fill" : "glyph"}
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d={paused ? "M7 5v10l8-5z" : "M7.5 5v10M12.5 5v10"} />
+          </svg>
         </button>
         <button
           type="button"
-          className="round-button"
+          className="round-btn"
           aria-label="Full screen"
           onClick={() => root.current?.requestFullscreen?.().catch(() => undefined)}
         >
-          ⤢
+          <svg className="glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            <path d="M4 8V4h4M12 4h4v4M16 12v4h-4M8 16H4v-4" />
+          </svg>
         </button>
       </div>
 
       {shown ? (
-        <div className="sky-card">
-          <p className="one-number" style={{ color: shown.tier_colour }}>
+        <div className="sky-card" data-tier={String(Math.min(7, Math.max(1, shown.tier)))}>
+          <p className="jersey-num sky-card-num">
             <span className="visually-hidden">Number </span>
             {shown.number}
           </p>
-          <div style={{ display: "grid", gap: "1rem" }}>
+          <div className="sky-card-copy">
             <h2>{oneName(shown.number, shown.name)}</h2>
             {shown.line ? <p className="one-line">{shown.line}</p> : null}
             <p className="one-brief">{shown.brief}</p>
             <p className="one-tier">
-              <span className="tier-dot" style={{ background: shown.tier_colour }} aria-hidden="true" />
+              <span className="swatch" aria-hidden="true" />
               Tier {shown.tier}, {shown.tier_name}. {oneTag(shown)}
             </p>
-            <ul className="measure-chips">
+            <ul className="jersey-measures">
               {measureList(shown.measures).map(([label, words]) => (
                 <li key={label}>
                   <span>{label}:</span> {words}
@@ -136,7 +152,7 @@ export function Sky({ data }: { data: Data }) {
                   left: `${p.x * 100}%`,
                   top: `${p.y * 100}%`,
                   opacity: s.active ? 1 : 0.4,
-                  color: s.tier_colour,
+                  ["--spark-glow" as string]: s.tier_colour,
                 }}
               >
                 <OneSpark inductionNo={s.induction_no} colour={s.tier_colour} size={isGlowing ? 96 : 64} />
@@ -162,7 +178,7 @@ export function Sky({ data }: { data: Data }) {
                 building what they noticed.
               </p>
             </div>
-            <p style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.625rem" }}>
+            <p className="sky-lockup">
               <SparkMark height={28} />
               <span>
                 <strong>1% Club</strong>

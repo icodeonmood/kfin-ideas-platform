@@ -174,10 +174,10 @@ export function LaunchStage({ url, shownUrl, qr }: Props) {
             the invitation and its QR code.
           </p>
           <div className="launch-controls">
-            <button ref={startButton} type="button" className="button" onClick={start}>
+            <button ref={startButton} type="button" className="btn btn-primary btn-lg" onClick={start}>
               Start
             </button>
-            <button type="button" className="button launch-ghost" onClick={fullScreen}>
+            <button type="button" className="btn btn-secondary btn-lg launch-ghost" onClick={fullScreen}>
               Full screen
             </button>
           </div>

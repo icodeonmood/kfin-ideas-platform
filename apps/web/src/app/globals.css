@@ -1353,7 +1353,7 @@ blockquote {
 }
 
 .sky-spark.is-glowing {
-  filter: drop-shadow(0 0 0.75rem currentColor);
+  filter: drop-shadow(0 0 0.75rem var(--spark-glow, currentColor)); /* a glow, never text colour (DEC-098) */
 }
 
 .sky-words {

@@ -1883,3 +1883,41 @@ main > .wall-top {
     border-radius: var(--r-card);
   }
 }
+
+/* ---------- The office screen (constellation) and the launch screen ----------
+ * Both are fixed full screens; the system's .stage sets position: relative, so it is pinned back here.
+ */
+.sky.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.sky-controls .round-btn {
+  color: var(--white);
+}
+
+.sky-card-num {
+  font-size: clamp(160px, 22vw, 320px);
+}
+
+.sky-card-copy {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sky-lockup {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sky-card .one-line,
+.sky-card .one-tier {
+  color: var(--ash);
+}
+
+.sky-card .one-tier .swatch {
+  margin-right: 8px;
+}
