@@ -69,6 +69,14 @@ Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, o
 
 **Learning from the core committee** (Committee, then Desk decisions, then "What the platform learns from your decisions"; core committee only). Proposed scorecard weights wait for the chair and proposed scoring bands (the shortlist line, confidence multipliers) for any core committee member. Approving records the decision only: the product team then edits `rules/scorecard.md` or `rules/routing.md`, bumps the version and records the committee's approval in the pull request. If approving answers "On hold", lane B's fairness report (`/reports`) shows a gap of 25 points or more in shortlist or pick rate between LOBs or locations; look there, then decide again or decline. If it answers "Not enough people in each group yet", fewer than two LOBs or two locations have 5 or more people in the report; wait for more decisions or decline. A loop that fails logs `learning.failed` with the loop's name and the error's type; the other loops that day still run, and the failed one can be run again from the Learning page. To see what was decided: `SELECT action, entity, at FROM audit_log WHERE action IN ('learning.approved', 'learning.declined') ORDER BY at DESC LIMIT 20`.
 
+### The speech service's image (BLD-C032)
+
+The speech service's base image is pinned by digest and every Python package by version and hash; nothing else gets in. To refresh them (a security fix, or a newer engine), on a machine with network access:
+
+1. Packages: in `services/worker/speech_service/`, run `uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 --exclude-newer <a date two weeks back> --no-header -o requirements.txt`. Read the diff: every package that changed, and why.
+2. Base image: look up the current multi-architecture digest of `python:3.12-slim` (`docker buildx imagetools inspect python:3.12-slim`, or the registry's API) and put it in the `FROM` line of `services/worker/speech_service/Dockerfile`.
+3. Rebuild with `COMPOSE_PROFILES=speech docker compose build speech`, run `make test` (the contract and compose tests), then deploy through UAT as usual.
+
 ## 3. Scheduled jobs to watch
 
 | Job | When (IST) | Healthy when |
