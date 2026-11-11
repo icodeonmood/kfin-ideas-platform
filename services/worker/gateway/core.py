@@ -413,9 +413,7 @@ def _run(
         flags.append("unknown_tags")
         data = _defuse_tags(data, unknown)
     outcome = "tag_mismatch" if flags else ("ok" if attempts == 1 else "ok_after_retry")
-    if (
-        not flags and not dropped_paths and use_cache
-    ):  # a mended answer is not cached: the next ask tries again
+    if not flags and mended is None and use_cache:  # a mended answer is not cached: the next ask tries again
         cache.put(conn, k, spec, data)
     # 9. Log. Dropped suggestions are counted by code only; the field paths stay with the caller.
     code = flags[0] if flags else (DROPPED if dropped_paths else None)
@@ -436,9 +434,9 @@ def _repaired(
     if not problems or not isinstance(data, dict) or _schema_problems(spec, data):
         return None
     mended = checks.repair(spec.name, sent, data)
-    if mended is None or not mended[1]:
+    if mended is None or mended[0] is data:  # nothing changed: nothing to mend
         return None
-    fixed, paths = mended
+    fixed, paths = mended  # paths may be empty: corrected assumption words drop nothing (BLD-C048)
     if _schema_problems(spec, fixed) or checks.run(spec.name, sent, fixed, d) or leak_hits(fixed):
         return None
     return fixed, paths

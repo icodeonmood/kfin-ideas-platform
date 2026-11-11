@@ -28,6 +28,7 @@ import copy
 import math
 import re
 import unicodedata
+from dataclasses import dataclass
 from itertools import combinations, product
 from typing import Any
 
@@ -89,15 +90,49 @@ PROSE = (
 )
 MAX_QUOTES = 3
 FIRST_SENTENCE_WORDS = 20
-MIN_QUOTE_CHARS = 12  # a two-word quote shorter than this needs a word that is not a stopword
-UNIT_FACTORS = (60.0,)  # minutes in an hour: a unit, not an assumption, so it is never listed
-MAX_OPERANDS = 4  # numbers in one product or quotient, e.g. 2 hours × 10 people × 22 days
+MINUTES_PER_HOUR = 60.0  # a unit, not an assumption: never listed, and only minutes into hours
+MAX_QUOTED = 10  # the person's quantities considered for one figure, in the order they wrote them
+MINUTE_UNITS = frozenset({"minute", "minutes", "min", "mins"})
+# Number words that never count as a quantity the person stated: "one analyst", "a team", "half the day" say how
+# the work is done, not how much (BLD-C042).
+NOT_OPERANDS = frozenset({"zero", "one", "a", "an", "half", "single"})
+# How each figure may be worked (BLD-C043). The person's quantities always multiply; an assumption only in the
+# direction its unit allows; at most `max` numbers in all. Division by the person's own numbers only for a count, and
+# only when the note shows it.
+FIELD_RULES: dict[str, dict[str, Any]] = {
+    "value.estimate.hours_saved_per_month": {
+        "max": 4, "minutes": True, "count": False, "default": (1,),
+        "signs": {"working_days_per_month": (1,), "working_hours_per_day": (1,), "months_per_year": (-1,)},
+    },
+    "value.estimate.inr_saved_per_year": {
+        "max": 4, "minutes": False, "count": False, "default": (1,),
+        "signs": {"working_days_per_month": (1,), "working_hours_per_day": (1,), "months_per_year": (1,)},
+    },
+    "value.estimate.inr_revenue_per_year": {
+        "max": 4, "minutes": False, "count": False, "default": (1,),
+        "signs": {"working_days_per_month": (1,), "working_hours_per_day": (1,), "months_per_year": (1,)},
+    },
+    "value.estimate.inr_revenue_one_time": {"max": 4, "minutes": False, "count": False, "default": (), "signs": {}},
+    "value.estimate.clients_who_would_pay": {
+        "max": 3, "minutes": False, "count": True, "default": (), "signs": {"months_per_year": (1,)},
+    },
+}  # fmt: skip
 ASSUMPTION_ID = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 STOPWORDS = frozenset(
     re.findall(
         r"\S+",
-        "a an and are as at be by for from has have i in is it its my no not of on or our so that the their they "
-        "this to us was we were with you your hai hain ka ke ki ko se mein me aur bhi to ye yeh wo woh nahi na",
+        "a an and are as at be been being by can could did do does for from get gets got has have how i in is it its "
+        "just my no not of on or our so some such that the their them then there they this those to too us very was "
+        "we were what when which who will with would you your all also any each every many more much same "
+        "hai hain ka ke ki ko se mein me aur bhi to ye yeh wo woh nahi na",
+    )
+)
+# Words too general to say anything on their own: "the team", "our process" back nothing (BLD-C047).
+GENERIC_NOUNS = frozenset(
+    re.findall(
+        r"\S+",
+        "team teams people person persons work works process processes issue issues problem problems thing things "
+        "time staff data system systems stuff task tasks job jobs way ways everyone someone everything something",
     )
 )
 
@@ -107,9 +142,11 @@ MESSAGES = {
     "not_found": "a quote in `evidence` is not word for word in one of the person's answers; copy one continuous "
     "phrase from a single answer exactly (no ellipses, no joining), or leave the field null",
     "too_short": "each quote in `evidence` must be at least two words and say something (not just 'of the')",
-    "no_figure": "an estimate needs a quote that holds the person's own figures, or leave it null",
+    "no_figure": "an estimate needs a quote that holds a quantity the person stated (not 'one' or 'a'), or leave "
+    "it null",
     "new_number": "holds a number that is neither the person's own nor worked from their numbers and the "
-    "assumptions you list; use only their figures and the allowed assumptions, or leave it null",
+    "assumptions you list (multiply their quantities; use each assumption only to turn their unit into the field's "
+    "unit); use only their figures and the allowed assumptions, or leave it null",
     "not_marked": "you added this answer, so mark its provenance `suggested` and give `evidence`, or leave it empty",
     "not_given": "may only hold references the person gave; return the person's list unchanged",
     "stray_evidence": "`evidence` is only for answers you suggested and for neutral_summary; remove this key",
@@ -122,12 +159,33 @@ _INVISIBLE = dict.fromkeys(map(ord, "​‌‍⁠﻿­"), None)  # ZWSP, ZWNJ, Z
 _PUNCT = str.maketrans({"–": "-", "—": "-", "‑": "-", "‘": "'", "’": "'", "“": '"', "”": '"'})
 _EDGE_MARKS = "\"'.,;:!?…()[]{}<>*/\\|`~-"
 _CURRENCY = re.compile(r"(?:\b(?:rs|inr)\b\.?|₹)\s*", re.I)
-_NUMBER = re.compile(
-    r"(?<![\d.,])(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-    r"(?:\s*(lakhs?|lacs?|crores?|cr|k|thousand|million)\b)?",
-    re.I,
+_MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
+# Numbers that are never quantities: dates, times, ordinals, financial years, years after a cue, references.
+_NOT_QUANTITIES = (
+    re.compile(r"\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b"),
+    re.compile(r"\b\d{1,2}[:.]\d{2}\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b", re.I),
+    re.compile(
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTHS}\b(?:,?\s*\d{{4}})?|\b{_MONTHS}\s+\d{{1,4}}(?:st|nd|rd|th)?\b"
+        r"(?:,?\s*\d{4})?",
+        re.I,
+    ),
+    re.compile(r"\b\d+(?:st|nd|rd|th)\b", re.I),
+    re.compile(r"\bfy\s*'?\d{2,4}(?:\s*-\s*\d{2,4})?\b|\b(?:19|20)\d{2}\s*-\s*\d{2,4}\b", re.I),
+    re.compile(r"\b(?:in|since|from|till|until|by|year|during|before|after)\s+(?:19|20)\d{2}\b", re.I),
+    re.compile(
+        r"(?:\bno\.|\bnos\.|#|\bref\.?|\bid\b|\bticket\b|\bsr\.?|\bfolio\b|\barn\b|\beuin\b)\s*[:#-]?\s*"
+        r"[\w/-]*\d[\w/-]*",
+        re.I,
+    ),
 )
-_MULTIPLIER = {"lakh": 1e5, "lac": 1e5, "crore": 1e7, "cr": 1e7, "k": 1e3, "thousand": 1e3, "million": 1e6}
+_QTY_EDGES = "\"'.,;:!?…()[]{}<>*`~"
+_DIGITS = re.compile(r"^(?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d+)?$")  # "2,3" is not a number (BLD-C046)
+_SUFFIXED = re.compile(r"^(\d+(?:\.\d+)?)(k|l|lakhs?|lacs?|cr|crores?)$", re.I)  # 5L, 1.5k, 2cr
+_RANGE = re.compile(r"^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$")  # 1-2 (days)
+_MULTIPLIER = {
+    "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "l": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7,
+    "k": 1e3, "thousand": 1e3, "million": 1e6, "hundred": 100.0,
+}  # fmt: skip
 _SMALL = re.findall(
     r"\S+",
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
@@ -138,11 +196,6 @@ _WORD_NUMBERS = {
     "thirty": 30.0, "forty": 40.0, "fifty": 50.0, "sixty": 60.0, "seventy": 70.0, "eighty": 80.0,
     "ninety": 90.0, "hundred": 100.0, "thousand": 1000.0, "dozen": 12.0, "half": 0.5,
 }  # fmt: skip
-_HAS_FIGURE = re.compile(
-    r"\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|"
-    r"hundred|thousand|lakh|lakhs|crore|crores|dozen|half)\b",
-    re.I,
-)
 _END = re.compile(r"[.!?।](?=\s|$)")  # a sentence end, the Devanagari danda included
 _ABBREVIATIONS = frozenset(
     re.findall(
@@ -243,60 +296,126 @@ def _found(quote: str, padded: list[str]) -> bool:
 
 
 def trivial(quote: str) -> bool:
+    """Under two words, or nothing in it but stopwords and general nouns ("the team", "our process"), BLD-C047."""
     words = tokens(quote)
     if len(words) < 2:
         return True
-    return len(" ".join(words)) < MIN_QUOTE_CHARS and all(w in STOPWORDS for w in words)
+    return all(w in STOPWORDS or w in GENERIC_NOUNS for w in words)
 
 
 # ---- numbers -----------------------------------------------------------------------------------------------------
 
 
-def numbers(text: str) -> set[float]:
-    """Figures written in digits, Indian forms included: ₹ or Rs. dropped, 1,20,000 and 5 lakh or 2 crore read."""
+@dataclass(frozen=True)
+class Quantity:
+    """A quantity the person stated: its value, the word after it (its unit, case folded) and how it was written."""
+
+    value: float
+    unit: str
+    in_words: bool
+
+
+def quantities(text: str) -> list[Quantity]:
+    """The quantities a text states, in order. Digits in Indian forms (₹ and Rs. dropped; 1,20,000, 5 lakh, 5L, 2
+    crore, 1.5k read; 1-2 read as both). Number words only in a quantity phrase ("ten people", "two hours", "five
+    lakh"), and never "one", "a", "half" and the like. Never a date, time, ordinal, financial year, a year after
+    "in" or "since", a reference after "No." or "ticket", a number with a leading zero or eight digits or more."""
     clean = _CURRENCY.sub(" ", TAG_RE.sub(" ", _prepare(text)))
-    out = set()
-    for digits, unit in _NUMBER.findall(clean):
-        value = float(digits.replace(",", ""))
-        if unit:
-            key = unit.casefold().rstrip("s")
-            value *= _MULTIPLIER.get(key, 1.0)
-        out.add(value)
+    for pattern in _NOT_QUANTITIES:
+        clean = pattern.sub(" ", clean)
+    words = [w for w in (raw.strip(_QTY_EDGES) for raw in clean.split()) if w]
+    out: list[Quantity] = []
+    i = 0
+    while i < len(words):
+        word, low = words[i], words[i].casefold()
+        nxt = words[i + 1].casefold() if i + 1 < len(words) else ""
+        values: list[float] = []
+        used = 1
+        in_words = False
+        if _DIGITS.match(word):
+            digits = word.replace(",", "")
+            if not (re.match(r"^0\d", digits) or ("," not in word and len(digits.split(".")[0]) >= 8)):
+                values = [float(digits)]
+                if nxt in _MULTIPLIER and nxt != "l":
+                    values, used = [values[0] * _MULTIPLIER[nxt]], 2
+        elif m := _SUFFIXED.match(word):
+            values = [float(m.group(1)) * _MULTIPLIER[m.group(2).casefold()]]
+        elif m := _RANGE.match(word):
+            values = [float(m.group(1)), float(m.group(2))]
+        elif low in _WORD_NUMBERS and low not in NOT_OPERANDS:
+            in_words = True
+            if nxt in _MULTIPLIER and nxt != "l":
+                values, used = [_WORD_NUMBERS[low] * _MULTIPLIER[nxt]], 2
+            elif nxt and nxt not in STOPWORDS and nxt not in _WORD_NUMBERS:
+                values = [_WORD_NUMBERS[low]]  # a quantity phrase: the number word names a count of something
+        if values:
+            unit = words[i + used].casefold() if i + used < len(words) else ""
+            out += [Quantity(v, unit, in_words) for v in values]
+        i += used
     return out
 
 
-def _word_numbers(text: str) -> set[float]:
-    """Small English number words ("ten people"), for estimates only: prose would read "one of" as a figure."""
-    return {_WORD_NUMBERS[w] for w in tokens(text) if w in _WORD_NUMBERS}
+def numbers(text: str) -> set[float]:
+    return {q.value for q in quantities(text)}
 
 
 def _close(value: float, result: float) -> bool:
-    return abs(value - result) <= max(0.5, 0.01 * abs(result))
+    """Rounding to the field's natural precision (whole hours, rupees, clients), else within 0.5%."""
+    if float(value).is_integer():
+        return abs(value - result) <= 0.5
+    return abs(value - result) <= 0.005 * abs(result)
 
 
-def reproduces(value: float, quoted: set[float], assumed: dict[str, float]) -> set[str] | None:
-    """The assumption IDs a figure needs, if it is one of the person's numbers (none) or a product or quotient of
-    their numbers, listed assumptions and unit factors (each used at most once, at least one of theirs, at most
-    four in all). None when it does not follow."""
-    q = sorted(x for x in quoted if x > 0)[:10]
-    if value == 0:
-        return set() if 0.0 in quoted else None
-    if any(_close(value, x) for x in q):
+def _division_shown(note: Any) -> bool:
+    return isinstance(note, str) and bool(re.search(r"÷|\s/\s|\bdivided\b|\bper\s+(?:client|person)\b", note))
+
+
+def reproduces(
+    value: Any,
+    quoted: list[Quantity],
+    assumed: dict[str, float],
+    field: str = "value.estimate.hours_saved_per_month",
+    division_shown: bool = False,
+) -> set[str] | None:
+    """The assumption IDs a figure needs, if it follows from what the person stated (BLD-C042, C043); None if not.
+
+    It must be one of their quantities as it stands, or their quantities multiplied together (each once, at least
+    one that is not 1), times or divided by allowed assumptions only in the direction the field's unit allows, and
+    divided by 60 only from minutes into hours. Never below 1, never from assumptions alone or assumptions times 1.
+    A count (clients) takes at most three numbers and divides by one of theirs only if the note shows it."""
+    rules = FIELD_RULES.get(field)
+    if rules is None or not isinstance(value, int | float) or isinstance(value, bool) or value < 1:
+        return None
+    if rules["count"] and not float(value).is_integer():
+        return None
+    theirs = [q for q in quoted if q.value > 0][:MAX_QUOTED]
+    if not any(q.value != 1 for q in theirs):
+        return None
+    if any(q.value != 1 and _close(float(value), q.value) for q in theirs):
         return set()
-    listed = sorted((k, v) for k, v in assumed.items() if v > 0)
-    for n_assumed in range(len(listed) + 1):
-        for chosen in combinations(listed, n_assumed):
-            for n_units in range(len(UNIT_FACTORS) + 1):
-                for units in combinations(UNIT_FACTORS, n_units):
-                    for n_quoted in range(1, MAX_OPERANDS - n_assumed - n_units + 1):
-                        for theirs in combinations(q, n_quoted):
-                            operands = [*theirs, *(v for _, v in chosen), *units]
-                            for signs in product((1, -1), repeat=len(operands)):
-                                result = math.prod(
-                                    x if s > 0 else 1 / x for x, s in zip(operands, signs, strict=True)
-                                )
-                                if _close(value, result):
-                                    return {k for k, _ in chosen}
+    extras: list[tuple[str | None, float, tuple[int, ...]]] = []
+    for aid, v in sorted(assumed.items()):
+        signs = rules["signs"].get(aid, rules["default"])
+        if v > 0 and signs:
+            extras.append((aid, v, signs))
+    if rules["minutes"] and any(q.unit in MINUTE_UNITS for q in theirs):
+        extras.append((None, MINUTES_PER_HOUR, (-1,)))
+    quoted_signs = (1, -1) if rules["count"] and division_shown else (1,)
+    for n_extra in range(len(extras) + 1):
+        for chosen in combinations(extras, n_extra):
+            for n_theirs in range(1, rules["max"] - n_extra + 1):
+                for picked in combinations(theirs, n_theirs):
+                    if not any(q.value != 1 for q in picked):
+                        continue
+                    for qs in product(quoted_signs, repeat=n_theirs):
+                        if qs[0] < 0:
+                            continue  # the first of their numbers leads; a count divides by a later one
+                        for es in product(*(signs for _, _, signs in chosen)):
+                            operands = [(q.value, s) for q, s in zip(picked, qs, strict=True)]
+                            operands += [(v, s) for (_, v, _), s in zip(chosen, es, strict=True)]
+                            result = math.prod(x if s > 0 else 1 / x for x, s in operands)
+                            if result >= 1 and _close(float(value), result):
+                                return {aid for aid, _, _ in chosen if aid is not None}
     return None
 
 
@@ -316,11 +435,15 @@ def _listed(out: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """(problem key, item) for each listed assumption; the key is its ID when well formed, else its position."""
     items: list[Any] = out["assumptions"] if isinstance(out.get("assumptions"), list) else []
     keyed = []
+    seen: set[str] = set()
     for i, a in enumerate(items):
         aid = a.get("id") if isinstance(a, dict) else None
-        key = (
-            f"assumptions.{aid}" if isinstance(aid, str) and ASSUMPTION_ID.match(aid) else f"assumptions.{i}"
-        )
+        named = (
+            isinstance(aid, str) and ASSUMPTION_ID.match(aid) and aid not in seen
+        )  # a repeat goes by position
+        key = f"assumptions.{aid}" if named else f"assumptions.{i}"
+        if isinstance(aid, str):
+            seen.add(aid)
         keyed.append((key, a if isinstance(a, dict) else {}))
     return keyed
 
@@ -380,6 +503,8 @@ def ungrounded(sent: dict[str, Any], out: dict[str, Any]) -> dict[str, str]:
     figures: set[float] = (
         set()
     )  # the person's figures behind every suggested estimate, for the note's working
+    minutes = False  # whether any of them is in minutes (then the note may show the 60)
+    note = _get(out, "value.estimate.note")
     for path in paths:
         if path != "neutral_summary" and provenance.get(path) != "suggested":
             bad[path] = "not_marked"
@@ -392,42 +517,40 @@ def ungrounded(sent: dict[str, Any], out: dict[str, Any]) -> dict[str, str]:
         joined = " ".join(str(q) for q in quotes or [])
         value = _get(out, path)
         if path in NUMERIC_ESTIMATES:
-            if not _HAS_FIGURE.search(joined):
+            theirs = quantities(joined)
+            if not any(q.value != 1 for q in theirs):
                 bad[path] = "no_figure"
                 continue
-            theirs = numbers(joined) | _word_numbers(joined)
-            need = reproduces(float(value), theirs, assumed) if isinstance(value, int | float) else None
+            need = reproduces(value, theirs, assumed, path, _division_shown(note))
             if need is None:
                 bad[path] = "new_number"
                 continue
             used |= need
-            figures |= theirs
+            figures |= {q.value for q in theirs}
+            minutes = minutes or any(q.unit in MINUTE_UNITS for q in theirs)
         elif path in PROSE and isinstance(value, str) and not numbers(value) <= numbers(joined):
             bad[path] = "new_number"
-    note = _get(out, "value.estimate.note")
     if "value.estimate.note" in paths and "value.estimate.note" not in bad and isinstance(note, str):
         own = numbers(" ".join(evidence.get("value.estimate.note") or []))
         results = {
             float(v) for p in NUMERIC_ESTIMATES if p not in bad and isinstance(v := _get(out, p), int | float)
         }
-        if not numbers(note) <= own | figures | results | set(assumed.values()) | set(UNIT_FACTORS):
+        units = {MINUTES_PER_HOUR} if minutes else set()
+        if not numbers(note) <= own | figures | results | set(assumed.values()) | units:
             bad["value.estimate.note"] = "new_number"
     if _empty(_get(answers, "ecosystem.references")) and not _empty(_get(out, "ecosystem.references")):
         bad["ecosystem.references"] = "not_given"
     for key in evidence:
         if key not in paths:
             bad.setdefault(key, "stray_evidence")
-    seen: set[str] = set()
     for key, a in listed:
         aid = a.get("id")
         if not isinstance(aid, str) or aid not in allowed:
             bad[key] = "unknown_assumption"
-        elif aid in seen or aid not in used:
-            bad[key] = "unused_assumption"
+        elif key != f"assumptions.{aid}" or aid not in used:
+            bad[key] = "unused_assumption"  # a repeat (keyed by position) or one no figure needs
         elif a.get("says") != allowed[aid]["says"]:
             bad[key] = "assumption_words"
-        if isinstance(aid, str):
-            seen.add(aid)
     return bad
 
 
@@ -487,15 +610,21 @@ def _drop(fixed: dict[str, Any], sent: dict[str, Any], path: str, code: str) -> 
         _set(fixed, path, None)
 
 
+# Changes that mend without taking anything the person would see away: not counted as dropped (BLD-C048).
+NOT_DROPS = frozenset({"assumption_words", "stray_evidence"})
+
+
 def repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Drop what `ungrounded` names, again until nothing is left to drop (a dropped figure can leave an assumption
-    unused or a note unsupported). Returns the repaired output and the dropped paths (IDs only)."""
+    unused or a note unsupported). Returns the repaired output (the same object if nothing changed) and the paths
+    dropped (IDs only). Corrected assumption words and removed stray evidence change the output but drop nothing."""
     fixed = copy.deepcopy(out)
     fixed["evidence"] = _dict(fixed.get("evidence"))
     fixed["provenance"] = _dict(fixed.get("provenance"))
     if not isinstance(fixed.get("assumptions"), list):
         fixed["assumptions"] = []
     dropped: list[str] = []
+    changed = False
     allowed = allowed_assumptions(sent)
     for _ in range(4):
         bad = ungrounded(sent, fixed)
@@ -512,8 +641,10 @@ def repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], l
         for path, code in sorted(bad.items()):
             if not path.startswith("assumptions."):
                 _drop(fixed, sent, path, code)
-            dropped.append(path)
-    if not dropped:
+            changed = True
+            if code not in NOT_DROPS:
+                dropped.append(path)
+    if not changed:
         return out, []
     return fixed, sorted(set(dropped))
 
@@ -521,28 +652,75 @@ def repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], l
 # ---- after the person or the review desk changes the canvas -------------------------------------------------------
 
 
-def still_backed(
-    card: dict[str, Any], allowed_values: dict[str, float]
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """After an edit: the evidence whose quotes are still in the person's words, and the listed assumptions that a
-    remaining suggested figure still needs (BLD-C028). The card has the canvas_answers shape."""
-    padded = _padded(source_pieces({"canvas_answers": card}))
-    evidence = {
-        path: quotes
-        for path, quotes in _dict(card.get("evidence")).items()
-        if isinstance(quotes, list)
-        and quotes
-        and all(isinstance(q, str) and _found(q, padded) for q in quotes)
-    }
+def _own_pieces(card: dict[str, Any]) -> list[str]:
+    """The person's own text in a saved canvas: fields whose provenance is `submitter` (never a suggestion, not even
+    an accepted one: that would back a suggestion with itself), references they gave and their clean files."""
     provenance = _dict(card.get("provenance"))
-    listed = [a for a in card.get("assumptions") or [] if isinstance(a, dict)]
+    pieces = [
+        str(_get(card, p))
+        for p in SOURCE_FIELDS
+        if isinstance(_get(card, p), str) and (p == "details" or provenance.get(p) == "submitter")
+    ]
+    if provenance.get("ecosystem.references") == "submitter":
+        pieces += [
+            str(r.get("value"))
+            for r in _get(card, "ecosystem.references") or []
+            if isinstance(r, dict) and r.get("value")
+        ]
+    pieces += [
+        str(x.get("digest"))
+        for x in card.get("attachments") or []
+        if isinstance(x, dict) and isinstance(x.get("digest"), str)
+    ]
+    return [p for p in pieces if p.strip()]
+
+
+def still_backed(card: dict[str, Any], allowed_values: dict[str, float]) -> tuple[dict[str, Any], list[str]]:
+    """After an edit (BLD-C045): the canvas with every quote checked again against the person's own text only. A
+    figure (or its note) whose quotes went, or that no longer follows from them, is cleared with its provenance; the
+    assumptions are only those a remaining figure needs. Returns the new canvas and the cleared paths."""
+    fixed = copy.deepcopy(card)
+    provenance = _dict(fixed.get("provenance"))
+    padded = _padded(_own_pieces(fixed))
+    evidence: dict[str, Any] = {}
+    cleared: list[str] = []
+    figure_paths = (*NUMERIC_ESTIMATES, "value.estimate.note")
+    for path, quotes in _dict(fixed.get("evidence")).items():
+        if (
+            isinstance(quotes, list)
+            and quotes
+            and all(isinstance(q, str) and _found(q, padded) for q in quotes)
+        ):
+            evidence[path] = quotes
+        elif path in figure_paths and provenance.get(path) in ("suggested", "accepted"):
+            _set(fixed, path, None)
+            provenance.pop(path, None)
+            cleared.append(path)
+    listed = [a for a in fixed.get("assumptions") or [] if isinstance(a, dict)]
     assumed = {a["id"]: allowed_values[a["id"]] for a in listed if a.get("id") in allowed_values}
+    note = _get(fixed, "value.estimate.note")
     needed: set[str] = set()
+    figures_left = False
     for path in NUMERIC_ESTIMATES:
-        value = _get(card, path)
-        if provenance.get(path) not in ("suggested", "accepted") or not isinstance(value, int | float):
+        value = _get(fixed, path)
+        if provenance.get(path) not in ("suggested", "accepted") or value is None:
             continue
         joined = " ".join(evidence.get(path) or [])
-        need = reproduces(float(value), numbers(joined) | _word_numbers(joined), assumed) if joined else None
-        needed |= need or set()
-    return evidence, [a for a in listed if a.get("id") in needed]
+        need = reproduces(value, quantities(joined), assumed, path, _division_shown(note)) if joined else None
+        if need is None:
+            _set(fixed, path, None)
+            provenance.pop(path, None)
+            evidence.pop(path, None)
+            cleared.append(path)
+            continue
+        needed |= need
+        figures_left = True
+    if not figures_left and provenance.get("value.estimate.note") in ("suggested", "accepted"):
+        _set(fixed, "value.estimate.note", None)  # the working of a figure that is no longer there
+        provenance.pop("value.estimate.note", None)
+        evidence.pop("value.estimate.note", None)
+        cleared.append("value.estimate.note")
+    fixed["evidence"] = evidence
+    fixed["provenance"] = provenance
+    fixed["assumptions"] = [a for a in listed if a.get("id") in needed]
+    return fixed, sorted(set(cleared))

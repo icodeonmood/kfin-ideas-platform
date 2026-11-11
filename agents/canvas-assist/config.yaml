@@ -1,6 +1,6 @@
 # canvas-assist — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: canvas-assist
-version: 0.4.0
+version: 0.4.1
 tier: reasoning
 model: claude-sonnet-5-5
 effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
