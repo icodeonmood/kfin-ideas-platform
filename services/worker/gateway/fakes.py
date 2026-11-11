@@ -11,6 +11,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from gateway import grounding
 from gateway.spec import AgentSpec
 from pii.tagger import TAG_RE
 
@@ -26,6 +27,10 @@ _SOLUTION = re.compile(r"\b(we should|we could|i propose|fix would|automate|buil
 # Text that tempts a model to put a rupee figure on a vague cost: the fake does, with a quote that is not in the
 # input, on both asks, so tests and the golden set reach the gateway's drop path (DEC-095).
 _PLANT_FIGURE = re.compile(r"\ba lot of money\b", re.I)
+# A cost "in salaries": the fake prices it with a salary that is not on the allowed list (DEC-097), on both asks.
+_PLANT_ASSUMPTION = re.compile(r"\bcosts us a fortune\b", re.I)
+_HOURS_A_DAY = re.compile(r"\b(\d+(?:\.\d+)?)\s*hours?\s+(?:a|per|every)\s+day\b", re.I)
+_PEOPLE = re.compile(r"\b(\d+)\s+(?:people|persons|staff|colleagues)\b", re.I)
 _KIND_MAP = {
     "idea_problem": "problem",
     "idea_solution": "problem_with_solution",
@@ -96,6 +101,10 @@ def _leaves(node: Any, path: str = "") -> list[tuple[str, Any]]:
     return [(path, node)]
 
 
+def _num(x: float) -> str:
+    return f"{int(x):,}" if float(x).is_integer() else f"{x:g}"
+
+
 def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     answers = copy.deepcopy(inputs.get("canvas_answers") or {})
     gk = (inputs.get("gatekeeper") or {}).get("kind") or {}
@@ -130,10 +139,40 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     out["neutral_summary"] = "An idea to improve a KFintech process."
     evidence["neutral_summary"] = [opening]
     estimate = value.setdefault("estimate", {})
-    if _PLANT_FIGURE.search(str(out.get("details") or "")) and estimate.get("inr_saved_per_year") is None:
+    details = str(out.get("details") or "")
+    if _PLANT_FIGURE.search(details) and estimate.get("inr_saved_per_year") is None:
         estimate["inr_saved_per_year"] = 500000
         provenance["value.estimate.inr_saved_per_year"] = "suggested"
         evidence["value.estimate.inr_saved_per_year"] = ["saves us five lakh a year"]
+    allowed = {a.get("id"): a for a in inputs.get("assumptions") or [] if isinstance(a, dict)}
+    listed: list[dict[str, str]] = []
+    hours, people = _HOURS_A_DAY.search(details), _PEOPLE.search(details)
+    days = allowed.get("working_days_per_month")
+    if (
+        hours
+        and people
+        and days
+        and estimate.get("hours_saved_per_month") is None
+        and not estimate.get("note")
+    ):
+        # Plain arithmetic on the person's figures with one listed assumption (DEC-097).
+        h, n, d = float(hours.group(1)), float(people.group(1)), float(days["value"])
+        total = h * n * d
+        estimate["hours_saved_per_month"] = int(total) if total.is_integer() else round(total, 1)
+        estimate["note"] = (
+            f"{_num(h)} hours a day × {_num(n)} people × {_num(d)} working days = {_num(total)} hours a month"
+        )
+        for path in ("value.estimate.hours_saved_per_month", "value.estimate.note"):
+            provenance[path] = "suggested"
+            evidence[path] = [hours.group(0), people.group(0)]
+        listed.append({"id": "working_days_per_month", "says": str(days["says"])})
+    if _PLANT_ASSUMPTION.search(details) and estimate.get("inr_saved_per_year") is None:
+        estimate["inr_saved_per_year"] = 720000
+        provenance["value.estimate.inr_saved_per_year"] = "suggested"
+        evidence["value.estimate.inr_saved_per_year"] = [opening]
+        listed.append({"id": "average_salary_per_month", "says": "₹30,000 salary a month"})
+        if "months_per_year" in allowed:
+            listed.append({"id": "months_per_year", "says": str(allowed["months_per_year"]["says"])})
     out.setdefault("attachments", [])
     slice_ = inputs.get("taxonomy_slice") or {}
 
@@ -148,9 +187,8 @@ def canvas_assist(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         "roles_affected": [],
     }
     out["provenance"] = provenance
-    out["evidence"] = {
-        k: v for k, v in evidence.items() if all(len(q.split()) >= 2 or len(q) >= 10 for q in v)
-    }
+    out["evidence"] = {k: v for k, v in evidence.items() if not any(grounding.trivial(q) for q in v)}
+    out["assumptions"] = listed
     out["flags_for_reviewer"] = []
     out["confidence"] = {
         "value.category": 0.5,

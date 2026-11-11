@@ -1,5 +1,5 @@
 {
-  "description": "Quick capture: three answers given; the assistant drafts the rest from the details only, quotes the person's words for every suggestion (DEC-095) and never invents a figure or a working-day count.",
+  "description": "Quick capture: three answers given; the assistant drafts the rest from the details only, quotes the person's words for every suggestion (DEC-095), works hours a month from their own figures with one listed assumption (DEC-097) and never invents a figure.",
   "input": {
     "canvas_answers": {
       "kind": null,
@@ -97,7 +97,24 @@
         }
       ]
     },
-    "past_corrections": []
+    "past_corrections": [],
+    "assumptions": [
+      {
+        "id": "working_days_per_month",
+        "value": 22,
+        "says": "22 working days in a month"
+      },
+      {
+        "id": "working_hours_per_day",
+        "value": 8,
+        "says": "8 working hours in a day"
+      },
+      {
+        "id": "months_per_year",
+        "value": 12,
+        "says": "12 months in a year"
+      }
+    ]
   },
   "output": {
     "kind": "problem",
@@ -116,12 +133,12 @@
       "category": "cost_saving",
       "play": "process_improvement",
       "estimate": {
-        "hours_saved_per_month": null,
+        "hours_saved_per_month": 132,
         "inr_saved_per_year": null,
         "inr_revenue_one_time": null,
         "inr_revenue_per_year": null,
         "clients_who_would_pay": null,
-        "note": null
+        "note": "3 people × 2 hours a day × 22 working days ≈ 132 hours a month, if the checks were automated."
       },
       "basis": null
     },
@@ -162,7 +179,9 @@
       "who.today_alternative": "suggested",
       "value.category": "submitter",
       "value.play": "suggested",
-      "ecosystem.solved_elsewhere": "submitter"
+      "ecosystem.solved_elsewhere": "submitter",
+      "value.estimate.hours_saved_per_month": "suggested",
+      "value.estimate.note": "suggested"
     },
     "evidence": {
       "kind": [
@@ -185,10 +204,22 @@
       ],
       "value.play": [
         "re-checking forms for missing bank or nominee fields before keying"
+      ],
+      "value.estimate.hours_saved_per_month": [
+        "Three people spend about 2 hours a day each"
+      ],
+      "value.estimate.note": [
+        "Three people spend about 2 hours a day each"
       ]
     },
+    "assumptions": [
+      {
+        "id": "working_days_per_month",
+        "says": "22 working days in a month"
+      }
+    ],
     "flags_for_reviewer": [
-      "The person gives 3 people × 2 hours a day; hours a month need their count of working days, so none is suggested."
+      "Hours estimate is worked from the person's own figures and 22 working days a month; no rupee value given."
     ],
     "confidence": {
       "value.category": 0.9,
@@ -200,7 +231,7 @@
     "strength": {
       "score": 2,
       "next_best": [
-        "Add a rough figure: hours saved a month",
+        "Say where the 3,000 forms a day figure comes from",
         "Tell us if another RTA or AMC solved this"
       ]
     }

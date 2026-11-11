@@ -102,7 +102,24 @@
         }
       ]
     },
-    "past_corrections": []
+    "past_corrections": [],
+    "assumptions": [
+      {
+        "id": "working_days_per_month",
+        "value": 22,
+        "says": "22 working days in a month"
+      },
+      {
+        "id": "working_hours_per_day",
+        "value": 8,
+        "says": "8 working hours in a day"
+      },
+      {
+        "id": "months_per_year",
+        "value": 12,
+        "says": "12 months in a year"
+      }
+    ]
   },
   "output": {
     "kind": "problem_with_solution",
@@ -182,6 +199,7 @@
         "remove the double keying"
       ]
     },
+    "assumptions": [],
     "flags_for_reviewer": [
       "Category is new revenue, but the text describes saving ops effort; cost saving may fit better.",
       "Touches investor KYC data; may need a compliance check."

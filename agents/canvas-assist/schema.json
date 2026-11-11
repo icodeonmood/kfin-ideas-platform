@@ -17,6 +17,7 @@
     "system",
     "provenance",
     "evidence",
+    "assumptions",
     "flags_for_reviewer",
     "confidence",
     "strength"
@@ -31,8 +32,9 @@
     },
     "one_line": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 200
+      "minLength": 0,
+      "maxLength": 200,
+      "description": "Empty only when the gateway removed a line it could not match to the person's words and none of their own was usable (BLD-C026)."
     },
     "neutral_summary": {
       "type": "string",
@@ -386,6 +388,31 @@
           "minLength": 2,
           "maxLength": 300
         }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "DEC-097: each basic assumption your suggested figures use, copied from <assumptions> (id and says exactly). Only those listed there; none if your figures use none.",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "says": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "id",
+          "says"
+        ],
+        "additionalProperties": false
       }
     },
     "flags_for_reviewer": {
