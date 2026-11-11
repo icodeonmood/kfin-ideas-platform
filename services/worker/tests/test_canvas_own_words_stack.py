@@ -198,3 +198,53 @@ def test_an_empty_summary_never_shows_the_persons_words_to_anyone_else(desk: Any
     meta = parse(render_idea(idea, history=[], verified=[], generated_by="test")).meta or {}
     assert meta["description"] == SUMMARY_PENDING  # never the one line, as before (BLD-C027)
     assert not (meta.get("kfin") or {}).get("neutral_summary")  # so the index gives match cards no summary
+
+
+def _gatekeeper_calls(db: Any, idea_id: str) -> int:
+    return int(
+        db.execute(
+            "SELECT count(*) AS n FROM llm_calls WHERE agent = 'gatekeeper' AND ref_id = %s", (idea_id,)
+        ).fetchone()["n"]
+    )
+
+
+def test_cheap_refusals_come_before_the_model_call(desk: Any) -> None:  # noqa: F811
+    """B3 (BLD-C044): the person's own idea, an item held for a second reviewer or someone else's item, and a
+    summary that copies the person's words, are all refused without asking the gatekeeper."""
+    db, item, idea_id = desk["db"], desk["item"], desk["idea_id"]
+    before = _gatekeeper_calls(db, idea_id)
+    with pytest.raises(service.ActionRefused) as own:
+        service.act(db, item, desk["owner"], {"action": "summary", "neutral_summary": SUMMARY})
+    assert own.value.code == "own_idea"
+    db.execute(
+        "UPDATE review_items SET assigned_to = %s, state = 'in_progress' WHERE id = %s", (desk["r2"], item)
+    )
+    with pytest.raises(service.ActionRefused) as elsewhere:
+        service.act(db, item, desk["r1"], {"action": "summary", "neutral_summary": SUMMARY})
+    assert elsewhere.value.code == "assigned_to_someone_else"
+    db.execute("UPDATE review_items SET state = 'awaiting_second_reviewer' WHERE id = %s", (item,))
+    with pytest.raises(service.ActionRefused) as held:
+        service.act(db, item, desk["r2"], {"action": "summary", "neutral_summary": SUMMARY})
+    assert held.value.code == "awaiting_hold_confirmation"
+    db.execute("UPDATE review_items SET assigned_to = NULL, state = 'open' WHERE id = %s", (item,))
+    details = db.execute(
+        "SELECT canvas ->> 'details' AS d FROM ideas WHERE idea_id = %s", (idea_id,)
+    ).fetchone()["d"]
+    copied = " ".join(details.split()[:7])  # seven of the person's words in a row
+    with pytest.raises(service.ActionRefused) as close:
+        service.act(db, item, desk["r1"], {"action": "summary", "neutral_summary": copied + " and more."})
+    assert close.value.code == "summary_too_close"
+    assert _gatekeeper_calls(db, idea_id) == before  # none of these reached the model
+    log_rows = db.execute(
+        "SELECT after FROM audit_log WHERE action = 'review.own_idea_refused' AND entity = %s",
+        (f"idea:{idea_id}",),
+    ).fetchall()
+    assert log_rows and copied not in json.dumps([r["after"] for r in log_rows])
+
+
+def test_a_decided_item_can_still_get_its_summary(desk: Any) -> None:  # noqa: F811
+    db, item = desk["db"], desk["item"]
+    service.act(db, item, desk["r1"], {"action": "decide"})
+    service.act(db, item, desk["r1"], {"action": "summary", "neutral_summary": SUMMARY})
+    card = db.execute("SELECT canvas FROM ideas WHERE idea_id = %s", (desk["idea_id"],)).fetchone()["canvas"]
+    assert card["neutral_summary"] == SUMMARY
