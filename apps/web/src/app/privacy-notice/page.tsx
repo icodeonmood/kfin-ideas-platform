@@ -18,9 +18,11 @@ export default async function PrivacyNotice({
     throw new Error("PRIVACY_NOTICE_VERSION has no matching notice text");
   }
   return (
-    <article aria-labelledby="notice-title">
-      <h1 id="notice-title">{PRIVACY_NOTICE.title}</h1>
-      <p className="muted">
+    <article className="glass notice-pane" aria-labelledby="notice-title">
+      <h1 id="notice-title" className="t-h1">
+        {PRIVACY_NOTICE.title}
+      </h1>
+      <p className="muted notice-version">
         Version {PRIVACY_NOTICE.version}
         {PRIVACY_NOTICE.draft ? " (draft, awaiting Legal sign-off)" : ""}
       </p>

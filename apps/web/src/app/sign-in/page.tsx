@@ -1,3 +1,5 @@
+import { SparkMark } from "@/components/spark-mark";
+import { Status } from "@/components/status";
 import { oidcConfig } from "@/server/config";
 import { safeNext } from "@/server/auth/session";
 
@@ -22,25 +24,33 @@ export default async function SignIn({
   const next = safeNext(params.next);
   const error = params.error ? (ERRORS[params.error] ?? DEFAULT_ERROR) : null;
   return (
-    <>
-      <h1>Sign in</h1>
-      {error ? (
-        <p role="alert" className="notice notice-error">
-          {error}
-        </p>
-      ) : null}
-      <p className="lead">Use your KFintech account to open 1% Club. There is no separate password.</p>
-      <p>
-        <a className="button" href={`/auth/login?next=${encodeURIComponent(next)}`}>
-          Sign in with your KFintech account
-        </a>
-      </p>
-      {oidcConfig().mode === "mock" ? (
-        <p className="dev-note">
-          Development sign-in: type a synthetic employee ID such as <code>SYN-00002</code> as the username and
-          leave the claims empty. <code>make seed</code> prints who each one is.
-        </p>
-      ) : null}
-    </>
+    <section className="band stage entry" data-theme="zed" data-glow="1" aria-labelledby="entry-title">
+      <div className="band-inner entry-inner">
+        <div className="entry-copy">
+          <h1 id="entry-title" className="t-display">
+            Sign in
+          </h1>
+          {error ? <Status kind="error" title={error} /> : null}
+          <p className="lead entry-lead">
+            Use your KFintech account to open 1% Club. There is no separate password.
+          </p>
+          <p className="entry-action">
+            <a className="btn btn-primary btn-lg" href={`/auth/login?next=${encodeURIComponent(next)}`}>
+              Sign in with your KFintech account
+            </a>
+          </p>
+          {oidcConfig().mode === "mock" ? (
+            <p className="dev-note entry-dev">
+              Development sign-in: type a synthetic employee ID such as <code>SYN-00002</code> as the username
+              and leave the claims empty. <code>make seed</code> prints who each one is.
+            </p>
+          ) : null}
+        </div>
+        <div className="entry-mark">
+          <SparkMark height={300} className="entry-spark" />
+          <p className="entry-tagline">1% spark. 99% sweat.</p>
+        </div>
+      </div>
+    </section>
   );
 }

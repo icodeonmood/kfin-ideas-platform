@@ -3,6 +3,9 @@
  * rising spark. The zeros take the surrounding text colour (currentColor), so the same mark works on Zed and on
  * white; the spark is always Spark orange. Below 32 px tall the small cut is used: heavier zeros, no ember.
  *
+ * The parts carry classes (mark-zero, mark-spark, mark-ember) so a brand page can animate the spark rising; the
+ * geometry and colours never change (BRAND.md section 4).
+ *
  * Decorative by default (aria-hidden), because it always sits next to the visible name "1% Club". Pass a label
  * only where the mark stands alone.
  */
@@ -37,10 +40,26 @@ export function SparkMark({
         </>
       ) : (
         <>
-          <circle cx="52" cy="58" r="34" fill="none" stroke="currentColor" strokeWidth="12" />
-          <circle cx="148" cy="184" r="34" fill="none" stroke="currentColor" strokeWidth="12" />
-          <polygon points="34,236 146.9,27.2 169.1,40.8" fill={SPARK} />
-          <circle cx="171.6" cy="11.8" r="7" fill={SPARK} />
+          <circle
+            className="mark-zero"
+            cx="52"
+            cy="58"
+            r="34"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="12"
+          />
+          <circle
+            className="mark-zero"
+            cx="148"
+            cy="184"
+            r="34"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="12"
+          />
+          <polygon className="mark-spark" points="34,236 146.9,27.2 169.1,40.8" fill={SPARK} />
+          <circle className="mark-ember" cx="171.6" cy="11.8" r="7" fill={SPARK} />
         </>
       )}
     </svg>
