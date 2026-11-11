@@ -54,6 +54,20 @@ function show(value: unknown): string {
   return String(value ?? "").replace(/_/g, " ");
 }
 
+/** A suggested answer as people read it: rupees with Indian grouping (₹5,00,000), hours and clients with their unit. */
+export function showSuggestion(path: string, value: unknown): string {
+  if (typeof value === "number") {
+    const n = value.toLocaleString("en-IN", { maximumFractionDigits: 1 });
+    if (path.startsWith("value.estimate.inr_"))
+      return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+    if (path === "value.estimate.hours_saved_per_month")
+      return `${n} ${value === 1 ? "hour" : "hours"} a month`;
+    if (path === "value.estimate.clients_who_would_pay") return `${n} ${value === 1 ? "client" : "clients"}`;
+    return n;
+  }
+  return show(value);
+}
+
 type Action = { ref: string | null; choice: string; label: string; needs?: "context" | "line" };
 
 function actionsFor(card: MatchCard): Action[] {
@@ -91,11 +105,18 @@ export function Crew({
   const [details, setDetails] = useState(ready.card.details ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Where the error belongs: the canvas check, a match card (its ref) or the page (BLD-C049).
+  const [errorAt, setErrorAt] = useState<string>("page");
   const [note, setNote] = useState("");
   const [open, setOpen] = useState<Action | null>(null);
   const [text, setText] = useState("");
   const crewRef = useRef<HTMLHeadingElement>(null);
   const wantCrewFocus = useRef(false);
+
+  // Opening "Mine is different" (or another choice that needs words) moves focus to its box (BLD-C049).
+  useEffect(() => {
+    if (open) document.getElementById(`crew-text-${open.ref}`)?.focus();
+  }, [open]);
 
   // After "Looks right", move focus to Find your crew once it has rendered.
   useEffect(() => {
@@ -105,9 +126,10 @@ export function Crew({
     }
   }, [ready.confirmed]);
 
-  async function post(path: string, body: unknown) {
+  async function post(path: string, body: unknown, where = "page") {
     setBusy(true);
     setError("");
+    setErrorAt(where);
     const res = await fetch(`/api/submissions/${id}/${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -127,7 +149,7 @@ export function Crew({
     const body: Record<string, unknown> = { keep };
     if (oneLine !== (ready.card.one_line ?? "")) body.one_line = oneLine;
     if (details !== (ready.card.details ?? "")) body.details = details;
-    const out = await post("confirm-card", body);
+    const out = await post("confirm-card", body, "canvas");
     if (!out) return;
     setNote(
       out.rerun_match ? "You changed the text, so we looked again for colleagues on the same thing." : "",
@@ -137,11 +159,11 @@ export function Crew({
   }
 
   async function choose(action: Action) {
-    const out = await post("choose", {
-      choice: action.choice,
-      ref: action.ref,
-      text: action.needs ? text : "",
-    });
+    const out = await post(
+      "choose",
+      { choice: action.choice, ref: action.ref, text: action.needs ? text : "" },
+      action.ref ?? "page",
+    );
     if (!out) return;
     setOpen(null);
     setText("");
@@ -195,11 +217,11 @@ export function Crew({
                 const wordsId = `${name}-words`;
                 const describedBy = s.quotes?.length ? `${valueId} ${wordsId}` : valueId;
                 return (
-                  <fieldset key={s.path} className="field suggestion" aria-describedby={describedBy}>
+                  <fieldset key={s.path} className="field suggestion">
                     <legend>{labelFor(s.path)}</legend>
                     <p id={valueId} className="suggested-value">
                       <span className="visually-hidden">Our suggestion: </span>
-                      {show(s.value)}
+                      {showSuggestion(s.path, s.value)}
                     </p>
                     {s.quotes?.length ? (
                       <div
@@ -260,6 +282,11 @@ export function Crew({
               We left {ready.left_blank.length === 1 ? "this" : "these"} blank because you didn&apos;t say:{" "}
               {ready.left_blank.map(labelFor).join("; ")}. Add {ready.left_blank.length === 1 ? "it" : "them"}{" "}
               if you know, under &ldquo;Tell us more&rdquo;.
+            </p>
+          ) : null}
+          {error && errorAt === "canvas" ? (
+            <p className="field-error" role="alert">
+              {error}
             </p>
           ) : null}
           <button type="submit" className="button" disabled={busy}>
@@ -357,6 +384,10 @@ export function Crew({
                               id={`crew-text-${card.ref}`}
                               rows={3}
                               value={text}
+                              aria-invalid={error && errorAt === card.ref ? true : undefined}
+                              aria-describedby={
+                                error && errorAt === card.ref ? `crew-error-${card.ref}` : undefined
+                              }
                               onChange={(e) => setText(e.target.value)}
                             />
                           </div>
@@ -364,6 +395,11 @@ export function Crew({
                             {open.label}
                           </button>
                         </form>
+                      ) : null}
+                      {error && errorAt === card.ref ? (
+                        <p id={`crew-error-${card.ref}`} className="field-error" role="alert">
+                          {error}
+                        </p>
                       ) : null}
                     </>
                   ) : null}
@@ -393,7 +429,7 @@ export function Crew({
           </div>
         </section>
       )}
-      {error ? (
+      {error && errorAt === "page" ? (
         <p className="field-error" role="alert">
           {error}
         </p>
