@@ -72,6 +72,9 @@ class ValidatedOutput:
     sent: dict[str, Any] = field(
         default_factory=dict
     )  # the tagged inputs the model saw (for evals and checks)
+    dropped: list[str] = field(
+        default_factory=list
+    )  # field paths the gateway removed after the re-ask (DEC-095); paths only, never text
 
 
 # ---- helpers -----------------------------------------------------------------------------------------------
@@ -390,6 +393,13 @@ def _run(
         "output_tokens": totals["output"], "cost_inr": money, "cache_read_tokens": totals["cache_read"],
         "tags_by_type": tagged.counts(),
     }  # fmt: skip
+    # After the one re-ask, an agent with a repair (canvas-assist, DEC-095) drops just the suggestions it could not
+    # back with the person's own words. The mended output must then pass every check, or the call fails as before.
+    dropped_paths: list[str] = []
+    mended = _repaired(spec, tagged.payload, data, problems, d)
+    if mended is not None:
+        data, dropped_paths = mended
+        problems = []
     if problems:
         _record(conn, spec, outcome="agent_failed", error_code="invalid_output", **common)
         _after_error(conn, spec)
@@ -403,11 +413,30 @@ def _run(
         flags.append("unknown_tags")
         data = _defuse_tags(data, unknown)
     outcome = "tag_mismatch" if flags else ("ok" if attempts == 1 else "ok_after_retry")
-    if not flags and use_cache:
+    if not flags and mended is None and use_cache:  # a mended answer is not cached: the next ask tries again
         cache.put(conn, k, spec, data)
-    # 9. Log.
-    _record(conn, spec, outcome=outcome, error_code=flags[0] if flags else None, **common)
+    # 9. Log. Dropped suggestions are counted by code only; the field paths stay with the caller.
+    code = flags[0] if flags else (DROPPED if dropped_paths else None)
+    _record(conn, spec, outcome=outcome, error_code=code, **common)
     # 8. Tagged output back to the caller, which stores it tagged and restores on view.
     return ValidatedOutput(
-        spec.name, spec.version, data, tagged.tags, outcome, flags, latency, tagged.payload
+        spec.name, spec.version, data, tagged.tags, outcome, flags, latency, tagged.payload, dropped_paths
     )
+
+
+DROPPED = "ungrounded_dropped"
+
+
+def _repaired(
+    spec: AgentSpec, sent: dict[str, Any], data: Any, problems: list[str], d: Directory | None
+) -> tuple[dict[str, Any], list[str]] | None:
+    """The mended output and the dropped paths, or None when there is nothing to mend or mending is not enough."""
+    if not problems or not isinstance(data, dict) or _schema_problems(spec, data):
+        return None
+    mended = checks.repair(spec.name, sent, data)
+    if mended is None or mended[0] is data:  # nothing changed: nothing to mend
+        return None
+    fixed, paths = mended  # paths may be empty: corrected assumption words drop nothing (BLD-C048)
+    if _schema_problems(spec, fixed) or checks.run(spec.name, sent, fixed, d) or leak_hits(fixed):
+        return None
+    return fixed, paths

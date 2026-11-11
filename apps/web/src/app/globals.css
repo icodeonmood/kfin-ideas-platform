@@ -844,6 +844,20 @@ blockquote {
   overflow-wrap: anywhere;
 }
 
+/* The person's own words behind a suggestion (DEC-095). */
+.from-words {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.from-words blockquote {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.from-words blockquote p {
+  margin: 0;
+}
+
 .inbox {
   list-style: none;
   padding: 0;

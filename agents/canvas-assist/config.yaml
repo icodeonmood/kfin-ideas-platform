@@ -1,6 +1,6 @@
 # canvas-assist — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: canvas-assist
-version: 0.2.1
+version: 0.4.1
 tier: reasoning
 model: claude-sonnet-5-5
 effort: medium          # no temperature: current models reject non-default sampling (BLD-070)
@@ -17,6 +17,7 @@ input_blocks:
 - taxonomy_slice
 - gatekeeper
 - past_corrections
+- assumptions
 untrusted_blocks:
 - canvas_answers
 - details_text
@@ -32,8 +33,11 @@ post_checks:
 - system IDs subset of taxonomy_slice
 - neutral_summary has no tags, names or client names
 - only tags that were sent
+- every suggestion and neutral_summary quotes the person's own words; unsupported ones are dropped after one re-ask (DEC-095)
+- every suggested figure is the person's own number, or follows from their numbers and the listed assumptions; only assumptions from the rules (DEC-097)
 pass_gates:
   submitter_field_changes: 0
   out_of_slice_ids: 0
   neutral_summary_leaks: 0
   area_tag_accuracy_min: 0.8
+  ungrounded_suggestions: 0

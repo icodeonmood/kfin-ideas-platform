@@ -12,11 +12,13 @@ from typing import Any
 from core.config import get_settings
 from core.db import Conn
 from gateway import run_agent
+from gateway.grounding import still_backed
 from pii.patterns import scan
 from pii.tagger import tag_payload
 from rules import load_rule
+from scan.inputs import assumptions
 from scan.matching import card_text, run_matching
-from scan.pipeline import _save_result, decide, load_result, thresholds
+from scan.pipeline import _save_result, decide, load_result, thresholds, with_review_flags
 
 EMPTY: dict[str, Any] = {
     "one_line": None,
@@ -67,6 +69,7 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
     result = load_result(row)
     card: dict[str, Any] = dict(result.get("confirmed") or result["canvas_assist"])
     provenance: dict[str, str] = dict(card.get("provenance") or {})
+    evidence: dict[str, Any] = dict(card.get("evidence") or {})  # the person's words behind each suggestion
 
     # Keep or clear each suggestion. Required enums the person clears fall back to "not sure"/"don't know".
     keep: dict[str, Any] = body.get("keep") or {}
@@ -85,6 +88,7 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
         else:
             _set_path(card, path, _empty_for(path))
         provenance.pop(path, None)
+        evidence.pop(path, None)
 
     # Edits to the one line and details: patterns, then gatekeeper, then tags.
     edits = {k: str(body[k]).strip() for k in ("one_line", "details") if isinstance(body.get(k), str)}
@@ -108,7 +112,16 @@ def confirm(conn: Conn, idea_uuid: str, idea_id: str, body: dict[str, Any]) -> d
             if value != card.get(field):
                 card[field] = value
                 provenance[field] = "submitter"
+                evidence.pop(field, None)  # their own words now, not a suggestion
     card["provenance"] = provenance
+    card["evidence"] = evidence
+    # Every quote checked again against the person's own text only; a figure whose quotes went is cleared with its
+    # assumptions, never left accepted without them (BLD-C028, BLD-C045).
+    allowed = {a["id"]: float(a["value"]) for a in assumptions()}
+    card, _cleared = still_backed(card, allowed)
+    card = with_review_flags(
+        card, []
+    )  # a summary the edit left blank is flagged for the review desk (BLD-C056)
 
     share_limit = float(
         load_rule(get_settings().company_repo_path, "thresholds").data["match"]["rerun_if_edit_share"]

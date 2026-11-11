@@ -27,7 +27,7 @@ MAX_MEMBERS = 12
 def _members(conn: Conn, d: dict[str, Any]) -> list[dict[str, Any]]:
     """Org-visible member ideas as checked neutral summaries with their lines of business."""
     rows = conn.execute(
-        "SELECT canvas ->> 'neutral_summary' AS summary, lobs FROM ideas "
+        "SELECT nullif(btrim(canvas ->> 'neutral_summary'), '') AS summary, lobs FROM ideas "
         "WHERE (CASE WHEN %s = 'idea' THEN idea_id ELSE cluster_id END) = %s AND visibility = 'org' "
         "AND stage NOT IN ('withdrawn', 'declined', 'parked', 'draft') ORDER BY submitted_at NULLS LAST, idea_id "
         "LIMIT %s",

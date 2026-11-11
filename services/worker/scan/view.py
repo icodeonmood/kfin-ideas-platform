@@ -12,6 +12,7 @@ from core import killswitch
 from core.config import get_settings
 from core.crypto import decrypt_json
 from core.db import Conn
+from gateway.grounding import NO_ANSWER
 from pii import vault
 from pii.restore import restore
 from rules import load_rule
@@ -33,16 +34,49 @@ DATA_TYPE_LABELS = {
 }
 
 
+def _at(canvas: dict[str, Any], path: str) -> Any:
+    node: Any = canvas
+    for key in path.split("."):
+        node = node.get(key) if isinstance(node, dict) else None
+    return node
+
+
 def _suggested(canvas: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each suggestion with the person's own words it came from (DEC-095). "Not sure yet" and "Don't know" say
+    nothing, so they are not offered as suggestions."""
+    raw = canvas.get("evidence")
+    evidence: dict[str, Any] = raw if isinstance(raw, dict) else {}
     out = []
     for path, who in sorted((canvas.get("provenance") or {}).items()):
         if who not in ("suggested", "accepted"):
             continue
-        node: Any = canvas
-        for key in path.split("."):
-            node = node.get(key) if isinstance(node, dict) else None
-        if node not in (None, "", []):
-            out.append({"path": path, "value": node})
+        node = _at(canvas, path)
+        if node in (None, "", []) or NO_ANSWER.get(path) == node:
+            continue
+        quotes = [q for q in evidence.get(path) or [] if isinstance(q, str)]
+        out.append({"path": path, "value": node, "quotes": quotes})
+    return out
+
+
+# The questions most worth answering that a quick capture often leaves blank (DEC-095: left blank when the person
+# did not say). Shown as "You didn't say", with no suggestion.
+LEFT_BLANK = ("who.frequency_or_reach", "who.today_alternative", "value.estimate", "value.basis")
+
+
+def _left_blank(canvas: dict[str, Any]) -> list[str]:
+    out = []
+    for path in LEFT_BLANK:
+        node = _at(canvas, path)
+        if path == "value.estimate":
+            empty = (
+                not any(v not in (None, "") for v in (node or {}).values())
+                if isinstance(node, dict)
+                else True
+            )
+        else:
+            empty = node in (None, "", [])
+        if empty:
+            out.append(path)
     return out
 
 
@@ -119,7 +153,12 @@ def view(conn: Conn, idea_uuid: str, mode: Literal["real", "neutral"]) -> dict[s
             "card": {"one_line": ca.get("one_line"), "details": ca.get("details")},
             "confirmed": "confirmed" in result,
             "suggested": _suggested(ca),
-            "neutral_summary": ca["neutral_summary"],
+            "left_blank": _left_blank(ca),
+            # DEC-097: the basic assumptions behind the suggested figures, in plain words.
+            "assumptions": [
+                str(a["says"]) for a in ca.get("assumptions") or [] if isinstance(a, dict) and a.get("says")
+            ],
+            "neutral_summary": str(ca.get("neutral_summary") or "").strip(),
             "next_best": ca["strength"]["next_best"],
             "matches": submitter_cards(conn, result["match"], row["contributor_code"])
             if "match" in result

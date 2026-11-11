@@ -174,14 +174,15 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
     if idea:
         card = idea["canvas"] or {}
         own = _owns(conn, user_id, idea)
-        one_line = (
-            _restore(conn, idea["idea_id"], card.get("one_line"), True)
-            if own
-            else card.get("neutral_summary")
-        )
+        if own:
+            one_line = _restore(conn, idea["idea_id"], card.get("one_line"), True)
+        else:  # someone else's idea: only its checked short summary, never their words (non-negotiable 7)
+            from views.common import checked_summary
+
+            one_line = checked_summary(conn, card.get("neutral_summary"))
         data["idea"] = {
             "id": idea["idea_id"],
-            "one_line": one_line or "your idea",
+            "one_line": one_line or ("your idea" if own else "a colleague's idea"),
             "strength": idea["strength"] if idea["strength"] is not None else 0,
             "next_best": list(((card.get("strength") or {}).get("next_best") or [])[:2]),
         }

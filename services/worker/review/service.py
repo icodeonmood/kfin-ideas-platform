@@ -159,6 +159,8 @@ def act(
 ) -> dict[str, Any]:
     now = now or dt.datetime.now(dt.UTC)
     action = body.get("action")
+    if action == "summary":
+        return _summary(conn, item_id, reviewer, body)
     with audited(conn), conn.transaction():
         item, idea = _load(conn, item_id)
         refuse_own(conn, reviewer, idea, str(action))
@@ -245,6 +247,126 @@ def act(
             )
             return {"state": "awaiting_second_reviewer", "stage": idea["stage"]}
         raise ActionRefused(400, "unknown_action")
+
+
+SUMMARY_MIN_CHARS = 15
+SUMMARY_MAX_WORDS = 25
+SUMMARY_MAX_CHARS = 220
+
+
+OWN_WORDS_RUN = 5  # tokens in a row shared with the person's text that make a summary a copy (BLD-C046)
+
+
+def _open_for_summary(item: dict[str, Any], reviewer: str) -> None:
+    """Like any action, except that a decided or closed item can still get its summary written (BLD-C044)."""
+    if item["state"] == "awaiting_second_reviewer":
+        raise ActionRefused(409, "awaiting_hold_confirmation")
+    if item["assigned_to"] and str(item["assigned_to"]) != reviewer:
+        raise ActionRefused(409, "assigned_to_someone_else")
+
+
+def _summary_text(body: dict[str, Any]) -> str:
+    text = " ".join(str(body.get("neutral_summary") or "").split())
+    if len(text) < SUMMARY_MIN_CHARS:
+        raise ActionRefused(422, "text_too_short")
+    if len(text) > SUMMARY_MAX_CHARS or len(text.split()) > SUMMARY_MAX_WORDS:
+        raise ActionRefused(422, "summary_too_long")
+    if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
+        raise ActionRefused(422, "personal_data")
+    return text
+
+
+def _too_close(conn: Conn, idea: dict[str, Any], text: str) -> bool:
+    """Whether the summary repeats five or more of the person's words in a row (any of their text, files' digests
+    included, as stored and as restored), which would put their words on colleagues' match cards (non-negotiable 7).
+    Never logged."""
+    from gateway.grounding import source_pieces, tokens
+    from pii import vault
+    from pii.restore import restore
+
+    card = idea["canvas"] or {}
+    # Everything of theirs: the original text, every free-text answer, their references and clean files' digests
+    # (BLD-C057), both as the card holds them and as the attachments table does.
+    texts: list[str] = [str(card.get("original_text") or ""), *source_pieces({"canvas_answers": card})]
+    texts += [
+        str(r["digest"])
+        for r in conn.execute(
+            "SELECT digest FROM attachments WHERE idea_uuid = %s AND state = 'clean' AND digest IS NOT NULL",
+            (idea["id"],),
+        ).fetchall()
+    ]
+    mapping = vault.mapping(conn, idea["idea_id"])
+    runs: set[tuple[str, ...]] = set()
+    for t in texts:
+        for variant in (t, str(restore(t, mapping, "real"))):
+            words = tokens(variant)
+            runs |= {tuple(words[i : i + OWN_WORDS_RUN]) for i in range(len(words) - OWN_WORDS_RUN + 1)}
+    words = tokens(text)
+    return any(tuple(words[i : i + OWN_WORDS_RUN]) in runs for i in range(len(words) - OWN_WORDS_RUN + 1))
+
+
+def _summary_checks(conn: Conn, idea_id: str, text: str) -> None:
+    """The gatekeeper, then the card check (no tag, pattern, name or client): the slow part, run with no lock."""
+    from gateway import AgentFailed, run_agent
+    from scan.matching import safe_summary
+    from scan.pipeline import decide, thresholds
+
+    try:
+        gk = run_agent(
+            "gatekeeper", {"mode": "submission", "submission": {"neutral_summary": text}}, idea_id, conn=conn
+        )
+    except AgentFailed:  # switched off or failing: nothing unchecked reaches colleagues
+        raise ActionRefused(503, "checks_unavailable") from None
+    if decide(gk.data, thresholds()) == "blocked":
+        raise ActionRefused(422, "personal_data")
+    if safe_summary(conn, text) is None:
+        raise ActionRefused(422, "summary_not_neutral")
+
+
+def _summary(conn: Conn, item_id: int, reviewer: str, body: dict[str, Any]) -> dict[str, Any]:
+    """The review desk's short summary for colleagues (DEC-026, BLD-C027, BLD-C044). Cheap refusals first: the text's
+    limits and patterns, the reviewer's own idea (audited), the item's state and the person's own words. Then the
+    model call, with no row locked. Then, under the lock, the same refusals again and the write."""
+    text = _summary_text(body)
+    with audited(conn):
+        item = conn.execute("SELECT * FROM review_items WHERE id = %s", (item_id,)).fetchone()
+        if item is None or item["item_type"] != "idea":
+            raise ActionRefused(404, "not_found")
+        idea = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (item["ref_id"],)).fetchone()
+        if idea is None:
+            raise ActionRefused(404, "not_found")
+        refuse_own(conn, reviewer, dict(idea), "summary")
+    _open_for_summary(dict(item), reviewer)
+    if _too_close(conn, dict(idea), text):
+        raise ActionRefused(422, "summary_too_close")
+    _summary_checks(conn, idea["idea_id"], text)
+    with audited(conn), conn.transaction():
+        locked, idea_now = _load(conn, item_id)
+        refuse_own(conn, reviewer, idea_now, "summary")
+        _open_for_summary(locked, reviewer)
+        rev = staff_code(conn, reviewer)
+        return _write_summary(conn, locked, idea_now, rev, text)
+
+
+def _write_summary(
+    conn: Conn, item: dict[str, Any], idea: dict[str, Any], rev: str, text: str
+) -> dict[str, Any]:
+    """Store it as the reviewer's, audit lengths only (non-negotiables 3 and 9), refresh the idea file."""
+    idea_id = idea["idea_id"]
+    card = dict(idea["canvas"] or {})
+    before = str(card.get("neutral_summary") or "")
+    card["neutral_summary"] = text
+    card["provenance"] = {**(card.get("provenance") or {}), "neutral_summary": "reviewer"}
+    card["evidence"] = {k: v for k, v in (card.get("evidence") or {}).items() if k != "neutral_summary"}
+    conn.execute("UPDATE ideas SET canvas = %s WHERE id = %s", (Jsonb(card), idea["id"]))
+    conn.execute(
+        "INSERT INTO audit_log (actor, action, entity, before, after) "
+        "VALUES (%s, 'review.neutral_summary', %s, %s, %s)",
+        (rev, f"idea:{idea_id}", Jsonb({"length": len(before)}), Jsonb({"length": len(text)})),
+    )
+    _reviewed_event(conn, idea_id, rev, "summary_written", verify=False)
+    log.info("review.neutral_summary", idea_id=idea_id, review_item_id=item["id"])
+    return {"state": item["state"], "stage": idea["stage"]}
 
 
 def confirm_hold(conn: Conn, item_id: int, reviewer: str, now: dt.datetime | None = None) -> dict[str, Any]:
@@ -356,6 +478,12 @@ def _decide(
         value[f] = v
     card["value"] = value
     card.setdefault("provenance", {}).update({f"value.{f}": "reviewer" for f in changes})
+    evidence = dict(card.get("evidence") or {})
+    for (
+        f
+    ) in changes:  # the reviewer's value, not the person's words: no "From their words" beside it (BLD-C028)
+        evidence.pop(f"value.{f}", None)
+    card["evidence"] = evidence
 
     attach = body.get("attach") or {"type": "new"}
     stage, cluster_id, outcome = "reviewed", idea["cluster_id"], "standalone"

@@ -16,6 +16,8 @@
     "attachments",
     "system",
     "provenance",
+    "evidence",
+    "assumptions",
     "flags_for_reviewer",
     "confidence",
     "strength"
@@ -30,13 +32,15 @@
     },
     "one_line": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 200
+      "minLength": 0,
+      "maxLength": 200,
+      "description": "Empty only when the gateway removed a line it could not match to the person's words and none of their own was usable (BLD-C026)."
     },
     "neutral_summary": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 220
+      "minLength": 0,
+      "maxLength": 220,
+      "description": "Empty only when the gateway removed a summary it could not match to the person's words (DEC-095); match cards then show none."
     },
     "details": {
       "type": "string"
@@ -367,6 +371,48 @@
           "suggested",
           "accepted"
         ]
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "description": "DEC-095: for every answer you suggest (provenance `suggested`) and for neutral_summary, 1 to 3 exact quotes from the person's own text that it came from, keyed by the same field path. Quotes are copied word for word in the input's language, with any tags exactly as given. No key for the person's own answers.",
+      "propertyNames": {
+        "pattern": "^[a-z_]+(\\.[a-z_]+)*$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 3,
+        "items": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 300
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "DEC-097: each basic assumption your suggested figures use, copied from <assumptions> (id and says exactly). Only those listed there; none if your figures use none.",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "says": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "id",
+          "says"
+        ],
+        "additionalProperties": false
       }
     },
     "flags_for_reviewer": {

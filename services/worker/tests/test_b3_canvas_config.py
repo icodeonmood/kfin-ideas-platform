@@ -42,4 +42,4 @@ def test_canvas_config_comes_from_the_company_repo() -> None:
         "what-is-it", "who-it-touches", "whats-it-worth", "solved-elsewhere", "your-solution", "your-research",
     ]  # fmt: skip
     assert all(e["weak"] and e["strong"] and e["why"] for e in body["examples"])
-    assert body["rules_version"]["thresholds"] == "1.0"
+    assert body["rules_version"]["thresholds"] == "1.1"  # 1.1: basic assumptions (DEC-097)

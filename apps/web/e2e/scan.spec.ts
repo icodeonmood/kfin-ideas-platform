@@ -30,6 +30,8 @@ test("the waiting screen ends with the summary and suggestions (AT-B4-09 screen)
   await expect(ready).toBeVisible({ timeout: 20_000 });
   await expect(ready).toBeFocused();
   await expect(page.getByText("We suggested answers for some questions you left blank:")).toBeVisible();
+  // Each suggestion shows the person's own words it came from (DEC-095).
+  await expect(page.getByText("From your words:").first()).toBeVisible();
   await expectNoSeriousAxeIssues(page);
 });
 

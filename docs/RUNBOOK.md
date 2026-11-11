@@ -158,6 +158,8 @@ python -m gonogo --since 2026-11-16 --vapt-open-high <n> --sso-ready yes \
 
 Copy the load test report and the restore drill result into `/data/loadtest` and `/data/ops` first. It reads the golden-set reports (`EVAL_REPORTS_DIR`), leak aborts since the date, the latest load test and restore drill, and the privacy notice version, then names the launch mode the evidence supports: Mode A only when every criterion is met. Rows marked "confirm" need a person's sign-off at the meeting.
 
+Below the table it prints how often the gateway dropped canvas-assist suggestions the person's words did not back (`ungrounded_dropped`) and refused its answer (`invalid_output`), for the last 24 hours, since launch (`--launch`, default 2026-11-20) and in golden-set runs since `--since` (DEC-095, DEC-097, BLD-C029). **Read it on the first real-route golden-set run once D1 is approved, and again before go-live.** A refused share near 20% would trip the automatic switch-off of `agent.canvas-assist` at launch (20% of failed calls over 15 minutes, at least 10 calls). If it is high, read the dropped and refused cases by ID in `llm_calls` (never text), fix the prompt and run `make eval` again before switching anything on. A dropped share well above 10% means the assistant keeps reaching past the person's words: tell the product team.
+
 ## The Ember, each month
 
 1. In the last week of the month, an admin opens **Write The Ember** (`/ember/compose`) and starts the month's issue.

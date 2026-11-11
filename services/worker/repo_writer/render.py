@@ -146,14 +146,16 @@ def render_idea(
     sol = canvas.get("solution") or {}
     provenance: dict[str, str] = canvas.get("provenance") or {}
     one_line = canvas.get("one_line") or ""
-    summary = canvas.get("neutral_summary") or one_line
+    # The description never falls back to the person's own words: an empty summary reads as pending (BLD-C027).
+    neutral = str(canvas.get("neutral_summary") or "").strip()  # spaces are no summary (BLD-C057)
+    summary = neutral or "A short summary is on its way."
 
     tags = [a.removeprefix("AREA-") for a in idea["area_ids"]]
     tags += [lob.removeprefix("LOB-") for lob in idea["lobs"]]
     tags += [s.removeprefix("GL-") for s in idea["systems"]]
     meta: dict[str, Any] = {
         "type": "idea",
-        "title": one_line,
+        "title": one_line or idea["idea_id"],  # an empty one line (BLD-C026) still gives the file a title
         "description": summary,
         "tags": list(dict.fromkeys(tags)),
         "status": "stable" if any(str(v.get("by", "")).startswith("human:") for v in verified) else "draft",
@@ -180,7 +182,7 @@ def render_idea(
         "cluster": idea["cluster_id"],
         "visibility": idea["visibility"],
         "language": idea["language"] or "en",
-        "neutral_summary": canvas.get("neutral_summary"),  # the only text a match card shows (BLD-079)
+        "neutral_summary": neutral or None,  # the only text a match card shows (BLD-079)
         "attachments": [
             {k: a[k] for k in ("id", "name", "sha256", "bytes") if k in a}
             for a in (canvas.get("attachments") or [])

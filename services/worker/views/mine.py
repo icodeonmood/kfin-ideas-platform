@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 from core.db import Conn
 from pii import vault
 from pii.restore import restore
-from views.common import PUBLIC_WORDS, checked_summary, first_area, is_public, taxonomy_names
+from views.common import PUBLIC_WORDS, first_area, is_public, public_summary, taxonomy_names
 
 # (stage in plain words, next step). The owner sees their own idea's stage more precisely than everyone else, but
 # a stage everyone can see reads the same for its owner: the word comes from the shared table (review A5).
@@ -142,9 +142,7 @@ def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
         joined.append(
             {
                 "how": LINK_WORDS.get(link["link_type"], "You joined"),
-                "summary": checked_summary(conn, (link["canvas"] or {}).get("neutral_summary"))
-                if public
-                else None,
+                "summary": public_summary(conn, link["canvas"]) if public else None,
                 "with_desk": not public and link["stage"] in BEFORE_DECISION,
                 "area": first_area(link["area_ids"], areas) if public else None,
                 "stage": PUBLIC_WORDS[link["stage"]]

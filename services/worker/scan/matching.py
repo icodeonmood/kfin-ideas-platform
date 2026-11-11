@@ -106,7 +106,7 @@ def run_matching(conn: Conn, idea_id: str, ca: dict[str, Any]) -> dict[str, Any]
 
 def safe_summary(conn: Conn, summary: str | None) -> str | None:
     """Shown only if it holds no tag, no pattern match and no name or client the detector recognises."""
-    if not summary or TAG_RE.search(summary) or scan(summary, kfin_domains=[]):
+    if not summary or not summary.strip() or TAG_RE.search(summary) or scan(summary, kfin_domains=[]):
         return None
     return None if detect(summary, directory(conn)) else summary
 

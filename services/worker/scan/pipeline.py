@@ -23,7 +23,7 @@ from gateway import AgentFailed, AgentSwitchedOff, LeakAbort, run_agent
 from router.corrections import corrections_for
 from router.taxonomy import taxonomy_slice
 from rules import load_rule
-from scan.inputs import canvas_answers, gatekeeper_input
+from scan.inputs import assumptions, canvas_answers, gatekeeper_input
 from scan.matching import run_matching
 
 log = get_logger("scan")
@@ -43,6 +43,30 @@ def about_investor(gk: dict[str, Any]) -> bool:
 
 class TooSlow(Exception):
     pass
+
+
+# What the review desk reads when the gateway dropped suggestions the person's words did not back (DEC-095).
+FLAG_SUMMARY_BLANK = "The short summary for colleagues was left blank; please write one."
+FLAG_DROPPED = "Some suggestions were left out because the person's own words did not support them."
+MAX_FLAGS = 5
+
+
+def with_review_flags(ca: dict[str, Any], dropped: list[str]) -> dict[str, Any]:
+    """The canvas-assist output as stored (BLD-C027, BLD-C044): a summary of only spaces becomes "", and the review
+    desk gets neutral flags read from the final answer (a blank summary, whoever left it blank) and from what the
+    gateway dropped (a suggestion left out; not an assumption removed or reworded). Paths only, never text."""
+    summary = ca.get("neutral_summary")
+    blank = not isinstance(summary, str) or not summary.strip()
+    flags = [FLAG_SUMMARY_BLANK] if blank else []
+    if any(p != "neutral_summary" and not p.startswith("assumptions.") for p in dropped):
+        flags.append(FLAG_DROPPED)
+    if not flags:
+        return ca
+    kept = [f for f in ca.get("flags_for_reviewer") or [] if f not in flags]
+    out = {**ca, "flags_for_reviewer": (flags + kept)[:MAX_FLAGS]}
+    if blank:
+        out["neutral_summary"] = ""
+    return out
 
 
 def thresholds() -> dict[str, Any]:
@@ -176,11 +200,12 @@ def run(conn: Conn, idea_uuid: str, *, mode: str = "sync") -> str:
                     "taxonomy_slice": taxonomy_slice(conn, text),
                     "gatekeeper": {"kind": gk_out["kind"], "language": gk_out["language"]},
                     "past_corrections": corrections_for(conn, embed([text])[0]),
+                    "assumptions": assumptions(),
                 },
                 ref,
                 conn=conn,
             )
-            result["canvas_assist"] = ca.data
+            result["canvas_assist"] = with_review_flags(ca.data, ca.dropped)
             _save_result(conn, idea_uuid, result)
         if mode == "sync" and time.monotonic() - started > limit:
             raise TooSlow()

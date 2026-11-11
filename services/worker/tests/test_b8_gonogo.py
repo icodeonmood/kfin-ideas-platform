@@ -36,7 +36,7 @@ def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namesp
         tmp_path / "ops", "restore-drill-1.json", {"passed": True, "seconds": 5400, "where": "UAT", "at": "x"}
     )
     return argparse.Namespace(
-        since="2100-01-01", vapt_open_high=0, sso_ready="yes", reports_dir=tmp_path / "eval",
+        since="2100-01-01", launch="2100-01-01", vapt_open_high=0, sso_ready="yes", reports_dir=tmp_path / "eval",
         loadtest_dir=tmp_path / "load", drill_dir=tmp_path / "ops",
     )  # fmt: skip
 
@@ -65,3 +65,31 @@ def test_an_unreadable_report_is_a_row_to_confirm(evidence: argparse.Namespace) 
     out = g.collect(evidence)
     row = next(r for r in out["rows"] if r["criterion"].startswith("Scan time"))
     assert row["state"] == "confirm" and "unreadable" in row["evidence"]
+
+
+def test_canvas_assist_dropped_and_refused_shares_are_printed(evidence: argparse.Namespace) -> None:
+    """DEC-095, BLD-C029: counts only, live calls apart from golden-set runs (DRAFT- scopes)."""
+    from core.db import connect
+
+    rows = [("IDEA-2100-000001", "ok", None), ("IDEA-2100-000002", "ok_after_retry", "ungrounded_dropped"),
+            ("IDEA-2100-000003", "agent_failed", "invalid_output"), ("IDEA-2100-000004", "ok", None),
+            ("DRAFT-gonogo-test", "ok_after_retry", "ungrounded_dropped")]  # fmt: skip
+    with connect(autocommit=True) as conn:
+        for ref, outcome, code in rows:
+            conn.execute(
+                "INSERT INTO llm_calls (agent, prompt_version, model, outcome, ref_id, error_code, created_at) "
+                "VALUES ('canvas-assist', '0.4.0', 'test', %s, %s, %s, '2100-01-02')",
+                (outcome, ref, code),
+            )
+        try:
+            out = g.collect(evidence)
+            since_launch = next(w for w in out["canvas_assist"] if w["window"].startswith("since launch"))
+            assert (since_launch["asked"], since_launch["dropped"], since_launch["invalid"]) == (4, 1, 1)
+            golden = next(w for w in out["canvas_assist"] if w["window"].startswith("golden-set"))
+            assert (golden["asked"], golden["dropped"]) == (1, 1)
+            text = g.render(out)
+            assert "| since launch (2100-01-01) | 4 | 1 of 4 (25%) | 1 of 4 (25%) |" in text
+            assert "last 24 hours" in text
+            assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # a watch, not a criterion
+        finally:
+            conn.execute("DELETE FROM llm_calls WHERE created_at = '2100-01-02' AND agent = 'canvas-assist'")

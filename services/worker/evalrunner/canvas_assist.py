@@ -6,12 +6,12 @@ import copy
 from typing import Any
 
 from evalrunner.common import Context, read_jsonl
-from gateway import AgentFailed, run_agent
+from gateway import AgentFailed, grounding, run_agent
 from gateway.checks import SUBMITTER_SECTIONS, _diff
 from gateway.spec import load
 from pii.detect import detect, directory
 from pii.tagger import TAG_RE
-from scan.inputs import taxonomy_slice
+from scan.inputs import assumptions, taxonomy_slice
 
 SKELETON: dict[str, Any] = {
     "kind": None,
@@ -62,6 +62,7 @@ def _inputs(case_input: Any) -> dict[str, Any]:
             "language": {"primary": "en", "mixed": False},
         },
         "past_corrections": case_input.get("past_corrections") or [],
+        "assumptions": case_input["assumptions"] if "assumptions" in case_input else assumptions(),
     }
 
 
@@ -105,6 +106,18 @@ def _properties(exp: dict[str, Any], sent: dict[str, Any], out: dict[str, Any], 
             res[key] = len(out["ecosystem"]["references"]) == int(want)
         elif key.endswith("_suggested_in"):
             res[key] = _get(out, key.removesuffix("_suggested_in")) in want
+        elif key == "all_suggestions_grounded":  # DEC-095: every suggestion quotes the person's own words
+            res[key] = not grounding.ungrounded(sent, out)
+        elif key == "no_invented_figures":
+            est_in = answers["value"]["estimate"]
+            est_out = out["value"]["estimate"]
+            res[key] = all(est_out[k] is None or est_in.get(k) is not None for k in grounding.ESTIMATES)
+        elif key == "evidence_tags_sent":
+            sent_tags = set(TAG_RE.findall(grounding.source_text(sent)))
+            quoted = {t for qs in (out.get("evidence") or {}).values() for q in qs for t in TAG_RE.findall(q)}
+            res[key] = quoted <= sent_tags
+        elif key == "assumptions_used":  # DEC-097: exactly these assumption IDs listed, in any order
+            res[key] = sorted(a.get("id") for a in out.get("assumptions") or []) == sorted(want)
         elif key.endswith("_may_suggest"):
             continue  # informational
         else:
@@ -144,6 +157,8 @@ def run(ctx: Context) -> dict[str, Any]:
             detect(data["neutral_summary"], d)
         )
         row["properties"] = _properties(case.get("expected_properties") or {}, sent, data, d)
+        row["ungrounded"] = len(grounding.ungrounded(sent, data))  # after the gateway: must be 0 (DEC-095)
+        row["dropped"] = len(out.dropped)  # how often the model needed the gateway to drop a suggestion
         row["outcome"] = out.outcome
         cases.append(row)
 
@@ -156,6 +171,8 @@ def run(ctx: Context) -> dict[str, Any]:
         "submitter_field_changes": sum(c["submitter_changes"] for c in ran),
         "out_of_slice_ids": sum(c["out_of_slice"] for c in ran),
         "neutral_summary_leaks": sum(c["summary_leak"] for c in ran),
+        "ungrounded_suggestions": sum(c["ungrounded"] for c in ran),
+        "suggestions_dropped": sum(c["dropped"] for c in ran),
         "area_tag_accuracy": round(
             sum(c["properties"]["system.areas_include"] for c in area_cases) / len(area_cases), 4
         )
@@ -173,6 +190,7 @@ def run(ctx: Context) -> dict[str, Any]:
         == gates.get("submitter_field_changes", 0),
         "out_of_slice_ids": metrics["out_of_slice_ids"] == gates.get("out_of_slice_ids", 0),
         "neutral_summary_leaks": metrics["neutral_summary_leaks"] == gates.get("neutral_summary_leaks", 0),
+        "ungrounded_suggestions": metrics["ungrounded_suggestions"] == gates.get("ungrounded_suggestions", 0),
     }
     return {"agent": spec.name, "version": spec.version, "metrics": metrics, "model_gates": model_gates,
             "harness_gates": harness_gates, "cases": cases}  # fmt: skip

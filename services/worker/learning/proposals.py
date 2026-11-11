@@ -83,7 +83,9 @@ def glossary(conn: Conn, now: dt.datetime, period: str) -> int:
     texts: dict[str, list[str]] = {}
     for r in rows:
         card = r["canvas"] or {}
-        texts[r["idea_id"]] = [str(card.get(k) or "") for k in ("neutral_summary", "one_line", "details")]
+        texts[r["idea_id"]] = [
+            str(card.get(k) or "").strip() for k in ("neutral_summary", "one_line", "details")
+        ]
     found = candidate_terms(texts, _known_terms(conn))
     people = directory(conn)
     added = 0

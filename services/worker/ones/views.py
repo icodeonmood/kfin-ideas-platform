@@ -22,7 +22,16 @@ from ones import numbers
 from ones.service import SHOWCASE_PARTS
 from ones.text import unseal, unseal_json
 from ones.tiers import tier_colour, tier_name
-from views.common import IN_GARAGE, PICKED, PUBLIC_STAGES, SHIPPED, checked_summary, taxonomy_names
+from views.common import (
+    IN_GARAGE,
+    PICKED,
+    PUBLIC_STAGES,
+    SHIPPED,
+    SUMMARY_PENDING,
+    checked_summary,
+    public_summary,
+    taxonomy_names,
+)
 
 WAY_IN_WORDS = {"accepted_idea": "Accepted idea", "sponsored": "Sponsored", "founding": "Founding One"}
 KIND_WORDS = {
@@ -62,11 +71,12 @@ def _idea_line(conn: Conn, one: dict[str, Any], public: bool) -> tuple[str | Non
         ).fetchone()
         if idea is None:
             return None, None
-        summary = (idea["canvas"] or {}).get("neutral_summary")
         if public:
             if idea["visibility"] != "org" or idea["stage"] not in PUBLIC_STAGES:
                 return None, None
-            summary = checked_summary(conn, summary)
+            summary = public_summary(conn, idea["canvas"])  # an unsafe one is still left out
+        else:
+            summary = str((idea["canvas"] or {}).get("neutral_summary") or "").strip() or SUMMARY_PENDING
         return summary, PUBLIC_WORDS.get(idea["stage"])
     title = unseal(one["title_encrypted"], f"one:{one['id']}:title")
     if public:  # checked when it was written; checked again before everyone sees it (Ones review, BLD-111)

@@ -22,7 +22,12 @@ export type MatchCard = {
   owning_lob?: string | null;
 };
 export type Ready = {
-  suggested: { path: string; value: unknown }[];
+  /** Each suggestion with the person's own words it came from (DEC-095). */
+  suggested: { path: string; value: unknown; quotes?: string[] }[];
+  /** Questions left blank because the person did not say. */
+  left_blank?: string[];
+  /** The basic assumptions behind the suggested figures, in plain words (DEC-097). */
+  assumptions?: string[];
   neutral_summary: string;
   next_best: string[];
   matches: MatchCard[];
@@ -47,6 +52,20 @@ function show(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ").replace(/_/g, " ");
   if (value && typeof value === "object") return Object.values(value).filter(Boolean).join(", ");
   return String(value ?? "").replace(/_/g, " ");
+}
+
+/** A suggested answer as people read it: rupees with Indian grouping (₹5,00,000), hours and clients with their unit. */
+export function showSuggestion(path: string, value: unknown): string {
+  if (typeof value === "number") {
+    const n = value.toLocaleString("en-IN", { maximumFractionDigits: 1 });
+    if (path.startsWith("value.estimate.inr_"))
+      return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+    if (path === "value.estimate.hours_saved_per_month")
+      return `${n} ${value === 1 ? "hour" : "hours"} a month`;
+    if (path === "value.estimate.clients_who_would_pay") return `${n} ${value === 1 ? "client" : "clients"}`;
+    return n;
+  }
+  return show(value);
 }
 
 type Action = { ref: string | null; choice: string; label: string; needs?: "context" | "line" };
@@ -86,11 +105,18 @@ export function Crew({
   const [details, setDetails] = useState(ready.card.details ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Where the error belongs: the canvas check, a match card (its ref) or the page (BLD-C049).
+  const [errorAt, setErrorAt] = useState<string>("page");
   const [note, setNote] = useState("");
   const [open, setOpen] = useState<Action | null>(null);
   const [text, setText] = useState("");
   const crewRef = useRef<HTMLHeadingElement>(null);
   const wantCrewFocus = useRef(false);
+
+  // Opening "Mine is different" (or another choice that needs words) moves focus to its box (BLD-C049).
+  useEffect(() => {
+    if (open) document.getElementById(`crew-text-${open.ref}`)?.focus();
+  }, [open]);
 
   // After "Looks right", move focus to Find your crew once it has rendered.
   useEffect(() => {
@@ -100,9 +126,10 @@ export function Crew({
     }
   }, [ready.confirmed]);
 
-  async function post(path: string, body: unknown) {
+  async function post(path: string, body: unknown, where = "page") {
     setBusy(true);
     setError("");
+    setErrorAt(where);
     const res = await fetch(`/api/submissions/${id}/${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -122,7 +149,7 @@ export function Crew({
     const body: Record<string, unknown> = { keep };
     if (oneLine !== (ready.card.one_line ?? "")) body.one_line = oneLine;
     if (details !== (ready.card.details ?? "")) body.details = details;
-    const out = await post("confirm-card", body);
+    const out = await post("confirm-card", body, "canvas");
     if (!out) return;
     setNote(
       out.rerun_match ? "You changed the text, so we looked again for colleagues on the same thing." : "",
@@ -132,11 +159,11 @@ export function Crew({
   }
 
   async function choose(action: Action) {
-    const out = await post("choose", {
-      choice: action.choice,
-      ref: action.ref,
-      text: action.needs ? text : "",
-    });
+    const out = await post(
+      "choose",
+      { choice: action.choice, ref: action.ref, text: action.needs ? text : "" },
+      action.ref ?? "page",
+    );
     if (!out) return;
     setOpen(null);
     setText("");
@@ -148,9 +175,11 @@ export function Crew({
       <h3 ref={headingRef} tabIndex={-1}>
         Your summary is ready
       </h3>
-      <p>
-        <strong>In short:</strong> {ready.neutral_summary}
-      </p>
+      {ready.neutral_summary ? (
+        <p>
+          <strong>In short:</strong> {ready.neutral_summary}
+        </p>
+      ) : null}
 
       {!ready.confirmed ? (
         <form onSubmit={(e) => void looksRight(e)}>
@@ -183,15 +212,40 @@ export function Crew({
               {ready.suggested.map((s) => {
                 const name = `keep-${s.path.replace(/\./g, "-")}`;
                 const kept = keep[s.path] ?? true;
+                // The value and the person's words behind it describe both choices (WCAG 1.3.1, 4.1.2).
+                const valueId = `${name}-value`;
+                const wordsId = `${name}-words`;
+                const describedBy = s.quotes?.length ? `${valueId} ${wordsId}` : valueId;
                 return (
                   <fieldset key={s.path} className="field suggestion">
                     <legend>{labelFor(s.path)}</legend>
-                    <p className="suggested-value">{show(s.value)}</p>
+                    <p id={valueId} className="suggested-value">
+                      <span className="visually-hidden">Our suggestion: </span>
+                      {showSuggestion(s.path, s.value)}
+                    </p>
+                    {s.quotes?.length ? (
+                      <div
+                        id={wordsId}
+                        className="from-words"
+                        role="group"
+                        aria-labelledby={`${wordsId}-label`}
+                      >
+                        <p id={`${wordsId}-label`} className="hint">
+                          From your words:
+                        </p>
+                        {s.quotes.map((q, i) => (
+                          <blockquote key={i}>
+                            <p>{q}</p>
+                          </blockquote>
+                        ))}
+                      </div>
+                    ) : null}
                     <label className="choice">
                       <input
                         type="radio"
                         name={name}
                         checked={kept}
+                        aria-describedby={describedBy}
                         onChange={() => setKeep((k) => ({ ...k, [s.path]: true }))}
                       />
                       Keep this suggestion
@@ -201,6 +255,7 @@ export function Crew({
                         type="radio"
                         name={name}
                         checked={!kept}
+                        aria-describedby={describedBy}
                         onChange={() => setKeep((k) => ({ ...k, [s.path]: false }))}
                       />
                       Leave it blank
@@ -208,7 +263,31 @@ export function Crew({
                   </fieldset>
                 );
               })}
+              {ready.assumptions?.length ? (
+                <div className="from-words" role="group" aria-labelledby="crew-assumptions">
+                  <p id="crew-assumptions" className="hint">
+                    Assumptions we made:
+                  </p>
+                  <ul>
+                    {ready.assumptions.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </>
+          ) : null}
+          {ready.left_blank?.length ? (
+            <p className="hint">
+              We left {ready.left_blank.length === 1 ? "this" : "these"} blank because you didn&apos;t say:{" "}
+              {ready.left_blank.map(labelFor).join("; ")}. Add {ready.left_blank.length === 1 ? "it" : "them"}{" "}
+              if you know, under &ldquo;Tell us more&rdquo;.
+            </p>
+          ) : null}
+          {error && errorAt === "canvas" ? (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
           ) : null}
           <button type="submit" className="button" disabled={busy}>
             Looks right
@@ -305,6 +384,10 @@ export function Crew({
                               id={`crew-text-${card.ref}`}
                               rows={3}
                               value={text}
+                              aria-invalid={error && errorAt === card.ref ? true : undefined}
+                              aria-describedby={
+                                error && errorAt === card.ref ? `crew-error-${card.ref}` : undefined
+                              }
                               onChange={(e) => setText(e.target.value)}
                             />
                           </div>
@@ -312,6 +395,11 @@ export function Crew({
                             {open.label}
                           </button>
                         </form>
+                      ) : null}
+                      {error && errorAt === card.ref ? (
+                        <p id={`crew-error-${card.ref}`} className="field-error" role="alert">
+                          {error}
+                        </p>
                       ) : null}
                     </>
                   ) : null}
@@ -341,7 +429,7 @@ export function Crew({
           </div>
         </section>
       )}
-      {error ? (
+      {error && errorAt === "page" ? (
         <p className="field-error" role="alert">
           {error}
         </p>

@@ -89,7 +89,7 @@ def card_summary(file_type: str, meta: dict[str, Any], kfin: dict[str, Any]) -> 
     if file_type not in CARD_TYPES:
         return None
     if file_type == "idea":
-        return _text(kfin.get("neutral_summary"))
+        return _text(kfin.get("neutral_summary")) or None  # "" is no summary (BLD-C022)
     return _text(meta.get("description"))
 
 

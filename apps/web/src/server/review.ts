@@ -63,7 +63,10 @@ export async function queue(f: QueueFilters): Promise<QueueRow[]> {
       "i.category",
       "i.strength",
       // A group proposal's description is checked to be safe for everyone's eyes (no tags, names or IDs).
-      sql<string | null>`coalesce(i.canvas->>'neutral_summary', (SELECT p.summary->>'description'
+      // An empty summary (the gateway left it blank, BLD-C022) is no summary: never "" in the queue.
+      sql<
+        string | null
+      >`coalesce(nullif(btrim(i.canvas->>'neutral_summary'), ''), (SELECT p.summary->>'description'
         FROM cluster_proposals p WHERE p.review_item_id = r.id))`.as("summary"),
       sql<Date | null>`(SELECT t.due_at FROM sla_timers t WHERE t.entity_type = 'review_item'
         AND t.entity_id = r.id::text AND t.stage IN ('review', 'cluster_proposal') ORDER BY t.id DESC LIMIT 1)`.as(
@@ -125,7 +128,7 @@ export async function itemView(me: CurrentUser, id: string) {
   return { ...((await res.json()) as Record<string, unknown>), mode };
 }
 
-const ACTIONS = ["decide", "redirect", "ask", "visibility", "hold", "confirm_hold"] as const;
+const ACTIONS = ["decide", "redirect", "ask", "visibility", "hold", "confirm_hold", "summary"] as const;
 
 /** Who may act on an item: the desk, or a core committee member on an item they vetoed and now hold (§4.3). */
 export async function mayAct(me: CurrentUser, id: string): Promise<boolean> {

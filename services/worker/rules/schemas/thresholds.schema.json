@@ -320,6 +320,34 @@
       ],
       "additionalProperties": false
     },
+    "assumptions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "value": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "says": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "says"
+        ],
+        "additionalProperties": false
+      }
+    },
     "kill_switch_triggers": {
       "type": "object",
       "properties": {
