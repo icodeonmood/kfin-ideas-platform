@@ -172,7 +172,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
 
     def voice_notes() -> None:
         """DEC-096: voice notes may launch off (paused with their reason); on, only with the engine on KFin's own
-        server. The watch switches them off by itself if the fake speech route is set outside dev and test."""
+        server behind the isolated speech service (BLD-C012). The watch switches them off by itself otherwise."""
         s = get_settings()
         with connect(autocommit=True) as conn:
             row = conn.execute(
@@ -184,13 +184,18 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
             rows.append(
                 _row(name, "met", "off: paused with its reason; the screen says voice notes are coming")
             )
-        elif s.speech_mode == "local" and s.speech_model_path:
+        elif s.speech_mode == "local" and s.speech_engine_url:
             rows.append(
-                _row(name, "met", "on; SPEECH_MODE local with a model path (IT, InfoSec and DPO cleared)")
+                _row(name, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
             )
         else:
+            isolation = "isolated service set" if s.speech_engine_url else "no isolated speech service"
             rows.append(
-                _row(name, "not met", f"on with SPEECH_MODE {s.speech_mode}; switch it off or fix the route")
+                _row(
+                    name,
+                    "not met",
+                    f"on with SPEECH_MODE {s.speech_mode}, {isolation}; switch it off or fix the route",
+                )
             )
             reasons_b.append("voice notes on without the engine on KFin's own server")
 

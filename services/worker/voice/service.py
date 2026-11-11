@@ -4,8 +4,8 @@
    draft and a few an hour per person (`rules/thresholds.md` `voice`). The recording goes to the quarantine bucket
    only; it is never moved to clean and no route opens it. No file name is kept.
 2. Transcribe (job `voice.transcribe`): the virus scan first (non-negotiable 8), then the probe (`voice/probe.py`,
-   an isolated child: allowed container and codec only, and the length read from the container's timestamps
-   before anything decodes it, BLD-C005), then `gateway.speech`, then spoken
+   a child process with a cleared environment and limits: allowed container and codec only, and the length read
+   from the container's timestamps before anything decodes it, BLD-C005), then `gateway.speech`, then spoken
    numbers become digits (`voice.numbers`), then every value the level-1 patterns would block is left out of the
    text ("[PAN left out]"), so investor identifiers are never stored, even encrypted. The text is held encrypted
    (context `voice:<id>`) for the person to fetch, and the recording is deleted at once: nobody needs it after
@@ -115,6 +115,9 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, data: bytes) ->
         if idea["stage"] != "draft":
             raise VoiceRefused(409, "not_a_draft")
         lim = limits()
+        # One person's uploads count one at a time, whichever draft they go to: two at once cannot both slip
+        # under the hourly limit (BLD-C013). Released when this transaction ends.
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"voice:{uploaded_by_code}",))
         this_hour = conn.execute(
             "SELECT count(*) AS n FROM voice_notes WHERE uploaded_by_code = %s AND created_at > now() - interval '1 hour'",
             (uploaded_by_code,),
@@ -199,7 +202,7 @@ def _fail(conn: Conn, row: dict[str, Any], code: str) -> str:
 
 
 def _probe(data: bytes) -> str | None:
-    """The container check in an isolated child (BLD-C005). Returns a refusal code, or None when it may be heard."""
+    """The container check in a limited child process (BLD-C005, BLD-C012). A refusal code, or None when it may be heard."""
     limit = get_settings().speech_max_seconds + PROBE_MARGIN_S
     try:
         answer = isolated.run(PROBE, [str(limit)], data, timeout_s=15, memory_mb=256, cpu_s=5)
@@ -296,10 +299,13 @@ def remove(conn: Conn, voice_id: str, reason_code: str, by: str | None = None) -
         if row is None or row["deleted_at"] is not None:
             return False
         _drop_recording(conn, voice_id, row["store_key"], reason_code)
+        # Deleted before it became text: it ends as failed with the reason (deleted_by_person, shared…), so the
+        # person's screen can say why rather than show nothing (BLD-C013).
         conn.execute(
             "UPDATE voice_notes SET transcript_encrypted = NULL, deleted_at = now(), "
+            "failure = CASE WHEN state IN ('ready', 'failed') THEN failure ELSE %s END, "
             "state = CASE WHEN state IN ('ready', 'failed') THEN state ELSE 'failed' END WHERE id = %s",
-            (voice_id,),
+            (reason_code, voice_id),
         )
         _audit(conn, voice_id, "voice_note.deleted", reason_code, by)
     return True
@@ -331,10 +337,18 @@ def drop_for_ideas(conn: Conn, idea_uuids: list[str], reason_code: str) -> int:
     for u in idea_uuids:
         try:
             done += purge_idea(conn, u, reason_code)
-        except (
-            Exception
-        ):  # the store unreachable: the bucket's own rule and the sweep's backstop still delete it
+        except Exception:  # the store unreachable: the bucket's own rule and the sweep's backstop delete it
             failed += 1
+            conn.execute(  # counted and audited, IDs only (BLD-C013)
+                "INSERT INTO audit_log (actor, action, entity, after, reason) VALUES (%s, %s, %s, %s, %s)",
+                (
+                    ACTOR,
+                    "voice_note.drop_incomplete",
+                    f"idea:{u}",
+                    Jsonb({"reason_code": reason_code, "left_to": "bucket_lifecycle_and_sweep"}),
+                    reason_code,
+                ),
+            )
     conn.execute("DELETE FROM voice_notes WHERE idea_uuid = ANY(%s::uuid[])", (idea_uuids,))
     if failed:
         log.warning("voice.drop_incomplete", failed_count=failed)

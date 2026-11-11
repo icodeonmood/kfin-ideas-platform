@@ -1,6 +1,8 @@
 """How long a recording is, and what it is, without decoding it (DEC-096, BLD-C005). Standard library only.
 
-Runs as an isolated child (`core.isolated.run`), after the virus scan and before any decoder sees the file:
+Runs as a child process (`core.isolated.run`: cleared environment, closed descriptors, resource limits, a timeout;
+same user, filesystem and network as the worker, which is acceptable for this stdlib-only parser, BLD-C012), after
+the virus scan and before any decoder sees the file:
 `python -I voice/probe.py --memory-mb 256 --cpu-s 5 <max_seconds>` with the recording on stdin, one JSON line out.
 It walks the container's own structure and reads timestamps, never audio samples, so a small file that claims
 hours of sound costs a few milliseconds here instead of minutes of decoding in the worker.
@@ -66,6 +68,8 @@ TRACKS, TRACK_ENTRY, TRACK_TYPE, CODEC_ID = 0x1654AE6B, 0xAE, 0x83, 0x86
 CLUSTER_TIMECODE, SIMPLE_BLOCK, BLOCK_GROUP, BLOCK = 0xE7, 0xA3, 0xA0, 0xA1
 TOP_LEVEL = {SEGMENT, CLUSTER, INFO, TRACKS, 0x114D9B74, 0x1C53BB6B, 0x1254C367, 0x1941A469, 0x1043A770}
 UNKNOWN = -1
+SEGMENT_ID = b"\x18\x53\x80\x67"
+TRAILING_PADDING = 16  # bytes allowed after a sized Segment
 
 
 def _vint(data: bytes, pos: int, keep_marker: bool) -> tuple[int, int]:
@@ -123,6 +127,8 @@ def _webm(data: bytes, max_seconds: float) -> Probe:
     pos = spos
     while pos < send:
         cid, csize, cpos = _element(data, pos)
+        if cid == SEGMENT:
+            raise Refused("unreadable")  # a second Segment (BLD-C013)
         if cid == CLUSTER:
             pos, latest = _cluster(data, cpos, csize, send, scale, latest, max_seconds)
             continue
@@ -151,6 +157,11 @@ def _webm(data: bytes, max_seconds: float) -> Probe:
                 codecs.append("opus")
         pos = cpos + csize
     if not codecs:
+        raise Refused("unreadable")
+    # Nothing may follow a sized Segment but a little padding, and never a second Segment (BLD-C013): bytes there
+    # would be data no check above has read.
+    trailing = data[send:]
+    if len(trailing) > TRAILING_PADDING or SEGMENT_ID in trailing:
         raise Refused("unreadable")
     return Probe("webm", "opus", latest)
 
@@ -352,6 +363,8 @@ def _fragments(data: bytes, boxes: list[tuple[bytes, int, int]], timescale: int,
 
 
 def _wav(data: bytes, max_seconds: float) -> Probe:
+    """PCM or float only. The header must agree with itself (byte rate = sample rate × channels × bytes per
+    sample) and with the file (the data chunk is all there): a header that lies is refused, not trusted (BLD-C013)."""
     pos = 12
     byte_rate = 0
     fmt = 0
@@ -361,19 +374,23 @@ def _wav(data: bytes, max_seconds: float) -> Probe:
         size = struct.unpack("<I", data[pos + 4 : pos + 8])[0]
         body = pos + 8
         if kind == b"fmt " and size >= 16:
-            fmt = struct.unpack("<H", data[body : body + 2])[0]
-            byte_rate = struct.unpack("<I", data[body + 8 : body + 12])[0]
+            fmt, channels, rate, byte_rate, align, bits = struct.unpack("<HHIIHH", data[body : body + 16])
             if (
                 fmt == 0xFFFE and size >= 26
             ):  # extensible: the real format is the sub-format's first two bytes
                 fmt = struct.unpack("<H", data[body + 24 : body + 26])[0]
             if fmt not in (1, 3):  # PCM or float
                 raise Refused("codec_not_allowed")
+            if not channels or not rate or bits % 8 or not bits:
+                raise Refused("unreadable")
+            if byte_rate != rate * channels * bits // 8 or align != channels * bits // 8:
+                raise Refused("unreadable")
         elif kind == b"data":
             if not byte_rate:
                 raise Refused("unreadable")
-            available = min(size, len(data) - body)  # a header may claim more than the file holds
-            seconds = available / byte_rate
+            if size > len(data) - body:  # the header claims more sound than the file holds
+                raise Refused("unreadable")
+            seconds = size / byte_rate
             _check(seconds, max_seconds)
         pos = body + size + (size & 1)
     if seconds is None or not fmt:

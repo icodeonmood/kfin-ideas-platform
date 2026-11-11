@@ -1,10 +1,17 @@
-"""Run a standalone script on hostile input in a short-lived child process (DEC-096, BLD-C005).
+"""Run a standalone script on costly or hostile input in a short-lived child process (DEC-096, BLD-C005, BLD-C012).
 
-The child is a separate interpreter started with `-I` (no user site, no environment-driven imports) and a
-minimal environment: no database URL, no keys, no tokens, nothing from the worker's settings. It reads the input
-on stdin, sets its own limits first thing (address space, CPU seconds, file size, no core files) before it
-touches the input, and prints one JSON object on its last line of stdout. The parent enforces a wall-clock
-timeout and kills it. Its stderr is discarded: a decoder's message can carry pieces of the input.
+What it gives: a separate interpreter started with `-I` (no user site, no environment-driven imports); a cleared
+environment (the worker's database URL, keys and tokens are not passed, and the runner refuses secret-looking
+variables); no inherited file descriptors (`close_fds`); its own limits, set first thing before it touches the
+input (address space, CPU seconds, file size, no core files); a wall-clock timeout; and its stderr discarded (a
+decoder's message can carry pieces of the input). So a file that would exhaust memory or CPU, or crash a parser,
+costs one child and never the worker.
+
+What it does not give: the child runs as the worker's own user, on the worker's filesystem and network. Code that
+took control of it could read what that user can read, including the worker's `/proc/<pid>/environ` and any
+mounted secret, and could reach the database and the store. It is a resource boundary, not a security boundary.
+The stdlib-only probe is low risk; a native decoder (the speech engine) is not, so outside dev and test the engine
+runs in the isolated speech service instead (BLD-C012).
 """
 
 from __future__ import annotations

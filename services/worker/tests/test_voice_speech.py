@@ -164,7 +164,7 @@ def test_the_watch_switches_voice_off_when_fake_runs_outside_dev(
     monkeypatch.setattr(watch, "switch_off", record)
     for env, mode, expected in (
         ("uat", "fake", 1),
-        ("prod", "local", 0),
+        ("prod", "local", 1),  # no isolated speech service (BLD-C012)
         ("dev", "fake", 0),
         ("test", "fake", 0),
     ):
@@ -175,3 +175,39 @@ def test_the_watch_switches_voice_off_when_fake_runs_outside_dev(
     settings(APP_ENV="uat", SPEECH_MODE="fake")
     watch.Watch.speech_route(None)  # type: ignore[arg-type]
     assert calls[-1][0] == "capture.voice" and "DEC-096" in calls[-1][1]
+
+
+def test_local_speech_outside_dev_needs_the_isolated_service(settings: Any, tmp_path: Any) -> None:
+    """The worker's child process is not a security boundary (BLD-C012): outside dev and test, `local` refuses
+    without SPEECH_ENGINE_URL; with it, the isolated service is the only route."""
+    settings(APP_ENV="uat", SPEECH_MODE="local", SPEECH_MODEL_PATH=str(tmp_path), SPEECH_ENGINE_URL="")
+    with pytest.raises(speech.SpeechUnavailable) as exc:
+        speech.transcribe(WEBM, "audio/webm")
+    assert exc.value.code == "isolation_required"
+    settings(SPEECH_ENGINE_URL="http://speech:8300")
+    with pytest.raises(speech.SpeechUnavailable) as exc:
+        speech.transcribe(WEBM, "audio/webm")
+    assert exc.value.code != "isolation_required"
+
+
+def test_the_watch_switches_voice_off_when_the_engine_is_not_isolated(
+    settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core import watch
+
+    calls: list[str] = []
+
+    def record(conn: object, name: str, reason: str, actor: str = "x") -> bool:
+        calls.append(reason)
+        return True
+
+    monkeypatch.setattr(watch, "switch_off", record)
+    settings(APP_ENV="prod", SPEECH_MODE="local", SPEECH_ENGINE_URL="")
+    watch.Watch.speech_route(None)  # type: ignore[arg-type]
+    assert len(calls) == 1 and "BLD-C012" in calls[0]
+    calls.clear()
+    settings(SPEECH_ENGINE_URL="http://speech:8300")
+    watch.Watch.speech_route(None)  # type: ignore[arg-type]
+    settings(APP_ENV="dev", SPEECH_ENGINE_URL="")
+    watch.Watch.speech_route(None)  # type: ignore[arg-type]
+    assert calls == []

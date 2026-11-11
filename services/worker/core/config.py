@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     speech_mode: str = "fake"  # fake | local | sarvam
     speech_local_engine: str = "faster-whisper"  # faster-whisper | indic-conformer (coming soon)
     speech_model_path: str = ""  # local only: folder with the model files (never fetched at run time)
+    # Outside dev and test, `local` speech must be the isolated speech service (BLD-C012): its own container with
+    # no route to the database, the store or the internet. Empty = the in-worker child, allowed in dev and test only.
+    speech_engine_url: str = ""
     speech_max_seconds: int = 180
     speech_threads: int = 2  # the engine child's CPU threads
     speech_memory_mb: int = 4096  # the engine child's address-space limit (Linux)

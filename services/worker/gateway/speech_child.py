@@ -1,11 +1,14 @@
-"""The engine on KFin's own server, run as an isolated child (DEC-096, BLD-C005). Standalone: no worker imports.
+"""The engine on KFin's own server as a child process of the worker, for dev and test only (DEC-096, BLD-C005,
+BLD-C012). Standalone: no worker imports.
 
 `python -I gateway/speech_child.py --memory-mb N --cpu-s N <model_path> <max_seconds> <threads>`, the recording on
 stdin, one JSON line out: {"text", "language", "seconds"} or {"error": code}. It sets its own limits before it
-reads anything, decodes and transcribes here (faster-whisper, CPU, int8), and never sees the database, keys or
-tokens: the parent starts it with a minimal environment. The model files are read from disk only; nothing is
-downloaded. The probe has already checked the container, the codec and the length; the length is checked again
-after decoding.
+reads anything and decodes and transcribes here (faster-whisper, CPU, int8). Its environment is cleared and its
+file descriptors closed, so it is not handed the database URL, keys or tokens; but it runs as the worker's user,
+with the worker's filesystem and network, so it is not a security boundary against a decoder exploit
+(`core/isolated.py`). Outside dev and test the worker refuses this route and uses the isolated speech service.
+The model files are read from disk only; nothing is downloaded. The probe has already checked the container, the
+codec and the length; the length is checked again after decoding.
 """
 
 from __future__ import annotations

@@ -2,7 +2,8 @@
 
 - `attachments.upload`: the virus scanner has not answered for 5 minutes. Files already uploaded are untouched.
 - `capture.voice`: outside dev and test, voice notes are on while `SPEECH_MODE` is `fake` (DEC-096, BLD-C007): a
-  sample sentence would stand in for people's words. Also checked once when the worker starts.
+  sample sentence would stand in for people's words; or while `local` has no isolated speech service
+  (`SPEECH_ENGINE_URL`, BLD-C012). Also checked once when the worker starts.
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.
@@ -92,12 +93,18 @@ class Watch:
 
     @staticmethod
     def speech_route(conn: Conn) -> bool:
+        """Voice notes off outside dev and test when the route is fake (BLD-C007) or the engine would run inside the
+        worker instead of the isolated speech service (BLD-C012)."""
         s = get_settings()
-        if not s.is_production_like or s.speech_mode != "fake":
+        if not s.is_production_like:
             return False
-        return switch_off(
-            conn, "capture.voice", "SPEECH_MODE is fake outside dev and test (automatic, DEC-096)"
-        )
+        if s.speech_mode == "fake":
+            reason = "SPEECH_MODE is fake outside dev and test (automatic, DEC-096)"
+        elif s.speech_mode == "local" and not s.speech_engine_url:
+            reason = "Speech engine not isolated: SPEECH_ENGINE_URL unset outside dev and test (automatic, BLD-C012)"
+        else:
+            return False
+        return switch_off(conn, "capture.voice", reason)
 
     def run(self, conn: Conn) -> None:
         for check in (self.scanner, self.bounces, self.speech_route):

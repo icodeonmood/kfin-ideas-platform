@@ -142,15 +142,19 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         with connect(autocommit=True) as conn:
             row = conn.execute("SELECT state FROM kill_switches WHERE name = 'capture.voice'").fetchone()
         on = row is not None and row["state"] == "on"
-        # On outside dev and test: only the engine on KFin's own server (hosted routes need InfoSec and the DPO).
-        mode_ok = not on or not s.is_production_like or s.speech_mode == "local"
+        # On outside dev and test: only the engine on KFin's own server, through the isolated speech service
+        # (BLD-C012); hosted routes need InfoSec and the DPO.
+        mode_ok = (
+            not on or not s.is_production_like or (s.speech_mode == "local" and bool(s.speech_engine_url))
+        )
         try:
             versioned = versioning(s.s3_bucket_quarantine)
         except Exception:  # a store with no versioning at all (the dev gateway) cannot keep old versions
             versioned = "unsupported"
         return (
             mode_ok and versioned != "Enabled",
-            f"capture.voice {'on' if on else 'off'}; SPEECH_MODE {s.speech_mode}; quarantine versioning {versioned}",
+            f"capture.voice {'on' if on else 'off'}; SPEECH_MODE {s.speech_mode}; "
+            f"isolated service {'set' if s.speech_engine_url else 'unset'}; quarantine versioning {versioned}",
         )
 
     return [

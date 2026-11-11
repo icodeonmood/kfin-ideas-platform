@@ -129,3 +129,39 @@ def test_a_child_that_eats_memory_is_stopped(tmp_path: Path) -> None:
     )
     with pytest.raises(isolated.IsolatedFailed):
         isolated.run(script, [], b"", timeout_s=15, memory_mb=128, cpu_s=5)
+
+
+def _sized_segment(extra: bytes = b"") -> bytes:
+    """The Chrome clip with its unknown Segment size replaced by the real one, then `extra` after it."""
+    unknown = b"\x18\x53\x80\x67\x01\xff\xff\xff\xff\xff\xff\xff"
+    at = f.CHROME_WEBM.index(unknown)
+    body = f.CHROME_WEBM[at + len(unknown) :]
+    sized = b"\x18\x53\x80\x67\x01" + len(body).to_bytes(7, "big")
+    return f.CHROME_WEBM[:at] + sized + body + extra
+
+
+def test_nothing_may_follow_a_webm_segment_but_padding() -> None:
+    """BLD-C013: bytes after a sized Segment are data no check has read; a second Segment is refused."""
+    assert probe(_sized_segment(), LIMIT).seconds == pytest.approx(2.1, abs=0.2)
+    assert probe(_sized_segment(bytes(8)), LIMIT).container == "webm"
+    for extra in (bytes(200), b"\x18\x53\x80\x67\x01\xff\xff\xff\xff\xff\xff\xff" + bytes(4)):
+        with pytest.raises(Refused) as exc:
+            probe(_sized_segment(extra), LIMIT)
+        assert exc.value.code == "unreadable"
+    with pytest.raises(Refused):  # a second Segment inside an unknown-size first one
+        probe(f.CHROME_WEBM + b"\x18\x53\x80\x67\x01\xff\xff\xff\xff\xff\xff\xff", LIMIT)
+
+
+def test_a_wav_header_that_disagrees_with_itself_or_the_file_is_refused() -> None:
+    """BLD-C013: the byte rate must be rate × channels × bytes per sample, and the data must all be there."""
+    import struct
+
+    good = f.wav(2)
+    at = good.index(b"fmt ") + 8
+    lying_rate = good[: at + 8] + struct.pack("<I", 10) + good[at + 12 :]  # claims 10 bytes a second
+    data_at = good.index(b"data") + 4
+    lying_size = good[:data_at] + struct.pack("<I", 10 * 1024 * 1024) + good[data_at + 4 :]
+    for data in (lying_rate, lying_size):
+        with pytest.raises(Refused) as exc:
+            probe(data, LIMIT)
+        assert exc.value.code == "unreadable"

@@ -2,10 +2,15 @@
 
 - `fake` (dev and tests): a synthetic test recording carries its own text after the marker `FAKE-TRANSCRIPT:`;
   any other recording gives one fixed sample sentence. No audio is decoded.
-- `local`: the engine runs on KFin's own server, with no network, in an isolated child process (BLD-C005). The
-  library is installed only in images built with `--build-arg WITH_SPEECH=1` and the model files come from
-  `SPEECH_MODEL_PATH` (never fetched at run time, never in Git), like BGE-M3 (BLD-080). faster-whisper first; the
-  engine interface lets AI4Bharat IndicConformer slot in for Indian languages ("coming soon").
+- `local`: the engine runs on KFin's own server, no third party. Outside dev and test it must be the isolated
+  speech service (`SPEECH_ENGINE_URL`, its own container with no route to the database, the store or the
+  internet; BLD-C012), and refuses with `isolation_required` without it. In dev and test it may run in a child
+  process of the worker (`gateway/speech_child.py`): a cleared environment, closed file descriptors, resource
+  limits and a timeout, but the same user, filesystem and network as the worker, so it bounds a costly file and
+  is not a security boundary against a decoder exploit. The library is installed only in images built with
+  `--build-arg WITH_SPEECH=1`, and the model files come from `SPEECH_MODEL_PATH` (never fetched at run time,
+  never in Git), like BGE-M3 (BLD-080). faster-whisper first; the engine interface lets AI4Bharat IndicConformer
+  slot in for Indian languages ("coming soon").
 - `fake` is refused outside dev and test (`fake_not_allowed`, BLD-C007).
 - Hosted routes (`sarvam` first): a model call that sends raw voice to a third party. Voice cannot be tagged
   before it leaves (non-negotiable 2), so a hosted route refuses unless BOTH `SPEECH_HOSTED_APPROVAL` names the
@@ -67,6 +72,10 @@ def transcribe(data: bytes, mime: str, conn: Conn | None = None) -> Transcript:
             raise SpeechUnavailable("fake_not_allowed")
         return _fake(data)
     if mode == "local":
+        if s.speech_engine_url:
+            return _speech_service(data, mime)
+        if s.is_production_like:  # the in-worker child is not a security boundary (BLD-C012)
+            raise SpeechUnavailable("isolation_required")
         return local_engine().transcribe(data, mime)
     if mode in HOSTED:
         hosted_allowed(conn)
@@ -108,11 +117,19 @@ def local_engine() -> Engine:
     return _engine
 
 
+def _speech_service(data: bytes, mime: str) -> Transcript:
+    """The isolated speech service (BLD-C012, built in round B). Until it exists the route refuses."""
+    raise SpeechUnavailable("engine_service_coming_soon")
+
+
 class FasterWhisper:
     """faster-whisper (CTranslate2) on CPU with int8 weights, about 1–2 GB of memory for a small or medium
-    multilingual model. The decode and the transcription both run in an isolated child (`gateway/speech_child.py`)
-    with a minimal environment, memory and CPU limits and a timeout (BLD-C005): a hostile file costs one child,
-    never the worker that holds the database credentials and the encryption key. The model loads per note."""
+    multilingual model, for dev and test only (BLD-C012). The decode and the transcription run in a child process
+    (`gateway/speech_child.py`) with a cleared environment (no database URL, keys or tokens passed), no inherited
+    file descriptors, memory and CPU limits and a timeout (BLD-C005), so a costly or crashing file costs one child.
+    It still runs as the worker's user, sees the worker's filesystem (including `/proc/<pid>/environ` of the
+    worker) and network: a decoder exploit could reach secrets and the database. Hence the isolated service
+    outside dev and test. The model loads per note."""
 
     name = "faster-whisper"
     CHILD = Path(__file__).resolve().with_name("speech_child.py")

@@ -323,3 +323,45 @@ def test_one_failing_note_does_not_stop_the_sweep(setup: Any, monkeypatch: pytes
     monkeypatch.setattr(service, "remove", flaky)
     assert service.sweep(conn) >= 1
     assert ("voice_note.deleted", "retention_24h") in audits(conn, ids[1])
+
+
+def test_a_note_deleted_before_it_is_text_says_why(setup: Any) -> None:
+    """BLD-C013: deleted mid-flight, it ends as failed with the reason, and the person's status says so."""
+    make, conn = setup
+    person = make()
+    b = person.browser()
+    draft = quick_draft(b)
+    voice_id = "7a1e0c52-1d2e-4c3b-9a8f-0e1d2c3b4a60"
+    conn.execute(  # still waiting to be heard (no job, so no race with the stack's worker)
+        "INSERT INTO voice_notes (id, idea_uuid, uploaded_by_code, mime, bytes) VALUES (%s, %s, %s, 'audio/wav', 64)",
+        (voice_id, draft, person.contributor_code),
+    )
+    assert b.request("DELETE", f"/api/submissions/{draft}/voice/{voice_id}").status_code == 204
+    assert b.get(f"/api/submissions/{draft}/voice/{voice_id}").json() == {
+        "id": voice_id,
+        "state": "failed",
+        "failure": "deleted_by_person",
+    }
+
+
+def test_a_store_failure_while_dropping_is_counted_and_audited(
+    setup: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-C013: the rows still go (the bucket rule and the sweep catch the object), and the audit says so."""
+    make, conn = setup
+    b = make().browser()
+    draft = quick_draft(b)
+    note = send_when_on(b, draft, recording("Dividend letters are posted twice."))
+    settle(b, draft, note["id"])
+
+    def store_down(c: Any, idea_uuid: str, reason_code: str) -> int:
+        raise RuntimeError("store unreachable")
+
+    monkeypatch.setattr(service, "purge_idea", store_down)
+    service.drop_for_ideas(conn, [draft], "test_store_down")
+    assert conn.execute("SELECT 1 FROM voice_notes WHERE id = %s", (note["id"],)).fetchone() is None
+    row = conn.execute(
+        "SELECT after FROM audit_log WHERE entity = %s AND action = 'voice_note.drop_incomplete'",
+        (f"idea:{draft}",),
+    ).fetchone()
+    assert row["after"] == {"reason_code": "test_store_down", "left_to": "bucket_lifecycle_and_sweep"}
