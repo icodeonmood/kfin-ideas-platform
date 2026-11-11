@@ -31,7 +31,7 @@ from core.logging import get_logger
 from okf.frontmatter import parse
 from okf.validate import check_concept_meta
 from pii.patterns import scan
-from repo_writer.git import Git, GitError
+from repo_writer.git import Git, GitError, seed_in_progress, seed_marker_age
 from repo_writer.render import (
     HistoryRow,
     existing_state,
@@ -67,6 +67,7 @@ PUSH_BACKOFF_S = (2, 5, 15, 60)
 RETRY_BACKOFF_S = (1, 5, 15, 60)
 STUCK_AFTER_ATTEMPTS = 5
 PUSH_ALERT_AFTER_S = 15 * 60
+SEED_SLOW_S = 60  # a seed holding the marker longer than this is worth a warning (BLD-A167)
 
 
 class LockLost(RuntimeError):
@@ -151,6 +152,15 @@ class RepoWriter:
         self._assert_lock()
         if not self.git.is_repo():
             raise GitError("company repo not found; run `make seed` first")
+        if seed_in_progress(self.git.path):  # a seed is writing the repo: never reset it (BLD-A167)
+            age = seed_marker_age(self.git.path) or 0.0
+            (log.warning if age > SEED_SLOW_S else log.info)("repo_writer.waiting_for_seed", seconds=int(age))
+            return []
+        if (
+            self.git.head() is None
+        ):  # initialised but never committed: a seed's first moments, or a bad restore
+            log.warning("repo_writer.repo_has_no_commit")
+            return []
         self.git.clear_stale_locks()  # safe: we hold the only writer lock
         if self.git.is_dirty():
             log.warning("repo_writer.dirty_tree_reset")
@@ -167,6 +177,8 @@ class RepoWriter:
             for event in pending:
                 if time.monotonic() < self._retry_at.get(int(event["id"]), 0.0):
                     break  # still backing off on the event at the head of the queue
+                if seed_in_progress(self.git.path):
+                    break  # a seed started during this round; the rest wait for the next one (BLD-A167)
                 try:
                     outcome = self._one(conn, event, recovered)
                 except DeadLetter as exc:

@@ -21,7 +21,7 @@ from identity.hr_import import import_rows, read_csv
 from identity.taxonomy_map import load as load_taxonomy
 from index.indexer import Indexer
 from okf.validate import validate_bundle
-from repo_writer.git import Git
+from repo_writer.git import Git, seeding
 from rules import RulesConfigError, load_all
 
 SEED_MESSAGE = (
@@ -117,15 +117,16 @@ def main(argv: list[str] | None = None) -> int:
     dest = Path(settings.company_repo_path)
 
     overlay_dir = args.seed_dir.parent / "dev-overlay"
-    created = create_company_repo(args.seed_dir, dest, settings.repo_writer_author, overlay_dir)
-    print(f"company repo: {'created' if created else 'already exists'} at {dest}")
-    if not created:
-        refreshed = refresh_seed_files(args.seed_dir, dest, settings.repo_writer_author)
-        if refreshed:
-            print(f"dev seed refresh: {refreshed} seed files updated")
-    overlay = 0 if created else apply_dev_overlay(overlay_dir, dest, settings.repo_writer_author)
-    if overlay:
-        print(f"dev overlay: {overlay} synthetic files added")
+    with seeding(dest):  # the running repo writer waits until the seed's commits are in (BLD-A167)
+        created = create_company_repo(args.seed_dir, dest, settings.repo_writer_author, overlay_dir)
+        print(f"company repo: {'created' if created else 'already exists'} at {dest}")
+        if not created:
+            refreshed = refresh_seed_files(args.seed_dir, dest, settings.repo_writer_author)
+            if refreshed:
+                print(f"dev seed refresh: {refreshed} seed files updated")
+        overlay = 0 if created else apply_dev_overlay(overlay_dir, dest, settings.repo_writer_author)
+        if overlay:
+            print(f"dev overlay: {overlay} synthetic files added")
 
     errors = [i for i in validate_bundle(dest) if i.level == "error"]
     if errors:
