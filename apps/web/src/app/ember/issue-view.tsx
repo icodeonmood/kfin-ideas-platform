@@ -2,7 +2,7 @@
  * One issue of The Ember (DEC-062, DEC-070, BLD-128), in the order it reads: impact first, because impact is what
  * makes the next person share an idea. Everything here is what everyone may already see; empty sections say so.
  */
-import { OneCardBody } from "@/components/one-card";
+import { jerseyProps, OneCardBody } from "@/components/one-card";
 import { measureList } from "@/lib/measures";
 import type { EmberIssue, EmberOne } from "@/server/ember";
 import type { PublicOne } from "@/server/ones";
@@ -21,7 +21,7 @@ function Ones({ ones, id, title, empty }: { ones: EmberOne[]; id: string; title:
       {ones.length ? (
         <ul className="one-cards">
           {ones.map((o) => (
-            <li key={o.number} className="one-card">
+            <li key={o.number} {...jerseyProps(asCard(o))}>
               <OneCardBody one={asCard(o)} />
             </li>
           ))}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { IdeaCard } from "@/components/idea-card";
-import { OneCardBody } from "@/components/one-card";
+import { jerseyProps, OneCardBody } from "@/components/one-card";
 import { day } from "@/lib/dates";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { currentUser } from "@/server/auth/current";
@@ -50,7 +50,7 @@ function OnesSection({ ones }: { ones: PublicOne[] }) {
       {ones.length ? (
         <ul className="one-cards">
           {ones.map((o) => (
-            <li key={o.number} className="one-card">
+            <li key={o.number} {...jerseyProps(o)}>
               <OneCardBody one={o} />
             </li>
           ))}

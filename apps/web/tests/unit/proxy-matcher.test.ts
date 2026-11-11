@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -14,9 +14,30 @@ describe("proxy matcher", () => {
     expect(covered("/brand/email-mark-white.png")).toBe(false);
   });
 
+  it("leaves the design system's script public, so signed-out pages can load it (BLD-D003)", () => {
+    expect(covered("/ds/opc.js")).toBe(false);
+  });
+
   it("still covers every page and API route", () => {
-    for (const path of ["/", "/ember", "/my-ideas", "/api/ideas", "/brandnew", "/ember/brand/x"]) {
+    for (const path of [
+      "/",
+      "/ember",
+      "/my-ideas",
+      "/api/ideas",
+      "/brandnew",
+      "/ember/brand/x",
+      "/dsx",
+      "/ember/ds/x",
+    ]) {
       expect(covered(path)).toBe(true);
+    }
+  });
+
+  // Excluded paths skip sign-in and the kill-switch check (non-negotiable 9). Only static files may live there:
+  // a page or route handler under app/brand or app/ds would be public without anyone noticing.
+  it("has no page or route under the public static paths", () => {
+    for (const dir of ["brand", "ds"]) {
+      expect(existsSync(fileURLToPath(new URL(`../../src/app/${dir}`, import.meta.url)))).toBe(false);
     }
   });
 });
