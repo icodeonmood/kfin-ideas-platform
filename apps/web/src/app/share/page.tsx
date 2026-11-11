@@ -41,6 +41,7 @@ export default async function Share() {
                   {new Date(d.updated_at).toLocaleString("en-IN", {
                     dateStyle: "medium",
                     timeStyle: "short",
+                    timeZone: "Asia/Kolkata", // rendered on the server, which may run in UTC (BLD-A165)
                   })}
                 </Link>
               </li>

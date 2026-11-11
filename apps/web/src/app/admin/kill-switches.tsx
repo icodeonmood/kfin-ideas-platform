@@ -98,7 +98,9 @@ function SwitchRow({ s, onDone }: { s: Switch; onDone: (message: string) => Prom
         <span className={`state state-${s.state}`}>{s.state === "on" ? "On" : "Off"}</span>
       </td>
       <td>
-        {s.changed_by ? new Date(s.changed_at).toLocaleString("en-IN") : "Never changed"}
+        {s.changed_by
+          ? new Date(s.changed_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+          : "Never changed"}
         {s.reason ? <div className="muted">{s.reason}</div> : null}
       </td>
       <td>

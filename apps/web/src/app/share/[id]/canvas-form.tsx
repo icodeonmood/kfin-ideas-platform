@@ -116,7 +116,13 @@ export function CanvasForm(props: Props) {
         if (res?.ok) {
           lastSaved.current = json;
           setSaveState("saved");
-          setSavedAt(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+          setSavedAt(
+            new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "Asia/Kolkata",
+            }),
+          );
         } else {
           setSaveState("error");
         }
