@@ -57,12 +57,27 @@ def ticker(poll_seconds: float = 20.0) -> None:
             time.sleep(poll_seconds)
 
 
+def _speech_route_guard() -> None:
+    """DEC-096 (BLD-C007): voice notes never run on the fake speech route outside dev and test. The watch checks
+    every minute; this checks once before anything else starts, and switches `capture.voice` off (audited)."""
+    from core.db import connect
+    from core.watch import Watch
+
+    try:
+        with connect(autocommit=True) as conn:
+            if Watch.speech_route(conn):
+                log.error("service.voice_switched_off_fake_speech")
+    except Exception as exc:  # the database not up yet: the watch's first minute catches it
+        log.warning("service.speech_guard_skipped", error_type=type(exc).__name__)
+
+
 def main() -> None:
     settings = get_settings()
     roles = settings.roles
     log.info("service.starting", roles=sorted(roles))
     if "api" in roles:
         ensure_buckets()
+    _speech_route_guard()
     if "repo_writer" in roles:
         _guard("repo_writer", RepoWriter(settings).run_forever)
     if "indexer" in roles:

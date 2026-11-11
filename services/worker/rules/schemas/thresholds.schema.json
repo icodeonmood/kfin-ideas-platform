@@ -349,6 +349,26 @@
         "email_bounce_rate_hour"
       ],
       "additionalProperties": false
+    },
+    "voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_waiting",
+        "max_per_hour"
+      ],
+      "properties": {
+        "max_waiting": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "max_per_hour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      }
     }
   },
   "required": [

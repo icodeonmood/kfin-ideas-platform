@@ -876,6 +876,18 @@ def remove(conn: Conn) -> None:
                 "'process:demo', %s)",
                 (r["idea_id"], Jsonb({"demo": True, "path": repo_path_for(r["idea_id"], r["submitted_at"])})),
             )
+        if _has_table(
+            conn, "voice_notes"
+        ):  # voice notes first: the foreign key restricts (DEC-096, BLD-C006)
+            from voice.service import drop_for_ideas
+
+            uuids = [
+                str(r["id"])
+                for r in conn.execute(
+                    "SELECT id FROM ideas WHERE contributor_code = ANY(%s)", (codes,)
+                ).fetchall()
+            ]
+            drop_for_ideas(conn, uuids, "demo_removed")
         conn.execute("DELETE FROM ideas WHERE contributor_code = ANY(%s)", (codes,))
         conn.execute(
             "UPDATE users SET manager_user_id = NULL WHERE manager_user_id = ANY(%s::uuid[])", (users,)

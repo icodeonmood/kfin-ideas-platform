@@ -1,6 +1,8 @@
 """Automatic switch-offs outside the gateway (§7.6 "Flips itself when"). Run by the worker's ticker every minute.
 
 - `attachments.upload`: the virus scanner has not answered for 5 minutes. Files already uploaded are untouched.
+- `capture.voice`: outside dev and test, voice notes are on while `SPEECH_MODE` is `fake` (DEC-096, BLD-C007): a
+  sample sentence would stand in for people's words. Also checked once when the worker starts.
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.
@@ -17,6 +19,7 @@ from collections.abc import Callable
 from psycopg.types.json import Jsonb
 
 from core import killswitch
+from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
 
@@ -87,8 +90,17 @@ class Watch:
             return False
         return switch_off(conn, "comms.email", "More than 5% of email bounced in the last hour (automatic)")
 
+    @staticmethod
+    def speech_route(conn: Conn) -> bool:
+        s = get_settings()
+        if not s.is_production_like or s.speech_mode != "fake":
+            return False
+        return switch_off(
+            conn, "capture.voice", "SPEECH_MODE is fake outside dev and test (automatic, DEC-096)"
+        )
+
     def run(self, conn: Conn) -> None:
-        for check in (self.scanner, self.bounces):
+        for check in (self.scanner, self.bounces, self.speech_route):
             try:
                 check(conn)
             except Exception as exc:  # one watch failing must not stop the other, or the ticker

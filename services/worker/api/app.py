@@ -138,12 +138,13 @@ def voice_status(voice_id: str, idea_uuid: str) -> JSONResponse:
 
 
 @app.delete("/internal/voice/{voice_id}", dependencies=[Depends(require_token)])
-def delete_voice(voice_id: str, idea_uuid: str) -> Response:
-    """The person took the text, or threw the note away: the recording and the held text go."""
+def delete_voice(voice_id: str, idea_uuid: str, by: str = "") -> Response:
+    """The person took the text, or threw the note away: the recording and the held text go. `by` is their
+    contributor code, for the audit (IDs only)."""
     from voice import service as voice
 
     with connect(autocommit=True) as conn:
-        voice.remove_for(conn, voice_id, idea_uuid)
+        voice.remove_for(conn, voice_id, idea_uuid, by or None)
     return Response(status_code=204)
 
 

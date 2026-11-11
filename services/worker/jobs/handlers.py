@@ -36,7 +36,9 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
             for f in conn.execute("SELECT id FROM attachments WHERE idea_uuid = %s", (c["id"],)).fetchall():
                 service.remove(conn, f["id"])
                 files += 1
-            voice_service.purge_idea(conn, str(c["id"]), "draft_purged")  # recordings and held text (DEC-096)
+            voice_service.drop_for_ideas(
+                conn, [str(c["id"])], "draft_purged"
+            )  # first: the FK restricts (BLD-C006)
             conn.execute("DELETE FROM ideas WHERE id = %s", (c["id"],))
             deleted += 1
     log.info("drafts.purged", deleted_count=deleted, file_count=files)

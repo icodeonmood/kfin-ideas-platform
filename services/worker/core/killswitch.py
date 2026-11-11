@@ -51,6 +51,19 @@ def is_on(name: str, conn: Conn | None = None) -> bool:
     return states(conn).get(name) == "on"
 
 
+def is_on_fresh(name: str, conn: Conn | None = None) -> bool:
+    """One switch read straight from the table, past the 10-second cache: for a step that must never run on a
+    stale "on" (a hosted speech call sends raw voice out, DEC-096). Unknown counts as off."""
+    own = conn is None
+    c = conn or connect(autocommit=True)
+    try:
+        row = c.execute("SELECT state FROM kill_switches WHERE name = %s", (name,)).fetchone()
+    finally:
+        if own:
+            c.close()
+    return row is not None and row["state"] == "on"
+
+
 def clear_cache() -> None:
     _cache["at"], _cache["states"] = 0.0, {}
 

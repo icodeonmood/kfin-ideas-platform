@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     speech_local_engine: str = "faster-whisper"  # faster-whisper | indic-conformer (coming soon)
     speech_model_path: str = ""  # local only: folder with the model files (never fetched at run time)
     speech_max_seconds: int = 180
+    speech_threads: int = 2  # the engine child's CPU threads
+    speech_memory_mb: int = 4096  # the engine child's address-space limit (Linux)
+    speech_timeout_s: int = 300  # the engine child's wall-clock limit
     speech_hosted_approval: str = ""  # the InfoSec and DPO approval reference; empty = hosted routes refuse
     speech_hosted_key: str = ""
     speech_hosted_url: str = "https://api.sarvam.ai/speech-to-text"

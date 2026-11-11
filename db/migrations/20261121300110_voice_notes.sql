@@ -4,7 +4,9 @@
 -- draft purge, or after 24 hours). The row stays as a tombstone so each deletion can be audited.
 CREATE TABLE voice_notes (
   id                   uuid        PRIMARY KEY,
-  idea_uuid            uuid        NOT NULL REFERENCES ideas (id) ON DELETE CASCADE,
+  -- RESTRICT, not CASCADE (BLD-C006): an idea cannot go while it holds voice notes, so every path that deletes
+  -- ideas must call voice.service.drop_for_ideas first, which deletes the recordings from the bucket and audits it.
+  idea_uuid            uuid        NOT NULL REFERENCES ideas (id) ON DELETE RESTRICT,
   uploaded_by_code     text        NOT NULL,
   mime                 text        NOT NULL CHECK (mime IN ('audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav')),
   bytes                integer     NOT NULL CHECK (bytes > 0),

@@ -30,9 +30,11 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
 
 
 def switches(monkeypatch: pytest.MonkeyPatch, **on: bool) -> None:
-    monkeypatch.setattr(
-        speech.killswitch, "is_on", lambda name, conn=None: on.get(name.replace(".", "_"), False)
-    )
+    def state(name: str, conn: object = None) -> bool:
+        return on.get(name.replace(".", "_"), False)
+
+    monkeypatch.setattr(speech.killswitch, "is_on", state)
+    monkeypatch.setattr(speech.killswitch, "is_on_fresh", state)
 
 
 def test_fake_reads_the_text_a_synthetic_recording_carries(settings: Any) -> None:
@@ -116,3 +118,60 @@ def test_the_hosted_client_lives_in_the_gateway_and_uses_no_vendor_sdk() -> None
 )
 def test_recordings_are_typed_by_their_bytes(data: bytes, mime: str | None) -> None:
     assert service.sniff(data) == mime
+
+
+def test_fake_is_refused_outside_dev_and_test(settings: Any) -> None:
+    settings(SPEECH_MODE="fake", APP_ENV="uat")
+    with pytest.raises(speech.SpeechUnavailable) as exc:
+        speech.transcribe(WEBM, "audio/webm")
+    assert exc.value.code == "fake_not_allowed"
+    settings(APP_ENV="test")
+    assert speech.transcribe(WEBM, "audio/webm").text == speech.FAKE_SAMPLE
+
+
+def test_the_hosted_switch_is_read_past_the_cache(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cached read says on; the table says off a moment later: the fresh read wins (BLD-C011)."""
+    settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL="INFOSEC-2026-017 / DPO-2026-004")
+    monkeypatch.setattr(speech.killswitch, "is_on", lambda name, conn=None: True)
+    monkeypatch.setattr(speech.killswitch, "is_on_fresh", lambda name, conn=None: False)
+    with pytest.raises(speech.HostedRefused) as exc:
+        speech.transcribe(WEBM, "audio/webm")
+    assert exc.value.code == "hosted_switched_off"
+
+
+def test_the_local_engine_runs_in_an_isolated_child(settings: Any, tmp_path: Any) -> None:
+    """No faster-whisper on this machine: the child says so, and the worker never imported it (BLD-C005)."""
+    import sys
+
+    settings(SPEECH_MODE="local", SPEECH_MODEL_PATH=str(tmp_path), SPEECH_TIMEOUT_S="60")
+    with pytest.raises(speech.SpeechUnavailable) as exc:
+        speech.transcribe(WEBM, "audio/webm")
+    assert exc.value.code in {"engine_not_installed", "model_unavailable"}
+    assert "faster_whisper" not in sys.modules
+
+
+def test_the_watch_switches_voice_off_when_fake_runs_outside_dev(
+    settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core import watch
+
+    calls: list[tuple[str, str]] = []
+
+    def record(conn: object, name: str, reason: str, actor: str = "x") -> bool:
+        calls.append((name, reason))
+        return True
+
+    monkeypatch.setattr(watch, "switch_off", record)
+    for env, mode, expected in (
+        ("uat", "fake", 1),
+        ("prod", "local", 0),
+        ("dev", "fake", 0),
+        ("test", "fake", 0),
+    ):
+        calls.clear()
+        settings(APP_ENV=env, SPEECH_MODE=mode)
+        watch.Watch.speech_route(None)  # type: ignore[arg-type]
+        assert len(calls) == expected, (env, mode)
+    settings(APP_ENV="uat", SPEECH_MODE="fake")
+    watch.Watch.speech_route(None)  # type: ignore[arg-type]
+    assert calls[-1][0] == "capture.voice" and "DEC-096" in calls[-1][1]

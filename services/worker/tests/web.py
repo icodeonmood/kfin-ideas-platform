@@ -146,6 +146,18 @@ def people(conn: Conn) -> Iterator[Any]:
                 "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])))",
                 (created,),
             )
+            # Voice notes first: the foreign key restricts deleting an idea that has them (BLD-C006).
+            from voice.service import drop_for_ideas
+
+            uuids = [
+                str(r["id"])
+                for r in conn.execute(
+                    "SELECT id FROM ideas WHERE contributor_code IN "
+                    "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[]))",
+                    (created,),
+                ).fetchall()
+            ]
+            drop_for_ideas(conn, uuids, "test_teardown")
             conn.execute(
                 "DELETE FROM ideas WHERE contributor_code IN "
                 "(SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[]))",

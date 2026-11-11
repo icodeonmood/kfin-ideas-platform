@@ -132,6 +132,11 @@ scan:
   - 15
   - 60
   poll_interval_s: 2
+voice:
+  # Voice notes in quick capture (DEC-096, BLD-C005, BLD-C008): recordings not yet text per draft, and new
+  # recordings a person may send in an hour. Failed notes never count as waiting.
+  max_waiting: 3
+  max_per_hour: 10
 kill_switch_triggers:
   leak_hits_per_hour_for_ai_all: 3
   agent_error_rate_15min: 0.2

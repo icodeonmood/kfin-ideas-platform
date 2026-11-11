@@ -170,6 +170,30 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
             if args.sso_ready == "no":
                 reasons_c.append("SSO or environments not ready")
 
+    def voice_notes() -> None:
+        """DEC-096: voice notes may launch off (paused with their reason); on, only with the engine on KFin's own
+        server. The watch switches them off by itself if the fake speech route is set outside dev and test."""
+        s = get_settings()
+        with connect(autocommit=True) as conn:
+            row = conn.execute(
+                "SELECT state, reason FROM kill_switches WHERE name = 'capture.voice'"
+            ).fetchone()
+        on = row is not None and row["state"] == "on"
+        name = "Voice notes: off, or on with the engine on KFin's own server (DEC-096)"
+        if not on:
+            rows.append(
+                _row(name, "met", "off: paused with its reason; the screen says voice notes are coming")
+            )
+        elif s.speech_mode == "local" and s.speech_model_path:
+            rows.append(
+                _row(name, "met", "on; SPEECH_MODE local with a model path (IT, InfoSec and DPO cleared)")
+            )
+        else:
+            rows.append(
+                _row(name, "not met", f"on with SPEECH_MODE {s.speech_mode}; switch it off or fix the route")
+            )
+            reasons_b.append("voice notes on without the engine on KFin's own server")
+
     switches_off: list[str] = []
     section("Gatekeeper: personal-data recall 100%, false blocks under 5%", gatekeeper)
     section('Judge: "same" precision at least 0.85', judge)
@@ -178,6 +202,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     section("No open high or critical VAPT findings", vapt)
     section("Restore drill completed inside 4 hours", drill)
     section("Privacy notice live", privacy_and_sso)
+    section("Voice notes: off, or on with the engine on KFin's own server (DEC-096)", voice_notes)
 
     mode = "C. Preview" if reasons_c else "B. Capture first" if reasons_b else "A. Full"
     if mode == "A. Full" and any(r["state"] == "not met" for r in rows):

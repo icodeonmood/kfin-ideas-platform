@@ -2,10 +2,11 @@
 
 - `fake` (dev and tests): a synthetic test recording carries its own text after the marker `FAKE-TRANSCRIPT:`;
   any other recording gives one fixed sample sentence. No audio is decoded.
-- `local`: the engine runs inside the worker on KFin's own server, with no network. The library is installed
-  only in images built with `--build-arg WITH_SPEECH=1` and the model files come from `SPEECH_MODEL_PATH`
-  (never fetched at run time, never in Git), like BGE-M3 (BLD-080). faster-whisper first; the engine interface
-  lets AI4Bharat IndicConformer slot in for Indian languages ("coming soon").
+- `local`: the engine runs on KFin's own server, with no network, in an isolated child process (BLD-C005). The
+  library is installed only in images built with `--build-arg WITH_SPEECH=1` and the model files come from
+  `SPEECH_MODEL_PATH` (never fetched at run time, never in Git), like BGE-M3 (BLD-080). faster-whisper first; the
+  engine interface lets AI4Bharat IndicConformer slot in for Indian languages ("coming soon").
+- `fake` is refused outside dev and test (`fake_not_allowed`, BLD-C007).
 - Hosted routes (`sarvam` first): a model call that sends raw voice to a third party. Voice cannot be tagged
   before it leaves (non-negotiable 2), so a hosted route refuses unless BOTH `SPEECH_HOSTED_APPROVAL` names the
   InfoSec and DPO approval AND the `speech.hosted` switch is on. Both are off at launch. Plain HTTP, no vendor
@@ -16,11 +17,11 @@ Nothing here logs the recording or the text. Errors carry a code only.
 
 from __future__ import annotations
 
-import io
 from dataclasses import dataclass
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Protocol
 
-from core import killswitch
+from core import isolated, killswitch
 from core.config import get_settings
 from core.db import Conn
 
@@ -59,8 +60,11 @@ class Engine(Protocol):
 
 def transcribe(data: bytes, mime: str, conn: Conn | None = None) -> Transcript:
     """Turn one recording into text through the configured route."""
-    mode = get_settings().speech_mode
+    s = get_settings()
+    mode = s.speech_mode
     if mode == "fake":
+        if s.is_production_like:  # a sample sentence must never stand in for someone's words (BLD-C007)
+            raise SpeechUnavailable("fake_not_allowed")
         return _fake(data)
     if mode == "local":
         return local_engine().transcribe(data, mime)
@@ -74,7 +78,7 @@ def hosted_allowed(conn: Conn | None = None) -> None:
     """Raise unless a hosted route has its approval reference and its switch is on (both, every time)."""
     if not get_settings().speech_hosted_approval.strip():
         raise HostedRefused("hosted_not_approved")
-    if not killswitch.is_on("speech.hosted", conn):
+    if not killswitch.is_on_fresh("speech.hosted", conn):  # past the cache: raw voice would leave (BLD-C011)
         raise HostedRefused("hosted_switched_off")
 
 
@@ -105,33 +109,39 @@ def local_engine() -> Engine:
 
 
 class FasterWhisper:
-    """faster-whisper (CTranslate2) on CPU with int8 weights: about 1–2 GB of memory for a small or medium
-    multilingual model. The language is detected; voice-activity filtering drops silence."""
+    """faster-whisper (CTranslate2) on CPU with int8 weights, about 1–2 GB of memory for a small or medium
+    multilingual model. The decode and the transcription both run in an isolated child (`gateway/speech_child.py`)
+    with a minimal environment, memory and CPU limits and a timeout (BLD-C005): a hostile file costs one child,
+    never the worker that holds the database credentials and the encryption key. The model loads per note."""
 
     name = "faster-whisper"
+    CHILD = Path(__file__).resolve().with_name("speech_child.py")
 
     def __init__(self) -> None:
-        try:
-            from faster_whisper import WhisperModel  # type: ignore[import-not-found]
-        except ImportError:
-            raise SpeechUnavailable("engine_not_installed") from None  # needs WITH_SPEECH=1
-        path = get_settings().speech_model_path
-        if not path:
+        if not get_settings().speech_model_path:
             raise SpeechUnavailable("model_path_missing")
-        self._model: Any = WhisperModel(path, device="cpu", compute_type="int8", local_files_only=True)
 
     def transcribe(self, data: bytes, mime: str) -> Transcript:
-        limit = get_settings().speech_max_seconds
+        s = get_settings()
         try:
-            segments, info = self._model.transcribe(io.BytesIO(data), beam_size=1, vad_filter=True)
-            if info.duration and info.duration > limit + 15:
-                raise SpeechUnavailable("too_long")
-            text = " ".join(s.text.strip() for s in segments).strip()
-        except SpeechUnavailable:
-            raise
-        except Exception:  # decoder and model errors can carry audio details: keep only a code
-            raise SpeechUnavailable("unreadable") from None
-        return Transcript(text=text, language=info.language, seconds=float(info.duration or 0.0))
+            answer = isolated.run(
+                self.CHILD,
+                [s.speech_model_path, str(s.speech_max_seconds + 15), str(s.speech_threads)],
+                data,
+                timeout_s=s.speech_timeout_s,
+                memory_mb=s.speech_memory_mb,
+                cpu_s=s.speech_timeout_s * max(1, s.speech_threads),
+                env={"OMP_NUM_THREADS": str(s.speech_threads), "HF_HUB_OFFLINE": "1"},
+            )
+        except isolated.IsolatedFailed as exc:
+            raise SpeechUnavailable(f"engine_{exc.code}") from None
+        if "error" in answer:
+            raise SpeechUnavailable(str(answer["error"]))
+        return Transcript(
+            text=str(answer.get("text", "")),
+            language=answer.get("language"),
+            seconds=float(answer.get("seconds") or 0.0),
+        )
 
 
 # ---- hosted routes (off until InfoSec and the DPO approve) -------------------------------------------------

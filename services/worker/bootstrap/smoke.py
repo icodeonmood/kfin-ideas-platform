@@ -134,6 +134,25 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
             f"{row['n']} people, {row['other']} outside the synthetic domain, {grants['n']} role grants",
         )
 
+    def voice_notes() -> tuple[bool, str]:
+        """DEC-096: voice notes are off, or on with the engine on KFin's own server; never the fake route outside
+        dev and test. The quarantine bucket is never versioned (a version would outlive a delete)."""
+        from attachments.store import versioning
+
+        with connect(autocommit=True) as conn:
+            row = conn.execute("SELECT state FROM kill_switches WHERE name = 'capture.voice'").fetchone()
+        on = row is not None and row["state"] == "on"
+        # On outside dev and test: only the engine on KFin's own server (hosted routes need InfoSec and the DPO).
+        mode_ok = not on or not s.is_production_like or s.speech_mode == "local"
+        try:
+            versioned = versioning(s.s3_bucket_quarantine)
+        except Exception:  # a store with no versioning at all (the dev gateway) cannot keep old versions
+            versioned = "unsupported"
+        return (
+            mode_ok and versioned != "Enabled",
+            f"capture.voice {'on' if on else 'off'}; SPEECH_MODE {s.speech_mode}; quarantine versioning {versioned}",
+        )
+
     return [
         ("worker answers", worker_health),
         ("web answers", web_health),
@@ -147,6 +166,7 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         ("rules load", rules),
         ("index at the repo head", index_at_head),
         ("people are synthetic, no dev personas", people),
+        ("voice notes: safe speech route, quarantine not versioned", voice_notes),
     ]
 
 

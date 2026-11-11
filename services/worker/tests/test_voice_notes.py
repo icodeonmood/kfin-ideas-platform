@@ -1,4 +1,4 @@
-"""Voice notes in quick capture over HTTP against the running stack (DEC-096, BLD-C003).
+"""Voice notes in quick capture over HTTP against the running stack (DEC-096, BLD-C003, BLD-C005 to C010).
 
 A recording is accepted only while `capture.voice` is on; the worker scans it, hears it (SPEECH_MODE=fake reads
 the text a synthetic recording carries), joins spoken numbers, leaves out blocked values, holds the text
@@ -19,18 +19,18 @@ from attachments import store
 from core import killswitch
 from core.config import get_settings
 from core.db import connect
-from gateway.speech import FAKE_MARKER
+from tests import voice_files as f
 from tests.web import Browser, people
 from voice import service
 
 pytestmark = pytest.mark.stack
 
-WEBM = b"\x1a\x45\xdf\xa3" + bytes(32)
 CACHE_S = 10.5
 
 
 def recording(words: str) -> bytes:
-    return WEBM + FAKE_MARKER + words.encode() + b"\0" + bytes(64)
+    """A valid 2-second WAV that SPEECH_MODE=fake hears as `words` (the probe reads the container first)."""
+    return f.wav(2, words=words)
 
 
 def soon(check: Callable[[], bool], timeout: float = CACHE_S + 2) -> bool:
@@ -64,7 +64,7 @@ def quick_draft(b: Browser) -> str:
 
 
 def send(b: Browser, draft: str, data: bytes) -> Any:
-    return b.post(f"/api/submissions/{draft}/voice", files={"file": ("voice-note", data, "audio/webm")})
+    return b.post(f"/api/submissions/{draft}/voice", files={"file": ("voice-note", data, "audio/wav")})
 
 
 def send_when_on(b: Browser, draft: str, data: bytes) -> dict[str, Any]:
@@ -223,4 +223,103 @@ def test_with_capture_voice_off_new_notes_are_refused_and_waiting_ones_are_delet
     store.put(get_settings().s3_bucket_quarantine, f"voice/{voice_id}", recording("Never heard."))
     assert service.transcribe(conn, voice_id) == "failed"
     assert not store.exists(get_settings().s3_bucket_quarantine, f"voice/{voice_id}")
-    assert audits(conn, voice_id) == [("voice_note.recording_deleted", "voice_paused")]
+    assert audits(conn, voice_id) == [
+        ("voice_note.recording_deleted", "voice_paused"),
+        ("voice_note.deleted", "voice_paused"),
+    ]
+
+
+def test_a_small_file_that_claims_hours_fails_as_too_long_and_frees_its_place(setup: Any) -> None:
+    """BLD-C005, BLD-C008: the probe refuses it before any decoding; a failed note is deleted at once and no longer
+    counts towards the three waiting, and its screen still says why."""
+    make, conn = setup
+    b = make().browser()
+    draft = quick_draft(b)
+    first = send_when_on(b, draft, f.long_low_bitrate_wav(4000))
+    done = settle(b, draft, first["id"])
+    assert done == {"id": first["id"], "state": "failed", "failure": "too_long"}
+    row = conn.execute(
+        "SELECT store_key, deleted_at FROM voice_notes WHERE id = %s", (first["id"],)
+    ).fetchone()
+    assert row["store_key"] is None and row["deleted_at"] is not None
+    assert ("voice_note.deleted", "too_long") in audits(conn, first["id"])
+    for _ in range(2):  # two more fail the same way; three failures must not lock voice notes
+        settle(b, draft, send(b, draft, f.webm_lasting(10 * 3600)).json()["id"])
+    assert send(b, draft, recording("A real note after three failures.")).status_code == 201
+
+
+def test_each_person_has_an_hourly_limit(setup: Any) -> None:
+    """BLD-C005: a rules value (`voice.max_per_hour`, 10 by default), with its own reason code."""
+    make, conn = setup
+    person = make()
+    b = person.browser()
+    draft = quick_draft(b)
+    send_when_on(b, draft, recording("The first note this hour."))
+    for _ in range(service.limits().max_per_hour - 1):  # earlier notes this hour, already gone
+        conn.execute(
+            "INSERT INTO voice_notes (id, idea_uuid, uploaded_by_code, mime, bytes, state, failure, deleted_at) "
+            "VALUES (gen_random_uuid(), %s, %s, 'audio/wav', 64, 'failed', 'nothing_heard', now())",
+            (draft, person.contributor_code),
+        )
+    r = send(b, draft, recording("One too many."))
+    assert r.status_code == 429 and r.json() == {"error": "too_many_this_hour"}
+
+
+def test_an_idea_with_voice_notes_cannot_be_deleted_except_through_the_purge(setup: Any) -> None:
+    """BLD-C006: the foreign key restricts; the draft purge deletes the recordings first, audited."""
+    import psycopg
+
+    from jobs.handlers import purge_drafts
+
+    make, conn = setup
+    b = make().browser()
+    draft = quick_draft(b)
+    note = send_when_on(b, draft, recording("Change of address forms are re-typed."))
+    settle(b, draft, note["id"])
+    with pytest.raises(psycopg.errors.ForeignKeyViolation), conn.transaction():
+        conn.execute("DELETE FROM ideas WHERE id = %s", (draft,))
+    conn.execute("UPDATE ideas SET draft_expires_at = now() - interval '1 minute' WHERE id = %s", (draft,))
+    purge_drafts(conn, {})
+    assert conn.execute("SELECT 1 FROM ideas WHERE id = %s", (draft,)).fetchone() is None
+    assert conn.execute("SELECT 1 FROM voice_notes WHERE id = %s", (note["id"],)).fetchone() is None
+    assert ("voice_note.deleted", "draft_purged") in audits(conn, note["id"])
+
+
+def test_the_audit_names_who_deleted_a_note_by_contributor_code(setup: Any) -> None:
+    make, conn = setup
+    person = make()
+    b = person.browser()
+    draft = quick_draft(b)
+    note = send_when_on(b, draft, recording("Statements reach investors late."))
+    settle(b, draft, note["id"])
+    assert b.request("DELETE", f"/api/submissions/{draft}/voice/{note['id']}").status_code == 204
+    row = conn.execute(
+        "SELECT after FROM audit_log WHERE entity = %s AND action = 'voice_note.deleted'",
+        (f"voice_note:{note['id']}",),
+    ).fetchone()
+    assert row["after"] == {"reason_code": "deleted_by_person", "contributor_code": person.contributor_code}
+
+
+def test_one_failing_note_does_not_stop_the_sweep(setup: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """BLD-C006: errors are counted per note and the rest are still deleted."""
+    make, conn = setup
+    b = make().browser()
+    draft = quick_draft(b)
+    ids = []
+    for words in ("First held note.", "Second held note."):
+        note = send_when_on(b, draft, recording(words))
+        settle(b, draft, note["id"])
+        ids.append(note["id"])
+    conn.execute(
+        "UPDATE voice_notes SET delete_after = now() - interval '1 minute' WHERE id = ANY(%s::uuid[])", (ids,)
+    )
+    real = service.remove
+
+    def flaky(c: Any, voice_id: str, reason_code: str, by: str | None = None) -> bool:
+        if voice_id == ids[0]:
+            raise RuntimeError("store down for this one")
+        return real(c, voice_id, reason_code, by)
+
+    monkeypatch.setattr(service, "remove", flaky)
+    assert service.sweep(conn) >= 1
+    assert ("voice_note.deleted", "retention_24h") in audits(conn, ids[1])
