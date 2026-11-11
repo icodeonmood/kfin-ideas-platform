@@ -4,6 +4,7 @@ back is sent back once (BLD-158's single re-ask), then dropped; the call is logg
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 import pytest
@@ -12,7 +13,10 @@ from core import killswitch
 from gateway import core, limits
 from gateway.routes import FAKE_SCRIPT, FakeRoute
 from pii.detect import build_directory
+from review import service
+from review.veto import desk_decisions
 from tests.helpers import tables_containing
+from tests.test_b6_review import desk  # noqa: F401  (the review desk fixture, shared)
 from tests.test_canvas_own_words import answers, output, sent_for
 
 pytestmark = pytest.mark.stack
@@ -101,3 +105,96 @@ def test_dropping_is_not_enough_when_another_check_fails(gw: Any) -> None:
     with pytest.raises(core.AgentFailed) as failed:
         core.run_agent("canvas-assist", sent, SCOPE + "2", conn=db, d=d)
     assert failed.value.code == "invalid_output"
+
+
+# ---- the review desk writes the short summary (BLD-C027) and nothing falls back to the person's words (C1) --------
+
+
+SUMMARY = "Mandate checks done by hand slow down SIP registrations for investors."
+OWN_WORDS = (
+    "Zephyrine ledger drift keeps tripping the quarterly courier reconciliation"  # synthetic, distinctive
+)
+
+
+def test_the_review_desk_writes_the_summary_through_the_checks_and_the_audit_has_no_text(desk: Any) -> None:  # noqa: F811
+    db, item = desk["db"], desk["item"]
+    out = service.act(db, item, desk["r1"], {"action": "summary", "neutral_summary": SUMMARY})
+    assert out["stage"]
+    card = db.execute("SELECT canvas FROM ideas WHERE idea_id = %s", (desk["idea_id"],)).fetchone()["canvas"]
+    assert card["neutral_summary"] == SUMMARY and card["provenance"]["neutral_summary"] == "reviewer"
+    assert "neutral_summary" not in (card.get("evidence") or {})
+    audit = db.execute(
+        "SELECT actor, before, after, reason FROM audit_log WHERE action = 'review.neutral_summary' "
+        "AND entity = %s ORDER BY id DESC LIMIT 1",
+        (f"idea:{desk['idea_id']}",),
+    ).fetchone()
+    assert audit["actor"].startswith("REV-") and audit["after"] == {"length": len(SUMMARY)}
+    assert "Mandate" not in json.dumps([audit["before"], audit["after"], audit["reason"]])
+    event = db.execute(
+        "SELECT payload FROM outbox WHERE aggregate_id = %s AND event_type = 'idea.reviewed' ORDER BY id DESC LIMIT 1",
+        (desk["idea_id"],),
+    ).fetchone()
+    assert event["payload"]["history"][0]["event"] == "summary_written"  # the idea file is written again
+
+
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("Too short", "text_too_short"),
+        ("Call 9876543210 to hear how mandate checks slow down registrations", "personal_data"),
+        ("Northwind Mutual Fund waits two days for every SIP mandate check", "summary_not_neutral"),
+        (" ".join(["word"] * 26), "summary_too_long"),
+    ],
+)
+def test_a_summary_with_personal_data_names_or_too_many_words_is_refused(
+    desk: Any,  # noqa: F811
+    text: str,
+    code: str,
+) -> None:
+    with pytest.raises(service.ActionRefused) as refused:
+        service.act(desk["db"], desk["item"], desk["r1"], {"action": "summary", "neutral_summary": text})
+    assert refused.value.code == code
+
+
+def test_with_the_checks_switched_off_no_summary_is_written(desk: Any) -> None:  # noqa: F811
+    db = desk["db"]
+    killswitch.set_switch(db, "ai.all", "off", reason="test: checks unavailable", actor="process:test")
+    killswitch.clear_cache()
+    try:
+        with pytest.raises(service.ActionRefused) as refused:
+            service.act(db, desk["item"], desk["r1"], {"action": "summary", "neutral_summary": SUMMARY})
+        assert refused.value.status == 503 and refused.value.code == "checks_unavailable"
+    finally:
+        killswitch.set_switch(db, "ai.all", "on", reason="test: put back", actor="process:test")
+        killswitch.clear_cache()
+
+
+def test_an_empty_summary_never_shows_the_persons_words_to_anyone_else(desk: Any) -> None:  # noqa: F811
+    """Non-negotiable 7: with the short summary left blank, every reader shows a placeholder or nothing, never the
+    person's one line, details or another field."""
+    from comms.render import _delivery_label
+    from okf.frontmatter import parse
+    from repo_writer.render import render_idea
+    from views.common import SUMMARY_PENDING, public_card, taxonomy_names
+    from views.wall import clear_cache, wall
+
+    db, idea_id = desk["db"], desk["idea_id"]
+    service.act(db, desk["item"], desk["r1"], {"action": "decide"})  # reviewed: a stage everyone may see
+    db.execute(
+        "UPDATE ideas SET canvas = canvas || jsonb_build_object('neutral_summary', '', 'one_line', %s::text, "
+        "'details', %s::text) WHERE idea_id = %s",
+        (OWN_WORDS, OWN_WORDS + " every week.", idea_id),
+    )
+    idea = dict(db.execute("SELECT * FROM ideas WHERE idea_id = %s", (idea_id,)).fetchone())
+    areas, _ = taxonomy_names()
+    card = public_card(db, idea, areas)
+    assert card is not None and card["summary"] == SUMMARY_PENDING  # still on the wall, with a placeholder
+    clear_cache()
+    assert "Zephyrine" not in json.dumps(wall(db), default=str)
+    decisions = desk_decisions(db)
+    mine = [d for d in decisions["decisions"] if d["idea_id"] == idea_id]
+    assert mine and mine[0]["summary"] is None  # the screen shows its own placeholder
+    assert _delivery_label(db, idea_id) == idea_id
+    meta = parse(render_idea(idea, history=[], verified=[], generated_by="test")).meta or {}
+    assert meta["description"] == SUMMARY_PENDING  # never the one line, as before (BLD-C027)
+    assert not (meta.get("kfin") or {}).get("neutral_summary")  # so the index gives match cards no summary
