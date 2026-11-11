@@ -179,6 +179,11 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     section("Restore drill completed inside 4 hours", drill)
     section("Privacy notice live", privacy_and_sso)
 
+    try:
+        assist = canvas_assist_shares(args)
+    except Exception as exc:  # the report still prints; this block says it could not read the calls
+        assist = [{"window": "canvas-assist calls", "error": type(exc).__name__}]
+
     mode = "C. Preview" if reasons_c else "B. Capture first" if reasons_b else "A. Full"
     if mode == "A. Full" and any(r["state"] == "not met" for r in rows):
         mode = "B. Capture first"  # no Mode A while any criterion is not met (B8 review)
@@ -191,7 +196,41 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         "mode": mode,
         "why": reasons_c or reasons_b,
         "switches_off": switches_off,
+        "canvas_assist": assist,
     }
+
+
+def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
+    """How often the gateway dropped canvas-assist suggestions the person's words did not back
+    (`ungrounded_dropped`) and refused its answer outright (`invalid_output`), over the last 24 hours, since launch
+    (live calls) and in golden-set runs since --since (DRAFT- scopes, as the gateway's own counts tell them apart).
+    A high invalid share would trip the automatic switch-off (20% of calls over 15 minutes, BLD-072). Counts only."""
+    windows = [
+        ("last 24 hours", "now() - interval '24 hours'", False),
+        (f"since launch ({args.launch})", "%(launch)s::date", False),
+        (f"golden-set runs since {args.since}", "%(since)s::date", True),
+    ]
+    out = []
+    with connect(autocommit=True) as conn:
+        for label, start, eval_runs in windows:
+            row = conn.execute(
+                "SELECT count(*) FILTER (WHERE outcome NOT IN ('switched_off', 'cached')) AS asked, "  # noqa: S608
+                "count(*) FILTER (WHERE error_code = 'ungrounded_dropped') AS dropped, "
+                "count(*) FILTER (WHERE error_code = 'invalid_output') AS invalid "
+                f"FROM llm_calls WHERE agent = 'canvas-assist' AND created_at >= {start} "
+                "AND (coalesce(ref_id, '') LIKE 'DRAFT-%%') = %(eval_runs)s",
+                {"launch": args.launch, "since": args.since, "eval_runs": eval_runs},
+            ).fetchone()
+            assert row is not None  # an aggregate always returns a row
+            out.append(
+                {"window": label, "asked": int(row["asked"]), "dropped": int(row["dropped"]),
+                 "invalid": int(row["invalid"])}
+            )  # fmt: skip
+    return out
+
+
+def _share(part: int, whole: int) -> str:
+    return f"{part} of {whole} ({part / whole:.0%})" if whole else "0 of 0"
 
 
 def render(r: dict[str, Any]) -> str:
@@ -206,6 +245,22 @@ def render(r: dict[str, Any]) -> str:
     if r["why"]:
         lines.append(f"**Because:** {'; '.join(r['why'])}.")
     lines.append(f"**Switches off now:** {', '.join(r['switches_off']) or 'none'}.")
+    lines += [
+        "",
+        "**canvas-assist answers (DEC-095, DEC-097):** check on the first real-route golden-set run and before launch;",
+        "the automatic switch-off acts when failed calls pass 20% over 15 minutes.",
+        "",
+        "| Window | Answers | Suggestions dropped (`ungrounded_dropped`) | Refused (`invalid_output`) |",
+        "|---|---|---|---|",
+    ]
+    for w in r.get("canvas_assist") or []:
+        if "error" in w:
+            lines.append(f"| {w['window']} | could not read ({w['error']}) | | |")
+        else:
+            lines.append(
+                f"| {w['window']} | {w['asked']} | {_share(w['dropped'], w['asked'])} | "
+                f"{_share(w['invalid'], w['asked'])} |"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -214,6 +269,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--since", default="2026-11-16", help="start of the UAT period (YYYY-MM-DD)")
+    parser.add_argument("--launch", default="2026-11-20", help="launch day, for live canvas-assist shares")
     parser.add_argument("--vapt-open-high", type=int)
     parser.add_argument("--sso-ready", choices=("yes", "no"))
     parser.add_argument("--out", type=Path)
