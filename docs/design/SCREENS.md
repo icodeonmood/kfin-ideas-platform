@@ -196,6 +196,8 @@ The renderer (`services/worker/comms/email_html.py`; The Ember in `services/work
 
 62 full-page screenshots at 1440 and 360 px, taken read-only as the demo personas, are kept outside the repo (lane D's scratchpad). They are uploaded only to the design artifacts. Defects found, reported to lane A (and lane C for item 3) the same day:
 
+**Status:** items 1, 4, 5 and 6 were fixed on `main` at `4cbfb28` (BLD-A163 reflow; BLD-A164 delivery step words "Handover to developers, Development, Testing, Code review, Quality checks, Going live", heading "… Build track. Being built. Current step: Development."; BLD-A165 India time; BLD-A166 My ideas titles). Item 3 was stale demo index rows, not code. Item 2 waits for a fresh demo database. Every `expectNoSeriousAxeIssues` call now also fails on sideways scroll at the page width and at 320 px.
+
 | # | Defect | Where | Owner |
 |---|---|---|---|
 | 1 | The home page scrolls sideways: scrollWidth 5398 at 1440 px and 4165 at 360 px. The Ones strip overflows the viewport, and the dark band is wider than the header (WCAG 1.4.10) | `/`, `ones-carousel.tsx` | Lane A |
