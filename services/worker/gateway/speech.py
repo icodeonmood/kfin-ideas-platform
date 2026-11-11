@@ -118,8 +118,53 @@ def local_engine() -> Engine:
 
 
 def _speech_service(data: bytes, mime: str) -> Transcript:
-    """The isolated speech service (BLD-C012, built in round B). Until it exists the route refuses."""
-    raise SpeechUnavailable("engine_service_coming_soon")
+    """The isolated speech service (`speech_service/service.py`, its own container on an internal network with
+    no route to the database, the store or the internet; BLD-C012, BLD-C015). The recording goes over HTTP with
+    the shared internal token; the answer must say which engine heard it, and a `fake` engine is refused outside
+    dev and test. Errors carry a code only."""
+    import httpx
+
+    s = get_settings()
+    try:
+        r = httpx.post(
+            f"{s.speech_engine_url.rstrip('/')}/transcribe",
+            content=data,
+            headers={
+                "X-Speech-Token": s.speech_service_token,
+                "X-Max-Seconds": str(s.speech_max_seconds + 15),
+                "Content-Type": "application/octet-stream",
+            },
+            timeout=httpx.Timeout(s.speech_timeout_s + 15, connect=5.0),
+        )
+    except httpx.TimeoutException:
+        raise SpeechUnavailable("engine_timeout") from None
+    except httpx.HTTPError:
+        raise SpeechUnavailable("engine_unreachable") from None
+    try:
+        body = r.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    if r.status_code == 401:
+        raise SpeechUnavailable("engine_unauthorized")
+    if r.status_code != 200:
+        code = str(body.get("error") or f"engine_{r.status_code}")
+        raise SpeechUnavailable(code if code.replace("_", "").isalnum() else f"engine_{r.status_code}")
+    if body.get("engine") == "fake" and s.is_production_like:
+        raise SpeechUnavailable(
+            "fake_not_allowed"
+        )  # a sample sentence must never stand in for someone's words
+    text = body.get("text")
+    if not isinstance(text, str):
+        raise SpeechUnavailable("engine_bad_reply")
+    language = body.get("language")
+    seconds = body.get("seconds")
+    return Transcript(
+        text=text,
+        language=language if isinstance(language, str) else None,
+        seconds=float(seconds) if isinstance(seconds, int | float) else None,
+    )
 
 
 class FasterWhisper:

@@ -40,7 +40,19 @@ v="$(value PSEUDONYM_VAULT_KEY "$DB_ENV_FILE")"
 [[ ${#v} -ge 32 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "PSEUDONYM_VAULT_KEY must be 32 or more random letters and digits"
 [[ -z "$(value PSEUDONYM_VAULT_KEY "$APP_ENV_FILE")" ]] \
   || fail "PSEUDONYM_VAULT_KEY belongs in the database env file only: the app env file also reaches the web app"
-compose build --quiet worker web
+# Voice notes (DEC-096, BLD-C015): with SPEECH_ENGINE_URL set, the isolated speech service starts too. Its token
+# lives in the database env file (worker and speech service only), never the app env file (the web app reads that).
+SPEECH_BUILD=""
+if [[ -n "$(value SPEECH_ENGINE_URL "$APP_ENV_FILE")" ]]; then
+  v="$(value SPEECH_SERVICE_TOKEN "$DB_ENV_FILE")"
+  [[ ${#v} -ge 32 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "SPEECH_SERVICE_TOKEN must be 32 or more random letters and digits, in the database env file"
+  [[ -n "$(value SPEECH_MODEL_DIR "$DB_ENV_FILE")$(value SPEECH_MODEL_DIR "$APP_ENV_FILE")" ]] || fail "set SPEECH_MODEL_DIR to the speech model folder on the host"
+  export COMPOSE_PROFILES=speech
+  SPEECH_BUILD="speech"
+fi
+[[ -z "$(value SPEECH_SERVICE_TOKEN "$APP_ENV_FILE")" ]] \
+  || fail "SPEECH_SERVICE_TOKEN belongs in the database env file only: the app env file also reaches the web app"
+compose build --quiet worker web $SPEECH_BUILD
 compose run --rm --no-deps -T worker python -m bootstrap.preflight || fail "preflight"
 
 step "2/8 Database: must be empty"

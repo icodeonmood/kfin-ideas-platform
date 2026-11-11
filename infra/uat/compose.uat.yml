@@ -41,6 +41,8 @@ services:
       CLAMAV_HOST: ${CLAMAV_HOST:?set CLAMAV_HOST in the app env file}
       SMTP_URL: ${SMTP_URL:-}
       EVAL_REPORTS_DIR: /data/eval-reports   # kept between deploys: the regression check's baseline
+      # From the database env file: the worker and the speech service only (BLD-C015). Empty when voice is not used.
+      SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-}
     volumes: !override ["${UAT_DATA_DIR:?set UAT_DATA_DIR}:/data"]
     ports: !reset []
 
@@ -51,6 +53,13 @@ services:
       DATABASE_URL: postgres://ideas_web:${DB_WEB_PASSWORD:?set DB_WEB_PASSWORD}@postgres:5432/ideas?sslmode=disable
       OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
     ports: !override ["${UAT_WEB_PORT:-3100}:3000"]
+
+  # The isolated speech service (BLD-C015), started only when SPEECH_ENGINE_URL is set (deploy.sh adds the profile).
+  # An empty token makes it refuse to start: it fails closed.
+  speech:
+    environment:
+      SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-}
+    volumes: !override ["${SPEECH_MODEL_DIR:-/srv/kfin-speech-models}:/models:ro"]
 
   dbmate:
     environment:

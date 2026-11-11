@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # Outside dev and test, `local` speech must be the isolated speech service (BLD-C012): its own container with
     # no route to the database, the store or the internet. Empty = the in-worker child, allowed in dev and test only.
     speech_engine_url: str = ""
+    speech_service_token: str = (
+        ""  # shared with the speech service only (not the web app), at least 32 characters
+    )
     speech_max_seconds: int = 180
     speech_threads: int = 2  # the engine child's CPU threads
     speech_memory_mb: int = 4096  # the engine child's address-space limit (Linux)
