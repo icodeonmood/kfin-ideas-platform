@@ -1,0 +1,109 @@
+/*
+ * App rules on top of the design system (DEC-099, lane D). ds-tokens.css and ds.css stay byte-identical to the design
+ * system artifact so they can be re-synced; anything the app needs differently lives here, loaded after them.
+ */
+
+/* ---------- The page column ---------- */
+main {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-8);
+}
+
+main:focus {
+  outline: none;
+}
+
+/* The paused-feature bands run the full width under the dock. */
+.banners {
+  max-width: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.banners .paused {
+  margin: 0;
+}
+
+/* ---------- Skip link ---------- */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -4rem;
+  z-index: 20;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--zed);
+  color: var(--white);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: var(--space-3);
+  outline-color: var(--link-on-zed);
+}
+
+/* ---------- Header dock ----------
+ * The system folds the menu behind a "Menu" button below 760 px. "Menu" is new copy that has not been through HR,
+ * and the e2e suite reaches every nav link by keyboard at 360 px, so for P0 the links stay visible: below 760 px
+ * they wrap to a second row that scrolls sideways inside the dock (never the page).
+ */
+.hdr-end form {
+  margin: 0;
+}
+
+@container (max-width: 760px) {
+  .hdr-dock {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 8px 8px 8px 16px;
+    border-radius: 28px;
+  }
+
+  .hdr-nav {
+    display: flex;
+    order: 3;
+    flex: 1 0 100%;
+    margin: 0 -4px;
+    padding: 2px 0 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .hdr-nav::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- Footer ---------- */
+.site-footer {
+  padding: var(--space-6) var(--gutter) var(--space-7);
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+
+.site-footer .inner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.site-footer a {
+  color: var(--link);
+  font-weight: 600;
+}

@@ -5,11 +5,15 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PausedBanners } from "@/components/banners";
+import { DsRuntime } from "@/components/ds-runtime";
 import { MainNav } from "@/components/nav";
 import { SparkMark } from "@/components/spark-mark";
 import { currentUser } from "@/server/auth/current";
 
 import "./globals.css";
+import "./ds-tokens.css";
+import "./ds.css";
+import "./ds-app.css";
 
 export const metadata: Metadata = {
   title: { default: "1% Club", template: "%s · 1% Club" },
@@ -18,29 +22,32 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
+/**
+ * The shell (DEC-099): a matte stage, a floating dark-glass dock with the mark, the menu for your roles and the
+ * account, the paused-feature bands, and the footer. Working screens are the White surface; brand pages set
+ * data-theme="zed" on their own bands. data-tier is 0 here; a One's own pages set their tier on their regions.
+ */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await currentUser().catch(() => null);
   const showShell = Boolean(me?.privacyAccepted);
   return (
-    <html lang="en-IN" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body>
+    <html lang="en-IN" data-theme="white" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className="stage" data-tier="0">
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
-        <header className="site-header">
-          <div className="inner">
-            <Link href="/" className="lockup">
+        <header className="hdr site-header">
+          <div className="hdr-dock dock" data-refract="26" data-dispersion="0.12">
+            <Link href="/" className="hdr-brand">
               <SparkMark height={28} />
               1% Club
             </Link>
             {showShell && me ? <MainNav items={me.nav} /> : null}
             {me ? (
-              <div className="account">
-                <span className="account-name">{me.name}</span>
+              <div className="hdr-end">
+                <span className="hdr-name account-name">{me.name}</span>
                 <form method="post" action="/auth/logout">
-                  <button type="submit" className="link-button">
-                    Sign out
-                  </button>
+                  <button type="submit">Sign out</button>
                 </form>
               </div>
             ) : null}
@@ -61,6 +68,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <p>A KFintech programme</p>
           </div>
         </footer>
+        <DsRuntime />
       </body>
     </html>
   );
