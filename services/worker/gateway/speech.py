@@ -36,6 +36,10 @@ FAKE_SAMPLE = (
     "and it adds a day to each request."
 )
 HOSTED = frozenset({"sarvam"})
+REAL_ENGINES = frozenset(
+    {"faster-whisper", "indic-conformer"}
+)  # what may answer outside dev and test (BLD-C030)
+SERVICE_LOCK_WAIT_S = 30  # the speech service's wait for its engine before it answers 503 busy
 
 
 class SpeechUnavailable(Exception):
@@ -134,7 +138,9 @@ def _speech_service(data: bytes, mime: str) -> Transcript:
                 "X-Max-Seconds": str(s.speech_max_seconds + 15),
                 "Content-Type": "application/octet-stream",
             },
-            timeout=httpx.Timeout(s.speech_timeout_s + 15, connect=5.0),
+            # Above the service's own limit (its wait for the engine, then the engine's time), so the service always
+            # answers first (BLD-C019).
+            timeout=httpx.Timeout(s.speech_timeout_s + SERVICE_LOCK_WAIT_S + 15, connect=5.0),
         )
     except httpx.TimeoutException:
         raise SpeechUnavailable("engine_timeout") from None
@@ -151,10 +157,10 @@ def _speech_service(data: bytes, mime: str) -> Transcript:
     if r.status_code != 200:
         code = str(body.get("error") or f"engine_{r.status_code}")
         raise SpeechUnavailable(code if code.replace("_", "").isalnum() else f"engine_{r.status_code}")
-    if body.get("engine") == "fake" and s.is_production_like:
-        raise SpeechUnavailable(
-            "fake_not_allowed"
-        )  # a sample sentence must never stand in for someone's words
+    if s.is_production_like and body.get("engine") not in REAL_ENGINES:
+        # A missing, fake or unknown engine is refused: a sample sentence must never stand in for someone's words
+        # (BLD-C030).
+        raise SpeechUnavailable("fake_not_allowed" if body.get("engine") == "fake" else "engine_unknown")
     text = body.get("text")
     if not isinstance(text, str):
         raise SpeechUnavailable("engine_bad_reply")

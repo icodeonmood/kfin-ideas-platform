@@ -43,15 +43,23 @@ v="$(value PSEUDONYM_VAULT_KEY "$DB_ENV_FILE")"
 # Voice notes (DEC-096, BLD-C015): with SPEECH_ENGINE_URL set, the isolated speech service starts too. Its token
 # lives in the database env file (worker and speech service only), never the app env file (the web app reads that).
 SPEECH_BUILD=""
-if [[ -n "$(value SPEECH_ENGINE_URL "$APP_ENV_FILE")" ]]; then
+speech_url="$(value SPEECH_ENGINE_URL "$APP_ENV_FILE")"
+if [[ -n "$speech_url" ]]; then
+  # Only the speech service on its internal network, over plain http inside it (BLD-C030); the worker refuses
+  # anything else at start too.
+  [[ "$speech_url" =~ ^http://speech(:[0-9]+)?/?$ ]] || fail "SPEECH_ENGINE_URL must be http://speech:8300 (the isolated speech service)"
   v="$(value SPEECH_SERVICE_TOKEN "$DB_ENV_FILE")"
   [[ ${#v} -ge 32 && "$v" =~ ^[A-Za-z0-9]+$ ]] || fail "SPEECH_SERVICE_TOKEN must be 32 or more random letters and digits, in the database env file"
+  # Two different secrets, never reused (BLD-C017): the speech service must not hold the worker's own API token.
+  [[ "$v" != "$(value INTERNAL_API_TOKEN "$APP_ENV_FILE")" ]] || fail "SPEECH_SERVICE_TOKEN must differ from INTERNAL_API_TOKEN"
   [[ -n "$(value SPEECH_MODEL_DIR "$DB_ENV_FILE")$(value SPEECH_MODEL_DIR "$APP_ENV_FILE")" ]] || fail "set SPEECH_MODEL_DIR to the speech model folder on the host"
   export COMPOSE_PROFILES=speech
   SPEECH_BUILD="speech"
 fi
 [[ -z "$(value SPEECH_SERVICE_TOKEN "$APP_ENV_FILE")" ]] \
   || fail "SPEECH_SERVICE_TOKEN belongs in the database env file only: the app env file also reaches the web app"
+[[ -z "$(value INTERNAL_API_TOKEN "$DB_ENV_FILE")" ]] \
+  || fail "INTERNAL_API_TOKEN belongs in the app env file only: never next to SPEECH_SERVICE_TOKEN"
 compose build --quiet worker web $SPEECH_BUILD
 compose run --rm --no-deps -T worker python -m bootstrap.preflight || fail "preflight"
 

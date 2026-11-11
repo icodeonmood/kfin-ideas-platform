@@ -63,9 +63,32 @@ def test_it_shares_only_an_internal_network_with_the_worker() -> None:
 
 
 def test_the_web_app_never_gets_the_speech_token() -> None:
+    """Blanked on purpose (BLD-C031): `environment` wins over `env_file`, so a token put in .env never reaches it."""
     for name in ("docker-compose.yml", "uat/compose.uat.yml"):
         web = _compose(name)["services"]["web"]
-        assert "SPEECH_SERVICE_TOKEN" not in (web.get("environment") or {}), name
+        assert (web.get("environment") or {}).get("SPEECH_SERVICE_TOKEN") == "", name
+
+
+def test_tmp_is_not_executable_and_the_worker_api_stays_off_the_speech_network() -> None:
+    c = _compose("docker-compose.yml")
+    tmp = next(t for t in c["services"]["speech"]["tmpfs"] if t.startswith("/tmp"))
+    assert {"noexec", "nosuid", "nodev"} <= set(tmp.split(":", 1)[1].split(","))  # BLD-C019
+    assert c["services"]["worker"]["environment"]["WORKER_API_BIND_PEER"] == "postgres"  # BLD-C017
+    assert "postgres" in c["services"] and "speech" not in _networks(c["services"]["postgres"])
+
+
+def test_the_image_is_pinned_by_digest_and_every_package_by_hash() -> None:
+    """BLD-C032: no floating base image, no unpinned or unhashed package."""
+    folder = ROOT / "services" / "worker" / "speech_service"
+    docker = (folder / "Dockerfile").read_text()
+    assert "FROM python:3.12-slim@sha256:" in docker
+    assert "--require-hashes" in docker and "--only-binary=:all:" in docker
+    reqs = (folder / "requirements.txt").read_text()
+    blocks = [b for b in reqs.split("\n") if b and not b.startswith((" ", "#"))]
+    assert any(b.startswith("faster-whisper==") for b in blocks)
+    for line in blocks:
+        assert "==" in line, line
+    assert reqs.count("--hash=sha256:") >= len(blocks)
 
 
 def test_uat_keeps_it_locked_down_and_takes_its_model_read_only() -> None:

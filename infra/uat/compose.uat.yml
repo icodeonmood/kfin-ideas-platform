@@ -52,6 +52,7 @@ services:
     environment:
       DATABASE_URL: postgres://ideas_web:${DB_WEB_PASSWORD:?set DB_WEB_PASSWORD}@postgres:5432/ideas?sslmode=disable
       OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
+      SPEECH_SERVICE_TOKEN: ""   # never the web app's (BLD-C031)
     ports: !override ["${UAT_WEB_PORT:-3100}:3000"]
 
   # The isolated speech service (BLD-C015), started only when SPEECH_ENGINE_URL is set (deploy.sh adds the profile).

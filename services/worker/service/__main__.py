@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from typing import Any
 
 import uvicorn
 
@@ -57,6 +58,35 @@ def ticker(poll_seconds: float = 20.0) -> None:
             time.sleep(poll_seconds)
 
 
+def _serve_api(settings: Any) -> None:
+    """The API on the default network and 127.0.0.1 only, never the speech network (BLD-C017)."""
+    import socket
+
+    from core.netbind import BindError, api_hosts
+
+    try:
+        hosts = api_hosts(settings.worker_api_bind_peer)
+    except BindError as exc:
+        log.error("service.api_bind_refused", error_code=exc.code)
+        raise SystemExit(3) from None
+    sockets = []
+    for host in hosts:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, settings.worker_port))
+        sock.listen(2048)
+        sock.set_inheritable(True)
+        sockets.append(sock)
+    log.info("service.api_listening", address_count=len(sockets), everywhere=len(hosts) == 1)
+    config = uvicorn.Config(
+        "api.app:app",
+        port=settings.worker_port,
+        access_log=False,  # request lines can carry IDs in paths; we log our own events
+        log_config=None,
+    )
+    uvicorn.Server(config).run(sockets=sockets)
+
+
 def _speech_route_guard() -> None:
     """DEC-096 (BLD-C007): voice notes never run on the fake speech route outside dev and test. The watch checks
     every minute; this checks once before anything else starts, and switches `capture.voice` off (audited)."""
@@ -95,13 +125,7 @@ def main() -> None:
     if "ticker" in roles:
         _guard("ticker", ticker)
     if "api" in roles:
-        uvicorn.run(
-            "api.app:app",
-            host="0.0.0.0",  # noqa: S104 - inside the container network
-            port=settings.worker_port,
-            access_log=False,  # request lines can carry IDs in paths; we log our own events
-            log_config=None,
-        )
+        _serve_api(settings)
     else:
         threading.Event().wait()
 

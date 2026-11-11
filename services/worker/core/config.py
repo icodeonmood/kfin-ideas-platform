@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,6 +72,9 @@ class Settings(BaseSettings):
     speech_service_token: str = (
         ""  # shared with the speech service only (not the web app), at least 32 characters
     )
+    # Outside dev and test, SPEECH_ENGINE_URL must be http:// to one of these hosts on the internal speech network
+    # (BLD-C030): a recording must never be sent anywhere else by a mistyped or tampered setting.
+    speech_engine_hosts: str = "speech"
     speech_max_seconds: int = 180
     speech_threads: int = 2  # the engine child's CPU threads
     speech_memory_mb: int = 4096  # the engine child's address-space limit (Linux)
@@ -113,6 +117,9 @@ class Settings(BaseSettings):
     worker_roles: str = "api,repo_writer,indexer,jobs,scheduler,ticker"
     internal_api_token: str = ""
     worker_port: int = 8000
+    # A host only on the default network (compose: postgres): the API listens on that network and 127.0.0.1 only,
+    # never on the speech network (BLD-C017). Empty: 0.0.0.0, for host-side runs and tests.
+    worker_api_bind_peer: str = ""
     index_poll_seconds: float = 2.0
     repo_writer_poll_seconds: float = 1.0
     log_level: str = "INFO"
@@ -132,6 +139,24 @@ class Settings(BaseSettings):
             return value
         base = REPO_ROOT if REPO_ROOT else Path.cwd()
         return (base / value).resolve()
+
+    @model_validator(mode="after")
+    def _speech_engine_url_allowed(self) -> Settings:
+        """Outside dev and test the speech service's address is http:// to an allowed host, or the worker refuses to
+        start (BLD-C030). Dev and test may point it anywhere (the contract test runs it on localhost)."""
+        if self.speech_engine_url and self.is_production_like:
+            url = urlsplit(self.speech_engine_url)
+            hosts = {h.strip().lower() for h in self.speech_engine_hosts.split(",") if h.strip()}
+            if (
+                url.scheme != "http"
+                or (url.hostname or "").lower() not in hosts
+                or url.username
+                or url.password
+            ):
+                raise ValueError(
+                    "SPEECH_ENGINE_URL must be http:// to an allowed speech host outside dev and test"
+                )
+        return self
 
     @property
     def is_production_like(self) -> bool:
