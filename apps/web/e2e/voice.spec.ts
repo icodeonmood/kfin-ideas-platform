@@ -80,7 +80,8 @@ test("voice notes on: record by keyboard, play back, turn it into text in the bo
       await expect(turn).toBeFocused();
       await expectNoSeriousAxeIssues(page);
       await page.keyboard.press("Enter");
-      await expect(panel.getByText(VOICE_DONE)).toBeVisible({ timeout: 120_000 });
+      // The visible note, not the live region that says the same thing.
+      await expect(panel.locator("p.muted", { hasText: VOICE_DONE })).toBeVisible({ timeout: 120_000 });
       await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toHaveValue(new RegExp(FAKE_SAMPLE));
       await expect(panel.getByRole("button", { name: "Record another voice note" })).toBeFocused();
       await page.context().close();

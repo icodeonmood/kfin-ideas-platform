@@ -52,6 +52,16 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
   const nextRef = useRef<HTMLButtonElement>(null);
   const startRef = useRef<HTMLButtonElement>(null);
   const cancelled = useRef(false);
+  // Where focus goes once the next step has rendered (never on first load): set by an action, used once.
+  const focusNext = useRef<"stop" | "next" | "start" | null>(null);
+
+  useEffect(() => {
+    const target = { stop: stopRef, next: nextRef, start: startRef }[focusNext.current ?? "start"];
+    if (focusNext.current && target.current) {
+      target.current.focus();
+      focusNext.current = null;
+    }
+  }, [step]);
 
   useEffect(
     () => () => {
@@ -96,14 +106,14 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
       blob.current = new Blob(chunks.current, { type: rec.mimeType || mimeType || "audio/webm" });
       setAudioUrl(URL.createObjectURL(blob.current));
       setStep("recorded");
-      requestAnimationFrame(() => nextRef.current?.focus());
+      focusNext.current = "next";
     };
     recorder.current = rec;
     rec.start(1000);
     setSeconds(0);
     setSay(announcement(0) ?? "");
     setStep("recording");
-    requestAnimationFrame(() => stopRef.current?.focus());
+    focusNext.current = "stop";
     const began = Date.now();
     timer.current = setInterval(() => {
       const s = Math.min(MAX_SECONDS, Math.floor((Date.now() - began) / 1000));
@@ -125,7 +135,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
     setAudioUrl(null);
     setStep("idle");
     setSay(message);
-    requestAnimationFrame(() => startRef.current?.focus());
+    focusNext.current = "start";
   }
 
   async function send() {
@@ -163,7 +173,7 @@ export function VoiceRecorder(p: { ideaId: string; enabled: boolean; onTranscrip
         setNote({ text: done, error: false });
         setSay(done);
         setStep("done");
-        requestAnimationFrame(() => startRef.current?.focus());
+        focusNext.current = "start";
         return;
       }
       if (v.state === "failed" || v.state === "deleted") return fail(v.failure ?? "");
