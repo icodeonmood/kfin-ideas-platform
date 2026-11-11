@@ -5,12 +5,22 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-import { emptyCanvas, MIC_HINT, QUESTIONS, QUICK_DECLARATION, type Canvas } from "@/lib/canvas/model";
+import {
+  CHOICES,
+  emptyCanvas,
+  MIC_HINT,
+  QUESTIONS,
+  QUICK_DECLARATION,
+  QUICK_DECLARATION_COVERS,
+  QUICK_STRENGTH_NOTE,
+  type Canvas,
+} from "@/lib/canvas/model";
 import {
   finaliseQuick,
   parseFigure,
   QUICK_DECLARATION_FIELD,
   strength,
+  strengthPanel,
   validate,
   type StrengthRubric,
 } from "@/lib/canvas/rules";
@@ -102,6 +112,16 @@ describe("required fields (AT-B3-02)", () => {
     expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["details"]);
   });
 
+  it("quick capture refuses an over-long one line sent straight to the API, as the full canvas does (BLD-C053)", () => {
+    const c = emptyCanvas("quick");
+    c.details = "Investors call twice because the SIP confirmation SMS arrives a day late.";
+    c.declarations = { no_personal_data: true, own_work_or_credited: true, ip_terms: true };
+    c.one_line = "word ".repeat(LIMITS.one_line_max_words + 1).trim();
+    expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["one_line"]);
+    c.one_line = "SIP confirmation SMS arrives a day late";
+    expect(validate(c, LIMITS)).toEqual([]);
+  });
+
   it("the full canvas still needs a category and all three ticks", () => {
     const c = complete();
     c.value.category = null;
@@ -132,10 +152,36 @@ describe("quick capture wording (DEC-094, DEC-096)", () => {
       QUESTIONS.quick_noticed.label,
       QUESTIONS.quick_noticed.why,
       QUICK_DECLARATION,
+      QUICK_DECLARATION_COVERS,
+      QUICK_STRENGTH_NOTE,
       MIC_HINT,
     ]) {
       expect(text).not.toMatch(/garage|duplicate|rejected|already solved|rant/i);
     }
+  });
+
+  it("the one confirmation covers files, in the full canvas's own words (BLD-C051)", () => {
+    const full = Object.fromEntries(CHOICES.declarations)["no_personal_data"]!;
+    expect(full).toBe("There is no investor or customer personal data in this idea or its files.");
+    expect(QUICK_DECLARATION.startsWith(full.replace(/\.$/, ""))).toBe(true);
+  });
+});
+
+describe("the side panel (DEC-005, DEC-094, BLD-C050)", () => {
+  it("quick capture shows one line and no score or prompts, however much is filled in", () => {
+    const c = emptyCanvas("quick");
+    expect(strengthPanel(c, RUBRIC)).toEqual({ kind: "note", note: QUICK_STRENGTH_NOTE });
+    c.details = "Three people re-check every SIP form for missing bank or nominee fields. ".repeat(3);
+    expect(strengthPanel(c, RUBRIC, 2)).toEqual({ kind: "note", note: QUICK_STRENGTH_NOTE });
+  });
+
+  it("the full canvas keeps the strength meter unchanged", () => {
+    const c = complete();
+    expect(strengthPanel(c, RUBRIC, 1)).toEqual({ kind: "meter", strength: strength(c, RUBRIC, 1) });
+    expect(strengthPanel(emptyCanvas("full"), RUBRIC)).toEqual({
+      kind: "meter",
+      strength: strength(emptyCanvas("full"), RUBRIC),
+    });
   });
 });
 

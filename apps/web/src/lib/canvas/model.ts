@@ -149,7 +149,13 @@ export const QUESTIONS = {
 
 /** Quick capture's single confirmation (DEC-094). Ticking it confirms all three declarations below. */
 export const QUICK_DECLARATION =
-  "I've left out investor and customer personal details, this is my own work or I've credited others, and I accept the IP terms.";
+  "There is no investor or customer personal data in this idea or its files, it is my own work or I've credited others, and I accept the IP terms.";
+
+/** Where the quick checkbox's description points (DEC-094): a short visible line, not the whole disclosure. */
+export const QUICK_DECLARATION_COVERS = "What this covers is listed just below.";
+
+/** Quick capture's side panel (DEC-094): no score and no prompts for questions quick capture does not ask. */
+export const QUICK_STRENGTH_NOTE = "You can add more later, and the assistant will suggest the rest.";
 
 /** The keyboard-mic hint under the quick capture box (DEC-096), behind `capture.mic_hint`. */
 export const MIC_HINT = "On your phone? Tap the mic on your keyboard and just talk, in any language.";

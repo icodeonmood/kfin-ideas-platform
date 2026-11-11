@@ -45,7 +45,7 @@ export async function expectNoSeriousAxeIssues(page: Page) {
  * box is filled.
  */
 export async function confirmQuickCapture(page: Page) {
-  await page.getByRole("checkbox", { name: /I've left out investor and customer personal details/ }).check();
+  await page.getByRole("checkbox", { name: /in this idea or its files, it is my own work/ }).check();
 }
 
 export type SwitchState = "on" | "off";

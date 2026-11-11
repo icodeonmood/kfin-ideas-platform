@@ -14,6 +14,7 @@ import {
   MIC_HINT,
   QUESTIONS,
   QUICK_DECLARATION,
+  QUICK_DECLARATION_COVERS,
   wordCount,
   type Canvas,
   type Mode,
@@ -23,7 +24,7 @@ import {
   parseFigure,
   personalData,
   QUICK_DECLARATION_FIELD,
-  strength,
+  strengthPanel,
   validate,
   type CanvasLimits,
   type FieldError,
@@ -90,7 +91,10 @@ export function CanvasForm(props: Props) {
   const hits = useMemo(() => personalData(canvas, props.kfinDomains), [canvas, props.kfinDomains]);
   const blocked = blocks(hits);
   const cleanFiles = files.filter((f) => f.state === "clean").length;
-  const score = useMemo(() => strength(canvas, props.rubric, cleanFiles), [canvas, props.rubric, cleanFiles]);
+  const panel = useMemo(
+    () => strengthPanel(canvas, props.rubric, cleanFiles),
+    [canvas, props.rubric, cleanFiles],
+  );
   const isQuick = props.mode === "quick";
 
   const update = (path: string, value: unknown) => setCanvas((c) => setPath(c, path, value));
@@ -514,37 +518,43 @@ export function CanvasForm(props: Props) {
           </div>
         </div>
 
-        <aside className="strength" aria-labelledby="strength-title">
-          <h2 id="strength-title">How ready is this for a committee?</h2>
-          <p className="strength-score" aria-live="polite">
-            <strong>{score.score} of 5</strong>
-          </p>
-          <div className="strength-bar" aria-hidden="true">
-            <span style={{ width: `${score.score * 20}%` }} />
-          </div>
-          <ul className="strength-points">
-            {Object.entries(score.points).map(([key, done]) => (
-              <li key={key} className={done ? "done" : "todo"}>
-                <span className="visually-hidden">{done ? "Done: " : "Not yet: "}</span>
-                <span aria-hidden="true">{done ? "✓ " : "○ "}</span>
-                {POINT_LABELS[key]}
-              </li>
-            ))}
-          </ul>
-          {score.nextBest.length ? (
-            <>
-              <h3>Most useful next</h3>
-              <ol>
-                {score.nextBest.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ol>
-            </>
-          ) : (
-            <p>This looks ready. You can still add more.</p>
-          )}
-          <p className="muted">This guides you; it never stops you sharing.</p>
-        </aside>
+        {panel.kind === "note" ? (
+          <aside className="strength" aria-label="What happens next">
+            <p>{panel.note}</p>
+          </aside>
+        ) : (
+          <aside className="strength" aria-labelledby="strength-title">
+            <h2 id="strength-title">How ready is this for a committee?</h2>
+            <p className="strength-score" aria-live="polite">
+              <strong>{panel.strength.score} of 5</strong>
+            </p>
+            <div className="strength-bar" aria-hidden="true">
+              <span style={{ width: `${panel.strength.score * 20}%` }} />
+            </div>
+            <ul className="strength-points">
+              {Object.entries(panel.strength.points).map(([key, done]) => (
+                <li key={key} className={done ? "done" : "todo"}>
+                  <span className="visually-hidden">{done ? "Done: " : "Not yet: "}</span>
+                  <span aria-hidden="true">{done ? "✓ " : "○ "}</span>
+                  {POINT_LABELS[key]}
+                </li>
+              ))}
+            </ul>
+            {panel.strength.nextBest.length ? (
+              <>
+                <h3>Most useful next</h3>
+                <ol>
+                  {panel.strength.nextBest.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <p>This looks ready. You can still add more.</p>
+            )}
+            <p className="muted">This guides you; it never stops you sharing.</p>
+          </aside>
+        )}
       </div>
     </form>
   );
@@ -660,10 +670,13 @@ function QuickDeclaration(p: { checked: boolean; onChange: (on: boolean) => void
             checked={p.checked}
             onChange={(e) => p.onChange(e.target.checked)}
             aria-invalid={p.error ? true : undefined}
-            aria-describedby={[`${id}-covers`, p.error ? `${id}-error` : ""].filter(Boolean).join(" ")}
+            aria-describedby={[`${id}-covers-note`, p.error ? `${id}-error` : ""].filter(Boolean).join(" ")}
           />
           {QUICK_DECLARATION}
         </label>
+        <p id={`${id}-covers-note`} className="hint">
+          {QUICK_DECLARATION_COVERS}
+        </p>
         {p.error ? (
           <p id={`${id}-error`} className="field-error">
             {p.error}
