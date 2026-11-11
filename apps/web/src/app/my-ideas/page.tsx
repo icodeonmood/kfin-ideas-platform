@@ -61,6 +61,7 @@ export default async function Page() {
       {mine === null ? (
         <Status
           kind="error"
+          role={null}
           title={<>We can&apos;t load your ideas just now. Please try again in a minute.</>}
         />
       ) : (

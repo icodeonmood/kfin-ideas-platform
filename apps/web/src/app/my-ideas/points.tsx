@@ -20,7 +20,7 @@ export function PointsPanel({ points }: { points: MyPoints | null }) {
       </h2>
       <p className="muted">Only you see your points. They never decide who becomes a One.</p>
       {points === null ? (
-        <Status kind="error" title={<>We can&apos;t load your points just now.</>} />
+        <Status kind="error" role={null} title={<>We can&apos;t load your points just now.</>} />
       ) : (
         <>
           <p className="points-total">

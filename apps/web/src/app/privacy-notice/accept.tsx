@@ -28,7 +28,7 @@ export function AcceptNotice({ version, next }: { version: string; next: string 
         disabled={state === "saving"}
         aria-busy={state === "saving" ? "true" : undefined}
       >
-        {state === "saving" ? "Saving…" : "I have read this — continue"}
+        <span>{state === "saving" ? "Saving…" : "I have read this — continue"}</span>
       </button>
     </>
   );

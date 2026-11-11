@@ -208,3 +208,18 @@ The renderer (`services/worker/comms/email_html.py`; The Ember in `services/work
 | 6 | At 360 px the glow-up dialog's content looks clipped at the bottom (to check that it scrolls) | `/my-ideas` (glow-up) | Lane A |
 | 7 | At 360 px the review queue table is cramped inside its scroll box; a group proposal stacks to 20,445 px | `/review`, `/review/clusters/[id]` | Lane D (P1 design) |
 | 8 | No committee round is linked from any committee page, so a round could not be captured | `/committee` | Lane D (P1 design) |
+
+## Accessibility check of the P0 build (12 Nov 2026, `design/p0` on the demo)
+
+Every P0 screen was checked at 1440, 360 and 320 px with reduced motion on and off. axe (WCAG 2.1 A and AA tags) found no violations, and no page scrolls sideways. Nothing runs forever under reduced motion, and no target is smaller than 24 px. Each focusable element visibly changes when it takes focus, measured as a pixel difference between its focused and unfocused states. axe cannot judge text on glass or gradients, so that text was measured against the pixels actually painted behind it. That found Electric on white glass at about 4.0:1, fixed in BLD-D005; the rest were hidden or covered text, or the dev overlay. An independent code review of the branch found the header overflow, the paused-band overlap, the two-links-current state and the hidden name (BLD-D006). It also found two new live regions, which are removed, and a screen reader saying "exclamation" before each personal-data note, which is now silent.
+
+### Design-system fixes to send back to the artifact
+
+| # | Fix | Why |
+|---|---|---|
+| 1 | `--link-glass` on White is `--electric-deep` | Plain Electric on the lens fill is about 4.0:1 over the matte ground (BLD-D005) |
+| 2 | The primary button's gloss is capped (`height: min(50%, 18px)`) | It sat behind the first line of a wrapped label at 360 px |
+| 3 | `thumb()` ignores clicks with Ctrl, Cmd, Shift, Alt or a middle button, and moves with route changes | It moved `aria-current` to links opened in a new tab (BLD-D006) |
+| 4 | `.hdr-name` stays visible below 940 px, with an ellipsis | The person's name disappeared on every phone |
+| 5 | `init()` gets a matching `destroy(root)` that disconnects `refract()`'s and `glow()`'s ResizeObservers and releases `glow()`'s hosts | Each client navigation leaves the last page's observers alive for the session (minor; sessions are short) |
+| 6 | The liquid layer survives a label change (the app wraps changing labels in a `<span>`) | React replaces a button's text and removes the layer |

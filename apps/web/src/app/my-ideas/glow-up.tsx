@@ -81,53 +81,51 @@ export function GlowUp({
           Tier {glow.to.tier}, {glow.to.tier_name}
         </strong>
       </p>
-      <div aria-live="polite">
-        {told ? (
-          <div className="story">
-            <h3>Your story so far</h3>
-            <dl className="story-counts">
-              <div>
-                <dt>Ideas shared</dt>
-                <dd>{glow.story.ideas_shared}</dd>
-              </div>
-              <div>
-                <dt>Picked or being built</dt>
-                <dd>{glow.story.ideas_picked}</dd>
-              </div>
-              <div>
-                <dt>Shipped</dt>
-                <dd>{glow.story.ideas_shipped}</dd>
-              </div>
-            </dl>
-            {measures.length ? (
-              <ul className="jersey-measures" aria-label="Impact so far">
-                {measures.map(([label, words]) => (
-                  <li key={label}>
-                    <span>{label}:</span> {words}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <ol>
-              {glow.story.milestones.map((m, i) => (
-                <li key={i}>
-                  {m.on ? `${day(m.on)}: ` : ""}
-                  {m.what}
+      {told ? (
+        <div className="story">
+          <h3>Your story so far</h3>
+          <dl className="story-counts">
+            <div>
+              <dt>Ideas shared</dt>
+              <dd>{glow.story.ideas_shared}</dd>
+            </div>
+            <div>
+              <dt>Picked or being built</dt>
+              <dd>{glow.story.ideas_picked}</dd>
+            </div>
+            <div>
+              <dt>Shipped</dt>
+              <dd>{glow.story.ideas_shipped}</dd>
+            </div>
+          </dl>
+          {measures.length ? (
+            <ul className="jersey-measures" aria-label="Impact so far">
+              {measures.map(([label, words]) => (
+                <li key={label}>
+                  <span>{label}:</span> {words}
                 </li>
               ))}
-            </ol>
-            {glow.messages.length ? <h3>Messages for you</h3> : null}
-            {glow.messages.map((m, i) => (
-              <figure key={i} className="glow-message">
-                <blockquote>{m.text}</blockquote>
-                <figcaption className="glow-from">
-                  {FROM_WORDS[m.from]}: {m.name}
-                </figcaption>
-              </figure>
+            </ul>
+          ) : null}
+          <ol>
+            {glow.story.milestones.map((m, i) => (
+              <li key={i}>
+                {m.on ? `${day(m.on)}: ` : ""}
+                {m.what}
+              </li>
             ))}
-          </div>
-        ) : null}
-      </div>
+          </ol>
+          {glow.messages.length ? <h3>Messages for you</h3> : null}
+          {glow.messages.map((m, i) => (
+            <figure key={i} className="glow-message">
+              <blockquote>{m.text}</blockquote>
+              <figcaption className="glow-from">
+                {FROM_WORDS[m.from]}: {m.name}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
       <div className="btn-row glow-actions">
         <button type="button" className="btn btn-primary btn-lg" onClick={() => void close()}>
           {told ? "Back to my dashboard" : "Skip to my dashboard"}

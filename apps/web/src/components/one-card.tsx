@@ -30,7 +30,7 @@ export function OneCardBody({ one }: { one: PublicOne }) {
       {tag ? <p className="jersey-flag">{tag}</p> : null}
       <h3 className="jersey-name">{oneName(one.number, one.name)}</h3>
       <p className="jersey-num">
-        <span className="vh">No. {one.number}</span>
+        <span className="vh">Number {one.number}</span>
         <span aria-hidden="true">{one.number}</span>
       </p>
       <span className="jersey-bar" aria-hidden="true" />

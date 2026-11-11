@@ -85,6 +85,7 @@ export default async function Page() {
       {w === null ? (
         <Status
           kind="error"
+          role={null}
           title={<>We can&apos;t load the wall just now. Please try again in a minute.</>}
         />
       ) : w.paused ? (

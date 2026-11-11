@@ -508,7 +508,7 @@ export function CanvasForm(props: Props) {
 
           <div className="submit-row">
             <button type="submit" className="btn btn-primary btn-lg" disabled={submitState === "sending"}>
-              {submitState === "sending" ? "Sharing…" : "Share your idea"}
+              <span>{submitState === "sending" ? "Sharing…" : "Share your idea"}</span>
             </button>
             <p className="save-status" role="status" aria-live="polite">
               {blocked

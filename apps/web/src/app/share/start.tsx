@@ -48,7 +48,7 @@ export function StartButtons() {
             disabled={busy !== null}
             aria-busy={busy === "quick" ? "true" : undefined}
           >
-            {busy === "quick" ? "Starting…" : "Start a quick capture"}
+            <span>{busy === "quick" ? "Starting…" : "Start a quick capture"}</span>
           </button>
         </li>
         <li className="glass share-way" data-lit="">
@@ -61,7 +61,7 @@ export function StartButtons() {
             disabled={busy !== null}
             aria-busy={busy === "full" ? "true" : undefined}
           >
-            {busy === "full" ? "Starting…" : "Start the full canvas"}
+            <span>{busy === "full" ? "Starting…" : "Start the full canvas"}</span>
           </button>
         </li>
       </ul>
