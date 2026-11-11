@@ -42,7 +42,7 @@ function receiverOf(source: string, dot: number): string {
   let i = dot - 1;
   let depth = 0;
   while (i >= 0) {
-    const c = source[i];
+    const c = source[i] ?? "";
     if (c === ")") depth += 1;
     else if (c === "(") {
       if (depth === 0) break;
@@ -61,7 +61,7 @@ export function dateCalls(source: string): string[] {
     const end = closeOf(source, m.index + m[0].length);
     const call = source.slice(m.index, end);
     const isDate =
-      m[1].startsWith("Intl") ||
+      (m[1] ?? "").startsWith("Intl") ||
       m[2] !== undefined ||
       DATE_PARTS.test(call) ||
       /\bnew Date\b|\bDate\.now\b/.test(receiverOf(source, m.index));
