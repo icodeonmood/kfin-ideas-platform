@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+
+import { Status } from "@/components/status";
 import { redirect } from "next/navigation";
 
 import { day } from "@/lib/dates";
@@ -34,11 +36,13 @@ export default async function Page() {
   const committeeOn = isOn(states, "committee.flow") || isOn(states, "appeals.filing");
   return (
     <>
-      <h1>My ideas</h1>
-      <p className="lead">Every idea you share is listed here with where it is now and what happens next.</p>
+      <h1 className="t-display page-display">My ideas</h1>
+      <p className="lead page-lead">
+        Every idea you share is listed here with where it is now and what happens next.
+      </p>
       {one ? <OneDashboard one={one} /> : null}
       <PointsPanel points={points} />
-      <p>
+      <p className="chip-links">
         <Link href="/my-ideas/lens">Your lens: your ideas and groups in numbers</Link>
         {" · "}
         <Link href="/journey">How an idea becomes a One</Link>
@@ -55,14 +59,17 @@ export default async function Page() {
         </p>
       ) : null}
       {mine === null ? (
-        <p className="notice">We can&apos;t load your ideas just now. Please try again in a minute.</p>
+        <Status
+          kind="error"
+          title={<>We can&apos;t load your ideas just now. Please try again in a minute.</>}
+        />
       ) : (
         <>
           {mine.ideas.length ? (
-            <ul className="crew-cards" aria-label="Your ideas">
+            <ul className="idea-list" aria-label="Your ideas">
               {mine.ideas.map((i) => (
-                <li key={i.id} className="crew-card">
-                  <h2>
+                <li key={i.id} className="idea" data-lit="">
+                  <h2 className="idea-title">
                     {i.draft ? (
                       <Link href={`/share/${i.id}`}>Your draft from {day(i.shared_on)}</Link>
                     ) : WAITING_ON_YOU.has(i.stage_key) ? (
@@ -73,7 +80,7 @@ export default async function Page() {
                       (i.one_line ?? "Your idea")
                     )}
                   </h2>
-                  <dl className="crew-facts">
+                  <dl className="facts">
                     {i.idea_id ? (
                       <div>
                         <dt>Idea</dt>
@@ -96,17 +103,19 @@ export default async function Page() {
               ))}
             </ul>
           ) : (
-            <p className="notice">
+            <p className="glass empty-note">
               You haven&apos;t shared an idea yet. <Link href="/share">Share an idea</Link>
             </p>
           )}
           {mine.joined.length ? (
-            <section aria-labelledby="mi-joined">
-              <h2 id="mi-joined">Ideas you teamed up on</h2>
-              <ul className="crew-cards">
+            <section className="my-section" aria-labelledby="mi-joined">
+              <h2 id="mi-joined" className="t-h2">
+                Ideas you teamed up on
+              </h2>
+              <ul className="idea-list">
                 {mine.joined.map((j, n) => (
-                  <li key={j.idea_id ?? `joined-${n}`} className="crew-card">
-                    <h3>
+                  <li key={j.idea_id ?? `joined-${n}`} className="idea" data-lit="">
+                    <h3 className="idea-title">
                       {j.with_desk ? (
                         "A related idea is with the review desk"
                       ) : j.idea_id ? (
@@ -115,7 +124,7 @@ export default async function Page() {
                         (j.summary ?? "A colleague's idea")
                       )}
                     </h3>
-                    <dl className="crew-facts">
+                    <dl className="facts">
                       <div>
                         <dt>How</dt>
                         <dd>{j.how}</dd>

@@ -31,13 +31,15 @@ export function NameOnWall({ initial }: { initial: boolean }) {
   }
 
   return (
-    <section aria-labelledby="mi-name">
-      <h2 id="mi-name">Your name on the wall</h2>
+    <section className="glass name-on-wall" aria-labelledby="mi-name">
+      <h2 id="mi-name" className="t-h2">
+        Your name on the wall
+      </h2>
       <p>
         Ideas on the wall show a short summary, never your own words. You can also choose to show your name
         next to ideas you shared yourself, never ones you only joined. You can change this at any time.
       </p>
-      <label className="choice">
+      <label className="check">
         <input
           type="checkbox"
           checked={on}

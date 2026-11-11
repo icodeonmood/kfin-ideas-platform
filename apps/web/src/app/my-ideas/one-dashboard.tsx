@@ -55,11 +55,14 @@ export function OneDashboard({ one }: { one: MyOne }) {
   if (!one.active) {
     return (
       <section
-        className="one-dashboard"
+        className="one-dashboard band stage"
+        data-theme="zed"
+        data-tier={String(Math.min(7, Math.max(1, one.tier)))}
         aria-labelledby="od-title"
-        style={{ ["--tier" as string]: one.tier_colour }}
       >
-        <h2 id="od-title">You were a One</h2>
+        <h2 id="od-title" className="t-display">
+          You were a One
+        </h2>
         <p className="lead-dark">
           Your spark stays in the sky at Tier {one.tier}, {one.tier_name}. A new idea can bring you back.
         </p>
@@ -69,21 +72,28 @@ export function OneDashboard({ one }: { one: MyOne }) {
 
   return (
     <section
-      className="one-dashboard"
+      className="one-dashboard band stage"
+      data-theme="zed"
+      data-glow="1"
+      data-tier={String(Math.min(7, Math.max(1, one.tier)))}
       aria-labelledby="od-title"
-      style={{ ["--tier" as string]: one.tier_colour }}
     >
       {one.glow_up ? <GlowUp glow={one.glow_up} number={one.number} inductionNo={one.induction_no} /> : null}
       <div className="one-hero">
-        <OneSpark inductionNo={one.induction_no} colour={one.tier_colour} size={96} zeros />
-        <p className="one-number" style={{ color: one.tier_colour }}>
-          <span className="visually-hidden">Your number </span>
-          {one.number}
-        </p>
-        <div>
-          <h2 id="od-title">You&apos;re No. {one.number}</h2>
+        <div className="jersey jersey-lg one-jersey" data-tilt="6">
+          <p className="jersey-num">
+            <span className="visually-hidden">Your number </span>
+            {one.number}
+          </p>
+          <span className="jersey-bar" aria-hidden="true" />
+        </div>
+        <div className="one-hero-copy">
+          <OneSpark inductionNo={one.induction_no} colour={one.tier_colour} size={72} zeros />
+          <h2 id="od-title" className="t-display">
+            You&apos;re No. {one.number}
+          </h2>
           <p className="lead-dark">
-            <span className="tier-dot" style={{ background: one.tier_colour }} aria-hidden="true" />
+            <span className="swatch" aria-hidden="true" />
             Tier {one.tier}, {one.tier_name}. {one.way_in} since {day(one.since)}.
           </p>
           {one.line ? (
@@ -100,7 +110,7 @@ export function OneDashboard({ one }: { one: MyOne }) {
 
       {one.can_swap ? (
         <form
-          className="one-section"
+          className="glass one-section"
           onSubmit={async (e) => {
             e.preventDefault();
             const n = Number(number);
@@ -129,22 +139,22 @@ export function OneDashboard({ one }: { one: MyOne }) {
             onChange={(e) => setNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
             aria-describedby={`${numberId}-hint${numberError ? ` ${numberId}-err` : ""}`}
             aria-invalid={numberError ? true : undefined}
-            style={{ maxWidth: "8rem" }}
+            className="input number-input"
           />
           {numberError ? (
             <p className="field-error" id={`${numberId}-err`}>
               {numberError}
             </p>
           ) : null}
-          <div className="actions">
-            <button type="submit" className="button">
+          <div className="btn-row">
+            <button type="submit" className="btn btn-primary">
               Choose this number
             </button>
           </div>
         </form>
       ) : null}
 
-      <div className="one-section">
+      <div className="glass one-section">
         <h3>Your impact brief</h3>
         {one.brief ? <p>{one.brief}</p> : <p className="muted">No brief on the wall yet.</p>}
         {one.brief_pending ? <p className="muted">Your new brief is with the core committee.</p> : null}
@@ -166,6 +176,7 @@ export function OneDashboard({ one }: { one: MyOne }) {
             committee approves it before it shows. {words}/30 words.
           </p>
           <textarea
+            className="textarea"
             id={briefId}
             rows={3}
             value={brief}
@@ -178,18 +189,18 @@ export function OneDashboard({ one }: { one: MyOne }) {
               {briefError}
             </p>
           ) : null}
-          <div className="actions">
-            <button type="submit" className="button">
+          <div className="btn-row">
+            <button type="submit" className="btn btn-primary">
               Send to the committee
             </button>
           </div>
         </form>
       </div>
 
-      <div className="one-section">
+      <div className="glass one-section">
         <h3>Impact so far</h3>
         {measures.length ? (
-          <ul className="measure-chips">
+          <ul className="jersey-measures">
             {measures.map(([label, words]) => (
               <li key={label}>
                 <span>{label}:</span> {words}
@@ -201,19 +212,15 @@ export function OneDashboard({ one }: { one: MyOne }) {
         )}
       </div>
 
-      <div className="one-section">
+      <div className="glass one-section">
         <h3>More for Ones</h3>
         <ul>
           <li>
-            <Link href="/my-ideas/showcase" style={{ color: "var(--white)" }}>
-              Your Showcase brief
-            </Link>
+            <Link href="/my-ideas/showcase">Your Showcase brief</Link>
             {one.showcase_updated ? ` (updated ${day(one.showcase_updated)})` : ""}
           </li>
           <li>
-            <Link href="/ones/leaderboard" style={{ color: "var(--white)" }}>
-              The Ones leaderboard
-            </Link>
+            <Link href="/ones/leaderboard">The Ones leaderboard</Link>
           </li>
         </ul>
       </div>

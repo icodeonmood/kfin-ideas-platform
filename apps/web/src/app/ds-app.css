@@ -1325,3 +1325,376 @@ main > .entry {
 .canvas h2[tabindex="-1"]:focus {
   outline: none;
 }
+
+/* ---------- My ideas ---------- */
+.chip-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-6);
+  font-size: 0;
+}
+
+.chip-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--g-fill);
+  box-shadow: var(--g-rim);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chip-links a:hover {
+  text-decoration: underline;
+}
+
+.idea-list {
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+
+.idea-list .idea {
+  position: relative;
+}
+
+.idea-list .facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  font-size: 14px;
+}
+
+.idea-list .facts > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.idea-list .facts dt {
+  color: var(--ink-muted);
+}
+
+.idea-list .facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty-note {
+  max-width: var(--measure);
+  padding: var(--space-6);
+  border-radius: var(--r-card);
+  font-size: 17px;
+}
+
+.my-section,
+.points-panel,
+.name-on-wall {
+  margin: 0 0 var(--space-6);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.points-panel,
+.name-on-wall {
+  max-width: 48rem;
+  padding: var(--space-6);
+}
+
+.points-panel h2,
+.name-on-wall h2,
+.my-section h2 {
+  margin: 0;
+}
+
+.points-panel p,
+.name-on-wall p {
+  margin: 0;
+}
+
+.points-total {
+  font-size: 17px;
+}
+
+.points-number {
+  font-weight: 800;
+  font-size: 56px;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+}
+
+.points-panel .plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+/* ---------- A One's dashboard: their tier lights their own corner ---------- */
+main > .one-dashboard {
+  margin-block: var(--space-6) var(--space-7);
+  padding-block: var(--space-8);
+  display: grid;
+  gap: var(--space-5);
+  border: 0;
+  border-radius: 0;
+}
+
+.one-dashboard .one-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--space-7);
+  margin: 0;
+}
+
+.one-dashboard .one-jersey {
+  min-height: 300px;
+  align-content: end;
+}
+
+.one-dashboard .one-jersey .jersey-num {
+  font-size: clamp(140px, 18vw, 220px);
+}
+
+.one-dashboard .one-hero-copy {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.one-dashboard .one-hero-copy h2 {
+  font-size: clamp(48px, 7vw, 96px);
+}
+
+.one-dashboard .lead-dark {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ash);
+}
+
+.one-dashboard .lead-dark .swatch {
+  margin-right: 8px;
+}
+
+.one-dashboard .one-section {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-6);
+  border: 0;
+  border-radius: var(--r-glass);
+}
+
+.one-dashboard .one-section h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.one-dashboard .one-section p,
+.one-dashboard .one-section form {
+  margin: 0;
+}
+
+.one-dashboard .one-section form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.one-dashboard .number-input {
+  max-width: 9rem;
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.one-dashboard .one-section ul:not(.jersey-measures) {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+@media (min-width: 64rem) {
+  .one-dashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .one-dashboard .one-hero,
+  .one-dashboard > [role="status"] {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 48rem) {
+  .one-dashboard .one-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .one-dashboard .one-jersey {
+    min-height: 220px;
+  }
+
+  .one-dashboard .one-section {
+    padding: var(--space-5) var(--space-4);
+    border-radius: var(--r-card);
+  }
+}
+
+/* ---------- The glow-up (DEC-084): a smoked glass sheet; the number heats from the old tier to the new ---------- */
+.glow-up {
+  --heat-anim: var(--heat);
+  width: min(44rem, calc(100vw - 2rem));
+  padding: var(--space-6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--r-glass);
+  background:
+    radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--heat) 26%, transparent), transparent 70%),
+    linear-gradient(180deg, #202229, #0e0f12);
+  color: var(--white);
+  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.9);
+  transition: --heat-anim var(--t-glow) var(--ease-move);
+}
+
+.glow-up::backdrop {
+  background: rgba(10, 10, 12, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.glow-hero {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-5);
+}
+
+.glow-num {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: clamp(96px, 16vw, 168px);
+  line-height: 0.82;
+  letter-spacing: -0.06em;
+  background: linear-gradient(180deg, var(--heat-core) 0%, var(--heat-anim) 62%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 calc(var(--bloom) * 0.8) color-mix(in srgb, var(--heat-anim) 70%, transparent));
+}
+
+.glow-up h2 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 800;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.glow-up h2:focus {
+  outline: none;
+}
+
+.glow-up .glow-from {
+  margin: 0;
+  color: var(--ash);
+}
+
+.glow-up .glow-from strong {
+  color: var(--white);
+}
+
+.glow-up .story {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.glow-up .story h3 {
+  margin: var(--space-2) 0 0;
+  font-size: 19px;
+}
+
+.glow-up .story-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.glow-up .story-counts dt {
+  color: var(--ash);
+  font-size: 14px;
+}
+
+.glow-up .story-counts dd {
+  margin: 0;
+  font-weight: 800;
+  font-size: 40px;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.glow-message {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--r-card);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.glow-message blockquote {
+  margin: 0;
+  font-size: 17px;
+}
+
+.glow-actions {
+  margin-top: var(--space-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-up {
+    transition: --heat-anim var(--t-state) var(--ease-move);
+  }
+}
+
+@media (max-width: 40rem) {
+  .glow-up {
+    width: calc(100vw - 1rem);
+    padding: var(--space-5) var(--space-4);
+    border-radius: var(--r-card);
+  }
+}
+
+/* Panels pack their rows to the top, so a short panel beside a tall one never stretches its chips. */
+.jersey-measures {
+  align-items: flex-start;
+}
+
+/* The dashboard's wells are dark on Zed (an older .one-dashboard rule painted them white). */
+.one-dashboard .input,
+.one-dashboard .textarea {
+  background: var(--g-well);
+  color: var(--ink);
+  border-color: var(--line-control);
+}
+
+.glow-message blockquote {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* Dark surfaces get dark scrollbars and form controls. */
+[data-theme="zed"] {
+  color-scheme: dark;
+}

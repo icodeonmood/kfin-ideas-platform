@@ -1,3 +1,4 @@
+import { Status } from "@/components/status";
 import { day } from "@/lib/dates";
 import type { MyPoints } from "@/server/points";
 
@@ -13,11 +14,13 @@ const pts = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 /** Your points (DEC-078): only you see them, and they never decide who becomes a One. */
 export function PointsPanel({ points }: { points: MyPoints | null }) {
   return (
-    <section className="points-panel" aria-labelledby="mi-points">
-      <h2 id="mi-points">Your points</h2>
+    <section className="glass points-panel" aria-labelledby="mi-points">
+      <h2 id="mi-points" className="t-h2">
+        Your points
+      </h2>
       <p className="muted">Only you see your points. They never decide who becomes a One.</p>
       {points === null ? (
-        <p className="notice">We can&apos;t load your points just now.</p>
+        <Status kind="error" title={<>We can&apos;t load your points just now.</>} />
       ) : (
         <>
           <p className="points-total">
@@ -36,7 +39,9 @@ export function PointsPanel({ points }: { points: MyPoints | null }) {
             <p>Share your first idea and your points start here.</p>
           )}
           {points.coming_soon.length ? (
-            <p className="muted">Coming soon: points for {listWords(points.coming_soon)}.</p>
+            <p className="soon-pill">
+              <strong>Coming soon:</strong> points for {listWords(points.coming_soon)}.
+            </p>
           ) : null}
         </>
       )}

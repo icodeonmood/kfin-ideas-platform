@@ -25,14 +25,15 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 /**
  * The shell (DEC-099): a matte stage, a floating dark-glass dock with the mark, the menu for your roles and the
  * account, the paused-feature bands, and the footer. Working screens are the White surface; brand pages set
- * data-theme="zed" on their own bands. data-tier is 0 here; a One's own pages set their tier on their regions.
+ * data-theme="zed" on their own bands. The body carries no data-tier (the tokens default to Spark): a tier on the
+ * body would outrank a One's own tier on a themed region, so a One's pages set data-tier on their own regions.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await currentUser().catch(() => null);
   const showShell = Boolean(me?.privacyAccepted);
   return (
     <html lang="en-IN" data-theme="white" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="stage" data-tier="0">
+      <body className="stage">
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
