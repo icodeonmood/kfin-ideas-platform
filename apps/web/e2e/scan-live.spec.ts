@@ -6,7 +6,7 @@
 import { expect, test } from "@playwright/test";
 
 import { QUESTIONS } from "../src/lib/canvas/model";
-import { PERSONAS, setSwitch, signIn } from "./helpers";
+import { confirmQuickCapture, PERSONAS, setSwitch, signIn } from "./helpers";
 
 test("the waiting screen follows the scan over server-sent events", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "the switch is shared between projects");
@@ -33,17 +33,7 @@ test("the waiting screen follows the scan over server-sent events", async ({ bro
       .fill(
         "Cheque deposit slips are typed twice at the branch counter, adding ten minutes to every deposit.",
       );
-    await a
-      .getByRole("group", { name: QUESTIONS.quick_who.label })
-      .getByRole("checkbox", { name: "Investors" })
-      .check();
-    await a
-      .getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })
-      .getByRole("radio", { name: "Not sure yet" })
-      .check();
-    for (const label of [/no investor or customer personal data/, /my own work/, /I accept the terms/]) {
-      await a.getByRole("checkbox", { name: label }).check();
-    }
+    await confirmQuickCapture(a);
     const stream = a.waitForResponse((r) => r.url().includes("/scan-events"), { timeout: 30_000 });
     await a.getByRole("button", { name: "Share your idea" }).click();
     await a.waitForURL(/\/done$/);

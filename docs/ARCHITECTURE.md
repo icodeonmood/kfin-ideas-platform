@@ -844,7 +844,7 @@ flowchart LR
 
 | Mode | Time | What the person does | What happens next |
 |---|---|---|---|
-| Quick capture | About 1 minute | Answers three questions: what did you notice, who feels it or would pay for it, does it save cost or earn revenue | Saved and scanned. The assistant drafts the rest of the canvas as suggestions. The person can enrich it now or later |
+| Quick capture | About 1 minute | One box (DEC-094): "What's getting in your way, or what would you change?", in any language (50+ characters), plus files if they have them and one confirmation covering the three declarations. Category is optional under "Add more if you like" and saved as "not sure yet" if left; who it touches is left to the assistant's suggestions. A tip suggests the phone keyboard's mic (`capture.mic_hint`, DEC-096) | Saved and scanned. The assistant drafts the rest of the canvas as suggestions. The person can enrich it now or later |
 | Full canvas | 5–10 minutes | Works through all six sections, with the assistant helping | Same scan, with a stronger start for review |
 
 **The canvas**
@@ -1902,6 +1902,7 @@ Stored in `kill_switches`, read on every request (10-second cache). Every change
 | `learning.jobs` | Every learning loop's job stops (§5: reports and proposals), and so does running one by hand; proposals already made can still be decided (BLD-122) | Admin | — |
 | `ember.send` | Sending The Ember stops; queued Ember emails wait; drafts, the chair's note and the archive carry on (BLD-128). `ones.public` off stops sending too | Admin | — |
 | `solutions.publish` | Approving a solution write-up stops, so nothing new reaches "Already running" matches; drafting and submitting carry on (BLD-133) | Admin | — |
+| `capture.mic_hint` | The tip under the quick capture box that suggests the phone keyboard's mic is hidden; nothing else changes (DEC-096, BLD-C001). On from day one | Admin, InfoSec | — |
 
 ### 7.7 Accessibility **[Day 1]**
 

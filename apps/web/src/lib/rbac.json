@@ -222,6 +222,10 @@
     ],
     "solutions.publish": [
       "admin"
+    ],
+    "capture.mic_hint": [
+      "admin",
+      "infosec"
     ]
   },
   "public": [

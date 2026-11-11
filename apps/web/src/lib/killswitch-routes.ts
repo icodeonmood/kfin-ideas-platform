@@ -19,7 +19,8 @@ export type SwitchName =
   | "ember.send"
   | "solutions.publish"
   | "committee.flow"
-  | "appeals.filing";
+  | "appeals.filing"
+  | "capture.mic_hint";
 
 interface Rule {
   methods: readonly string[];
@@ -106,6 +107,8 @@ export const BANNERS: Record<SwitchName, string> = {
     "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",
   "committee.flow": "The committee's reviews and decisions are paused for now.",
   "appeals.filing": "Appeals are paused for a short while. Please try again later.",
+  // DEC-096: off only hides the hint under the quick capture box; nothing else changes, so no banner shows it.
+  "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */

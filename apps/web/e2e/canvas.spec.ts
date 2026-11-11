@@ -6,8 +6,15 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { MIC_HINT, QUESTIONS, QUICK_STRENGTH_NOTE } from "../src/lib/canvas/model";
+import {
+  confirmQuickCapture,
+  expectNoSeriousAxeIssues,
+  PERSONAS,
+  restoreSwitches,
+  setSwitch,
+  signIn,
+} from "./helpers";
 
 const DETAILS =
   "Three people re-check every SIP form by hand for missing bank or nominee fields before keying it in.";
@@ -39,24 +46,78 @@ async function declare(page: Page) {
   }
 }
 
-test("quick capture: three questions submit (AT-B3-01)", async ({ page }) => {
+test("quick capture: one box, files, one tick, and it shares (AT-B3-01, DEC-094)", async ({ page }) => {
   await start(page, "quick");
   await expect(page.getByRole("heading", { level: 1, name: "Quick capture" })).toBeVisible();
+  // One visible question; the category waits, closed, under "Add more if you like".
+  await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toBeVisible();
+  await expect(page.getByText(QUESTIONS.quick_noticed.why, { exact: false })).toBeVisible();
+  await expect(page.getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })).toBeHidden();
+  await expect(page.getByText("Add more if you like")).toBeVisible();
+  // No score and no prompts for questions quick capture does not ask (BLD-C050).
+  await expect(page.getByRole("complementary", { name: "What happens next" })).toHaveText(
+    QUICK_STRENGTH_NOTE,
+  );
+  await expect(page.locator(".strength-score")).toHaveCount(0);
+  // Files can be added here too, with the same checks as the full canvas.
+  await expect(page.getByLabel("Attach a file (optional)")).toBeVisible();
+  // One confirmation, not three.
+  await expect(page.getByRole("checkbox", { name: /I accept the terms/ })).toHaveCount(0);
   await page.getByLabel(QUESTIONS.quick_noticed.label).fill(DETAILS);
-  await page
-    .getByRole("group", { name: QUESTIONS.quick_who.label })
-    .getByRole("checkbox", { name: "Investors" })
-    .check();
-  await page
-    .getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })
-    .getByRole("radio", { name: "Not sure yet" })
-    .check();
-  await declare(page);
   await expectNoSeriousAxeIssues(page);
+  await page.getByRole("button", { name: "Share your idea" }).click();
+  // Nothing ticked yet: the one error links to the one checkbox.
+  const summary = page.getByRole("alert").filter({ hasText: "before you share" });
+  await expect(summary).toBeFocused();
+  await expect(summary.getByRole("link")).toHaveCount(1);
+  await summary.getByRole("link", { name: "Please confirm this before you share." }).click();
+  await expect(
+    page.getByRole("checkbox", { name: /in this idea or its files, it is my own work/ }),
+  ).toBeFocused();
+  await confirmQuickCapture(page);
   await page.getByRole("button", { name: "Share your idea" }).click();
   await page.waitForURL(/\/done$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Your idea is in: IDEA-\d{4}-\d{6}$/);
   await expectNoSeriousAxeIssues(page);
+});
+
+test("quick capture: the category is optional and can be chosen under Add more (DEC-094)", async ({
+  page,
+}) => {
+  await start(page, "quick");
+  await page.getByLabel(QUESTIONS.quick_noticed.label).fill(DETAILS);
+  await page.getByText("Add more if you like").click();
+  await page
+    .getByRole("group", { name: new RegExp(QUESTIONS.quick_value.label) })
+    .getByRole("radio", { name: "Cost saving" })
+    .check();
+  await confirmQuickCapture(page);
+  await page.getByRole("button", { name: "Share your idea" }).click();
+  await page.waitForURL(/\/done$/);
+});
+
+test("quick capture: the keyboard-mic tip follows capture.mic_hint (DEC-096)", async ({ browser }) => {
+  const before = await setSwitch(browser, "capture.mic_hint", "on");
+  try {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await start(page, "quick");
+    await expect(page.getByText(MIC_HINT)).toBeVisible();
+    await setSwitch(browser, "capture.mic_hint", "off");
+    await expect
+      .poll(
+        async () => {
+          await page.reload();
+          return page.getByText(MIC_HINT).count();
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(0);
+    await expect(page.getByLabel(QUESTIONS.quick_noticed.label)).toBeVisible();
+    await ctx.close();
+  } finally {
+    await restoreSwitches(browser, [["capture.mic_hint", before]]);
+  }
 });
 
 test("full canvas: six sections, exact questions, why-we-ask lines and example links (AT-B3-01)", async ({

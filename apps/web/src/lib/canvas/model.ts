@@ -135,17 +135,30 @@ export const QUESTIONS = {
     why: "Research you've done saves weeks later",
   },
   visibility: { label: "Who can see this?", why: "" },
-  // Quick capture: three questions (§4.1 "Two ways in").
+  // Quick capture is one box (DEC-094): one visible question, files if the person has them, and an optional
+  // category under "Add more if you like". `why` is shown as the hint under the box, not as "Why we ask".
   quick_noticed: {
-    label: "What did you notice?",
-    why: "Context helps us find others who said the same thing",
+    label: "What's getting in your way, or what would you change?",
+    why: "Say it any way you like, in any language. We'll help you shape it.",
   },
-  quick_who: { label: "Who feels it or would pay for it?", why: "Size of the pain, or size of the market" },
   quick_value: {
     label: "Does it save cost or earn revenue?",
-    why: "This is how committees first sort ideas",
+    why: 'This is how committees first sort ideas. If you don\'t choose, we save it as "Not sure yet".',
   },
 } as const;
+
+/** Quick capture's single confirmation (DEC-094). Ticking it confirms all three declarations below. */
+export const QUICK_DECLARATION =
+  "There is no investor or customer personal data in this idea or its files, it is my own work or I've credited others, and I accept the IP terms.";
+
+/** Where the quick checkbox's description points (DEC-094): a short visible line, not the whole disclosure. */
+export const QUICK_DECLARATION_COVERS = "What this covers is listed just below.";
+
+/** Quick capture's side panel (DEC-094): no score and no prompts for questions quick capture does not ask. */
+export const QUICK_STRENGTH_NOTE = "You can add more later, and the assistant will suggest the rest.";
+
+/** The keyboard-mic hint under the quick capture box (DEC-096), behind `capture.mic_hint`. */
+export const MIC_HINT = "On your phone? Tap the mic on your keyboard and just talk, in any language.";
 
 export const CHOICES = {
   kind: [

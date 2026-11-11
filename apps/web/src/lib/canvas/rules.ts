@@ -5,7 +5,7 @@
  */
 import { scan, type PatternMatch } from "@/lib/pii/patterns";
 
-import { ESTIMATE_FIELDS, textFields, wordCount, type Canvas } from "./model";
+import { ESTIMATE_FIELDS, QUICK_STRENGTH_NOTE, textFields, wordCount, type Canvas } from "./model";
 
 export type CanvasLimits = {
   one_line_max_words: number;
@@ -25,7 +25,13 @@ export type StrengthRubric = {
 
 export type FieldError = { field: string; message: string };
 
-/** Required fields (AT-B3-02). Quick capture asks three questions; the full canvas asks for more. */
+/** The field path of quick capture's single confirmation (its error links to that checkbox). */
+export const QUICK_DECLARATION_FIELD = "declarations.all";
+
+/**
+ * Required fields (AT-B3-02). Quick capture is one box (DEC-094): the details, visibility and one confirmation
+ * covering the three declarations; its category is optional. The full canvas asks for more.
+ */
 export function validate(c: Canvas, limits: CanvasLimits): FieldError[] {
   const errors: FieldError[] = [];
   const add = (field: string, message: string) => errors.push({ field, message });
@@ -38,16 +44,36 @@ export function validate(c: Canvas, limits: CanvasLimits): FieldError[] {
       add("one_line", `Keep the one line to ${limits.one_line_max_words} words or fewer (it has ${words}).`);
     if (c.kind === "problem_with_solution" && !c.solution.approach.trim())
       add("solution.approach", "Tell us how you would solve it, since you have a fix in mind.");
+  } else {
+    // Quick capture never asks for the one line, but a direct API call may send one: same limit (BLD-C053).
+    const words = wordCount(c.one_line);
+    if (words > limits.one_line_max_words)
+      add("one_line", `Keep the one line to ${limits.one_line_max_words} words or fewer (it has ${words}).`);
   }
   if (c.details.trim().length < limits.details_min_chars)
     add("details", `Please write at least ${limits.details_min_chars} characters, in any language.`);
-  if (!c.value.category) add("value.category", "Choose cost saving, new revenue, both, or not sure yet.");
+  if (c.mode === "full" && !c.value.category)
+    add("value.category", "Choose cost saving, new revenue, both, or not sure yet.");
   if (c.visibility === "committee" && c.visibility_reason.trim().length < 10)
     add("visibility_reason", "Tell us briefly why only committees should see this.");
-  for (const [key, ok] of Object.entries(c.declarations)) {
-    if (!ok) add(`declarations.${key}`, "Please confirm this before you share.");
+  if (c.mode === "quick") {
+    if (!Object.values(c.declarations).every(Boolean))
+      add(QUICK_DECLARATION_FIELD, "Please confirm this before you share.");
+  } else {
+    for (const [key, ok] of Object.entries(c.declarations)) {
+      if (!ok) add(`declarations.${key}`, "Please confirm this before you share.");
+    }
   }
   return errors;
+}
+
+/**
+ * What a quick capture saves on submit (DEC-094): a category the person did not choose is saved as "Not sure
+ * yet". That is the person's own answer, so the assistant never fills it in for them (DEC-004).
+ */
+export function finaliseQuick(c: Canvas): Canvas {
+  if (c.mode !== "quick" || c.value.category) return c;
+  return { ...c, value: { ...c.value, category: "not_sure" } };
 }
 
 export type PersonalDataHit = { field: string; match: PatternMatch };
@@ -121,6 +147,18 @@ export function strength(c: Canvas, rubric: StrengthRubric, cleanAttachments = 0
     solved_elsewhere: solved,
   };
   return { score: Object.values(points).filter(Boolean).length, points, nextBest: prompts.slice(0, 2) };
+}
+
+export type StrengthPanel = { kind: "meter"; strength: Strength } | { kind: "note"; note: string };
+
+/**
+ * What the canvas's side panel shows (DEC-005, DEC-094, BLD-C050). The full canvas shows the strength meter.
+ * Quick capture shows one line and no score: its one box cannot earn the rubric's points, and the meter's
+ * prompts would ask for answers quick capture never asks for.
+ */
+export function strengthPanel(c: Canvas, rubric: StrengthRubric, cleanAttachments = 0): StrengthPanel {
+  if (c.mode === "quick") return { kind: "note", note: QUICK_STRENGTH_NOTE };
+  return { kind: "meter", strength: strength(c, rubric, cleanAttachments) };
 }
 
 /** Number inputs: blank is null; negatives and junk are refused rather than guessed. */

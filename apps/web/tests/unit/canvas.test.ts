@@ -5,8 +5,25 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-import { emptyCanvas, QUESTIONS, type Canvas } from "@/lib/canvas/model";
-import { parseFigure, strength, validate, type StrengthRubric } from "@/lib/canvas/rules";
+import {
+  CHOICES,
+  emptyCanvas,
+  MIC_HINT,
+  QUESTIONS,
+  QUICK_DECLARATION,
+  QUICK_DECLARATION_COVERS,
+  QUICK_STRENGTH_NOTE,
+  type Canvas,
+} from "@/lib/canvas/model";
+import {
+  finaliseQuick,
+  parseFigure,
+  QUICK_DECLARATION_FIELD,
+  strength,
+  strengthPanel,
+  validate,
+  type StrengthRubric,
+} from "@/lib/canvas/rules";
 
 const thresholds = parse(
   /```yaml\n([\s\S]*?)```/.exec(
@@ -71,12 +88,100 @@ describe("required fields (AT-B3-02)", () => {
     expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["solution.approach", "visibility_reason"]);
   });
 
-  it("quick capture needs only what it asks: what you noticed, cost or revenue, visibility, declarations", () => {
+  it("quick capture is one box (DEC-094): the details, visibility and one confirmation; no category needed", () => {
     const c = emptyCanvas("quick");
     c.details = "Investors call twice because the SIP confirmation SMS arrives a day late.";
-    c.value.category = "not_sure";
     c.declarations = { no_personal_data: true, own_work_or_credited: true, ip_terms: true };
     expect(validate(c, LIMITS)).toEqual([]);
+  });
+
+  it("quick capture reports one confirmation, linked to its one checkbox, not three", () => {
+    const c = emptyCanvas("quick");
+    c.details = "Investors call twice because the SIP confirmation SMS arrives a day late.";
+    expect(validate(c, LIMITS)).toEqual([
+      { field: QUICK_DECLARATION_FIELD, message: "Please confirm this before you share." },
+    ]);
+    c.declarations = { no_personal_data: true, own_work_or_credited: false, ip_terms: true };
+    expect(validate(c, LIMITS).map((e) => e.field)).toEqual([QUICK_DECLARATION_FIELD]);
+  });
+
+  it("quick capture still needs 50 characters of detail, in any language", () => {
+    const c = emptyCanvas("quick");
+    c.details = "बहुत धीमा";
+    c.declarations = { no_personal_data: true, own_work_or_credited: true, ip_terms: true };
+    expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["details"]);
+  });
+
+  it("quick capture refuses an over-long one line sent straight to the API, as the full canvas does (BLD-C053)", () => {
+    const c = emptyCanvas("quick");
+    c.details = "Investors call twice because the SIP confirmation SMS arrives a day late.";
+    c.declarations = { no_personal_data: true, own_work_or_credited: true, ip_terms: true };
+    c.one_line = "word ".repeat(LIMITS.one_line_max_words + 1).trim();
+    expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["one_line"]);
+    c.one_line = "SIP confirmation SMS arrives a day late";
+    expect(validate(c, LIMITS)).toEqual([]);
+  });
+
+  it("the full canvas still needs a category and all three ticks", () => {
+    const c = complete();
+    c.value.category = null;
+    c.declarations.ip_terms = false;
+    expect(validate(c, LIMITS).map((e) => e.field)).toEqual(["value.category", "declarations.ip_terms"]);
+  });
+});
+
+describe("finaliseQuick (DEC-094, DEC-004)", () => {
+  it("saves a quick capture's unchosen category as Not sure yet", () => {
+    const c = emptyCanvas("quick");
+    expect(finaliseQuick(c).value.category).toBe("not_sure");
+    expect(c.value.category).toBeNull(); // the input is not changed
+  });
+
+  it("keeps a category the person chose, and never touches the full canvas", () => {
+    const quick = emptyCanvas("quick");
+    quick.value.category = "cost_saving";
+    expect(finaliseQuick(quick).value.category).toBe("cost_saving");
+    expect(finaliseQuick(emptyCanvas("full")).value.category).toBeNull();
+  });
+});
+
+describe("quick capture wording (DEC-094, DEC-096)", () => {
+  it("asks one plain question and never uses words employees must not see", () => {
+    expect(QUESTIONS.quick_noticed.label).toBe("What's getting in your way, or what would you change?");
+    for (const text of [
+      QUESTIONS.quick_noticed.label,
+      QUESTIONS.quick_noticed.why,
+      QUICK_DECLARATION,
+      QUICK_DECLARATION_COVERS,
+      QUICK_STRENGTH_NOTE,
+      MIC_HINT,
+    ]) {
+      expect(text).not.toMatch(/garage|duplicate|rejected|already solved|rant/i);
+    }
+  });
+
+  it("the one confirmation covers files, in the full canvas's own words (BLD-C051)", () => {
+    const full = Object.fromEntries(CHOICES.declarations)["no_personal_data"]!;
+    expect(full).toBe("There is no investor or customer personal data in this idea or its files.");
+    expect(QUICK_DECLARATION.startsWith(full.replace(/\.$/, ""))).toBe(true);
+  });
+});
+
+describe("the side panel (DEC-005, DEC-094, BLD-C050)", () => {
+  it("quick capture shows one line and no score or prompts, however much is filled in", () => {
+    const c = emptyCanvas("quick");
+    expect(strengthPanel(c, RUBRIC)).toEqual({ kind: "note", note: QUICK_STRENGTH_NOTE });
+    c.details = "Three people re-check every SIP form for missing bank or nominee fields. ".repeat(3);
+    expect(strengthPanel(c, RUBRIC, 2)).toEqual({ kind: "note", note: QUICK_STRENGTH_NOTE });
+  });
+
+  it("the full canvas keeps the strength meter unchanged", () => {
+    const c = complete();
+    expect(strengthPanel(c, RUBRIC, 1)).toEqual({ kind: "meter", strength: strength(c, RUBRIC, 1) });
+    expect(strengthPanel(emptyCanvas("full"), RUBRIC)).toEqual({
+      kind: "meter",
+      strength: strength(emptyCanvas("full"), RUBRIC),
+    });
   });
 });
 

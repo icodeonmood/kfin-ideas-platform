@@ -22,7 +22,10 @@ export default async function Home() {
           <h2>
             <Link href="/share">Share an idea</Link>
           </h2>
-          <p>A quick capture takes about a minute. The full canvas helps you make it stronger.</p>
+          <p>
+            A quick capture is one box: say it your way, in any language. The full canvas helps you make it
+            stronger.
+          </p>
         </li>
         <li className="card">
           <h2>

@@ -8,12 +8,23 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CHOICES, ESTIMATE_FIELDS, QUESTIONS, wordCount, type Canvas, type Mode } from "@/lib/canvas/model";
+import {
+  CHOICES,
+  ESTIMATE_FIELDS,
+  MIC_HINT,
+  QUESTIONS,
+  QUICK_DECLARATION,
+  QUICK_DECLARATION_COVERS,
+  wordCount,
+  type Canvas,
+  type Mode,
+} from "@/lib/canvas/model";
 import {
   blocks,
   parseFigure,
   personalData,
-  strength,
+  QUICK_DECLARATION_FIELD,
+  strengthPanel,
   validate,
   type CanvasLimits,
   type FieldError,
@@ -34,6 +45,8 @@ type Props = {
   kfinDomains: string[];
   attachments: AttachmentItem[];
   attachmentLimits: AttachmentLimits;
+  /** `capture.mic_hint` (DEC-096): suggest the phone keyboard's mic under the quick capture box. */
+  micHint: boolean;
 };
 
 const fid = (path: string) => "f-" + path.replace(/[.]/g, "-");
@@ -74,7 +87,10 @@ export function CanvasForm(props: Props) {
   const hits = useMemo(() => personalData(canvas, props.kfinDomains), [canvas, props.kfinDomains]);
   const blocked = blocks(hits);
   const cleanFiles = files.filter((f) => f.state === "clean").length;
-  const score = useMemo(() => strength(canvas, props.rubric, cleanFiles), [canvas, props.rubric, cleanFiles]);
+  const panel = useMemo(
+    () => strengthPanel(canvas, props.rubric, cleanFiles),
+    [canvas, props.rubric, cleanFiles],
+  );
   const isQuick = props.mode === "quick";
 
   const update = (path: string, value: unknown) => setCanvas((c) => setPath(c, path, value));
@@ -175,7 +191,7 @@ export function CanvasForm(props: Props) {
       <h1 id="canvas-title">{isQuick ? "Quick capture" : "Share an idea"}</h1>
       <p className="lead">
         {isQuick
-          ? "Three questions, about a minute. You can add more later, and the assistant will suggest the rest."
+          ? "One box, about a minute. Say it your way and add files if you have them. You can add more later, and the assistant will suggest the rest for you to check."
           : "Six short sections. Better answers make your idea faster to review and stronger in committee. A missing answer never stops you sharing."}
       </p>
 
@@ -212,32 +228,35 @@ export function CanvasForm(props: Props) {
           {isQuick ? (
             <section aria-labelledby="quick-title" className="canvas-section">
               <h2 id="quick-title">Your idea</h2>
-              {text("details", QUESTIONS.quick_noticed.label, QUESTIONS.quick_noticed.why, {
+              {text("details", QUESTIONS.quick_noticed.label, "", {
                 multiline: true,
                 required: true,
-                hint: `At least ${props.limits.details_min_chars} characters, in any language.`,
+                hint: `${QUESTIONS.quick_noticed.why} At least ${props.limits.details_min_chars} characters.`,
               })}
-              <Choices
-                type="checkbox"
-                path="who.segments"
-                label={QUESTIONS.quick_who.label}
-                why={QUESTIONS.quick_who.why}
-                options={CHOICES.segments}
-                values={canvas.who.segments}
-                onChange={(v) => update("who.segments", v)}
-                error={errorFor("who.segments")}
+              {props.micHint ? (
+                <p className="hint" id="quick-mic-hint">
+                  {MIC_HINT}
+                </p>
+              ) : null}
+              <Attachments
+                ideaId={props.id}
+                files={files}
+                onChange={setFiles}
+                limits={props.attachmentLimits}
               />
-              <Choices
-                type="radio"
-                path="value.category"
-                label={QUESTIONS.quick_value.label}
-                why={QUESTIONS.quick_value.why}
-                options={CHOICES.category}
-                values={canvas.value.category ? [canvas.value.category] : []}
-                onChange={(v) => update("value.category", v[0] ?? null)}
-                error={errorFor("value.category")}
-                required
-              />
+              <details className="more-details">
+                <summary>Add more if you like</summary>
+                <Choices
+                  type="radio"
+                  path="value.category"
+                  label={QUESTIONS.quick_value.label}
+                  why={QUESTIONS.quick_value.why}
+                  options={CHOICES.category}
+                  values={canvas.value.category ? [canvas.value.category] : []}
+                  onChange={(v) => update("value.category", v[0] ?? null)}
+                  error={errorFor("value.category")}
+                />
+              </details>
             </section>
           ) : (
             <>
@@ -429,35 +448,45 @@ export function CanvasForm(props: Props) {
             {canvas.visibility === "committee"
               ? text("visibility_reason", "Why committees only?", "", { multiline: true, required: true })
               : null}
-            <fieldset className="field" id={fid("declarations")}>
-              <legend>
-                Please confirm <span className="req">(required)</span>
-              </legend>
-              {CHOICES.declarations.map(([key, label]) => {
-                const path = `declarations.${key}`;
-                const error = errorFor(path);
-                return (
-                  <div key={key} className="choice-row">
-                    <label className="choice">
-                      <input
-                        id={fid(path)}
-                        type="checkbox"
-                        checked={canvas.declarations[key]}
-                        onChange={(e) => update(path, e.target.checked)}
-                        aria-invalid={error ? true : undefined}
-                        aria-describedby={error ? `${fid(path)}-error` : undefined}
-                      />
-                      {label}
-                    </label>
-                    {error ? (
-                      <p id={`${fid(path)}-error`} className="field-error">
-                        {error}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </fieldset>
+            {isQuick ? (
+              <QuickDeclaration
+                checked={Object.values(canvas.declarations).every(Boolean)}
+                onChange={(on) =>
+                  update("declarations", { no_personal_data: on, own_work_or_credited: on, ip_terms: on })
+                }
+                error={errorFor(QUICK_DECLARATION_FIELD)}
+              />
+            ) : (
+              <fieldset className="field" id={fid("declarations")}>
+                <legend>
+                  Please confirm <span className="req">(required)</span>
+                </legend>
+                {CHOICES.declarations.map(([key, label]) => {
+                  const path = `declarations.${key}`;
+                  const error = errorFor(path);
+                  return (
+                    <div key={key} className="choice-row">
+                      <label className="choice">
+                        <input
+                          id={fid(path)}
+                          type="checkbox"
+                          checked={canvas.declarations[key]}
+                          onChange={(e) => update(path, e.target.checked)}
+                          aria-invalid={error ? true : undefined}
+                          aria-describedby={error ? `${fid(path)}-error` : undefined}
+                        />
+                        {label}
+                      </label>
+                      {error ? (
+                        <p id={`${fid(path)}-error`} className="field-error">
+                          {error}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </fieldset>
+            )}
           </section>
 
           <div className="submit-row">
@@ -478,37 +507,43 @@ export function CanvasForm(props: Props) {
           </div>
         </div>
 
-        <aside className="strength" aria-labelledby="strength-title">
-          <h2 id="strength-title">How ready is this for a committee?</h2>
-          <p className="strength-score" aria-live="polite">
-            <strong>{score.score} of 5</strong>
-          </p>
-          <div className="strength-bar" aria-hidden="true">
-            <span style={{ width: `${score.score * 20}%` }} />
-          </div>
-          <ul className="strength-points">
-            {Object.entries(score.points).map(([key, done]) => (
-              <li key={key} className={done ? "done" : "todo"}>
-                <span className="visually-hidden">{done ? "Done: " : "Not yet: "}</span>
-                <span aria-hidden="true">{done ? "✓ " : "○ "}</span>
-                {POINT_LABELS[key]}
-              </li>
-            ))}
-          </ul>
-          {score.nextBest.length ? (
-            <>
-              <h3>Most useful next</h3>
-              <ol>
-                {score.nextBest.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ol>
-            </>
-          ) : (
-            <p>This looks ready. You can still add more.</p>
-          )}
-          <p className="muted">This guides you; it never stops you sharing.</p>
-        </aside>
+        {panel.kind === "note" ? (
+          <aside className="strength" aria-label="What happens next">
+            <p>{panel.note}</p>
+          </aside>
+        ) : (
+          <aside className="strength" aria-labelledby="strength-title">
+            <h2 id="strength-title">How ready is this for a committee?</h2>
+            <p className="strength-score" aria-live="polite">
+              <strong>{panel.strength.score} of 5</strong>
+            </p>
+            <div className="strength-bar" aria-hidden="true">
+              <span style={{ width: `${panel.strength.score * 20}%` }} />
+            </div>
+            <ul className="strength-points">
+              {Object.entries(panel.strength.points).map(([key, done]) => (
+                <li key={key} className={done ? "done" : "todo"}>
+                  <span className="visually-hidden">{done ? "Done: " : "Not yet: "}</span>
+                  <span aria-hidden="true">{done ? "✓ " : "○ "}</span>
+                  {POINT_LABELS[key]}
+                </li>
+              ))}
+            </ul>
+            {panel.strength.nextBest.length ? (
+              <>
+                <h3>Most useful next</h3>
+                <ol>
+                  {panel.strength.nextBest.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <p>This looks ready. You can still add more.</p>
+            )}
+            <p className="muted">This guides you; it never stops you sharing.</p>
+          </aside>
+        )}
       </div>
     </form>
   );
@@ -602,6 +637,50 @@ function PersonalDataNote({ id, hits, text }: { id: string; hits: PersonalDataHi
         </p>
       ))}
     </div>
+  );
+}
+
+/**
+ * Quick capture's one confirmation (DEC-094): a single tick confirms all three declarations, and the full text of
+ * each sits in a disclosure right under it.
+ */
+function QuickDeclaration(p: { checked: boolean; onChange: (on: boolean) => void; error?: string }) {
+  const id = fid(QUICK_DECLARATION_FIELD);
+  return (
+    <fieldset className="field">
+      <legend>
+        Please confirm <span className="req">(required)</span>
+      </legend>
+      <div className="choice-row">
+        <label className="choice">
+          <input
+            id={id}
+            type="checkbox"
+            checked={p.checked}
+            onChange={(e) => p.onChange(e.target.checked)}
+            aria-invalid={p.error ? true : undefined}
+            aria-describedby={[`${id}-covers-note`, p.error ? `${id}-error` : ""].filter(Boolean).join(" ")}
+          />
+          {QUICK_DECLARATION}
+        </label>
+        <p id={`${id}-covers-note`} className="hint">
+          {QUICK_DECLARATION_COVERS}
+        </p>
+        {p.error ? (
+          <p id={`${id}-error`} className="field-error">
+            {p.error}
+          </p>
+        ) : null}
+      </div>
+      <details className="more-details" id={`${id}-covers`}>
+        <summary>What this covers</summary>
+        <ul>
+          {CHOICES.declarations.map(([key, label]) => (
+            <li key={key}>{label}</li>
+          ))}
+        </ul>
+      </details>
+    </fieldset>
   );
 }
 
