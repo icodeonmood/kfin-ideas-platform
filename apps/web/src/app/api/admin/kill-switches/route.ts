@@ -5,6 +5,7 @@ import { canFlip } from "@/lib/rbac";
 import { auditIp, authorize, str } from "@/server/auth/authorize";
 import { getDb } from "@/server/db";
 import { KillSwitchError, setKillSwitch } from "@/server/killswitch";
+import { log } from "@/server/log";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,14 @@ export async function PUT(request: NextRequest) {
     });
   } catch (err) {
     if (err instanceof KillSwitchError) return NextResponse.json({ error: err.message }, { status: 400 });
-    throw err;
+    // Anything else: the error's class and SQLSTATE only, never its message (BLD-A171), so a failure here can be
+    // diagnosed from the logs. CI saw one unexplained 500 on this call.
+    log.error("killswitch.set_failed", {
+      switch: body.name,
+      error_type: err instanceof Error ? err.constructor.name : typeof err,
+      sqlstate: typeof (err as { code?: unknown }).code === "string" ? (err as { code: string }).code : null,
+    });
+    return NextResponse.json({ error: "switch_not_changed" }, { status: 500 });
   }
   return NextResponse.json({ name: body.name, state: body.state });
 }
