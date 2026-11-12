@@ -12,6 +12,7 @@ describe("proxy matcher", () => {
   it("leaves the brand marks public, so emails can load them with no session", () => {
     expect(covered("/brand/email-mark-white@2x.png")).toBe(false);
     expect(covered("/brand/email-mark-white.png")).toBe(false);
+    expect(covered("/brand/email-mark-ink@2x.png")).toBe(false);
   });
 
   it("still covers every page and API route", () => {
