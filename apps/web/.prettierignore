@@ -8,7 +8,3 @@ package-lock.json
 src/lib/pii/patterns.json
 src/lib/rbac.json
 
-# Design system files copied verbatim from the 1% Club design system artifact (lane D); keep them byte-identical for re-syncs.
-public/ds/
-src/app/ds.css
-src/app/ds-tokens.css

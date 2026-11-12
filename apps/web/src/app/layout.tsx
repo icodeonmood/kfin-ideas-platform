@@ -1,18 +1,16 @@
-import { GeistMono } from "geist/font/mono";
-import { GeistSans } from "geist/font/sans";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PausedBanners } from "@/components/banners";
-import { DsRuntime } from "@/components/ds-runtime";
 import { MainNav } from "@/components/nav";
 import { SparkMark } from "@/components/spark-mark";
 import { currentUser } from "@/server/auth/current";
 
+import "@fontsource-variable/inter";
+import "@fontsource-variable/inter-tight";
 import "./globals.css";
-import "./ds-tokens.css";
-import "./ds.css";
+import "./offer.css";
 import "./ds-app.css";
 
 export const metadata: Metadata = {
@@ -23,24 +21,24 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 /**
- * The shell (DEC-099): a matte stage, a floating dark-glass dock with the mark, the menu for your roles and the
- * account, the paused-feature bands, and the footer. Working screens are the White surface; brand pages set
- * data-theme="zed" on their own bands. The body carries no data-tier (the tokens default to Spark): a tier on the
- * body would outrank a One's own tier on a themed region, so a One's pages set data-tier on their own regions.
+ * The shell in the OFFER theme (DEC-101): the lockup, the menu for your roles and the account on a warm paper ground,
+ * the paused-feature bands, and the footer. Inter and Inter Tight are self-hosted from their npm packages (BLD-D008),
+ * so no page asks Google for a font. Brand moments set data-theme="zed" on their own dark panel; a One's pages set
+ * data-tier on their own regions.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await currentUser().catch(() => null);
   const showShell = Boolean(me?.privacyAccepted);
   return (
-    <html lang="en-IN" data-theme="white" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en-IN" data-theme="white">
       <body className="stage">
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
         <header className="hdr site-header">
-          <div className="hdr-dock dock" data-refract="26" data-dispersion="0.12">
+          <div className="hdr-dock">
             <Link href="/" className="hdr-brand">
-              <SparkMark height={28} />
+              <SparkMark height={26} />
               1% Club
             </Link>
             {showShell && me ? <MainNav items={me.nav} /> : null}
@@ -69,7 +67,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <p>A KFintech programme</p>
           </div>
         </footer>
-        <DsRuntime />
       </body>
     </html>
   );

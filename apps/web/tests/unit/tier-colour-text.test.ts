@@ -5,14 +5,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /*
- * DEC-098: a tier colour is light and fill, never text. Tiers 6 and 7 fail as text on Zed (3.6:1 and 2.8:1), so a
- * One's number is drawn from a pale core to the tier colour instead. This fails on any `color:` set from a tier
- * colour in the app's own code: a style object fed `tier_colour`, or CSS `color: var(--tier-N)`. Fills, glows,
- * borders and SVG paint are fine. The vendored design-system files (ds.css, ds-tokens.css) are left out: their
- * jersey number paints the tier through a gradient with a transparent text fill.
+ * DEC-098: a tier colour is light and fill, never text. Tiers 6 and 7 fail as text on the dark panel (3.6:1 and 2.8:1),
+ * so a One's number is solid white (DEC-101) and the tier shows as a dash, a dot and a soft light. This fails on any
+ * `color:` set from a tier colour in the app's own code: a style object fed `tier_colour`, or CSS
+ * `color: var(--tier-N)`. Fills, glows, borders and SVG paint are fine.
  */
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
-const VENDORED = new Set(["app/ds.css", "app/ds-tokens.css"]);
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -39,7 +37,7 @@ describe("tier colours are never text (DEC-098)", () => {
 
   it("no app stylesheet sets a text colour from a tier token", () => {
     const offenders = files(SRC)
-      .filter((f) => f.endsWith(".css") && !VENDORED.has(relative(SRC, f)))
+      .filter((f) => f.endsWith(".css"))
       .flatMap((f) =>
         readFileSync(f, "utf8")
           .split("\n")

@@ -14,10 +14,6 @@ describe("proxy matcher", () => {
     expect(covered("/brand/email-mark-white.png")).toBe(false);
   });
 
-  it("leaves the design system's script public, so signed-out pages can load it (BLD-D003)", () => {
-    expect(covered("/ds/opc.js")).toBe(false);
-  });
-
   it("still covers every page and API route", () => {
     for (const path of [
       "/",
@@ -26,6 +22,7 @@ describe("proxy matcher", () => {
       "/api/ideas",
       "/brandnew",
       "/ember/brand/x",
+      "/ds/opc.js",
       "/dsx",
       "/ember/ds/x",
     ]) {
@@ -34,9 +31,10 @@ describe("proxy matcher", () => {
   });
 
   // Excluded paths skip sign-in and the kill-switch check (non-negotiable 9). Only static files may live there:
-  // a page or route handler under app/brand or app/ds would be public without anyone noticing.
+  // a page or route handler under app/brand would be public without anyone noticing. /ds/ is no longer excluded
+  // (DEC-101 dropped the design system's script), so it is covered like any other path.
   it("has no page or route under the public static paths", () => {
-    for (const dir of ["brand", "ds"]) {
+    for (const dir of ["brand"]) {
       expect(existsSync(fileURLToPath(new URL(`../../src/app/${dir}`, import.meta.url)))).toBe(false);
     }
   });

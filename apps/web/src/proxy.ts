@@ -106,5 +106,5 @@ async function killSwitchCheck(method: string, pathname: string): Promise<NextRe
 
 // `brand/` holds the public marks that emails load (Ember review): mail clients fetch them with no session.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|brand/|ds/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|brand/).*)"],
 };

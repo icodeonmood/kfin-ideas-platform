@@ -33,7 +33,6 @@ const config = [
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",
-      "public/ds/**",
       "next-env.d.ts",
       "src/server/db-types.ts",
     ],
