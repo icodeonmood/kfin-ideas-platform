@@ -124,6 +124,7 @@ Demo personas: Nikhil, review desk (DEMO-00002); Meera, core committee (00003); 
 | 8 | No route has its own loading, error or not-found screen; `/review`, `/reports` and `/admin/conflicts` fall through to the unbranded default error page | `src/app/**` |
 | 9 | Only four switches have banners; `committee.flow`, `clusters.batch`, `ones.public` and `solutions.publish` show up only after a click fails, and three screens ignore the banner text the server sends | `banners.tsx:5`; `proxy.ts:103`; `console-view.tsx:51,67`; `run-now.tsx`; `delivery-view.tsx:172` |
 | 10 | Nav gaps: "Review" only for reviewers though core and admin can open it; the fix-track owner has no Delivery link | `rbac.json:381, 414` |
+| 11 | The roster row puts a tier swatch in the same row as the Actions disclosure. Under a strict reading of DEC-098 (a tier colour never sits beside a control on white), the redesign drops the swatch, because the tier name is already in the text (lane A, 12 Nov 2026) | `console-view.tsx:518` |
 
 ---
 
@@ -223,3 +224,4 @@ Every P0 screen was checked at 1440, 360 and 320 px with reduced motion on and o
 | 4 | `.hdr-name` stays visible below 940 px, with an ellipsis | The person's name disappeared on every phone |
 | 5 | `init()` gets a matching `destroy(root)` that disconnects `refract()`'s and `glow()`'s ResizeObservers and releases `glow()`'s hosts | Each client navigation leaves the last page's observers alive for the session (minor; sessions are short) |
 | 6 | The liquid layer survives a label change (the app wraps changing labels in a `<span>`) | React replaces a button's text and removes the layer |
+| 7 | Tiers 6 and 7 end the number's gradient on a lighter mix of their colour (`--num-end`), and the spark, tier-6 and tier-7 notes in `tokens.json` follow DEC-098 | Tier 7's colour is 2.5:1 on Graphite, under the 3:1 large text needs (BLD-D007) |

@@ -418,6 +418,50 @@ main > .band {
   scroll-snap-align: start;
 }
 
+/* ---------- A One's number keeps 3:1 (DEC-098, WCAG 1.4.3 large text) ----------
+ * The system draws the number from a pale core to the tier colour, solid from 58% down. Blue flame and Star are too
+ * dark for that on Zed (3.6:1 and 2.8:1; 3.2:1 and 2.5:1 on Graphite), so their numbers end on a lighter mix of
+ * the same colour. Every tier sets its own end, so a jersey inside another One's tier never inherits the wrong one.
+ * A jersey's glow keeps the true tier colour; the glow-up's number and glow both heat towards this end.
+ * tier-number-contrast.test.ts checks each end on Zed, Graphite and the glow-up sheet. */
+[data-tier="0"] {
+  --num-end: var(--spark);
+}
+
+[data-tier="1"] {
+  --num-end: var(--tier-1);
+}
+
+[data-tier="2"] {
+  --num-end: var(--tier-2);
+}
+
+[data-tier="3"] {
+  --num-end: var(--tier-3);
+}
+
+[data-tier="4"] {
+  --num-end: var(--tier-4);
+}
+
+[data-tier="5"] {
+  --num-end: var(--tier-5);
+}
+
+[data-tier="6"] {
+  --num-end: color-mix(in srgb, var(--tier-6) 80%, #fff);
+}
+
+[data-tier="7"] {
+  --num-end: color-mix(in srgb, var(--tier-7) 70%, #fff);
+}
+
+.jersey-num {
+  background: linear-gradient(180deg, var(--heat-core) 0%, var(--num-end, var(--tier, var(--heat))) 58%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
 /* ---------- Jersey extras the app shows (the idea line and measured impact) ---------- */
 .jersey-line,
 .jersey-muted {
@@ -1664,7 +1708,7 @@ main > .one-dashboard {
 
 /* ---------- The glow-up (DEC-084): a smoked glass sheet; the number heats from the old tier to the new ---------- */
 .glow-up {
-  --heat-anim: var(--heat);
+  --heat-anim: var(--num-end, var(--heat));
   width: min(44rem, calc(100vw - 2rem));
   padding: var(--space-6);
   border: 1px solid rgba(255, 255, 255, 0.14);
