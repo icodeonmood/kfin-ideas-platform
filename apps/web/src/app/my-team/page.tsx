@@ -56,7 +56,7 @@ export default async function Page() {
                         <>
                           <span
                             className="swatch"
-                            style={{ background: p.one.tier_colour }}
+                            style={{ background: p.one.tier_colour, ["--tier" as string]: p.one.tier_colour }}
                             aria-hidden="true"
                           />
                           No. {p.one.number}, {p.one.tier_name}

@@ -515,7 +515,11 @@ function RosterRow({ o, viewer, onDone }: { o: ConsoleOne; viewer: Viewer; onDon
       </td>
       <td>{o.way_in}</td>
       <td>
-        <span className="swatch" style={{ background: o.tier_colour }} aria-hidden="true" />
+        <span
+          className="swatch"
+          style={{ background: o.tier_colour, ["--tier" as string]: o.tier_colour }}
+          aria-hidden="true"
+        />
         {o.tier}, {o.tier_name}
         {o.legend_number ? ". Legend number" : ""}
       </td>
