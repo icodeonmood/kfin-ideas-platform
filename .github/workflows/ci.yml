@@ -67,3 +67,14 @@ jobs:
           docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
             logs --no-color --no-log-prefix worker web > container.log
           cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../container.log
+
+      # IDs-only logs (non-negotiable 3, checked just above), kept for a week so a failure can be diagnosed
+      # after the run (BLD-A171).
+      - name: Keep the container logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: container.log
+          retention-days: 7
+          if-no-files-found: ignore
