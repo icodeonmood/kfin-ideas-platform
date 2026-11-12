@@ -35,7 +35,7 @@ Voice: like a colleague who has seen everything and still believes in you. Short
 | `--zed` | `#0A0A0C` | Brand surfaces: header, wall hero, club pages, launch page. Text on white | White on it 19.7:1 |
 | `--white` | `#FFFFFF` | Working screens (canvas, My ideas, review desk, admin). Text on Zed | |
 | `--electric` | `#2B5BFF` | Only things you can press: buttons, links, focus rings | White on it 5.2:1; on white 5.2:1; on Zed only at 24 px and up (3.8:1) |
-| `--spark` | `#FF5B14` | The outlier. Once per screen, only on "the one": the mark's spark, a One's number or badge | On Zed 6.4:1; Zed text on it 6.4:1. Never text on white |
+| `--spark` | `#FF5B14` | The outlier. Once per screen, only on "the one": the mark's spark. A One's number and badge take their tier colour (§4a, DEC-098) | On Zed 6.4:1; Zed text on it 6.4:1. Never text on white |
 | `--graphite` | `#17181C` | Raised surfaces on Zed | |
 | `--ash` | `#9EA3AD` | Secondary text on Zed | 7.8:1 on Zed. Not on white |
 | `--slate` | `#5C6270` | Secondary text on white | 6.1:1 on white |
