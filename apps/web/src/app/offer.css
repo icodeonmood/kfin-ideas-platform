@@ -52,6 +52,7 @@
   --electric-dark: var(--blue);
   --graphite: #1a1a1e;
   --ash: #a3a3a6; /* secondary text on the dark panel, 7.5:1 on #111111 */
+  --ash-lit: #c4c4c7; /* secondary text over a tier's light on a One's card, 4.5:1 or better where the light is brightest */
   --slate: var(--ink-muted);
   --line-dark: rgba(255, 255, 255, 0.12);
   --line-light: var(--line);
@@ -730,8 +731,8 @@ h3 {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex: none;
   display: grid;
   place-content: center;
@@ -776,7 +777,7 @@ h3 {
 
 .check {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   gap: var(--space-3);
   align-items: start;
   cursor: pointer;
@@ -843,7 +844,7 @@ h3 {
 .jersey-flag {
   margin: 0;
   font-size: 12.5px;
-  color: var(--ash);
+  color: var(--ash-lit);
 }
 
 .jersey-bar {
@@ -891,7 +892,7 @@ h3 {
   gap: var(--space-2) var(--space-4);
   margin: 0;
   font-size: 13.5px;
-  color: var(--ash);
+  color: var(--ash-lit);
 }
 
 .swatch {

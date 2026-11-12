@@ -357,7 +357,7 @@ main > .band {
 .jersey-muted {
   margin: 0;
   font-size: 15px;
-  color: var(--ash);
+  color: var(--ash-lit);
 }
 
 .jersey-measures {
@@ -379,7 +379,7 @@ main > .band {
 }
 
 .jersey-measures span {
-  color: var(--ash);
+  color: var(--ash-lit);
 }
 
 /* Jerseys in a row share one height; their measured impact sits at the foot, so the spare space is even. */
