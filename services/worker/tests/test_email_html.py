@@ -188,8 +188,9 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
         k: v for k, v in _sample("one-inducted").items() if k != "tier"
     }  # an induction has no tier change
     email = email_html.compose(_load(REPO, "one-inducted"), data, BASE)
-    assert email.html.count('bgcolor="#2B5BFF"') == 1
-    assert "No. 17" in email.html and "Tier 1, Spark" in email.html and "#FF7F14" in email.html
+    assert email.html.count('class="em-btn-cell" bgcolor="#111111"') == 1  # one black button (DEC-101)
+    assert "No. 17" in email.html and "Tier 1 · Spark" in email.html and 'bgcolor="#FF7F14"' in email.html
+    assert "color:#FF7F14" not in email.html  # the tier colour is a fill, never text (DEC-098)
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
 
@@ -254,9 +255,27 @@ def test_text_colours_meet_aa(theme: str) -> None:
     p = email_html.PALETTES[theme]
     for fg in ("text", "muted", "link"):
         assert _contrast(p[fg], p["card"]) >= 4.5, (theme, fg)
+        assert _contrast(p[fg], p["page"]) >= 4.5, (theme, fg, "page")  # the header sits on the page
     assert _contrast(p["text"], p["panel"]) >= 4.5
-    assert _contrast(email_html.WHITE, email_html.ELECTRIC) >= 4.5
-    assert _contrast(email_html.ASH, email_html.ZED) >= 4.5
+    assert _contrast(p["button_text"], p["button"]) >= 4.5
+    for fg in ("text", "muted"):
+        assert _contrast(p[fg], p["foot"]) >= 4.5, (theme, fg, "footer")
+    # The One's panel is dark in both themes: white number, muted label.
+    assert _contrast(email_html.WHITE, email_html.INK) >= 4.5
+    assert _contrast(email_html.PANEL_MUTED, email_html.INK) >= 4.5
+
+
+def test_the_mark_is_ink_on_paper_and_white_only_in_dark_mode() -> None:
+    auto = email_html.compose(_load(REPO, "reviewed"), SAMPLE, BASE).html
+    assert "email-mark-ink@2x.png" in auto
+    # The white mark is only for mail apps in dark mode, and Outlook desktop never sees it.
+    head, dark = auto.split("<!--[if !mso]><!-->", 1)
+    assert (
+        "email-mark-white@2x.png" not in head
+        and "email-mark-white@2x.png" in dark.split("<!--<![endif]-->")[0]
+    )
+    dark_preview = email_html.compose(_load(REPO, "reviewed"), SAMPLE, BASE, theme="dark").html
+    assert "email-mark-white@2x.png" in dark_preview and "email-mark-ink@2x.png" not in dark_preview
 
 
 def test_the_dark_style_block_covers_every_class_used() -> None:

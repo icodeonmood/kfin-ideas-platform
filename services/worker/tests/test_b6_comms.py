@@ -180,7 +180,11 @@ def test_eight_day_one_events_reach_the_inbox_and_mailpit(people: Any) -> None:
     # Both parts (DEC-061, BLD-125): plain text and branded HTML. The only image is the hosted mark: no pixel.
     assert full["Text"].strip() and full["HTML"].strip()
     imgs = re.findall(r'<img[^>]+src="([^"]+)"', full["HTML"])
-    assert imgs == [f"{get_settings().app_base_url.rstrip('/')}/brand/email-mark-white@2x.png"]
+    base = get_settings().app_base_url.rstrip("/")
+    assert imgs == [
+        f"{base}/brand/email-mark-ink@2x.png",
+        f"{base}/brand/email-mark-white@2x.png",
+    ]  # dark mode
     assert "<img" not in full["Text"] and "**" not in full["Text"] and "1% spark. 99% sweat." in full["HTML"]
     # Text lives only in templates and source records, never in notifications or the comms log.
     assert tables_containing(db, "Which branches see this most?") == []
