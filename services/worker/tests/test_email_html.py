@@ -189,7 +189,8 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
     }  # an induction has no tier change
     email = email_html.compose(_load(REPO, "one-inducted"), data, BASE)
     assert email.html.count('class="em-btn-cell" bgcolor="#111111"') == 1  # one black button (DEC-101)
-    assert "No. 17" in email.html and "Tier 1 · Spark" in email.html and 'bgcolor="#FF7F14"' in email.html
+    assert "No. 17" in email.html and 'Tier 1<span aria-hidden="true"> ·</span> Spark' in email.html
+    assert 'bgcolor="#FF7F14"' in email.html
     assert "color:#FF7F14" not in email.html  # the tier colour is a fill, never text (DEC-098)
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
@@ -256,7 +257,8 @@ def test_text_colours_meet_aa(theme: str) -> None:
     for fg in ("text", "muted", "link"):
         assert _contrast(p[fg], p["card"]) >= 4.5, (theme, fg)
         assert _contrast(p[fg], p["page"]) >= 4.5, (theme, fg, "page")  # the header sits on the page
-    assert _contrast(p["text"], p["panel"]) >= 4.5
+    for fg in ("text", "muted", "link"):  # the idea card
+        assert _contrast(p[fg], p["panel"]) >= 4.5, (theme, fg, "panel")
     assert _contrast(p["button_text"], p["button"]) >= 4.5
     for fg in ("text", "muted"):
         assert _contrast(p[fg], p["foot"]) >= 4.5, (theme, fg, "footer")
@@ -278,9 +280,45 @@ def test_the_mark_is_ink_on_paper_and_white_only_in_dark_mode() -> None:
     assert "email-mark-white@2x.png" in dark_preview and "email-mark-ink@2x.png" not in dark_preview
 
 
+def _classes(html: str) -> set[str]:
+    return {c for group in re.findall(r'class="([^"]+)"', html) for c in group.split()}
+
+
 def test_the_dark_style_block_covers_every_class_used() -> None:
-    html = email_html.compose(_load(REPO, "reviewed"), SAMPLE, BASE).html
-    used = set(re.findall(r'class="([^"]+)"', html))
-    classes = {c for group in used for c in group.split()}
-    for c in classes:
-        assert f".{c} " in email_html._DARK_CSS, c
+    """Every template, the digest and the Ember: each class has a dark rule, and each colour or background class
+    has an Outlook.com rule too ([data-ogsc] for words, [data-ogsb] for grounds)."""
+    pages = [email_html.compose(_load(REPO, n), _sample(n), BASE).html for n in NAMES]
+    pages.append(
+        email_html.digest([(_load(REPO, "submitted"), SAMPLE), (_load(REPO, "reviewed"), SAMPLE)], BASE).html
+    )
+    from ember import render as ember_render
+    from tests.test_ember import ISSUE
+
+    pages.append(ember_render.compose(ISSUE, BASE, f"{BASE}/ember/1").html)
+    media = email_html._DARK_CSS.split("} }", 1)[0]  # the prefers-color-scheme block
+    words = {"em-text", "em-muted", "em-link", "em-btn", "em-mark-light", "em-mark-dark"}
+    grounds = {"em-page", "em-card", "em-panel", "em-btn-cell", "em-foot"}
+    for html in pages:
+        for c in _classes(html):
+            assert f".{c} " in media, c
+            if c in words:
+                assert f"[data-ogsc] .{c} " in email_html._DARK_CSS, c
+            if c in grounds:
+                assert f"[data-ogsb] .{c} " in email_html._DARK_CSS, c
+
+
+def test_the_arrow_and_the_middle_dot_are_not_read_aloud() -> None:
+    """Display marks the renderer adds are hidden from screen readers; the words are the template's (BLD-A170)."""
+    html = email_html.compose(_load(REPO, "one-inducted"), _sample("one-inducted"), BASE).html
+    for mark in ("→", "·"):
+        for m in re.finditer(mark, html):
+            before = html[: m.start()]
+            assert before.rfind('<span aria-hidden="true">') > before.rfind("</span>"), mark
+
+
+def test_the_ember_uses_the_one_black_button() -> None:
+    from ember import render as ember_render
+    from tests.test_ember import ISSUE
+
+    html = ember_render.compose(ISSUE, BASE, f"{BASE}/ember/1").html
+    assert 'class="em-btn-cell" bgcolor="#111111"' in html and "#2B5BFF" not in html

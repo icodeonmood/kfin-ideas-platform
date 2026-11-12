@@ -135,7 +135,7 @@ def _inline(fragment: str, values: list[str], base: str, colours: dict[str, str]
     return _fill(out, values).replace("\n", "<br>")
 
 
-def _button(label: str, url: str, colours: dict[str, str]) -> str:
+def button(label: str, url: str, colours: dict[str, str]) -> str:
     """A bulletproof black button (DEC-101): the cell carries the colour, so Outlook desktop shows it without CSS
     support. Mail apps in dark mode turn it white with ink words."""
     return (
@@ -164,12 +164,13 @@ def _blocks(body: str, values: list[str], base: str, colours: dict[str, str]) ->
             url = _safe_url(m.group(2), values, base)
             label = _fill(html.escape(m.group(1), quote=False), values)
             if url and not button_done:
-                out.append(_button(label, url, colours))
+                out.append(button(label, url, colours))
                 button_done = True
             elif url:  # a standalone action link: ink, bold, no underline, ending in an arrow (DEC-101)
                 out.append(
                     f'<p class="em-text" style="{p_style}"><a class="em-link" href="{html.escape(url, quote=True)}" '
-                    f'style="color:{colours["link"]};font-weight:600;text-decoration:none;">{label}&nbsp;→</a></p>'
+                    f'style="color:{colours["link"]};font-weight:600;text-decoration:none;">{label}'
+                    '<span aria-hidden="true">&nbsp;→</span></a></p>'
                 )
             else:  # an address we won't link to: keep the words, drop the link
                 out.append(f'<p class="em-text" style="{p_style}">{label}</p>')
@@ -218,10 +219,11 @@ def _one_block(data: dict[str, Any]) -> str:
         tier_rows = (
             '<tr><td style="padding:0 0 12px;"><table role="presentation" cellpadding="0" cellspacing="0" '
             f'border="0"><tr><td bgcolor="{colour}" width="24" height="4" style="width:24px;height:4px;'
-            f'background:{colour};border-radius:2px;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>'
+            f"background:{colour};border-radius:2px;font-size:1px;line-height:4px;mso-line-height-rule:exactly;"
+            '">&nbsp;</td></tr></table></td></tr>'
             f'<tr><td style="font-family:{FONT};font-size:11px;line-height:16px;font-weight:600;'
             f'letter-spacing:0.12em;text-transform:uppercase;color:{PANEL_MUTED};">'
-            f"Tier {tier} · {html.escape(name)}</td></tr>"
+            f'Tier {tier}<span aria-hidden="true"> ·</span> {html.escape(name)}</td></tr>'
         )
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
@@ -273,21 +275,25 @@ _DARK_CSS = (
     " .em-mark-dark { display:block !important; }"
     " }"
     f" [data-ogsb] .em-page {{ background-color:{_D['page']} !important; }}"
-    f" [data-ogsb] .em-card {{ background-color:{_D['card']} !important; }}"
+    f" [data-ogsb] .em-card {{ background-color:{_D['card']} !important; border-color:{_D['border']} !important; }}"
+    f" [data-ogsb] .em-line {{ border-color:{_D['line']} !important; }}"
     f" [data-ogsb] .em-panel {{ background-color:{_D['panel']} !important; }}"
     f" [data-ogsb] .em-btn-cell {{ background-color:{_D['button']} !important; }}"
-    f" [data-ogsb] .em-foot {{ background-color:{_D['foot']} !important; }}"
+    f" [data-ogsb] .em-foot {{ background-color:{_D['foot']} !important; border-color:{_D['foot_line']} !important; }}"
     f" [data-ogsc] .em-text {{ color:{_D['text']} !important; }}"
     f" [data-ogsc] .em-muted {{ color:{_D['muted']} !important; }}"
     f" [data-ogsc] .em-link {{ color:{_D['link']} !important; }}"
     f" [data-ogsc] .em-btn {{ color:{_D['button_text']} !important; }}"
+    " [data-ogsc] .em-mark-light { display:none !important; }"
+    " [data-ogsc] .em-mark-dark { display:block !important; }"
 )
 
 
 def _marks(base: str, theme: Theme) -> str:
     """The Spark mark: ink zeros on paper, white zeros in dark mode. In "auto" both are sent and the style block
     shows one; the dark one sits in a non-Outlook comment, since Outlook desktop has no dark mode and may ignore
-    `display:none` on an image."""
+    `display:none` on an image. The ink PNG carries its own paper ground, so a mail app that darkens the page
+    without telling the email (Gmail) still shows the mark, on a small paper tile."""
     root = base.rstrip("/")
 
     def img(file: str, cls: str, extra: str = "") -> str:
@@ -345,7 +351,7 @@ def shell(subject: str, inner: list[str], base: str, theme: Theme = "auto") -> s
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
         f'<td class="em-muted" style="font-family:{FONT};font-size:13px;line-height:18px;color:{colours["muted"]};">'
         f'<span class="em-text" style="font-weight:500;color:{colours["text"]};">1% Club</span>'
-        f" &nbsp;·&nbsp; {TAGLINE}</td>"
+        f'<span aria-hidden="true"> &nbsp;·&nbsp;</span> {TAGLINE}</td>'
         f'<td class="em-muted" align="right" style="font-family:{FONT};font-size:13px;line-height:18px;'
         f'color:{colours["muted"]};">{ENDORSEMENT}</td></tr></table></td></tr></table></td></tr>'
         "</table></td></tr></table></body></html>"
