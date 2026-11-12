@@ -52,7 +52,11 @@ export default async function Page() {
                     {p.you ? " (you)" : ""}
                   </td>
                   <td>
-                    <span className="swatch" style={{ background: p.tier_colour }} aria-hidden="true" />
+                    <span
+                      className="swatch"
+                      style={{ background: p.tier_colour, ["--tier" as string]: p.tier_colour }}
+                      aria-hidden="true"
+                    />
                     {p.tier}, {p.tier_name}
                   </td>
                   <td>

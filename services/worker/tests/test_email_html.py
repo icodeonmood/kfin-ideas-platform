@@ -189,7 +189,7 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
     }  # an induction has no tier change
     email = email_html.compose(_load(REPO, "one-inducted"), data, BASE)
     assert email.html.count('bgcolor="#2B5BFF"') == 1
-    assert "No. 17" in email.html and "Tier 1, Spark" in email.html and "#FF5B14" in email.html
+    assert "No. 17" in email.html and "Tier 1, Spark" in email.html and "#FF7F14" in email.html
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
 
