@@ -6,7 +6,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from comms.email_html import FONT, PALETTES, Email, Theme, shell
+from comms.email_html import FONT, HEAD_FONT, PALETTES, Email, Theme, button, shell
 
 UNITS_ORDER = ("time", "money", "effort", "scale")
 UNIT_WORDS = {"time": "Time", "money": "Money", "effort": "Effort", "scale": "Scale"}
@@ -52,8 +52,8 @@ def _one_name(o: dict[str, Any]) -> str:
 
 def _h2(text: str, c: dict[str, str]) -> str:
     return (
-        f'<h2 class="em-text" style="margin:24px 0 10px;font-family:{FONT};font-size:20px;line-height:26px;'
-        f'font-weight:bold;color:{c["text"]};">{html.escape(text)}</h2>'
+        f'<h2 class="em-text" style="margin:24px 0 10px;font-family:{HEAD_FONT};font-size:20px;line-height:26px;'
+        f'font-weight:600;letter-spacing:-0.01em;color:{c["text"]};">{html.escape(text)}</h2>'
     )
 
 
@@ -136,13 +136,7 @@ def compose(issue: dict[str, Any], base: str, link: str, theme: Theme = "auto") 
         names = ", ".join(issue["managers"])
         inner.append(_p(f"Their teams shared the most this month: {names}.", c))
         text += ["Thank you, managers", f"Their teams shared the most this month: {names}."]
-    inner.append(
-        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 20px;">'
-        '<tr><td bgcolor="#2B5BFF" style="border-radius:10px;background:#2B5BFF;">'
-        f'<a href="{html.escape(link, quote=True)}" style="display:inline-block;padding:13px 22px;font-family:{FONT};'
-        'font-size:16px;font-weight:bold;line-height:20px;color:#FFFFFF;text-decoration:none;border-radius:10px;">'
-        "Read it in the app</a></td></tr></table>"
-    )
+    inner.append(button("Read it in the app", link, c))  # the one black button (DEC-101, BLD-A170)
     text += [f"Read it in the app: {link}", "1% spark. 99% sweat.", "A KFintech programme"]
     return Email(
         subject, "\n\n".join(t for t in text if t is not None) + "\n", shell(subject, inner, base, theme)
