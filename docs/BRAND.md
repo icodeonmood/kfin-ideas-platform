@@ -89,9 +89,22 @@ A tier colour is light and fill only, never small text: the One's spark, badge, 
 
 A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once.
 
-## 4b. Email (DEC-061, BLD-125)
+## 4b. Email (DEC-061, BLD-125; OFFER look DEC-101, BLD-A170)
 
-Every email has a plain-text part and a branded HTML part. HTML: 600 px wide, built from tables, Arial, light colours inline (what Outlook desktop shows) and a dark version for mail apps set to dark. A Zed header band carries the Spark mark as a hosted PNG (`/brand/email-mark-white@2x.png`, shown at 20 x 24; never SVG in email) and "1% Club". One Electric button per email, the first link the template puts on its own line. The One's number sits in a Zed block with its tier swatch. The footer always reads "1% spark. 99% sweat." and "A KFintech programme". No tracking pixels, no web fonts. Links on dark use #7C9BFF, since Electric is too dark to read on Graphite. Wording comes from the templates and HR reviews it; the renderer never changes words.
+Every email has a plain-text part and a branded HTML part. HTML: 600 px wide, built from tables, light colours inline (what Outlook desktop shows) and a dark version for mail apps set to dark. The values come from lane D's OFFER boards.
+
+| Part | Light | Dark mode |
+|---|---|---|
+| Page | Paper `#F3F3F1` | `#111111` |
+| Header | The Spark mark (hosted PNG, `/brand/email-mark-ink@2x.png`, shown at 22 x 26; never SVG in email), then "1% Club" in ink, weight 600, letter-spacing -0.03em. No band | The white mark (`email-mark-white@2x.png`), white name. Outlook desktop never gets the white copy |
+| Card | White, 1px `#E4E4E0` border, radius 16, padding 32. The subject is the headline | `#1A1A1E`, border `#2C2C30` |
+| Text | Ink `#111111`, 16 px, line height 1.6; muted `#5F5F64` | White; muted `#A3A3A6` |
+| Button | One per email, the first link the template puts on its own line: black `#111111`, white words, radius 10, padding 14 x 22 | White, ink words |
+| Links | Inline links ink and underlined. Further links on their own line: ink, weight 600, no underline, ending in an arrow. Blue `#3355FF` is never a link colour in email | White |
+| The One's number | A dark panel (`#111111`, radius 16, padding 24) in both themes: the tier as a 24 x 4 dash in its colour (DEC-098, fill only), the tier in small capitals in `#A3A3A6`, the number in white at 64 px, then "Your number" | Same |
+| Footer | A `#E9E9E6` band with a `#DADAD6` top rule: "1% Club" in ink, "1% spark. 99% sweat." and "A KFintech programme", 13 px muted | `#161619`, rule `#2C2C30` |
+
+Type: Inter where the mail app has it, else Arial (`Inter, Arial, Helvetica, sans-serif`); headlines and the wordmark use `'Inter Tight', Inter, Arial, sans-serif` at 600. No web fonts are loaded and there are no tracking pixels. Every text pair passes AA, and the email tests compute each one. Wording comes from the templates and HR reviews it; the renderer never changes words.
 
 ## 5. Motion and sound
 
