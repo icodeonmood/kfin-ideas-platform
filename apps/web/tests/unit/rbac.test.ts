@@ -250,3 +250,13 @@ describe("shared policy file", () => {
     expect(policyJson).toEqual(yaml);
   });
 });
+
+describe("canFlip with names that are not switches (BLD-A171 review)", () => {
+  it("refuses built-in object keys instead of throwing", () => {
+    const admin = new Set(["admin", "infosec"]);
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(() => canFlip(admin, name)).not.toThrow();
+      expect(canFlip(admin, name)).toBe(false);
+    }
+  });
+});

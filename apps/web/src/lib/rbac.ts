@@ -114,7 +114,12 @@ export function navFor(roles: Set<string>, switchesOn: ReadonlySet<string> = new
 /** §7.6 "Who can flip": `agent.*` covers every agent switch. */
 export function canFlip(roles: Set<string>, switchName: string): boolean {
   const flippers = policy.kill_switch_flippers as Record<string, string[]>;
-  const key = switchName in flippers ? switchName : switchName.startsWith("agent.") ? "agent.*" : undefined;
+  // Own keys only: `in` would also match "constructor" or "__proto__" and then throw below (BLD-A171 review).
+  const key = Object.hasOwn(flippers, switchName)
+    ? switchName
+    : switchName.startsWith("agent.")
+      ? "agent.*"
+      : undefined;
   return Boolean(key && flippers[key]!.some((r) => roles.has(r)));
 }
 

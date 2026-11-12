@@ -47,11 +47,22 @@ export async function PUT(request: NextRequest) {
     if (err instanceof KillSwitchError) return NextResponse.json({ error: err.message }, { status: 400 });
     // Anything else: the error's class and SQLSTATE only, never its message (BLD-A171), so a failure here can be
     // diagnosed from the logs. CI saw one unexplained 500 on this call.
-    log.error("killswitch.set_failed", {
-      switch: body.name,
-      error_type: err instanceof Error ? err.constructor.name : typeof err,
-      sqlstate: typeof (err as { code?: unknown }).code === "string" ? (err as { code: string }).code : null,
-    });
+    // The name came in the request: only a known switch is logged by name.
+    const known = Object.hasOwn(BANNERS, body.name)
+      ? body.name
+      : body.name.startsWith("agent.")
+        ? "agent.*"
+        : "other";
+    try {
+      log.error("killswitch.set_failed", {
+        switch: known,
+        error_type: err instanceof Error ? err.constructor.name : typeof err,
+        sqlstate:
+          typeof (err as { code?: unknown }).code === "string" ? (err as { code: string }).code : null,
+      });
+    } catch {
+      // a log policy refusal must not turn this answer into a crash
+    }
     return NextResponse.json({ error: "switch_not_changed" }, { status: 500 });
   }
   return NextResponse.json({ name: body.name, state: body.state });
