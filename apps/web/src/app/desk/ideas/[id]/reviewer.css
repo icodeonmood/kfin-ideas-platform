@@ -1,0 +1,487 @@
+/* S-R2 The idea, for the reviewer (board DeskIdea), with C-LISTEN, C-WORTH and C-SHEET-MERGE. Tokens only. */
+.ri {
+  display: grid;
+  gap: 24px;
+  max-width: 1080px;
+}
+.ri-head {
+  display: grid;
+  gap: 10px;
+  max-width: 600px;
+}
+.ri-ref {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.ri-title {
+  max-width: 24ch;
+  margin: 0;
+}
+.ri-line {
+  color: var(--mute);
+  margin: 0;
+}
+.ri-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 32px;
+  align-items: start;
+}
+.ri-left {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.ri-card-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ri-arts-list,
+.ri-sim-list,
+.ri-sent-qs,
+.ri-queued ul,
+.ri-sugg ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.ri-art {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.ri-art-b,
+.ri-sim-b {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ri-art-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  font: 600 10px/1 var(--ft);
+  background: var(--sunk);
+  color: var(--ink2);
+}
+.ri-words {
+  margin-top: 12px;
+}
+.ri-parts {
+  display: grid;
+}
+.ri-part {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  gap: 12px;
+}
+.ri-part:first-child {
+  padding-top: 0;
+}
+.ri-part:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.ri-part-h {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ri-part-h h2 {
+  margin-right: auto;
+}
+.ri-asking {
+  color: var(--ink);
+  border-color: var(--tier-3);
+}
+.ri-q {
+  display: grid;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+.ri-q-draft {
+  border-left-color: var(--tier-3);
+}
+.ri-q p {
+  margin: 0;
+}
+.ri-a {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+.ri-sim-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid var(--rule);
+}
+.ri-banner {
+  margin: 12px 0 0;
+}
+
+/* The panel: sticky, its own scroll, its bottom bar pinned (S-R2.panel). */
+.ri-panel {
+  position: sticky;
+  top: 96px;
+  max-height: min(calc(100vh - 120px), 820px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.ri-panel-in {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.ri-panel-in h2:focus {
+  outline: none;
+}
+.ri-panel-in h2:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+}
+.ri-bar {
+  border-top: 1px solid var(--rule);
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ri-bar-foot {
+  padding: 0 24px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.ri-revise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+}
+.ri-ask {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+.ri-ask-h {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ri-ask-b {
+  padding: 0 16px 16px;
+  display: grid;
+  gap: 14px;
+}
+.ri-queued li,
+.ri-sugg li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ri-choices {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.ri-shield {
+  margin: 0;
+}
+.ri-reason {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ri-decided {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.ri-progress {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--sunk);
+  overflow: hidden;
+}
+.ri-progress i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+.ri-sent-qs li {
+  display: grid;
+  gap: 2px;
+}
+.ri-sent-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* C-WORTH */
+.wv {
+  display: grid;
+  gap: 12px;
+}
+.wv-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+.wv-tiles dd {
+  margin: 0;
+}
+.wv-empty {
+  color: var(--mute);
+}
+.wv-changed {
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.wv-edit {
+  display: grid;
+  gap: 14px;
+}
+.wv-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.wv-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.wv-actions p {
+  margin: 0 auto 0 0;
+}
+
+/* C-LISTEN */
+.listen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto 38px;
+  gap: 0 16px;
+  padding: 18px 20px 14px;
+  border-radius: var(--r-md);
+  position: relative;
+  z-index: 6;
+}
+.listen-t {
+  font: 500 16px/1.3 var(--ft);
+  margin: 0 0 4px;
+}
+.listen-time {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lctl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lmenu {
+  position: relative;
+}
+.lparts {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  z-index: 8;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  min-width: 240px;
+  background: var(--card);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 28px -18px rgba(17, 17, 17, 0.3);
+}
+.lparts button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.lparts button:hover,
+.lparts button:focus-visible {
+  background: var(--sunk);
+}
+.lplay-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.lplay {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-round);
+  border: 0;
+  background: var(--ink);
+  color: var(--paper);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.lplay[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.lspeed {
+  border: 0;
+  background: none;
+  font: 500 12px/1 var(--ft);
+  cursor: pointer;
+}
+.lchap {
+  grid-column: 1 / -1;
+  position: relative;
+  align-self: center;
+}
+.lline {
+  width: 100%;
+  appearance: none;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(to right, var(--blue) var(--played), var(--sunk) var(--played));
+}
+.lline::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-round);
+  background: var(--blue);
+  border: 2px solid var(--paper);
+}
+.lticks i {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 10px;
+  background: var(--rule2);
+  pointer-events: none;
+}
+.eq {
+  width: 12px;
+  height: 10px;
+  background: linear-gradient(
+    to right,
+    var(--blue) 2px,
+    transparent 2px 5px,
+    var(--blue) 5px 7px,
+    transparent 7px 10px,
+    var(--blue) 10px
+  );
+}
+
+/* C-SHEET-MERGE */
+.mgsheet {
+  width: min(560px, calc(100vw - 32px));
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  padding: 28px;
+}
+.mgsheet::backdrop {
+  background: rgba(17, 17, 17, 0.32);
+  backdrop-filter: blur(4px);
+}
+.mgsheet form {
+  display: grid;
+  gap: 14px;
+}
+.mgsheet-x {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.mg-opts {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.mg-opt,
+.mg-team {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.mg-opt span,
+.mg-team span {
+  display: grid;
+  gap: 2px;
+}
+.mg-opt.on {
+  border: 1.5px solid var(--blue);
+  background: var(--wash);
+}
+.mg-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  .ri-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* S-R2.rules/7 default: on narrow screens the panel follows the idea, its main button always visible. */
+  .ri-panel {
+    position: sticky;
+    bottom: 0;
+    top: auto;
+    max-height: 70vh;
+  }
+}
+@media (max-width: 640px) {
+  .wv-fields,
+  .wv-tiles {
+    grid-template-columns: 1fr;
+  }
+  .ri-sim-row {
+    grid-template-columns: 1fr;
+  }
+}
