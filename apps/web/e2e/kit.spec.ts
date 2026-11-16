@@ -141,3 +141,10 @@ test("C-FILE.row: a found detail is a warning under its row, with the row's own 
   await expect(files.getByRole("alert")).toContainText("Nobody can open it until it’s hidden");
   await expect(files.getByRole("button", { name: "Hide it for me" })).toBeVisible();
 });
+
+test("C-AVATAR.crew/2: each crew face takes focus and is named", async ({ page }) => {
+  const face = page.getByRole("img", { name: "Imran Qureshi" });
+  await face.focus();
+  await expect(face).toBeFocused();
+  await expect(page.getByText("Rahul Verma and 4 others on it")).toBeVisible();
+});

@@ -1212,3 +1212,69 @@
     padding-left: 0;
   }
 }
+
+/* ---------- C-AVATAR.crew: overlapping faces with a line ---------- */
+.av-sys {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.crew {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink2);
+  font-size: 14px;
+}
+
+.crew-faces {
+  display: inline-flex;
+  padding-left: 8px;
+}
+
+.crew-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #ffffff;
+  color: var(--ink);
+  font: 600 11.5px/1 var(--ft);
+  cursor: default;
+}
+
+.crew-face.t1 {
+  background: #ffe7d6;
+}
+
+.crew-face.t2 {
+  background: #ffe0d6;
+}
+
+.crew-face.t3 {
+  background: #ffdde8;
+}
+
+.crew-face.t4 {
+  background: #ffd6d6;
+}
+
+.crew-face:is(:hover, :focus-visible)::after {
+  content: attr(data-name);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 9px;
+  border-radius: var(--r-xs);
+  background: var(--ink);
+  color: #ffffff;
+  font: 500 12.5px/1 var(--ft);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--sh-tooltip);
+}

@@ -112,3 +112,15 @@ describe("C-BUTTON", () => {
     expect(buttonClass("primary", "regular", "tbar-close")).toBe("btn btn-primary tbar-close");
   });
 });
+
+describe("C-AVATAR.crew", () => {
+  it("the crew line leads with the lead's name or counts colleagues", async () => {
+    const { crewLine } = await import("@/components/ui/avatar");
+    const four = [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }];
+    expect(crewLine(four, 4, "Rahul Verma")).toBe("Rahul Verma and 3 others on it");
+    expect(crewLine(four.slice(0, 2), 2, "Rahul Verma")).toBe("Rahul Verma and 1 other on it");
+    expect(crewLine(four.slice(0, 1), 1, "Rahul Verma")).toBe("Rahul Verma is on it");
+    expect(crewLine(four)).toBe("4 colleagues on it");
+    expect(crewLine([], 0)).toBe("Nobody on it yet");
+  });
+});

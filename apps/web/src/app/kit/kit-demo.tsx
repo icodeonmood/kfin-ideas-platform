@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Avatar, CrewFaces } from "@/components/ui/avatar";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
 import { Dropdown } from "@/components/ui/dropdown";
@@ -66,6 +67,28 @@ export function KitDemo() {
             Jump to fields
           </ButtonLink>
         </div>
+      </section>
+
+      <section className="card" aria-labelledby="k-people">
+        <h2 id="k-people" className="h2">
+          People
+        </h2>
+        <div className="btn-row">
+          <Avatar initials="AS" size={44} name="Asha Shetty" />
+          <Avatar initials="AS" size={36} ring="neutral" name="Asha Shetty" />
+          <Avatar initials="AS" size={36} tier={4} name="Asha Shetty, Tier 4, Blaze" />
+          <Avatar initials="" size={36} system name="1% Club" />
+        </div>
+        <CrewFaces
+          leadName="Rahul Verma"
+          total={5}
+          people={[
+            { name: "Rahul Verma", initials: "RV" },
+            { name: "Asha Shetty", initials: "AS" },
+            { name: "Imran Qureshi", initials: "IQ" },
+            { name: "Leela Das", initials: "LD" },
+          ]}
+        />
       </section>
 
       <section className="card" aria-labelledby="k-pills">
