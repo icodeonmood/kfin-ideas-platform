@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { verifyCode } from "@/server/auth/codes";
 import { emailCodeOn, liveCodeDeps, MailFailed, signedInResponse } from "@/server/auth/email-code";
+import { refusedJson } from "@/server/auth/sso";
 import { readJson } from "@/server/http";
 import { log } from "@/server/log";
 
@@ -18,7 +19,8 @@ const STATUS = {
 
 /**
  * POST /auth/code/verify `{ email, code }` → `{ signed_in: true, to }` (A-API.auth). Errors: `wrong_code` with
- * `{ tries_left }`, `code_expired` (a new one was sent), `rate_limited`, `account_disabled`.
+ * `{ tries_left }`, `code_expired` with `{ resent, resend_in_seconds }` (a new one was sent, or can be once the
+ * countdown ends), `rate_limited`, `account_disabled`, `unavailable`; each with a reference (L-AUTH.rules/8).
  */
 export async function POST(request: NextRequest) {
   if (!(await emailCodeOn())) {
@@ -34,18 +36,22 @@ export async function POST(request: NextRequest) {
   try {
     result = await verifyCode(await liveCodeDeps(), email, code);
   } catch (err) {
-    log.error("auth.code_verify_failed", { error_type: err instanceof MailFailed ? "mail" : "unexpected" });
-    return NextResponse.json({ error: "unavailable" }, { status: 503 });
+    return refusedJson(
+      request,
+      "code_verify",
+      err instanceof MailFailed ? "mail_failed" : "unavailable",
+      503,
+      { error: "unavailable" },
+    );
   }
   if (!result.ok) {
-    log.info("auth.code_refused", { error_code: result.error });
     const extra =
       result.error === "wrong_code"
         ? { tries_left: result.triesLeft }
         : result.error === "code_expired"
-          ? { resent: true }
+          ? { resent: result.resent, resend_in_seconds: result.resendInSeconds }
           : {};
-    return NextResponse.json({ error: result.error, ...extra }, { status: STATUS[result.error] });
+    return refusedJson(request, "code_verify", result.error, STATUS[result.error], extra);
   }
   log.info("auth.signed_in", { user_id: result.userId, route: "email_code" });
   return signedInResponse(request, result.userId);

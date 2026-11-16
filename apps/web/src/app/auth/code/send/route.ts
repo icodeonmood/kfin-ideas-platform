@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { sendCode } from "@/server/auth/codes";
 import { emailCodeOn, liveCodeDeps, MailFailed } from "@/server/auth/email-code";
+import { refusedJson } from "@/server/auth/sso";
 import {
   ATTEMPT_COOKIE,
   attemptCookieOptions,
@@ -23,7 +24,8 @@ const STATUS = { not_work_email: 400, account_disabled: 403, rate_limited: 429, 
 
 /**
  * POST /auth/code/send `{ email, intent? }` → `{ sent_to, valid_minutes, resend_in_seconds }` (A-API.auth,
- * L-AUTH.rules/2-3). Errors: `not_work_email`, `rate_limited`, `account_disabled`, and `too_soon` with
+ * L-AUTH.rules/2-3). Errors: `not_work_email`, `rate_limited`, `account_disabled` and `unavailable`, each with a
+ * reference (`ref`, and `reference` as "SSO-7F3A, 9:42 am", L-AUTH.rules/8); and `too_soon` with
  * `resend_in_seconds` before the countdown ends (V-FIELDS.signin/6).
  */
 export async function POST(request: NextRequest) {
@@ -39,18 +41,19 @@ export async function POST(request: NextRequest) {
   try {
     result = await sendCode(await liveCodeDeps(), email);
   } catch (err) {
-    log.error("auth.code_send_failed", { error_type: err instanceof MailFailed ? "mail" : "unexpected" });
-    return NextResponse.json({ error: "unavailable" }, { status: 503 });
+    return refusedJson(request, "code_send", err instanceof MailFailed ? "mail_failed" : "unavailable", 503, {
+      error: "unavailable",
+    });
   }
   if (!result.ok) {
-    log.info("auth.code_refused", { error_code: result.error });
-    return NextResponse.json(
-      {
-        error: result.error,
-        ...("resendInSeconds" in result ? { resend_in_seconds: result.resendInSeconds } : {}),
-      },
-      { status: STATUS[result.error] },
-    );
+    // Asking again before the countdown ends is not a failure: the screen shows the countdown.
+    if (result.error === "too_soon") {
+      return NextResponse.json(
+        { error: result.error, resend_in_seconds: result.resendInSeconds },
+        { status: STATUS.too_soon },
+      );
+    }
+    return refusedJson(request, "code_send", result.error, STATUS[result.error]);
   }
   log.info("auth.code_sent");
   const response = NextResponse.json(
