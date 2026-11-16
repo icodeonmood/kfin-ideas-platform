@@ -16,24 +16,23 @@ from core.logging import get_logger
 log = get_logger("jobs.schedule")
 IST = ZoneInfo("Asia/Kolkata")
 
+# Retired features' jobs are no longer scheduled (DEC-106): comms.nudges (quick-capture nudges, R16),
+# learning.run (R13), cluster.batch (R6), lenses.build (R12) and qualify.backfill (R7). Their handlers stay in
+# jobs/handlers.py until the cleanup after launch, so a row already queued still runs to an end.
+RETIRED: frozenset[str] = frozenset(
+    {"comms.nudges", "learning.run", "cluster.batch", "lenses.build", "qualify.backfill", "qualify.start"}
+)
+
 # job type -> time of day (IST). §3.5 times where given; drafts.purge is ours.
 DAILY: dict[str, clock] = {
     "reconcile": clock(2, 0),  # §3.5
     "drafts.purge": clock(3, 30),
-    "comms.nudges": clock(10, 0),  # quick captures still weak on day 2 and day 7 (§3.7)
     "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)
-    "learning.run": clock(5, 30),  # §5: the handler decides which loops are due today
     "delivery.tick": clock(9, 30),  # §4.9 to §4.11: reminders and escalations
 }
 
 # job type -> (ISO weekday, time of day IST). Enqueued once per ISO week, on that day at or after that time.
-WEEKLY: dict[str, tuple[int, clock]] = {
-    "cluster.batch": (
-        7,
-        clock(22, 0),
-    ),  # §3.5: Sunday 22:00; the job skips itself while `clusters.batch` is off
-    "lenses.build": (1, clock(5, 0)),  # §4.14 and the §6 job table: Monday 05:00, counts only
-}
+WEEKLY: dict[str, tuple[int, clock]] = {}
 
 
 # job type -> minutes. Enqueued once per slot of that many minutes.
@@ -41,7 +40,6 @@ EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
     "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
     "voice.sweep": 15,  # voice notes held past 24 hours or for an idea already shared (DEC-096)
-    "qualify.backfill": 60,  # approved groups waiting for qualify (the job does nothing while `committee.flow` is off)
 }
 
 
