@@ -54,11 +54,11 @@ class DeskIdea:
 
 def tab_of(i: DeskIdea, now: dt.datetime, decided_days: int) -> Tab | None:
     """L-REVIEW.queue: the one tab an idea is on, or None when it is off the desk (decided earlier than this
-    week, withdrawn, merged, or a Not now still waiting for its return date)."""
-    if i.decided_at is not None:
-        return "decided" if now - i.decided_at < dt.timedelta(days=decided_days) else None
-    if i.status not in ("with_review_desk", "needs_you"):
-        return None
+    week, withdrawn, merged, or a Not now still waiting for its return date). A Not now that has come back is on
+    the desk again whatever its earlier decision."""
+    if i.status not in ("with_review_desk", "needs_you"):  # decided, or off the desk
+        recent = i.decided_at is not None and now - i.decided_at < dt.timedelta(days=decided_days)
+        return "decided" if recent else None
     s = state(i.questions) if i.questions else None
     if s in ("sent", "seen"):
         return "waiting"
