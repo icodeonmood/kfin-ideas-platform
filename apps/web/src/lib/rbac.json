@@ -88,10 +88,6 @@
       "lob_committee": "park_or_decline_own_lob",
       "core_committee": "yes"
     },
-    "hear_appeals": {
-      "core_committee": "lob_appeals",
-      "appeal_panel": "yes"
-    },
     "run_action_plans": {
       "working_group": "yes",
       "sponsor": "yes",
@@ -274,7 +270,6 @@
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/plus-one                     submit",
     "POST /api/ideas/{id}/answer                       submit",
-    "POST /api/ideas/{id}/disagree                     submit",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
     "GET /api/clusters                                 see_org_ideas",
@@ -308,10 +303,6 @@
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "POST /api/admin/reveal                            reveal_identity",
     "POST /api/admin/conflicts                         grant_roles",
-    "GET /api/appeals                                  signed_in",
-    "POST /api/appeals                                 submit",
-    "GET /api/appeals/{id}                             hear_appeals",
-    "POST /api/appeals/{id}/decision                   hear_appeals",
     "GET /api/reports/{kind}                           view_fairness_reports",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",

@@ -129,9 +129,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             </>
           ) : null}
         </p>
-        {p.owner && p.uuid ? (
-          <FollowUpPanel uuid={p.uuid} question={p.question ?? null} canDisagree={Boolean(p.can_disagree)} />
-        ) : null}
+        {p.owner && p.uuid ? <FollowUpPanel uuid={p.uuid} question={p.question ?? null} /> : null}
       </section>
       <section aria-labelledby="ip-canvas" className="glass idea-pane">
         <h2 id="ip-canvas" className="t-h2">

@@ -2,7 +2,7 @@
  * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
  * committee — plus Committee (Desk decisions while the committee flow is paused, BLD-227), Ones, Delivery and
  * Lenses; admin — plus Ones, Delivery, Lenses and Admin (the Ones console, DEC-040; delivery and lenses, BLD-115 to
- * BLD-122). My ideas links to committee decisions and appeals while the committee flow runs.
+ * BLD-122).
  * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
  * keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
@@ -33,25 +33,6 @@ test.describe("navigation by role (AT-B2-06)", () => {
       }).toPass({ timeout: 20_000, intervals: [1_000, 2_000, 5_000] });
     });
   }
-
-  test("My ideas links to committee decisions and appeals while the committee flow or appeals run", async ({
-    page,
-  }) => {
-    await signIn(page, PERSONAS.contributor);
-    const link = page.getByRole("link", { name: "Committee decisions on your ideas, and appeals" });
-    let shown = false;
-    await expect(async () => {
-      await page.goto("/my-ideas");
-      shown = (await switchIsOn("committee.flow")) || (await switchIsOn("appeals.filing"));
-      await expect(link).toHaveCount(shown ? 1 : 0, { timeout: 1_000 });
-    }).toPass({ timeout: 20_000, intervals: [1_000, 2_000, 5_000] });
-    if (shown) {
-      await expect(link).toHaveAttribute("href", "/appeals");
-      await link.click();
-      await expect(page.getByRole("heading", { level: 1, name: "Appeals" })).toBeVisible();
-      await expectNoSeriousAxeIssues(page);
-    }
-  });
 });
 
 test("every navigation item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {

@@ -44,7 +44,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
-    pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer|disagree)\/?$/,
+    pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer)\/?$/,
     switches: ["submissions"],
   },
   { methods: ["POST"], pattern: /^\/api\/clusters\/[^/]+\/join\/?$/, switches: ["submissions"] },
@@ -82,10 +82,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   {
     methods: ["POST"],
     pattern:
-      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts|appeals\/[^/]+\/decision)\/?$/,
+      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts)\/?$/,
     switches: ["committee.flow"],
   },
-  { methods: ["POST"], pattern: /^\/api\/appeals\/?$/, switches: ["appeals.filing"] },
 ];
 
 /**
