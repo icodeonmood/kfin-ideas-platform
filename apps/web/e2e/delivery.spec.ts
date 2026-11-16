@@ -1,27 +1,21 @@
 /**
- * Delivery and learning (BLD-115 to BLD-122): the screens load for the people who may see them, send everyone else
- * home, say what is coming soon, and pass axe. Lenses are retired (DEC-106, R12). The flows themselves are covered
- * by the worker's stack tests (services/worker/tests/test_delivery.py) and the demo tour.
+ * Delivery (BLD-115 to BLD-122): the screens load for the people who may see them, say what is coming soon, and
+ * pass axe. Lenses and learning are retired (DEC-106, R12, R13). The flows themselves are covered by the worker's
+ * stack tests (services/worker/tests/test_delivery.py) and the demo tour.
  */
 import { expect, test } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
-test("the admin sees Delivery and Learning, each with its coming-soon notes", async ({ page }) => {
+test("the admin sees Delivery with its coming-soon note", async ({ page }) => {
   await signIn(page, PERSONAS.admin);
   await page.goto("/delivery");
   await expect(page.getByRole("heading", { level: 1, name: "Delivery" })).toBeVisible();
   await expect(page.getByText("Live sync with the delivery pipeline: coming soon")).toBeVisible();
   await expectNoSeriousAxeIssues(page);
-
-  await page.goto("/admin");
-  await page.getByRole("link", { name: "Learning reports and proposals" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Learning" })).toBeVisible();
-  await expect(page.getByText("Switching a kind to automatic: off at launch")).toBeVisible();
-  await expectNoSeriousAxeIssues(page);
 });
 
-test("an employee sees only their own deliveries and is sent home from Learning", async ({ page }) => {
+test("an employee sees only their own deliveries", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
   await page.goto("/delivery");
   await expect(page.getByRole("heading", { level: 2, name: "Your deliveries" })).toBeVisible();
@@ -29,8 +23,6 @@ test("an employee sees only their own deliveries and is sent home from Learning"
     0,
   );
   await expectNoSeriousAxeIssues(page);
-  await page.goto("/learning");
-  await expect(page).toHaveURL((url) => url.pathname === "/");
 });
 
 test("a delivery that is not yours is not found", async ({ page }) => {

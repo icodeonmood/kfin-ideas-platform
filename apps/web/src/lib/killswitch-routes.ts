@@ -57,8 +57,6 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
   { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
-  // Running a learning loop by hand stops with the scheduled ones (§5); the worker refuses it too.
-  { methods: ["POST"], pattern: /^\/api\/learning\/run\/?$/, switches: ["learning.jobs"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
   // Evidence files on deliveries use the same pipeline and switches as research files (BLD-131).
@@ -139,12 +137,6 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
-  /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
-  /^\/api\/learning\/role-themes\/[^/]+\/decide\/?$/, // the same for a role's friction themes (BLD-139)
-  /^\/api\/learning\/committee\/proposals\/[^/]+\/decide\/?$/, // the core committee deciding one (BLD-149, BLD-150)
-  // An admin writing an approved term or tag into the company repo (BLD-136): a person's own console step on the
-  // admin page, not employee-facing; the text checks answer 503 on their own when the assistant is off.
-  /^\/api\/learning\/proposals\/[^/]+\/publish\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

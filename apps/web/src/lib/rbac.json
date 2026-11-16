@@ -50,13 +50,6 @@
     "veto_desk_decision": {
       "core_committee": "yes"
     },
-    "propose_rule_changes": {
-      "reviewer": "yes",
-      "admin": "yes"
-    },
-    "approve_scorecard_changes": {
-      "core_committee": "yes"
-    },
     "open_attachments": {
       "contributor": "as_idea"
     },
@@ -110,9 +103,6 @@
       "admin": "yes"
     },
     "manage_delivery": {
-      "admin": "yes"
-    },
-    "review_learning": {
       "admin": "yes"
     },
     "write_ember_note": {
@@ -296,13 +286,6 @@
     "POST /api/delivery/{id}/writeup/submit            work_delivery",
     "POST /api/delivery/{id}/writeup/approve           work_delivery",
     "POST /api/delivery/{id}/writeup/send-back         work_delivery",
-    "GET /api/learning                                 review_learning",
-    "POST /api/learning/proposals/{id}/decide          review_learning",
-    "POST /api/learning/proposals/{id}/publish         review_learning",
-    "POST /api/learning/role-themes/{id}/decide       review_learning",
-    "POST /api/learning/run                            review_learning",
-    "GET /api/learning/committee                       approve_scorecard_changes",
-    "POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",
     "GET /api/ember/{id}                               signed_in",
@@ -329,8 +312,6 @@
     "/ones/showcase             view_ones_console",
     "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
-    "/learning/committee        approve_scorecard_changes",
-    "/learning                  review_learning",
     "/ember/compose             write_ember_note"
   ],
   "navigation": [

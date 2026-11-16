@@ -20,8 +20,6 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  propose_rule_changes:       { reviewer: yes, admin: yes }
-  approve_scorecard_changes:  { core_committee: yes }
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -33,12 +31,11 @@ capabilities:
   propose_ones:               { core_committee: yes, ceo: yes }
   decide_ones:                { core_committee: yes }
   carry_out_ones:             { admin: yes }
-  # Delivery (§4.8 to §4.11), lenses (§4.14) and learning (§5). The worker checks each person's part again: an
-  # owner, sponsor, delivery PM or milestone owner acts only on their own deliveries.
+  # Delivery (§4.8 to §4.11). The worker checks each person's part again: an owner, sponsor, delivery PM or
+  # milestone owner acts only on their own deliveries. Lenses and learning are retired (DEC-106).
   work_delivery:              { contributor: as_party, core_committee: yes, admin: yes }
   start_handover:             { core_committee: yes, admin: yes }
   manage_delivery:            { admin: yes }                           # link the pipeline page; Finance's confirmation
-  review_learning:            { admin: yes }                           # the product team's proposals and reports
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
@@ -148,7 +145,7 @@ endpoints:
   - POST /api/me/one/glow-up/{id}/seen                signed_in
   - GET /api/me/one/showcase                          signed_in
   - PUT /api/me/one/showcase                          signed_in
-  # Delivery, lenses and learning (BLD-115 to BLD-122).
+  # Delivery (BLD-115 to BLD-122). Lenses and learning are retired (DEC-106).
   - GET /api/delivery                                 work_delivery   # your own deliveries; committees and admins see all
   - POST /api/delivery                                start_handover
   - GET /api/delivery/{id}                            work_delivery
@@ -174,15 +171,6 @@ endpoints:
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
   - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
-  - GET /api/learning                                 review_learning
-  - POST /api/learning/proposals/{id}/decide          review_learning
-  - POST /api/learning/proposals/{id}/publish         review_learning   # write an approved term or tag into the company repo (BLD-136)
-  - POST /api/learning/role-themes/{id}/decide       review_learning   # approve or decline a role's friction themes (BLD-139)
-  - POST /api/learning/run                            review_learning
-  # Learning from the core committee's decisions (§5.9, BLD-149, BLD-150). The worker lets the chair decide
-  # scorecard weights and any core committee member decide scoring bands.
-  - GET /api/learning/committee                       approve_scorecard_changes
-  - POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note
   - GET /api/ember/{id}                               signed_in
@@ -214,8 +202,6 @@ pages:
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /ones/console              view_ones_console                    # the committee console's Ones module
   - /delivery                  work_delivery                        # each person sees only their own deliveries
-  - /learning/committee        approve_scorecard_changes            # before /learning: the first match wins (BLD-149)
-  - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
 # Navigation (AT-B2-06): everyone gets the first four; the rest by role. `when_on` / `when_off` name a kill switch:

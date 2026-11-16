@@ -133,7 +133,7 @@ test("13-14: the launch screen and the kill switches", async ({ browser }) => {
   await expectNoSeriousAxeIssues(admin);
 });
 
-test("15-21: delivery and learning (read only, so the demo stays ready; lenses retired, DEC-106)", async ({
+test("15-21: delivery (read only, so the demo stays ready; lenses and learning retired, DEC-106)", async ({
   browser,
 }) => {
   const meera = await as(browser, DEMO.member);
@@ -172,8 +172,5 @@ test("15-21: delivery and learning (read only, so the demo stays ready; lenses r
   await sana.goto("/delivery");
   await sana.getByRole("link", { name: /where each service request is/ }).click();
   await expect(sana.getByRole("button", { name: "Finance has confirmed the money" })).toBeVisible();
-  await expectNoSeriousAxeIssues(sana);
-  await sana.goto("/learning");
-  await expect(sana.getByRole("heading", { level: 3, name: "IFSC" })).toBeVisible();
   await expectNoSeriousAxeIssues(sana);
 });

@@ -37,11 +37,6 @@ export default async function Admin() {
   return (
     <>
       <h1>Admin</h1>
-      {can(me.roles, "review_learning") ? (
-        <p>
-          <Link href="/learning">Learning reports and proposals</Link>
-        </p>
-      ) : null}
       {showSwitches ? <KillSwitches initial={switches} /> : null}
       {showSwitches ? (
         <section aria-labelledby="speech-title">
