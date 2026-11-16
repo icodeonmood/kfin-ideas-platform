@@ -60,11 +60,6 @@ export default async function Admin() {
       {showRoles ? <Roles initial={grants} /> : null}
       {showRoles ? (
         <p>
-          <Link href="/admin/conflicts">Conflict flags on committee reviews</Link>
-        </p>
-      ) : null}
-      {showRoles ? (
-        <p>
           <Link href="/reports">Fairness and calibration reports</Link>
         </p>
       ) : null}

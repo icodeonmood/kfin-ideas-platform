@@ -1,146 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-
-import { canSeePage } from "@/lib/rbac";
-import { currentUser } from "@/server/auth/current";
-import { rounds } from "@/server/committee";
-
-import { OpenCycle } from "./open-cycle";
 
 export const metadata: Metadata = { title: "Committee" };
-export const dynamic = "force-dynamic";
 
-type Round = {
-  id: string;
-  cluster_id: string;
-  body: string;
-  lob_id: string | null;
-  state: string;
-  closes_at: string;
-  scored: number;
-  voting: number;
-  quorum_met: boolean;
-  i_scored: boolean;
-  outcome: string | null;
-  final_score: number | null;
-};
-
-const STATE: Record<string, string> = {
-  open: "Scoring",
-  revealed: "Scores revealed",
-  decided: "Decided",
-  cancelled: "Cancelled",
-};
-
-export default async function Committee() {
-  const me = await currentUser();
-  if (!me) redirect("/sign-in");
-  // A slow or unreachable worker must not take the links below with it: Desk decisions is reached from here.
-  const data = await rounds(me).catch(() => null);
-  // Desk decisions sits here now that Committee has its place in the menu (BLD-227); each link only for those who
-  // may open it, since LOB committees come here too.
-  const links = [
-    { href: "/desk-decisions", label: "Desk decisions" },
-    { href: "/appeals", label: "Appeals" },
-    { href: "/reports", label: "Fairness and calibration" },
-  ].filter((l) => canSeePage(me.roles, l.href));
-  const list = (data?.rounds ?? []) as Round[];
-  const presentations = (data?.presentations ?? []) as {
-    id: string;
-    cluster_id: string;
-    state: string;
-    slot_at: string | null;
-  }[];
+/**
+ * Holding page. Scoring rounds, cycles, presentations and the links to desk decisions, appeals and reports are
+ * retired (DEC-106, R1, R8 to R10, R14); lane B rebuilds this route as the Ones Committee window (S-R4).
+ */
+export default function Committee() {
   return (
     <>
       <h1>Committee</h1>
       <p className="lead">
-        Groups of ideas ready for the committee&apos;s written, blind review. Scores stay sealed until
-        everyone has scored.
+        The review desk&apos;s decisions will show here, each with the time the committee has to extend or
+        reverse it.
       </p>
-      <p>
-        {links.map((l, i) => (
-          <span key={l.href}>
-            {i ? " · " : null}
-            <Link href={l.href}>{l.label}</Link>
-          </span>
-        ))}
-      </p>
-      {data === null ? (
-        <p className="notice">
-          We can&apos;t load the committee&apos;s reviews just now. Please try again in a minute.
-        </p>
-      ) : null}
-      {data?.chair ? <OpenCycle /> : null}
-      {data === null ? null : (
-        <section aria-labelledby="c-rounds" className="panel">
-          <h2 id="c-rounds">Reviews</h2>
-          {list.length ? (
-            <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table">
-              <table>
-                <caption>{list.length} reviews</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Review</th>
-                    <th scope="col">Committee</th>
-                    <th scope="col">Where it is</th>
-                    <th scope="col">Scored</th>
-                    <th scope="col">Closes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((r) => (
-                    <tr key={r.id}>
-                      <th scope="row">
-                        <Link href={`/committee/rounds/${r.id}`}>
-                          {r.id} ({r.cluster_id})
-                        </Link>
-                      </th>
-                      <td>{r.body === "core" ? "Core committee" : `LOB committee (${r.lob_id})`}</td>
-                      <td>
-                        {STATE[r.state] ?? r.state}
-                        {r.outcome ? `: ${r.outcome}` : ""}
-                        {r.state === "open" && !r.i_scored ? " (waiting for your scores)" : ""}
-                      </td>
-                      <td>
-                        {r.scored} of {r.voting}
-                      </td>
-                      <td>
-                        {new Date(r.closes_at).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          timeZone: "Asia/Kolkata",
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p>No reviews yet. They open when the chair opens a cycle.</p>
-          )}
-        </section>
-      )}
-      {presentations.length ? (
-        <section aria-labelledby="c-presentations" className="panel">
-          <h2 id="c-presentations">Presentations</h2>
-          <ul>
-            {presentations.map((p) => (
-              <li key={p.id}>
-                <Link href={`/committee/presentations/${p.id}`}>
-                  {p.id} ({p.cluster_id})
-                </Link>{" "}
-                · {p.state}
-                {p.slot_at
-                  ? ` · ${new Date(p.slot_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}`
-                  : ""}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
     </>
   );
 }

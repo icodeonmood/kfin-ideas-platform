@@ -45,13 +45,8 @@ const SECTION_3_1: Record<string, string[]> = {
   veto_desk_decision: ["core_committee"],
   propose_rule_changes: ["reviewer", "admin"],
   approve_scorecard_changes: ["core_committee"],
-  see_core_briefs: ["core_committee"],
-  present: ALL,
   open_attachments: ALL,
   see_restored_values: ALL,
-  score: ["lob_committee", "core_committee"],
-  decide: ["lob_committee", "core_committee"],
-  run_action_plans: ["working_group", "sponsor", "admin"],
   approve_handover: ["sponsor"],
   see_people_view: ALL,
   reveal_identity: ["admin"],
@@ -155,11 +150,10 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
     expect(canSeePage(rolesOf("core_committee"), "/desk-decisions")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
-    // A sub-page's own rule applies, not /admin's: InfoSec flips switches but does not clear conflict flags.
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    expect(canSeePage(rolesOf("infosec"), "/admin/conflicts")).toBe(false);
-    expect(canSeePage(rolesOf("hr"), "/admin/conflicts")).toBe(false);
-    expect(canSeePage(rolesOf("admin"), "/admin/conflicts")).toBe(true);
+    // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
+    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("core_committee"), "/reports")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/reports")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);

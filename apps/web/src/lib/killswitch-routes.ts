@@ -77,12 +77,6 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
-  {
-    methods: ["POST"],
-    pattern:
-      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|admin\/conflicts)\/?$/,
-    switches: ["committee.flow"],
-  },
 ];
 
 /**
