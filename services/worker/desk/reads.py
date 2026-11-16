@@ -11,9 +11,9 @@ import datetime as dt
 from typing import Any
 
 from core.db import Conn
-from desk import promises, queue, when
+from desk import clock, promises, queue, when
 from desk.questions import SetFacts
-from desk.store import code_of, now
+from desk.store import code_of, now, person_by_code
 from desk.window import Window
 
 _QUEUE = """
@@ -117,3 +117,293 @@ def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left"
         ],
         "now": t.astimezone(when.IST).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The reviewer's page (A-API.desk GET /desk/ideas/:id; S-R2) and the listen script (L-LISTEN)
+# ---------------------------------------------------------------------------------------------------------------
+STATUS_LABELS = {
+    "checking": "Checking", "with_review_desk": "With the review desk", "needs_you": "Needs you", "picked": "Picked",
+    "being_built": "Being built", "shipped": "Shipped", "not_now": "Not now", "not_picked": "Not picked",
+    "withdrawn": "Withdrawn", "merged": "Merged",
+}  # fmt: skip
+PILLS = {"needs_you": "warn", "not_now": "warn", "shipped": "ok", "not_picked": "neutral", "withdrawn": "neutral",
+         "merged": "neutral"}  # fmt: skip
+HIDDEN_KINDS = {"folio": "Folio", "pan": "PAN", "phone": "Phone number", "email": "Email", "account": "Account number",
+                "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
+_BRINGS = {"saves_time": "saves time", "saves_cost": "saves cost", "earns_revenue": "earns revenue",
+           "less_outside_tools": "cuts reliance on outside tools", "not_sure": "not sure yet"}  # fmt: skip
+CHECKED = ("checked", "hidden_checked", "ok")
+
+
+def _size(n: int) -> str:
+    if n >= 1024 * 1024:
+        return f"{n / (1024 * 1024):.1f} MB".replace(".0 MB", " MB")
+    return f"{max(1, round(n / 1024))} KB"
+
+
+def _and(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _brings(values: list[str]) -> str:
+    if "saves_time" in values and "saves_cost" in values:  # the board's "saves time and cost"
+        rest = [_BRINGS[v] for v in values if v not in ("saves_time", "saves_cost")]
+        return _and(["saves time and cost", *rest]) if rest else "saves time and cost"
+    return _and([_BRINGS.get(v, v) for v in values]) if values else ""
+
+
+def _hidden_line(kinds: list[str]) -> str:
+    if not kinds:
+        return ""
+    names = [HIDDEN_KINDS.get(k, k) for k in dict.fromkeys(kinds)]
+    first, *rest = names
+    return _and([first, *[n.lower() if n not in ("PAN", "Aadhaar") else n for n in rest]]) + " hidden."
+
+
+def _questions(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[dict[str, Any]]]:
+    """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3)."""
+    from desk.store import person_by_code, person_by_user, unseal
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    for r in conn.execute(
+        "SELECT q.id, q.part, q.text_encrypted, s.sent_at, s.by_user_id, a.id AS answer_id, a.text_encrypted AS "
+        "answer_encrypted, a.sent_at AS answered_at, a.by_code FROM questions q JOIN question_sets s ON s.id = q.set_id "
+        "LEFT JOIN answers a ON a.question_id = q.id AND a.sent_at IS NOT NULL "
+        "WHERE s.idea_uuid = %s AND s.state <> 'queued' ORDER BY s.sent_at, q.seq",
+        (idea_uuid,),
+    ).fetchall():
+        asked_by = person_by_user(conn, r["by_user_id"])
+        item: dict[str, Any] = {
+            "id": str(r["id"]), "text": unseal(r["text_encrypted"], "questions", "text_encrypted", str(r["id"])),
+            "asked_at": r["sent_at"].isoformat(), "asked_by": asked_by.first_name,
+            "asked_line": f"You asked, {when.which_day(r['sent_at'], at)} {when.clock(r['sent_at'])}",
+            "state": "Answered" if r["answer_id"] else "Not answered yet", "answer": None,
+        }  # fmt: skip
+        if r["answer_id"]:
+            by = person_by_code(conn, r["by_code"])
+            files = conn.execute(
+                "SELECT id, name, hidden_note FROM attachments WHERE answer_id = %s ORDER BY created_at",
+                (r["answer_id"],),
+            ).fetchall()
+            item["answer"] = {
+                "text": unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"])),
+                "at": r["answered_at"].isoformat(), "by": by.first_name,
+                "line": f"{by.first_name} answered, {when.which_day(r['answered_at'], at)} {when.clock(r['answered_at'])}",
+                "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"]} for f in files],
+            }  # fmt: skip
+        out.setdefault(str(r["part"]), []).append(item)
+    return out
+
+
+def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> dict[str, Any]:
+    """Which working state the panel opens in (L-REVIEW.panel), with what it shows."""
+    from desk import committee, questions
+
+    decision = committee.for_idea(conn, str(idea["id"]), user_id, at)
+    if decision is not None and idea["status"] not in ON_DESK_STATUSES:
+        return {"state": "decided", "decision": decision}
+    if idea["status"] == "merged":
+        return {"state": "merged"}
+    s = conn.execute(
+        "SELECT * FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (idea["id"],),
+    ).fetchone()
+    if s is None:
+        return {"state": "reviewing", "decision": decision}
+    n = conn.execute(
+        "SELECT count(*) AS n, count(a.sent_at) AS answered, max(a.sent_at) AS answered_at FROM questions q "
+        "LEFT JOIN answers a ON a.question_id = q.id AND a.sent_at IS NOT NULL WHERE q.set_id = %s",
+        (s["id"],),
+    ).fetchone()
+    assert n is not None
+    facts = questions.SetFacts(int(n["n"]), int(n["answered"]), s["sent_at"], s["seen_at"], s["due_at"],
+                               n["answered_at"])  # fmt: skip
+    c = clock.countdown(s["due_at"], at)
+    sent_line = f"Sent {when.which_day(s['sent_at'], at)}, {when.clock(s['sent_at'])}."
+    if s["seen_at"]:
+        sent_line += f" Seen {when.clock(s['seen_at'])}."
+    common = {
+        "set_id": str(s["id"]), "count": facts.count, "answered": facts.answered, "due_at": s["due_at"].isoformat(),
+        "countdown": c.label("to answer"), "variant": c.variant, "sent_line": sent_line,
+        "decide_by_line": f"Decide by {when.day(idea['decide_by'], at)}." if idea["decide_by"] else None,
+    }  # fmt: skip
+    if questions.state(facts) == "answered":
+        title = {1: "Answered", 2: "Both answered"}.get(facts.count) or f"All {facts.count} answered"
+        spare = questions.spare_line(n["answered_at"], s["due_at"]) if n["answered_at"] else None
+        return {"state": "answered", "title": title, "spare_line": spare, **common}
+    sharer_first = person_by_code(conn, idea["contributor_code"]).first_name
+    return {"state": "sent", "title": f"Waiting on {sharer_first}", **common}
+
+
+ON_DESK_STATUSES = frozenset({"with_review_desk", "needs_you"})
+
+
+def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None) -> dict[str, Any]:
+    """Everything a reviewer needs to decide on one idea, on one page (S-R2.left, S-R2.panel). Raw words are the
+    masked copy (L-REVIEW.open/3); unmasked hidden details never reach the desk."""
+    from desk import revise, worth
+    from desk.store import is_own, load_idea, person_by_code, unseal
+
+    t = at or now()
+    idea = load_idea(conn, ref)
+    sharer = person_by_code(conn, idea["contributor_code"])
+    own = is_own(conn, user_id, idea)
+    shared_at = idea["shared_at"] or idea["created_at"]
+    sorting = [
+        worth.KIND_LABELS.get(str(idea["kind"]), "").lower(),
+        str(idea["area"] or ""),
+        _brings(list(idea["brings"])),
+    ]
+    sorting_line = ", ".join(s for s in sorting if s)
+    heading = f"Shared {when.day(shared_at, t)} by {sharer.name}, {sharer.area or idea['area'] or ''}, {idea['city'] or ''}."
+    if idea["sorting_confirmed_at"] and sorting_line:
+        heading += f" Sorting confirmed by {sharer.first_name}: {sorting_line[0].lower() + sorting_line[1:]}."
+    # own words, the masked copy (L-REVIEW.open/3)
+    messages = [
+        {"seq": m["seq"], "via": m["via"], "at": m["created_at"].isoformat(),
+         "text": unseal(m["text_encrypted"], "idea_messages", "text_encrypted", str(m["id"]))}
+        for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea["id"],))
+    ]  # fmt: skip
+    hidden_kinds = [r["kind"] for r in conn.execute(
+        "SELECT kind FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at", (idea["id"],))]  # fmt: skip
+    files = [
+        dict(f) for f in conn.execute(
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at FROM attachments "
+            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') ORDER BY created_at",
+            (idea["id"], list(CHECKED)),
+        )
+    ]  # fmt: skip
+    similar_n = conn.execute(
+        "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
+        (idea["id"],),
+    ).fetchone()
+    versions = conn.execute(
+        "SELECT count(*) AS n, count(*) FILTER (WHERE 'title' = ANY(changed_fields)) AS titles "
+        "FROM idea_versions WHERE idea_uuid = %s",
+        (idea["id"],),
+    ).fetchone()
+    first = sharer.first_name
+    artefacts: list[dict[str, Any]] = []
+    for f in files:
+        by = person_by_code(conn, f["uploaded_by_code"]).first_name
+        size = _size(int(f["bytes"])) + (
+            f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
+        )
+        when_line = "Added with the answers." if f["answer_id"] else f"Attached by {by}."
+        artefacts.append({"kind": "file", "id": f["id"], "title": f["name"],
+                          "line": f"{when_line} {size}." + (f" {f['hidden_note']}" if f["hidden_note"] else ""),
+                          "action": "Open"})  # fmt: skip
+    if messages:
+        artefacts.append({"kind": "own_words", "title": f"{first}’s own words",
+                          "line": " ".join(x for x in (f"As {first} wrote them on {when.DAYS[shared_at.astimezone(when.IST).weekday()]}, before the draft.",
+                                                       _hidden_line(hidden_kinds)) if x),
+                          "action": "Read"})  # fmt: skip
+    if similar_n and similar_n["n"]:
+        n = int(similar_n["n"])
+        kept = f" {first} kept it separate." if idea["kept_separate"] else ""
+        artefacts.append({"kind": "similar_found", "title": "Similar ideas",
+                          "line": f"{n} found while {first} wrote.{kept}", "action": "Compare"})  # fmt: skip
+    if versions and versions["n"]:
+        n, titles = int(versions["n"]), int(versions["titles"])
+        bits = [f"{n} version{'s' * (n != 1)}."]
+        if titles:
+            bits.append(
+                f"Title changed {when.times(titles)}"
+                + (", sorting confirmed." if idea["sorting_confirmed_at"] else ".")
+            )
+        artefacts.append({"kind": "versions", "title": "Draft history", "line": " ".join(bits), "action": "See changes"})  # fmt: skip
+    sharer_worth, reviewer_worth, revision = revise.current(conn, str(idea["id"]))
+    fix = conn.execute("SELECT * FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
+    asked = _questions(conn, idea["id"], t)
+    part_text = {
+        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
+        "cost": "", "evidence": "", "fix": (fix["how"] or "") if fix and fix["included"] else "",
+    }  # fmt: skip
+    from desk.questions import PART_NAMES, PARTS
+
+    parts = [
+        {"part": p, "name": PART_NAMES[p], "text": part_text[p], "questions": asked.get(p, [])} for p in PARTS
+    ]
+    similar = [
+        {"idea_id": s["idea_id"], "title": s["title"], "status": s["status"], "strength": s["strength"],
+         "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
+         "meta": f"{s['idea_id']}, {person_by_code(conn, s['contributor_code']).name}, {s['area'] or ''}, "
+                 f"{s['city'] or ''}. {s['crew']} on its crew"}
+        for s in conn.execute(
+            "SELECT o.idea_id, o.title, o.status, o.area, o.city, o.contributor_code, o.merged_into, l.strength, l.reason, "
+            "(SELECT count(*) FROM crew_members c WHERE c.idea_uuid = o.id AND c.left_at IS NULL) AS crew "
+            "FROM similar_links l JOIN ideas o ON o.id = l.other_idea_uuid "
+            "WHERE l.idea_uuid = %s AND o.status NOT IN ('draft', 'withdrawn') ORDER BY l.rank",
+            (idea["id"],),
+        )
+    ]  # fmt: skip
+    decide_by = idea["decide_by"]
+    c = clock.countdown(decide_by, t) if decide_by else None
+    return {
+        "idea": {
+            "id": idea["idea_id"],
+            "title": idea["title"],
+            "status": idea["status"],
+            "status_label": STATUS_LABELS.get(str(idea["status"]), ""),
+            "pill": PILLS.get(str(idea["status"]), "blue"),
+            "heading": heading,
+            "kind": idea["kind"],
+            "area": idea["area"],
+        },
+        "sharer": sharer.as_json(),
+        "own": own,
+        "can_act": not own and idea["status"] in ON_DESK_STATUSES,
+        "decide_by": {
+            "at": decide_by.isoformat() if decide_by else None,
+            "label": when.day(decide_by, t) if decide_by else None,
+            "left": c.label("to decide") if c else None,
+        },
+        "artefacts": artefacts,
+        "own_words": messages,
+        "parts": parts,
+        "worth": {
+            "tiles": [vars(x) for x in worth.tiles(sharer_worth, reviewer_worth)],
+            "revised": reviewer_worth is not None,
+            "revision": revision,
+            "line": (
+                f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
+                if reviewer_worth is not None
+                else f"Clear enough? Decide now. If it’s worth more than {first} could put into numbers, revise what it’s "
+                f"worth first. {first} sees your figures next to theirs."
+            ),
+        },
+        "similar": similar,
+        "panel": _panel(conn, idea, user_id, t),
+    }
+
+
+def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
+    """L-LISTEN (BLD-B230): the masked script the reviewer's browser reads aloud, with answers in their parts."""
+    from desk import listen, revise
+
+    view = reviewer_idea(conn, ref, user_id)
+    idea = view["idea"]
+    _ = idea
+    texts = {p["part"]: p["text"] for p in view["parts"]}
+    sharer_worth, reviewer_worth, _rev = revise.current(conn, str(load_uuid(conn, ref)))
+    files = [
+        listen.FileLine(None, a["title"].rsplit(".", 1)[-1].upper() if "." in a["title"] else "file", None,
+                        a["line"].split(". ", 2)[-1] if "hidden" in a["line"] else None)
+        for a in view["artefacts"] if a["kind"] == "file"
+    ]  # fmt: skip
+    answers = {
+        p["part"]: [
+            listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in p["questions"] if q["answer"]
+        ]
+        for p in view["parts"]
+    }
+    script = listen.build(texts, worth=reviewer_worth or sharer_worth, files=files, answers=answers)
+    return script.as_json()
+
+
+def load_uuid(conn: Conn, ref: str) -> Any:
+    from desk.store import load_idea
+
+    return load_idea(conn, ref)["id"]
