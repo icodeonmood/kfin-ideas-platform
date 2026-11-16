@@ -1,0 +1,256 @@
+{
+  "_about": "The 1% Club's enums: one source for TypeScript (apps/web/src/lib/contracts/enums.gen.ts) and Python (services/worker/onepc/enums.json), both written by `cd apps/web && npm run sync:shared`. Values are the wire values of 1pc-handoff/06-contracts/E-ENUMS.md (draft 0, rev 1) unless `source` says otherwise; labels are exactly what the interface shows. `db_checks` maps each database CHECK to the enum(s) it must equal; `db_values_outside_the_pack` lists old values a reused column keeps after the cut-over; the cleanup migration of Monday 23 November drops each or keeps it as an operations value (infosec, hr). Tests on both sides keep the migration, this file and the copies equal.",
+  "enums": {
+    "idea_status": {
+      "source": "E-ENUMS.idea-status",
+      "values": ["draft", "checking", "with_review_desk", "needs_you", "picked", "being_built", "shipped", "not_now", "not_picked", "withdrawn", "merged"],
+      "labels": {
+        "draft": "Draft",
+        "checking": "Checking",
+        "with_review_desk": "With the review desk",
+        "needs_you": "Needs you",
+        "picked": "Picked",
+        "being_built": "Being built",
+        "shipped": "Shipped",
+        "not_now": "Not now",
+        "not_picked": "Not picked",
+        "withdrawn": "Withdrawn",
+        "merged": "Merged"
+      },
+      "pill": {
+        "draft": "neutral",
+        "checking": "blue",
+        "with_review_desk": "blue",
+        "needs_you": "warn",
+        "picked": "blue",
+        "being_built": "blue",
+        "shipped": "ok",
+        "not_now": "warn",
+        "not_picked": "neutral",
+        "withdrawn": "neutral",
+        "merged": "neutral"
+      },
+      "groups": {
+        "closed": ["not_picked", "not_now", "withdrawn", "merged"],
+        "picked_and_building": ["picked", "being_built"]
+      },
+      "note": "needs_you is a view of with_review_desk for the sharer while a question set is open (E-ENUMS.idea-machine); it is a valid wire value but is never stored by the machine."
+    },
+    "stage": {
+      "source": "E-ENUMS.stage",
+      "values": ["shared", "checked_matched", "reviewed", "built", "shipped"],
+      "labels": { "shared": "Shared", "checked_matched": "Checked and matched", "reviewed": "Reviewed", "built": "Built", "shipped": "Shipped" }
+    },
+    "stage_state": { "source": "E-ENUMS.stage", "values": ["done", "now", "to_come", "not_going_ahead"] },
+    "kind": {
+      "source": "E-ENUMS.kind",
+      "values": ["problem", "fix", "business_idea"],
+      "labels": { "problem": "A problem to fix", "business_idea": "A new business idea" },
+      "note": "Check it offers problem and business_idea; the Wall shows fix for a problem shared with a fix (E-ENUMS.kind OPEN default).",
+      "wall_labels": { "problem": "Problem", "fix": "Fix", "business_idea": "Business idea" },
+      "wall_filters": { "problem": "Problems", "fix": "Fixes", "business_idea": "Business ideas" }
+    },
+    "brings": {
+      "source": "E-ENUMS.sorting",
+      "values": ["saves_time", "saves_cost", "earns_revenue", "less_outside_tools", "not_sure"],
+      "labels": {
+        "saves_time": "Saves time",
+        "saves_cost": "Saves cost",
+        "earns_revenue": "Earns revenue",
+        "less_outside_tools": "Cuts reliance on outside tools",
+        "not_sure": "Not sure yet"
+      },
+      "note": "not_sure is exclusive: it clears the others (V-FIELDS.checkit/3)."
+    },
+    "sorting_source": { "source": "E-ENUMS.sorting", "values": ["suggested", "confirmed", "changed"] },
+    "part": {
+      "source": "E-ENUMS.part",
+      "values": ["summary", "often", "who", "cost", "evidence", "fix"],
+      "labels": { "summary": "The problem", "often": "How often", "who": "Who it affects", "cost": "What it's worth", "evidence": "Attached", "fix": "Fix" }
+    },
+    "decision": {
+      "source": "E-ENUMS.decision",
+      "values": ["pick", "not_now", "not_picked"],
+      "labels": { "pick": "Picked", "not_now": "Not now", "not_picked": "Not picked" }
+    },
+    "return_in": {
+      "source": "E-ENUMS.decision",
+      "values": ["1m", "3m", "6m"],
+      "default": "3m",
+      "note": "The periods are a promise (P-PRODUCT.promises): no database CHECK; the chosen value is recorded and the date computed."
+    },
+    "window_state": { "source": "E-ENUMS.windows", "values": ["open", "extended", "reversed", "expired"] },
+    "question_set_state": { "source": "E-ENUMS.questions", "values": ["queued", "sent", "seen", "partly_answered", "answered", "closed"] },
+    "time_to_answer": {
+      "source": "E-ENUMS.questions",
+      "values": ["1d", "3d", "1w"],
+      "default": "3d",
+      "note": "The times are a promise (P-PRODUCT.promises): no database CHECK; the chosen value is recorded and due_at computed."
+    },
+    "teamup_state": { "source": "E-ENUMS.teamup", "values": ["sent", "approved_merged", "approved_team_only", "declined", "withdrawn", "closed"] },
+    "merge_request_state": { "source": "E-ENUMS.teamup (draft merge request)", "values": ["none", "waiting", "accepted", "team_only", "declined", "withdrawn"] },
+    "file_state": {
+      "source": "E-ENUMS.file",
+      "values": ["uploading", "checking", "checked", "upload_failed", "personal_data_found", "hidden_checked", "too_big", "locked", "infected"]
+    },
+    "link_state": {
+      "source": "E-ENUMS.file",
+      "values": ["ok", "unreachable"],
+      "note": "Links are never fetched (BLD-E001), so unreachable is never set."
+    },
+    "link_scope": { "source": "E-ENUMS.file", "values": ["internal", "external"] },
+    "hidden_kind": { "source": "E-ENUMS.hidden", "values": ["folio", "pan", "phone", "email", "account", "aadhaar", "name"] },
+    "hidden_state": { "source": "E-ENUMS.hidden", "values": ["hidden", "shown"] },
+    "show_reason": {
+      "source": "E-ENUMS.hidden",
+      "values": ["scheme_or_product_code", "internal_reference", "made_up_example"],
+      "labels": {
+        "scheme_or_product_code": "it's a scheme or product code",
+        "internal_reference": "it's an internal reference",
+        "made_up_example": "it's made up for the example"
+      }
+    },
+    "solved_already": { "source": "E-ENUMS.fix", "values": ["yes", "partly", "no", "dont_know"] },
+    "basis": {
+      "source": "E-ENUMS.fix",
+      "values": ["own_research", "verified_documents", "report", "conversation", "hunch"],
+      "labels": {
+        "own_research": "My own research",
+        "verified_documents": "Verified documents",
+        "report": "A report or document",
+        "conversation": "A conversation",
+        "hunch": "A hunch"
+      }
+    },
+    "outside_tools": { "source": "E-ENUMS.fix", "values": ["none", "partly", "fully"] },
+    "draft_part": { "source": "E-ENUMS.draft", "values": ["title", "often", "who", "value", "area", "similar"] },
+    "part_state": { "source": "E-ENUMS.draft", "values": ["waiting", "updating", "filled", "pinned", "failed"] },
+    "channel": { "source": "E-ENUMS.draft", "values": ["web", "voice", "email", "teams"] },
+    "draft_step": {
+      "source": "E-ENUMS.draft",
+      "values": ["tell", "check:1", "check:2", "check:3", "check:4", "check:5", "check:6", "check:7", "send"]
+    },
+    "inbox_kind": {
+      "source": "E-ENUMS.inbox",
+      "values": [
+        "questions",
+        "teamup_request",
+        "teamup_answer",
+        "decision",
+        "decision_reversed",
+        "desk_merge",
+        "worth_revised",
+        "stage_moved",
+        "build_ask",
+        "mention",
+        "crew_joined",
+        "comment",
+        "draft_kept",
+        "sent_to_desk",
+        "answer_reminder"
+      ]
+    },
+    "role": { "source": "E-ENUMS.roles", "values": ["employee", "reviewer", "committee", "build_team", "admin", "display"] },
+    "idea_role": { "source": "E-ENUMS.roles (per idea)", "values": ["sharer", "lead", "crew"] },
+    "tier": {
+      "source": "E-ENUMS.tier",
+      "values": [1, 2, 3, 4, 5, 6, 7],
+      "labels": { "1": "Spark", "2": "Glow", "3": "Flame", "4": "Blaze", "5": "White heat", "6": "Blue flame", "7": "Star" }
+    },
+    "one_flag": { "source": "E-ENUMS.tier", "values": ["founding", "one"], "labels": { "founding": "Founding One", "one": "One" } },
+    "match_strength": { "source": "E-ENUMS.match", "values": ["close", "related"], "labels": { "close": "Close match", "related": "Related" } },
+    "crew_reason": { "source": "E-ENUMS.match", "values": ["close_to_yours", "touches_your_work", "same_area", "same_office"] },
+
+    "message_via": { "source": "E-ENTITIES.draft Message.via", "values": ["typed", "voice", "email", "teams"] },
+    "device": { "source": "E-ENTITIES.draft saved_on.device", "values": ["phone", "laptop"] },
+    "conversation_type": { "source": "E-ENTITIES.inbox ConversationEntry.type", "values": ["event", "message", "questions", "answers"] },
+    "conversation_audience": { "source": "E-ENTITIES.inbox Conversation.audience", "values": ["you_and_desk", "crew_and_desk", "build_team"] },
+    "merge_via": { "source": "E-ENTITIES.crew Merge.via", "values": ["lead_accepted", "review_desk"] },
+    "file_kind": { "source": "E-ENTITIES.files FileItem.kind", "values": ["file", "link", "folder"] },
+    "action_style": { "source": "E-ENTITIES.inbox Action.style", "values": ["primary", "line", "text"] },
+    "wall_stage": { "source": "E-ENTITIES.wall WallStage.stage", "values": ["picked", "being_built", "shipped"] },
+    "impact_measured": { "source": "E-ENTITIES.wall LiveFix.measured", "values": ["30d", "90d", "pending"] },
+    "ember_state": { "source": "E-ENTITIES.wall EmberIssue.state", "values": ["latest", "coming_soon"] },
+
+    "teamup_answer": { "source": "A-API.team-up", "values": ["merge", "team_only", "decline"] },
+    "merge_lead": { "source": "A-API.desk", "values": ["this", "other"] },
+    "my_ideas_list": { "source": "A-API.my-ideas", "values": ["yours", "teamed"] },
+    "my_ideas_sort": { "source": "A-API.my-ideas", "values": ["latest", "shared", "stage"] },
+    "inbox_tab": { "source": "A-API.inbox", "values": ["all", "needs_you", "unread", "archived"] },
+    "desk_sort": { "source": "A-API.desk", "values": ["time_left", "decide_by", "area"] },
+    "committee_tab": { "source": "A-API.committee", "values": ["window", "reversed", "expired"] },
+    "committee_sort": { "source": "A-API.committee", "values": ["closing", "decided", "area"] },
+    "wall_sort": { "source": "A-API.wall", "values": ["popular", "newest", "crew", "ones"] },
+
+    "crew_member_role": { "source": "repo (lane E): crew_members.role, the per-idea roles a crew row can hold", "values": ["lead", "crew"] },
+    "worth_side": { "source": "repo (lane E): idea_worth.by_side, L-WORTH/3", "values": ["sharer", "reviewer"] },
+    "similar_outcome": { "source": "repo (lane E): similar_links.outcome, L-AUDIT.metrics", "values": ["previewed", "kept_separate", "merge_asked"] },
+    "hidden_found_by": { "source": "repo (lane E): hidden_details.found_by, L-HIDE.rules/7", "values": ["patterns", "gatekeeper", "reviewer"] },
+    "sealed_source": { "source": "repo (lane E): idea_words_sealed.source", "values": ["message", "answer", "conversation", "edit"] },
+    "flag_variant": { "source": "repo (lane E): flag_assignments.variant, P-DECISIONS.experiments", "values": ["default", "alternative"] },
+    "clock_kind": {
+      "source": "repo (lane E): sla_timers.stage for the pack's clocks (no CHECK on that column)",
+      "values": [
+        "edit_window",
+        "question_due",
+        "question_reminder",
+        "decide_by",
+        "committee_window",
+        "not_now_return",
+        "team_by",
+        "merge_request_wait",
+        "impact_30",
+        "impact_90",
+        "draft_archive"
+      ]
+    }
+  },
+  "db_checks": {
+    "ideas.status": ["idea_status"],
+    "ideas.kind": ["kind"],
+    "ideas.brings": ["brings"],
+    "ideas.channel": ["channel"],
+    "ideas.step": ["draft_step"],
+    "ideas.saved_device": ["device"],
+    "idea_messages.via": ["message_via"],
+    "idea_messages.device": ["device"],
+    "idea_parts.key": ["draft_part"],
+    "idea_parts.state": ["part_state"],
+    "idea_words_sealed.source": ["sealed_source"],
+    "hidden_details.kind": ["hidden_kind"],
+    "hidden_details.state": ["hidden_state"],
+    "hidden_details.reason": ["show_reason"],
+    "hidden_details.found_by": ["hidden_found_by"],
+    "idea_fix.solved_already": ["solved_already"],
+    "idea_fix.basis": ["basis"],
+    "idea_worth.by_side": ["worth_side"],
+    "idea_worth.outside_tools": ["outside_tools"],
+    "idea_worth.kind": ["kind"],
+    "similar_links.strength": ["match_strength"],
+    "similar_links.outcome": ["similar_outcome"],
+    "question_sets.state": ["question_set_state"],
+    "questions.part": ["part"],
+    "answers.added_to": ["part"],
+    "idea_decisions.choice": ["decision"],
+    "merges.via": ["merge_via"],
+    "merges.prior_status": ["idea_status"],
+    "decision_windows.state": ["window_state"],
+    "decision_reversals.to_choice": ["decision"],
+    "teamup_requests.state": ["teamup_state"],
+    "merge_requests.state": ["merge_request_state"],
+    "crew_members.role": ["crew_member_role"],
+    "conversation_entries.type": ["conversation_type"],
+    "attachments.kind": ["file_kind"],
+    "attachments.file_state": ["file_state", "link_state"],
+    "attachments.link_scope": ["link_scope"],
+    "notifications.kind": ["inbox_kind"],
+    "role_grants.role": ["role"],
+    "sign_in_intents.step": ["draft_step"],
+    "flag_assignments.variant": ["flag_variant"],
+    "flag_exposures.variant": ["flag_variant"]
+  },
+  "db_values_outside_the_pack": {
+    "ideas.kind": ["problem_with_solution"],
+    "role_grants.role": ["lob_committee", "core_committee", "core_chair", "appeal_panel", "working_group", "sponsor", "infosec", "hr", "ceo"]
+  }
+}

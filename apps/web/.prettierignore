@@ -8,3 +8,4 @@ package-lock.json
 src/lib/pii/patterns.json
 src/lib/rbac.json
 
+src/lib/contracts/enums.gen.ts
