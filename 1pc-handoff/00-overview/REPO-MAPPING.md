@@ -25,8 +25,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | Pack route | Closest today | State | Effort | Phase | Lane |
 |---|---|---|---|---|---|---|
-| `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
-| `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
+| `S-01` | `/` signed out | `app/landing.tsx`, `landing-motion.tsx`, `landing.css`, served by `app/page.tsx` when signed out (BLD-A172); e2e `landing.spec.ts` | built (branch `a/auth-landing`) | M | P0 | A |
+| `S-02` | `/sign-in` | `app/sign-in/{page,email-code,sso-form}.tsx`, `sign-in.css`; `app/signed-out`; e2e `sign-in.spec.ts` | built (branch `a/auth-landing`); email steps behind `auth.email_code`, off (BLD-E002) | L | P0 (single sign-on), P2 (email code) | A |
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
@@ -92,7 +92,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | ID | Owner today | State | Phase | Lane |
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
-| `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
+| `L-AUTH` | `server/auth/{intents,sso,reference,codes,email-code,drafts,session,table-fallback}.ts`; `app/auth/{sso/start,login,callback,code/send,code/verify,session,sign-out,logout}`; worker `comms/sign_in_code.py` (BLD-A173 to A176) | built (branch `a/auth-landing`); tables from the cut-over, memory until then | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
