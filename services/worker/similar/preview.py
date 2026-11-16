@@ -221,7 +221,7 @@ def rupees(amount: Decimal | float | int) -> str:
     digits = str(abs(whole))
     if len(digits) > 3:
         head, tail = digits[:-3], digits[-3:]
-        groups = []
+        groups: list[str] = []
         while len(head) > 2:
             groups.insert(0, head[-2:])
             head = head[:-2]

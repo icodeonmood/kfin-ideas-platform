@@ -86,8 +86,8 @@ def test_bld_c090_compare_for_the_desk_and_committee_only(db: Any, seeded: dict[
         assert out["compare_with"]["owner"]["first_name"] == "Rekha"
         assert set(out["compare_with"]) >= {"id", "title", "owner", "worth"}
     for first in ("Pallavi", "Kunal", "Tanvi"):  # a colleague, an admin, the sharer herself
-        out = idea_preview(db, t7.ref, viewer=Viewer.of(db, _user(db, first)), compare_with=r1.ref)
-        assert "compare" not in out and "compare_with" not in out
+        plain = idea_preview(db, t7.ref, viewer=Viewer.of(db, _user(db, first)), compare_with=r1.ref)
+        assert plain is not None and "compare" not in plain and "compare_with" not in plain
 
 
 def test_bld_c090_drafts_and_withdrawn_ideas(db: Any, seeded: dict[str, Any]) -> None:
