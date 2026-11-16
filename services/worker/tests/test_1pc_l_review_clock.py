@@ -130,3 +130,14 @@ def test_promises_read_lane_a_rule_keys() -> None:
     assert p.return_months == (("1m", 2), ("3m", 4), ("6m", 8)) and p.return_default == "3m"
     assert p.team_by_working_days == 8
     assert _from_rule(DEFAULTS, {}) == DEFAULTS
+
+
+def test_S_R1_rules_2_the_shared_countdown_vectors_hold() -> None:
+    """desk/countdown_vectors.json is what apps/web/src/lib/desk/countdown.ts is tested against too."""
+    import json
+    from pathlib import Path
+
+    data = json.loads(Path(clock.__file__).with_name("countdown_vectors.json").read_text())
+    for v in data["cases"]:
+        c = clock.countdown(dt.datetime.fromisoformat(v["due"]), dt.datetime.fromisoformat(v["now"]))
+        assert (c.count, c.variant) == (v["count"], v["variant"]), v
