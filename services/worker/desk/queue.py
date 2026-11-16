@@ -50,6 +50,7 @@ class DeskIdea:
     decided_at: dt.datetime | None = None
     window: Window | None = None
     reversal: Reversal | None = None
+    set_id: str | None = None  # the latest question set, for "Remind {sharer}" on its row
 
 
 def tab_of(i: DeskIdea, now: dt.datetime, decided_days: int) -> Tab | None:
@@ -93,9 +94,9 @@ class Row:
     area: str = ""
     decide_by_at: dt.datetime | None = None
     decided_at: dt.datetime | None = None
-    asked: int = (
-        0  # the dots beside the Questions column: one per question, filled once answered (board Desk)
-    )
+    set_id: str | None = None
+    # the dots beside the Questions column: one per question, filled once answered (board Desk)
+    asked: int = 0
     answered: int = 0
 
 
@@ -130,7 +131,7 @@ def row(i: DeskIdea, tab: Tab, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Ro
         return Row(
             i.idea_id, i.title, who, desk_line(i.questions, now, decided=True, tz=tz), None, None, None,
             when.day(i.decide_by, now, tz), "Open", "open", decision, _committee_line(i, now, tz), i.area,
-            i.decide_by, i.decided_at, *_dots(i),
+            i.decide_by, i.decided_at, i.set_id, *_dots(i),
         )  # fmt: skip
     due, c, suffix = clock_of(i, tab, now)
     if tab == "waiting" and i.questions and overdue(i.questions, now):
@@ -142,7 +143,7 @@ def row(i: DeskIdea, tab: Tab, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Ro
     return Row(
         i.idea_id, i.title, who, desk_line(i.questions, now, tz=tz), c.label(suffix), c.variant, due,
         when.day(i.decide_by, now, tz), action, kind, area=i.area, decide_by_at=i.decide_by,  # type: ignore[arg-type]
-        asked=_dots(i)[0], answered=_dots(i)[1],
+        set_id=i.set_id, asked=_dots(i)[0], answered=_dots(i)[1],
     )  # fmt: skip
 
 
