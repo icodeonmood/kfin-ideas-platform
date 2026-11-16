@@ -33,6 +33,7 @@ questions:
   answer_default_days: 3
   deadline_hour: 18             # questions fall due at 6 pm, India time
   reminder_hours_before: [24, 2]
+  extend_by_days: 2             # the review desk's "Give 2 more days" (L-QUESTIONS.clock/3)
 notes:
   decision_reason_min_chars: 30
   reversal_note_min_chars: 30

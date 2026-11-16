@@ -89,7 +89,8 @@
         "answer_options_days",
         "answer_default_days",
         "deadline_hour",
-        "reminder_hours_before"
+        "reminder_hours_before",
+        "extend_by_days"
       ],
       "properties": {
         "answer_options_days": {
@@ -118,6 +119,10 @@
             "minimum": 1
           },
           "uniqueItems": true
+        },
+        "extend_by_days": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

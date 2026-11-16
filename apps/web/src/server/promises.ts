@@ -16,6 +16,7 @@ export type Promises = {
     answer_default_days: number;
     deadline_hour: number;
     reminder_hours_before: number[];
+    extend_by_days: number;
   };
   notes: {
     decision_reason_min_chars: number;
