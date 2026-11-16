@@ -166,6 +166,22 @@ def _hidden_line(kinds: list[str]) -> str:
     return _and([first, *[n.lower() if n not in ("PAN", "Aadhaar") else n for n in rest]]) + " hidden."
 
 
+def _evidence_text(files: list[dict[str, Any]], hidden_kinds: list[str]) -> str:
+    """The Attached part in words (board DeskIdea): "One file: branch-call-log-nov.pdf. Folio ••••89 is hidden from
+    everyone." File names stand in for what each file is until the assistant describes them."""
+    from desk.listen import _NUMBERS
+
+    sent = [f for f in files if not f["answer_id"]]
+    bits = []
+    if sent:
+        n = len(sent)
+        names = "; ".join(str(f["name"]) for f in sent)
+        bits.append(f"{_NUMBERS[n] if n < len(_NUMBERS) else n} file{'s' * (n != 1)}: {names}.")
+    if hidden_kinds:
+        bits.append(_hidden_line(hidden_kinds).replace(" hidden.", " hidden from everyone."))
+    return " ".join(bits)
+
+
 def _questions(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3)."""
     from desk.store import person_by_code, person_by_user, unseal
@@ -327,7 +343,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     asked = _questions(conn, idea["id"], t)
     part_text = {
         "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
-        "cost": "", "evidence": "", "fix": (fix["how"] or "") if fix and fix["included"] else "",
+        "cost": "", "evidence": _evidence_text(files, hidden_kinds),
+        "fix": (fix["how"] or "") if fix and fix["included"] else "",
     }  # fmt: skip
     from desk.questions import PART_NAMES, PARTS
 
