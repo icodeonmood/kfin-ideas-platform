@@ -145,9 +145,13 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
-    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    // The committee page is the Ones Committee's window (S-R4, lane B): the pack's `committee` role only.
+    expect(canSeePage(rolesOf("committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
+    // The review desk (S-R1, S-R2) is for reviewers.
+    expect(canSeePage(rolesOf("reviewer"), "/desk/ideas/IDEA-2026-001481")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/desk")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
