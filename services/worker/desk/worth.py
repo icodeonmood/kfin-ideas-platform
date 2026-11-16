@@ -55,7 +55,7 @@ def inr(n: float) -> str:
     if len(whole) <= 3:
         return f"₹{whole}"
     head, tail = whole[:-3], whole[-3:]
-    groups = []
+    groups: list[str] = []
     while len(head) > 2:
         groups.insert(0, head[-2:])
         head = head[:-2]
@@ -143,7 +143,7 @@ def read_revision(fields: dict[str, Any], note: str | None, note_max: int) -> tu
         tools = None
     if note is not None and len(note.strip()) > note_max:
         errors.append(FieldError("note_too_long", "note", f"Keep the note under {note_max} characters."))
-    return Worth(**ranges, outside_tools=tools), errors  # type: ignore[arg-type]
+    return Worth(**ranges, outside_tools=tools), errors
 
 
 @dataclass(frozen=True)
