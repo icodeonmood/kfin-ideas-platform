@@ -47,7 +47,6 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer)\/?$/,
     switches: ["submissions"],
   },
-  { methods: ["POST"], pattern: /^\/api\/clusters\/[^/]+\/join\/?$/, switches: ["submissions"] },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
@@ -55,7 +54,6 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
-  { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
   { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
@@ -141,7 +139,6 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
-  /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
