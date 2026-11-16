@@ -7,6 +7,8 @@
 /* ---------- C-PILL: dot and words, never the dot alone ---------- */
 .pill {
   display: inline-flex;
+  justify-self: start;
+  width: fit-content;
   align-items: center;
   gap: 7px;
   min-height: 26px;
@@ -1325,4 +1327,363 @@ textarea:is(.fld, .textarea) {
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+/* ---------- C-CREW-DECK: a pile of cards, one in front ---------- */
+/* The flight out to the right stays inside the deck's area, so the page never scrolls sideways mid-flight */
+.deck-wrap {
+  display: grid;
+  min-width: 0;
+  overflow-x: clip;
+  gap: 16px;
+  justify-items: center;
+}
+
+.deck {
+  position: relative;
+  width: min(440px, 100%);
+  padding-bottom: 36px;
+  border-radius: var(--r-lg);
+}
+
+/* The edges of the next two cards under the front one */
+.deck::before,
+.deck::after {
+  content: "";
+  position: absolute;
+  top: 40px;
+  bottom: 20px;
+  left: 14px;
+  right: 14px;
+  z-index: 0;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 6px 12px -8px rgba(17, 17, 17, 0.22);
+}
+
+.deck::after {
+  top: 80px;
+  bottom: 8px;
+  left: 30px;
+  right: 30px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.deck-track {
+  position: relative;
+  z-index: 1;
+  display: grid;
+}
+
+.dcard {
+  grid-area: 1 / 1;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dcard.cur {
+  z-index: 4;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dcard.nx {
+  z-index: 2;
+}
+
+.dcard.toback {
+  z-index: 3;
+  animation: deckToBack 0.62s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+
+.dcard.cur.fromback {
+  animation: deckFromBack 0.62s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+
+@keyframes deckToBack {
+  0% {
+    transform: none;
+    opacity: 1;
+    z-index: 4;
+  }
+
+  42% {
+    transform: translate(46%, -18px) rotate(6deg);
+    opacity: 1;
+    z-index: 4;
+  }
+
+  43% {
+    z-index: 1;
+  }
+
+  100% {
+    transform: translateY(26px) scale(0.9);
+    opacity: 0;
+    z-index: 1;
+  }
+}
+
+@keyframes deckFromBack {
+  0% {
+    transform: translateY(26px) scale(0.9);
+    opacity: 0;
+    z-index: 1;
+  }
+
+  55% {
+    transform: translate(46%, -18px) rotate(6deg);
+    opacity: 1;
+    z-index: 1;
+  }
+
+  56% {
+    z-index: 4;
+  }
+
+  100% {
+    transform: none;
+    opacity: 1;
+    z-index: 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dcard.toback,
+  .dcard.cur.fromback {
+    animation: none;
+  }
+
+  .dcard.toback {
+    opacity: 0;
+  }
+}
+
+.deck-ctl {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.deck-b[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.deck-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--fieldBorder);
+  transition: width var(--mo-state) var(--mo-snap);
+}
+
+.deck-dots i.on {
+  width: 18px;
+  background: var(--ink);
+}
+
+.kit-dcard {
+  display: grid;
+  gap: 12px;
+  min-height: 300px;
+  align-content: start;
+  background: #ffffff;
+}
+
+/* ---------- C-ONES-FAN: a fan of the Ones' posts ---------- */
+.fan {
+  --fan-w: 341px;
+  --fan-gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .fan {
+    --fan-w: min(300px, calc(100vw - 72px));
+  }
+}
+
+/* The row of cards never sets the page's width: the view clips it and may shrink (WCAG 1.4.10) */
+.fan-view {
+  min-width: 0;
+  margin-block: -24px;
+  padding-block: 24px;
+  overflow-x: clip;
+  touch-action: pan-y;
+}
+
+.fan-track {
+  display: flex;
+  gap: var(--fan-gap);
+  transition: transform var(--mo-move) var(--mo-out);
+}
+
+.fan-view.spread .fan-track {
+  transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
+}
+
+.fan-card {
+  position: relative;
+  flex: none;
+  width: var(--fan-w);
+  transition:
+    transform var(--mo-move) var(--mo-out),
+    opacity var(--mo-state) ease;
+}
+
+/* Stacked: every card pulled back over the first, peeking with a slight turn; only three show */
+.fan-view:not(.spread) .fan-card {
+  z-index: calc(10 - var(--i));
+  transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)) + var(--i) * 22px))
+    rotate(calc(var(--i) * 3deg)) scale(calc(1 - var(--i) * 0.04));
+  transform-origin: 50% 100%;
+}
+
+.fan-view:not(.spread) .fan-card:nth-child(n + 4) {
+  opacity: 0;
+}
+
+.fan-card > * {
+  transform: perspective(900px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+  transition: transform 0.3s var(--mo-out);
+}
+
+.fan-ctl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fan-pos {
+  margin-right: auto;
+}
+
+.fan-ctl .round-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fan-track,
+  .fan-card,
+  .fan-card > * {
+    transition: none;
+  }
+}
+
+/* A One's post on the dark slab, lit by their tier (F-COLOR.tiers/3: the key colour at 32% to nothing) */
+.opost {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  min-height: 511px;
+  padding: 24px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 70% at 85% 0%, color-mix(in srgb, var(--heat) 32%, transparent), transparent 62%),
+    var(--slab);
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 40px 80px -40px rgba(17, 17, 17, 0.6);
+}
+
+.opost-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.opost-who {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.opost-who b {
+  color: #ffffff;
+  font: 500 15.5px/1.2 var(--ft);
+}
+
+.opost-ago {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 13px;
+}
+
+.opost-s {
+  margin: 0;
+  font: 500 21px/1.3 var(--fd);
+  letter-spacing: -0.014em;
+}
+
+.opost-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.opost-fig {
+  display: grid;
+  gap: 6px;
+  margin: auto 0 0;
+}
+
+.opost-fig .fig {
+  font-size: 64px;
+}
+
+.opost-unit {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+
+.opost-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13.5px;
+}
+
+.opost-t {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+
+.opost .av-ring {
+  --avatarInRing: #2a2b30;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 2px var(--slab);
+}
+
+.fan-empty {
+  max-width: 62ch;
 }

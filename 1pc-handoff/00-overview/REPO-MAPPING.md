@@ -84,8 +84,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-LISTEN` | missing | M | P0 | B |
 | `C-SHEET-MERGE` | missing | M | P0 | B |
 | `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
-| `C-CREW-DECK` | exists, differs | L | P0 | D (motion), F (data) |
-| `C-ONES-FAN` | exists, differs | M to L | P0 | D |
+| `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
+| `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |
 
 ## `P-REPO.logic`
 

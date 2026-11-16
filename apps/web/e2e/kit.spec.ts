@@ -148,3 +148,31 @@ test("C-AVATAR.crew/2: each crew face takes focus and is named", async ({ page }
   await expect(face).toBeFocused();
   await expect(page.getByText("Rahul Verma and 4 others on it")).toBeVisible();
 });
+
+test("C-CREW-DECK.behaviour/4: Next and ← → move the deck; only the front card is in the reading order", async ({
+  page,
+}) => {
+  const deck = page.getByRole("region", { name: "Ideas close to yours" });
+  await expect(deck.getByRole("heading", { level: 3 })).toHaveCount(1);
+  await expect(deck.getByRole("button", { name: "Previous idea" })).toHaveAttribute("aria-disabled", "true");
+  await deck.getByRole("button", { name: "Next idea" }).click();
+  await expect(deck.getByText("Idea 2 of 3")).toBeAttached();
+  await expect(deck.getByRole("heading", { level: 3 })).toHaveText("No script for calls about rejections");
+  await page.keyboard.press("ArrowLeft");
+  await expect(deck.getByRole("heading", { level: 3 })).toHaveText("Rejection SMS codes confuse investors");
+  await expectNoSeriousAxeIssues(page);
+});
+
+test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post 2 of 3'; a name only with consent", async ({
+  page,
+}) => {
+  const fan = page.getByRole("region", { name: "Posts from the Ones" });
+  await expect(fan.getByText("Post 1 of 3")).toBeVisible();
+  await fan.getByRole("button", { name: "Next post" }).click();
+  await expect(fan.getByText("Post 2 of 3")).toBeVisible();
+  await expect(fan.getByRole("article")).toContainText("One No. 17");
+  await page.keyboard.press("ArrowRight");
+  await expect(fan.getByText("Post 3 of 3")).toBeVisible();
+  await expect(fan.getByRole("button", { name: "Next post" })).toHaveAttribute("aria-disabled", "true");
+  await expectNoSeriousAxeIssues(page);
+});

@@ -5,10 +5,12 @@ import { useState } from "react";
 import { Avatar, CrewFaces } from "@/components/ui/avatar";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
+import { Deck } from "@/components/ui/deck";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { DropArea, FileList, FileRow } from "@/components/ui/file";
+import { OnesFan, OnesPost } from "@/components/ui/ones-fan";
 import { SearchBar } from "@/components/ui/search";
 import { IDEA_STATUS, Pill, StatusPill, type IdeaStatus } from "@/components/ui/pill";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
@@ -35,6 +37,7 @@ export function KitDemo() {
   const [q, setQ] = useState("");
   const [qf, setQf] = useState<string[]>(["needs"]);
   const [along, setAlong] = useState<string[]>([]);
+  const [deckAt, setDeckAt] = useState(0);
 
   return (
     <div className="arrive kit">
@@ -274,6 +277,81 @@ export function KitDemo() {
             </button>
           }
           help="Screenshots, photos, PDFs or spreadsheets, up to 25 MB each."
+        />
+      </section>
+
+      <section className="card" aria-labelledby="k-deck">
+        <h2 id="k-deck" className="h2">
+          Deck
+        </h2>
+        <Deck
+          label="Ideas close to yours"
+          index={deckAt}
+          onIndexChange={setDeckAt}
+          cards={[
+            "Rejection SMS codes confuse investors",
+            "No script for calls about rejections",
+            "Branch queue times are not tracked anywhere",
+          ].map((t) => (
+            <article key={t} className="card kit-dcard">
+              <StatusPill status="with_review_desk" />
+              <h3 className="h3">{t}</h3>
+              <p className="meta">Investor service, Hyderabad</p>
+              <Button size="full">Team up</Button>
+            </article>
+          ))}
+        />
+      </section>
+
+      <section className="card" aria-labelledby="k-fan">
+        <h2 id="k-fan" className="h2">
+          The Ones
+        </h2>
+        <OnesFan
+          empty={<p className="body">No Ones yet.</p>}
+          companion={
+            <article className="opost" data-tier="0">
+              <p className="opost-s">The next One could be you.</p>
+            </article>
+          }
+          cards={[
+            {
+              n: 1,
+              t: 4,
+              tn: "Blaze",
+              who: "Asha Shetty",
+              i: "AS",
+              f: "1,240",
+              u: "failed debits avoided last quarter",
+            },
+            { n: 17, t: 2, tn: "Glow", who: null, i: "", f: "38%", u: "fewer calls about rejections" },
+            {
+              n: 5,
+              t: 6,
+              tn: "Blue flame",
+              who: "Imran Qureshi",
+              i: "IQ",
+              f: "6 hrs",
+              u: "saved each week at one branch",
+            },
+          ].map((p) => (
+            <OnesPost
+              key={p.n}
+              name={p.who}
+              initials={p.i}
+              number={p.n}
+              tier={p.t}
+              tierName={p.tn}
+              ago="2d"
+              sentence="Rejection messages now say what went wrong and what to do next."
+              adopted="Adopted by 3 teams"
+              figure={p.f}
+              unit={p.u}
+              likes={24}
+              comments={6}
+              threadHref="/kit#k-fan"
+            />
+          ))}
         />
       </section>
 
