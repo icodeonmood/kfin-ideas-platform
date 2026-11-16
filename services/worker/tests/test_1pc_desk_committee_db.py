@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -101,9 +101,10 @@ def test_V_ACC_committee_4_a_reversal_is_final_and_the_idea_takes_the_new_decisi
         got["counts"]["reversed"] == 1
         and got["summary"] == "0 decisions open to review. You reversed 1 this month."
     )
-    for again in (lambda: committee.reverse_window(db, cast["window"], cast["rohan"]["id"],
+    agains: tuple[Callable[[], object], ...] = (lambda: committee.reverse_window(db, cast["window"], cast["rohan"]["id"],
                                                    {"to": "not_picked", "note": NOTE}, t),
-                  lambda: committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)):  # fmt: skip
+                  lambda: committee.extend_window(db, cast["window"], cast["rohan"]["id"], t))  # fmt: skip
+    for again in agains:
         with pytest.raises(Refused) as refused:
             again()
         assert refused.value.code == "already_reversed"

@@ -61,7 +61,8 @@ def test_L_DECIDE_rules_4_words_a_sharer_never_reads_are_flagged_not_blocked() -
 def test_L_DECIDE_rules_6_and_7_dates_a_decision_sets() -> None:
     d = decide.dates_for("not_now", DECIDED, None, P, CAL)
     assert d.return_at == at(2027, 2, 16, 16, 58) and d.team_by is None
-    assert decide.return_words(d.return_at, "Kavya", DECIDED) == (  # type: ignore[arg-type]
+    assert d.return_at is not None
+    assert decide.return_words(d.return_at, "Kavya", DECIDED) == (
         "Comes back to you and Kavya on Tuesday 16 February 2027"
     )
     assert decide.dates_for("not_now", DECIDED, "1m", P, CAL).return_at == at(2026, 12, 16, 16, 58)

@@ -6,7 +6,7 @@ Needs Postgres with the handoff cut-over applied (`make up`, then the tests migr
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -283,10 +283,11 @@ def test_L_QUESTIONS_states_a_closed_set_refuses_saves(db: Conn, cast: dict[str,
     kavya = cast["kavya"]["id"]
     asking.save_answer(db, _qids(sent)[0], kavya, "Mostly R07.")
     decide.send(db, cast["idea"]["idea_id"], cast["meera"]["id"], {"choice": "pick", "reason": REASON})
-    for call in (
+    calls: tuple[Callable[[], object], ...] = (
         lambda: asking.save_answer(db, _qids(sent)[1], kavya, "One branch."),
         lambda: asking.send_answers(db, sent["id"], kavya),
-    ):
+    )
+    for call in calls:
         with pytest.raises(Refused) as refused:
             call()
         assert (refused.value.status, refused.value.code) == (409, "set_closed")

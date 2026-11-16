@@ -49,7 +49,7 @@ def test_L_QUESTIONS_ask_3_suggestions_start_with_the_ideas_gaps() -> None:
 
 
 def test_S_R2_rules_2_ask_about_this_queues_that_parts_first_suggestion() -> None:
-    full = dict.fromkeys(q.PARTS, True)
+    full: dict[str, bool] = dict.fromkeys(q.PARTS, True)
     s = q.first_for("often", full)
     assert s is not None and s.text == "Is it getting worse, better or about the same?"
     assert q.first_for("often", full, [s.text]) is None
