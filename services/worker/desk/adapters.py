@@ -1,8 +1,8 @@
 """The other lanes' entry points, each behind one function, so a change to theirs touches only this file.
 
 - `tell`: L-NOTIFY and L-INBOX (lane A, `notify.post`, BLD-A180). A no-op until `notify` is importable.
-- `say`: L-CONVO (lane F): a line in the idea's conversation. Writes `conversation_entries` directly, as an event
-  with IDs only, until lane F publishes its entry point.
+- `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Writes `conversation_entries`
+  directly until `convo` is importable.
 - `hide`: L-HIDE (lane C): free text masked before it is stored or shown to anyone else. Until lane C's entry point
   lands it masks what the shared patterns find (kind + •••• + last two), so nothing a reviewer types reaches a
   sharer unmasked.
@@ -66,7 +66,19 @@ def say(
     entry_type: str = "event",
     at: dt.datetime | None = None,
 ) -> None:
-    """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time."""
+    """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time.
+    Lane F's `convo.post` takes these same arguments (SHIP_PLAN §5a); the direct insert is the fallback until it is
+    importable."""
+    try:
+        convo = importlib.import_module("convo")
+    except ModuleNotFoundError:
+        convo = None
+    if convo is not None:
+        convo.post(
+            conn, idea_uuid, event, author_user_id=author_user_id, author_code=author_code, payload=dict(payload or {}),
+            question_set_id=question_set_id, entry_type=entry_type, at=at,
+        )  # fmt: skip
+        return
     conn.execute(
         "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, author_code, "
         "question_set_id, at) VALUES (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
