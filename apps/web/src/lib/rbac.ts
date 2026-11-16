@@ -95,9 +95,12 @@ export function canSeePage(roles: Set<string>, path: string): boolean {
   return !caps || caps.some((c) => can(roles, c));
 }
 
-export type NavItem = { label: string; href: string };
+/** Where a link sits in the signed-in shell (C-SIDEBAR, C-PHONE-TABS): the "Share a problem" button, a sidebar
+ * item, an item shown only while the sidebar is folded, or the account menu. */
+export type NavPlace = "new" | "main" | "folded" | "account";
+export type NavItem = { key: string; label: string; href: string; place: NavPlace; tab?: number };
 
-type NavRule = { label: string; href: string; roles?: string[]; when_on?: string; when_off?: string };
+type NavRule = NavItem & { roles?: string[]; when_on?: string; when_off?: string };
 
 /**
  * The menu for these roles. `switchesOn` names the kill switches that are on; an item tied to a switch shows only
@@ -108,7 +111,9 @@ export function navFor(roles: Set<string>, switchesOn: ReadonlySet<string> = new
     .filter((item) => !item.roles || item.roles.some((r) => roles.has(r)))
     .filter((item) => !item.when_on || switchesOn.has(item.when_on))
     .filter((item) => !item.when_off || !switchesOn.has(item.when_off))
-    .map(({ label, href }) => ({ label, href }));
+    .map(({ key, label, href, place, tab }) =>
+      tab ? { key, label, href, place, tab } : { key, label, href, place },
+    );
 }
 
 /** §7.6 "Who can flip": `agent.*` covers every agent switch. */

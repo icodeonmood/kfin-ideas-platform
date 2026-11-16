@@ -96,7 +96,8 @@ describe("kill switch route map (§7.6)", () => {
         else if (/\.tsx?$/.test(name)) {
           const code = readFileSync(full, "utf8")
             .replace(/\/\*[\s\S]*?\*\//g, "")
-            .replace(/^\s*\/\/.*$/gm, "");
+            .replace(/^\s*\/\/.*$/gm, "")
+            .replace(/\brole=["']switch["']/g, ""); // an ARIA role (the P shortcut's toggle), not a word on screen
           // Words people read: string literals and JSX text.
           const strings = code.match(/(["'`])(?:(?!\1)[^\\\n]|\\.)*\1/g) ?? [];
           const jsxText = code.match(/>[^<>{}\n]+</g) ?? [];

@@ -1444,8 +1444,10 @@ blockquote {
 }
 
 @media print {
-  .site-header,
-  .site-footer,
+  .sbar,
+  .ptop,
+  .ptabs,
+  .amb,
   .banners,
   .skip-link,
   .no-print {

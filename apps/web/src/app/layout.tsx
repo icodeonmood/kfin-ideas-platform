@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import { PausedBanners } from "@/components/banners";
-import { MainNav } from "@/components/nav";
-import { SparkMark } from "@/components/spark-mark";
+import { FOLD_COOKIE, foldedFrom } from "@/components/shell/fold";
+import { ShellFrame } from "@/components/shell/frame";
 import { currentUser } from "@/server/auth/current";
+import { shellData } from "@/server/shell";
 
 import "@fontsource-variable/inter";
 import "@fontsource-variable/inter-tight";
@@ -13,63 +14,45 @@ import "./tokens.css";
 import "./foundation.css";
 import "./globals.css";
 import "./offer.css";
+import "./shell.css";
 import "./motion.css";
 import "./ds-app.css";
 
 export const metadata: Metadata = {
   title: { default: "1% Club", template: "%s · 1% Club" },
-  description: "1% Club, a KFintech programme. Share a problem, a fix or a business idea.",
+  description:
+    "1% Club, a KFintech programme. Share a problem in your own words and follow it until it's fixed.",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 /**
- * The shell in the OFFER theme (DEC-101): the lockup, the menu for your roles and the account on a warm paper ground,
- * the paused-feature bands, and the footer. Inter and Inter Tight are self-hosted from their npm packages (BLD-D008),
- * so no page asks Google for a font. Brand moments set data-theme="zed" on their own dark panel; a One's pages set
- * data-tier on their own regions.
+ * The document and the shell (F-SPACE.shell; C-SIDEBAR, C-PHONE-TABS; BLD-D011). The shell itself is chosen by path in
+ * ShellFrame: none on the wall displays, a brand row when signed out, the sidebar and the phone tab bar when signed in.
+ * Inter and Inter Tight are self-hosted (BLD-D008). #mo-fx is the motion effects layer (F-MOTION), never interactive.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await currentUser().catch(() => null);
-  const showShell = Boolean(me?.privacyAccepted);
+  const signedIn = Boolean(me?.privacyAccepted);
+  const data = signedIn && me ? await shellData(me) : null;
+  const folded = foldedFrom((await cookies()).get(FOLD_COOKIE)?.value, me?.id);
   return (
-    <html lang="en-IN" data-theme="white">
+    <html lang="en-IN" data-theme="white" data-fold={folded === null ? "auto" : folded ? "folded" : "open"}>
       <body className="stage">
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
-        <header className="hdr site-header">
-          <div className="hdr-dock">
-            <Link href="/" className="hdr-brand">
-              <SparkMark height={26} />
-              1% Club
-            </Link>
-            {showShell && me ? <MainNav items={me.nav} /> : null}
-            {me ? (
-              <div className="hdr-end">
-                <span className="hdr-name account-name">{me.name}</span>
-                <form method="post" action="/auth/logout">
-                  <button type="submit">Sign out</button>
-                </form>
-              </div>
-            ) : null}
-          </div>
-        </header>
-        {showShell ? <PausedBanners /> : null}
-        <main id="main" tabIndex={-1}>
+        <ShellFrame
+          signedIn={signedIn}
+          personId={me?.id ?? null}
+          nav={me?.nav ?? []}
+          data={data}
+          folded={folded}
+          banners={signedIn ? <PausedBanners /> : null}
+        >
           {children}
-        </main>
-        <footer className="site-footer">
-          <div className="inner">
-            <p>1% Club</p>
-            {showShell ? (
-              <p>
-                <Link href="/ember">The Ember</Link>
-              </p>
-            ) : null}
-            <p>A KFintech programme</p>
-          </div>
-        </footer>
+        </ShellFrame>
+        <div id="mo-fx" aria-hidden="true" />
       </body>
     </html>
   );

@@ -258,20 +258,19 @@ pages:
   - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
-# Navigation (AT-B2-06): everyone gets the first four; the rest by role. `when_on` / `when_off` name a kill switch:
-# the item shows only while that switch is on (or off). An unknown switch counts as off, as everywhere (§7.6).
-# BLD-227: with the committee flow on, "Committee" takes Desk decisions' place for the core committee (Desk
-# decisions stays one link away on /committee) and LOB committees get it too; with the flow paused, core members
-# keep their direct Desk decisions link.
+# Navigation (AT-B2-06): items without `roles` are everyone's; the rest by role. `when_on` / `when_off` may name a
+# kill switch: the item shows only while that switch is on (or off). An unknown switch counts as off (§7.6).
 navigation:
-  - { label: Share an idea,   href: /share }
-  - { label: My ideas,        href: /my-ideas }
-  - { label: Wall,            href: /wall }
-  - { label: Messages,        href: /inbox }
-  - { label: Review,          href: /review,          roles: [reviewer] }
-  - { label: Committee,       href: /committee,       roles: [core_committee, lob_committee], when_on: committee.flow }
-  - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee], when_off: committee.flow }
-  - { label: Ones,            href: /ones/console,    roles: [core_committee, admin, ceo] }
-  - { label: Delivery,        href: /delivery,        roles: [working_group, sponsor, core_committee, admin, ceo] }
-  - { label: Lenses,          href: /lenses,          roles: [lob_committee, core_committee, admin] }
-  - { label: Admin,           href: /admin,           roles: [admin, infosec, hr] }
+  # The signed-in shell (C-SIDEBAR, C-PHONE-TABS; lane D, BLD-D011). The only place the shell reads its links.
+  # place: new = the "Share a problem" button; main = a sidebar item; folded = only while the sidebar is folded;
+  # account = the account menu. tab = the item's place in the phone tab bar (Home, My ideas, Share, Wall, Inbox).
+  # A screen that moves or lands (Find your crew /crew, Profile /profile, Home /home) changes or adds its row here.
+  - { key: share,     label: Share a problem, href: /share,     place: new,    tab: 3 }
+  - { key: home,      label: Home,            href: /,          place: main,   tab: 1 }
+  - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
+  - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
+  - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
+  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [core_committee] }
+  - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
+  - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }

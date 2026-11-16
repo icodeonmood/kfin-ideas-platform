@@ -124,8 +124,21 @@ export async function restoreSwitches(browser: Browser, before: Array<[string, S
   if (first) throw first;
 }
 
+/** The main items of the shell as the person sees them (C-SIDEBAR, C-PHONE-TABS): on desktop "Share a problem" and
+ * the sidebar items for their roles; on a phone the five tabs. The account menu's links are not in it. */
 export async function navLabels(page: Page): Promise<string[]> {
-  return page.getByRole("navigation", { name: "Main" }).getByRole("link").allInnerTexts();
+  return page
+    .getByRole("navigation", { name: "Main" })
+    .locator(":is(.sb-new, .sb-i, .ptab):visible :is(.sb-l, .ptab-l)")
+    .allInnerTexts();
+}
+
+/** The phone tab bar, the same for everyone (C-PHONE-TABS.bar). */
+export const PHONE_TABS = ["Home", "My ideas", "Share", "Wall", "Inbox"];
+
+/** Open the account menu from the sidebar's account row, or the phone's account button on a root screen. */
+export async function openAccountMenu(page: Page) {
+  await page.getByRole("button", { name: /^Your account, / }).click();
 }
 
 /** The dev database (`make e2e` passes it from `.env`; BLD-200). Read-only use: tests only wait on it. */

@@ -55,15 +55,15 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | State | Effort | Phase | Lane |
 |---|---|---|---|---|
-| `C-SIDEBAR` | exists, differs | M to L | P0 | D |
-| `C-PHONE-TABS` | missing | M | P0 | D |
-| `C-TASKBAR` | missing | S to M | P0 | D |
+| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. Lanes B fill `desk` and `committee` rows | M to L | P0 | D |
+| `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
+| `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
 | `C-BUTTON` | exists, differs (26 files use the old `.button`) | M | P0 | D |
 | `C-CHIP` | exists, differs | M | P0 | D |
 | `C-PILL` | missing | S | P0 | D |
 | `C-FIELD`, `C-FIELD-MSG` | exists, differs | S | P0 | D |
 | `C-CARD` | exists, differs (no glass today) | M | P0 | D |
-| `C-AVATAR` | missing | S | P0 | D |
+| `C-AVATAR` | disc, sizes and rings built (`components/ui/avatar.tsx`); crew faces to come | S | P0 | D |
 | `C-SKELETON` | missing | S | P0 | D |
 | `C-EMPTY` | exists, differs | S | P0 | D |
 | `C-SORTS` | missing | S | P0 | D |

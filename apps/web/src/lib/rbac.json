@@ -405,57 +405,63 @@
   ],
   "navigation": [
     {
-      "label": "Share an idea",
-      "href": "/share"
+      "key": "share",
+      "label": "Share a problem",
+      "href": "/share",
+      "place": "new",
+      "tab": 3
     },
     {
+      "key": "home",
+      "label": "Home",
+      "href": "/",
+      "place": "main",
+      "tab": 1
+    },
+    {
+      "key": "my-ideas",
       "label": "My ideas",
-      "href": "/my-ideas"
+      "href": "/my-ideas",
+      "place": "folded",
+      "tab": 2
     },
     {
+      "key": "wall",
       "label": "Wall",
-      "href": "/wall"
+      "href": "/wall",
+      "place": "main",
+      "tab": 4
     },
     {
-      "label": "Messages",
-      "href": "/inbox"
+      "key": "inbox",
+      "label": "Inbox",
+      "href": "/inbox",
+      "place": "main",
+      "tab": 5
     },
     {
-      "label": "Review",
+      "key": "desk",
+      "label": "Review desk",
       "href": "/review",
+      "place": "main",
       "roles": [
         "reviewer"
       ]
     },
     {
-      "label": "Committee",
+      "key": "committee",
+      "label": "Ones Committee",
       "href": "/committee",
-      "roles": [
-        "core_committee",
-        "lob_committee"
-      ],
-      "when_on": "committee.flow"
-    },
-    {
-      "label": "Desk decisions",
-      "href": "/desk-decisions",
+      "place": "main",
       "roles": [
         "core_committee"
-      ],
-      "when_off": "committee.flow"
-    },
-    {
-      "label": "Ones",
-      "href": "/ones/console",
-      "roles": [
-        "core_committee",
-        "admin",
-        "ceo"
       ]
     },
     {
+      "key": "delivery",
       "label": "Delivery",
       "href": "/delivery",
+      "place": "account",
       "roles": [
         "working_group",
         "sponsor",
@@ -465,17 +471,10 @@
       ]
     },
     {
-      "label": "Lenses",
-      "href": "/lenses",
-      "roles": [
-        "lob_committee",
-        "core_committee",
-        "admin"
-      ]
-    },
-    {
+      "key": "admin",
       "label": "Admin",
       "href": "/admin",
+      "place": "account",
       "roles": [
         "admin",
         "infosec",
