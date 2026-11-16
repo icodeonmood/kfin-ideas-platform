@@ -201,7 +201,12 @@ def reverse_merge(conn: Conn, merge_id: str, user_id: str, note_masked: str, at:
         raise Refused(409, "already_reversed")
     conn.execute(
         "UPDATE ideas SET status = %s, merged_into = NULL WHERE id = %s",
-        (m["prior_status"] or "with_review_desk", m["merged_idea_uuid"]),
+        # its question sets were closed by the merge, so a joiner that was waiting on its sharer comes back to the
+        # desk rather than to a "Needs you" with nothing to answer
+        (
+            "with_review_desk" if m["prior_status"] in (None, "needs_you") else m["prior_status"],
+            m["merged_idea_uuid"],
+        ),
     )
     conn.execute(
         "UPDATE crew_members SET left_at = %s, left_how = 'merge_reversed' WHERE merge_id = %s AND left_at IS NULL",

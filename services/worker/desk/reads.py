@@ -91,6 +91,11 @@ def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left"
     urgent ideas waiting on their sharers. A search narrows the rows and the counts alike."""
     t = at or now()
     p = promises.get()
+    from desk.clocks import return_due
+
+    return_due(
+        conn, t
+    )  # a Not now whose date has come is back on the desk now, timer or not (L-DECIDE.rules/7)
     search = (q or "").strip() or None
     rows = conn.execute(
         _QUEUE,
@@ -271,7 +276,10 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     files = [
         dict(f) for f in conn.execute(
             "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at FROM attachments "
-            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') ORDER BY created_at",
+            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') "
+            # a draft answer's files stay the sharer's until the answer is sent
+            "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
+            "AND a.sent_at IS NOT NULL)) ORDER BY created_at",
             (idea["id"], list(CHECKED)),
         )
     ]  # fmt: skip
