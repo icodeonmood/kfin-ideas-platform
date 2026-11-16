@@ -273,8 +273,6 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
-    "GET /api/review/qualify/{id}                      view_review_queue",
-    "POST /api/review/qualify/{id}                     work_review_queue",
     "GET /api/committee/rounds                         score",
     "GET /api/committee/rounds/{id}                    score",
     "POST /api/committee/rounds/{id}/action            score",
