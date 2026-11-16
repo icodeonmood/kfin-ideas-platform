@@ -1,6 +1,6 @@
 # The Garage · Ideas Platform — guide for Claude Code
 
-This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wide ideas platform, a sub-brand under The Garage. Any employee signs in with SSO and submits a problem, a fix or a business idea on a guided canvas. AI checks it for personal data, helps complete the canvas and finds colleagues working on the same thing. The review desk decides, the 1% Club core committee can see everything and veto, and accepted ideas go to the Garage delivery pipeline or a non-tech fix track.
+This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wide ideas platform, the 1% Club, a sub-brand under The Garage. Any employee signs in with SSO and shares a problem in their own words (Tell it), checks the draft the assistant builds from those words, with customers' personal details hidden (Check it), and sends it (Send it). The review desk decides (Picked, Not now, Not picked) with a reason the sharer reads; the Ones Committee can extend or reverse a decision inside its window. Picked ideas get a build team, shipped ideas are measured, and the people behind them become Ones. Since 16 Nov 2026 the product is built to the design handoff pack in `1pc-handoff/` (DEC-102).
 
 **Launch:** org-wide at the new office inauguration, Friday 20 November 2026. **Owner:** Product & Strategy Lead, Domestic Business (product team owns the POC).
 
@@ -10,6 +10,8 @@ This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wid
 
 | File | Why |
 |---|---|
+| `1pc-handoff/README.md`, then `00-overview/PRODUCT.md` | The design and behaviour spec: the source of truth for how the product looks, moves, reads and behaves (DEC-102). Read the README once |
+| `docs/SHIP_PLAN_1PC.md` | The plan for shipping the pack: lanes, checkpoints, data, retirements |
 | `docs/DECISIONS.md` | What has been decided and must not be re-opened without asking |
 | `docs/DAY1_PLAN.md` | Blocks B1–B8, dates, and the acceptance tests that define "done" |
 | `docs/ARCHITECTURE.md` (v0.3) | The full specification. Day-one sections: §2 data, §3.1–3.7 shared services, §4.1–4.4, §6, §7, §8, §9 |
@@ -20,12 +22,28 @@ This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wid
 
 `docs/diagrams/ideas-platform-diagrams.html` has the three drawn diagrams (journey, layers, tech). Open it in a browser if you need the picture.
 
+## Design handoff (1% Club)
+
+The design and behaviour spec lives in `1pc-handoff/`. It is the source of truth for how the product looks, moves, reads and behaves.
+
+- First time on this repo: read `1pc-handoff/README.md` once, then `00-overview/PRODUCT.md`.
+- Do not read the whole pack for a task. Find the module by ID in `1pc-handoff/manifest.json` (it lists every module, its file, what it depends on and what uses it) and open only that file.
+- IDs: `S-` screens, `C-` components, `F-` foundations, `J-` journeys, `L-` back-end logic, `E-`/`A-` contracts, `V-` validation, `P-` product. Anchors look like `S-R2.panel`; numbered lines like `S-R2.panel/3`.
+- When asked to "apply D-00NN": open `1pc-handoff/CHANGELOG.md`, read that entry only, open the files under its **Read** line at the named anchors, make the change, run the `V-ACC` tests it names. The module files already describe the new state; the entry's Old column tells you what to look for in the code.
+- When two sources disagree: the latest CHANGELOG entry wins. After that, the module file wins on behaviour (rules, states, validation, data); the prototype board and its screenshot win on look (layout, spacing, colour, exact copy).
+- The prototype boards are a design artefact. Take values, copy and behaviour from them; never copy their structure or their demo logic. Build from `01-foundations/tokens.json` and `reference/computed/components.md`.
+- Exact wording for every screen and state is in `1pc-handoff/reference/copy/<Board>.md`. Do not rewrite copy.
+- Lines marked `OPEN:` or `NOT DRAWN:` give a default. Build the default; do not invent a different one. They are all listed in `00-overview/GAPS.md`.
+- Keep `00-overview/REPO-MAPPING.md` current: when you build or move a screen, component or service, update its row.
+- Everyone named on the boards is a fictional demo person. Never seed production with them.
+- In code, reference the module ID in the test name and in the commit message (for example "Implements S-R2.panel, L-REVIEW.panel; tests V-ACC.review/1–6").
+
 ## Two repos, do not mix them up
 
 | Repo | What it holds | Who writes it |
 |---|---|---|
 | `kfin-ideas-platform` (this one) | Code, migrations, agents, seed content, tests | You |
-| `kfin-ideas` (company repo) | OKF Markdown knowledge bundle: ideas, clusters, decisions, rules, taxonomy | **Only the repo writer service**, from the outbox. Seeded once from `seed/company-repo/` |
+| `kfin-ideas` (company repo) | Read-only configuration: `rules/`, `taxonomy/`, `comms/` templates | Seeded from `seed/company-repo/`; changed by the programme team without a release. Since DEC-106 nothing writes ideas, clusters, decisions or appeals to it |
 
 In dev the company repo lives at `$COMPANY_REPO_PATH` (default `./.data/kfin-ideas`), created by `make seed`. Never hand-edit it in code paths; tests may read it.
 
@@ -36,10 +54,10 @@ Stop and ask the user before changing any of these.
 1. **Every model call goes through the gateway** (`run_agent` in `services/worker/gateway/`). No model SDK import anywhere else; CI enforces it.
 2. **Tag before sending.** Personal and sensitive values become typed tags (`[[KFIN_EMPLOYEE_1]]`, `[[CLIENT_AMC_1]]`…) before any model call. The leak check re-runs the patterns on the tagged payload and aborts on any hit. Real values are restored only for viewers allowed to see them (§3.2).
 3. **No idea text, attachment text or personal data in logs, traces, error messages, analytics or `llm_calls`.** Logs carry IDs only. A log-scrubber test must pass.
-4. **Investor and customer identifiers are blocked at submission** (patterns in §4.2 step 2, then `gatekeeper`). Pattern blocks are absolute. A `gatekeeper` block, investor and customer ones included, can be contested ("This is not personal data") and then goes through flagged for the review desk to check first (BLD-082, option B).
+4. **Customers' personal details are hidden from everyone but the person who typed them** (DEC-103, `L-HIDE`). Patterns, then `gatekeeper`, run on every message, transcript, edit and file before any other service sees the text. Every other person, service, model, index and log receives only the masked copy. The unmasked value is stored encrypted in a worker-only table, readable by the sharer alone. "Show it" needs one of the three reasons and is logged. A file with a detail found cannot be opened by anyone else until it is hidden or removed.
 5. **Agents propose; people decide.** Agents never write to the company repo or change a stage on their own on day one. Autonomy (§5.6) is off at launch.
-6. **Database only, never the repo or the search index:** core briefs, sealed scores, assessments, decision sheets, the people view, the pseudonym vault, contributor-to-employee mapping. Use row-level security where §2.5 says so.
-7. **Submitters never see another person's raw text, files or name.** Match cards show `neutral_summary`, area tag, stage and count only (§4.2 step 7).
+6. **Database only, never the repo or the search index:** the sharer's unmasked words and hidden values, the pseudonym vault, contributor-to-employee mapping, points. The web role is revoked from the worker-only tables, and the pinned privilege test lists them.
+7. **Who sees what follows `P-PRODUCT.privacy`** (DEC-104). A person's raw words go only to them, the review desk and the Ones Committee; everyone else, previews and match cards included, sees the short summary. Names show unless the sharer hides theirs from the Wall. Checked files and the conversation are for the sharer, crew, desk and committee. Points are private to the person.
 8. **Links are never fetched. Files are never opened before they pass the checks** (virus scan, then personal-data check).
 9. **Kill switches are checked on every request** (§7.6) and every privileged action is written to `audit_log`.
 10. **WCAG 2.1 AA** on every employee-facing screen (§7.7). `axe` runs in CI.
@@ -121,4 +139,4 @@ kfin-ideas-platform/
 
 ## Words on screen
 
-Employees are not engineers. All UI copy, messages and help text use plain Indian business English, short sentences and no internal jargon. The platform is called **1% Club** on every screen, email and poster; "The Garage" is the internal project name and never appears to employees (DEC-030, DEC-035). Use the platform's own words: **canvas**, **Already running** and **Find your crew** for matches, **review desk**, **1% Club core committee**, **Ones** for inducted members with jersey numbers ("No. 17"), and the stages **Picked**, **Being built**, **Shipped** (DEC-034, DEC-038). Never show a submitter "duplicate", "rejected", "already solved" or "Garage". Message wording comes from `comms/templates/` in the company repo, which HR signs off.
+Employees are not engineers. All UI copy, messages and help text use plain Indian business English, short sentences and no internal jargon. The platform is called **1% Club** on every screen, email and poster; "The Garage" is the internal project name and appears only as "Part of The Garage" in the Landing footer (`S-01`). The words are the pack's (`1pc-handoff/01-foundations/F-COPY.md`, `F-COPY.vocabulary`): **Share a problem**, **Tell it, Check it, Send it**, **your words**, **draft**, **sorting**, **similar ideas**, **Team up**, **crew**, **lead**, **review desk**, **Ones Committee**, **Picked / Not now / Not picked**, **Needs you**, the stages **Shared, Checked and matched, Reviewed, Built, Shipped**, **the Wall**, **Inbox** and **conversation**. Never say "duplicate", "rejected", "already solved", "appeal" or "invalid". Exact copy per screen and state is in `1pc-handoff/reference/copy/`; message wording comes from `comms/templates/`, which HR signs off.

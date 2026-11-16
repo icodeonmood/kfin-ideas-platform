@@ -19,7 +19,7 @@ Filled in on 16 Nov 2026 by lane E (the planning session) from a read of `main` 
 | `mapping/logic.md` | Every `L-` module; the non-negotiable check; the retire list (R1 to R28); new infrastructure |
 | `mapping/contracts.md` | `E-ENTITIES`, `E-ENUMS`, `A-API`, `V-FIELDS`; retired tables and endpoints; the migration approach |
 
-The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase** is the cut in that plan (P0 Friday 20 Nov, P1 by Wednesday 25 Nov, P2 after outside approvals). **Lane** is who builds it. Update a row when its module lands.
+The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: since DEC-105 everything ships for Friday 20 Nov (P0); P2 marks what is built but switched off until an outside approval lands. **Lane** is who builds it (`docs/SHIP_PLAN_1PC.md` §5). Update a row when its module lands.
 
 ## `P-REPO.screens`
 
@@ -34,18 +34,18 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase** is
 | `S-06` | `/ideas/:id` (sharer) | `app/ideas/[id]` | exists, differs | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
 | `S-07` | `/my-ideas` | `app/my-ideas` | exists, differs | M | P0 | E |
-| `S-08` | `/ideas/:id/conversation` | none | missing | L | P1 | B |
-| `S-09` | `/ideas/:id` (others) | `app/ideas/[id]` | exists, differs | M | P0 (team up P1) | E |
+| `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
+| `S-09` | `/ideas/:id` (others) | `app/ideas/[id]` | exists, differs | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
-| `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 (decide), P1 (ask, worth, merge, Listen) | B |
-| `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P1 | B |
-| `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P1 | B |
-| `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P1 | E |
-| `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P1 | E |
-| `S-H3` | `/share/other-ways` | none | missing | M | P1 (page), P2 (arrivals) | A |
-| `S-H4` | `/how-it-works` | `app/journey` | exists, differs | S | P1 | A |
+| `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
+| `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
+| `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P0 | B |
+| `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
+| `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
+| `S-H3` | `/share/other-ways` | none | missing | M | P0 (page), P2 (arrivals) | A |
+| `S-H4` | `/how-it-works` | `app/journey` | exists, differs | S | P0 | A |
 | `S-H5` | `/inbox` | `app/inbox` | exists, differs | L | P0 | A |
 | `S-H6` | `/profile` | none; pieces on `/my-ideas` (`points.tsx`, `name-on-wall.tsx`) | exists, differs | M | P0 | E |
 | `S-OFFICE` | `/display/office` | `app/constellation` (`sky.tsx`) | exists, differs | M | P0 | A |
@@ -68,24 +68,24 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase** is
 | `C-EMPTY` | exists, differs | S | P0 | D |
 | `C-SORTS` | missing | S | P0 | D |
 | `C-TABS` | missing | S to M | P0 | D |
-| `C-SEARCH` | missing | M | P0 (filters), P1 (ask) | D |
+| `C-SEARCH` | missing | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | missing | S to M | P0 | D |
 | `C-FILE` | exists, differs (keep the quarantine and scan logic in `attachments.tsx`) | M | P0 | D (UI), C (wiring) |
-| `C-DROPDOWN` | missing | S | P1 | D |
+| `C-DROPDOWN` | missing | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
 | `C-HIDDEN` | exists, differs | M | P0 | C |
 | `C-SIMGRID` | exists, differs | M | P0 | C |
 | `C-PREVIEW` | missing | M | P0 | C |
-| `C-WORTH` | exists, differs | M | P0 (view), P1 (revise) | C, B |
-| `C-QCARD` | missing | M | P1 | B |
+| `C-WORTH` | exists, differs | M | P0 | C, B |
+| `C-QCARD` | missing | M | P0 | B |
 | `C-INBOX-READER` | exists, differs | L | P0 | A |
-| `C-LISTEN` | missing | M | P1 | B |
-| `C-SHEET-MERGE` | missing | M | P1 | B |
-| `C-SHEET-TEAMUP` | exists, differs | M | P1 | E |
-| `C-CREW-DECK` | exists, differs | L | P1 | D (motion), E (data) |
-| `C-ONES-FAN` | exists, differs | M to L | P0 (static), P1 (motion) | D |
+| `C-LISTEN` | missing | M | P0 | B |
+| `C-SHEET-MERGE` | missing | M | P0 | B |
+| `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
+| `C-CREW-DECK` | exists, differs | L | P0 | D (motion), F (data) |
+| `C-ONES-FAN` | exists, differs | M to L | P0 | D |
 
 ## `P-REPO.logic`
 
@@ -106,15 +106,15 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase** is
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
 | `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
 | `L-DISPLAY` | `app/launch`, `app/constellation` | exists, differs | P0 | A |
-| `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P1 | B |
-| `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P1 | B |
-| `L-CONVO` | none | missing | P1 | B |
-| `L-WORTH` | impact estimates (qualify) | exists, differs | P1 | B |
-| `L-MERGE` | `idea_links` | exists, differs | P1 | B (desk), C (request) |
-| `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P1 | E |
-| `L-CREW` | none | missing | P1 | E |
-| `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 (filters), P1 (ask) | E |
-| `L-LISTEN` | none | missing | P1 | B |
+| `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P0 | B |
+| `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P0 | B |
+| `L-CONVO` | none | missing | P0 | F |
+| `L-WORTH` | impact estimates (qualify) | exists, differs | P0 | B |
+| `L-MERGE` | `idea_links` | exists, differs | P0 | B (desk), F (request) |
+| `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
+| `L-CREW` | none | missing | P0 | F |
+| `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
+| `L-LISTEN` | none | missing | P0 | B |
 
 ## `P-REPO.contracts`
 
