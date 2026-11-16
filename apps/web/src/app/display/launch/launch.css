@@ -1,0 +1,302 @@
+/*
+ * S-LAUNCH, from reference/css/boards/Launch.css and the Launch board (1920×1080). The operator frame is a page the
+ * operator reads and presses, so it fills the window and reflows, never below a readable size; the reveal is the
+ * board itself, scaled to the window.
+ */
+
+/* ---------- Before Start (operator) ---------- */
+.dl-intro {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  justify-self: stretch;
+  min-width: 0;
+  overflow-y: auto;
+  padding: max(24px, calc(120 * var(--u))) max(16px, calc(120 * var(--u))) max(24px, calc(96 * var(--u)));
+}
+
+.dl-eyebrow {
+  margin: 0;
+  font: 500 max(12px, calc(16 * var(--u))) / 1.2 var(--dsp-ft);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.dl-title {
+  margin: max(12px, calc(28 * var(--u))) 0 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: max(36px, calc(136 * var(--u)));
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.dl-lead {
+  display: grid;
+  gap: max(10px, calc(18 * var(--u)));
+  max-width: min(100%, max(36rem, calc(980 * var(--u))));
+  margin-top: max(16px, calc(44 * var(--u)));
+}
+
+.dl-lead p,
+.dl-intro > .dl-lead[role="alert"] {
+  margin: 0;
+  font-size: max(16px, calc(26 * var(--u)));
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dl-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: max(12px, calc(18 * var(--u)));
+  margin: max(20px, calc(52 * var(--u))) 0 max(32px, calc(48 * var(--u)));
+}
+
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: max(48px, calc(64 * var(--u)));
+  padding: 0 max(20px, calc(32 * var(--u)));
+  border: 0;
+  border-radius: 12px;
+  box-sizing: border-box;
+  font: 500 max(16px, calc(20 * var(--u))) / 1 var(--dsp-ft);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dl-btn-white {
+  background: #ffffff;
+  color: #111111;
+}
+
+.dl-btn-white:hover {
+  background: #e9e9e6;
+}
+
+.dl-btn-line {
+  background: transparent;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.dl-btn-line:hover {
+  box-shadow: inset 0 0 0 1px #ffffff;
+}
+
+.dl-beats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: max(16px, calc(24 * var(--u)));
+  margin: auto 0 0;
+  padding: max(20px, calc(32 * var(--u))) 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  list-style: none;
+}
+
+.dl-beat-at {
+  margin: 0;
+  font: 500 max(14px, calc(18 * var(--u))) / 1 var(--dsp-fd);
+  font-feature-settings: "tnum" 1;
+  color: #ffffff;
+}
+
+.dl-beat-what {
+  margin: max(6px, calc(10 * var(--u))) 0 0;
+  font-size: max(14px, calc(17 * var(--u)));
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* ---------- The reveal and the final frame ---------- */
+.dl-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(45% 60% at 30% 50%, rgba(255, 91, 20, 0.16), rgba(255, 91, 20, 0));
+}
+
+.dl-grid {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: calc(120 * var(--u));
+  align-items: center;
+  padding: 0 calc(140 * var(--u));
+}
+
+.dl-lockup {
+  display: flex;
+  align-items: center;
+  gap: calc(48 * var(--u));
+}
+
+.dl-mark {
+  display: block;
+  flex: none;
+  width: calc(240 * var(--u));
+  height: auto;
+  overflow: visible;
+}
+
+.dl-name {
+  margin: 0;
+  font: 600 calc(176 * var(--u)) / 0.9 var(--dsp-fd);
+  letter-spacing: -0.04em;
+}
+
+.dl-tagline {
+  margin: calc(56 * var(--u)) 0 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: calc(64 * var(--u));
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.dl-qr-frame {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: calc(360 * var(--u));
+  height: calc(360 * var(--u));
+  padding: calc(32 * var(--u));
+  border-radius: calc(24 * var(--u));
+  background: #ffffff;
+}
+
+.dl-qr {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dl-invite-line {
+  margin: calc(40 * var(--u)) 0 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: calc(56 * var(--u));
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.dl-scan {
+  margin: calc(18 * var(--u)) 0 0;
+  font-size: calc(26 * var(--u));
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.dl-url {
+  margin: calc(14 * var(--u)) 0 0;
+  font: 500 calc(24 * var(--u)) / 1.2 var(--dsp-ft);
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+/* Each part waits unseen until its beat, then builds once (the board's timings, from its beat). */
+.dl-glow,
+.dl-zero,
+.dl-spark,
+.dl-ember,
+.dl-name,
+.dl-tagline,
+.dl-invite {
+  opacity: 0;
+}
+
+.dl-glow.is-on,
+.dl-zero.is-on,
+.dl-spark.is-on,
+.dl-ember.is-on,
+.dl-name.is-on,
+.dl-tagline.is-on,
+.dl-invite.is-on {
+  opacity: 1;
+}
+
+.dl-glow.is-on {
+  animation: dsp-fade 2.4s ease both;
+}
+
+.dl-spark {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+}
+
+.dl-spark.is-on {
+  animation: dl-rise 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dl-ember.is-on {
+  animation: dsp-fade 0.6s ease 1.3s both;
+}
+
+.dl-zero {
+  stroke-dasharray: 1;
+}
+
+.dl-zero.is-on {
+  animation: dl-draw 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dl-zero-2.is-on {
+  animation-delay: 0.35s;
+}
+
+.is-on .dl-wd {
+  display: inline-block;
+  animation: dsp-words 1.6s linear both;
+  animation-delay: calc(var(--d, 0s) + var(--j, 0) * 120ms);
+}
+
+.dl-invite.is-on .dl-qr-frame {
+  animation: dl-frame 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dl-invite.is-on .dl-qr {
+  animation: dsp-fade 0.8s ease 1s both;
+}
+
+.dl-invite.is-on .dl-url {
+  animation: dsp-fade 0.8s ease 2.4s both;
+}
+
+@keyframes dl-rise {
+  0% {
+    opacity: 0;
+    transform: scale(0.04);
+  }
+}
+
+@keyframes dl-draw {
+  0% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes dl-frame {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+    background-color: rgba(255, 255, 255, 0);
+    box-shadow: inset 0 0 0 2px rgba(143, 168, 255, 0.9);
+  }
+  45% {
+    opacity: 1;
+    transform: none;
+    background-color: rgba(255, 255, 255, 0);
+  }
+  100% {
+    background-color: #ffffff;
+    box-shadow: inset 0 0 0 0 rgba(143, 168, 255, 0);
+  }
+}
