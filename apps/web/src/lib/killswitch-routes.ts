@@ -80,7 +80,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   {
     methods: ["POST"],
     pattern:
-      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts)\/?$/,
+      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|admin\/conflicts)\/?$/,
     switches: ["committee.flow"],
   },
 ];
