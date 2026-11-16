@@ -2,7 +2,9 @@
  * Single sign-on first (L-AUTH.rules/1, 4, 8; A-API.auth `POST /auth/sso/start`).
  *
  * Start: keep where the person is going on the server against a new attempt (or reuse the attempt they already
- * have, for "Try again"), then send them to the identity provider; `silent` asks it to show nothing.
+ * have, for "Try again"), then send them to the identity provider; `silent` asks it to show nothing. A row is
+ * written only for somewhere other than `/`, and within a per-address and overall limit; the sealed sign-in cookie
+ * carries the place too, so nobody lands in the wrong place over the limit (BLD-A177).
  * Callback: a silent try the provider cannot complete without the person is not a failure: they see S-02 with the
  * intent still kept. Any other failure gets a reference ("SSO-7F3A, 9:42 am") that is also in the log line.
  */
@@ -19,6 +21,7 @@ import {
   destination,
   intentStore,
   newAttemptKey,
+  worthKeeping,
   type Intent,
 } from "./intents";
 import { newFailureRef } from "./reference";
@@ -31,6 +34,7 @@ import {
   TX_COOKIE,
   TX_TTL_SECONDS,
 } from "./session";
+import { mayKeepIntent } from "./throttle";
 
 export type StartInput = { to?: unknown; draft_id?: unknown; step?: unknown; silent?: unknown };
 /** JSON for scripts; a 303 after a form post (S-02's buttons); a 307 for a link (GET). */
@@ -79,7 +83,9 @@ export async function startSso(request: NextRequest, input: StartInput, mode: Mo
   if (!intent) {
     intent = cleanIntent({ to: input.to, draftId: input.draft_id, step: input.step });
     key = newAttemptKey();
-    await store.save(attemptKeyHash(key), intent, now);
+    if (worthKeeping(intent) && mayKeepIntent(request, now.getTime())) {
+      await store.save(attemptKeyHash(key), intent, now);
+    }
   }
   const attemptHash = attemptKeyHash(key!);
 
@@ -101,6 +107,8 @@ export async function startSso(request: NextRequest, input: StartInput, mode: Mo
     nonce: randomToken(),
     verifier: randomToken(48),
     silent: truthy(input.silent),
+    next: destination(intent),
+    attempt: attemptHash,
     iat: Math.floor(now.getTime() / 1000),
   };
   let url: string;

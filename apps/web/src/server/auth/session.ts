@@ -149,9 +149,11 @@ export async function revokeSession(token: string | undefined): Promise<void> {
 export const TX_COOKIE = "ideas_oidc";
 export const TX_TTL_SECONDS = 10 * 60;
 /**
- * The OIDC transaction. Where the person was going is not here: it is kept on the server against the attempt
- * (`intents.ts`, L-AUTH.rules/4). `silent` marks a `prompt=none` try, whose "not signed in at the provider" answer
- * is not a failure (L-AUTH.rules/1). `next` is read only from transactions started before that change.
+ * The OIDC transaction. Where the person was going is kept on the server against the attempt (`intents.ts`,
+ * L-AUTH.rules/4); `next` carries the same place for when no row was kept (nowhere in particular, or over the write
+ * limit, BLD-A177). `attempt` is the attempt key's hash: the callback signs in only the browser that holds the same
+ * attempt cookie (login CSRF). `silent` marks a `prompt=none` try, whose "not signed in at the provider" answer is
+ * not a failure (L-AUTH.rules/1).
  */
 export type SignInTx = {
   state: string;
@@ -159,8 +161,17 @@ export type SignInTx = {
   verifier: string;
   silent?: boolean;
   next?: string;
+  attempt?: string;
   iat: number;
 };
+
+/** Equal strings, compared in constant time (state, attempt hashes). Unequal lengths are simply unequal. */
+export function sameSecret(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
 
 const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
 
