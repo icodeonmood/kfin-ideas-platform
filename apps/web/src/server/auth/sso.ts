@@ -24,7 +24,7 @@ import {
   worthKeeping,
   type Intent,
 } from "./intents";
-import { newFailureRef } from "./reference";
+import { newFailureRef, referenceLabel } from "./reference";
 import {
   cookieOptions,
   readSession,
@@ -58,6 +58,25 @@ const truthy = (v: unknown) => v === true || v === "1" || v === "true";
 /** `/sign-in?failed=SSO-7F3A&at=…`: the "Could not sign in" state, or `refused` for an account that can't. */
 export function failurePath(kind: "failed" | "refused", ref: string, at = new Date()): string {
   return `/sign-in?${kind}=${encodeURIComponent(ref)}&at=${Math.floor(at.getTime() / 1000)}`;
+}
+
+/**
+ * A refused email-code request (L-AUTH.rules/8): logged like any sign-in failure, with the reference and IDs only,
+ * and answered with the reference and its label ("SSO-7F3A, 9:42 am") for the person to read to the desk.
+ */
+export function refusedJson(
+  request: NextRequest,
+  stage: "code_send" | "code_verify",
+  error: string,
+  status: number,
+  extra: Record<string, unknown> = {},
+): NextResponse {
+  const key = request.cookies.get(ATTEMPT_COOKIE)?.value;
+  const ref = logFailure(stage, error, key && key.length <= 128 ? attemptKeyHash(key) : undefined);
+  return NextResponse.json(
+    { error, ...extra, ref, reference: referenceLabel(ref, Math.floor(Date.now() / 1000)) },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 /** Logs one failure with its reference and IDs only, and returns the reference. */
