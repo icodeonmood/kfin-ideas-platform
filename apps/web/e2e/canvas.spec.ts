@@ -1,6 +1,6 @@
 /**
- * The idea canvas in the browser (B3): AT-B3-01 (quick capture submits; full canvas wording, "why we ask",
- * example links), AT-B3-02 (errors tied to fields), AT-B3-03 (browser half of the pattern check), AT-B3-04
+ * The idea canvas in the browser (B3): AT-B3-01 (quick capture submits; full canvas wording, "why we ask"; the
+ * example links are retired, DEC-106, R16), AT-B3-02 (errors tied to fields), AT-B3-03 (browser half of the pattern check), AT-B3-04
  * (autosave and its pause), AT-B3-05 (strength meter guides, never blocks), AT-B3-09 (keyboard only, axe,
  * 200% zoom and 360 px). Signs in as the seeded contributor persona.
  */
@@ -123,9 +123,7 @@ test("quick capture: the keyboard-mic tip follows capture.mic_hint (DEC-096)", a
   });
 });
 
-test("full canvas: six sections, exact questions, why-we-ask lines and example links (AT-B3-01)", async ({
-  page,
-}) => {
+test("full canvas: six sections, exact questions and why-we-ask lines (AT-B3-01)", async ({ page }) => {
   await start(page, "full");
   for (const heading of [
     "1. What is it?",
@@ -158,13 +156,7 @@ test("full canvas: six sections, exact questions, why-we-ask lines and example l
     await expect(page.getByText(q.label, { exact: false }).first(), key).toBeVisible();
     if (q.why) await expect(page.getByText(`Why we ask: ${q.why}`).first(), `${key} why`).toBeVisible();
   }
-  const examples = page.getByRole("link", { name: /What good looks like/ });
-  await expect(examples).toHaveCount(6);
-  const href = await examples.first().getAttribute("href");
-  expect(href).toBe("/share/examples/what-is-it");
-  await expectNoSeriousAxeIssues(page);
-  await page.goto(href!);
-  await expect(page.getByRole("heading", { level: 2, name: "A strong answer" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /What good looks like/ })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
 });
 

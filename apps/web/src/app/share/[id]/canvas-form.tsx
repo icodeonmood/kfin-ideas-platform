@@ -36,14 +36,12 @@ import { Attachments, type AttachmentItem, type AttachmentLimits } from "./attac
 import { insertTranscript } from "./voice-logic";
 import { VoiceRecorder } from "./voice-recorder";
 
-type Example = { slug: string; section: string };
 type Props = {
   id: string;
   mode: Mode;
   initial: Canvas;
   limits: CanvasLimits;
   rubric: StrengthRubric;
-  examples: Example[];
   kfinDomains: string[];
   attachments: AttachmentItem[];
   attachmentLimits: AttachmentLimits;
@@ -170,17 +168,6 @@ export function CanvasForm(props: Props) {
     })),
   ];
 
-  const example = (slug: string) => {
-    const ex = props.examples.find((e) => e.slug === slug);
-    return ex ? (
-      <p className="example-link">
-        <a href={`/share/examples/${slug}`} target="_blank" rel="noopener">
-          What good looks like<span className="visually-hidden"> for {ex.section} (opens in a new tab)</span>
-        </a>
-      </p>
-    ) : null;
-  };
-
   const text = (path: string, label: string, why: string, opts: Partial<TextProps> = {}) => (
     <TextField
       path={path}
@@ -279,7 +266,6 @@ export function CanvasForm(props: Props) {
             <>
               <section aria-labelledby="s1-title" className="glass canvas-section">
                 <h2 id="s1-title">1. What is it?</h2>
-                {example("what-is-it")}
                 <Choices
                   type="radio"
                   path="kind"
@@ -304,7 +290,6 @@ export function CanvasForm(props: Props) {
 
               <section aria-labelledby="s2-title" className="glass canvas-section">
                 <h2 id="s2-title">2. Who does it touch?</h2>
-                {example("who-it-touches")}
                 <Choices
                   type="checkbox"
                   path="who.segments"
@@ -335,7 +320,6 @@ export function CanvasForm(props: Props) {
 
               <section aria-labelledby="s3-title" className="glass canvas-section">
                 <h2 id="s3-title">3. What&apos;s it worth to KFintech?</h2>
-                {example("whats-it-worth")}
                 <Choices
                   type="radio"
                   path="value.category"
@@ -398,7 +382,6 @@ export function CanvasForm(props: Props) {
 
               <section aria-labelledby="s4-title" className="glass canvas-section">
                 <h2 id="s4-title">4. Has anyone solved this?</h2>
-                {example("solved-elsewhere")}
                 <Choices
                   type="radio"
                   path="ecosystem.solved_elsewhere"
@@ -419,7 +402,6 @@ export function CanvasForm(props: Props) {
 
               <section aria-labelledby="s5-title" className="glass canvas-section">
                 <h2 id="s5-title">5. Your solution</h2>
-                {example("your-solution")}
                 {text("solution.approach", QUESTIONS.approach.label, QUESTIONS.approach.why, {
                   multiline: true,
                   required: canvas.kind === "problem_with_solution",
@@ -430,7 +412,6 @@ export function CanvasForm(props: Props) {
 
               <section aria-labelledby="s6-title" className="glass canvas-section">
                 <h2 id="s6-title">6. Your research</h2>
-                {example("your-research")}
                 <p className="why">Why we ask: {QUESTIONS.research.why}</p>
                 <References
                   value={canvas.ecosystem.references}
