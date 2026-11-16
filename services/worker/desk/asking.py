@@ -373,13 +373,14 @@ def _remind(
     recipients: Sequence[str],
     sender: str,
     t: dt.datetime,
+    dedupe_key: str | None = None,
 ) -> None:
     sid = str(s["id"])
     day = t.astimezone(clock.office_calendar().tz).date().isoformat()
     adapters.tell(
         conn, "answer_reminder", recipients, idea_uuid=str(idea["id"]), sender=sender, needs_you=True,
         due_at=s["due_at"], actions=[_answer_action(idea)], refs={"set_id": sid},
-        dedupe_key=f"answer_reminder:{sid}:{day}:{t.astimezone(clock.office_calendar().tz):%H}",
+        dedupe_key=dedupe_key or f"answer_reminder:{sid}:{day}:{t.astimezone(clock.office_calendar().tz):%H}",
     )  # fmt: skip
     conn.execute("UPDATE question_sets SET reminded_at = %s WHERE id = %s", (t, sid))
 
@@ -433,7 +434,8 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
         recipients = [u for u in _sharers(conn, idea) if _reminders_on(conn, u)]
         if not recipients:
             return False
-        _remind(conn, idea, s, recipients, "system", t)
+        # one per (set, threshold): a retry or an overlapping run never sends it twice (lane A's ask)
+        _remind(conn, idea, s, recipients, "system", t, f"answer_reminder:{sid}:{crossed:%Y%m%dT%H%M%z}")
         audit(conn, "system", "desk.answer_reminder", f"idea:{idea['idea_id']}", after={"set_id": sid})
         return True
 
