@@ -9,7 +9,8 @@
  *   table cannot be turned back into codes by trying all million of them).
  * - Every guess spends a try before it is compared, so parallel guesses cannot exceed the tries.
  * - Out of tries or expired: a fresh code goes out automatically, once per spent code (`L-AUTH.states`), within
- *   the send limit.
+ *   the send limit and never sooner than `resend_after_seconds` after the last one (the countdown says when).
+ * - Rows are bounded: issuing a code deletes codes that ran out more than a day ago (BLD-A177).
  * - An address with no account gets the same answers as one with an account, and no email (no list of who works
  *   here). A leaver's address is told it cannot sign in (`L-AUTH.errors`).
  *
@@ -22,6 +23,8 @@ import { getDb } from "../db";
 /** Sends allowed per address in the window; "Too many tries. Wait 10 minutes, or use single sign-on." */
 export const SENDS_PER_WINDOW = 5;
 export const SEND_WINDOW_MINUTES = 10;
+/** Codes that ran out longer ago than this are deleted when a new one is issued. */
+export const CODE_KEEP_HOURS = 24;
 
 export type CodeRules = {
   code_digits: number;
@@ -43,8 +46,13 @@ export type CodeRow = {
 export interface CodeStore {
   /** The newest code for the address that has not been superseded or used. */
   current(emailHash: string): Promise<CodeRow | null>;
-  /** Stores a new code and supersedes every earlier one for the address, in one step. */
-  issue(row: Omit<CodeRow, "id" | "supersededAt">): Promise<void>;
+  /**
+   * Stores a new code and supersedes every earlier one for the address, in one step; deletes codes of any address
+   * that ran out before `pruneBefore`.
+   */
+  issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date): Promise<void>;
+  /** When the last code went to the address, used or not. */
+  lastSentAt(emailHash: string): Promise<Date | null>;
   /** Spends one try if the code is still live; the tries left after it, or null if none could be spent. */
   spendTry(id: string, now: Date): Promise<number | null>;
   /** Marks the code used (superseded) so it never works twice; false if it was already used. */
@@ -61,7 +69,8 @@ export type SendResult =
 export type VerifyResult =
   | { ok: true; userId: string }
   | { ok: false; error: "wrong_code"; triesLeft: number }
-  | { ok: false; error: "code_expired"; resent: true }
+  | { ok: false; error: "code_expired"; resent: true; resendInSeconds: number }
+  | { ok: false; error: "code_expired"; resent: false; resendInSeconds: number }
   | { ok: false; error: "not_work_email" | "rate_limited" | "account_disabled" };
 
 export type CodeDeps = {
@@ -118,13 +127,16 @@ async function issueAndMail(
   const sent = await deps.store.sentSince(eHash, new Date(now.getTime() - SEND_WINDOW_MINUTES * 60_000));
   if (sent >= SENDS_PER_WINDOW) return false;
   const code = (deps.randomCode ?? randomDigits)(deps.rules.code_digits);
-  await deps.store.issue({
-    emailHash: eHash,
-    codeHash: codeHash(deps.secret, eHash, code),
-    expiresAt: new Date(now.getTime() + deps.rules.code_valid_minutes * 60_000),
-    triesLeft: deps.rules.code_tries,
-    sentAt: now,
-  });
+  await deps.store.issue(
+    {
+      emailHash: eHash,
+      codeHash: codeHash(deps.secret, eHash, code),
+      expiresAt: new Date(now.getTime() + deps.rules.code_valid_minutes * 60_000),
+      triesLeft: deps.rules.code_tries,
+      sentAt: now,
+    },
+    new Date(now.getTime() - CODE_KEEP_HOURS * 3_600_000),
+  );
   if (user?.active) await deps.mail(user.id, code, deps.rules.code_valid_minutes);
   return true;
 }
@@ -165,11 +177,23 @@ export async function verifyCode(deps: CodeDeps, rawEmail: string, rawCode: stri
   const eHash = emailHash(deps.secret, email);
   const now = deps.now();
 
+  const resendAfter = deps.rules.resend_after_seconds;
   const runOut = async (): Promise<VerifyResult> => {
     const user = await deps.findUser(email);
     if (user && !user.active) return { ok: false, error: "account_disabled" };
+    // Not sooner than a resend would be allowed: the person waits out the countdown, then asks or tries again.
+    const last = await deps.store.lastSentAt(eHash);
+    const waited = last ? (now.getTime() - last.getTime()) / 1000 : Infinity;
+    if (waited < resendAfter) {
+      return {
+        ok: false,
+        error: "code_expired",
+        resent: false,
+        resendInSeconds: Math.ceil(resendAfter - waited),
+      };
+    }
     return (await issueAndMail(deps, email, eHash, user))
-      ? { ok: false, error: "code_expired", resent: true }
+      ? { ok: false, error: "code_expired", resent: true, resendInSeconds: resendAfter }
       : { ok: false, error: "rate_limited" };
   };
 
@@ -200,10 +224,16 @@ export class MemoryCodeStore implements CodeStore {
     return live.length ? { ...live[live.length - 1]! } : null;
   }
 
-  async issue(row: Omit<CodeRow, "id" | "supersededAt">) {
+  async issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date) {
+    this.rows = this.rows.filter((r) => r.expiresAt >= pruneBefore);
     for (const r of this.rows)
       if (r.emailHash === row.emailHash && !r.supersededAt) r.supersededAt = row.sentAt;
     this.rows.push({ ...row, id: String(++this.seq), supersededAt: null });
+  }
+
+  async lastSentAt(eHash: string) {
+    const sent = this.rows.filter((r) => r.emailHash === eHash).map((r) => r.sentAt.getTime());
+    return sent.length ? new Date(Math.max(...sent)) : null;
   }
 
   async spendTry(id: string, now: Date) {
@@ -252,10 +282,11 @@ export class PgCodeStore implements CodeStore {
       : null;
   }
 
-  async issue(row: Omit<CodeRow, "id" | "supersededAt">) {
+  async issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date) {
     await getDb()
       .transaction()
       .execute(async (trx) => {
+        await trx.deleteFrom("sign_in_codes").where("expires_at", "<", pruneBefore).execute();
         await trx
           .updateTable("sign_in_codes")
           .set({ superseded_at: row.sentAt })
@@ -297,6 +328,15 @@ export class PgCodeStore implements CodeStore {
       .returning("id")
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  async lastSentAt(eHash: string) {
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select((eb) => eb.fn.max("sent_at").as("last"))
+      .where("email_hash", "=", eHash)
+      .executeTakeFirst();
+    return row?.last ? new Date(row.last as string | Date) : null;
   }
 
   async sentSince(eHash: string, since: Date) {
