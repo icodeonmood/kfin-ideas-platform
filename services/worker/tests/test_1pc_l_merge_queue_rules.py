@@ -122,6 +122,8 @@ def test_S_R1_layout_4_rows_and_actions() -> None:
     )  # fmt: skip
     r = queue.row(URGENT, "waiting", NOW)
     assert (r.time_left, r.variant) == ("07:40 to answer", "warn")
+    assert (queue.row(WAITING, "waiting", NOW).asked, queue.row(WAITING, "waiting", NOW).answered) == (3, 0)
+    assert (queue.row(FRESH, "to_review", NOW).asked, queue.row(FRESH, "to_review", NOW).answered) == (0, 0)
     r = queue.row(BACK, "answered", NOW)
     assert (r.questions, r.time_left, r.action) == (
         "Both answered, 1 hour ago",
