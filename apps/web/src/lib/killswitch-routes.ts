@@ -55,8 +55,6 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
-  // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
-  { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
   // Evidence files on deliveries use the same pipeline and switches as research files (BLD-131).
@@ -110,8 +108,6 @@ export const BANNERS: Record<SwitchName, string> = {
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
 export const BECAUSE = {
   emberWaitsForOnes: "The Ember names them, so it can't go out until they are back.",
-  announcementWaitsForOnes:
-    "The announcement names them, so it waits. Show the Ones on the wall again first (Admin page).",
 } as const;
 
 /**
@@ -126,9 +122,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
-  // The Ones console keeps working whatever is paused: it is the committee's own record (DEC-040). Text checks
-  // inside these calls answer 503 on their own when the assistant is off.
-  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode)\/?$/,
+  // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
+  // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
+  // announcement are retired (DEC-106); proposals stay until lane A's admin path replaces them.
+  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,

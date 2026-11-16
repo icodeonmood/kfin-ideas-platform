@@ -151,9 +151,7 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
-    expect(canSeePage(rolesOf("contributor"), "/ones/console")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
-    expect(canSeePage(rolesOf("core_committee"), "/ones/console")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
   });
 

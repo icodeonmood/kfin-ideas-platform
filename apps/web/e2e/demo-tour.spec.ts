@@ -87,31 +87,7 @@ test("7: the review desk", async ({ browser }) => {
   await expectNoSeriousAxeIssues(desk);
 });
 
-test("9: the console's three waiting states", async ({ browser }) => {
-  const chair = await as(browser, DEMO.chair);
-  await chair.goto("/ones/console");
-  await expect(
-    chair
-      .locator("li.proposal", { hasText: "Vikram Bhat" })
-      .getByRole("button", { name: "Approve as chair" }),
-  ).toBeVisible();
-  await expect(chair.locator("li.proposal", { hasText: "Farhan Qureshi" })).toContainText("Tier 1 to Tier 2");
-  await expect(chair.locator("li.proposal", { hasText: "Suresh Patil" })).toContainText(
-    "Ready for the admin member",
-  );
-  await expectNoSeriousAxeIssues(chair);
-  const admin = await as(browser, DEMO.admin);
-  await admin.goto("/ones/console");
-  await expect(
-    admin
-      .locator("li.proposal", { hasText: "Suresh Patil" })
-      .getByRole("button", { name: "Carry out and send" }),
-  ).toBeVisible();
-  const ceo = await as(browser, DEMO.ceo);
-  await ceo.goto("/ones/console");
-  await expect(ceo.getByRole("heading", { level: 2, name: "Propose a One" })).toBeVisible();
-});
-
+// The Ones console (step 9) is retired (DEC-106, R21).
 // The manager view (step 11) is retired (DEC-106, R12).
 test("10, 12: leaderboard and the office screen", async ({ browser }) => {
   const ananya = await as(browser, DEMO.one);

@@ -132,10 +132,8 @@ endpoints:
   - POST /api/ones/proposals/{id}/messages            signed_in       # committee, CEO or an invited colleague
   - POST /api/ones/proposals/{id}/invites             decide_ones
   - PUT /api/ones/{id}/measures                       carry_out_ones
-  - POST /api/ones/{id}/awards                        carry_out_ones
   - GET /api/ones/{id}/showcase                       view_ones_console
   - PUT /api/ones/screen-mode                         carry_out_ones
-  - POST /api/ones/announce                           carry_out_ones
   - GET /api/me/one                                   signed_in
   - POST /api/me/one/number                           signed_in
   - POST /api/me/one/brief                            signed_in
@@ -196,7 +194,6 @@ pages:
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
-  - /ones/console              view_ones_console                    # the committee console's Ones module
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
