@@ -74,13 +74,6 @@
       "sponsor": "yes",
       "ceo": "yes"
     },
-    "see_people_view": {
-      "contributor": "own_history",
-      "reviewer": "yes",
-      "lob_committee": "own_lob",
-      "core_committee": "yes",
-      "admin": "yes"
-    },
     "reveal_identity": {
       "admin": "with_reason_logged"
     },
@@ -117,11 +110,6 @@
       "admin": "yes"
     },
     "manage_delivery": {
-      "admin": "yes"
-    },
-    "view_lenses": {
-      "lob_committee": "yes",
-      "core_committee": "yes",
       "admin": "yes"
     },
     "review_learning": {
@@ -222,7 +210,6 @@
     "POST /api/me/privacy-notice                       signed_in",
     "GET /api/me/ideas                                 signed_in",
     "GET /api/me/points                                signed_in",
-    "GET /api/me/lens                                  signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
     "GET /api/inbox                                    signed_in",
@@ -284,7 +271,6 @@
     "POST /api/me/one/glow-up/{id}/seen                signed_in",
     "GET /api/me/one/showcase                          signed_in",
     "PUT /api/me/one/showcase                          signed_in",
-    "GET /api/me/team                                  signed_in",
     "GET /api/delivery                                 work_delivery",
     "POST /api/delivery                                start_handover",
     "GET /api/delivery/{id}                            work_delivery",
@@ -310,8 +296,6 @@
     "POST /api/delivery/{id}/writeup/submit            work_delivery",
     "POST /api/delivery/{id}/writeup/approve           work_delivery",
     "POST /api/delivery/{id}/writeup/send-back         work_delivery",
-    "GET /api/lenses                                   view_lenses",
-    "POST /api/lenses/rebuild                          review_learning",
     "GET /api/learning                                 review_learning",
     "POST /api/learning/proposals/{id}/decide          review_learning",
     "POST /api/learning/proposals/{id}/publish         review_learning",
@@ -345,7 +329,6 @@
     "/ones/showcase             view_ones_console",
     "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
-    "/lenses                    view_lenses",
     "/learning/committee        approve_scorecard_changes",
     "/learning                  review_learning",
     "/ember/compose             write_ember_note"
