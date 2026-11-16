@@ -1111,3 +1111,10 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     body["quarter"] = quarter or reports.current_quarter()
     body["quarters"] = reports.recent_quarters()
     return _json(body)
+
+
+# An idea's own pages (lane E): the sharer's page, a colleague's view, My ideas, withdraw and restore (A-API.ideas,
+# A-API.my-ideas; S-06, S-07, S-09). Its routes live with the code in ideapage/routes.py.
+from ideapage.routes import build as _idea_page_routes  # noqa: E402
+
+app.include_router(_idea_page_routes(require_token))
