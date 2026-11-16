@@ -26,8 +26,12 @@ from sla.calendar import add_working_days, add_working_seconds, working_seconds
 log = get_logger("sla")
 
 
+def _rules() -> dict[str, Any]:
+    return dict(load_rule(get_settings().company_repo_path, "sla").data)
+
+
 def _rule(stage: str) -> dict[str, Any]:
-    return dict(load_rule(get_settings().company_repo_path, "sla").data[stage])
+    return dict(_rules()[stage])
 
 
 def start(conn: Conn, entity_type: str, entity_id: str, stage: str, now: dt.datetime | None = None) -> int:
@@ -134,7 +138,8 @@ def _escalation(conn: Conn, target: str | None) -> list[str]:
 
 def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
     now = now or dt.datetime.now(dt.UTC)
-    counts = {"reminders": 0, "breaches": 0, "withdrawn": 0, "expired": 0}
+    counts = {"reminders": 0, "breaches": 0, "withdrawn": 0, "expired": 0, "skipped": 0}
+    rules = _rules()
     ids = [
         r["id"]
         for r in conn.execute("SELECT id FROM sla_timers WHERE state = 'running' ORDER BY id").fetchall()
@@ -148,7 +153,14 @@ def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
             if row is None:
                 continue
             t = dict(row)
-            rule = _rule(t["stage"])
+            if t["stage"] not in rules:
+                # A timer kind with no rule in rules/sla.md: another lane's clock with its own sweep (the 1% Club
+                # cut-over added several), or a rule removed by mistake. Leave it running, say so by ID, and carry
+                # on with the rest, rather than stop every timer behind it (BLD-A182).
+                log.warning("sla.timer_without_rule", timer_id=timer_id, stage=t["stage"])
+                counts["skipped"] += 1
+                continue
+            rule = dict(rules[t["stage"]])
             f = _fraction(t, now)
             is_deadline = bool(rule.get("escalate_to") or rule.get("remind_at") or rule.get("on_breach"))
             if f >= 1 and not is_deadline:
