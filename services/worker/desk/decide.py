@@ -23,7 +23,7 @@ STATUS_AFTER: dict[str, str] = {"pick": "picked", "not_now": "not_now", "not_pic
 REASON_LABELS: dict[str, str] = {
     "pick": "Why are you picking it?",
     "not_now": "Why not now, and what would change it?",
-    "not_picked": "Why isn't it going ahead?",
+    "not_picked": "Why isn’t it going ahead?",
 }
 
 

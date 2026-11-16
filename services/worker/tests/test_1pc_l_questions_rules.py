@@ -100,7 +100,7 @@ def test_S_R2_panel_2_words_while_asking() -> None:
     assert q.ready_line(2) == "2 questions ready" and q.ready_line(1) == "1 question ready"
     assert q.send_label(3, "Kavya") == "Send 3 questions to Kavya"
     assert q.deadline_line("Kavya", DUE, NOW) == "Kavya has until Thursday 19 November, 6 pm."
-    assert q.AFTER_DECIDE_BY == "That's after you decide, so you'd need to move your date."
+    assert q.AFTER_DECIDE_BY == "That’s after you decide, so you’d need to move your date."
 
 
 def test_S_R2_panel_4_answered_with_time_to_spare() -> None:
