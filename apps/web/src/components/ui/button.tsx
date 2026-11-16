@@ -3,8 +3,6 @@
 import Link from "next/link";
 import {
   forwardRef,
-  useLayoutEffect,
-  useRef,
   type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
   type MouseEvent,
@@ -17,8 +15,8 @@ import {
  *
  * Disabled is `aria-disabled`, never the `disabled` attribute: the button stays focusable so a screen reader finds it,
  * and a click calls `onDisabledClick` (C-BUTTON.states/4: move focus to the field that blocks it and show its message).
- * Busy swaps the label for the action in progress ("Sending…") with a spinner, keeps the button's width and ignores
- * further clicks (C-BUTTON.states/5).
+ * Busy swaps the label for the action in progress ("Sending…") with a spinner and ignores further clicks; with a
+ * busyLabel both labels share one cell, so the width never changes (C-BUTTON.states/5).
  */
 export type ButtonVariant = "primary" | "line" | "soft" | "text" | "text-blue";
 export type ButtonSize = "regular" | "sm" | "full";
@@ -80,31 +78,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  const own = useRef<HTMLButtonElement | null>(null);
-  const width = useRef<number | null>(null);
-
-  // Keep the width the label had, so the button does not jump when the label changes to the busy one.
-  useLayoutEffect(() => {
-    const el = own.current;
-    if (!el) return;
-    if (busy) {
-      if (width.current === null) width.current = el.getBoundingClientRect().width;
-      el.style.minWidth = `${width.current}px`;
-    } else {
-      width.current = null;
-      el.style.minWidth = "";
-    }
-  }, [busy]);
-
   const blocked = Boolean(disabled || busy);
   return (
     <button
       {...rest}
-      ref={(el) => {
-        own.current = el;
-        if (typeof ref === "function") ref(el);
-        else if (ref) ref.current = el;
-      }}
+      ref={ref}
       type={type}
       style={style}
       className={buttonClass(variant, size, className)}
@@ -124,8 +102,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       }}
       data-blocked={blocked ? "" : undefined}
     >
-      {busy ? <span className="spin" aria-hidden="true" /> : icon}
-      {busy ? (busyLabel ?? children) : children}
+      {busyLabel !== undefined ? (
+        // Both labels share one cell, so the button is always as wide as the wider one and never jumps when the
+        // label changes; the one not showing is hidden from sight and from screen readers.
+        <span className="btn-lbls">
+          <span className="btn-lbl" aria-hidden={busy ? true : undefined}>
+            {icon}
+            {children}
+          </span>
+          <span className="btn-lbl" aria-hidden={busy ? undefined : true}>
+            <span className="spin" aria-hidden="true" />
+            {busyLabel}
+          </span>
+        </span>
+      ) : (
+        <>
+          {busy ? <span className="spin" aria-hidden="true" /> : icon}
+          {children}
+        </>
+      )}
     </button>
   );
 });

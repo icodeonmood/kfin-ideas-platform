@@ -1019,3 +1019,20 @@ h3 {
 }
 
 /* Reduced motion: foundation.css holds the one rule (F-MOTION.reduced). */
+
+/* A button with a busy label: both labels in one cell, only one visible */
+.btn-lbls {
+  display: inline-grid;
+}
+
+.btn-lbl {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-8);
+}
+
+.btn-lbl[aria-hidden="true"] {
+  visibility: hidden;
+}
