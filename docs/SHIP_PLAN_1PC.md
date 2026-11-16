@@ -72,6 +72,8 @@ If Thursday's go/no-go finds a lane short, the product lead chooses from this dr
 | Fri 20 | Inauguration. Code freeze except fixes |
 | Mon 23 | Cleanup migration drops the retired tables |
 
+Copy rule for every lane (BLD-E008): never a gendered pronoun for a real person; use the first name, or "they" and "their" where the name would repeat; list each changed line for HR.
+
 Rules for every lane: your own worktree; one module per commit, pushed; module IDs in test names and commit messages (`S-R2.panel`, `V-ACC.review/1`); `REPO-MAPPING.md` updated when a module lands; deltas (`D-00NN`) applied in order by the lane that owns the module; nothing merges to `main` without lint, unit and the e2e of its journey green on GitHub CI.
 
 ## 5a. Cross-lane entry points
