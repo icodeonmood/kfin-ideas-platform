@@ -246,10 +246,8 @@
     "POST /api/ones/proposals/{id}/messages            signed_in",
     "POST /api/ones/proposals/{id}/invites             decide_ones",
     "PUT /api/ones/{id}/measures                       carry_out_ones",
-    "POST /api/ones/{id}/awards                        carry_out_ones",
     "GET /api/ones/{id}/showcase                       view_ones_console",
     "PUT /api/ones/screen-mode                         carry_out_ones",
-    "POST /api/ones/announce                           carry_out_ones",
     "GET /api/me/one                                   signed_in",
     "POST /api/me/one/number                           signed_in",
     "POST /api/me/one/brief                            signed_in",
@@ -304,7 +302,6 @@
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
-    "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
     "/ember/compose             write_ember_note"
   ],

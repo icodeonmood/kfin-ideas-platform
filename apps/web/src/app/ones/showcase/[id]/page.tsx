@@ -21,14 +21,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!brief) {
     return (
       <p className="notice">
-        We can&apos;t find that Showcase brief. <Link href="/ones/console">Back to the Ones</Link>
+        We can&apos;t find that Showcase brief. <Link href="/wall">Back to the Wall</Link>
       </p>
     );
   }
   return (
     <>
       <p className="no-print">
-        <Link href="/ones/console">Back to the Ones</Link>
+        <Link href="/wall">Back to the Wall</Link>
       </p>
       <h1>
         Showcase brief: No. {brief.number ?? "retired"}, {brief.name}

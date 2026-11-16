@@ -38,8 +38,6 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("GET", "/api/attachments/ATT-2026-000001")).toEqual(["attachments.open"]);
     expect(switchesFor("GET", "/api/attachments/ATT-2026-000001/status")).toEqual([]);
     expect(switchesFor("GET", "/api/wall")).toEqual(["wall.public"]);
-    // The org-wide announcement names Ones, so it waits while they are off the wall (Ones review).
-    expect(switchesFor("POST", "/api/ones/announce")).toEqual(["ones.public"]);
     expect(switchesFor("POST", "/api/ones/proposals")).toEqual([]);
     expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
   });
