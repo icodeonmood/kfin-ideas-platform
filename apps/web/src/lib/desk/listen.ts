@@ -24,7 +24,7 @@ export type ListenRate = (typeof SPEEDS)[number];
 /** L-LISTEN/5: a script saved for offline is kept this many days. */
 export const OFFLINE_DAYS = 30;
 /** L-LISTEN/7: what the player shows when the speech engine fails. */
-export const LISTEN_ERROR = "Couldn't prepare the audio. Try again.";
+export const LISTEN_ERROR = "Couldn’t prepare the audio. Try again.";
 
 const TICK_MS = 250;
 // Float sums land a hair under whole numbers (129.99999…); this keeps them on the right side.
