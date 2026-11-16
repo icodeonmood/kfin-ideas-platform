@@ -28,16 +28,6 @@
     "see_org_ideas": {
       "contributor": "yes"
     },
-    "see_committee_only_ideas": {
-      "contributor": "own",
-      "reviewer": "yes",
-      "lob_committee": "own_lob",
-      "core_committee": "yes",
-      "appeal_panel": "case",
-      "working_group": "own_cluster",
-      "sponsor": "own_cluster",
-      "admin": "yes"
-    },
     "work_review_queue": {
       "reviewer": "yes",
       "admin": "yes"
@@ -66,9 +56,6 @@
     "approve_handover": {
       "sponsor": "yes",
       "ceo": "yes"
-    },
-    "reveal_identity": {
-      "admin": "with_reason_logged"
     },
     "grant_roles": {
       "admin": "yes"
@@ -218,7 +205,6 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "PUT /api/ideas/{id}/canvas                        submit",
-    "POST /api/ideas/{id}/plus-one                     submit",
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
@@ -233,7 +219,6 @@
     "DELETE /api/admin/roles/{id}                      grant_roles",
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
-    "POST /api/admin/reveal                            reveal_identity",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/ones/leaderboard                         signed_in",

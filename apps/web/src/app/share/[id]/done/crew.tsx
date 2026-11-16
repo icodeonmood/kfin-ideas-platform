@@ -82,7 +82,6 @@ function actionsFor(card: MatchCard): Action[] {
   if (card.label !== "same") return [];
   return [
     { ref: card.ref, choice: "team_up", label: "Team up with my context", needs: "context" },
-    { ref: card.ref, choice: "plus_one", label: "+1 only" },
     { ref: card.ref, choice: "different", label: "Mine is different", needs: "line" },
   ];
 }

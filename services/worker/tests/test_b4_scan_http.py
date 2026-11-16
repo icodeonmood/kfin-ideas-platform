@@ -76,28 +76,21 @@ def test_blocked_goes_back_to_edit_with_the_same_ids(me: Any) -> None:
     assert settled(b, draft)["outcome"] == "ready"
 
 
-def test_an_investor_block_can_be_contested_and_is_audited(me: Any) -> None:
-    """BLD-082 option B (9 Nov 2026): "This is not personal data" works on an investor block too, and the contest is
-    audited with IDs and a code only. (The review item's flag is checked in test_b4_scan.py: saving here would leave
-    an outbox event for an idea the cleanup deletes.)"""
+def test_a_block_can_no_longer_be_contested(me: Any) -> None:
+    """DEC-106 (R3): "This is not personal data" (BLD-082 option B) is retired. A gatekeeper block is edited out
+    until lane C's Check it hides details instead of blocking them (DEC-103); nothing is audited as a contest."""
     person, _, conn = me
     b = person.browser()
     name = g.person_name(random.Random(111))
     draft, idea_id = submit(b, f"The investor {name} called five times because her SIP registration slipped.")
-    status = settled(b, draft)
-    assert status["outcome"] == "blocked" and status["blocked"]["investor_context"] is True
-    assert status["blocked"]["can_contest"] is True
+    assert settled(b, draft)["outcome"] == "blocked"
     contest = b.post(f"/api/submissions/{draft}/scan-choice", json={"choice": "not_personal_data"})
-    assert contest.status_code == 200, contest.text
-    assert settled(b, draft)["outcome"] == "ready"
-
+    assert contest.status_code == 400 and contest.json() == {"error": "choice_required"}
+    assert settled(b, draft)["outcome"] == "blocked"
     audit = conn.execute(
-        "SELECT actor, after FROM audit_log WHERE action = 'scan.contest' AND entity = %s",
-        (f"idea:{idea_id}",),
-    ).fetchall()
-    assert [a["after"] for a in audit] == [{"investor_or_customer": True}]
-    assert audit[0]["actor"] == f"user:{person.user_id}"
-    assert name not in str(audit) and name.split()[0] not in str(audit)
+        "SELECT 1 FROM audit_log WHERE action = 'scan.contest' AND entity = %s", (f"idea:{idea_id}",)
+    ).fetchone()
+    assert audit is None
 
 
 def test_the_desk_sees_contested_investor_items_first(me: Any) -> None:

@@ -39,14 +39,12 @@ const ALL = [
 const SECTION_3_1: Record<string, string[]> = {
   submit: ALL,
   see_org_ideas: ALL,
-  see_committee_only_ideas: ALL,
   work_review_queue: ["reviewer", "admin"],
   view_review_queue: ["reviewer", "core_committee", "admin"],
   veto_desk_decision: ["core_committee"],
   open_attachments: ALL,
   see_restored_values: ALL,
   approve_handover: ["sponsor"],
-  reveal_identity: ["admin"],
   grant_roles: ["admin"],
 };
 
@@ -63,8 +61,6 @@ describe("policy agrees with ARCHITECTURE §3.1", () => {
   }
 
   it("keeps the scope words the handlers must enforce", () => {
-    expect(scopesFor(rolesOf("lob_committee"), "see_committee_only_ideas")).toEqual(["own", "own_lob"]);
-    expect(scopesFor(rolesOf("admin"), "reveal_identity")).toEqual(["with_reason_logged"]);
     expect(scopesFor(rolesOf("contributor"), "see_restored_values")).toEqual(["own_idea"]);
   });
 

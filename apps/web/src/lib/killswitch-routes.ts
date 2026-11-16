@@ -44,7 +44,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
-    pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer)\/?$/,
+    pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
   {
