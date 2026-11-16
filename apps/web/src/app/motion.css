@@ -1,0 +1,546 @@
+/*
+ * 1% Club motion (lane D; F-MOTION; BLD-E005: no animation library). Ported from the pack's reference/css/motion.css.
+ * The tokens (--mo-*) live in tokens.css. The prototype's selectors are re-pointed at the app's own classes; the
+ * snackbar is dropped (no toasts, P-DECISIONS.taken/12). Script-driven motion (FLIP, hand-overs, sparks, word reveals)
+ * lives in src/lib/motion/ and checks reduced motion itself, because CSS cannot stop it.
+ *
+ * How a screen takes part:
+ *   - every child of <main id="main"> arrives as one block;
+ *   - a screen that wants its blocks to arrive one after another puts class "arrive" on their container;
+ *   - a showcase screen (F-MOTION.rules/2) adds "cine" for the deeper, slower arrival;
+ *   - anything that must not move (a sticky bar, a live region) takes "mo-skip".
+ */
+
+:root {
+  --mo-base: 0ms;
+  interpolate-size: allow-keywords;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A full page load between two documents fades through (F-MOTION.handover, "Fade through"). The sidebar and the tab
+     bar keep their own names, so they never move. */
+  @view-transition {
+    navigation: auto;
+  }
+
+  ::view-transition-old(root) {
+    animation: moVtOut 0.22s var(--mo-acc) both;
+  }
+
+  ::view-transition-new(root) {
+    animation: moVtIn 0.42s var(--mo-out) both;
+  }
+
+  .sbar {
+    view-transition-name: mo-sbar;
+  }
+
+  .ptabs {
+    view-transition-name: mo-tabs;
+  }
+
+  /* --- 1. Screens arrive (F-MOTION.arrive): blocks rise out of a soft blur, one after another. The two wall
+     displays (launch, office) run their own timelines and never take part. --- */
+  main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb),
+  .arrive > :not(.mo-skip) {
+    animation: moIn var(--mo-scene) var(--mo-out) backwards;
+    animation-delay: calc(var(--mo-base) + var(--mo-i, 0) * var(--mo-gap));
+  }
+
+  .arrive > :nth-child(2) {
+    --mo-i: 1;
+  }
+
+  .arrive > :nth-child(3) {
+    --mo-i: 2;
+  }
+
+  .arrive > :nth-child(4) {
+    --mo-i: 3;
+  }
+
+  .arrive > :nth-child(5) {
+    --mo-i: 4;
+  }
+
+  .arrive > :nth-child(6) {
+    --mo-i: 5;
+  }
+
+  .arrive > :nth-child(n + 7) {
+    --mo-i: 6;
+  }
+
+  /* The page heading settles a beat later, its tracking tightening as it lands */
+  main#main :is(h1, .d1):not([data-mo-split]) {
+    animation: moHead calc(var(--mo-scene) + 200ms) var(--mo-out) backwards;
+    animation-delay: calc(var(--mo-base) + 90ms);
+  }
+
+  /* A hero line waits for its word reveal; if the script never runs, it shows on its own */
+  [data-mo-split] {
+    animation: moLate 0.5s var(--mo-out) 1.15s backwards;
+  }
+
+  .mo-split-on [data-mo-split] {
+    animation: none;
+  }
+
+  /* Showcase screens: longer, deeper arrivals */
+  .cine {
+    --mo-scene: 1000ms;
+    --mo-gap: 80ms;
+  }
+
+  main#main > .cine:not(.arrive),
+  .cine.arrive > :not(.mo-skip),
+  .cine .arrive > :not(.mo-skip) {
+    animation-name: moInDeep;
+  }
+
+  /* Arrivals after a hand-over (set on <html> by the hand-over helper before the first frame) */
+  .mo-a-expand {
+    --mo-base: 380ms;
+  }
+
+  .mo-a-portal {
+    --mo-base: 420ms;
+  }
+
+  .mo-a-peer
+    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    animation-name: moThrough;
+    animation-duration: var(--mo-move);
+    --mo-gap: 30ms;
+  }
+
+  .mo-a-fwd
+    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    animation-name: moAxisIn;
+    animation-duration: var(--mo-move);
+    --mo-gap: 36ms;
+  }
+
+  .mo-a-back
+    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    animation-name: moAxisBack;
+    animation-duration: var(--mo-move);
+    --mo-gap: 36ms;
+  }
+
+  .mo-a-expand main#main :is(h1, .d1) {
+    animation: none;
+  }
+
+  /* --- 2. Controls (F-MOTION.inside: Press, Primary hover) --- */
+  :is(.btn, .chip, .choice, .check, .round-btn, .sb-i, .sb-new, .sb-me, .ptab, .tb) {
+    transition-property: transform, background-color, box-shadow, color, opacity, text-decoration-color;
+    transition-timing-function: var(--mo-snap);
+    transition-duration: var(--mo-state);
+  }
+
+  :is(.btn, .chip, .choice, .check, .round-btn, .sb-new):active {
+    transform: scale(0.97);
+    transition-duration: var(--mo-press);
+  }
+
+  /* The ink button's sheen crosses once on hover, with a soft drop */
+  :is(.btn-primary, .btn.ink, .sb-new) {
+    background-image: var(--sheen);
+    background-size: 260% 100%;
+    background-position: 120% 0;
+    background-repeat: no-repeat;
+    transition:
+      background-position 0.9s var(--mo-out),
+      background-color var(--mo-state) var(--mo-snap),
+      box-shadow var(--mo-state) var(--mo-snap),
+      transform var(--mo-state) var(--mo-snap);
+  }
+
+  :is(.btn-primary, .btn.ink, .sb-new):hover {
+    background-position: -20% 0;
+    box-shadow: var(--sh-primary-hover);
+  }
+
+  :is(.btn-primary, .btn.ink)[aria-disabled="true"]:hover,
+  :is(.btn-primary, .btn.ink):disabled:hover {
+    background-position: 120% 0;
+    box-shadow: none;
+  }
+
+  :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    transition: outline-offset var(--mo-quick) var(--mo-out);
+  }
+
+  /* A choice landing settles on the spring */
+  :is(.chip, .choice)[aria-pressed="true"],
+  :is(.chip, .choice)[aria-checked="true"],
+  .choice:has(input:checked),
+  [role="radio"][aria-checked="true"],
+  [role="checkbox"][aria-checked="true"] {
+    transition-timing-function: var(--mo-spring);
+    transition-duration: 520ms;
+  }
+
+  /* --- 3. Things that open: menus, pop-ups, sheets, notes, field messages --- */
+  :is(.scrim, .backdrop) {
+    animation: moFade var(--mo-state) var(--mo-out) backwards;
+  }
+
+  :is(.sheet, .popup)[open],
+  :is(.sheet, .popup):not(dialog) {
+    animation: moModal 520ms var(--mo-spring) backwards;
+  }
+
+  :is(.sheet, .popup)[open]::backdrop {
+    animation: moFade var(--mo-state) var(--mo-out) backwards;
+  }
+
+  :is(.menu, [role="menu"], [role="listbox"].pop) {
+    transform-origin: top right;
+    animation: moMenu 260ms var(--mo-out) backwards;
+  }
+
+  :is(.confirm, .banner, .note, .unfold) {
+    animation: moUnfold 420ms var(--mo-out) backwards;
+  }
+
+  :is(.field-msg, .err) {
+    animation: moNudge 480ms var(--mo-out) backwards;
+  }
+
+  .field-msg.warn {
+    animation: moDrop 280ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
+
+  .otp.bad {
+    animation: moShake 420ms var(--mo-snap);
+  }
+
+  details > :not(summary) {
+    animation: moUnfold 380ms var(--mo-out) backwards;
+  }
+
+  details::details-content {
+    height: 0;
+    overflow: clip;
+    transition:
+      height 380ms var(--mo-out),
+      content-visibility 380ms allow-discrete;
+  }
+
+  details[open]::details-content {
+    height: auto;
+  }
+
+  /* --- 4. Progress draws (C-TRACK): the line draws, each node lands in turn, "now" breathes twice --- */
+  .trk::after {
+    animation: moGrowW 1.2s var(--mo-out) backwards;
+    animation-delay: calc(var(--mo-base) + 420ms);
+  }
+
+  .trk > li .nd {
+    animation: moPop 700ms var(--mo-spring) backwards;
+    animation-delay: calc(var(--mo-base) + 300ms + var(--mo-k, 0) * 120ms);
+  }
+
+  .trk > li:nth-child(2),
+  .vtrk > li:nth-child(2) {
+    --mo-k: 1;
+  }
+
+  .trk > li:nth-child(3),
+  .vtrk > li:nth-child(3) {
+    --mo-k: 2;
+  }
+
+  .trk > li:nth-child(4),
+  .vtrk > li:nth-child(4) {
+    --mo-k: 3;
+  }
+
+  .trk > li:nth-child(5),
+  .vtrk > li:nth-child(5) {
+    --mo-k: 4;
+  }
+
+  .trk > li.now .nd {
+    animation:
+      moPop 700ms var(--mo-spring) backwards,
+      moBreath 2.2s var(--mo-out) 1.8s 2;
+    animation-delay: calc(var(--mo-base) + 300ms + var(--mo-k, 0) * 120ms), calc(var(--mo-base) + 1.8s);
+  }
+
+  .vtrk > li::before {
+    transform-origin: top;
+    animation: moGrowY 900ms var(--mo-out) backwards;
+    animation-delay: calc(var(--mo-base) + 300ms + var(--mo-k, 0) * 120ms);
+  }
+}
+
+/* Rules the motion helpers rely on */
+.mo-leaving,
+.mo-leaving * {
+  animation: none !important;
+  pointer-events: none !important;
+}
+
+.mo-flipping :is(li, .btn, .chip, .choice, .card, .tile) {
+  transition-duration: 0s !important;
+}
+
+.amb i {
+  translate: 0 var(--mo-py, 0px);
+}
+
+.mo-w {
+  display: inline-block;
+  will-change: transform;
+}
+
+/* The effects layer: sparks, hand-over ghosts, the sliding choice ring. Never interactive, never in the reading order */
+#mo-fx {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-fx);
+  pointer-events: none;
+  contain: strict;
+}
+
+#mo-fx > * {
+  position: absolute;
+  pointer-events: none;
+}
+
+.mo-ghost {
+  inset: 0;
+  will-change: clip-path, opacity;
+}
+
+.mo-ring {
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+  will-change: transform, width, height;
+}
+
+.mo-spark {
+  left: 0;
+  top: 0;
+  width: 5px;
+  height: 14px;
+  border-radius: 3px;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mo-fx {
+    display: none;
+  }
+
+  [data-mo-split] {
+    animation: none;
+  }
+}
+
+@keyframes moVtOut {
+  to {
+    opacity: 0;
+    scale: 0.985;
+  }
+}
+
+@keyframes moVtIn {
+  from {
+    opacity: 0;
+    scale: 1.01;
+  }
+}
+
+@keyframes moIn {
+  from {
+    opacity: 0;
+    translate: 0 22px;
+    scale: 0.985;
+    filter: blur(6px);
+  }
+}
+
+@keyframes moInDeep {
+  from {
+    opacity: 0;
+    translate: 0 48px;
+    scale: 0.96;
+    filter: blur(14px);
+  }
+}
+
+@keyframes moHead {
+  from {
+    opacity: 0;
+    translate: 0 0.45em;
+    filter: blur(8px);
+    letter-spacing: 0.02em;
+  }
+}
+
+@keyframes moLate {
+  from {
+    opacity: 0;
+    translate: 0 0.3em;
+  }
+}
+
+@keyframes moThrough {
+  from {
+    opacity: 0;
+    scale: 0.975;
+  }
+}
+
+@keyframes moAxisIn {
+  from {
+    opacity: 0;
+    translate: 48px 0;
+  }
+}
+
+@keyframes moAxisBack {
+  from {
+    opacity: 0;
+    translate: -48px 0;
+  }
+}
+
+@keyframes moFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes moModal {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+    scale: 0.94;
+    filter: blur(6px);
+  }
+}
+
+@keyframes moSheet {
+  from {
+    translate: 0 100%;
+  }
+}
+
+@keyframes moMenu {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+    scale: 0.95;
+    filter: blur(4px);
+  }
+}
+
+@keyframes moUnfold {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+    clip-path: inset(0 0 100% 0 round 14px);
+  }
+}
+
+@keyframes moDrop {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+@keyframes moNudge {
+  0% {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+
+  35% {
+    opacity: 1;
+    translate: -5px 0;
+  }
+
+  55% {
+    translate: 4px 0;
+  }
+
+  75% {
+    translate: -2px 0;
+  }
+
+  100% {
+    translate: 0 0;
+  }
+}
+
+@keyframes moShake {
+  20% {
+    translate: -8px 0;
+  }
+
+  40% {
+    translate: 7px 0;
+  }
+
+  60% {
+    translate: -4px 0;
+  }
+
+  80% {
+    translate: 2px 0;
+  }
+}
+
+@keyframes moGrowW {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes moGrowY {
+  from {
+    scale: 1 0;
+  }
+}
+
+@keyframes moPop {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+
+  60% {
+    opacity: 1;
+  }
+
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes moBreath {
+  0% {
+    box-shadow:
+      inset 0 0 0 2px var(--blue),
+      0 0 0 4px rgba(57, 93, 237, 0.16);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 0 0 2px var(--blue),
+      0 0 0 12px rgba(57, 93, 237, 0);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 0 0 2px var(--blue),
+      0 0 0 4px rgba(57, 93, 237, 0.16);
+  }
+}

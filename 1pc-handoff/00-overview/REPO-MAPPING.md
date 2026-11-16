@@ -131,6 +131,8 @@ Approach: one cut-over migration in lane E's range (`202611215xxxxx`, sorting af
 
 `01-foundations/tokens.css` is imported as-is into `apps/web/src/app/`, and the OFFER names in `offer.css` become aliases of the pack's tokens, so existing call sites keep working while screens move over. Fonts stay self-hosted through `@fontsource-variable` (BLD-D008); `--fd` and `--ft` are overridden because the pack names "Inter" and the installed family is "Inter Variable". Tier colours change in `services/worker/ones/tiers.py`, the emails and `docs/BRAND.md` too. Detail: `mapping/components.md` §1.
 
+**Built** (lane D, BLD-D010, 16 Nov 2026): `apps/web/src/app/tokens.css` (verbatim), `foundation.css` (the groups tokens.css leaves out, base, type classes, ambient light, reduced motion), `offer.css` (aliases only), `motion.css` (the pack's motion sheet, re-pointed), `src/lib/motion/flip.ts` (WAAPI FLIP, BLD-E005). Tests: `apps/web/tests/unit/foundation.test.ts`.
+
 ## `P-REPO.not-in-pack`
 
 What the repo has that the pack does not describe, and what happens to it, is the retire list in `mapping/logic.md` §3 and `mapping/contracts.md` §5, summarised in `docs/SHIP_PLAN_1PC.md` §6.

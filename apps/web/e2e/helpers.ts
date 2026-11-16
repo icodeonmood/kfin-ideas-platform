@@ -29,7 +29,19 @@ export async function signIn(page: Page, username: string, claims?: Record<strin
   }
 }
 
+/** Screens arrive block by block, rising out of a fade (F-MOTION.arrive), so axe would measure contrast mid-fade.
+ * Finish every animation that ends; loops (a skeleton's shimmer, a breathing node) keep running. */
+export async function settleMotion(page: Page) {
+  await page.evaluate(() => {
+    for (const a of document.getAnimations()) {
+      const timing = a.effect?.getComputedTiming();
+      if (timing && timing.iterations !== Infinity && a.playState !== "finished") a.finish();
+    }
+  });
+}
+
 export async function expectNoSeriousAxeIssues(page: Page) {
+  await settleMotion(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();

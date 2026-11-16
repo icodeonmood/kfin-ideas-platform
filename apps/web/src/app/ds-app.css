@@ -799,7 +799,7 @@ main > .entry {
   font: 400 17px/1.5 var(--font-sans);
   color: var(--ink);
   background: var(--g-well);
-  border: 1px solid var(--line-control);
+  border: 1px solid var(--fieldBorder);
   border-radius: var(--r-well);
   box-shadow: none;
   transition:

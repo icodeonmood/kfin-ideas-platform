@@ -1,74 +1,68 @@
 /*
- * The 1% Club in the OFFER on IRIS design theme (DEC-101, lane D). Tokens, base and components.
+ * The 1% Club's older OFFER names (DEC-101, BLD-D009), now pointing at the design pack's tokens (DEC-102, BLD-D010).
  *
- * Everything about the look comes from OFFER: Inter Tight for headlines and the wordmark, Inter for text, ink #111111
- * on a warm paper ground, white cards, hairline rules, one blue (#3355FF) for focus, a choice made and progress,
- * black primary buttons, OFFER's status colours (always a dot and words), and a contained dark panel for brand
- * moments. The 1% Club keeps its name, the Spark mark and the tier colours (DEC-098) as light and fill.
- *
- * The token names are the ones the app's rules (ds-app.css) and the older pages (globals.css) already read, so every
- * screen takes the new values; this sheet loads after globals.css and wins on equal specificity.
+ * tokens.css (the pack's own file) and foundation.css load first and own every value. This block only maps the
+ * names the app's rules (ds-app.css) and the older pages (globals.css) still read onto those tokens, so every screen
+ * takes the pack's values today. Screens move to the pack's names as they are rebuilt; then this block goes.
+ * Never define a pack name (--ink, --paper, --card, --rule, --blue, --spark, --tier-N …) here: this sheet loads later
+ * and would win.
  */
 
-/* ---------- Tokens ---------- */
+/* ---------- Aliases ---------- */
 :root,
 [data-theme="white"] {
-  /* OFFER's palette */
-  --paper: #f3f3f1;
-  --card: #ffffff;
-  --sunken: #e9e9e6;
-  --rule: #dadad6;
-  --line: #e4e4e0;
-  --line-soft: #ededea;
-  --line-control: #d0d0cb;
-  --ink: #111111;
-  --ink-muted: #5f5f64; /* 5.7:1 on paper, 6.4:1 on white */
-  --blue: #3355ff; /* 4.9:1 on its wash, 5.4:1 on white */
-  --blue-wash: #eef2ff;
-  --ok: #067647;
-  --ok-dot: #12b76a;
-  --ok-wash: #ecfdf3;
-  --warn-ink: #b54708;
-  --warn-dot: #f79009;
-  --warn-wash: #fffaeb;
-  --error: #b42318;
-  --error-dot: #f04438;
-  --error-wash: #fef3f2;
+  /* Neutrals */
+  --sunken: var(--sunk);
+  --line: var(--rule2);
+  --line-soft: var(--rule2);
+  --line-control: var(--edge); /* line buttons and chips; fields use --fieldBorder (F-COLOR.contrast/2) */
+  --ink-muted: var(--mute);
+  --blue-wash: var(--wash);
+
+  /* Status triplets */
+  --ok: var(--okT);
+  --ok-dot: var(--okD);
+  --ok-wash: var(--okW);
+  --warn-ink: var(--warnT);
+  --warn-dot: var(--warnD);
+  --warn-wash: var(--warnW);
+  --error: var(--badT);
+  --error-dot: var(--badD);
+  --error-wash: var(--badW);
   --error-line: #fecdca;
-  --spark: #ff5b14; /* the mark's own colour, and the dash on the one card to start with */
 
   /* Roles */
   --link: var(--ink);
   --link-on-zed: #ffffff;
-  --electric-deep: var(--blue);
+  --electric-deep: var(--blueT);
   --focus: var(--blue);
-  --field-glow: rgba(51, 85, 255, 0.16);
+  --field-glow: var(--focus-glow);
   --surface: var(--card);
 
-  /* The older names in globals.css take OFFER's values, so every page follows */
+  /* The pre-OFFER names in globals.css */
   --zed: var(--ink);
   --white: #ffffff;
   --electric: var(--blue);
-  --electric-dark: var(--blue);
-  --graphite: #1a1a1e;
-  --ash: #a3a3a6; /* secondary text on the dark panel, 7.5:1 on #111111 */
-  --ash-lit: #c4c4c7; /* secondary text over a tier's light on a One's card, 4.5:1 or better where the light is brightest */
-  --slate: var(--ink-muted);
+  --electric-dark: var(--blueT);
+  --graphite: var(--slab);
+  --ash: var(--underline); /* secondary text on the dark slab, 7.5:1 */
+  --ash-lit: #c4c4c7; /* secondary text over a tier's light on a One's card */
+  --slate: var(--mute);
   --line-dark: rgba(255, 255, 255, 0.12);
-  --line-light: var(--line);
+  --line-light: var(--rule2);
   --bg: var(--paper);
   --text: var(--ink);
-  --muted: var(--ink-muted);
+  --muted: var(--mute);
   --accent: var(--blue);
-  --border: var(--line);
-  --radius: 10px;
+  --border: var(--rule2);
+  --radius: var(--r-sm);
 
   /* Type */
-  --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-display: "Inter Tight Variable", "Inter Tight", "Inter Variable", Inter, system-ui, sans-serif;
-  --font: var(--font-sans);
+  --font-sans: var(--ft);
+  --font-display: var(--fd);
+  --font: var(--ft);
 
-  /* Space, measure and shape */
+  /* Space, measure and shape (the --space-N steps keep their values; the pack's px steps are --sp-N) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -78,22 +72,22 @@
   --space-7: 48px;
   --space-8: 72px;
   --space-9: 120px;
-  --gutter: clamp(20px, 3.4vw, 48px);
-  --page-max: 1344px;
-  --measure: 68ch;
-  --radius-pill: 999px;
-  --r-card: 20px;
-  --r-glass: 24px;
-  --r-well: 10px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 16px 40px rgba(16, 24, 40, 0.07);
+  --gutter: var(--page-gutter);
+  --page-max: var(--content-max);
+  --measure: 65ch;
+  --radius-pill: var(--r-pill);
+  --r-card: var(--r-md);
+  --r-glass: var(--r-lg);
+  --r-well: var(--r-sm);
+  --shadow-card: var(--sh-glass);
 
-  /* Motion (OFFER: eased out, never bouncy) */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-move: cubic-bezier(0.16, 1, 0.3, 1);
-  --spring: cubic-bezier(0.16, 1, 0.3, 1);
-  --t-state: 0.2s;
+  /* Motion */
+  --ease-out: var(--mo-out);
+  --ease-move: var(--mo-out);
+  --spring: var(--mo-spring);
+  --t-state: var(--mo-state);
   --t-sp: 0.3s;
-  --t-reveal: 0.45s;
+  --t-reveal: var(--mo-move);
   --t-glow: 2.4s;
   --slash-skew: 0deg;
 
@@ -103,19 +97,10 @@
   --g-rim: 0 0 0 0 transparent;
   --shadow-well: none;
 
-  /* Heat: the Spark by default; a One's tier sets its own (below) */
+  /* Heat: the spark by default; a One's tier sets its own (below). Tier colours are light and fill only, never text */
   --heat: var(--spark);
   --heat-core: #ffe2c4;
   --bloom: 24px;
-
-  /* DEC-098 tier colours: light and fill only, never text */
-  --tier-1: #ff7f14;
-  --tier-2: #ff4313;
-  --tier-3: #ff2e6b;
-  --tier-4: #ff0000;
-  --tier-5: #27d57f;
-  --tier-6: #8c2ff1;
-  --tier-7: #1e46d9;
 }
 
 /* The dark panel (OFFER's "Neutral by design" slab): brand moments, a One's corner, the office and launch screens */
@@ -126,9 +111,9 @@
   --line-soft: rgba(255, 255, 255, 0.08);
   --line-control: rgba(255, 255, 255, 0.28);
   --rule: rgba(255, 255, 255, 0.16);
-  --card: #1a1a1e;
-  --g-fill: #1a1a1e;
-  --g-well: #1a1a1e;
+  --card: var(--slab);
+  --g-fill: var(--slab);
+  --g-well: var(--slab);
   --link: #ffffff;
   --focus: #8fa8ff;
   --field-glow: rgba(143, 168, 255, 0.2);
@@ -188,7 +173,7 @@ a:hover {
 
 :focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .vh {
@@ -235,41 +220,61 @@ h3 {
   font-weight: 500;
 }
 
+/* The older title classes take the pack's scale (F-TYPE.scale): .t-display is d1, .t-h1 is h1, .t-h2 is h2 */
 .t-display {
   margin: 0;
-  font-size: clamp(45px, 5.84vw, 90px);
+  font-size: clamp(44px, 4.6vw, 64px);
   line-height: 1.02;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
 .t-h1 {
   margin: 0;
-  font-size: clamp(32px, 3.4vw, 48px);
-  line-height: 1.06;
-  letter-spacing: -0.028em;
+  font-size: 40px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 
 .t-h2 {
   margin: 0;
-  font-size: clamp(22px, 2vw, 26px);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  line-height: 1.12;
+  letter-spacing: -0.024em;
 }
 
-/* Section labels: small capitals with a number ("01 · Where to start") */
-.eyebrow {
-  margin: 0;
-  font: 500 11px/1.2 var(--font-sans);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
+@media (max-width: 640px) {
+  .t-display {
+    font-size: 32px;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+  }
+
+  .t-h1 {
+    font-size: 28px;
+    line-height: 1.12;
+    letter-spacing: -0.026em;
+  }
+
+  .t-h2 {
+    font-size: 21px;
+    line-height: 1.2;
+    letter-spacing: -0.018em;
+  }
 }
 
 .lead {
-  font-size: 19px;
+  max-width: 62ch;
+  font-size: 18px;
   line-height: 1.55;
-  color: var(--ink-muted);
+  color: var(--mute);
+}
+
+@media (max-width: 640px) {
+  .lead {
+    font-size: 16px;
+    line-height: 1.5;
+  }
 }
 
 /* ---------- Buttons and links ---------- */
@@ -660,8 +665,8 @@ h3 {
   font: 400 16px/1.5 var(--font-sans);
   color: var(--ink);
   background: var(--card);
-  border: 1px solid var(--line-control);
-  border-radius: var(--r-well);
+  border: 1px solid var(--fieldBorder); /* 3:1 on white (F-COLOR.contrast/2) */
+  border-radius: var(--r-sm);
 }
 
 .textarea {
@@ -672,7 +677,7 @@ h3 {
 .input:hover,
 .textarea:hover,
 .select:hover {
-  border-color: #9e9e99;
+  border-color: var(--mute);
 }
 
 .input:focus-visible,
@@ -688,7 +693,7 @@ h3 {
 
 .input::placeholder,
 .textarea::placeholder {
-  color: var(--ink-muted);
+  color: var(--placeholder);
 }
 
 .choices {
@@ -1023,14 +1028,4 @@ h3 {
   box-shadow: inset 0 0 0 1px #111111;
 }
 
-/* ---------- Reduced motion: nothing travels ---------- */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-}
+/* Reduced motion: foundation.css holds the one rule (F-MOTION.reduced). */

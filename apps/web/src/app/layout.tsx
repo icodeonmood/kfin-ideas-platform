@@ -9,8 +9,11 @@ import { currentUser } from "@/server/auth/current";
 
 import "@fontsource-variable/inter";
 import "@fontsource-variable/inter-tight";
+import "./tokens.css";
+import "./foundation.css";
 import "./globals.css";
 import "./offer.css";
+import "./motion.css";
 import "./ds-app.css";
 
 export const metadata: Metadata = {

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const STEP_AT_MS = [0, 4000, 8000, 14000, 16500, 30000];
 const FINAL = STEP_AT_MS.length - 1;
-const SPARK = "#FF5B14";
+const SPARK = "#F46835";
 const CRACKLE_AT_S = 4;
 
 type Props = { url: string; shownUrl: string; qr: { size: number; d: string } };

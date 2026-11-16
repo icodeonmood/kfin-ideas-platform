@@ -4,7 +4,7 @@
   --white: #ffffff;
   --electric: #2b5bff; /* only things you can press; white on it 5.2:1, on white 5.2:1 */
   --electric-dark: #1e46d9; /* hover; white on it 7.2:1 */
-  --spark: #ff5b14; /* the outlier: only on "the one" (the mark's spark, a One) */
+  /* --spark comes from tokens.css (DEC-102) */
   --graphite: #17181c; /* raised surfaces on Zed */
   --ash: #9ea3ad; /* secondary text on Zed, 7.8:1; never on white */
   --slate: #5c6270; /* secondary text on white, 6.1:1 */
