@@ -15,8 +15,8 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from core.crypto import decrypt_json, encrypt_json
 from core.db import Conn
+from onepc.context import open_text, seal_text
 
 
 class Refused(Exception):
@@ -81,13 +81,13 @@ def actor(user_id: str) -> str:
 
 
 def seal(text: str, table: str, column: str, row_id: str | int) -> bytes:
-    return encrypt_json({"text": text}, f"{table}.{column}:{row_id}")
+    """Private masked text for a `*_encrypted` column, sealed as the cut-over defines it (onepc.context, BLD-E006),
+    so the web app can open what the worker wrote."""
+    return seal_text(table, column, row_id, text)
 
 
 def unseal(blob: bytes | None, table: str, column: str, row_id: str | int) -> str | None:
-    if blob is None:
-        return None
-    return str(decrypt_json(bytes(blob), f"{table}.{column}:{row_id}")["text"])
+    return open_text(table, column, row_id, blob)
 
 
 def load_idea(conn: Conn, ref: str, *, lock: bool = False) -> dict[str, Any]:
