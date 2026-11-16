@@ -1,0 +1,46 @@
+/* S-R4 Ones Committee (board Committee), on the desk's table styles. Tokens only. */
+.cm-explain {
+  max-width: 760px;
+  margin: 0;
+}
+.cm-table tbody + tbody tr:first-child td {
+  border-top: 0;
+}
+.cm-dec,
+.cm-win {
+  display: table-cell;
+}
+.cm-dec > * + *,
+.cm-win > * + * {
+  display: block;
+  margin-top: 6px;
+}
+.cm-reason {
+  margin: 8px 0 0;
+  max-width: 46ch;
+}
+.cm-detail td {
+  padding-top: 0;
+}
+.cm-review,
+.cm-reverse {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  padding: 4px 0 8px;
+}
+.cm-reverse h2,
+.cm-review h2 {
+  margin: 0;
+}
+.cm-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .cm-acts .btn {
+    width: 100%;
+  }
+}
