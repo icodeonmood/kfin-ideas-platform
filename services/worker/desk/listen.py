@@ -20,7 +20,7 @@ from desk.worth import Worth, tiles
 # Must match the browser engine's estimate (apps/web/src/lib/desk/listen.ts) so the server's lengths and the
 # player's ticks agree.
 CHARS_PER_SECOND = 15.0
-PAUSE_SECONDS = 0.6
+PART_GAP_SECONDS = 0.5  # between one part and the next
 
 _MASK = re.compile(r"\s*•{2,}[^\s.,;:!?)]*")  # "Folio ••••89" → "Folio hidden"
 _EMPTY: dict[str, str] = {
@@ -60,7 +60,7 @@ class Answer:
 class ScriptPart:
     part: Part
     title: str
-    text: str
+    text: str  # the body; the browser speaks "{title}. {text}" so a listener hears where each part starts
     seconds: float
 
 
@@ -72,7 +72,8 @@ class Script:
 
     def as_json(self) -> dict[str, object]:
         at, chapters = 0.0, []
-        for p in self.parts:
+        for i, p in enumerate(self.parts):
+            at += PART_GAP_SECONDS if i else 0.0
             chapters.append({"part": p.part, "at": round(at, 1)})
             at += p.seconds
         return {
@@ -107,8 +108,14 @@ def _worth_text(worth: Worth | None) -> str:
     return " ".join(said)
 
 
-def estimate(text: str) -> float:
-    return len(text) / CHARS_PER_SECOND + PAUSE_SECONDS
+def spoken(title: str, text: str) -> str:
+    """What the browser says for one part (apps/web/src/lib/desk/listen.ts `spokenText`)."""
+    return f"{title}. {text}" if text.strip() else f"{title}."
+
+
+def estimate(title: str, text: str) -> float:
+    """Seconds at normal speed, as the browser engine estimates them."""
+    return len(spoken(title, text)) / CHARS_PER_SECOND
 
 
 def build(
@@ -128,10 +135,10 @@ def build(
             body = _worth_text(worth)
         if part == "evidence" and not body.strip():
             body = _files_text(files)
-        spoken = speakable(body) or _EMPTY[part]
+        body_said = speakable(body) or _EMPTY[part]
         for a in answers.get(part, ()):
-            spoken += f" {a.by_first_name} answered: {speakable(a.text)}"
-        line = f"{PART_NAMES[part]}. {spoken}"
-        out.append(ScriptPart(part, PART_NAMES[part], line, estimate(line)))
+            body_said += f" {a.by_first_name} answered: {speakable(a.text)}"
+        out.append(ScriptPart(part, PART_NAMES[part], body_said, estimate(PART_NAMES[part], body_said)))
     digest = hashlib.sha256("\n".join(p.text for p in out).encode()).hexdigest()[:16]
-    return Script(tuple(out), sum(p.seconds for p in out), digest)
+    total = sum(p.seconds for p in out) + PART_GAP_SECONDS * (len(out) - 1)
+    return Script(tuple(out), total, digest)
