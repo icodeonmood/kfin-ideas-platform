@@ -293,6 +293,17 @@ def review_veto(item_id: int, body: dict[str, Any]) -> JSONResponse:
     return _review_call(veto, item_id, str(body.get("member_user_id") or ""), str(body.get("reason") or ""))
 
 
+@app.get("/internal/config/promises", dependencies=[Depends(require_token)])
+def config_promises() -> JSONResponse:
+    """P-PRODUCT.promises from the company repo's rules/promises.md (BLD-A181): the times, windows and minimum
+    lengths the app shows people and keeps to. Read on each call, so a change needs no release."""
+    from core.config import get_settings
+    from rules import load_rule
+
+    data = dict(load_rule(get_settings().company_repo_path, "promises").data)
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/internal/wall", dependencies=[Depends(require_token)])
 def wall_view() -> JSONResponse:
     """The public wall (§4.13). Everything on it has passed review and its summary check."""

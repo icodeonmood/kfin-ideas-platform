@@ -38,6 +38,7 @@ RULE_PATHS: dict[str, str] = {
     "compliance-tier": "rules/compliance-tier.md",
     "points": "rules/points.md",
     "priority": "rules/priority.md",
+    "promises": "rules/promises.md",
     "reason-codes": "rules/reason-codes.md",
     "redirects": "rules/redirects.md",
     "routing": "rules/routing.md",
@@ -135,6 +136,15 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
         codes = [c["code"] for c in data["codes"]]
         if len(codes) != len(set(codes)):
             problems.append("reason codes must be unique")
+    elif name == "promises":
+        q, nn = data["questions"], data["not_now"]
+        if q["answer_default_days"] not in q["answer_options_days"]:
+            problems.append("questions.answer_default_days must be one of answer_options_days")
+        if nn["return_default_months"] not in nn["return_options_months"]:
+            problems.append("not_now.return_default_months must be one of return_options_months")
+        cw = data["committee_window"]
+        if cw["days"] > cw["max_months"] * 31:
+            problems.append("committee_window.days cannot exceed max_months")
     elif name == "sla":
         for key, spec in data.items():
             if key != "version" and not ({"limit_wd", "limit_days", "due_wd_before_session"} & set(spec)):
