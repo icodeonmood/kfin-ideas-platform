@@ -952,7 +952,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="remove the demo's own rows and files and stop (before e2e here)",
     )
+    parser.add_argument(
+        "--set",
+        choices=("legacy", "1pc"),
+        default="legacy",
+        help="legacy: this demo (the old screens); 1pc: the 1% Club seed for the handoff's tables (bootstrap.club_seed)",
+    )
     args = parser.parse_args(argv)
+    if args.set == "1pc":
+        from bootstrap import club_seed
+
+        return club_seed.main(["--reset"] if args.reset else ["--remove"] if args.remove else [])
     _dev_only()
     with connect(autocommit=True) as conn:
         if args.remove:
