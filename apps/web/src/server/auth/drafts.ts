@@ -3,11 +3,9 @@
  * title, when and on which device it was saved, and the step.
  *
  * Drafts are `ideas` rows with status 'draft' (lane E's cut-over, 20261121500100: title, step, saved_at,
- * saved_device, archived_at), owned through contributor_map. Before the cut-over is on a database those columns
- * are missing, and the lookup finds nothing: the expired state then shows without the card (BLD-A174).
+ * saved_device, archived_at), owned through contributor_map. The title is the masked one (L-HIDE), shown only to
+ * the browser that held this person's session. No draft, or one without a title yet: the card is left out.
  */
-import { sql } from "kysely";
-
 import { getDb } from "../db";
 
 export type DraftCard = {
@@ -27,37 +25,27 @@ export interface DraftLookup {
   card(ownerId: string, draftId: string): Promise<DraftCard | null>;
 }
 
-const MISSING = new Set(["42P01", "42703"]); // undefined table, undefined column
-
 export const pgDraftLookup: DraftLookup = {
   async card(ownerId, draftId) {
-    try {
-      const r = await sql<{
-        id: string;
-        title: string | null;
-        saved_at: Date | null;
-        saved_device: "laptop" | "phone" | null;
-        step: string | null;
-      }>`
-        SELECT i.id, i.title, i.saved_at, i.saved_device, i.step
-        FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code
-        WHERE i.id = ${draftId}::uuid AND m.user_id = ${ownerId}::uuid
-          AND i.status = 'draft' AND i.archived_at IS NULL
-      `.execute(getDb());
-      const row = r.rows[0];
-      if (!row || !row.title || !row.saved_at) return null;
-      return {
-        id: row.id,
-        title: row.title,
-        savedAt: new Date(row.saved_at),
-        savedOn: row.saved_device,
-        step: row.step ?? "tell",
-        keptLine: null,
-      };
-    } catch (err) {
-      if (MISSING.has(String((err as { code?: unknown }).code))) return null;
-      throw err;
-    }
+    const row = await getDb()
+      .selectFrom("ideas")
+      .innerJoin("contributor_map", "contributor_map.contributor_code", "ideas.contributor_code")
+      .select(["ideas.id", "ideas.title", "ideas.saved_at", "ideas.saved_device", "ideas.step"])
+      .where("ideas.id", "=", draftId)
+      .where("contributor_map.user_id", "=", ownerId)
+      .where("ideas.status", "=", "draft")
+      .where("ideas.archived_at", "is", null)
+      .executeTakeFirst();
+    if (!row || !row.title || !row.saved_at) return null;
+    const device = row.saved_device === "laptop" || row.saved_device === "phone" ? row.saved_device : null;
+    return {
+      id: row.id,
+      title: row.title,
+      savedAt: new Date(row.saved_at),
+      savedOn: device,
+      step: row.step ?? "tell",
+      keptLine: null,
+    };
   },
 };
 
