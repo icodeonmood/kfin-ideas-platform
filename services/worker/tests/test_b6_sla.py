@@ -228,3 +228,23 @@ def test_an_answer_that_lands_first_wins_over_the_withdrawal(item: Any) -> None:
     engine.stop(db, "idea", "IDEA-2026-000951", "needs_info")
     engine.tick(db, now=due + dt.timedelta(days=1))
     assert db.execute("SELECT state FROM sla_timers WHERE id = %s", (t2,)).fetchone()["state"] == "stopped"
+
+
+def test_a_timer_kind_with_no_rule_is_skipped_and_the_rest_still_run(item: Any) -> None:
+    """BLD-A182: the 1% Club cut-over lets other lanes add timer kinds with their own sweeps. One the engine has no
+    rule for stays running and is skipped by ID; the timers behind it are still handled."""
+    db, _users, rid, _ = item
+    db.execute(
+        "INSERT INTO sla_timers (entity_type, entity_id, stage, started_at, due_at) "
+        "VALUES ('idea', 'IDEA-2026-000952', 'impact_30', %s, %s)",
+        (MONDAY - dt.timedelta(days=40), MONDAY - dt.timedelta(days=10)),
+    )
+    tid = engine.start(db, "review_item", rid, "veto_window", now=MONDAY)
+    due = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (tid,)).fetchone()["due_at"]
+    counts = engine.tick(db, now=due + dt.timedelta(minutes=1))
+    assert counts["skipped"] == 1 and counts["expired"] == 1
+    rows = db.execute(
+        "SELECT stage, state FROM sla_timers WHERE entity_id IN ('IDEA-2026-000952', %s)", (rid,)
+    ).fetchall()
+    states = {r["stage"]: r["state"] for r in rows}
+    assert states == {"impact_30": "running", "veto_window": "stopped"}
