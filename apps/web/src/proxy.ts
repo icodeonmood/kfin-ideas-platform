@@ -1,7 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { BANNERS, switchesFor } from "@/lib/killswitch-routes";
-import { allowedBeforePrivacyNotice, canSeePage, decide, effectiveRoles, isPublic } from "@/lib/rbac";
+import {
+  allowedBeforePrivacyNotice,
+  canSeePage,
+  decide,
+  effectiveRoles,
+  isAuthExempt,
+  isPublic,
+} from "@/lib/rbac";
 import {
   cookieOptions,
   readSession,
@@ -23,7 +30,7 @@ const redirect = (path: string) => NextResponse.redirect(new URL(path, appBaseUr
 
 /**
  * Runs before every request except static files (Next.js proxy, Node.js runtime). In order:
- * cross-origin writes refused → sign-in routes (their kill switches only) → session (401 / sign-in; `/` is
+ * cross-origin writes refused → sign-in routes (listed ones only, then their kill switches) → session (401 / sign-in; `/` is
  * Landing when signed out) → privacy notice (403 / notice page) → RBAC from
  * policy/rbac.yaml (unknown 404, denied 403) → kill switches (503 with a banner, §7.6) → sliding session refresh.
  */
@@ -38,8 +45,12 @@ export async function proxy(request: NextRequest) {
   if (!SAFE_METHODS.has(method) && origin && origin !== appBaseUrl().origin) {
     return json(403, { error: "cross_origin" });
   }
-  // Sign-in routes run without a session; the email-code ones still meet their switch (BLD-E002, §7.6).
-  if (pathname.startsWith("/auth/")) return (await killSwitchCheck(method, pathname)) ?? NextResponse.next();
+  // Sign-in routes run without a session, but only those policy/rbac.yaml lists in `auth_exempt` (BLD-A177);
+  // the email-code ones still meet their switch (BLD-E002, §7.6).
+  if (pathname.startsWith("/auth/")) {
+    if (!isAuthExempt(method, pathname)) return json(404, { error: "not_found" });
+    return (await killSwitchCheck(method, pathname)) ?? NextResponse.next();
+  }
   if (PUBLIC_PAGES.has(pathname) || (isApi && isPublic(method, pathname))) {
     return NextResponse.next();
   }
