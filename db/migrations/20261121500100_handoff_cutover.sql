@@ -130,6 +130,7 @@ UPDATE ideas SET
     WHEN stage IN ('declined', 'already_solved', 'redirected', 'appealed') THEN 'not_picked'
     WHEN stage = 'withdrawn' THEN 'withdrawn'
     WHEN stage = 'merged' THEN 'merged'
+    ELSE 'draft'  -- a stage added after this mapping was written still satisfies NOT NULL
   END,
   status_changed_at = updated_at,
   shared_at = submitted_at;
