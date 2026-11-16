@@ -53,7 +53,7 @@ SELECT w.id AS window_id, w.state, w.opens_at, w.closes_at, w.max_closes_at, w.e
        r.id AS reversal_id, r.to_choice, r.note_encrypted AS reversal_note, r.by_user_id AS reversed_by,
        r.at AS reversed_at, r.return_at AS reversed_return_at,
        i.id AS idea_uuid, i.idea_id, i.title, i.area, i.city, i.contributor_code, i.status,
-       li.idea_id AS lead_idea_id
+       li.idea_id AS lead_idea_id, li.contributor_code AS lead_code, d.id AS this_decision_id
 FROM decision_windows w
 LEFT JOIN idea_decisions d ON d.id = w.decision_id
 LEFT JOIN merges m ON m.id = w.merge_id
@@ -105,7 +105,7 @@ def _row_json(
                 f"Reversed {when.day(r['reversed_at'], at, tz)}. Final. {sharer.first_name} has the note."
             ),
         }
-    own = is_own(conn, user_id, {"id": r["idea_uuid"], "contributor_code": r["contributor_code"]})
+    own = _own(conn, user_id, r)
     open_ = ww.state in ("open", "extended")
     return {
         "window_id": str(r["window_id"]),
@@ -134,6 +134,20 @@ def _row_json(
         "action": "Review" if open_ else "See it",
         "area": r["area"] or "",
     }  # fmt: skip
+
+
+def _own(conn: Conn, user_id: str, r: dict[str, Any]) -> bool:
+    """L-COMMITTEE.rules/9: a member's own idea. For a desk merge both ideas count: the one that joined and the
+    one that leads."""
+    if is_own(conn, user_id, {"id": r["idea_uuid"], "contributor_code": r["contributor_code"]}):
+        return True
+    return r["merge_id"] is not None and is_own(
+        conn, user_id, {"id": r["lead_idea_uuid"], "contributor_code": r["lead_code"]}
+    )
+
+
+# A reversal changes a decision that still stands as the desk left it (picked may already be being built).
+STILL = {"pick": ("picked", "being_built"), "not_now": ("not_now",), "not_picked": ("not_picked",)}
 
 
 def _tab(r: dict[str, Any], at: dt.datetime) -> Tab:
@@ -232,10 +246,11 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
     note = str(body.get("note") or "")
     with audited(conn), conn.transaction():
         r = _load(conn, window_id, lock=True)
-        idea = dict(
-            conn.execute("SELECT * FROM ideas WHERE id = %s FOR UPDATE", (r["idea_uuid"],)).fetchone() or {}
-        )
-        if is_own(conn, user_id, idea):
+        locked = sorted({str(r["idea_uuid"]), str(r["lead_idea_uuid"] or r["idea_uuid"])})
+        rows = {str(x["id"]): dict(x) for x in conn.execute(
+            "SELECT * FROM ideas WHERE id = ANY(%s::uuid[]) ORDER BY id FOR UPDATE", (locked,))}  # fmt: skip
+        idea = rows[str(r["idea_uuid"])]
+        if _own(conn, user_id, r):
             raise Refused(
                 403, "own_idea", "This is your own idea. Another member takes it.",
                 audit=(actor(user_id), "committee.own_idea_refused", f"window:{window_id}", {}),
@@ -254,6 +269,21 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             w = reverse(_window(r), t)
         except WindowRefused as exc:
             raise _refuse(exc) from None
+        # The window may still be open while the idea has moved on: a Not now that came back and was decided again,
+        # a merge already undone. Then this decision no longer stands as the desk left it, and it is not reversed.
+        latest = conn.execute(
+            "SELECT id FROM idea_decisions WHERE idea_uuid = %s ORDER BY at DESC LIMIT 1", (r["idea_uuid"],)
+        ).fetchone()
+        overtaken = (
+            (idea["status"] != "merged" or str(idea["merged_into"]) != str(r["lead_idea_uuid"]))
+            if is_merge
+            else (latest is None or str(latest["id"]) != str(r["this_decision_id"])
+                  or idea["status"] not in STILL[str(r["choice"])])
+        )  # fmt: skip
+        if overtaken:
+            raise Refused(
+                409, "window_closed", "A newer decision has replaced this one. There is nothing to reverse."
+            )
         masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip())
         reversal_id = str(uuid.uuid4())
         return_at = decide.return_at(t, return_in or p.return_default, p) if to == "not_now" else None
@@ -349,9 +379,9 @@ def for_idea(
     return out
 
 
-READERS = frozenset(
-    {"reviewer", "committee", "admin", "core_committee"}
-)  # P-PRODUCT.privacy: desk and committee
+# P-PRODUCT.privacy: the review desk and the committee read a decision's reason; admins do not. `core_committee` is
+# the committee's role until lane E retires it with the old pages.
+READERS = frozenset({"reviewer", "committee", "core_committee"})
 
 
 def may_read_decision(conn: Conn, viewer_id: str, idea: dict[str, Any]) -> bool:
