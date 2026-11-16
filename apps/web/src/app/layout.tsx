@@ -15,6 +15,7 @@ import "./foundation.css";
 import "./globals.css";
 import "./offer.css";
 import "./shell.css";
+import "./components.css";
 import "./motion.css";
 import "./ds-app.css";
 

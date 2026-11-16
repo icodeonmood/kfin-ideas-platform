@@ -1,0 +1,804 @@
+/*
+ * 1% Club core components (lane D): C-PILL, C-FIELD, C-FIELD-MSG, C-CARD, C-SKELETON, C-EMPTY, C-CHIP, C-SORTS,
+ * C-TABS, C-TRACK. Values from the pack's kit.css, field-messages.css and the boards, on its tokens. The React side is
+ * in src/components/ui/. Motion for these (press, choices landing, field messages, the track drawing) is in motion.css.
+ */
+
+/* ---------- C-PILL: dot and words, never the dot alone ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 4px 10px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: var(--sunk);
+  color: var(--ink);
+  font: 500 13px/1.4 var(--ft);
+  white-space: nowrap;
+}
+
+.pill > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.pill.blue {
+  background: var(--wash);
+  color: var(--blueT);
+}
+
+.pill.blue > i {
+  background: var(--blue);
+}
+
+.pill.ok {
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.pill.ok > i {
+  background: var(--okD);
+}
+
+.pill.warn {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+
+.pill.warn > i {
+  background: var(--warnD);
+}
+
+.pill.bad {
+  background: var(--badW);
+  color: var(--badT);
+}
+
+.pill.bad > i {
+  background: var(--badD);
+}
+
+.pill.band {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.pill.band > i {
+  background: #ffffff;
+}
+
+.pill.soon {
+  background: transparent;
+  color: #3f3f44;
+  box-shadow: inset 0 0 0 1px #bdbdb7;
+}
+
+/* ---------- C-FIELD ---------- */
+.lbl {
+  display: block;
+  margin: 0 0 8px;
+  font: 500 15px/1.4 var(--ft);
+  color: var(--ink);
+}
+
+.lbl .opt {
+  font-weight: 400;
+  color: var(--mute);
+}
+
+.fld,
+.input,
+.textarea,
+.select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ctl);
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--ft);
+  transition:
+    border-color var(--mo-quick) ease,
+    box-shadow var(--mo-quick) ease;
+}
+
+textarea:is(.fld, .textarea) {
+  min-height: 112px;
+  resize: vertical;
+}
+
+:is(.fld, .input, .textarea, .select)::placeholder {
+  color: var(--placeholder);
+}
+
+:is(.fld, .input, .textarea, .select):focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-glow);
+}
+
+:is(.fld, .input, .textarea, .select)[aria-invalid="true"] {
+  border-color: var(--badT);
+  box-shadow: 0 0 0 3px var(--bad-glow);
+}
+
+:is(.fld, .input, .textarea, .select):disabled {
+  background: var(--sunk);
+  color: var(--mute);
+}
+
+:is(.fld, .input, .textarea, .select)[readonly] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding-inline: 0;
+}
+
+.help {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+/* ---------- C-FIELD-MSG: a tinted note under its field or group; never a toast ---------- */
+.fmsg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 7px 12px 7px 9px;
+  border-radius: var(--r-sm);
+  background: var(--badW);
+  color: var(--badT);
+  font: 500 13.5px/1.45 var(--ft);
+  box-shadow: inset 0 0 0 1px var(--bad-ring);
+}
+
+.fmsg.warn {
+  background: var(--warnW);
+  color: var(--warnT);
+  box-shadow: inset 0 0 0 1px var(--warn-ring);
+}
+
+.fmsg-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fmsg-ic::before {
+  content: "!";
+  color: #ffffff;
+  font: 700 11px/1 var(--ft);
+}
+
+/* ---------- C-CARD: surfaces ---------- */
+.card {
+  position: relative;
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid var(--rule2);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.panel {
+  position: relative;
+  box-sizing: border-box;
+  padding: 24px;
+  border-radius: var(--r-md);
+  background: var(--glass-panel);
+  -webkit-backdrop-filter: var(--glass-panel-blur);
+  backdrop-filter: var(--glass-panel-blur);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 34px 80px -40px rgba(57, 93, 237, 0.34);
+}
+
+.tile {
+  box-sizing: border-box;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.05);
+}
+
+.tile.sm {
+  border-radius: var(--r-sm);
+}
+
+.well {
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+}
+
+.note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.note.blue {
+  background: var(--wash);
+  color: var(--noteBlueText);
+}
+
+.slab {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  padding: 32px;
+  border-radius: var(--r-lg);
+  background: var(--slab);
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.placeholder {
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px dashed #bdbdb7;
+  border-radius: var(--r-md);
+}
+
+/* A whole-card link: the title is the link, the card is the hit area, one focus ring (C-CARD.rules/4) */
+.card-link {
+  cursor: pointer;
+}
+
+.card-link .card-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-link .card-title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.card-link .card-title a:focus-visible {
+  outline: none;
+}
+
+.card-link:has(.card-title a:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.card-link:hover {
+  border-color: rgba(17, 17, 17, 0.16);
+}
+
+@media (max-width: 640px) {
+  .card,
+  .panel,
+  .placeholder {
+    padding: 18px;
+  }
+}
+
+/* ---------- C-SKELETON ---------- */
+.sk {
+  display: block;
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--sunk) 0%, var(--skeletonHi) 50%, var(--sunk) 100%);
+  background-size: 200% 100%;
+  animation: sk 1.4s linear infinite;
+}
+
+.sk.tint {
+  background: linear-gradient(90deg, #e6ebff 0%, #f1f4ff 50%, #e6ebff 100%);
+  background-size: 200% 100%;
+}
+
+.sk-rows {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sk-row {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+@keyframes sk {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Content arriving where its skeleton was: up 4px out of a 3px blur, no layout shift */
+.arrived {
+  animation: skIn 440ms var(--mo-out) backwards;
+}
+
+@keyframes skIn {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+    filter: blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+}
+
+/* ---------- C-EMPTY ---------- */
+.emp {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 8px 0;
+}
+
+.emp.center {
+  justify-items: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.emp .emp-t {
+  margin: 0;
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.014em;
+}
+
+.emp .emp-b {
+  margin: 0;
+  max-width: 52ch;
+  color: var(--mute);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.emp .emp-a {
+  margin-top: 8px;
+}
+
+/* ---------- C-CHIP: single choice (radios), multi choice (pressed), filters ---------- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--ink);
+  font: 500 14.5px/1 var(--ft);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.chip:hover {
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.chip[aria-checked="true"],
+.chip[aria-pressed="true"] {
+  background: var(--wash);
+  color: var(--blueT);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+
+.chip .chip-tick {
+  display: none;
+}
+
+.chip[aria-checked="true"] .chip-tick,
+.chip[aria-pressed="true"] .chip-tick {
+  display: inline-flex;
+}
+
+.chip .chip-n {
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip[aria-checked="true"] .chip-n,
+.chip[aria-pressed="true"] .chip-n {
+  color: inherit;
+}
+
+.chip[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 40px on desktop; 44px wherever the pointer is coarse and on phones (F-SPACE.targets) */
+@media (pointer: coarse), (max-width: 640px) {
+  .chip {
+    min-height: 44px;
+    font-size: 15px;
+  }
+}
+
+/* Phone: long chip rows scroll sideways inside themselves, with a fade that says there is more */
+@media (max-width: 640px) {
+  .chips.scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding: 2px var(--page-gutter) 4px;
+    scroll-padding-inline: var(--page-gutter);
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+  }
+
+  .chips.scroll > * {
+    flex: none;
+    scroll-snap-align: start;
+  }
+}
+
+/* ---------- C-SORTS ---------- */
+.sorts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sorts-l {
+  margin-right: 4px;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.sorts button {
+  position: relative;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--mute2);
+  font: 500 13.5px/1 var(--ft);
+  cursor: pointer;
+}
+
+.sorts button:hover {
+  color: var(--ink);
+}
+
+.sorts button[aria-pressed="true"] {
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--ink);
+}
+
+@media (pointer: coarse) {
+  .sorts button::after {
+    content: "";
+    position: absolute;
+    inset: -6px 0;
+  }
+}
+
+.sorts-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- C-TABS ---------- */
+.tabs {
+  position: relative;
+  display: flex;
+  gap: 28px;
+  border-bottom: 1px solid var(--rule2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs [role="tab"] {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mute2);
+  font: 500 16px/1 var(--ft);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tabs [role="tab"]:hover {
+  color: var(--ink);
+}
+
+.tabs [role="tab"][aria-selected="true"] {
+  color: var(--ink);
+}
+
+.tabs [role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.tab-n {
+  min-width: 20px;
+  padding: 2px 6px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  color: var(--mute);
+  font: 500 13px/1.2 var(--ft);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+[aria-selected="true"] > .tab-n {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+/* ---------- C-TRACK: five stages as nodes on a line ---------- */
+.trk {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trk::before,
+.trk::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 11px;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.trk::before {
+  width: calc((100% + 16px) / 5 * 4);
+  background: repeating-linear-gradient(90deg, var(--rule) 0 6px, transparent 6px 10px);
+}
+
+.trk::after {
+  width: calc((100% + 16px) / 5 * var(--fill-i, 0));
+  background: var(--ink);
+}
+
+.trk > li {
+  position: relative;
+  padding-right: 8px;
+}
+
+.nd {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px var(--edge);
+  color: #ffffff;
+}
+
+.trk > li.done .nd,
+.vtrk > li.done .nd {
+  background: var(--ink);
+  box-shadow: none;
+}
+
+.trk > li.now .nd,
+.vtrk > li.now .nd {
+  box-shadow:
+    inset 0 0 0 2px var(--blue),
+    0 0 0 4px var(--focus-glow);
+}
+
+:is(.trk, .vtrk) > li.now .nd::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+:is(.trk, .vtrk) > li.off .nd {
+  box-shadow: none;
+  border: 2px dashed var(--underline);
+}
+
+.sn {
+  margin: 14px 0 0;
+  color: var(--ink);
+  font: 500 17px/1.2 var(--fd);
+  letter-spacing: -0.012em;
+}
+
+:is(.trk, .vtrk) > li.off .sn {
+  color: var(--mute);
+}
+
+.sw {
+  margin: 6px 0 0;
+  color: var(--mute);
+  font-size: 13.5px;
+  line-height: 1.45;
+  letter-spacing: 0.004em;
+}
+
+:is(.trk, .vtrk) > li.now .sw {
+  color: var(--ink);
+}
+
+.nowtag {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 12px/1.4 var(--ft);
+}
+
+/* Vertical: phones and narrow cards */
+.vtrk {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vtrk > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 14px;
+  padding-bottom: 18px;
+}
+
+.vtrk > li::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 24px;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(180deg, var(--rule) 0 6px, transparent 6px 10px);
+}
+
+.vtrk > li.done::before {
+  background: var(--ink);
+}
+
+.vtrk > li:last-child::before {
+  display: none;
+}
+
+.vtrk .nd {
+  grid-row: 1 / span 3;
+}
+
+.vtrk .sn {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+@media (max-width: 640px) {
+  .trk.auto {
+    display: none;
+  }
+}
+
+@media (min-width: 641px) {
+  .vtrk.auto {
+    display: none;
+  }
+}
+
+/* Sorts: the row on desktop, the cycling button on a phone */
+.sorts-phone {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .sorts-wide {
+    display: none;
+  }
+
+  .sorts-phone {
+    display: inline-flex;
+  }
+}
+
+/* The component kit page (dev and test only) */
+.kit {
+  display: grid;
+  gap: 24px;
+}
+
+.kit .card {
+  display: grid;
+  gap: 16px;
+}
+
+.kit-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 24px;
+}
+
+.kit-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.kit-surfaces {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 16px;
+}
+
+.kit-surfaces > h2 {
+  grid-column: 1 / -1;
+}

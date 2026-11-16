@@ -58,18 +58,18 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. Lanes B fill `desk` and `committee` rows | M to L | P0 | D |
 | `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
 | `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
-| `C-BUTTON` | exists, differs (26 files use the old `.button`) | M | P0 | D |
-| `C-CHIP` | exists, differs | M | P0 | D |
-| `C-PILL` | missing | S | P0 | D |
-| `C-FIELD`, `C-FIELD-MSG` | exists, differs | S | P0 | D |
-| `C-CARD` | exists, differs (no glass today) | M | P0 | D |
+| `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
+| `C-CHIP` | built: `components/ui/chips.tsx` (`ChoiceChips` radio group with arrows, `MultiChips` pressed), `components.css`; the sliding ring waits for the FLIP polish | M | P0 | D |
+| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`) | S | P0 | D |
+| `C-FIELD`, `C-FIELD-MSG` | built: `components/ui/field.tsx` (`Field` wires label, help, message, `aria-describedby`, `aria-invalid`; `FieldMsg`); 3:1 border; the six-box code field and the question box are still to come | S | P0 | D |
+| `C-CARD` | built: `components.css` (`.card`, `.panel`, `.tile`, `.well`, `.note`, `.note.blue`, `.slab`, `.placeholder`, `.card-link`); glass inside the shell (`shell.css`) | M | P0 | D |
 | `C-AVATAR` | disc, sizes and rings built (`components/ui/avatar.tsx`); crew faces to come | S | P0 | D |
-| `C-SKELETON` | missing | S | P0 | D |
-| `C-EMPTY` | exists, differs | S | P0 | D |
-| `C-SORTS` | missing | S | P0 | D |
-| `C-TABS` | missing | S to M | P0 | D |
+| `C-SKELETON` | built: `components/ui/skeleton.tsx` (`Skeleton`, `SkeletonRows`, `Loading`, `Spinner`) | S | P0 | D |
+| `C-EMPTY` | built: `components/ui/empty.tsx`; screens replace their ad hoc lines as they are rebuilt | S | P0 | D |
+| `C-SORTS` | built: `components/ui/sorts.tsx` (row on desktop, cycling button on a phone); row gliding waits for the FLIP polish | S | P0 | D |
+| `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
 | `C-SEARCH` | missing | M | P0 | D (bar), F (ask) |
-| `C-TRACK` | missing | S to M | P0 | D |
+| `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | exists, differs (keep the quarantine and scan logic in `attachments.tsx`) | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | missing | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
