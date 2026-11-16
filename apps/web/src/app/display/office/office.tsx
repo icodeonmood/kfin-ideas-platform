@@ -152,7 +152,13 @@ export function OfficeScreen({ initial, seconds, stars }: Props) {
     const t = window.setInterval(async () => {
       try {
         const res = await fetch("/api/display/office", { cache: "no-store" });
-        if (!res.ok) return; // signed out or paused upstream: keep what is on screen
+        if (res.status === 503) {
+          // `ones.public` switched off: the Ones leave the screen and it shows the resting line.
+          const body = (await res.json().catch(() => ({}))) as { switch?: string };
+          if (live && body.switch === "ones.public") setData({ paused: true, ones: [] });
+          return;
+        }
+        if (!res.ok) return; // signed out, or the network: keep what is on screen
         const next = (await res.json()) as OfficeData;
         if (!live) return;
         const at = next.ones.findIndex((o) => o.number === shownNumber.current);
