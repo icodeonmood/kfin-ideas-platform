@@ -19,6 +19,8 @@ from typing import Any
 from core.db import Conn
 from desk.store import now
 
+SWEEP_LOCK = 0x1C1B0001  # pg advisory lock key for the review side's sweep (lane B)
+
 
 def return_due(conn: Conn, at: dt.datetime | None = None) -> int:
     """Bring back every Not now whose return date has come. Returns how many came back."""
@@ -36,10 +38,18 @@ def return_due(conn: Conn, at: dt.datetime | None = None) -> int:
 
 
 def run_due(conn: Conn, at: dt.datetime | None = None) -> dict[str, Any]:
-    """The sweep. Returns counts only."""
+    """The sweep. Returns counts only. Two runs never overlap: a second one returns zeros at once."""
+    t = at or now()
+    with conn.transaction():  # one sweep at a time: a slow run and the next tick never overlap
+        held = conn.execute("SELECT pg_try_advisory_xact_lock(%s) AS got", (SWEEP_LOCK,)).fetchone()
+        if held is None or not held["got"]:
+            return {"returned": 0, "windows_closed": 0, "reminded": 0}
+        return _sweep(conn, t)
+
+
+def _sweep(conn: Conn, t: dt.datetime) -> dict[str, Any]:
     from desk import asking, committee, promises
 
-    t = at or now()
     returned = return_due(conn, t)
     closed = sum(
         1
