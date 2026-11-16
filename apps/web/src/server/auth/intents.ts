@@ -4,16 +4,15 @@
  * the round trip to the identity provider and a switch from single sign-on to an email code.
  *
  * The browser holds only a random attempt key in an HttpOnly cookie; the table keeps its SHA-256, like sessions.
- * Storage sits behind `IntentStore`: `sign_in_intents` arrives in lane E's cut-over (20261121500100), and the
- * in-memory store backs the unit tests until then.
+ * Storage sits behind `IntentStore`: `sign_in_intents` from lane E's cut-over (20261121500100), and an in-memory
+ * twin for the unit tests.
  */
 import { createHash, randomBytes } from "node:crypto";
 
-import { sql } from "kysely";
+import { isEnumValue } from "@/lib/contracts/enums";
 
 import { getDb } from "../db";
 import { safeNext } from "./session";
-import { withTableFallback } from "./table-fallback";
 
 export const ATTEMPT_COOKIE = "ideas_attempt";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -33,18 +32,8 @@ export const newAttemptKey = () => randomBytes(32).toString("base64url");
 export const attemptKeyHash = (key: string) => createHash("sha256").update(key, "utf8").digest("hex");
 
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** E-ENUMS draft steps, as `sign_in_intents.step` and `ideas.step` allow them (lane E's cut-over). */
-export const DRAFT_STEPS: ReadonlySet<string> = new Set([
-  "tell",
-  "check:1",
-  "check:2",
-  "check:3",
-  "check:4",
-  "check:5",
-  "check:6",
-  "check:7",
-  "send",
-]);
+/** E-ENUMS draft steps (`draft_step` in contracts/1pc/enums.json), as `sign_in_intents.step` allows them. */
+export const isDraftStep = (value: unknown): value is string => isEnumValue("draft_step", value);
 
 /**
  * A clean intent from untrusted input: `to` is a same-site path (never another site), the draft id a UUID and the
@@ -59,8 +48,7 @@ export function cleanIntent(input: { to?: unknown; draftId?: unknown; step?: unk
     typeof input.draftId === "string" && DRAFT_ID.test(input.draftId)
       ? input.draftId.toLowerCase()
       : (fromPath?.draftId ?? null);
-  const step =
-    typeof input.step === "string" && DRAFT_STEPS.has(input.step) ? input.step : (fromPath?.step ?? null);
+  const step = isDraftStep(input.step) ? input.step : (fromPath?.step ?? null);
   return { to, draftId, step: draftId ? (step ?? "tell") : null };
 }
 
@@ -128,17 +116,16 @@ export class MemoryIntentStore implements IntentStore {
 }
 
 /**
- * `sign_in_intents` (lane E's cut-over, 20261121500100): attempt_key (the SHA-256 here, text), destination,
- * draft_id (uuid, references ideas), step (E-ENUMS draft step), created_at, used_at. Raw SQL so this file does not
- * depend on generated types before the table is on `main`.
+ * `sign_in_intents` (lane E's cut-over, 20261121500100): attempt_key (the SHA-256 here), destination, draft_id
+ * (references ideas), step (E-ENUMS draft step), created_at, used_at.
  */
 export class PgIntentStore implements IntentStore {
   async save(keyHash: string, intent: Intent, now: Date) {
     const insert = (draftId: string | null, step: string | null) =>
-      sql`
-        INSERT INTO sign_in_intents (attempt_key, destination, draft_id, step, created_at)
-        VALUES (${keyHash}, ${intent.to}, ${draftId}, ${step}, ${now})
-      `.execute(getDb());
+      getDb()
+        .insertInto("sign_in_intents")
+        .values({ attempt_key: keyHash, destination: intent.to, draft_id: draftId, step, created_at: now })
+        .execute();
     try {
       await insert(intent.draftId, intent.step);
     } catch (err) {
@@ -149,32 +136,35 @@ export class PgIntentStore implements IntentStore {
   }
 
   async find(keyHash: string, now: Date) {
-    const r = await sql<{ destination: string; draft_id: string | null; step: string | null }>`
-      SELECT destination, draft_id, step FROM sign_in_intents
-      WHERE attempt_key = ${keyHash} AND used_at IS NULL
-        AND created_at > ${now}::timestamptz - make_interval(mins => ${INTENT_TTL_MINUTES})
-    `.execute(getDb());
-    const row = r.rows[0];
+    const row = await getDb()
+      .selectFrom("sign_in_intents")
+      .select(["destination", "draft_id", "step"])
+      .where("attempt_key", "=", keyHash)
+      .where("used_at", "is", null)
+      .where("created_at", ">", oldest(now))
+      .executeTakeFirst();
     return row ? { to: row.destination, draftId: row.draft_id, step: row.step } : null;
   }
 
   async use(keyHash: string, now: Date) {
-    const r = await sql<{ destination: string; draft_id: string | null; step: string | null }>`
-      UPDATE sign_in_intents SET used_at = ${now}
-      WHERE attempt_key = ${keyHash} AND used_at IS NULL
-        AND created_at > ${now}::timestamptz - make_interval(mins => ${INTENT_TTL_MINUTES})
-      RETURNING destination, draft_id, step
-    `.execute(getDb());
-    const row = r.rows[0];
+    const row = await getDb()
+      .updateTable("sign_in_intents")
+      .set({ used_at: now })
+      .where("attempt_key", "=", keyHash)
+      .where("used_at", "is", null)
+      .where("created_at", ">", oldest(now))
+      .returning(["destination", "draft_id", "step"])
+      .executeTakeFirst();
     return row ? { to: row.destination, draftId: row.draft_id, step: row.step } : null;
   }
 }
 
+const oldest = (now: Date) => new Date(now.getTime() - INTENT_TTL_MINUTES * 60_000);
+
 let store: IntentStore | undefined;
 
-/** The table; in process memory while the table is missing (before the cut-over, BLD-A173). */
 export function intentStore(): IntentStore {
-  store ??= withTableFallback<IntentStore>("sign_in_intents", new PgIntentStore(), new MemoryIntentStore());
+  store ??= new PgIntentStore();
   return store;
 }
 
