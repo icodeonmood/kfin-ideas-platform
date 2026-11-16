@@ -173,7 +173,10 @@ export async function expireSession(page: Page): Promise<void> {
   await client.connect();
   try {
     const { rowCount } = await client.query(
-      "UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id_hash = $1",
+      // As 8 hours would leave it: started 8 h 2 min ago, ran out a minute ago (expires_at must follow created_at).
+      "UPDATE sessions SET created_at = now() - interval '8 hours 2 minutes', " +
+        "last_seen_at = now() - interval '8 hours 2 minutes', expires_at = now() - interval '1 minute' " +
+        "WHERE id_hash = $1",
       [createHash("sha256").update(token, "utf8").digest()],
     );
     if (rowCount !== 1) throw new Error("expireSession: no such session");
