@@ -38,22 +38,95 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
-export interface Attachments {
-  bytes: Int8;
-  created_at: Generated<Timestamp>;
-  digest: string | null;
+export interface AiPrescores {
+  dimension: string;
+  evidence_refs: Generated<Json>;
+  generated_by: string;
+  rationale: string;
+  round_id: string;
+  value: number;
+}
+
+export interface Answers {
+  added_to: string | null;
+  by_code: string;
+  id: Generated<string>;
+  question_id: string;
+  saved_at: Generated<Timestamp>;
+  sent_at: Timestamp | null;
+  text_encrypted: Buffer | null;
+}
+
+export interface Appeals {
+  appellant_code: string;
+  cluster_id: string;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_id: string;
+  due_at: Timestamp;
+  filed_at: Generated<Timestamp>;
+  grounds: string[];
+  heard_by: string;
+  hearing_requested: Generated<boolean>;
   id: string;
+  links: Generated<Json>;
+  outcome: string | null;
+  panel: string[];
+  reasons: string | null;
+  repo_commit: string | null;
+  repo_path: string | null;
+  state: Generated<string>;
+  statement: string;
+}
+
+export interface Assessments {
+  cluster_id: string;
+  concerns: Generated<Json>;
+  conditions: Generated<Json>;
+  dimension_scores: Json;
+  id: Generated<Int8>;
+  member_id: string;
+  open_questions: string | null;
+  presentation_id: string;
+  route_pref: string | null;
+  stage: Generated<string>;
+  strengths: Generated<Json>;
+  submitted_at: Generated<Timestamp>;
+  vote: string;
+  will_sponsor: Generated<boolean>;
+}
+
+export interface Attachments {
+  answer_id: string | null;
+  bytes: Int8;
+  checks: Json | null;
+  conversation_entry_id: string | null;
+  created_at: Generated<Timestamp>;
   delivery_id: Int8 | null;
+  digest: string | null;
+  digest_meta: Json | null;
+  file_state: string | null;
+  hidden_note: string | null;
+  id: string;
   idea_uuid: string | null;
+  indexed_at: Timestamp | null;
+  item_count: number | null;
+  kind: Generated<string>;
+  link_scope: string | null;
+  masked_store_key: string | null;
+  message_id: string | null;
   mime: string | null;
   name: string;
+  pages: number | null;
+  parent_id: string | null;
   rejection: Json | null;
   sha256: string | null;
   state: Generated<string>;
-  store_key: string;
+  store_key: string | null;
   updated_at: Generated<Timestamp>;
   uploaded_by_code: string | null;
   uploaded_by_user: string | null;
+  url_encrypted: Buffer | null;
 }
 
 export interface AuditLog {
@@ -77,6 +150,25 @@ export interface Autonomy {
   window_size: Generated<number>;
 }
 
+export interface BuildTeams {
+  chosen_at: Generated<Timestamp>;
+  chosen_by: string | null;
+  id: Generated<string>;
+  idea_uuid: string;
+  lead_user_id: string | null;
+  name: string;
+}
+
+export interface Capacity {
+  capex_budget_inr: Numeric | null;
+  cycle_id: string;
+  declared_at: Timestamp | null;
+  declared_by: string | null;
+  garage_slots: number | null;
+  presentation_slots: Generated<number>;
+  wg_hours: number | null;
+}
+
 export interface Chunks {
   area_ids: Generated<string[]>;
   attachment_id: string | null;
@@ -97,18 +189,96 @@ export interface Chunks {
   visibility: Generated<string>;
 }
 
+export interface ClusterGates {
+  cluster_id: string;
+  confirmed_at: Timestamp | null;
+  confirmed_by: string | null;
+  detail: string | null;
+  evidence: Generated<Json>;
+  gate: string;
+  note: string | null;
+  proposed: string;
+  result: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface ClusterPairs {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  idea_a: string;
+  idea_b: string;
+  kind: Generated<string>;
+  source: string;
+}
+
+export interface ClusterProposals {
+  cluster_id: string | null;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  dropped: Generated<Json>;
+  generated_by: string | null;
+  id: Generated<Int8>;
+  kind: string;
+  members: string[];
+  metrics: Generated<Json>;
+  review_item_id: Int8 | null;
+  run_id: string;
+  split_groups: Json | null;
+  state: Generated<string>;
+  summary: Json | null;
+  tag_scope: string;
+  targets: Generated<string[]>;
+}
+
+export interface ClusterRuns {
+  anchors: number | null;
+  counts: Generated<Json>;
+  error_code: string | null;
+  finished_at: Timestamp | null;
+  id: string;
+  params: Generated<Json>;
+  pool_size: number | null;
+  started_at: Generated<Timestamp>;
+  state: Generated<string>;
+}
+
 export interface Clusters {
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  archived_at: Timestamp | null;
   centroid: string | null;
   created_at: Generated<Timestamp>;
   distinct_contributors: Generated<number>;
+  generated_by: string | null;
   id: string;
   lobs: Generated<string[]>;
   member_count: Generated<number>;
+  members_changed_at: Timestamp | null;
+  merged_into: string | null;
+  qualified_at: Timestamp | null;
+  reason_code: string | null;
   repo_commit: string | null;
   repo_path: string | null;
+  route_lob: string | null;
   route_to: string | null;
   scope: string | null;
   stage: Generated<string>;
+  state: Generated<string>;
+  summary: Json | null;
+  tag_scope: string | null;
+  title: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CoiFlags {
+  clear_reason: string | null;
+  cleared_by: string | null;
+  created_at: Generated<Timestamp>;
+  member_id: string;
+  reason: string;
+  round_id: string;
+  status: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -128,9 +298,12 @@ export interface CommsLog {
 }
 
 export interface CommsPrefs {
+  email: Generated<boolean>;
   manager_notes: Generated<boolean>;
   public_name_consent: Generated<boolean>;
+  reminders: Generated<boolean>;
   routine: Generated<string>;
+  teams: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -139,6 +312,21 @@ export interface ContributorMap {
   contributor_code: string;
   created_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface ConversationEntries {
+  at: Generated<Timestamp>;
+  author_code: string | null;
+  author_user_id: string | null;
+  deleted_at: Timestamp | null;
+  event: string | null;
+  id: Generated<string>;
+  idea_uuid: string;
+  mentions: Generated<string[]>;
+  payload: Generated<Json>;
+  question_set_id: string | null;
+  text_encrypted: Buffer | null;
+  type: string;
 }
 
 export interface Corrections {
@@ -153,10 +341,289 @@ export interface Corrections {
   reviewer_id: string | null;
 }
 
+export interface CrewMembers {
+  contributor_code: string;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  joined_at: Generated<Timestamp>;
+  left_at: Timestamp | null;
+  left_how: string | null;
+  merge_id: string | null;
+  removed_by_code: string | null;
+  role: string;
+  teamup_request_id: string | null;
+  via: string;
+}
+
+export interface CrewPasses {
+  id: Generated<Int8>;
+  idea_uuid: string;
+  passed_at: Generated<Timestamp>;
+  undone_at: Timestamp | null;
+  user_id: string;
+}
+
+export interface Cycles {
+  created_at: Generated<Timestamp>;
+  decisions_by: Timestamp | null;
+  id: string;
+  opened_by: string | null;
+  opens_at: Generated<Timestamp>;
+  presentations_from: Timestamp | null;
+  presentations_to: Timestamp | null;
+  shortlist_by: Timestamp | null;
+  state: Generated<string>;
+}
+
+export interface DecisionReversals {
+  at: Generated<Timestamp>;
+  by_user_id: string;
+  id: Generated<string>;
+  note_encrypted: Buffer;
+  return_at: Timestamp | null;
+  return_in: string | null;
+  to_choice: string | null;
+  window_id: string;
+}
+
+export interface Decisions {
+  appeal_window_closes: Timestamp | null;
+  body: Generated<string>;
+  casting_vote: Generated<boolean>;
+  cluster_id: string;
+  conditions: Generated<Json>;
+  cycle_id: string | null;
+  decided_at: Generated<Timestamp>;
+  decided_by: string;
+  id: string;
+  members_present: Generated<number>;
+  outcome: string;
+  override_reason: string | null;
+  plain_reason: string | null;
+  presentation_id: string | null;
+  reason_code: string | null;
+  recused: Generated<number>;
+  repo_commit: string | null;
+  repo_path: string | null;
+  round_id: string | null;
+  route: string | null;
+  sponsor_id: string | null;
+  votes: Json;
+  what_would_change: string | null;
+}
+
+export interface DecisionSheets {
+  change_from_prelim: Generated<Json>;
+  cluster_id: string;
+  conditions: Json | null;
+  cycle_id: string | null;
+  divergence_flags: Generated<string[]>;
+  final_score: Numeric | null;
+  generated_at: Generated<Timestamp>;
+  generated_by: string | null;
+  medians: Json;
+  presentation_id: string;
+  route_prefs: Generated<Json>;
+  sponsors_willing: Generated<number>;
+  spread: Json;
+  tallies: Json;
+  themes: Json | null;
+}
+
+export interface DecisionWindows {
+  closes_at: Timestamp;
+  decision_id: string | null;
+  extended_times: Generated<number>;
+  id: Generated<string>;
+  last_extended_by: string | null;
+  max_closes_at: Timestamp;
+  merge_id: string | null;
+  opens_at: Generated<Timestamp>;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Deliveries {
+  blocked_flagged_at: Timestamp | null;
+  blocked_since: Timestamp | null;
+  closed_at: Timestamp | null;
+  completed_at: Timestamp | null;
+  completed_by: string | null;
+  completion: Json | null;
+  completion_notes: Buffer | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  gate_status: string | null;
+  id: Generated<Int8>;
+  link_state: Generated<string>;
+  metric_encrypted: Buffer | null;
+  objective_encrypted: Buffer | null;
+  outcome: string | null;
+  owner_user_id: string | null;
+  pack: Generated<Json>;
+  phase: string | null;
+  phase_updated_at: Timestamp | null;
+  pipeline_page_id: string | null;
+  pm_user_id: string | null;
+  resolved_at: Timestamp | null;
+  shipped_at: Timestamp | null;
+  slug: string | null;
+  sponsor_approved_at: Timestamp | null;
+  sponsor_approved_by: string | null;
+  sponsor_user_id: string | null;
+  state: Generated<string>;
+  subject_id: string;
+  subject_type: string;
+  submitted_by: string | null;
+  track: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface DeliveryCheckins {
+  by_user: string;
+  created_at: Generated<Timestamp>;
+  delivery_id: Int8;
+  id: Generated<Int8>;
+  note_encrypted: Buffer | null;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  week_of: Timestamp;
+}
+
+export interface DeliveryMeasurements {
+  confirmed_at: Timestamp | null;
+  confirmed_by: string | null;
+  delivery_id: Int8 | null;
+  due_at: Timestamp;
+  filled_at: Timestamp | null;
+  filled_by: string | null;
+  finance_confirmed_at: Timestamp | null;
+  finance_confirmed_by: string | null;
+  id: Generated<Int8>;
+  idea_uuid: string | null;
+  mark: string;
+  notes_encrypted: Buffer | null;
+  reminded_on: Timestamp | null;
+  results: Generated<Json>;
+}
+
+export interface DeliveryMilestones {
+  created_at: Generated<Timestamp>;
+  delivery_id: Int8;
+  done_at: Timestamp | null;
+  due_on: Timestamp;
+  escalated_on: Timestamp | null;
+  id: Generated<Int8>;
+  overdue_sent_on: Timestamp | null;
+  owner_user_id: string | null;
+  status: Generated<string>;
+  title_encrypted: Buffer;
+}
+
+export interface DraftRuns {
+  finished_at: Timestamp | null;
+  id: Generated<string>;
+  idea_uuid: string;
+  message_id: string | null;
+  part_ms: Generated<Json>;
+  parts: Generated<string[]>;
+  ready: boolean | null;
+  receipt: Generated<Json>;
+  started_at: Generated<Timestamp>;
+  state: Generated<string>;
+  suggestions: Generated<Json>;
+}
+
+export interface EmberIssues {
+  chair_note_by: string | null;
+  chair_note_encrypted: Buffer | null;
+  content: Json | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<Int8>;
+  month: Timestamp;
+  note_approved_at: Timestamp | null;
+  note_approved_by: string | null;
+  ready_token: string | null;
+  sent_at: Timestamp | null;
+  sent_by: string | null;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FlagAssignments {
+  assigned_at: Generated<Timestamp>;
+  assigned_by: Generated<string>;
+  flag_key: string;
+  user_id: string;
+  variant: string;
+}
+
+export interface FlagExposures {
+  at: Generated<Timestamp>;
+  flag_key: string;
+  id: Generated<Int8>;
+  screen: string;
+  user_id: string | null;
+  variant: string;
+}
+
+export interface Flags {
+  alternative_percent: Generated<number>;
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  description: string;
+  key: string;
+  state: Generated<string>;
+}
+
+export interface HiddenDetails {
+  created_at: Generated<Timestamp>;
+  found_by: Generated<string>;
+  id: Generated<string>;
+  idea_uuid: string;
+  kind: string;
+  masked: string;
+  reason: string | null;
+  shown_at: Timestamp | null;
+  shown_by: string | null;
+  source: string;
+  source_id: string;
+  span_end: number | null;
+  span_start: number | null;
+  state: Generated<string>;
+  vault_tag: string | null;
+}
+
 export interface IdCounters {
   kind: string;
   last_value: Generated<number>;
   period: string;
+}
+
+export interface IdeaDecisions {
+  at: Generated<Timestamp>;
+  by_user_id: string;
+  choice: string;
+  id: Generated<string>;
+  idea_uuid: string;
+  joined_with: string | null;
+  reason_encrypted: Buffer;
+  return_at: Timestamp | null;
+  return_in: string | null;
+  team_by: Timestamp | null;
+}
+
+export interface IdeaFix {
+  basis: string | null;
+  how: string | null;
+  idea_uuid: string;
+  included: Generated<boolean>;
+  needs: string | null;
+  risks: string | null;
+  solved_already: string | null;
+  solved_note: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface IdeaLinks {
@@ -171,36 +638,198 @@ export interface IdeaLinks {
   solution_id: string | null;
 }
 
+export interface IdeaMessages {
+  char_count: Generated<number>;
+  created_at: Generated<Timestamp>;
+  device: string | null;
+  edited_at: Timestamp | null;
+  id: Generated<string>;
+  idea_uuid: string;
+  lang: string | null;
+  seq: number;
+  spans: Generated<Json>;
+  text_encrypted: Buffer;
+  via: string;
+}
+
+export interface IdeaOpens {
+  day: Generated<Timestamp>;
+  idea_uuid: string;
+  user_id: string;
+}
+
+export interface IdeaParts {
+  idea_uuid: string;
+  key: string;
+  run_id: string | null;
+  source_quote: string | null;
+  state: Generated<string>;
+  took_ms: number | null;
+  updated_at: Generated<Timestamp>;
+  value: Json | null;
+  why: string | null;
+}
+
+export interface IdeaQuestions {
+  answer_encrypted: Buffer | null;
+  answered_at: Timestamp | null;
+  asked_at: Generated<Timestamp>;
+  asked_by: string | null;
+  due_at: Timestamp;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  question_encrypted: Buffer;
+  review_item_id: Int8 | null;
+}
+
 export interface Ideas {
+  affects: Generated<string[]>;
+  archived_at: Timestamp | null;
+  area: string | null;
   area_ids: Generated<string[]>;
   basis: string | null;
+  brings: Generated<string[]>;
   canvas: Json | null;
   capture_mode: Generated<string>;
   category: string | null;
+  channel: Generated<string>;
+  char_count: Generated<number>;
+  city: string | null;
   cluster_id: string | null;
   contributor_code: string;
   created_at: Generated<Timestamp>;
+  decide_by: Timestamp | null;
+  declaration_version: string | null;
+  declared_at: Timestamp | null;
   draft_encrypted: Buffer | null;
   draft_expires_at: Timestamp | null;
+  edit_closes_at: Timestamp | null;
+  helper_picks: Generated<string[]>;
+  helper_text: string | null;
   id: Generated<string>;
   idea_id: string | null;
+  kept_separate: Generated<boolean>;
   kind: string | null;
   language: string | null;
   lobs: Generated<string[]>;
+  merged_into: string | null;
+  often: string | null;
+  opened_at: Timestamp | null;
+  opened_by: string | null;
+  origin_encrypted: Buffer | null;
   play: string | null;
   raw_encrypted: Buffer | null;
   repo_commit: string | null;
   repo_path: string | null;
+  restored_at: Timestamp | null;
+  reviewer_id: string | null;
   roles_affected: Generated<string[]>;
+  saved_at: Timestamp | null;
+  saved_device: string | null;
+  saved_device_id: string | null;
   scope: string | null;
+  share_seconds: number | null;
+  shared_at: Timestamp | null;
+  sorting_confirmed_at: Timestamp | null;
+  sorting_sources: Generated<Json>;
   stage: Generated<string>;
+  status: Generated<string>;
+  status_changed_at: Timestamp | null;
+  step: string | null;
   strength: number | null;
   submission_id: string | null;
   submitted_at: Timestamp | null;
+  summary: string | null;
   systems: Generated<string[]>;
+  title: string | null;
   updated_at: Generated<Timestamp>;
   visibility: Generated<string>;
   visibility_reason: string | null;
+  withdraw_reason_encrypted: Buffer | null;
+  withdrawn_at: Timestamp | null;
+}
+
+export interface IdeaStageHistory {
+  at: Generated<Timestamp>;
+  from_stage: string | null;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  source: Generated<string>;
+  to_stage: string;
+}
+
+export interface IdeaStatusHistory {
+  at: Generated<Timestamp>;
+  from_status: string | null;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  source: Generated<string>;
+  to_status: string;
+}
+
+export interface IdeaVersions {
+  at: Generated<Timestamp>;
+  by_code: string | null;
+  changed_fields: Generated<string[]>;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  n: number;
+  snapshot_encrypted: Buffer | null;
+}
+
+export interface IdeaWordsSealed {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  owner_user_id: string;
+  source: string;
+  source_id: string;
+  text_encrypted: Buffer;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface IdeaWorth {
+  area: string | null;
+  at: Generated<Timestamp>;
+  by_code: string | null;
+  by_side: string;
+  by_user_id: string | null;
+  cost_high: Numeric | null;
+  cost_low: Numeric | null;
+  hours_high: Numeric | null;
+  hours_low: Numeric | null;
+  id: Generated<Int8>;
+  idea_uuid: string;
+  kind: string | null;
+  note_encrypted: Buffer | null;
+  outside_tools: string | null;
+  revenue_high: Numeric | null;
+  revenue_low: Numeric | null;
+}
+
+export interface IdempotencyKeys {
+  created_at: Generated<Timestamp>;
+  expires_at: Generated<Timestamp>;
+  key: string;
+  request_hash: string;
+  response_json: Json | null;
+  route: string;
+  status: number | null;
+  user_id: string;
+}
+
+export interface ImpactEstimates {
+  annual_net_benefit: Numeric | null;
+  basis: Generated<Json>;
+  cluster_id: string;
+  fields: Generated<Json>;
+  finance_required: Generated<boolean>;
+  finance_validated_at: Timestamp | null;
+  finance_validated_by: string | null;
+  payback_months: Numeric | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  version: Generated<number>;
 }
 
 export interface IndexState {
@@ -231,6 +860,39 @@ export interface KillSwitches {
   name: string;
   reason: string | null;
   state: Generated<string>;
+}
+
+export interface LearningProposals {
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  doc_id: string | null;
+  id: Generated<Int8>;
+  kind: string;
+  payload: Generated<Json>;
+  period: string;
+  publish_encrypted: Buffer | null;
+  published_at: Timestamp | null;
+  published_by: string | null;
+  repo_commit: string | null;
+  repo_path: string | null;
+  state: Generated<string>;
+  text_encrypted: Buffer | null;
+}
+
+export interface LearningReports {
+  built_at: Generated<Timestamp>;
+  data: Json;
+  id: Generated<Int8>;
+  kind: string;
+  period: string;
+}
+
+export interface LensSnapshots {
+  built_at: Generated<Timestamp>;
+  data: Json;
+  key: string;
+  kind: string;
 }
 
 export interface Links {
@@ -265,16 +927,176 @@ export interface LlmCalls {
   tags_by_type: Generated<Json>;
 }
 
+export interface MergeRequests {
+  answered_at: Timestamp | null;
+  answered_by_code: string | null;
+  draft_uuid: string;
+  from_code: string;
+  id: Generated<string>;
+  lead_reason_encrypted: Buffer | null;
+  note_encrypted: Buffer;
+  other_idea_uuid: string;
+  sent_at: Generated<Timestamp>;
+  state: Generated<string>;
+}
+
+export interface Merges {
+  at: Generated<Timestamp>;
+  by_code: string | null;
+  by_user_id: string | null;
+  id: Generated<string>;
+  lead_idea_uuid: string;
+  merge_request_id: string | null;
+  merged_idea_uuid: string;
+  note_encrypted: Buffer | null;
+  prior_status: string | null;
+  reversed_at: Timestamp | null;
+  team_up: Generated<boolean>;
+  teamup_request_id: string | null;
+  via: string;
+}
+
 export interface Notifications {
+  actions: Generated<Json>;
+  archived_at: Timestamp | null;
+  attempts: Generated<number>;
   channel: string;
+  comms_log_id: Int8 | null;
   created_at: Generated<Timestamp>;
+  due_at: Timestamp | null;
+  error_code: string | null;
+  event: string | null;
+  from_user_id: string | null;
   id: Generated<Int8>;
+  idea_uuid: string | null;
+  kind: string | null;
+  needs_you: Generated<boolean>;
   payload: Generated<Json>;
   read_at: Timestamp | null;
+  resolved_at: Timestamp | null;
+  send_after: Timestamp | null;
   sent_at: Timestamp | null;
   state: Generated<string>;
   template: string;
+  urgency: string | null;
   user_id: string;
+}
+
+export interface OneAwards {
+  awarded_at: Generated<Timestamp>;
+  awarded_by: string;
+  category: string;
+  id: Generated<Int8>;
+  one_id: Int8;
+  year: number;
+}
+
+export interface OneGlowUps {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  one_id: Int8;
+  proposal_id: Int8;
+  seen_at: Timestamp | null;
+  tier_from: number;
+  tier_to: number;
+}
+
+export interface OneLegendNumbers {
+  number: number;
+  one_id: Int8;
+  retired_on: Generated<Timestamp>;
+  retired_year: Generated<number | null>;
+}
+
+export interface OneMessageInvites {
+  invited_at: Generated<Timestamp>;
+  invited_by: string;
+  proposal_id: Int8;
+  user_id: string;
+}
+
+export interface OneMessages {
+  author_role: string;
+  author_user_id: string;
+  id: Generated<Int8>;
+  proposal_id: Int8;
+  text_encrypted: Buffer | null;
+  written_at: Generated<Timestamp>;
+}
+
+export interface OneNumberHistory {
+  from_at: Generated<Timestamp>;
+  how: string;
+  id: Generated<Int8>;
+  number: number;
+  one_id: Int8;
+  rests_until: Timestamp | null;
+  to_at: Timestamp | null;
+}
+
+export interface OnePostLikes {
+  liked_at: Generated<Timestamp>;
+  post_id: string;
+  user_id: string;
+}
+
+export interface OnePosts {
+  adopted_by: number | null;
+  figure_line: string | null;
+  figure_value: string | null;
+  id: Generated<string>;
+  idea_uuid: string | null;
+  one_id: Int8;
+  posted_at: Generated<Timestamp>;
+  removed_at: Timestamp | null;
+  shipped: Generated<boolean>;
+  text_encrypted: Buffer;
+}
+
+export interface OneProposals {
+  approval: string | null;
+  carried_out_at: Timestamp | null;
+  carried_out_by: string | null;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  id: Generated<Int8>;
+  idea_id: string | null;
+  kind: string;
+  meeting_on: Timestamp | null;
+  one_id: Int8 | null;
+  proposed_at: Generated<Timestamp>;
+  proposed_by: string;
+  reason_encrypted: Buffer | null;
+  state: Generated<string>;
+  subject_user_id: string;
+  text_encrypted: Buffer | null;
+  tier_to: number | null;
+  way_in: string | null;
+}
+
+export interface Ones {
+  announced_at: Timestamp | null;
+  brief_approved_at: Timestamp | null;
+  brief_encrypted: Buffer | null;
+  id: Generated<Int8>;
+  idea_id: string | null;
+  inducted_at: Generated<Timestamp>;
+  induction_no: number;
+  measures: Generated<Json>;
+  number: number | null;
+  retired_at: Timestamp | null;
+  status: Generated<string>;
+  swap_until: Timestamp;
+  tier: Generated<number>;
+  title_encrypted: Buffer | null;
+  user_id: string;
+  way_in: string;
+}
+
+export interface OneShowcaseBriefs {
+  one_id: Int8;
+  parts_encrypted: Buffer;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface Outbox {
@@ -284,10 +1106,19 @@ export interface Outbox {
   commit_sha: string | null;
   committed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  dead_lettered_at: Timestamp | null;
   event_type: string;
   id: Generated<Int8>;
   last_error: string | null;
   payload: Generated<Json>;
+}
+
+export interface PersonSettings {
+  shortcut_p: Generated<boolean>;
+  show_name_on_wall: Generated<boolean>;
+  sidebar_folded: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface PointsLedger {
@@ -297,6 +1128,28 @@ export interface PointsLedger {
   id: Generated<Int8>;
   points: Numeric;
   ref_id: string | null;
+}
+
+export interface Presentations {
+  accepted_at: Timestamp | null;
+  accepted_by: string | null;
+  assessments_due: Timestamp | null;
+  cluster_id: string;
+  created_at: Generated<Timestamp>;
+  cycle_id: string | null;
+  held_at: Timestamp | null;
+  id: string;
+  invited_at: Generated<Timestamp>;
+  outline: Json | null;
+  outline_by: string | null;
+  presenters: Generated<string[]>;
+  qna_notes: string | null;
+  reply_due: Timestamp | null;
+  round_id: string | null;
+  slot_at: Timestamp | null;
+  slot_options: Generated<ArrayType<Timestamp>>;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface PrivacyAcceptances {
@@ -317,13 +1170,42 @@ export interface PseudonymVault {
   value_hmac: Buffer;
 }
 
+export interface Questions {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  part: string;
+  seq: number;
+  set_id: string;
+  suggested: Generated<boolean>;
+  text_encrypted: Buffer;
+}
+
+export interface QuestionSets {
+  answered_at: Timestamp | null;
+  by_user_id: string;
+  closed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  due_at: Timestamp | null;
+  extended_times: Generated<number>;
+  id: Generated<string>;
+  idea_uuid: string;
+  reminded_at: Timestamp | null;
+  seen_at: Timestamp | null;
+  sent_at: Timestamp | null;
+  state: Generated<string>;
+  time_to_answer: string | null;
+}
+
 export interface RepoFiles {
+  area_ids: Generated<string[]>;
   commit_sha: string;
   file_type: string;
   indexed_at: Generated<Timestamp>;
   kfin_id: string | null;
+  lobs: Generated<string[]>;
   repo_path: string;
   stage: string | null;
+  summary: string | null;
   trust: string;
   visibility: Generated<string>;
 }
@@ -359,6 +1241,18 @@ export interface RoleGrants {
   valid_to: Timestamp | null;
 }
 
+export interface RoleThemes {
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  id: Generated<Int8>;
+  ideas_considered: number;
+  period: string;
+  role_id: string;
+  state: Generated<string>;
+  themes: Json;
+}
+
 export interface Scans {
   attempts: Generated<number>;
   created_at: Generated<Timestamp>;
@@ -376,6 +1270,54 @@ export interface Scans {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ScoringRounds {
+  below_threshold_reason: string | null;
+  body: string;
+  closes_at: Timestamp;
+  cluster_id: string;
+  confidence_multiplier: Generated<Numeric>;
+  created_at: Generated<Timestamp>;
+  cycle_id: string | null;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  evidence_type: string | null;
+  final_score: Numeric | null;
+  flags: Json | null;
+  id: string;
+  lob_id: string | null;
+  medians: Json | null;
+  opens_at: Generated<Timestamp>;
+  outcome: string | null;
+  outcome_note: string | null;
+  queue_position: number | null;
+  quorum: Generated<Numeric>;
+  ranges: Json | null;
+  reason_code: string | null;
+  revealed_at: Timestamp | null;
+  roster: string[];
+  scorecard_version: string;
+  state: Generated<string>;
+  suggested_band: number | null;
+}
+
+export interface ScreenSettings {
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  id: Generated<boolean>;
+  mode: Generated<string>;
+}
+
+export interface SealedScores {
+  comment: string | null;
+  dimension: string;
+  member_id: string;
+  revised_at: Timestamp | null;
+  revised_value: number | null;
+  round_id: string;
+  submitted_at: Generated<Timestamp>;
+  value: number;
+}
+
 export interface Sessions {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -383,6 +1325,37 @@ export interface Sessions {
   last_seen_at: Generated<Timestamp>;
   revoked_at: Timestamp | null;
   user_id: string;
+}
+
+export interface SignInCodes {
+  code_hash: string;
+  email_hash: string;
+  expires_at: Timestamp;
+  id: Generated<Int8>;
+  sent_at: Generated<Timestamp>;
+  superseded_at: Timestamp | null;
+  tries_left: number;
+}
+
+export interface SignInIntents {
+  attempt_key: string;
+  created_at: Generated<Timestamp>;
+  destination: string;
+  draft_id: string | null;
+  step: string | null;
+  used_at: Timestamp | null;
+}
+
+export interface SimilarLinks {
+  created_at: Generated<Timestamp>;
+  found_while: Generated<string>;
+  idea_uuid: string;
+  other_idea_uuid: string;
+  outcome: string | null;
+  rank: Generated<number>;
+  reason: string;
+  strength: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface SlaTimers {
@@ -402,6 +1375,41 @@ export interface SlaTimers {
   updated_at: Generated<Timestamp>;
 }
 
+export interface SolutionWriteups {
+  approved_at: Timestamp | null;
+  approved_by: string | null;
+  contributors: Generated<string[]>;
+  created_at: Generated<Timestamp>;
+  delivery_id: Int8;
+  drafted_by: string;
+  id: Generated<Int8>;
+  parts_encrypted: Buffer;
+  repo_commit: string | null;
+  repo_path: string | null;
+  solution_id: string | null;
+  state: Generated<string>;
+  submitted_at: Timestamp | null;
+  submitted_by: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TeamupBrought {
+  idea_uuid: string;
+  request_id: string;
+}
+
+export interface TeamupRequests {
+  answered_at: Timestamp | null;
+  answered_by_code: string | null;
+  from_code: string;
+  id: Generated<string>;
+  idea_uuid: string;
+  lead_reason_encrypted: Buffer | null;
+  note_encrypted: Buffer;
+  sent_at: Generated<Timestamp>;
+  state: Generated<string>;
+}
+
 export interface Terms {
   alias: string;
   glossary_id: string;
@@ -412,10 +1420,12 @@ export interface Terms {
 
 export interface Users {
   active: Generated<boolean>;
+  area: string | null;
   created_at: Generated<Timestamp>;
   email: string;
   emp_id_hash: string;
   entra_oid: string | null;
+  first_name: string | null;
   hr_department: string | null;
   hr_job_title: string | null;
   id: Generated<string>;
@@ -429,39 +1439,151 @@ export interface Users {
   role_title: string | null;
   source: Generated<string>;
   staff_code: string | null;
+  tier: Generated<number>;
   updated_at: Generated<Timestamp>;
 }
 
+export interface VaultCounters {
+  last: number;
+  scope_id: string;
+  type: string;
+}
+
+export interface VoiceNotes {
+  bytes: number;
+  created_at: Generated<Timestamp>;
+  delete_after: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
+  failure: string | null;
+  id: string;
+  idea_uuid: string;
+  language: string | null;
+  mime: string;
+  removed_count: Generated<number>;
+  state: Generated<string>;
+  store_key: string | null;
+  transcript_encrypted: Buffer | null;
+  uploaded_by_code: string;
+}
+
+export interface WorkingGroups {
+  charter_path: string | null;
+  closed_at: Timestamp | null;
+  cluster_id: string;
+  decision_id: string | null;
+  formed_at: Generated<Timestamp>;
+  id: string;
+  members: Generated<Json>;
+  product_owner_id: string | null;
+  sponsor_id: string | null;
+  state: Generated<string>;
+}
+
 export interface DB {
+  ai_prescores: AiPrescores;
+  answers: Answers;
+  appeals: Appeals;
+  assessments: Assessments;
   attachments: Attachments;
   audit_log: AuditLog;
   autonomy: Autonomy;
+  build_teams: BuildTeams;
+  capacity: Capacity;
   chunks: Chunks;
+  cluster_gates: ClusterGates;
+  cluster_pairs: ClusterPairs;
+  cluster_proposals: ClusterProposals;
+  cluster_runs: ClusterRuns;
   clusters: Clusters;
+  coi_flags: CoiFlags;
   comms_log: CommsLog;
   comms_prefs: CommsPrefs;
   contributor_map: ContributorMap;
+  conversation_entries: ConversationEntries;
   corrections: Corrections;
+  crew_members: CrewMembers;
+  crew_passes: CrewPasses;
+  cycles: Cycles;
+  decision_reversals: DecisionReversals;
+  decision_sheets: DecisionSheets;
+  decision_windows: DecisionWindows;
+  decisions: Decisions;
+  deliveries: Deliveries;
+  delivery_checkins: DeliveryCheckins;
+  delivery_measurements: DeliveryMeasurements;
+  delivery_milestones: DeliveryMilestones;
+  draft_runs: DraftRuns;
+  ember_issues: EmberIssues;
+  flag_assignments: FlagAssignments;
+  flag_exposures: FlagExposures;
+  flags: Flags;
+  hidden_details: HiddenDetails;
   id_counters: IdCounters;
+  idea_decisions: IdeaDecisions;
+  idea_fix: IdeaFix;
   idea_links: IdeaLinks;
+  idea_messages: IdeaMessages;
+  idea_opens: IdeaOpens;
+  idea_parts: IdeaParts;
+  idea_questions: IdeaQuestions;
+  idea_stage_history: IdeaStageHistory;
+  idea_status_history: IdeaStatusHistory;
+  idea_versions: IdeaVersions;
+  idea_words_sealed: IdeaWordsSealed;
+  idea_worth: IdeaWorth;
   ideas: Ideas;
+  idempotency_keys: IdempotencyKeys;
+  impact_estimates: ImpactEstimates;
   index_state: IndexState;
   jobs: Jobs;
   kill_switches: KillSwitches;
+  learning_proposals: LearningProposals;
+  learning_reports: LearningReports;
+  lens_snapshots: LensSnapshots;
   links: Links;
   llm_cache: LlmCache;
   llm_calls: LlmCalls;
+  merge_requests: MergeRequests;
+  merges: Merges;
   notifications: Notifications;
+  one_awards: OneAwards;
+  one_glow_ups: OneGlowUps;
+  one_legend_numbers: OneLegendNumbers;
+  one_message_invites: OneMessageInvites;
+  one_messages: OneMessages;
+  one_number_history: OneNumberHistory;
+  one_post_likes: OnePostLikes;
+  one_posts: OnePosts;
+  one_proposals: OneProposals;
+  one_showcase_briefs: OneShowcaseBriefs;
+  ones: Ones;
   outbox: Outbox;
+  person_settings: PersonSettings;
   points_ledger: PointsLedger;
+  presentations: Presentations;
   privacy_acceptances: PrivacyAcceptances;
   pseudonym_vault: PseudonymVault;
+  question_sets: QuestionSets;
+  questions: Questions;
   repo_files: RepoFiles;
   review_items: ReviewItems;
   role_grants: RoleGrants;
+  role_themes: RoleThemes;
   scans: Scans;
+  scoring_rounds: ScoringRounds;
+  screen_settings: ScreenSettings;
+  sealed_scores: SealedScores;
   sessions: Sessions;
+  sign_in_codes: SignInCodes;
+  sign_in_intents: SignInIntents;
+  similar_links: SimilarLinks;
   sla_timers: SlaTimers;
+  solution_writeups: SolutionWriteups;
+  teamup_brought: TeamupBrought;
+  teamup_requests: TeamupRequests;
   terms: Terms;
   users: Users;
+  vault_counters: VaultCounters;
+  voice_notes: VoiceNotes;
+  working_groups: WorkingGroups;
 }

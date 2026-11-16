@@ -20,6 +20,12 @@ HIDDEN_FROM_WEB = {
     "sealed_scores", "ai_prescores", "assessments", "decision_sheets",  # sealed committee records (§4.6–§4.7)
     "appeals",  # statements reach the panel through the worker only (§4.12, BLD-222)
     "voice_notes",  # recordings and what was heard reach the owner through the worker only (DEC-096, BLD-C002)
+    "idea_words_sealed",  # the sharer's unmasked words, readable by them alone (DEC-103, L-HIDE.rules/4)
+}  # fmt: skip
+# Final or audit-like records of the handoff cut-over: the web role inserts and reads them, never changes or removes
+# them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags).
+APPEND_ONLY_FOR_WEB = {
+    "idea_decisions", "decision_reversals", "idea_versions", "flag_exposures", "idea_opens", "idea_status_history",
 }  # fmt: skip
 
 
@@ -57,3 +63,22 @@ def test_the_tables_hidden_from_web_are_exactly_the_pinned_list() -> None:
     hidden = {r["table_name"] for r in rows if not r["web"]}
     assert hidden == HIDDEN_FROM_WEB
     assert {r["table_name"] for r in rows if not r["worker"]} == {"schema_migrations"}
+
+
+def test_the_web_role_cannot_change_final_records_e_entities() -> None:
+    """E-ENTITIES.review: decisions and reversals are final; versions, exposures, opens and status history are logs.
+    The web role keeps SELECT and INSERT on each; only these tables (of those it can read) lack UPDATE or DELETE."""
+    with connect(autocommit=True) as owner:
+        rows = owner.execute(
+            "SELECT table_name, "
+            "has_table_privilege('ideas_web_svc', format('public.%I', table_name), 'SELECT') AS can_select, "
+            "has_table_privilege('ideas_web_svc', format('public.%I', table_name), 'INSERT') AS can_insert, "
+            "has_table_privilege('ideas_web_svc', format('public.%I', table_name), 'UPDATE') AS can_update, "
+            "has_table_privilege('ideas_web_svc', format('public.%I', table_name), 'DELETE') AS can_delete "
+            "FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+        ).fetchall()
+    readable = [r for r in rows if r["can_select"]]
+    final = {r["table_name"] for r in readable if not r["can_update"] and not r["can_delete"]}
+    # llm_calls is read-only for web and contributor codes are never changed or removed by it (BLD-077).
+    assert final - {"llm_calls", "contributor_map"} == APPEND_ONLY_FOR_WEB
+    assert all(r["can_insert"] for r in readable if r["table_name"] in APPEND_ONLY_FOR_WEB)
