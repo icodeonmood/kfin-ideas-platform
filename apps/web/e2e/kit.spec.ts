@@ -176,3 +176,29 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await expect(fan.getByRole("button", { name: "Next post" })).toHaveAttribute("aria-disabled", "true");
   await expectNoSeriousAxeIssues(page);
 });
+
+test("C-FIELD.kinds: paste fills the six code boxes; a wrong code is said under them", async ({ page }) => {
+  const first = page.getByRole("textbox", { name: "Digit 1 of 6" });
+  await first.focus();
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.setData("text", "135 790");
+    document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+  });
+  await expect(page.getByRole("textbox", { name: "Digit 6 of 6" })).toHaveValue("0");
+  await expect(page.getByRole("alert").filter({ hasText: "That code didn’t match" })).toBeVisible();
+  await expectNoSeriousAxeIssues(page);
+  await page.keyboard.press("Backspace");
+  await expect(page.getByRole("textbox", { name: "Digit 6 of 6" })).toHaveValue("");
+});
+
+test("C-FIELD.kinds: the question box adds on Enter, pinned to the part chosen", async ({ page }) => {
+  const box = page.getByRole("textbox", { name: "What would you like to ask Asha?" });
+  await page.getByRole("combobox", { name: "Pinned to" }).selectOption("often");
+  await box.fill("How many of the 40 calls are about R07?");
+  await box.press("Enter");
+  await expect(page.getByRole("list", { name: "Your questions" })).toContainText(
+    "often: How many of the 40 calls are about R07?",
+  );
+  await expect(box).toHaveValue("");
+});

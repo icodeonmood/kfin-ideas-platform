@@ -5,12 +5,14 @@ import { useState } from "react";
 import { Avatar, CrewFaces } from "@/components/ui/avatar";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
+import { CodeField } from "@/components/ui/code-field";
 import { Deck } from "@/components/ui/deck";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { DropArea, FileList, FileRow } from "@/components/ui/file";
 import { OnesFan, OnesPost } from "@/components/ui/ones-fan";
+import { QuestionBox } from "@/components/ui/question-box";
 import { SearchBar } from "@/components/ui/search";
 import { IDEA_STATUS, Pill, StatusPill, type IdeaStatus } from "@/components/ui/pill";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
@@ -38,6 +40,10 @@ export function KitDemo() {
   const [qf, setQf] = useState<string[]>(["needs"]);
   const [along, setAlong] = useState<string[]>([]);
   const [deckAt, setDeckAt] = useState(0);
+  const [code, setCode] = useState("");
+  const [codeWrong, setCodeWrong] = useState(false);
+  const [pin, setPin] = useState("problem");
+  const [asked, setAsked] = useState<string[]>([]);
 
   return (
     <div className="arrive kit">
@@ -139,6 +145,47 @@ export function KitDemo() {
             {(p) => <textarea {...p} rows={4} defaultValue="Folio ••••89 asked twice this week." />}
           </Field>
         </div>
+      </section>
+
+      <section className="card" aria-labelledby="k-kinds">
+        <h2 id="k-kinds" className="h2">
+          The code and the question box
+        </h2>
+        <CodeField
+          label="The 6-digit code from the email"
+          value={code}
+          onChange={(v) => {
+            setCode(v);
+            setCodeWrong(false);
+          }}
+          onComplete={(v) => setCodeWrong(v !== "246810")}
+          error={
+            codeWrong
+              ? "That code didn’t match. Check the latest email from 1% Club. 2 tries left."
+              : undefined
+          }
+        />
+        <QuestionBox
+          label="What would you like to ask Asha?"
+          parts={[
+            { value: "problem", label: "The problem" },
+            { value: "often", label: "How often" },
+            { value: "who", label: "Who it affects" },
+            { value: "worth", label: "What it’s worth" },
+            { value: "attached", label: "Attached" },
+            { value: "fix", label: "Fix" },
+          ]}
+          pinned={pin}
+          onPinned={setPin}
+          onAdd={(q, part) => setAsked((a) => [...a, `${part}: ${q}`])}
+        />
+        {asked.length ? (
+          <ul className="meta" aria-label="Your questions">
+            {asked.map((q) => (
+              <li key={q}>{q}</li>
+            ))}
+          </ul>
+        ) : null}
       </section>
 
       <section className="card" aria-labelledby="k-chips">

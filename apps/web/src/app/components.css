@@ -776,11 +776,13 @@ textarea:is(.fld, .textarea) {
 /* The component kit page (dev and test only) */
 .kit {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 
 .kit .card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -1686,4 +1688,120 @@ textarea:is(.fld, .textarea) {
 
 .fan-empty {
   max-width: 62ch;
+}
+
+/* ---------- C-FIELD.kinds: the 6-digit code and the question box ---------- */
+/* Six boxes that shrink together on a narrow screen rather than push the page sideways */
+.otp {
+  display: flex;
+  gap: 8px;
+  max-width: 328px;
+}
+
+.otp-b {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  max-width: 48px;
+  height: 56px;
+  box-sizing: border-box;
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink);
+  font: 500 24px/1 var(--fd);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition:
+    border-color var(--mo-quick) ease,
+    box-shadow var(--mo-quick) ease;
+}
+
+.otp-b:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-glow);
+}
+
+.otp-b[aria-invalid="true"] {
+  border-color: var(--badT);
+}
+
+@media (max-width: 360px) {
+  .otp {
+    gap: 6px;
+  }
+}
+
+.qbx-box {
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  transition:
+    border-color var(--mo-quick) ease,
+    box-shadow var(--mo-quick) ease;
+}
+
+.qbx-box:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-glow);
+}
+
+.qbx-t {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 12px 14px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 16px/1.5 var(--ft);
+  resize: vertical;
+  outline: none;
+}
+
+.qbx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 6px 10px;
+}
+
+.qbx-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--mute);
+  font-size: 13.5px;
+}
+
+.qbx-pin select {
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--sunk);
+  color: var(--ink);
+  font: 500 13.5px/1 var(--ft);
+}
+
+.qbx-add {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.qbx-add[aria-disabled="true"] {
+  background: var(--rule2);
+  color: var(--placeholder);
+  cursor: not-allowed;
 }
