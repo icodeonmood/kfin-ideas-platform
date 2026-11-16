@@ -240,7 +240,8 @@ membership_scoped:
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
-  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
+  - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
+  - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
