@@ -151,3 +151,21 @@ def test_voice_note_log_lines_pass_the_logger(monkeypatch: pytest.MonkeyPatch) -
     for field in ("voice_id", "byte_count", "removed_count", "deleted_count", "reason_code"):
         assert not field_is_forbidden(field), field
     assert field_is_forbidden("voice_note_id")
+
+
+def test_an_actor_uuid_is_an_id_not_personal_data() -> None:
+    """BLD-A183: about 0.7% of random UUIDs hold a digit run shaped like a mobile, card or Aadhaar number. As
+    `user:<uuid>` they tripped the value scan, which failed a switch change after it had committed (CI, 16 Nov)."""
+    import uuid
+
+    from pii.log_rules import value_patterns
+
+    for tripped in (
+        "user:39a14df0-6457-4f72-bc06-a6528110703c",  # mobile-shaped
+        "user:48bcbea8-338c-463c-b892-37429447669b",  # card-shaped
+        "user:39a048b5-e7c2-46e2-9a5f-811782882274",  # Aadhaar-shaped
+    ):
+        assert value_patterns(tripped) == [], tripped
+    assert all(value_patterns(f"user:{uuid.uuid4()}") == [] for _ in range(20000))
+    # Only the exact form is exempt: a phone number beside an ID is still found.
+    assert value_patterns("user:39a14df0-6457-4f72-bc06-a6528110703c 9876543210") != []

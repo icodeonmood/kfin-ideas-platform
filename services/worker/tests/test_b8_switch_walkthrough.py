@@ -38,10 +38,12 @@ def off(b: Browser, name: str) -> Iterator[None]:
         )
         assert r.status_code == 200, (name, state, r.status_code)
 
-    flip("off")
     try:
+        flip("off")
         yield
     finally:
+        # Restore even when switching off failed, so one bad call cannot leave the stack paused for every later
+        # test (BLD-A183).
         flip(before)
         time.sleep(CACHE_S)  # let every process see it again before the next switch
 

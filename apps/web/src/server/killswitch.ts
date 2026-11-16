@@ -73,5 +73,11 @@ export async function setKillSwitch(input: {
     });
   clearKillSwitchCache();
   // Alerting to the product lead and InfoSec goes through the comms module (B6); this line is the alert until then.
-  log.warn("killswitch.changed", { switch: input.name, state: input.state, actor_code: input.actor });
+  // The change is already committed and audited, so a log refusal must not turn it into a failed request
+  // (BLD-A183: a random user UUID could trip the value scan and the switch changed behind a 500).
+  try {
+    log.warn("killswitch.changed", { switch: input.name, state: input.state, actor_code: input.actor });
+  } catch {
+    // the audit_log row above is the record
+  }
 }
