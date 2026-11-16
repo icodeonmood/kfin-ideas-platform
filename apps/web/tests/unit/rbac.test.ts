@@ -4,7 +4,7 @@
  * policy/rbac.yaml; (2) a table-driven test over every endpoint × role generated from rbac.yaml.
  * The HTTP half (the proxy really enforces it) is services/worker/tests/test_b2_04_rbac_http.py.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import { parse } from "yaml";
 
 import policyJson from "@/lib/rbac.json";
 import {
+  AUTH_EXEMPT,
   ENDPOINTS,
   ROLE_COLUMNS,
   can,
@@ -19,6 +20,7 @@ import {
   canSeePage,
   decide,
   effectiveRoles,
+  isAuthExempt,
   navFor,
   scopesFor,
 } from "@/lib/rbac";
@@ -237,5 +239,50 @@ describe("canFlip with names that are not switches (BLD-A171 review)", () => {
       expect(() => canFlip(admin, name)).not.toThrow();
       expect(canFlip(admin, name)).toBe(false);
     }
+  });
+});
+
+describe("L-AUTH sign-in routes in the policy (BLD-A177)", () => {
+  const authRoot = path.resolve(__dirname, "../../src/app/auth");
+  /** Every handler a route file under app/auth exports, as "METHOD /auth/…". */
+  const handlers = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (name === "route.ts") {
+          const url = "/auth/" + path.relative(authRoot, dir).split(path.sep).join("/");
+          const source = readFileSync(full, "utf8");
+          const methods = [
+            ...source.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g),
+          ];
+          expect(methods.length, `${url} exports no handler`).toBeGreaterThan(0);
+          for (const m of methods) out.push(`${m[1]} ${url}`);
+        }
+      }
+    };
+    walk(authRoot);
+    return out.sort();
+  };
+
+  it("L-AUTH: every route file under app/auth has its line in auth_exempt, and every line has a route", () => {
+    const routes = handlers();
+    expect(routes.length).toBeGreaterThan(0);
+    const missing = routes.filter((r) => {
+      const [method, url] = r.split(" ");
+      return !isAuthExempt(method!, url!);
+    });
+    expect(missing, "add these to auth_exempt in policy/rbac.yaml, with the reason").toEqual([]);
+    expect(AUTH_EXEMPT.map((r) => `${r.method} ${r.template}`).sort()).toEqual(routes);
+  });
+
+  it("L-AUTH: only listed sign-in routes and methods run without a session", () => {
+    expect(isAuthExempt("GET", "/auth/callback")).toBe(true);
+    expect(isAuthExempt("HEAD", "/auth/session")).toBe(true);
+    expect(isAuthExempt("POST", "/auth/sso/start")).toBe(true);
+    expect(isAuthExempt("GET", "/auth/sign-out")).toBe(false);
+    expect(isAuthExempt("GET", "/auth/anything-new")).toBe(false);
+    expect(isAuthExempt("POST", "/auth/code/send/extra")).toBe(false);
   });
 });
