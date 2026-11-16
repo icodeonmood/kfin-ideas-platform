@@ -31,7 +31,6 @@ export function PhoneTabs({ nav, unread }: { nav: NavItem[]; unread: number }) {
             href={t.href}
             className={share ? "ptab share" : "ptab"}
             aria-current={isCurrent(pathname, t.href) ? "page" : undefined}
-            aria-label={share ? t.label : count ? `${t.label}, ${count} new` : undefined}
           >
             {share ? (
               <span className="ptab-t">
@@ -46,6 +45,8 @@ export function PhoneTabs({ nav, unread }: { nav: NavItem[]; unread: number }) {
               </span>
             ) : null}
             <span className="ptab-l">{label}</span>
+            {share ? <span className="vh"> a problem</span> : null}
+            {count ? <span className="vh">, {count} new</span> : null}
           </Link>
         );
       })}

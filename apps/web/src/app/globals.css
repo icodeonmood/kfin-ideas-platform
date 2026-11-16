@@ -115,12 +115,15 @@ main,
 }
 
 .link-button {
-  padding: 0.5rem 0.25rem;
+  min-height: 44px;
+  padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
-  font: inherit;
+  color: var(--ink);
+  font: 500 15px/1 var(--ft);
   text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--underline);
   cursor: pointer;
 }
 
@@ -318,38 +321,47 @@ textarea[aria-invalid="true"] {
   }
 }
 
+/* The older buttons (26 screens, most being rebuilt or retired) take C-BUTTON's look: .button is the ink primary,
+   .button-secondary the line button, .link-button the text button. New screens use components/ui/button.tsx. */
 .button {
-  display: inline-block;
-  padding: 0.625rem 1.125rem;
-  border: 2px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--white); /* 5.2:1 on Electric */
-  font: inherit;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background-color: var(--ink);
+  color: #ffffff;
+  font: 500 15px/1 var(--ft);
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .button:hover {
-  border-color: var(--electric-dark);
-  background: var(--electric-dark);
+  background-color: var(--ink2);
+  color: #ffffff;
 }
 
 .button[disabled],
 .button[aria-disabled="true"] {
-  opacity: 0.7;
-  cursor: progress;
+  background: var(--rule2);
+  color: var(--placeholder);
+  cursor: not-allowed;
 }
 
 .button-secondary {
-  background: var(--bg);
-  color: var(--accent);
+  background-color: var(--card);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--edge);
 }
 
 .button-secondary:hover {
-  background: var(--surface); /* Electric on it 4.8:1 */
-  color: var(--accent);
+  background-color: var(--card);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
 }
 
 .notice {

@@ -87,8 +87,11 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
     test.skip(isPhone(info), "the P shortcut is for a keyboard at a desk");
     await signIn(page, PERSONAS.contributor);
     await page.goto("/wall");
-    await page.keyboard.press("p");
-    await page.waitForURL((url) => url.pathname === "/share");
+    // The shortcut listens once the page has hydrated; press again until it has.
+    await expect(async () => {
+      await page.keyboard.press("p");
+      await page.waitForURL((url) => url.pathname === "/share", { timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
   });
 });
 
@@ -126,7 +129,9 @@ test("every shell item works by keyboard with a visible focus ring (AT-B2-07)", 
     await page.waitForURL((url) => url.pathname === href);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     // A task screen on a phone swaps the tab bar for its dock; everywhere else the item is marked current.
-    const after = page.getByRole("navigation", { name: "Main" }).locator(`[href="${href}"]:visible`);
+    const after = page
+      .getByRole("navigation", { name: "Main" })
+      .locator(`:is(.sb-new, .sb-i, .ptab)[href="${href}"]:visible`);
     if (await after.count()) await expect(after).toHaveAttribute("aria-current", "page");
   }
 });

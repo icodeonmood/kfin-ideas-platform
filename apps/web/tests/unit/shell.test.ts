@@ -100,3 +100,15 @@ describe("C-TASKBAR.save", () => {
     expect(savedTime("2026-11-16T04:35:00Z")).toBe("10:05 am");
   });
 });
+
+describe("C-BUTTON", () => {
+  it("C-BUTTON.variants and sizes map to the stylesheet's classes", async () => {
+    const { buttonClass } = await import("@/components/ui/button");
+    expect(buttonClass()).toBe("btn btn-primary");
+    expect(buttonClass("line", "sm")).toBe("btn btn-secondary btn-sm");
+    expect(buttonClass("soft", "full")).toBe("btn btn-soft btn-full");
+    expect(buttonClass("text", "full")).toBe("tb");
+    expect(buttonClass("text-blue")).toBe("tb blue");
+    expect(buttonClass("primary", "regular", "tbar-close")).toBe("btn btn-primary tbar-close");
+  });
+});

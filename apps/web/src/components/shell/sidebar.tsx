@@ -169,14 +169,16 @@ export function Sidebar({
                   className="sb-i"
                   data-tip={item.label}
                   aria-current={isCurrent(pathname, item.href) ? "page" : undefined}
-                  aria-label={unread ? `${item.label}, ${unread} unread` : undefined}
                 >
                   <NavIcon navKey={item.key} className="sb-svg" />
                   <span className="sb-l">{item.label}</span>
                   {unread ? (
-                    <span className="sb-n num" aria-hidden="true">
-                      {unread}
-                    </span>
+                    <>
+                      <span className="sb-n num" aria-hidden="true">
+                        {unread}
+                      </span>
+                      <span className="vh">, {unread} unread</span>
+                    </>
                   ) : null}
                 </Link>
               </li>

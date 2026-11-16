@@ -118,13 +118,14 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
   const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox", () =>
-    expect(labels("contributor")).toEqual(base));
+  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and The Ember in the account menu", () =>
+    expect(labels("contributor")).toEqual([...base, "The Ember"]));
   it("the review desk adds Review desk to the sidebar", () =>
     expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]));
   it("the core committee adds Ones Committee to the sidebar and Delivery to the account menu", () => {
     expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
-    expect(labels("core_committee", "account")).toEqual(["Delivery"]);
+    expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
+    expect(labels("contributor", "account")).toEqual(["The Ember"]);
   });
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");

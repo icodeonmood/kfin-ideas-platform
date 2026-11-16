@@ -145,6 +145,21 @@ export const IconKey = (p: Props) => (
   </Svg>
 );
 
+export const IconEmber = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H17v15.5a.5.5 0 0 1-.5.5H6a2 2 0 0 1-2-2z" />
+    <path d="M17 8h2.5a.5.5 0 0 1 .5.5V18a2 2 0 0 1-2 2" />
+    <path d="M8 8h5M8 12h5M8 16h3" />
+  </Svg>
+);
+
+export const IconDelivery = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3 4 7v10l8 4 8-4V7z" />
+    <path d="m4 7 8 4 8-4M12 11v10" />
+  </Svg>
+);
+
 /** The sidebar and tab icon for a navigation key (policy/rbac.yaml `navigation:`). */
 export function NavIcon({ navKey, ...p }: Props & { navKey: string }) {
   switch (navKey) {
@@ -164,6 +179,10 @@ export function NavIcon({ navKey, ...p }: Props & { navKey: string }) {
       return <IconCommittee {...p} />;
     case "share":
       return <IconPlus {...p} />;
+    case "ember":
+      return <IconEmber {...p} />;
+    case "delivery":
+      return <IconDelivery {...p} />;
     default:
       return <IconAdmin {...p} />;
   }

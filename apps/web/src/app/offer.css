@@ -278,83 +278,160 @@ h3 {
 }
 
 /* ---------- Buttons and links ---------- */
+/* C-BUTTON (lane D): ink primary, line, soft, text and blue text; regular 48, small 44, full 56; radius 12.
+ * The repo's names stay (btn-primary, btn-secondary, btn-quiet, btn-sm, btn-lg) and the pack's join them (btn-soft,
+ * btn-full, tb, tb blue), so call sites keep working. Press, sheen and hover drop are in motion.css. Disabled is a
+ * grey fill with readable text, never faded (C-BUTTON.states/4); busy shows a spinner and keeps its width. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  min-height: 48px;
-  padding: 10px 20px;
+  gap: var(--sp-8);
+  min-height: var(--ctl);
+  padding: 0 20px;
   border: 0;
-  border-radius: 10px;
-  font: 500 15px/1.2 var(--font-sans);
+  border-radius: var(--r-sm);
+  font: 500 15px/1 var(--ft);
   text-align: center;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
   box-sizing: border-box;
-  transition:
-    background-color var(--t-state) ease,
-    box-shadow var(--t-state) ease,
-    color var(--t-state) ease;
-}
-
-.btn-lg {
-  min-height: 52px;
-  padding: 12px 24px;
-  font-size: 16px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-sm {
-  min-height: 40px;
-  padding: 8px 16px;
-  font-size: 14px;
+  min-height: var(--ctl-sm);
+  padding: 0 16px;
+}
+
+.btn-lg,
+.btn-full {
+  min-height: var(--ctl-full);
+  font-size: 16px;
+}
+
+.btn-full {
+  width: 100%;
 }
 
 .btn-primary {
-  background: var(--ink);
+  background-color: var(--ink);
   color: #ffffff;
 }
 
 .btn-primary:hover {
-  background: #2a2a2e;
+  background-color: var(--ink2);
   color: #ffffff;
 }
 
 .btn-secondary {
-  background: #ffffff;
-  color: #111111;
-  box-shadow: inset 0 0 0 1px var(--line-control);
+  background-color: var(--card);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--edge);
 }
 
 .btn-secondary:hover {
-  color: #111111;
-  box-shadow: inset 0 0 0 1px #111111;
-}
-
-.btn-quiet {
-  background: transparent;
   color: var(--ink);
-  padding-inline: 6px;
+  box-shadow: var(--sh-line-hover);
 }
 
-.btn-quiet:hover {
+.btn-soft {
+  background-color: var(--sunk);
+  color: var(--ink);
+}
+
+.btn-soft:hover {
+  background-color: var(--softHover);
+  color: var(--ink);
+}
+
+/* Text buttons: underlined at rest (offset 4px), the underline darkens on hover; no box */
+.btn-quiet,
+.tb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 500 15px/1 var(--ft);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--underline);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.btn:disabled,
-.btn[aria-disabled="true"] {
-  opacity: 0.5;
+.btn-quiet:hover,
+.tb:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.tb.blue {
+  color: var(--blueT);
+  text-decoration-color: var(--underlineBlue);
+}
+
+.tb.blue:hover {
+  color: var(--blueT);
+  text-decoration-color: currentColor;
+}
+
+.btn:is(:disabled, [aria-disabled="true"]):not(.btn-quiet),
+:is(.btn-primary, .btn-secondary, .btn-soft):is(:disabled, [aria-disabled="true"]) {
+  background: var(--rule2);
+  color: var(--placeholder);
+  box-shadow: none;
   cursor: not-allowed;
 }
 
+:is(.btn-quiet, .tb):is(:disabled, [aria-disabled="true"]) {
+  color: var(--placeholder);
+  text-decoration-color: var(--rule2);
+  cursor: not-allowed;
+}
+
+/* Busy (C-BUTTON.states/5, NOT DRAWN default): the action in progress with a 12px spinner; further clicks are ignored */
+.btn[aria-busy="true"] {
+  cursor: progress;
+}
+
+.spin {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--edge);
+  border-top-color: var(--blue);
+  animation: spin 0.8s linear infinite;
+}
+
+.btn-primary .spin {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 [data-theme="zed"] .btn-primary {
-  background: #ffffff;
-  color: #111111;
+  background-color: #ffffff;
+  color: var(--slab);
 }
 
 [data-theme="zed"] .btn-primary:hover {
-  background: #e9e9e6;
+  background-color: var(--sunk);
+  color: var(--slab);
 }
 
 [data-theme="zed"] .btn-secondary {
@@ -364,6 +441,7 @@ h3 {
 }
 
 [data-theme="zed"] .btn-secondary:hover {
+  color: #ffffff;
   box-shadow: inset 0 0 0 1px #ffffff;
 }
 

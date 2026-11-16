@@ -458,6 +458,12 @@
       ]
     },
     {
+      "key": "ember",
+      "label": "The Ember",
+      "href": "/ember",
+      "place": "account"
+    },
+    {
       "key": "delivery",
       "label": "Delivery",
       "href": "/delivery",

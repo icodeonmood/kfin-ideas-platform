@@ -94,7 +94,6 @@ export function AccountMenu({
   };
 
   const tierLine = data.tier && data.tierName ? `Tier ${data.tier}, ${data.tierName}` : null;
-  const label = ["Your account", data.name, tierLine].filter(Boolean).join(", ");
 
   return (
     <div className={`acct acct-${placement}`}>
@@ -138,18 +137,29 @@ export function AccountMenu({
         type="button"
         className={placement === "up" ? "sb-me" : "ptop-me"}
         data-tip={placement === "up" ? data.name : undefined}
-        aria-label={label}
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
+        {/* Named from its content, so the spoken name holds the words on screen (WCAG 2.5.3) */}
+        <span className="vh">Your account, </span>
         <Avatar initials={data.initials} size={36} tier={data.tier} ring="neutral" />
         {placement === "up" ? (
-          <span className="sb-l sb-who" aria-hidden="true">
+          <span className="sb-l sb-who">
             <b>{data.name}</b>
-            {tierLine ? <span>{tierLine}</span> : null}
+            {tierLine ? (
+              <span>
+                <span className="vh">, </span>
+                {tierLine}
+              </span>
+            ) : null}
           </span>
-        ) : null}
+        ) : (
+          <span className="vh">
+            {data.name}
+            {tierLine ? `, ${tierLine}` : ""}
+          </span>
+        )}
       </button>
     </div>
   );
