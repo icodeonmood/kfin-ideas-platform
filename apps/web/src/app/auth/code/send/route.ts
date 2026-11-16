@@ -10,8 +10,10 @@ import {
   cleanIntent,
   intentStore,
   newAttemptKey,
+  worthKeeping,
 } from "@/server/auth/intents";
 import { secureCookies } from "@/server/auth/session";
+import { mayKeepIntent } from "@/server/auth/throttle";
 import { readJson } from "@/server/http";
 import { log } from "@/server/log";
 
@@ -55,19 +57,24 @@ export async function POST(request: NextRequest) {
     { sent_to: result.sentTo, valid_minutes: result.validMinutes, resend_in_seconds: result.resendInSeconds },
     { headers: { "Cache-Control": "no-store" } },
   );
-  // Keep where they were going against the attempt, unless this browser already has one (L-AUTH.rules/4).
+  // Keep where they were going against the attempt (L-AUTH.rules/4). An explicit `intent.to` is where the person
+  // asked to go now, so it replaces a kept attempt's place; without one, the browser's kept attempt stands.
+  const raw = (body.intent && typeof body.intent === "object" ? body.intent : {}) as Record<string, unknown>;
+  const explicit = typeof raw.to === "string" && raw.to !== "";
   const key = request.cookies.get(ATTEMPT_COOKIE)?.value;
   const now = new Date();
-  const kept = key && key.length <= 128 ? await intentStore().find(attemptKeyHash(key), now) : null;
+  const kept =
+    !explicit && key && key.length <= 128 ? await intentStore().find(attemptKeyHash(key), now) : null;
   if (!kept) {
-    const raw = (body.intent ?? {}) as Record<string, unknown>;
-    const fresh = newAttemptKey();
-    await intentStore().save(
-      attemptKeyHash(fresh),
-      cleanIntent({ to: raw.to, draftId: raw.draft_id, step: raw.step }),
-      now,
-    );
-    response.cookies.set(ATTEMPT_COOKIE, fresh, attemptCookieOptions(secureCookies()));
+    const intent = cleanIntent({ to: raw.to, draftId: raw.draft_id, step: raw.step });
+    if (worthKeeping(intent) && mayKeepIntent(request, now.getTime())) {
+      const fresh = newAttemptKey();
+      await intentStore().save(attemptKeyHash(fresh), intent, now);
+      response.cookies.set(ATTEMPT_COOKIE, fresh, attemptCookieOptions(secureCookies()));
+    } else if (explicit) {
+      // Asked for `/` (or over the limit): an older attempt must not send them somewhere else.
+      response.cookies.set(ATTEMPT_COOKIE, "", attemptCookieOptions(secureCookies(), 0));
+    }
   }
   return response;
 }

@@ -17,14 +17,17 @@ import { safeNext } from "./session";
 export const ATTEMPT_COOKIE = "ideas_attempt";
 const FOREIGN_KEY_VIOLATION = "23503";
 export const INTENT_TTL_MINUTES = 30;
+/** Rows older than this are deleted when a new one is written (BLD-A177). Used rows go at once. */
+export const INTENT_KEEP_HOURS = 24;
 
 export type Intent = { to: string; draftId: string | null; step: string | null };
 
 export interface IntentStore {
+  /** Keeps the intent, and deletes rows older than INTENT_KEEP_HOURS on the way. */
   save(keyHash: string, intent: Intent, now: Date): Promise<void>;
   /** The intent for this attempt, if it is unused and not older than the TTL. */
   find(keyHash: string, now: Date): Promise<Intent | null>;
-  /** Marks the intent used and returns it, once. A second call (a replayed callback) gets null. */
+  /** Removes the intent and returns it, once. A second call (a replayed callback) gets null. */
   use(keyHash: string, now: Date): Promise<Intent | null>;
 }
 
@@ -66,6 +69,12 @@ export function draftFromPath(path: string): { draftId: string; step: string } |
 export const isCheckStep = (step: string | null | undefined) =>
   Boolean(step && (step.startsWith("check:") || step === "send"));
 
+/**
+ * Whether an intent is worth a row: somewhere other than `/`, or a draft (BLD-A177). Signing in with nowhere in
+ * particular to go keeps nothing; the callback then lands on `/`.
+ */
+export const worthKeeping = (intent: Intent) => intent.draftId !== null || intent.to !== "/";
+
 /** Where to land after signing in: the draft at its step, else the kept path (S-04 after "Share a problem"). */
 export function destination(intent: Intent | null): string {
   if (!intent) return "/";
@@ -93,34 +102,38 @@ export const attemptCookieOptions = (secure: boolean, maxAge = INTENT_TTL_MINUTE
 
 const expired = (createdAt: Date, now: Date) =>
   now.getTime() - createdAt.getTime() > INTENT_TTL_MINUTES * 60_000;
+const keptSince = (now: Date) => new Date(now.getTime() - INTENT_KEEP_HOURS * 3_600_000);
 
 /** For unit tests and for dev before the cut-over: one process, nothing survives a restart. */
 export class MemoryIntentStore implements IntentStore {
-  private rows = new Map<string, { intent: Intent; createdAt: Date; usedAt: Date | null }>();
+  rows = new Map<string, { intent: Intent; createdAt: Date }>();
 
   async save(keyHash: string, intent: Intent, now: Date) {
-    this.rows.set(keyHash, { intent: { ...intent }, createdAt: now, usedAt: null });
+    for (const [k, row] of this.rows) if (row.createdAt < keptSince(now)) this.rows.delete(k);
+    this.rows.set(keyHash, { intent: { ...intent }, createdAt: now });
   }
 
   async find(keyHash: string, now: Date) {
     const row = this.rows.get(keyHash);
-    return row && !row.usedAt && !expired(row.createdAt, now) ? { ...row.intent } : null;
+    return row && !expired(row.createdAt, now) ? { ...row.intent } : null;
   }
 
   async use(keyHash: string, now: Date) {
     const row = this.rows.get(keyHash);
-    if (!row || row.usedAt || expired(row.createdAt, now)) return null;
-    row.usedAt = now;
-    return { ...row.intent };
+    if (!row) return null;
+    this.rows.delete(keyHash);
+    return expired(row.createdAt, now) ? null : { ...row.intent };
   }
 }
 
 /**
  * `sign_in_intents` (lane E's cut-over, 20261121500100): attempt_key (the SHA-256 here), destination, draft_id
- * (references ideas), step (E-ENUMS draft step), created_at, used_at.
+ * (references ideas), step (E-ENUMS draft step), created_at, used_at. A used row is deleted, so `used_at` stays
+ * empty; rows nobody used are deleted a day later, when another is written (BLD-A177).
  */
 export class PgIntentStore implements IntentStore {
   async save(keyHash: string, intent: Intent, now: Date) {
+    await getDb().deleteFrom("sign_in_intents").where("created_at", "<", keptSince(now)).execute();
     const insert = (draftId: string | null, step: string | null) =>
       getDb()
         .insertInto("sign_in_intents")
@@ -148,14 +161,12 @@ export class PgIntentStore implements IntentStore {
 
   async use(keyHash: string, now: Date) {
     const row = await getDb()
-      .updateTable("sign_in_intents")
-      .set({ used_at: now })
+      .deleteFrom("sign_in_intents")
       .where("attempt_key", "=", keyHash)
-      .where("used_at", "is", null)
-      .where("created_at", ">", oldest(now))
-      .returning(["destination", "draft_id", "step"])
+      .returning(["destination", "draft_id", "step", "created_at", "used_at"])
       .executeTakeFirst();
-    return row ? { to: row.destination, draftId: row.draft_id, step: row.step } : null;
+    if (!row || row.used_at || new Date(row.created_at) <= oldest(now)) return null;
+    return { to: row.destination, draftId: row.draft_id, step: row.step };
   }
 }
 
