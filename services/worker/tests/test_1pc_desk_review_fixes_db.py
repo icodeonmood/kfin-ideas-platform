@@ -169,3 +169,19 @@ def test_finding_8_a_list_where_a_word_belongs_answers_in_the_packs_shape(
     with pytest.raises(Refused) as refused:
         revise.revise_worth(db, cast["idea"]["idea_id"], cast["meera"]["id"], {"kind": ["problem"]})
     assert (refused.value.status, refused.value.code) == (422, "kind_invalid")
+
+
+def test_lane_A_ask_two_sweeps_never_overlap(db: Conn, cast: dict[str, Any], test_database: str) -> None:
+    from core.db import connect
+    from tests import helpers
+
+    decide.send(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                {"choice": "not_now", "reason": REASON, "return_in": "1m"}, f.at(16, 10))  # fmt: skip
+    other = connect(helpers.db_url(test_database))
+    try:
+        other.execute("SELECT pg_advisory_lock(%s)", (clocks.SWEEP_LOCK,))  # a slow run still going
+        assert clocks.run_due(db, f.at(17, 9, m=12)) == {"returned": 0, "windows_closed": 0, "reminded": 0}
+        other.execute("SELECT pg_advisory_unlock(%s)", (clocks.SWEEP_LOCK,))
+        assert clocks.run_due(db, f.at(17, 9, m=12))["returned"] == 1
+    finally:
+        other.close()
