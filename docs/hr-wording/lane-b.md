@@ -47,3 +47,18 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | An answer over the limit | Keep your answer under 2,000 characters. |
 | What it's worth: a tools choice not offered | Choose None, Partly or Fully. |
 | The committee: no extension left, a closed window, a reversed one | This window is at the 3-month limit. / This window has closed. The decision stands. / This decision has already been reversed. That was final. |
+
+## 4. Lines added with the screens (16 Nov, evening)
+
+| Where | Wording |
+|---|---|
+| The Answer screen, after sending (BLD-E008) | The board says "Meera decides by Friday 20 November, and her decision comes to your Inbox." This now reads "Meera decides by Friday 20 November, and the decision comes to your Inbox." |
+| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee's window. |
+| The Ones Committee, empty tabs | No decisions in the window. Each desk decision shows here for 30 days after it is made. / Nothing reversed. A decision the committee changes shows here, with its note. / Nothing expired yet. When a window closes, the decision stands and moves here. |
+| The Answer screen with nothing to answer | Nothing to answer right now. When the review desk asks you something about this idea, the questions show here. |
+| The reviewer's page, the reviewer's own idea | Your own idea. Another reviewer decides on it. You can read it here. |
+| The review desk, a reminder that did not go | The reminder didn't go. Try again. |
+| The Ones Committee, a reversal that cannot start | This decision can't be reversed now. |
+| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can't be opened right now. |
+| Any send that fails | That didn't go through. Try again. / Your answers didn't send. Try again. / That didn't save. Try again. / That didn't merge. Try again. |
+| The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
