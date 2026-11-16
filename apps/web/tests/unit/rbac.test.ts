@@ -48,7 +48,6 @@ const SECTION_3_1: Record<string, string[]> = {
   open_attachments: ALL,
   see_restored_values: ALL,
   approve_handover: ["sponsor"],
-  see_people_view: ALL,
   reveal_identity: ["admin"],
   grant_roles: ["admin"],
 };
@@ -200,12 +199,9 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(decide(rolesOf("admin"), "POST", "/api/delivery/4/measurements/day_90/finance").kind).toBe(
       "allow",
     );
-    expect(decide(rolesOf("contributor"), "GET", "/api/lenses").kind).toBe("deny");
-    expect(decide(rolesOf("lob_committee"), "GET", "/api/lenses").kind).toBe("allow");
     expect(decide(rolesOf("core_committee"), "GET", "/api/learning").kind).toBe("deny");
     expect(decide(rolesOf("admin"), "POST", "/api/learning/proposals/3/decide").kind).toBe("allow");
     expect(canSeePage(rolesOf("contributor"), "/delivery/4")).toBe(true); // their own, or not found
-    expect(canSeePage(rolesOf("contributor"), "/lenses")).toBe(false);
     expect(canSeePage(rolesOf("admin"), "/learning")).toBe(true);
   });
 });

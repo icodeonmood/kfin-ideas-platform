@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { day } from "@/lib/dates";
 import { currentUser } from "@/server/auth/current";
 import { myIdeas } from "@/server/ideas";
-import { myOne, myTeam } from "@/server/ones";
+import { myOne } from "@/server/ones";
 import { myPoints } from "@/server/points";
 
 import { NameOnWall } from "./name-on-wall";
@@ -23,10 +23,9 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const [mine, one, team, points] = await Promise.all([
+  const [mine, one, points] = await Promise.all([
     myIdeas(me).catch(() => null),
     myOne(me).catch(() => null),
-    myTeam(me).catch(() => null),
     myPoints(me).catch(() => null),
   ]);
   return (
@@ -38,15 +37,8 @@ export default async function Page() {
       {one ? <OneDashboard one={one} /> : null}
       <PointsPanel points={points} />
       <p className="chip-links">
-        <Link href="/my-ideas/lens">Your lens: your ideas and groups in numbers</Link>
-        {" · "}
         <Link href="/journey">How an idea becomes a One</Link>
       </p>
-      {team && team.people.length ? (
-        <p>
-          <Link href="/my-team">Your team&apos;s ideas</Link> ({team.people.length} people report to you)
-        </p>
-      ) : null}
       {mine === null ? (
         <Status
           kind="error"

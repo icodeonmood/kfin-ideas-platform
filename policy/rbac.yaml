@@ -25,7 +25,6 @@ capabilities:
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
-  see_people_view:            { contributor: own_history, reviewer: yes, lob_committee: own_lob, core_committee: yes, admin: yes }
   reveal_identity:            { admin: with_reason_logged }
   grant_roles:                { admin: yes }
   manage_kill_switches:       { admin: per_switch, infosec: per_switch, hr: per_switch }
@@ -39,7 +38,6 @@ capabilities:
   work_delivery:              { contributor: as_party, core_committee: yes, admin: yes }
   start_handover:             { core_committee: yes, admin: yes }
   manage_delivery:            { admin: yes }                           # link the pipeline page; Finance's confirmation
-  view_lenses:                { lob_committee: yes, core_committee: yes, admin: yes }   # counts only
   review_learning:            { admin: yes }                           # the product team's proposals and reports
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
@@ -87,7 +85,6 @@ endpoints:
   - POST /api/me/privacy-notice                       signed_in
   - GET /api/me/ideas                                 signed_in
   - GET /api/me/points                                signed_in
-  - GET /api/me/lens                                  signed_in       # only ever the person's own (BLD-135)
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
   - GET /api/inbox                                    signed_in
@@ -151,7 +148,6 @@ endpoints:
   - POST /api/me/one/glow-up/{id}/seen                signed_in
   - GET /api/me/one/showcase                          signed_in
   - PUT /api/me/one/showcase                          signed_in
-  - GET /api/me/team                                  signed_in
   # Delivery, lenses and learning (BLD-115 to BLD-122).
   - GET /api/delivery                                 work_delivery   # your own deliveries; committees and admins see all
   - POST /api/delivery                                start_handover
@@ -178,8 +174,6 @@ endpoints:
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
   - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
-  - GET /api/lenses                                   view_lenses
-  - POST /api/lenses/rebuild                          review_learning
   - GET /api/learning                                 review_learning
   - POST /api/learning/proposals/{id}/decide          review_learning
   - POST /api/learning/proposals/{id}/publish         review_learning   # write an approved term or tag into the company repo (BLD-136)
@@ -220,7 +214,6 @@ pages:
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /ones/console              view_ones_console                    # the committee console's Ones module
   - /delivery                  work_delivery                        # each person sees only their own deliveries
-  - /lenses                    view_lenses
   - /learning/committee        approve_scorecard_changes            # before /learning: the first match wins (BLD-149)
   - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send

@@ -112,15 +112,13 @@ test("9: the console's three waiting states", async ({ browser }) => {
   await expect(ceo.getByRole("heading", { level: 2, name: "Propose a One" })).toBeVisible();
 });
 
-test("10-12: leaderboard, manager view and the office screen", async ({ browser }) => {
+// The manager view (step 11) is retired (DEC-106, R12).
+test("10, 12: leaderboard and the office screen", async ({ browser }) => {
   const ananya = await as(browser, DEMO.one);
   await ananya.goto("/ones/leaderboard");
   await expect(ananya.getByRole("cell", { name: "Rohit Menon" })).toBeVisible();
   await expectNoSeriousAxeIssues(ananya);
   const rahul = await as(browser, DEMO.manager);
-  await rahul.goto("/my-team");
-  await expect(rahul.getByRole("cell", { name: "Kavya Menon" })).toBeVisible();
-  await expectNoSeriousAxeIssues(rahul);
   await rahul.goto("/constellation");
   await expect(rahul.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
   await expectNoSeriousAxeIssues(rahul);
@@ -135,7 +133,9 @@ test("13-14: the launch screen and the kill switches", async ({ browser }) => {
   await expectNoSeriousAxeIssues(admin);
 });
 
-test("15-21: delivery, lenses and learning (read only, so the demo stays ready)", async ({ browser }) => {
+test("15-21: delivery and learning (read only, so the demo stays ready; lenses retired, DEC-106)", async ({
+  browser,
+}) => {
   const meera = await as(browser, DEMO.member);
   await meera.goto("/delivery");
   await expect(
@@ -143,9 +143,6 @@ test("15-21: delivery, lenses and learning (read only, so the demo stays ready)"
   ).toBeVisible();
   await expect(meera.getByRole("button", { name: "Start the handover" }).first()).toBeVisible();
   await expect(meera.getByText("Live sync with the delivery pipeline: coming soon")).toBeVisible();
-  await expectNoSeriousAxeIssues(meera);
-  await meera.goto("/lenses");
-  await expect(meera.getByRole("heading", { level: 2, name: "By line of business" })).toBeVisible();
   await expectNoSeriousAxeIssues(meera);
 
   const ceo = await as(browser, DEMO.ceo);
