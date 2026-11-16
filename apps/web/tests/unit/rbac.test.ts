@@ -35,6 +35,7 @@ const ALL = [
   "working_group",
   "sponsor",
   "admin",
+  "committee", // the pack's Ones Committee (E-ENUMS.roles, DEC-102), beside the §3.1 columns until they retire
 ];
 const SECTION_3_1: Record<string, string[]> = {
   submit: ALL,
@@ -58,10 +59,11 @@ const SECTION_3_1: Record<string, string[]> = {
   see_people_view: ALL,
   reveal_identity: ["admin"],
   grant_roles: ["admin"],
+  committee_window: ["committee"], // L-COMMITTEE: the 30-day window, extend, reverse once (lane B)
 };
 
 describe("policy agrees with ARCHITECTURE §3.1", () => {
-  it("lists exactly the eight §3.1 role columns", () => {
+  it("lists the eight §3.1 role columns and the pack's committee", () => {
     expect([...ROLE_COLUMNS]).toEqual(ALL);
   });
 
