@@ -38,6 +38,9 @@ Never run `git reset`, `git stash` or a whole-file `git add` in a checkout anoth
 | C | Feature revisions and new features | `.worktrees/build-c` | none | `202611213xxxxx` |
 | D | Design track: every screen and interaction | `.worktrees/design` | none | `202611214xxxxx` (reserved; it should not need one) |
 | E | Planning and the design-handoff cut-over (`docs/SHIP_PLAN_1PC.md`): contracts, the schema cut-over, retirements, the idea page, My ideas, the Wall, Profile | `.worktrees/handoff` | none | `202611215xxxxx` (sorts after every other lane's, so the cut-over runs last on a fresh database) |
+| F | The handoff's team-up, crew, conversation and search (`docs/SHIP_PLAN_1PC.md` §5) | `.worktrees/build-f*` | none | `202611226xxxxx` (after the cut-over) |
+
+**After the handoff cut-over (BLD-E006) every lane uses a range that sorts after it**, because the new tables arrive in the cut-over: A `202611221xxxxx`, B `202611222xxxxx`, C `202611223xxxxx`, D `202611224xxxxx`, E `202611225xxxxx` (the cut-over itself is `20261121500100`), F `202611226xxxxx`. Write no migration until the cut-over is on `main`; until then build against `1pc-handoff/06-contracts/`.
 
 ## Product decisions
 
