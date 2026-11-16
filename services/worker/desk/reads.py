@@ -81,7 +81,7 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
         "idea_id": row.idea_id, "title": row.title, "who": row.who, "questions": row.questions,
         "time_left": row.time_left, "variant": row.variant, "due_at": row.due_at.isoformat() if row.due_at else None,
         "decide_by": row.decide_by, "action": row.action, "action_kind": row.action_kind, "decision": row.decision,
-        "committee": row.committee, "area": row.area,
+        "committee": row.committee, "area": row.area, "asked": row.asked, "answered": row.answered,
     }  # fmt: skip
 
 
