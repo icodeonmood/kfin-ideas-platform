@@ -128,7 +128,10 @@ def _amount(n: int, unit: str) -> str:
     return f"{n} {unit}{'s' * (n != 1)}"
 
 
-def countdown(due_at: dt.datetime, now: dt.datetime) -> Countdown:
+def countdown(due_at: dt.datetime, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Countdown:
+    """A day or more ahead counts calendar days in office time, as people do: a 30-day window decided on Monday
+    16 November has 25 days left on Saturday 21 November at any hour (V-ACC.committee/1). Under a day it is
+    hours and minutes; once late, how late."""
     left = int((due_at - now).total_seconds())
     if left <= 0:
         late = -left
@@ -140,4 +143,5 @@ def countdown(due_at: dt.datetime, now: dt.datetime) -> Countdown:
     if left < 86400:
         minutes = max(1, left // 60)
         return Countdown(left, f"{minutes // 60:02d}:{minutes % 60:02d}", "warn")
-    return Countdown(left, _amount(left // 86400, "day"), "normal")
+    days = (due_at.astimezone(tz).date() - now.astimezone(tz).date()).days
+    return Countdown(left, _amount(days, "day"), "normal")
