@@ -60,6 +60,7 @@ def say(
     event: str,
     *,
     author_user_id: str | None = None,
+    author_code: str | None = None,
     payload: Mapping[str, Ref] | None = None,
     question_set_id: str | None = None,
     entry_type: str = "event",
@@ -67,9 +68,18 @@ def say(
 ) -> None:
     """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time."""
     conn.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, question_set_id, at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
-        (idea_uuid, entry_type, event, Jsonb(dict(payload or {})), author_user_id, question_set_id, at),
+        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, author_code, "
+        "question_set_id, at) VALUES (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
+        (
+            idea_uuid,
+            entry_type,
+            event,
+            Jsonb(dict(payload or {})),
+            author_user_id,
+            author_code,
+            question_set_id,
+            at,
+        ),
     )
 
 
@@ -107,4 +117,7 @@ def schedule(
 ) -> None:
     """Ask lane A's timer engine to call a lane B handler at `due_at`. Screens never depend on it having run."""
     _ = (conn, payload)
-    log.info("desk.schedule.pending", kind=kind, entity=entity)
+    target, _, target_id = entity.partition(":")
+    log.info(
+        "desk.schedule.pending", kind=kind, target=target, target_id=target_id
+    )  # a bare ID passes the value scan

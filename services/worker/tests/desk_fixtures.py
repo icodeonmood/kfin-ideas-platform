@@ -52,9 +52,8 @@ def idea(conn: Conn, sharer: dict[str, str], *, title: str = "Investors call to 
     }  # fmt: skip
     names = ", ".join(cols)
     marks = ", ".join(["%s"] * len(cols))
-    row = conn.execute(
-        f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *", tuple(cols.values())
-    ).fetchone()  # noqa: S608
+    sql = f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *"  # noqa: S608 (column names are this file's own)
+    row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
     conn.execute(
         "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'lead', 'shared')",
