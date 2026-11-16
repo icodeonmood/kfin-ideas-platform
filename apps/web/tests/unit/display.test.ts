@@ -61,7 +61,12 @@ describe("S-OFFICE: the office screen (L-DISPLAY.office)", () => {
     expect(position(0, 7)).toBe("1 of 7");
   });
 
-  it("names nobody who has not said yes: the light reads 'No. 17' alone", () => {
+  it("uses the directory's first name when the worker gives one", () => {
+    const [o] = officeOrder([one({ name: "Asha K. Synthetic", first_name: "Asha" })]);
+    expect(lightLabel(o!)).toBe("No. 17 · Asha");
+  });
+
+  it("names nobody who hid their name from the Wall (DEC-104): the light reads 'No. 17' alone", () => {
     const [o] = officeOrder([one({ name: null })]);
     expect(o!.first_name).toBeNull();
     expect(lightLabel(o!)).toBe("No. 17");
