@@ -77,7 +77,7 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
   const pages: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", ["/", "/share", "/my-ideas", "/wall"]],
     ["reviewer", ["/review"]],
-    ["core", ["/desk-decisions"]],
+    ["core", ["/committee"]],
     ["admin", ["/admin"]],
   ];
   for (const [persona, paths] of pages) {
@@ -128,7 +128,7 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
 
 test("people without the role are sent home from Review and Admin", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
-  for (const path of ["/review", "/admin", "/desk-decisions"]) {
+  for (const path of ["/review", "/admin", "/committee"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/$/);
   }

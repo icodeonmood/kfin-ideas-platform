@@ -78,20 +78,13 @@ test("5-6: the wall and an idea page", async ({ browser }) => {
   await expectNoSeriousAxeIssues(kavya);
 });
 
-test("7-8: the review desk and desk decisions", async ({ browser }) => {
+// Desk decisions (step 8) is retired (DEC-106, R10); lane B rebuilds the committee window on /committee.
+test("7: the review desk", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
   await desk.goto("/review");
   await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
   await expectNoSeriousAxeIssues(desk);
-  const member = await as(browser, DEMO.member);
-  await member.goto("/desk-decisions");
-  await expect(
-    member
-      .getByText("Explain transaction rejections to distributors in plain words", { exact: false })
-      .first(),
-  ).toBeVisible();
-  await expectNoSeriousAxeIssues(member);
 });
 
 test("9: the console's three waiting states", async ({ browser }) => {

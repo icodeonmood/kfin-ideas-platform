@@ -338,7 +338,6 @@
   },
   "pages": [
     "/review                    view_review_queue",
-    "/desk-decisions            view_review_queue",
     "/committee                 veto_desk_decision",
     "/admin                     manage_kill_switches grant_roles",
     "/reports                   view_fairness_reports",
