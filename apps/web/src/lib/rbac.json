@@ -111,10 +111,6 @@
     },
     "send_ember": {
       "admin": "yes"
-    },
-    "view_fairness_reports": {
-      "core_committee": "yes",
-      "admin": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -238,7 +234,6 @@
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "POST /api/admin/reveal                            reveal_identity",
-    "GET /api/reports/{kind}                           view_fairness_reports",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/ones/leaderboard                         signed_in",
@@ -307,7 +302,6 @@
     "/review                    view_review_queue",
     "/committee                 veto_desk_decision",
     "/admin                     manage_kill_switches grant_roles",
-    "/reports                   view_fairness_reports",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
     "/ones/console              view_ones_console",

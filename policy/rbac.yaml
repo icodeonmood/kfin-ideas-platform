@@ -39,8 +39,6 @@ capabilities:
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
-  # Fairness and calibration (§3.8, §5.4, BLD-223): counts only, small numbers suppressed.
-  view_fairness_reports:      { core_committee: yes, admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -120,7 +118,6 @@ endpoints:
   - GET /api/admin/kill-switches                      manage_kill_switches
   - PUT /api/admin/kill-switches                      manage_kill_switches
   - POST /api/admin/reveal                            reveal_identity
-  - GET /api/reports/{kind}                           view_fairness_reports      # fairness and calibration (§3.8, §5.4)
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.
   - GET /api/ones                                     see_org_ideas
@@ -197,7 +194,6 @@ pages:
   - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
-  - /reports                   view_fairness_reports                # fairness and calibration, counts only (BLD-223)
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /ones/console              view_ones_console                    # the committee console's Ones module

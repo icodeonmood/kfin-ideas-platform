@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { can, canFlip } from "@/lib/rbac";
 import { listGrants } from "@/server/admin/roles";
@@ -53,11 +52,6 @@ export default async function Admin() {
         </section>
       ) : null}
       {showRoles ? <Roles initial={grants} /> : null}
-      {showRoles ? (
-        <p>
-          <Link href="/reports">Fairness and calibration reports</Link>
-        </p>
-      ) : null}
     </>
   );
 }
