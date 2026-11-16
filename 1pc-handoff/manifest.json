@@ -1,0 +1,3960 @@
+{
+ "pack": "1% Club build handoff",
+ "draft": 0,
+ "baseline": {
+  "canvas_version": 106,
+  "date": "2026-11-16"
+ },
+ "generated": "2026-11-16",
+ "last_delta": null,
+ "modules": [
+  {
+   "id": "P-DECISIONS",
+   "title": "Decisions taken, promises awaiting sign-off, open questions",
+   "file": "00-overview/DECISIONS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Handoff.dc.html",
+   "source_sha": "e0334143c46807a2",
+   "depends_on": [],
+   "used_by": [
+    "P-GAPS",
+    "P-PRODUCT",
+    "P-REPO",
+    "F-COPY",
+    "F-SPACE",
+    "C-CREW-DECK",
+    "C-FIELD-MSG",
+    "C-FILE",
+    "S-04",
+    "S-05",
+    "L-AUDIT",
+    "L-AUTH",
+    "L-DISPLAY",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-MERGE",
+    "L-ONES",
+    "L-SUBMIT",
+    "L-WALL"
+   ],
+   "anchors": [
+    "P-DECISIONS.experiments",
+    "P-DECISIONS.open",
+    "P-DECISIONS.signoff",
+    "P-DECISIONS.taken"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "P-GAPS",
+   "title": "Everything the canvas leaves open or does not draw",
+   "file": "00-overview/GAPS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "none",
+   "source_sha": null,
+   "depends_on": [],
+   "used_by": [],
+   "anchors": [
+    "P-GAPS.notdrawn",
+    "P-GAPS.open"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "P-PRODUCT",
+   "title": "What 1% Club is, who uses it and how an idea lives",
+   "file": "00-overview/PRODUCT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Handoff.dc.html",
+   "source_sha": "e0334143c46807a2",
+   "depends_on": [],
+   "used_by": [
+    "P-DECISIONS",
+    "P-GAPS",
+    "S-01",
+    "L-AUDIT",
+    "A-API"
+   ],
+   "anchors": [
+    "P-PRODUCT.arc",
+    "P-PRODUCT.cast",
+    "P-PRODUCT.lifecycle",
+    "P-PRODUCT.privacy",
+    "P-PRODUCT.promises",
+    "P-PRODUCT.roles"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "P-REPO",
+   "title": "Where each module lands in the repo",
+   "file": "00-overview/REPO-MAPPING.md",
+   "rev": 1,
+   "status": "pending",
+   "source": "none",
+   "source_sha": null,
+   "depends_on": [],
+   "used_by": [],
+   "anchors": [
+    "P-REPO.components",
+    "P-REPO.contracts",
+    "P-REPO.first-task",
+    "P-REPO.logic",
+    "P-REPO.screens",
+    "P-REPO.tokens"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "P-ROUTES",
+   "title": "Screens, routes and navigation",
+   "file": "00-overview/ROUTES.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/canvas.json",
+   "source_sha": "54bd41a462915528",
+   "depends_on": [],
+   "used_by": [
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-REPO",
+    "C-PROMPT",
+    "J-BROWSE",
+    "S-02",
+    "S-03",
+    "S-07"
+   ],
+   "anchors": [
+    "P-ROUTES.graph",
+    "P-ROUTES.nav",
+    "P-ROUTES.screens",
+    "P-ROUTES.state"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-A11Y",
+   "title": "Accessibility",
+   "file": "01-foundations/F-A11Y.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR",
+    "F-MOTION",
+    "F-SPACE"
+   ],
+   "used_by": [
+    "C-BUTTON"
+   ],
+   "anchors": [
+    "F-A11Y.audit",
+    "F-A11Y.rules",
+    "F-A11Y.shortcuts"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-COLOR",
+   "title": "Colour",
+   "file": "01-foundations/F-COLOR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [],
+   "used_by": [
+    "F-A11Y",
+    "F-ICONS",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-ONES-FAN",
+    "C-PILL",
+    "C-SIDEBAR",
+    "C-SKELETON",
+    "C-TASKBAR",
+    "C-TRACK",
+    "E-ENUMS",
+    "P-DECISIONS",
+    "P-GAPS",
+    "C-PREVIEW",
+    "V-ACC"
+   ],
+   "anchors": [
+    "F-COLOR.contrast",
+    "F-COLOR.core",
+    "F-COLOR.glass",
+    "F-COLOR.gradients",
+    "F-COLOR.principles",
+    "F-COLOR.raw",
+    "F-COLOR.status",
+    "F-COLOR.tiers"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-COPY",
+   "title": "Words, voice and vocabulary",
+   "file": "01-foundations/F-COPY.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/",
+   "source_sha": null,
+   "depends_on": [],
+   "used_by": [
+    "C-EMPTY",
+    "E-ENUMS",
+    "C-BUTTON",
+    "L-AUDIT"
+   ],
+   "anchors": [
+    "F-COPY.buttons",
+    "F-COPY.placeholders",
+    "F-COPY.plurals",
+    "F-COPY.states",
+    "F-COPY.vocabulary",
+    "F-COPY.voice"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-ICONS",
+   "title": "Icons and the brand mark",
+   "file": "01-foundations/F-ICONS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/icons/INDEX.md",
+   "source_sha": "e1515403aea8bd28",
+   "depends_on": [
+    "F-COLOR"
+   ],
+   "used_by": [
+    "C-AVATAR",
+    "C-PHONE-TABS",
+    "C-SIDEBAR"
+   ],
+   "anchors": [
+    "F-ICONS.avatars",
+    "F-ICONS.mark",
+    "F-ICONS.style"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-MOTION",
+   "title": "Motion and transitions",
+   "file": "01-foundations/F-MOTION.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Motion.dc.html",
+   "source_sha": "97c8708e498fc0ef",
+   "depends_on": [],
+   "used_by": [
+    "F-A11Y",
+    "C-BUTTON",
+    "C-CHIP",
+    "C-CREW-DECK",
+    "C-DRAFT-LOADER",
+    "C-FIELD-MSG",
+    "C-LISTEN",
+    "C-ONES-FAN",
+    "C-PREVIEW",
+    "C-PROMPT",
+    "C-SKELETON",
+    "C-SORTS",
+    "C-TABS",
+    "C-TASKBAR",
+    "C-TRACK",
+    "S-01",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-ICONS",
+    "S-02",
+    "S-03"
+   ],
+   "anchors": [
+    "F-MOTION.arrive",
+    "F-MOTION.build",
+    "F-MOTION.focus",
+    "F-MOTION.handover",
+    "F-MOTION.inside",
+    "F-MOTION.reduced",
+    "F-MOTION.rules",
+    "F-MOTION.tokens"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-SPACE",
+   "title": "Space, shape, layers and layout",
+   "file": "01-foundations/F-SPACE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR"
+   ],
+   "used_by": [
+    "F-A11Y",
+    "C-BUTTON",
+    "C-CARD",
+    "C-PHONE-TABS",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-CHIP",
+    "C-SIDEBAR",
+    "V-ACC"
+   ],
+   "anchors": [
+    "F-SPACE.breakpoints",
+    "F-SPACE.cta",
+    "F-SPACE.radius",
+    "F-SPACE.scale",
+    "F-SPACE.scroll",
+    "F-SPACE.shadow",
+    "F-SPACE.shell",
+    "F-SPACE.targets",
+    "F-SPACE.z"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "F-TYPE",
+   "title": "Type",
+   "file": "01-foundations/F-TYPE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [],
+   "used_by": [
+    "C-BUTTON",
+    "C-FIELD",
+    "S-OFFICE"
+   ],
+   "anchors": [
+    "F-TYPE.faces",
+    "F-TYPE.rules",
+    "F-TYPE.scale"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-AVATAR",
+   "title": "Avatars and crew faces",
+   "file": "02-components/C-AVATAR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/sidebar.css",
+   "source_sha": "f5073ad106badcb0",
+   "depends_on": [
+    "F-COLOR",
+    "F-ICONS"
+   ],
+   "used_by": [
+    "C-CREW-DECK",
+    "C-INBOX-READER",
+    "C-ONES-FAN",
+    "C-PREVIEW",
+    "C-SIDEBAR",
+    "C-SIMGRID",
+    "S-08",
+    "S-09",
+    "S-H6"
+   ],
+   "anchors": [
+    "C-AVATAR.anatomy",
+    "C-AVATAR.crew",
+    "C-AVATAR.reference",
+    "C-AVATAR.ring"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-BUTTON",
+   "title": "Buttons",
+   "file": "02-components/C-BUTTON.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR",
+    "F-TYPE",
+    "F-MOTION",
+    "F-SPACE"
+   ],
+   "used_by": [
+    "C-EMPTY",
+    "C-HIDDEN",
+    "C-PREVIEW",
+    "C-QCARD",
+    "C-SHEET-MERGE",
+    "C-SHEET-TEAMUP",
+    "C-SORTS",
+    "S-01",
+    "S-02",
+    "S-H2B",
+    "S-H4",
+    "P-GAPS",
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "anchors": [
+    "C-BUTTON.reference",
+    "C-BUTTON.rules",
+    "C-BUTTON.sizes",
+    "C-BUTTON.states",
+    "C-BUTTON.variants"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-CARD",
+   "title": "Cards, glass panels, notes and wells",
+   "file": "02-components/C-CARD.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/glass-and-light.css",
+   "source_sha": "3c33f04dcb5a57f7",
+   "depends_on": [
+    "F-COLOR",
+    "F-SPACE"
+   ],
+   "used_by": [
+    "C-EMPTY",
+    "S-01",
+    "S-H3",
+    "S-H6",
+    "S-ONE",
+    "S-WALL"
+   ],
+   "anchors": [
+    "C-CARD.reference",
+    "C-CARD.rules",
+    "C-CARD.variants"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-CHIP",
+   "title": "Chips (single and multi choice)",
+   "file": "02-components/C-CHIP.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-DRAFT-PANEL",
+    "C-HIDDEN",
+    "C-SEARCH",
+    "C-WORTH",
+    "S-05",
+    "S-06B",
+    "S-H2",
+    "S-WALL",
+    "P-GAPS"
+   ],
+   "anchors": [
+    "C-CHIP.anatomy",
+    "C-CHIP.behaviour",
+    "C-CHIP.reference",
+    "C-CHIP.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-CREW-DECK",
+   "title": "Find your crew: deck of cards",
+   "file": "02-components/C-CREW-DECK.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Crew.css",
+   "source_sha": "ec764c4f21970acb",
+   "depends_on": [
+    "C-PILL",
+    "C-AVATAR",
+    "C-SHEET-TEAMUP",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "J-TEAMUP",
+    "S-03",
+    "S-H2",
+    "P-DECISIONS",
+    "P-GAPS",
+    "F-MOTION",
+    "L-CREW"
+   ],
+   "anchors": [
+    "C-CREW-DECK.behaviour",
+    "C-CREW-DECK.card",
+    "C-CREW-DECK.reference",
+    "C-CREW-DECK.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-DRAFT-LOADER",
+   "title": "Draft loader (six services, one bar)",
+   "file": "02-components/C-DRAFT-LOADER.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/draft-loader.css",
+   "source_sha": "794b6fef3e0c3a46",
+   "depends_on": [
+    "C-SKELETON",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-DRAFT-PANEL",
+    "S-04",
+    "S-04B",
+    "P-GAPS",
+    "F-COLOR",
+    "F-MOTION",
+    "J-SHARE",
+    "L-DRAFT",
+    "A-API"
+   ],
+   "anchors": [
+    "C-DRAFT-LOADER.a11y",
+    "C-DRAFT-LOADER.anatomy",
+    "C-DRAFT-LOADER.failure",
+    "C-DRAFT-LOADER.maths",
+    "C-DRAFT-LOADER.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-DRAFT-PANEL",
+   "title": "The draft, as a live document",
+   "file": "02-components/C-DRAFT-PANEL.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Compose.css",
+   "source_sha": "1a6f672be71b3f66",
+   "depends_on": [
+    "C-DRAFT-LOADER",
+    "C-HIDDEN",
+    "C-CHIP",
+    "C-SKELETON"
+   ],
+   "used_by": [
+    "S-04",
+    "S-04B",
+    "J-SHARE",
+    "L-DRAFT"
+   ],
+   "anchors": [
+    "C-DRAFT-PANEL.anatomy",
+    "C-DRAFT-PANEL.behaviour",
+    "C-DRAFT-PANEL.reference",
+    "C-DRAFT-PANEL.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-DROPDOWN",
+   "title": "Dropdown with multi-select",
+   "file": "02-components/C-DROPDOWN.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/team-up-sheet.css",
+   "source_sha": "2518d298a59bcb9c",
+   "depends_on": [
+    "C-FIELD"
+   ],
+   "used_by": [
+    "C-SHEET-TEAMUP"
+   ],
+   "anchors": [
+    "C-DROPDOWN.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-EMPTY",
+   "title": "Empty states",
+   "file": "02-components/C-EMPTY.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/MyIdeas.md",
+   "source_sha": "97af5885aa1a5b8d",
+   "depends_on": [
+    "F-COPY",
+    "C-CARD",
+    "C-BUTTON"
+   ],
+   "used_by": [
+    "S-03",
+    "S-07",
+    "S-H2"
+   ],
+   "anchors": [
+    "C-EMPTY.anatomy",
+    "C-EMPTY.kinds",
+    "C-EMPTY.reference",
+    "C-EMPTY.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-FIELD-MSG",
+   "title": "Field errors and warnings",
+   "file": "02-components/C-FIELD-MSG.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/field-messages.css",
+   "source_sha": "76d1d296a1cea287",
+   "depends_on": [
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-FIELD",
+    "C-FILE",
+    "C-PROMPT",
+    "C-SHEET-MERGE",
+    "S-02",
+    "S-05",
+    "S-06B",
+    "S-08",
+    "S-R2",
+    "S-R3",
+    "S-R4",
+    "V-FIELDS",
+    "P-DECISIONS",
+    "F-MOTION"
+   ],
+   "anchors": [
+    "C-FIELD-MSG.anatomy",
+    "C-FIELD-MSG.behaviour",
+    "C-FIELD-MSG.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-FIELD",
+   "title": "Text fields, text areas and labels",
+   "file": "02-components/C-FIELD.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR",
+    "F-TYPE",
+    "C-FIELD-MSG"
+   ],
+   "used_by": [
+    "C-DROPDOWN",
+    "C-SEARCH",
+    "C-SHEET-MERGE",
+    "C-SHEET-TEAMUP",
+    "C-WORTH",
+    "S-02",
+    "S-ONE",
+    "S-R2",
+    "S-R3",
+    "S-R4",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "C-FIELD.anatomy",
+    "C-FIELD.kinds",
+    "C-FIELD.reference",
+    "C-FIELD.rules",
+    "C-FIELD.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-FILE",
+   "title": "File and link rows, and the uploader",
+   "file": "02-components/C-FILE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Review.css",
+   "source_sha": "a1cbe42986bd6729",
+   "depends_on": [
+    "C-FIELD-MSG",
+    "C-SKELETON"
+   ],
+   "used_by": [
+    "C-PROMPT",
+    "S-04B",
+    "S-05",
+    "S-06",
+    "S-06B",
+    "S-08",
+    "S-R2",
+    "S-R3",
+    "P-DECISIONS",
+    "P-GAPS",
+    "F-ICONS",
+    "L-HIDE",
+    "A-API"
+   ],
+   "anchors": [
+    "C-FILE.reference",
+    "C-FILE.row",
+    "C-FILE.uploader",
+    "C-FILE.view"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-HIDDEN",
+   "title": "Hidden personal details",
+   "file": "02-components/C-HIDDEN.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Compose.css",
+   "source_sha": "1a6f672be71b3f66",
+   "depends_on": [
+    "C-CHIP",
+    "C-BUTTON"
+   ],
+   "used_by": [
+    "C-DRAFT-PANEL",
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06",
+    "S-06B",
+    "L-HIDE"
+   ],
+   "anchors": [
+    "C-HIDDEN.list",
+    "C-HIDDEN.reference",
+    "C-HIDDEN.where"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-INBOX-READER",
+   "title": "Inbox: list and reader",
+   "file": "02-components/C-INBOX-READER.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Inbox.css",
+   "source_sha": "29ba96165b6f0c15",
+   "depends_on": [
+    "C-TABS",
+    "C-AVATAR",
+    "C-QCARD"
+   ],
+   "used_by": [
+    "S-H2B",
+    "S-H5",
+    "L-INBOX"
+   ],
+   "anchors": [
+    "C-INBOX-READER.layout",
+    "C-INBOX-READER.reader",
+    "C-INBOX-READER.reference",
+    "C-INBOX-READER.row"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-LISTEN",
+   "title": "Listen to the whole idea (player)",
+   "file": "02-components/C-LISTEN.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/DeskIdea.css",
+   "source_sha": "5348dd3549f506e3",
+   "depends_on": [
+    "F-MOTION"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "S-R2",
+    "P-GAPS",
+    "F-MOTION",
+    "L-LISTEN"
+   ],
+   "anchors": [
+    "C-LISTEN.anatomy",
+    "C-LISTEN.behaviour",
+    "C-LISTEN.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-ONES-FAN",
+   "title": "The Ones: fan of cards",
+   "file": "02-components/C-ONES-FAN.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Home.css",
+   "source_sha": "b54a9b9a687c4e14",
+   "depends_on": [
+    "C-AVATAR",
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "S-03",
+    "F-MOTION",
+    "L-ONES"
+   ],
+   "anchors": [
+    "C-ONES-FAN.behaviour",
+    "C-ONES-FAN.card",
+    "C-ONES-FAN.reference",
+    "C-ONES-FAN.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-PHONE-TABS",
+   "title": "Phone tab bar and top bars",
+   "file": "02-components/C-PHONE-TABS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/phone-polish.css",
+   "source_sha": "6d36fa1205b12f20",
+   "depends_on": [
+    "F-ICONS",
+    "F-SPACE"
+   ],
+   "used_by": [
+    "P-ROUTES",
+    "F-SPACE"
+   ],
+   "anchors": [
+    "C-PHONE-TABS.bar",
+    "C-PHONE-TABS.dock",
+    "C-PHONE-TABS.nav",
+    "C-PHONE-TABS.reference",
+    "C-PHONE-TABS.top"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-PILL",
+   "title": "Status pill",
+   "file": "02-components/C-PILL.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR"
+   ],
+   "used_by": [
+    "C-CREW-DECK",
+    "C-PREVIEW",
+    "C-QCARD",
+    "C-SIMGRID",
+    "S-06",
+    "S-07",
+    "S-09",
+    "S-H3",
+    "S-R1",
+    "S-R2",
+    "S-R4",
+    "S-WALL",
+    "F-COLOR"
+   ],
+   "anchors": [
+    "C-PILL.anatomy",
+    "C-PILL.reference",
+    "C-PILL.rules",
+    "C-PILL.variants"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-PREVIEW",
+   "title": "Preview pop-up for an idea",
+   "file": "02-components/C-PREVIEW.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/preview-popup.css",
+   "source_sha": "af187801084838d4",
+   "depends_on": [
+    "C-PILL",
+    "C-AVATAR",
+    "C-BUTTON",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-SHEET-TEAMUP",
+    "C-SIMGRID",
+    "J-REVIEW",
+    "J-SIMILAR",
+    "S-05",
+    "S-06",
+    "S-R2",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "C-FILE",
+    "C-SHEET-MERGE"
+   ],
+   "anchors": [
+    "C-PREVIEW.anatomy",
+    "C-PREVIEW.behaviour",
+    "C-PREVIEW.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-PROMPT",
+   "title": "Prompt box: type, speak, attach",
+   "file": "02-components/C-PROMPT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Home.css",
+   "source_sha": "b54a9b9a687c4e14",
+   "depends_on": [
+    "C-FILE",
+    "C-FIELD-MSG",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "S-03",
+    "S-04",
+    "S-04B",
+    "S-R3",
+    "F-SPACE",
+    "C-FIELD",
+    "L-DRAFT"
+   ],
+   "anchors": [
+    "C-PROMPT.anatomy",
+    "C-PROMPT.attach",
+    "C-PROMPT.keys",
+    "C-PROMPT.reference",
+    "C-PROMPT.states",
+    "C-PROMPT.voice"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-QCARD",
+   "title": "Questions card",
+   "file": "02-components/C-QCARD.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Status.css",
+   "source_sha": "d11ba0ddf0f6b4d3",
+   "depends_on": [
+    "C-PILL",
+    "C-BUTTON"
+   ],
+   "used_by": [
+    "C-INBOX-READER",
+    "S-03",
+    "S-06",
+    "S-08",
+    "S-H5",
+    "P-GAPS",
+    "J-TRACK",
+    "L-CONVO",
+    "L-QUESTIONS"
+   ],
+   "anchors": [
+    "C-QCARD.anatomy",
+    "C-QCARD.places",
+    "C-QCARD.reference",
+    "C-QCARD.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SEARCH",
+   "title": "Search bar with filters inside",
+   "file": "02-components/C-SEARCH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/MyIdeas.css",
+   "source_sha": "b8315aabb593e1ee",
+   "depends_on": [
+    "C-CHIP",
+    "C-FIELD"
+   ],
+   "used_by": [
+    "S-07",
+    "S-R1",
+    "C-FIELD",
+    "L-SEARCH"
+   ],
+   "anchors": [
+    "C-SEARCH.anatomy",
+    "C-SEARCH.behaviour",
+    "C-SEARCH.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SHEET-MERGE",
+   "title": "Merge sheet (review desk)",
+   "file": "02-components/C-SHEET-MERGE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/DeskIdea.css",
+   "source_sha": "5348dd3549f506e3",
+   "depends_on": [
+    "C-FIELD",
+    "C-BUTTON",
+    "C-FIELD-MSG"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "S-R2",
+    "C-FIELD",
+    "C-PREVIEW",
+    "L-MERGE",
+    "L-REVIEW"
+   ],
+   "anchors": [
+    "C-SHEET-MERGE.after",
+    "C-SHEET-MERGE.anatomy",
+    "C-SHEET-MERGE.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SHEET-TEAMUP",
+   "title": "Team up request sheet",
+   "file": "02-components/C-SHEET-TEAMUP.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/team-up-sheet.css",
+   "source_sha": "2518d298a59bcb9c",
+   "depends_on": [
+    "C-FIELD",
+    "C-DROPDOWN",
+    "C-BUTTON",
+    "C-PREVIEW"
+   ],
+   "used_by": [
+    "C-CREW-DECK",
+    "C-SIMGRID",
+    "J-SIMILAR",
+    "J-TEAMUP",
+    "S-03",
+    "S-05",
+    "S-06",
+    "S-09",
+    "S-H2",
+    "P-ROUTES",
+    "C-DROPDOWN",
+    "C-FIELD",
+    "C-PREVIEW",
+    "L-TEAMUP",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "C-SHEET-TEAMUP.a11y",
+    "C-SHEET-TEAMUP.after",
+    "C-SHEET-TEAMUP.compose",
+    "C-SHEET-TEAMUP.reference",
+    "C-SHEET-TEAMUP.sent"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SIDEBAR",
+   "title": "Sidebar (desktop navigation)",
+   "file": "02-components/C-SIDEBAR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/sidebar.css",
+   "source_sha": "f5073ad106badcb0",
+   "depends_on": [
+    "F-COLOR",
+    "F-ICONS",
+    "C-AVATAR"
+   ],
+   "used_by": [
+    "S-03",
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06",
+    "S-07",
+    "S-08",
+    "S-09",
+    "S-H2",
+    "S-H2B",
+    "S-H3",
+    "S-H4",
+    "S-H5",
+    "S-H6",
+    "S-ONE",
+    "S-R1",
+    "S-R2",
+    "S-R4",
+    "S-WALL",
+    "P-ROUTES",
+    "F-MOTION",
+    "F-SPACE",
+    "J-RESUME",
+    "L-INBOX"
+   ],
+   "anchors": [
+    "C-SIDEBAR.anatomy",
+    "C-SIDEBAR.fold",
+    "C-SIDEBAR.reference",
+    "C-SIDEBAR.rules",
+    "C-SIDEBAR.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SIMGRID",
+   "title": "Similar ideas: tiles and grid",
+   "file": "02-components/C-SIMGRID.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/similar-grid.css",
+   "source_sha": "5b2f90f00064ae22",
+   "depends_on": [
+    "C-PILL",
+    "C-AVATAR",
+    "C-PREVIEW",
+    "C-SHEET-TEAMUP"
+   ],
+   "used_by": [
+    "S-05",
+    "S-06",
+    "S-R2",
+    "P-GAPS",
+    "J-SIMILAR",
+    "L-SIMILAR"
+   ],
+   "anchors": [
+    "C-SIMGRID.grid",
+    "C-SIMGRID.other",
+    "C-SIMGRID.reference",
+    "C-SIMGRID.tile"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SKELETON",
+   "title": "Loading skeletons and spinner",
+   "file": "02-components/C-SKELETON.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/kit.css",
+   "source_sha": "001aef650dc8a98e",
+   "depends_on": [
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-DRAFT-LOADER",
+    "C-DRAFT-PANEL",
+    "C-FILE",
+    "S-07"
+   ],
+   "anchors": [
+    "C-SKELETON.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-SORTS",
+   "title": "Sort control",
+   "file": "02-components/C-SORTS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/MyIdeas.css",
+   "source_sha": "b8315aabb593e1ee",
+   "depends_on": [
+    "C-BUTTON",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "S-07",
+    "S-R1",
+    "S-R4",
+    "S-WALL"
+   ],
+   "anchors": [
+    "C-SORTS.anatomy",
+    "C-SORTS.behaviour",
+    "C-SORTS.reference",
+    "C-SORTS.uses"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-TABS",
+   "title": "Tabs with counts",
+   "file": "02-components/C-TABS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Desk.css",
+   "source_sha": "0b57175badeadb06",
+   "depends_on": [
+    "F-MOTION"
+   ],
+   "used_by": [
+    "C-INBOX-READER",
+    "S-07",
+    "S-H5",
+    "S-R1",
+    "S-R4"
+   ],
+   "anchors": [
+    "C-TABS.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-TASKBAR",
+   "title": "Task bar: steps, save status, Save and close",
+   "file": "02-components/C-TASKBAR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Review.css",
+   "source_sha": "a1cbe42986bd6729",
+   "depends_on": [
+    "F-COLOR",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06B",
+    "S-R3",
+    "P-GAPS",
+    "F-SPACE",
+    "L-DRAFT"
+   ],
+   "anchors": [
+    "C-TASKBAR.anatomy",
+    "C-TASKBAR.reference",
+    "C-TASKBAR.save",
+    "C-TASKBAR.steps"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-TRACK",
+   "title": "Stage track",
+   "file": "02-components/C-TRACK.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/Status.css",
+   "source_sha": "d11ba0ddf0f6b4d3",
+   "depends_on": [
+    "F-MOTION",
+    "F-COLOR"
+   ],
+   "used_by": [
+    "S-01",
+    "S-06",
+    "S-09",
+    "S-H4",
+    "F-MOTION"
+   ],
+   "anchors": [
+    "C-TRACK.anatomy",
+    "C-TRACK.detail",
+    "C-TRACK.motion",
+    "C-TRACK.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "C-WORTH",
+   "title": "What it's worth: view and edit",
+   "file": "02-components/C-WORTH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/boards/DeskIdea.css",
+   "source_sha": "5348dd3549f506e3",
+   "depends_on": [
+    "C-FIELD",
+    "C-CHIP"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "S-05",
+    "S-06",
+    "S-06B",
+    "S-R2",
+    "L-WORTH"
+   ],
+   "anchors": [
+    "C-WORTH.edit",
+    "C-WORTH.reference",
+    "C-WORTH.view"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-BROWSE",
+   "title": "Browse, open, come back to the same place",
+   "file": "03-journeys/J-BROWSE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/MyIdeas.dc.html",
+   "source_sha": "c87314bb86eac69b",
+   "depends_on": [
+    "S-07",
+    "S-WALL",
+    "S-09",
+    "S-06",
+    "S-R1",
+    "S-H5"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-BROWSE.boards"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-COMMITTEE",
+   "title": "The Ones Committee reviews a decision",
+   "file": "03-journeys/J-COMMITTEE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Committee.dc.html",
+   "source_sha": "7566ff82bc002424",
+   "depends_on": [
+    "S-R4",
+    "S-06",
+    "L-COMMITTEE"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-COMMITTEE.boards"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-ONE",
+   "title": "An idea ships and its sharer becomes a One",
+   "file": "03-journeys/J-ONE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Wall.dc.html",
+   "source_sha": "6492c9028697b5e8",
+   "depends_on": [
+    "S-06",
+    "S-WALL",
+    "S-ONE",
+    "S-OFFICE",
+    "S-03",
+    "L-IMPACT",
+    "L-ONES"
+   ],
+   "used_by": [
+    "J-TRACK"
+   ],
+   "anchors": [
+    "J-ONE.boards"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-RECOVER",
+   "title": "When something goes wrong",
+   "file": "03-journeys/J-RECOVER.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Compose.dc.html",
+   "source_sha": "103ffbab3cd6a877",
+   "depends_on": [
+    "S-02",
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06",
+    "S-06B",
+    "L-AUTH",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-SUBMIT"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-RECOVER.boards"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-RESUME",
+   "title": "Start anywhere, finish anywhere",
+   "file": "03-journeys/J-RESUME.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Home.dc.html",
+   "source_sha": "829f665e2fced6b2",
+   "depends_on": [
+    "S-03",
+    "S-04B",
+    "S-H3",
+    "S-H5",
+    "L-DRAFT"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-RESUME.boards",
+    "J-RESUME.steps"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-REVIEW",
+   "title": "Review an idea and decide",
+   "file": "03-journeys/J-REVIEW.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Desk.dc.html",
+   "source_sha": "1197b63ec286cca2",
+   "depends_on": [
+    "S-R1",
+    "S-R2",
+    "C-LISTEN",
+    "C-WORTH",
+    "C-SHEET-MERGE",
+    "C-PREVIEW",
+    "L-REVIEW",
+    "L-QUESTIONS",
+    "L-WORTH",
+    "L-DECIDE",
+    "L-MERGE"
+   ],
+   "used_by": [
+    "V-ACC",
+    "J-SIMILAR"
+   ],
+   "anchors": [
+    "J-REVIEW.ask",
+    "J-REVIEW.boards",
+    "J-REVIEW.main",
+    "J-REVIEW.merge"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-SHARE",
+   "title": "Share a problem for the first time",
+   "file": "03-journeys/J-SHARE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Landing.dc.html",
+   "source_sha": "56f78ff973f9c124",
+   "depends_on": [
+    "S-01",
+    "S-02",
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06",
+    "L-AUTH",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-SORT",
+    "L-SIMILAR",
+    "L-SUBMIT"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-SHARE.accept",
+    "J-SHARE.boards",
+    "J-SHARE.steps",
+    "J-SHARE.variants"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-SIMILAR",
+   "title": "Someone raised it already: merge request, or go it alone",
+   "file": "03-journeys/J-SIMILAR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Review.dc.html",
+   "source_sha": "84425ab9e5155aab",
+   "depends_on": [
+    "S-05",
+    "S-H2B",
+    "S-06",
+    "C-PREVIEW",
+    "C-SHEET-TEAMUP",
+    "L-SIMILAR",
+    "L-MERGE",
+    "L-TEAMUP"
+   ],
+   "used_by": [
+    "V-ACC",
+    "J-SHARE"
+   ],
+   "anchors": [
+    "J-SIMILAR.boards",
+    "J-SIMILAR.steps"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-TEAMUP",
+   "title": "Find your crew and team up",
+   "file": "03-journeys/J-TEAMUP.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Crew.dc.html",
+   "source_sha": "b9ddf56b17f81a01",
+   "depends_on": [
+    "S-H2",
+    "S-03",
+    "S-09",
+    "S-06",
+    "S-H2B",
+    "S-08",
+    "C-CREW-DECK",
+    "C-SHEET-TEAMUP",
+    "L-CREW",
+    "L-TEAMUP"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-TEAMUP.boards"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "J-TRACK",
+   "title": "Track an idea, answer the desk, read the decision",
+   "file": "03-journeys/J-TRACK.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Status.dc.html",
+   "source_sha": "e5d7d867ba89e8e5",
+   "depends_on": [
+    "S-06",
+    "S-R3",
+    "S-08",
+    "S-H5",
+    "S-07",
+    "S-03",
+    "L-QUESTIONS",
+    "L-DECIDE",
+    "L-COMMITTEE",
+    "L-INBOX",
+    "L-SUBMIT"
+   ],
+   "used_by": [
+    "V-ACC"
+   ],
+   "anchors": [
+    "J-TRACK.boards",
+    "J-TRACK.steps"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-01",
+   "title": "Landing",
+   "file": "04-screens/S-01.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Landing.dc.html",
+   "source_sha": "56f78ff973f9c124",
+   "depends_on": [
+    "C-BUTTON",
+    "C-TRACK",
+    "C-CARD",
+    "L-AUTH",
+    "F-MOTION"
+   ],
+   "used_by": [
+    "J-SHARE",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-BUTTON",
+    "C-PHONE-TABS",
+    "C-TRACK",
+    "L-AUTH"
+   ],
+   "anchors": [
+    "S-01.layout",
+    "S-01.purpose",
+    "S-01.reference",
+    "S-01.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-02",
+   "title": "Sign in",
+   "file": "04-screens/S-02.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/SignIn.dc.html",
+   "source_sha": "7471cde5eb6012a7",
+   "depends_on": [
+    "C-FIELD",
+    "C-FIELD-MSG",
+    "C-BUTTON",
+    "L-AUTH"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-BUTTON",
+    "C-CARD",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "J-RESUME",
+    "L-AUTH",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-02.layout",
+    "S-02.purpose",
+    "S-02.reference",
+    "S-02.rules",
+    "S-02.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-03",
+   "title": "Home",
+   "file": "04-screens/S-03.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Home.dc.html",
+   "source_sha": "829f665e2fced6b2",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-PROMPT",
+    "C-QCARD",
+    "C-ONES-FAN",
+    "C-CREW-DECK",
+    "C-SHEET-TEAMUP",
+    "C-EMPTY",
+    "L-INBOX",
+    "L-CREW",
+    "L-ONES",
+    "L-DRAFT"
+   ],
+   "used_by": [
+    "J-ONE",
+    "J-RESUME",
+    "J-TEAMUP",
+    "J-TRACK",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CREW-DECK",
+    "C-DROPDOWN",
+    "C-FIELD",
+    "C-ONES-FAN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-PROMPT",
+    "C-QCARD",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "S-01",
+    "L-CREW",
+    "L-DRAFT",
+    "L-INBOX",
+    "L-ONES",
+    "L-QUESTIONS",
+    "L-TEAMUP",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-03.hero",
+    "S-03.phone",
+    "S-03.purpose",
+    "S-03.reference",
+    "S-03.rules",
+    "S-03.sections"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-04",
+   "title": "Tell it (a new problem)",
+   "file": "04-screens/S-04.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Compose.dc.html",
+   "source_sha": "103ffbab3cd6a877",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TASKBAR",
+    "C-PROMPT",
+    "C-DRAFT-PANEL",
+    "C-DRAFT-LOADER",
+    "C-HIDDEN",
+    "L-DRAFT",
+    "L-HIDE"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CHIP",
+    "C-DRAFT-LOADER",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-HIDDEN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-PREVIEW",
+    "C-PROMPT",
+    "C-SIDEBAR",
+    "C-SKELETON",
+    "C-TASKBAR",
+    "J-RESUME",
+    "S-01",
+    "S-03",
+    "S-04B",
+    "S-H4",
+    "L-AUTH",
+    "L-DRAFT",
+    "L-HIDE",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-04.empty",
+    "S-04.phone",
+    "S-04.purpose",
+    "S-04.reference",
+    "S-04.rules",
+    "S-04.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-04B",
+   "title": "Tell it: the conversation (from Home, or a saved draft)",
+   "file": "04-screens/S-04B.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/ComposeResume.dc.html",
+   "source_sha": "b7edb23f22725fc4",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TASKBAR",
+    "C-PROMPT",
+    "C-DRAFT-PANEL",
+    "C-DRAFT-LOADER",
+    "C-HIDDEN",
+    "C-FILE",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-SIMILAR"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-RESUME",
+    "J-SHARE",
+    "P-DECISIONS",
+    "P-ROUTES",
+    "F-COLOR",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CHIP",
+    "C-DRAFT-LOADER",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-HIDDEN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-PREVIEW",
+    "C-PROMPT",
+    "C-SIDEBAR",
+    "C-SIMGRID",
+    "C-SKELETON",
+    "C-TASKBAR",
+    "J-SIMILAR",
+    "S-03",
+    "S-04",
+    "S-05",
+    "S-07",
+    "S-H3",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-INBOX",
+    "L-SIMILAR",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-04B.layout",
+    "S-04B.purpose",
+    "S-04B.reference",
+    "S-04B.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-05",
+   "title": "Check it, then send it",
+   "file": "04-screens/S-05.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Review.dc.html",
+   "source_sha": "84425ab9e5155aab",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TASKBAR",
+    "C-CHIP",
+    "C-HIDDEN",
+    "C-SIMGRID",
+    "C-PREVIEW",
+    "C-SHEET-TEAMUP",
+    "C-FILE",
+    "C-WORTH",
+    "C-FIELD-MSG",
+    "L-SORT",
+    "L-SIMILAR",
+    "L-MERGE",
+    "L-SUBMIT",
+    "L-HIDE"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "J-SIMILAR",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-FILE",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-PREVIEW",
+    "C-QCARD",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "C-SIMGRID",
+    "C-SKELETON",
+    "C-TASKBAR",
+    "S-06B",
+    "L-HIDE",
+    "L-MERGE",
+    "L-SIMILAR",
+    "L-SORT",
+    "L-SUBMIT",
+    "L-WORTH",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-05.fix",
+    "S-05.layout",
+    "S-05.parts",
+    "S-05.phone",
+    "S-05.purpose",
+    "S-05.reference",
+    "S-05.rules",
+    "S-05.similar",
+    "S-05.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-06",
+   "title": "Status: your idea's page",
+   "file": "04-screens/S-06.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Status.dc.html",
+   "source_sha": "e5d7d867ba89e8e5",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TRACK",
+    "C-PILL",
+    "C-HIDDEN",
+    "C-FILE",
+    "C-QCARD",
+    "C-SIMGRID",
+    "C-PREVIEW",
+    "C-SHEET-TEAMUP",
+    "C-WORTH",
+    "L-SUBMIT",
+    "L-QUESTIONS",
+    "L-DECIDE",
+    "L-COMMITTEE",
+    "L-CONVO"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-COMMITTEE",
+    "J-ONE",
+    "J-RECOVER",
+    "J-SHARE",
+    "J-SIMILAR",
+    "J-TEAMUP",
+    "J-TRACK",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "F-ICONS",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-DROPDOWN",
+    "C-FIELD",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-PREVIEW",
+    "C-QCARD",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "C-SIMGRID",
+    "C-TRACK",
+    "S-05",
+    "S-06B",
+    "S-07",
+    "S-09",
+    "S-WALL",
+    "L-COMMITTEE",
+    "L-CONVO",
+    "L-DECIDE",
+    "L-HIDE",
+    "L-IMPACT",
+    "L-INBOX",
+    "L-QUESTIONS",
+    "L-SIMILAR",
+    "L-SUBMIT",
+    "L-TEAMUP",
+    "L-WORTH",
+    "A-API",
+    "V-ACC"
+   ],
+   "anchors": [
+    "S-06.layout",
+    "S-06.purpose",
+    "S-06.reference",
+    "S-06.rules",
+    "S-06.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-06B",
+   "title": "Edit after sharing",
+   "file": "04-screens/S-06B.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Edit.dc.html",
+   "source_sha": "88da348c155b938c",
+   "depends_on": [
+    "C-TASKBAR",
+    "C-CHIP",
+    "C-HIDDEN",
+    "C-FILE",
+    "C-WORTH",
+    "C-FIELD-MSG",
+    "L-SUBMIT",
+    "L-SORT",
+    "L-HIDE"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-FILE",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-QCARD",
+    "C-SIDEBAR",
+    "C-SKELETON",
+    "C-TASKBAR",
+    "S-06",
+    "L-SORT",
+    "L-SUBMIT",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-06B.layout",
+    "S-06B.purpose",
+    "S-06B.reference",
+    "S-06B.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-07",
+   "title": "My ideas",
+   "file": "04-screens/S-07.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/MyIdeas.dc.html",
+   "source_sha": "c87314bb86eac69b",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-SEARCH",
+    "C-TABS",
+    "C-SORTS",
+    "C-PILL",
+    "C-EMPTY",
+    "C-SKELETON",
+    "L-SEARCH"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-TRACK",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-FIELD",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-SEARCH",
+    "C-SIDEBAR",
+    "C-SKELETON",
+    "C-SORTS",
+    "C-TABS",
+    "J-RESUME",
+    "S-03",
+    "L-SEARCH"
+   ],
+   "anchors": [
+    "S-07.filters",
+    "S-07.layout",
+    "S-07.phone",
+    "S-07.purpose",
+    "S-07.reference",
+    "S-07.return",
+    "S-07.rows",
+    "S-07.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-08",
+   "title": "An idea's conversation",
+   "file": "04-screens/S-08.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Messages.dc.html",
+   "source_sha": "8fb4a9dcb2ba3fc8",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-QCARD",
+    "C-FILE",
+    "C-AVATAR",
+    "C-FIELD-MSG",
+    "L-CONVO",
+    "L-QUESTIONS"
+   ],
+   "used_by": [
+    "J-TEAMUP",
+    "J-TRACK",
+    "P-DECISIONS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-FIELD-MSG",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-QCARD",
+    "C-SIDEBAR",
+    "C-SKELETON",
+    "S-06",
+    "S-09",
+    "L-CONVO",
+    "L-QUESTIONS",
+    "A-API",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-08.layout",
+    "S-08.purpose",
+    "S-08.reference",
+    "S-08.rules",
+    "S-08.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-09",
+   "title": "A colleague's idea",
+   "file": "04-screens/S-09.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Idea.dc.html",
+   "source_sha": "f9eaa3898e115a1d",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TRACK",
+    "C-PILL",
+    "C-AVATAR",
+    "C-SHEET-TEAMUP",
+    "L-TEAMUP"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-TEAMUP",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-DROPDOWN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "C-TRACK",
+    "S-07",
+    "S-WALL",
+    "L-TEAMUP",
+    "A-API"
+   ],
+   "anchors": [
+    "S-09.layout",
+    "S-09.purpose",
+    "S-09.reference",
+    "S-09.rules",
+    "S-09.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H2",
+   "title": "Find your crew",
+   "file": "04-screens/S-H2.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Crew.dc.html",
+   "source_sha": "b9ddf56b17f81a01",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-CREW-DECK",
+    "C-SHEET-TEAMUP",
+    "C-CHIP",
+    "C-EMPTY",
+    "L-CREW",
+    "L-TEAMUP"
+   ],
+   "used_by": [
+    "J-TEAMUP",
+    "P-ROUTES",
+    "F-COLOR",
+    "F-TYPE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-CREW-DECK",
+    "C-DROPDOWN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "S-03",
+    "L-CREW",
+    "L-SIMILAR",
+    "L-TEAMUP"
+   ],
+   "anchors": [
+    "S-H2.layout",
+    "S-H2.phone",
+    "S-H2.purpose",
+    "S-H2.reference",
+    "S-H2.rules",
+    "S-H2.states",
+    "S-H2.title"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H2B",
+   "title": "A team-up or merge request, in the lead's Inbox",
+   "file": "04-screens/S-H2B.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/CrewRequest.dc.html",
+   "source_sha": "f58a34cf5fcd6c36",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-INBOX-READER",
+    "C-BUTTON",
+    "L-TEAMUP",
+    "L-MERGE",
+    "L-INBOX"
+   ],
+   "used_by": [
+    "J-SIMILAR",
+    "J-TEAMUP",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CHIP",
+    "C-INBOX-READER",
+    "C-PILL",
+    "C-SIDEBAR",
+    "L-INBOX",
+    "L-MERGE",
+    "L-TEAMUP",
+    "A-API",
+    "V-ACC"
+   ],
+   "anchors": [
+    "S-H2B.purpose",
+    "S-H2B.reader",
+    "S-H2B.reference",
+    "S-H2B.rules",
+    "S-H2B.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H3",
+   "title": "Share another way",
+   "file": "04-screens/S-H3.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Ways.dc.html",
+   "source_sha": "c22ac4ee07548a98",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-CARD",
+    "C-PILL",
+    "L-DRAFT",
+    "L-NOTIFY"
+   ],
+   "used_by": [
+    "J-RESUME",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-PILL",
+    "C-SIDEBAR",
+    "S-03",
+    "L-DRAFT",
+    "L-NOTIFY"
+   ],
+   "anchors": [
+    "S-H3.layout",
+    "S-H3.purpose",
+    "S-H3.reference",
+    "S-H3.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H4",
+   "title": "What happens after you share",
+   "file": "04-screens/S-H4.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/How.dc.html",
+   "source_sha": "4cd64b4487ef67a8",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TRACK",
+    "C-BUTTON"
+   ],
+   "used_by": [
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-SIDEBAR",
+    "S-03"
+   ],
+   "anchors": [
+    "S-H4.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H5",
+   "title": "Inbox",
+   "file": "04-screens/S-H5.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Inbox.dc.html",
+   "source_sha": "cedfc5d1634b10e8",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TABS",
+    "C-INBOX-READER",
+    "C-QCARD",
+    "L-INBOX"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-RESUME",
+    "J-TRACK",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CHIP",
+    "C-INBOX-READER",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-QCARD",
+    "C-SIDEBAR",
+    "C-TABS",
+    "S-03",
+    "S-H2B",
+    "L-INBOX",
+    "L-QUESTIONS",
+    "A-API"
+   ],
+   "anchors": [
+    "S-H5.layout",
+    "S-H5.purpose",
+    "S-H5.reference",
+    "S-H5.rules",
+    "S-H5.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-H6",
+   "title": "Profile and settings",
+   "file": "04-screens/S-H6.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Profile.dc.html",
+   "source_sha": "ac350cb442960b43",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-AVATAR",
+    "C-CARD",
+    "L-ONES",
+    "L-NOTIFY"
+   ],
+   "used_by": [
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CREW-DECK",
+    "C-SIDEBAR",
+    "L-NOTIFY",
+    "L-ONES",
+    "L-QUESTIONS",
+    "L-WALL",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-H6.layout",
+    "S-H6.purpose",
+    "S-H6.reference",
+    "S-H6.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-LAUNCH",
+   "title": "Launch screen (inauguration)",
+   "file": "04-screens/S-LAUNCH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Launch.dc.html",
+   "source_sha": "5504475d6c332041",
+   "depends_on": [
+    "L-DISPLAY"
+   ],
+   "used_by": [
+    "P-ROUTES",
+    "F-ICONS",
+    "F-TYPE",
+    "C-BUTTON",
+    "L-DISPLAY"
+   ],
+   "anchors": [
+    "S-LAUNCH.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-OFFICE",
+   "title": "Office screen (wall display)",
+   "file": "04-screens/S-OFFICE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Office.dc.html",
+   "source_sha": "03f7a674a5db1bc9",
+   "depends_on": [
+    "L-DISPLAY",
+    "L-ONES"
+   ],
+   "used_by": [
+    "J-ONE",
+    "P-ROUTES",
+    "F-TYPE",
+    "S-LAUNCH",
+    "L-DISPLAY",
+    "L-ONES"
+   ],
+   "anchors": [
+    "S-OFFICE.reference"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-ONE",
+   "title": "A One's dashboard",
+   "file": "04-screens/S-ONE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/OneDashboard.dc.html",
+   "source_sha": "1b9c9511e7d466f0",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-CARD",
+    "C-FIELD",
+    "L-ONES",
+    "L-IMPACT"
+   ],
+   "used_by": [
+    "J-ONE",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-FIELD",
+    "C-SIDEBAR",
+    "L-IMPACT",
+    "L-ONES",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-ONE.layout",
+    "S-ONE.purpose",
+    "S-ONE.reference",
+    "S-ONE.rules",
+    "S-ONE.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-R1",
+   "title": "Review desk",
+   "file": "04-screens/S-R1.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Desk.dc.html",
+   "source_sha": "1197b63ec286cca2",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-SEARCH",
+    "C-TABS",
+    "C-SORTS",
+    "C-PILL",
+    "L-REVIEW",
+    "L-QUESTIONS"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-REVIEW",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-FIELD",
+    "C-SEARCH",
+    "C-SIDEBAR",
+    "C-SORTS",
+    "C-TABS",
+    "L-COMMITTEE",
+    "L-REVIEW",
+    "L-SEARCH",
+    "A-API"
+   ],
+   "anchors": [
+    "S-R1.layout",
+    "S-R1.purpose",
+    "S-R1.reference",
+    "S-R1.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-R2",
+   "title": "The idea, for the reviewer",
+   "file": "04-screens/S-R2.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/DeskIdea.dc.html",
+   "source_sha": "7ab1e7d0b1be9849",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-LISTEN",
+    "C-WORTH",
+    "C-FILE",
+    "C-SIMGRID",
+    "C-PREVIEW",
+    "C-SHEET-MERGE",
+    "C-FIELD",
+    "C-FIELD-MSG",
+    "C-PILL",
+    "L-REVIEW",
+    "L-QUESTIONS",
+    "L-DECIDE",
+    "L-MERGE",
+    "L-WORTH",
+    "L-LISTEN",
+    "L-COMMITTEE"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-SPACE",
+    "F-TYPE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-FILE",
+    "C-LISTEN",
+    "C-PILL",
+    "C-PREVIEW",
+    "C-SEARCH",
+    "C-SHEET-MERGE",
+    "C-SIDEBAR",
+    "C-SIMGRID",
+    "C-WORTH",
+    "J-SIMILAR",
+    "S-09",
+    "S-R1",
+    "L-DECIDE",
+    "L-HIDE",
+    "L-LISTEN",
+    "L-MERGE",
+    "L-QUESTIONS",
+    "L-REVIEW",
+    "L-SIMILAR",
+    "L-SORT",
+    "L-WORTH",
+    "A-API",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-R2.layout",
+    "S-R2.left",
+    "S-R2.panel",
+    "S-R2.panel.ask",
+    "S-R2.purpose",
+    "S-R2.reference",
+    "S-R2.rules",
+    "S-R2.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-R3",
+   "title": "Answer the review desk",
+   "file": "04-screens/S-R3.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Answer.dc.html",
+   "source_sha": "3d4f9e608c576f39",
+   "depends_on": [
+    "C-TASKBAR",
+    "C-FIELD",
+    "C-FILE",
+    "C-PROMPT",
+    "C-FIELD-MSG",
+    "L-QUESTIONS",
+    "L-HIDE"
+   ],
+   "used_by": [
+    "J-TRACK",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-SPACE",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-PHONE-TABS",
+    "C-QCARD",
+    "C-SIDEBAR",
+    "J-RECOVER",
+    "S-07",
+    "S-08",
+    "L-INBOX",
+    "L-QUESTIONS",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-R3.layout",
+    "S-R3.purpose",
+    "S-R3.reference",
+    "S-R3.rules",
+    "S-R3.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-R4",
+   "title": "Ones Committee",
+   "file": "04-screens/S-R4.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Committee.dc.html",
+   "source_sha": "7566ff82bc002424",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-TABS",
+    "C-SORTS",
+    "C-PILL",
+    "C-FIELD",
+    "C-FIELD-MSG",
+    "L-COMMITTEE"
+   ],
+   "used_by": [
+    "J-COMMITTEE",
+    "P-GAPS",
+    "P-ROUTES",
+    "F-COLOR",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-FIELD-MSG",
+    "C-FIELD",
+    "C-PILL",
+    "C-SIDEBAR",
+    "C-SORTS",
+    "C-TABS",
+    "L-COMMITTEE",
+    "L-DECIDE",
+    "A-API",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "S-R4.layout",
+    "S-R4.purpose",
+    "S-R4.reference",
+    "S-R4.rules",
+    "S-R4.states"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "S-WALL",
+   "title": "The Wall",
+   "file": "04-screens/S-WALL.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Wall.dc.html",
+   "source_sha": "6492c9028697b5e8",
+   "depends_on": [
+    "C-SIDEBAR",
+    "C-CHIP",
+    "C-SORTS",
+    "C-PILL",
+    "C-CARD",
+    "L-WALL",
+    "L-ONES",
+    "L-IMPACT"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-ONE",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-ROUTES",
+    "C-AVATAR",
+    "C-BUTTON",
+    "C-CARD",
+    "C-CHIP",
+    "C-EMPTY",
+    "C-ONES-FAN",
+    "C-PHONE-TABS",
+    "C-PILL",
+    "C-SIDEBAR",
+    "C-SORTS",
+    "J-TRACK",
+    "S-03",
+    "L-IMPACT",
+    "L-ONES",
+    "L-WALL"
+   ],
+   "anchors": [
+    "S-WALL.ember",
+    "S-WALL.impact",
+    "S-WALL.justin",
+    "S-WALL.kindling",
+    "S-WALL.layout",
+    "S-WALL.ones",
+    "S-WALL.phone",
+    "S-WALL.purpose",
+    "S-WALL.reference",
+    "S-WALL.rules"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-AUDIT",
+   "title": "Permissions, audit trail, feature flags, configuration",
+   "file": "05-logic/L-AUDIT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Handoff.dc.html",
+   "source_sha": "e0334143c46807a2",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "A-API"
+   ],
+   "anchors": [
+    "L-AUDIT.config",
+    "L-AUDIT.flags",
+    "L-AUDIT.metrics",
+    "L-AUDIT.permissions",
+    "L-AUDIT.trail"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-AUTH",
+   "title": "Sign-in, session and keeping intent",
+   "file": "05-logic/L-AUTH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/SignIn.md",
+   "source_sha": "7bf32f31b20248e6",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "S-01",
+    "S-02",
+    "P-GAPS",
+    "J-RESUME"
+   ],
+   "anchors": [
+    "L-AUTH.errors",
+    "L-AUTH.purpose",
+    "L-AUTH.rules",
+    "L-AUTH.states",
+    "L-AUTH.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-COMMITTEE",
+   "title": "The Ones Committee's window: view, extend, reverse",
+   "file": "05-logic/L-COMMITTEE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Committee.md",
+   "source_sha": "3ad05b47ab31de3d",
+   "depends_on": [
+    "L-DECIDE",
+    "L-NOTIFY"
+   ],
+   "used_by": [
+    "J-COMMITTEE",
+    "J-TRACK",
+    "S-06",
+    "S-R2",
+    "S-R4",
+    "L-DECIDE",
+    "L-MERGE",
+    "P-DECISIONS",
+    "P-GAPS"
+   ],
+   "anchors": [
+    "L-COMMITTEE.rules",
+    "L-COMMITTEE.states",
+    "L-COMMITTEE.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-CONVO",
+   "title": "An idea's conversation",
+   "file": "05-logic/L-CONVO.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Messages.md",
+   "source_sha": "b30e54c1ae4320d7",
+   "depends_on": [
+    "L-INBOX",
+    "L-HIDE"
+   ],
+   "used_by": [
+    "S-06",
+    "S-08",
+    "P-GAPS",
+    "J-TEAMUP",
+    "J-TRACK"
+   ],
+   "anchors": [
+    "L-CONVO.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-CREW",
+   "title": "Find your crew: what is suggested, in what order",
+   "file": "05-logic/L-CREW.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Crew.md",
+   "source_sha": "1dd787df791aa081",
+   "depends_on": [
+    "L-SIMILAR",
+    "L-TEAMUP"
+   ],
+   "used_by": [
+    "J-TEAMUP",
+    "S-03",
+    "S-H2",
+    "C-CREW-DECK",
+    "A-API"
+   ],
+   "anchors": [
+    "L-CREW.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-DECIDE",
+   "title": "Decisions: Pick, Not now, Not picked",
+   "file": "05-logic/L-DECIDE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/DeskIdea.md",
+   "source_sha": "b13c43c7a0c9f6e0",
+   "depends_on": [
+    "L-COMMITTEE",
+    "L-NOTIFY",
+    "E-ENUMS"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "J-TRACK",
+    "S-06",
+    "S-R2",
+    "L-COMMITTEE",
+    "L-REVIEW",
+    "P-DECISIONS",
+    "P-GAPS",
+    "J-ONE",
+    "L-QUESTIONS"
+   ],
+   "anchors": [
+    "L-DECIDE.after",
+    "L-DECIDE.options",
+    "L-DECIDE.rules",
+    "L-DECIDE.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-DISPLAY",
+   "title": "Office screen and launch screen",
+   "file": "05-logic/L-DISPLAY.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Office.md",
+   "source_sha": "261333c80db54671",
+   "depends_on": [
+    "L-ONES"
+   ],
+   "used_by": [
+    "S-LAUNCH",
+    "S-OFFICE"
+   ],
+   "anchors": [
+    "L-DISPLAY.launch",
+    "L-DISPLAY.office",
+    "L-DISPLAY.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-DRAFT",
+   "title": "Building the draft from the person's words",
+   "file": "05-logic/L-DRAFT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/draft-loader-module.js",
+   "source_sha": "668c281ceec4814d",
+   "depends_on": [
+    "L-HIDE",
+    "L-SORT",
+    "L-SIMILAR",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-RESUME",
+    "J-SHARE",
+    "S-03",
+    "S-04",
+    "S-04B",
+    "S-H3",
+    "L-SORT",
+    "P-DECISIONS",
+    "P-GAPS",
+    "C-DRAFT-LOADER",
+    "C-DRAFT-PANEL",
+    "C-PROMPT",
+    "C-TASKBAR",
+    "L-AUTH",
+    "L-QUESTIONS",
+    "L-SUBMIT",
+    "A-API"
+   ],
+   "anchors": [
+    "L-DRAFT.autosave",
+    "L-DRAFT.channels",
+    "L-DRAFT.errors",
+    "L-DRAFT.input",
+    "L-DRAFT.parts",
+    "L-DRAFT.pins",
+    "L-DRAFT.touchpoints",
+    "L-DRAFT.voice"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-HIDE",
+   "title": "Hiding customers' personal details",
+   "file": "05-logic/L-HIDE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Compose.md",
+   "source_sha": "6f99265243bf6b1d",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "S-04",
+    "S-04B",
+    "S-05",
+    "S-06B",
+    "S-R3",
+    "L-CONVO",
+    "L-DRAFT",
+    "L-LISTEN",
+    "L-SUBMIT",
+    "P-DECISIONS",
+    "P-GAPS",
+    "P-PRODUCT",
+    "C-FILE",
+    "C-HIDDEN",
+    "L-QUESTIONS",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "L-HIDE.audit",
+    "L-HIDE.detect",
+    "L-HIDE.files",
+    "L-HIDE.rules",
+    "L-HIDE.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-IMPACT",
+   "title": "Measuring what a shipped idea changed",
+   "file": "05-logic/L-IMPACT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Wall.md",
+   "source_sha": "5c1f58fd4a63fc4c",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-ONE",
+    "S-ONE",
+    "S-WALL",
+    "L-ONES",
+    "L-WALL",
+    "P-GAPS",
+    "J-TRACK",
+    "L-DECIDE"
+   ],
+   "anchors": [
+    "L-IMPACT.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-INBOX",
+   "title": "Inbox: one list of what waits on you and what changed",
+   "file": "05-logic/L-INBOX.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Inbox.md",
+   "source_sha": "4546f77250600383",
+   "depends_on": [
+    "L-NOTIFY",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-TRACK",
+    "S-03",
+    "S-H2B",
+    "S-H5",
+    "L-CONVO",
+    "L-NOTIFY",
+    "P-DECISIONS",
+    "P-GAPS",
+    "C-INBOX-READER"
+   ],
+   "anchors": [
+    "L-INBOX.kinds",
+    "L-INBOX.rules",
+    "L-INBOX.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-LISTEN",
+   "title": "Reading an idea aloud",
+   "file": "05-logic/L-LISTEN.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/DeskIdea.md",
+   "source_sha": "b13c43c7a0c9f6e0",
+   "depends_on": [
+    "L-HIDE"
+   ],
+   "used_by": [
+    "S-R2",
+    "P-GAPS",
+    "C-LISTEN",
+    "L-REVIEW",
+    "A-API"
+   ],
+   "anchors": [
+    "L-LISTEN.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-MERGE",
+   "title": "Merging ideas",
+   "file": "05-logic/L-MERGE.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/DeskIdea.md",
+   "source_sha": "b13c43c7a0c9f6e0",
+   "depends_on": [
+    "L-TEAMUP",
+    "L-COMMITTEE",
+    "L-NOTIFY",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "J-SIMILAR",
+    "S-05",
+    "S-H2B",
+    "S-R2",
+    "L-REVIEW",
+    "L-TEAMUP",
+    "P-DECISIONS",
+    "P-GAPS",
+    "C-SHEET-MERGE",
+    "C-SHEET-TEAMUP",
+    "J-SHARE",
+    "S-06",
+    "L-SIMILAR",
+    "L-SUBMIT"
+   ],
+   "anchors": [
+    "L-MERGE.desk",
+    "L-MERGE.effects",
+    "L-MERGE.request",
+    "L-MERGE.states",
+    "L-MERGE.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-NOTIFY",
+   "title": "Notifications outside the app: Teams and email",
+   "file": "05-logic/L-NOTIFY.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Profile.md",
+   "source_sha": "6345667159953f21",
+   "depends_on": [
+    "L-INBOX"
+   ],
+   "used_by": [
+    "S-H3",
+    "S-H6",
+    "L-COMMITTEE",
+    "L-DECIDE",
+    "L-INBOX",
+    "L-MERGE",
+    "L-QUESTIONS",
+    "L-TEAMUP",
+    "P-GAPS",
+    "J-TRACK",
+    "L-SUBMIT"
+   ],
+   "anchors": [
+    "L-NOTIFY.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-ONES",
+   "title": "The Ones: numbers, tiers, points",
+   "file": "05-logic/L-ONES.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/OneDashboard.md",
+   "source_sha": "7ea20fed1f20c33c",
+   "depends_on": [
+    "L-IMPACT",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-ONE",
+    "S-03",
+    "S-H6",
+    "S-OFFICE",
+    "S-ONE",
+    "S-WALL",
+    "L-DISPLAY",
+    "L-WALL",
+    "P-DECISIONS",
+    "P-GAPS"
+   ],
+   "anchors": [
+    "L-ONES.open",
+    "L-ONES.rules",
+    "L-ONES.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-QUESTIONS",
+   "title": "Questions from the review desk, and answers",
+   "file": "05-logic/L-QUESTIONS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Answer.md",
+   "source_sha": "c89797eb0539c310",
+   "depends_on": [
+    "L-NOTIFY",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "J-TRACK",
+    "S-06",
+    "S-08",
+    "S-R1",
+    "S-R2",
+    "S-R3",
+    "L-REVIEW",
+    "C-QCARD"
+   ],
+   "anchors": [
+    "L-QUESTIONS.answer",
+    "L-QUESTIONS.ask",
+    "L-QUESTIONS.clock",
+    "L-QUESTIONS.states",
+    "L-QUESTIONS.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-REVIEW",
+   "title": "The review desk's queue and working states",
+   "file": "05-logic/L-REVIEW.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Desk.md",
+   "source_sha": "cb741a42cd1d24d0",
+   "depends_on": [
+    "L-QUESTIONS",
+    "L-DECIDE",
+    "L-MERGE",
+    "E-ENUMS"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "S-R1",
+    "S-R2",
+    "P-GAPS"
+   ],
+   "anchors": [
+    "L-REVIEW.clock",
+    "L-REVIEW.open",
+    "L-REVIEW.panel",
+    "L-REVIEW.queue",
+    "L-REVIEW.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-SEARCH",
+   "title": "Search and \"ask in your own words\"",
+   "file": "05-logic/L-SEARCH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/MyIdeas.md",
+   "source_sha": "97af5885aa1a5b8d",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "S-07",
+    "C-SEARCH",
+    "L-REVIEW"
+   ],
+   "anchors": [
+    "L-SEARCH.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-SIMILAR",
+   "title": "Matching similar ideas",
+   "file": "05-logic/L-SIMILAR.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Review.md",
+   "source_sha": "48bdef7726ac7ead",
+   "depends_on": [
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-SHARE",
+    "J-SIMILAR",
+    "S-04B",
+    "S-05",
+    "L-CREW",
+    "L-DRAFT",
+    "L-SUBMIT",
+    "P-DECISIONS",
+    "C-DRAFT-LOADER",
+    "C-SIMGRID"
+   ],
+   "anchors": [
+    "L-SIMILAR.failure",
+    "L-SIMILAR.rules",
+    "L-SIMILAR.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-SORT",
+   "title": "Sorting: suggested, then confirmed by the sharer",
+   "file": "05-logic/L-SORT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Review.md",
+   "source_sha": "48bdef7726ac7ead",
+   "depends_on": [
+    "L-DRAFT",
+    "E-ENUMS"
+   ],
+   "used_by": [
+    "J-SHARE",
+    "S-05",
+    "S-06B",
+    "L-DRAFT",
+    "L-SUBMIT",
+    "L-WORTH",
+    "P-DECISIONS",
+    "P-GAPS",
+    "V-FIELDS"
+   ],
+   "anchors": [
+    "L-SORT.fields",
+    "L-SORT.rules",
+    "L-SORT.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-SUBMIT",
+   "title": "Sending, the edit window, withdrawing and restoring",
+   "file": "05-logic/L-SUBMIT.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Status.md",
+   "source_sha": "f5aafae7e8856e2d",
+   "depends_on": [
+    "L-SORT",
+    "L-HIDE",
+    "L-SIMILAR",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-RECOVER",
+    "J-SHARE",
+    "J-TRACK",
+    "S-05",
+    "S-06",
+    "S-06B",
+    "L-REVIEW",
+    "L-SORT",
+    "E-ENUMS"
+   ],
+   "anchors": [
+    "L-SUBMIT.edit",
+    "L-SUBMIT.pre",
+    "L-SUBMIT.send",
+    "L-SUBMIT.states",
+    "L-SUBMIT.touchpoints",
+    "L-SUBMIT.withdraw"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-TEAMUP",
+   "title": "Team up: asking to join a crew",
+   "file": "05-logic/L-TEAMUP.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/css/team-up-module.js",
+   "source_sha": "e6360d44f49843b4",
+   "depends_on": [
+    "L-MERGE",
+    "L-NOTIFY",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-SIMILAR",
+    "J-TEAMUP",
+    "S-09",
+    "S-H2",
+    "S-H2B",
+    "L-CREW",
+    "L-MERGE",
+    "P-GAPS",
+    "C-SHEET-TEAMUP",
+    "L-SIMILAR"
+   ],
+   "anchors": [
+    "L-TEAMUP.rules",
+    "L-TEAMUP.states",
+    "L-TEAMUP.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-WALL",
+   "title": "The Wall: what everyone sees",
+   "file": "05-logic/L-WALL.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/Wall.md",
+   "source_sha": "5c1f58fd4a63fc4c",
+   "depends_on": [
+    "L-ONES",
+    "L-IMPACT",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "S-WALL",
+    "P-GAPS"
+   ],
+   "anchors": [
+    "L-WALL.ember",
+    "L-WALL.impact",
+    "L-WALL.justin",
+    "L-WALL.kindling",
+    "L-WALL.ones",
+    "L-WALL.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "L-WORTH",
+   "title": "What it's worth, and the reviewer's revision",
+   "file": "05-logic/L-WORTH.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/DeskIdea.md",
+   "source_sha": "b13c43c7a0c9f6e0",
+   "depends_on": [
+    "L-SORT",
+    "E-ENTITIES"
+   ],
+   "used_by": [
+    "J-REVIEW",
+    "S-R2",
+    "C-WORTH",
+    "S-05",
+    "S-06",
+    "L-REVIEW",
+    "L-SORT",
+    "A-API"
+   ],
+   "anchors": [
+    "L-WORTH.touchpoints"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "A-API",
+   "title": "API shapes each screen expects",
+   "file": "06-contracts/A-API.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/",
+   "source_sha": null,
+   "depends_on": [
+    "E-ENTITIES",
+    "E-ENUMS"
+   ],
+   "used_by": [
+    "V-FIELDS",
+    "C-DRAFT-LOADER",
+    "C-ONES-FAN",
+    "C-PREVIEW",
+    "C-SHEET-TEAMUP",
+    "C-SIDEBAR",
+    "S-01",
+    "S-03",
+    "S-06",
+    "S-07",
+    "S-08",
+    "L-AUTH",
+    "L-DRAFT",
+    "L-INBOX",
+    "L-QUESTIONS",
+    "L-TEAMUP"
+   ],
+   "anchors": [
+    "A-API.auth",
+    "A-API.committee",
+    "A-API.config",
+    "A-API.conventions",
+    "A-API.desk",
+    "A-API.draft-stream",
+    "A-API.drafts",
+    "A-API.events",
+    "A-API.files",
+    "A-API.home",
+    "A-API.idea-events",
+    "A-API.idea-preview",
+    "A-API.ideas",
+    "A-API.inbox",
+    "A-API.inbox-count",
+    "A-API.me",
+    "A-API.my-drafts",
+    "A-API.my-ideas",
+    "A-API.ones",
+    "A-API.ones-posts",
+    "A-API.questions",
+    "A-API.search",
+    "A-API.team-up",
+    "A-API.wall"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "E-ENTITIES",
+   "title": "Entities the screens need",
+   "file": "06-contracts/E-ENTITIES.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/",
+   "source_sha": null,
+   "depends_on": [
+    "E-ENUMS"
+   ],
+   "used_by": [
+    "L-AUDIT",
+    "L-AUTH",
+    "L-DRAFT",
+    "L-HIDE",
+    "L-IMPACT",
+    "L-INBOX",
+    "L-MERGE",
+    "L-ONES",
+    "L-QUESTIONS",
+    "L-SEARCH",
+    "L-SIMILAR",
+    "L-SUBMIT",
+    "L-TEAMUP",
+    "L-WALL",
+    "L-WORTH",
+    "A-API"
+   ],
+   "anchors": [
+    "E-ENTITIES.crew",
+    "E-ENTITIES.draft",
+    "E-ENTITIES.files",
+    "E-ENTITIES.idea",
+    "E-ENTITIES.inbox",
+    "E-ENTITIES.person",
+    "E-ENTITIES.review",
+    "E-ENTITIES.wall"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "E-ENUMS",
+   "title": "Enums, statuses and state machines",
+   "file": "06-contracts/E-ENUMS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/",
+   "source_sha": null,
+   "depends_on": [
+    "F-COLOR",
+    "F-COPY"
+   ],
+   "used_by": [
+    "L-DECIDE",
+    "L-REVIEW",
+    "L-SORT",
+    "A-API",
+    "E-ENTITIES",
+    "P-GAPS",
+    "P-PRODUCT",
+    "F-COLOR",
+    "C-PILL",
+    "L-SUBMIT"
+   ],
+   "anchors": [
+    "E-ENUMS.decision",
+    "E-ENUMS.draft",
+    "E-ENUMS.file",
+    "E-ENUMS.fix",
+    "E-ENUMS.hidden",
+    "E-ENUMS.idea-machine",
+    "E-ENUMS.idea-status",
+    "E-ENUMS.inbox",
+    "E-ENUMS.kind",
+    "E-ENUMS.match",
+    "E-ENUMS.part",
+    "E-ENUMS.questions",
+    "E-ENUMS.roles",
+    "E-ENUMS.sorting",
+    "E-ENUMS.stage",
+    "E-ENUMS.teamup",
+    "E-ENUMS.tier",
+    "E-ENUMS.windows"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "V-ACC",
+   "title": "Acceptance tests",
+   "file": "07-validation/V-ACC.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/prototype/Handoff.dc.html",
+   "source_sha": "e0334143c46807a2",
+   "depends_on": [
+    "J-SHARE",
+    "J-RESUME",
+    "J-SIMILAR",
+    "J-TRACK",
+    "J-REVIEW",
+    "J-COMMITTEE",
+    "J-TEAMUP",
+    "J-RECOVER",
+    "J-BROWSE"
+   ],
+   "used_by": [
+    "J-BROWSE",
+    "J-COMMITTEE",
+    "J-RECOVER",
+    "J-RESUME",
+    "J-REVIEW",
+    "J-SHARE",
+    "J-SIMILAR",
+    "J-TEAMUP",
+    "J-TRACK"
+   ],
+   "anchors": [
+    "V-ACC.browse",
+    "V-ACC.committee",
+    "V-ACC.recover",
+    "V-ACC.resume",
+    "V-ACC.review",
+    "V-ACC.share",
+    "V-ACC.similar",
+    "V-ACC.teamup",
+    "V-ACC.track",
+    "V-ACC.visual"
+   ],
+   "last_delta": "none"
+  },
+  {
+   "id": "V-FIELDS",
+   "title": "Field rules and messages",
+   "file": "07-validation/V-FIELDS.md",
+   "rev": 1,
+   "status": "baseline",
+   "source": "reference/copy/",
+   "source_sha": null,
+   "depends_on": [
+    "C-FIELD",
+    "C-FIELD-MSG",
+    "A-API"
+   ],
+   "used_by": [
+    "P-GAPS",
+    "C-BUTTON",
+    "C-FIELD-MSG",
+    "S-02",
+    "S-04",
+    "S-05",
+    "S-ONE",
+    "S-R2",
+    "S-R4",
+    "L-AUTH",
+    "L-DECIDE",
+    "L-SORT"
+   ],
+   "anchors": [
+    "V-FIELDS.answer",
+    "V-FIELDS.checkit",
+    "V-FIELDS.committee",
+    "V-FIELDS.decision",
+    "V-FIELDS.one",
+    "V-FIELDS.review",
+    "V-FIELDS.signin",
+    "V-FIELDS.sorting",
+    "V-FIELDS.teamup",
+    "V-FIELDS.tellit"
+   ],
+   "last_delta": "none"
+  }
+ ],
+ "boards": {
+  "Handoff": {
+   "screen": null,
+   "sha": "e0334143c46807a2",
+   "w": 1440,
+   "h": 5680
+  },
+  "Landing": {
+   "screen": "S-01",
+   "sha": "56f78ff973f9c124",
+   "w": 1440,
+   "h": 3000
+  },
+  "SignIn": {
+   "screen": "S-02",
+   "sha": "7471cde5eb6012a7",
+   "w": 1440,
+   "h": 900
+  },
+  "Home": {
+   "screen": "S-03",
+   "sha": "829f665e2fced6b2",
+   "w": 1440,
+   "h": 3470
+  },
+  "Compose": {
+   "screen": "S-04",
+   "sha": "103ffbab3cd6a877",
+   "w": 1440,
+   "h": 1080
+  },
+  "ComposeResume": {
+   "screen": "S-04B",
+   "sha": "b7edb23f22725fc4",
+   "w": 1440,
+   "h": 1080
+  },
+  "Review": {
+   "screen": "S-05",
+   "sha": "84425ab9e5155aab",
+   "w": 1440,
+   "h": 1080
+  },
+  "Status": {
+   "screen": "S-06",
+   "sha": "e5d7d867ba89e8e5",
+   "w": 1440,
+   "h": 1700
+  },
+  "Edit": {
+   "screen": "S-06B",
+   "sha": "88da348c155b938c",
+   "w": 1440,
+   "h": 2800
+  },
+  "MyIdeas": {
+   "screen": "S-07",
+   "sha": "c87314bb86eac69b",
+   "w": 1440,
+   "h": 1150
+  },
+  "Messages": {
+   "screen": "S-08",
+   "sha": "8fb4a9dcb2ba3fc8",
+   "w": 1440,
+   "h": 1240
+  },
+  "Idea": {
+   "screen": "S-09",
+   "sha": "f9eaa3898e115a1d",
+   "w": 1440,
+   "h": 1340
+  },
+  "PhoneLanding": {
+   "screen": "S-01",
+   "sha": "c8966f626015fb98",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneSignIn": {
+   "screen": "S-02",
+   "sha": "fa239fe244250b95",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneHome": {
+   "screen": "S-03",
+   "sha": "f6631e385d776f1d",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneCompose": {
+   "screen": "S-04",
+   "sha": "c1a80b7fe8ce7d21",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneComposeResume": {
+   "screen": "S-04B",
+   "sha": "3208d12317206ef4",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneReview": {
+   "screen": "S-05",
+   "sha": "dba21b834c18d80c",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneStatus": {
+   "screen": "S-06",
+   "sha": "8d3a3225b6709185",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneEdit": {
+   "screen": "S-06B",
+   "sha": "74f4a24f7b153be6",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneMyIdeas": {
+   "screen": "S-07",
+   "sha": "6720c41718fadda2",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneMessages": {
+   "screen": "S-08",
+   "sha": "f2c01b5c00ff993a",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneWall": {
+   "screen": "S-WALL",
+   "sha": "68f3eb6607e0a2ad",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneIdea": {
+   "screen": "S-09",
+   "sha": "2bca40b74ed5f597",
+   "w": 390,
+   "h": 844
+  },
+  "Wall": {
+   "screen": "S-WALL",
+   "sha": "6492c9028697b5e8",
+   "w": 1440,
+   "h": 4400
+  },
+  "OneDashboard": {
+   "screen": "S-ONE",
+   "sha": "1b9c9511e7d466f0",
+   "w": 1440,
+   "h": 2500
+  },
+  "Office": {
+   "screen": "S-OFFICE",
+   "sha": "03f7a674a5db1bc9",
+   "w": 1920,
+   "h": 1080
+  },
+  "Launch": {
+   "screen": "S-LAUNCH",
+   "sha": "5504475d6c332041",
+   "w": 1920,
+   "h": 1080
+  },
+  "Desk": {
+   "screen": "S-R1",
+   "sha": "1197b63ec286cca2",
+   "w": 1440,
+   "h": 920
+  },
+  "DeskIdea": {
+   "screen": "S-R2",
+   "sha": "7ab1e7d0b1be9849",
+   "w": 1440,
+   "h": 2080
+  },
+  "Answer": {
+   "screen": "S-R3",
+   "sha": "3d4f9e608c576f39",
+   "w": 1440,
+   "h": 1100
+  },
+  "Committee": {
+   "screen": "S-R4",
+   "sha": "7566ff82bc002424",
+   "w": 1440,
+   "h": 1000
+  },
+  "Crew": {
+   "screen": "S-H2",
+   "sha": "b9ddf56b17f81a01",
+   "w": 1440,
+   "h": 920
+  },
+  "CrewRequest": {
+   "screen": "S-H2B",
+   "sha": "f58a34cf5fcd6c36",
+   "w": 1440,
+   "h": 1000
+  },
+  "Ways": {
+   "screen": "S-H3",
+   "sha": "c22ac4ee07548a98",
+   "w": 1440,
+   "h": 1000
+  },
+  "How": {
+   "screen": "S-H4",
+   "sha": "4cd64b4487ef67a8",
+   "w": 1440,
+   "h": 1000
+  },
+  "PhoneCrew": {
+   "screen": "S-H2",
+   "sha": "0ac6a3a461079030",
+   "w": 390,
+   "h": 844
+  },
+  "Inbox": {
+   "screen": "S-H5",
+   "sha": "cedfc5d1634b10e8",
+   "w": 1440,
+   "h": 1000
+  },
+  "Profile": {
+   "screen": "S-H6",
+   "sha": "ac350cb442960b43",
+   "w": 1440,
+   "h": 1000
+  },
+  "PhoneInbox": {
+   "screen": "S-H5",
+   "sha": "c90bc7c526369581",
+   "w": 390,
+   "h": 844
+  },
+  "PhoneAnswer": {
+   "screen": "S-R3",
+   "sha": "9b0077e9c3a6d8e9",
+   "w": 390,
+   "h": 844
+  },
+  "Motion": {
+   "screen": null,
+   "sha": "97c8708e498fc0ef",
+   "w": 1440,
+   "h": 3960
+  }
+ },
+ "retired": []
+}

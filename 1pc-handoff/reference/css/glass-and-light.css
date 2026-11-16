@@ -1,0 +1,20 @@
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.amb i{filter:blur(48px)}
+.amb .a1{width:820px;height:600px;left:40px;top:-140px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:740px;height:560px;right:-180px;top:160px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:960px;height:600px;left:30%;top:620px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.amb .a4{width:780px;height:560px;right:-120px;top:1480px;background:radial-gradient(closest-side,rgba(57,93,237,0.28),rgba(57,93,237,0))}
+.amb .a5{width:720px;height:520px;left:140px;top:2180px;background:radial-gradient(closest-side,rgba(244,104,53,0.22),rgba(244,104,53,0))}
+.amb .a6{width:920px;height:560px;right:12%;top:2920px;background:radial-gradient(closest-side,rgba(146,128,255,0.26),rgba(146,128,255,0))}
+.tbar{background:rgba(246,246,244,.55)}
+.pc{background:linear-gradient(90deg,rgba(255,255,255,.5) 0,rgba(255,255,255,.5) var(--sbw),rgba(17,17,17,.08) var(--sbw),rgba(17,17,17,.08) calc(var(--sbw) + 1px),transparent calc(var(--sbw) + 1px)) no-repeat,#F3F3F1}
+/* floating surfaces stay solid over the light */
+.nl li::before{background:#FFFFFF}
+

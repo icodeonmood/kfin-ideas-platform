@@ -1,0 +1,97 @@
+/* Board-specific rules of Landing.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+body{margin:0;background:#F3F3F1}
+a{color:#111111}a:hover{color:#395DED}
+.pc{--fd:'Inter Tight',Inter,system-ui,sans-serif;--ft:Inter,system-ui,sans-serif;color:#111111;font-family:var(--ft);font-feature-settings:'cv11' 1;-webkit-font-smoothing:antialiased;background:#F3F3F1}
+.wrap{max-width:1280px;margin:0 auto;padding:0 48px;box-sizing:border-box}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 22px;border-radius:12px;font:500 16px/1 var(--ft);text-decoration:none;cursor:pointer;border:0;box-sizing:border-box;white-space:nowrap}
+.ink{background:#111111;color:#FFFFFF}.ink:hover{background:#2A2A2E;color:#FFFFFF}
+.wht{background:#FFFFFF;color:#111111}.wht:hover{background:#E9E9E6;color:#111111}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid #395DED;outline-offset:3px}
+/* the nav sits on the hero grid: the mark over the headline column, the links over the mark’s column; Share a problem is the one way in */
+.top{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);column-gap:48px;align-items:center;padding-top:20px;padding-bottom:20px}
+.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#111111;font:600 20px/1 var(--fd);letter-spacing:-0.03em;padding:8px 0}
+.tnav{display:flex;align-items:center;gap:8px 28px;flex-wrap:wrap}
+.tnav a.tl{font-size:15px;text-decoration:none;padding:12px 0}.tnav a.tl:hover{text-decoration:underline;text-underline-offset:6px}
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:48px;align-items:center;padding-top:72px;padding-bottom:96px}
+.kick{margin:0;font-size:16px;color:#5F5F64}
+.h1{margin:22px 0 0;font:500 clamp(52px,6.4vw,96px)/.98 var(--fd);letter-spacing:-0.04em;text-wrap:balance}
+.lead{margin:28px 0 0;font-size:20px;line-height:1.55;color:#4A4A50;max-width:600px;text-wrap:pretty}
+.go{margin-top:40px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px}
+.gonote{margin:0;font-size:15px;color:#5F5F64}
+/* the mark, annotated */
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.fig{margin:0;display:flex;flex-direction:column;align-items:center;gap:36px}
+.fig>svg{display:block;width:min(300px,70%);height:auto;overflow:visible}
+.key{display:grid;gap:12px;justify-items:start}
+.k{display:inline-flex;align-items:center;gap:12px;font-size:15px;line-height:1.3;color:#3F3F45}
+.sp{transform-box:fill-box;transform-origin:0% 100%;animation:rise 1.4s cubic-bezier(.16,1,.3,1) .5s both}
+.sd{animation:fade .5s ease 1.5s both}
+@keyframes rise{0%{transform:scale(.06);opacity:0}}
+@keyframes fade{0%{opacity:0}}
+/* how it works: the same track people see after they share */
+.sec{padding-top:112px}
+.h2{margin:0;font:500 clamp(34px,3.6vw,52px)/1.04 var(--fd);letter-spacing:-0.032em}
+.trk{list-style:none;margin:48px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 32px;position:relative}
+.trk::before{content:"";position:absolute;left:14px;right:14px;top:14px;height:2px;background:#DADAD6}
+.trk li{position:relative}
+.nd{position:relative;z-index:1;width:30px;height:30px;border-radius:50%;box-sizing:border-box;display:grid;place-items:center;background:#F3F3F1;box-shadow:inset 0 0 0 2px #111111;font:500 13px/1 var(--ft)}
+.trk li:first-child .nd{background:#111111;color:#FFFFFF;box-shadow:none}
+.tn{margin:22px 0 0;font:500 24px/1.15 var(--fd);letter-spacing:-0.02em}
+.tw{margin:6px 0 0;font-size:14px;color:#5F5F64}
+.td{margin:12px 0 0;font-size:16px;line-height:1.55;color:#4A4A50;max-width:280px}
+/* questions */
+.qa{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:48px;align-items:start}
+.qs{margin:0;padding:0;border-top:1px solid #111111}
+details{border-bottom:1px solid #DADAD6}
+summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 0;font:500 20px/1.3 var(--fd);letter-spacing:-0.012em}
+summary::-webkit-details-marker{display:none}
+summary .pm{flex:none;width:28px;height:28px;border-radius:50%;box-shadow:inset 0 0 0 1px #C9C9C3;display:grid;place-items:center;transition:transform .2s}
+details[open] summary .pm{transform:rotate(45deg)}
+details p{margin:0;padding:0 56px 24px 0;font-size:17px;line-height:1.6;color:#4A4A50;max-width:640px}
+/* the Ones */
+.slab{margin-top:112px;border-radius:28px;background:#111111;color:#FFFFFF;padding:64px;box-sizing:border-box}
+.ones{list-style:none;margin:44px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.one{border-radius:20px;background:#1B1B1F;padding:24px 24px 26px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.no{margin:22px 0 0;font:500 64px/1 var(--fd);letter-spacing:-0.04em}
+.end{padding-top:120px;padding-bottom:120px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:32px}
+.big{margin:0;font:500 clamp(48px,6vw,88px)/.98 var(--fd);letter-spacing:-0.04em;max-width:900px}
+@media (max-width:1000px){.hero,.qa{grid-template-columns:minmax(0,1fr)}.trk{grid-template-columns:repeat(2,minmax(0,1fr));gap:36px 32px}.trk::before{display:none}.ones{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.wrap{padding:0 20px}.slab{padding:36px 20px;border-radius:20px}.trk{grid-template-columns:minmax(0,1fr)}.tnav a.tl{display:none}}
+@media (prefers-reduced-motion:reduce){.pc *{animation:none !important;transition:none !important}}
+/* Craft layer: kerning, tracking, tabular figures, no widows, 44px targets, press feedback, no font-swap jump */
+@font-face{font-family:'Inter Fallback';src:local('Arial');size-adjust:107%;ascent-override:90%;descent-override:22.5%;line-gap-override:0%}
+html{scrollbar-gutter:stable}
+.pc{--ft:Inter,'Inter Fallback',system-ui,sans-serif;font-kerning:normal;text-rendering:optimizeLegibility;letter-spacing:-0.006em}
+p,li,dd,summary,figcaption{text-wrap:pretty}
+h1,h2,h3,legend{text-wrap:balance}
+.kick,.gonote,.tw,.k{letter-spacing:.004em}
+.nd,.no,.tnum{font-variant-numeric:tabular-nums}
+.btn{transition:transform .12s cubic-bezier(.2,0,0,1),background-color .15s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.btn:active{transform:scale(.97)}
+.brand,.tnav a.tl{min-height:44px;display:inline-flex;align-items:center;box-sizing:border-box}
+details[open]>p{animation:drop .22s cubic-bezier(.2,0,0,1);transform-origin:top left}
+@keyframes drop{0%{opacity:0;transform:translateY(-6px)}}
+@media (prefers-reduced-motion:reduce){.btn{transition:none}details[open]>p{animation:none}}
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.amb i{filter:blur(48px)}
+.amb .a1{width:820px;height:600px;left:40px;top:-140px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:740px;height:560px;right:-180px;top:160px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:960px;height:600px;left:30%;top:620px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.amb .a4{width:780px;height:560px;right:-120px;top:1480px;background:radial-gradient(closest-side,rgba(57,93,237,0.28),rgba(57,93,237,0))}
+.amb .a5{width:720px;height:520px;left:140px;top:2180px;background:radial-gradient(closest-side,rgba(244,104,53,0.22),rgba(244,104,53,0))}
+.amb .a6{width:920px;height:560px;right:12%;top:2920px;background:radial-gradient(closest-side,rgba(146,128,255,0.26),rgba(146,128,255,0))}
+.tbar{background:rgba(246,246,244,.55)}
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* ==== R29 colour roles (end) ==== */

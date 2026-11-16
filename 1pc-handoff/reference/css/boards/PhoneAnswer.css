@@ -1,0 +1,152 @@
+/* Board-specific rules of PhoneAnswer.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+/* ==== r19: one question at a time in a glass sheet; a review bar on top; check, then send ==== */
+.qcol{max-width:880px;margin:0 auto}
+.qf{position:relative;margin-top:28px;padding:26px 40px 26px;border-radius:28px}
+.qbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:24px}
+.qsegs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.qseg{display:flex;flex-direction:column;align-items:flex-start;gap:9px;width:100%;min-height:44px;padding:6px 0 2px;border:0;background:none;font:500 12.5px/1.2 var(--ft);color:var(--mute);cursor:pointer;text-align:left}
+.qseg i{display:block;width:100%;height:6px;border-radius:999px;background:rgba(17,17,17,.1);transition:background-color .26s ease}
+.qseg.ok i{background:var(--okD)}
+.qseg.cur i{background:var(--blue)}
+.qseg.cur{color:var(--ink);font-weight:600}
+.qseg:hover{color:var(--ink)}
+.qseg[aria-disabled="true"]{cursor:default}
+.qseg[aria-disabled="true"]:hover{color:var(--mute)}
+.qseg:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:8px}
+.qprog{margin:4px 0 0;font:500 13px/1.2 var(--ft);color:var(--mute2);white-space:nowrap}
+.qstage{min-height:330px;margin-top:30px}
+.qstep{display:flex;flex-direction:column;align-items:stretch}
+.qstage.fwd .qstep{animation:qUp .46s cubic-bezier(.2,.8,.2,1) both}
+.qstage.back .qstep{animation:qDown .46s cubic-bezier(.2,.8,.2,1) both}
+@keyframes qUp{from{opacity:0;translate:0 28px}to{opacity:1;translate:0 0}}
+@keyframes qDown{from{opacity:0;translate:0 -28px}to{opacity:1;translate:0 0}}
+@media (prefers-reduced-motion:reduce){.qstage .qstep{animation:none}}
+.qwho{margin:0;font:500 13.5px/1.3 var(--ft);color:var(--warnT)}
+.qwho.ok{color:var(--okT)}
+.qt{display:flex;align-items:baseline;gap:14px;margin:10px 0 0;font:500 30px/1.25 var(--fd);letter-spacing:-.015em;color:var(--ink)}
+.qt > span:last-child{max-width:30ch}
+.qt:focus{outline:none}
+.qn{flex:none;display:inline-flex;align-items:center;gap:4px;font:600 16px/1 var(--ft);color:var(--blue);transform:translateY(-5px)}
+.qin{display:block;width:100%;box-sizing:border-box;margin-top:26px;padding:6px 0 12px;border:0;border-bottom:2px solid rgba(17,17,17,.18);border-radius:0;background:transparent;font:400 22px/1.45 var(--ft);color:var(--ink);resize:none;transition:border-color .15s ease}
+.qin::placeholder{color:#6C6C70}
+.qin:focus{outline:none;border-bottom-color:var(--blue)}
+.qhint{margin:12px 0 0;font-size:13px;line-height:1.6;color:var(--mute)}
+.qk{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin:0 2px;box-sizing:border-box;border-radius:8px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule),0 1px 0 var(--rule);font:500 12px/1 var(--ft);color:var(--ink2)}
+.qadd{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:18px}
+.qfile{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 6px 0 12px;border-radius:12px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule);font-size:14px;color:var(--ink)}
+.qfile .ok{color:var(--okT);font-size:12.5px}
+.qfile button{display:inline-grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:none;color:var(--mute);cursor:pointer}
+.qfile button:hover{background:rgba(17,17,17,.06);color:var(--ink)}
+.qfile button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.qrev{list-style:none;margin:18px 0 0;padding:0;border-top:1px solid rgba(17,17,17,.08)}
+.qrev > li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:4px 14px;align-items:start;padding:14px 0;border-bottom:1px solid rgba(17,17,17,.08)}
+.qrev > li:last-child{border-bottom:0}
+.qrn{font:600 14px/1.5 var(--ft);color:var(--blue)}
+.qrq{margin:0;font:500 15.5px/1.45 var(--ft);color:var(--ink)}
+.qra{margin:4px 0 0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.qrev > li.open .qra{color:var(--warnT)}
+.qrev .tb{margin-top:-10px;font-size:14.5px}
+.qdone .qok{display:inline-grid;place-items:center;width:52px;height:52px;margin-bottom:16px;border-radius:20px;background:var(--okW);color:var(--okT)}
+.qdone .body{margin:12px 0 0}
+.qfoot{display:flex;align-items:center;gap:12px;margin-top:26px;padding-top:20px;border-top:1px solid rgba(17,17,17,.08)}
+.qfoot .btn{min-height:52px;padding:0 24px;border-radius:12px}
+.qfoot .btn.line{gap:6px;padding-left:16px}
+.qfoot .fwd{margin-left:auto;min-width:168px}
+.qfoot .fwd.line{padding-left:24px}
+/* r24: every answer field takes files and a voice answer; the clip and mic sit in its right corner */
+.qfield{display:flex;align-items:flex-end;gap:6px;margin-top:26px;border-bottom:2px solid rgba(17,17,17,.18);transition:border-color .15s ease}
+.qfield:focus-within,.qfield.rec{border-bottom-color:var(--blue)}
+.qfield .qin{flex:1;min-width:0;margin-top:0;border-bottom:0}
+.qtools{display:inline-flex;gap:2px;flex:none;padding-bottom:8px}
+.qtool{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:transparent;color:var(--ink2);cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.qtool:hover{background:rgba(17,17,17,.05);color:var(--ink)}
+.qtool:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.qmic{border-radius:50%}
+.qmic .mi,.qmic .ms{display:inline-grid;place-items:center}
+.qmic .ms{display:none}
+.qmic.on{background:var(--blue);color:#FFFFFF}
+.qmic.on:hover{background:var(--blueT);color:#FFFFFF}
+.qmic.on .mi{display:none}
+.qmic.on .ms{display:inline-grid}
+.qlive{display:flex;align-items:center;gap:10px;margin:12px 0 0;font:500 13.5px/1.3 var(--ft);color:var(--blueT)}
+.qwave{display:inline-flex;align-items:center;gap:3px;height:16px}
+.qwave i{display:block;width:3px;height:100%;border-radius:2px;background:var(--blue);animation:qw 1s ease-in-out infinite}
+.qwave i:nth-child(2){animation-delay:-.2s}.qwave i:nth-child(3){animation-delay:-.4s}.qwave i:nth-child(4){animation-delay:-.6s}.qwave i:nth-child(5){animation-delay:-.8s}
+@keyframes qw{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+@media (prefers-reduced-motion:reduce){.qwave i{animation:none}}
+.qfiles{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.qrev .qfiles{margin-top:10px}
+.qrev .qfile{min-height:36px;padding-right:12px;font-size:13.5px}
+.qfile .qfn{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qfile .chk{font-size:12.5px;color:var(--mute)}
+.qnote{margin:10px 0 0;font-size:13px;color:var(--mute)}
+
+/* R27: each question names the part of the idea its answer is added to */
+.qmeta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0}
+.qpart{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;border-radius:999px;background:rgba(57,93,237,.08);color:var(--blueT);font:500 12.5px/1.3 var(--ft)}
+.qpart b{font-weight:600}
+.qfoot .fwd2{margin-left:auto;padding-left:24px}.qfoot .fwd2 + .fwd{margin-left:0}
+.qrp{margin:2px 0 0;font:500 12.5px/1.4 var(--ft);color:var(--blueT)}
+
+/* R27: PhoneAnswer, tuned for the phone */
+.ahead{padding:4px 0 0}
+.ahead .lede{margin:8px 0 0;font-size:14.5px;line-height:1.5;color:var(--mute)}
+.aclock{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:12px}
+.due{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 11px 0 9px;border-radius:999px;background:rgba(17,17,17,.06);color:var(--ink2);font:500 13px/1 var(--ft);white-space:nowrap}
+.due.soon{background:var(--badW);color:var(--badT)}
+.due.done{background:var(--okW);color:var(--okT)}
+.aclock .meta{font-size:12.5px}
+.qf{margin-top:18px;padding:18px 16px 20px;border-radius:28px;background:rgba(255,255,255,.8);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(17,17,17,.06),0 24px 50px -34px rgba(17,17,17,.3)}
+.qbar{grid-template-columns:minmax(0,1fr);gap:8px}
+.qprog{margin:0;font-size:12.5px}
+.qsegs{gap:4px}
+.qseg{gap:7px;font-size:11.5px;min-height:40px}
+.qseg span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.qstage{min-height:0;margin-top:18px}
+.qt{gap:10px;margin-top:10px;font-size:22px;line-height:1.3}
+.qt > span:last-child{max-width:none}
+.qt{text-wrap:pretty}
+.qn{font-size:14px;transform:translateY(-3px)}
+.qmeta{gap:6px 8px}
+.qwho{font-size:12.5px}
+.qpart{font-size:12px}
+.qfield{margin-top:18px}
+.qin{font-size:18px}
+.qtool{width:40px;height:44px}
+.qhint{display:none}
+.qrev > li{grid-template-columns:20px minmax(0,1fr) auto;gap:2px 10px}
+.qrq{font-size:14.5px}
+.qra{font-size:14px}
+.qdone .qok{width:44px;height:44px;border-radius:12px;margin-bottom:12px}
+.qdock{gap:0;padding-top:10px}
+.qdock .qfoot{display:flex;align-items:center;gap:10px;margin:0;padding:0;border:0}
+.qdock .qfoot .btn{min-height:52px;border-radius:12px;padding:0 18px}
+.qdock .qfoot .fwd{flex:1;min-width:0;margin-left:0}
+.qdock .qfoot .fwd2{flex:none;margin-left:0;padding:0 16px}
+.qdock .qfoot .btn.line:first-child:not(.fwd2){flex:none}
+
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.ph{isolation:isolate}
+.amb i{filter:blur(30px)}
+.amb .a1{width:380px;height:330px;left:-120px;top:-50px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:350px;height:310px;right:-130px;top:290px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:420px;height:330px;left:-70px;top:600px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.pnav{background:transparent}
+.tabs{background:rgba(255,255,255,.72)}
+.dock{background:rgba(255,255,255,.62);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5)}
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* a task screen: quiet light, the cool glow at half strength, no warm or violet glow */
+.amb .a2,.amb .a3,.amb .a5,.amb .a6{display:none}
+.amb .a1,.amb .a4{opacity:.5}
+/* ==== R29 colour roles (end) ==== */

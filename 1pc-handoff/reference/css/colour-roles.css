@@ -1,0 +1,8 @@
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* a task screen: quiet light, the cool glow at half strength, no warm or violet glow */
+.amb .a2,.amb .a3,.amb .a5,.amb .a6{display:none}
+.amb .a1,.amb .a4{opacity:.5}
+/* ==== R29 colour roles (end) ==== */

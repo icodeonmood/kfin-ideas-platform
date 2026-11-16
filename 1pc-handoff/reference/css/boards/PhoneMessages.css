@@ -1,0 +1,120 @@
+/* Board-specific rules of PhoneMessages.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+/* R27: one idea's conversation, on the phone. The questions card hands over to PhoneAnswer; the box at the bottom is for messages */
+.pback{max-width:150px}
+.cvh{padding:6px 0 18px;border-bottom:1px solid rgba(17,17,17,.08)}
+.cvmeta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0;font-size:13px;color:var(--mute)}
+.cvt{margin-top:10px}
+.cvppl{display:flex;align-items:center;gap:10px;margin-top:12px}
+.faces{display:flex;flex:none}
+.faces .av{width:30px;height:30px;font-size:10.5px;cursor:default;border-width:2.5px}
+.faces .av + .av{margin-left:-8px}
+.cvppl .meta{font-size:12.5px;line-height:1.4}
+.cvopen{margin-top:6px;font-size:14.5px}
+.conv{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:16px}
+.ev{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.45;color:var(--mute)}
+.evd{width:6px;height:6px;margin-top:6px;border-radius:50%;background:var(--faint);flex:none}
+.msg{display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:310px}
+.msg.me{align-self:flex-end;align-items:flex-end;animation:sendIn .26s var(--e-in)}
+.msg.wide{max-width:none;width:100%}
+.msg.me.wide{align-items:stretch;animation:none}
+@keyframes sendIn{0%{opacity:0;transform:translateY(8px)}}
+.who{display:flex;align-items:center;flex-wrap:wrap;gap:2px 8px;margin:0;font-size:12.5px;color:var(--mute)}
+.who b{font-weight:500;color:var(--ink);font-size:13.5px}
+.msg.me .who{justify-content:flex-end}
+.avm{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 10.5px/1 var(--ft);color:var(--ink);box-sizing:border-box;border:2.5px solid transparent;background:linear-gradient(#ECECE8,#ECECE8) padding-box,var(--ring,#DADAD6) border-box;box-shadow:inset 0 0 0 1.5px #FFFFFF}
+.bub{margin:0;padding:11px 14px;border-radius:20px;border-top-left-radius:6px;font-size:15.5px;line-height:1.5;background:rgba(255,255,255,.88);box-shadow:0 0 0 1px rgba(17,17,17,.07);color:var(--ink)}
+.me .bub{background:var(--ink);color:#FFFFFF;box-shadow:none;border-top-left-radius:18px;border-top-right-radius:6px}
+.ment{font-weight:600;color:var(--blueT)}
+.fchip{margin:0;display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border-radius:12px;background:rgba(255,255,255,.88);box-shadow:0 0 0 1px rgba(17,17,17,.08);font-size:13px;max-width:100%;box-sizing:border-box}
+.fchip .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ft{display:inline-grid;place-items:center;min-width:36px;height:26px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--sunk);font:600 10px/1 var(--ft);color:var(--mute2);flex:none}
+.fn{font-weight:500}
+.fm{color:var(--mute);font-size:12.5px;white-space:nowrap}
+.due{display:inline-flex;align-items:center;gap:5px;min-height:26px;margin:0;padding:0 10px 0 8px;border-radius:999px;background:rgba(17,17,17,.05);color:var(--ink2);font:500 12.5px/1 var(--ft);white-space:nowrap}
+.due.soon{background:var(--badW);color:var(--badT)}
+.due.xs{min-height:22px;font-size:12px}
+.due svg{width:12px;height:12px}
+.sentl{display:inline-flex;align-items:center;gap:5px;margin:0;font-size:12.5px;color:var(--okT);text-align:right}
+.askc{box-sizing:border-box;padding:16px 16px 16px;border-radius:20px;border-top-left-radius:6px;background:rgba(255,255,255,.88);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(181,71,8,.22),0 24px 50px -32px rgba(244,104,53,.4)}
+.askc.done{box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(17,17,17,.08)}
+.askh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.askt{margin:0;font:500 17px/1.3 var(--fd);letter-spacing:-0.01em}
+.askq,.ansq{list-style:none;margin:12px 0 0;padding:0;border-radius:12px;background:rgba(17,17,17,.035)}
+.askq > li,.ansq > li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:2px 8px;padding:11px 12px}
+.askq > li + li,.ansq > li + li{border-top:1px solid rgba(17,17,17,.07)}
+.qn{font:600 13.5px/1.45 var(--ft);color:var(--warnT)}
+.askc.done .qn{color:var(--mute)}
+.qq{margin:0;font:500 14.5px/1.45 var(--ft);color:var(--ink)}
+.askc.done .qq{color:var(--mute2);font-weight:400}
+.qp{margin:4px 0 0;display:flex;align-items:center;gap:4px;font:400 12px/1.3 var(--ft);color:var(--blueT)}
+.qp b{font-weight:600}
+.askf{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.askf .meta{font-size:12.5px;line-height:1.45}
+.askf .btn.full{min-height:52px}
+.okl{display:flex;align-items:center;gap:6px;margin:12px 0 0;font:500 13px/1.4 var(--ft);color:var(--okT)}
+.ansc{box-sizing:border-box;padding:14px 14px 14px;border-radius:20px;border-top-right-radius:6px;background:var(--ink);color:#FFFFFF}
+.anst{margin:0;font:500 16px/1.3 var(--fd)}
+.ansc .ansq{background:rgba(255,255,255,.07)}
+.ansc .ansq > li + li{border-top-color:rgba(255,255,255,.1)}
+.ansc .qn{color:rgba(255,255,255,.55)}
+.ansc .qq{color:rgba(255,255,255,.66);font:400 12.5px/1.45 var(--ft)}
+.qa{margin:3px 0 0;font-size:14.5px;line-height:1.5;color:#FFFFFF}
+.ansc .qp{color:#AFC0FF}
+.afiles{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.afiles li{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border-radius:8px;background:rgba(255,255,255,.1);font-size:12px}
+.cvempty{margin-top:18px;padding:24px 18px;border-radius:20px;border:1px dashed #BDBDB7;text-align:center}
+.cvempty .meta{margin-top:6px}
+/* the message box, pinned */
+.cvdock{padding-left:12px;padding-right:12px;gap:8px}
+.cvhint{display:flex;gap:8px;align-items:flex-start;margin:0;padding:8px 10px;border-radius:12px;background:var(--warnW);color:var(--warnT);font-size:12.5px;line-height:1.4}
+.cvhint svg{flex:none;width:14px;height:14px;margin-top:1px}
+.cvhint a{color:inherit;font-weight:600}
+.cvrow{display:flex;align-items:flex-end;gap:6px}
+.cvtool{flex:none;width:44px;height:48px;border:0;border-radius:12px;background:none;display:grid;place-items:center;color:var(--mute2);cursor:pointer}
+textarea.cvin{flex:1;min-width:0;min-height:48px;height:48px;max-height:120px;box-sizing:border-box;padding:13px 16px;border:0;border-radius:24px;background:rgba(255,255,255,.92);box-shadow:0 0 0 1px rgba(17,17,17,.1);resize:none;font:400 16px/1.4 var(--ft);color:var(--ink)}
+textarea.cvin:focus{outline:none;box-shadow:0 0 0 1.5px var(--blue)}
+.cvsend{flex:none;width:48px;height:48px;border:0;border-radius:50%;background:var(--ink);color:#FFFFFF;display:grid;place-items:center;cursor:pointer;transition:transform .12s var(--e-ui)}
+.cvsend:active{transform:scale(.94)}
+.cvfile{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 8px;border-radius:12px;background:rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(17,17,17,.08);font-size:13px}
+.cvfile .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cvfile .ok{display:inline-flex;align-items:center;gap:4px;color:var(--okT)}
+.cvfile .chk{display:inline-flex;align-items:center;gap:5px}
+.cvx{width:32px;height:32px;border:0;border-radius:8px;background:none;display:grid;place-items:center;color:var(--mute2);cursor:pointer}
+.cvdock .err{margin:0}
+.cvask{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 8px 8px 14px;border-radius:20px;background:var(--warnW);box-shadow:0 0 0 1px rgba(181,71,8,.18)}
+.cvaskt{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;font-size:14px;color:var(--warnT)}
+.cvaskt b{font-weight:600}
+.cvask .due{background:rgba(255,255,255,.7)}
+.cvask .btn{flex:none;min-width:96px}
+.okl{align-items:flex-start}
+.okl svg{flex:none;margin-top:1px}
+
+/* avatar: a Google-style outer ring in the tier's colours, a white gap, then the face */
+.t1{--ring:conic-gradient(from 210deg,#F5863B,#FFC27A,#F69F54,#DE6D2D,#F5863B)}.t2{--ring:conic-gradient(from 210deg,#F35532,#FF9A6B,#F4744C,#CE4327,#F35532)}.t3{--ring:conic-gradient(from 210deg,#F34770,#FF8FB0,#F4678D,#CD3254,#F34770)}.t4{--ring:conic-gradient(from 210deg,#F23729,#F58267,#F34F41,#C80000,#F23729)}.t5{--ring:conic-gradient(from 210deg,#4DD187,#A6F2CC,#67DFA0,#12A862,#4DD187)}.t6{--ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1)}.t7{--ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9)}
+.av.t1,.av.t2,.av.t3,.av.t4,.av.t5,.av.t6,.av.t7{box-sizing:border-box;border:3px solid transparent;background:linear-gradient(#ECECE8,#ECECE8) padding-box,var(--ring) border-box;box-shadow:inset 0 0 0 2px #FFFFFF}
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.ph{isolation:isolate}
+.amb i{filter:blur(30px)}
+.amb .a1{width:380px;height:330px;left:-120px;top:-50px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:350px;height:310px;right:-130px;top:290px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:420px;height:330px;left:-70px;top:600px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.pnav{background:transparent}
+.tabs{background:rgba(255,255,255,.72)}
+.dock{background:rgba(255,255,255,.62);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5)}
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* a task screen: quiet light, the cool glow at half strength, no warm or violet glow */
+.amb .a2,.amb .a3,.amb .a5,.amb .a6{display:none}
+.amb .a1,.amb .a4{opacity:.5}
+/* ==== R29 colour roles (end) ==== */

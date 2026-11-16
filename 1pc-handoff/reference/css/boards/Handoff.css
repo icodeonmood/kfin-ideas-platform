@@ -1,0 +1,25 @@
+/* Board-specific rules of Handoff.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+.hd{padding:72px 0 40px}
+.sec{padding:56px 0;border-top:1px solid var(--rule)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:18px}
+.fstep{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:12px;background:var(--card);box-shadow:inset 0 0 0 1px var(--rule2);font:500 15px/1.2 var(--ft)}
+.fstep.wait{background:var(--warnW);box-shadow:inset 0 0 0 1px #F5D9A8;color:var(--warnT)}
+.fstep.new{background:var(--wash);box-shadow:inset 0 0 0 1.5px var(--blue);color:var(--blueT)}
+.fstep.end{background:var(--ink);color:#FFFFFF;box-shadow:none}
+.sep{width:18px;height:2px;background:var(--rule)}
+.cmp{display:grid;grid-template-columns:120px minmax(0,1fr);gap:16px 24px;align-items:start;margin-top:32px}
+.cmp>p{padding-top:14px}
+.tbl{margin-top:24px;font-size:15px;line-height:1.5}
+.tr{display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1.25fr) 110px 130px;gap:0 24px;padding:16px 0;border-bottom:1px solid var(--rule);align-items:start}
+.tr.th{padding:12px 0;border-bottom:1px solid var(--ink);font:500 14px/1.3 var(--ft);color:var(--mute)}
+.tr .sc{font:500 16px/1.35 var(--fd);letter-spacing:-0.01em}
+.tr .ac{font-variant-numeric:tabular-nums;color:var(--mute2)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:24px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:24px}
+.card.p{padding:24px 26px 26px}
+.card h3{margin:0}
+ul.plain{margin:12px 0 0;padding-left:18px}
+ul.plain li{margin:6px 0;font-size:15px;line-height:1.55;color:var(--mute2)}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:6px 14px;margin-top:14px;font-size:14.5px;line-height:1.5}
+.kv dt{color:var(--mute)}.kv dd{margin:0}

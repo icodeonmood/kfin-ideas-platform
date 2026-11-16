@@ -1,0 +1,108 @@
+/* Board-specific rules of PhoneSignIn.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+.pbody{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;justify-content:flex-start;padding:max(56px,env(safe-area-inset-top)) 28px 24px}
+.blk{width:100%;max-width:320px;margin:0 auto;padding-bottom:64px}
+.blk h1{margin-top:24px}
+.blk .ln{margin:10px 0 0;font-size:16px;line-height:1.5;color:var(--mute2)}
+.track{margin-top:24px;height:3px;border-radius:2px;background:var(--rule2);overflow:hidden}
+.track span{display:block;height:100%;width:36%;border-radius:2px;background:var(--blue);animation:slide 1.2s var(--e-ui) infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(280%)}}
+.next{margin-top:16px;display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.45;color:var(--mute2)}
+.next .ic{flex:none;width:28px;height:28px;border-radius:8px;background:var(--wash);color:var(--blueT);display:grid;place-items:center}
+.alert{margin-top:20px;display:flex;gap:10px;background:var(--badW);border:1px solid #FECDCA;border-radius:20px;padding:14px}
+.alert p{margin:0;color:var(--badT)}
+.draft{margin-top:20px;padding:16px}
+.full{width:100%;min-height:56px;border-radius:12px;font-size:16px}
+.dock .tb{align-self:center}
+/* ==== email first, then a 6-digit code; single sign-on as the alternative ==== */
+.fl{display:block;margin:28px 0 8px;font:500 14px/1.3 var(--ft);color:var(--ink)}
+.emw{display:flex;align-items:center;gap:10px;min-height:56px;padding:0 16px;border-radius:12px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule)}
+.emw:focus-within{box-shadow:inset 0 0 0 2px var(--blue),0 0 0 4px rgba(57,93,237,.12)}
+.emw svg{flex:none;color:var(--mute2)}
+.em{flex:1;min-width:0;height:54px;border:0;background:transparent;font:400 17px/1.3 var(--ft);color:var(--ink);outline:none}
+.em::placeholder{color:#8A8A90}
+.hint{margin:8px 0 0;font-size:13.5px;line-height:1.45;color:var(--mute)}
+.hint.warn{color:var(--warnT)}
+.pact{margin-top:20px}
+.big{width:100%;min-height:56px;border-radius:12px;font-size:16px;gap:10px}
+.btn.dis{opacity:.4;pointer-events:none}
+.btn.ink.dis{opacity:1;background:#DCDCD8;background-image:none;color:#FFFFFF;box-shadow:none}
+.or{display:flex;align-items:center;gap:12px;margin:24px 0 16px;font-size:13px;color:var(--mute)}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--rule)}
+.sso{display:inline-flex;align-items:center;justify-content:center}
+.ssol{margin:10px 0 0;text-align:center;line-height:1.5}
+.ssol .tb{font-size:inherit}
+.who{font-weight:600;color:var(--ink)}
+.otp{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:28px}
+.otp input{position:absolute;inset:0;z-index:1;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;font-size:16px;cursor:text}
+.otp span{display:grid;place-items:center;height:60px;border-radius:12px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule);font:500 26px/1 var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.otp:focus-within span.cur{box-shadow:inset 0 0 0 2px var(--blue),0 0 0 4px rgba(57,93,237,.12)}
+.otp span.cur{box-shadow:inset 0 0 0 1.5px rgba(57,93,237,.5)}
+.otp.bad span{box-shadow:inset 0 0 0 1.5px var(--badT);color:var(--badT);background:#FFF8F7}
+.cerr{display:flex;gap:8px;margin:12px 0 0;font-size:14px;line-height:1.45;color:var(--badT)}
+.resend{margin:14px 0 0}
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.ph{isolation:isolate}
+.amb i{filter:blur(30px)}
+.amb .a1{width:380px;height:330px;left:-120px;top:-50px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:350px;height:310px;right:-130px;top:290px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:420px;height:330px;left:-70px;top:600px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.pnav{background:transparent}
+.tabs{background:rgba(255,255,255,.72)}
+/* ==== sign in: lit colour card, form on glass ==== */
+.pbody{padding:max(54px,env(safe-area-inset-top)) 20px 24px}
+.blk{max-width:none;padding-bottom:40px}
+.shero{position:relative;isolation:isolate;overflow:hidden;height:192px;padding:22px 22px 0;box-sizing:border-box;border-radius:28px;background:linear-gradient(160deg,#3455EC 0%,#6957EE 52%,#F58256 128%);color:#FFFFFF;box-shadow:0 30px 60px -34px rgba(52,85,236,.65)}
+.shero::before,.shero::after{content:"";position:absolute;z-index:-1;border-radius:50%}
+.shero::before{width:230px;height:230px;right:-70px;top:-70px;border:24px solid rgba(255,255,255,.14)}
+.shero::after{width:130px;height:130px;left:-40px;bottom:-30px;background:rgba(255,255,255,.12)}
+.sh-k{margin:16px 0 0;font-size:13.5px;color:rgba(255,255,255,.78)}
+.sh-t{margin:4px 0 0;font:500 26px/1.1 var(--fd);letter-spacing:-0.026em}
+.sglass{position:relative;z-index:1;margin-top:-40px;padding:24px 20px 24px;border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.74));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(17,17,17,.06),0 30px 60px -36px rgba(17,17,17,.45)}
+.sglass .h1{margin-top:0;font-size:30px}
+.sglass .ln{font-size:15px}
+.sglass .emw{background:rgba(255,255,255,.92)}
+.dock{background:rgba(255,255,255,.62)}
+/* ==== the title sits beside the logo in the colour card; the form card starts with the field ==== */
+.shero{display:flex;align-items:flex-start;gap:14px;height:150px;padding:24px 22px 0}
+.shero .sh-mk{flex:none}
+.shero .sh-h{margin:4px 0 0;font:500 27px/1.12 var(--fd);letter-spacing:-0.026em;color:#FFFFFF;outline:none}
+.sglass{margin-top:-52px}
+.sglass .fl{margin-top:0}
+.sglass .ln{margin-top:0}
+.sglass .card.draft{margin-top:14px}
+/* ==== email step: single sign-on in the middle, the email field in a bottom sheet ==== */
+.blk{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box}
+.blk:has(.sglass.bare) .shero{height:auto;padding-bottom:24px}
+.sglass.bare{margin:auto 0;padding:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
+.ssomid{display:flex;flex-direction:column;align-items:stretch}
+.sglass.bare .sso{background:rgba(255,255,255,.82);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:inset 0 0 0 1px rgba(17,17,17,.1),0 18px 36px -24px rgba(17,17,17,.45)}
+.dock.bsheet{position:relative;gap:10px;padding-top:10px;border-top:0;border-radius:28px 28px 0 0;background:rgba(255,255,255,.95);-webkit-backdrop-filter:blur(24px) saturate(1.4);backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 -1px 0 rgba(17,17,17,.06),0 -24px 48px -28px rgba(17,17,17,.4)}
+.bsheet .grab{align-self:center;width:40px;height:5px;margin-bottom:4px;border-radius:999px;background:rgba(17,17,17,.16)}
+.bsheet .fl{margin:2px 0 0}
+.bsheet .emw{background:#FFFFFF}
+.bsheet #em-h{margin:0 0 4px}
+.hint:empty{display:none}
+/* ==== email step: the colour card is now the top of the bottom sheet ==== */
+.dock.bsheet{gap:0;padding:0 0 max(30px,calc(env(safe-area-inset-bottom) + 12px));overflow:hidden;background:#FFFFFF;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 -24px 48px -26px rgba(52,85,236,.55)}
+.bsheet .shead{position:relative;isolation:isolate;overflow:hidden;padding:10px 22px 46px;background:linear-gradient(160deg,#3455EC 0%,#6957EE 52%,#F58256 128%);color:#FFFFFF}
+.bsheet .shead::before,.bsheet .shead::after{content:"";position:absolute;z-index:-1;border-radius:50%}
+.bsheet .shead::before{width:200px;height:200px;right:-60px;top:-80px;border:22px solid rgba(255,255,255,.14)}
+.bsheet .shead::after{width:110px;height:110px;left:-36px;bottom:-40px;background:rgba(255,255,255,.12)}
+.bsheet .grab{display:block;margin:0 auto 16px;background:rgba(255,255,255,.55)}
+.shrow{display:flex;align-items:center;gap:14px}
+.shrow .sh-mk{flex:none;width:32px;height:38px}
+.shrow .sh-h{margin:0;font:500 25px/1.15 var(--fd);letter-spacing:-0.024em;color:#FFFFFF;outline:none}
+.bsheet .sbody{position:relative;display:flex;flex-direction:column;gap:10px;margin-top:-26px;padding:22px 20px 0;border-radius:28px 28px 0 0;background:#FFFFFF}
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* ==== R29 colour roles (end) ==== */

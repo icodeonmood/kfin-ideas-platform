@@ -1,0 +1,537 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-11-13T23:24:34Z"
+ },
+ "title": "1% Club, reworked: say it, check it, send it",
+ "launch": {
+  "view": "canvas"
+ },
+ "pages": [],
+ "boards": {
+  "Handoff.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 5680,
+   "title": "Handoff: what changed, why, and how it was checked",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Landing.dc.html": {
+   "x": 0,
+   "y": 6230,
+   "w": 1440,
+   "h": 3000,
+   "title": "1 · Landing: Share a problem keeps its intent through sign-in",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "SignIn.dc.html": {
+   "x": 1520,
+   "y": 6230,
+   "w": 1440,
+   "h": 900,
+   "title": "2 · Sign in: email first, then a 6-digit code; single sign-on as the alternative (tweaks: state, came from)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Home.dc.html": {
+   "x": 3040,
+   "y": 6230,
+   "w": 1440,
+   "h": 3470,
+   "title": "3 · Home: ask first. The question, the box, starters, then Jump back in (tweaks: visitor, prompt, attachments, and None, One or Several for Needs you, Your ideas, Find your crew and The Ones)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Compose.dc.html": {
+   "x": 4560,
+   "y": 6230,
+   "w": 1440,
+   "h": 1080,
+   "title": "4 · Tell it: Share a problem opens on the Home prompt on its own; after the first message, a conversation with the draft building beside it; hidden details in one folded list, Preview on similar ideas (simulator S1, tweaks: state, hidden, loader)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "ComposeResume.dc.html": {
+   "x": 6080,
+   "y": 6230,
+   "w": 1440,
+   "h": 1080,
+   "title": "4b · Tell it, the conversation: where Home lands once you have typed (your words become the first message, the draft builds beside it), and where a saved draft picks up (tweak: loader)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Review.dc.html": {
+   "x": 7600,
+   "y": 6230,
+   "w": 1440,
+   "h": 1080,
+   "title": "5 · Check it, part by part: your words, sorting, similar ideas, proof, your fix and who would help, one at a time, then send it. No scrolling (simulator S2 reorders the parts; tweaks: step, similar, merge, evidence, fix, submit). Similar ideas: yours and the similar ideas in one grid, three across",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Status.dc.html": {
+   "x": 9120,
+   "y": 6230,
+   "w": 1440,
+   "h": 1700,
+   "title": "6 · Status: the idea as a card in the Wall’s colours; questions as a card with an Answer button; answers shown on their parts; decisions with the Ones Committee’s window; Team up on similar ideas (tweaks: state, fix, attached, hidden)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Edit.dc.html": {
+   "x": 10640,
+   "y": 6230,
+   "w": 1440,
+   "h": 2800,
+   "title": "6b · Edit after sharing, until the review desk opens it",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "MyIdeas.dc.html": {
+   "x": 12160,
+   "y": 6230,
+   "w": 1440,
+   "h": 1150,
+   "title": "7 · My ideas: search first, filters inside the bar, ask in your own words; Yours and Teamed up (tweaks: filter, search, list, view, arrival)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Messages.dc.html": {
+   "x": 13680,
+   "y": 6230,
+   "w": 1440,
+   "h": 1240,
+   "title": "8 · An idea’s conversation, opened from the idea or the Inbox: the review desk’s questions as a card with an Answer button, and the answers posted back; the box below is for messages (tweaks: idea, view, time to answer)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Idea.dc.html": {
+   "x": 15200,
+   "y": 6230,
+   "w": 1440,
+   "h": 1340,
+   "title": "9 · A colleague’s idea: Team up sends Ravi a note, with one of yours brought along if you like; he approves or declines (tweaks: from, team up)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneLanding.dc.html": {
+   "x": 0,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Landing",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneSignIn.dc.html": {
+   "x": 470,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Sign in: single sign-on in the middle, the title and work email in one bottom sheet, then a code (tweak: state)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneHome.dc.html": {
+   "x": 940,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Home: the question, starters, pinned box (tweaks: visitor, prompt, and None, One or Several for each section)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneCompose.dc.html": {
+   "x": 1410,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Tell it (simulators S1 and S3, tweaks: state, hidden, loader)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneComposeResume.dc.html": {
+   "x": 1880,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Tell it, the conversation: from Home with your words, or picked up (tweak: loader)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneReview.dc.html": {
+   "x": 2350,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Check it and send it (simulator S2, tweaks)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneStatus.dc.html": {
+   "x": 2820,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Status: questions as a card, answers on their parts, decisions with the committee’s window (tweaks: state, fix, attached, hidden)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneEdit.dc.html": {
+   "x": 3290,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Edit after sharing",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneMyIdeas.dc.html": {
+   "x": 3760,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "My ideas (tweaks)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneMessages.dc.html": {
+   "x": 4230,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "An idea’s conversation: the questions card hands over to Answer (tweaks: idea, view, time to answer)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneWall.dc.html": {
+   "x": 4700,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Wall",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneIdea.dc.html": {
+   "x": 5170,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "A colleague’s idea: the same Team up request (tweaks: from, team up)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Wall.dc.html": {
+   "x": 0,
+   "y": 13230,
+   "w": 1440,
+   "h": 4400,
+   "title": "The Wall, on the new shell",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "OneDashboard.dc.html": {
+   "x": 1520,
+   "y": 13230,
+   "w": 1440,
+   "h": 2500,
+   "title": "A One’s own dashboard, on the new shell",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Office.dc.html": {
+   "x": 3040,
+   "y": 13230,
+   "w": 1920,
+   "h": 1080,
+   "title": "Office screen (content aligned)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Launch.dc.html": {
+   "x": 5040,
+   "y": 13230,
+   "w": 1920,
+   "h": 1080,
+   "title": "Launch screen (unchanged)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Desk.dc.html": {
+   "x": 0,
+   "y": 18330,
+   "w": 1440,
+   "h": 920,
+   "title": "R1 · Review desk: search first, tabs, every question’s clock, and each decision’s committee window (tweak: tab)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "DeskIdea.dc.html": {
+   "x": 1520,
+   "y": 18330,
+   "w": 1440,
+   "h": 2080,
+   "title": "R2 · The idea, for the reviewer: listen on the go, revise what it’s worth, then decide: Pick, Not now or Not picked, each with a reason. Asking the sharer first is optional and folded away. Or merge it with a similar idea and team the sharers up (tweak: state)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Answer.dc.html": {
+   "x": 3040,
+   "y": 18330,
+   "w": 1440,
+   "h": 1100,
+   "title": "R3 · Kavya answers one question at a time, sees which part of her idea each answer goes to, checks her answers, then sends (tweaks: state, time to answer)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Crew.dc.html": {
+   "x": 1520,
+   "y": 20950,
+   "w": 1440,
+   "h": 920,
+   "title": "H2 · Find your crew: previous and next under the card; Team up sends the lead a note and, if you like, one of your ideas; zero state built (tweak: view)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Ways.dc.html": {
+   "x": 3040,
+   "y": 20950,
+   "w": 1440,
+   "h": 1000,
+   "title": "H3 · Share another way: email, Teams, the app (coming soon), and what arrived",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "How.dc.html": {
+   "x": 4560,
+   "y": 20950,
+   "w": 1440,
+   "h": 1000,
+   "title": "H4 · What happens after you share (first visit)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneCrew.dc.html": {
+   "x": 5640,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Find your crew: the card fills the screen, swipe up for the detail, swipe left for the next; Team up sends the lead a request (tweaks: view, details, teamUp)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Inbox.dc.html": {
+   "x": 6080,
+   "y": 20950,
+   "w": 1440,
+   "h": 1000,
+   "title": "H5 · Inbox: the one list of what waits on you and what changed; Needs you is its tab (tweak: filter)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Profile.dc.html": {
+   "x": 7600,
+   "y": 20950,
+   "w": 1440,
+   "h": 1000,
+   "title": "H6 · Profile and settings: your points, your name on the Wall, how we reach you (tweak: wall)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneInbox.dc.html": {
+   "x": 6110,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Inbox: every update in one place, grouped by when (tweak: filter)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Motion.dc.html": {
+   "x": 0,
+   "y": 22550,
+   "w": 1440,
+   "h": 3960,
+   "title": "M · Motion: how every screen, component and button moves, with live specimens",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "CrewRequest.dc.html": {
+   "x": 9120,
+   "y": 20950,
+   "w": 1440,
+   "h": 1000,
+   "title": "H2b · Ravi gets Kavya’s request in his Inbox: her note and the idea she asks him to merge into his; Merge it, Team up only, or Decline with an optional reason (tweak: state)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Committee.dc.html": {
+   "x": 4560,
+   "y": 18330,
+   "w": 1440,
+   "h": 1000,
+   "title": "R4 · Ones Committee: every decision with its 30-day window; extend 30 days at a time up to 3 months, or reverse it with a note the sharer reads (tweaks: tab, view)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "PhoneAnswer.dc.html": {
+   "x": 6580,
+   "y": 10130,
+   "w": 390,
+   "h": 844,
+   "title": "Answer: one question at a time, typed or spoken; each answer names the part of your idea it goes to (tweaks: state, time to answer)",
+   "expand": "fill",
+   "is_interactive": true
+  }
+ },
+ "order": [
+  "Handoff.dc.html",
+  "Landing.dc.html",
+  "SignIn.dc.html",
+  "Home.dc.html",
+  "Compose.dc.html",
+  "ComposeResume.dc.html",
+  "Review.dc.html",
+  "Status.dc.html",
+  "Edit.dc.html",
+  "MyIdeas.dc.html",
+  "Messages.dc.html",
+  "Idea.dc.html",
+  "PhoneLanding.dc.html",
+  "PhoneSignIn.dc.html",
+  "PhoneHome.dc.html",
+  "PhoneCompose.dc.html",
+  "PhoneComposeResume.dc.html",
+  "PhoneReview.dc.html",
+  "PhoneStatus.dc.html",
+  "PhoneEdit.dc.html",
+  "PhoneMyIdeas.dc.html",
+  "PhoneMessages.dc.html",
+  "PhoneWall.dc.html",
+  "PhoneIdea.dc.html",
+  "Wall.dc.html",
+  "OneDashboard.dc.html",
+  "Office.dc.html",
+  "Launch.dc.html",
+  "Desk.dc.html",
+  "DeskIdea.dc.html",
+  "Answer.dc.html",
+  "Committee.dc.html",
+  "Crew.dc.html",
+  "CrewRequest.dc.html",
+  "Ways.dc.html",
+  "How.dc.html",
+  "PhoneCrew.dc.html",
+  "Inbox.dc.html",
+  "Profile.dc.html",
+  "PhoneInbox.dc.html",
+  "PhoneAnswer.dc.html",
+  "Motion.dc.html"
+ ],
+ "notes": {
+  "rowHand": {
+   "x": 0,
+   "y": -300,
+   "text": "1% Club, reworked: say it, check it, send it",
+   "kind": "title1",
+   "maxW": 1440
+  },
+  "noteRead": {
+   "x": 1520,
+   "y": 0,
+   "w": 520,
+   "fill": "blue",
+   "text": "How to read this canvas\n\nStart with the Handoff board on the left: the arc, what changed on each screen and why, how each check was verified, the conflicts we ruled on and the lines that need sign-off.\n\nEvery screen is interactive. The panel on the right of a selected board has tweaks for its states (empty, error, offline and so on).\n\nThree switches are marked as simulators, S1 to S3. The first option is our pick; the second is worth an A/B test because a metric should decide it.\n\nThe v38 artefact is untouched. This is a separate artefact."
+  },
+  "rowDesk": {
+   "x": 0,
+   "y": 5930,
+   "text": "The journey, desktop",
+   "kind": "title1",
+   "maxW": 16640
+  },
+  "noteS1": {
+   "x": 4560,
+   "y": 5970,
+   "w": 560,
+   "fill": "purple",
+   "text": "Simulator S1, how the draft is built. Default: live draft beside the text. Test against: a short interview of up to three skippable questions. Decided by draft completeness against time to submit and drop-off."
+  },
+  "noteS2": {
+   "x": 7600,
+   "y": 5970,
+   "w": 560,
+   "fill": "purple",
+   "text": "Simulator S2, similar ideas. Default: a quiet nudge, decided on this screen. Test against: check first, a comparison before Review on a strong match. Decided by duplicates reaching the review desk against completion rate."
+  },
+  "rowPhone": {
+   "x": 0,
+   "y": 9830,
+   "text": "The journey, phone",
+   "kind": "title1",
+   "maxW": 6510
+  },
+  "noteS3": {
+   "x": 1410,
+   "y": 9870,
+   "w": 420,
+   "fill": "purple",
+   "text": "Simulator S3, phone entry. Default: type first, with a large mic. Test against: voice first. Decided by phone completion and how often people correct the transcript."
+  },
+  "rowOther": {
+   "x": 0,
+   "y": 12930,
+   "text": "Carried over on the new shell",
+   "kind": "title1",
+   "maxW": 7000
+  },
+  "rowReview": {
+   "x": 0,
+   "y": 18030,
+   "text": "The review desk asks back, and both sides see the clock",
+   "kind": "title1",
+   "maxW": 4480
+  },
+  "noteReview": {
+   "x": 6080,
+   "y": 18330,
+   "w": 520,
+   "fill": "blue",
+   "text": "How questions and decisions work\n\nMeera from the review desk opens an idea (R2). Her main path is to decide straight away, after revising what it’s worth if she sees more in it than the sharer did. Asking first is optional and folded away: she picks from the questions reviewers usually ask, or writes her own. Each question points at a part of the idea (The problem, How often, Who it affects, What it’s worth, Attached or Fix), by the same name Kavya sees on her own page. She sets the time to answer.\n\nKavya answers only on Answer (R3, and its phone version): one question at a time, typed or spoken. Each answer lands on its part of her idea and posts back into the idea’s conversation (8) as one message. Elsewhere the questions show as a card with an Answer button, never a free-text box.\n\nEither way, Meera decides on the same page: Pick, Not now or Not picked, each with a reason Kavya reads at once. The Ones Committee (R4) sees every decision for 30 days and can reverse it with a note to Kavya, or extend the window 30 days at a time up to 3 months. Then it expires and the decision stands."
+  },
+  "rowBoxes": {
+   "x": 0,
+   "y": 20650,
+   "text": "Where the Home boxes go",
+   "kind": "title1",
+   "maxW": 10560
+  },
+  "rowMotion": {
+   "x": 0,
+   "y": 22250,
+   "text": "Motion",
+   "kind": "title1",
+   "maxW": 1440
+  },
+  "noteH1": {
+   "x": 0,
+   "y": 20950,
+   "w": 520,
+   "fill": "blue",
+   "text": "H1 · Needs you, retired\n\nThe Inbox (H5) is now the one list of what waits on you, and Needs you is its tab. Home shows the top two with “All 3 in Inbox”. Each idea keeps its own conversation (8), so nothing is listed in four places and read state agrees everywhere."
+  },
+  "noteLoad": {
+   "x": 6080,
+   "y": 7390,
+   "w": 600,
+   "fill": "blue",
+   "text": "Draft loader (4, 4b and both phone boards)\n\nThe draft is built by six independent services, called together the moment your words arrive: title and summary, how often, who it affects, what it’s worth, area, and similar ideas. Each part shows a skeleton until its service answers.\n\nHow the bar moves\n• Each service has a mean response time: p50 over the last 7 days, from monitoring. Prototype values: title 1.8 s, how often 0.9 s, who 1.2 s, worth 1.5 s, area 0.7 s, similar ideas 2.6 s.\n• Weight = its share of the summed means: similar ideas 30%, title 21%, worth 17%, who 14%, how often 10%, area 8%.\n• While a part waits, it rises along 0.9 × (1 − e^(−t ÷ mean)). It keeps moving and never fills on its own.\n• When a part answers, it counts as full and its value fades in.\n• The bar is the weighted sum, so it never pauses or moves back. It stays under 97% until all six are in.\n• Time left comes from the slowest pending mean. A part past 1.5 × its mean says so, for example “still looking for similar ideas”.\n• Move to Review waits for all six.\n\nLoader tweak: Plays once, Slow similar ideas (3 × its mean), Held for review."
+  }
+ },
+ "designSystems": []
+}

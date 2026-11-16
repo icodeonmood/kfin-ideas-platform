@@ -1,0 +1,43 @@
+/* Board-specific rules of PhoneWall.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+.grp{margin-top:24px}
+.ghead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--ink)}
+.rows{list-style:none;margin:0;padding:0}
+.rmain{flex:1;min-width:0}
+.rt{margin:0;font:500 17px/1.3 var(--fd);letter-spacing:-0.01em}
+.chev{flex:none;color:#6C6C70}
+.slab{margin:32px -20px 0;padding:28px 20px 32px;background:var(--ink);color:#FFFFFF}
+.ones{list-style:none;margin:16px -20px 0;padding:0 20px;display:flex;gap:10px}
+.one{flex:none;width:236px;border-radius:20px;background:#1B1B1F;padding:16px;box-sizing:border-box;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.one .no{margin:12px 0 0;font:500 44px/.9 var(--fd);letter-spacing:-0.04em;font-variant-numeric:tabular-nums}
+.tot{list-style:none;margin:12px 0 0;padding:16px 0 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px;border-top:1px solid var(--ink)}
+.tot .big{margin:0;font:500 32px/1 var(--fd);letter-spacing:-0.035em;font-variant-numeric:tabular-nums}
+.tot .big span{font-size:.45em;letter-spacing:-0.01em}
+.emp{margin-top:16px;padding:24px 16px;text-align:center}
+/* avatar: a Google-style outer ring in the tier's colours, a white gap, then the face */
+.t1{--ring:conic-gradient(from 210deg,#F5863B,#FFC27A,#F69F54,#DE6D2D,#F5863B)}.t2{--ring:conic-gradient(from 210deg,#F35532,#FF9A6B,#F4744C,#CE4327,#F35532)}.t3{--ring:conic-gradient(from 210deg,#F34770,#FF8FB0,#F4678D,#CD3254,#F34770)}.t4{--ring:conic-gradient(from 210deg,#F23729,#F58267,#F34F41,#C80000,#F23729)}.t5{--ring:conic-gradient(from 210deg,#4DD187,#A6F2CC,#67DFA0,#12A862,#4DD187)}.t6{--ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1)}.t7{--ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9)}
+.av.t1,.av.t2,.av.t3,.av.t4,.av.t5,.av.t6,.av.t7{box-sizing:border-box;border:3px solid transparent;background:linear-gradient(#ECECE8,#ECECE8) padding-box,var(--ring) border-box;box-shadow:inset 0 0 0 2px #FFFFFF}
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.ph{isolation:isolate}
+.amb i{filter:blur(30px)}
+.amb .a1{width:380px;height:330px;left:-120px;top:-50px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:350px;height:310px;right:-130px;top:290px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:420px;height:330px;left:-70px;top:600px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.pnav{background:transparent}
+.tabs{background:rgba(255,255,255,.72)}
+.dock{background:rgba(255,255,255,.62);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5)}
+
+/* ==== R41 wall tiles and just in (begin) ==== */
+/* impact tiles: the number on one line, the unit in the label */
+.tot .big{white-space:nowrap}
+/* Just in: one sort control that cycles, and more of the list 3 at a time */
+.gtools{display:flex;justify-content:flex-start;margin-top:2px}
+.gmore{margin-top:4px}
+/* ==== R41 wall tiles and just in (end) ==== */

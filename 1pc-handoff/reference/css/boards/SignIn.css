@@ -1,0 +1,73 @@
+/* Board-specific rules of SignIn.dc.html, after removing the shared kit, side bar, motion, phone polish and field messages.
+   Later rules override earlier ones: read from the bottom up when two rules disagree. */
+.pc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.left{display:flex;flex-direction:column;padding:0 56px 32px;box-sizing:border-box;min-height:900px}
+.top{height:72px;display:flex;align-items:center}
+.box{margin:auto;width:100%;max-width:440px;padding:24px 0 calc(24px + 4vh)}
+.ld{margin-top:14px}
+.big{width:100%;min-height:56px;border-radius:12px;font-size:16px}
+.next{margin-top:28px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;align-items:start;padding:18px 18px 18px 16px;border-radius:20px;background:var(--card);border:1px solid var(--rule2)}
+.next .ic{grid-row:span 2;width:40px;height:40px;border-radius:12px;background:var(--wash);color:var(--blueT);display:grid;place-items:center}
+.next b{font:500 16px/1.3 var(--fd);letter-spacing:-0.01em}
+.bar2{margin-top:28px;height:3px;border-radius:2px;background:var(--rule2);overflow:hidden}
+.bar2 span{display:block;height:100%;width:40%;border-radius:2px;background:var(--blue);animation:slide 1.2s var(--e-ui) infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+.alert{margin-top:24px;display:flex;gap:12px;background:var(--badW);border:1px solid #FECDCA;border-radius:12px;padding:14px 16px}
+.alert p{margin:0;color:var(--badT)}
+.help{margin:28px 0 0;padding-top:20px;border-top:1px solid var(--rule);display:grid;gap:8px;font-size:14.5px;line-height:1.5;color:var(--mute);letter-spacing:.004em}
+.draft{margin-top:24px;padding:18px 20px;border-radius:20px;background:var(--card);border:1px solid var(--rule2)}
+.right{position:relative;overflow:hidden;background:var(--ink);color:#FFFFFF;display:flex;flex-direction:column;justify-content:space-between;padding:56px;box-sizing:border-box}
+@media (max-width:900px){.pc{grid-template-columns:minmax(0,1fr)}.right{display:none}.left{padding:0 20px 24px}}
+/* ==== email first, then a 6-digit code; single sign-on as the alternative ==== */
+.fl{display:block;margin:28px 0 8px;font:500 14px/1.3 var(--ft);color:var(--ink)}
+.emw{display:flex;align-items:center;gap:10px;min-height:56px;padding:0 16px;border-radius:12px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule)}
+.emw:focus-within{box-shadow:inset 0 0 0 2px var(--blue),0 0 0 4px rgba(57,93,237,.12)}
+.emw svg{flex:none;color:var(--mute2)}
+.em{flex:1;min-width:0;height:54px;border:0;background:transparent;font:400 17px/1.3 var(--ft);color:var(--ink);outline:none}
+.em::placeholder{color:#8A8A90}
+.hint{margin:8px 0 0;font-size:13.5px;line-height:1.45;color:var(--mute)}
+.hint.warn{color:var(--warnT)}
+.pact{margin-top:20px}
+.big{width:100%;min-height:56px;border-radius:12px;font-size:16px;gap:10px}
+.btn.dis{opacity:.4;pointer-events:none}
+.btn.ink.dis{opacity:1;background:#DCDCD8;background-image:none;color:#FFFFFF;box-shadow:none}
+.or{display:flex;align-items:center;gap:12px;margin:24px 0 16px;font-size:13px;color:var(--mute)}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--rule)}
+.sso{display:inline-flex;align-items:center;justify-content:center}
+.ssol{margin:10px 0 0;text-align:center;line-height:1.5}
+.ssol .tb{font-size:inherit}
+.who{font-weight:600;color:var(--ink)}
+.otp{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:28px}
+.otp input{position:absolute;inset:0;z-index:1;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;font-size:16px;cursor:text}
+.otp span{display:grid;place-items:center;height:60px;border-radius:12px;background:#FFFFFF;box-shadow:inset 0 0 0 1px var(--rule);font:500 26px/1 var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.otp:focus-within span.cur{box-shadow:inset 0 0 0 2px var(--blue),0 0 0 4px rgba(57,93,237,.12)}
+.otp span.cur{box-shadow:inset 0 0 0 1.5px rgba(57,93,237,.5)}
+.otp.bad span{box-shadow:inset 0 0 0 1.5px var(--badT);color:var(--badT);background:#FFF8F7}
+.cerr{display:flex;gap:8px;margin:12px 0 0;font-size:14px;line-height:1.45;color:var(--badT)}
+.resend{margin:14px 0 0}
+/* ==== one look on every screen: ambient light, glass, colour ==== */
+.pc{position:relative;isolation:isolate;min-height:100vh;--card:rgba(255,255,255,.78)}
+.amb{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.amb i{position:absolute;border-radius:50%}
+.pc .glow,.pc .pglow{display:none !important}
+:where(.card,.panel){-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 18px 40px -30px rgba(17,17,17,.28)}
+:where(.card,.panel){border-color:rgba(17,17,17,.07)}
+
+.amb i{filter:blur(48px)}
+.amb .a1{width:820px;height:600px;left:40px;top:-140px;background:radial-gradient(closest-side,rgba(57,93,237,0.34),rgba(57,93,237,0))}
+.amb .a2{width:740px;height:560px;right:-180px;top:160px;background:radial-gradient(closest-side,rgba(244,104,53,0.24),rgba(244,104,53,0))}
+.amb .a3{width:960px;height:600px;left:30%;top:620px;background:radial-gradient(closest-side,rgba(146,128,255,0.3),rgba(146,128,255,0))}
+.amb .a4{width:780px;height:560px;right:-120px;top:1480px;background:radial-gradient(closest-side,rgba(57,93,237,0.28),rgba(57,93,237,0))}
+.amb .a5{width:720px;height:520px;left:140px;top:2180px;background:radial-gradient(closest-side,rgba(244,104,53,0.22),rgba(244,104,53,0))}
+.amb .a6{width:920px;height:560px;right:12%;top:2920px;background:radial-gradient(closest-side,rgba(146,128,255,0.26),rgba(146,128,255,0))}
+.tbar{background:rgba(246,246,244,.55)}
+/* ==== sign in: form on glass, the right panel lit ==== */
+.box{max-width:470px;margin:auto;padding:40px 40px 36px;border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.7));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 0 0 1px rgba(17,17,17,.06),0 40px 80px -48px rgba(17,17,17,.45);box-sizing:border-box}
+.box .emw{background:rgba(255,255,255,.92)}
+.right{margin:16px 16px 16px 0;border-radius:28px;background:radial-gradient(640px 480px at 10% 4%,rgba(57,93,237,.62),rgba(57,93,237,0) 70%),radial-gradient(560px 420px at 96% 98%,rgba(244,104,53,.46),rgba(244,104,53,0) 70%),radial-gradient(720px 380px at 62% 52%,rgba(146,128,255,.34),rgba(146,128,255,0) 70%),#111111}
+.right::before{content:"";position:absolute;width:420px;height:420px;right:-140px;top:-140px;border-radius:50%;border:40px solid rgba(255,255,255,.06)}
+/* ==== R29 colour roles (begin) ==== */
+/* warm colour means "needs you": avatar rings are neutral here; tier colour lives on Profile, the Wall, the One dashboard and the Ones */
+/* your own profile icon keeps its tier ring: the side bar on desktop, the account button on the phone */
+:is(.pc,.ph) :is(.t1,.t2,.t3,.t4,.t5,.t6,.t7):not(.ocard):not(.ocard *):not(.sb-me *):not([aria-label^="Your account"]){--ring:linear-gradient(#D9D9DE,#D9D9DE)}
+/* ==== R29 colour roles (end) ==== */
