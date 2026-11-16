@@ -1,0 +1,157 @@
+/**
+ * J-COMMITTEE: the Ones Committee reviews a decision (1pc-handoff/03-journeys/J-COMMITTEE.md).
+ * Copy: reference/copy/Committee.md (S-R4), reference/copy/Status.md (S-06 committee line, "Reversed" state).
+ * Seed: Manoj is on the committee. C1 (picked 10 days ago) is extended, F1 (not picked 3 days ago) is reversed,
+ * J1 (picked 38 days ago) has expired, T7 (picked 5 days ago) is read.
+ */
+import { expect, type Page } from "@playwright/test";
+
+import { seeded, signInAs, step } from "./lib";
+
+const EXPLANATION =
+  "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
+  "reverse a decision, with a note the sharer reads. Extend a window 30 days at a time, up to 3 months. Then it " +
+  "expires and the decision stands.";
+
+async function openCommittee(page: Page) {
+  await signInAs(page, "manoj");
+  await page.goto("/committee");
+  await expect(page.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
+}
+
+function rowFor(page: Page, title: string) {
+  return page.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+}
+
+step(
+  "J-COMMITTEE/1",
+  "S-R4",
+  "In the window lists each decision with the reason as the sharer read it",
+  { needs: ["S-R4", "L-COMMITTEE", "C-TABS", "C-SORTS"] },
+  async ({ page }) => {
+    const t7 = await seeded("T7");
+    await openCommittee(page);
+    await expect(page.getByText(EXPLANATION)).toBeVisible();
+    await expect(page.getByRole("tab", { name: /In the window/, selected: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Closing soonest" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Carried from J-REVIEW/6: the reviewer's decision, its reason word for word, and the window it opened.
+    const row = rowFor(page, t7.title);
+    await expect(row).toContainText(`${t7.ref}, Tanvi Deshmukh, Investor service, Hyderabad`);
+    await expect(row).toContainText("Picked");
+    await expect(row).toContainText(/by Harish from the review desk, \w+day \d{1,2} \w+/);
+    await expect(row).toContainText("25 days left");
+    await expect(row.getByRole("button", { name: "Review" })).toBeVisible();
+  },
+);
+
+step(
+  "J-COMMITTEE/2",
+  "S-R4",
+  "Review opens the row: the reason, the window, Extend and Reverse",
+  { needs: ["S-R4", "L-COMMITTEE"] },
+  async ({ page }) => {
+    const c1 = await seeded("C1");
+    await openCommittee(page);
+    await rowFor(page, c1.title).getByRole("button", { name: "Review" }).click();
+    await expect(page.getByText("The review desk’s reason, as Charulata read it")).toBeVisible();
+    await expect(
+      page.getByText(
+        /^Open until \w+day \d{1,2} \w+\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+( \d{4})?\. When it closes, the decision stands\.$/,
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+( \d{4})?$/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Reverse the decision" })).toBeEnabled();
+  },
+);
+
+step(
+  "J-COMMITTEE/3a",
+  "S-R4",
+  "Extend moves the window 30 days and the sharer sees the new date",
+  { needs: ["S-R4", "L-COMMITTEE", "S-06"], changes: ["C1"] },
+  async ({ page, browser }) => {
+    const c1 = await seeded("C1");
+    await openCommittee(page);
+    const row = rowFor(page, c1.title);
+    await row.getByRole("button", { name: "Review" }).click();
+    const extend = page.getByRole("button", { name: /^Extend to / });
+    const newDate = (await extend.innerText()).replace(/^Extend to /, "").trim();
+    await extend.click();
+    await expect(row).toContainText("Extended");
+    await expect(row).toContainText("Extended once");
+    await expect(row).toContainText(`Until ${newDate.replace(/ \d{4}$/, "")}`);
+
+    // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
+    const sharer = await (await browser.newContext()).newPage();
+    await signInAs(sharer, "charulata");
+    await sharer.goto(`/ideas/${c1.ref}`);
+    await expect(
+      sharer.getByText(
+        `The Ones Committee can review this decision until ${newDate.replace(/ \d{4}$/, "")}. If they change it, their note comes to your Inbox. After that, it stands.`,
+      ),
+    ).toBeVisible();
+    await sharer.context().close();
+  },
+);
+
+step(
+  "J-COMMITTEE/3b",
+  "S-R4",
+  "Reverse with a note: final, the row moves to Reversed and the sharer reads the note",
+  { needs: ["S-R4", "L-COMMITTEE", "S-06", "L-NOTIFY"], changes: ["F1"] },
+  async ({ page, browser }) => {
+    const f1 = await seeded("F1");
+    const note = "We want to try this at two branches on pension days before deciding for every branch.";
+    await openCommittee(page);
+    await rowFor(page, f1.title).getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "Reverse the decision" }).click();
+    const form = page.getByRole("dialog", { name: "Reverse the decision" });
+    await expect(form).toContainText(`On “${f1.title}”.`);
+    await expect(form).toContainText(
+      "Faisal reads your note at once, and Harish from the review desk sees it too.",
+    );
+    await expect(form).toContainText(
+      "This is final. The review desk’s decision stays on record, next to yours.",
+    );
+    await form.getByRole("radio", { name: /^Picked/ }).click();
+    await form
+      .getByRole("textbox", { name: "Why the committee is changing it, in words Faisal will understand" })
+      .fill(note);
+    await form.getByRole("button", { name: "Reverse and tell Faisal" }).click();
+
+    await page.getByRole("tab", { name: /Reversed/ }).click();
+    const row = rowFor(page, f1.title);
+    await expect(row).toContainText(/Now: Picked by Manoj Agarwal, \w+day \d{1,2} \w+/);
+    await expect(row).toContainText(/Reversed \w+day \d{1,2} \w+\. Final\. Faisal has the note\./);
+    await expect(row.getByRole("button", { name: "See it" })).toBeVisible();
+
+    // Hand-off: the sharer's page takes the new decision, with the note word for word and "This is final."
+    const sharer = await (await browser.newContext()).newPage();
+    await signInAs(sharer, "faisal");
+    await sharer.goto(`/ideas/${f1.ref}`);
+    await expect(sharer.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
+    await expect(sharer.getByText("The committee’s note to you")).toBeVisible();
+    await expect(sharer.getByText(note)).toBeVisible();
+    await expect(sharer.getByText(/^This is final\./)).toBeVisible();
+    await sharer.context().close();
+  },
+);
+
+step(
+  "J-COMMITTEE/3c",
+  "S-R4",
+  "A window that closed with nothing done is under Expired and the decision stands",
+  { needs: ["S-R4", "L-COMMITTEE"] },
+  async ({ page }) => {
+    const j1 = await seeded("J1");
+    await openCommittee(page);
+    await page.getByRole("tab", { name: /Expired/ }).click();
+    const row = rowFor(page, j1.title);
+    await expect(row).toContainText(/Expired \w+day \d{1,2} \w+\. After 30 days\. The decision stands\./);
+    await expect(row.getByRole("button", { name: "See it" })).toBeVisible();
+    await expect(row.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+  },
+);

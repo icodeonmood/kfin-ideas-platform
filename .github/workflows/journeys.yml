@@ -1,0 +1,89 @@
+# The journey suite (lane G, apps/web/journeys/): every journey in 1pc-handoff/03-journeys/, end to end, on main.
+# Same set-up as the gates job in ci.yml, plus the 1% Club seed; runs only this suite. Synthetic data only; no
+# secrets (LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock). Not part of the gates until lane A adds it (Thu 19).
+name: journeys
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md"]
+  workflow_dispatch:
+
+# One run at a time on main, never cancelled: each walk reads the latest completed run.
+concurrency:
+  group: journeys-main
+  cancel-in-progress: false
+
+jobs:
+  journeys:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.27"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd services/worker && uv sync --frozen
+          cd ../../apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+
+      - name: Start the local stack
+        # The worker runs as the runner's user so it and the host-side seed share ./.data (Linux keeps file owners).
+        run: |
+          make .env
+          printf 'WORKER_UID=%s\nWORKER_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+          make up
+
+      - name: Seed the company repo
+        run: make seed
+
+      - name: Load the 1% Club seed (BLD-E009)
+        run: make demo DEMO_SET=1pc
+
+      - name: Journeys
+        id: journeys
+        working-directory: apps/web
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          OIDC_ISSUER: http://localhost:8090/default
+          E2E_DATABASE_URL: postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable
+        run: npx playwright test -c journeys/playwright.config.ts
+
+      - name: Board (journey × step)
+        if: always()
+        run: |
+          if [ -f apps/web/test-results/journeys/board.md ]; then
+            cat apps/web/test-results/journeys/board.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No board: the suite did not run (see the failed step)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journeys-shots
+          path: apps/web/test-results/journeys/shots
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload the report and board
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journeys-report
+          path: |
+            apps/web/playwright-report/journeys
+            apps/web/test-results/journeys/board.md
+            apps/web/test-results/journeys/results.json
+          retention-days: 7
+          if-no-files-found: ignore
