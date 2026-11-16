@@ -19,7 +19,7 @@ from desk.window import Window
 _QUEUE = """
 SELECT i.id, i.idea_id, i.title, i.area, i.city, i.status, i.decide_by, i.contributor_code, i.shared_at,
        u.name AS sharer_name, coalesce(u.first_name, split_part(u.name, ' ', 1)) AS sharer_first_name,
-       qs.sent_at, qs.seen_at, qs.due_at, qs.state AS set_state, qs.n_questions, qs.n_answered, qs.answered_at,
+       qs.set_id, qs.sent_at, qs.seen_at, qs.due_at, qs.state AS set_state, qs.n_questions, qs.n_answered, qs.answered_at,
        d.choice, d.at AS decided_at,
        w.opens_at, w.closes_at, w.max_closes_at, w.extended_times,
        r.to_choice, r.at AS reversed_at
@@ -27,7 +27,7 @@ FROM ideas i
 LEFT JOIN contributor_map cm ON cm.contributor_code = i.contributor_code
 LEFT JOIN users u ON u.id = cm.user_id
 LEFT JOIN LATERAL (
-  SELECT s.state, s.sent_at, s.seen_at, s.due_at,
+  SELECT s.id AS set_id, s.state, s.sent_at, s.seen_at, s.due_at,
          (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n_questions,
          (SELECT count(*) FROM questions q JOIN answers a ON a.question_id = q.id
            WHERE q.set_id = s.id AND a.sent_at IS NOT NULL) AS n_answered,
@@ -73,6 +73,7 @@ def _desk_idea(r: dict[str, Any]) -> queue.DeskIdea:
         sharer_first_name=str(r["sharer_first_name"] or "the sharer"), area=str(r["area"] or ""),
         city=str(r["city"] or ""), status=str(r["status"]), decide_by=r["decide_by"], questions=facts,
         decision=r["choice"], decided_at=r["decided_at"], window=window, reversal=reversal,
+        set_id=str(r["set_id"]) if r["set_id"] else None,
     )  # fmt: skip
 
 
@@ -81,7 +82,7 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
         "idea_id": row.idea_id, "title": row.title, "who": row.who, "questions": row.questions,
         "time_left": row.time_left, "variant": row.variant, "due_at": row.due_at.isoformat() if row.due_at else None,
         "decide_by": row.decide_by, "action": row.action, "action_kind": row.action_kind, "decision": row.decision,
-        "committee": row.committee, "area": row.area, "asked": row.asked, "answered": row.answered,
+        "committee": row.committee, "area": row.area, "asked": row.asked, "answered": row.answered, "set_id": row.set_id,
     }  # fmt: skip
 
 

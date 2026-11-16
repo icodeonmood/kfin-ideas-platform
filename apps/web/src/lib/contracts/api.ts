@@ -452,6 +452,7 @@ export interface DeskRow {
   area: string;
   asked: number; // the dots: one per question
   answered: number; // filled once answered
+  set_id: string | null; // the latest question set, for "Remind {sharer}"
 }
 export interface DeskResponse {
   items: DeskRow[];
