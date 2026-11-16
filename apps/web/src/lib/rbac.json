@@ -57,12 +57,6 @@
     "approve_scorecard_changes": {
       "core_committee": "yes"
     },
-    "see_core_briefs": {
-      "core_committee": "yes"
-    },
-    "present": {
-      "contributor": "when_invited"
-    },
     "open_attachments": {
       "contributor": "as_idea"
     },
@@ -75,19 +69,6 @@
       "working_group": "own_cluster",
       "sponsor": "own_cluster",
       "admin": "with_reason_logged"
-    },
-    "score": {
-      "lob_committee": "own_lob",
-      "core_committee": "yes"
-    },
-    "decide": {
-      "lob_committee": "park_or_decline_own_lob",
-      "core_committee": "yes"
-    },
-    "run_action_plans": {
-      "working_group": "yes",
-      "sponsor": "yes",
-      "admin": "yes"
     },
     "approve_handover": {
       "sponsor": "yes",
@@ -273,15 +254,6 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
-    "GET /api/committee/rounds                         score",
-    "GET /api/committee/rounds/{id}                    score",
-    "POST /api/committee/rounds/{id}/action            score",
-    "POST /api/committee/cycles                        decide",
-    "GET /api/committee/presentations/{id}             decide",
-    "POST /api/committee/presentations/{id}/action     decide",
-    "GET /api/presentations/{id}                       present",
-    "POST /api/presentations/{id}/action               present",
-    "GET /api/working-groups/{id}                      signed_in",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",
@@ -289,7 +261,6 @@
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "POST /api/admin/reveal                            reveal_identity",
-    "POST /api/admin/conflicts                         grant_roles",
     "GET /api/reports/{kind}                           view_fairness_reports",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
@@ -368,8 +339,7 @@
   "pages": [
     "/review                    view_review_queue",
     "/desk-decisions            view_review_queue",
-    "/committee                 score decide",
-    "/admin/conflicts           grant_roles",
+    "/committee                 veto_desk_decision",
     "/admin                     manage_kill_switches grant_roles",
     "/reports                   view_fairness_reports",
     "/launch                    grant_roles",

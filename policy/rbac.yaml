@@ -22,13 +22,8 @@ capabilities:
   veto_desk_decision:         { core_committee: yes }
   propose_rule_changes:       { reviewer: yes, admin: yes }
   approve_scorecard_changes:  { core_committee: yes }
-  see_core_briefs:            { core_committee: yes }
-  present:                    { contributor: when_invited }
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
-  score:                      { lob_committee: own_lob, core_committee: yes }
-  decide:                     { lob_committee: park_or_decline_own_lob, core_committee: yes }
-  run_action_plans:           { working_group: yes, sponsor: yes, admin: yes }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
   see_people_view:            { contributor: own_history, reviewer: yes, lob_committee: own_lob, core_committee: yes, admin: yes }
   reveal_identity:            { admin: with_reason_logged }
@@ -124,15 +119,6 @@ endpoints:
   - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
-  - GET /api/committee/rounds                         score                      # §4.6 (the worker checks the roster)
-  - GET /api/committee/rounds/{id}                    score
-  - POST /api/committee/rounds/{id}/action            score                      # score, revise, step aside, reveal, decide
-  - POST /api/committee/cycles                        decide                     # the chair opens a cycle (worker checks the chair)
-  - GET /api/committee/presentations/{id}             decide                     # §4.7 (worker checks the core committee)
-  - POST /api/committee/presentations/{id}/action     decide                     # session, sealed assessment, collation, decision
-  - GET /api/presentations/{id}                       present                    # a contributor's invitation (worker checks the cluster)
-  - POST /api/presentations/{id}/action               present                    # accept with presenters and a slot; edit the outline
-  - GET /api/working-groups/{id}                      signed_in                  # members, the sponsor, the committee and admins
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
@@ -140,7 +126,6 @@ endpoints:
   - GET /api/admin/kill-switches                      manage_kill_switches
   - PUT /api/admin/kill-switches                      manage_kill_switches
   - POST /api/admin/reveal                            reveal_identity
-  - POST /api/admin/conflicts                         grant_roles                # clear a manager's conflict flag with a reason (§3.1, BLD-221)
   - GET /api/reports/{kind}                           view_fairness_reports      # fairness and calibration (§3.8, §5.4)
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.
@@ -228,9 +213,8 @@ membership_scoped:
 pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /desk-decisions            view_review_queue
-  - /committee                 score decide                         # any of these (§4.6–§4.7)
+  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
   # First match wins: a page under /admin with its own rule must come before /admin.
-  - /admin/conflicts           grant_roles                          # conflict flags waiting for an admin (BLD-221)
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /reports                   view_fairness_reports                # fairness and calibration, counts only (BLD-223)
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
