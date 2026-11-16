@@ -113,6 +113,8 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
     expect(labels("contributor", "account")).toEqual(["The Ember"]);
   });
+  it("the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
+    expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
     expect(labels("admin", "main")).toEqual(["Home", "Wall", "Inbox"]);

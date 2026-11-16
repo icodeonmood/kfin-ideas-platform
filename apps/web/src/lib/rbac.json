@@ -341,6 +341,7 @@
       "href": "/committee",
       "place": "main",
       "roles": [
+        "committee",
         "core_committee"
       ]
     },

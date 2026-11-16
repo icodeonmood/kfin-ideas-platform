@@ -206,7 +206,7 @@ navigation:
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
   - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
-  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [core_committee] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
