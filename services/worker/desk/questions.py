@@ -32,7 +32,7 @@ PART_NAMES: dict[str, str] = {
     "summary": "The problem",
     "often": "How often",
     "who": "Who it affects",
-    "cost": "What it's worth",
+    "cost": "What it’s worth",
     "evidence": "Attached",
     "fix": "Fix",
 }
@@ -222,7 +222,7 @@ def deadline_line(
     return f"{sharer_first_name} has until {when.deadline(due_at, now, tz)}."
 
 
-AFTER_DECIDE_BY = "That's after you decide, so you'd need to move your date."
+AFTER_DECIDE_BY = "That’s after you decide, so you’d need to move your date."
 
 
 def spare_line(answered_at: dt.datetime, due_at: dt.datetime, tz: dt.tzinfo = when.IST) -> str:
