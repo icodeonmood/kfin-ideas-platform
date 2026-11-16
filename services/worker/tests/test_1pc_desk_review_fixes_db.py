@@ -93,8 +93,11 @@ def test_finding_2_a_draft_answers_files_stay_the_sharers(db: Conn, cast: dict[s
     )
     qid = sent["questions"][0]["id"]
     asking.save_answer(db, qid, cast["kavya"]["id"], "Here it is.", ("ATT-2026-000777",), f.at(16, 12))
-    files = lambda: [a for a in reads.reviewer_idea(db, cast["idea"]["idea_id"], cast["meera"]["id"])["artefacts"]  # noqa: E731
-                     if a["kind"] == "file"]  # fmt: skip
+
+    def files() -> list[dict[str, Any]]:
+        page = reads.reviewer_idea(db, cast["idea"]["idea_id"], cast["meera"]["id"])
+        return [a for a in page["artefacts"] if a["kind"] == "file"]
+
     assert files() == []
     asking.send_answers(db, sent["id"], cast["kavya"]["id"], f.at(16, 12, 5))
     assert [a["title"] for a in files()] == ["rejection-sms-1.png"]
