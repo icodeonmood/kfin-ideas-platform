@@ -8,12 +8,27 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from desk import clock, when
+from desk import adapters, clock, promises, when
 from desk.promises import RETURN_IN, Promises
-from desk.window import add_months
+from desk.review import ensure_on_desk
+from desk.store import (
+    Refused,
+    actor,
+    audit,
+    audited,
+    load_idea,
+    now,
+    own_codes,
+    person_by_code,
+    refuse_own,
+    seal,
+    user_of,
+)
+from desk.window import add_months, open_window
 
 Choice = Literal["pick", "not_now", "not_picked"]
 CHOICES: tuple[Choice, ...] = ("pick", "not_now", "not_picked")
@@ -148,3 +163,130 @@ def dates_for(choice: Choice, decided_at: dt.datetime, return_in: str | None, p:
 def return_words(t: dt.datetime, sharer_first_name: str, now: dt.datetime, tz: dt.tzinfo = when.IST) -> str:
     """'Comes back to you and Kavya on Tuesday 16 February 2027' (the reviewer's line)."""
     return f"Comes back to you and {sharer_first_name} on {when.day(t, now, tz)}"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Sending a decision (L-DECIDE.rules/3, /5–10)
+# ---------------------------------------------------------------------------------------------------------------
+
+
+def _refused(e: FieldError, status: int = 422) -> Refused:
+    return Refused(status, e.code, e.message, e.field)
+
+
+def send(
+    conn: Any, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
+) -> dict[str, Any]:
+    """The reviewer sends Pick, Not now or Not picked with a reason. The sharer reads it at once, the committee's
+    window opens, open question sets close and queued ones are dropped. Never edited afterwards (rules/9)."""
+    t = at or now()
+    p = promises.get()
+    cal = clock.office_calendar()
+    choice, reason = body.get("choice"), str(body.get("reason") or "")
+    return_in = body.get("return_in") if choice == "not_now" else None
+    with audited(conn), conn.transaction():
+        idea = load_idea(conn, ref, lock=True)
+        refuse_own(conn, user_id, idea, "decide")
+        ensure_on_desk(idea)
+        sharer = person_by_code(conn, idea["contributor_code"])
+        errors = check_decision(choice, reason, return_in, sharer.first_name, p)
+        if errors:
+            raise _refused(errors[0])
+        notes = wording_check(reason)
+        if notes and not body.get("wording_ok"):
+            words = ", ".join(f"“{n.word}”" for n in notes)
+            raise Refused(
+                422, "wording_check",
+                f"{sharer.first_name} reads this word for word. The product never says {words}: "
+                f"{notes[0].suggestion}. Send it anyway if you mean it.",
+                "reason",
+            )  # fmt: skip
+        joined = None
+        if choice == "pick" and body.get("joined_with"):
+            other = conn.execute(
+                "SELECT id, status FROM ideas WHERE idea_id = %s", (str(body["joined_with"]),)
+            ).fetchone()
+            if (
+                other is None
+                or other["id"] == idea["id"]
+                or other["status"] in ("draft", "withdrawn", "merged")
+            ):
+                raise Refused(
+                    422, "joined_with_invalid", "Choose a similar idea that is still open.", "joined_with"
+                )
+            joined = other["id"]
+        dates = dates_for(choice, t, return_in, p, cal)  # type: ignore[arg-type]
+        masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip())
+        decision_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, "
+            "return_in, return_at, team_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (decision_id, idea["id"], choice, seal(masked, "idea_decisions", "reason_encrypted", decision_id),
+             user_id, t, joined, (return_in or p.return_default) if choice == "not_now" else None,
+             dates.return_at, dates.team_by),
+        )  # fmt: skip
+        w = open_window(t, p)
+        conn.execute(
+            "INSERT INTO decision_windows (decision_id, opens_at, closes_at, max_closes_at) VALUES (%s, %s, %s, %s)",
+            (decision_id, w.opens_at, w.closes_at, w.max_closes_at),
+        )
+        conn.execute(
+            "UPDATE ideas SET status = %s, reviewer_id = coalesce(reviewer_id, %s), opened_at = coalesce(opened_at, %s), "
+            "opened_by = coalesce(opened_by, %s), edit_closes_at = least(coalesce(edit_closes_at, %s), %s) WHERE id = %s",
+            (STATUS_AFTER[str(choice)], user_id, t, user_id, t, t, idea["id"]),
+        )
+        # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel)
+        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
+        conn.execute(
+            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed'",
+            (t, idea["id"]),
+        )
+        adapters.say(conn, str(idea["id"]), "desk.decided", author_user_id=user_id,
+                     payload={"decision_id": decision_id, "choice": str(choice)}, at=t)  # fmt: skip
+        sharers = [u for c in sorted(own_codes(conn, idea)) if (u := user_of(conn, c))]
+        adapters.tell(
+            conn, "decision", sharers, idea_uuid=str(idea["id"]), sender=user_id,
+            actions=[("See the decision", f"/ideas/{idea['idea_id']}", "primary")],
+            refs={"decision_id": decision_id, "choice": str(choice)},
+        )  # fmt: skip
+        if dates.return_at:
+            adapters.schedule(conn, "desk.not_now_return", f"idea:{idea['id']}", dates.return_at)
+        adapters.schedule(conn, "committee.window_close", f"decision:{decision_id}", w.closes_at)
+        audit(conn, actor(user_id), "desk.decide", f"idea:{idea['idea_id']}",
+              before={"status": idea["status"]},
+              after={"decision_id": decision_id, "choice": str(choice), "return_in": return_in,
+                     "joined_with": str(joined) if joined else None})  # fmt: skip
+        return {
+            "id": decision_id, "idea_id": idea["idea_id"], "choice": choice, "label": LABELS[str(choice)],
+            "reason": masked, "at": t.isoformat(), "return_at": dates.return_at.isoformat() if dates.return_at else None,
+            "team_by": dates.team_by.isoformat() if dates.team_by else None,
+            "window": {"state": "open", "opens_at": w.opens_at.isoformat(), "closes_at": w.closes_at.isoformat(),
+                       "max_closes_at": w.max_closes_at.isoformat(), "extended_times": 0},
+        }  # fmt: skip
+
+
+def return_from_not_now(conn: Any, idea_uuid: str, at: dt.datetime | None = None) -> bool:
+    """Timer handler (lane A's engine calls it on the return date): Not now comes back to "To review"
+    (L-DECIDE.rules/7). A decision reversed since then, or an idea that moved on, is left alone."""
+    t = at or now()
+    with conn.transaction():
+        idea = conn.execute("SELECT * FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)).fetchone()
+        if idea is None or idea["status"] != "not_now":
+            return False
+        latest = conn.execute(
+            "SELECT d.return_at, r.return_at AS reversed_return FROM idea_decisions d "
+            "JOIN decision_windows w ON w.decision_id = d.id LEFT JOIN decision_reversals r ON r.window_id = w.id "
+            "WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1",
+            (idea_uuid,),
+        ).fetchone()
+        due = latest and (latest["reversed_return"] or latest["return_at"])
+        if due is None or due > t:
+            return False
+        decide = clock.decide_by(t, promises.get(), clock.office_calendar())
+        conn.execute(
+            "UPDATE ideas SET status = 'with_review_desk', decide_by = %s, opened_at = NULL, opened_by = NULL "
+            "WHERE id = %s",
+            (decide, idea_uuid),
+        )
+        adapters.say(conn, idea_uuid, "desk.back_from_not_now", at=t)
+        return True
