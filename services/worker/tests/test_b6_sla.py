@@ -248,3 +248,20 @@ def test_a_timer_kind_with_no_rule_is_skipped_and_the_rest_still_run(item: Any) 
     ).fetchall()
     states = {r["stage"]: r["state"] for r in rows}
     assert states == {"impact_30": "running", "veto_window": "stopped"}
+
+
+def test_a_tick_before_the_company_repo_exists_waits_instead_of_crashing(
+    item: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-A182: a stack starts before `make seed`; the ticker must not crash the worker when the rules are absent."""
+    from rules import RulesConfigError
+
+    db, _users, rid, _ = item
+    engine.start(db, "review_item", rid, "veto_window", now=MONDAY)
+
+    def missing() -> dict[str, Any]:
+        raise RulesConfigError(["rules/sla.md: missing"])
+
+    monkeypatch.setattr(engine, "_rules", missing)
+    counts = engine.tick(db, now=MONDAY + dt.timedelta(days=30))
+    assert set(counts.values()) == {0}
