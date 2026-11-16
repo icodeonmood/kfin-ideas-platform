@@ -6,6 +6,7 @@ import {
   ATTEMPT_COOKIE,
   attemptCookieOptions,
   attemptKeyHash,
+  cleanIntent,
   destination,
   intentStore,
 } from "@/server/auth/intents";
@@ -14,6 +15,7 @@ import {
   cookieOptions,
   createSession,
   openTx,
+  sameSecret,
   secureCookies,
   sessionTtlSeconds,
   SESSION_COOKIE,
@@ -32,7 +34,8 @@ function go(path: string) {
 }
 
 /**
- * GET /auth/callback — finish single sign-on: check state, exchange the code, verify the ID token, start a session
+ * GET /auth/callback — finish single sign-on: check state (constant time) and that this browser holds the attempt
+ * the transaction was started for (login CSRF, BLD-A177), exchange the code, verify the ID token, start a session
  * (L-AUTH.rules/5: length from rules/promises.md), then go where the attempt said (L-AUTH.rules/4). The attempt
  * cookie is kept on any failure, so "Try again" or the email code still lands in the same place.
  */
@@ -51,8 +54,11 @@ export async function GET(request: NextRequest) {
     }
     return go(failurePath("failed", logFailure("callback", "idp_refused", attemptHash)));
   }
-  if (!tx || !code || params.get("state") !== tx.state) {
+  if (!tx || !code || !sameSecret(params.get("state"), tx.state)) {
     return go(failurePath("failed", logFailure("callback", "state_mismatch", attemptHash)));
+  }
+  if (!sameSecret(attemptHash, tx.attempt)) {
+    return go(failurePath("failed", logFailure("callback", "attempt_mismatch", attemptHash)));
   }
 
   try {
@@ -60,9 +66,9 @@ export async function GET(request: NextRequest) {
     const user = await userFromClaims(claims);
     const ttl = await sessionTtlSeconds();
     const token = await createSession(user.id, ttl);
-    const intent = attemptHash ? await intentStore().use(attemptHash, new Date()) : null;
-    // A transaction started before intents were kept on the server carries its own `next`.
-    const to = intent ? destination(intent) : destination({ to: tx.next ?? "/", draftId: null, step: null });
+    const intent = await intentStore().use(attemptHash!, new Date());
+    // No row (nowhere in particular, or over the write limit): the sealed transaction carries the place.
+    const to = destination(intent ?? cleanIntent({ to: tx.next }));
     const accepted = await getDb()
       .selectFrom("privacy_acceptances")
       .select("user_id")
