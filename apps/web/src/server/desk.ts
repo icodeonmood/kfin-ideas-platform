@@ -92,3 +92,19 @@ export function writeRoute(
     });
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Server-side reads for the review side's pages (the page renders with data; the client then talks to /api).
+// ---------------------------------------------------------------------------------------------------------------
+
+/** One read from the worker for a server component; null when the worker says it does not exist. */
+export async function deskRead<T>(
+  me: CurrentUser,
+  workerPath: string,
+  query: Record<string, string | null | undefined> = {},
+): Promise<T | null> {
+  const res = await workerFetch(path(workerPath, me, query));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`worker answered ${res.status}`);
+  return (await res.json()) as T;
+}
