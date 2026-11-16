@@ -21,11 +21,12 @@ export type OfficeOne = {
 
 export type OfficeData = { paused: boolean; ones: OfficeOne[] };
 
-/** What the worker's public view gives for each One (`/internal/ones/public`). */
+/** What the worker gives for each One (`/internal/display/office`). */
 export type PublicOneInput = {
   number: number | null;
   induction_no: number;
   name: string | null;
+  first_name?: string | null;
   founding: boolean;
   tier: number;
   tier_name: string;
@@ -71,7 +72,7 @@ export function toOfficeOne(p: PublicOneInput): OfficeOne | null {
     number: p.number,
     induction_no: p.induction_no,
     name,
-    first_name: name ? (name.split(/\s+/)[0] ?? null) : null,
+    first_name: name ? p.first_name?.trim() || (name.split(/\s+/)[0] ?? null) : null,
     tier: p.tier,
     tier_name: p.tier_name,
     tier_colour: p.tier_colour,
