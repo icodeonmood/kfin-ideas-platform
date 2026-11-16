@@ -5,7 +5,6 @@
  */
 import type { TimeToAnswer } from "@/lib/contracts";
 
-const TZ = "Asia/Kolkata";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = [
   "January",
@@ -26,7 +25,7 @@ type Parts = { y: number; m: number; d: number; wd: number; h: number; mi: numbe
 
 function partsOf(t: Date): Parts {
   const f = new Intl.DateTimeFormat("en-GB", {
-    timeZone: TZ,
+    timeZone: "Asia/Kolkata",
     year: "numeric",
     month: "numeric",
     day: "numeric",
