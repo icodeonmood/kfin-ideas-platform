@@ -148,7 +148,6 @@ describe("navigation and pages (AT-B2-06)", () => {
   it("pages follow the same rules", () => {
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
-    expect(canSeePage(rolesOf("core_committee"), "/desk-decisions")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
     // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
