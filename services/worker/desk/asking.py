@@ -379,7 +379,7 @@ def _remind(
     adapters.tell(
         conn, "answer_reminder", recipients, idea_uuid=str(idea["id"]), sender=sender, needs_you=True,
         due_at=s["due_at"], actions=[_answer_action(idea)], refs={"set_id": sid},
-        dedupe_key=f"answer_reminder:{sid}:{day}",
+        dedupe_key=f"answer_reminder:{sid}:{day}:{t.astimezone(clock.office_calendar().tz):%H}",
     )  # fmt: skip
     conn.execute("UPDATE question_sets SET reminded_at = %s WHERE id = %s", (t, sid))
 
@@ -417,6 +417,12 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
         s = dict(row)
         earliest = s["due_at"] - dt.timedelta(hours=max(p.reminders_before_hours, default=0))
         if t >= s["due_at"] or t < earliest:
+            return False
+        # once per threshold: the latest of "1 day before" and "2 hours before" already passed, unless a reminder
+        # (timed or by hand) has gone since then, so a sweep every few minutes reminds twice in all
+        crossed = max(s["due_at"] - dt.timedelta(hours=h) for h in p.reminders_before_hours
+                      if s["due_at"] - dt.timedelta(hours=h) <= t)  # fmt: skip
+        if s["reminded_at"] is not None and s["reminded_at"] >= crossed:
             return False
         found = conn.execute(
             "SELECT id, idea_id, contributor_code FROM ideas WHERE id = %s", (s["idea_uuid"],)
