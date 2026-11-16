@@ -8,7 +8,8 @@
     "appeal_panel",
     "working_group",
     "sponsor",
-    "admin"
+    "admin",
+    "committee"
   ],
   "role_aliases": {
     "core_chair": "core_committee"
@@ -103,6 +104,9 @@
     "open_display": {
       "admin": "yes",
       "display": "yes"
+    },
+    "committee_window": {
+      "committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -171,6 +175,10 @@
       "infosec"
     ],
     "speech.hosted": [
+      "infosec"
+    ],
+    "desk.listen": [
+      "admin",
       "infosec"
     ]
   },
@@ -278,7 +286,27 @@
     "POST /api/ember/drafts                            send_ember",
     "PUT /api/ember/{id}/note                          write_ember_note",
     "POST /api/ember/{id}/ready                        write_ember_note",
-    "POST /api/ember/{id}/send                         send_ember"
+    "POST /api/ember/{id}/send                         send_ember",
+    "GET /api/desk                                     view_review_queue",
+    "GET /api/desk/ideas/{id}                          view_review_queue",
+    "GET /api/desk/ideas/{id}/listen                   view_review_queue",
+    "POST /api/desk/ideas/{id}/open                    work_review_queue",
+    "PUT /api/desk/ideas/{id}/worth                    work_review_queue",
+    "POST /api/desk/ideas/{id}/decision                work_review_queue",
+    "GET /api/desk/ideas/{id}/merge-sheet              work_review_queue",
+    "POST /api/desk/ideas/{id}/merge                   work_review_queue",
+    "GET /api/desk/ideas/{id}/suggested-questions      work_review_queue",
+    "POST /api/desk/ideas/{id}/question-sets           work_review_queue",
+    "POST /api/question-sets/{id}/extend               work_review_queue",
+    "POST /api/question-sets/{id}/remind               work_review_queue",
+    "GET /api/ideas/{id}/question-set                  signed_in",
+    "PUT /api/questions/{id}/answer                    signed_in",
+    "POST /api/question-sets/{id}/send                 signed_in",
+    "GET /api/ideas/{id}/decision                      signed_in",
+    "GET /api/committee                                committee_window",
+    "GET /api/committee/windows/{id}/reversing         committee_window",
+    "POST /api/committee/windows/{id}/extend           committee_window",
+    "POST /api/committee/windows/{id}/reverse          committee_window"
   ],
   "membership_scoped": {
     "ones": [
