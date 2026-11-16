@@ -172,6 +172,9 @@
     ],
     "speech.hosted": [
       "infosec"
+    ],
+    "auth.email_code": [
+      "infosec"
     ]
   },
   "public": [

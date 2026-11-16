@@ -78,6 +78,7 @@ SAMPLE: dict[str, Any] = {
         "names_visible": True,
     },
     "member": {"name": "Farhan Qureshi"},
+    "code": {"value": "481902", "valid_minutes": 10},
     "reminder": {"share_percent": 60},
     "request": {"context": "We run a similar check at the service centres."},
     "requester": {"lob_name": "Investor servicing"},

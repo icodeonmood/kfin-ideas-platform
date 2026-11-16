@@ -40,3 +40,4 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [not-presented.md](not-presented.md) — An update on {{cluster.id}} (draft for HR review)
 - [appeal-filed.md](appeal-filed.md) — An appeal for your panel: {{cluster.id}} (draft for HR review)
 - [appeal-decided.md](appeal-decided.md) — Your appeal on {{cluster.id}} has been heard (draft for HR review)
+- [sign-in-code.md](sign-in-code.md) — Your 1% Club sign-in code (draft for HR sign-off)

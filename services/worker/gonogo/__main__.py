@@ -45,7 +45,10 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
 # Switches that start off on purpose: the report shows them as expected, not as a problem, so nobody "fixes" them
 # on. Voice left this list with DEC-108 (on at launch through Sarvam). The channels built and switched off until
 # IT or InfoSec approve them (DEC-105: Teams, email intake, email-code sign-in) join it as their switches land.
-OFF_BY_DESIGN: dict[str, str] = {}
+OFF_BY_DESIGN: dict[str, str] = {
+    # Migration 20261122100100 (BLD-E002): the email-code route of sign-in waits for InfoSec.
+    "auth.email_code": "Off until InfoSec approves sign-in by email code (BLD-E002, DEC-105)",
+}
 
 VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
 HOSTED = "Hosted speech (Sarvam): switch, approval reference and key match the route (DEC-108)"
