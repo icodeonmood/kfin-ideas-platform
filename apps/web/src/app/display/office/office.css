@@ -1,0 +1,481 @@
+/*
+ * S-OFFICE, from reference/css/boards/Office.css and the Office board (1920×1080), in board pixels times --u.
+ * The screen keeps its earlier look (S-OFFICE/4): caps lines, middle dots, its own brighter palette.
+ */
+.do-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 55% at 70% 40%, rgba(51, 85, 255, 0.12), rgba(51, 85, 255, 0)),
+    radial-gradient(40% 40% at 20% 85%, var(--do-glow-soft), rgba(0, 0, 0, 0));
+}
+
+.do-dust,
+.do-lights {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.do-star,
+.do-light {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.do-star {
+  animation: do-twinkle 4.8s ease-in-out infinite;
+  animation-delay: calc(var(--d) * -1s);
+}
+
+@keyframes do-twinkle {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.do-light {
+  animation: do-lit 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes do-lit {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.do-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.7);
+  animation: do-halo 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes do-halo {
+  0% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.do-dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.do-spark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.do-bub {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 14 * var(--u));
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  padding: calc(7 * var(--u)) calc(13 * var(--u));
+  border-radius: 999px;
+  background: rgba(26, 26, 30, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  font: 500 calc(15 * var(--u)) / 1.2 var(--dsp-ft);
+  color: #ffffff;
+  white-space: nowrap;
+  transition:
+    background-color 0.5s ease,
+    color 0.5s ease;
+}
+
+.do-bub::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(-6 * var(--u));
+  margin-left: calc(-6 * var(--u));
+  border-left: calc(6 * var(--u)) solid transparent;
+  border-right: calc(6 * var(--u)) solid transparent;
+  border-bottom: calc(6 * var(--u)) solid rgba(26, 26, 30, 0.9);
+}
+
+.do-bub.is-on {
+  background: #ffffff;
+  color: #111111;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.do-bub.is-on::before {
+  border-bottom-color: #ffffff;
+}
+
+.do-bdot {
+  flex: none;
+  width: calc(8 * var(--u));
+  height: calc(8 * var(--u));
+  border-radius: 50%;
+}
+
+/* ---------- The words ---------- */
+.do-head {
+  position: absolute;
+  left: calc(96 * var(--u));
+  right: calc(96 * var(--u));
+  top: calc(84 * var(--u));
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.do-eyebrow {
+  margin: 0;
+  font: 500 calc(15 * var(--u)) / 1.2 var(--dsp-ft);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #c4c4c7;
+}
+
+.do-title {
+  margin: calc(22 * var(--u)) 0 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: calc(168 * var(--u));
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+}
+
+.do-count {
+  margin: calc(18 * var(--u)) 0 0;
+  font-size: calc(22 * var(--u));
+  color: #c4c4c7;
+}
+
+.do-controls {
+  display: flex;
+  gap: calc(14 * var(--u));
+}
+
+.do-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max(44px, calc(56 * var(--u)));
+  height: max(44px, calc(56 * var(--u)));
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+
+.do-round:hover {
+  box-shadow: inset 0 0 0 1px #ffffff;
+}
+
+.do-round svg {
+  width: max(18px, calc(22 * var(--u)));
+  height: max(18px, calc(22 * var(--u)));
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.do-tagline {
+  position: absolute;
+  right: calc(96 * var(--u));
+  bottom: calc(92 * var(--u));
+  margin: 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: calc(40 * var(--u));
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ---------- The current One's card ---------- */
+.do-card {
+  position: absolute;
+  left: calc(96 * var(--u));
+  bottom: calc(88 * var(--u));
+  box-sizing: border-box;
+  width: calc(680 * var(--u));
+  padding: calc(36 * var(--u)) calc(40 * var(--u)) calc(30 * var(--u));
+  border-radius: calc(24 * var(--u));
+  overflow: hidden;
+  background-color: rgba(20, 20, 24, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 40px 90px rgba(0, 0, 0, 0.5);
+}
+
+.do-card.is-a {
+  animation: do-frame-a 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.do-card.is-b {
+  animation: do-frame-b 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.do-card > .do-fill {
+  position: absolute;
+  inset: -50% 10% 40% -30%;
+  background: radial-gradient(closest-side, var(--do-glow-a), var(--do-glow-b));
+}
+
+.do-card-in {
+  position: relative;
+}
+
+.do-tier {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+
+.do-tier p {
+  margin: 0;
+  font: 500 calc(14 * var(--u)) / 1.2 var(--dsp-ft);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #c4c4c7;
+}
+
+.do-bar {
+  width: calc(32 * var(--u));
+  height: calc(5 * var(--u));
+  border-radius: calc(3 * var(--u));
+  background: var(--do-colour);
+  transform-origin: 0 50%;
+}
+
+.do-who {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(28 * var(--u));
+  margin-top: calc(22 * var(--u));
+}
+
+.do-number {
+  margin: 0;
+  font-family: var(--dsp-fd);
+  font-weight: 500;
+  font-size: calc(152 * var(--u));
+  line-height: 0.86;
+  letter-spacing: -0.045em;
+  font-feature-settings: "tnum" 1;
+}
+
+.do-dg {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: top;
+  line-height: 1;
+}
+
+.do-col {
+  display: block;
+  transition: transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.do-col > span {
+  display: block;
+  height: 1em;
+}
+
+.do-name-block {
+  padding-bottom: calc(8 * var(--u));
+}
+
+.do-name {
+  margin: 0;
+  font: 500 calc(32 * var(--u)) / 1.1 var(--dsp-fd);
+  letter-spacing: -0.02em;
+}
+
+.do-flag {
+  margin: calc(8 * var(--u)) 0 0;
+  font-size: calc(18 * var(--u));
+  color: #c4c4c7;
+}
+
+.do-brief {
+  margin: calc(26 * var(--u)) 0 0;
+  padding-top: calc(22 * var(--u));
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: calc(24 * var(--u));
+  line-height: 1.4;
+}
+
+.do-progress {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  margin-top: calc(24 * var(--u));
+}
+
+.do-pos {
+  font: 500 calc(14 * var(--u)) / 1 var(--dsp-ft);
+  font-feature-settings: "tnum" 1;
+  color: #c4c4c7;
+}
+
+.do-track {
+  flex: 1;
+  height: calc(3 * var(--u));
+  border-radius: calc(2 * var(--u));
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.do-run {
+  display: block;
+  height: 100%;
+  background: #ffffff;
+  transform-origin: 0 50%;
+}
+
+/* The build replays on every One: two copies of each animation, swapped, restart it (the board's way). */
+.do-card.is-a .do-wd,
+.do-card.is-b .do-wd {
+  display: inline-block;
+  animation: do-word-a 2.6s linear both;
+  animation-delay: calc(var(--base, 0ms) + var(--j, 0) * 45ms);
+}
+
+.do-card.is-b .do-wd {
+  animation-name: do-word-b;
+}
+
+.do-card.is-a .do-fill {
+  animation: do-fill-a 1.6s ease 0.45s both;
+}
+
+.do-card.is-b .do-fill {
+  animation: do-fill-b 1.6s ease 0.45s both;
+}
+
+.do-run.is-a {
+  animation: do-run-a var(--dwell) linear both;
+}
+
+.do-run.is-b {
+  animation: do-run-b var(--dwell) linear both;
+}
+
+/* Pause holds every loop and the progress, not only the rotation. */
+.is-paused .do-run,
+.is-paused .do-star {
+  animation-play-state: paused;
+}
+
+@keyframes do-frame-a {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+    box-shadow: inset 0 0 0 1.5px rgba(143, 168, 255, 0.85);
+    background-color: rgba(51, 85, 255, 0.06);
+  }
+  22% {
+    opacity: 1;
+    transform: none;
+  }
+  60% {
+    box-shadow: inset 0 0 0 1.5px rgba(143, 168, 255, 0.35);
+    background-color: rgba(20, 20, 24, 0.2);
+  }
+}
+
+@keyframes do-frame-b {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+    box-shadow: inset 0 0 0 1.5px rgba(143, 168, 255, 0.85);
+    background-color: rgba(51, 85, 255, 0.06);
+  }
+  22% {
+    opacity: 1;
+    transform: none;
+  }
+  60% {
+    box-shadow: inset 0 0 0 1.5px rgba(143, 168, 255, 0.35);
+    background-color: rgba(20, 20, 24, 0.2);
+  }
+}
+
+@keyframes do-word-a {
+  0%,
+  48% {
+    color: transparent;
+    text-decoration: underline;
+    text-decoration-thickness: 0.62em;
+    text-underline-offset: -0.72em;
+    text-decoration-color: rgba(255, 255, 255, 0.14);
+  }
+  58% {
+    color: #8fa8ff;
+    text-decoration-color: rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes do-word-b {
+  0%,
+  48% {
+    color: transparent;
+    text-decoration: underline;
+    text-decoration-thickness: 0.62em;
+    text-underline-offset: -0.72em;
+    text-decoration-color: rgba(255, 255, 255, 0.14);
+  }
+  58% {
+    color: #8fa8ff;
+    text-decoration-color: rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes do-fill-a {
+  0%,
+  40% {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+}
+
+@keyframes do-fill-b {
+  0%,
+  40% {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+}
+
+@keyframes do-run-a {
+  0% {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes do-run-b {
+  0% {
+    transform: scaleX(0);
+  }
+}
