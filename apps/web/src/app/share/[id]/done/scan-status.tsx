@@ -278,22 +278,8 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             >
               Edit my idea
             </button>
-            {status.blocked.can_contest ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() => void choose("not_personal_data")}
-              >
-                This is not personal data
-              </button>
-            ) : null}
           </div>
-          <p className="muted">
-            {status.blocked.can_contest
-              ? 'If you choose "This is not personal data", your idea goes ahead and the review desk checks these details first.'
-              : "Please edit these details out."}
-          </p>
+          <p className="muted">Please edit these details out.</p>
         </div>
       ) : null}
 

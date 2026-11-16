@@ -14,16 +14,14 @@ extra_roles: [infosec, hr, ceo]       # not columns in §3.1: kill switches (§7
 
 capabilities:
   signed_in:                  { contributor: yes }
-  submit:                     { contributor: yes }                     # submit, join, +1, appeal own outcomes
+  submit:                     { contributor: yes }                     # submit and join (+1 and appeals retired, DEC-106)
   see_org_ideas:              { contributor: yes }
-  see_committee_only_ideas:   { contributor: own, reviewer: yes, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: yes }
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
-  reveal_identity:            { admin: with_reason_logged }
   grant_roles:                { admin: yes }
   manage_kill_switches:       { admin: per_switch, infosec: per_switch, hr: per_switch }
   # The Ones (DEC-040 to DEC-086): propose, approve (chair or a recorded majority), carry out (admin member).
@@ -91,7 +89,7 @@ endpoints:
   - POST /api/submissions/{id}/submit                 submit
   - GET /api/submissions/{id}/scan-status             submit
   - GET /api/submissions/{id}/scan-events             submit          # live progress, server-sent events (§8 week 3; behind scan.live)
-  - POST /api/submissions/{id}/scan-choice            submit          # edit, contest, redirect or override (addition to §8, BLD-075)
+  - POST /api/submissions/{id}/scan-choice            submit          # edit, redirect or override (addition to §8, BLD-075; contest retired, DEC-106)
   - POST /api/submissions/{id}/confirm-card           submit
   - POST /api/submissions/{id}/choose                 submit
   - POST /api/submissions/{id}/attachments            submit
@@ -102,7 +100,6 @@ endpoints:
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit
-  - POST /api/ideas/{id}/plus-one                     submit
   - POST /api/ideas/{id}/answer                       submit
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
@@ -117,7 +114,6 @@ endpoints:
   - DELETE /api/admin/roles/{id}                      grant_roles
   - GET /api/admin/kill-switches                      manage_kill_switches
   - PUT /api/admin/kill-switches                      manage_kill_switches
-  - POST /api/admin/reveal                            reveal_identity
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.
   - GET /api/ones                                     see_org_ideas

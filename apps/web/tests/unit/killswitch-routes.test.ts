@@ -8,7 +8,7 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("PUT", "/api/submissions/abc")).toEqual(["submissions"]);
     expect(switchesFor("POST", "/api/submissions/abc/submit")).toEqual(["submissions"]);
     expect(switchesFor("PUT", "/api/ideas/IDEA-2026-000001/canvas")).toEqual(["submissions"]);
-    expect(switchesFor("POST", "/api/ideas/IDEA-2026-000001/plus-one")).toEqual(["submissions"]);
+    expect(switchesFor("POST", "/api/ideas/IDEA-2026-000001/answer")).toEqual(["submissions"]);
   });
 
   it("needs both switches to upload a file", () => {
