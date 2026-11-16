@@ -28,7 +28,6 @@ import type {
 } from "./enums";
 import type {
   CrewCard,
-  Decision,
   Draft,
   EmberIssue,
   FileItem,
@@ -43,17 +42,14 @@ import type {
   IsoDate,
   JustInRow,
   LiveFix,
-  Merge,
   OneCard,
   OnePost,
   Person,
   PersonSettings,
-  QuestionSet,
   SimilarMatch,
   Sorting,
   TeamUpRequest,
   WallStage,
-  Worth,
   Conversation,
   ConversationEntry,
 } from "./entities";
@@ -302,81 +298,417 @@ export interface IdeaVersion {
 export type SimilarResponse = SimilarMatch[];
 
 // ---------------------------------------------------------------------------------------------------------------
-// A-API.questions
+// A-API.questions, A-API.desk, A-API.committee: the review side. Lane B owns these shapes (they are what the
+// worker's desk/*.py return, words worked out on the server per A-API.conventions/6); ask lane B before changing.
 // ---------------------------------------------------------------------------------------------------------------
+export type CountdownVariant = "normal" | "warn" | "bad";
+export interface Countdown {
+  label: string; // "3 days to answer", "07:38 left", "Overdue by 5 hours"
+  variant: CountdownVariant;
+}
+/** A person as the desk and the committee see them (DEC-104). */
+export interface DeskPerson {
+  id: string | null;
+  name: string;
+  first_name: string;
+  initials: string;
+  city: string | null;
+  area: string | null;
+}
+
+// A-API.questions
 export type SuggestedQuestionsResponse = { part: IdeaPart; text: string }[];
 export interface SendQuestionSetRequest {
-  questions: { part: IdeaPart; text: string }[];
-  time_to_answer: TimeToAnswer;
+  questions: { part: IdeaPart; text: string; suggested?: boolean }[];
+  time_to_answer?: TimeToAnswer;
+  move_decide_by?: boolean;
 }
-export type QuestionSetResponse = QuestionSet & { due?: DueLabel };
-export interface ExtendQuestionSetRequest {
-  days: number;
+export interface AnswerFile {
+  id: string;
+  kind: string;
+  name: string;
+  type: string | null;
+  size: number;
+  pages: number | null;
+  state: string | null;
+  hidden_note: string | null;
 }
+export interface SetAnswer {
+  id: string;
+  question_id: string;
+  text: string;
+  files: AnswerFile[];
+  by: DeskPerson;
+  at: IsoDate | null;
+  added_to: IdeaPart;
+  added_to_name: string;
+  saved_at: IsoDate | null;
+  sent_at: IsoDate | null;
+  sent: boolean;
+}
+export interface SetQuestion {
+  id: string;
+  seq: number;
+  part: IdeaPart;
+  part_name: string;
+  text: string;
+  suggested: boolean;
+  answer: SetAnswer | null;
+}
+export interface QuestionSetView {
+  id: string;
+  idea_id: string;
+  by: DeskPerson;
+  state: "queued" | "sent" | "seen" | "partly_answered" | "answered" | "closed";
+  time_to_answer: TimeToAnswer | null;
+  sent_at: IsoDate | null;
+  seen_at: IsoDate | null;
+  due_at: IsoDate | null;
+  answered_at: IsoDate | null;
+  extended_times: number;
+  reminded_at: IsoDate | null;
+  count: number;
+  answered: number;
+  overdue: boolean;
+  questions: SetQuestion[];
+}
+export type QuestionSetResponse = QuestionSetView & {
+  due_label: string; // "Kavya has until Thursday 19 November, 6 pm."
+  countdown: Countdown;
+  after_decide_by: boolean;
+  after_decide_by_line: string | null;
+  decide_by: IsoDate | null;
+};
+export interface ExtendQuestionSetResponse {
+  id: string;
+  due_at: IsoDate;
+  extended_times: number;
+  due_label: string;
+  countdown: Countdown;
+}
+export interface RemindResponse {
+  id: string;
+  reminded_at: IsoDate;
+}
+/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. */
+export type SharerQuestionSetResponse =
+  | (QuestionSetView & {
+      idea: { id: string; title: string };
+      countdown: Countdown;
+      deadline: string; // "Answer by Thursday 19 November, 6 pm"
+      progress: string; // "1 of 3 answered"
+      send_label: string; // "Send 1 answer to Meera", or "Answer at least one question"
+    })
+  | null;
 export interface SaveAnswerRequest {
   text: string;
   file_ids?: string[];
 }
+export interface SaveAnswerResponse {
+  id: string;
+  question_id: string;
+  text: string;
+  hidden: number;
+  files: AnswerFile[];
+  added_to: IdeaPart;
+  added_to_name: string;
+  saved_at: IsoDate;
+  sent: false;
+}
+export interface SendAnswersResponse {
+  set_id: string;
+  state: "partly_answered" | "answered";
+  sent: number;
+  answered: number;
+  count: number;
+  sent_at: IsoDate;
+  progress: string;
+  sent_line: string; // "Sent to Meera, 4:32 pm"
+  spare: string; // "Answered with 3 days to spare"
+  reviewer_first_name: string;
+  decides_by: string | null; // "Meera decides by Friday 20 November"
+}
 
-// ---------------------------------------------------------------------------------------------------------------
-// A-API.desk, A-API.committee
-// ---------------------------------------------------------------------------------------------------------------
+// A-API.desk (S-R1)
+export type DeskTab = "to_review" | "waiting" | "answered" | "decided";
 export interface DeskQuery {
-  tab?: string;
+  tab?: DeskTab;
   sort?: DeskSort;
   q?: string;
 }
 export interface DeskRow {
-  idea: Idea;
-  questions_state: string;
-  time_left: { label: string; variant: string };
-  decide_by: DueLabel;
-  action: { label: string; to: string };
+  idea_id: string;
+  title: string;
+  who: string; // "Kavya Menon, Investor service, Hyderabad"
+  questions: string; // "0 of 3 answered, seen 12:05 pm"
+  time_left: string | null; // "3 days to answer"
+  variant: CountdownVariant | null;
+  due_at: IsoDate | null; // the clock behind time_left, for the live countdown
+  decide_by: string; // "Friday 20 November"
+  action: string; // "Open", "Read answers", "Remind Divya"
+  action_kind: "open" | "read_answers" | "remind";
+  decision: string | null; // "Picked, 2 November" / "Reversed: picked"
+  committee: string | null; // "Ones Committee can review it until Wednesday 2 December"
+  area: string;
+  asked: number; // the dots: one per question
+  answered: number; // filled once answered
 }
-export interface DeskResponse extends ListOf<DeskRow> {
-  sentence: string;
+export interface DeskResponse {
+  items: DeskRow[];
+  total: number;
+  counts: Record<DeskTab, number>;
+  summary: string;
+  tab: DeskTab;
+  sort: DeskSort;
+  waiting_on_sharers: { idea_id: string; title: string; dot: "blue" | "amber" | "red" }[];
+  now: IsoDate;
+}
+
+// A-API.desk (S-R2): the reviewer's page
+export interface ReviewerQuestion {
+  id: string;
+  text: string | null;
+  asked_at: IsoDate;
+  asked_by: string;
+  asked_line: string; // "You asked, today 11:20 am"
+  state: "Answered" | "Not answered yet";
+  answer: {
+    text: string | null;
+    at: IsoDate;
+    by: string;
+    line: string; // "Kavya answered, today 4:32 pm"
+    files: { id: string; name: string; hidden: string | null }[];
+  } | null;
+}
+export interface ReviewerPart {
+  part: IdeaPart;
+  name: string;
+  text: string;
+  questions: ReviewerQuestion[];
+}
+export interface WorthTile {
+  measure: "hours_month" | "cost_month" | "revenue_month" | "outside_tools";
+  label: string;
+  value: string;
+  was: string | null; // "was 70 to 150 hours a month"
+  changed: boolean;
+}
+export interface WorthRevision {
+  id: number;
+  note: string | null;
+  by: DeskPerson;
+  at: IsoDate;
+  kind: Kind | null;
+  area: string | null;
+}
+export interface ReviewerArtefact {
+  kind: "file" | "own_words" | "similar_found" | "versions";
+  id?: string;
+  title: string;
+  line: string;
+  action: string; // "Open", "Read", "Compare", "See changes"
+}
+export interface ReviewerSimilar {
+  idea_id: string;
+  title: string;
+  status: string;
+  strength: "close" | "related";
+  reason: string;
+  merged: boolean;
+  meta: string; // "IDEA-2026-001412, Ravi Nair, Investor service, Hyderabad. 4 on its crew"
+}
+export type ReviewerPanel =
+  | { state: "reviewing"; decision: CommitteeRow | null }
+  | { state: "decided"; decision: CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null } }
+  | { state: "merged" }
+  | {
+      state: "sent" | "answered";
+      title: string; // "Waiting on Kavya" / "All 3 answered"
+      spare_line?: string | null;
+      set_id: string;
+      count: number;
+      answered: number;
+      due_at: IsoDate;
+      countdown: string;
+      variant: CountdownVariant;
+      sent_line: string; // "Sent today, 11:20 am. Seen 12:05 pm."
+      decide_by_line: string | null;
+    };
+export interface ReviewerIdeaResponse {
+  idea: {
+    id: string;
+    title: string;
+    status: string;
+    status_label: string;
+    pill: "blue" | "warn" | "ok" | "neutral";
+    heading: string;
+    kind: Kind;
+    area: string | null;
+  };
+  sharer: DeskPerson;
+  own: boolean; // the reviewer's own idea: read only (V-ACC.review/14)
+  can_act: boolean;
+  decide_by: { at: IsoDate | null; label: string | null; left: string | null };
+  artefacts: ReviewerArtefact[];
+  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  parts: ReviewerPart[];
+  worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
+  similar: ReviewerSimilar[];
+  panel: ReviewerPanel;
 }
 export interface WorthRequest {
-  worth: Worth & { outside_tools?: OutsideTools };
+  hours_month?: string; // as typed: "70 to 150", "about ₹25,000", "2.5 lakh"
+  cost_month?: string;
+  revenue_month?: string;
+  outside_tools?: OutsideTools;
   kind?: Kind;
   area?: string;
   note?: string;
+}
+export interface WorthResponse {
+  idea_id: string;
+  worth_id: number;
+  tiles: WorthTile[];
+  sharer: DeskPerson;
+  reviewer: DeskPerson & { note: string | null; by: DeskPerson; at: IsoDate };
+  kind: Kind;
+  area: string | null;
 }
 export interface DecisionRequest {
   choice: DecisionChoice;
   reason: string;
   joined_with?: string;
   return_in?: ReturnIn;
+  wording_ok?: boolean; // send anyway after the wording check (L-DECIDE.rules/4)
 }
-export type DecisionResponse = Decision;
+export interface DecisionResponse {
+  id: string;
+  idea_id: string;
+  choice: DecisionChoice;
+  label: string;
+  reason: string; // masked, as the sharer reads it
+  at: IsoDate;
+  return_at: IsoDate | null;
+  team_by: IsoDate | null;
+  window: { state: "open"; opens_at: IsoDate; closes_at: IsoDate; max_closes_at: IsoDate; extended_times: 0 };
+}
+export interface MergeSheetResponse {
+  idea_id: string;
+  other_idea_id: string;
+  title: string; // "Merge with IDEA-2026-001412?"
+  line: string;
+  default_lead: MergeLead;
+  options: { lead: MergeLead; label: string; meta: string; selected: boolean }[];
+  by_lead: Record<MergeLead, { line: string; team_up: string }>;
+  refusal: Record<MergeLead, string | null>;
+  team_up: { label: string; line: string; default: boolean };
+  note: { label: string; prefill: string; min: number; max: number };
+  small_print: string;
+  button: string;
+}
 export interface DeskMergeRequest {
   other_idea_id: string;
   lead: MergeLead;
   team_up: boolean;
   note: string;
 }
-export type DeskMergeResponse = Merge;
-export interface ListenAudioResponse {
-  url: string;
-  total_seconds: number;
-  chapters: { part: IdeaPart; at: number }[];
+export interface DeskMergeResponse {
+  id: string;
+  lead_idea_id: string;
+  merged_idea_id: string;
+  by: DeskPerson;
+  via: "review_desk";
+  team_up: boolean;
+  note: string;
+  at: IsoDate;
+  window: {
+    state: string;
+    opens_at: IsoDate;
+    closes_at: IsoDate;
+    max_closes_at: IsoDate;
+    extended_times: number;
+  };
+  banner: string; // C-SHEET-MERGE.after
 }
+/** BLD-B230: the browser speaks the masked script with a local voice; there is no audio file. */
+export interface ListenAudioResponse {
+  parts: { part: IdeaPart; title: string; text: string; seconds: number }[];
+  chapters: { part: IdeaPart; at: number }[];
+  total_seconds: number;
+  version: string; // changes with the content, so a copy saved for offline is replaced
+}
+
+// A-API.committee (S-R4). Actions are keyed by window: a window covers a desk decision or a desk merge.
 export interface CommitteeQuery {
   tab?: CommitteeTab;
   sort?: CommitteeSort;
 }
 export interface CommitteeRow {
-  idea: Idea;
-  decision: Decision;
+  window_id: string;
+  kind: "decision" | "merge";
+  idea: { id: string; title: string; meta: string };
+  sharer: DeskPerson;
+  decision: {
+    choice: DecisionChoice | null;
+    label: string;
+    merged_into: string | null;
+    by_line: string; // "by Meera from the review desk, Monday 12 October"
+    reason: string | null;
+    reason_heading: string; // "The review desk's reason, as Kavya read it"
+  };
+  window: {
+    state: "open" | "extended" | "reversed" | "expired";
+    opens_at: IsoDate;
+    closes_at: IsoDate;
+    max_closes_at: IsoDate;
+    extended_times: number;
+    left: string | null; // "22 days left"
+    until: string; // "Until Wednesday 16 December"
+    extended: string | null; // "Extended once"
+    extend_to: string | null; // "Extend to Friday 15 January 2027"
+    limit_line: string | null; // "At the 3-month limit"
+    closed_line: string | null; // "Expired Wednesday 18 November. After 30 days. The decision stands."
+    open_line: string | null;
+  };
+  reversal: {
+    to: DecisionChoice | null;
+    note: string | null;
+    by: DeskPerson;
+    at: IsoDate;
+    now_line: string; // "Now: Picked by Rohan Mehta, Friday 13 November"
+    final_line: string; // "Reversed Friday 13 November. Final. Kavya has the note."
+  } | null;
+  can_extend: boolean;
+  can_reverse: boolean; // false on a member's own idea (L-COMMITTEE.rules/9)
+  action: "Review" | "See it";
+  area: string;
 }
-export interface CommitteeResponse extends ListOf<CommitteeRow, CommitteeTab> {
-  sentence: string;
+export interface CommitteeResponse {
+  items: CommitteeRow[];
+  total: number;
+  counts: Record<CommitteeTab, number>;
+  summary: string; // "3 decisions open to review. You reversed 1 this month."
+  explanation: string;
+}
+export interface ReversingWordsResponse {
+  title: string;
+  intro: string;
+  options: { to: DecisionChoice; label: string; line: string }[];
+  note_label: string;
+  note_help: string;
+  final_line: string;
+  send_label: string; // "Reverse and tell Kavya"
 }
 export interface ReverseRequest {
-  to: DecisionChoice;
+  to?: DecisionChoice; // none for a desk merge
   note: string;
   return_in?: ReturnIn;
 }
+/** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else. */
+export type DecisionForViewerResponse =
+  | (CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null })
+  | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
+  | null;
 
 // ---------------------------------------------------------------------------------------------------------------
 // A-API.team-up
