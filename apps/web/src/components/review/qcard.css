@@ -1,0 +1,38 @@
+/* C-QCARD (board Status: .verq, .qn). Tokens only. */
+.qcard {
+  display: grid;
+  gap: 12px;
+}
+.qcard-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.qcard-h .pill {
+  margin-left: auto;
+}
+.qcard h3,
+.qcard p {
+  margin: 0;
+}
+.qcard-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+.qcard-list li {
+  display: grid;
+  gap: 2px;
+}
+.qcard-a {
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+}
+.qcard-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
