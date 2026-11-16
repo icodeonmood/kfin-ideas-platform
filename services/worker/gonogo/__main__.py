@@ -49,6 +49,8 @@ OFF_BY_DESIGN = {
         "the model, and the DPO's privacy notice covers voice notes (DEC-096)"
     ),
     "speech.hosted": "Off until InfoSec and the DPO approve a hosted route (DEC-096)",
+    # Migration 20261122100100 (BLD-E002): the email-code route of sign-in waits for InfoSec.
+    "auth.email_code": "Off until InfoSec approves sign-in by email code (BLD-E002, DEC-105)",
 }
 
 
@@ -305,7 +307,7 @@ def render(r: dict[str, Any]) -> str:
     if (
         by_design
     ):  # the first exceptions to DEC-088: off on purpose until their approvals land; do not switch on
-        lines.append(f"**Off as expected (by design, DEC-096):** {', '.join(by_design)}.")
+        lines.append(f"**Off as expected (by design, DEC-096, DEC-105):** {', '.join(by_design)}.")
     lines += [
         "",
         "**canvas-assist answers (DEC-095, DEC-097):** check on the first real-route golden-set run and before launch;",
