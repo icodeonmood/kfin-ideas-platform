@@ -9,9 +9,10 @@ on:
     paths-ignore: ["docs/**", "*.md"]
   workflow_dispatch:
 
-# One run at a time on main, never cancelled: each walk reads the latest completed run.
+# One run at a time on main, never cancelled: each walk reads the latest completed run. A run by hand on another
+# branch (a builder checking its specs) has its own group, so it never displaces a pending run on main.
 concurrency:
-  group: journeys-main
+  group: ${{ github.ref == 'refs/heads/main' && 'journeys-main' || format('journeys-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
