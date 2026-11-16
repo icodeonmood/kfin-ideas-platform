@@ -174,9 +174,13 @@ test.describe("S-OFFICE: the office screen", () => {
 
   test("S-OFFICE/1-2, V-ACC.visual/4: the Ones as they are now, no chrome, axe clean", async ({ page }) => {
     await signIn(page, PERSONAS.admin);
+    // 503 while `ones.public` is off (the route's kill switch, non-negotiable 9): the screen then rests.
     const api = await page.request.get("/api/display/office");
-    expect(api.status()).toBe(200);
-    const data = (await api.json()) as { paused: boolean; ones: unknown[] };
+    expect([200, 503]).toContain(api.status());
+    const data = (api.status() === 200 ? await api.json() : { paused: true, ones: [] }) as {
+      paused: boolean;
+      ones: unknown[];
+    };
     await page.goto("/display/office");
     await expect(page.getByRole("region", { name: "The Ones, in the sky" })).toBeVisible();
     await expect(page.getByText("1% Club · KFintech")).toBeVisible();

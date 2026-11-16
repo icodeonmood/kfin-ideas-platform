@@ -38,6 +38,8 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("GET", "/api/attachments/ATT-2026-000001")).toEqual(["attachments.open"]);
     expect(switchesFor("GET", "/api/attachments/ATT-2026-000001/status")).toEqual([]);
     expect(switchesFor("GET", "/api/wall")).toEqual(["wall.public"]);
+    expect(switchesFor("GET", "/api/display/office")).toEqual(["ones.public"]); // S-OFFICE, non-negotiable 9
+    expect(switchesFor("GET", "/api/display/office/x")).toEqual([]);
     expect(switchesFor("POST", "/api/ones/proposals")).toEqual([]);
     expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
   });
