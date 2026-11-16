@@ -20,7 +20,7 @@ from comms.route import emit
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
-from rules import load_rule
+from rules import RulesConfigError, load_rule
 from sla.calendar import add_working_days, add_working_seconds, working_seconds
 
 log = get_logger("sla")
@@ -139,11 +139,19 @@ def _escalation(conn: Conn, target: str | None) -> list[str]:
 def tick(conn: Conn, now: dt.datetime | None = None) -> dict[str, int]:
     now = now or dt.datetime.now(dt.UTC)
     counts = {"reminders": 0, "breaches": 0, "withdrawn": 0, "expired": 0, "skipped": 0}
-    rules = _rules()
     ids = [
         r["id"]
         for r in conn.execute("SELECT id FROM sla_timers WHERE state = 'running' ORDER BY id").fetchall()
     ]
+    if not ids:
+        return counts
+    try:
+        rules = _rules()
+    except RulesConfigError:
+        # The company repo is not there yet (a stack starting before `make seed`) or its rules are invalid: wait
+        # for the next tick rather than crash the ticker (BLD-A182).
+        log.warning("sla.rules_unavailable", running=len(ids))
+        return counts
     for timer_id in ids:
         with conn.transaction():
             # Lock and re-read: an answer or a decision may have stopped this timer since the list was taken.
