@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CODE_KEEP_HOURS,
   isWorkEmail,
   MemoryCodeStore,
   SEND_WINDOW_MINUTES,
@@ -116,12 +117,14 @@ describe("L-AUTH.rules/3: a 6-digit code, 10 minutes, 3 tries, a new one after 4
   it("V-FIELDS.signin/5: out of tries, a fresh code goes out once and the old one never works", async () => {
     const w = world();
     await sendCode(w.deps, ME);
+    w.later(RULES.resend_after_seconds);
     await verifyCode(w.deps, ME, "000000");
     await verifyCode(w.deps, ME, "000001");
     expect(await verifyCode(w.deps, ME, "000002")).toEqual({
       ok: false,
       error: "code_expired",
       resent: true,
+      resendInSeconds: 45,
     });
     expect(w.mailed.map((m) => m.code)).toEqual(["481902", "112233"]);
     expect(await verifyCode(w.deps, ME, "481902")).toEqual({ ok: false, error: "wrong_code", triesLeft: 2 });
@@ -136,8 +139,42 @@ describe("L-AUTH.rules/3: a 6-digit code, 10 minutes, 3 tries, a new one after 4
       ok: false,
       error: "code_expired",
       resent: true,
+      resendInSeconds: 45,
     });
     expect(w.mailed).toHaveLength(2);
+  });
+
+  it("L-AUTH.rules/3: out of tries inside 45 seconds, no new code until the countdown ends", async () => {
+    const w = world();
+    await sendCode(w.deps, ME);
+    w.later(10);
+    await verifyCode(w.deps, ME, "000000");
+    await verifyCode(w.deps, ME, "000001");
+    expect(await verifyCode(w.deps, ME, "000002")).toEqual({
+      ok: false,
+      error: "code_expired",
+      resent: false,
+      resendInSeconds: 35,
+    });
+    expect(w.mailed).toHaveLength(1);
+    w.later(20);
+    expect(await verifyCode(w.deps, ME, "481902")).toMatchObject({ resent: false, resendInSeconds: 15 });
+    w.later(15);
+    expect(await verifyCode(w.deps, ME, "481902")).toMatchObject({ error: "code_expired", resent: true });
+    expect(w.mailed.map((m) => m.code)).toEqual(["481902", "112233"]);
+    expect(await verifyCode(w.deps, ME, "112233")).toEqual({ ok: true, userId: "u-1" });
+  });
+
+  it("BLD-A177: issuing a code deletes codes that ran out more than a day ago", async () => {
+    const w = world();
+    await sendCode(w.deps, ME);
+    w.later(60);
+    await sendCode(w.deps, "no.such.person@kfintech.example");
+    expect(w.store.rows).toHaveLength(2);
+    w.later(CODE_KEEP_HOURS * 3600 + 11 * 60);
+    await sendCode(w.deps, ME);
+    expect(w.store.rows).toHaveLength(1);
+    expect(await verifyCode(w.deps, ME, "445566")).toEqual({ ok: true, userId: "u-1" });
   });
 
   it("a code works once", async () => {
