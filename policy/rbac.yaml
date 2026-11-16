@@ -29,7 +29,6 @@ capabilities:
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   score:                      { lob_committee: own_lob, core_committee: yes }
   decide:                     { lob_committee: park_or_decline_own_lob, core_committee: yes }
-  hear_appeals:               { core_committee: lob_appeals, appeal_panel: yes }
   run_action_plans:           { working_group: yes, sponsor: yes, admin: yes }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
   see_people_view:            { contributor: own_history, reviewer: yes, lob_committee: own_lob, core_committee: yes, admin: yes }
@@ -119,7 +118,6 @@ endpoints:
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/plus-one                     submit
   - POST /api/ideas/{id}/answer                       submit
-  - POST /api/ideas/{id}/disagree                     submit
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
   - GET /api/clusters                                 see_org_ideas
@@ -153,10 +151,6 @@ endpoints:
   - PUT /api/admin/kill-switches                      manage_kill_switches
   - POST /api/admin/reveal                            reveal_identity
   - POST /api/admin/conflicts                         grant_roles                # clear a manager's conflict flag with a reason (§3.1, BLD-221)
-  - GET /api/appeals                                  signed_in                  # §4.12: decisions on my groups, appeals I hear (worker checks)
-  - POST /api/appeals                                 submit                     # appeal an own group's decision (worker checks the contributor)
-  - GET /api/appeals/{id}                             hear_appeals               # the panel's blind view (worker checks the panel)
-  - POST /api/appeals/{id}/decision                   hear_appeals               # the panel chair records the outcome
   - GET /api/reports/{kind}                           view_fairness_reports      # fairness and calibration (§3.8, §5.4)
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.

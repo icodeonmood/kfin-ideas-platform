@@ -52,7 +52,6 @@ const SECTION_3_1: Record<string, string[]> = {
   see_restored_values: ALL,
   score: ["lob_committee", "core_committee"],
   decide: ["lob_committee", "core_committee"],
-  hear_appeals: ["core_committee", "appeal_panel"],
   run_action_plans: ["working_group", "sponsor", "admin"],
   approve_handover: ["sponsor"],
   see_people_view: ALL,

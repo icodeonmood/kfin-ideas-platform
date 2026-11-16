@@ -245,12 +245,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             {(FINAL[status.final] ?? MOVED_ON).title}
           </h3>
           <p>{(FINAL[status.final] ?? MOVED_ON).text}</p>
-          <FollowUp
-            id={id}
-            question={status.question ?? null}
-            canDisagree={Boolean(status.can_disagree)}
-            onChanged={refresh}
-          />
+          <FollowUp id={id} question={status.question ?? null} onChanged={refresh} />
         </div>
       ) : null}
 
