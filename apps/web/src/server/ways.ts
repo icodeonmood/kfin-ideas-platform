@@ -58,38 +58,25 @@ export async function arrivals(me: CurrentUser): Promise<Arrival[]> {
   return [];
 }
 
-const APP_NEWS = { asked: "app_news.asked", withdrawn: "app_news.withdrawn" } as const;
-const entity = (me: CurrentUser) => `person:${me.id}`;
-
 /**
- * Whether the person asked to hear when the 1% Club app is out (L-NOTIFY/7), the latest choice winning.
- * TODO(cut-over, lane E): move to the person's own settings (E-ENTITIES.person.settings) when the cut-over gives
- * them a place; until then each choice is an audit row with IDs only, which is also the record L-AUDIT wants.
+ * Whether the person asked to hear when the 1% Club app is out (L-NOTIFY/7): one row per person, the latest choice
+ * (`app_news_requests`, 20261122100200). No row means they have not asked.
  */
 export async function wantsAppNews(me: CurrentUser): Promise<boolean> {
   const row = await getDb()
-    .selectFrom("audit_log")
-    .select("action")
-    .where("entity", "=", entity(me))
-    .where("action", "in", [APP_NEWS.asked, APP_NEWS.withdrawn])
-    .orderBy("id", "desc")
-    .limit(1)
+    .selectFrom("app_news_requests")
+    .select("wants")
+    .where("user_id", "=", me.id)
     .executeTakeFirst();
-  return row?.action === APP_NEWS.asked;
+  return row?.wants === true;
 }
 
-export async function setAppNews(me: CurrentUser, want: boolean, ip: string | null): Promise<boolean> {
+/** Ask, or withdraw the ask: an upsert, so pressing again always reflects the latest choice. */
+export async function setAppNews(me: CurrentUser, want: boolean): Promise<boolean> {
   await getDb()
-    .insertInto("audit_log")
-    .values({
-      actor: `user:${me.id}`,
-      action: want ? APP_NEWS.asked : APP_NEWS.withdrawn,
-      entity: entity(me),
-      before: null,
-      after: JSON.stringify({ app_news: want }),
-      reason: null,
-      ip,
-    })
+    .insertInto("app_news_requests")
+    .values({ user_id: me.id, wants: want })
+    .onConflict((oc) => oc.column("user_id").doUpdateSet({ wants: want }))
     .execute();
   return want;
 }
