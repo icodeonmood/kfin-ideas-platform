@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from "react";
+
 /**
  * Motion helpers for what CSS cannot do alone (F-MOTION; BLD-E005: no animation library, the Web Animations API and a
  * small FLIP helper instead). Every helper checks reduced motion itself, because the stylesheet's reduced-motion rule
@@ -114,4 +116,40 @@ export async function flip(
   } finally {
     events.forEach((e) => window.removeEventListener(e, finishAll, { capture: true }));
   }
+}
+
+/**
+ * Lists re-sort (F-MOTION.inside): call in a component that renders a list whose order can change. Every row carries
+ * data-flip with a key that stays the same when the order changes; when `key` changes (the sort, a filter), rows glide
+ * from their old place to their new one (560 ms, the standard curve) and new rows fade in. React only; reduced motion
+ * and server render do nothing.
+ */
+export function useFlipList(container: { current: HTMLElement | null }, key: unknown) {
+  const last = useRef<Map<string, DOMRect>>(new Map());
+  useLayoutEffect(() => {
+    const el = container.current;
+    if (!el) return;
+    const rows = Array.from(el.querySelectorAll<HTMLElement>("[data-flip]")).slice(0, FLIP_LIMIT);
+    const now = new Map<string, DOMRect>();
+    for (const r of rows) now.set(r.dataset.flip!, r.getBoundingClientRect());
+    const before = last.current;
+    last.current = now;
+    if (before.size === 0 || reducedMotion()) return;
+    for (const r of rows) {
+      const was = before.get(r.dataset.flip!);
+      const is = now.get(r.dataset.flip!)!;
+      if (!was) {
+        r.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "cubic-bezier(.16,1,.3,1)" });
+        continue;
+      }
+      const t = invert(was, is);
+      if (isStill(t)) continue;
+      r.animate([{ transform: `translate(${t.dx}px, ${t.dy}px)` }, { transform: "none" }], {
+        duration: 560,
+        easing: "cubic-bezier(.2,0,0,1)",
+      });
+    }
+    // Only a change of `key` should animate; layout moves from scrolling or resizing are not re-sorts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 }

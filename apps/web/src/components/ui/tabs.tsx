@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 /**
  * C-TABS: text tabs with counts. tablist, tab and aria-selected; arrow keys, Home and End move between tabs and
@@ -37,10 +37,18 @@ export function Tabs({
   onChange: (value: string) => void;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [ink, setInk] = useState<{ x: number; w: number } | null>(null);
   const at = Math.max(
     0,
     tabs.findIndex((t) => t.value === value),
   );
+  // The underline travels from the old tab to the new one and stretches to fit (C-TABS/3): one ink line moved by
+  // transform, measured after each change. Until it is measured, each selected tab draws its own line.
+  useLayoutEffect(() => {
+    const t = refs.current[at];
+    if (t) setInk({ x: t.offsetLeft, w: t.offsetWidth });
+  }, [at, tabs.length]);
+
   const go = (i: number) => {
     const t = tabs[i];
     if (!t) return;
@@ -65,7 +73,7 @@ export function Tabs({
     go(to);
   };
   return (
-    <div className="tabs" role="tablist" aria-label={label}>
+    <div className={ink ? "tabs inked" : "tabs"} role="tablist" aria-label={label}>
       {tabs.map((t, i): ReactNode => (
         <button
           key={t.value}
@@ -85,6 +93,13 @@ export function Tabs({
           {t.count !== undefined ? <span className="tab-n">{t.count}</span> : null}
         </button>
       ))}
+      {ink ? (
+        <span
+          className="tabs-ink"
+          aria-hidden="true"
+          style={{ transform: `translateX(${ink.x}px) scaleX(${ink.w})` }}
+        />
+      ) : null}
     </div>
   );
 }
