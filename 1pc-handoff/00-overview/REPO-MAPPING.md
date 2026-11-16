@@ -92,7 +92,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | ID | Owner today | State | Phase | Lane |
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
-| `L-AUTH` | `server/auth/{intents,sso,reference,codes,email-code,drafts,session,table-fallback}.ts`; `app/auth/{sso/start,login,callback,code/send,code/verify,session,sign-out,logout}`; worker `comms/sign_in_code.py` (BLD-A173 to A176) | built (branch `a/auth-landing`); tables from the cut-over, memory until then | P0 (single sign-on), P2 (email code) | A |
+| `L-AUTH` | `server/auth/{intents,sso,reference,codes,email-code,drafts,session}.ts`; `app/auth/{sso/start,login,callback,code/send,code/verify,session,sign-out,logout}`; worker `comms/sign_in_code.py` (BLD-A173 to A176) | built (branch `a/auth-landing`) on the cut-over's `sign_in_intents` and `sign_in_codes` | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   cleanIntent,
@@ -8,7 +8,6 @@ import {
   nextScreen,
   INTENT_TTL_MINUTES,
 } from "@/server/auth/intents";
-import { withTableFallback } from "@/server/auth/table-fallback";
 
 const DRAFT = "0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10";
 
@@ -62,29 +61,5 @@ describe("L-AUTH.rules/4: where the person was going", () => {
     const late = new Date(t0.getTime() + (INTENT_TTL_MINUTES + 1) * 60_000);
     expect(await store.find("old", late)).toBeNull();
     expect(await store.use("old", late)).toBeNull();
-  });
-});
-
-describe("BLD-A173: storage before lane E's cut-over", () => {
-  it("uses the table, and process memory only once the table is reported missing", async () => {
-    const missing = Object.assign(new Error("relation does not exist"), { code: "42P01" });
-    const db = { hit: vi.fn(async () => "db") };
-    const memory = { hit: vi.fn(async () => "memory") };
-    const store = withTableFallback("t", db, memory);
-    expect(await store.hit()).toBe("db");
-    db.hit.mockRejectedValueOnce(missing);
-    expect(await store.hit()).toBe("memory");
-    expect(await store.hit()).toBe("memory");
-    expect(db.hit).toHaveBeenCalledTimes(2);
-  });
-
-  it("never hides any other database error", async () => {
-    const boom = Object.assign(new Error("connection lost"), { code: "08006" });
-    const store = withTableFallback(
-      "t",
-      { hit: async () => Promise.reject(boom) },
-      { hit: async () => "memory" },
-    );
-    await expect(store.hit()).rejects.toBe(boom);
   });
 });
