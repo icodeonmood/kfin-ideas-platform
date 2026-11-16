@@ -180,6 +180,9 @@
     "desk.listen": [
       "admin",
       "infosec"
+    ],
+    "auth.email_code": [
+      "infosec"
     ]
   },
   "public": [

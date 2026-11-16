@@ -218,6 +218,11 @@ describe("kill switch flippers (§7.6)", () => {
     expect(canFlip(r("infosec"), "speech.hosted")).toBe(true);
     expect(canFlip(r("admin"), "speech.hosted")).toBe(false);
   });
+
+  it("sign-in by email code (BLD-E002): InfoSec alone switches it", () => {
+    expect(canFlip(r("infosec"), "auth.email_code")).toBe(true);
+    expect(canFlip(r("admin"), "auth.email_code")).toBe(false);
+  });
 });
 
 describe("shared policy file", () => {

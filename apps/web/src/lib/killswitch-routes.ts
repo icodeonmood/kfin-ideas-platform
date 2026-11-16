@@ -23,7 +23,8 @@ export type SwitchName =
   | "capture.mic_hint"
   | "capture.voice"
   | "speech.hosted"
-  | "desk.listen";
+  | "desk.listen"
+  | "auth.email_code";
 
 interface Rule {
   methods: readonly string[];
@@ -90,6 +91,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
+  // Sign-in by email code (L-AUTH.rules/2-3) waits for InfoSec: off until then (BLD-E002). Single sign-on needs none.
+  { methods: ["POST"], pattern: /^\/auth\/code\/(?:send|verify)\/?$/, switches: ["auth.email_code"] },
 ];
 
 /**
@@ -122,6 +125,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
   // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
   "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
+  // The sign-in screen hides the email route while it is off, so people normally never meet this (BLD-E002).
+  "auth.email_code": "Signing in with a code by email is coming soon. Use single sign-on.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
