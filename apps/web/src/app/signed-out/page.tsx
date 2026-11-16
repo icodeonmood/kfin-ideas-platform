@@ -1,24 +1,46 @@
-import { SparkMark } from "@/components/spark-mark";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-export default function SignedOut() {
+import { SparkMark } from "@/components/spark-mark";
+import { currentUser } from "@/server/auth/current";
+
+import "../sign-in/sign-in.css";
+
+export const dynamic = "force-dynamic";
+
+/** After "Sign out": signed out, so no shell; the same frame as S-02 (its own top row, main and footer). */
+export default async function SignedOut() {
+  const me = await currentUser().catch(() => null);
+  if (me) redirect("/");
   return (
-    <section className="band stage entry" data-theme="zed" data-glow="1" aria-labelledby="entry-title">
-      <div className="band-inner entry-inner">
-        <div className="entry-copy">
-          <h1 id="entry-title" className="t-display">
-            You have signed out
-          </h1>
-          <p className="entry-action">
-            <a className="btn btn-secondary btn-lg" href="/sign-in">
-              Sign in again
-            </a>
-          </p>
-        </div>
-        <div className="entry-mark">
-          <SparkMark height={300} className="entry-spark" />
-          <p className="entry-tagline">1% spark. 99% sweat.</p>
-        </div>
+    <div className="si">
+      <div className="si-side">
+        <header className="si-top">
+          <Link href="/" className="si-brand">
+            <SparkMark height={26} />
+            1% Club
+          </Link>
+        </header>
+        <main id="main" tabIndex={-1} className="si-main">
+          <div className="si-card">
+            <div className="si-step">
+              <h1 className="si-h1">You have signed out</h1>
+              <a className="si-btn si-btn-primary" href="/sign-in">
+                Sign in again
+              </a>
+            </div>
+          </div>
+        </main>
+        <footer className="si-foot">
+          <p>1% Club, a KFintech programme</p>
+        </footer>
       </div>
-    </section>
+      <aside className="si-lit" aria-labelledby="si-tagline">
+        <SparkMark height={260} className="si-lit-mark" />
+        <p id="si-tagline" className="si-tagline">
+          1% spark. 99% sweat.
+        </p>
+      </aside>
+    </div>
   );
 }

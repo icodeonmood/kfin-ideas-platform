@@ -2,10 +2,12 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues } from "./helpers";
 
-test("signed-out visitors land on sign in, which is keyboard reachable and passes axe", async ({ page }) => {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/sign-in\?next=%2F/);
-  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
+test("signed-out visitors on a page land on sign in, which is keyboard reachable and passes axe", async ({
+  page,
+}) => {
+  await page.goto("/my-ideas");
+  await expect(page).toHaveURL(/\/sign-in\?next=%2Fmy-ideas/);
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in to 1% Club" })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
   await expectNoSeriousAxeIssues(page);

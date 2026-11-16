@@ -105,7 +105,7 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
 test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the browser)", async ({ page }) => {
   const id = `SYN-E${Date.now().toString(36).toUpperCase()}`;
   await page.goto("/sign-in");
-  await page.getByRole("link", { name: "Sign in with your KFintech account" }).click();
+  await page.getByRole("button", { name: "Use single sign-on" }).click();
   await page.locator('input[name="username"]').fill(id);
   await page.locator('textarea[name="claims"]').fill(
     JSON.stringify({
