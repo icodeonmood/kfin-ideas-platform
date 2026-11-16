@@ -72,7 +72,21 @@ If Thursday's go/no-go finds a lane short, the product lead chooses from this dr
 | Fri 20 | Inauguration. Code freeze except fixes |
 | Mon 23 | Cleanup migration drops the retired tables |
 
+Copy rule for every lane (BLD-E008): never a gendered pronoun for a real person; use the first name, or "they" and "their" where the name would repeat; list each changed line for HR.
+
 Rules for every lane: your own worktree; one module per commit, pushed; module IDs in test names and commit messages (`S-R2.panel`, `V-ACC.review/1`); `REPO-MAPPING.md` updated when a module lands; deltas (`D-00NN`) applied in order by the lane that owns the module; nothing merges to `main` without lint, unit and the e2e of its journey green on GitHub CI.
+
+## 5a. Cross-lane entry points
+
+Call another lane's module only through these, behind a thin adapter in your own code, so a change touches one file.
+
+| Module | Owner | Entry point | Notes |
+|---|---|---|---|
+| `L-NOTIFY`, `L-INBOX` | A (BLD-A180) | `from notify import post, Action, Posted` (`services/worker/notify/__init__.py`): `post(conn, kind, recipients, *, idea_id=None, sender="system", needs_you=False, due_at=None, actions=(), refs=None, dedupe_key=None) -> Posted` | Call inside your own transaction. `kind` from `E-ENUMS.inbox`; lane F sends lane A its team-up and merge kinds. `refs` holds IDs, enums, numbers and booleans only, never text (the line is rendered from the HR templates at read time). `dedupe_key` for reminders. In-app at once, email by `comms_prefs`, Teams off. Returns `Posted(ids=[])` until the cut-over adds the columns |
+| Timers on the sla engine | A | After the cut-over | Lane B registers its own timer kinds and handlers; lane A owns the engine, the schedule and the decide-by digest |
+| `C-PREVIEW`, "Hide this" (`L-HIDE.rules/7`) | C | By Tue 12:00 | Opened from `S-R2` (lane B) and crew cards (lane F) |
+| `L-CONVO` post | F | When lane F starts | Lane B posts "opened it", answers and the merge's closing line |
+| Shared types and enums | E | `apps/web/src/lib/contracts/`, `contracts/1pc/enums.json` (Python loader in `services/worker/`) | On `e/cutover`, merged by Tue 13:00 |
 
 ## 6. Data and retirements
 
