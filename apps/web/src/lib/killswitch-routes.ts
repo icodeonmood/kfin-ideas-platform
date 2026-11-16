@@ -53,7 +53,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["attachments.open"],
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
-  { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
+  // The office screen's Ones (S-OFFICE) rest with the rest of the public Ones.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/(?:ones(?:\/constellation)?|display\/office)\/?$/,
+    switches: ["ones.public"],
+  },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
