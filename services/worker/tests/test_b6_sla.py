@@ -161,8 +161,10 @@ def test_an_overdue_committee_step_reads_as_words_not_a_number(seeded: Any) -> N
     assert "999999" not in subject + body
 
 
-def test_needs_info_pauses_review_and_withdraws_after_seven_working_days(item: Any) -> None:
-    db, users, rid, idea_uuid = item
+def test_needs_info_pauses_review_and_no_longer_withdraws(item: Any) -> None:
+    """The pause still works; the auto-withdrawal after seven working days is retired (DEC-106, R18): the overdue
+    question timer closes quietly and the idea stays where it is (L-QUESTIONS.clock/4)."""
+    db, _users, rid, idea_uuid = item
     review = engine.start(db, "review_item", rid, "review", now=MONDAY)
     before = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (review,)).fetchone()["due_at"]
     engine.pause(db, "review_item", rid, "review", now=MONDAY + dt.timedelta(days=1))
@@ -177,16 +179,13 @@ def test_needs_info_pauses_review_and_withdraws_after_seven_working_days(item: A
     engine.pause(db, "review_item", rid, "review", now=MONDAY + dt.timedelta(days=3))
     due_info = db.execute("SELECT due_at FROM sla_timers WHERE id = %s", (info,)).fetchone()["due_at"]
     assert due_info.astimezone(IST).date() == dt.date(2026, 11, 26)  # Tue 17th + 7 working days
-    engine.tick(db, now=due_info + dt.timedelta(minutes=5))
+    counts = engine.tick(db, now=due_info + dt.timedelta(minutes=5))
+    assert counts["withdrawn"] == 0 and counts["breaches"] == 0
     assert (
-        db.execute("SELECT stage FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()["stage"] == "withdrawn"
+        db.execute("SELECT stage FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()["stage"] == "needs_info"
     )
-    withdrawn = jobs(db, "idea.withdrawn_no_answer")
-    assert withdrawn and withdrawn[0]["refs"]["idea_id"] == "IDEA-2026-000951"
-    _subject, body, _ = message_for(
-        db, users["owner"]["id"], "idea.withdrawn_no_answer", "withdrawn-no-answer", withdrawn[0]["refs"]
-    )
-    assert "Forms wait a day" in body and "Reopen" in body
+    assert db.execute("SELECT state FROM sla_timers WHERE id = %s", (info,)).fetchone()["state"] == "stopped"
+    assert jobs(db, "idea.withdrawn_no_answer") == [] and jobs(db, "sla.breached") == []
 
 
 # --- B6 review regressions -------------------------------------------------------------------------------------
