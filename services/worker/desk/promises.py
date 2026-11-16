@@ -69,6 +69,8 @@ def _from_rule(base: Promises, data: dict[str, Any]) -> Promises:
         changes["answer_default"] = days[int(q["answer_default_days"])]
     if "deadline_hour" in q:
         changes["deadline_hour"] = int(q["deadline_hour"])
+    if "extend_by_days" in q:  # "Give 2 more days" (asked of lane A on 16 Nov)
+        changes["give_more_days"] = int(q["extend_by_days"])
     if "reminder_hours_before" in q:
         changes["reminders_before_hours"] = tuple(int(h) for h in q["reminder_hours_before"])
     for key, name in (
