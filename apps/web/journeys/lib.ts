@@ -182,10 +182,11 @@ export function draftUrl(idea: { uuid: string }, sub = ""): string {
 
 // --- Which modules are on main ---------------------------------------------------------------------------------------
 
-/** Off on purpose, so a step that needs them stays fixme even though code exists (reason shown on the board). */
+/** Off on purpose, so a step that needs them stays fixme even though code exists (reason shown on the board).
+ * `L-AUTH.email-code` is not a pack anchor: it names the email-code route of `L-AUTH.rules` for this list. */
 export const FORCE_FIXME: Readonly<Record<string, string>> = {
   "L-DRAFT.channels": "email and Teams intake off until IT (DEC-105)",
-  "L-AUTH.code": "email-code sign-in off until InfoSec (BLD-E002)",
+  "L-AUTH.email-code": "email-code sign-in off until InfoSec (BLD-E002)",
   "L-DRAFT.voice": "streamed voice off until IT, InfoSec and the DPO (DEC-105)",
 };
 
