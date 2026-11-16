@@ -19,6 +19,7 @@ import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Sorts } from "@/components/ui/sorts";
 import { tabPanelProps, Tabs } from "@/components/ui/tabs";
 import { Track } from "@/components/ui/track";
+import { sparkBurst } from "@/lib/motion/spark";
 
 const AREAS = [
   { value: "investor", label: "Investor service", count: 12 },
@@ -59,7 +60,8 @@ export function KitDemo() {
           <Button
             busy={busy}
             busyLabel="Sending…"
-            onClick={() => {
+            onClick={(e) => {
+              sparkBurst(e.currentTarget);
               setBusy(true);
               window.setTimeout(() => setBusy(false), 2_000);
             }}

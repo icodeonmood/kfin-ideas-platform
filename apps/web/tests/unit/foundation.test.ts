@@ -136,3 +136,21 @@ describe("F-MOTION FLIP helper (BLD-E005)", () => {
     expect(FLIP_LIMIT).toBe(180);
   });
 });
+
+describe("F-MOTION.inside: the 1% spark", () => {
+  it("eighteen slashes spread round the circle, 46 to 116 px out, in the pack's six colours", async () => {
+    const { sparkPaths } = await import("@/lib/motion/spark");
+    let seed = 0.37;
+    const random = () => (seed = ((seed * 9301 + 49297) % 233280) / 233280);
+    const paths = sparkPaths(18, random);
+    expect(paths).toHaveLength(18);
+    for (const p of paths) {
+      const d = Math.hypot(p.dx, p.dy);
+      expect(d).toBeGreaterThanOrEqual(46);
+      expect(d).toBeLessThanOrEqual(116);
+      expect(p.duration).toBeGreaterThanOrEqual(760);
+      expect(p.duration).toBeLessThanOrEqual(1120);
+    }
+    expect(new Set(paths.map((p) => p.colour)).size).toBe(6);
+  });
+});

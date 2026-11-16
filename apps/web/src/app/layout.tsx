@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import { PausedBanners } from "@/components/banners";
+import { Handover } from "@/components/motion/handover";
 import { FOLD_COOKIE, foldedFrom } from "@/components/shell/fold";
 import { ShellFrame } from "@/components/shell/frame";
 import { currentUser } from "@/server/auth/current";
@@ -54,6 +55,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           {children}
         </ShellFrame>
         <div id="mo-fx" aria-hidden="true" />
+        <Handover />
       </body>
     </html>
   );
