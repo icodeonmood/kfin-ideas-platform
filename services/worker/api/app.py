@@ -313,6 +313,13 @@ def wall_view() -> JSONResponse:
         return JSONResponse(wall(conn), headers={"Cache-Control": "no-store"})
 
 
+# The 1% Club's Wall, the Ones and Profile (lane E; A-API.wall, .ones, .ones-posts, .me). Routes live with the code
+# in wall/routes.py.
+from wall.routes import build as _wall_routes  # noqa: E402
+
+app.include_router(_wall_routes(require_token))
+
+
 @app.get("/internal/me/{user_id}/ideas", dependencies=[Depends(require_token)])
 def my_ideas_view(user_id: str) -> JSONResponse:
     """My ideas (AT-B7-02); the web app vouches for who the person is."""
