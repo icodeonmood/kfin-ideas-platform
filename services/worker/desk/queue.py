@@ -93,6 +93,10 @@ class Row:
     area: str = ""
     decide_by_at: dt.datetime | None = None
     decided_at: dt.datetime | None = None
+    asked: int = (
+        0  # the dots beside the Questions column: one per question, filled once answered (board Desk)
+    )
+    answered: int = 0
 
 
 def _committee_line(i: DeskIdea, now: dt.datetime, tz: dt.tzinfo) -> str | None:
@@ -109,6 +113,11 @@ def _committee_line(i: DeskIdea, now: dt.datetime, tz: dt.tzinfo) -> str | None:
     return "The Ones Committee’s window has closed. The decision stands."
 
 
+def _dots(i: DeskIdea) -> tuple[int, int]:
+    q = i.questions
+    return (q.count, q.answered) if q and q.sent_at else (0, 0)
+
+
 def row(i: DeskIdea, tab: Tab, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Row:
     who = f"{i.sharer_name}, {i.area}, {i.city}"
     if tab == "decided":
@@ -121,7 +130,7 @@ def row(i: DeskIdea, tab: Tab, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Ro
         return Row(
             i.idea_id, i.title, who, desk_line(i.questions, now, decided=True, tz=tz), None, None, None,
             when.day(i.decide_by, now, tz), "Open", "open", decision, _committee_line(i, now, tz), i.area,
-            i.decide_by, i.decided_at,
+            i.decide_by, i.decided_at, *_dots(i),
         )  # fmt: skip
     due, c, suffix = clock_of(i, tab, now)
     if tab == "waiting" and i.questions and overdue(i.questions, now):
@@ -133,6 +142,7 @@ def row(i: DeskIdea, tab: Tab, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Ro
     return Row(
         i.idea_id, i.title, who, desk_line(i.questions, now, tz=tz), c.label(suffix), c.variant, due,
         when.day(i.decide_by, now, tz), action, kind, area=i.area, decide_by_at=i.decide_by,  # type: ignore[arg-type]
+        asked=_dots(i)[0], answered=_dots(i)[1],
     )  # fmt: skip
 
 
