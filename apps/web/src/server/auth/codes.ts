@@ -13,14 +13,11 @@
  * - An address with no account gets the same answers as one with an account, and no email (no list of who works
  *   here). A leaver's address is told it cannot sign in (`L-AUTH.errors`).
  *
- * Storage sits behind `CodeStore`: `sign_in_codes` arrives in lane E's cut-over; memory backs the unit tests.
+ * Storage sits behind `CodeStore`: `sign_in_codes` from lane E's cut-over, and an in-memory twin for the unit tests.
  */
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
-import { sql } from "kysely";
-
 import { getDb } from "../db";
-import { withTableFallback } from "./table-fallback";
 
 /** Sends allowed per address in the window; "Too many tries. Wait 10 minutes, or use single sign-on." */
 export const SENDS_PER_WINDOW = 5;
@@ -229,27 +226,22 @@ export class MemoryCodeStore implements CodeStore {
 }
 
 /**
- * `sign_in_codes` (lane E's cut-over, 20261121500100): id (bigint identity), email_hash, code_hash, expires_at,
- * tries_left, sent_at, superseded_at. Raw SQL so this file does not depend on generated types before the table is
- * on `main`.
+ * `sign_in_codes` (lane E's cut-over, 20261121500100): id, email_hash, code_hash, expires_at, tries_left, sent_at,
+ * superseded_at.
  */
 export class PgCodeStore implements CodeStore {
   async current(eHash: string) {
-    const r = await sql<{
-      id: string;
-      code_hash: string;
-      expires_at: Date;
-      tries_left: number;
-      sent_at: Date;
-    }>`
-      SELECT id::text AS id, code_hash, expires_at, tries_left, sent_at FROM sign_in_codes
-      WHERE email_hash = ${eHash} AND superseded_at IS NULL
-      ORDER BY sent_at DESC LIMIT 1
-    `.execute(getDb());
-    const row = r.rows[0];
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select(["id", "code_hash", "expires_at", "tries_left", "sent_at"])
+      .where("email_hash", "=", eHash)
+      .where("superseded_at", "is", null)
+      .orderBy("sent_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
     return row
       ? {
-          id: row.id,
+          id: String(row.id),
           emailHash: eHash,
           codeHash: row.code_hash,
           expiresAt: new Date(row.expires_at),
@@ -264,46 +256,63 @@ export class PgCodeStore implements CodeStore {
     await getDb()
       .transaction()
       .execute(async (trx) => {
-        await sql`
-          UPDATE sign_in_codes SET superseded_at = ${row.sentAt}
-          WHERE email_hash = ${row.emailHash} AND superseded_at IS NULL
-        `.execute(trx);
-        await sql`
-          INSERT INTO sign_in_codes (email_hash, code_hash, expires_at, tries_left, sent_at)
-          VALUES (${row.emailHash}, ${row.codeHash}, ${row.expiresAt}, ${row.triesLeft}, ${row.sentAt})
-        `.execute(trx);
+        await trx
+          .updateTable("sign_in_codes")
+          .set({ superseded_at: row.sentAt })
+          .where("email_hash", "=", row.emailHash)
+          .where("superseded_at", "is", null)
+          .execute();
+        await trx
+          .insertInto("sign_in_codes")
+          .values({
+            email_hash: row.emailHash,
+            code_hash: row.codeHash,
+            expires_at: row.expiresAt,
+            tries_left: row.triesLeft,
+            sent_at: row.sentAt,
+          })
+          .execute();
       });
   }
 
   async spendTry(id: string, now: Date) {
-    const r = await sql<{ tries_left: number }>`
-      UPDATE sign_in_codes SET tries_left = tries_left - 1
-      WHERE id = ${id}::bigint AND superseded_at IS NULL AND expires_at > ${now} AND tries_left > 0
-      RETURNING tries_left
-    `.execute(getDb());
-    return r.rows[0] ? r.rows[0].tries_left : null;
+    const row = await getDb()
+      .updateTable("sign_in_codes")
+      .set((eb) => ({ tries_left: eb("tries_left", "-", 1) }))
+      .where("id", "=", id)
+      .where("superseded_at", "is", null)
+      .where("expires_at", ">", now)
+      .where("tries_left", ">", 0)
+      .returning("tries_left")
+      .executeTakeFirst();
+    return row ? row.tries_left : null;
   }
 
   async use(id: string, now: Date) {
-    const r = await sql`
-      UPDATE sign_in_codes SET superseded_at = ${now} WHERE id = ${id}::bigint AND superseded_at IS NULL
-      RETURNING 1
-    `.execute(getDb());
-    return r.rows.length === 1;
+    const row = await getDb()
+      .updateTable("sign_in_codes")
+      .set({ superseded_at: now })
+      .where("id", "=", id)
+      .where("superseded_at", "is", null)
+      .returning("id")
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async sentSince(eHash: string, since: Date) {
-    const r = await sql<{ n: string }>`
-      SELECT count(*)::text AS n FROM sign_in_codes WHERE email_hash = ${eHash} AND sent_at >= ${since}
-    `.execute(getDb());
-    return Number(r.rows[0]?.n ?? 0);
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select((eb) => eb.fn.countAll<string>().as("n"))
+      .where("email_hash", "=", eHash)
+      .where("sent_at", ">=", since)
+      .executeTakeFirst();
+    return Number(row?.n ?? 0);
   }
 }
 
 let store: CodeStore | undefined;
 
-/** The table; in process memory while the table is missing (before the cut-over, BLD-A173). */
 export function codeStore(): CodeStore {
-  store ??= withTableFallback<CodeStore>("sign_in_codes", new PgCodeStore(), new MemoryCodeStore());
+  store ??= new PgCodeStore();
   return store;
 }
