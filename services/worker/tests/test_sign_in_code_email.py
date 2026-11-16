@@ -40,12 +40,13 @@ def test_the_code_email_goes_out_at_once_and_nothing_keeps_the_code(
     db, user_id, address = person
     sent: list[tuple[str, Any]] = []
     monkeypatch.setattr("comms.sign_in_code._smtp", lambda to, email: sent.append((to, email)))
+    queued = db.execute("SELECT count(*) AS n FROM notifications").fetchone()["n"]
     sign_in_code.send(db, user_id, "481902", 10)
     assert [to for to, _ in sent] == [address]
     email = sent[0][1]
     assert email.subject == "Your 1% Club sign-in code"
     assert "481902" in email.text and "10 minutes" in email.text and "Synthetic" in email.text
-    assert db.execute("SELECT count(*) AS n FROM notifications").fetchone()["n"] == 0
+    assert db.execute("SELECT count(*) AS n FROM notifications").fetchone()["n"] == queued  # never queued
     assert "481902" not in captured_logs.getvalue()
 
 
