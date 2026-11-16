@@ -37,6 +37,7 @@ Never run `git reset`, `git stash` or a whole-file `git add` in a checkout anoth
 | B | Parallel build | `.worktrees/build-b*` | BLD-200 to BLD-229 | `202611212xxxxx` |
 | C | Feature revisions and new features | `.worktrees/build-c` | none | `202611213xxxxx` |
 | D | Design track: every screen and interaction | `.worktrees/design` | none | `202611214xxxxx` (reserved; it should not need one) |
+| E | Planning and the design-handoff cut-over (`docs/SHIP_PLAN_1PC.md`): contracts, the schema cut-over, retirements, the idea page, My ideas, the Wall, Profile | `.worktrees/handoff` | none | `202611215xxxxx` (sorts after every other lane's, so the cut-over runs last on a fresh database) |
 
 ## Product decisions
 
