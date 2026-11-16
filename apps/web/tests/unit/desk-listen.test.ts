@@ -443,7 +443,7 @@ describe("L-LISTEN/7 the speech engine fails", () => {
     expect(state()).toMatchObject({ playing: false, error: true });
     expect(states.at(-1)?.error).toBe(true);
     expect(time.running()).toBe(false);
-    expect(LISTEN_ERROR).toBe("Couldn't prepare the audio. Try again.");
+    expect(LISTEN_ERROR).toBe("Couldn’t prepare the audio. Try again.");
   });
 
   it("play again clears the error", () => {
