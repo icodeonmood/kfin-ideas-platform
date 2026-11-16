@@ -50,10 +50,6 @@
     "veto_desk_decision": {
       "core_committee": "yes"
     },
-    "approve_cluster_proposals": {
-      "reviewer": "yes",
-      "admin": "yes"
-    },
     "propose_rule_changes": {
       "reviewer": "yes",
       "admin": "yes"
@@ -272,18 +268,11 @@
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
-    "GET /api/clusters                                 see_org_ideas",
-    "GET /api/clusters/{id}                            see_org_ideas",
-    "POST /api/clusters/{id}/join                      submit",
     "GET /api/review/items                             view_review_queue",
     "GET /api/review/items/{id}                        view_review_queue",
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
-    "GET /api/review/cluster-runs                      view_review_queue",
-    "POST /api/review/cluster-runs                     approve_cluster_proposals",
-    "GET /api/review/cluster-proposals/{id}            view_review_queue",
-    "POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals",
     "GET /api/review/qualify/{id}                      view_review_queue",
     "POST /api/review/qualify/{id}                     work_review_queue",
     "GET /api/committee/rounds                         score",

@@ -43,7 +43,6 @@ const SECTION_3_1: Record<string, string[]> = {
   work_review_queue: ["reviewer", "admin"],
   view_review_queue: ["reviewer", "core_committee", "admin"],
   veto_desk_decision: ["core_committee"],
-  approve_cluster_proposals: ["reviewer", "admin"],
   propose_rule_changes: ["reviewer", "admin"],
   approve_scorecard_changes: ["core_committee"],
   see_core_briefs: ["core_committee"],
