@@ -7,7 +7,7 @@
 # a new route cannot ship without a line in this file.
 version: "1.0"
 
-roles: [contributor, reviewer, lob_committee, core_committee, appeal_panel, working_group, sponsor, admin]
+roles: [contributor, reviewer, lob_committee, core_committee, appeal_panel, working_group, sponsor, admin, committee]
 role_aliases:
   core_chair: core_committee          # the chair is a core committee member
 extra_roles: [infosec, hr, ceo]       # not columns in §3.1: kill switches (§7.6) and the CEO's sponsorships (DEC-042)
@@ -37,6 +37,9 @@ capabilities:
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
+  # The Ones Committee's window (L-COMMITTEE, S-R4; DEC-102): every desk decision for 30 days, extend, reverse once.
+  # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
+  committee_window:           { committee: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -60,6 +63,7 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
 
 # No session needed.
 public:
@@ -169,6 +173,29 @@ endpoints:
   - PUT /api/ember/{id}/note                          write_ember_note
   - POST /api/ember/{id}/ready                        write_ember_note   # the worker allows the core committee chair only (BLD-134)
   - POST /api/ember/{id}/send                         send_ember
+
+  # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
+  # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
+  - GET /api/desk                                     view_review_queue
+  - GET /api/desk/ideas/{id}                          view_review_queue
+  - GET /api/desk/ideas/{id}/listen                   view_review_queue   # behind desk.listen
+  - POST /api/desk/ideas/{id}/open                    work_review_queue
+  - PUT /api/desk/ideas/{id}/worth                    work_review_queue
+  - POST /api/desk/ideas/{id}/decision                work_review_queue
+  - GET /api/desk/ideas/{id}/merge-sheet              work_review_queue
+  - POST /api/desk/ideas/{id}/merge                   work_review_queue
+  - GET /api/desk/ideas/{id}/suggested-questions      work_review_queue
+  - POST /api/desk/ideas/{id}/question-sets           work_review_queue
+  - POST /api/question-sets/{id}/extend               work_review_queue
+  - POST /api/question-sets/{id}/remind               work_review_queue
+  - GET /api/ideas/{id}/question-set                  signed_in       # the sharer only, checked by the worker
+  - PUT /api/questions/{id}/answer                    signed_in       # the sharer only, checked by the worker
+  - POST /api/question-sets/{id}/send                 signed_in       # the sharer only, checked by the worker
+  - GET /api/ideas/{id}/decision                      signed_in       # the decision as the sharer and crew read it
+  - GET /api/committee                                committee_window
+  - GET /api/committee/windows/{id}/reversing         committee_window
+  - POST /api/committee/windows/{id}/extend           committee_window
+  - POST /api/committee/windows/{id}/reverse          committee_window
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
