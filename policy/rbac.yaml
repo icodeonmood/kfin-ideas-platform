@@ -76,6 +76,7 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  auth.email_code: [infosec]                          # BLD-E002: sign-in by email code; InfoSec only, off until it approves
 
 # No session needed.
 public:

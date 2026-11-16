@@ -32,6 +32,16 @@ describe("kill switch route map (§7.6)", () => {
     expect(BANNERS["speech.hosted"]).not.toMatch(/sarvam|vendor|third/i);
   });
 
+  it("BLD-E002: sign-in by email code needs auth.email_code; single sign-on needs no switch", () => {
+    expect(switchesFor("POST", "/auth/code/send")).toEqual(["auth.email_code"]);
+    expect(switchesFor("POST", "/auth/code/verify")).toEqual(["auth.email_code"]);
+    expect(switchesFor("POST", "/auth/sso/start")).toEqual([]);
+    expect(switchesFor("GET", "/auth/callback")).toEqual([]);
+    expect(BANNERS["auth.email_code"]).toBe(
+      "Signing in with a code by email is coming soon. Use single sign-on.",
+    );
+  });
+
   it("leaves reads open, except file downloads and the wall", () => {
     expect(switchesFor("GET", "/api/submissions/abc/scan-status")).toEqual([]);
     expect(switchesFor("GET", "/api/ideas/IDEA-2026-000001")).toEqual([]);

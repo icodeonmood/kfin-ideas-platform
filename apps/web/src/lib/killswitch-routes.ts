@@ -22,7 +22,8 @@ export type SwitchName =
   | "appeals.filing"
   | "capture.mic_hint"
   | "capture.voice"
-  | "speech.hosted";
+  | "speech.hosted"
+  | "auth.email_code";
 
 interface Rule {
   methods: readonly string[];
@@ -86,6 +87,8 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["committee.flow"],
   },
   { methods: ["POST"], pattern: /^\/api\/appeals\/?$/, switches: ["appeals.filing"] },
+  // Sign-in by email code (L-AUTH.rules/2-3) waits for InfoSec: off until then (BLD-E002). Single sign-on needs none.
+  { methods: ["POST"], pattern: /^\/auth\/code\/(?:send|verify)\/?$/, switches: ["auth.email_code"] },
 ];
 
 /**
@@ -116,6 +119,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096).
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // The sign-in screen hides the email route while it is off, so people normally never meet this (BLD-E002).
+  "auth.email_code": "Signing in with a code by email is coming soon. Use single sign-on.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
