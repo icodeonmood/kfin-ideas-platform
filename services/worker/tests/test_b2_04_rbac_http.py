@@ -126,7 +126,8 @@ def test_pages_follow_the_policy(sessions: dict[str, Any]) -> None:
     redirected = (302, 307)
     assert sessions["contributor"].get("/review").status_code in redirected
     assert sessions["reviewer"].get("/review").status_code not in redirected
-    assert sessions["core_committee"].get("/desk-decisions").status_code not in redirected
+    assert sessions["core_committee"].get("/committee").status_code not in redirected
+    assert sessions["reviewer"].get("/committee").status_code in redirected
     assert sessions["contributor"].get("/admin").status_code in redirected
     assert sessions["admin"].get("/admin").status_code not in redirected
 
@@ -149,9 +150,6 @@ def test_get_requests_and_pages_create_nothing(sessions: dict[str, Any]) -> None
             "/ember",
             "/ember/compose",
             "/my-ideas",
-            "/my-ideas/lens",
-            "/lenses",
-            "/learning",
             "/delivery",
         ]
         for role in ("admin", "core_chair", "core_committee"):

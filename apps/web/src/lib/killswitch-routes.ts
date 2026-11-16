@@ -44,10 +44,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
-    pattern: /^\/api\/ideas\/[^/]+\/(?:plus-one|answer|disagree)\/?$/,
+    pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
-  { methods: ["POST"], pattern: /^\/api\/clusters\/[^/]+\/join\/?$/, switches: ["submissions"] },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
@@ -55,12 +54,7 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
-  { methods: ["POST"], pattern: /^\/api\/review\/cluster-runs\/?$/, switches: ["clusters.batch"] },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
-  // The org-wide announcement names Ones: it waits while they are off the wall (Ones review).
-  { methods: ["POST"], pattern: /^\/api\/ones\/announce\/?$/, switches: ["ones.public"] },
-  // Running a learning loop by hand stops with the scheduled ones (§5); the worker refuses it too.
-  { methods: ["POST"], pattern: /^\/api\/learning\/run\/?$/, switches: ["learning.jobs"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
   // Evidence files on deliveries use the same pipeline and switches as research files (BLD-131).
@@ -79,13 +73,6 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
-  {
-    methods: ["POST"],
-    pattern:
-      /^\/api\/(?:committee\/(?:cycles|rounds\/[^/]+\/action|presentations\/[^/]+\/action)|presentations\/[^/]+\/action|review\/qualify\/[^/]+|admin\/conflicts|appeals\/[^/]+\/decision)\/?$/,
-    switches: ["committee.flow"],
-  },
-  { methods: ["POST"], pattern: /^\/api\/appeals\/?$/, switches: ["appeals.filing"] },
 ];
 
 /**
@@ -121,8 +108,6 @@ export const BANNERS: Record<SwitchName, string> = {
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
 export const BECAUSE = {
   emberWaitsForOnes: "The Ember names them, so it can't go out until they are back.",
-  announcementWaitsForOnes:
-    "The announcement names them, so it waits. Show the Ones on the wall again first (Admin page).",
 } as const;
 
 /**
@@ -137,25 +122,18 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
-  // The Ones console keeps working whatever is paused: it is the committee's own record (DEC-040). Text checks
-  // inside these calls answer 503 on their own when the assistant is off.
-  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/(?:measures|awards)|screen-mode)\/?$/,
+  // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
+  // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
+  // announcement are retired (DEC-106); proposals stay until lane A's admin path replaces them.
+  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
-  /^\/api\/review\/cluster-proposals\/[^/]+\/action\/?$/, // deciding proposals already made needs no switch; new runs are behind clusters.batch
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
-  /^\/api\/lenses\/rebuild\/?$/, // counts only, from the database; §7.6 has no lens switch
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
-  /^\/api\/learning\/proposals\/[^/]+\/decide\/?$/, // a person recording a decision on a proposal already made
-  /^\/api\/learning\/role-themes\/[^/]+\/decide\/?$/, // the same for a role's friction themes (BLD-139)
-  /^\/api\/learning\/committee\/proposals\/[^/]+\/decide\/?$/, // the core committee deciding one (BLD-149, BLD-150)
-  // An admin writing an approved term or tag into the company repo (BLD-136): a person's own console step on the
-  // admin page, not employee-facing; the text checks answer 503 on their own when the assistant is off.
-  /^\/api\/learning\/proposals\/[^/]+\/publish\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

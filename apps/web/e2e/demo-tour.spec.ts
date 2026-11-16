@@ -78,56 +78,23 @@ test("5-6: the wall and an idea page", async ({ browser }) => {
   await expectNoSeriousAxeIssues(kavya);
 });
 
-test("7-8: the review desk and desk decisions", async ({ browser }) => {
+// Desk decisions (step 8) is retired (DEC-106, R10); lane B rebuilds the committee window on /committee.
+test("7: the review desk", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
   await desk.goto("/review");
   await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
   await expectNoSeriousAxeIssues(desk);
-  const member = await as(browser, DEMO.member);
-  await member.goto("/desk-decisions");
-  await expect(
-    member
-      .getByText("Explain transaction rejections to distributors in plain words", { exact: false })
-      .first(),
-  ).toBeVisible();
-  await expectNoSeriousAxeIssues(member);
 });
 
-test("9: the console's three waiting states", async ({ browser }) => {
-  const chair = await as(browser, DEMO.chair);
-  await chair.goto("/ones/console");
-  await expect(
-    chair
-      .locator("li.proposal", { hasText: "Vikram Bhat" })
-      .getByRole("button", { name: "Approve as chair" }),
-  ).toBeVisible();
-  await expect(chair.locator("li.proposal", { hasText: "Farhan Qureshi" })).toContainText("Tier 1 to Tier 2");
-  await expect(chair.locator("li.proposal", { hasText: "Suresh Patil" })).toContainText(
-    "Ready for the admin member",
-  );
-  await expectNoSeriousAxeIssues(chair);
-  const admin = await as(browser, DEMO.admin);
-  await admin.goto("/ones/console");
-  await expect(
-    admin
-      .locator("li.proposal", { hasText: "Suresh Patil" })
-      .getByRole("button", { name: "Carry out and send" }),
-  ).toBeVisible();
-  const ceo = await as(browser, DEMO.ceo);
-  await ceo.goto("/ones/console");
-  await expect(ceo.getByRole("heading", { level: 2, name: "Propose a One" })).toBeVisible();
-});
-
-test("10-12: leaderboard, manager view and the office screen", async ({ browser }) => {
+// The Ones console (step 9) is retired (DEC-106, R21).
+// The manager view (step 11) is retired (DEC-106, R12).
+test("10, 12: leaderboard and the office screen", async ({ browser }) => {
   const ananya = await as(browser, DEMO.one);
   await ananya.goto("/ones/leaderboard");
   await expect(ananya.getByRole("cell", { name: "Rohit Menon" })).toBeVisible();
   await expectNoSeriousAxeIssues(ananya);
   const rahul = await as(browser, DEMO.manager);
-  await rahul.goto("/my-team");
-  await expect(rahul.getByRole("cell", { name: "Kavya Menon" })).toBeVisible();
-  await expectNoSeriousAxeIssues(rahul);
   await rahul.goto("/constellation");
   await expect(rahul.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
   await expectNoSeriousAxeIssues(rahul);
@@ -142,7 +109,9 @@ test("13-14: the launch screen and the kill switches", async ({ browser }) => {
   await expectNoSeriousAxeIssues(admin);
 });
 
-test("15-21: delivery, lenses and learning (read only, so the demo stays ready)", async ({ browser }) => {
+test("15-21: delivery (read only, so the demo stays ready; lenses and learning retired, DEC-106)", async ({
+  browser,
+}) => {
   const meera = await as(browser, DEMO.member);
   await meera.goto("/delivery");
   await expect(
@@ -150,9 +119,6 @@ test("15-21: delivery, lenses and learning (read only, so the demo stays ready)"
   ).toBeVisible();
   await expect(meera.getByRole("button", { name: "Start the handover" }).first()).toBeVisible();
   await expect(meera.getByText("Live sync with the delivery pipeline: coming soon")).toBeVisible();
-  await expectNoSeriousAxeIssues(meera);
-  await meera.goto("/lenses");
-  await expect(meera.getByRole("heading", { level: 2, name: "By line of business" })).toBeVisible();
   await expectNoSeriousAxeIssues(meera);
 
   const ceo = await as(browser, DEMO.ceo);
@@ -182,8 +148,5 @@ test("15-21: delivery, lenses and learning (read only, so the demo stays ready)"
   await sana.goto("/delivery");
   await sana.getByRole("link", { name: /where each service request is/ }).click();
   await expect(sana.getByRole("button", { name: "Finance has confirmed the money" })).toBeVisible();
-  await expectNoSeriousAxeIssues(sana);
-  await sana.goto("/learning");
-  await expect(sana.getByRole("heading", { level: 3, name: "IFSC" })).toBeVisible();
   await expectNoSeriousAxeIssues(sana);
 });

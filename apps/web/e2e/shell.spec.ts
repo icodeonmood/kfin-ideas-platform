@@ -191,7 +191,7 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
 
 test("people without the role are sent home from Review and Admin", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
-  for (const path of ["/review", "/admin", "/desk-decisions"]) {
+  for (const path of ["/review", "/admin", "/committee"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/$/);
   }

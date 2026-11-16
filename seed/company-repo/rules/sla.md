@@ -30,7 +30,6 @@ veto_window:
   limit_wd: 5
 needs_info:
   limit_wd: 7
-  on_breach: withdraw_with_reopen
 cluster_proposal:
   limit_wd: 5
   escalate_to: core_chair

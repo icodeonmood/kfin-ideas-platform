@@ -39,24 +39,12 @@ const ALL = [
 const SECTION_3_1: Record<string, string[]> = {
   submit: ALL,
   see_org_ideas: ALL,
-  see_committee_only_ideas: ALL,
   work_review_queue: ["reviewer", "admin"],
   view_review_queue: ["reviewer", "core_committee", "admin"],
   veto_desk_decision: ["core_committee"],
-  approve_cluster_proposals: ["reviewer", "admin"],
-  propose_rule_changes: ["reviewer", "admin"],
-  approve_scorecard_changes: ["core_committee"],
-  see_core_briefs: ["core_committee"],
-  present: ALL,
   open_attachments: ALL,
   see_restored_values: ALL,
-  score: ["lob_committee", "core_committee"],
-  decide: ["lob_committee", "core_committee"],
-  hear_appeals: ["core_committee", "appeal_panel"],
-  run_action_plans: ["working_group", "sponsor", "admin"],
   approve_handover: ["sponsor"],
-  see_people_view: ALL,
-  reveal_identity: ["admin"],
   grant_roles: ["admin"],
 };
 
@@ -73,8 +61,6 @@ describe("policy agrees with ARCHITECTURE §3.1", () => {
   }
 
   it("keeps the scope words the handlers must enforce", () => {
-    expect(scopesFor(rolesOf("lob_committee"), "see_committee_only_ideas")).toEqual(["own", "own_lob"]);
-    expect(scopesFor(rolesOf("admin"), "reveal_identity")).toEqual(["with_reason_logged"]);
     expect(scopesFor(rolesOf("contributor"), "see_restored_values")).toEqual(["own_idea"]);
   });
 
@@ -153,19 +139,13 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
   it("pages follow the same rules", () => {
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
-    expect(canSeePage(rolesOf("core_committee"), "/desk-decisions")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
-    // A sub-page's own rule applies, not /admin's: InfoSec flips switches but does not clear conflict flags.
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    expect(canSeePage(rolesOf("infosec"), "/admin/conflicts")).toBe(false);
-    expect(canSeePage(rolesOf("hr"), "/admin/conflicts")).toBe(false);
-    expect(canSeePage(rolesOf("admin"), "/admin/conflicts")).toBe(true);
-    expect(canSeePage(rolesOf("core_committee"), "/reports")).toBe(true);
-    expect(canSeePage(rolesOf("contributor"), "/reports")).toBe(false);
+    // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
+    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
-    expect(canSeePage(rolesOf("contributor"), "/ones/console")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
-    expect(canSeePage(rolesOf("core_committee"), "/ones/console")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
   });
 
@@ -192,7 +172,7 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });
 
-  it("delivery, lenses and learning (BLD-115 to BLD-122)", () => {
+  it("delivery (BLD-115 to BLD-122)", () => {
     // Anyone may be named owner, PM or milestone owner: the worker serves only their own deliveries.
     expect(decide(rolesOf("contributor"), "GET", "/api/delivery").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "PUT", "/api/delivery/4/measurements/day_30").kind).toBe("allow");
@@ -207,13 +187,7 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(decide(rolesOf("admin"), "POST", "/api/delivery/4/measurements/day_90/finance").kind).toBe(
       "allow",
     );
-    expect(decide(rolesOf("contributor"), "GET", "/api/lenses").kind).toBe("deny");
-    expect(decide(rolesOf("lob_committee"), "GET", "/api/lenses").kind).toBe("allow");
-    expect(decide(rolesOf("core_committee"), "GET", "/api/learning").kind).toBe("deny");
-    expect(decide(rolesOf("admin"), "POST", "/api/learning/proposals/3/decide").kind).toBe("allow");
     expect(canSeePage(rolesOf("contributor"), "/delivery/4")).toBe(true); // their own, or not found
-    expect(canSeePage(rolesOf("contributor"), "/lenses")).toBe(false);
-    expect(canSeePage(rolesOf("admin"), "/learning")).toBe(true);
   });
 });
 

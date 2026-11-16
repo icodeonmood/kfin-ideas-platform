@@ -245,12 +245,7 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             {(FINAL[status.final] ?? MOVED_ON).title}
           </h3>
           <p>{(FINAL[status.final] ?? MOVED_ON).text}</p>
-          <FollowUp
-            id={id}
-            question={status.question ?? null}
-            canDisagree={Boolean(status.can_disagree)}
-            onChanged={refresh}
-          />
+          <FollowUp id={id} question={status.question ?? null} onChanged={refresh} />
         </div>
       ) : null}
 
@@ -283,22 +278,8 @@ export function ScanStatus({ id, initial }: { id: string; initial: Status | null
             >
               Edit my idea
             </button>
-            {status.blocked.can_contest ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() => void choose("not_personal_data")}
-              >
-                This is not personal data
-              </button>
-            ) : null}
           </div>
-          <p className="muted">
-            {status.blocked.can_contest
-              ? 'If you choose "This is not personal data", your idea goes ahead and the review desk checks these details first.'
-              : "Please edit these details out."}
-          </p>
+          <p className="muted">Please edit these details out.</p>
         </div>
       ) : null}
 

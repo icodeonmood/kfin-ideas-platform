@@ -14,26 +14,14 @@ extra_roles: [infosec, hr, ceo]       # not columns in §3.1: kill switches (§7
 
 capabilities:
   signed_in:                  { contributor: yes }
-  submit:                     { contributor: yes }                     # submit, join, +1, appeal own outcomes
+  submit:                     { contributor: yes }                     # submit and join (+1 and appeals retired, DEC-106)
   see_org_ideas:              { contributor: yes }
-  see_committee_only_ideas:   { contributor: own, reviewer: yes, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: yes }
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  approve_cluster_proposals:  { reviewer: yes, admin: yes }
-  propose_rule_changes:       { reviewer: yes, admin: yes }
-  approve_scorecard_changes:  { core_committee: yes }
-  see_core_briefs:            { core_committee: yes }
-  present:                    { contributor: when_invited }
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
-  score:                      { lob_committee: own_lob, core_committee: yes }
-  decide:                     { lob_committee: park_or_decline_own_lob, core_committee: yes }
-  hear_appeals:               { core_committee: lob_appeals, appeal_panel: yes }
-  run_action_plans:           { working_group: yes, sponsor: yes, admin: yes }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
-  see_people_view:            { contributor: own_history, reviewer: yes, lob_committee: own_lob, core_committee: yes, admin: yes }
-  reveal_identity:            { admin: with_reason_logged }
   grant_roles:                { admin: yes }
   manage_kill_switches:       { admin: per_switch, infosec: per_switch, hr: per_switch }
   # The Ones (DEC-040 to DEC-086): propose, approve (chair or a recorded majority), carry out (admin member).
@@ -41,18 +29,14 @@ capabilities:
   propose_ones:               { core_committee: yes, ceo: yes }
   decide_ones:                { core_committee: yes }
   carry_out_ones:             { admin: yes }
-  # Delivery (§4.8 to §4.11), lenses (§4.14) and learning (§5). The worker checks each person's part again: an
-  # owner, sponsor, delivery PM or milestone owner acts only on their own deliveries.
+  # Delivery (§4.8 to §4.11). The worker checks each person's part again: an owner, sponsor, delivery PM or
+  # milestone owner acts only on their own deliveries. Lenses and learning are retired (DEC-106).
   work_delivery:              { contributor: as_party, core_committee: yes, admin: yes }
   start_handover:             { core_committee: yes, admin: yes }
   manage_delivery:            { admin: yes }                           # link the pipeline page; Finance's confirmation
-  view_lenses:                { lob_committee: yes, core_committee: yes, admin: yes }   # counts only
-  review_learning:            { admin: yes }                           # the product team's proposals and reports
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
-  # Fairness and calibration (§3.8, §5.4, BLD-223): counts only, small numbers suppressed.
-  view_fairness_reports:      { core_committee: yes, admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -94,7 +78,6 @@ endpoints:
   - POST /api/me/privacy-notice                       signed_in
   - GET /api/me/ideas                                 signed_in
   - GET /api/me/points                                signed_in
-  - GET /api/me/lens                                  signed_in       # only ever the person's own (BLD-135)
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
   - GET /api/inbox                                    signed_in
@@ -106,7 +89,7 @@ endpoints:
   - POST /api/submissions/{id}/submit                 submit
   - GET /api/submissions/{id}/scan-status             submit
   - GET /api/submissions/{id}/scan-events             submit          # live progress, server-sent events (§8 week 3; behind scan.live)
-  - POST /api/submissions/{id}/scan-choice            submit          # edit, contest, redirect or override (addition to §8, BLD-075)
+  - POST /api/submissions/{id}/scan-choice            submit          # edit, redirect or override (addition to §8, BLD-075; contest retired, DEC-106)
   - POST /api/submissions/{id}/confirm-card           submit
   - POST /api/submissions/{id}/choose                 submit
   - POST /api/submissions/{id}/attachments            submit
@@ -117,47 +100,20 @@ endpoints:
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit
-  - POST /api/ideas/{id}/plus-one                     submit
   - POST /api/ideas/{id}/answer                       submit
-  - POST /api/ideas/{id}/disagree                     submit
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
-  - GET /api/clusters                                 see_org_ideas
-  - GET /api/clusters/{id}                            see_org_ideas
-  - POST /api/clusters/{id}/join                      submit
   - GET /api/review/items                             view_review_queue
   - GET /api/review/items/{id}                        view_review_queue
   - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
-  - GET /api/review/cluster-runs                      view_review_queue          # weekly clustering runs (§4.4 B; addition to §8)
-  - POST /api/review/cluster-runs                     approve_cluster_proposals  # run now (behind clusters.batch)
-  - GET /api/review/cluster-proposals/{id}            view_review_queue
-  - POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals  # approve, remove a member, reject
-  - GET /api/review/qualify/{id}                      view_review_queue          # qualify (§4.5; addition to §8)
-  - POST /api/review/qualify/{id}                     work_review_queue
-  - GET /api/committee/rounds                         score                      # §4.6 (the worker checks the roster)
-  - GET /api/committee/rounds/{id}                    score
-  - POST /api/committee/rounds/{id}/action            score                      # score, revise, step aside, reveal, decide
-  - POST /api/committee/cycles                        decide                     # the chair opens a cycle (worker checks the chair)
-  - GET /api/committee/presentations/{id}             decide                     # §4.7 (worker checks the core committee)
-  - POST /api/committee/presentations/{id}/action     decide                     # session, sealed assessment, collation, decision
-  - GET /api/presentations/{id}                       present                    # a contributor's invitation (worker checks the cluster)
-  - POST /api/presentations/{id}/action               present                    # accept with presenters and a slot; edit the outline
-  - GET /api/working-groups/{id}                      signed_in                  # members, the sponsor, the committee and admins
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
   - DELETE /api/admin/roles/{id}                      grant_roles
   - GET /api/admin/kill-switches                      manage_kill_switches
   - PUT /api/admin/kill-switches                      manage_kill_switches
-  - POST /api/admin/reveal                            reveal_identity
-  - POST /api/admin/conflicts                         grant_roles                # clear a manager's conflict flag with a reason (§3.1, BLD-221)
-  - GET /api/appeals                                  signed_in                  # §4.12: decisions on my groups, appeals I hear (worker checks)
-  - POST /api/appeals                                 submit                     # appeal an own group's decision (worker checks the contributor)
-  - GET /api/appeals/{id}                             hear_appeals               # the panel's blind view (worker checks the panel)
-  - POST /api/appeals/{id}/decision                   hear_appeals               # the panel chair records the outcome
-  - GET /api/reports/{kind}                           view_fairness_reports      # fairness and calibration (§3.8, §5.4)
   # The Ones (DEC-034 to DEC-087). The worker re-checks each person's grants; "signed_in" routes act only on
   # the person's own record, or need an invitation the worker checks.
   - GET /api/ones                                     see_org_ideas
@@ -172,18 +128,15 @@ endpoints:
   - POST /api/ones/proposals/{id}/messages            signed_in       # committee, CEO or an invited colleague
   - POST /api/ones/proposals/{id}/invites             decide_ones
   - PUT /api/ones/{id}/measures                       carry_out_ones
-  - POST /api/ones/{id}/awards                        carry_out_ones
   - GET /api/ones/{id}/showcase                       view_ones_console
   - PUT /api/ones/screen-mode                         carry_out_ones
-  - POST /api/ones/announce                           carry_out_ones
   - GET /api/me/one                                   signed_in
   - POST /api/me/one/number                           signed_in
   - POST /api/me/one/brief                            signed_in
   - POST /api/me/one/glow-up/{id}/seen                signed_in
   - GET /api/me/one/showcase                          signed_in
   - PUT /api/me/one/showcase                          signed_in
-  - GET /api/me/team                                  signed_in
-  # Delivery, lenses and learning (BLD-115 to BLD-122).
+  # Delivery (BLD-115 to BLD-122). Lenses and learning are retired (DEC-106).
   - GET /api/delivery                                 work_delivery   # your own deliveries; committees and admins see all
   - POST /api/delivery                                start_handover
   - GET /api/delivery/{id}                            work_delivery
@@ -209,17 +162,6 @@ endpoints:
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
   - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
-  - GET /api/lenses                                   view_lenses
-  - POST /api/lenses/rebuild                          review_learning
-  - GET /api/learning                                 review_learning
-  - POST /api/learning/proposals/{id}/decide          review_learning
-  - POST /api/learning/proposals/{id}/publish         review_learning   # write an approved term or tag into the company repo (BLD-136)
-  - POST /api/learning/role-themes/{id}/decide       review_learning   # approve or decline a role's friction themes (BLD-139)
-  - POST /api/learning/run                            review_learning
-  # Learning from the core committee's decisions (§5.9, BLD-149, BLD-150). The worker lets the chair decide
-  # scorecard weights and any core committee member decide scoring bands.
-  - GET /api/learning/committee                       approve_scorecard_changes
-  - POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note
   - GET /api/ember/{id}                               signed_in
@@ -243,19 +185,12 @@ membership_scoped:
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
-  - /desk-decisions            view_review_queue
-  - /committee                 score decide                         # any of these (§4.6–§4.7)
+  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
   # First match wins: a page under /admin with its own rule must come before /admin.
-  - /admin/conflicts           grant_roles                          # conflict flags waiting for an admin (BLD-221)
   - /admin                     manage_kill_switches grant_roles     # any of these
-  - /reports                   view_fairness_reports                # fairness and calibration, counts only (BLD-223)
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
-  - /ones/console              view_ones_console                    # the committee console's Ones module
   - /delivery                  work_delivery                        # each person sees only their own deliveries
-  - /lenses                    view_lenses
-  - /learning/committee        approve_scorecard_changes            # before /learning: the first match wins (BLD-149)
-  - /learning                  review_learning
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
 # Navigation (AT-B2-06): items without `roles` are everyone's; the rest by role. `when_on` / `when_off` may name a

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { can, canFlip } from "@/lib/rbac";
 import { listGrants } from "@/server/admin/roles";
@@ -37,11 +36,6 @@ export default async function Admin() {
   return (
     <>
       <h1>Admin</h1>
-      {can(me.roles, "review_learning") ? (
-        <p>
-          <Link href="/learning">Learning reports and proposals</Link>
-        </p>
-      ) : null}
       {showSwitches ? <KillSwitches initial={switches} /> : null}
       {showSwitches ? (
         <section aria-labelledby="speech-title">
@@ -58,16 +52,6 @@ export default async function Admin() {
         </section>
       ) : null}
       {showRoles ? <Roles initial={grants} /> : null}
-      {showRoles ? (
-        <p>
-          <Link href="/admin/conflicts">Conflict flags on committee reviews</Link>
-        </p>
-      ) : null}
-      {showRoles ? (
-        <p>
-          <Link href="/reports">Fairness and calibration reports</Link>
-        </p>
-      ) : null}
     </>
   );
 }

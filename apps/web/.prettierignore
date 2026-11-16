@@ -9,3 +9,4 @@ src/lib/pii/patterns.json
 src/lib/rbac.json
 
 src/app/tokens.css
+src/lib/contracts/enums.gen.ts

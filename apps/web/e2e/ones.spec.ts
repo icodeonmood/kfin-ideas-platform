@@ -1,8 +1,8 @@
 /**
- * The Ones, end to end (DEC-034 to DEC-087): the committee proposes, the chair approves, the admin member carries
- * it out; the new One chooses a number and writes a brief; a tier up plays the glow-up once; the Showcase brief,
- * the leaderboard, the home carousel and the office screen. axe on every page. Synthetic people only: each run
- * picks a synthetic employee who is not a One yet.
+ * The Ones, end to end (DEC-034 to DEC-087): a One is inducted through the proposal API (the console page is
+ * retired, DEC-106, R21; lane A's admin path replaces the proposals); the new One chooses a number and writes a
+ * brief; a tier up plays the glow-up once; the Showcase brief, the leaderboard, the home carousel and the office
+ * screen. axe on every page. Synthetic people only: each run picks a synthetic employee who is not a One yet.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -64,29 +64,24 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
   });
 
-  test("the committee proposes, the chair approves and the admin carries it out", async ({ browser }) => {
+  test("the committee proposes, the chair approves and the admin carries it out (API)", async ({
+    browser,
+  }) => {
     const core = await as(browser, PERSONAS.core);
-    const { person } = await proposeSomeone(core);
+    const { person, proposal } = await proposeSomeone(core);
     subject = person;
 
     const chair = await as(browser, CHAIR);
-    await chair.goto("/ones/console");
-    await expect(chair.getByRole("heading", { level: 1, name: "Ones" })).toBeVisible();
-    await expectNoSeriousAxeIssues(chair);
-    const card = chair.locator("li.proposal", { hasText: subject.name });
-    await card.getByRole("button", { name: "Approve as chair" }).click();
-    await expect(chair.getByRole("status").filter({ hasText: "Approved." })).toHaveText("Approved.");
-
+    expect(
+      (
+        await api(chair, "POST", `/api/ones/proposals/${proposal}/decide`, {
+          verdict: "approve",
+          how: "chair",
+        })
+      ).status,
+    ).toBe(200);
     const admin = await as(browser, PERSONAS.admin);
-    await admin.goto("/ones/console");
-    await admin
-      .locator("li.proposal", { hasText: subject.name })
-      .getByRole("button", { name: "Carry out and send" })
-      .click();
-    await expect(
-      admin.getByRole("status").filter({ hasText: "Carried out. The message is on its way." }),
-    ).toHaveText("Carried out. The message is on its way.");
-    await expectNoSeriousAxeIssues(admin);
+    expect((await api(admin, "POST", `/api/ones/proposals/${proposal}/carry-out`)).status).toBe(200);
 
     const roster = (await api(admin, "GET", "/api/ones/console")).body as {
       ones: { id: number; email: string }[];
@@ -228,9 +223,7 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
   });
 });
 
-test("nobody outside the committee, the CEO or admin opens the console", async ({ page }) => {
+test("nobody outside the committee, the CEO or admin reads the console's data", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
-  await page.goto("/ones/console");
-  await expect(page).toHaveURL((url) => url.pathname === "/");
   expect((await page.request.get("/api/ones/console")).status()).toBe(403);
 });

@@ -28,16 +28,6 @@
     "see_org_ideas": {
       "contributor": "yes"
     },
-    "see_committee_only_ideas": {
-      "contributor": "own",
-      "reviewer": "yes",
-      "lob_committee": "own_lob",
-      "core_committee": "yes",
-      "appeal_panel": "case",
-      "working_group": "own_cluster",
-      "sponsor": "own_cluster",
-      "admin": "yes"
-    },
     "work_review_queue": {
       "reviewer": "yes",
       "admin": "yes"
@@ -49,23 +39,6 @@
     },
     "veto_desk_decision": {
       "core_committee": "yes"
-    },
-    "approve_cluster_proposals": {
-      "reviewer": "yes",
-      "admin": "yes"
-    },
-    "propose_rule_changes": {
-      "reviewer": "yes",
-      "admin": "yes"
-    },
-    "approve_scorecard_changes": {
-      "core_committee": "yes"
-    },
-    "see_core_briefs": {
-      "core_committee": "yes"
-    },
-    "present": {
-      "contributor": "when_invited"
     },
     "open_attachments": {
       "contributor": "as_idea"
@@ -80,36 +53,9 @@
       "sponsor": "own_cluster",
       "admin": "with_reason_logged"
     },
-    "score": {
-      "lob_committee": "own_lob",
-      "core_committee": "yes"
-    },
-    "decide": {
-      "lob_committee": "park_or_decline_own_lob",
-      "core_committee": "yes"
-    },
-    "hear_appeals": {
-      "core_committee": "lob_appeals",
-      "appeal_panel": "yes"
-    },
-    "run_action_plans": {
-      "working_group": "yes",
-      "sponsor": "yes",
-      "admin": "yes"
-    },
     "approve_handover": {
       "sponsor": "yes",
       "ceo": "yes"
-    },
-    "see_people_view": {
-      "contributor": "own_history",
-      "reviewer": "yes",
-      "lob_committee": "own_lob",
-      "core_committee": "yes",
-      "admin": "yes"
-    },
-    "reveal_identity": {
-      "admin": "with_reason_logged"
     },
     "grant_roles": {
       "admin": "yes"
@@ -146,23 +92,11 @@
     "manage_delivery": {
       "admin": "yes"
     },
-    "view_lenses": {
-      "lob_committee": "yes",
-      "core_committee": "yes",
-      "admin": "yes"
-    },
-    "review_learning": {
-      "admin": "yes"
-    },
     "write_ember_note": {
       "core_committee": "yes",
       "admin": "yes"
     },
     "send_ember": {
-      "admin": "yes"
-    },
-    "view_fairness_reports": {
-      "core_committee": "yes",
       "admin": "yes"
     }
   },
@@ -249,7 +183,6 @@
     "POST /api/me/privacy-notice                       signed_in",
     "GET /api/me/ideas                                 signed_in",
     "GET /api/me/points                                signed_in",
-    "GET /api/me/lens                                  signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
     "GET /api/inbox                                    signed_in",
@@ -272,47 +205,20 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "PUT /api/ideas/{id}/canvas                        submit",
-    "POST /api/ideas/{id}/plus-one                     submit",
     "POST /api/ideas/{id}/answer                       submit",
-    "POST /api/ideas/{id}/disagree                     submit",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
-    "GET /api/clusters                                 see_org_ideas",
-    "GET /api/clusters/{id}                            see_org_ideas",
-    "POST /api/clusters/{id}/join                      submit",
     "GET /api/review/items                             view_review_queue",
     "GET /api/review/items/{id}                        view_review_queue",
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
-    "GET /api/review/cluster-runs                      view_review_queue",
-    "POST /api/review/cluster-runs                     approve_cluster_proposals",
-    "GET /api/review/cluster-proposals/{id}            view_review_queue",
-    "POST /api/review/cluster-proposals/{id}/action    approve_cluster_proposals",
-    "GET /api/review/qualify/{id}                      view_review_queue",
-    "POST /api/review/qualify/{id}                     work_review_queue",
-    "GET /api/committee/rounds                         score",
-    "GET /api/committee/rounds/{id}                    score",
-    "POST /api/committee/rounds/{id}/action            score",
-    "POST /api/committee/cycles                        decide",
-    "GET /api/committee/presentations/{id}             decide",
-    "POST /api/committee/presentations/{id}/action     decide",
-    "GET /api/presentations/{id}                       present",
-    "POST /api/presentations/{id}/action               present",
-    "GET /api/working-groups/{id}                      signed_in",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",
     "DELETE /api/admin/roles/{id}                      grant_roles",
     "GET /api/admin/kill-switches                      manage_kill_switches",
     "PUT /api/admin/kill-switches                      manage_kill_switches",
-    "POST /api/admin/reveal                            reveal_identity",
-    "POST /api/admin/conflicts                         grant_roles",
-    "GET /api/appeals                                  signed_in",
-    "POST /api/appeals                                 submit",
-    "GET /api/appeals/{id}                             hear_appeals",
-    "POST /api/appeals/{id}/decision                   hear_appeals",
-    "GET /api/reports/{kind}                           view_fairness_reports",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/ones/leaderboard                         signed_in",
@@ -325,17 +231,14 @@
     "POST /api/ones/proposals/{id}/messages            signed_in",
     "POST /api/ones/proposals/{id}/invites             decide_ones",
     "PUT /api/ones/{id}/measures                       carry_out_ones",
-    "POST /api/ones/{id}/awards                        carry_out_ones",
     "GET /api/ones/{id}/showcase                       view_ones_console",
     "PUT /api/ones/screen-mode                         carry_out_ones",
-    "POST /api/ones/announce                           carry_out_ones",
     "GET /api/me/one                                   signed_in",
     "POST /api/me/one/number                           signed_in",
     "POST /api/me/one/brief                            signed_in",
     "POST /api/me/one/glow-up/{id}/seen                signed_in",
     "GET /api/me/one/showcase                          signed_in",
     "PUT /api/me/one/showcase                          signed_in",
-    "GET /api/me/team                                  signed_in",
     "GET /api/delivery                                 work_delivery",
     "POST /api/delivery                                start_handover",
     "GET /api/delivery/{id}                            work_delivery",
@@ -361,15 +264,6 @@
     "POST /api/delivery/{id}/writeup/submit            work_delivery",
     "POST /api/delivery/{id}/writeup/approve           work_delivery",
     "POST /api/delivery/{id}/writeup/send-back         work_delivery",
-    "GET /api/lenses                                   view_lenses",
-    "POST /api/lenses/rebuild                          review_learning",
-    "GET /api/learning                                 review_learning",
-    "POST /api/learning/proposals/{id}/decide          review_learning",
-    "POST /api/learning/proposals/{id}/publish         review_learning",
-    "POST /api/learning/role-themes/{id}/decide       review_learning",
-    "POST /api/learning/run                            review_learning",
-    "GET /api/learning/committee                       approve_scorecard_changes",
-    "POST /api/learning/committee/proposals/{id}/decide approve_scorecard_changes",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",
     "GET /api/ember/{id}                               signed_in",
@@ -389,18 +283,11 @@
   },
   "pages": [
     "/review                    view_review_queue",
-    "/desk-decisions            view_review_queue",
-    "/committee                 score decide",
-    "/admin/conflicts           grant_roles",
+    "/committee                 veto_desk_decision",
     "/admin                     manage_kill_switches grant_roles",
-    "/reports                   view_fairness_reports",
     "/launch                    grant_roles",
     "/ones/showcase             view_ones_console",
-    "/ones/console              view_ones_console",
     "/delivery                  work_delivery",
-    "/lenses                    view_lenses",
-    "/learning/committee        approve_scorecard_changes",
-    "/learning                  review_learning",
     "/ember/compose             write_ember_note"
   ],
   "navigation": [

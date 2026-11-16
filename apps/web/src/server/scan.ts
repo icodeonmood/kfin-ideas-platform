@@ -1,7 +1,8 @@
 /**
  * The scan as the submitter sees it (§4.2 steps 3–4, B4): status and step for the waiting screen, and the
- * person's choices when the scan stops — edit a blocked idea, say it is not personal data (it goes through,
- * flagged for the reviewer), take a redirect, or say "No, this is an idea" with a reason.
+ * person's choices when the scan stops — edit a blocked idea, take a redirect, or say "No, this is an idea" with a
+ * reason. Contesting a block ("This is not personal data", BLD-082) is retired (DEC-103, DEC-106): details are
+ * hidden, not blocked, once lane C's Check it lands; until then a block is edited out.
  * The worker restores tagged values; this module only decides who may see them (§3.1: the owner sees real
  * values of their own idea) and records choices.
  */
@@ -18,8 +19,8 @@ import type { DB } from "./db-types";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
 
-export type ScanChoice = "edit" | "not_personal_data" | "take_redirect" | "is_an_idea";
-const CHOICES: readonly ScanChoice[] = ["edit", "not_personal_data", "take_redirect", "is_an_idea"];
+export type ScanChoice = "edit" | "take_redirect" | "is_an_idea";
+const CHOICES: readonly ScanChoice[] = ["edit", "take_redirect", "is_an_idea"];
 
 async function ownedSubmitted(me: CurrentUser, id: string) {
   if (!/^[0-9a-f-]{36}$/.test(id) || !me.contributorCode) throw new SubmissionError(404, "not_found");
@@ -67,21 +68,14 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
   const body = (input ?? {}) as { choice?: unknown; reason?: unknown };
   const choice = CHOICES.find((c) => c === body.choice);
   if (!choice) throw new SubmissionError(400, "choice_required");
-  // What the person was shown: whether they may contest, and the reason length from rules/redirects.md.
-  const view = (await scanStatus(me, id)) as {
-    blocked?: { can_contest?: boolean; investor_context?: boolean };
-    redirect?: { override_reason_min_chars?: number };
-  };
+  // What the person was shown: the reason length from rules/redirects.md.
+  const view = (await scanStatus(me, id)) as { redirect?: { override_reason_min_chars?: number } };
   const needs: Record<ScanChoice, string> = {
     edit: "blocked",
-    not_personal_data: "blocked",
     take_redirect: "redirect",
     is_an_idea: "redirect",
   };
   let reason = "";
-  // Every gatekeeper block can be contested (BLD-082 option B); the worker still says so per scan.
-  if (choice === "not_personal_data" && view.blocked?.can_contest !== true)
-    throw new SubmissionError(409, "not_available_now");
   if (choice === "is_an_idea") {
     reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
     if (reason.length < (view.redirect?.override_reason_min_chars ?? 15))
@@ -146,33 +140,6 @@ export async function scanChoice(me: CurrentUser, id: string, input: unknown) {
         await trx.updateTable("scans").set({ outcome: "redirected" }).where("idea_uuid", "=", id).execute();
         return { next: null };
       }
-      if (choice === "not_personal_data") {
-        overrides.not_personal_data = true; // goes through, flagged for the reviewer (§4.2 step 3)
-        const moved = await trx
-          .updateTable("ideas")
-          .set({ stage: "scanning" })
-          .where("id", "=", id)
-          .where("stage", "=", "blocked")
-          .executeTakeFirst();
-        expect("blocked", moved.numUpdatedRows);
-        await trx
-          .updateTable("scans")
-          .set({ overrides: JSON.stringify(overrides) })
-          .where("idea_uuid", "=", id)
-          .execute();
-        // IDs and a code only: never the flagged words (non-negotiable 3).
-        await trx
-          .insertInto("audit_log")
-          .values({
-            actor: `user:${me.id}`,
-            action: "scan.contest",
-            entity: `idea:${row.idea_id}`,
-            after: JSON.stringify({ investor_or_customer: view.blocked?.investor_context === true }),
-          })
-          .execute();
-        await requeue(trx, id, scan.attempts);
-        return { next: null };
-      }
       overrides.is_an_idea = true;
       await trx
         .updateTable("scans")
@@ -213,7 +180,8 @@ export async function confirmCard(me: CurrentUser, id: string, input: unknown) {
   return out;
 }
 
-const SAVE_CHOICES = ["team_up", "plus_one", "different", "something_changed", "new", "withdraw"] as const;
+// "+1" is retired (DEC-106, R5); the rest stays until lane C's Send it replaces this step.
+const SAVE_CHOICES = ["team_up", "different", "something_changed", "new", "withdraw"] as const;
 
 /** Find your crew: the person's choice, saved in one transaction by the worker (§4.2 step 8). */
 export async function chooseMatch(me: CurrentUser, id: string, input: unknown) {
