@@ -9,8 +9,11 @@ import { sql } from "kysely";
 
 import { appBaseUrl, isProductionLike, privacyNoticeVersion, sessionSecret } from "../config";
 import { getDb } from "../db";
+import { log } from "../log";
+import { promises } from "../promises";
 
 export const SESSION_COOKIE = "ideas_session";
+/** KFintech policy, 8 hours: used only when rules/promises.md cannot be read (`sessionTtlSeconds`). */
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
 export const SESSION_ABSOLUTE_HOURS = 12; // sliding refresh never extends a session past a working day
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
@@ -40,14 +43,33 @@ export type SessionInfo = {
   needsRefresh: boolean;
 };
 
-export async function createSession(userId: string): Promise<string> {
+let promisesWarnedAt = 0;
+
+/**
+ * Session length from P-PRODUCT.promises `session.hours` (rules/promises.md, BLD-A181; L-AUTH.rules/5). If the
+ * worker cannot be read, the policy's 8 hours, with a warning at most once a minute.
+ */
+export async function sessionTtlSeconds(): Promise<number> {
+  try {
+    const hours = (await promises()).session.hours;
+    if (Number.isFinite(hours) && hours > 0) return Math.round(hours * 3600);
+  } catch {
+    if (Date.now() - promisesWarnedAt > 60_000) {
+      promisesWarnedAt = Date.now();
+      log.warn("auth.promises_unavailable");
+    }
+  }
+  return SESSION_TTL_SECONDS;
+}
+
+export async function createSession(userId: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   await getDb()
     .insertInto("sessions")
     .values({
       id_hash: hashToken(token),
       user_id: userId,
-      expires_at: new Date(Date.now() + SESSION_TTL_SECONDS * 1000),
+      expires_at: new Date(Date.now() + ttlSeconds * 1000),
     })
     .execute();
   return token;
@@ -85,13 +107,32 @@ export async function readSession(token: string | undefined): Promise<SessionInf
   };
 }
 
-export async function refreshSession(token: string): Promise<void> {
+export async function refreshSession(token: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<void> {
   await getDb()
     .updateTable("sessions")
-    .set({ last_seen_at: new Date(), expires_at: new Date(Date.now() + SESSION_TTL_SECONDS * 1000) })
+    .set({ last_seen_at: new Date(), expires_at: new Date(Date.now() + ttlSeconds * 1000) })
     .where("id_hash", "=", hashToken(token))
     .where("revoked_at", "is", null)
     .execute();
+}
+
+/**
+ * A session that ran out (time, not signing out) within the last day, for S-02's "Session expired mid-draft"
+ * (L-AUTH.states, A-API.auth `GET /auth/session` → `expired`). Only the browser holding the cookie can ask, and a
+ * signed-out session never counts, so a shared laptop shows nothing after "Sign out".
+ */
+export async function expiredSession(
+  token: string | undefined,
+): Promise<{ userId: string; email: string } | null> {
+  if (!token || token.length > 128) return null;
+  const r = await sql<{ user_id: string; email: string }>`
+    SELECT s.user_id, u.email FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND u.active
+      AND (s.expires_at <= now() OR s.created_at <= now() - make_interval(hours => ${SESSION_ABSOLUTE_HOURS}))
+      AND s.expires_at > now() - interval '1 day'
+  `.execute(getDb());
+  const row = r.rows[0];
+  return row ? { userId: row.user_id, email: row.email } : null;
 }
 
 export async function revokeSession(token: string | undefined): Promise<void> {
@@ -107,7 +148,19 @@ export async function revokeSession(token: string | undefined): Promise<void> {
 
 export const TX_COOKIE = "ideas_oidc";
 export const TX_TTL_SECONDS = 10 * 60;
-export type SignInTx = { state: string; nonce: string; verifier: string; next: string; iat: number };
+/**
+ * The OIDC transaction. Where the person was going is not here: it is kept on the server against the attempt
+ * (`intents.ts`, L-AUTH.rules/4). `silent` marks a `prompt=none` try, whose "not signed in at the provider" answer
+ * is not a failure (L-AUTH.rules/1). `next` is read only from transactions started before that change.
+ */
+export type SignInTx = {
+  state: string;
+  nonce: string;
+  verifier: string;
+  silent?: boolean;
+  next?: string;
+  iat: number;
+};
 
 const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
 

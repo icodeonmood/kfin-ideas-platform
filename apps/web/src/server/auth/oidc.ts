@@ -100,14 +100,17 @@ const b64url = (buf: Buffer) => buf.toString("base64url");
 export const randomToken = (bytes = 32) => b64url(randomBytes(bytes));
 export const pkceChallenge = (verifier: string) => b64url(createHash("sha256").update(verifier).digest());
 
+/** `silent` asks the provider not to show anything (`prompt=none`): silent single sign-on (L-AUTH.rules/1). */
 export async function authorizationUrl(tx: {
   state: string;
   nonce: string;
   verifier: string;
+  silent?: boolean;
 }): Promise<string> {
   const cfg = oidcConfig();
   const url = new URL((await discovery()).authorization_endpoint);
   url.search = new URLSearchParams({
+    ...(tx.silent ? { prompt: "none" } : {}),
     response_type: "code",
     client_id: cfg.clientId,
     redirect_uri: cfg.redirectUri,
