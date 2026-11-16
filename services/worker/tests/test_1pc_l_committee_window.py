@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 
 import pytest
 
@@ -54,7 +55,8 @@ def test_V_ACC_committee_2_and_3_extend_30_days_at_a_time_to_the_limit() -> None
 def test_V_ACC_committee_4_a_reversal_is_final() -> None:
     w = reverse(open_window(DECIDED, P), DECIDED + dt.timedelta(days=1))
     assert w.state(DECIDED + dt.timedelta(days=2)) == "reversed"
-    for action in (lambda: extend(w, DECIDED, P), lambda: reverse(w, DECIDED)):
+    actions: tuple[Callable[[], object], ...] = (lambda: extend(w, DECIDED, P), lambda: reverse(w, DECIDED))
+    for action in actions:
         with pytest.raises(WindowRefused) as refused:
             action()
         assert refused.value.code == "already_reversed"
@@ -70,7 +72,7 @@ def test_V_ACC_committee_5_a_window_left_alone_expires_and_the_decision_stands()
         reverse(w, now)
     assert refused.value.code == "window_closed"
     full = Window(w.opens_at, w.max_closes_at, w.max_closes_at, 3)
-    assert words(full, at(2027, 2, 1), P).closed_line.endswith("After 3 months. The decision stands.")  # type: ignore[union-attr]
+    assert words(full, at(2027, 2, 1), P).closed_line.endswith("After 3 months. The decision stands.")
 
 
 def test_add_months_keeps_the_day_or_uses_the_month_end() -> None:
