@@ -301,6 +301,20 @@ h3 {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Labels never wrap (C-BUTTON.sizes) except on a very narrow screen, where a long label would otherwise push the page
+   sideways (WCAG 1.4.10 reflow, at 320 px): there it wraps, balanced, and the button grows taller */
+@media (max-width: 480px) {
+  .btn,
+  .button {
+    max-width: 100%;
+    padding-block: 10px;
+    white-space: normal;
+    text-wrap: balance;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+}
+
 .btn-sm {
   min-height: var(--ctl-sm);
   padding: 0 16px;
