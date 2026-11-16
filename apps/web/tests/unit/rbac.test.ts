@@ -43,8 +43,6 @@ const SECTION_3_1: Record<string, string[]> = {
   work_review_queue: ["reviewer", "admin"],
   view_review_queue: ["reviewer", "core_committee", "admin"],
   veto_desk_decision: ["core_committee"],
-  propose_rule_changes: ["reviewer", "admin"],
-  approve_scorecard_changes: ["core_committee"],
   open_attachments: ALL,
   see_restored_values: ALL,
   approve_handover: ["sponsor"],
@@ -184,7 +182,7 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });
 
-  it("delivery, lenses and learning (BLD-115 to BLD-122)", () => {
+  it("delivery (BLD-115 to BLD-122)", () => {
     // Anyone may be named owner, PM or milestone owner: the worker serves only their own deliveries.
     expect(decide(rolesOf("contributor"), "GET", "/api/delivery").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "PUT", "/api/delivery/4/measurements/day_30").kind).toBe("allow");
@@ -199,10 +197,7 @@ describe("navigation and pages (AT-B2-06)", () => {
     expect(decide(rolesOf("admin"), "POST", "/api/delivery/4/measurements/day_90/finance").kind).toBe(
       "allow",
     );
-    expect(decide(rolesOf("core_committee"), "GET", "/api/learning").kind).toBe("deny");
-    expect(decide(rolesOf("admin"), "POST", "/api/learning/proposals/3/decide").kind).toBe("allow");
     expect(canSeePage(rolesOf("contributor"), "/delivery/4")).toBe(true); // their own, or not found
-    expect(canSeePage(rolesOf("admin"), "/learning")).toBe(true);
   });
 });
 

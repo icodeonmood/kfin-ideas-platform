@@ -150,7 +150,6 @@ def test_get_requests_and_pages_create_nothing(sessions: dict[str, Any]) -> None
             "/ember",
             "/ember/compose",
             "/my-ideas",
-            "/learning",
             "/delivery",
         ]
         for role in ("admin", "core_chair", "core_committee"):
