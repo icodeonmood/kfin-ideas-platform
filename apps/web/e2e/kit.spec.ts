@@ -98,3 +98,46 @@ test("C-TRACK.anatomy: the stages are an ordered list that says each stage's sta
   await expect(track.getByRole("listitem").nth(2)).toContainText("Reviewed, now");
   await expect(track.getByRole("listitem").nth(0)).toContainText("Shared, done");
 });
+
+test("C-SEARCH.behaviour/1–2, /6: the panel opens on focus; Backspace removes the last filter; Escape keeps the text", async ({
+  page,
+}) => {
+  const box = page.getByRole("searchbox", { name: "Search your ideas" });
+  await box.focus();
+  const panel = page.getByRole("group", { name: "Narrow your search" });
+  await expect(panel).toBeVisible();
+  await expectNoSeriousAxeIssues(page);
+  await panel.getByRole("button", { name: /With the review desk/ }).click();
+  await expect(page.getByRole("button", { name: "Remove the filter: With the review desk" })).toBeVisible();
+  await box.focus();
+  await page.keyboard.press("Backspace");
+  await expect(page.getByRole("button", { name: "Remove the filter: With the review desk" })).toHaveCount(0);
+  await box.fill("sms");
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(box).toHaveValue("sms");
+});
+
+test("C-DROPDOWN/2–5: None picked, then a title, then a count; Escape closes the list only", async ({
+  page,
+}) => {
+  const field = page.getByRole("button", { name: /Bring your ideas along/ });
+  await expect(field).toContainText("None picked");
+  await field.click();
+  await expect(field).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("checkbox", { name: /Rejection SMS codes/ }).check();
+  await expect(field).toContainText("Rejection SMS codes confuse investors");
+  await page.getByRole("checkbox", { name: /No script for calls/ }).check();
+  await expect(field).toContainText("2 ideas picked");
+  await expectNoSeriousAxeIssues(page);
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveAttribute("aria-expanded", "false");
+  await expect(field).toBeFocused();
+});
+
+test("C-FILE.row: a found detail is a warning under its row, with the row's own action", async ({ page }) => {
+  const files = page.getByRole("list", { name: "Your files" });
+  await expect(files.getByRole("listitem")).toHaveCount(3);
+  await expect(files.getByRole("alert")).toContainText("Nobody can open it until it’s hidden");
+  await expect(files.getByRole("button", { name: "Hide it for me" })).toBeVisible();
+});

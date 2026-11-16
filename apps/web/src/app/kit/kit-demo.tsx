@@ -4,8 +4,11 @@ import { useState } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
+import { DropArea, FileList, FileRow } from "@/components/ui/file";
+import { SearchBar } from "@/components/ui/search";
 import { IDEA_STATUS, Pill, StatusPill, type IdeaStatus } from "@/components/ui/pill";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Sorts } from "@/components/ui/sorts";
@@ -28,6 +31,9 @@ export function KitDemo() {
   const [title, setTitle] = useState("");
   const [tried, setTried] = useState(false);
   const short = title.trim().length < 30;
+  const [q, setQ] = useState("");
+  const [qf, setQf] = useState<string[]>(["needs"]);
+  const [along, setAlong] = useState<string[]>([]);
 
   return (
     <div className="arrive kit">
@@ -171,6 +177,81 @@ export function KitDemo() {
             </Empty>
           )}
         </div>
+      </section>
+
+      <section className="card" aria-labelledby="k-search">
+        <h2 id="k-search" className="h2">
+          Search, dropdown and files
+        </h2>
+        <SearchBar
+          label="Search your ideas"
+          placeholder="Search your ideas, or ask a question"
+          text={q}
+          onText={setQ}
+          filters={[
+            { value: "needs", label: "Needs you", count: 1 },
+            { value: "desk", label: "With the review desk", count: 2 },
+            { value: "closed", label: "Closed", count: 0 },
+          ]}
+          picked={qf}
+          onPicked={setQf}
+          onSubmit={() => undefined}
+          asks={["Which of my ideas need me this week?", "What did the review desk pick?"]}
+          foot="Search reads your titles, your own words, your files and the review desk’s notes."
+        />
+        <Dropdown
+          label="Bring your ideas along"
+          noun={{ one: "idea", many: "ideas" }}
+          options={[
+            { value: "a", title: "Rejection SMS codes confuse investors", meta: "Shared Friday" },
+            { value: "b", title: "No script for calls about rejections", meta: "Draft, Wednesday" },
+          ]}
+          values={along}
+          onChange={setAlong}
+        />
+        <FileList label="Your files">
+          <FileRow name="rejection-sms.png" size="240 KB" status="checked" statusText="Checked">
+            <button type="button" className="tb">
+              View
+            </button>
+            <button type="button" className="tb">
+              Remove
+            </button>
+          </FileRow>
+          <FileRow
+            name="branch-calls.xlsx"
+            size="1.2 MB"
+            status="checking"
+            statusText="Checking for personal details"
+          >
+            <button type="button" className="tb">
+              Remove
+            </button>
+          </FileRow>
+          <FileRow
+            name="call-log.pdf"
+            size="3.4 MB"
+            status="found"
+            statusText="Waiting for you"
+            message={{
+              kind: "warn",
+              text: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+            }}
+          >
+            <button type="button" className="tb">
+              Hide it for me
+            </button>
+          </FileRow>
+        </FileList>
+        <DropArea
+          title="Drop files here, or"
+          browse={
+            <button type="button" className="tb blue">
+              browse
+            </button>
+          }
+          help="Screenshots, photos, PDFs or spreadsheets, up to 25 MB each."
+        />
       </section>
 
       <section className="card" aria-labelledby="k-track">

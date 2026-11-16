@@ -68,10 +68,10 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-EMPTY` | built: `components/ui/empty.tsx`; screens replace their ad hoc lines as they are rebuilt | S | P0 | D |
 | `C-SORTS` | built: `components/ui/sorts.tsx` (row on desktop, cycling button on a phone); row gliding waits for the FLIP polish | S | P0 | D |
 | `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
-| `C-SEARCH` | missing | M | P0 | D (bar), F (ask) |
+| `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
-| `C-FILE` | exists, differs (keep the quarantine and scan logic in `attachments.tsx`) | M | P0 | D (UI), C (wiring) |
-| `C-DROPDOWN` | missing | S | P0 | D |
+| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
+| `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
