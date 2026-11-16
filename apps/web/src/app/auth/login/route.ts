@@ -1,27 +1,13 @@
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
-import { appBaseUrl } from "@/server/config";
-import { authorizationUrl, OidcError, randomToken } from "@/server/auth/oidc";
-import { cookieOptions, safeNext, sealTx, TX_COOKIE, TX_TTL_SECONDS } from "@/server/auth/session";
-import { log } from "@/server/log";
+import { startSso } from "@/server/auth/sso";
 
 export const dynamic = "force-dynamic";
 
-/** GET /auth/login — start the authorisation-code flow with PKCE (§3.1, §8). */
+/**
+ * GET /auth/login?next=… — the older way in, kept for links already sent. It is single sign-on with the place to
+ * go kept on the server like every other start (L-AUTH.rules/4), never only in the browser.
+ */
 export async function GET(request: NextRequest) {
-  const tx = {
-    state: randomToken(),
-    nonce: randomToken(),
-    verifier: randomToken(48),
-    next: safeNext(request.nextUrl.searchParams.get("next")),
-    iat: Math.floor(Date.now() / 1000),
-  };
-  try {
-    const response = NextResponse.redirect(await authorizationUrl(tx));
-    response.cookies.set(TX_COOKIE, sealTx(tx), { ...cookieOptions(TX_TTL_SECONDS), path: "/auth" });
-    return response;
-  } catch (err) {
-    log.error("auth.login_failed", { error_code: err instanceof OidcError ? err.code : "unexpected" });
-    return NextResponse.redirect(new URL("/sign-in?error=idp_unavailable", appBaseUrl()));
-  }
+  return startSso(request, { to: request.nextUrl.searchParams.get("next") ?? "/" }, "link");
 }
