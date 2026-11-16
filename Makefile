@@ -59,14 +59,17 @@ db-users: ## Dev only: login users for the web and worker roles (UAT/prod: ops, 
 seed: migrate ## Create the local company repo, validate it, index it, load synthetic users
 	$(PY) python -m bootstrap.seed
 
-demo: ## Dev only: load the synthetic demo for a walkthrough (docs/DEMO.md); a second run changes nothing
-	$(PY) python -m bootstrap.demo
+# DEMO_SET=1pc picks the 1% Club seed for the handoff's tables (bootstrap/club_seed.py) instead of the old demo.
+DEMO_SET ?= legacy
 
-demo-reset: ## Dev only: remove the demo and every One in the local database, then load the demo again
-	$(PY) python -m bootstrap.demo --reset
+demo: ## Dev only: load the synthetic demo (docs/DEMO.md; DEMO_SET=1pc for the 1% Club seed); a second run changes nothing
+	$(PY) python -m bootstrap.demo --set $(DEMO_SET)
+
+demo-reset: ## Dev only: remove the demo (and, for the old one, every One in the local database), then load it again
+	$(PY) python -m bootstrap.demo --set $(DEMO_SET) --reset
 
 demo-remove: ## Dev only: remove the demo without loading it again; run before e2e on this stack (BLD-154)
-	$(PY) python -m bootstrap.demo --remove
+	$(PY) python -m bootstrap.demo --set $(DEMO_SET) --remove
 
 test: up migrate test-py test-web ## Unit and integration tests
 
