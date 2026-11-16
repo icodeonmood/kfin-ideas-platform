@@ -13,8 +13,8 @@ This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wid
 | `1pc-handoff/README.md`, then `00-overview/PRODUCT.md` | The design and behaviour spec: the source of truth for how the product looks, moves, reads and behaves (DEC-102). Read the README once |
 | `docs/SHIP_PLAN_1PC.md` | The plan for shipping the pack: lanes, checkpoints, data, retirements |
 | `docs/DECISIONS.md` | What has been decided and must not be re-opened without asking |
-| `docs/DAY1_PLAN.md` | Blocks B1–B8, dates, and the acceptance tests that define "done" |
-| `docs/ARCHITECTURE.md` (v0.3) | The full specification. Day-one sections: §2 data, §3.1–3.7 shared services, §4.1–4.4, §6, §7, §8, §9 |
+| `docs/DAY1_PLAN.md` | **History. Do not read it.** Blocks B1 to B8 are done; the plan now is `docs/SHIP_PLAN_1PC.md` (BLD-G001) |
+| `docs/ARCHITECTURE.md` (v0.3) | **Read only the section a non-negotiable cites.** The pack wins on product behaviour (DEC-102) |
 | `docs/GARAGE_INHERITANCE.md` | Your first task: copy what this project needs from the Garage project |
 | `agents/*/` | Draft prompts, schemas and configs for `gatekeeper`, `canvas-assist` and `judge` |
 | `seed/company-repo/` | Starting content for the company repo (rules, taxonomy, glossary, comms templates, canvas examples) |
@@ -119,8 +119,8 @@ kfin-ideas-platform/
 
 ## How to work
 
-1. Work block by block in `docs/DAY1_PLAN.md`. Do not start a block until the previous block's acceptance tests pass, unless the plan says the blocks can overlap.
-2. At the end of each block: run `make lint test e2e` (and `make eval` from B4), tick the block in `DAY1_PLAN.md`, and add a dated entry to `docs/BUILD_LOG.md`: what is done, what was deferred, anything the user must do.
+1. Work to your lane's scope and checkpoints in `docs/SHIP_PLAN_1PC.md`.
+2. At the end of each block: run `make lint test e2e` (and `make eval` from B4), and add a dated entry to `docs/BUILD_LOG.md`: what is done, what was deferred, anything the user must do.
 3. When the spec is unclear, take the simpler reading that keeps every non-negotiable, write it in `docs/DECISIONS.md` (the next ID in your lane, date, decision, reason, alternative) and carry on. If it touches a non-negotiable, stop and ask.
 4. If a block runs more than half a day late, propose a cut from the drop order in §9.2 rather than squeezing quality.
 5. Small commits with clear messages. Never commit `.env`, data folders, model weights or anything from `~/the-garage` that is not listed for copying.
