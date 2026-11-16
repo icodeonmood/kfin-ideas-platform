@@ -117,11 +117,15 @@ def user_of(conn: Conn, code: str | None) -> str | None:
 
 
 def own_codes(conn: Conn, idea: dict[str, Any]) -> set[str]:
-    """The sharer, and the sharers of ideas merged into this one: all credited (L-MERGE.effects/2)."""
+    """The sharer, and the sharers of every idea merged into this one, through chains of merges: all are credited
+    (L-MERGE.effects/2), so none of them may review, decide or reverse it."""
     codes = {str(idea["contributor_code"])}
     for r in conn.execute(
-        "SELECT i.contributor_code FROM merges m JOIN ideas i ON i.id = m.merged_idea_uuid "
-        "WHERE m.lead_idea_uuid = %s AND m.reversed_at IS NULL",
+        "WITH RECURSIVE joined(id) AS ("
+        "  SELECT merged_idea_uuid FROM merges WHERE lead_idea_uuid = %s AND reversed_at IS NULL"
+        "  UNION SELECT m.merged_idea_uuid FROM merges m JOIN joined j ON m.lead_idea_uuid = j.id"
+        "    WHERE m.reversed_at IS NULL"
+        ") SELECT i.contributor_code FROM joined j JOIN ideas i ON i.id = j.id",
         (idea["id"],),
     ).fetchall():
         codes.add(str(r["contributor_code"]))

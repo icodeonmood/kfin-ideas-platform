@@ -105,7 +105,7 @@ def revise_worth(
         if errors:
             e = errors[0]
             raise Refused(422, e.code, e.message, e.field)
-        if kind is not None and kind not in KIND_LABELS:
+        if kind is not None and (not isinstance(kind, str) or kind not in KIND_LABELS):
             raise Refused(422, "kind_invalid", "Choose what kind it is.", "kind")
         if area is not None and (not isinstance(area, str) or not area.strip()):
             raise Refused(422, "area_invalid", "Choose an area.", "area")
