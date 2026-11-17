@@ -213,7 +213,10 @@ def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> dict[str, Any]
         "WHERE q.set_id = %s AND a.sent_at IS NOT NULL ORDER BY q.seq",
         (s["id"],),
     ).fetchall()
-    batch = [a for a in rows if a["sent_at"] == x["at"]] or list(rows)  # this sending, or all sent so far
+    # This sending: the answers sent last at or before the entry's time (the entry may sit a microsecond later,
+    # BLD-F057); all sent so far if none match.
+    sent = [a["sent_at"] for a in rows if a["sent_at"] <= x["at"]]
+    batch = [a for a in rows if sent and a["sent_at"] == max(sent)] or list(rows)
     part = labels("part")
     files = _answer_files(ctx, [str(a["id"]) for a in batch])
     answers = [

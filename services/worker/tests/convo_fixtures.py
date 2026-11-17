@@ -1,6 +1,8 @@
 """Synthetic people and ideas for lane F's conversation tests (non-negotiable 11: invented names only).
 
-Every helper writes through the test's own `db` connection (autocommit) and returns plain values.
+Every helper writes through the test's own `db` connection (autocommit) and returns plain values, and records the
+people and ideas it makes so `clean` can delete them when the test ends: no user is left behind in the shared test
+database (the seed's HR import refuses while active users are there).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from core.db import Conn
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 _counter = iter(range(1, 10**6))
+_made: dict[str, list[str]] = {"users": [], "ideas": []}  # what `clean` deletes after each test
 
 
 def at(d: int, h: int = 0, mi: int = 0, m: int = 11, y: int = 2026) -> dt.datetime:
@@ -30,6 +33,7 @@ def person(conn: Conn, name: str, *, city: str = "Hyderabad", area: str = "Inves
         (user_id, f"hash-{user_id}", name, f"{name.split()[0].lower()}.{next(_counter)}@example.test",
          name.split()[0], city, area),
     )  # fmt: skip
+    _made["users"].append(user_id)
     conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, user_id))
     for role, scope in roles:
         conn.execute(
@@ -52,6 +56,7 @@ def idea(conn: Conn, sharer: dict[str, str], *, title: str = "Investors call to 
     sql = f"INSERT INTO ideas ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *"  # noqa: S608
     row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
+    _made["ideas"].append(str(row["id"]))
     conn.execute(
         "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, joined_at) "
         "VALUES (%s, %s, 'lead', 'shared', %s)",
@@ -80,13 +85,26 @@ def leave_crew(conn: Conn, idea_row: dict[str, Any], member: dict[str, str]) -> 
 def build_team(conn: Conn, idea_row: dict[str, Any], lead: dict[str, str], *members: dict[str, str]) -> None:
     conn.execute(
         "INSERT INTO build_teams (idea_uuid, name, lead_user_id) VALUES (%s, %s, %s)",
-        (idea_row["id"], f"{lead['first_name']}'s team", lead["id"]),
+        (idea_row["id"], f"{lead['name']}’s team", lead["id"]),
     )
     for m in (lead, *members):
         conn.execute(
             "INSERT INTO role_grants (user_id, role, scope_id) VALUES (%s, 'build_team', %s)",
             (m["id"], idea_row["idea_id"]),
         )
+
+
+def clean(conn: Conn) -> None:
+    """Delete the rows these fixtures made, and only those: their ideas first (crews, conversation lines, requests,
+    merges, question sets, files and links go with them), then their people (contributor codes, roles, inbox items
+    and remembered idempotency keys go with them). `audit_log` keeps its rows: IDs only."""
+    ideas, users = list(_made["ideas"]), list(_made["users"])
+    _made["ideas"].clear()
+    _made["users"].clear()
+    if ideas:
+        conn.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (ideas,))
+    if users:
+        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
 
 
 def entries(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
@@ -114,7 +132,13 @@ def question_set(
         qid = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO questions (id, set_id, seq, part, text_encrypted) VALUES (%s, %s, %s, %s, %s)",
-            (qid, set_id, seq, part, seal_text("questions", "text_encrypted", qid, f"Synthetic question {seq}?")),
+            (
+                qid,
+                set_id,
+                seq,
+                part,
+                seal_text("questions", "text_encrypted", qid, f"Synthetic question {seq}?"),
+            ),
         )
     return set_id
 
@@ -122,7 +146,9 @@ def question_set(
 def answer_all(conn: Conn, set_id: str, sharer: dict[str, str], at_: dt.datetime) -> None:
     from onepc.context import seal_text
 
-    for q in conn.execute("SELECT id, seq, part FROM questions WHERE set_id = %s ORDER BY seq", (set_id,)).fetchall():
+    for q in conn.execute(
+        "SELECT id, seq, part FROM questions WHERE set_id = %s ORDER BY seq", (set_id,)
+    ).fetchall():
         aid = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO answers (id, question_id, by_code, text_encrypted, added_to, saved_at, sent_at) "
@@ -141,6 +167,14 @@ def attachment(
     conn.execute(
         "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, store_key, state, kind, "
         "file_state) VALUES (%s, %s, %s, %s, %s, 2048, %s, 'clean', 'file', %s)",
-        (att_id, idea_row["id"], owner["code"], name, "application/vnd.ms-excel", f"clean/{att_id}", file_state),
+        (
+            att_id,
+            idea_row["id"],
+            owner["code"],
+            name,
+            "application/vnd.ms-excel",
+            f"clean/{att_id}",
+            file_state,
+        ),
     )
     return att_id
