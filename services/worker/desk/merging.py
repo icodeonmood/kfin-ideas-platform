@@ -146,10 +146,15 @@ def desk_merge(
             "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
         )
         conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
-        conn.execute(
-            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed'",
+        closed = conn.execute(
+            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
+            "RETURNING id",
             (t, joiner["id"]),
-        )
+        ).fetchall()
+        for (
+            done
+        ) in closed:  # L-INBOX.rules/3: the joining idea's questions leave Needs you with their reminders
+            adapters.resolve(conn, adapters.questions_key(str(done["id"])))
         # L-MERGE.effects/4: the joining sharer and their live crew join the lead's crew, never as a second lead
         added: list[str] = []
         if team_up:
