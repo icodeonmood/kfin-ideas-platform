@@ -164,6 +164,21 @@ def cluster_batch(conn: Conn, payload: dict[str, Any]) -> None:
     run_batch(conn, manual_by=payload.get("manual_by"))
 
 
+@handler("file.check")
+def check_file(conn: Conn, payload: dict[str, Any]) -> None:
+    """A file added on the 1% Club: virus scan, then its text, then hiding customers' details (L-HIDE.files)."""
+    from attachments import files
+
+    files.check(conn, str(payload["attachment_id"]))
+
+
+@on_dead("file.check")
+def file_check_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    from attachments import files
+
+    files.gave_up(conn, str(payload["attachment_id"]))
+
+
 @handler("attachment.digest")
 def attachment_digest(conn: Conn, payload: dict[str, Any]) -> None:
     """attachment-digest and the file text in the index, once the idea is submitted (§4.2 attachments step 6)."""

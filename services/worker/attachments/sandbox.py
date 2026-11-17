@@ -11,7 +11,7 @@ import sys
 from multiprocessing.connection import Connection
 from typing import Any
 
-from attachments.extract import EXTRACTORS, Extracted, TooBigToCheck
+from attachments.extract import EXTRACTORS, Extracted, Locked, NotCheckable, TooBigToCheck
 from attachments.ocr import OcrFailed
 
 TIMEOUT_S = 90.0
@@ -36,6 +36,10 @@ def _child(kind: str, data: bytes, memory_mb: int, conn: Connection) -> None:
         result: Any = ("ok", EXTRACTORS[kind](data))
     except TooBigToCheck as exc:
         result = ("too_big", str(exc))
+    except Locked as exc:
+        result = ("locked", str(exc))
+    except NotCheckable as exc:
+        result = ("not_checkable", str(exc))
     except MemoryError:
         result = ("too_big", "memory")
     except OcrFailed as exc:
@@ -76,4 +80,6 @@ def extract(kind: str, data: bytes, *, timeout_s: float = TIMEOUT_S, memory_mb: 
         return value
     if status == "unavailable":
         raise ExtractionFailed("ocr_unavailable")
+    if status in ("locked", "not_checkable"):  # the old pipeline treats both as unreadable, as before
+        raise ExtractionFailed(status)
     raise ExtractionFailed("too_big" if status == "too_big" else "unreadable")
