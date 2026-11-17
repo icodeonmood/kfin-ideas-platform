@@ -118,12 +118,14 @@ export function EditIdea({
 
   // --- Loading ------------------------------------------------------------------------------------------------------
 
+  /** The page as the server sent it. After a save the file rows stay as they are: files never wait for Save, and a
+   * row that is still uploading, or failed in this browser, must not vanish. */
   const take = useCallback(
-    (p: EditPageResponse) => {
+    (p: EditPageResponse, opts: { files?: boolean } = {}) => {
       setPage(p);
       setState(stateFrom(p));
       setHidden(p.hidden);
-      loadProof(p.files as Parameters<typeof loadProof>[0]);
+      if (opts.files !== false) loadProof(p.files as Parameters<typeof loadProof>[0]);
     },
     [loadProof],
   );
@@ -266,7 +268,7 @@ export function EditIdea({
     if (body.version) setSavedAt(body.version.at);
     // Read the page again: the server keeps the masked copy of new words, and may have hidden a detail in them.
     const again = await api.editPage(ideaId);
-    if (again.ok && again.body) take(again.body);
+    if (again.ok && again.body) take(again.body, { files: false });
     else if (page && state) {
       // The page could not be read again: what was sent is now what the page compares against.
       const next = afterSave(page, state);
