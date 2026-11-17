@@ -1304,6 +1304,14 @@ export type ConversationEntryView =
       count: number;
       answered: number;
       due_at: IsoDate | null;
+      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
+       * review desk asked 3 questions." for others (BLD-F065). */
+      title: string;
+      /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
+       * answer is added to its part of your idea." */
+      deadline?: string;
+      /** The sharer's, while open: S-R3 (S-08.rules/1). */
+      answer_url?: string;
       at: IsoDate;
       at_label: string;
     }

@@ -21,6 +21,7 @@ from convo.access import COMMITTEE_ROLES, DESK_ROLES, Reader, reader
 from convo.render import COMMITTEE, DESK, Ctx, author, plural, when
 from convo.store import People, Person, load_idea, now, unseal
 from core.db import Conn
+from desk.when import deadline as answer_by
 from onepc.enums import labels
 
 REMOVE_WITHIN = dt.timedelta(minutes=5)  # L-CONVO/10 (NOT DRAWN default)
@@ -177,7 +178,7 @@ def _entry(
             e["can_remove_until"] = until
         return e
     if x["type"] == "questions":
-        return _questions(ctx, x)
+        return _questions(ctx, x, t)
     if x["type"] == "answers":
         return _answers(ctx, x, staff_as, t)
     return None
@@ -195,17 +196,38 @@ def _set(ctx: Ctx, set_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def _questions(ctx: Ctx, x: dict[str, Any]) -> dict[str, Any] | None:
-    """By reference (L-CONVO/4): the card itself is lane B's `C-QCARD`, filled from `GET /ideas/:id/question-set`."""
+def _questions(ctx: Ctx, x: dict[str, Any], t: dt.datetime) -> dict[str, Any] | None:
+    """By reference (L-CONVO/4): the card itself is lane B's `C-QCARD`, filled from `GET /ideas/:id/question-set`.
+    Its plain words come with it, for S-08 to show until the card is on main (BLD-F065): the card's title, and for
+    the sharer while the set is open the deadline as lane B words it (`desk.when.deadline`) and where to answer."""
     s = _set(ctx, str(x["question_set_id"]))
     if s is None or s["state"] == "queued":
         return None
     by = ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK)
-    return {
+    n = int(s["count"])
+    is_open = s["state"] in OPEN_SET_STATES
+    if (
+        ctx.reader.sharer
+    ):  # Messages.md: "Meera has 3 questions about your idea" / "Meera’s 3 questions, answered"
+        title = (
+            f"{by.first_name} has {plural(n, 'question')} about your idea"
+            if is_open
+            else f"{by.first_name}’s {plural(n, 'question')}, answered"
+        )
+    else:
+        title = f"{ctx.name(by)} asked {plural(n, 'question')}."
+    out: dict[str, Any] = {
         "type": "questions", "id": str(x["id"]), "set_id": str(s["id"]), "state": s["state"],
-        "by": by.ref(), "by_label": ctx.name(by), "count": int(s["count"]), "answered": int(s["answered"]),
-        "due_at": s["due_at"],
+        "by": by.ref(), "by_label": ctx.name(by), "count": n, "answered": int(s["answered"]),
+        "due_at": s["due_at"], "title": title,
     }  # fmt: skip
+    if ctx.reader.sharer and is_open and s["due_at"]:
+        out["deadline"] = (
+            f"Answer by {answer_by(s['due_at'], t)}. One at a time, typed or spoken, and each answer is added to its "
+            "part of your idea."
+        )
+        out["answer_url"] = f"/ideas/{ctx.idea['idea_id']}/answer"
+    return out
 
 
 def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking, t: dt.datetime) -> dict[str, Any] | None:
