@@ -166,3 +166,10 @@ The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `
 | `L-CREW/2`, a match reason that does not start "Same …" (BLD-F032) | The card's reason strip | The calls you describe, like your idea from Saturday |
 | `L-CREW/2`, the day in those lines | The card's reason strip | today / yesterday / a weekday within the week / 12 November |
 | `L-CREW/9`, a waiting request whose lead's record was erased (BLD-F035) | "Your crews" | Waiting for the lead (and "A colleague" for the name, the existing BLD-E006 line) |
+| `S-H2`, filters that match nothing (BLD-F037; the pack draws no state) | In place of the deck, with "Clear all" | No ideas match these filters / Try fewer filters, or clear them to see every idea close to yours. |
+| `L-CREW/7`, the end of the deck when nothing was asked (the pack draws "You asked to team up on 1 idea.") | "That's everyone for now" | New ideas close to yours show up here. (the line without its first sentence) / You asked to team up on 2 ideas. (the plural) |
+| `L-CREW/5`, the filter panel's count, read by a screen reader | As options are picked | 1 idea matches / 2 ideas match (the board's "2 ideas match") |
+| `S-H2`, the card's title as a button (it opens the preview) | Read by a screen reader | Rejection SMS codes confuse investors. Preview the idea |
+| `S-H2`, while the deck loads | Read by a screen reader only | Loading ideas close to yours |
+| `S-H2`, when the deck does not load | In place of the deck, with "Try again" | These ideas did not load / Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
+| `S-H2`, when a pass, an undo or "See them again" does not go through | Under the deck | That did not go through. Check your connection, then try again. |
