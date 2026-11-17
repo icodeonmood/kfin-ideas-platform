@@ -17,7 +17,7 @@ test("everyone reads The Ember's archive from the account menu; only the chair a
   await expect(page.getByRole("link", { name: "Work on this month's issue" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
   await page.goto("/ember/compose");
-  await expect(page).toHaveURL(/\/$/); // sent home
+  await expect(page).toHaveURL(/\/home$/); // sent home (Home is S-03 at /home, BLD-C143)
 });
 
 test("an admin opens Write The Ember", async ({ page }) => {

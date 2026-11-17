@@ -90,10 +90,12 @@ test("J-SHARE/v1, J-RESUME/2: sending from Home opens S-04B with the words; the 
   await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
   const draft = new URL(page.url()).pathname;
   await expect(page.getByText(WORDS).first()).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toBeVisible();
   await expect(page.getByText("Picked up where you left off.")).toHaveCount(0);
 
-  if (isPhone(page)) return; // the side bar is the desktop's (C-SIDEBAR); the phone reaches drafts from My ideas
+  // The desktop's draft panel and side bar (C-DRAFT-PANEL, C-SIDEBAR); the phone opens the draft from a sheet and
+  // reaches drafts from My ideas
+  if (isPhone(page)) return;
+  await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toBeVisible();
   await page.goto("/home");
   const section = page.getByRole("navigation", { name: "Main" }).getByRole("region", { name: "Drafts" });
   const link = section.getByRole("link").first();
