@@ -123,9 +123,11 @@ function useMinute(): Date {
  * focus asked for by S-R2.rules/4 is carried across that remount here.
  */
 let focusPanelOnMount = false;
-let carried: { ideaId: string; banner: string; at: number } | null = null;
-/** A carried banner is for the new read straight after a merge, never for a later visit to the same idea. */
-const CARRY_MS = 15_000;
+/**
+ * A merge's banner, carried to the new read straight after the merge and cleared as soon as it is shown there (or
+ * as soon as the next read arrives, when that read does not mount the page afresh), never for a later visit.
+ */
+let carried: { ideaId: string; banner: string } | null = null;
 function refreshInto(router: ReturnType<typeof useRouter>) {
   focusPanelOnMount = true;
   router.refresh();
@@ -170,7 +172,7 @@ export function ReviewerIdea({
   const [previewing, setPreviewing] = useState<ReviewerSimilar | null>(null);
   const [merging, setMerging] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(() =>
-    carried?.ideaId === idea.id && Date.now() - carried.at < CARRY_MS ? carried.banner : null,
+    carried?.ideaId === idea.id ? carried.banner : null,
   );
   const [mergedIds, setMergedIds] = useState<Set<string>>(
     () => new Set(page.similar.filter((s) => s.merged).map((s) => s.idea_id)),
@@ -188,10 +190,10 @@ export function ReviewerIdea({
   const reasonBox = useRef<HTMLTextAreaElement>(null);
   const now = useMinute();
 
-  // The carried banner shows once
+  // The carried banner shows once: cleared when this mount has shown it, and on each new read of the page
   useEffect(() => {
     carried = null;
-  }, [idea.id]);
+  }, [page]);
 
   // L-REVIEW.open/1: page.tsx opens the idea for a reviewer before it is read (J-REVIEW/1).
 
@@ -611,7 +613,7 @@ export function ReviewerIdea({
                       <ul className="ri-wording-l" aria-label="Plainer ways to say it">
                         {(wording.suggestions ?? []).slice(1).map((w) => (
                           <li key={w.word} className="meta">
-                            For &quot;{w.word}&quot;, {w.suggestion}.
+                            For “{w.word}”, {w.suggestion}.
                           </li>
                         ))}
                       </ul>
@@ -832,7 +834,7 @@ export function ReviewerIdea({
             setMerging(null);
             // When this idea is the one that joined, its status changes and the page mounts afresh: the banner
             // stays (C-SHEET-MERGE.after)
-            carried = { ideaId: idea.id, banner: m.banner, at: Date.now() };
+            carried = { ideaId: idea.id, banner: m.banner };
             router.refresh();
           }}
         />
