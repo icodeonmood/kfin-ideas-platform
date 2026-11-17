@@ -31,7 +31,8 @@ export type DueRow = {
   due_label: string;
   overdue: boolean;
 };
-type Figure = { amount: number; unit?: string; line?: string };
+/** A saved figure: `{amount, unit, line}` from this page's form, or the synthetic seed's older `{value, line}`. */
+type Figure = { amount?: number; unit?: string; line?: string; value?: string | number };
 export type EnteredRow = {
   id: number;
   idea_ref: string;
@@ -639,12 +640,29 @@ function Impact({
   );
 }
 
+/**
+ * The entered figures as lines (J-ONE/2, L-IMPACT). This page's form saves `{amount, unit, line}`. The synthetic
+ * seed's older figures are `{value, line}`: the figure as text with its unit in `line` ("620", "hours a month"), or
+ * a figure that carries its own words ("2 fewer steps", "per online form"). Lane E's Wall reads both
+ * (services/worker/wall/impact.py), so this list does too, and never shows "NaN".
+ */
+export function figureLines(results: EnteredRow["results"]): string[] {
+  const read = (f: Figure | undefined, words: (n: number) => string): string | null => {
+    if (!f) return null;
+    if (typeof f.amount === "number" && Number.isFinite(f.amount)) return words(f.amount);
+    const text = String(f.value ?? "").trim();
+    return text ? [text, f.line?.trim()].filter(Boolean).join(" ") : null;
+  };
+  return [
+    read(results.time, (n) => `${number.format(n)} hours a month`),
+    read(results.money, (n) => `₹${rupees.format(n)} a year`),
+    read(results.effort, (n) => `${number.format(n)} fewer steps`),
+    read(results.scale, (n) => `${number.format(n)} ${results.scale?.unit ?? ""}`.trim()),
+  ].filter((l): l is string => l !== null);
+}
+
 function Figures({ results }: { results: EnteredRow["results"] }) {
-  const lines: string[] = [];
-  if (results.time) lines.push(`${number.format(results.time.amount)} hours a month`);
-  if (results.money) lines.push(`₹${rupees.format(results.money.amount)} a year`);
-  if (results.effort) lines.push(`${number.format(results.effort.amount)} fewer steps`);
-  if (results.scale) lines.push(`${number.format(results.scale.amount)} ${results.scale.unit ?? ""}`.trim());
+  const lines = figureLines(results);
   return (
     <ul className="plain-list">
       {lines.map((l) => (

@@ -57,6 +57,8 @@ test("L-AUDIT, F-SPACE.breakpoints: an admin sees the programme, the experiments
   // DEC-108: voice goes through Sarvam and is on at launch.
   await expect(page.getByText(/Voice notes are turned into text by Sarvam/)).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "S1" })).toBeVisible();
+  // J-ONE/2 on the 1% Club seed: a figure saved in the seed's older form reads as words, never "NaN".
+  await expect(page.locator("#impact")).not.toContainText("NaN");
   const size = page.viewportSize() ?? { width: 1280, height: 720 };
   await page.setViewportSize({ width: 320, height: size.height });
   try {
