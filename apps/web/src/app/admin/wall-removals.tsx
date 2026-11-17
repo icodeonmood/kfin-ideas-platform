@@ -6,7 +6,7 @@
  */
 import { useId, useState } from "react";
 
-import { FieldError } from "./programme";
+import { FieldError, useConfirmStep, useHeadingFocus } from "./programme";
 import { send, type Problem } from "./send";
 
 export type Removal = { id: number; idea_ref: string; title: string; by: string; reason: string; at: string };
@@ -27,6 +27,7 @@ export function WallRemovals({
   onDone: (message: string) => Promise<void>;
 }) {
   const id = useId();
+  const { heading, then } = useHeadingFocus(onDone);
   const [ref, setRef] = useState("");
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -49,7 +50,9 @@ export function WallRemovals({
 
   return (
     <section aria-labelledby={`${id}-title`} id="wall">
-      <h2 id={`${id}-title`}>Take an idea off the Wall</h2>
+      <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>
+        Take an idea off the Wall
+      </h2>
       <p className="muted">
         Use this when an idea&apos;s summary should not be on the Wall, for example if it is spam or
         sensitive. The idea, its decision and its people stay as they are. Every change needs a reason and is
@@ -112,7 +115,7 @@ export function WallRemovals({
                 <td>{r.reason}</td>
                 <td>{when.format(new Date(r.at))}</td>
                 <td>
-                  <PutBack removal={r} onDone={onDone} />
+                  <PutBack removal={r} onDone={then} />
                 </td>
               </tr>
             ))}
@@ -125,12 +128,13 @@ export function WallRemovals({
 
 function PutBack({ removal, onDone }: { removal: Removal; onDone: (m: string) => Promise<void> }) {
   const id = useId();
-  const [open, setOpen] = useState(false);
+  // Opening moves focus to the reason, the step's first field; Cancel brings it back (WCAG 2.4.3).
+  const { open, trigger, step, show, cancel, close } = useConfirmStep<HTMLTextAreaElement>();
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
   if (!open)
     return (
-      <button type="button" className="button button-secondary" onClick={() => setOpen(true)}>
+      <button type="button" className="button button-secondary" ref={trigger} onClick={show}>
         Put back<span className="visually-hidden">: {removal.idea_ref}</span>
       </button>
     );
@@ -142,13 +146,14 @@ function PutBack({ removal, onDone }: { removal: Removal; onDone: (m: string) =>
         event.preventDefault();
         const out = await send("DELETE", `/api/admin/ideas/${removal.idea_ref}/wall-removal`, { reason });
         if (!out.ok) return setProblem(out.problem);
-        setOpen(false);
+        close();
         await onDone(`${removal.idea_ref} is back on the Wall.`);
       }}
     >
       <label htmlFor={`${id}-reason`}>Reason for putting it back</label>
       <textarea
         id={`${id}-reason`}
+        ref={step}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         rows={2}
@@ -164,7 +169,7 @@ function PutBack({ removal, onDone }: { removal: Removal; onDone: (m: string) =>
         <button type="submit" className="button">
           Put back on the Wall
         </button>
-        <button type="button" className="button button-secondary" onClick={() => setOpen(false)}>
+        <button type="button" className="button button-secondary" onClick={cancel}>
           Cancel
         </button>
       </div>

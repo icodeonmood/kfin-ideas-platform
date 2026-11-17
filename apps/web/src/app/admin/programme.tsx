@@ -6,7 +6,7 @@
  * after the Ones (L-ONES admin path, DEC-106). The pack does not draw this page (L-DECIDE.after and L-IMPACT/8
  * OPEN): it is a plain, accessible page. Every action is checked and audited on the server.
  */
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { TIER_NAME } from "@/lib/contracts";
 
@@ -117,6 +117,53 @@ const described = (problem: Problem | null, field: string, id: string) =>
     ? { "aria-invalid": true as const, "aria-describedby": id }
     : {};
 
+/**
+ * Focus for a confirm step that opens in place of its button (WCAG 2.4.3): opening moves focus into the step,
+ * Cancel brings it back to the button. On success the caller moves focus on (to its section's heading), because
+ * the row leaves the table.
+ */
+export function useConfirmStep<T extends HTMLElement>() {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const step = useRef<T>(null);
+  const next = useRef<"step" | "trigger" | null>(null);
+  useEffect(() => {
+    if (next.current === "step") step.current?.focus();
+    else if (next.current === "trigger") trigger.current?.focus();
+    next.current = null;
+  }, [open]);
+  return {
+    open,
+    trigger,
+    step,
+    show: () => {
+      next.current = "step";
+      setOpen(true);
+    },
+    cancel: () => {
+      next.current = "trigger";
+      setOpen(false);
+    },
+    close: () => {
+      next.current = null;
+      setOpen(false);
+    },
+  };
+}
+
+/** A section heading that takes focus once its confirm step has done its work (WCAG 2.4.3). */
+export function useHeadingFocus(onDone: (m: string) => Promise<void>) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const then = useCallback(
+    async (m: string) => {
+      await onDone(m);
+      heading.current?.focus();
+    },
+    [onDone],
+  );
+  return { heading, then };
+}
+
 // --- J-ONE step 1: choose the build team -------------------------------------------------------------------------
 
 function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) => Promise<void> }) {
@@ -220,9 +267,12 @@ function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) 
 
 function Shipping({ beingBuilt, onDone }: { beingBuilt: IdeaRow[]; onDone: (m: string) => Promise<void> }) {
   const id = useId();
+  const { heading, then } = useHeadingFocus(onDone);
   return (
     <section aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>Being built: mark shipped</h2>
+      <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>
+        Being built: mark shipped
+      </h2>
       <p className="muted">
         When the fix is live, mark it shipped. The sharer&apos;s track reaches Shipped, and its 30- and 90-day
         checks are set.
@@ -252,7 +302,7 @@ function Shipping({ beingBuilt, onDone }: { beingBuilt: IdeaRow[]; onDone: (m: s
                 <td>{row.lead ?? "—"}</td>
                 <td>{row.since_label ?? "—"}</td>
                 <td>
-                  <ShipButton row={row} onDone={onDone} />
+                  <ShipButton row={row} onDone={then} />
                 </td>
               </tr>
             ))}
@@ -264,18 +314,26 @@ function Shipping({ beingBuilt, onDone }: { beingBuilt: IdeaRow[]; onDone: (m: s
 }
 
 function ShipButton({ row, onDone }: { row: IdeaRow; onDone: (m: string) => Promise<void> }) {
-  const [asking, setAsking] = useState(false);
+  const { open, trigger, step, show, cancel, close } = useConfirmStep<HTMLDivElement>();
   const [problem, setProblem] = useState<Problem | null>(null);
   const errId = `ship-${row.idea_ref}-err`;
-  if (!asking)
+  const askId = `ship-${row.idea_ref}-ask`;
+  if (!open)
     return (
-      <button type="button" className="button button-secondary" onClick={() => setAsking(true)}>
+      <button type="button" className="button button-secondary" ref={trigger} onClick={show}>
         Mark shipped<span className="visually-hidden">: {row.idea_ref}</span>
       </button>
     );
   return (
-    <div className="inline-form" role="group" aria-label={`Mark ${row.idea_ref} shipped`}>
-      <p>Is it live and in use?</p>
+    <div
+      className="inline-form"
+      role="group"
+      aria-label={`Mark ${row.idea_ref} shipped`}
+      aria-describedby={askId}
+      ref={step}
+      tabIndex={-1}
+    >
+      <p id={askId}>Is it live and in use?</p>
       {problem ? (
         <p id={errId} role="alert" className="field-error">
           {problem.message}
@@ -288,13 +346,13 @@ function ShipButton({ row, onDone }: { row: IdeaRow; onDone: (m: string) => Prom
           onClick={async () => {
             const out = await send("POST", `/api/admin/ideas/${row.idea_ref}/shipped`);
             if (!out.ok) return setProblem(out.problem);
-            setAsking(false);
+            close();
             await onDone(`${row.idea_ref} is shipped. Its 30- and 90-day checks are set.`);
           }}
         >
           Yes, it has shipped
         </button>
-        <button type="button" className="button button-secondary" onClick={() => setAsking(false)}>
+        <button type="button" className="button button-secondary" onClick={cancel}>
           Cancel
         </button>
       </div>
@@ -634,6 +692,7 @@ function FinanceCell({ m, onDone }: { m: EnteredRow; onDone: (t: string) => Prom
 
 function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise<void> }) {
   const id = useId();
+  const { heading, then } = useHeadingFocus(onDone);
   const [email, setEmail] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
 
@@ -648,7 +707,9 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
 
   return (
     <section aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>The Ones</h2>
+      <h2 id={`${id}-title`} ref={heading} tabIndex={-1}>
+        The Ones
+      </h2>
       <p className="muted">
         People become Ones on their own when an idea they are credited on is measured and confirmed. Here you
         mark Founding Ones and remove a One. Both are recorded with your name and the time.
@@ -680,7 +741,7 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
                 </td>
                 <td>{o.idea_ref ?? "—"}</td>
                 <td>
-                  <RemoveOne one={o} onDone={onDone} />
+                  <RemoveOne one={o} onDone={then} />
                 </td>
               </tr>
             ))}
@@ -711,12 +772,13 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
 }
 
 function RemoveOne({ one, onDone }: { one: OneRow; onDone: (m: string) => Promise<void> }) {
-  const [asking, setAsking] = useState(false);
+  const { open, trigger, step, show, cancel, close } = useConfirmStep<HTMLDivElement>();
   const [problem, setProblem] = useState<Problem | null>(null);
   const errId = `remove-one-${one.id}-err`;
-  if (!asking)
+  const askId = `remove-one-${one.id}-ask`;
+  if (!open)
     return (
-      <button type="button" className="button button-secondary" onClick={() => setAsking(true)}>
+      <button type="button" className="button button-secondary" ref={trigger} onClick={show}>
         Remove
         <span className="visually-hidden">
           : No. {one.number}, {one.name}
@@ -724,8 +786,15 @@ function RemoveOne({ one, onDone }: { one: OneRow; onDone: (m: string) => Promis
       </button>
     );
   return (
-    <div className="inline-form" role="group" aria-label={`Remove No. ${one.number}, ${one.name}`}>
-      <p>
+    <div
+      className="inline-form"
+      role="group"
+      aria-label={`Remove No. ${one.number}, ${one.name}`}
+      aria-describedby={askId}
+      ref={step}
+      tabIndex={-1}
+    >
+      <p id={askId}>
         Remove No. {one.number}? Their card and posts leave the Wall, Home and the office screen. The number
         rests for six months.
       </p>
@@ -741,13 +810,13 @@ function RemoveOne({ one, onDone }: { one: OneRow; onDone: (m: string) => Promis
           onClick={async () => {
             const out = await send("DELETE", `/api/admin/ones/${one.id}`);
             if (!out.ok) return setProblem(out.problem);
-            setAsking(false);
+            close();
             await onDone(`${one.name} is no longer a One. No. ${one.number} rests for six months.`);
           }}
         >
           Yes, remove
         </button>
-        <button type="button" className="button button-secondary" onClick={() => setAsking(false)}>
+        <button type="button" className="button button-secondary" onClick={cancel}>
           Cancel
         </button>
       </div>
