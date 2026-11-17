@@ -15,16 +15,17 @@ import psycopg
 
 from core.db import Conn
 from teamup import adapters, rules
-from teamup.requests import Req, load_request, tell_lead, waiting_from
+from teamup.requests import Req, end_sent_drafts, ended, load_request, settle, tell_lead, waiting_from
 from teamup.store import (
     Refused,
     actor,
     audit,
     audited,
+    hidden_from,
     is_closed,
     lead_code,
     load_draft,
-    load_idea,
+    load_idea_for,
     lock_ideas,
     person_by_code,
     remember,
@@ -79,7 +80,11 @@ def merge_request_json(conn: Conn, req: Req | None) -> dict[str, Any]:
 def state(conn: Conn, draft_id: str, user_id: str) -> dict[str, Any]:
     """`GET /drafts/:id/merge-request` (BLD-F015): the draft's latest merge request, for its owner."""
     draft = load_draft(conn, draft_id, require_code(conn, user_id))
-    return merge_request_json(conn, _latest(conn, draft["id"]))
+    req = _latest(conn, draft["id"])
+    if req is not None and ended(req):  # the idea closed, or this draft was sent or archived (BLD-F024)
+        settle(conn, req.idea)
+        req = _latest(conn, draft["id"])
+    return merge_request_json(conn, req)
 
 
 def ask(
@@ -87,17 +92,25 @@ def ask(
 ) -> dict[str, Any]:
     """`POST /drafts/:id/merge-request` `{other_idea_id, note}`: "Ask {lead} to merge mine in" (L-MERGE.request/1–4).
     Returns the draft's merge request in state `waiting`. Errors: note_too_short (30), already_requested,
-    already_on_crew (they lead that idea), idea_closed, draft_closed."""
+    already_on_crew (they lead that idea), idea_closed, draft_closed, not_found (a withdrawn idea, BLD-E011),
+    key_reused (BLD-F026)."""
     code = require_code(conn, user_id)
-    made = remembered(conn, user_id, idempotency_key, ROUTE_ASK)
+    asked = {"draft": draft_id, **body}
+    made = remembered(conn, user_id, idempotency_key, ROUTE_ASK, asked)
     if made is not None:
         return merge_request_json(conn, load_request(conn, made))
     note = str(body.get("note") or "")
     with audited(conn), conn.transaction():
         draft = load_draft(conn, draft_id, code)
-        other = load_idea(conn, str(body.get("other_idea_id") or ""))
+        other = load_idea_for(conn, str(body.get("other_idea_id") or ""), code)
         locked = lock_ideas(conn, draft["id"], other["id"])
         draft, other = locked[str(draft["id"])], locked[str(other["id"])]
+        if hidden_from(conn, other, code):  # withdrawn while this waited for the lock
+            raise Refused(404, "not_found")
+        # the same key sent twice at once: the second waited for the lock, and returns the first
+        made = remembered(conn, user_id, idempotency_key, ROUTE_ASK, asked)
+        if made is not None:
+            return merge_request_json(conn, load_request(conn, made))
         if draft["status"] != "draft" or draft["archived_at"] is not None:
             raise Refused(409, "draft_closed", "This draft has already been sent.")
         if is_closed(str(other["status"])):
@@ -106,6 +119,8 @@ def ask(
         if lead_of_other == code:
             raise Refused(409, "already_on_crew", "You lead this idea.")
         lead = person_by_code(conn, lead_of_other)
+        # a request from a draft sent since does not count as open (BLD-F024)
+        end_sent_drafts(conn, other["id"])
         if waiting_merge_request(conn, draft["id"]) or waiting_from(conn, other["id"], code):
             raise Refused(409, "already_requested", f"Waiting on {lead.first_name} to merge")
         problem = rules.check_note(note, adapters.note_min())
@@ -131,7 +146,7 @@ def ask(
         tell_lead(conn, rid, "merge", other, 1, user_id)
         audit(conn, actor(user_id), "merge_request.ask", f"draft:{draft['id']}",
               after={"request_id": rid, "other_idea_id": other["idea_id"]})  # fmt: skip
-        remember(conn, user_id, idempotency_key, ROUTE_ASK, {"draft": draft_id, **body}, rid)
+        remember(conn, user_id, idempotency_key, ROUTE_ASK, asked, rid)
         return merge_request_json(conn, load_request(conn, rid))
 
 
