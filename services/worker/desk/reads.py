@@ -262,6 +262,83 @@ def _questions(
     return out
 
 
+def _file_artefacts(conn: Conn, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The Attachments card's file rows (S-R2.left/2), each marked when it holds a customer detail (DEC-107)."""
+    out: list[dict[str, Any]] = []
+    for f in files:
+        by = person_by_code(conn, f["uploaded_by_code"]).first_name
+        size = _size(int(f["bytes"])) + (
+            f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
+        )
+        when_line = "Added with the answers." if f["answer_id"] else f"Attached by {by}."
+        out.append({"kind": "file", "id": f["id"], "title": f["name"],
+                    "line": f"{when_line} {size}." + (f" {f['hidden_note']}" if f["hidden_note"] else ""),
+                    "action": "Open", "customer_detail": f["customer_detail"]})  # fmt: skip
+    return out
+
+
+def _part_texts(
+    conn: Conn, idea: dict[str, Any], files: list[dict[str, Any]], hidden_kinds: list[str]
+) -> dict[str, str]:
+    """Each part's words as the idea holds them (S-R2.left/3); the worth part is shown as tiles."""
+    fix = conn.execute("SELECT how, included FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
+    return {
+        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
+        "cost": "", "evidence": _evidence_text(files, hidden_kinds),
+        "fix": (fix["how"] or "") if fix and fix["included"] else "",
+    }  # fmt: skip
+
+
+def _parts(texts: dict[str, str], asked: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    from desk.questions import PART_NAMES, PARTS
+
+    return [
+        {"part": p, "name": PART_NAMES[p], "text": texts[p], "questions": asked.get(p, [])} for p in PARTS
+    ]
+
+
+def _own_words(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
+    """The sharer's own words, the masked copy (L-REVIEW.open/3)."""
+    from desk.store import unseal
+
+    return [
+        {"seq": m["seq"], "via": m["via"], "at": m["created_at"].isoformat(),
+         "text": unseal(m["text_encrypted"], "idea_messages", "text_encrypted", str(m["id"]))}
+        for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea_uuid,))
+    ]  # fmt: skip
+
+
+_MERGED_IN = """
+WITH RECURSIVE chain(id) AS (
+  SELECT id FROM ideas WHERE merged_into = %s AND status = 'merged'
+  UNION SELECT i.id FROM ideas i JOIN chain c ON i.merged_into = c.id WHERE i.status = 'merged'
+)
+SELECT i.*, (SELECT max(m.at) FROM merges m WHERE m.merged_idea_uuid = i.id AND m.reversed_at IS NULL) AS merged_at,
+       l.idea_id AS into_idea_id
+FROM chain c JOIN ideas i ON i.id = c.id JOIN ideas l ON l.id = i.merged_into
+ORDER BY coalesce(i.shared_at, i.created_at), i.id
+"""
+
+
+def _contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime, viewer_id: str) -> list[dict[str, Any]]:
+    """L-MERGE.effects/3: every idea merged into this one, through the whole `merged_into` chain, as a contribution
+    under its sharer's first name: its parts, the answers its sharer sent, its words and its files. Files are gated
+    as the lead's are: checked, or marked when they hold a customer detail (DEC-107)."""
+    out: list[dict[str, Any]] = []
+    for c in conn.execute(_MERGED_IN, (idea["id"],)).fetchall():
+        sharer = person_by_code(conn, c["contributor_code"])
+        files = _checked_files(conn, c["id"], DESK_SEES)
+        texts = _part_texts(conn, c, files, _hidden_kinds(conn, c["id"]))
+        out.append({
+            "idea_id": c["idea_id"], "title": c["title"] or "", "into": c["into_idea_id"],
+            "merged_at": c["merged_at"].isoformat() if c["merged_at"] else None,
+            "sharer": sharer.as_json(), "label": f"{sharer.first_name}’s idea, {c['idea_id']}",
+            "parts": _parts(texts, _questions(conn, c["id"], at, viewer_id)),
+            "files": _file_artefacts(conn, files), "own_words": _own_words(conn, c["id"]),
+        })  # fmt: skip
+    return out
+
+
 def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> dict[str, Any]:
     """Which working state the panel opens in (L-REVIEW.panel), with what it shows."""
     from desk import committee, questions
@@ -310,7 +387,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     """Everything a reviewer needs to decide on one idea, on one page (S-R2.left, S-R2.panel). Raw words are the
     masked copy (L-REVIEW.open/3); unmasked hidden details never reach the desk."""
     from desk import revise, worth
-    from desk.store import is_own, load_idea, person_by_code, unseal
+    from desk.store import is_own, load_idea, person_by_code
 
     t = at or now()
     idea = load_idea(conn, ref)
@@ -326,12 +403,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     heading = f"Shared {when.day(shared_at, t)} by {sharer.name}, {sharer.area or idea['area'] or ''}, {idea['city'] or ''}."
     if idea["sorting_confirmed_at"] and sorting_line:
         heading += f" Sorting confirmed by {sharer.first_name}: {sorting_line[0].lower() + sorting_line[1:]}."
-    # own words, the masked copy (L-REVIEW.open/3)
-    messages = [
-        {"seq": m["seq"], "via": m["via"], "at": m["created_at"].isoformat(),
-         "text": unseal(m["text_encrypted"], "idea_messages", "text_encrypted", str(m["id"]))}
-        for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea["id"],))
-    ]  # fmt: skip
+    messages = _own_words(conn, idea["id"])
     hidden_kinds = _hidden_kinds(conn, idea["id"])
     # the desk opens a file holding a customer detail, marked (DEC-107)
     files = _checked_files(conn, idea["id"], DESK_SEES)
@@ -345,16 +417,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         (idea["id"],),
     ).fetchone()
     first = sharer.first_name
-    artefacts: list[dict[str, Any]] = []
-    for f in files:
-        by = person_by_code(conn, f["uploaded_by_code"]).first_name
-        size = _size(int(f["bytes"])) + (
-            f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
-        )
-        when_line = "Added with the answers." if f["answer_id"] else f"Attached by {by}."
-        artefacts.append({"kind": "file", "id": f["id"], "title": f["name"],
-                          "line": f"{when_line} {size}." + (f" {f['hidden_note']}" if f["hidden_note"] else ""),
-                          "action": "Open", "customer_detail": f["customer_detail"]})  # fmt: skip
+    artefacts = _file_artefacts(conn, files)
     if messages:
         artefacts.append({"kind": "own_words", "title": f"{first}’s own words",
                           "line": " ".join(x for x in (f"As {first} wrote them on {when.DAYS[shared_at.astimezone(when.IST).weekday()]}, before the draft.",
@@ -375,18 +438,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             )
         artefacts.append({"kind": "versions", "title": "Draft history", "line": " ".join(bits), "action": "See changes"})  # fmt: skip
     sharer_worth, reviewer_worth, revision = revise.current(conn, str(idea["id"]))
-    fix = conn.execute("SELECT * FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
-    asked = _questions(conn, idea["id"], t, user_id)
-    part_text = {
-        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
-        "cost": "", "evidence": _evidence_text(files, hidden_kinds),
-        "fix": (fix["how"] or "") if fix and fix["included"] else "",
-    }  # fmt: skip
-    from desk.questions import PART_NAMES, PARTS
-
-    parts = [
-        {"part": p, "name": PART_NAMES[p], "text": part_text[p], "questions": asked.get(p, [])} for p in PARTS
-    ]
+    parts = _parts(_part_texts(conn, idea, files, hidden_kinds), _questions(conn, idea["id"], t, user_id))
     similar = [
         {"idea_id": s["idea_id"], "title": s["title"], "status": s["status"], "strength": s["strength"],
          "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
@@ -436,6 +488,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             ),
         },
         "similar": similar,
+        "contributions": _contributions(conn, idea, t, user_id),
         "panel": _panel(conn, idea, user_id, t),
     }
 
@@ -451,13 +504,8 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
     t = at or now()
     idea = load_idea(conn, ref)
     files = _checked_files(conn, idea["id"])  # viewer-independent: never a file holding a customer detail
-    fix = conn.execute("SELECT how, included FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
     sharer_worth, reviewer_worth, _rev = revise.current(conn, str(idea["id"]))
-    texts = {
-        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
-        "cost": "", "evidence": _evidence_text(files, _hidden_kinds(conn, idea["id"])),
-        "fix": (fix["how"] or "") if fix and fix["included"] else "",
-    }  # fmt: skip
+    texts = _part_texts(conn, idea, files, _hidden_kinds(conn, idea["id"]))
     answers = {
         part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
         for part, qs in _questions(conn, idea["id"], t).items()
