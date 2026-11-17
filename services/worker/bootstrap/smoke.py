@@ -20,6 +20,7 @@ from pathlib import Path
 
 from core.config import get_settings
 from core.db import connect
+from core.speech_route import hosted_problem, key_set, voice_problem
 from okf.validate import validate_bundle
 from repo_writer.git import Git
 from rules.loader import RULE_PATHS, load_all
@@ -148,13 +149,13 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
                 ).fetchall()
             }
         on = states.get("capture.voice") == "on"
-        sarvam_ok = (
-            s.speech_mode == "sarvam"
-            and states.get("speech.hosted") == "on"
-            and bool(s.speech_hosted_approval.strip())
-        )
-        local_ok = s.speech_mode == "local" and bool(s.speech_engine_url)
-        mode_ok = not on or not s.is_production_like or sarvam_ok or local_ok
+        hosted_on = states.get("speech.hosted") == "on"
+        key = key_set(s)
+        # Outside dev and test the route must be ready as switched, by the go/no-go report's own rules (DEC-108)
+        problem = voice_problem(
+            on, hosted_on, s.speech_mode, s.speech_engine_url, s.speech_hosted_approval, key
+        ) or hosted_problem(hosted_on, s.speech_hosted_approval, key)
+        mode_ok = not s.is_production_like or problem is None
         try:
             versioned = versioning(s.s3_bucket_quarantine)
         except Exception:  # a store with no versioning at all (the dev gateway) cannot keep old versions
@@ -162,7 +163,7 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         return (
             mode_ok and versioned != "Enabled",
             f"capture.voice {'on' if on else 'off'}; speech.hosted {states.get('speech.hosted', 'missing')}; "
-            f"SPEECH_MODE {s.speech_mode}; "
+            f"SPEECH_MODE {s.speech_mode}; Sarvam key {'set' if key else 'missing'}; "
             f"isolated service {'set' if s.speech_engine_url else 'unset'}; quarantine versioning {versioned}",
         )
 
