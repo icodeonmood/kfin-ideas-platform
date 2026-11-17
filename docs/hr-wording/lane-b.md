@@ -1,0 +1,64 @@
+# New wording on the review side, for HR's sign-off (lane B)
+
+Written 16 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Everything else on the review screens is the design pack's own copy (`1pc-handoff/reference/copy/`), used as it stands. These are the lines lane B had to add or change, each with where it shows and why. Names in quotes stand for the real person's first name at run time.
+
+## 1. Lines changed so they never guess a person's gender (BLD-E008)
+
+The boards say "she" and "her" for the demo sharer. With real people that would guess their gender, so the first name is used, or "they" and "their" where the name would repeat.
+
+| Where | Board copy | Changed to |
+|---|---|---|
+| The reviewer's page, after a decision | Today, 4:58 pm. She has it now. | Today, 4:58 pm. Kavya has it now. |
+| The reviewer's page, the Not picked option | It won't go ahead. Say what happens to her words. | It won't go ahead. Say what happens to Kavya's words. |
+| The reviewer's page, the files list | Her own words. As she wrote them on Saturday, before the draft. | Kavya's own words. As Kavya wrote them on Saturday, before the draft. |
+| The reviewer's page, the files list | 2 found while she wrote. She kept hers separate. | 2 found while Kavya wrote. Kavya kept it separate. |
+| The reviewer's page, the heading | Sorting confirmed by her | Sorting confirmed by Kavya |
+| The reviewer's page, the files list | Added with her answers today. | Added with the answers. |
+| The reviewer's page, the panel | She sees your figures next to hers. | Kavya sees your figures next to theirs. |
+
+## 2. Lines the boards do not draw
+
+| Where | Wording | Why |
+|---|---|---|
+| A notice when Listen is switched off | Listening to an idea is paused for now. You can still read it on the page. | Listen can be switched off on its own; it is first in Thursday's drop order |
+| The review desk, when nothing waits on a sharer and nothing is answered | 1 idea to review. / 8 ideas to review. / Nothing to review. | The board draws the summary only with questions out |
+| The review desk, a decision whose committee window has closed | The Ones Committee's window has closed. The decision stands. | Not drawn |
+| The review desk, a decision the committee changed | The Ones Committee changed it to not now on 13 November, with a note to Kavya | The board draws only "picked it on 13 November" |
+| The Ones Committee, reversing a Not now or Not picked | On "{title}". The review desk said not now. / The review desk didn't pick it. | The board draws only a Pick; its line reads "The review desk said picked it", which this corrects to "The review desk picked it." |
+| Suggested questions, when the idea leaves a part empty | How often does this happen: a few times a day, a week or a month? / Who does this affect most: investors, distributors or a KFin team? / Can you add a screenshot or a file that shows it, with customer details hidden? | The assistant writes these once it is on; until then these fill the gaps |
+| The merge sheet's note, before the reviewer edits it | You both raised the same problem. One team, one fix, with both your names on it. | The board's note names details only the assistant can write |
+| The panel, answers in with little time left, or late | Answered with 5 hours to spare. / Answered 2 hours after the deadline. | The board draws only "Answered with 3 days to spare" |
+| Listen, a part with nothing in it | No summary yet. / Not given. / No figures given. / Nothing attached. | The board draws only "No fix suggested. It was optional." |
+| The reason field, a word a sharer must never read | Kavya reads this word for word. The product never says "duplicate": say it is the same problem as another idea, and name it. Send it anyway if you mean it. | L-DECIDE.rules/4 asks for a warning that does not block |
+
+## 3. Error messages the boards do not draw
+
+| Where | Wording |
+|---|---|
+| A reviewer opening their own idea | This is your own idea. Another reviewer takes it. |
+| A committee member on their own idea | This is your own idea. Another member takes it. |
+| A second decision | This idea already has a decision. |
+| A reason, a reversal note, a merge note over the limit | Keep the reason under 1,000 characters. / Keep the note under 1,000 characters. / Keep the note under 600 characters. |
+| Not now without a return period | Choose when it comes back. |
+| Joining with a similar idea that has closed | Choose a similar idea that is still open. |
+| A question left empty, or too long | Write the question first. / Keep it under 300 characters. |
+| A question not pinned to a part | Choose the part it is about. |
+| A time to answer not offered | Choose 1 day, 3 days or 1 week. |
+| An answer over the limit | Keep your answer under 2,000 characters. |
+| What it's worth: a tools choice not offered | Choose None, Partly or Fully. |
+| The committee: no extension left, a closed window, a reversed one | This window is at the 3-month limit. / This window has closed. The decision stands. / This decision has already been reversed. That was final. |
+
+## 4. Lines added with the screens (16 Nov, evening)
+
+| Where | Wording |
+|---|---|
+| The Answer screen, after sending (BLD-E008) | The board says "Meera decides by Friday 20 November, and her decision comes to your Inbox." This now reads "Meera decides by Friday 20 November, and the decision comes to your Inbox." |
+| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee's window. |
+| The Ones Committee, empty tabs | No decisions in the window. Each desk decision shows here for 30 days after it is made. / Nothing reversed. A decision the committee changes shows here, with its note. / Nothing expired yet. When a window closes, the decision stands and moves here. |
+| The Answer screen with nothing to answer | Nothing to answer right now. When the review desk asks you something about this idea, the questions show here. |
+| The reviewer's page, the reviewer's own idea | Your own idea. Another reviewer decides on it. You can read it here. |
+| The review desk, a reminder that did not go | The reminder didn't go. Try again. |
+| The Ones Committee, a reversal that cannot start | This decision can't be reversed now. |
+| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can't be opened right now. |
+| Any send that fails | That didn't go through. Try again. / Your answers didn't send. Try again. / That didn't save. Try again. / That didn't merge. Try again. |
+| The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
