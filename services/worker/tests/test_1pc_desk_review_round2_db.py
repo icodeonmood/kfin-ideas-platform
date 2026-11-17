@@ -265,3 +265,21 @@ def test_S_R2_DEC_107_files_by_check_state_on_the_reviewer_page_and_for_a_co_sha
     script = reads.listen_script(db, idea["idea_id"], cast["meera"]["id"])
     evidence = next(p for p in script["parts"] if p["part"] == "evidence")["text"]
     assert "sms-801.png" in evidence and "sms-802.png" not in evidence
+
+
+# ---- finding 8: "Give 2 more days" on an overdue set counts from now, and reminds before the new deadline --------
+def test_L_QUESTIONS_clock_3_more_time_on_an_overdue_set_is_never_still_overdue(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    sent = _send(db, cast, time_to_answer="1d")  # due Tuesday 17 November, 11:20 am
+    late = f.at(18, 10)  # overdue by nearly a day
+    got = asking.give_more_time(db, sent["id"], cast["meera"]["id"], late)
+    assert dt.datetime.fromisoformat(got["due_at"]) == f.at(20, 10)
+    assert got["countdown"] == {"label": "2 days to answer", "variant": "normal"}
+    assert (
+        reads.reviewer_idea(db, cast["idea"]["idea_id"], cast["meera"]["id"], late)["panel"]["variant"]
+        == "normal"
+    )
+    assert clocks.run_due(db, f.at(19, 9))["reminded"] == 0
+    assert clocks.run_due(db, f.at(19, 10, 5))["reminded"] == 1  # a day before the new deadline
+    assert clocks.run_due(db, f.at(20, 8, 5))["reminded"] == 1  # and two hours before
