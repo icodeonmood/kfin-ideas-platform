@@ -124,3 +124,46 @@ def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(db: Any) -> Non
     assert glow_up_seen(conn, who, int(g["id"]))
     again = my_one(conn, who)
     assert again is not None and again["glow_up"] is None
+
+
+def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_other(db: Any) -> None:
+    """J-REVIEW/M3 (L-MERGE.desk/1, 2, 5; L-REVIEW.open/1; L-SIMILAR.rules/6): two ideas from different sharers,
+    both with the review desk, opened by the same reviewer (so both edit windows are closed), nothing decided or
+    asked, and each lists the other under similar ideas. The one shared first leads by default."""
+    conn = db
+    m = club_seed.load(conn)
+    first, later, _reason = club_seed.DESK_PAIR
+    rows = {
+        str(r["id"]): r
+        for r in conn.execute(
+            "SELECT id, status, reviewer_id, opened_at, opened_by, edit_closes_at, shared_at, contributor_code, "
+            "merged_into, now() AS now FROM ideas WHERE id = ANY(%s::uuid[])",
+            ([m[first].uuid, m[later].uuid],),
+        ).fetchall()
+    }
+    a, b = rows[m[first].uuid], rows[m[later].uuid]
+    lavanya = _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP["lavanya"]))
+    for r in (a, b):
+        assert r["status"] == "with_review_desk" and r["merged_into"] is None
+        assert r["reviewer_id"] == lavanya and r["opened_by"] == lavanya and r["opened_at"] is not None
+        assert r["edit_closes_at"] <= r["opened_at"] < r["now"]  # opening closed the sharer's edit window
+    assert a["contributor_code"] != b["contributor_code"]
+    assert a["shared_at"] < b["shared_at"]  # the default lead (L-MERGE.desk/2)
+    assert m[first].ref and m[later].ref
+
+    links = conn.execute(
+        "SELECT idea_uuid, other_idea_uuid, strength FROM similar_links WHERE idea_uuid = ANY(%s::uuid[]) "
+        "AND other_idea_uuid = ANY(%s::uuid[])",
+        ([m[first].uuid, m[later].uuid], [m[first].uuid, m[later].uuid]),
+    ).fetchall()
+    assert {(str(r["idea_uuid"]), str(r["other_idea_uuid"]), r["strength"]) for r in links} == {
+        (m[first].uuid, m[later].uuid, "close"),
+        (m[later].uuid, m[first].uuid, "close"),
+    }
+    pair = [m[first].uuid, m[later].uuid]
+    for table, column in (("idea_decisions", "idea_uuid"), ("question_sets", "idea_uuid"),
+                          ("merges", "lead_idea_uuid"), ("merges", "merged_idea_uuid")):  # fmt: skip
+        sql = f"SELECT count(*) FROM {table} WHERE {column} = ANY(%s::uuid[])"  # noqa: S608 - fixed names
+        assert _one(conn, sql, pair) == 0, table
+    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+    assert _one(conn, matched, m[later].uuid) == "1"
