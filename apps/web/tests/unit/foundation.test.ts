@@ -59,12 +59,12 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-/** The declarations of the rule whose selector is exactly `selector` in components.css, comments dropped. */
-function componentRule(selector: string): Record<string, string> {
-  const css = read(`${APP}components.css`).replace(/\/\*[\s\S]*?\*\//g, "");
+/** The declarations of the rule whose selector is exactly `selector` in a sheet (components.css by default). */
+function componentRule(selector: string, sheet = "components.css"): Record<string, string> {
+  const css = read(`${APP}${sheet}`).replace(/\/\*[\s\S]*?\*\//g, "");
   const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const body = css.match(new RegExp(`(?:^|\\})\\s*${esc}\\s*\\{([^}]*)\\}`))?.[1];
-  if (body === undefined) throw new Error(`components.css has no rule ${selector}`);
+  if (body === undefined) throw new Error(`${sheet} has no rule ${selector}`);
   return Object.fromEntries(
     body
       .split(";")
@@ -199,6 +199,14 @@ describe("F-COLOR.contrast and F-A11Y.rules/1", () => {
       const disc = paint(r.background!, hex("--paper"), t);
       expect(contrast(paint(r.color!, disc, t), disc), `${sel} on ${disc}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+describe("F-TYPE.rules/5: avatar initials are 12px or larger", () => {
+  it.each([".av", ".av-36", ".av-32", ".av-28", ".crew-face"])("%s", (sel) => {
+    const r = componentRule(sel, "shell.css");
+    const size = (r["font-size"] ?? r.font ?? "").match(/(\d+(?:\.\d+)?)px/)?.[1];
+    expect(Number(size), `${sel} font size`).toBeGreaterThanOrEqual(12);
   });
 });
 
