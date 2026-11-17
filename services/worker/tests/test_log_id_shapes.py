@@ -56,8 +56,9 @@ def test_l_audit_nn3_seeded_uuids_as_ref_id_are_never_refused_in_strict_mode(
             log.info("gateway.call", agent="gatekeeper", outcome="ok", ref_id=value)
             assert scan_log_line(json.dumps({"event": "gateway.call", "ref_id": value})) == [], value
         log.info("gateway.batch", ref_ids=values)  # the list branch
-    # The seed is fixed, so this is exact: the test really exercises the IDs that used to fail.
-    assert would_have_tripped == 121
+    # 121 with this seed today. Any positive count proves the test still exercises IDs that used to fail; an exact
+    # count would break whenever a detection pattern is tuned.
+    assert would_have_tripped > 0
 
 
 def test_l_audit_nn3_ids_that_tripped_before_are_written_and_pass_the_scrubber(
