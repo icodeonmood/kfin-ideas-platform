@@ -95,6 +95,11 @@ endpoints:
   - POST /api/me/app-news                             signed_in       # "Tell me when it's out" (S-H3, L-NOTIFY/7)
   - GET /api/inbox                                    signed_in
   - POST /api/inbox/{id}/read                         signed_in       # mark one message read (addition to §8)
+  # An idea's conversation (lane F; A-API.inbox, L-CONVO). The worker decides who may read or write on each idea
+  # (L-CONVO/2: sharer, crew, desk, committee, build team, a person mentioned) and answers anyone else 404.
+  - GET /api/ideas/{id}/conversation                  signed_in
+  - POST /api/ideas/{id}/conversation/messages        signed_in
+  - DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in  # the sender’s own, within 5 minutes
   - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
