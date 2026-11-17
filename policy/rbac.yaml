@@ -103,6 +103,11 @@ endpoints:
   - POST /api/inbox/{id}/unread                       signed_in       # "Mark unread" (S-H5)
   - POST /api/inbox/{id}/archive                      signed_in       # refused while it still needs the person (L-INBOX.rules/5)
   - POST /api/inbox/{id}/actions/{op}                 signed_in       # the item's op, run by the lane that owns it (notify.ops)
+  # An idea's conversation (lane F; A-API.inbox, L-CONVO). The worker decides who may read or write on each idea
+  # (L-CONVO/2: sharer, crew, desk, committee, build team, a person mentioned) and answers anyone else 404.
+  - GET /api/ideas/{id}/conversation                  signed_in
+  - POST /api/ideas/{id}/conversation/messages        signed_in
+  - DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in  # the sender’s own, within 5 minutes
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
   - PUT /api/submissions/{id}                         submit

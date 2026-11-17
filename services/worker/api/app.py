@@ -1356,3 +1356,7 @@ app.include_router(_idea_page_routes(require_token))
 from teamup.routes import build as _teamup_routes  # noqa: E402
 
 app.include_router(_teamup_routes(require_token))
+# An idea's conversation (lane F; L-CONVO, A-API.inbox). Its routes live with the code in convo/routes.py.
+from convo.routes import build as _convo_routes  # noqa: E402
+
+app.include_router(_convo_routes(require_token))
