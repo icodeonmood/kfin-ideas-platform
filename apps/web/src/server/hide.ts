@@ -6,6 +6,8 @@
  * - `POST /api/drafts/:id/hidden/:hid/show` and `/hide` (C-HIDDEN "Show it", "Hide it", L-HIDE.rules/6): the person
  *   whose words they are, only.
  * Errors follow A-API.conventions/2: `{ error: { code, message } }`. Messages never echo the person's text.
+ * Offsets: the browser's "Hide this" range is in UTF-16 units and goes on as `units: "utf16"`; spans going out are
+ * converted with `spansToUtf16` (`hide-offsets.ts`, BLD-C068).
  */
 import { NextResponse } from "next/server";
 
@@ -16,11 +18,13 @@ import type { CurrentUser } from "./auth/current";
 import { getDb } from "./db";
 import { workerFetch } from "./worker";
 
+export { codePointsToUtf16, spansToUtf16, utf16ToCodePoints } from "./hide-offsets";
+
 export type HideErrorCode =
   "forbidden" | "not_found" | "range_invalid" | "already_hidden" | "reason_required" | "hide_failed";
 
 export const HIDE_MESSAGES: Record<HideErrorCode, string> = {
-  forbidden: "Only the review desk and the Ones Committee can hide text.",
+  forbidden: "The review desk hid this, so it stays hidden.",
   not_found: "We couldn't find that. It may have changed. Refresh and try again.",
   range_invalid: "Select only the words to hide, then try again.",
   already_hidden: "That is already hidden from everyone.",
@@ -43,7 +47,7 @@ export const SHOW_REASONS: readonly ShowReason[] = [
   "made_up_example",
 ] as const;
 
-export const DESK_SOURCE_KINDS = ["part", "message", "answer", "title"] as const;
+export const DESK_SOURCE_KINDS = ["part", "message", "answer", "title", "conversation", "fix"] as const;
 export type DeskSourceKind = (typeof DESK_SOURCE_KINDS)[number];
 
 export class HideError extends Error {
@@ -79,7 +83,13 @@ async function callWorker(path: string, body: Record<string, unknown>): Promise<
   });
   const out = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const code = String(out.error ?? "");
+    const err = out.error;
+    const code =
+      typeof err === "string"
+        ? err
+        : err && typeof err === "object"
+          ? String((err as { code?: unknown }).code ?? "")
+          : "";
     throw new HideError(code in STATUS ? (code as HideErrorCode) : "hide_failed");
   }
   return out as unknown as HiddenDetail;
@@ -107,6 +117,7 @@ export async function deskHide(me: CurrentUser, ideaId: string, body: Record<str
     source: { kind, id: sourceId },
     start,
     end,
+    units: "utf16", // the browser's offsets; the worker converts them against the text the reviewer read
     by: me.id,
   });
 }
