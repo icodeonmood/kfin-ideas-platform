@@ -424,6 +424,28 @@ def test_L_TEAMUP_rules_11_a_member_leaves_and_the_lead_removes(
     assert [r["left_how"] for r in kavya_rows] == ["removed", None]
 
 
+def test_L_SUBMIT_withdraw_2_a_stranger_cannot_leave_or_remove_on_a_withdrawn_idea(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """BLD-F023: leave and remove say "not found" to a stranger, so neither confirms that a withdrawn idea exists;
+    the people BLD-E011 names still get their usual answers."""
+    pradeep = f.person(db, "Pradeep Kumar")
+    db.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (cast["lead"]["id"],))
+    ref = cast["lead"]["idea_id"]
+    for call in (
+        lambda: crew.leave(db, ref, pradeep["id"]),
+        lambda: crew.remove(db, ref, cast["asha"]["id"], pradeep["id"]),
+    ):
+        r = _refused(call)
+        assert (r.status, r.code, r.message) == (404, "not_found", "We couldn’t find that.")
+    assert [a for a in f.audit_rows(db, "crew.") if a["entity"] == f"idea:{ref}"] == []
+    assert cast["asha"]["code"] in f.live_crew(db, cast["lead"])
+    assert _refused(crew.leave, db, ref, cast["ravi"]["id"]).code == "lead_stays"
+    assert _refused(crew.remove, db, ref, pradeep["id"], cast["ravi"]["id"]).code == "not_on_crew"
+    assert _refused(crew.remove, db, ref, cast["ravi"]["id"], cast["asha"]["id"]).code == "not_lead"
+    assert crew.leave(db, ref, cast["asha"]["id"])["crew_count"] == 1
+
+
 # --- adapters --------------------------------------------------------------------------------------------------
 def test_adapters_resolve_calls_lane_A_with_the_request_key(inbox: f.Inbox) -> None:
     adapters.resolve(None, "0b6c3d2e-0000-4000-8000-000000000001")  # type: ignore[arg-type]
@@ -810,6 +832,91 @@ def test_L_TEAMUP_states_a_draft_merge_request_ends_when_the_idea_closes(
     sent = _refused(drafts.ask, db, str(draft["id"]), cast["kavya"]["id"],
                     {"other_idea_id": f.idea(db, cast["asha"])["idea_id"], "note": NOTE})  # fmt: skip
     assert sent.code == "draft_closed"
+
+
+# --- BLD-F027 lock order, BLD-F024 reads that write only when something ended ------------------------------------
+_LOCK_IDEA = "SELECT * FROM ideas WHERE id = %s FOR UPDATE"  # `store.lock_ideas`
+_WRITES = ("INSERT", "UPDATE", "DELETE")
+
+
+def _sql_log(db: Conn, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
+    """Every statement the connection runs from now on, with its parameters."""
+    log: list[tuple[str, Any]] = []
+    real = db.execute
+
+    def spy(query: Any, params: Any = None, **kw: Any) -> Any:
+        log.append((str(query).strip(), params))
+        return real(query, params, **kw)
+
+    monkeypatch.setattr(db, "execute", spy)
+    return log
+
+
+def _locks_before_anything_else(log: list[tuple[str, Any]]) -> list[str]:
+    """The ideas `lock_ideas` locked, in the order it locked them, before the first write or any other lock."""
+    out: list[str] = []
+    for sql, params in log:
+        if sql == _LOCK_IDEA:
+            out.append(str(params[0]))
+        elif "FOR UPDATE" in sql or sql.split(None, 1)[0].upper() in _WRITES:
+            break
+    return out
+
+
+def _writes(log: list[tuple[str, Any]]) -> list[str]:
+    return [sql for sql, _ in log if sql.split(None, 1)[0].upper() in _WRITES or "FOR UPDATE" in sql]
+
+
+def test_BLD_F027_answer_send_with_a_draft_and_ask_lock_every_idea_first_in_id_order(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-TEAMUP, L-MERGE.request: the three writes that touch two ideas lock both, sorted by row id, before any
+    other lock or write, so two of them at once wait for each other instead of deadlocking."""
+    lead, mine = str(cast["lead"]["id"]), str(cast["mine"]["id"])
+    # POST /ideas/:id/team-up with draft_id ("Keep mine separate"): the idea and the draft it marks
+    kept = f.draft(db, cast["kavya"])
+    f.similar(db, kept, cast["lead"])
+    log = _sql_log(db, monkeypatch)
+    sent = requests.send(db, cast["lead"]["idea_id"], cast["kavya"]["id"],
+                         {"note": NOTE, "brought_idea_ids": [cast["mine"]["idea_id"]],
+                          "draft_id": str(kept["id"])})  # fmt: skip
+    locked = _locks_before_anything_else(log)
+    assert locked == sorted(locked) and set(locked) == {lead, mine, str(kept["id"])}
+    # POST /team-up/:id/answer: the lead's idea and every idea brought, then the request row
+    log.clear()
+    requests.answer(db, sent["id"], cast["ravi"]["id"], {"answer": "merge"})
+    locked = _locks_before_anything_else(log)
+    assert locked == sorted(locked) and set(locked) == {lead, mine}
+    # POST /drafts/:id/merge-request: the draft and the idea it asks to join
+    pradeep = f.person(db, "Pradeep Kumar")
+    asking = f.draft(db, pradeep)
+    log.clear()
+    drafts.ask(db, str(asking["id"]), pradeep["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE})
+    locked = _locks_before_anything_else(log)
+    assert locked == sorted(locked) and set(locked) == {lead, str(asking["id"])}
+
+
+def test_BLD_F024_a_read_writes_only_when_a_brought_draft_has_left_draft(
+    db: Conn, cast: dict[str, Any], held: dict[str, Any], inbox: f.Inbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rid, draft = held["asked"]["id"], held["draft"]
+    ref = cast["lead"]["idea_id"]
+    log = _sql_log(db, monkeypatch)
+    requests.my_state(db, ref, cast["kavya"]["id"])
+    requests.my_state(db, ref, cast["asha"]["id"])
+    requests.read(db, rid, cast["ravi"]["id"])
+    _check_it(db, cast, held)
+    assert _writes(log) == []
+    # the draft is sent while its request waits: the next read ends it, once
+    db.execute("UPDATE ideas SET status = 'with_review_desk' WHERE id = %s", (draft["id"],))
+    log.clear()
+    mine = requests.my_state(db, ref, cast["kavya"]["id"])
+    assert mine["request"]["state"] == "withdrawn" and mine["can_request"] is True
+    assert any(sql.startswith("UPDATE merge_requests") for sql in _writes(log))
+    log.clear()
+    requests.my_state(db, ref, cast["kavya"]["id"])
+    requests.read(db, rid, cast["ravi"]["id"])
+    assert _writes(log) == []
 
 
 def test_the_fixtures_leave_no_people_or_ideas_behind(
