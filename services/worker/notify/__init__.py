@@ -58,6 +58,9 @@ REMINDER_KINDS: frozenset[str] = frozenset({"answer_reminder"})
 # Kinds that carry no refs at all: the item says only that something happened (L-HIDE/7, /8: a hidden detail is never
 # in a notification, not even as an ID that points at it).
 NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
+# Kinds sent as the review desk as a whole (L-HIDE/7, BLD-A205): the reviewer who acted is never stored on the item or
+# its email, so no later read can name them; the reader shows "The review desk".
+AS_THE_DESK: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 
 Ref = str | int | bool | None
 
@@ -83,9 +86,11 @@ class Action:
 
 @dataclass(frozen=True)
 class Posted:
-    """What `post` did: the inbox item IDs, one per recipient who got a new one."""
+    """What `post` did: the inbox item IDs, one per recipient who got a new one (`ids`), and the open items a repeat
+    post with the same key brought up to date (`updated`)."""
 
     ids: list[int] = field(default_factory=list)
+    updated: list[int] = field(default_factory=list)
 
 
 class NotifyError(ValueError):
@@ -142,8 +147,13 @@ def post(
     - `needs_you`, `due_at`: show the item under "Needs you", with its due date (L-INBOX).
     - `actions`: the buttons on the item. None given: the kind's own (L-INBOX.kinds).
     - `refs`: the kind's body as IDs, enums, numbers and booleans only; the template turns them into words.
-    - `dedupe_key`: posting the same key to the same person twice keeps one item (reminders, retries); `resolve`
-      finds the item again by it.
+    - `dedupe_key`: one item per person per key (reminders, retries); `resolve` finds the item again by it. A
+      repeat post with the same key updates that person's item in place while it is open (not resolved): the latest
+      `due_at`, `refs`, `actions` and `needs_you` replace the old ones on the same row, and an email or Teams message
+      still waiting to go takes the new date and refs. No new row is written and no second outside message is queued;
+      read and archived stay as they were (BLD-A188: lane B's "Give 2 more days" posts `questions` again under
+      `qs:<set>` with the new `due_at`, so every screen shows one countdown, V-ACC.track/3). Once the item is resolved,
+      a repeat post leaves it as it is and posts nothing.
 
     The sender is never also a recipient; a recipient listed twice gets one item; people who have left get none.
     """
@@ -166,6 +176,7 @@ def post(
     people = [p for p in people if p != from_user]
     if not people:
         return Posted()
+    stored_from = None if kind in AS_THE_DESK else from_user
 
     rows = conn.execute(
         "SELECT u.id, coalesce(p.email, true) AS email, coalesce(p.teams, true) AS teams, "
@@ -181,18 +192,44 @@ def post(
         Jsonb([{k: v for k, v in asdict(a).items() if v is not None} for a in actions]),
     )
     ids: list[int] = []
+    updated: list[int] = []
     for person in people:
         pref = prefs.get(person)
         if pref is None:
             continue
+        # A repeat key updates the open item in place (`xmax = 0` only on a fresh insert); a resolved one is left
+        # alone and returns nothing.
         item = conn.execute(
             "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, sent_at, kind, "
             "from_user_id, idea_uuid, needs_you, due_at, actions, dedupe_key) "
             "VALUES (%s, 'in_app', %s, %s, %s, 'immediate', 'sent', now(), %s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING RETURNING id",
-            (person, template, payload, event, kind, from_user, idea, needs_you, due_at, buttons, dedupe_key),
+            "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET "
+            "due_at = EXCLUDED.due_at, payload = EXCLUDED.payload, actions = EXCLUDED.actions, "
+            "needs_you = EXCLUDED.needs_you WHERE notifications.resolved_at IS NULL "
+            "RETURNING id, (xmax = 0) AS inserted",
+            (
+                person,
+                template,
+                payload,
+                event,
+                kind,
+                stored_from,
+                idea,
+                needs_you,
+                due_at,
+                buttons,
+                dedupe_key,
+            ),
         ).fetchone()
-        if item is None:  # this person already has it
+        if item is None:  # this person had it, and it is resolved: nothing to post
+            continue
+        if not item["inserted"]:  # an open item brought up to date; its outside messages are not sent again
+            updated.append(int(item["id"]))
+            conn.execute(
+                "UPDATE notifications SET due_at = %s, payload = %s WHERE user_id = %s AND dedupe_key = %s "
+                "AND channel <> 'in_app' AND state = 'queued'",
+                (due_at, payload, person, dedupe_key),
+            )
             continue
         ids.append(int(item["id"]))
         channels = outside_channels(
@@ -205,11 +242,11 @@ def post(
                 "kind, from_user_id, idea_uuid, due_at, dedupe_key) "
                 "VALUES (%s, %s, %s, %s, %s, 'immediate', 'queued', now(), %s, %s, %s, %s, %s) "
                 "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
-                (person, channel, template, payload, event, kind, from_user, idea, due_at, dedupe_key),
+                (person, channel, template, payload, event, kind, stored_from, idea, due_at, dedupe_key),
             )
-    if ids:
-        log.info("notify.posted", inbox_kind=kind, item_count=len(ids))
-    return Posted(ids=ids)
+    if ids or updated:
+        log.info("notify.posted", inbox_kind=kind, item_count=len(ids), updated_count=len(updated))
+    return Posted(ids=ids, updated=updated)
 
 
 def resolve(conn: Conn, dedupe_key: str, *, recipients: Sequence[str] | None = None) -> int:

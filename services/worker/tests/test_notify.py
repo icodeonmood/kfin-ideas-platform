@@ -176,6 +176,52 @@ def test_L_NOTIFY_dedupe_keeps_one_item_and_resolve_takes_it_off_needs_you(cast:
     assert inbox.counts(db, p["kavya"]["id"])["needs_you"] == 1
 
 
+def test_L_NOTIFY_a_repeat_key_updates_the_open_item_in_place(cast: Any) -> None:
+    """BLD-A188, V-ACC.track/3 (one countdown everywhere): lane B's "Give 2 more days" posts `questions` again under
+    `qs:<set>` with the new due date and `more_time`. The same row moves its date and refs; no second row and no
+    second email; read stays read. Once resolved, a repeat post changes nothing."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
+    s = str(uuid.uuid4())
+    first_due, later_due = WORKDAY_NOON + dt.timedelta(days=3), WORKDAY_NOON + dt.timedelta(days=5)
+    posted = notify.post(db, "questions", [kavya], idea_id=ideas["mine"], sender=p["meera"]["id"], needs_you=True,
+                         due_at=first_due, refs={"set_id": s}, dedupe_key=f"qs:{s}")  # fmt: skip
+    item = posted.ids[0]
+    inbox.mark_read(db, kavya, item)
+    again = notify.post(db, "questions", [kavya], idea_id=ideas["mine"], sender=p["meera"]["id"], needs_you=True,
+                        due_at=later_due, refs={"set_id": s, "more_time": True},
+                        actions=[Action("Answer the questions", "primary", to="answer")],
+                        dedupe_key=f"qs:{s}")  # fmt: skip
+    assert again.ids == [] and again.updated == [item]
+    rows = db.execute(
+        "SELECT id, channel, due_at, payload, actions, needs_you, read_at FROM notifications WHERE user_id = %s "
+        "ORDER BY id",
+        (kavya,),
+    ).fetchall()
+    assert [r["channel"] for r in rows] == ["in_app", "email"]  # one item, one email in total
+    mine = rows[0]
+    assert (
+        mine["id"] == item
+        and mine["due_at"] == later_due
+        and mine["payload"] == {"set_id": s, "more_time": True}
+    )
+    assert mine["actions"] == [{"label": "Answer the questions", "style": "primary", "to": "answer"}]
+    assert mine["needs_you"] and mine["read_at"] is not None  # read stays read
+    assert rows[1]["due_at"] == later_due  # the email still waiting to go says the new date
+    assert inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]["due"]["label"] == "5 days left"
+    # Resolved: a repeat post leaves the item as it is and posts nothing.
+    assert notify.resolve(db, f"qs:{s}") == 1
+    late = notify.post(db, "questions", [kavya], idea_id=ideas["mine"], needs_you=True,
+                       due_at=later_due + dt.timedelta(days=1), refs={"set_id": s}, dedupe_key=f"qs:{s}")  # fmt: skip
+    assert late == notify.Posted()
+    after = db.execute("SELECT due_at, needs_you FROM notifications WHERE id = %s", (item,)).fetchone()
+    assert after["due_at"] == later_due and not after["needs_you"]
+    assert (
+        db.execute("SELECT count(*) AS n FROM notifications WHERE user_id = %s", (kavya,)).fetchone()["n"]
+        == 2
+    )
+
+
 def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None:
     db, p, ideas = cast["db"], cast["p"], cast["ideas"]
     kavya = p["kavya"]["id"]
@@ -307,6 +353,11 @@ def test_L_HIDE_7_detail_hidden_by_desk_comes_from_the_review_desk_with_one_acti
             "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
         ).fetchone()
         assert row["payload"] == {}
+        # Not even stored: the item and its email carry no sender, so no later read can name the reviewer.
+        senders = db.execute(
+            "SELECT channel, from_user_id FROM notifications WHERE user_id = %s ORDER BY id", (kavya,)
+        ).fetchall()
+        assert [(r["channel"], r["from_user_id"]) for r in senders] == [("in_app", None), ("email", None)]
         mail = nrender.email(db, dict(row), WORKDAY_NOON)
         assert "The review desk hid a customer’s detail in your idea" in mail.text
         assert "Only you can still see it." in mail.text and "Meera" not in mail.text + mail.html
@@ -315,6 +366,79 @@ def test_L_HIDE_7_detail_hidden_by_desk_comes_from_the_review_desk_with_one_acti
         if widen:
             db.execute("ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check")
             db.execute("ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check " + check)
+
+
+def test_L_NOTIFY_3_J_TEAMUP_4_the_request_email_opens_the_leads_item_in_the_app(cast: Any) -> None:
+    """The email row has no buttons of its own, so "Answer the request" uses the kind's "inbox" link: it opens the
+    person's in-app item (found by its key, else by the idea), never the email row's id; with no item, the Inbox."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
+    request = str(uuid.uuid4())
+    # Lane F's call (BLD-A188): bare ops under teamup_request, refs {request_id, request, brought}.
+    posted = notify.post(db, "teamup_request", [kavya], idea_id=ideas["mine"], sender=p["ravi"]["id"],
+                         needs_you=True, refs={"request_id": request, "request": "merge", "brought": 1},
+                         actions=[Action("Decline", "text", op="decline"), Action("Team up only", op="team_only"),
+                                  Action("Merge it", "primary", op="merge")],
+                         dedupe_key=f"teamup_request:{request}")  # fmt: skip
+    item = posted.ids[0]
+    mail_row = dict(
+        db.execute(
+            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
+        ).fetchone()
+    )
+    assert mail_row["id"] != item and not mail_row["actions"]  # an email row carries no buttons
+    mail = nrender.email(db, mail_row, WORKDAY_NOON)
+    assert f"/inbox/{item}" in mail.text and f"/inbox/{mail_row['id']}" not in mail.text + mail.html
+    assert "Answer the request" in mail.text
+    # An item posted with no key is found by its idea: the latest of its kind posted before the email.
+    other = notify.post(db, "teamup_request", [kavya], idea_id=ideas["mine"], sender=p["rohan"]["id"],
+                        needs_you=True, refs={"request_id": str(uuid.uuid4()), "request": "team_only"},
+                        actions=[Action("Decline", "text", op="decline"),
+                                 Action("Approve", "primary", op="team_only")])  # fmt: skip
+    second = dict(
+        db.execute(
+            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' ORDER BY id DESC LIMIT 1",
+            (kavya,),
+        ).fetchone()
+    )
+    assert second["dedupe_key"] is None
+    assert f"/inbox/{other.ids[0]}" in nrender.email(db, second, WORKDAY_NOON).text
+    # No in-app item left to open: the plain Inbox.
+    db.execute("DELETE FROM notifications WHERE user_id = %s AND channel = 'in_app'", (kavya,))
+    text = nrender.email(db, mail_row, WORKDAY_NOON).text
+    assert "/inbox/" not in text and "/inbox" in text
+
+
+@pytest.mark.parametrize(
+    ("refs", "line", "label"),
+    [
+        ({"via": "phone"}, "kept your draft from your phone", "Carry on"),
+        ({"via": "email"}, "kept your draft from email", "Check and send"),
+        ({"via": "teams"}, "kept your draft from Teams", "Check and send"),
+        ({}, "kept your draft", "Carry on"),
+        ({"via": "fax"}, "kept your draft", "Carry on"),
+    ],
+    ids=["phone", "email", "teams", "missing", "unknown"],
+)
+def test_L_INBOX_J_RESUME_5_6_draft_kept_reads_and_acts_by_via(
+    cast: Any, refs: dict[str, Any], line: str, label: str
+) -> None:
+    """BLD-A188: lane C posts `via` (phone|email|teams) and no buttons; the line and the one button follow it, and
+    every button opens the draft on S-04B. A missing or unknown `via` is never read as the phone."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
+    notify.post(db, "draft_kept", [kavya], idea_id=ideas["draft"], refs=refs)
+    got = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+    assert (got["body"]["sender"], got["line"]) == ("1% Club", line)
+    assert got["actions"] == [{"label": label, "style": "primary", "to": f"/share/{ideas['draft']}"}]
+    row = db.execute(
+        "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
+    ).fetchone()
+    mail = nrender.email(db, dict(row), WORKDAY_NOON)
+    assert f"1% Club {line}: " in mail.text
+    assert f"{label}" in mail.text and f"/share/{ideas['draft']}" in mail.text
+    assert ("Carry on" if label == "Check and send" else "Check and send") not in mail.text + mail.html
+    assert "your phone" not in mail.text or refs.get("via") == "phone"
 
 
 def test_L_INBOX_kinds_items_that_name_no_set_choice_or_request_read_them_from_the_idea(cast: Any) -> None:
