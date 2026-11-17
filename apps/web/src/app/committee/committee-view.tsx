@@ -198,6 +198,12 @@ export function CommitteeView({
       if (sendButton.current) sparkBurst(sendButton.current); // S-R4.rules/3
       setReversing(null);
       setOpen(null);
+      // The row leaves this tab and its count moves to Reversed at once; the reload below then brings the server's list.
+      setData((d) => ({
+        ...d,
+        items: d.items.filter((x) => x.window_id !== row.window_id),
+        counts: { ...d.counts, window: Math.max(0, d.counts.window - 1), reversed: d.counts.reversed + 1 },
+      }));
       await load(view.current.tab, view.current.sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
     });
   }
