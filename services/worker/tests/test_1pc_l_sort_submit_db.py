@@ -39,11 +39,13 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
         ("ravi", "Ravi Desai", "CTR-b2c3d4"),
         ("neha", "Neha Kulkarni", "CTR-c3d4e5"),
     ):
-        row = db.execute(
-            "INSERT INTO users (emp_id_hash, name, email, location, first_name) VALUES (%s, %s, %s, 'Hyderabad', %s) "
-            "RETURNING id",
-            (f"test-{key}", name, f"{key}@kfintech.example", name.split()[0]),
-        ).fetchone()
+        row = (
+            db.execute(  # people who sign in, not HR rows: the seed's HR import shares this session database
+                "INSERT INTO users (emp_id_hash, name, email, location, first_name, source) "
+                "VALUES (%s, %s, %s, 'Hyderabad', %s, 'sign_in') RETURNING id",
+                (f"test-{key}", name, f"{key}@kfintech.example", name.split()[0]),
+            ).fetchone()
+        )
         people[key] = str(row["id"])
         db.execute(
             "INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, row["id"])
@@ -51,7 +53,10 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (people["ravi"],))
     draft = _draft(db, "CTR-a1b2c3")
     yield {"conn": db, "p": people, "draft": draft}
+    # Leave the session database as it was found: AT-B1-03's seed import runs on it later.
     db.execute("DELETE FROM jobs WHERE id > %s", (last_job,))
+    db.execute("DELETE FROM sla_timers WHERE stage IN ('decide_by', 'no_such_kind')")
+    db.execute("TRUNCATE ideas, users RESTART IDENTITY CASCADE")
     get_settings.cache_clear()
 
 
