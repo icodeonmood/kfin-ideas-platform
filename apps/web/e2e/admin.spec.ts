@@ -67,13 +67,18 @@ test("L-AUDIT, F-SPACE.breakpoints: an admin sees the programme, the experiments
   await expectNoSeriousAxeIssues(page);
 });
 
-test("DEC-106: an empty Founding One form says what is missing, tied to the field", async ({ page }) => {
+test("DEC-106, C-FIELD-MSG.behaviour/3: an empty Founding One form says what is missing, tied to the field", async ({
+  page,
+}) => {
   await signIn(page, PERSONAS.admin);
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Mark Founding One" }).click();
-  const email = page.getByRole("textbox", { name: "Work email" }).first();
-  await expect(page.getByText("Enter a work email.")).toBeVisible();
+  // Its own form: "Lead's work email" (choose a build team) and each experiment's "Work email" use the same words.
+  const form = page.getByRole("form", { name: "Mark a Founding One" });
+  await form.getByRole("button", { name: "Mark Founding One" }).click();
+  const email = form.getByRole("textbox", { name: "Work email", exact: true });
+  await expect(form.getByRole("alert")).toHaveText("Enter a work email.");
   await expect(email).toHaveAttribute("aria-invalid", "true");
+  await expect(email).toHaveAccessibleDescription("Enter a work email.");
   await expectNoSeriousAxeIssues(page);
 });
 
