@@ -96,6 +96,13 @@ function send<T>(url: string, method: "POST" | "PUT", body?: unknown) {
   return call<T>(url, { method, body });
 }
 
+/** V-FIELDS/3: focus a field that blocks a send, in the middle of the view so no sticky bar covers it. */
+function toField(el: HTMLElement | null | undefined) {
+  if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.focus({ preventScroll: true });
+}
+
 /** The time now, refreshed on each whole minute: every countdown label can only change then. */
 function useMinute(): Date {
   const [now, setNow] = useState(() => new Date());
@@ -116,7 +123,9 @@ function useMinute(): Date {
  * focus asked for by S-R2.rules/4 is carried across that remount here.
  */
 let focusPanelOnMount = false;
-let carried: { ideaId: string; banner: string } | null = null;
+let carried: { ideaId: string; banner: string; at: number } | null = null;
+/** A carried banner is for the new read straight after a merge, never for a later visit to the same idea. */
+const CARRY_MS = 15_000;
 function refreshInto(router: ReturnType<typeof useRouter>) {
   focusPanelOnMount = true;
   router.refresh();
@@ -161,7 +170,7 @@ export function ReviewerIdea({
   const [previewing, setPreviewing] = useState<ReviewerSimilar | null>(null);
   const [merging, setMerging] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(() =>
-    carried?.ideaId === idea.id ? carried.banner : null,
+    carried?.ideaId === idea.id && Date.now() - carried.at < CARRY_MS ? carried.banner : null,
   );
   const [mergedIds, setMergedIds] = useState<Set<string>>(
     () => new Set(page.similar.filter((s) => s.merged).map((s) => s.idea_id)),
@@ -175,11 +184,13 @@ export function ReviewerIdea({
   const worthRef = useRef<HTMLDivElement>(null);
   const similarTitle = useRef<HTMLHeadingElement>(null);
   const sendButton = useRef<HTMLButtonElement>(null);
+  const choices = useRef<HTMLFieldSetElement>(null);
+  const reasonBox = useRef<HTMLTextAreaElement>(null);
   const now = useMinute();
 
   // The carried banner shows once
   useEffect(() => {
-    if (carried?.ideaId === idea.id) carried = null;
+    carried = null;
   }, [idea.id]);
 
   // L-REVIEW.open/1: page.tsx opens the idea for a reviewer before it is read (J-REVIEW/1).
@@ -231,9 +242,19 @@ export function ReviewerIdea({
     setBusy(false);
     if (!r.ok) {
       const e = r.error;
-      if (e.code === "wording_check") return setWording(e);
-      if (e.field === "choice") return setErrors({ choice: e.message });
-      if (e.field === "reason") return setErrors({ reason: e.message });
+      if (e.code === "wording_check") {
+        setWording(e);
+        return toField(reasonBox.current);
+      }
+      // V-FIELDS/3: the field that blocks takes focus, scrolled clear of the panel's bar
+      if (e.field === "choice") {
+        setErrors({ choice: e.message });
+        return toField(choices.current?.querySelector("input"));
+      }
+      if (e.field === "reason") {
+        setErrors({ reason: e.message });
+        return toField(reasonBox.current);
+      }
       return setErrors({ form: e.message });
     }
     spark();
@@ -305,6 +326,7 @@ export function ReviewerIdea({
 
           <Artefacts
             artefacts={page.artefacts}
+            canCompare={page.similar.length > 0}
             ownWords={page.own_words}
             onCompare={() => {
               similarTitle.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -484,7 +506,11 @@ export function ReviewerIdea({
                   Decide on this idea
                 </h2>
                 <p className="meta">{first} reads your decision and your reason as soon as you send it.</p>
-                <fieldset className="ri-choices" aria-describedby={errors.choice ? "choice-err" : undefined}>
+                <fieldset
+                  ref={choices}
+                  className="ri-choices"
+                  aria-describedby={errors.choice ? "choice-err" : undefined}
+                >
                   <legend className="vh">Your decision</legend>
                   {(
                     [
@@ -567,6 +593,7 @@ export function ReviewerIdea({
                   {(p) => (
                     <textarea
                       {...p}
+                      ref={reasonBox}
                       rows={4}
                       maxLength={1000}
                       value={panel.reason}
@@ -584,7 +611,7 @@ export function ReviewerIdea({
                       <ul className="ri-wording-l" aria-label="Plainer ways to say it">
                         {(wording.suggestions ?? []).slice(1).map((w) => (
                           <li key={w.word} className="meta">
-                            For “{w.word}”, {w.suggestion}.
+                            For &quot;{w.word}&quot;, {w.suggestion}.
                           </li>
                         ))}
                       </ul>
@@ -805,7 +832,7 @@ export function ReviewerIdea({
             setMerging(null);
             // When this idea is the one that joined, its status changes and the page mounts afresh: the banner
             // stays (C-SHEET-MERGE.after)
-            carried = { ideaId: idea.id, banner: m.banner };
+            carried = { ideaId: idea.id, banner: m.banner, at: Date.now() };
             router.refresh();
           }}
         />
@@ -871,11 +898,14 @@ function OwnWords({
 /** S-R2.left/2: "Everything that came with the idea": files, the sharer's own words, similar ideas found, draft history. */
 function Artefacts({
   artefacts,
+  canCompare,
   ownWords,
   onCompare,
 }: {
   artefacts: ReviewerArtefact[];
   ownWords: ReviewerIdeaResponse["own_words"];
+  /** "Compare" scrolls to Similar ideas; with none listed there it is not shown. */
+  canCompare: boolean;
   onCompare: () => void;
 }) {
   const [wordsOpen, setWordsOpen] = useState(false);
@@ -907,7 +937,7 @@ function Artefacts({
                 >
                   {a.action}
                 </Button>
-              ) : a.kind === "similar_found" ? (
+              ) : a.kind === "similar_found" && canCompare ? (
                 <Button variant="text-blue" onClick={onCompare}>
                   {a.action}
                 </Button>
@@ -1079,7 +1109,7 @@ function SentOrAnswered({
       {p.state === "sent" && onMore && onRemind ? (
         <div className="ri-sent-acts">
           <Button variant="text" onClick={onMore}>
-            Give {extendDays ?? 2} more days
+            Give {extendDays ?? 2} more {(extendDays ?? 2) === 1 ? "day" : "days"}
           </Button>
           <Button variant="line" size="sm" disabled={reminded} onClick={onRemind}>
             {reminded ? "Reminded, just now" : "Send a reminder"}
