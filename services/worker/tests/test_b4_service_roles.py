@@ -80,6 +80,7 @@ def test_the_web_role_cannot_change_final_records_e_entities() -> None:
         ).fetchall()
     readable = [r for r in rows if r["can_select"]]
     final = {r["table_name"] for r in readable if not r["can_update"] and not r["can_delete"]}
-    # llm_calls is read-only for web and contributor codes are never changed or removed by it (BLD-077).
-    assert final - {"llm_calls", "contributor_map"} == APPEND_ONLY_FOR_WEB
+    # llm_calls is read-only for web and contributor codes are never changed or removed by it (BLD-077); so are
+    # Sarvam's metering and Listen's audio cache, which only the worker writes (DEC-108, BLD-C110, BLD-C114).
+    assert final - {"llm_calls", "contributor_map", "speech_calls", "listen_cache"} == APPEND_ONLY_FOR_WEB
     assert all(r["can_insert"] for r in readable if r["table_name"] in APPEND_ONLY_FOR_WEB)

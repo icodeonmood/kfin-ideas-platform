@@ -23,7 +23,15 @@ def _write(folder: Path, name: str, body: Any) -> None:
 
 @pytest.fixture
 def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namespace:
-    monkeypatch.setattr(g, "get_settings", lambda: Settings(privacy_notice_version="1.0"))
+    # Voice is on at launch through Sarvam (DEC-108): the evidence of a ready launch includes the route, the approval
+    # and a key (a synthetic one here; the report says present or absent, never the value).
+    ready = Settings(
+        privacy_notice_version="1.0",
+        speech_mode="sarvam",
+        speech_hosted_approval="DEC-108",
+        sarvam_api_key="synthetic-test-key",
+    )
+    monkeypatch.setattr(g, "get_settings", lambda: ready)
     real = {"route": "anthropic", "version": "0.2.0"}
     _write(tmp_path / "eval", "gatekeeper-0.2.0-1.json",
            real | {"metrics": {"personal_data_recall": 1.0, "false_block_rate": 0.02}})  # fmt: skip
