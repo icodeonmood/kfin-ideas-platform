@@ -1,6 +1,10 @@
 /* S-R1 Review desk (board Desk). Values from reference/computed; colours and radii are tokens only. */
+/* One column no wider than the page: an auto column grows to the widest row's min-content, and the four tabs in a
+   row are about 800 px, which scrolled the whole page sideways at 320 and 360 px. The tab row scrolls in its own
+   box instead (C-TABS), the search wraps and the table turns into cards (S-R1.rules/6, V-ACC.visual). */
 .rd {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
   max-width: 1080px;
 }
