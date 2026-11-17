@@ -29,8 +29,11 @@
   }
 }
 
+/* A phone has no sidebar whatever the saved fold: `:root[data-fold]` matches the 0,2,0 fold rules above, which a
+ * bare `:root` (0,1,0) lost to, leaving a 56 px gap down every signed-in phone screen. */
 @media (max-width: 640px) {
-  :root {
+  :root,
+  :root[data-fold] {
     --sbw: 0px;
   }
 }
