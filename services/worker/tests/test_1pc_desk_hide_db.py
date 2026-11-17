@@ -19,6 +19,11 @@ from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: remov
 NOW = f.at(16, 13, 20)
 
 
+def cast_conn(value: object) -> Conn:
+    """A stand-in connection for a call that never reaches the database."""
+    return value  # type: ignore[return-value]
+
+
 @pytest.fixture
 def repo(company_repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     from core.config import get_settings
@@ -116,8 +121,9 @@ def test_L_HIDE_adapters_hide_calls_lane_C_hide_text_with_who_wrote_it(
         return "masked", 1
 
     monkeypatch.setattr(adapters, "hide_text", spy)
-    assert adapters.hide("conn", "idea-1", "words", by="user-1") == ("masked", 1)
-    assert adapters.hide("conn", "idea-1", "words", by="user-2", source="answer", source_id="a-1") == (
+    conn = cast_conn("conn")
+    assert adapters.hide(conn, "idea-1", "words", by="user-1") == ("masked", 1)
+    assert adapters.hide(conn, "idea-1", "words", by="user-2", source="answer", source_id="a-1") == (
         "masked",
         1,
     )
@@ -165,3 +171,9 @@ def test_L_HIDE_rules_4_L_QUESTIONS_answer_6_an_answer_keeps_its_details_across_
     assert core.own_words(db, "answer", first["id"], idea_uuid=str(cast["idea"]["id"])) == text + (
         " And once more today."
     )
+    # an emptied box hides nothing any more
+    asking.save_answer(db, qid, kavya, "", at=f.at(16, 12, 14))
+    left = db.execute(
+        "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s", (cast["idea"]["id"],)
+    ).fetchone()
+    assert left is not None and left["n"] == 0
