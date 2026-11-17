@@ -183,6 +183,30 @@ def _evidence_text(files: list[dict[str, Any]], hidden_kinds: list[str]) -> str:
     return " ".join(bits)
 
 
+def _hidden_kinds(conn: Conn, idea_uuid: Any) -> list[str]:
+    return [
+        str(r["kind"])
+        for r in conn.execute(
+            "SELECT kind FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at",
+            (idea_uuid,),
+        )
+    ]
+
+
+def _checked_files(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
+    """Files that passed the checks; a draft answer's files stay the sharer's until the answer is sent."""
+    return [
+        dict(f)
+        for f in conn.execute(
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at FROM attachments "
+            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') "
+            "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
+            "AND a.sent_at IS NOT NULL)) ORDER BY created_at",
+            (idea_uuid, list(CHECKED)),
+        )
+    ]
+
+
 def _questions(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3)."""
     from desk.store import person_by_code, person_by_user, unseal
@@ -288,18 +312,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
          "text": unseal(m["text_encrypted"], "idea_messages", "text_encrypted", str(m["id"]))}
         for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea["id"],))
     ]  # fmt: skip
-    hidden_kinds = [r["kind"] for r in conn.execute(
-        "SELECT kind FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at", (idea["id"],))]  # fmt: skip
-    files = [
-        dict(f) for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at FROM attachments "
-            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') "
-            # a draft answer's files stay the sharer's until the answer is sent
-            "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
-            "AND a.sent_at IS NOT NULL)) ORDER BY created_at",
-            (idea["id"], list(CHECKED)),
-        )
-    ]  # fmt: skip
+    hidden_kinds = _hidden_kinds(conn, idea["id"])
+    files = _checked_files(conn, idea["id"])
     similar_n = conn.execute(
         "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
         (idea["id"],),
@@ -405,28 +419,35 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     }
 
 
-def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
-    """L-LISTEN (BLD-B230): the masked script the reviewer's browser reads aloud, with answers in their parts."""
+def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
+    """The masked listen script for an idea, the same for every viewer (L-LISTEN/2): what the browser voice reads
+    (BLD-B230) and what lane C's hosted voice synthesises part by part (DEC-108), so the chapters, the estimate and the
+    audio agree. Each part is spoken as `listen.spoken(title, text)`; `Script.version` changes with the content.
+    Returns a `desk.listen.Script`."""
     from desk import listen, revise
+    from desk.store import load_idea
 
-    view = reviewer_idea(conn, ref, user_id)
-    idea = view["idea"]
-    _ = idea
-    texts = {p["part"]: p["text"] for p in view["parts"]}
-    sharer_worth, reviewer_worth, _rev = revise.current(conn, str(load_uuid(conn, ref)))
-    files = [
-        listen.FileLine(None, a["title"].rsplit(".", 1)[-1].upper() if "." in a["title"] else "file", None,
-                        a["line"].split(". ", 2)[-1] if "hidden" in a["line"] else None)
-        for a in view["artefacts"] if a["kind"] == "file"
-    ]  # fmt: skip
+    t = at or now()
+    idea = load_idea(conn, ref)
+    files = _checked_files(conn, idea["id"])
+    fix = conn.execute("SELECT how, included FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
+    sharer_worth, reviewer_worth, _rev = revise.current(conn, str(idea["id"]))
+    texts = {
+        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
+        "cost": "", "evidence": _evidence_text(files, _hidden_kinds(conn, idea["id"])),
+        "fix": (fix["how"] or "") if fix and fix["included"] else "",
+    }  # fmt: skip
     answers = {
-        p["part"]: [
-            listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in p["questions"] if q["answer"]
-        ]
-        for p in view["parts"]
+        part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
+        for part, qs in _questions(conn, idea["id"], t).items()
     }
-    script = listen.build(texts, worth=reviewer_worth or sharer_worth, files=files, answers=answers)
-    return script.as_json()
+    return listen.build(texts, worth=reviewer_worth or sharer_worth, answers=answers)
+
+
+def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
+    """`GET /desk/ideas/:id/listen` (the route checks the desk role): the script as JSON."""
+    _ = user_id
+    return dict(script_for(conn, ref).as_json())
 
 
 def load_uuid(conn: Conn, ref: str) -> Any:
