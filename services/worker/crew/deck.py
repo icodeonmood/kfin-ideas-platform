@@ -261,6 +261,8 @@ WHERE i.status = ANY(%(open)s) AND i.shared_at IS NOT NULL AND i.idea_id IS NOT 
                   WHERE m.idea_uuid = i.id AND m.contributor_code = %(code)s AND m.left_at IS NULL)
   AND NOT EXISTS (SELECT 1 FROM teamup_requests t
                   WHERE t.idea_uuid = i.id AND t.from_code = %(code)s AND t.state IN ('sent', 'declined'))
+  AND NOT EXISTS (SELECT 1 FROM merge_requests mr
+                  WHERE mr.other_idea_uuid = i.id AND mr.from_code = %(code)s AND mr.state IN ('waiting', 'declined'))
   AND NOT EXISTS (SELECT 1 FROM crew_passes p
                   WHERE p.user_id = %(uid)s AND p.idea_uuid = i.id AND p.undone_at IS NULL)
 """
@@ -269,8 +271,9 @@ WHERE i.status = ANY(%(open)s) AND i.shared_at IS NOT NULL AND i.idea_id IS NOT 
 def cards_for(conn: Conn, v: Viewer, current: dt.datetime) -> list[Card]:
     """The whole deck for this person, in order, before filters (L-CREW/1–4).
 
-    L-CREW/1: shared ideas still open to a crew that the person is not on, has not asked to join (a request
-    waiting or declined; a withdrawn one may be asked again) and has not passed. Each needs one of the four
+    L-CREW/1: shared ideas still open to a crew that the person is not on, has not asked to join (a team-up
+    request, or a draft's merge request, waiting or declined; a withdrawn one may be asked again, BLD-F038) and
+    has not passed. Each needs one of the four
     reasons of L-CREW/2; an idea with none is not shown."""
     rows = conn.execute(_ELIGIBLE, {"open": list(OPEN_STATUSES), "code": v.code, "uid": v.user_id}).fetchall()
     links = _links(conn, v)
@@ -403,14 +406,19 @@ def chips(active: Active) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------------------------------------------
 def tallies(conn: Conn, v: Viewer) -> dict[str, Any]:
     """`{ joined, pending, passed }` (A-API.team-up), plus `asked` for the end of the deck (L-CREW/7: "You asked to
-    team up on 1 idea"; every idea asked about, withdrawn requests aside) and the last pass, for "Undo last pass"."""
+    team up on 1 idea"; every idea asked about, withdrawn requests aside) and the last pass, for "Undo last pass".
+    A draft's merge request asks to join too (BLD-F038)."""
     row = conn.execute(
         "SELECT "
         " (SELECT count(*) FROM crew_members m WHERE m.contributor_code = %(code)s AND m.left_at IS NULL "
         "    AND m.role = 'crew') AS joined, "
-        " (SELECT count(*) FROM teamup_requests t WHERE t.from_code = %(code)s AND t.state = 'sent') AS pending, "
-        " (SELECT count(DISTINCT t.idea_uuid) FROM teamup_requests t WHERE t.from_code = %(code)s "
-        "    AND t.state <> 'withdrawn') AS asked, "
+        " (SELECT count(*) FROM teamup_requests t WHERE t.from_code = %(code)s AND t.state = 'sent') "
+        "  + (SELECT count(*) FROM merge_requests mr WHERE mr.from_code = %(code)s AND mr.state = 'waiting') "
+        "  AS pending, "
+        " (SELECT count(DISTINCT a.idea_uuid) FROM ("
+        "    SELECT t.idea_uuid FROM teamup_requests t WHERE t.from_code = %(code)s AND t.state <> 'withdrawn' "
+        "    UNION ALL SELECT mr.other_idea_uuid FROM merge_requests mr WHERE mr.from_code = %(code)s "
+        "      AND mr.state NOT IN ('withdrawn', 'none')) a) AS asked, "
         " (SELECT count(*) FROM crew_passes p WHERE p.user_id = %(uid)s AND p.undone_at IS NULL) AS passed, "
         " (SELECT i.idea_id FROM crew_passes p JOIN ideas i ON i.id = p.idea_uuid "
         "    WHERE p.user_id = %(uid)s AND p.undone_at IS NULL ORDER BY p.passed_at DESC, p.id DESC LIMIT 1) "
@@ -423,8 +431,9 @@ def tallies(conn: Conn, v: Viewer) -> dict[str, Any]:
 
 
 def your_crews(conn: Conn, v: Viewer) -> dict[str, Any]:
-    """L-CREW/9: ideas the person is on or has asked to join, newest first, each with its state ("Waiting for
-    Ravi", "On the crew"), and the link to My ideas → Teamed up."""
+    """L-CREW/9: ideas the person is on or has asked to join (a team-up request, or a draft's merge request that
+    waits, BLD-F038), newest first, one row per idea, each with its state ("Waiting for Ravi", "On the crew"), and
+    the link to My ideas → Teamed up."""
     if not v.code:
         return {"items": [], "teamed_link": TEAMED_LINK}
     lead_of = (
@@ -440,12 +449,21 @@ def your_crews(conn: Conn, v: Viewer) -> dict[str, Any]:
         f"SELECT i.idea_id, i.title, i.status, 'waiting', t.sent_at, t.id::text, {lead_of} "
         f"FROM teamup_requests t JOIN ideas i ON i.id = t.idea_uuid "
         f"WHERE t.from_code = %(code)s AND t.state = 'sent' AND i.idea_id IS NOT NULL "
+        f"UNION ALL "
+        f"SELECT i.idea_id, i.title, i.status, 'waiting', mr.sent_at, mr.id::text, {lead_of} "
+        f"FROM merge_requests mr JOIN ideas i ON i.id = mr.other_idea_uuid "
+        f"WHERE mr.from_code = %(code)s AND mr.state = 'waiting' AND i.idea_id IS NOT NULL "
         f"ORDER BY at DESC",
         {"code": v.code},
     ).fetchall()
     people = people_by_code(conn, (str(r["lead_code"]) for r in rows))
     items = []
+    seen: set[str] = set()
     for r in rows:
+        # On the crew and still waiting on a draft's merge request: one row per idea, the newest.
+        if r["idea_id"] in seen:
+            continue
+        seen.add(r["idea_id"])
         lead = people.get(str(r["lead_code"]), UNKNOWN)
         waiting = r["state"] == "waiting"
         label = (
