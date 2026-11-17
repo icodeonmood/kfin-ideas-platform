@@ -428,7 +428,8 @@ def _reminders_on(conn: Conn, user_id: str) -> bool:
 def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
     """Timer handler (`desk.answer_reminder`): 1 day and 2 hours before the deadline (L-QUESTIONS.clock/2). Does
     nothing for a set that is answered or closed, for a sharer with reminders off (S-H6), once the deadline has
-    passed, or for a timer set before "Give 2 more days" moved the deadline (it would come too early)."""
+    passed, before a threshold that falls after the sending (`clock.reminders`), or for a timer set before "Give 2
+    more days" moved the deadline (it would come too early)."""
     t = at or now()
     p = promises.get()
     try:
@@ -440,13 +441,14 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
         if row is None or row["state"] not in OPEN or row["due_at"] is None:
             return False
         s = dict(row)
-        earliest = s["due_at"] - dt.timedelta(hours=max(p.reminders_before_hours, default=0))
-        if t >= s["due_at"] or t < earliest:
+        # the same thresholds the timer path schedules: only those after the set was sent, so a 1-day set (its
+        # "1 day before" falls on the sending itself) is never reminded the moment it arrives
+        passed = [x for x in clock.reminders(s["sent_at"] or s["created_at"], s["due_at"], p) if x <= t]
+        if t >= s["due_at"] or not passed:
             return False
         # once per threshold: the latest of "1 day before" and "2 hours before" already passed, unless a reminder
         # (timed or by hand) has gone since then, so a sweep every few minutes reminds twice in all
-        crossed = max(s["due_at"] - dt.timedelta(hours=h) for h in p.reminders_before_hours
-                      if s["due_at"] - dt.timedelta(hours=h) <= t)  # fmt: skip
+        crossed = max(passed)
         if s["reminded_at"] is not None and s["reminded_at"] >= crossed:
             return False
         found = conn.execute(
@@ -542,6 +544,16 @@ def _answer_body(text: Any, file_ids: Any) -> tuple[str | None, tuple[str, ...]]
     return text, tuple(file_ids)
 
 
+def _empty_draft(conn: Conn, answer: dict[str, Any]) -> bool:
+    """A draft answer with no text and no file: nobody's yet (L-QUESTIONS.answer/4)."""
+    if answer["text_encrypted"] is not None:
+        return False
+    return (
+        conn.execute("SELECT 1 FROM attachments WHERE answer_id = %s LIMIT 1", (answer["id"],)).fetchone()
+        is None
+    )
+
+
 def save_answer(
     conn: Conn,
     question_id: str,
@@ -569,12 +581,14 @@ def save_answer(
         if q["state"] == "closed":
             raise Refused(409, "set_closed", CLOSED)
         existing = conn.execute(
-            "SELECT id, by_code, sent_at FROM answers WHERE question_id = %s FOR UPDATE", (qid,)
+            "SELECT id, by_code, sent_at, text_encrypted FROM answers WHERE question_id = %s FOR UPDATE",
+            (qid,),
         ).fetchone()
         if existing and existing["sent_at"] is not None:
             raise Refused(409, "answer_sent", "This answer is already with the review desk.")
-        # one answer row per question (answers.question_id is unique): a co-sharer's draft stays theirs
-        if existing and existing["by_code"] != code:
+        # one answer row per question (answers.question_id is unique): a co-sharer's draft stays theirs, unless it
+        # holds nothing yet (an autosave of an empty box), which another credited sharer takes over
+        if existing and existing["by_code"] != code and not _empty_draft(conn, existing):
             raise Refused(409, "answer_in_progress", ANSWER_IN_PROGRESS)
         errors = questions.check_answer(text, p)
         if errors:
