@@ -61,7 +61,9 @@ def _audit(db: Conn, action: str, since: int) -> list[dict[str, Any]]:
 # --- L-ONES.rules/1: becoming a One ----------------------------------------------------------------------------------
 
 
-def test_L_ONES_rules_1_inducts_everyone_credited_once_impact_is_measured_and_confirmed(ones_db: Conn) -> None:
+def test_L_ONES_rules_1_inducts_everyone_credited_once_impact_is_measured_and_confirmed(
+    ones_db: Conn,
+) -> None:
     db = ones_db
     mark = _mark(db)
     admin = f.person(db, "Mehul Desai", roles=("admin",))
@@ -104,7 +106,10 @@ def test_L_ONES_rules_1_a_One_an_admin_removed_is_not_brought_back_automatically
     assert len(ones.induct_for_idea(db, idea["id"], actor=admin["id"], now=f.NOW)) == 1
     ones.remove_one(db, admin["id"], sharer["id"], now=f.NOW)
     assert ones.induct_for_idea(db, idea["id"], actor=admin["id"], now=f.NOW) == []
-    assert db.execute("SELECT status FROM ones WHERE user_id = %s", (sharer["id"],)).fetchone()["status"] == "retired"
+    assert (
+        db.execute("SELECT status FROM ones WHERE user_id = %s", (sharer["id"],)).fetchone()["status"]
+        == "retired"
+    )
 
 
 def test_DEC_106_admins_mark_Founding_Ones_and_remove_Ones_and_only_admins(ones_db: Conn) -> None:
@@ -145,7 +150,9 @@ def test_S_ONE_rules_1_only_a_One_reads_or_changes_their_dashboard(ones_db: Conn
 def test_S_ONE_dashboard_shows_the_number_window_idea_impact_and_brief(ones_db: Conn) -> None:
     db = ones_db
     who = f.person(db, "Ritika Sood", show_name=False)
-    idea = f.idea(db, who, title="Flag likely-wrong bank details before the first SIP debit", status="shipped")
+    idea = f.idea(
+        db, who, title="Flag likely-wrong bank details before the first SIP debit", status="shipped"
+    )
     f.measurement(db, idea, "day_30", {"time": {"amount": 620, "unit": "hours a month", "line": "Fewer bounced-debit cases"},
                                        "money": {"amount": 1_800_000, "unit": "rupees a year"},
                                        "effort": {"amount": 3, "unit": "fewer steps", "line": "Per new mandate"},
@@ -188,17 +195,27 @@ def test_L_ONES_rules_2_number_swap_free_taken_out_of_range_and_locked(ones_db: 
         f.one(db, f.person(db, f"Holder {n}"), number=n)
     for bad in (0, 1000, "abc", True, 3.5, None, "12a"):
         e = refused("out_of_range", ones.set_number, db, who["id"], bad, now=f.NOW)
-        assert e.body() == {"error": {"code": "out_of_range", "message": "Pick a number from 1 to 999.", "field": "number"}}
+        assert e.body() == {
+            "error": {"code": "out_of_range", "message": "Pick a number from 1 to 999.", "field": "number"}
+        }
     e = refused("taken", ones.set_number, db, who["id"], 7, now=f.NOW)
     assert e.body()["error"] == {"code": "taken", "message": "No. 7 is taken. Free numbers near it: 6, 8, 11.",
                                  "field": "number", "near": [6, 8, 11]}  # fmt: skip
     assert ones.set_number(db, who["id"], "17", now=f.NOW)["number_window"]["number"] == 17
-    assert ones.set_number(db, who["id"], 17, now=f.NOW)["number_window"]["number"] == 17  # same again: no change
+    assert (
+        ones.set_number(db, who["id"], 17, now=f.NOW)["number_window"]["number"] == 17
+    )  # same again: no change
     assert len(_audit(db, "ones.number_changed", mark)) == 1
-    assert ones.nearest_free(db, 2, oid, f.NOW) == [1, 6, 8]  # their old number rests for others, not for them
+    assert ones.nearest_free(db, 2, oid, f.NOW) == [
+        1,
+        6,
+        8,
+    ]  # their old number rests for others, not for them
     # The window is 30 days from becoming a One (f.one: inducted two days before NOW): open a day before it ends,
     # closed a day after.
-    assert ones.set_number(db, who["id"], 18, now=f.NOW + dt.timedelta(days=27))["number_window"]["open"] is True
+    assert (
+        ones.set_number(db, who["id"], 18, now=f.NOW + dt.timedelta(days=27))["number_window"]["open"] is True
+    )
     later = f.NOW + dt.timedelta(days=29)
     e = refused("window_closed", ones.set_number, db, who["id"], 19, now=later)
     assert e.message == "No. 18 is yours for good."
@@ -217,7 +234,14 @@ def test_L_ONES_rules_5_a_new_brief_waits_for_the_programme_team(ones_db: Conn) 
     for bad in ("Too short.", "x" * 141, "Two sentences here. And another one after it.", 42):
         e = refused("brief_invalid", ones.propose_brief, db, who["id"], bad, now=f.NOW)
         assert e.message == "Keep it to one sentence, up to 140 characters." and e.field == "text"
-    refused("personal_data", ones.propose_brief, db, who["id"], "Call the investor on 9876543210 about it", now=f.NOW)
+    refused(
+        "personal_data",
+        ones.propose_brief,
+        db,
+        who["id"],
+        "Call the investor on 9876543210 about it",
+        now=f.NOW,
+    )
     new = "Stuck SIP registrations now explain themselves on IRIS."
     assert ones.propose_brief(db, who["id"], new, now=f.NOW) == {
         "brief": {"text": "Distributors now see why an SIP registration is stuck.", "pending": True}}  # fmt: skip
@@ -229,7 +253,9 @@ def test_L_ONES_rules_5_a_new_brief_waits_for_the_programme_team(ones_db: Conn) 
     ones.propose_brief(db, who["id"], "A brief the programme team will not take, sadly.", now=f.NOW)
     ones.decline_brief(db, admin["id"], oid)
     assert ones.dashboard(db, who["id"], now=f.NOW)["brief"] == {"text": new, "pending": False}
-    stored = db.execute("SELECT brief_encrypted FROM ones WHERE id = %s", (oid,)).fetchone()["brief_encrypted"]
+    stored = db.execute("SELECT brief_encrypted FROM ones WHERE id = %s", (oid,)).fetchone()[
+        "brief_encrypted"
+    ]
     assert new.encode() not in bytes(stored)  # encrypted at rest
 
 
@@ -247,7 +273,9 @@ def test_L_ONES_rules_3_the_glow_up_plays_once_with_the_committees_message(ones_
     m = db.execute("INSERT INTO one_messages (proposal_id, author_user_id, author_role) VALUES (%s, %s, 'committee') "
                    "RETURNING id", (p, chair["id"])).fetchone()["id"]  # fmt: skip
     note = "Distributors stopped calling about stuck SIP registrations within a month."
-    db.execute("UPDATE one_messages SET text_encrypted = %s WHERE id = %s", (seal(note, f"one_message:{m}"), m))
+    db.execute(
+        "UPDATE one_messages SET text_encrypted = %s WHERE id = %s", (seal(note, f"one_message:{m}"), m)
+    )
     g = db.execute("INSERT INTO one_glow_ups (one_id, proposal_id, tier_from, tier_to) VALUES (%s, %s, 1, 2) "
                    "RETURNING id", (oid, p)).fetchone()["id"]  # fmt: skip
     moment = ones.dashboard(db, who["id"], now=f.NOW)["tier_moment"]
@@ -267,7 +295,15 @@ def test_L_ONES_rules_3_the_glow_up_plays_once_with_the_committees_message(ones_
 def test_S_WALL_ones_cards_in_order_and_the_leaderboard_by_tier_then_hours(ones_db: Conn) -> None:
     db = ones_db
     a, b, c = (f.person(db, n) for n in ("Ritika Sood", "Harsh Vora", "Leela Nambiar"))
-    f.one(db, a, number=1, tier=4, way_in="founding", inducted_at=f.ago(days=30), brief="First brief, for the Wall.")
+    f.one(
+        db,
+        a,
+        number=1,
+        tier=4,
+        way_in="founding",
+        inducted_at=f.ago(days=30),
+        brief="First brief, for the Wall.",
+    )
     f.one(db, b, number=17, tier=2, inducted_at=f.ago(days=3))
     f.one(db, c, number=9, tier=5, inducted_at=f.ago(days=2))
     wall = ones.one_cards(db)
