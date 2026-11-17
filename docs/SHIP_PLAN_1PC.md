@@ -4,7 +4,7 @@ Written 16 Nov 2026 by the planning session (lane E); revised the same afternoon
 
 ## 1. Summary
 
-The revised design replaces the product's front end and most of its review machinery. It keeps the platform underneath: the gateway, personal-data detection, file checks, speech to text, timers, email, Ones numbers and tiers, impact measurement and matching. Everything in the pack ships for the inauguration on Friday 20 November, in one cut-over, built by six lanes in parallel (DEC-105). Channels that need IT or InfoSec are built and switched off until their approvals land: Teams, email intake, email-code sign-in, streamed voice and a hosted voice for Listen. While InfoSec's model-route approval (D1) is open, the draft's parts are filled by hand.
+The revised design replaces the product's front end and most of its review machinery. It keeps the platform underneath: the gateway, personal-data detection, file checks, speech to text, timers, email, Ones numbers and tiers, impact measurement and matching. Everything in the pack ships for the inauguration on Friday 20 November, in one cut-over, built by six lanes in parallel (DEC-105). Channels that need IT or InfoSec are built and switched off until their approvals land: Teams, email intake and email-code sign-in. Voice is on at launch through Sarvam (DEC-108, confirmed with the DPO's approval on 17 Nov): speech to text with the person's own words plus a labelled English copy, streaming, and Listen with Sarvam's voice (on-device voice as fallback). While InfoSec's model-route approval (D1) is open, the draft's parts are filled by hand.
 
 ## 2. Decisions
 
@@ -17,7 +17,7 @@ The revised design replaces the product's front end and most of its review machi
 | DEC-106 | The retirements in section 6 |
 | BLD-E001 | Links are never fetched; classified by domain only |
 | BLD-E002 | Email-code sign-in behind a switch, off until InfoSec approves |
-| BLD-E003 | Listen uses the browser's local voice on the masked script |
+| BLD-E003 | Superseded by DEC-108: Listen uses Sarvam's voice on the masked script, with the browser's on-device voice as fallback |
 | BLD-E004 | A decision's reason is read in the app only |
 | BLD-E005 | No animation library; CSS, the Web Animations API and a FLIP helper |
 | BLD-E006 | The cut-over evolves `public` in place, in lane E's migration range |
@@ -48,7 +48,7 @@ Still needed from outside the build: the DPO's privacy notice covering names and
 
 ## 4. Scope (DEC-105)
 
-All 10 journeys, 25 screens, 33 components and 24 logic modules. Built and switched off until approved: Teams notifications and intake, email intake (`S-H3` shows the page, arrivals say "coming soon"), email-code sign-in, streamed voice, a hosted Listen voice. With `ai.all` off (D1 open), Tell it saves the words and offers every part to fill in by hand, which the pack draws as the failed-part state (`C-DRAFT-LOADER.failure`, `L-DRAFT.errors`); hidden-detail patterns run without AI.
+All 10 journeys, 25 screens, 33 components and 24 logic modules. Built and switched off until approved: Teams notifications and intake, email intake (`S-H3` shows the page, arrivals say "coming soon"), email-code sign-in. Voice and Listen are on at launch through Sarvam (DEC-108). With `ai.all` off (D1 open), Tell it saves the words and offers every part to fill in by hand, which the pack draws as the failed-part state (`C-DRAFT-LOADER.failure`, `L-DRAFT.errors`); hidden-detail patterns run without AI.
 
 If Thursday's go/no-go finds a lane short, the product lead chooses from this drop order (each item is switched off, not half-shipped): Listen; search "ask in your own words" (filters stay); the S1 to S3 alternatives (defaults stay); crew-deck and Ones-fan motion (static cards stay); `S-H4`.
 
@@ -58,7 +58,7 @@ If Thursday's go/no-go finds a lane short, the product lead chooses from this dr
 |---|---|---|
 | D | kfin-ideas-platform-cf | Foundations (`tokens.css` with the OFFER names aliased, type, glass, motion), the shell (`C-SIDEBAR`, `C-PHONE-TABS`, `C-TASKBAR`), every shared component from `C-BUTTON` to `C-DROPDOWN`, `C-ONES-FAN` and `C-CREW-DECK` motion; then visual and accessibility QA of every screen against `reference/shots` |
 | E | kfin-ideas-platform-29 | The cut-over migration, contracts as shared types, retirements, synthetic reseed (first, alone); then `S-06`, `S-07`, `S-09`, `S-WALL`, `S-H6`, `S-ONE`; `L-WALL`, `L-ONES`; integration and the go/no-go |
-| F | new session | `S-H2`, `S-H2B`, `S-08`; `C-SHEET-TEAMUP`, `C-CREW-DECK` data, `C-SEARCH` ask; `L-TEAMUP`, `L-CREW`, `L-CONVO`, `L-MERGE.request`, `L-SEARCH` |
+| F | kfin-ideas-platform-0e | `S-H2`, `S-H2B`, `S-08`; `C-SHEET-TEAMUP`, `C-CREW-DECK` data, `C-SEARCH` ask; `L-TEAMUP`, `L-CREW`, `L-CONVO`, `L-MERGE.request`, `L-SEARCH` |
 | C | kfin-ideas-platform-ad | `S-03`, `S-04`, `S-04B`, `S-05`, `S-06B`; `C-PROMPT`, `C-DRAFT-LOADER`, `C-DRAFT-PANEL`, `C-HIDDEN`, `C-SIMGRID`, `C-PREVIEW`; `L-DRAFT`, `L-HIDE`, `L-SORT`, `L-SIMILAR`, `L-SUBMIT`; the S1 to S3 variants |
 | B | kfin-ideas-platform-67 | `S-R1`, `S-R2`, `S-R3`, `S-R4`; `C-QCARD`, `C-WORTH`, `C-SHEET-MERGE`, `C-LISTEN`; `L-REVIEW`, `L-DECIDE`, `L-QUESTIONS`, `L-COMMITTEE`, `L-WORTH`, `L-MERGE.desk`, `L-LISTEN` |
 | A | kfin-ideas-platform-3b | `S-01`, `S-02`, `S-H3`, `S-H4`, `S-H5`, `S-LAUNCH`, `S-OFFICE`, the minimal admin page (build team, shipped, measurements, Finance confirmation, Founding Ones, "Take off the Wall", roles, flags); `C-INBOX-READER`; `L-AUTH`, `L-AUDIT`, `L-INBOX`, `L-NOTIFY`, `L-DISPLAY`, `L-IMPACT`, every clock; the gates, CI and the demo stack |
@@ -88,7 +88,7 @@ Call another lane's module only through these, behind a thin adapter in your own
 | "Hide this" (`L-HIDE.rules/7`) | C | Worker `hide_text(conn, idea_uuid, text, *, by, source="desk") -> (masked, count)` in `services/worker/hide/__init__.py`; web `POST /api/desk/ideas/:id/hide` with `{source:{kind:"part"|"message"|"answer"|"title", id}, start, end}`, returns `HiddenDetail`; errors `forbidden`, `not_found`, `range_invalid`, `already_hidden`; notifies the sharer (`detail_hidden_by_desk`). On `main` by Tue 16:00 | Lane B calls it from `S-R2` |
 | Answer files | C | `POST /api/files` with `answer_id`. On `main` by Wed 12:00 | Lane B's `S-R3` |
 | Withdraw and restore (`L-SUBMIT.withdraw`) | E | Worker `services/worker/ideapage/withdraw.py` (branch `e/idea-page-my-ideas`) | Lane C's `S-06B` and `S-05` call it; one implementation |
-| `L-CONVO` post | F | When lane F starts | Lane B posts "opened it", answers and the merge's closing line |
+| `L-CONVO` post | F | `from convo import post` (`services/worker/convo/__init__.py`, landing Tue 17): `post(conn, idea_uuid, event, *, author_user_id=None, author_code=None, payload=None, question_set_id=None, entry_type="event", at=None) -> str` (the entry id) | The same arguments as lane B's `desk/adapters.say`, so lane B switches by one line. Call inside your own transaction. `event` is a dotted code (`desk.opened`); `payload` holds IDs, enums, numbers and booleans only; lane F renders the line from the code at read time, so send lane F any new code. Lane B posts "opened it", answers and the merge's closing line |
 | Shared types and enums | E | `apps/web/src/lib/contracts/`, `contracts/1pc/enums.json` (Python loader in `services/worker/`) | On `e/cutover`, merged by Tue 13:00 |
 
 ## 6. Data and retirements
@@ -125,7 +125,7 @@ Old specs for retired pages are deleted with the pages (about 50 routes; the lis
 | Review desk lead | Area-to-reviewer map (`L-SORT.rules/7`) | Thursday | Any reviewer, never the sharer |
 | IT | Teams app, the 1% Club mailbox, Graph permissions | After launch | In-app and email only |
 | InfoSec | Email-code sign-in | After launch | Single sign-on only |
-| IT, InfoSec, DPO | Speech service and voice | After launch | Typing only; the mic says "coming soon" |
+| Sarvam (DEC-108) | Speech to text, translation and Listen, India-hosted, no retention, no training on our data; DPO approved, InfoSec told | Friday | Typing still works; Listen falls back to the on-device voice. The IT asks for the on-server speech container are withdrawn (it stays an optional fallback) |
 
 ## 9. Risks
 

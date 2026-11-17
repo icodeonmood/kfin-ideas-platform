@@ -360,6 +360,16 @@ export interface IdeaPreview {
   hue: 1 | 2;
   /** Reviewers only. */
   compare?: { often?: string; who?: string; worth?: string };
+  /** Reviewers only, with `?compare_with=<id>`: the same three rows for the idea they are looking at, for the
+   * column "Next to Kavya's" (C-PREVIEW.anatomy/4, BLD-C090). */
+  compare_with?: {
+    id: string;
+    title: string;
+    owner: PersonRef;
+    often?: string;
+    who?: string;
+    worth?: string;
+  };
 }
 
 export interface SimilarMatch {
