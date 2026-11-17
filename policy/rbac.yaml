@@ -162,6 +162,21 @@ endpoints:
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
   - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
+  # The 1% Club's Wall, the Ones and Profile (lane E; A-API.wall, A-API.ones, A-API.ones-posts, A-API.me). The worker
+  # checks the rest: /one is the One's alone (membership below), a profile and its points are only ever the caller's.
+  - GET /api/wall/kindling                            see_org_ideas
+  - GET /api/wall/just-in                             see_org_ideas
+  - GET /api/wall/ones                                see_org_ideas
+  - GET /api/wall/impact                              see_org_ideas
+  - GET /api/wall/ember                               see_org_ideas
+  - GET /api/ones/posts                               signed_in
+  - PUT /api/ones/posts/{id}/like                     signed_in
+  - GET /api/one                                      signed_in
+  - PUT /api/one/number                               signed_in
+  - POST /api/one/brief                               signed_in
+  - POST /api/one/glow-up/{id}/seen                   signed_in
+  - GET /api/me/profile                               signed_in       # always the signed-in person's own
+  - PATCH /api/me/settings                            signed_in       # always the signed-in person's own
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note
   - GET /api/ember/{id}                               signed_in
@@ -181,6 +196,10 @@ membership_scoped:
     - POST /api/me/one/brief
     - GET /api/me/one/showcase
     - PUT /api/me/one/showcase
+    - GET /api/one                                  # S-ONE.rules/1: a One's own dashboard (lane E)
+    - PUT /api/one/number
+    - POST /api/one/brief
+    - POST /api/one/glow-up/{id}/seen
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:

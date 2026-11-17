@@ -63,8 +63,55 @@ def test_S_WALL_justin_1_lists_only_ideas_with_the_review_desk_newest_first(wall
 def test_V_ACC_browse_3_just_in_pages_by_five_then_shows_the_rest(wall_db: Conn, desk: dict[str, Any]) -> None:
     first = kindling.just_in(wall_db, now=f.NOW)
     assert len(first["items"]) == 5 and first["next"] == "5" and first["total"] == 7
+    assert first["sub"] == "7 with the review desk"
+    assert first["more"] == 2 and first["more_label"] == "Show 2 more"
     rest = kindling.just_in(wall_db, offset=5, now=f.NOW)
     assert len(rest["items"]) == 2 and rest["next"] is None
+    assert rest["more"] == 0 and rest["more_label"] == "Show fewer"
+
+
+def test_V_ACC_browse_3_twelve_with_the_desk_show_5_more_then_2_more_then_fewer(wall_db: Conn) -> None:
+    db = wall_db
+    who = f.person(db, "Tanvi Mehra")
+    for n in range(12):
+        f.idea(db, who, title=f"Idea number {n}", shared_at=f.ago(hours=n + 1))
+    labels = [kindling.just_in(db, offset=o, now=f.NOW)["more_label"] for o in (0, 5, 10)]
+    assert labels == ["Show 5 more", "Show 2 more", "Show fewer"]
+    # The phone asks for three at a time (L-WALL.justin/5): "Show 3 more".
+    assert kindling.just_in(db, limit=3, now=f.NOW)["more_label"] == "Show 3 more"
+    assert kindling.just_in(db, limit=50, now=f.NOW)["more_label"] is None  # everything fits: no button
+    assert kindling.just_in(db, now=f.NOW)["sub"] == "12 with the review desk"
+
+
+def test_S_WALL_phone_each_row_carries_the_figure_for_the_current_sort(wall_db: Conn, desk: dict[str, Any]) -> None:
+    """L-WALL.justin/5: "Opened by 233 this week", "Shared 2h ago", "3 on the crew", "1 One on the crew"."""
+    db, p, i = wall_db, desk["p"], desk["i"]
+    for viewer in ("rhea", "kabir"):
+        f.opened(db, i["a"], p[viewer])
+    f.crew(db, i["a"], p["nisha"])
+    f.one(db, p["nisha"], number=21)
+
+    def line(sort: str, ref: str) -> str:
+        rows = kindling.just_in(db, sort=sort, limit=50, now=f.NOW)["items"]
+        return str(next(r["figure_label"] for r in rows if r["id"] == ref))
+
+    a, c = i["a"]["idea_id"], i["c"]["idea_id"]
+    assert (line("popular", a), line("newest", a), line("crew", a), line("ones", a)) == (
+        "Opened by 2 this week", "Shared 2h ago", "2 on the crew", "1 One on the crew",
+    )  # fmt: skip
+    assert line("newest", c) == "Shared yesterday" and line("ones", c) == "0 Ones on the crew"
+
+
+def test_J_BROWSE_5_a_Wall_row_opens_the_idea_with_its_way_back_to_the_Wall(wall_db: Conn, desk: dict[str, Any]) -> None:
+    """S-WALL.rules/4: the title opens the idea page; it says "Back to the Wall" and returns to the same sort and
+    kind chip (the idea page reads `from` and `back`)."""
+    db, i = wall_db, desk["i"]
+    a = i["a"]["idea_id"]
+    plain = kindling.just_in(db, limit=50, now=f.NOW)["items"][0]
+    assert plain["id"] == a and plain["to"] == f"/ideas/{a}?from=wall"
+    assert plain["meta"] == "Problem, Investor service"
+    sorted_ = next(r for r in kindling.just_in(db, kind="problem", sort="popular", now=f.NOW)["items"] if r["id"] == a)
+    assert sorted_["to"] == f"/ideas/{a}?from=wall&back=%2Fwall%3Fkind%3Dproblem%26sort%3Dpopular"
 
 
 def test_S_WALL_justin_2_sorts_Popular_by_distinct_openers_in_7_days(wall_db: Conn, desk: dict[str, Any]) -> None:
@@ -136,6 +183,10 @@ def test_S_WALL_kindling_three_stages_with_counts_and_up_to_three_ideas(wall_db:
     # E-ENUMS.kind OPEN default: a problem shared with a fix shows as a Fix on the Wall.
     assert kinds["Problem with a fix attached"]["kind"] == "fix"
     assert kinds["Shipped fix"]["crew_count"] == 2
+    # "Problem, Distributor experience, 4 colleagues on it" (S-WALL.kindling)
+    assert kinds["Shipped fix"]["meta"] == "Problem, Investor service, 2 colleagues on it"
+    assert kinds["Problem with a fix attached"]["meta"] == "Fix, Investor service, 1 colleague on it"
+    assert kinds["Shipped fix"]["to"].startswith(f"/ideas/{shipped['idea_id']}?from=wall")
 
 
 def test_DEC_104_hides_the_name_when_the_sharer_turned_it_off(wall_db: Conn, desk: dict[str, Any]) -> None:
@@ -157,7 +208,7 @@ def test_P_PRODUCT_privacy_the_Wall_carries_the_short_summary_never_own_words_or
     row = out["items"][0]
     assert set(row) == {
         "id", "title", "summary", "kind", "area", "crew_count", "sharer", "shared_at", "shared_label",
-        "opened_7d", "ones_count",
+        "opened_7d", "ones_count", "meta", "figure_label", "to",
     }  # fmt: skip
     assert "points" not in str(out) and "own_words" not in str(out)
 
