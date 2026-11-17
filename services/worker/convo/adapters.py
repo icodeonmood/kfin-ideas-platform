@@ -78,7 +78,9 @@ def hide(conn: Conn, idea_uuid: str, text: str, *, by: str, entry_id: str) -> tu
     """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103). Call it inside the
     transaction that inserts the entry `entry_id`, written by the user `by` (lane C's contract, BLD-F054)."""
     if _hide_message is not None:
-        done = _hide_message(conn, idea_uuid, text, by=by, source="conversation", source_id=entry_id)
+        done = _hide_message(
+            conn, idea_uuid, text, by=by, source="conversation", source_id=entry_id, gatekeeper=True
+        )
         return done.masked, done.hidden_count
     return pattern_mask(text)
 

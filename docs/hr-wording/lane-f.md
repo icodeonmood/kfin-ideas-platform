@@ -131,6 +131,7 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-CONVO/5`, a message over 4,000 characters (BLD-F055) | Not drawn | Keep a message under 4,000 characters. |
 | `L-CONVO/7`, a sixth file on one message (BLD-F055) | Not drawn | Attach up to 5 files to a message. |
 | `L-CONVO/6`, an eleventh person mentioned in one message (BLD-F055) | Not drawn | Mention up to 10 people in a message. |
+| `L-CONVO/7`, a file sent by someone other than the sharer, the review desk or the Ones Committee (BLD-F063; S-08 shows them no attach control) | Not drawn | Only the person who shared this idea, the review desk and the Ones Committee can add files here. |
 | `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
 | `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
 | `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |

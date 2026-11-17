@@ -406,7 +406,7 @@ def test_bld_f054_l_convo_7_a_message_is_hidden_through_lane_cs_hide_message_whe
     [row] = fx.entries(db, idea["id"])
     [call] = calls
     assert call == {"idea": str(idea["id"]), "text": typed, "in_tx": True, "by": meera["id"],
-                    "source": "conversation", "source_id": str(row["id"])}  # fmt: skip
+                    "source": "conversation", "source_id": str(row["id"]), "gatekeeper": True}  # fmt: skip
     assert (
         unseal(bytes(row["text_encrypted"]), str(row["id"])) == "Folio ••••90 was rejected, Ravi ••••ir says."
     )
@@ -525,3 +525,31 @@ def test_bld_f056_l_inbox_comment_a_new_hour_starts_a_new_comment_item(
     send(db, idea["idea_id"], meera["id"], {"text": "After ten."}, at=fx.at(17, 10, 0))
     keys = [c["dedupe_key"] for c in told if c["kind"] == "comment"]
     assert keys == [f"convo.comment:{idea['id']}:2026111709", f"convo.comment:{idea['id']}:2026111710"]
+
+
+def test_bld_f063_l_convo_7_only_the_sharer_the_desk_and_the_core_committee_add_files(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    """The crew, the build team and a mentioned person write without files: a file from them is refused, and the
+    box tells S-08 not to show the attach control. The readers who add files are the readers who can open them."""
+    kavya, meera, meghna, tara = cast["kavya"], cast["meera"], cast["meghna"], cast["colleague"]
+    core = fx.person(db, "Rohan Mehta", roles=(("core_committee", None),))
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, status="being_built")
+    fx.join_crew(db, idea, meghna)
+    fx.build_team(db, idea, arjun)
+    send(db, idea["idea_id"], kavya["id"], {"text": "@Tara Joshi have a look.", "mentions": [tara["id"]]})
+    for who in (meghna, arjun, tara):
+        own = fx.attachment(db, idea, who)
+        err = refused(send, db, idea["idea_id"], who["id"], {"text": "With my file.", "file_ids": [own]})
+        assert (err.status, err.code, err.field) == (422, "files_not_allowed", "file_ids"), who["name"]
+        assert err.message == (
+            "Only the person who shared this idea, the review desk and the Ones Committee can add files here."
+        )
+        assert conversation(db, idea["idea_id"], who["id"], at=NOW)["composer"]["can_attach"] is False
+        assert send(db, idea["idea_id"], who["id"], {"text": "Words only."})["entry"]["files"] == []
+    for who in (kavya, meera, core):
+        own = fx.attachment(db, idea, who)
+        assert conversation(db, idea["idea_id"], who["id"], at=NOW)["composer"]["can_attach"] is True
+        sent = send(db, idea["idea_id"], who["id"], {"file_ids": [own]})
+        assert [f["id"] for f in sent["entry"]["files"]] == [own], who["name"]

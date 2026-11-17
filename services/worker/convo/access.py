@@ -43,6 +43,12 @@ class Reader:
         return self.sharer or self.crew or self.desk or self.committee or self.build
 
     @property
+    def may_attach(self) -> bool:
+        """Adds files to a message: the sharer, the review desk and the core committee, the readers who can open
+        them (BLD-F063). The crew, the build team and a mentioned person write without files."""
+        return self.files and self.full
+
+    @property
     def staff(self) -> bool:
         """Speaks as the review desk or the committee: staff, and not on the idea themselves."""
         return (self.desk or self.committee) and not (self.sharer or self.crew or self.build)
