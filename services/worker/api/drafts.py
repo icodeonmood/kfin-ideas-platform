@@ -256,7 +256,8 @@ async def build(idea_uuid: str, request: Request) -> Response:
 @router.post("/intake")
 async def intake(request: Request) -> Response:
     """L-DRAFT.channels (BLD-C077): the 1% Club mailbox reader or the Teams app hands over one arrival. Off until
-    IT gives them (`intake.email`, `intake.teams`; DEC-105): then 503, and the caller keeps the message."""
+    IT gives them (`intake.email`, `intake.teams`; DEC-105), and while `submissions` is off: then 503, and the caller
+    keeps the message. A note with no words is a bounce the caller sends on (`empty_message`, BLD-C037)."""
     from draft.channels import Arrival, ChannelOff
     from draft.channels import intake as take
 
@@ -264,16 +265,13 @@ async def intake(request: Request) -> Response:
 
     def go() -> Response:
         received = _at(data.get("received_at"))
-        if (
-            received is None
-            or not isinstance(data.get("note"), str)
-            or not isinstance(data.get("sender"), str)
-        ):
+        note = data.get("note") if data.get("note") is not None else ""  # a forward with nothing on top
+        if received is None or not isinstance(note, str) or not isinstance(data.get("sender"), str):
             return _json({"error": "arrival_invalid"}, 400)
         arrival = Arrival(
             channel=str(data.get("channel") or ""),
             sender=data["sender"],
-            note=data["note"],
+            note=note,
             received_at=received,
             subject=data.get("subject") if isinstance(data.get("subject"), str) else None,
             thread=data.get("thread") if isinstance(data.get("thread"), str) else None,
@@ -282,8 +280,8 @@ async def intake(request: Request) -> Response:
         with connect(autocommit=True) as conn:
             try:
                 out = take(conn, arrival)
-            except ChannelOff:
-                return _json({"error": "channel_off"}, 503)
+            except ChannelOff as off:
+                return _json({"error": "channel_off", "switch": str(off)}, 503)
         runs.dispatch(out.get("run_id"))
         return _json(out, 202 if "draft_id" in out else 200)
 

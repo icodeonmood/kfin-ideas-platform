@@ -421,6 +421,7 @@ def test_l_draft_recent_lists_titles_and_where_they_were_saved(drafting: Any) ->
 
 
 def test_l_draft_channels_an_email_lands_as_a_masked_draft_only_while_its_switch_is_on(drafting: Any) -> None:
+    """BLD-C077; BLD-C037: `submissions` holds too, and a note with no words bounces with its name."""
     import generators
 
     from draft.channels import Arrival, ChannelOff, intake
@@ -443,10 +444,20 @@ def test_l_draft_channels_an_email_lands_as_a_masked_draft_only_while_its_switch
     with pytest.raises(ChannelOff):
         intake(db, arrival)
     _switch(db, "intake.email", "on")
+    _switch(db, "submissions", "off")  # BLD-C037: paused like every other way to start a draft
+    with pytest.raises(ChannelOff) as off:
+        intake(db, arrival)
+    assert str(off.value) == "submissions"
+    _switch(db, "submissions", "on")
     assert intake(db, Arrival("email", "someone@elsewhere.example", W1, arrival.received_at)) == {
         "bounced": True,
         "reason_code": "unknown_sender",
     }
+    drafts_before = db.execute("SELECT count(*) AS n FROM ideas").fetchone()["n"]
+    for note in ("", "   \n "):  # a forward with nothing on top: told, never a silent refusal
+        bare = Arrival("email", arrival.sender, note, arrival.received_at, subject=arrival.subject)
+        assert intake(db, bare) == {"bounced": True, "reason_code": "empty_message"}
+    assert db.execute("SELECT count(*) AS n FROM ideas").fetchone()["n"] == drafts_before  # nothing stored
     out = intake(db, arrival)
     if out["run_id"]:
         _run(out["run_id"])

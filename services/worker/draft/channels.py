@@ -33,7 +33,8 @@ THREAD_MAX = 20_000
 
 
 class ChannelOff(Exception):
-    """The channel's switch is off: the arrival is not taken (the caller keeps or bounces it)."""
+    """The channel's switch, or `submissions`, is off: the arrival is not taken (the caller keeps it and tries
+    again). The switch's name is the message."""
 
 
 @dataclass(frozen=True)
@@ -75,19 +76,26 @@ def origin_label(channel: str, origin: dict[str, Any], now: dt.datetime) -> str 
 
 def intake(conn: Conn, arrival: Arrival) -> dict[str, Any]:
     """One arrival: a draft (`{"draft_id", "run_id"}`), or `{"bounced": true, "reason_code": …}` for a sender who
-    is not an employee. Raises ChannelOff while the channel is off."""
+    is not an employee (`unknown_sender`) or a note with no words (`empty_message`) or too many (`too_long`).
+    Raises ChannelOff while the channel or `submissions` is off."""
     switch = SWITCH.get(arrival.channel)
     if switch is None:
         raise DraftError(400, "channel_invalid", field="channel")
-    if not killswitch.is_on(switch, conn):
-        raise ChannelOff(switch)
+    # A draft is a submission's start: `submissions` holds here as on every other draft route (§7.6).
+    for name in (switch, "submissions"):
+        if not killswitch.is_on(name, conn):
+            raise ChannelOff(name)
     owner = _sender(conn, arrival.sender)
     if owner is None:
-        log.info("intake.bounced", channel_code=arrival.channel, reason_code="unknown_sender")
-        return {"bounced": True, "reason_code": "unknown_sender"}
+        return _bounce(arrival.channel, "unknown_sender")
     if arrival.received_at.tzinfo is None:
         raise DraftError(400, "received_at_invalid")
     from draft import store
+
+    try:  # a forward with no note on top has no words to draft from: the person is told, never left wondering
+        store._check_text(arrival.note, field="note")
+    except DraftError as exc:
+        return _bounce(arrival.channel, exc.code)  # empty_message or too_long, A-API's names (BLD-C037)
 
     origin: dict[str, Any] = {"received_at": arrival.received_at.isoformat()}
     if arrival.subject:
@@ -110,6 +118,12 @@ def intake(conn: Conn, arrival: Arrival) -> dict[str, Any]:
         _kept(conn, owner, idea_uuid, arrival.channel)
     log.info("intake.kept", channel_code=arrival.channel, idea_uuid=idea_uuid, run_id=run_id)
     return {"draft_id": idea_uuid, "run_id": run_id}
+
+
+def _bounce(channel: str, reason: str) -> dict[str, Any]:
+    """Not taken: comms sends the sender the polite bounce for `reason_code` (no text, ever)."""
+    log.info("intake.bounced", channel_code=channel, reason_code=reason)
+    return {"bounced": True, "reason_code": reason}
 
 
 def _kept(conn: Conn, owner: Owner, idea_uuid: str, channel: str) -> None:
