@@ -32,7 +32,8 @@ const redirect = (path: string) => NextResponse.redirect(new URL(path, appBaseUr
  * Runs before every request except static files (Next.js proxy, Node.js runtime). In order:
  * cross-origin writes refused → sign-in routes (listed ones only, then their kill switches) → session (401 / sign-in; `/` is
  * Landing when signed out) → privacy notice (403 / notice page) → RBAC from
- * policy/rbac.yaml (unknown 404, denied 403) → kill switches (503 with a banner, §7.6) → sliding session refresh.
+ * policy/rbac.yaml (unknown 404, denied 403) → kill switches (503 with a banner, §7.6) → activity recorded (the
+ * session still ends `session.hours` after sign-in, L-AUTH.rules/5, BLD-A178).
  */
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
