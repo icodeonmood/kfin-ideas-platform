@@ -1217,10 +1217,15 @@
   }
 }
 
-/* Printing (a showcase brief): the page only, at full width */
+/* Printing (a showcase brief): the page only, at full width; the task bar and the dock stay on screen */
 @media print {
   .shell:not(.shell-public) {
     padding-left: 0;
+  }
+
+  .tbar,
+  .dock {
+    display: none !important;
   }
 }
 
