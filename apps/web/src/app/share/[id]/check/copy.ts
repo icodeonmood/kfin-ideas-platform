@@ -49,6 +49,9 @@ export const CHECK_COPY = {
     summary: "What happens",
     often: "How often",
     change: { title: "Change the title", summary: "Change what happens", often: "Change how often" },
+    /** The phone boards: "Change" with what it changes read out ("Change title", PhoneReview.md, PhoneEdit.md). */
+    changePhone: "Change",
+    changeWhat: { title: "title", summary: "what happens", often: "how often" },
     /** V-FIELDS.checkit/1–2. */
     titleNeeded: "Give it a title of a few words.",
     summaryNeeded: "Say what happens, in a sentence or two.",
@@ -62,6 +65,8 @@ export const CHECK_COPY = {
   hidden: {
     label: "Hidden from everyone",
     show: "Show it",
+    /** PhoneReview.md, PhoneEdit.md: a row's button on a phone. */
+    showPhone: "Not personal? Show it",
     /** C-HIDDEN.list/1–3. */
     ask: "Only show it if it isn’t about a real customer. What is it?",
     note: "We note your reason with the idea.",

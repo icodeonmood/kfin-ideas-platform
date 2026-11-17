@@ -63,18 +63,22 @@ export function WordsBody({
   onSave,
   onAttached,
   hidden,
+  phone = false,
 }: {
   values: Record<WordKey, string>;
   attached: FileItem[];
   onSave(key: WordKey, value: string): Promise<boolean>;
   onAttached(): void;
   hidden: ReactNode;
+  /** The phone boards' look (PhoneReview.md, PhoneEdit.md): each line labelled, the title too, with a "Change"
+   * button ("Change title") in place of the pen. */
+  phone?: boolean;
 }) {
   return (
     <div className="ck-words">
-      <EditLine k="title" label={C.words.title} value={values.title} onSave={onSave} title />
-      <EditLine k="summary" label={C.words.summary} value={values.summary} onSave={onSave} />
-      <EditLine k="often" label={C.words.often} value={values.often} onSave={onSave} />
+      <EditLine k="title" label={C.words.title} value={values.title} onSave={onSave} title phone={phone} />
+      <EditLine k="summary" label={C.words.summary} value={values.summary} onSave={onSave} phone={phone} />
+      <EditLine k="often" label={C.words.often} value={values.often} onSave={onSave} phone={phone} />
       {hidden}
       {attached.length ? (
         <div className="ck-att">
@@ -109,12 +113,14 @@ function EditLine({
   value,
   onSave,
   title,
+  phone = false,
 }: {
   k: WordKey;
   label: string;
   value: string;
   onSave(key: WordKey, value: string): Promise<boolean>;
   title?: boolean;
+  phone?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
@@ -142,7 +148,7 @@ function EditLine({
 
   return (
     <div className={title ? "ck-w ck-w-title" : "ck-w"}>
-      {title ? null : (
+      {title && !phone ? null : (
         <p className="lbl" id={`${id}-l`}>
           {label}
         </p>
@@ -196,25 +202,39 @@ function EditLine({
       ) : (
         <div className="ck-w-v">
           {title ? <h3 className="h3 ck-title">{value}</h3> : <p className="ck-v">{value}</p>}
-          <button
-            type="button"
-            className="ck-pen"
-            aria-label={C.words.change[k]}
-            onClick={() => {
-              setText(value);
-              setEditing(true);
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path
-                d="M4 20h4L19 9l-4-4L4 16v4Zm11-15 4 4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+          {phone ? (
+            <button
+              type="button"
+              className="tb blue ck-chg"
+              onClick={() => {
+                setText(value);
+                setEditing(true);
+              }}
+            >
+              {C.words.changePhone}
+              <span className="vh"> {C.words.changeWhat[k]}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ck-pen"
+              aria-label={C.words.change[k]}
+              onClick={() => {
+                setText(value);
+                setEditing(true);
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M4 20h4L19 9l-4-4L4 16v4Zm11-15 4 4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       )}
       {error ? <FieldMsg id={`${id}-m`}>{error}</FieldMsg> : null}

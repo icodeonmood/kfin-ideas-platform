@@ -32,15 +32,20 @@ export function HiddenTile({
   details,
   onShow,
   onHide,
+  phone = false,
 }: {
   details: HiddenDetail[];
-  onShow(id: string, reason: ShowReason): Promise<boolean>;
+  /** True when shown; a string is the server's own words for a refusal ("The review desk hid this, so it stays
+   * hidden.", 403), shown under the tile instead of the general line. */
+  onShow(id: string, reason: ShowReason): Promise<boolean | string>;
   onHide(id: string): Promise<boolean>;
+  /** The phone boards' label for a row's button: "Not personal? Show it" (PhoneReview.md, PhoneEdit.md). */
+  phone?: boolean;
 }) {
   const [asking, setAsking] = useState<string | null>(null);
   const [reason, setReason] = useState<ShowReason | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const askId = useId();
   if (!details.length) return null;
   const asked = details.find((d) => d.id === asking) ?? null;
@@ -48,9 +53,10 @@ export function HiddenTile({
   const confirm = async () => {
     if (!asked || !reason) return;
     setBusy(true);
-    const ok = await onShow(asked.id, reason);
+    const res = await onShow(asked.id, reason);
+    const ok = res === true;
     setBusy(false);
-    setFailed(!ok);
+    setFailed(ok ? null : typeof res === "string" && res ? res : CHECK_COPY.failed);
     if (ok) {
       setAsking(null);
       setReason(null);
@@ -71,7 +77,7 @@ export function HiddenTile({
                   variant="text-blue"
                   onClick={async () => {
                     setBusy(true);
-                    setFailed(!(await onHide(d.id)));
+                    setFailed((await onHide(d.id)) ? null : CHECK_COPY.failed);
                     setBusy(false);
                   }}
                 >
@@ -86,10 +92,10 @@ export function HiddenTile({
                 onClick={() => {
                   setAsking(asking === d.id ? null : d.id);
                   setReason(null);
-                  setFailed(false);
+                  setFailed(null);
                 }}
               >
-                {C.show}
+                {phone ? C.showPhone : C.show}
               </Button>
             )}
           </li>
@@ -115,7 +121,7 @@ export function HiddenTile({
           </div>
         </div>
       ) : null}
-      {failed ? <FieldMsg>{CHECK_COPY.failed}</FieldMsg> : null}
+      {failed ? <FieldMsg>{failed}</FieldMsg> : null}
     </div>
   );
 }

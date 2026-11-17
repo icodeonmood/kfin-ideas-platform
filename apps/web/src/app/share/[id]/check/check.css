@@ -1087,3 +1087,34 @@
     flex: 1;
   }
 }
+
+/* ---------- For the edit page (S-06B) and the phone boards: the parts' optional looks ---------- */
+/* WordsBody phone: "Change" as a text button beside the line (PhoneReview, PhoneEdit) */
+.ck-chg {
+  flex: none;
+  min-height: 44px;
+}
+
+/* ProofBody edit, phone: one button that opens the file picker, with its line */
+.ck-pick {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 64px;
+  padding: 14px 16px;
+  border: 1.5px dashed var(--rule);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ck-pick-t {
+  font-weight: 500;
+}
+
+.ck-proof-edit .fdrop {
+  margin-bottom: 12px;
+}

@@ -30,6 +30,7 @@ export function ProofBody({
   onHide,
   onRemove,
   showHelps,
+  edit,
 }: {
   items: ProofItem[];
   limitMb: number;
@@ -42,6 +43,21 @@ export function ProofBody({
   onHide(key: string): void;
   onRemove(key: string): void;
   showHelps: boolean;
+  /**
+   * The edit page's look (S-06B; Edit.md, PhoneEdit.md): the drop area always open above the link field, or on a
+   * phone one button that opens the file picker, and the link field in the edit boards' words. Check it leaves it
+   * out and keeps "Attach files".
+   */
+  edit?: {
+    /** "Link to a report, dashboard or ticket" (read out, not shown: the field says it). */
+    links: string;
+    /** "Or paste a link to a report, dashboard or ticket"; on a phone "Or paste a link". */
+    linkInput: string;
+    /** "Add link"; on a phone "Add". */
+    addLink: string;
+    /** Phone: "Add a photo or file" with its line, in place of the drop area. */
+    pick?: { label: string; line: string };
+  };
 }) {
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -83,9 +99,24 @@ export function ProofBody({
     }
   };
 
+  const browse = (
+    <button type="button" className="tb blue" onClick={() => input.current?.click()}>
+      {C.browse}
+    </button>
+  );
+  // The edit page: a phone gets one button that opens the picker; a desk the drop area, always open.
+  const picker = edit?.pick ? (
+    <button type="button" className="ck-pick tile" onClick={() => input.current?.click()}>
+      <span className="ck-pick-t">{edit.pick.label}</span>
+      <span className="ck-pick-l meta">{edit.pick.line}</span>
+    </button>
+  ) : (
+    <DropArea title={C.dropTitle} help={help} dragging={dragging} browse={browse} />
+  );
+
   return (
     <div
-      className="ck-proof"
+      className={edit ? "ck-proof ck-proof-edit" : "ck-proof"}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
@@ -93,22 +124,29 @@ export function ProofBody({
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
     >
-      <p className="lbl" id={`${ids}-l`}>
-        {C.links}
-      </p>
+      {edit ? picker : null}
+      {edit ? (
+        <span className="vh" id={`${ids}-l`}>
+          {edit.links}
+        </span>
+      ) : (
+        <p className="lbl" id={`${ids}-l`}>
+          {C.links}
+        </p>
+      )}
       <span className="vh" id={`${ids}-p`}>
-        {C.linkInput}
+        {edit ? edit.linkInput : C.linkInput}
       </span>
       <div className="ck-linkrow">
         <input
           className="fld"
-          type="text"
+          type={edit ? "url" : "text"}
           inputMode="url"
           autoComplete="off"
-          placeholder={C.linkInput}
-          aria-labelledby={`${ids}-l ${ids}-p`}
+          placeholder={edit ? edit.linkInput : C.linkInput}
+          aria-labelledby={edit ? `${ids}-p` : `${ids}-l ${ids}-p`}
+          aria-describedby={bad ? `${ids}-m` : edit ? `${ids}-l` : undefined}
           aria-invalid={bad ? true : undefined}
-          aria-describedby={bad ? `${ids}-m` : undefined}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -122,18 +160,20 @@ export function ProofBody({
             }
           }}
         />
-        <Button
-          variant="line"
-          size="sm"
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          aria-controls={open ? `${ids}-drop` : undefined}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {C.attach}
-        </Button>
+        {edit ? null : (
+          <Button
+            variant="line"
+            size="sm"
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            aria-controls={open ? `${ids}-drop` : undefined}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {C.attach}
+          </Button>
+        )}
         <Button variant="line" size="sm" busy={adding} onClick={() => void addLinks()}>
-          {C.addLink}
+          {edit ? edit.addLink : C.addLink}
         </Button>
       </div>
       {bad ? <FieldMsg id={`${ids}-m`}>{C.notALink}</FieldMsg> : null}
@@ -150,18 +190,9 @@ export function ProofBody({
           if (files.length) onFiles(files);
         }}
       />
-      {open || dragging ? (
+      {!edit && (open || dragging) ? (
         <div id={`${ids}-drop`}>
-          <DropArea
-            title={C.dropTitle}
-            help={help}
-            dragging={dragging}
-            browse={
-              <button type="button" className="tb blue" onClick={() => input.current?.click()}>
-                {C.browse}
-              </button>
-            }
-          />
+          <DropArea title={C.dropTitle} help={help} dragging={dragging} browse={browse} />
         </div>
       ) : null}
       {items.length ? (

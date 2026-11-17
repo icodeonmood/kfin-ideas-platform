@@ -36,12 +36,16 @@ export function FixPartBody({
   onRemove,
   removing,
   error,
+  words,
 }: {
   part: FixPart;
   onOpen(): void;
   onRemove(): void;
   removing: boolean;
   error: string | null;
+  /** The edit page's row (S-06B; Edit.md): "Got an idea how to solve it?" and its line, under its own "Your fix"
+   * heading, so the row's title is not a heading there. Check it leaves it out. */
+  words?: { title: string; line: string };
 }) {
   return (
     <div className="ck-fix">
@@ -64,8 +68,8 @@ export function FixPartBody({
       ) : (
         <div className="fixrow tile">
           <div>
-            <h2 className="h3">{C.rowTitle}</h2>
-            <p className="meta">{C.rowLine}</p>
+            {words ? <p className="h3">{words.title}</p> : <h2 className="h3">{C.rowTitle}</h2>}
+            <p className="meta">{words ? words.line : C.rowLine}</p>
             {part.kind === "started" ? <p className="ck-started">{C.started}</p> : null}
           </div>
           <div className="fxa">
