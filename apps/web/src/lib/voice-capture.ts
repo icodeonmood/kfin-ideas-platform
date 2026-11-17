@@ -339,7 +339,7 @@ export class VoiceCapture {
     this.set({ status: "recording", seconds: 0, maxSeconds: this.maxSeconds, text: "", spans: [] });
     const running = await resumed;
     // Stopped, ended or left while the resume was settling: that path owns the note, and its end is already sent.
-    if (run !== this.run || running || this.state.status !== "recording") return;
+    if (run !== this.run || running || this.getState().status !== "recording") return;
     // The context never ran (iOS outside the tap): the mic goes off, the note ends, and the reason is a code.
     const id = this.streamId;
     this.release();

@@ -34,7 +34,7 @@ import type {
   ShowReason,
 } from "@/lib/contracts";
 import { DraftClient, DraftError, newClientId, type Outgoing } from "@/lib/compose/client";
-import { segments } from "@/lib/compose/hidden";
+import { quoteRange, segments } from "@/lib/compose/hidden";
 import { applyEvent, fromDraft, withDraft, type Live } from "@/lib/compose/live";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
@@ -98,13 +98,6 @@ function useIsPhone(): boolean {
 function isEditable(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
-}
-
-/** Where the person's quote sits in a text, for the underline (C-DRAFT-PANEL.behaviour/3). */
-function quoteRange(text: string, quote: string | null): { start: number; end: number } | null {
-  if (!quote) return null;
-  const at = text.toLowerCase().indexOf(quote.toLowerCase());
-  return at < 0 ? null : { start: at, end: at + quote.length };
 }
 
 function Words({ text, spans, quote }: { text: string; spans: HiddenSpan[]; quote: string | null }) {
@@ -259,6 +252,9 @@ export function Compose({
           .then((d) => {
             setDraft(d);
             setLive((l) => withDraft(l, d));
+            // S-04's box: the saved message's spans, as the web edge converted them (BLD-C121).
+            const first = d.messages.find((m) => m.id === firstMid.current);
+            if (first) setBoxSpans(first.spans ?? null);
           })
           .catch(() => undefined);
       }
@@ -612,7 +608,7 @@ export function Compose({
             : PROMPT_COPY.firstPlaceholder
       }
       keyHint={!conversation}
-      spans={!conversation && boxIsSaved ? (boxSpans ?? live.spans) : null}
+      spans={!conversation && boxIsSaved ? boxSpans : null}
       source={!conversation ? quoteRange(box, quote) : null}
       voice={{
         state: voice.state,

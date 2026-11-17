@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { authorize } from "@/server/auth/authorize";
-import { bodyOf, deviceOf, draftError, drafts, noStore } from "@/server/drafts";
+import { bodyOf, deviceOf, draftError, drafts, noStore, spansForBrowser } from "@/server/drafts";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   try {
     const open = request.nextUrl.searchParams.get("open") === "1";
     const { body } = await drafts.get(me, deviceOf(request), (await params).id, open);
-    return NextResponse.json(body, { headers: noStore });
+    return NextResponse.json(spansForBrowser(body), { headers: noStore });
   } catch (err) {
     return draftError(err);
   }

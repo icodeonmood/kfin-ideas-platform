@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { IDEMPOTENCY_HEADER } from "@/lib/contracts/api";
 import { authorize } from "@/server/auth/authorize";
-import { bodyOf, deviceOf, draftError, drafts, noStore } from "@/server/drafts";
+import { bodyOf, deviceOf, draftError, drafts, noStore, spansForBrowser } from "@/server/drafts";
 
 /** POST /api/drafts/{id}/messages `{ text, via, files?, text_en?, stream_id?, at?, defer_run? }` — one more message (A-API.drafts).
  * Hidden first (DEC-103), the person's own words sealed for them, then only the parts it could change are built
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ...(Array.isArray(body.files) ? { files: body.files.filter((f) => typeof f === "string") } : {}),
       client_id: request.headers.get(IDEMPOTENCY_HEADER) ?? undefined,
     });
-    return NextResponse.json(out, { status: 202, headers: noStore });
+    return NextResponse.json(spansForBrowser(out), { status: 202, headers: noStore });
   } catch (err) {
     return draftError(err);
   }

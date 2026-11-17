@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Draft, DraftStreamEvent } from "@/lib/contracts";
 import { DraftClient, DraftError, type Outgoing } from "@/lib/compose/client";
-import { kindsLine, segments, SHOW_REASONS, shownLine } from "@/lib/compose/hidden";
+import { kindsLine, quoteRange, segments, SHOW_REASONS, shownLine } from "@/lib/compose/hidden";
 import { applyEvent, fromDraft, hasValue, withDraft } from "@/lib/compose/live";
 import {
   barValue,
@@ -146,6 +146,23 @@ function server(replies: Array<"network" | { status: number; body?: unknown }>) 
 const ok = (mid: string) => ({
   status: 202,
   body: { run_id: "r-1", message: { id: mid }, draft: { id: DRAFT, messages: [] } },
+});
+
+describe("C-DRAFT-PANEL.behaviour/3 the source phrase's underline (BLD-C121)", () => {
+  it("C-DRAFT-PANEL.behaviour/3 ignores case without moving the offsets after an 'İ'", () => {
+    const text = "İstanbul desk: About 40 calls a day reach the branch"; // synthetic
+    const r = quoteRange(text, "about 40 calls a day");
+    expect(r).not.toBeNull();
+    expect(text.slice(r!.start, r!.end)).toBe("About 40 calls a day");
+    expect(quoteRange(text, "nothing like this")).toBeNull();
+    expect(quoteRange(text, "a (day")).toBeNull(); // a phrase with pattern characters is matched as text
+  });
+
+  it("C-DRAFT-PANEL.behaviour/3 after an emoji the exact phrase is found where the browser counts it", () => {
+    const text = "🙂🙂 about 40 calls a day";
+    const r = quoteRange(text, "about 40 calls a day")!;
+    expect(text.slice(r.start, r.end)).toBe("about 40 calls a day");
+  });
 });
 
 describe("the draft client: client_id on every message (S-04B, A-API.drafts; BLD-C122)", () => {

@@ -8,7 +8,6 @@ import type {
   DraftPartKey,
   DraftStreamEvent,
   HiddenDetail,
-  HiddenSpan,
   Part,
   SimilarMatch,
 } from "@/lib/contracts";
@@ -29,8 +28,6 @@ export interface Live {
   suggestions: string[];
   ready: boolean;
   hidden: HiddenDetail[];
-  /** The newest `hidden` event's spans, in the run's message (S-04 underlines its box with them). */
-  spans: HiddenSpan[] | null;
 }
 
 const EMPTY_PART = <T>(value: T): Part<T> => ({ state: "waiting", value });
@@ -64,7 +61,6 @@ export function fromDraft(d: Draft | null): Live {
     suggestions: d?.suggestions ?? [],
     ready: Boolean(d?.ready),
     hidden: d?.hidden ?? [],
-    spans: null,
   };
 }
 
@@ -72,11 +68,11 @@ export function fromDraft(d: Draft | null): Live {
 export function withDraft(live: Live, d: Draft): Live {
   const next = fromDraft(d);
   if (live.running && live.runId && d.run?.id === live.runId && d.run.state === "running") {
-    return { ...next, loader: live.loader, updating: live.updating, spans: live.spans };
+    return { ...next, loader: live.loader, updating: live.updating };
   }
   // The run the loader showed has finished: keep it, so the strip can fill, say "All 6 parts are in" and fold.
   const same = live.loader && live.runId && d.run?.id === live.runId;
-  return { ...next, loader: same ? live.loader : null, spans: live.spans };
+  return { ...next, loader: same ? live.loader : null };
 }
 
 /** One stream event. `now` is the page's clock (ms), for the loader. */
@@ -100,7 +96,9 @@ export function applyEvent(live: Live, e: DraftStreamEvent, now: number): Live {
       };
     }
     case "hidden":
-      return { ...live, hidden: e.data.details ?? live.hidden, spans: e.data.spans ?? null };
+      // The event's spans are the worker's code points with no text beside them, so they are not drawn: the
+      // underline comes from each message's own spans, converted at the web edge (`spansForBrowser`, BLD-C121).
+      return { ...live, hidden: e.data.details ?? live.hidden };
     case "part": {
       const { key, state, value, why, source_quote } = e.data;
       const parts = { ...live.parts };

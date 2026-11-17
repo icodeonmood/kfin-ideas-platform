@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { authorize } from "@/server/auth/authorize";
-import { bodyOf, deviceOf, draftError, drafts, noStore } from "@/server/drafts";
+import { bodyOf, deviceOf, draftError, drafts, noStore, spansForBrowser } from "@/server/drafts";
 
 /** PATCH /api/drafts/{id}/parts/{part} `{ value }` — the person's own value: set and pinned, so later messages
  * never overwrite it ("Your call", L-DRAFT.pins). `{ pinned: false }` unpins and suggests again ("Suggest again").
@@ -18,7 +18,7 @@ export async function PATCH(
     const path = `${encodeURIComponent(id)}/parts/${encodeURIComponent(part)}`;
     const send = "value" in body ? { value: body.value } : body.pinned === false ? { pinned: false } : {};
     const { body: out } = await drafts.write(me, deviceOf(request), "PATCH", path, send);
-    return NextResponse.json(out, { headers: noStore });
+    return NextResponse.json(spansForBrowser(out), { headers: noStore });
   } catch (err) {
     return draftError(err);
   }
