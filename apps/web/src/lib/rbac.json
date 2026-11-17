@@ -129,6 +129,9 @@
     "comms.email": [
       "admin"
     ],
+    "comms.teams": [
+      "admin"
+    ],
     "wall.public": [
       "admin",
       "hr"
@@ -192,7 +195,13 @@
     "PUT /api/me/comms-prefs                           signed_in",
     "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
+    "GET /api/inbox/counts                             signed_in",
+    "GET /api/inbox/needs-you                          signed_in",
+    "POST /api/inbox/read-all                          signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
+    "POST /api/inbox/{id}/unread                       signed_in",
+    "POST /api/inbox/{id}/archive                      signed_in",
+    "POST /api/inbox/{id}/actions/{op}                 signed_in",
     "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
