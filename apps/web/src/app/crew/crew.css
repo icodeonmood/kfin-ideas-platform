@@ -1,0 +1,555 @@
+/* S-H2, Find your crew (lane F). Values from reference/css/boards/Crew.css (.pcard, .pc-*, .fbtn, .fpanel), built on
+   tokens.css; lane D's .deck draws the pile and its controls (components.css). */
+
+.crew-page {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 440px) minmax(220px, 272px);
+  justify-content: center;
+  align-items: start;
+  gap: 40px;
+  padding: 24px 24px 48px;
+}
+
+/* ---- Left: back link, title, filters ---- */
+.crew-back-row {
+  margin: 0 0 18px;
+}
+
+.crew-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--ink);
+  font: 500 15px/1 var(--ft);
+  text-decoration: none;
+}
+
+.crew-back:hover {
+  text-decoration: underline;
+}
+
+/* S-H2.title: 32px so it fits the column, never wrapping */
+.crew-h1 {
+  margin: 0;
+  font: 500 32px/1.1 var(--fd);
+  letter-spacing: -0.024em;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.crew-lead {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+.crew-fanchor {
+  position: relative;
+  z-index: 5;
+  margin-top: 22px;
+}
+
+.crew-fbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.crew-fbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  font: 500 15px/1 var(--ft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.crew-fbtn:hover {
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.crew-fbtn[aria-expanded="true"] {
+  background: var(--wash);
+  color: var(--blueT);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+
+.crew-fcount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: var(--blue);
+  color: #ffffff;
+  font: 600 12px/1 var(--ft);
+}
+
+.crew-fres {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--mute);
+  text-align: right;
+}
+
+.crew-fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.crew-fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 13.5px/1 var(--ft);
+  cursor: pointer;
+}
+
+.crew-fpill:hover {
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.crew-fclr {
+  min-height: 44px;
+  font-size: 13.5px;
+}
+
+/* The glass filter panel ("Filter ideas") */
+.crew-fpanel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  z-index: 40;
+  width: min(640px, calc(100vw - 48px));
+  padding: 18px 22px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 0 0 1px rgba(17, 17, 17, 0.08),
+    0 40px 80px -40px rgba(17, 17, 17, 0.45);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+}
+
+.crew-fph {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crew-fpt {
+  margin: 0;
+  font: 500 20px/1.2 var(--fd);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.crew-x {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+
+.crew-x:hover {
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--ink);
+}
+
+.crew-fgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px;
+  margin-top: 10px;
+}
+
+.crew-fg {
+  min-width: 0;
+}
+
+.crew-fg.wide {
+  grid-column: 1 / -1;
+}
+
+.crew-fgl {
+  margin: 0 0 8px;
+  font: 500 13.5px/1.3 var(--ft);
+  color: var(--mute2);
+}
+
+.crew-fpf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.crew-fpf .btn {
+  min-width: 150px;
+}
+
+/* ---- Centre: the deck and its cards (C-CREW-DECK.card) ---- */
+.crew-centre {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.crew-deck {
+  min-width: 0;
+}
+
+.crew-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+  box-sizing: border-box;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.08),
+    0 26px 60px -34px rgba(17, 17, 17, 0.38);
+}
+
+.crew-skel {
+  background: linear-gradient(180deg, #ffffff, #f7f7f5);
+}
+
+.crew-top {
+  padding: 22px 22px 20px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+}
+
+.crew-top.hue1 {
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(57, 93, 237, 0.2), rgba(57, 93, 237, 0) 60%),
+    radial-gradient(120% 150% at 100% 0%, rgba(244, 104, 53, 0.16), rgba(244, 104, 53, 0) 60%),
+    #ffffff;
+}
+
+.crew-top.hue2 {
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(146, 128, 255, 0.24), rgba(146, 128, 255, 0) 60%),
+    radial-gradient(120% 150% at 100% 0%, rgba(57, 93, 237, 0.14), rgba(57, 93, 237, 0) 60%),
+    #ffffff;
+}
+
+.crew-t {
+  margin: 14px 0 0;
+  font: 500 26px/1.12 var(--fd);
+  letter-spacing: -0.024em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.crew-tb {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.crew-tb:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+
+.crew-m {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--mute2);
+}
+
+.crew-why {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 22px;
+  background: rgba(57, 93, 237, 0.06);
+  font: 500 14px/1.35 var(--ft);
+  color: var(--blueT);
+}
+
+.crew-why svg {
+  flex: none;
+  color: #c63d00;
+}
+
+.crew-q {
+  padding: 16px 22px 0;
+}
+
+.crew-l {
+  margin: 0;
+  font: 500 12.5px/1.3 var(--ft);
+  color: var(--mute);
+}
+
+.crew-a {
+  margin: 4px 0 14px;
+  font: 500 19px/1.32 var(--fd);
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.crew-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: auto;
+  padding: 18px 22px 20px;
+}
+
+.crew-join {
+  min-height: 54px;
+  font-size: 16.5px;
+}
+
+/* "Waiting for Ravi": what stands where Team up was; opens the sheet on its sent step */
+.crew-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 15.5px/1 var(--ft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.crew-wait i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+.crew-wait:hover {
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+/* The end of the deck, nothing yet, filtered to nothing, did not load */
+.crew-end {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 360px;
+  align-content: center;
+  padding: 32px 28px;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.06);
+  text-align: center;
+}
+
+.crew-end:focus {
+  outline: none;
+}
+
+.crew-end:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+}
+
+.crew-end-ic {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 24px/1 var(--fd);
+}
+
+.crew-err {
+  margin: 0;
+  font-size: 14px;
+  color: var(--badT);
+  text-align: center;
+}
+
+/* ---- Right: Your crews ---- */
+.crew-side {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 0 0 1px rgba(17, 17, 17, 0.07),
+    0 26px 50px -36px rgba(17, 17, 17, 0.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+
+.crew-side-t {
+  margin: 0;
+  font: 500 19px/1.2 var(--fd);
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.crew-side-e {
+  margin: 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.crew-rows {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crew-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin: 0 -10px;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.crew-row:hover {
+  background: rgba(17, 17, 17, 0.05);
+}
+
+.crew-row-t {
+  font: 500 15px/1.35 var(--ft);
+}
+
+.crew-row-m {
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.crew-row-s {
+  justify-self: start;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 12.5px/1.3 var(--ft);
+}
+
+.crew-row-s.ok {
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.crew-side-p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+  font-size: 14px;
+  color: var(--mute2);
+}
+
+.crew-all {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  font: 500 14px/1.3 var(--ft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---- Narrower screens: one column; the card is the screen on a phone (S-H2.phone) ---- */
+@media (max-width: 1100px) {
+  .crew-page {
+    grid-template-columns: minmax(0, 440px);
+    gap: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .crew-page {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 16px 32px;
+  }
+
+  .crew-back-row {
+    display: none;
+  }
+
+  /* The compact bar shows the title; the heading stays for screen readers */
+  .crew-h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .crew-card {
+    min-height: calc(100dvh - 220px);
+  }
+
+  .crew-fpanel {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 8px;
+    width: auto;
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
+  }
+
+  .crew-fgrid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -63,7 +63,7 @@ describe("crew route handlers (A-API.team-up)", () => {
     const res = await deck.GET(new NextRequest("http://app/api/crew?location=Mumbai&category=Operations"));
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
-    expect(calls[0].path).toBe(`/internal/crew?user_id=${ME}&location=Mumbai&category=Operations`);
+    expect(calls[0]?.path).toBe(`/internal/crew?user_id=${ME}&location=Mumbai&category=Operations`);
   });
 
   it("POST /api/crew/pass, /undo and /reset reach the worker as POSTs", async () => {
