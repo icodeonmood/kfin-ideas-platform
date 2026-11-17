@@ -92,3 +92,8 @@
     padding: 20px;
   }
 }
+
+/* The help line and, near the limit, the counter, each on its own line (V-FIELDS.answer/1) */
+.ans .help-l {
+  display: block;
+}
