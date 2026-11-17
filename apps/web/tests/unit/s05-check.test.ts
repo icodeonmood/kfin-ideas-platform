@@ -1948,6 +1948,50 @@ describe("S-05 review fixes: the fix sheet (S-05.fix)", () => {
   });
 });
 
+describe("S-05 verification should-fixes (BLD-C131, C134)", () => {
+  it("C-SIMGRID.grid/4 BLD-C131: Keep mine separate that the server does not record leaves the grid unfolded with the drawn line under it", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/similar/keep-separate")
+          ? { status: 503, body: { error: { code: "not_available", message: "Paused for now." } } }
+          : undefined,
+      ...base(),
+    ]);
+    await railTo("Similar ideas");
+    await act(async () =>
+      (sheetHook.options!.onSent as (s: unknown) => void)({
+        kind: "teamup",
+        id: "tu-1",
+        ideaId: MATCH_RAVI.idea.id,
+        note: "I take these calls at the Hyderabad branch too.",
+        brought: [],
+        after: null,
+      }),
+    );
+    await settle();
+    expect(calls.find((c) => c.url.endsWith("/similar/keep-separate"))?.body).toEqual({ on: true });
+    expect(document.querySelector(".simgrid")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Kept separate.");
+    expect(document.body.textContent).toContain(CHECK_COPY.failed);
+  });
+
+  it("S-05.rules/5 BLD-C134: not_ready for how often shows the server's words under Submit, with no Try again", async () => {
+    const line = "Say roughly how often it happens.";
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/submit")
+          ? { status: 422, body: { error: { code: "not_ready", message: line, field: "often" } } }
+          : undefined,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toBe(line);
+    expect(button("Try again")).toBeUndefined();
+    expect(button("Submit")).toBeTruthy();
+  });
+});
+
 describe("S-05 words (F-COPY)", () => {
   it("never says duplicate, rejected, already solved, appeal, invalid or Garage to the sharer", () => {
     const all = JSON.stringify(CHECK_COPY, (_k, v) => (typeof v === "function" ? v("2", "Ravi") : v));

@@ -404,11 +404,15 @@ export function CheckIt({
   const similarNext = () => go(4, { forwardFrom: 3 });
 
   /** The sheet's send. "Keep mine separate" is a team-up request sent with the draft (BLD-F020, BLD-F071): the
-   * draft is kept separate and the grid folds (C-SIMGRID.grid/4, V-ACC.share/7); a merge request reloads the bar. */
-  const teamUpSent = (sent: TeamUpSent) => {
+   * draft is kept separate and the grid folds (C-SIMGRID.grid/4, V-ACC.share/7); a merge request reloads the bar.
+   * The grid folds only once the server has recorded it; if it has not, the grid stays and the drawn line under it
+   * says so, so the person can choose again (BLD-C131). */
+  const teamUpSent = async (sent: TeamUpSent) => {
     if (sent.kind === "teamup") {
-      setKept(true);
-      void track(api.keepSeparate(draftId, true));
+      setMergeError(null);
+      const r = await track(api.keepSeparate(draftId, true));
+      if (r.ok) setKept(true);
+      else setMergeError({ where: "grid", text: C.failed });
     }
     void loadSimilar();
   };
@@ -595,6 +599,12 @@ export function CheckIt({
     if (code === "not_a_draft") {
       // Already sent: its own line, and Submit stays unavailable rather than looping on Try again.
       setSendState({ kind: "refused", message: message || C.failed, final: true });
+      return;
+    }
+    if (code === "not_ready") {
+      // Any other part not ready (how often, for one): the server's words under Submit, never "Try again", which
+      // would only meet the same refusal (S-05.rules/5).
+      setSendState({ kind: "refused", message: message || C.failed });
       return;
     }
     if (
@@ -789,7 +799,7 @@ export function CheckIt({
               merge={mv}
               keptSeparate={kept}
               onShowAgain={() => void showAgain()}
-              onSent={teamUpSent}
+              onSent={(sent) => void teamUpSent(sent)}
               onWithdrawn={() => void loadSimilar()}
               onWithdraw={(a) => withdraw(a, "grid")}
             />

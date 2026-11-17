@@ -8,7 +8,7 @@
  * The sheet is a right-hand dialog (full screen on a phone), mounted at the page root: six questions, a readiness
  * line that counts what is filled, and the most useful next answer. Only "How would you solve it?" is needed. The
  * cross is "Close, and keep what you wrote" (a started fix, `included: false`), saved before the sheet closes;
- * "Cancel" and Escape close without saving (S-05.fix OPEN, P-DECISIONS.open/13, BLD-C139). While it is open the page
+ * "Cancel" and Escape close without saving (S-05.fix OPEN, P-DECISIONS.open/13, BLD-C134). While it is open the page
  * behind it is inert, so neither a pointer nor a screen reader reaches it. Amounts go to the server as typed and come
  * back normalised (L-WORTH/1).
  */
