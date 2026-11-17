@@ -21,8 +21,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {
-    default: (p: { href: string; className?: string; children?: unknown }) =>
-      h("a", { href: p.href, className: p.className }, p.children as never),
+    default: ({ children, ...p }: { href: string; children?: unknown }) => h("a", p, children as never),
   };
 });
 
@@ -149,5 +148,36 @@ describe("C-SIDEBAR.anatomy/4, F-A11Y.rules/4: each dot says what it means", () 
     expect(spoken("/share/d-9")).toBe("Draft: ");
     expect(committee[0]?.words).toBeUndefined();
     expect(spoken("/committee?open=w-1")).toBeNull();
+  });
+});
+
+describe("C-SIDEBAR.anatomy/4: section actions (boards Desk and Committee, BLD-D013)", () => {
+  /** A section's header links as [name, href, text], in order. */
+  const actions = (section: string) =>
+    Array.from(host.querySelectorAll(`section[aria-label="${section}"] .sb-ha a`)).map((a) => [
+      a.getAttribute("aria-label"),
+      a.getAttribute("href"),
+      a.textContent,
+    ]);
+
+  it("Waiting on sharers: search and View all, both on the desk's waiting tab", () => {
+    expect(actions("Waiting on sharers")).toEqual([
+      ["Search the desk", "/desk?tab=waiting", ""],
+      ["View all ideas waiting on sharers", "/desk?tab=waiting", "View all"],
+    ]);
+  });
+
+  it("Closing soonest: View all opens the committee", () => {
+    expect(actions("Closing soonest")).toEqual([
+      ["View all ideas closing soonest", "/committee", "View all"],
+    ]);
+  });
+
+  it("Your ideas keeps its search and View all", () => {
+    expect(actions("Your ideas").map(([name]) => name)).toEqual(["Search your ideas", "View all your ideas"]);
+  });
+
+  it("the actions sit inside their section, which the folded bar hides", () => {
+    for (const a of host.querySelectorAll(".sb-ha a")) expect(a.closest(".sb-sec")).not.toBeNull();
   });
 });
