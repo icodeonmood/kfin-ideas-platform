@@ -82,7 +82,10 @@ def test_s06_layout_breadcrumb_names_where_the_sharer_came_from(club: dict[str, 
     """S-06.layout/1, S-06.rules/6, J-BROWSE/5: the breadcrumb returns to My ideas' filtered view, to the Wall's
     own view when the sharer opened it from the Wall, and Home after first sharing; an off-site back is dropped."""
     t5 = ref(club, "T5")
-    crumb = lambda **kw: view(club, t5, "tanvi", **kw)["page"]["breadcrumb"]  # noqa: E731
+
+    def crumb(**kw: Any) -> dict[str, Any]:
+        return dict(view(club, t5, "tanvi", **kw)["page"]["breadcrumb"])
+
     assert crumb(came_from="my-ideas", back="/my-ideas?filter=needs_you&row=X") == {
         "label": "My ideas, Needs you",
         "to": "/my-ideas?filter=needs_you&row=X",
