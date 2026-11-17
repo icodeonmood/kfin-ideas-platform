@@ -511,6 +511,7 @@ test.describe("S-WALL on the 1% Club seed", () => {
     const html = await page.content();
     const payload = JSON.stringify({ kindling, justIn });
     let checked = 0;
+    let drawn = 0;
     for (const key of Object.keys(OWN_WORDS) as IdeaKey[]) {
       const words = OWN_WORDS[key]!;
       expect(html, `${key}'s own words in the page`).not.toContain(words);
@@ -520,10 +521,17 @@ test.describe("S-WALL on the 1% Club seed", () => {
       if (!item) continue;
       // What the Wall carries is the short summary everyone sees, and the title
       expect(item.summary).toBe(idea.summary);
-      await expect(page.getByRole("link", { name: new RegExp(`^${esc(idea.title)}`) }).first()).toBeVisible();
       checked++;
+      // The API read above asks for 50; the page draws fewer at first (a phone shows fewer rows before "Show 5
+      // more"), so only a row the page has drawn is checked for its link
+      const link = page.getByRole("link", { name: new RegExp(`^${esc(idea.title)}`) });
+      if ((await link.count()) > 0) {
+        await expect(link.first()).toBeVisible();
+        drawn++;
+      }
     }
     expect(checked, "a seeded idea is on the Wall").toBeGreaterThan(0);
+    expect(drawn, "a seeded idea is drawn on the Wall").toBeGreaterThan(0);
   });
 
   test("DEC-104, L-WALL.ones: a One's name shows on the Wall; a One who hides it is One No. N", async ({
