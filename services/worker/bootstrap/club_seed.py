@@ -15,6 +15,7 @@ What it gives every screen of the pack something to show:
 - decisions inside the Ones Committee's window (one extended), expired ones, and a reversal;
 - a team-up request waiting on a lead (with an idea brought along), approved and declined ones, a draft's merge
   request waiting, an accepted one, and a desk merge inside its window;
+- two ideas on one reviewer's desk, opened, that list each other as similar, ready for a desk merge (J-REVIEW/M3);
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
 - one One whose tier rose with the moment not yet shown (J-ONE step 6).
@@ -280,7 +281,26 @@ IDEAS: dict[str, Spec] = {
                "Investors at the counter cannot read rejection codes on their letters.",
                "Investor service", ["Investors bring rejection letters to the counter and ask what R07 means."],
                step="check:6", saved_days=7),
+    # J-REVIEW/M3 (L-MERGE.desk): two sharers, one problem, both opened by Lavanya, each listing the other.
+    "F2": Spec("faisal", "with_review_desk", "problem", "Change of bank waits for a cancelled cheque by post",
+               "Investors who change their bank must post a cancelled cheque. The request waits until the cheque "
+               "reaches us.",
+               "Operations",
+               ["Investors who change their bank have to post us a cancelled cheque. The request waits a week or "
+                "more until it arrives, and the investor calls to ask why."],
+               often="About 25 requests a week", shared_days=4.5, opened_days=3.0, reviewer="lavanya"),
+    "J2": Spec("jatin", "with_review_desk", "problem", "Clients wait a week for a bank change to go through",
+               "A client who changes their bank waits for a posted cheque to reach us. Distributors take the calls "
+               "meanwhile.",
+               "Sales",
+               ["My distributors say their clients wait a week to change their bank, because the cancelled cheque "
+                "goes by post. The distributor takes the calls while they wait."],
+               often="Every week, across my distributors", shared_days=3.5, opened_days=2.0, reviewer="lavanya",
+               affects=["Distributors", "Investors"]),
 }  # fmt: skip
+# J2 was written after F2 was shared, so it found F2 while drafting (L-SIMILAR.rules/4, 5); F2 got J2 when J2 was
+# shared (L-SIMILAR.rules/6). Nobody asked to merge: the desk can (L-MERGE.desk/1), F2 leading as shared first.
+DESK_PAIR = ("F2", "J2", "Close match: a bank change waits for a cheque by post")
 
 
 def _dev_only() -> None:
@@ -780,6 +800,18 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
             (m[a].uuid, m[b].uuid, strength, reason, outcome),
         )
     conn.execute("UPDATE ideas SET kept_separate = true WHERE id = %s", (m["T5"].uuid,))
+    first, later, reason = DESK_PAIR
+    for a, b, found in ((later, first, "drafting"), (first, later, "later")):
+        conn.execute(
+            "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason, found_while) "
+            "VALUES (%s, %s, 'close', %s, %s)",
+            (m[a].uuid, m[b].uuid, reason, found),
+        )
+    conn.execute(  # "Checked and matched" counts the one it found (L-SIMILAR.rules/5)
+        "UPDATE conversation_entries SET payload = jsonb_set(payload, '{similar}', '1') "
+        "WHERE idea_uuid = %s AND event = 'checked_matched'",
+        (m[later].uuid,),
+    )
 
     # T2's merge request waits on Rekha (Submit is held). N1's was accepted into T7.
     for key, other, state, note, days in (
