@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -14,7 +14,13 @@ import {
 
 const repo = path.resolve(__dirname, "../../../..");
 const source = JSON.parse(readFileSync(path.join(repo, "contracts/1pc/enums.json"), "utf8"));
-const migration = readFileSync(path.join(repo, "db/migrations/20261121500100_handoff_cutover.sql"), "utf8");
+const CUTOVER = "20261121500100_handoff_cutover.sql";
+const migration = readFileSync(path.join(repo, "db/migrations", CUTOVER), "utf8");
+/** Migrations after the cut-over that widen one of its CHECKs (lane C's `detail_hidden_by_desk`, BLD-C063). */
+const later = readdirSync(path.join(repo, "db/migrations"))
+  .filter((name) => name.endsWith(".sql") && name > CUTOVER)
+  .sort()
+  .map((name) => readFileSync(path.join(repo, "db/migrations", name), "utf8"));
 
 /** Every `col IN (...)` and `col <@ ARRAY[...]` CHECK in the migration's up section, keyed "table.column". */
 function checksInMigration(sql: string): Map<string, string[]> {
@@ -23,13 +29,15 @@ function checksInMigration(sql: string): Map<string, string[]> {
     at: m.index!,
     name: m[1]!,
   }));
-  const tableAt = (i: number) => tables.filter((t) => t.at < i).at(-1)!.name;
+  const tableAt = (i: number) => tables.filter((t) => t.at < i).at(-1)?.name;
   const out = new Map<string, string[]>();
   for (const m of up.matchAll(/CHECK \(\s*(\w+) IN \(([^)]*)\)|CHECK \(\s*(\w+) <@ ARRAY\[([^\]]*)\]/g)) {
+    const table = tableAt(m.index!);
+    if (table === undefined) continue;
     const column = m[1] ?? m[3]!;
     const list = m[2] ?? m[4]!;
     out.set(
-      `${tableAt(m.index!)}.${column}`,
+      `${table}.${column}`,
       [...list.matchAll(/'([^']*)'/g)].map((v) => v[1]!),
     );
   }
@@ -66,6 +74,9 @@ describe("E-ENUMS shared contract (contracts/1pc/enums.json, BLD-E006)", () => {
 
   it("every database CHECK in the cut-over equals its enum (plus the old values a reused column keeps)", () => {
     const found = checksInMigration(migration);
+    // A later migration that replaces one of these CHECKs wins, as it does in the database.
+    for (const sql of later)
+      for (const [key, values] of checksInMigration(sql)) if (found.has(key)) found.set(key, values);
     for (const [key, names] of Object.entries(DB_CHECKS)) {
       const expected = new Set<string>(names.flatMap((n) => enumValues(n as EnumName).map(String)));
       for (const extra of DB_VALUES_OUTSIDE_THE_PACK[key] ?? []) expected.add(extra);

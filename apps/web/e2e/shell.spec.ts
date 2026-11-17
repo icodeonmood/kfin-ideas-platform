@@ -93,6 +93,24 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
       await page.waitForURL((url) => url.pathname === "/share", { timeout: 1_000 });
     }).toPass({ timeout: 15_000 });
   });
+
+  test("C-PHONE-TABS, F-SPACE.shell: a phone gives the page its full width whatever the saved fold", async ({
+    page,
+  }, info) => {
+    test.skip(!isPhone(info), "the sidebar's width applies on a desk");
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/wall");
+    const main = page.locator("main#main");
+    // "auto" is the first visit (no choice yet); "folded" and "open" are a choice saved on a desk.
+    for (const fold of ["auto", "folded", "open"]) {
+      await page.evaluate((f) => document.documentElement.setAttribute("data-fold", f), fold);
+      await expect
+        .poll(async () => (await main.boundingBox())?.x ?? Infinity, {
+          message: `main's left edge, fold ${fold}`,
+        })
+        .toBeLessThanOrEqual(24);
+    }
+  });
 });
 
 async function tabTo(page: Page, target: ReturnType<Page["locator"]>) {
