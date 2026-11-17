@@ -4,6 +4,12 @@
   gap: 24px;
   max-width: 1080px;
 }
+/* S-R2: the DeskIdea board starts the page 40px down (main.wrap) where the shell's main gives 32px. Desktop only */
+@media (min-width: 641px) {
+  .ri {
+    padding-top: 8px;
+  }
+}
 .ri-head {
   display: grid;
   gap: 10px;
