@@ -65,9 +65,7 @@ def idea(
         "city": "Hyderabad", "area": "Investor service", "kind": "problem", "shared_at": shared_at,
         **columns,
     }  # fmt: skip
-    sql = (
-        f"INSERT INTO ideas ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *"  # noqa: S608
-    )
+    sql = f"INSERT INTO ideas ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *"  # noqa: S608
     row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
     conn.execute(
@@ -77,12 +75,18 @@ def idea(
     return dict(row)
 
 
-def draft(conn: Conn, owner: dict[str, str], *, title: str = "Investors call to ask why a redemption was rejected") -> dict[str, Any]:
+def draft(
+    conn: Conn, owner: dict[str, str], *, title: str = "Investors call to ask why a redemption was rejected"
+) -> dict[str, Any]:
     """An unsent draft: no reference, status `draft`, masked title and summary."""
     row = conn.execute(
         "INSERT INTO ideas (contributor_code, status, title, summary, kind) VALUES (%s, 'draft', %s, %s, 'problem') "
         "RETURNING *",
-        (owner["code"], title, "About 40 investors a day call the branch to ask why a redemption was rejected."),
+        (
+            owner["code"],
+            title,
+            "About 40 investors a day call the branch to ask why a redemption was rejected.",
+        ),
     ).fetchone()
     assert row is not None
     return dict(row)
@@ -129,17 +133,20 @@ def events(conn: Conn, idea_row: dict[str, Any]) -> list[tuple[str, dict[str, An
     return [
         (str(r["event"]), dict(r["payload"]))
         for r in conn.execute(
-            "SELECT event, payload FROM conversation_entries WHERE idea_uuid = %s ORDER BY at, id", (idea_row["id"],)
+            "SELECT event, payload FROM conversation_entries WHERE idea_uuid = %s ORDER BY at, id",
+            (idea_row["id"],),
         ).fetchall()
     ]
 
 
-def audit_rows(conn: Conn, action_prefix: str) -> list[dict[str, Any]]:
+def audit_rows(conn: Conn, action_prefix: str, request_id: str | None = None) -> list[dict[str, Any]]:
+    """Audit entries by action prefix, and by request when given (`audit_log` is not emptied between tests)."""
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT actor, action, entity, before, after FROM audit_log WHERE action LIKE %s ORDER BY id",
-            (f"{action_prefix}%",),
+            "SELECT actor, action, entity, before, after FROM audit_log WHERE action LIKE %s "
+            "AND (%s::text IS NULL OR after->>'request_id' = %s) ORDER BY id",
+            (f"{action_prefix}%", request_id, request_id),
         ).fetchall()
     ]
 

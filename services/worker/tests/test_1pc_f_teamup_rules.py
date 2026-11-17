@@ -68,7 +68,9 @@ def test_BLD_E008_no_gendered_pronoun_in_any_line_lane_F_writes(brought: int) ->
         lines.append(rules.lead_result(ans, "Kavya", brought, None)["text"])
     lines += list(rules.reader_words("Kavya Menon", "Kavya", brought).values())
     for state in ("sent", "approved_team_only", "approved_merged", "declined"):
-        after = rules.requester_after(state, lead_first="Ravi", lead_ref="IDEA-2026-001412", reason="x", brought=brought)
+        after = rules.requester_after(
+            state, lead_first="Ravi", lead_ref="IDEA-2026-001412", reason="x", brought=brought
+        )
         assert after is not None
         lines.append(str(after["line"]))
     for state in ("waiting", "accepted", "team_only", "declined"):
@@ -87,7 +89,9 @@ def test_S_H2B_reader_words_for_a_merge_request() -> None:
 
 
 def test_C_SHEET_TEAMUP_after_waiting_and_approved() -> None:
-    waiting = rules.requester_after("sent", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None, brought=0)
+    waiting = rules.requester_after(
+        "sent", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None, brought=0
+    )
     assert waiting is not None and waiting["line"] == "Waiting for Ravi"
     assert waiting["action"] == {"label": "Withdraw", "op": "withdraw"}
     on = rules.requester_after("approved_team_only", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None,
@@ -102,11 +106,16 @@ def test_C_SHEET_TEAMUP_after_waiting_and_approved() -> None:
 def test_L_MERGE_request_4_to_7_the_Check_it_words_match_the_Review_board() -> None:
     w = rules.draft_after("waiting", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None)
     assert w is not None and w["label"] == "Waiting on Ravi to merge" and w["can_submit"] is False
-    assert w["line"] == "Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own."
+    assert (
+        w["line"] == "Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own."
+    )
     assert w["action"] == {"label": "Withdraw the request", "op": "withdraw"}
     a = rules.draft_after("accepted", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None)
     assert a is not None and a["label"] == "Merged into IDEA-2026-001412"
-    assert a["line"] == "Ravi accepted. Yours is now part of IDEA-2026-001412, with credit to you. Nothing else to send."
+    assert (
+        a["line"]
+        == "Ravi accepted. Yours is now part of IDEA-2026-001412, with credit to you. Nothing else to send."
+    )
     assert a["action"] == {"label": "See the merged idea", "to": "/ideas/IDEA-2026-001412"}
     reason = "Mine is about the SMS wording, yours is about the calls it causes. Better as two."
     d = rules.draft_after("declined", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=reason)
@@ -119,8 +128,27 @@ def test_L_MERGE_request_4_to_7_the_Check_it_words_match_the_Review_board() -> N
 
 
 def test_small_labels() -> None:
-    assert rules.status_meta("IDEA-2026-001481", "with_review_desk") == "IDEA-2026-001481, with the review desk"
+    assert (
+        rules.status_meta("IDEA-2026-001481", "with_review_desk") == "IDEA-2026-001481, with the review desk"
+    )
     now = dt.datetime(2026, 11, 17, 9, 0, tzinfo=dt.UTC)
     assert rules.shared_label(dt.datetime(2026, 11, 14, 6, 0, tzinfo=dt.UTC), now) == "Shared Saturday."
     assert rules.shared_label(dt.datetime(2026, 11, 17, 4, 0, tzinfo=dt.UTC), now) == "Shared today."
     assert rules.shared_label(dt.datetime(2026, 11, 2, 4, 0, tzinfo=dt.UTC), now) == "Shared 2 Nov."
+
+
+def test_a_reason_is_quoted_and_closed_once_as_the_boards_print_it() -> None:
+    assert rules.quoted("The crew is full for now") == "“The crew is full for now”."
+    assert rules.quoted("Better as two.") == "“Better as two.”"
+    d = rules.draft_after("declined", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason="Better as two")
+    assert (
+        d is not None and d["line"] == "Ravi kept that idea separate: “Better as two”. Send yours on its own."
+    )
+    r = rules.requester_after("declined", lead_first="Ravi", lead_ref="x", reason="Full for now", brought=1)
+    assert r is not None and r["line"] == "Ravi declined: “Full for now”. Send yours on its own."
+
+
+def test_C_SHEET_TEAMUP_sent_the_waiting_detail_uses_the_sheet_words() -> None:
+    w = rules.requester_after("sent", lead_first="Ravi", lead_ref="x", reason=None, brought=0)
+    assert w is not None
+    assert w["detail"] == "Ravi reads your note, then approves or declines. You’ll hear in your Inbox."
