@@ -64,12 +64,22 @@ function toolsOf(tiles: WorthTile[]): OutsideTools {
   return v === "Partly less reliance" ? "partly" : v === "Fully less reliance" ? "fully" : "none";
 }
 
+/** The reviewer's last revision as typed, from `WorthResponse.reviewer` (a figure's `text` less its unit). */
+export type WorthInitial = {
+  hours?: string;
+  cost?: string;
+  revenue?: string;
+  tools?: OutsideTools;
+  note?: string;
+};
+
 export function WorthEditor({
   ideaId,
   sharerFirstName,
   kind,
   area,
   tiles,
+  initial,
   onCancel,
   onSaved,
 }: {
@@ -78,16 +88,18 @@ export function WorthEditor({
   kind: Kind;
   area: string | null;
   tiles: WorthTile[];
+  /** Opens on the reviewer's own figures and note after a revision on this page (L-WORTH/2). */
+  initial?: WorthInitial;
   onCancel: () => void;
   onSaved: (saved: WorthResponse) => void;
 }) {
-  const [hours, setHours] = useState(figureOf(tiles, "hours_month"));
-  const [cost, setCost] = useState(figureOf(tiles, "cost_month"));
-  const [revenue, setRevenue] = useState(figureOf(tiles, "revenue_month"));
-  const [tools, setTools] = useState<OutsideTools>(toolsOf(tiles));
+  const [hours, setHours] = useState(initial?.hours ?? figureOf(tiles, "hours_month"));
+  const [cost, setCost] = useState(initial?.cost ?? figureOf(tiles, "cost_month"));
+  const [revenue, setRevenue] = useState(initial?.revenue ?? figureOf(tiles, "revenue_month"));
+  const [tools, setTools] = useState<OutsideTools>(initial?.tools ?? toolsOf(tiles));
   const [newKind, setKind] = useState<Kind>(kind === "business_idea" ? "business_idea" : "problem");
   const [newArea, setArea] = useState(area ?? WORTH_AREAS[0]!);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(initial?.note ?? "");
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
 
