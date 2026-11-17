@@ -5,9 +5,10 @@
  * the signed-in person's id. The person is never taken from the request. The worker decides what that person may
  * see of this idea and answers in the pack's error shape, `{ error: { code, message } }`, passed through as it is.
  *
- * Defence in depth (DEC-104, P-PRODUCT.privacy): whatever the worker sends, a colleague's view (S-09) leaves here
- * with the public fields only, and a redirect carries nothing but where to go. Nothing here logs a body
- * (non-negotiable 3).
+ * Defence in depth (DEC-104, P-PRODUCT.privacy, non-negotiable 7): whatever the worker sends, the sharer's page
+ * (S-06) leaves only when it names the signed-in person as its sharer, a colleague's view (S-09) leaves with the
+ * public fields only, a withdrawn idea's S-09 with its reference and one line (BLD-E011), and a redirect carries
+ * nothing but where to go. Nothing here logs a body (non-negotiable 3).
  */
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -17,6 +18,7 @@ import { readJson } from "@/server/http";
 import { workerFetch } from "@/server/worker";
 
 const NO_STORE = { "Cache-Control": "no-store" };
+const NOT_FOUND = { error: { code: "not_found", message: "We can’t find that idea." } };
 const UNAVAILABLE = {
   error: { code: "unavailable", message: "This page can’t be loaded right now. Try again in a minute." },
 };
@@ -64,11 +66,42 @@ function pick(obj: unknown, keys: readonly string[]): Json {
   return out;
 }
 
-/** The view as it may leave the web app: the sharer's page whole; S-09 and the redirects cut to their fields. */
-export function guardView(body: unknown): unknown {
+/** A withdrawn idea's S-09 (BLD-E011): the reference and one line, no title, summary, crew, track or name. */
+const WITHDRAWN_IDEA_FIELDS = ["id", "ref", "status"] as const;
+const WITHDRAWN_PAGE_FIELDS = ["state", "back", "pill"] as const;
+const WITHDRAWN_TEAM_UP_FIELDS = ["state", "line", "can_team_up"] as const;
+
+function isWithdrawn(v: Json): boolean {
+  const idea = v.idea as Json | undefined;
+  const page = v.page as Json | undefined;
+  return idea?.status === "withdrawn" || page?.state === "withdrawn";
+}
+
+/** S-06 is the sharer's alone: it leaves only when the page names the signed-in person as its sharer. */
+function isMine(v: Json, me: CurrentUser): boolean {
+  const sharer = (v.idea as Json | undefined)?.sharer as Json | null | undefined;
+  return typeof sharer?.id === "string" && sharer.id === me.id;
+}
+
+/** The view as it may leave the web app: the sharer's page whole, to its sharer only; S-09 and the redirects cut
+ * to their fields; anything else is "not found". */
+export function guardView(body: unknown, me: CurrentUser): unknown {
   if (!body || typeof body !== "object" || "error" in body) return body;
   const v = body as Json;
-  if (v.view === "sharer") return v;
+  if (v.view === "sharer") return isMine(v, me) ? v : NOT_FOUND;
+  if (v.view === "colleague" && isWithdrawn(v)) {
+    const page = (v.page ?? {}) as Json;
+    return {
+      view: "colleague",
+      screen: "S-09",
+      idea: { ...pick(v.idea, WITHDRAWN_IDEA_FIELDS), status: "withdrawn" },
+      page: {
+        ...pick(page, WITHDRAWN_PAGE_FIELDS),
+        state: "withdrawn",
+        team_up: pick(page.team_up, WITHDRAWN_TEAM_UP_FIELDS),
+      },
+    };
+  }
   if (v.view === "colleague") {
     return {
       view: "colleague",
@@ -78,7 +111,14 @@ export function guardView(body: unknown): unknown {
     };
   }
   if (v.view === "desk" || v.view === "draft") return { view: v.view, to: v.to };
-  return { error: { code: "not_found", message: "We can’t find that idea." } };
+  return NOT_FOUND;
+}
+
+/** Withdraw and restore answer with the sharer's page (`SharerView`), and only to its sharer. */
+export function guardSharer(body: unknown, me: CurrentUser): unknown {
+  if (!body || typeof body !== "object" || "error" in body) return body;
+  const v = body as Json;
+  return v.view === "sharer" && isMine(v, me) ? v : NOT_FOUND;
 }
 
 function workerPath(
@@ -114,7 +154,6 @@ async function forward(path: string, init: RequestInit = {}, shape?: (body: unkn
 }
 
 const REF = /^(IDEA-[0-9]{4}-[0-9]{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-const NOT_FOUND = { error: { code: "not_found", message: "We can’t find that idea." } };
 
 async function ideaKey(ctx: { params: Promise<{ id?: string }> }): Promise<string | null> {
   const id = (await ctx.params).id ?? "";
@@ -140,7 +179,7 @@ export async function getIdeaView(request: NextRequest, ctx: { params: Promise<{
       back: q.get("back")?.slice(0, 600),
     }),
     {},
-    guardView,
+    (body) => guardView(body, me),
   );
 }
 
@@ -168,9 +207,10 @@ export function postIdeaAction(action: "withdraw" | "restore") {
       const raw = await readJson(request);
       if (typeof raw.reason === "string") body.reason = raw.reason.slice(0, 2000);
     }
-    return forward(workerPath(`/internal/ideas/${encodeURIComponent(key)}/${action}`, me), {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    return forward(
+      workerPath(`/internal/ideas/${encodeURIComponent(key)}/${action}`, me),
+      { method: "POST", body: JSON.stringify(body) },
+      (out) => guardSharer(out, me),
+    );
   };
 }
