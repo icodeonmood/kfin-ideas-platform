@@ -17,6 +17,7 @@ from typing import Any
 
 from core.config import REPO_ROOT, get_settings
 from core.db import Conn
+from pii.vault import EVAL_SCOPE_PREFIX
 
 ROOT = REPO_ROOT or Path.cwd()
 GOLDEN = ROOT / "eval" / "golden"
@@ -38,7 +39,11 @@ class Context:
     scopes: list[str] = field(default_factory=list)
 
     def scope(self) -> str:
-        s = f"DRAFT-{uuid.UUID(int=self.rng.getrandbits(128))}"
+        """A draft scope with the eval marker (BLD-C034): the gateway's switch-offs and the go/no-go leave these
+        calls out, and count every live draft's."""
+        # The marker stands in for the uuid's first 8 hex digits: still a draft scope to SCOPE_RE and the vault.
+        rest = str(uuid.UUID(int=self.rng.getrandbits(128)))[9:]
+        s = EVAL_SCOPE_PREFIX + rest
         self.scopes.append(s)
         return s
 
