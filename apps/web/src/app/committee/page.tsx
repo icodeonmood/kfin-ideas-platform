@@ -38,6 +38,7 @@ export default async function CommitteePage({
       initial={data}
       tab={tab}
       sort={sort}
+      open={one("open") ?? null}
       noteMin={p.notes.reversal_note_min_chars}
       returnMonths={p.not_now.return_options_months}
     />
