@@ -17,13 +17,14 @@ from fastapi.responses import JSONResponse
 
 from core.db import connect
 from programme.common import Refused, now_utc
+from wall.common import Refused as LaneERefused
 
 
 def _call(fn: Callable[..., Any], *args: Any, status: int = 200) -> JSONResponse:
     with connect(autocommit=True) as conn:
         try:
             body = fn(conn, *args)
-        except Refused as exc:
+        except (Refused, LaneERefused) as exc:
             return JSONResponse(exc.body(), status_code=exc.status)
     return JSONResponse(jsonable_encoder(body), status_code=status, headers={"Cache-Control": "no-store"})
 
@@ -73,6 +74,6 @@ def build(require_token: Callable[..., None]) -> APIRouter:
 
     @r.post("/ones/{one_id}/remove")
     def remove(one_id: str, body: dict[str, Any] = Body(...)) -> JSONResponse:  # noqa: B008
-        return _call(lambda c: ones.remove_one(c, _who(body), one_id, body))
+        return _call(lambda c: ones.remove_one(c, _who(body), one_id))
 
     return r
