@@ -30,12 +30,28 @@ export async function signIn(page: Page, username: string, claims?: Record<strin
 }
 
 /** Screens arrive block by block, rising out of a fade (F-MOTION.arrive), so axe would measure contrast mid-fade.
- * Finish every animation that ends; loops (a skeleton's shimmer, a breathing node) keep running. */
+ * Finish every animation that ends; loops (a skeleton's shimmer, a breathing node) keep running. After a link
+ * click, waitForURL can return before the shell adds its arrival class (handover.tsx), so keep finishing until
+ * nothing new has started for 250 ms (at most 3 s); main's CI caught axe mid-fade on 17 Nov (AT-B6-02). */
 export async function settleMotion(page: Page) {
-  await page.evaluate(() => {
-    for (const a of document.getAnimations()) {
-      const timing = a.effect?.getComputedTiming();
-      if (timing && timing.iterations !== Infinity && a.playState !== "finished") a.finish();
+  await page.evaluate(async () => {
+    const finishRunning = () => {
+      let finished = 0;
+      for (const a of document.getAnimations()) {
+        const timing = a.effect?.getComputedTiming();
+        if (timing && timing.iterations !== Infinity && a.playState !== "finished") {
+          a.finish();
+          finished++;
+        }
+      }
+      return finished;
+    };
+    let quietSince = performance.now();
+    const giveUp = quietSince + 3_000;
+    while (performance.now() < giveUp) {
+      if (finishRunning() > 0) quietSince = performance.now();
+      else if (performance.now() - quietSince >= 250) return;
+      await new Promise((r) => setTimeout(r, 50));
     }
   });
 }
