@@ -94,6 +94,9 @@ export type PanelProps = {
   offline?: boolean;
   /** Focus the box when "Move to Review" is pressed while it cannot go yet (C-BUTTON.states/4). */
   onBlocked?(): void;
+  /** Team up from a similar idea's preview (lane F's sheet, C-SHEET-TEAMUP): `open` is C-PREVIEW's `onPrimary`;
+   * `waiting` holds, per idea, the line to show once a request is sent ("" when the sheet gave none). */
+  teamUp?: { open(ideaId: string): void; waiting: Record<string, string> };
 };
 
 export function panelStatus(live: Live): string {
@@ -134,7 +137,11 @@ export function DraftPanel(props: PanelProps) {
         {props.hidden ? (
           <HiddenDetails details={live.hidden} actions={props.hidden} onFocusDetail={props.onFocusDetail} />
         ) : null}
-        <Similar part={live.parts.similar} updating={live.updating.includes("similar")} />
+        <Similar
+          part={live.parts.similar}
+          updating={live.updating.includes("similar")}
+          teamUp={props.teamUp}
+        />
       </div>
     </>
   );
@@ -440,7 +447,24 @@ function PartEditor({
   );
 }
 
-function Similar({ part, updating }: { part: Part<SimilarMatch[]>; updating: boolean }) {
+/** C-PREVIEW's green status once a team-up request is sent: the sheet's own line, or "Waiting for Ravi". */
+export function waitingLine(
+  m: SimilarMatch,
+  waiting: Record<string, string> | undefined,
+): string | undefined {
+  if (!waiting || !(m.idea.id in waiting)) return undefined;
+  return waiting[m.idea.id] || `Waiting for ${m.idea.lead.first_name}`;
+}
+
+function Similar({
+  part,
+  updating,
+  teamUp,
+}: {
+  part: Part<SimilarMatch[]>;
+  updating: boolean;
+  teamUp?: PanelProps["teamUp"];
+}) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<SimilarMatch | null>(null);
   const listId = useId();
@@ -507,6 +531,8 @@ function Similar({ part, updating }: { part: Part<SimilarMatch[]>; updating: boo
           matchReason={preview.reason}
           yours="draft"
           onClose={() => setPreview(null)}
+          onPrimary={teamUp?.open}
+          primaryDone={waitingLine(preview, teamUp?.waiting)}
         />
       ) : null}
     </div>

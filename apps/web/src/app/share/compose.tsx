@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
 import { DraftPanel, PANEL_COPY, type Readiness } from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
+// Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
+import { useTeamUpSheet } from "@/components/compose/teamup-shim";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -496,6 +498,29 @@ export function Compose({
     }
   }, [box, voiceNote, conversation, client, adopt, failed, saveBox, router]);
 
+  // ── Team up from a similar idea (C-PREVIEW → lane F's C-SHEET-TEAMUP; J-SIMILAR/3–5) ───────────────────────
+  const [waiting, setWaiting] = useState<Record<string, string>>({});
+  const refresh = useCallback(() => {
+    const id = idRef.current;
+    if (id)
+      client.get(id).then(
+        (d) => adopt(d),
+        () => undefined,
+      );
+  }, [client, adopt]);
+  const teamUp = useTeamUpSheet({
+    onSent: (sent) => {
+      setWaiting((w) => ({ ...w, [sent.ideaId]: sent.after?.line ?? "" }));
+      refresh();
+    },
+    onWithdrawn: (sent) => {
+      setWaiting((w) => Object.fromEntries(Object.entries(w).filter(([k]) => k !== sent.ideaId)));
+      refresh();
+    },
+    draftId: draftId ?? undefined,
+    draftTitle: typeof live.parts.title.value === "string" ? live.parts.title.value : undefined,
+  });
+
   // ── keys: P focuses the box (C-PROMPT.keys/3) ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -809,7 +834,9 @@ export function Compose({
           phone={phone}
           offline={save === "offline"}
           onBlocked={() => boxRef.current?.focus()}
+          teamUp={{ open: teamUp.open, waiting }}
         />
+        {teamUp.sheet}
       </div>
       {phone ? (
         <Dock>

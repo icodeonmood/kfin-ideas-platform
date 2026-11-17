@@ -10,10 +10,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DraftLoader } from "@/components/compose/draft-loader";
-import { DraftPanel, READINESS, type PanelProps } from "@/components/compose/draft-panel";
+import { DraftPanel, READINESS, waitingLine, type PanelProps } from "@/components/compose/draft-panel";
 import { HiddenDetails } from "@/components/compose/hidden";
 import { Prompt, PROMPT_COPY, type PromptProps } from "@/components/compose/prompt";
-import type { Draft } from "@/lib/contracts";
+import type { Draft, IdeaPreview, SimilarMatch } from "@/lib/contracts";
 import { fromDraft } from "@/lib/compose/live";
 import { MIC_BLOCKED, VOICE_LISTENING, type VoiceCaptureState } from "@/lib/voice-capture";
 import { VOICE_EN_LABEL, VOICE_NOTICE } from "@/lib/voice-stream";
@@ -364,5 +364,50 @@ describe("C-HIDDEN (S-04, S-04B; BLD-C121)", () => {
     expect(host.textContent).toContain("Shown, because it's an internal reference.");
     await act(async () => button("Hide it")!.click());
     expect(hide).toHaveBeenCalledWith("h-2");
+  });
+});
+
+// ── similar ideas: C-PREVIEW, then lane F's team-up sheet (BLD-C129) ─────────────────────────────────────────
+
+const RAVI: IdeaPreview = {
+  id: "IDEA-2026-001412",
+  title: "Rejection SMS codes confuse investors",
+  status: "with_review_desk",
+  area: "Investor service",
+  city: "Hyderabad",
+  shared_at: "2026-11-02T10:30:00+05:30",
+  lead: { id: "p-ravi", name: "Ravi Nair", first_name: "Ravi", initials: "RN" },
+  crew_faces: [{ id: "p-ravi", name: "Ravi Nair", first_name: "Ravi", initials: "RN" }],
+  crew_count: 4,
+  in_their_words: "Investors get a code, not a reason, and then they call us.",
+  looking_for: "Someone who takes these calls at a branch every day.",
+  hue: 1,
+} as IdeaPreview;
+const MATCH = {
+  idea: RAVI,
+  strength: "close",
+  reason: "Close match: the same R07 SMS and the same calls",
+} as SimilarMatch;
+
+describe("S-04B similar ideas: Preview, then Team up through lane F's sheet (J-SIMILAR/3; BLD-C129)", () => {
+  it("C-PREVIEW opens from the strip, and its Team up opens the sheet for that idea", async () => {
+    const open = vi.fn();
+    panel({ teamUp: { open, waiting: {} } }, { ...READY, similar: { state: "filled", value: [MATCH] } });
+    const strip = host.querySelector("button.simb") as HTMLButtonElement;
+    expect(strip.textContent).toContain("1 similar idea");
+    expect(strip.textContent).toContain("Colleagues raised something close");
+    act(() => strip.click());
+    await act(async () => button("Preview: Rejection SMS codes confuse investors")?.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Close match: the same R07 SMS and the same calls");
+    const teamUp = [...dialog.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Team up")!;
+    await act(async () => teamUp.click());
+    expect(open).toHaveBeenCalledWith("IDEA-2026-001412");
+  });
+
+  it("C-SHEET-TEAMUP.after once sent: the sheet's line, or 'Waiting for Ravi'; nothing before", () => {
+    expect(waitingLine(MATCH, {})).toBeUndefined();
+    expect(waitingLine(MATCH, { "IDEA-2026-001412": "" })).toBe("Waiting for Ravi");
+    expect(waitingLine(MATCH, { "IDEA-2026-001412": "Waiting for Ravi Nair" })).toBe("Waiting for Ravi Nair");
   });
 });
