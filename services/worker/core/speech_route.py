@@ -9,7 +9,8 @@ from core.config import Settings
 def key_set(s: Settings) -> bool:
     """The Sarvam key is in the worker's env. Lane C's Sarvam client names it `sarvam_api_key`; until c/sarvam is on
     main the setting is `speech_hosted_key`. Only whether it is set is ever read out."""
-    return bool(str(getattr(s, "sarvam_api_key", "") or getattr(s, "speech_hosted_key", "")).strip())
+    name = "sarvam_api_key" if "sarvam_api_key" in type(s).model_fields else "speech_hosted_key"
+    return bool(str(getattr(s, name, "")).strip())  # once renamed, only the name lane C's client reads counts
 
 
 def voice_problem(
