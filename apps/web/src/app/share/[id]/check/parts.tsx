@@ -377,7 +377,7 @@ function SearchAdd({
         aria-label={label}
         placeholder={label}
         aria-expanded={open && found.length > 0}
-        aria-controls={`${id}-lb`}
+        aria-controls={open && found.length ? `${id}-lb` : undefined}
         aria-autocomplete="list"
         aria-activedescendant={open && found[active] ? `${id}-o${active}` : undefined}
         autoComplete="off"
