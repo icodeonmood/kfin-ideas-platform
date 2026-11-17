@@ -6,7 +6,6 @@
  * place (S-R4.rules/2); a reversal moves the row to Reversed (S-R4.rules/3).
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -95,7 +94,6 @@ export function CommitteeView({
   noteMin: number;
   returnMonths: number[];
 }) {
-  const router = useRouter();
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState(firstTab);
   const [sort, setSort] = useState(firstSort);
@@ -130,8 +128,10 @@ export function CommitteeView({
     setSort(nextSort);
     setOpen(null);
     setReversing(null);
-    router.replace(`/committee?tab=${nextTab}&sort=${nextSort}`, { scroll: false });
-    const res = await fetch(`/api/committee?tab=${nextTab}&sort=${nextSort}`);
+    // The URL keeps the tab and sort without a navigation: a router navigation to new search params remounts this
+    // view from the server's props, and the list this load fetches would land on the old one (S-R4.rules/3).
+    window.history.replaceState(null, "", `/committee?tab=${nextTab}&sort=${nextSort}`);
+    const res = await fetch(`/api/committee?tab=${nextTab}&sort=${nextSort}`, { cache: "no-store" });
     if (!res.ok) return;
     const next = (await res.json()) as CommitteeResponse;
     if (request === latest.current) setData(next);
