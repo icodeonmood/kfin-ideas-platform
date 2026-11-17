@@ -20,6 +20,8 @@ from typing import Any
 
 from core.config import REPO_ROOT, get_settings
 from core.db import connect
+from core.speech_route import hosted_problem, key_set, voice_problem
+from core.watch import SARVAM_KEY_MISSING
 
 ROOT = REPO_ROOT or Path.cwd()  # in the worker container there is no repo root: /app
 
@@ -41,11 +43,13 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
     return data
 
 
-# Switches that start off on purpose (exceptions to DEC-088): the report shows them as expected, not as a problem, so
-# nobody "fixes" them on. Empty since DEC-108 put `capture.voice` and `speech.hosted` on at launch (BLD-C115).
+# Switches that start off on purpose: the report shows them as expected, not as a problem, so nobody "fixes" them
+# on. Voice left this list with DEC-108 (on at launch through Sarvam). The channels built and switched off until
+# IT or InfoSec approve them (DEC-105: Teams, email intake, email-code sign-in) join it as their switches land.
 OFF_BY_DESIGN: dict[str, str] = {}
-VOICE_ROW = "Voice notes: on through Sarvam, with its key (DEC-108)"
-HOSTED_ROW = "Hosted speech (Sarvam): on, with the approval and the key (DEC-108)"
+
+VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
+HOSTED = "Hosted speech (Sarvam): switch, approval reference and key match the route (DEC-108)"
 
 
 def _row(name: str, state: str, evidence: str) -> dict[str, str]:
@@ -53,69 +57,58 @@ def _row(name: str, state: str, evidence: str) -> dict[str, str]:
 
 
 def voice_rows(
-    s: Any, capture: dict[str, Any] | None, hosted: dict[str, Any] | None
+    voice_on: bool,
+    hosted_on: bool,
+    speech_mode: str,
+    engine_url: str,
+    approval: str,
+    key: bool,
+    *,
+    voice_reason: str | None = None,
+    hosted_reason: str | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
-    """The two voice rows and any reasons to hold the launch (BLD-C115). Hosted speech is the launch route under
-    non-negotiable 2's voice exception (DEC-108: audio goes to Sarvam untagged; text is masked first and every
-    transcript as it returns), confirmed by the product lead with the DPO's approval on 17 Nov."""
-    from core.watch import SARVAM_KEY_MISSING
-
-    key = "Sarvam key present" if s.sarvam_api_key.strip() else "Sarvam key absent"
+    """DEC-108: voice is on at launch through Sarvam (speech to text and Listen; India-hosted, no retention). The
+    on-server engine behind the isolated speech service (BLD-C012) stays an allowed fallback; the fake route never
+    is. Off is a row for the product lead to confirm, not "off as expected". The route rules are shared with the
+    smoke check (`core.speech_route`). Returns the rows and any reasons that rule out Mode A."""
     rows: list[dict[str, str]] = []
-    why: list[str] = []
-
-    def off(row: dict[str, Any] | None) -> str:
-        reason = str((row or {}).get("reason") or "no switch row")
-        return f"off: {SARVAM_KEY_MISSING}" if reason == SARVAM_KEY_MISSING else f"off: {reason}; {key}"
-
-    if capture is None or capture["state"] != "on":
-        rows.append(_row(VOICE_ROW, "not met", off(capture)))
-        why.append("voice notes off (DEC-108 puts them on at launch)")
-    elif s.speech_mode == "sarvam" and s.sarvam_api_key.strip():
-        rows.append(_row(VOICE_ROW, "met", f"on; SPEECH_MODE sarvam; {key}"))
-    elif s.speech_mode == "sarvam":
-        rows.append(
-            _row(VOICE_ROW, "not met", f"on; SPEECH_MODE sarvam; {key}: put it in the worker's env file")
+    reasons: list[str] = []
+    problem = voice_problem(voice_on, hosted_on, speech_mode, engine_url, approval, key)
+    if not voice_on and voice_reason == SARVAM_KEY_MISSING:  # the watch's key guard flipped it (BLD-C115)
+        rows.append(_row(VOICE, "not met", f"off: {SARVAM_KEY_MISSING}"))
+        reasons.append("voice switched off by the watch: the Sarvam key is missing")
+    elif not voice_on:
+        evidence = (
+            "off: DEC-108 plans voice on at launch; switch it on, or launch without it (typing still works)"
         )
-        why.append("voice notes on without the Sarvam key")
-    elif s.speech_mode == "local" and s.speech_engine_url:
+        rows.append(_row(VOICE, "confirm", evidence))
+    elif problem:
+        rows.append(_row(VOICE, "not met", problem))
+        reasons.append("voice on without a working route")
+    elif speech_mode == "sarvam":
         rows.append(
-            _row(
-                VOICE_ROW,
-                "confirm",
-                "on; the fallback: SPEECH_MODE local through the isolated speech service",
-            )
+            _row(VOICE, "met", "on; SPEECH_MODE sarvam, speech.hosted on, approval reference and key set")
         )
     else:
-        rows.append(_row(VOICE_ROW, "not met", f"on with SPEECH_MODE {s.speech_mode}; set it to sarvam"))
-        why.append(f"voice notes on with SPEECH_MODE {s.speech_mode}")
-
-    approval = s.speech_hosted_approval.strip()
-    if hosted is None or hosted["state"] != "on":
-        rows.append(_row(HOSTED_ROW, "not met", off(hosted)))
-        why.append("hosted speech off (DEC-108 puts it on at launch)")
-    elif not approval:
         rows.append(
-            _row(
-                HOSTED_ROW, "not met", f"on without an approval reference; set SPEECH_HOSTED_APPROVAL; {key}"
-            )
+            _row(VOICE, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
         )
-        why.append("hosted speech on without its approval reference")
-    elif not s.sarvam_api_key.strip():
+    hosted = hosted_problem(hosted_on, approval, key)
+    if not hosted_on and hosted_reason == SARVAM_KEY_MISSING:
+        rows.append(_row(HOSTED, "not met", f"off: {SARVAM_KEY_MISSING}"))
+        reasons.append("hosted speech switched off by the watch: the Sarvam key is missing")
+    elif hosted:
+        rows.append(_row(HOSTED, "not met", hosted))
+        reasons.append("hosted speech on without its approval reference or key")
+    elif hosted_on:
+        rows.append(_row(HOSTED, "met", "on with an approval reference and the key set (DEC-108)"))
+    elif speech_mode == "sarvam":
         rows.append(
-            _row(HOSTED_ROW, "not met", f"on; approval {approval}; {key}: put it in the worker's env file")
+            _row(HOSTED, "confirm", "off while SPEECH_MODE is sarvam: switch it on with voice (DEC-108)")
         )
-        why.append("hosted speech on without the Sarvam key")
     else:
-        rows.append(
-            _row(
-                HOSTED_ROW,
-                "met",
-                f"on; approval {approval} (non-negotiable 2's voice exception, confirmed with the DPO's approval); "
-                f"{key}",
-            )
-        )
-    return rows, why
+        rows.append(_row(HOSTED, "met", f"off; SPEECH_MODE {speech_mode or 'unset'} does not use it"))
+    return rows, reasons
 
 
 def collect(args: argparse.Namespace) -> dict[str, Any]:
@@ -244,14 +237,24 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 reasons_c.append("SSO or environments not ready")
 
     def voice_notes() -> None:
-        """DEC-108: voice notes and hosted speech are on at launch through Sarvam, with the key in the worker's env
-        (present or absent is reported, never the value). The watch switches both off if the key is missing."""
+        """DEC-108: voice on at launch through Sarvam; see voice_rows."""
+        s = get_settings()
         with connect(autocommit=True) as conn:
             found = conn.execute(
                 "SELECT name, state, reason FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
             ).fetchall()
-        by_name = {r["name"]: dict(r) for r in found}
-        got, why = voice_rows(get_settings(), by_name.get("capture.voice"), by_name.get("speech.hosted"))
+        states = {r["name"]: r["state"] for r in found}
+        reasons = {r["name"]: r["reason"] for r in found}
+        got, why = voice_rows(
+            states.get("capture.voice") == "on",
+            states.get("speech.hosted") == "on",
+            s.speech_mode,
+            s.speech_engine_url,
+            s.speech_hosted_approval,
+            key_set(s),
+            voice_reason=reasons.get("capture.voice"),
+            hosted_reason=reasons.get("speech.hosted"),
+        )
         rows.extend(got)
         reasons_b.extend(why)
 
@@ -263,7 +266,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     section("No open high or critical VAPT findings", vapt)
     section("Restore drill completed inside 4 hours", drill)
     section("Privacy notice live", privacy_and_sso)
-    section(VOICE_ROW, voice_notes)
+    section(VOICE, voice_notes)
 
     try:
         assist = canvas_assist_shares(args)
@@ -333,9 +336,7 @@ def render(r: dict[str, Any]) -> str:
     by_design = [n for n in r["switches_off"] if n in OFF_BY_DESIGN]
     other = [n for n in r["switches_off"] if n not in OFF_BY_DESIGN]
     lines.append(f"**Switches off now:** {', '.join(other) or 'none'}.")
-    if (
-        by_design
-    ):  # the first exceptions to DEC-088: off on purpose until their approvals land; do not switch on
+    if by_design:  # off on purpose until their approvals land; do not switch on
         lines.append(f"**Off as expected (by design):** {', '.join(by_design)}.")
     lines += [
         "",

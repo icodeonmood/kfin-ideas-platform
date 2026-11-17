@@ -10,7 +10,8 @@ version: "1.0"
 roles: [contributor, reviewer, lob_committee, core_committee, appeal_panel, working_group, sponsor, admin]
 role_aliases:
   core_chair: core_committee          # the chair is a core committee member
-extra_roles: [infosec, hr, ceo]       # not columns in §3.1: kill switches (§7.6) and the CEO's sponsorships (DEC-042)
+extra_roles: [infosec, hr, ceo, display]  # not columns in §3.1: kill switches (§7.6), the CEO's sponsorships (DEC-042), and
+                                          # the wall and launch displays (E-ENUMS.roles; grantable once the cut-over widens role_grants, BLD-A190)
 
 capabilities:
   signed_in:                  { contributor: yes }
@@ -37,6 +38,8 @@ capabilities:
   # The Ember (DEC-062, BLD-128): the chair writes the note, an admin drafts and sends; everyone reads sent issues.
   write_ember_note:           { core_committee: yes, admin: yes }      # the worker allows the chair and admins only
   send_ember:                 { admin: yes }
+  # The office and launch screens (L-DISPLAY, BLD-A190): the display role, and admins until it can be granted.
+  open_display:               { admin: yes, display: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -81,6 +84,7 @@ endpoints:
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
+  - POST /api/me/app-news                             signed_in       # "Tell me when it's out" (S-H3, L-NOTIFY/7)
   - GET /api/me/refer-as                              signed_in       # she, he, they or unset (BLD-C111, DEC-108)
   - PUT /api/me/refer-as                              signed_in       # asked once in Profile (S-H6); the person only
   - GET /api/inbox                                    signed_in
@@ -129,6 +133,7 @@ endpoints:
   # the person's own record, or need an invitation the worker checks.
   - GET /api/ones                                     see_org_ideas
   - GET /api/ones/constellation                       see_org_ideas
+  - GET /api/display/office                           open_display    # the office screen's Ones (S-OFFICE, A-API.wall)
   - GET /api/ones/leaderboard                         signed_in       # Ones only (DEC-077)
   - GET /api/ones/console                             view_ones_console
   - POST /api/ones/proposals                          propose_ones
@@ -200,6 +205,7 @@ pages:
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
+  - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send

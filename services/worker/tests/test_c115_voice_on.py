@@ -6,14 +6,15 @@ worker's alone in compose and deploy.sh. The migration's effect is a stack test.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from core import watch
 from core.config import get_settings
-from gonogo.__main__ import HOSTED_ROW, OFF_BY_DESIGN, VOICE_ROW, voice_rows
+from gonogo.__main__ import HOSTED as HOSTED_ROW
+from gonogo.__main__ import OFF_BY_DESIGN, voice_rows
+from gonogo.__main__ import VOICE as VOICE_ROW
 from tests.test_compose_speech import _compose
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -71,74 +72,24 @@ def test_BLD_C115_with_the_key_or_in_test_nothing_is_switched(
     assert flips == []
 
 
-# ---- the go/no-go rows ----------------------------------------------------------------------------------------
+# ---- the go/no-go rows (lane A's `core/speech_route` is the one answer; this lane adds the key guard's row) ----
 
 
-def _s(**kw: str) -> SimpleNamespace:
-    base = {"speech_mode": "sarvam", "sarvam_api_key": "synthetic-key", "speech_hosted_approval": "DEC-108",
-            "speech_engine_url": ""}  # fmt: skip
-    base.update(kw)
-    return SimpleNamespace(**base)
-
-
-ON = {"state": "on", "reason": "On at launch (DEC-108)"}
-
-
-def _states(rows: list[dict[str, str]]) -> dict[str, tuple[str, str]]:
-    return {r["criterion"]: (r["state"], r["evidence"]) for r in rows}
-
-
-def test_BLD_C115_both_on_with_the_key_are_met_and_never_print_the_key() -> None:
-    rows, why = voice_rows(_s(), ON, ON)
-    got = _states(rows)
-    assert got[VOICE_ROW] == ("met", "on; SPEECH_MODE sarvam; Sarvam key present")
-    assert got[HOSTED_ROW][0] == "met" and "non-negotiable 2's voice exception" in got[HOSTED_ROW][1]
-    assert "DPO's approval" in got[HOSTED_ROW][1] and "approval DEC-108" in got[HOSTED_ROW][1]
-    assert why == [] and "synthetic-key" not in str(rows)
-
-
-def test_BLD_C115_switched_off_by_the_watch_says_exactly_that() -> None:
-    off = {"state": "off", "reason": KEY_MISSING}
-    rows, why = voice_rows(_s(sarvam_api_key=""), off, off)
-    got = _states(rows)
+def test_BLD_C115_switched_off_by_the_key_guard_says_exactly_that() -> None:
+    rows, why = voice_rows(
+        False, False, "sarvam", "", "DEC-108", False, voice_reason=KEY_MISSING, hosted_reason=KEY_MISSING
+    )
+    got = {r["criterion"]: (r["state"], r["evidence"]) for r in rows}
     assert got[VOICE_ROW] == ("not met", "off: Sarvam key missing (automatic)")
     assert got[HOSTED_ROW] == ("not met", "off: Sarvam key missing (automatic)")
     assert len(why) == 2
 
 
-def test_BLD_C115_on_without_the_key_is_not_met() -> None:
-    rows, why = voice_rows(_s(sarvam_api_key=""), ON, ON)
-    got = _states(rows)
-    assert got[VOICE_ROW][0] == "not met" and "Sarvam key absent" in got[VOICE_ROW][1]
-    assert got[HOSTED_ROW][0] == "not met" and "Sarvam key absent" in got[HOSTED_ROW][1]
-    assert why == ["voice notes on without the Sarvam key", "hosted speech on without the Sarvam key"]
-
-
-def test_BLD_C115_off_for_another_reason_shows_it_with_the_key_state() -> None:
-    off = {"state": "off", "reason": "Automatic: Sarvam error rate above 20% over 15 minutes (DEC-108)"}
-    rows, _ = voice_rows(_s(), ON, off)
-    assert _states(rows)[HOSTED_ROW] == (
-        "not met",
-        "off: Automatic: Sarvam error rate above 20% over 15 minutes (DEC-108); Sarvam key present",
-    )
-    rows, _ = voice_rows(_s(), None, None)
-    assert _states(rows)[VOICE_ROW] == ("not met", "off: no switch row; Sarvam key present")
-
-
-def test_BLD_C115_hosted_on_without_the_approval_is_not_met() -> None:
-    rows, why = voice_rows(_s(speech_hosted_approval=""), ON, ON)
-    assert (
-        _states(rows)[HOSTED_ROW][0] == "not met" and "hosted speech on without its approval reference" in why
-    )
-
-
-@pytest.mark.parametrize(
-    ("mode", "url", "state"),
-    [("local", "http://speech:8300", "confirm"), ("fake", "", "not met"), ("local", "", "not met")],
-)
-def test_BLD_C115_other_routes_with_voice_on(mode: str, url: str, state: str) -> None:
-    rows, _ = voice_rows(_s(speech_mode=mode, speech_engine_url=url), ON, ON)
-    assert _states(rows)[VOICE_ROW][0] == state
+def test_BLD_C115_on_with_the_route_the_approval_and_the_key_is_met() -> None:
+    rows, why = voice_rows(True, True, "sarvam", "", "DEC-108", True)
+    assert [r["state"] for r in rows] == ["met", "met"] and why == []
+    rows, why = voice_rows(True, True, "sarvam", "", "", True)  # BLD-C117 (6): the approval is checked
+    assert "met" not in {r["state"] for r in rows if r["criterion"] == HOSTED_ROW} and why
 
 
 def test_BLD_C115_nothing_is_off_by_design_any_more() -> None:
