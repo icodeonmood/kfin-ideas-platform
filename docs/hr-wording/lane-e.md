@@ -1,6 +1,6 @@
 # New wording in lane E, for HR's sign-off
 
-Written 18 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Everything else on lane E's screens (the Wall, My ideas, an idea's page, your One dashboard and Profile) is the design pack's own copy (`1pc-handoff/reference/copy/`), used as it stands. These are the lines lane E had to add where no board draws them, each with where it shows and the file and line that holds it (paths under `apps/web/src/app/`). Each is copied word for word from the code; words in braces, such as {n} or {tier}, are filled in at run time. In the code each line from section 2 on is marked `// NOT DRAWN (BLD-E0xx): HR sign-off`, and the same lines are listed in `docs/BUILD_LOG.md` (BLD-E041 to BLD-E046) and `1pc-handoff/00-overview/GAPS.md`.
+Written 18 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Everything else on lane E's screens (the Wall, My ideas, an idea's page, your One dashboard and Profile) is the design pack's own copy (`1pc-handoff/reference/copy/`), used as it stands. These are the lines lane E had to add where no board draws them, each with where it shows and the file and line that holds it (paths under `apps/web/src/app/`, unless a row gives the full path from the repo root). Each is copied word for word from the code; words in braces, such as {n} or {tier}, are filled in at run time. In the code each line in sections 2 to 7 is marked `// NOT DRAWN (BLD-E0xx): HR sign-off`, and the same lines are listed in `docs/BUILD_LOG.md` (BLD-E041 to BLD-E046) and `1pc-handoff/00-overview/GAPS.md`.
 
 ## 1. When a screen cannot load
 
@@ -95,3 +95,27 @@ These words are lane F's, from the team-up sheet, and are already on HR's list i
 | "Withdraw request" on the card, while it runs | `ideas/[id]/colleague-screen.tsx:227` (word at `apps/web/src/components/teamup/teamup-sheet.tsx:91`) | Withdrawing… |
 | Under the card, a withdraw with no answer from the server | `ideas/[id]/colleague-screen.tsx:197` (word at `apps/web/src/components/teamup/teamup-sheet.tsx:107`) | Check your connection, then try again. |
 | Under the card, a withdraw the server refused | `ideas/[id]/colleague-screen.tsx:188` | The server's own line for that refusal, as the team-up sheet shows it (listed in `docs/hr-wording/lane-f.md`, section 2) |
+
+## 8. Worker (`services/worker/ideapage/`)
+
+The worker builds these lines and sends them to the page, so they are not in `apps/web/src/app/`: paths in this section are from the repo root. In the code each is marked `# NOT DRAWN`. Words in braces are filled in at run time: {lead_ref} is the reference of the idea it now belongs to, {q} the words searched for, {closes} the day changes closed, {name} the build team's name and {checks} the days after shipping when the effect is measured.
+
+| Module | Where it shows | File and line | Wording |
+|---|---|---|---|
+| `S-09` | A colleague's idea that is now part of another, on its Team up card | `services/worker/ideapage/colleague.py:74` | This idea is now part of {lead_ref}. Team up there. |
+| `S-09` | A colleague's idea that was not picked or was withdrawn, on its Team up card | `services/worker/ideapage/colleague.py:82` | This idea isn’t going ahead, so it isn’t taking a crew. |
+| `S-07` | My ideas, "Needs you" with nothing in it, the line under the heading (the heading, "Nothing needs you right now.", is the Home board's) | `services/worker/ideapage/mine.py:401` | When the review desk asks you something, it shows here. |
+| `S-07` | My ideas, "Drafts" with nothing in it, the heading | `services/worker/ideapage/mine.py:402` | No drafts. |
+| `S-07` | The same, the line under it | `services/worker/ideapage/mine.py:402` | Drafts you start are kept here, saved as you type. |
+| `S-07` | My ideas, "Picked and building" with nothing in it, the heading | `services/worker/ideapage/mine.py:408` | Nothing picked yet. |
+| `S-07` | The same, the line under it | `services/worker/ideapage/mine.py:409` | Ideas the review desk picks show here while a team builds them. |
+| `S-07` | My ideas, a search that finds nothing | `services/worker/ideapage/mine.py:524`, `:558` | Nothing found for “{q}”. |
+| `S-07` | My ideas, under a search's answer, what it looked at | `services/worker/ideapage/mine.py:528` | Matched on titles, short summaries and references. |
+| `S-07` | My ideas, "Teamed up" with nothing in it, the heading | `services/worker/ideapage/mine.py:577` | You haven’t teamed up on an idea yet. |
+| `S-07` | The same, the line under it | `services/worker/ideapage/mine.py:580` | Find your crew to join colleagues on something similar. |
+| `S-06` | Your idea's page, when questions came before the review desk opened it | `services/worker/ideapage/sharer.py:228` | The idea itself can’t be changed now. Write to the review desk in the conversation. |
+| `S-06` | Your idea's page, when the time for changes ran out before the review desk opened it | `services/worker/ideapage/sharer.py:230`, `:231` | The time for changes ended on {closes}, so the idea itself can’t be changed now. Write to the review desk in the conversation. |
+| `S-06` | Your idea's page while it is being built, the card's first line | `services/worker/ideapage/sharer.py:283` | Being built. |
+| `S-06` | The same, the line under it (the first sentence only when a build team is named) | `services/worker/ideapage/sharer.py:284`, `:285` | {name} is building it. The build team writes to you in the conversation. |
+| `S-06` | Your idea's page once it has shipped, the card's first line | `services/worker/ideapage/sharer.py:290` | Shipped. It’s live. |
+| `S-06` | The same, the line under it | `services/worker/ideapage/sharer.py:291` | We measure what changed {checks} days after it shipped. |
