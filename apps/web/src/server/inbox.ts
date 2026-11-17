@@ -73,18 +73,3 @@ export async function inboxWrite(me: CurrentUser, id: string | null, verb: strin
   const path = id === null ? `${base(me)}/${verb}` : `${base(me)}/${id}/${verb}`;
   return workerFetch(path, { method: "POST" });
 }
-
-/** The shell's old reading of the Inbox (lane D's `shellData` counts `!read`): the unread items, so its number is
- * the Inbox's own. New code reads `inboxCounts(me).unread`. */
-export type Message = { id: number; subject: string; body: string; at: string; read: boolean };
-
-export async function messagesFor(me: CurrentUser): Promise<Message[]> {
-  const list = await inboxFor(me, "unread");
-  return list.items.map((i) => ({
-    id: Number(i.id),
-    subject: [i.body.sender, i.line].filter(Boolean).join(" "),
-    body: i.body.note,
-    at: i.at,
-    read: !i.unread,
-  }));
-}
