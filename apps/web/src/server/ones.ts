@@ -59,66 +59,6 @@ export type MyOne = Tiered & {
   showcase_updated: string | null;
 };
 
-export type ConsoleOne = Tiered & {
-  id: number;
-  induction_no: number;
-  number: number | null;
-  name: string;
-  email: string;
-  status: "active" | "retired";
-  way_in: string;
-  idea_id: string | null;
-  line: string | null;
-  stage: string | null;
-  brief: string | null;
-  measures: Measures;
-  since: string;
-  lapses_on: string;
-  lapsed: boolean;
-  retired_at: string | null;
-  legend_number: number | null;
-  announced: boolean;
-  showcase_updated: string | null;
-};
-
-export type Proposal = {
-  id: number;
-  kind: "include" | "remove" | "tier_up" | "tier_down" | "impact_brief" | "legend";
-  kind_words: string;
-  state: "proposed" | "approved" | "declined" | "carried_out" | "withdrawn";
-  one_id: number | null;
-  subject: string | null;
-  way_in: string | null;
-  idea_id: string | null;
-  tier_from: number | null;
-  tier_to: number | null;
-  tier_to_name: string | null;
-  reason: string | null;
-  text: string | null;
-  proposed_by: string | null;
-  proposed_by_id: string;
-  proposed_at: string;
-  approval: "chair" | "majority" | null;
-  meeting_on: string | null;
-  decided_by: string | null;
-  decided_at: string | null;
-  carried_out_by: string | null;
-  messages: { from: string; name: string }[];
-  invited: string[];
-  committee_message: boolean;
-};
-
-export type OnesConsole = {
-  ones: ConsoleOne[];
-  proposals: Proposal[];
-  resting: { number: number; until: string }[];
-  legends: { number: number; one_id: number }[];
-  last_allocated: number;
-  screen_mode: "static" | "ambient";
-  awards: { year: number; category: string; one_id: number; name: string }[];
-  active: number;
-};
-
 export type ShowcaseBrief = Tiered & {
   one_id: number;
   number: number | null;
@@ -227,33 +167,8 @@ export const constellation = () =>
     cards: PublicOne[];
   }>("/internal/ones/constellation");
 
-export const onesConsole = () => call<OnesConsole>("/internal/ones/console");
-
 export const myOne = async (me: CurrentUser) =>
   (await call<{ one: MyOne | null }>(`/internal/me/${me.id}/one`)).one;
-
-export async function leaderboard(me: CurrentUser) {
-  const res = await workerFetch(`/internal/ones/leaderboard/${me.id}`);
-  if (res.status === 403) return null;
-  if (!res.ok) throw new SubmissionError(502, "leaderboard_unavailable");
-  return (await res.json()) as {
-    people: (Tiered & {
-      rank: number;
-      number: number;
-      name: string | null;
-      measures: Measures;
-      you: boolean;
-    })[];
-    teams: {
-      rank: number;
-      lob: string;
-      ones: number;
-      top_tier: number;
-      top_tier_name: string;
-      measured: number;
-    }[];
-  };
-}
 
 export const myTeam = (me: CurrentUser) =>
   call<{
@@ -277,6 +192,8 @@ export async function myShowcase(me: CurrentUser) {
   return (await res.json()) as ShowcaseBrief;
 }
 
+/** What `/ones/write/:id` asks the committee, the CEO or an invited colleague to write (kept, BLD-E042). The console,
+ * the leaderboard and the rest of the proposals API are retired (DEC-106, BLD-E049). */
 export const inviteView = (me: CurrentUser, proposalId: string) =>
   call<{
     one_display: string;
@@ -287,26 +204,9 @@ export const inviteView = (me: CurrentUser, proposalId: string) =>
 
 // --- Writes ------------------------------------------------------------------------------------------------------
 
-export const propose = (me: CurrentUser, input: unknown) =>
-  post<{ id: number; state: string }>("/internal/ones/proposals", { ...body(input), actor_user_id: me.id });
-
-export const decide = (me: CurrentUser, proposalId: string, input: unknown) =>
-  post(`/internal/ones/proposals/${id(proposalId)}/decide`, { ...body(input), actor_user_id: me.id });
-
-export const carryOut = (me: CurrentUser, proposalId: string) =>
-  post(`/internal/ones/proposals/${id(proposalId)}/carry-out`, { actor_user_id: me.id });
-
-export const withdraw = (me: CurrentUser, proposalId: string) =>
-  post(`/internal/ones/proposals/${id(proposalId)}/withdraw`, { actor_user_id: me.id });
-
+/** `/ones/write/:id`'s form posts here (kept, BLD-E042, BLD-E049): the words feed S-ONE's "Messages for you". */
 export const addMessage = (me: CurrentUser, proposalId: string, input: unknown) =>
   post(`/internal/ones/proposals/${id(proposalId)}/messages`, { ...body(input), actor_user_id: me.id });
-
-export const invitePeer = (me: CurrentUser, proposalId: string, input: unknown) =>
-  post(`/internal/ones/proposals/${id(proposalId)}/invites`, {
-    email: body(input).email,
-    actor_user_id: me.id,
-  });
 
 export const setMeasures = (me: CurrentUser, oneId: string, input: unknown) =>
   post(

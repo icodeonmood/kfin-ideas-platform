@@ -215,14 +215,22 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(shadowed).toEqual([]);
   });
 
-  it("the Ones console: who may propose, approve and carry out (DEC-040)", () => {
-    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals").kind).toBe("allow");
-    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals").kind).toBe("deny");
-    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/decide").kind).toBe("allow");
-    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals/4/decide").kind).toBe("deny");
-    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("allow");
-    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("deny");
-    expect(decide(rolesOf("contributor"), "GET", "/api/ones/console").kind).toBe("deny");
+  it("L-ONES BLD-E049 (DEC-106): the Ones console, the old leaderboard and the proposals API are retired; /ones/write/:id's message route stays", () => {
+    for (const role of ["contributor", "core_committee", "core_chair", "ceo", "admin"]) {
+      for (const [method, url] of [
+        ["GET", "/api/ones/console"],
+        ["GET", "/api/ones/leaderboard"],
+        ["POST", "/api/ones/proposals"],
+        ["POST", "/api/ones/proposals/4/decide"],
+        ["POST", "/api/ones/proposals/4/carry-out"],
+        ["POST", "/api/ones/proposals/4/withdraw"],
+        ["GET", "/api/ones/proposals/4/invite"],
+        ["POST", "/api/ones/proposals/4/invites"],
+      ] as const)
+        expect(decide(rolesOf(role), method, url).kind, `${role} ${method} ${url}`).toBe("unknown"); // refused 404
+    }
+    // The committee, the CEO or an invited colleague writes at /ones/write/:id; the worker checks which (BLD-E042).
+    expect(decide(rolesOf("contributor"), "POST", "/api/ones/proposals/4/messages").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "GET", "/api/ones").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });

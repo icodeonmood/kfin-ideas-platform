@@ -77,7 +77,7 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("GET", "/api/wall")).toEqual(["wall.public"]);
     expect(switchesFor("GET", "/api/display/office")).toEqual(["ones.public"]); // S-OFFICE, non-negotiable 9
     expect(switchesFor("GET", "/api/display/office/x")).toEqual([]);
-    expect(switchesFor("POST", "/api/ones/proposals")).toEqual([]);
+    expect(switchesFor("POST", "/api/ones/proposals/4/messages")).toEqual([]); // /ones/write/:id (BLD-E042)
     expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
   });
 
