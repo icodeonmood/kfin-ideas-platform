@@ -231,7 +231,7 @@ def send(
                                           note_is_reason=True, field="joined_with", notify=False)  # fmt: skip
         joined = other["id"] if other is not None else None
         dates = dates_for(choice, t, return_in, p, cal)  # type: ignore[arg-type]
-        masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip())
+        masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip(), by=user_id)
         decision_id = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, "
