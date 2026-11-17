@@ -84,3 +84,13 @@ describe("F-TYPE.rules/5: no text under 12px in lane D's badges", () => {
     expect(fontPx(style("shell.css", ".sb-n"))).toBe(12);
   });
 });
+
+describe("Print: the page only", () => {
+  it.each([
+    [".tbar", "C-TASKBAR"],
+    [".dock", "C-PHONE-TABS.dock"],
+  ])("%s (%s) is hidden in print, from lane D's own sheet", (selector) => {
+    const printed = style("shell.css", selector, (a) => a === "@media print");
+    expect(printed.get("display")).toMatch(/^none(\s*!important)?$/);
+  });
+});
