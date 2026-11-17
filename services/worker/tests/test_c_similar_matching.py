@@ -51,6 +51,7 @@ def _links(conn: Any, idea_uuid: str) -> dict[str, dict[str, Any]]:
 
 
 def test_bld_c091_chunks_come_from_shared_rows_only(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/1: one chunk per shared idea that is not withdrawn, from its masked row."""
     index.sync(db)
     rows = {
         str(r["idea_uuid"]): r
@@ -78,6 +79,8 @@ def test_bld_c091_chunks_come_from_shared_rows_only(db: Any, seeded: dict[str, A
 
 
 def test_bld_c092_with_the_assistant_off_matching_works_by_code(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/1-3: never own ideas, drafts or withdrawn ones; close or related with a reason; at most
+    8, close first."""
     _switch(db, "ai.all", "off")
     t2 = seeded["T2"]  # Tanvi's draft: the SIP failure SMS gives no reason
     run = m.match_idea(db, t2.uuid)
@@ -105,6 +108,7 @@ def test_bld_c092_with_the_assistant_off_matching_works_by_code(db: Any, seeded:
 
 
 def test_bld_c092_the_judge_labels_through_the_gateway(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/2: the judge labels by meaning, through run_agent."""
     t2 = seeded["T2"]
     run = m.match_idea(db, t2.uuid)
     assert run.state == "done" and run.labelled_by == "judge"
@@ -115,6 +119,8 @@ def test_bld_c092_the_judge_labels_through_the_gateway(db: Any, seeded: dict[str
 def test_bld_c092_judge_labels_become_close_related_or_nothing(
     db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """L-SIMILAR.rules/2-3: same is close, related is related, different is dropped; close first; a reason
+    that fails the checks falls back to code."""
     r1, t2 = seeded["R1"], seeded["T2"]
 
     def fake_run_agent(name: str, inputs: dict[str, Any], ref_id: str, **_: Any) -> Any:
@@ -151,6 +157,8 @@ def test_bld_c092_judge_labels_become_close_related_or_nothing(
 def test_bld_c092_a_failure_never_blocks_and_is_recorded(
     db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """L-SIMILAR.rules/9 (L-SIMILAR.failure): a failure never blocks sharing, is recorded, and the draft part
+    says it couldn't check."""
     t4 = seeded["T4"]  # checking: being sent now
 
     def broken(*_: Any, **__: Any) -> Any:
@@ -168,6 +176,7 @@ def test_bld_c092_a_failure_never_blocks_and_is_recorded(
 
 
 def test_bld_c093_reruns_only_on_a_material_change(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/4-5: re-runs on a material change only; sending always runs."""
     _switch(db, "ai.all", "off")
     t2 = seeded["T2"]
     assert m.match_idea(db, t2.uuid).state == "done"
@@ -189,6 +198,7 @@ def test_bld_c093_reruns_only_on_a_material_change(db: Any, seeded: dict[str, An
 
 
 def test_bld_c093_similar_for_gives_the_draft_part_its_matches(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/4: the draft part's matches, stored, masked, never the other sharer's own words."""
     _switch(db, "ai.all", "off")
     t2 = seeded["T2"]
     out = similar_for(
@@ -208,6 +218,8 @@ def test_bld_c093_similar_for_gives_the_draft_part_its_matches(db: Any, seeded: 
 
 
 def test_bld_c092_who_sees_the_matches(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/5-6: the sharer and the reviewer see the matches; a newer idea shows on the older
+    idea's page."""
     p1, t5, t2 = seeded["P1"], seeded["T5"], seeded["T2"]  # the seed: T5 found P1 while Tanvi wrote
     pallavi, harish, tanvi = (Viewer.of(db, _user(db, n)) for n in ("Pallavi", "Harish", "Tanvi"))
     # Rule 6: the newer idea shows on the older idea's page, for its sharer and the reviewer.
@@ -227,6 +239,8 @@ def test_bld_c092_who_sees_the_matches(db: Any, seeded: dict[str, Any]) -> None:
 
 
 def test_bld_c092_my_request_and_merged_ideas(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/1, /7: a merged idea resolves to the one it joined; the viewer's own team-up request
+    rides on the match."""
     e1, t5, r2, t11 = seeded["E1"], seeded["T5"], seeded["R2"], seeded["T11"]
     esha = Viewer.of(db, _user(db, "Esha"))
     db.execute(
@@ -243,6 +257,8 @@ def test_bld_c092_my_request_and_merged_ideas(db: Any, seeded: dict[str, Any]) -
 
 
 def test_bld_c095_keep_mine_separate_is_recorded_for_the_reviewer(db: Any, seeded: dict[str, Any]) -> None:
+    """L-SIMILAR.rules/7-8: Keep mine separate is recorded for the reviewer; a merge request stays; Show them
+    again undoes it."""
     t2, t1 = seeded["T2"], seeded["T1"]  # T2 asked Rekha to merge (kept as it is); T1 found R1 while writing
     tanvi, pallavi = Viewer.of(db, _user(db, "Tanvi")), Viewer.of(db, _user(db, "Pallavi"))
     assert keep_separate(db, t1.uuid, pallavi) is None  # not hers

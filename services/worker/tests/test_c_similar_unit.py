@@ -73,6 +73,7 @@ def _hit(title: str, summary: str, cosine: float = 0.0, keyword: bool = True) ->
 
 
 def test_bld_c092_words_and_material_change() -> None:
+    """L-SIMILAR.rules/4: what counts as a material change, compared as hashes of words."""
     assert m.words("The SMS for a failed SIP debit only says it failed.") == [
         "sms",
         "failed",
@@ -91,6 +92,7 @@ def test_bld_c092_words_and_material_change() -> None:
 
 
 def test_bld_c092_code_labels_need_meaning_or_a_good_share_of_words() -> None:
+    """L-SIMILAR.rules/2: by meaning first; shared words alone only when they are a good part of the other idea."""
     mine = "SIP failure SMS gives no reason. When a SIP debit fails the SMS says only that it failed."
     r1 = _hit(
         "Investors get no reason when a SIP debit fails",
@@ -118,6 +120,7 @@ def test_bld_c092_code_labels_need_meaning_or_a_good_share_of_words() -> None:
 
 
 def test_bld_c092_code_reasons_name_what_is_shared() -> None:
+    """L-SIMILAR.rules/2: the one-line reason names what is shared, in plain words."""
     assert m.code_reason("close", ["SMS", "calls"], "", False) == "Close match: same SMS, same calls"
     assert m.code_reason("close", [], "", False) == "Close match: the same problem"
     assert m.code_reason("related", ["calls"], "", False) == "Related: also about calls"

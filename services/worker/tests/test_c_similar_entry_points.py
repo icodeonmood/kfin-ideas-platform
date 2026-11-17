@@ -11,6 +11,7 @@ from similar import match_shared, similar_for
 
 
 def test_bld_c093_entry_points_keep_their_names_and_signatures() -> None:
+    """L-SIMILAR.rules/4-5: the draft part and the send call keep their names."""
     assert set(similar.__all__) >= {"similar_for", "match_shared"}
 
     sig = inspect.signature(similar_for)
