@@ -10,6 +10,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { PhoneBar } from "@/components/shell/phone";
 import { OnesPost } from "@/components/ui/ones-fan";
 
 vi.mock("next/link", async () => {
@@ -196,5 +197,45 @@ describe("S-H6.rules/3: the account menu is not clipped", () => {
     expect(style("shell.css", ".sb-in", folded).get("overflow")).toBe("visible");
     expect(style("shell.css", ".acct-up .acct-menu", folded).get("max-width")).toBe("none");
     expect(style("shell.css", ".acct-menu").get("width")).toBe("248px");
+  });
+});
+
+describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
+  const phone = (a: string) => a === "@media (max-width: 640px)";
+  // Measured at 500 16px Inter: "Your idea" 71.2px, "The idea" 65.5px; Back adds 4 + 22 (chevron) + 2 + 8 = 36px
+  const BACK_NEEDS = 36 + 71.2;
+
+  it("each side keeps the same room, enough for Back with 'The idea' or 'Your idea' in full, so the title stays centred", () => {
+    const cols = style("shell.css", ".pnav", phone).get("grid-template-columns") ?? "";
+    const m = cols.match(/^minmax\((\d+)px, 1fr\) auto minmax\((\d+)px, 1fr\)$/);
+    expect(m, cols).not.toBeNull();
+    expect(m![1]).toBe(m![2]);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(BACK_NEEDS);
+    // At 360px the 40-character title still gets room: 360 - 16 padding - 16 gaps - both sides
+    expect(360 - 32 - 2 * Number(m![1])).toBeGreaterThanOrEqual(100);
+  });
+
+  it("a longer Back label ends in an ellipsis inside its own column; targets stay 44px; the title caps at 180px", () => {
+    const label = style("shell.css", ".pback span", phone);
+    expect(label.get("min-width")).toBe("0");
+    expect(label.get("overflow")).toBe("hidden");
+    expect(label.get("text-overflow")).toBe("ellipsis");
+    const back = style("shell.css", ".pback", phone);
+    expect(back.get("min-width")).toBe("44px");
+    expect(back.get("min-height")).toBe("44px");
+    expect(back.get("overflow")).toBe("hidden");
+    const title = style("shell.css", ".pnav-t", phone);
+    expect(title.get("max-width")).toBe("180px");
+    expect(title.get("text-overflow")).toBe("ellipsis");
+    expect(
+      renderToStaticMarkup(
+        createElement(PhoneBar, {
+          back: { href: "/ideas/IDEA-2026-000301", label: "The idea" },
+          title: "Rejection SMS codes confuse distributors",
+        }),
+      ),
+    ).toMatch(
+      /<a href="\/ideas\/IDEA-2026-000301" class="pback"><svg[^>]*>.*<\/svg><span>The idea<\/span><\/a>/,
+    );
   });
 });
