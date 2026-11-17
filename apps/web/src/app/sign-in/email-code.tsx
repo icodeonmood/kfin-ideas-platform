@@ -171,12 +171,10 @@ export function EmailCode({
   );
 
   if (step === "going") {
+    // The code is accepted and the browser is on its way; only the board's words (S-02.states Signing you in).
     return (
-      <div className="si-step" data-dir="fwd">
+      <div className="si-step" data-dir="fwd" role="status">
         <h1 className="si-h1">Signing you in</h1>
-        <p className="si-lead" role="status">
-          Code accepted. Opening 1% Club for you.
-        </p>
       </div>
     );
   }
@@ -239,7 +237,7 @@ export function EmailCode({
           </div>
           {wrong !== null ? (
             <p id={`${ids}-wrong`} className="si-error" role="alert">
-              That code didn&apos;t match. Check the latest email from 1% Club. {tries}
+              That code didn’t match. Check the latest email from 1% Club. {tries}
             </p>
           ) : null}
           {notice ? (
@@ -282,73 +280,106 @@ export function EmailCode({
             {notice}
           </p>
         ) : null}
-        <button
-          type="button"
-          className="si-btn si-btn-primary"
-          disabled={busy}
-          onClick={() => void send(knownEmail)}
-        >
-          Send a code to {knownEmail}
-        </button>
-        <p className="si-center">
-          <button type="submit" form={ssoId} className="si-link">
-            Use single sign-on instead
+        <div className="si-dock">
+          <button
+            type="button"
+            className="si-btn si-btn-primary"
+            disabled={busy}
+            onClick={() => void send(knownEmail)}
+          >
+            <span className="si-desk">Send a code to {knownEmail}</span>
+            <span className="si-phone">
+              <LockIcon />
+              Send a code and carry on
+            </span>
           </button>
-        </p>
+          <p className="si-center">
+            <button type="submit" form={ssoId} className="si-link">
+              Use single sign-on instead
+            </button>
+          </p>
+        </div>
       </div>
     );
   }
 
   const fieldError = touched && email.trim() !== "" && !work;
+  // Phone (PhoneSignIn): single sign-on in the middle, the title and work email in one bottom sheet, no help line.
   return (
-    <div className="si-step" data-dir={dir} key="email">
-      <h1 className="si-h1">Sign in to 1% Club</h1>
-      <form
-        className="si-email-form"
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          setTouched(true);
-          if (work) void send(email.trim().toLowerCase());
-        }}
-      >
-        <label htmlFor={`${ids}-email`} className="si-label">
-          Work email
-        </label>
-        <input
-          ref={emailRef}
-          id={`${ids}-email`}
-          className="si-input"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          placeholder="name@kfintech.com"
-          value={email}
-          aria-invalid={fieldError}
-          aria-describedby={`${ids}-email-help`}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => setTouched(true)}
-        />
-        <p id={`${ids}-email-help`} className={fieldError ? "si-help si-help-bad" : "si-help"}>
-          {fieldError ? MESSAGES.not_work_email : "Use your official KFintech email ID to sign in."}
-        </p>
-        {notice ? (
-          <p className="si-error" role="alert">
-            {notice}
+    <div className="si-step si-step-email" data-dir={dir} key="email">
+      <div className="si-phone">
+        <div className="si-sso-mid">
+          <SsoForm
+            intent={intent ? { to: intent.to, draftId: intent.draft_id, step: intent.step } : null}
+            label="Use single sign-on"
+          />
+        </div>
+      </div>
+      <div className="si-sheet">
+        <h1 className="si-h1">Sign in to 1% Club</h1>
+        <form
+          className="si-email-form"
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            setTouched(true);
+            if (work) void send(email.trim().toLowerCase());
+          }}
+        >
+          <label htmlFor={`${ids}-email`} className="si-label">
+            <span className="si-desk">Work email</span>
+            <span className="si-phone">Use your work email</span>
+          </label>
+          <input
+            ref={emailRef}
+            id={`${ids}-email`}
+            className="si-input"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="name@kfintech.com"
+            value={email}
+            aria-invalid={fieldError}
+            aria-describedby={`${ids}-email-help`}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setTouched(true)}
+          />
+          <p id={`${ids}-email-help`} className={fieldError ? "si-help si-help-bad" : "si-help"}>
+            {fieldError ? (
+              MESSAGES.not_work_email
+            ) : (
+              <span className="si-desk">Use your official KFintech email ID to sign in.</span>
+            )}
           </p>
-        ) : null}
-        <button type="submit" className="si-btn si-btn-primary" disabled={!work || busy}>
-          Send code
-        </button>
-      </form>
-      <p className="si-or">
-        <span>or</span>
-      </p>
-      <SsoForm
-        id={ssoId}
-        intent={intent ? { to: intent.to, draftId: intent.draft_id, step: intent.step } : null}
-        label="Use single sign-on"
-      />
+          {notice ? (
+            <p className="si-error" role="alert">
+              {notice}
+            </p>
+          ) : null}
+          <button type="submit" className="si-btn si-btn-primary" disabled={!work || busy}>
+            Send code
+          </button>
+        </form>
+        <div className="si-desk">
+          <p className="si-or">
+            <span>or</span>
+          </p>
+          <SsoForm
+            id={ssoId}
+            intent={intent ? { to: intent.to, draftId: intent.draft_id, step: intent.step } : null}
+            label="Use single sign-on"
+          />
+        </div>
+      </div>
     </div>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }

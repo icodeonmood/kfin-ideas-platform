@@ -108,7 +108,9 @@ describe("L-AUTH.rules/5 activity never extends a session past session.hours", (
     expect(await s.expiredSession("token-of-a-signed-in-browser")).toBeNull();
     const read = queries.find((q) => /from sessions s/i.test(q.sql))!;
     expect(flat(read)).toMatch(/s\.created_at <= now\(\) - make_interval\(secs => \$\d+\)/);
-    expect(flat(read)).toMatch(/LEAST\(s\.expires_at, s\.created_at \+ make_interval\(secs => \$\d+\)\) > now\(\) - interval '1 day'/);
+    expect(flat(read)).toMatch(
+      /LEAST\(s\.expires_at, s\.created_at \+ make_interval\(secs => \$\d+\)\) > now\(\) - interval '1 day'/,
+    );
     expect(read.parameters.filter((p) => p === 8 * 3600)).toHaveLength(2);
   });
 });

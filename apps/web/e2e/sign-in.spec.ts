@@ -12,6 +12,9 @@ test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
 });
 
+/** The phone-360 project shows PhoneSignIn's words, the desktop one SignIn's (BLD-A179). */
+const phone = (name: string) => name === "phone-360";
+
 test("S-02.states Enter email, BLD-E002: while the email route is off, only single sign-on shows", async ({
   page,
 }) => {
@@ -49,16 +52,25 @@ test("S-02.states Signing you in: names where the person lands next, and continu
 
 test("S-02.states Could not sign in, L-AUTH.rules/8: a failure carries a reference and a way to try again", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/auth/callback?error=temporarily_unavailable");
   await expect(page).toHaveURL(/\/sign-in\?failed=SSO-[0-9A-F]{4}&at=\d+$/);
   const ref = new URL(page.url()).searchParams.get("failed")!;
-  await expect(page.getByRole("heading", { level: 1, name: "We couldn't sign you in" })).toBeVisible();
+  // Each board's apostrophe, exactly: SignIn.md "couldn't", PhoneSignIn.md "couldn’t".
+  const title = phone(testInfo.project.name) ? "We couldn’t sign you in" : "We couldn't sign you in";
+  await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
   // Next.js has its own route announcer, so find this alert by its words.
   const alert = page.getByRole("alert").filter({ hasText: "Your KFintech account didn't answer in time." });
-  await expect(alert).toContainText("This is usually a short network hiccup on the office Wi-Fi or VPN.");
+  await expect(alert).toContainText(
+    phone(testInfo.project.name)
+      ? "Usually a short network hiccup."
+      : "This is usually a short network hiccup on the office Wi-Fi or VPN.",
+  );
   await expect(alert).toContainText("Nothing you typed is lost.");
-  await expect(page.getByText(new RegExp(`${ref}, \\d{1,2}:\\d{2} (am|pm)`))).toBeVisible();
+  // Both boards' lines are in the page; the width shows one.
+  await expect(
+    page.getByText(new RegExp(`${ref}, \\d{1,2}:\\d{2} (am|pm)`)).filter({ visible: true }),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Try again" })).toHaveAttribute("href", "/auth/sso/start");
   if (!(await switchIsOn("auth.email_code"))) {
     await expect(page.getByRole("link", { name: "get a code by email instead" })).toHaveCount(0);
@@ -83,19 +95,25 @@ test("L-AUTH.rules/4: where the person was going survives the round trip to the 
 
 test("S-02.states Session expired mid-draft, L-AUTH.rules/4,5: sign in again and carry on at the draft", async ({
   page,
-}) => {
+}, testInfo) => {
   await signIn(page, PERSONAS.contributor);
   await expireSession(page);
   const draft = `/share/${randomUUID()}`;
   await page.goto(draft);
   await expect(page).toHaveURL((url) => url.pathname === "/sign-in");
   await expect(page.getByRole("heading", { level: 1, name: "Sign in again to carry on" })).toBeVisible();
-  await expect(
-    page.getByText(
-      "KFintech apps sign everyone out after 8 hours. Your draft is safe, exactly as you left it.",
-    ),
-  ).toBeVisible();
-  await expect(page.getByText(/Trouble signing in\? Call the IT service desk/)).toBeVisible();
+  if (phone(testInfo.project.name)) {
+    await expect(
+      page.getByText("KFintech apps sign everyone out after 8 hours. Your draft is safe.", { exact: true }),
+    ).toBeVisible();
+  } else {
+    await expect(
+      page.getByText(
+        "KFintech apps sign everyone out after 8 hours. Your draft is safe, exactly as you left it.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText(/Trouble signing in\? Call the IT service desk/)).toBeVisible();
+  }
   await expectNoSeriousAxeIssues(page);
   await page.getByRole("button", { name: "Use single sign-on" }).click();
   await page.locator('input[name="username"]').fill(PERSONAS.contributor);

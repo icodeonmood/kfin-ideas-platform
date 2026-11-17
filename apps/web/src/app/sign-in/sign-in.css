@@ -467,6 +467,39 @@ main.si-main {
   overflow-wrap: anywhere;
 }
 
+/*
+ * The two boards' words (reference/copy SignIn.md and PhoneSignIn.md, BLD-A179). Only bare wrappers carry these
+ * classes: the shown one adds no box of its own (its children sit in the step's grid), and display:none takes the
+ * other out of the page for screen readers too.
+ */
+.si-desk {
+  display: contents;
+}
+
+.si-phone {
+  display: none;
+}
+
+.si-sheet,
+.si-dock {
+  display: grid;
+  gap: 20px;
+}
+
+/* PhoneSignIn's one "Next:" line */
+.si-next-one {
+  align-items: center;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #5f5f64;
+}
+
+.si-next-one b {
+  font-weight: 600;
+  color: #111111;
+}
+
 .si-dev {
   width: min(470px, 100%);
   margin: 16px 0 0;
@@ -555,6 +588,51 @@ main.si-main {
       linear-gradient(120deg, #3a4fe0, #5b4fe6);
     color: #ffffff;
     font-size: 28px;
+  }
+
+  .si .si-desk {
+    display: none;
+  }
+
+  .si .si-phone {
+    display: contents;
+  }
+
+  .si-dock {
+    gap: 12px;
+    padding-top: 8px;
+  }
+
+  /* Enter email (PhoneSignIn): single sign-on in the middle, the title and work email in one bottom sheet */
+  .si-card:has(.si-step-email) {
+    overflow: visible;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .si-step-email {
+    grid-template-rows: 1fr auto;
+    gap: 24px;
+    min-height: calc(100svh - 140px);
+    padding: 0;
+  }
+
+  .si-sso-mid {
+    align-self: center;
+  }
+
+  .si-sheet {
+    gap: 16px;
+    padding: 0 20px 24px;
+    overflow: hidden;
+    border-radius: 24px;
+    background: #ffffff;
+    box-shadow:
+      0 0 0 1px rgba(17, 17, 17, 0.07),
+      0 -12px 40px -24px rgba(17, 17, 17, 0.35);
   }
 
   .si-otp-boxes {
