@@ -253,7 +253,16 @@ def execute(run_id: str) -> None:
         before = values(conn, idea_uuid)
         said = words(conn, idea_uuid)
         ai = ai_on(conn)
-        todo = [k for k in run["parts"] if k == "similar" or (ai and k in parts.AGENT_PARTS)]
+        waiting = {
+            str(r["key"])
+            for r in conn.execute(
+                "SELECT key FROM idea_parts WHERE idea_uuid = %s AND run_id = %s AND state = 'updating'",
+                (idea_uuid, run_id),
+            ).fetchall()
+        }  # still this run's: not settled, pinned or taken by a newer run since
+        todo = [
+            k for k in run["parts"] if k in waiting and (k == "similar" or (ai and k in parts.AGENT_PARTS))
+        ]
         futures = [_PART_POOL.submit(_run_part, run_id, idea_uuid, k, said) for k in todo]
         _, pending = wait(futures, timeout=RUN_TIMEOUT_S)
         for f in pending:
