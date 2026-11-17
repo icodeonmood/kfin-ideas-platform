@@ -1345,3 +1345,8 @@ app.include_router(_desk_routes(require_token))
 from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
+
+# Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
+from teamup.routes import build as _teamup_routes  # noqa: E402
+
+app.include_router(_teamup_routes(require_token))
