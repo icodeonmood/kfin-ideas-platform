@@ -87,6 +87,18 @@ describe("every day-one endpoint × every role column (generated from rbac.yaml)
     expect(decide(rolesOf("contributor"), "GET", "/api/health").kind).toBe("public");
   });
 
+  it("lets everyone signed in reach an idea's conversation; the worker decides per idea and answers others 404 (L-CONVO/2)", () => {
+    const base = "/api/ideas/IDEA-2026-001481/conversation";
+    for (const role of ["contributor", "reviewer", "core_committee"]) {
+      expect(decide(rolesOf(role), "GET", base).kind).toBe("allow");
+      expect(decide(rolesOf(role), "POST", `${base}/messages`).kind).toBe("allow");
+      expect(
+        decide(rolesOf(role), "DELETE", `${base}/messages/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10`).kind,
+      ).toBe("allow");
+    }
+    expect(decide(rolesOf("contributor"), "PUT", `${base}/messages`).kind).toBe("unknown");
+  });
+
   it("matches the §8 review rules people care about most", () => {
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/action").kind).toBe("allow");
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/veto").kind).toBe("deny");

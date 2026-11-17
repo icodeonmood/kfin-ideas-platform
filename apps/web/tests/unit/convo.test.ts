@@ -33,7 +33,7 @@ describe("L-CONVO web handlers (A-API.inbox conversation)", () => {
   it("GET forwards the signed-in person as user_id and passes the worker's answer through", async () => {
     reply = { status: 404, body: { error: { code: "not_found", message: "" } } };
     const res = await convo.getConversation(req("GET"), ctx("IDEA-2026-001481"));
-    expect(calls[0].path).toBe(
+    expect(calls[0]!.path).toBe(
       "/internal/ideas/IDEA-2026-001481/conversation?user_id=0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10",
     );
     expect(res.status).toBe(404);
@@ -49,14 +49,23 @@ describe("L-CONVO web handlers (A-API.inbox conversation)", () => {
   });
 
   it("POST sends only the fields the worker reads, and the Idempotency-Key", async () => {
-    reply = { status: 422, body: { error: { code: "empty_message", message: "Write a message or attach a file first.", field: "text" } } };
+    reply = {
+      status: 422,
+      body: {
+        error: { code: "empty_message", message: "Write a message or attach a file first.", field: "text" },
+      },
+    };
     const res = await convo.postMessage(
-      req("POST", { text: "", file_ids: ["ATT-2026-000001", 7], mentions: ["u-2"], as_user: "someone-else" }, {
-        "Idempotency-Key": "key-say-hello-0001",
-      }),
+      req(
+        "POST",
+        { text: "", file_ids: ["ATT-2026-000001", 7], mentions: ["u-2"], as_user: "someone-else" },
+        {
+          "Idempotency-Key": "key-say-hello-0001",
+        },
+      ),
       ctx("IDEA-2026-001481"),
     );
-    const sent = calls[0];
+    const sent = calls[0]!;
     expect(sent.path).toBe(
       "/internal/ideas/IDEA-2026-001481/conversation/messages?user_id=0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10",
     );
@@ -73,10 +82,10 @@ describe("L-CONVO web handlers (A-API.inbox conversation)", () => {
 
   it("DELETE removes by entry id, escaped", async () => {
     await convo.deleteMessage(req("DELETE"), ctx("IDEA-2026-001481", "a/b"));
-    expect(calls[0].path).toBe(
+    expect(calls[0]!.path).toBe(
       "/internal/ideas/IDEA-2026-001481/conversation/messages/a%2Fb?user_id=0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10",
     );
-    expect(calls[0].init?.method).toBe("DELETE");
+    expect(calls[0]!.init?.method).toBe("DELETE");
   });
 
   it("messageBody drops anything that is not the contract's", () => {
