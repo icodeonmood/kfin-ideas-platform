@@ -475,7 +475,14 @@ function Sheet(props: TeamUpSheetProps) {
             title={view.lead ? TEAMUP_COPY.title(first) : TEAMUP_COPY.failedTitle}
             message={<FieldMsg id={lineId}>{view.error.message}</FieldMsg>}
             action={
-              <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  boxRef.current?.focus({ preventScroll: true }); // the button goes with the step
+                  setView({ kind: "loading" });
+                  setAttempt((n) => n + 1);
+                }}
+              >
                 {TEAMUP_COPY.retry}
               </Button>
             }

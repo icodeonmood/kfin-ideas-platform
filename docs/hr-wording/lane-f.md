@@ -48,3 +48,21 @@ The board says "she" and "her" for the demo requester. With real people that wou
 | `S-H2B.reader`: answering a draft merge request whose draft was sent or archived while it waited (BLD-F024) | The lead's Inbox reader | Kavya withdrew this request. (the existing `not_waiting` line) |
 | `S-H2B.reader/3`: an idea brought whose short summary fails the checks (BLD-F022, BLD-C090) | The lead's Inbox reader | A short summary is on its way. (lane C's existing placeholder, BLD-C022) |
 
+
+## 4. The team-up sheet (`C-SHEET-TEAMUP`, added 17 Nov)
+
+The sheet's own words are the pack's (`C-SHEET-TEAMUP` and `reference/copy/Crew.md`, view=Request and view=Request sent), used as they stand: they name the lead, so no line needed the BLD-E008 change. The code is `apps/web/src/components/teamup/teamup-sheet.tsx` (`TEAMUP_COPY`). These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `C-SHEET-TEAMUP.compose/5`, the privacy line in full | Under the choice, once one or more ideas are picked (the pack writes "…and the idea you bring.") | Ravi sees your name, your note and the idea you bring. / Ravi sees your name, your note and the ideas you bring. |
+| `C-SHEET-TEAMUP.compose/4`, the open list with nothing to pick | "Bring your ideas along", for a person with no shared idea of their own | You have no shared ideas to bring yet. |
+| `C-SHEET-TEAMUP.compose`, Check it: the name of the single choice (BLD-F071) | Above "Ask Ravi to merge mine in" and "Keep mine separate" | Your draft |
+| `C-SHEET-TEAMUP.compose/3`, a note over 600 characters | Under the note (the line in section 2, now also shown before sending) | Keep your note to 600 characters. |
+| `C-SHEET-TEAMUP.sent`, the withdraw in progress | On "Withdraw request" while it goes | Withdrawing… |
+| `C-SHEET-TEAMUP`, while the note loads | Read by a screen reader only | Loading your note |
+| `C-SHEET-TEAMUP`, when neither the idea nor the note loads | The sheet's title, with the reason under it and "Try again" | Team up |
+| `C-SHEET-TEAMUP`, opened on an idea the person cannot ask about (BLD-F072) | In place of the note, with only "Done" | You lead this idea. / You’re on the crew. / This idea is no longer open to team up. (the API's existing lines) |
+| `A-API.conventions/2`, a 401 (the session ended) as well as a 403 | Above "Send to Ravi" | Sign in again to team up. (the existing `forbidden` line) |
+| No answer from the server | Above "Send to Ravi", or where the note would be | Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
+| An answer the sheet cannot read | Above "Send to Ravi" | Something went wrong. Please try again. (the existing `worker_error` line) |
