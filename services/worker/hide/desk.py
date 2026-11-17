@@ -1,12 +1,16 @@
 """A reviewer's "Hide this" (L-HIDE.rules/7, S-R2) and the sharer's "Show it" / "Hide it" (L-HIDE.rules/6, C-HIDDEN.list).
 
-"Hide this": the reviewer selects text in what they read (offsets in the masked copy). It is masked at once in
-that text and wherever the same value appears in the idea's other copies (messages, answers, conversation, title,
-summary, parts, receipts), the value is stored sealed, the action is audited and the sharer is told
-(`detail_hidden_by_desk`).
+"Hide this": the reviewer selects text in what they read (offsets in the masked copy, in code points, or in UTF-16
+units when the browser sends them). It is masked at once in that text and, as whole words in any case, in every
+other copy of the idea (`_sweep`): messages (and their English copy), answers, conversation messages, the title,
+summary, how-often line and helper line, the parts, the fix, the desk's questions, the saved versions, the
+similar-idea reasons and the draft's receipts. Each changed copy gets a `hidden_details` row, the value is stored
+sealed, the action is audited and the sharer is told (`detail_hidden_by_desk`). A selection must be at least three
+characters with a letter or digit in it.
 
 "Show it" needs one of the three reasons and puts the value back in the copy others read; "Hide it" masks it again.
-Both are the owner's alone and are audited; the desk reads "Shown, because …" from `hidden_details`.
+Both are the owner's alone and are audited; the desk reads "Shown, because …" from `hidden_details`. A detail the
+review desk hid, or any detail holding a value the desk hid, cannot be shown: the desk's hide wins (BLD-C066).
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from core.crypto import CryptoError, decrypt_json, encrypt_json
 from core.db import Conn
 from core.logging import get_logger
 from hide import detect
@@ -35,16 +40,19 @@ from hide.core import (
     scope_for,
     spans_of,
 )
-from onepc.context import open_text, seal_text
+from onepc.context import open_text, seal_text, sealed_context
 from pii import vault
 
 log = get_logger("hide")
 
-DESK_SOURCES = ("part", "message", "answer", "title", "conversation")
+DESK_SOURCES = ("part", "message", "answer", "title", "conversation", "fix")
 NOTIFY_KIND = "detail_hidden_by_desk"
 MAX_SELECTION = 300
+MIN_SELECTION = 3  # shorter selections ("a", "5") would mask pieces of other words (BLD-C066)
 PART_KEYS = ("title", "often", "who", "value", "area", "similar")
-TITLE_FIELDS = ("title", "summary", "often")
+TITLE_FIELDS = ("title", "summary", "often", "helper_text")  # ideas columns the desk reads
+FIX_FIELDS = ("how", "needs", "solved_note", "risks")  # idea_fix columns the desk reads
+UNITS = ("cp", "utf16")
 
 
 # ---- texts with a sealed owner's copy: messages, answers, conversation messages --------------------------------
@@ -98,7 +106,7 @@ def load_sealed(conn: Conn, idea_uuid: str, source: str, source_id: str | None =
         masked = open_text(table, "text_encrypted", sid, r["text_encrypted"])
         if masked is None:
             continue
-        words = own_words(conn, source, sid)
+        words = own_words(conn, source, sid, idea_uuid=idea_uuid)
         out.append(
             Sealed(
                 source,
@@ -180,15 +188,31 @@ def _new_detail(
     end: int | None,
     kind: str,
     value: str,
+    found_by: str = "reviewer",
 ) -> dict[str, Any]:
     tag = vault.assign(conn, scope_for(idea_uuid), VAULT_TYPE[kind], value)
     row = conn.execute(
         "INSERT INTO hidden_details (idea_uuid, source, source_id, span_start, span_end, kind, masked, vault_tag, "
-        "found_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'reviewer') RETURNING *",
-        (idea_uuid, source, source_id, start, end, kind, detect.mask(kind, value), tag),
+        "found_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+        (idea_uuid, source, source_id, start, end, kind, detect.mask(kind, value), tag, found_by),
     ).fetchone()
     assert row is not None
     return dict(row)
+
+
+def _copy_detail(
+    conn: Conn, idea_uuid: str, source: str, source_id: str, kind: str, value: str, found_by: str
+) -> None:
+    """A copy with no owner's words (a title, a part, a saved version…) that the sweep masked: one row per copy and
+    value, with no span, so it can be traced and listed (BLD-C066)."""
+    tag = vault.assign(conn, scope_for(idea_uuid), VAULT_TYPE[kind], value)
+    conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked, vault_tag, found_by) "
+        "SELECT %s, %s, %s, %s, %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM hidden_details WHERE idea_uuid = %s "
+        "AND source = %s AND source_id = %s AND vault_tag = %s AND span_start IS NULL)",
+        (idea_uuid, source, source_id, kind, detect.mask(kind, value), tag, found_by,
+         idea_uuid, source, source_id, tag),
+    )  # fmt: skip
 
 
 def _rehide(conn: Conn, detail: dict[str, Any]) -> dict[str, Any]:
@@ -246,20 +270,25 @@ def _set_path(node: Any, path: list[str], value: str) -> Any:
 
 
 def _plain_text(conn: Conn, idea_uuid: str, kind: str, source_id: str) -> tuple[str, Callable[[str], None]]:
-    """The text a reviewer sees for a title or part, and how to write it back."""
-    if kind == "title":
-        column = source_id if source_id in TITLE_FIELDS else "title"
+    """The text a reviewer sees for a title, a fix field or a part, and how to write it back."""
+    if kind in ("title", "fix"):
+        fields, table, key = (
+            (TITLE_FIELDS, "ideas", "id") if kind == "title" else (FIX_FIELDS, "idea_fix", "idea_uuid")
+        )
+        if kind == "fix" and source_id not in fields:
+            raise HideError(404, "not_found")
+        column = source_id if source_id in fields else "title"
         row = conn.execute(
-            f"SELECT {column} AS t FROM ideas WHERE id = %s",  # noqa: S608 (one of three fixed names)
+            f"SELECT {column} AS t FROM {table} WHERE {key} = %s",  # noqa: S608 (fixed names only)
             (idea_uuid,),
         ).fetchone()
         if row is None or not isinstance(row["t"], str):
             raise HideError(404, "not_found")
 
-        def write_title(new: str) -> None:
-            conn.execute(f"UPDATE ideas SET {column} = %s WHERE id = %s", (new, idea_uuid))  # noqa: S608 (fixed names)
+        def write_plain(new: str) -> None:
+            conn.execute(f"UPDATE {table} SET {column} = %s WHERE {key} = %s", (new, idea_uuid))  # noqa: S608
 
-        return row["t"], write_title
+        return row["t"], write_plain
     key, path = _part_path(source_id)
     row = conn.execute(
         "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = %s", (idea_uuid, key)
@@ -280,46 +309,114 @@ def _plain_text(conn: Conn, idea_uuid: str, kind: str, source_id: str) -> tuple[
     return text, write_part
 
 
-def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, skip: tuple[str, str]) -> int:
-    """Mask `value` in every other copy of this idea. Returns how many texts changed."""
-    changed = 0
-    mask_text = detect.mask(kind, value)
+def _has_column(conn: Conn, table: str, column: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = %s "
+            "AND column_name = %s",
+            (table, column),
+        ).fetchone()
+        is not None
+    )
+
+
+@dataclass
+class Swept:
+    copies: int = 0  # texts changed
+    rehidden: int = 0  # the owner's "Show it" undone because the desk hid the same value
+
+
+def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str = "reviewer") -> Swept:
+    """Mask `value`, as whole words in any case, in every copy of this idea (L-HIDE.rules/7). Texts with the owner's
+    words get a detail per place (their masked copy is rebuilt from them); the other copies are masked in place and
+    get one row each. When the desk hid it, a detail the owner chose to show with the same value is hidden again."""
+    out = Swept()
+    masked = detect.mask(kind, value)
+
+    def masker(t: str) -> str:
+        return detect.mask_in(t, value, masked)[0]
+
+    # 1. Messages, answers and conversation messages: rebuilt from the owner's words.
+    english = _has_column(conn, "idea_messages", "text_en_encrypted")  # lane C's drafts add an English copy
     for source in ("message", "answer", "conversation"):
         for src in load_sealed(conn, idea_uuid, source):
-            if (source, src.id) == skip:
-                continue
             details = details_for(conn, idea_uuid, source, src.id)
+            flipped = False
+            if found_by == "reviewer":
+                for i, d in enumerate(details):
+                    s, e = d.get("span_start"), d.get("span_end")
+                    if (
+                        d["state"] == "shown"
+                        and s is not None
+                        and detect.same_value(value, src.owner_text[s:e])
+                    ):
+                        details[i] = _rehide(conn, d)
+                        flipped = True
+                        out.rehidden += 1
             taken = [
                 (int(d["span_start"]), int(d["span_end"])) for d in details if d.get("span_start") is not None
             ]
             new = [
                 (s, e)
-                for s, e in detect.occurrences(src.owner_text, value)
+                for s, e in detect.value_places(src.owner_text, value)
                 if all(e <= a or s >= b for a, b in taken)
             ]
-            if not new:
-                continue
             for s, e in new:
-                details.append(_new_detail(conn, idea_uuid, source, src.id, s, e, kind, value))
-            _write_sealed(conn, idea_uuid, src, details)
-            changed += 1
+                details.append(
+                    _new_detail(conn, idea_uuid, source, src.id, s, e, kind, src.owner_text[s:e], found_by)
+                )
+            if new or flipped:
+                _write_sealed(conn, idea_uuid, src, details)
+                out.copies += 1
+            if source == "message" and english:
+                row = conn.execute(
+                    "SELECT text_en_encrypted FROM idea_messages WHERE id = %s", (src.id,)
+                ).fetchone()
+                text_en = (
+                    open_text("idea_messages", "text_en_encrypted", src.id, row["text_en_encrypted"])
+                    if row
+                    else None
+                )
+                if text_en:
+                    new_en, n = detect.mask_in(text_en, value, masked)
+                    if n:
+                        conn.execute(
+                            "UPDATE idea_messages SET text_en_encrypted = %s WHERE id = %s",
+                            (seal_text("idea_messages", "text_en_encrypted", src.id, new_en), src.id),
+                        )
+                        out.copies += 1
 
-    def replace(t: str) -> str:
-        return t.replace(value, mask_text)
+    def plain(source: str, source_id: str) -> None:
+        _copy_detail(conn, idea_uuid, source, source_id, kind, value, found_by)
+        out.copies += 1
 
-    row = conn.execute(
-        "UPDATE ideas SET title = replace(title, %s, %s), summary = replace(summary, %s, %s), "
-        "often = replace(often, %s, %s) WHERE id = %s AND (strpos(title, %s) > 0 OR strpos(summary, %s) > 0 "
-        "OR strpos(often, %s) > 0) RETURNING id",
-        (value, mask_text, value, mask_text, value, mask_text, idea_uuid, value, value, value),
+    # 2. The idea's own lines: title, summary, how often, the helper line.
+    idea = conn.execute(
+        "SELECT title, summary, often, helper_text FROM ideas WHERE id = %s", (idea_uuid,)
     ).fetchone()
-    changed += 1 if row else 0
+    for column in TITLE_FIELDS:
+        old = idea[column] if idea else None
+        if isinstance(old, str) and detect.value_places(old, value):
+            conn.execute(f"UPDATE ideas SET {column} = %s WHERE id = %s", (masker(old), idea_uuid))  # noqa: S608
+            plain("title", column)
+
+    # 3. The fix (masked copies; the person's own words for them are sealed as edits).
+    fix = conn.execute(
+        "SELECT how, needs, solved_note, risks FROM idea_fix WHERE idea_uuid = %s", (idea_uuid,)
+    ).fetchone()
+    for column in FIX_FIELDS:
+        old = fix[column] if fix else None
+        if isinstance(old, str) and detect.value_places(old, value):
+            conn.execute(f"UPDATE idea_fix SET {column} = %s WHERE idea_uuid = %s", (masker(old), idea_uuid))  # noqa: S608
+            plain("fix", column)
+
+    # 4. The parts: value, why and the quote.
     for part in conn.execute(
         "SELECT key, value, why, source_quote FROM idea_parts WHERE idea_uuid = %s", (idea_uuid,)
     ).fetchall():
-        new_value = _walk(part["value"], replace) if part["value"] is not None else None
-        new_why = replace(part["why"]) if part["why"] else part["why"]
-        new_quote = replace(part["source_quote"]) if part["source_quote"] else part["source_quote"]
+        new_value = _walk(part["value"], masker) if part["value"] is not None else None
+        new_why = masker(part["why"]) if part["why"] else part["why"]
+        new_quote = masker(part["source_quote"]) if part["source_quote"] else part["source_quote"]
         if (new_value, new_why, new_quote) != (part["value"], part["why"], part["source_quote"]):
             conn.execute(
                 "UPDATE idea_parts SET value = %s, why = %s, source_quote = %s WHERE idea_uuid = %s AND key = %s",
@@ -331,18 +428,66 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, skip: tuple[str, s
                     part["key"],
                 ),
             )
-            changed += 1
+            plain("part", str(part["key"]))
+
+    # 5. The desk's questions (masked when written, `hide_text`), sealed per row.
+    for q in conn.execute(
+        "SELECT q.id, q.text_encrypted FROM questions q JOIN question_sets s ON s.id = q.set_id "
+        "WHERE s.idea_uuid = %s",
+        (idea_uuid,),
+    ).fetchall():
+        qid = str(q["id"])
+        text = open_text("questions", "text_encrypted", qid, q["text_encrypted"])
+        if text and detect.value_places(text, value):
+            conn.execute(
+                "UPDATE questions SET text_encrypted = %s WHERE id = %s",
+                (seal_text("questions", "text_encrypted", qid, masker(text)), qid),
+            )
+            plain("desk", qid)
+
+    # 6. Saved versions of the idea (the masked idea as saved, sealed as JSON).
+    for v in conn.execute(
+        "SELECT id, n, snapshot_encrypted FROM idea_versions WHERE idea_uuid = %s AND snapshot_encrypted IS NOT NULL",
+        (idea_uuid,),
+    ).fetchall():
+        context = sealed_context("idea_versions", "snapshot_encrypted", f"{idea_uuid}:{v['n']}")
+        try:
+            snap = decrypt_json(bytes(v["snapshot_encrypted"]), context)
+        except CryptoError:
+            continue  # sealed another way: left as it is, never opened by the desk
+        new_snap = _walk(snap, masker)
+        if new_snap != snap:
+            conn.execute(
+                "UPDATE idea_versions SET snapshot_encrypted = %s WHERE id = %s",
+                (encrypt_json(new_snap, context), v["id"]),
+            )
+            plain("version", str(v["n"]))
+
+    # 7. Why another idea looks similar, in either direction.
+    for link in conn.execute(
+        "SELECT idea_uuid, other_idea_uuid, reason FROM similar_links WHERE idea_uuid = %s OR other_idea_uuid = %s",
+        (idea_uuid, idea_uuid),
+    ).fetchall():
+        if detect.value_places(link["reason"], value):
+            conn.execute(
+                "UPDATE similar_links SET reason = %s WHERE idea_uuid = %s AND other_idea_uuid = %s",
+                (masker(link["reason"]), link["idea_uuid"], link["other_idea_uuid"]),
+            )
+            other = link["other_idea_uuid"] if str(link["idea_uuid"]) == idea_uuid else link["idea_uuid"]
+            plain("similar", str(other))
+
+    # 8. The draft's receipts and suggestions.
     for run in conn.execute(
         "SELECT id, receipt, suggestions FROM draft_runs WHERE idea_uuid = %s", (idea_uuid,)
     ).fetchall():
-        receipt, suggestions = _walk(run["receipt"], replace), _walk(run["suggestions"], replace)
+        receipt, suggestions = _walk(run["receipt"], masker), _walk(run["suggestions"], masker)
         if (receipt, suggestions) != (run["receipt"], run["suggestions"]):
             conn.execute(
                 "UPDATE draft_runs SET receipt = %s, suggestions = %s WHERE id = %s",
                 (_jsonb(receipt), _jsonb(suggestions), run["id"]),
             )
-            changed += 1
-    return changed
+            plain("run", str(run["id"]))
+    return out
 
 
 def _notify_sharer(conn: Conn, idea: dict[str, Any], by: str) -> bool:
@@ -361,11 +506,39 @@ def _notify_sharer(conn: Conn, idea: dict[str, Any], by: str) -> bool:
     return True
 
 
+def _selection(text: str, start: int, end: int) -> tuple[int, str]:
+    """The selected words without the spaces around them, and where they start. Refuses a selection shorter than
+    three characters or with no letter or digit in it (BLD-C066)."""
+    raw = text[start:end]
+    value = raw.strip()
+    if len(value) < MIN_SELECTION or not any(ch.isalnum() for ch in value):
+        raise HideError(400, "range_invalid")
+    return start + len(raw) - len(raw.lstrip()), value
+
+
+def _code_points(text: str, start: int, end: int, units: str) -> tuple[int, int]:
+    if units == "cp":
+        return start, end
+    s, e = detect.from_utf16(text, start), detect.from_utf16(text, end)
+    if s is None or e is None or e <= s:
+        raise HideError(400, "range_invalid")
+    return s, e
+
+
 def desk_hide(
-    conn: Conn, idea_uuid: str, *, source_kind: str, source_id: str, start: int, end: int, by: str
+    conn: Conn,
+    idea_uuid: str,
+    *,
+    source_kind: str,
+    source_id: str,
+    start: int,
+    end: int,
+    by: str,
+    units: str = "cp",
 ) -> dict[str, Any]:
-    """A reviewer's "Hide this". Returns the HiddenDetail. Errors: not_found, range_invalid, already_hidden."""
-    if source_kind not in DESK_SOURCES:
+    """A reviewer's "Hide this". `units`: "cp" (code points, Python callers) or "utf16" (the browser's offsets, which
+    the web passes on as they are). Returns the HiddenDetail. Errors: not_found, range_invalid, already_hidden."""
+    if source_kind not in DESK_SOURCES or units not in UNITS:
         raise HideError(400, "range_invalid")
     if (
         not isinstance(start, int)
@@ -374,7 +547,7 @@ def desk_hide(
         or isinstance(end, bool)
     ):
         raise HideError(400, "range_invalid")
-    if start < 0 or end <= start or end - start > MAX_SELECTION:
+    if start < 0 or end <= start or end - start > MAX_SELECTION * (2 if units == "utf16" else 1):
         raise HideError(400, "range_invalid")
     with conn.transaction():
         idea = idea_row(conn, idea_uuid)
@@ -386,8 +559,10 @@ def desk_hide(
             if not found:
                 raise HideError(404, "not_found")
             src = found[0]
-            if end > len(src.masked_now) or not src.masked_now[start:end].strip():
+            start, end = _code_points(src.masked_now, start, end, units)
+            if end > len(src.masked_now) or end - start > MAX_SELECTION:
                 raise HideError(400, "range_invalid")
+            _selection(src.masked_now, start, end)
             details = details_for(conn, idea_uuid, source_kind, src.id)
             o_start, o_end, shown = _owner_range(src, details, start, end)
             if shown is not None:
@@ -395,20 +570,23 @@ def desk_hide(
                 details = [row if str(d["id"]) == str(row["id"]) else d for d in details]
                 _write_sealed(conn, idea_uuid, src, details)
                 value = src.owner_text[o_start:o_end]
+                taken = conn.execute(
+                    "UPDATE hidden_details SET found_by = 'reviewer' WHERE id = %s RETURNING *", (row["id"],)
+                ).fetchone()  # the desk's hide now: the owner cannot show it again
+                assert taken is not None
+                row = dict(taken)
             else:
-                raw = src.owner_text[o_start:o_end]
-                lead = len(raw) - len(raw.lstrip())
-                value = raw.strip()
-                o_start += lead
-                o_end = o_start + len(value)
+                o_start, value = _selection(src.owner_text, o_start, o_end)
                 kind = detect.classify(value, src.owner_text, o_start)
-                row = _new_detail(conn, idea_uuid, source_kind, src.id, o_start, o_end, kind, value)
+                row = _new_detail(
+                    conn, idea_uuid, source_kind, src.id, o_start, o_start + len(value), kind, value
+                )
                 details.append(row)
                 _write_sealed(conn, idea_uuid, src, details)
-            skip = (source_kind, src.id)
         else:
             text, write = _plain_text(conn, idea_uuid, source_kind, source_id)
-            if end > len(text) or not text[start:end].strip():
+            start, end = _code_points(text, start, end, units)
+            if end > len(text) or end - start > MAX_SELECTION:
                 raise HideError(400, "range_invalid")
             for a, b in detect.mask_tokens(text):
                 if a < end and start < b:
@@ -417,15 +595,11 @@ def desk_hide(
                         if a <= start and end <= b
                         else HideError(400, "range_invalid")
                     )
-            raw = text[start:end]
-            lead = len(raw) - len(raw.lstrip())
-            value = raw.strip()
-            s = start + lead
+            s, value = _selection(text, start, end)
             kind = detect.classify(value, text, s)
             row = _new_detail(conn, idea_uuid, source_kind, source_id, s, s + len(value), kind, value)
             write(text[:s] + str(row["masked"]) + text[s + len(value) :])
-            skip = (source_kind, source_id)
-        changed = _sweep(conn, idea_uuid, value, str(row["kind"]), skip)
+        swept = _sweep(conn, idea_uuid, value, str(row["kind"]))
         hid = str(row["id"])
         notified = _notify_sharer(conn, idea, by)
         audit(
@@ -434,9 +608,9 @@ def desk_hide(
             "hide.desk_hidden",
             idea_uuid,
             {"hidden_id": hid, "kind": row["kind"], "source": source_kind, "source_id": source_id,
-             "other_copies": changed, "sharer_notified": notified},
+             "other_copies": swept.copies, "rehidden": swept.rehidden, "sharer_notified": notified},
         )  # fmt: skip
-    log.info("hide.desk_hidden", idea_id=idea_uuid, hidden_id=hid, other_copies=changed)
+    log.info("hide.desk_hidden", idea_id=idea_uuid, hidden_id=hid, other_copies=swept.copies)
     return detail_view(row)
 
 
@@ -497,12 +671,29 @@ def _owned_detail(conn: Conn, idea_uuid: str, hid: str, by: str) -> tuple[dict[s
     return idea, dict(row)
 
 
+def _desk_hid(conn: Conn, idea_uuid: str, detail: dict[str, Any]) -> bool:
+    """The review desk hid this detail, or the same value elsewhere on the idea: the desk's hide wins (BLD-C066)."""
+    if detail["found_by"] == "reviewer":
+        return True
+    if not detail.get("vault_tag"):
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM hidden_details WHERE idea_uuid = %s AND vault_tag = %s AND found_by = 'reviewer' LIMIT 1",
+            (idea_uuid, detail["vault_tag"]),
+        ).fetchone()
+        is not None
+    )
+
+
 def show(conn: Conn, idea_uuid: str, hid: str, *, reason: object, by: str) -> dict[str, Any]:
     """ "Show it" with one of the three reasons (L-HIDE.rules/6). Returns the HiddenDetail."""
     if reason not in SHOW_REASONS:
         raise HideError(400, "reason_required")
     with conn.transaction():
         _, detail = _owned_detail(conn, idea_uuid, hid, by)
+        if _desk_hid(conn, idea_uuid, detail):
+            raise HideError(403, "forbidden")
         if detail["state"] == "shown":
             return detail_view(detail)
         row = conn.execute(
@@ -528,6 +719,8 @@ def hide_again(conn: Conn, idea_uuid: str, hid: str, *, by: str) -> dict[str, An
     """ "Hide it": reverses "Show it". Returns the HiddenDetail."""
     with conn.transaction():
         _, detail = _owned_detail(conn, idea_uuid, hid, by)
+        if detail["found_by"] == "reviewer":
+            raise HideError(403, "forbidden")  # the desk's own hide: not the owner's to change
         if detail["state"] == "hidden":
             return detail_view(detail)
         updated = _rehide(conn, detail)

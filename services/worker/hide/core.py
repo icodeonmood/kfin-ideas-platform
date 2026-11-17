@@ -4,7 +4,8 @@ Where things live (cut-over 20261121500100):
 - the masked copy: the text's own column (`idea_messages.text_encrypted`, `answers.text_encrypted`,
   `conversation_entries.text_encrypted`, sealed with the data key; `ideas.title`, `idea_parts.value`), the only copy
   anyone else gets;
-- the person's own words: `idea_words_sealed` (worker-only, vault key), keyed by (source, source_id);
+- the person's own words: `idea_words_sealed` (worker-only, vault key), keyed by (source, `sealed_key`): a row id as
+  it is, any other id under the idea's uuid, so two ideas' "version 2" never meet (BLD-C066);
 - each value: `pseudonym_vault` (worker-only, encrypted) under the idea's hide scope `DRAFT-<idea uuid>`, which
   never changes when the draft is shared;
 - `hidden_details`: kind, span in the owner's text, the masked form, the vault tag, who found it and whether the
@@ -36,7 +37,8 @@ SEALED_SOURCES = (
     "conversation",
     "edit",
 )  # idea_words_sealed.source (E-ENUMS sealed_source)
-DETAIL_SOURCES = (*SEALED_SOURCES, "file", "desk", "title", "part")  # hidden_details.source (BLD-C062)
+DETAIL_SOURCES = (*SEALED_SOURCES, "file", "desk", "title", "part")  # what hide_into takes (BLD-C062)
+SWEPT_SOURCES = ("fix", "version", "similar", "run")  # hidden_details.source for swept copies only (BLD-C066)
 SHOW_REASONS = ("scheme_or_product_code", "internal_reference", "made_up_example")  # E-ENUMS show_reason
 VAULT_TYPE = {
     "folio": "FOLIO_NUMBER",
@@ -50,12 +52,16 @@ VAULT_TYPE = {
 
 
 class HideError(Exception):
-    """A refusal the API turns into `{error: code}`. The code is safe to log."""
+    """A refusal the API turns into `{error: {code, message}}`. The code is safe to log."""
 
     def __init__(self, status: int, code: str) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
+
+
+class GatekeeperUnavailable(Exception):
+    """A re-check found the gateway still down: the job runner tries again later. Carries the gateway's code only."""
 
 
 @dataclass
@@ -228,25 +234,43 @@ def summary(masked: str, details: list[dict[str, Any]]) -> Hidden:
 # ---- hiding a text ---------------------------------------------------------------------------------------
 
 
+def sealed_key(idea_uuid: str, source_id: str) -> str:
+    """`idea_words_sealed.source_id` for one text. `UNIQUE (source, source_id)` spans every idea, so an id that is
+    not a row id ("2" for an edit's version) is kept under the idea's uuid ("<uuid>:2"). Row ids, and ids that
+    already start with the idea's uuid (lane C's drafts and edits), are kept as they are, so callers that remove
+    their own rows by id still find them (BLD-C066)."""
+    sid = str(source_id)
+    if is_uuid(sid) or sid.startswith(f"{uuid.UUID(idea_uuid)}:"):
+        return sid
+    return f"{uuid.UUID(idea_uuid)}:{sid}"
+
+
 def _seal_words(conn: Conn, idea_uuid: str, source: str, source_id: str, owner_user: str, text: str) -> None:
-    conn.execute(
-        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
-        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, source_id) DO UPDATE SET text_encrypted = EXCLUDED.text_encrypted",
-        (idea_uuid, source, source_id, owner_user,
-         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{source_id}", text, vault=True)),
-    )  # fmt: skip
-
-
-def own_words(conn: Conn, source: str, source_id: str) -> str | None:
-    """The person's own words for one text (worker only; the API hands them to their owner alone)."""
+    """Seal the person's own words. A row under the same key for another idea or person is never overwritten."""
+    key = sealed_key(idea_uuid, source_id)
     row = conn.execute(
-        "SELECT text_encrypted FROM idea_words_sealed WHERE source = %s AND source_id = %s",
-        (source, source_id),
+        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
+        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, source_id) DO UPDATE SET text_encrypted = EXCLUDED.text_encrypted "
+        "WHERE idea_words_sealed.idea_uuid = EXCLUDED.idea_uuid AND idea_words_sealed.owner_user_id = EXCLUDED.owner_user_id "
+        "RETURNING id",
+        (idea_uuid, source, key, owner_user,
+         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{key}", text, vault=True)),
+    ).fetchone()  # fmt: skip
+    if row is None:
+        raise HideError(409, "conflict")
+
+
+def own_words(conn: Conn, source: str, source_id: str, *, idea_uuid: str) -> str | None:
+    """The person's own words for one text of this idea (worker only; the API hands them to their owner alone)."""
+    key = sealed_key(idea_uuid, source_id)
+    row = conn.execute(
+        "SELECT text_encrypted FROM idea_words_sealed WHERE idea_uuid = %s AND source = %s AND source_id = %s",
+        (idea_uuid, source, key),
     ).fetchone()
     if row is None:
         return None
     return open_text(
-        "idea_words_sealed", "text_encrypted", f"{source}:{source_id}", row["text_encrypted"], vault=True
+        "idea_words_sealed", "text_encrypted", f"{source}:{key}", row["text_encrypted"], vault=True
     )
 
 
@@ -262,16 +286,45 @@ def hide_into(
     seal: bool = True,
 ) -> Hidden:
     """Detect, store each value sealed, keep earlier "Show it" choices for the same values, and return the result.
-    Re-running on an edited text keeps each detail's id where its value is still there. Caller's transaction."""
+    Re-running on an edited text keeps each detail's id where its value is still there.
+
+    Call it inside the same transaction as the write that stores the masked copy (see `hide/__init__.py`): the
+    idea's lock is held until that transaction ends, so a desk hide cannot land in between. Its own work runs in
+    savepoints, so a failure here leaves the caller's transaction usable."""
+    return _hide(
+        conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=gatekeeper, seal=seal
+    )[0]
+
+
+def _hide(
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str,
+    source_id: str,
+    gatekeeper: bool = True,
+    seal: bool = True,
+    recheck: bool = False,
+) -> tuple[Hidden, list[dict[str, Any]]]:
+    """`hide_into`, also returning the stored rows. `recheck`: a queued re-check, which raises
+    `GatekeeperUnavailable` instead of going on without the gatekeeper."""
     if source not in DETAIL_SOURCES:
         raise ValueError("unknown hide source")
+    idea_row(conn, idea_uuid)
+    scope = scope_for(idea_uuid)
+    gate = detect.Gate([])
+    if gatekeeper:
+        with conn.transaction():  # the model call comes before the idea's lock (BLD-C067)
+            gate = detect.gatekeeper_finds(conn, text, scope)
+    if recheck and gate.skipped:
+        raise GatekeeperUnavailable(gate.skipped)
     with conn.transaction():
-        idea_row(conn, idea_uuid)
         lock(conn, idea_uuid)
-        scope = scope_for(idea_uuid)
         before = details_for(conn, idea_uuid, source, source_id)
         known = known_values(conn, idea_uuid, {str(d["vault_tag"]) for d in before if d["vault_tag"]})
-        found = detect.find(conn, text, scope=scope, known=known, gatekeeper=gatekeeper)
+        found = detect.find(conn, text, scope=scope, known=known, gatekeeper=False, gate=gate.finds)
         by_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for d in before:
             by_tag[str(d["vault_tag"])].append(d)
@@ -299,7 +352,8 @@ def hide_into(
         if gone:
             conn.execute("DELETE FROM hidden_details WHERE id = ANY(%s::uuid[])", (gone,))
         masked, _ = layout(text, kept)
-        if seal and source in SEALED_SOURCES and is_uuid(by):
+        sealed = seal and source in SEALED_SOURCES and is_uuid(by)
+        if sealed:
             _seal_words(conn, idea_uuid, source, source_id, by, text)
         if kept or gone:
             audit(
@@ -315,8 +369,38 @@ def hide_into(
                     "removed": len(gone),
                 },
             )
+        if gate.skipped:
+            _gatekeeper_skipped(conn, idea_uuid, by, source, source_id, gate, recheck=sealed)
     log.info("hide.text_hidden", idea_id=idea_uuid, source_code=source, hidden_count=len(kept))
-    return summary(masked, kept)
+    return summary(masked, kept), kept
+
+
+RECHECK_JOB = "hide.recheck"
+
+
+def _gatekeeper_skipped(
+    conn: Conn, idea_uuid: str, by: str, source: str, source_id: str, gate: detect.Gate, *, recheck: bool
+) -> None:
+    """The gatekeeper could not run on this text: it went on with the patterns and names. Audited with IDs and the
+    gateway's code only, and, when the person's words are sealed and the gatekeeper was not switched off on
+    purpose, a re-check is queued that runs it again once the gateway is back (`hide/recheck.py`, BLD-C067)."""
+    queued = None
+    if recheck and not gate.switched_off:
+        from jobs.runner import enqueue
+
+        queued = enqueue(
+            conn,
+            RECHECK_JOB,
+            {"idea_uuid": idea_uuid, "source": source, "source_id": source_id, "by": by},
+            dedupe_key=f"{RECHECK_JOB}:{idea_uuid}:{source}:{sealed_key(idea_uuid, source_id)}",
+        )
+    audit(
+        conn,
+        by,
+        "hide.gatekeeper_skipped",
+        idea_uuid,
+        {"source": source, "source_id": source_id, "code": gate.skipped, "recheck_job": queued},
+    )
 
 
 def preview(conn: Conn | None, text: str, *, idea_uuid: str | None = None) -> Hidden:
