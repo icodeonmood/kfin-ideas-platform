@@ -165,7 +165,8 @@ def _answer_text(r: dict[str, Any]) -> str:
 
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
     """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
-    of their own. `customer_detail` marks a file in which the scan found a customer detail (DEC-107)."""
+    of their own. A link's `type` is "link" (it has no MIME type); a file's is its MIME type. `customer_detail` marks
+    a file in which the scan found a customer detail (DEC-107)."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
@@ -175,7 +176,8 @@ def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, An
         (list(answer_ids),),
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
-            {"id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"], "size": r["bytes"],
+            {"id": r["id"], "kind": r["kind"], "name": r["name"],
+             "type": "link" if r["kind"] == "link" else r["mime"], "size": r["bytes"],
              "pages": r["pages"], "state": r["file_state"], "hidden_note": r["hidden_note"],
              "customer_detail": r["file_state"] == CUSTOMER_DETAIL}
         )  # fmt: skip
