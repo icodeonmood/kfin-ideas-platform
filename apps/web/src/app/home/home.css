@@ -707,8 +707,26 @@
     font-size: 32px;
   }
 
+  /* S-03.phone: the starters sit as cards above the box */
+  .hm .cz .hm-starters {
+    order: 1;
+    margin-top: 20px;
+    gap: 8px;
+  }
+
+  .hm .cz .hm-starters .hstarter {
+    min-height: 48px;
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.08);
+  }
+
   .hm .cz .hm-prompt {
-    margin-top: 24px;
+    order: 2;
+    margin-top: 20px;
+  }
+
+  .hm-pnote {
+    order: 3;
   }
 
   .hm-jump {
