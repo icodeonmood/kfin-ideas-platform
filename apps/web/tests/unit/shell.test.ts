@@ -10,7 +10,7 @@ import { IconAdmin, NavIcon } from "@/components/shell/icons";
 import { isCurrent } from "@/components/shell/sidebar";
 import { saveWords, savedTime } from "@/components/shell/taskbar";
 import rbac from "@/lib/rbac.json";
-import { initialsOf, toneFor, whenSaved } from "@/server/shell";
+import { initialsOf, listRows } from "@/server/shell";
 
 const DRAFT = "3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b";
 
@@ -64,21 +64,62 @@ describe("C-SIDEBAR", () => {
     expect(foldedFrom(undefined, "u-1")).toBeNull();
   });
 
-  it("C-SIDEBAR.anatomy/4: dots are warn for needs you, blue for active, neutral otherwise", () => {
-    expect(toneFor("needs_info")).toBe("warn");
-    expect(toneFor("scanned")).toBe("blue");
-    expect(toneFor("in_delivery")).toBe("blue");
-    expect(toneFor("shipped")).toBe("neutral");
-    expect(toneFor("withdrawn")).toBe("neutral");
+  it("C-SIDEBAR.anatomy/4: drafts and ideas come from the shell lists, linked and dotted as S-07 sets them", () => {
+    const rows = listRows({
+      drafts: [
+        {
+          id: "d1f0c1a2-0000-4000-8000-000000000001",
+          title: "Mandate forms bounce twice",
+          saved_label: "Friday, on your phone",
+        },
+        { id: "d1f0c1a2-0000-4000-8000-000000000002", title: "Untitled draft", saved_label: "" },
+        {
+          id: "d1f0c1a2-0000-4000-8000-000000000003",
+          title: "Third draft",
+          saved_label: "Today, on this laptop",
+        },
+      ],
+      ideas: [
+        {
+          id: "IDEA-2026-001481",
+          title: "PAN mismatch holds new folios",
+          status_dot: "warn",
+          status_label: "Needs you",
+        },
+        { id: "IDEA-2026-001482", title: "Plain words for rejection codes", status_dot: "blue" },
+        { id: "IDEA-2026-001483", title: "Shipped fix", status_dot: "neutral", status_label: " Shipped " },
+        { id: "IDEA-2026-001484", title: "Fourth idea", status_dot: "blue" },
+      ],
+    });
+    expect(rows.drafts).toEqual([
+      {
+        href: "/share/d1f0c1a2-0000-4000-8000-000000000001",
+        title: "Mandate forms bounce twice",
+        meta: "Friday, on your phone",
+        tone: "draft",
+      },
+      { href: "/share/d1f0c1a2-0000-4000-8000-000000000002", title: "Untitled draft", tone: "draft" },
+    ]);
+    expect(rows.ideas).toEqual([
+      {
+        href: "/ideas/IDEA-2026-001481",
+        title: "PAN mismatch holds new folios",
+        tone: "warn",
+        words: "Needs you",
+      },
+      // no status_label yet: the sidebar falls back to the tone's own words
+      { href: "/ideas/IDEA-2026-001482", title: "Plain words for rejection codes", tone: "blue" },
+      { href: "/ideas/IDEA-2026-001483", title: "Shipped fix", tone: "neutral", words: "Shipped" },
+    ]);
   });
 
-  it("a draft says when it was last saved, in India time", () => {
-    const now = new Date("2026-11-16T12:00:00+05:30");
-    expect(whenSaved("2026-11-16T09:00:00+05:30", now)).toBe("Today");
-    expect(whenSaved("2026-11-15T23:30:00+05:30", now)).toBe("Yesterday");
-    expect(whenSaved("2026-11-13T10:00:00+05:30", now)).toBe("Friday");
-    expect(whenSaved("2026-11-02T10:00:00+05:30", now)).toBe("2 Nov");
-    expect(whenSaved(null, now)).toBe("");
+  it("C-SIDEBAR.anatomy/4: an unknown dot is neutral, and no lists means empty sections", () => {
+    const rows = listRows({
+      drafts: [],
+      ideas: [{ id: "IDEA-2026-001490", title: "Odd dot", status_dot: "purple" }],
+    });
+    expect(rows.ideas[0]?.tone).toBe("neutral");
+    expect(listRows(null)).toEqual({ drafts: [], ideas: [] });
   });
 });
 

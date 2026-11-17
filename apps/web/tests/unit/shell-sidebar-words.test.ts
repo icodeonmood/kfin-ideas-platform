@@ -11,8 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "@/components/shell/sidebar";
 import type { NavItem } from "@/lib/rbac";
-import type { MyIdea } from "@/server/ideas";
-import { committeeRows, deskRows, ideaRow, type ShellData } from "@/server/shell";
+import { committeeRows, deskRows, listRows, type ShellData } from "@/server/shell";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/desk",
@@ -31,22 +30,6 @@ const NAV: NavItem[] = [
   { key: "home", label: "Home", href: "/", place: "main", tab: 1 },
   { key: "desk", label: "Review desk", href: "/desk", place: "main" },
 ];
-
-function idea(over: Partial<MyIdea>): MyIdea {
-  return {
-    id: "d-1",
-    idea_id: "IDEA-2026-000101",
-    one_line: "Branch queue times are not tracked anywhere",
-    area: "Investor service",
-    shared_on: "2026-11-16T09:00:00+05:30",
-    draft: false,
-    stage: "Reviewed",
-    next_step: "",
-    due: null,
-    stage_key: "reviewed",
-    ...over,
-  };
-}
 
 const desk = deskRows({
   waiting_on_sharers: [
@@ -77,20 +60,24 @@ const DATA: ShellData = {
   tierName: null,
   inboxUnread: 0,
   drafts: [{ href: "/share/d-9", title: "Cheque scans at month end", meta: "Today", tone: "draft" }],
-  ideas: [
-    ideaRow(idea({})),
-    ideaRow(
-      idea({
-        idea_id: "IDEA-2026-000102",
-        one_line: "Same KYC details typed into three screens",
-        stage: "Needs you",
-        stage_key: "needs_you",
-      }),
-    ),
-    ideaRow(
-      idea({ idea_id: "IDEA-2026-000103", one_line: "No stage words", stage: " ", stage_key: "asked" }),
-    ),
-  ],
+  ideas: listRows({
+    drafts: [],
+    ideas: [
+      {
+        id: "IDEA-2026-000101",
+        title: "Branch queue times are not tracked anywhere",
+        status_dot: "blue",
+        status_label: "Reviewed",
+      },
+      {
+        id: "IDEA-2026-000102",
+        title: "Same KYC details typed into three screens",
+        status_dot: "warn",
+        status_label: "Needs you",
+      },
+      { id: "IDEA-2026-000103", title: "No stage words", status_dot: "warn", status_label: " " },
+    ],
+  }).ideas,
   desk,
   committee,
 };
