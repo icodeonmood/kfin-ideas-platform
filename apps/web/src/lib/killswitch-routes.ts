@@ -48,6 +48,13 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // An idea's conversation (lane F; L-CONVO, BLD-F058): writing or removing a message pauses with sharing, like
+  // answering the desk above. Reading it stays open, so the conversation still reads in read-only mode.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/ideas\/[^/]+\/conversation\/messages(?:\/[^/]+)?\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
