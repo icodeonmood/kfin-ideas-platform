@@ -6,8 +6,9 @@ import { expectNoSeriousAxeIssues, signIn } from "./helpers";
  * S-03 Home (`/home`, BLD-C143 to C147), against the local stack. The question and the box, the sections in order
  * with axe clean on desktop and phone; sending from the box makes the draft and opens S-04B on it with the words as
  * the first message, never the empty S-04 (P-ROUTES.graph, V-ACC.share/3, J-SHARE/v1); that draft is then under
- * Drafts in the side bar with when and where it was saved, and opens S-04B (C-SIDEBAR, J-RESUME/2). A new synthetic
- * person per run (SYN-E…), so nothing seeded changes. Synthetic words only.
+ * Drafts in the side bar with when and where it was saved, and opens S-04B (C-SIDEBAR, J-RESUME/2). The Ones' fan
+ * on Home: its arrows and the cheer toggle (C-ONES-FAN), cheered and taken back. A new synthetic person per run
+ * (SYN-E…), so nothing seeded changes. Synthetic words only.
  */
 
 const WORDS =
@@ -100,5 +101,41 @@ test("J-SHARE/v1, J-RESUME/2: sending from Home opens S-04B with the words; the 
   const section = page.getByRole("navigation", { name: "Main" }).getByRole("region", { name: "Drafts" });
   const link = section.getByRole("link").first();
   await expect(link).toHaveAttribute("href", draft);
-  await expect(link).toHaveAccessibleName(/(?:Today|Just now), on (?:this|your) laptop$/);
+  // The same browser reads the board's words: "on this laptop", never "on your laptop" (BLD-C147, the device cookie)
+  await expect(link).toHaveAccessibleName(/(?:Today|Just now), on this laptop$/);
+});
+
+test("C-ONES-FAN on Home: the Ones' posts, the arrows and the cheer toggle, axe clean", async ({ page }) => {
+  await signInFresh(page, "O");
+  await page.waitForURL((url) => url.pathname === "/home");
+  const fan = page.getByRole("region", { name: "The Ones", exact: true });
+  await expect(fan).toBeVisible();
+  const pos = fan.getByText(/^Post 1 of \d+$/);
+  await expect(pos).toBeVisible(); // the 1% Club seed has posts
+  const total = Number(/of (\d+)/.exec(await pos.innerText())![1]);
+  const prev = fan.getByRole("button", { name: "Previous post" });
+  const next = fan.getByRole("button", { name: "Next post" });
+  await expect(prev).toHaveAttribute("aria-disabled", "true");
+  if (total > 1) {
+    await next.click();
+    await expect(fan.getByText(`Post 2 of ${total}`)).toBeVisible();
+    await prev.click();
+    await expect(fan.getByText(`Post 1 of ${total}`)).toBeVisible();
+  }
+  // Cheer the front post, then take it back, so the seed's counts are as they were
+  const cheer = fan.getByRole("button", { name: /^Cheer .+ fix, \d+ cheers?$/ }).first();
+  await expect(cheer).toHaveAttribute("aria-pressed", "false");
+  const liked = page.waitForResponse((r) =>
+    /\/api\/ones\/posts\/[^/]+\/like$/.test(new URL(r.url()).pathname),
+  );
+  await cheer.click();
+  expect((await liked).ok()).toBe(true);
+  await expect(cheer).toHaveAttribute("aria-pressed", "true");
+  await expectNoSeriousAxeIssues(page);
+  const unliked = page.waitForResponse((r) =>
+    /\/api\/ones\/posts\/[^/]+\/like$/.test(new URL(r.url()).pathname),
+  );
+  await cheer.click();
+  expect((await unliked).ok()).toBe(true);
+  await expect(cheer).toHaveAttribute("aria-pressed", "false");
 });

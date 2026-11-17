@@ -286,6 +286,8 @@ export function HomeScreen({
   const router = useRouter();
   const f = useMemo<FetchLike>(() => fetchImpl ?? ((input, init) => fetch(input, init)), [fetchImpl]);
   const client = useMemo(() => new DraftClient({ fetch: f as typeof fetch }), [f]);
+  // The browser's device id, also left as a cookie, so the side bar's Drafts can say "on this laptop" (BLD-C147).
+  useEffect(() => void client.device(), [client]);
 
   // ── the box ─────────────────────────────────────────────────────────────────────────────────────────────────
   const [box, setBox] = useState("");

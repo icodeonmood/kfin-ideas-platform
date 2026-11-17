@@ -24,6 +24,20 @@ import {
 export type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const DEVICE_ID_KEY = "1pc.device-id";
+/** The same opaque id as a first-party cookie, so pages the server renders (the side bar's Drafts) can say "on this
+ * laptop" too (BLD-C147). Random, no personal data; readable by the page; sent only to this site. */
+export const DEVICE_COOKIE = "device_id";
+const DEVICE_ID_SHAPE = /^[A-Za-z0-9_-]{8,64}$/;
+
+function rememberDevice(id: string): void {
+  if (typeof document === "undefined") return;
+  try {
+    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; secure" : "";
+    document.cookie = `${DEVICE_COOKIE}=${id}; path=/; max-age=31536000; samesite=lax${secure}`;
+  } catch {
+    // the server then reads "on your laptop"; nothing else changes
+  }
+}
 const OUTBOX_PREFIX = "1pc.outbox.";
 const OUTBOX_KEY = (draftId: string) => `${OUTBOX_PREFIX}${draftId}`;
 const RETRY_DELAYS_MS = [400, 1200, 3000] as const;
@@ -236,7 +250,7 @@ export class DraftClient {
     } catch {
       id = null;
     }
-    if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+    if (!id || !DEVICE_ID_SHAPE.test(id)) {
       id = newClientId().replace(/-/g, "");
       try {
         this.store?.setItem(DEVICE_ID_KEY, id);
@@ -245,6 +259,7 @@ export class DraftClient {
       }
     }
     this.deviceId = id;
+    rememberDevice(id);
     return id;
   }
 

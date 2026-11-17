@@ -17,6 +17,15 @@ import type { CrewCard, DraftListItem, MyIdeaRow, SharerQuestionSetResponse } fr
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: push, refresh: vi.fn() }) }));
+// The request the server sees, for the shell's device (BLD-C147): headers and cookies set per test.
+const request = { headers: new Headers(), cookies: new Map<string, string>() };
+vi.mock("next/headers", () => ({
+  headers: async () => request.headers,
+  cookies: async () => ({
+    get: (name: string) =>
+      request.cookies.has(name) ? { name, value: request.cookies.get(name)! } : undefined,
+  }),
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
@@ -24,7 +33,8 @@ vi.mock("next/link", () => ({
 
 const { HomeScreen, HOME_COPY } = await import("@/app/home/home");
 const { loadCrew, loadMine, loadOnes, loadSets } = await import("@/lib/home/data");
-const { draftRows } = await import("@/server/shell");
+const { askingDevice, draftRows } = await import("@/server/shell");
+const { DEVICE_COOKIE } = await import("@/lib/compose/client");
 
 const NEW_DRAFT = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const WORDS =
@@ -586,6 +596,71 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     expect(text()).toContain("The next One could be you");
     expect(text()).toContain("Every fix here started with one person saying what kept going wrong.");
   });
+
+  it("C-ONES-FAN on Home: the arrows move through the posts and the cheer toggles, saved with the server", async () => {
+    const post = (id: string, name: string, initials: string, likes: number) => ({
+      id,
+      one: {
+        number: 3,
+        person: person(`p-${id}`, name, initials),
+        tier: 2,
+        tier_name: "Spark",
+        flag: "earned",
+        brief: "",
+      },
+      text: `Synthetic: a fix by ${name}.`,
+      ago: "1d",
+      shipped: true,
+      adopted_by: 0,
+      figure: { value: "40", line: "calls avoided last month" },
+      likes,
+      liked: false,
+      comments: 2,
+      thread_to: "/ideas/IDEA-2026-001401",
+    });
+    const likes: { url: string; body: unknown }[] = [];
+    await show(
+      baseRoutes({
+        "/api/ones/posts": (init) => {
+          if (init?.method !== "PUT")
+            return {
+              status: 200,
+              body: [post("post-a", "Rekha Saxena", "RS", 12), post("post-b", "Varun Chopra", "VC", 5)],
+            };
+          const body = JSON.parse(String(init.body)) as { liked: boolean };
+          likes.push({ url: "post-a", body });
+          return { status: 200, body: { likes: body.liked ? 13 : 12 } };
+        },
+      }),
+    );
+    const fan = host.querySelector('[role="region"][aria-label="The Ones"]')!;
+    expect(fan).not.toBeNull();
+    const pos = () => fan.querySelector(".fan-pos")?.textContent;
+    const prev = fan.querySelector('button[aria-label="Previous post"]') as HTMLButtonElement;
+    const next = fan.querySelector('button[aria-label="Next post"]') as HTMLButtonElement;
+    expect(pos()).toBe("Post 1 of 2");
+    expect(prev.getAttribute("aria-disabled")).toBe("true");
+    act(() => next.click());
+    expect(pos()).toBe("Post 2 of 2");
+    expect(next.getAttribute("aria-disabled")).toBe("true");
+    act(() => prev.click());
+    expect(pos()).toBe("Post 1 of 2");
+
+    const cheer = () =>
+      [...fan.querySelectorAll<HTMLButtonElement>("button.opost-cheer")].find((b) =>
+        b.textContent?.includes("Rekha Saxena"),
+      )!;
+    expect(cheer().textContent?.replace(/\s+/g, " ").trim()).toContain("Cheer Rekha Saxena’s fix,");
+    expect(cheer().getAttribute("aria-pressed")).toBe("false");
+    act(() => cheer().click());
+    await flush();
+    expect(cheer().getAttribute("aria-pressed")).toBe("true");
+    expect(cheer().textContent).toContain("13");
+    act(() => cheer().click());
+    await flush();
+    expect(cheer().getAttribute("aria-pressed")).toBe("false");
+    expect(likes.map((l) => l.body)).toEqual([{ liked: true }, { liked: false }]);
+  });
 });
 
 describe("lib/home/data (BLD-C143, C145, C146)", () => {
@@ -649,5 +724,51 @@ describe("C-SIDEBAR Drafts (J-RESUME/2, BLD-C147)", () => {
       },
     ]);
     expect(draftRows(null)).toEqual([]);
+  });
+});
+
+describe("C-SIDEBAR Drafts on this device (J-RESUME/2, BLD-C147)", () => {
+  beforeEach(() => {
+    request.headers = new Headers();
+    request.cookies.clear();
+  });
+
+  it("Home leaves the draft client's device id as a first-party cookie, the same id it sends as X-Device-Id", async () => {
+    document.cookie = `${DEVICE_COOKIE}=; path=/; max-age=0`;
+    await show(baseRoutes());
+    const cookie = /(?:^|; )device_id=([A-Za-z0-9_-]{8,64})(?:;|$)/.exec(document.cookie);
+    expect(cookie).not.toBeNull();
+    let sent: string | null = null;
+    await act(async () => {
+      root.render(
+        createElement(HomeScreen, {
+          firstName: "Kavya",
+          fetchImpl: fakeFetch(
+            baseRoutes({
+              "/api/drafts": (init) => {
+                sent = new Headers(init?.headers).get("X-Device-Id");
+                return { status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } };
+              },
+            }),
+          ).f,
+        }),
+      );
+    });
+    await flush();
+    type(WORDS);
+    act(() => link("Continue to Share a problem")!.click());
+    await flush();
+    expect(sent).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(/(?:^|; )device_id=([A-Za-z0-9_-]{8,64})/.exec(document.cookie)![1]).toBe(sent);
+  });
+
+  it("the shell reads that cookie, so a draft saved on this laptop reads on this laptop; X-Device-Id wins", async () => {
+    request.cookies.set(DEVICE_COOKIE, "laptopdevice01");
+    expect(await askingDevice()).toEqual({ kind: "laptop", id: "laptopdevice01" });
+    request.headers = new Headers({ "x-device-id": "headerdevice02" });
+    expect(await askingDevice()).toEqual({ kind: "laptop", id: "headerdevice02" });
+    request.headers = new Headers({ "user-agent": "Mozilla/5.0 (Linux; Android 14) Mobile" });
+    request.cookies.set(DEVICE_COOKIE, "bad id with spaces");
+    expect(await askingDevice()).toEqual({ kind: "phone", id: null });
   });
 });

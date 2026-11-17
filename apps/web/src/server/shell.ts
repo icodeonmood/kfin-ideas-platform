@@ -4,8 +4,9 @@
  * shared contracts land (A-API.me, A-API.inbox-count, A-API.my-drafts, A-API.my-ideas). The shell never stops a page
  * from rendering: each part that cannot be read in time is simply left out.
  */
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 
+import { DEVICE_COOKIE } from "@/lib/compose/client";
 import type { CommitteeResponse, DeskResponse, DraftListItem } from "@/lib/contracts";
 
 import type { CurrentUser } from "./auth/current";
@@ -96,10 +97,12 @@ const PHONE_UA = /Mobi|Android|iPhone|iPod|Windows Phone/i;
 const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
 /** The device asking, from the request (as `deviceOf` in server/drafts.ts), so a draft reads "on your phone" or
- * "on this laptop". Outside a request (tests) it is a laptop with no id. */
-async function askingDevice(): Promise<DeviceInfo> {
+ * "on this laptop". A page load sends no `X-Device-Id`, so the browser's id comes from the `device_id` cookie the
+ * draft client sets (BLD-C147). Outside a request (tests) it is a laptop with no id. */
+export async function askingDevice(): Promise<DeviceInfo> {
   try {
     const h = await headers();
+    const jar = await cookies();
     const said = h.get("x-device");
     const kind =
       said === "phone" || said === "laptop"
@@ -107,7 +110,7 @@ async function askingDevice(): Promise<DeviceInfo> {
         : PHONE_UA.test(h.get("user-agent") ?? "")
           ? "phone"
           : "laptop";
-    const id = h.get("x-device-id");
+    const id = h.get("x-device-id") ?? jar.get(DEVICE_COOKIE)?.value ?? null;
     return { kind, id: id && DEVICE_ID.test(id) ? id : null };
   } catch {
     return { kind: "laptop", id: null };
