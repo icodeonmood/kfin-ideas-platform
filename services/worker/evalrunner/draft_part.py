@@ -1,7 +1,8 @@
 """draft-part golden set (L-DRAFT.parts, BLD-C072): each answer, after the gateway, quotes only the person's own
 words (never the English copy of a voice note, DEC-108), holds only their numbers, chooses only from the lists and
 carries no tags in what the person reads. The expectations per case measure whether the part found what the words
-say. Synthetic cases only."""
+say; `dropped` and `first_attempt_problems` measure the model before the gateway mends it (BLD-C035). Synthetic
+cases only."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import json
 from typing import Any
 
 from evalrunner.common import ROOT, Context, read_jsonl
-from gateway import AgentFailed, run_agent
+from gateway import AgentFailed, grounding, run_agent
 from gateway.checks import draft_part as check
 from gateway.spec import load
 from pii.tagger import TAG_RE
@@ -33,7 +34,7 @@ def _met(expected: dict[str, Any], out: dict[str, Any], sent: dict[str, Any]) ->
         if key == "title_filled":
             ok = bool(out.get("title")) == want
         elif key == "summary_max_sentences":
-            ok = out.get("summary") is None or out["summary"].count(". ") + 1 <= want
+            ok = out.get("summary") is None or len(grounding.split_sentences(out["summary"])) <= want
         elif key == "often_contains":
             ok = isinstance(out.get("often"), str) and want in out["often"]
         elif key == "who_includes":
@@ -56,7 +57,7 @@ def _met(expected: dict[str, Any], out: dict[str, Any], sent: dict[str, Any]) ->
 def run(ctx: Context) -> dict[str, Any]:
     spec = load("draft-part")
     cases: list[dict[str, Any]] = []
-    ungrounded = out_of_list = tags = met = total = dropped = 0
+    ungrounded = out_of_list = tags = met = total = dropped = first_attempt = 0
     for case in read_jsonl("draft_part.jsonl"):
         sent = ctx.fill(_inputs(case["input"]))
         row: dict[str, Any] = {"id": case["id"]}
@@ -71,10 +72,14 @@ def run(ctx: Context) -> dict[str, Any]:
         ungrounded += int(any("evidence" in p or "number" in p for p in problems))
         out_of_list += int(any("options.choices" in p for p in problems))
         tags += int(any(isinstance(out.get(k), str) and TAG_RE.search(out[k]) for k in TEXT))
+        # The model before the gateway's repair: an answer the checks refused on the first ask (re-asked), and one
+        # still unbacked after the re-ask (dropped). The checks after the gateway always hold; these do not.
+        first_attempt += int(result.outcome == "ok_after_retry")
         dropped += int(bool(result.dropped))
         m, t = _met(case.get("expected") or {}, out, result.sent)
         met, total = met + m, total + t
-        row.update({"met": m, "of": t, "dropped": result.dropped, "problems": len(problems)})
+        row.update({"met": m, "of": t, "dropped": result.dropped, "problems": len(problems),
+                    "first_attempt_refused": result.outcome == "ok_after_retry"})  # fmt: skip
         cases.append(row)
     errors = sum(1 for c in cases if "error" in c)
     metrics = {
@@ -84,6 +89,7 @@ def run(ctx: Context) -> dict[str, Any]:
         "out_of_list": out_of_list,
         "tags_in_text": tags,
         "dropped": dropped,
+        "first_attempt_problems": first_attempt,
         "expectations": round(met / total, 4) if total else 1.0,
     }
     gates = spec.raw.get("pass_gates") or {}
@@ -92,6 +98,8 @@ def run(ctx: Context) -> dict[str, Any]:
         "out_of_list": out_of_list <= gates.get("out_of_list", 0),
         "tags_in_text": tags <= gates.get("tags_in_text", 0),
         "expectations": metrics["expectations"] >= gates.get("expectations_min", 0.8),
+        "dropped": dropped <= gates.get("dropped_max", 1),
+        "first_attempt_problems": first_attempt <= gates.get("first_attempt_problems_max", 3),
     }
     # The harness: no case may fail outright, and nothing the gateway lets through may break the rules, whatever
     # the route (the checks run on every answer, so this holds in fake mode too).

@@ -459,8 +459,20 @@ def _cue_quote(text: str, cue: str) -> str | None:
 
 
 def _first_sentence(text: str) -> str:
-    m = re.search(r"[.!?।](?=\s|$)", text)
-    return (text[: m.end()] if m else text).strip()
+    pieces = grounding.split_sentences(text)  # "Rs." and "e.g." do not end one
+    return pieces[0] if pieces else text.strip()
+
+
+def _clip_chars(text: str, limit: int) -> str:
+    """At most `limit` characters, cut at a word boundary (the draft's summary limit, L-DRAFT.parts)."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit + 1]
+    return (cut.rsplit(" ", 1)[0] if " " in cut else text[:limit]).rstrip(" ,;:")
+
+
+SUMMARY_MAX = 600
+WHO_MAX = 8
 
 
 def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -482,7 +494,7 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         quote = " ".join(first.rstrip(".!?। ").split()[:12])
         if not quote or grounding.trivial(quote) or not title:
             return out
-        summary = " ".join(_neutral(_first_sentence(t)) for t in texts[:3])
+        summary = _clip_chars(" ".join(_neutral(_first_sentence(t)) for t in texts[:3]), SUMMARY_MAX)
         out.update(title=title[:1].upper() + title[1:], summary=summary, evidence=[quote])
         return out
     if part == "often":
@@ -512,6 +524,7 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
             return out
         if part == "area":
             picked, quotes, said = picked[:1], quotes[:1], said[:1]
+        picked = picked[:WHO_MAX]  # who: at most 8 groups, as a person may pick (L-DRAFT.pins)
         reason = ("you mentioned " if part == "who" else "it's about ") + " and ".join(
             dict.fromkeys(said[:2])
         )

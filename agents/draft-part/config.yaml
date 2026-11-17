@@ -1,7 +1,7 @@
 # draft-part — one part of the live draft (L-DRAFT.parts), asked once per part, the parts in parallel. Bump `version`
 # and add a CHANGELOG line on any change; `make eval` must pass.
 name: draft-part
-version: 0.1.1
+version: 0.1.2
 tier: fast
 model: claude-haiku-5-5
 effort: low             # no temperature: current models reject non-default sampling (BLD-070)
@@ -29,9 +29,11 @@ post_checks:
 - numbers only as the person gave them; no figures worked out and no assumptions (DEC-097 lists none for the draft)
 - who and area only from options.choices; worth only from its ids, "not sure yet" alone
 - no tags in title, summary, often or reason (they are shown to the person and, once shared, to others)
-- title at most 70 characters; summary at most 3 sentences
+- title at most 70 characters; summary at most 3 sentences ("Rs." and "e.g." do not end one)
 pass_gates:
   ungrounded_after_gateway: 0
   out_of_list: 0
   tags_in_text: 0
   expectations_min: 0.8
+  dropped_max: 1                   # of 12: answers still unbacked after the re-ask, dropped by the gateway (BLD-C035)
+  first_attempt_problems_max: 3    # of 12: answers the checks refused on the first ask (each re-ask doubles a part's wait)
