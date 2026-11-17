@@ -903,6 +903,96 @@ def test_l_submit_edit_fix_and_helpers_save_as_a_version_with_range_text(world: 
     assert err.value.field == "fix.how"
 
 
+def _hide_rows(conn: Any, uid: str) -> dict[str, Any]:
+    """What hide holds for an idea: its hidden details and the sealed words, each row as it is stored."""
+    hidden = conn.execute(
+        "SELECT id, source, source_id, kind, masked FROM hidden_details WHERE idea_uuid = %s ORDER BY id",
+        (uid,),
+    ).fetchall()
+    sealed = conn.execute(
+        "SELECT id, source_id, text_encrypted FROM idea_words_sealed WHERE idea_uuid = %s ORDER BY id", (uid,)
+    ).fetchall()
+    return {"hidden": [dict(r) for r in hidden], "sealed": [dict(r) for r in sealed]}
+
+
+def test_l_submit_edit_3_an_unchanged_save_hides_nothing_again(world: dict[str, Any]) -> None:
+    """BLD-C141, J-RECOVER edit step: words sent back exactly as their stored masked copies (the summary, the fix and
+    who would help, as the edit page gave them) are not masked again, so a repeat Save adds no hidden-detail or
+    sealed rows, no figures and no version."""
+    conn, asha, uid = world["conn"], world["p"]["asha"], world["draft"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=1)
+    first = edit.save(
+        conn,
+        ref,
+        asha,
+        {
+            "declaration_version": DECLARATION_VERSION,
+            "summary": "Folio 1234567890 gets the SMS with only R07.",  # a made-up folio
+            "fix": {
+                "how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F.",  # a made-up PAN
+                "worth": {"cost_month": "about 25k"},
+            },
+            "helpers": {"picks": ["Someone from tech"], "text": "whoever has 9876543210"},  # a made-up phone
+        },
+        now=later,
+    )
+    assert first["changed_fields"] == ["summary", "fix", "helpers"]
+    before = _hide_rows(conn, uid)
+    kinds = {r["kind"] for r in before["hidden"]}
+    assert {"folio", "pan", "phone"} <= kinds and len(before["sealed"]) >= 3
+    worth_rows = conn.execute("SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s", (uid,)).fetchone()[
+        "n"
+    ]
+    idea = _idea(world)
+    page = edit.page(conn, ref, asha, now=later)
+    assert "1234567890" not in idea["summary"] and "9876543210" not in idea["helper_text"]
+    assert "ABCPE1234F" not in page["fix"]["how"]
+    again = edit.save(
+        conn,
+        ref,
+        asha,
+        {
+            "declaration_version": DECLARATION_VERSION,
+            "summary": idea["summary"],
+            "fix": {"how": page["fix"]["how"], "worth": page["fix"]["worth"]},
+            "helpers": {"picks": list(idea["helper_picks"]), "text": idea["helper_text"]},
+        },
+        now=later + dt.timedelta(minutes=5),
+    )
+    assert again["version"] is None and again["changed_fields"] == []
+    assert _hide_rows(conn, uid) == before
+    assert (
+        conn.execute("SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s", (uid,)).fetchone()["n"]
+        == worth_rows
+    )  # "about ₹25,000 a month" reads back the same, so no new figures row (BLD-C140)
+
+
+def test_s05_fix_and_helpers_sent_back_masked_keep_what_was_hidden(world: dict[str, Any]) -> None:
+    """BLD-C141 on a draft (one source id per answer): the fix sheet or who would help sent again with the masked copy
+    it got back keeps the hidden detail and the sealed words as they were, instead of hiding nothing from the masked
+    copy and dropping them."""
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    out = fix.put_draft(
+        conn,
+        draft,
+        asha,
+        {"how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F."},
+        now=NOW,
+    )
+    said = helpers.put_draft(
+        conn, draft, asha, {"picks": ["Data or reports"], "text": "whoever has 9876543210"}, now=NOW
+    )
+    before = _hide_rows(conn, draft)
+    assert {r["kind"] for r in before["hidden"]} >= {"pan", "phone"}
+    fix.put_draft(conn, draft, asha, {"how": out["how"], "basis": "report"}, now=NOW)
+    again = helpers.put_draft(
+        conn, draft, asha, {"picks": ["Data or reports", "Someone from tech"], "text": said["text"]}, now=NOW
+    )
+    assert again["text"] == "whoever has Phone ••••10"
+    assert _hide_rows(conn, draft) == before
+
+
 # --- BLD-C087 verification fixes ------------------------------------------------------------------------------------
 
 

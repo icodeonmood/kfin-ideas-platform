@@ -8,7 +8,8 @@
    version."
 3. Each save re-runs hidden-detail detection on the new text before it is stored (DEC-103: the masked copy is what
    is kept; the words as typed are sealed for the sharer alone), and similar-idea matching when the summary changed
-   (`/3`).
+   (`/3`). Text sent back exactly as its stored masked copy is unchanged: it is not masked again, so a repeat Save
+   writes no hidden-detail or sealed rows (BLD-C141).
 4. Each save is a version (`/4`): `idea_versions` holds the changed fields and, sealed, each one's value before and
    after, so the review desk can see what changed. The idea as shared is version 1; the first save is version 2.
 5. Empty optional parts carry a prompt with the closing date (`/6`).
@@ -245,9 +246,13 @@ class _Save:
         self.before: dict[str, Any] = {}
         self.after: dict[str, Any] = {}
 
-    def mask(self, field: str, text: str) -> str:
+    def mask(self, field: str, text: str, stored: str | None = None) -> str:
         """The masked copy of the person's new words for one field. Hide stores each value, its `hidden_details` row
-        and the words as typed, sealed for the sharer alone (DEC-103, L-HIDE.rules/4); nothing more is written here."""
+        and the words as typed, sealed for the sharer alone (DEC-103, L-HIDE.rules/4); nothing more is written here.
+        Words that are the stored masked copy, sent back unchanged, are that copy: hide already holds what it hid
+        from them, so nothing runs and nothing is written (BLD-C141)."""
+        if text == stored:
+            return text
         source_id = f"{self.uid}:{self.n}:{field}"
         return adapters.mask_text(self.conn, self.uid, text, by=self.user_id, source_id=source_id).text
 
@@ -280,7 +285,7 @@ def _save_texts(s: _Save, body: dict[str, Any]) -> None:
             text = _text(raw, 10_000)
             if text is None or (field != "often" and not text) or len(text) > limit:
                 raise Refused(422, "field_needed", messages[field], field)
-            value = s.mask(field, text) if text else None
+            value = s.mask(field, text, s.idea.get(field)) if text else None
         if value != s.idea.get(field):
             updates[field] = value
             s.changed(field, s.idea.get(field), value)
@@ -292,7 +297,7 @@ def _save_helpers(s: _Save, body: dict[str, Any], li: config.Lists) -> None:
     if "helpers" not in body:
         return
     picks, words = helpers.read(body["helpers"], li, at="helpers.")
-    text = s.mask("helpers", words) if words else None
+    text = s.mask("helpers", words, s.idea.get("helper_text")) if words else None
     before = {"picks": list(s.idea.get("helper_picks") or []), "text": s.idea.get("helper_text")}
     after = {"picks": picks, "text": text}
     if before != after:

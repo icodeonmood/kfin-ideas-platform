@@ -12,7 +12,8 @@
    before a single figure stays ("about ₹25,000 a month saved", as drawn): `idea_worth.<measure>_about` keeps it.
 4. Every answer in words goes through hide like any part (`submit.adapters.mask_text`, DEC-103): only the masked
    copy is kept here; the words as typed are sealed for the sharer alone. One source id per answer, so saving the
-   sheet again replaces what was hidden from that answer before.
+   sheet again replaces what was hidden from that answer before. An answer sent back exactly as its stored masked
+   copy is unchanged and is not masked again: no hidden-detail or sealed rows are written for it (BLD-C141).
 5. A fix never holds Submit (L-SUBMIT.pre/6); with one included the button reads "Submit with my fix".
 
 The sharer's figures are rows in `idea_worth` (by_side 'sharer'; the latest counts). On a draft they are replaced,
@@ -285,10 +286,15 @@ def store(
     """Mask the words (hide, one source id per answer under `stem`), keep the masked copy in `idea_fix` and the
     figures in `idea_worth`. Inside the caller's transaction."""
     ids = source_ids(idea_uuid, stem)
+    stored = conn.execute(
+        "SELECT how, needs, solved_note, risks FROM idea_fix WHERE idea_uuid = %s", (idea_uuid,)
+    ).fetchone()
     masked: dict[str, str | None] = {}
     emptied: list[str] = []
     for key, text in answers.words.items():
-        if text:
+        if text and stored is not None and text == stored[key]:
+            masked[key] = text  # the stored masked copy sent back: hide already holds what it hid from it
+        elif text:
             masked[key] = adapters.mask_text(conn, idea_uuid, text, by=user_id, source_id=ids[key]).text
         else:
             masked[key] = None

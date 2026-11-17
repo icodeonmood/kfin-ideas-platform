@@ -411,6 +411,52 @@ def test_l_hide_an_edit_goes_through_c_hide_once_it_is_here(monkeypatch: pytest.
     ]  # fmt: skip
 
 
+def test_l_submit_edit_3_words_sent_back_as_stored_are_not_masked_again_bld_c141(
+    monkeypatch: pytest.MonkeyPatch, seed_rules: None
+) -> None:
+    """An unchanged Save (and a draft's who would help sent again): words sent back exactly as their stored masked
+    copies reach neither hide nor the database, so no hidden-detail or sealed rows are written again."""
+    from submit import adapters, config, edit, helpers
+
+    def no_hide(*a: Any, **k: Any) -> Any:
+        raise AssertionError("masked again")
+
+    monkeypatch.setattr(adapters, "mask_text", no_hide)
+
+    class NoWrites:
+        def execute(self, *a: Any, **k: Any) -> Any:
+            raise AssertionError("an unchanged save wrote a row")
+
+    idea: dict[str, Any] = {
+        "id": str(uuid.uuid4()),
+        "title": "SMS codes confuse investors",
+        "summary": "Folio Folio ••••90 gets the SMS with only a code.",
+        "helper_picks": ["Someone from tech"],
+        "helper_text": "whoever has Phone ••••10",
+    }
+    s = edit._Save(NoWrites(), idea, str(uuid.uuid4()), 3)  # type: ignore[arg-type]
+    edit._save_texts(
+        s,
+        {
+            "title": "SMS codes confuse investors",
+            "summary": " Folio Folio ••••90 gets  the SMS with only a code. ",
+        },
+    )
+    edit._save_helpers(
+        s, {"helpers": {"picks": ["someone from tech"], "text": "whoever has Phone ••••10"}}, config.lists()
+    )
+    assert s.after == {}
+    kept = helpers.mask(
+        NoWrites(),  # type: ignore[arg-type]
+        idea["id"],
+        "u",
+        "whoever has Phone ••••10",
+        source_id=f"{idea['id']}:draft:helpers",
+        stored="whoever has Phone ••••10",
+    )
+    assert kept == "whoever has Phone ••••10"
+
+
 @pytest.mark.parametrize(("returned", "expected"), [(3, 3), (0, 0), (-1, None)])
 def test_l_similar_failure_minus_one_is_couldnt_check_not_zero(
     monkeypatch: pytest.MonkeyPatch, returned: int, expected: int | None
