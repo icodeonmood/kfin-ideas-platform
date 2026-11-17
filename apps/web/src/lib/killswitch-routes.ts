@@ -108,8 +108,8 @@ export const BANNERS: Record<SwitchName, string> = {
   // DEC-096: off only hides the hint under the quick capture box; nothing else changes, so no banner shows it.
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
   "capture.voice": "Voice notes are coming soon.",
-  // Employees never see a vendor's name (DEC-096).
-  "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
+  "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */

@@ -58,6 +58,14 @@ if [[ -n "$speech_url" ]]; then
 fi
 [[ -z "$(value SPEECH_SERVICE_TOKEN "$APP_ENV_FILE")" ]] \
   || fail "SPEECH_SERVICE_TOKEN belongs in the database env file only: the app env file also reaches the web app"
+# Voice through Sarvam (DEC-108, BLD-C115): the key is the worker's alone, in the database env file. The app env file
+# also reaches the web app, so the key is refused there. With SPEECH_MODE=sarvam the key and the approval are needed.
+[[ -z "$(value SARVAM_API_KEY "$APP_ENV_FILE")" ]] \
+  || fail "SARVAM_API_KEY belongs in the database env file only: the app env file also reaches the web app"
+if [[ "$(value SPEECH_MODE "$APP_ENV_FILE")" == "sarvam" ]]; then
+  [[ -n "$(value SARVAM_API_KEY "$DB_ENV_FILE")" ]] || fail "SPEECH_MODE is sarvam: put SARVAM_API_KEY in the database env file"
+  [[ -n "$(value SPEECH_HOSTED_APPROVAL "$APP_ENV_FILE")" ]] || fail "SPEECH_MODE is sarvam: set SPEECH_HOSTED_APPROVAL=DEC-108 in the app env file"
+fi
 [[ -z "$(value INTERNAL_API_TOKEN "$DB_ENV_FILE")" ]] \
   || fail "INTERNAL_API_TOKEN belongs in the app env file only: never next to SPEECH_SERVICE_TOKEN"
 compose build --quiet worker web $SPEECH_BUILD

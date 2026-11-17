@@ -80,7 +80,7 @@ def test_an_unknown_mode_refuses(settings: Any) -> None:
 def test_a_hosted_route_refuses_without_both_its_approval_and_its_switch(
     settings: Any, monkeypatch: pytest.MonkeyPatch, approval: str, switch_on: bool, code: str
 ) -> None:
-    settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL=approval, SPEECH_HOSTED_KEY="synthetic-test-key")
+    settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL=approval, SARVAM_API_KEY="synthetic-test-key")
     switches(monkeypatch, speech_hosted=switch_on)
     called: list[bool] = []
     monkeypatch.setattr(speech, "_sarvam", lambda data, mime: called.append(True))

@@ -43,6 +43,8 @@ services:
       EVAL_REPORTS_DIR: /data/eval-reports   # kept between deploys: the regression check's baseline
       # From the database env file: the worker and the speech service only (BLD-C015). Empty when voice is not used.
       SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-}
+      # From the database env file: Sarvam's key, the worker only (DEC-108). Empty: the watch switches voice off.
+      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
     volumes: !override ["${UAT_DATA_DIR:?set UAT_DATA_DIR}:/data"]
     ports: !reset []
 
@@ -53,6 +55,7 @@ services:
       DATABASE_URL: postgres://ideas_web:${DB_WEB_PASSWORD:?set DB_WEB_PASSWORD}@postgres:5432/ideas?sslmode=disable
       OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
       SPEECH_SERVICE_TOKEN: ""   # never the web app's (BLD-C031)
+      SARVAM_API_KEY: ""   # never the web app's (DEC-108, BLD-C115)
     ports: !override ["${UAT_WEB_PORT:-3100}:3000"]
 
   # The isolated speech service (BLD-C015), started only when SPEECH_ENGINE_URL is set (deploy.sh adds the profile).

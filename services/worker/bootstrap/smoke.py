@@ -135,17 +135,22 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         )
 
     def voice_notes() -> tuple[bool, str]:
-        """DEC-096: voice notes are off, or on with the engine on KFin's own server; never the fake route outside
-        dev and test. The quarantine bucket is never versioned (a version would outlive a delete)."""
+        """DEC-108: voice is on at launch through Sarvam, so with voice on outside dev and test the route is
+        `sarvam` with its approval reference and `SARVAM_API_KEY` in the worker's env (present or absent, never the
+        value; no call to Sarvam is made), or the fallback engine behind the isolated speech service; never the
+        fake route. The quarantine bucket is never versioned (a version would outlive a delete)."""
         from attachments.store import versioning
 
         with connect(autocommit=True) as conn:
             row = conn.execute("SELECT state FROM kill_switches WHERE name = 'capture.voice'").fetchone()
         on = row is not None and row["state"] == "on"
-        # On outside dev and test: only the engine on KFin's own server, through the isolated speech service
-        # (BLD-C012); hosted routes need InfoSec and the DPO.
+        key = bool(s.sarvam_api_key.strip())
+        approval = bool(s.speech_hosted_approval.strip())
         mode_ok = (
-            not on or not s.is_production_like or (s.speech_mode == "local" and bool(s.speech_engine_url))
+            not on
+            or not s.is_production_like
+            or (s.speech_mode == "sarvam" and key and approval)
+            or (s.speech_mode == "local" and bool(s.speech_engine_url))
         )
         try:
             versioned = versioning(s.s3_bucket_quarantine)
@@ -154,7 +159,8 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         return (
             mode_ok and versioned != "Enabled",
             f"capture.voice {'on' if on else 'off'}; SPEECH_MODE {s.speech_mode}; "
-            f"isolated service {'set' if s.speech_engine_url else 'unset'}; quarantine versioning {versioned}",
+            f"Sarvam key {'present' if key else 'absent'}; approval {'set' if approval else 'unset'}; "
+            f"quarantine versioning {versioned}",
         )
 
     return [
