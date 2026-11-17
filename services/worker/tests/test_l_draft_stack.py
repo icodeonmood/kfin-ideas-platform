@@ -165,7 +165,9 @@ def test_l_draft_parts_runs_fill_every_part_from_the_words_through_the_gateway(d
     assert "saves_time" in parts["value"]["value"]
     assert parts["similar"]["state"] == "failed"  # L-SIMILAR is not on main yet: never "none found"
     calls = db.execute("SELECT agent, outcome, ref_id FROM llm_calls").fetchall()
-    assert calls and {c["agent"] for c in calls} == {"draft-part"}
+    # The parts, and L-HIDE's gatekeeper on every message before anything else sees it (main, BLD-C151).
+    assert calls and "draft-part" in {c["agent"] for c in calls}
+    assert {c["agent"] for c in calls} <= {"draft-part", "gatekeeper"}
     assert all(c["ref_id"] == f"DRAFT-{idea}" for c in calls)
     done = db.execute("SELECT receipt, ready, part_ms FROM draft_runs WHERE id = %s", (second,)).fetchone()
     assert "often" in done["part_ms"] and any(line.startswith("Noted how often:") for line in done["receipt"])

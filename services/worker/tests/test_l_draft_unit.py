@@ -386,9 +386,11 @@ def test_l_draft_adapters_call_c_hide_and_c_similar_by_their_names_once_they_lan
     import sys
     import types
 
+    import hide as hide_on_main
     import similar
 
-    assert adapters.landed("hide", "hide_message") is None  # not on main yet: the patterns alone
+    # L-HIDE is on main (BLD-C151): the draft hides through it.
+    assert adapters.landed("hide", "hide_message") is hide_on_main.hide_message
     assert adapters.similar_for(cast(Any, None), "u", "T", "S") is None  # not on main yet: "couldn't check"
     seen: dict[str, Any] = {}
 
@@ -402,8 +404,13 @@ def test_l_draft_adapters_call_c_hide_and_c_similar_by_their_names_once_they_lan
     hide = types.ModuleType("hide")
     hide.hide_message = hide_message
     monkeypatch.setitem(sys.modules, "hide", hide)
+
+    class _Conn:  # no hidden details held yet: nothing for the vault to drop
+        def execute(self, *_: Any) -> Any:
+            return types.SimpleNamespace(fetchall=lambda: [])
+
     got = adapters.hide_message(
-        cast(Any, None), "idea-1", "own words", by="user-1", source="edit", source_id="s-1"
+        cast(Any, _Conn()), "idea-1", "own words", by="user-1", source="edit", source_id="s-1"
     )
     assert got.masked == "PAN ••••4F"
     assert seen["hide"] == ("idea-1", "own words", "user-1", "edit", "s-1", True)  # the gatekeeper runs too

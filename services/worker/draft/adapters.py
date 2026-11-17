@@ -1,8 +1,8 @@
 """Thin adapters to the other lane C modules L-DRAFT depends on, so a change touches one file (SHIP_PLAN §5a).
 
-- L-HIDE (branch c/hide): `hide_message` calls c/hide's `hide.hide_message(conn, idea_uuid, text, *, by, source,
-  source_id=None, gatekeeper=True) -> Hidden` (.masked, .spans, .details, .hidden_count, .kinds_line, .receipt) as
-  soon as the `hide` package is on main (a guarded import, BLD-C038). Until then it masks the customer details of
+- L-HIDE (on main since 18 Nov): `hide_message` calls `hide.hide_message(conn, idea_uuid, text, *, by, source,
+  source_id=None, gatekeeper=True) -> Hidden` (.masked, .spans, .details, .hidden_count, .kinds_line, .receipt)
+  (a guarded import, BLD-C038), then drops the vault values no hidden detail of the draft holds any more (BLD-C151). Until then it masks the customer details of
   DEC-103 with the level-1 patterns alone; L-HIDE adds the gatekeeper's pass and names next to a detail, and keeps
   each detail's id across edits. `hide_text` and `preview` go through the same masking.
 - Voice (DEC-108, branch c/sarvam): `voice_message` calls c/sarvam's `speech.drafts.voice_to_message(conn,
@@ -149,10 +149,20 @@ def hide_message(
     if source not in SEALED_SOURCES:
         raise ValueError("hide_message takes a message, answer, conversation or edit")
     hide = landed("hide", "hide_message")
-    if hide is not None:  # c/hide: patterns, then the gatekeeper (non-negotiable 4)
+    if hide is not None:  # L-HIDE, on main: patterns, then the gatekeeper (non-negotiable 4)
+        held = [
+            r["vault_tag"]
+            for r in conn.execute(
+                "SELECT vault_tag FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = %s",
+                (idea_uuid, source, source_id),
+            ).fetchall()
+        ]
         hidden: Hidden = hide(
             conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=True
         )
+        # L-HIDE drops the details an edit took out; their values leave the vault too, once nothing in the draft
+        # holds them (BLD-C038, kept with L-HIDE on main: BLD-C151).
+        _drop_unreferenced(conn, idea_uuid, held)
         return hidden
     found = find(text)
     scope = f"DRAFT-{idea_uuid}"
