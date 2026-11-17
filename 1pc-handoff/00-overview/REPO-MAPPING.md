@@ -44,12 +44,12 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
 | `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
-| `S-H3` | `/share/other-ways` | none | missing | M | P0 (page), P2 (arrivals) | A |
-| `S-H4` | `/how-it-works` | `app/journey` | exists, differs | S | P0 | A |
+| `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
+| `S-H4` | `/how-it-works` | `app/how-it-works`, `lib/how-it-works.ts` (old `app/journey` stays until lane E retires it) | built (16 Nov, BLD-A194) | S | P0 | A |
 | `S-H5` | `/inbox` | `app/inbox` | exists, differs | L | P0 | A |
 | `S-H6` | `/profile` | none; pieces on `/my-ideas` (`points.tsx`, `name-on-wall.tsx`) | exists, differs | M | P0 | E |
-| `S-OFFICE` | `/display/office` | `app/constellation` (`sky.tsx`) | exists, differs | M | P0 | A |
-| `S-LAUNCH` | `/display/launch` | `app/launch/stage.tsx` (admin only today) | exists, differs | S | P0 | A |
+| `S-OFFICE` | `/display/office` | `app/display/office`, `lib/display.ts`, `server/display.ts`, worker `display/office.py`, `GET /api/display/office` (old `app/constellation` stays until lane E retires it) | built (16 Nov, BLD-A190, BLD-A191) | M | P0 | A |
+| `S-LAUNCH` | `/display/launch` | `app/display/launch` (`stage.tsx`, `sound.ts`); old `app/launch` stays until lane E retires it | built (16 Nov, BLD-A190, BLD-A193) | S | P0 | A |
 
 ## `P-REPO.components`
 
@@ -105,7 +105,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
 | `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
-| `L-DISPLAY` | `app/launch`, `app/constellation` | exists, differs | P0 | A |
+| `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
 | `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P0 | B |
 | `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P0 | B |
 | `L-CONVO` | none | missing | P0 | F |

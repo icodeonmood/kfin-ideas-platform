@@ -53,7 +53,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["attachments.open"],
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
-  { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
+  // The office screen's Ones (S-OFFICE) rest with the rest of the public Ones.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/(?:ones(?:\/constellation)?|display\/office)\/?$/,
+    switches: ["ones.public"],
+  },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
@@ -122,6 +127,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/me\/refer-as\/?$/, // how a person wants to be referred to (BLD-C111) changes nothing about ideas
+  /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
   // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
   // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
