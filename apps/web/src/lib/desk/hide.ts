@@ -25,6 +25,8 @@ export const HIDE_WORDS = {
   already_hidden: "That’s already hidden.",
   /** The text changed under the selection (another reviewer hid something): the page is read again (BLD-B247). */
   stale: "The page changed. Select again.",
+  /** The page's text is not exactly the stored text (a CRLF the HTML parser made LF): nothing is offered (BLD-B247). */
+  select_again: "Select again.",
 } as const;
 
 /** The line under "Hide this" when the hide is refused: plain words per code, else F-COPY's failure line. */
@@ -96,8 +98,12 @@ export function hideBody(source: HideSource, at: Selected) {
   return { source, start: at.start, end: at.end, units: "utf16" as const, selected: at.selected };
 }
 
-/** Keyboard selection inside a focused text (WCAG 2.1.1): Shift and an arrow, Home or End extend it. */
-export interface ExtendStep {
+/**
+ * The caret and the selection inside a focused text, from the keyboard (WCAG 2.1.1; BLD-B247): an arrow, Home or End
+ * moves the caret (`Selection.modify("move", …)`), and with Shift extends the selection from where the caret is.
+ */
+export interface CaretStep {
+  alter: "move" | "extend";
   direction: "forward" | "backward";
   granularity: "character" | "word" | "line" | "lineboundary";
 }
@@ -111,31 +117,34 @@ interface KeyLike {
   metaKey: boolean;
 }
 
-/** What Shift and a key does to the selection: a letter (a word with Ctrl, or Option on a Mac), a line, to a line's end. */
-export function extendStep(e: KeyLike): ExtendStep | null {
-  if (!e.shiftKey || e.metaKey) return null;
-  const word = e.ctrlKey || e.altKey;
+/**
+ * What a key does inside a focused text: a letter, a word (Ctrl, or Option on a Mac), a line, or to a line's start or
+ * end. Shift extends instead of moving. Alt and an arrow off a Mac is the browser's Back and Forward, so it is left to
+ * the browser, as is anything with Cmd (or the Windows key).
+ */
+export function caretStep(e: KeyLike, mac = false): CaretStep | null {
+  if (e.metaKey || (e.altKey && !mac)) return null;
+  const alter = e.shiftKey ? "extend" : "move";
+  const word = mac ? e.altKey : e.ctrlKey;
   switch (e.key) {
     case "ArrowRight":
-      return { direction: "forward", granularity: word ? "word" : "character" };
+      return { alter, direction: "forward", granularity: word ? "word" : "character" };
     case "ArrowLeft":
-      return { direction: "backward", granularity: word ? "word" : "character" };
+      return { alter, direction: "backward", granularity: word ? "word" : "character" };
     case "ArrowDown":
-      return { direction: "forward", granularity: "line" };
+      return { alter, direction: "forward", granularity: "line" };
     case "ArrowUp":
-      return { direction: "backward", granularity: "line" };
+      return { alter, direction: "backward", granularity: "line" };
     case "End":
-      return { direction: "forward", granularity: "lineboundary" };
+      return { alter, direction: "forward", granularity: "lineboundary" };
     case "Home":
-      return { direction: "backward", granularity: "lineboundary" };
+      return { alter, direction: "backward", granularity: "lineboundary" };
     default:
       return null;
   }
 }
 
-/** Enter, or Alt+H (Option+H on a Mac types "˙", so the key's code is read), moves to "Hide this". */
+/** Enter, with no modifier, moves to "Hide this". (Alt+H is the browser's Help menu on Windows, so it is not used.) */
 export function opensHide(e: KeyLike): boolean {
-  if (e.metaKey || e.ctrlKey) return false;
-  if (e.key === "Enter" && !e.altKey && !e.shiftKey) return true;
-  return e.altKey && !e.shiftKey && (e.code === "KeyH" || e.key.toLowerCase() === "h");
+  return e.key === "Enter" && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey;
 }
