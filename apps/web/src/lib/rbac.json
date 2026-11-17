@@ -383,6 +383,7 @@
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/display                   open_display",
+    "/ones/showcase             view_ones_console",
     "/delivery                  work_delivery",
     "/ember/compose             write_ember_note"
   ],
