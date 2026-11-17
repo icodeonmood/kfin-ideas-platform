@@ -40,9 +40,10 @@
   }
 
   /* --- 1. Screens arrive (F-MOTION.arrive): blocks rise out of a soft blur, one after another. The two wall
-     displays (launch, office) run their own timelines and never take part. --- */
-  main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb),
-  .arrive > :not(.mo-skip) {
+     displays (launch, office) run their own timelines and never take part, and nor do the sticky and fixed bars
+     (F-MOTION.arrive/4): a filter on them would also move a fixed dock while it plays. --- */
+  main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb, .tbar, .dock, .pnav, .ptop),
+  .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop) {
     animation: moIn var(--mo-scene) var(--mo-out) backwards;
     animation-delay: calc(var(--mo-base) + var(--mo-i, 0) * var(--mo-gap));
   }

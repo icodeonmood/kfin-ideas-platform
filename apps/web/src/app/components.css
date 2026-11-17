@@ -469,8 +469,9 @@ textarea:is(.fld, .textarea) {
   .chips.scroll {
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin-inline: calc(-1 * var(--page-gutter));
-    padding: 2px var(--page-gutter) 4px;
+    /* Room for the focus ring, which the scrolling row would otherwise clip (F-A11Y.rules/2) */
+    margin: -4px calc(-1 * var(--page-gutter)) -2px;
+    padding: 6px var(--page-gutter);
     scroll-padding-inline: var(--page-gutter);
     scroll-snap-type: x proximity;
     scrollbar-width: none;
@@ -533,13 +534,20 @@ textarea:is(.fld, .textarea) {
 }
 
 /* ---------- C-TABS ---------- */
+/* The row scrolls, which clips; the padding keeps every tab's focus ring in view (F-A11Y.rules/2) */
 .tabs {
   position: relative;
   display: flex;
   gap: 28px;
+  padding: 6px 6px 3px;
+  margin: -6px -6px 0;
   border-bottom: 1px solid var(--rule2);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.tabs [role="tab"]:focus-visible {
+  outline-offset: 1px;
 }
 
 .tabs [role="tab"] {
@@ -547,7 +555,7 @@ textarea:is(.fld, .textarea) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 46px;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: none;
