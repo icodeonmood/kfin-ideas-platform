@@ -105,6 +105,19 @@ def test_A_API_files_http_upload_check_and_view_through_the_web(world: dict[str,
         assert seen.headers["content-disposition"].startswith("inline;")
     assert other.get(f"/api/files/{att}").status_code == 404
     assert other.get(f"/api/files/{att}/view").status_code == 404
+    # Review fix 3: the old route never describes or serves a row of the files pipeline, whatever its state; such a
+    # file opens only through /api/files/:id/view, under DEC-107's rule.
+    for b in (sharer, reviewer):
+        assert b.get(f"/api/attachments/{att}").status_code == 404
+        assert b.get(f"/api/attachments/{att}/status").status_code == 404
+    found = sharer.post(
+        "/api/files",
+        data={"idea_id": world["ref"]},
+        files={"file": ("calls.pdf", make.pdf(["The investor with PAN ABCPK4321F called."]), "application/pdf")},
+    )
+    assert found.status_code == 201, found.text
+    assert _settled(sharer, found.json()["id"])["state"] == "personal_data_found"
+    assert reviewer.get(f"/api/attachments/{found.json()['id']}").status_code == 404
     opened = (
         world["conn"]
         .execute(
