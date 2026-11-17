@@ -212,6 +212,8 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
+    "POST /api/ideas/{id}/withdraw                     submit",
+    "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/attachments/{id}                         open_attachments",

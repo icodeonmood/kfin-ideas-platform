@@ -79,7 +79,7 @@ endpoints:
   - GET /api/status                                   signed_in
   - GET /api/me                                       signed_in
   - POST /api/me/privacy-notice                       signed_in
-  - GET /api/me/ideas                                 signed_in
+  - GET /api/me/ideas                                 signed_in       # S-07, My ideas: the person's own list (lane E)
   - GET /api/me/shell                                 signed_in       # the shell's drafts, ideas and Inbox count (C-SIDEBAR.rules/2)
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
@@ -103,8 +103,10 @@ endpoints:
   - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
   - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
   - GET /api/ideas                                    see_org_ideas
-  - GET /api/ideas/{id}                               see_org_ideas
+  - GET /api/ideas/{id}                               see_org_ideas   # S-06 for the sharer, S-09 for others; the worker decides (lane E)
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
+  - POST /api/ideas/{id}/withdraw                     submit          # the sharer only, inside the edit window, checked by the worker (L-SUBMIT.withdraw)
+  - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
   - GET /api/attachments/{id}                         open_attachments

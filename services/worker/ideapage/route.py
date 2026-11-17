@@ -4,9 +4,11 @@
 - a reviewer who is not the sharer goes to the reviewer's page (S-R2, `/desk/ideas/:id`, lane B);
 - anyone else gets the colleague's view (S-09).
 
-A draft, a never-shared idea and a withdrawn idea exist only for their owner: everyone else gets "not found",
-the same answer as for an idea that does not exist, so nothing is confirmed (L-DRAFT.autosave/3,
-L-SUBMIT.withdraw/2). Others reach an idea only by its reference, never by its row id.
+A draft and a never-shared idea exist only for their owner: everyone else gets "not found", the same answer as
+for an idea that does not exist, so nothing is confirmed (L-DRAFT.autosave/3). A withdrawn idea is the same, except
+for someone who was on its crew or asked to join it: they were told, and get S-09's one line (S-09.rules/2,
+L-SUBMIT.withdraw/2 and /4, BLD-E010). A merged idea shows its S-06 or S-09 state with the link to where it went.
+Others reach an idea only by its reference, never by its row id.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import Any
 
 from core.db import Conn
 from ideapage import read
-from ideapage.colleague import colleague_view
+from ideapage.colleague import colleague_view, withdrawn_view
 from ideapage.sharer import sharer_view
 
 
@@ -51,8 +53,12 @@ def idea_view(
     by_reference = key.startswith(read.IDEA_REF_PREFIX)
     if not by_reference or idea["idea_id"] is None or idea["shared_at"] is None:
         raise read.NotFound
-    if idea["status"] in ("draft", "withdrawn"):
+    if idea["status"] == "draft":
         raise read.NotFound
+    if idea["status"] == "withdrawn":
+        if not read.was_involved(conn, str(idea["id"]), me.code):
+            raise read.NotFound
+        return withdrawn_view(idea, came_from=came_from, back=back)
     if me.on_desk:
         return {"view": "desk", "to": f"/desk/ideas/{idea['idea_id']}"}
     out = colleague_view(conn, idea, me, t, came_from=came_from, back=back)
