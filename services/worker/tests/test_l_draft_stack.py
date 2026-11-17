@@ -294,3 +294,52 @@ def test_l_draft_recent_lists_titles_and_where_they_were_saved(drafting: Any) ->
     assert items[1]["title"] == "Rejection SMS codes confuse investors"
     assert items[0]["title"].startswith("Our branch takes about 40 calls")  # no title yet: their first words
     assert items[1]["saved_labels"]["sidebar"] == "Today, on your phone"
+
+
+# ---- L-DRAFT.channels: built and off (DEC-105) ---------------------------------------------------------------------
+
+
+def test_l_draft_channels_an_email_lands_as_a_masked_draft_only_while_its_switch_is_on(drafting: Any) -> None:
+    import generators
+
+    from draft.channels import Arrival, ChannelOff, intake
+
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    db.execute(
+        "INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (owner.code, owner.user_id)
+    )
+    pan = generators.pan(generators.default_rng(5))
+    arrival = Arrival(
+        channel="email",
+        sender="Sharer@KFINTECH.example",
+        note=f"{W1} The caller read out a PAN, {pan}.",
+        received_at=dt.datetime.now(dt.UTC),
+        subject="Fwd: R07 rejections again",
+        thread="From the branch: three more calls today about R07.",
+    )
+    _switch(db, "intake.email", "off")
+    with pytest.raises(ChannelOff):
+        intake(db, arrival)
+    _switch(db, "intake.email", "on")
+    assert intake(db, Arrival("email", "someone@elsewhere.example", W1, arrival.received_at)) == {
+        "bounced": True,
+        "reason_code": "unknown_sender",
+    }
+    out = intake(db, arrival)
+    if out["run_id"]:
+        _run(out["run_id"])
+    draft = store.view(db, owner, out["draft_id"], LAPTOP)
+    assert draft["channel"] == "email" and draft["messages"][0]["via"] == "email"
+    assert draft["messages"][0]["text"] == arrival.note  # their own words, to them
+    assert draft["origin"]["label"].startswith("From your email, today at ")
+    assert draft["origin"]["label"].endswith(": “Fwd: R07 rejections again”")
+    assert draft["origin"]["thread"].startswith("From the branch")
+    assert draft["receipt"][0] == "Turned your email into a draft. Nothing has been sent."
+    stored = db.execute(
+        "SELECT text_encrypted, id FROM idea_messages WHERE idea_uuid = %s", (out["draft_id"],)
+    )
+    row = stored.fetchone()
+    assert pan not in (
+        open_text("idea_messages", "text_encrypted", str(row["id"]), row["text_encrypted"]) or pan
+    )

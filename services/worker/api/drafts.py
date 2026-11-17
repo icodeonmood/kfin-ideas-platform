@@ -243,3 +243,40 @@ async def build(idea_uuid: str, request: Request) -> Response:
         return _json({"run_id": run_id}, 202)
 
     return await _threaded(go)
+
+
+@router.post("/intake")
+async def intake(request: Request) -> Response:
+    """L-DRAFT.channels (BLD-C077): the 1% Club mailbox reader or the Teams app hands over one arrival. Off until
+    IT gives them (`intake.email`, `intake.teams`; DEC-105): then 503, and the caller keeps the message."""
+    from draft.channels import Arrival, ChannelOff
+    from draft.channels import intake as take
+
+    data = await _body(request)
+
+    def go() -> Response:
+        received = _at(data.get("received_at"))
+        if (
+            received is None
+            or not isinstance(data.get("note"), str)
+            or not isinstance(data.get("sender"), str)
+        ):
+            return _json({"error": "arrival_invalid"}, 400)
+        arrival = Arrival(
+            channel=str(data.get("channel") or ""),
+            sender=data["sender"],
+            note=data["note"],
+            received_at=received,
+            subject=data.get("subject") if isinstance(data.get("subject"), str) else None,
+            thread=data.get("thread") if isinstance(data.get("thread"), str) else None,
+            note_en=data.get("note_en") if isinstance(data.get("note_en"), str) else None,
+        )
+        with connect(autocommit=True) as conn:
+            try:
+                out = take(conn, arrival)
+            except ChannelOff:
+                return _json({"error": "channel_off"}, 503)
+        runs.dispatch(out.get("run_id"))
+        return _json(out, 202 if "draft_id" in out else 200)
+
+    return await _threaded(go)

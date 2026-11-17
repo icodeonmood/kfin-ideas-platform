@@ -167,6 +167,12 @@
     ],
     "speech.hosted": [
       "infosec"
+    ],
+    "intake.email": [
+      "admin"
+    ],
+    "intake.teams": [
+      "admin"
     ]
   },
   "public": [

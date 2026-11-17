@@ -60,6 +60,8 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  intake.email: [admin]                              # L-DRAFT.channels: off until IT gives the mailbox (DEC-105)
+  intake.teams: [admin]                              # L-DRAFT.channels: off until IT gives the Teams app (DEC-105)
 
 # No session needed.
 public:

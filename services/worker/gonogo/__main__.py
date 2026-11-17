@@ -49,6 +49,9 @@ OFF_BY_DESIGN = {
         "the model, and the DPO's privacy notice covers voice notes (DEC-096)"
     ),
     "speech.hosted": "Off until InfoSec and the DPO approve a hosted route (DEC-096)",
+    # L-DRAFT.channels (BLD-C077), migration 20261122300210: built and off until IT gives the mailbox and the app.
+    "intake.email": "Off until IT gives the 1% Club mailbox (DEC-105): forwarded emails land as drafts once it is on",
+    "intake.teams": "Off until IT gives the 1% Club Teams app (DEC-105): Teams messages land as drafts once it is on",
 }
 
 

@@ -667,7 +667,11 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
         out["suggestions"] = list(done["suggestions"] or [])
     origin = open_text("ideas", "origin_encrypted", idea_uuid, row["origin_encrypted"])
     if origin:
-        out["origin"] = json.loads(origin)
+        from draft.channels import origin_label
+
+        o = json.loads(origin)
+        o["label"] = origin_label(row["channel"], o, now)
+        out["origin"] = o
     fix = conn.execute(
         "SELECT how, needs, solved_already, solved_note, basis, risks, included FROM idea_fix WHERE idea_uuid = %s",
         (idea_uuid,),

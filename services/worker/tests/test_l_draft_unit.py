@@ -308,3 +308,16 @@ def test_l_draft_pins_a_pinned_title_survives_a_new_answer() -> None:
     value, why, quote, _ = result_of("title", data, [{"n": 1, "text": W1}], prior)
     assert value == {"title": "My own title", "summary": "New summary.", "pinned": ["title"]}
     assert why == "From your first sentence." and quote == "the SMS to the investor"
+
+
+def test_l_draft_channels_origin_labels_are_the_boards() -> None:
+    from draft.channels import origin_label
+
+    now = dt.datetime(2026, 11, 17, 13, 38, tzinfo=IST)
+    email = {"received_at": "2026-11-17T09:14:00+05:30", "subject": "Fwd: R07 rejections again"}
+    assert (
+        origin_label("email", email, now) == "From your email, today at 9:14 am: “Fwd: R07 rejections again”"
+    )
+    teams = {"received_at": "2026-11-16T19:02:00+05:30"}
+    assert origin_label("teams", teams, now) == "From Teams, yesterday 7:02 pm"
+    assert origin_label("email", {"received_at": "not a date"}, now) is None
