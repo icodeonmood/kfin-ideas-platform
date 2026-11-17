@@ -12,6 +12,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
+import { CUSTOMER_DETAIL } from "@/lib/desk/files";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import "./qcard.css";
@@ -80,14 +81,35 @@ export function QuestionsCard({
         <ol className="qcard-list">
           {set.questions.map((q) => (
             <li key={q.id} className={q.answer?.sent ? "done" : undefined}>
+              {/* Partly answered (NOT DRAWN): an answered question shows a tick beside its words */}
               <p className="body">
-                {q.answer?.sent ? <span aria-label="Answered">✓ </span> : null}
+                {q.answer?.sent && !answered ? (
+                  <span className="qcard-tick" role="img" aria-label="Answered">
+                    ✓{" "}
+                  </span>
+                ) : null}
                 {q.text}
               </p>
               <p className="meta">
                 {answered ? "Added to" : "Answer goes to"} {q.part_name}
               </p>
               {answered && q.answer ? <p className="body qcard-a">{q.answer.text}</p> : null}
+              {answered && q.answer?.files.length ? (
+                <ul className="qcard-files" aria-label="Files with this answer">
+                  {q.answer.files.map((f) => (
+                    <li key={f.id} className="meta">
+                      {f.name}
+                      {f.hidden_note ? `. ${f.hidden_note}` : ""}
+                      {f.customer_detail ? (
+                        <>
+                          {" "}
+                          <Pill variant="warn">{CUSTOMER_DETAIL}</Pill>
+                        </>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ol>
