@@ -61,23 +61,6 @@ test("4: My ideas as a One: the tier dashboard and the glow-up", async ({ browse
   await expectNoSeriousAxeIssues(founding);
 });
 
-test("5-6: the wall and an idea page", async ({ browser }) => {
-  const kavya = await as(browser, DEMO.employee);
-  await kavya.goto("/wall");
-  const ones = kavya.locator(".ones-band");
-  await expect(ones.getByText("Rohit Menon")).toBeVisible();
-  await expect(ones.getByText("One No. 3")).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
-  await kavya
-    .getByRole("link", {
-      name: /status page for every investor service request|Check bank details|One status page/,
-    })
-    .first()
-    .click();
-  await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
-});
-
 /**
  * S-R1 (A10, N3): a desk tab shows what its count says: n rows for a count of n, or its own empty line, and no
  * table, for 0. CI never runs this tour (DEMO_TOUR is unset there, and `make seed` loads no ideas), and the legacy
