@@ -17,6 +17,7 @@ What it gives every screen of the pack something to show:
   requests waiting on one lead (each in her Inbox, one per answer J-SIMILAR/6 walks), an accepted one, and a desk
   merge inside its window;
 - two ideas on one reviewer's desk, opened, that list each other as similar, ready for a desk merge (J-REVIEW/M3);
+- a draft that arrived by email, its detail hidden, with its "kept your draft" Inbox item (J-RESUME/5, 6);
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
 - one One whose tier rose with the moment not yet shown (J-ONE step 6).
@@ -32,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -119,6 +121,7 @@ class Spec:
     helpers: list[str] = field(default_factory=list)
     channel: str = "web"
     via: str = "typed"
+    origin: str | None = None  # an email arrival's subject (L-DRAFT.channels), arrived as the draft was made
 
 
 IDEAS: dict[str, Spec] = {
@@ -312,6 +315,17 @@ IDEAS: dict[str, Spec] = {
                ["The note an investor gets for a failed SIP debit shows only a bank code. They cannot tell whether "
                 "to add money or change the mandate, so they call us."],
                often="About ten calls a week at our branch", step="check:6", saved_days=0.5),
+    # J-RESUME/5 and /6 (L-DRAFT.channels): a forwarded email that landed as a draft, one detail hidden, not opened.
+    "I2": Spec("indira", "draft", "problem", "Returned dividend letters go back to old addresses",
+               "Dividend letters that come back are posted again to the same old address. Nobody checks the "
+               "address first.",
+               "Corporate registry",
+               ["Forwarding this thread. Dividend letters that come back are posted again to the same old address. "
+                "The one for {folio} came back last week for the third time. Could we check the address with the "
+                "depository before we post again?"],
+               often="Every dividend season", affects=["Investors", "KFin teams"], brings=["saves_cost"],
+               hidden={"{folio}": ("folio", "4400076512")}, step="tell", saved_days=0.15, channel="email",
+               via="email", origin="Fwd: Dividend letter returned again"),
 }  # fmt: skip
 # J2 was written after F2 was shared, so it found F2 while drafting (L-SIMILAR.rules/4, 5); F2 got J2 when J2 was
 # shared (L-SIMILAR.rules/6). Nobody asked to merge: the desk can (L-MERGE.desk/1), F2 leading as shared first.
@@ -437,6 +451,8 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         sources["area"] = {"source": "changed", "why": "Your call"}
     path = _status_path(s, now)
     text_chars = sum(len(w) for w in s.words)
+    # An email or Teams arrival has no device (L-DRAFT.channels); otherwise where it was last saved.
+    device = None if s.channel in ("email", "teams") else ("phone" if s.via == "voice" else "laptop")
     conn.execute(
         "INSERT INTO ideas (id, idea_id, contributor_code, status, kind, title, summary, often, city, affects, area, "
         "brings, sorting_sources, sorting_confirmed_at, helper_picks, channel, step, saved_at, saved_device, "
@@ -449,7 +465,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             owner["city"] if shared else None, s.affects, s.area, s.brings, Jsonb(sources),
             shared if confirmed else None, s.helpers, s.channel,
             s.step if shared is None else None, _ago(s.saved_days, now) if shared is None else shared,
-            "phone" if s.via == "voice" else "laptop", f"seed-device-{s.owner}",
+            device, f"seed-device-{s.owner}" if device else None,
             text_chars, _ago(s.saved_days, now) if s.archived else None, shared,
             40 + (len(s.title) % 50) if shared else None, DECLARATION if shared else None, shared,
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
@@ -458,6 +474,15 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             path[0][1],
         ),
     )  # fmt: skip
+    if s.origin is not None:  # sealed as draft intake seals it: masked subject, the note on top, when it came
+        origin = {"received_at": path[0][1].isoformat(), "subject": s.origin, "note": s.origin}
+        conn.execute(
+            "UPDATE ideas SET origin_encrypted = %s WHERE id = %s",
+            (
+                seal_text("ideas", "origin_encrypted", idea_uuid, json.dumps(origin, ensure_ascii=False)),
+                idea_uuid,
+            ),
+        )
     # The track's history at the real times (the trigger recorded "now").
     conn.execute("DELETE FROM idea_status_history WHERE idea_uuid = %s", (idea_uuid,))
     prev = None
@@ -490,7 +515,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         conn.execute(
             "INSERT INTO idea_messages (id, idea_uuid, seq, via, device, lang, text_encrypted, spans, char_count, "
             "created_at) VALUES (%s, %s, %s, %s, %s, 'en', %s, %s, %s, %s)",
-            (mid, idea_uuid, seq, s.via, "phone" if s.via == "voice" else "laptop",
+            (mid, idea_uuid, seq, s.via, device,
              seal_text("idea_messages", "text_encrypted", mid, masked), Jsonb(spans), len(own_text), at),
         )  # fmt: skip
         if values:
@@ -520,7 +545,8 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         "INSERT INTO draft_runs (id, idea_uuid, message_id, state, parts, part_ms, receipt, suggestions, ready, "
         "started_at, finished_at) VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, true, %s, %s)",
         (run_id, idea_uuid, message_ids[-1], list(timings), Jsonb(timings),
-         Jsonb(["Wrote a title and a short summary from your words.",
+         Jsonb([*(["Turned your email into a draft. Nothing has been sent."] if s.channel == "email" else []),
+                "Wrote a title and a short summary from your words.",
                 *(["Hid 1 personal detail from everyone but you."] if s.hidden else [])]),
          Jsonb(["Add what you already tried", "Say who feels it most"]), path[0][1], path[0][1] + dt.timedelta(seconds=3)),
     )  # fmt: skip
@@ -1226,6 +1252,11 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
                     {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
                     due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
+    # J-RESUME/5: the email arrival's "kept your draft", as draft intake posts it (L-DRAFT.channels; refs: channel).
+    email = m["I2"]
+    _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid,
+                {"idea_id": email.ref, "channel": email.spec.channel}, _ago(email.spec.saved_days + 0.05, now),
+                actions=[{"label": "Check and send", "to": "draft", "style": "primary"}])  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
