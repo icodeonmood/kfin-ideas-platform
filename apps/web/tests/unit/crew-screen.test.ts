@@ -19,7 +19,8 @@ vi.mock("next/link", async () => {
   };
 });
 
-const { CREW_COPY, CrewScreen, crewUrl, filtersFrom, statusLabel } = await import("@/app/crew/crew-screen");
+const { CREW_COPY, CrewScreen, crewUrl, filtersFrom, leadFirst, statusLabel } =
+  await import("@/app/crew/crew-screen");
 const { Deck } = await import("@/components/ui/deck");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -117,7 +118,7 @@ function deckBody(items = [C1, C2, C3], extra: Record<string, unknown> = {}) {
 }
 
 // --- A fetch that answers by method and path -------------------------------------------------------------------
-type Answer = { status?: number; body?: unknown };
+type Answer = { status?: number; body?: unknown; wait?: Promise<void> };
 let routes: Record<string, Answer | ((body: unknown) => Answer)> = {};
 let calls: { key: string; body: unknown }[] = [];
 
@@ -130,6 +131,7 @@ function mockFetch() {
       calls.push({ key, body });
       const route = routes[key];
       const a: Answer = typeof route === "function" ? route(body) : (route ?? { status: 404, body: {} });
+      if (a.wait) await a.wait;
       const status = a.status ?? 200;
       return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(a.body) };
     }),
@@ -206,6 +208,14 @@ describe("S-H2 helpers (L-CREW/5)", () => {
         { key: "location", value: "Hyderabad", label: "Hyderabad" },
       ]),
     ).toEqual({ location: ["Pune", "Hyderabad"] });
+  });
+
+  it("a lead who hid their name is 'the lead' in a sentence (BLD-F042)", () => {
+    expect(leadFirst({ first_name: "Ravi", initials: "RN" })).toBe("Ravi");
+    expect(leadFirst({ first_name: "A colleague", initials: "" })).toBe("the lead");
+    expect(CREW_COPY.teamUpOn("Rejection SMS codes confuse investors", "the lead")).toBe(
+      "Team up on Rejection SMS codes confuse investors: send the lead a note",
+    );
   });
 
   it("a just-shared idea reads Shared on the card (BLD-F030); the rest keep their status words", () => {
@@ -379,6 +389,32 @@ describe("S-H2 Find your crew", () => {
     await click(button("Remove filter: Hyderabad"));
     expect(calls.at(-1)?.key).toBe("GET /api/crew");
     expect(page()).toContain("3 ideas close to yours");
+  });
+
+  it("only the latest read changes the deck: an older answer that comes back last is ignored", async () => {
+    let n = 0;
+    let release: () => void = () => undefined;
+    const late = new Promise<void>((r) => {
+      release = r;
+    });
+    routes["GET /api/crew"] = () => {
+      n += 1;
+      if (n === 1)
+        return {
+          body: { ...deckBody([C1]), active: [{ key: "location", value: "Hyderabad", label: "Hyderabad" }] },
+        };
+      if (n === 2) return { wait: late, body: deckBody([C2]) };
+      return { body: deckBody() };
+    };
+    await mount();
+    expect(page()).toContain("1 idea close to yours");
+    await click(button("Remove filter: Hyderabad")); // its answer is held back
+    await click(buttons().find((b) => text(b) === "Clear all" && b.closest(".crew-fact")));
+    expect(page()).toContain("3 ideas close to yours");
+    release();
+    await settle();
+    expect(page()).toContain("3 ideas close to yours");
+    expect(text(front())).toContain("Rejection SMS codes confuse investors");
   });
 
   it("L-CREW/9: Your crews lists the lead, the state and the idea link", async () => {
