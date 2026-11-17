@@ -98,6 +98,7 @@ export const TEAMUP_COPY = {
   retry: "Try again",
   /** The opener's state when the person cannot ask (the API's own lines for these codes). */
   youLead: "You lead this idea.",
+  waiting: (lead: string) => `Waiting for ${lead}`,
   onCrew: "You’re on the crew.",
   closed: "This idea is no longer open to team up.",
   /** Errors with no ready-made message from the API (docs/hr-wording/lane-f.md). */
@@ -242,27 +243,36 @@ function initialsOf(name: string): string {
   return (first + last).toUpperCase();
 }
 
-let meOnce: Promise<string | null> | null = null;
-/** The signed-in person's initials for the avatar pair, asked once per page load (GET /api/me). */
-function myInitials(): Promise<string | null> {
-  meOnce ??= call(teamupUrls.me).then((r) => {
-    const name = r.ok ? (r.body as { name?: unknown } | null)?.name : null;
-    if (typeof name !== "string" || !name) {
-      meOnce = null;
-      return null;
-    }
-    return initialsOf(name);
-  });
-  return meOnce;
+type Who = { key: string; initials: string };
+/** The signed-in person (GET /api/me), asked on every open: their initials for the avatar pair, and the key that
+ * keeps one person's typed note from showing to the next person who signs in on the same page (BLD-F074). */
+async function whoAmI(): Promise<Who | null> {
+  const r = await call(teamupUrls.me);
+  const b = r.ok && r.body && typeof r.body === "object" ? (r.body as Record<string, unknown>) : null;
+  const name = typeof b?.name === "string" ? b.name : "";
+  const key = [b?.contributor_code, b?.email].find((v): v is string => typeof v === "string" && v !== "");
+  return key ? { key, initials: initialsOf(name) } : null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// What was typed, kept for this session (C-SHEET-TEAMUP.a11y): cleared when the request is sent.
+// What was typed, kept for this session (C-SHEET-TEAMUP.a11y): cleared when the request is sent, and all of it when
+// another person is signed in (BLD-F074). Nothing is kept while the sheet does not know who is signed in.
 // ---------------------------------------------------------------------------------------------------------------
 type Kept = { note: string; picks: string[]; choice: Choice };
 type Choice = "separate" | "merge";
 const kept = new Map<string, Kept>();
+let keptFor: string | null = null;
 const keyOf = (ideaId: string, draftId?: string) => `${ideaId}|${draftId ?? ""}`;
+
+/** The text kept for this person, after forgetting anyone else's. */
+function keptBy(who: string | null): Map<string, Kept> | null {
+  if (!who) return null;
+  if (keptFor !== who) {
+    kept.clear();
+    keptFor = who;
+  }
+  return kept;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // The component
@@ -283,8 +293,25 @@ export interface TeamUpSheetProps {
   draftTitle?: string;
   /** The button that carries on after sending: "Keep looking" on Find your crew, "Done" elsewhere. */
   doneLabel?: "Done" | "Keep looking";
-  /** The signed-in person's disc; asked from GET /api/me when not given. */
+  /** The signed-in person's initials, when the host has them; otherwise from GET /api/me. */
   me?: { initials: string };
+  /**
+   * Where focus goes on close when the button that opened the sheet is gone (the host re-drew it as "Waiting for
+   * Ravi"). Without it, the sheet looks for an element marked `{...teamUpOpener(ideaId)}` (WCAG 2.4.3, BLD-F074).
+   */
+  returnFocus?(): HTMLElement | null | undefined;
+}
+
+/** Spread on whatever stands where "Team up" was ("Waiting for Ravi" with Withdraw), so focus can return to it. */
+export function teamUpOpener(ideaId: string): { "data-teamup-opener": string } {
+  return { "data-teamup-opener": ideaId };
+}
+
+function markedOpener(ideaId: string): HTMLElement | null {
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-teamup-opener]"))) {
+    if (el.dataset.teamupOpener === ideaId && el.isConnected) return el;
+  }
+  return null;
 }
 
 const noSubscribe = () => () => {};
@@ -302,6 +329,8 @@ export function TeamUpSheet(props: TeamUpSheetProps): JSX.Element | null {
 }
 
 type Loaded = {
+  /** The signed-in person's key for what they typed; null when GET /api/me did not answer. */
+  who: string | null;
   lead: PersonRef;
   title: string;
   drafted: string;
@@ -331,60 +360,64 @@ function Sheet(props: TeamUpSheetProps) {
   // Load my state and the pre-filled note together (BLD-F015, BLD-F011).
   useEffect(() => {
     let live = true;
-    Promise.all([call(teamupUrls.mine(ideaId)), call(teamupUrls.draftNote(ideaId))]).then(([mine, note]) => {
-      if (!live) return;
-      const m = mine.ok && isMine(mine.body) ? mine.body : null;
-      if (m?.request && m.request.state === "sent") {
-        setView({ kind: "sent", lead: m.lead, sent: fromRequest(ideaId, m.request, m.after) });
-        return;
-      }
-      if (m && m.why_not && m.why_not !== "already_requested") {
-        const message =
-          m.why_not === "idea_closed"
-            ? TEAMUP_COPY.closed
-            : m.me === "lead"
-              ? TEAMUP_COPY.youLead
-              : TEAMUP_COPY.onCrew;
-        setView({ kind: "cannot", lead: m.lead, message });
-        return;
-      }
-      if (!note.ok || !isDraftNote(note.body)) {
-        const error = !note.ok
-          ? note.error
-          : !mine.ok
-            ? mine.error
-            : { code: "error", message: TEAMUP_COPY.failed };
-        setView({ kind: "failed", error, lead: m?.lead });
-        return;
-      }
-      const d = note.body;
-      setView({
-        kind: "compose",
-        data: {
-          lead: d.lead,
-          title: d.idea.title,
-          drafted: d.note,
-          own: d.own_ideas.map((o) => ({ id: o.id, title: o.title, meta: o.meta })),
-          min: d.min_chars ?? 30,
-          max: d.max_chars ?? 600,
-        },
-      });
-    });
+    Promise.all([call(teamupUrls.mine(ideaId)), call(teamupUrls.draftNote(ideaId)), whoAmI()]).then(
+      ([mine, note, who]) => {
+        if (!live) return;
+        if (who && !props.me) setInitials(who.initials);
+        const m = mine.ok && isMine(mine.body) ? mine.body : null;
+        if (m?.request && m.request.state === "sent") {
+          setView({ kind: "sent", lead: m.lead, sent: fromRequest(ideaId, m.request, m.after) });
+          return;
+        }
+        if (m?.why_not) {
+          // A request still waiting that did not come back as one: say so rather than offer a send the API refuses.
+          const first = m.lead.first_name || m.lead.name;
+          const message =
+            m.why_not === "idea_closed"
+              ? TEAMUP_COPY.closed
+              : m.why_not === "already_requested"
+                ? (m.after?.line ?? TEAMUP_COPY.waiting(first))
+                : m.me === "lead"
+                  ? TEAMUP_COPY.youLead
+                  : TEAMUP_COPY.onCrew;
+          setView({ kind: "cannot", lead: m.lead, message });
+          return;
+        }
+        if (!note.ok || !isDraftNote(note.body)) {
+          const error = !note.ok
+            ? note.error
+            : !mine.ok
+              ? mine.error
+              : { code: "error", message: TEAMUP_COPY.failed };
+          setView({ kind: "failed", error, lead: m?.lead });
+          return;
+        }
+        const d = note.body;
+        setView({
+          kind: "compose",
+          data: {
+            who: who?.key ?? null,
+            lead: d.lead,
+            title: d.idea.title,
+            drafted: d.note,
+            own: d.own_ideas.map((o) => ({ id: o.id, title: o.title, meta: o.meta })),
+            min: d.min_chars ?? 30,
+            max: d.max_chars ?? 600,
+          },
+        });
+      },
+    );
     return () => {
       live = false;
     };
+    // `props.me` is read once, when the sheet loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ideaId, attempt]);
 
+  const returnFocus = useRef(props.returnFocus);
   useEffect(() => {
-    if (initials) return;
-    let live = true;
-    void myInitials().then((i) => {
-      if (live && i) setInitials(i);
-    });
-    return () => {
-      live = false;
-    };
-  }, [initials]);
+    returnFocus.current = props.returnFocus;
+  });
 
   // Focus in on open, trapped while open, back to the opener on close (F-MOTION.focus/1, /2).
   useLayoutEffect(() => {
@@ -398,12 +431,22 @@ function Sheet(props: TeamUpSheetProps) {
     const root = document.documentElement;
     const overflow = root.style.overflow;
     root.style.overflow = "hidden";
+    // Back to the opener; if the host has re-drawn it ("Team up" is now "Waiting for Ravi"), to what the host names
+    // or marks in its place, once the host's new markup is on the page (WCAG 2.4.3, BLD-F074).
+    const back = (): HTMLElement | null => {
+      if (opener && opener.isConnected) return opener;
+      const given = returnFocus.current?.();
+      if (given && given.isConnected) return given;
+      return markedOpener(ideaId);
+    };
     return () => {
       document.removeEventListener("focusin", keepInside);
       root.style.overflow = overflow;
-      if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+      const now = back();
+      if (now) now.focus({ preventScroll: true });
+      else queueMicrotask(() => back()?.focus({ preventScroll: true }));
     };
-  }, []);
+  }, [ideaId]);
 
   const close = useCallback(() => onClose(), [onClose]);
 
@@ -593,7 +636,8 @@ function Compose({
   onSentHere(sent: TeamUpSent): void;
 }) {
   const key = keyOf(ideaId, draftId);
-  const before = kept.get(key);
+  const store = keptBy(data.who);
+  const before = store?.get(key);
   const [note, setNote] = useState(before?.note ?? data.drafted);
   const [picks, setPicks] = useState<string[]>(before?.picks ?? []);
   const [choice, setChoice] = useState<Choice>(before?.choice ?? "separate");
@@ -604,7 +648,7 @@ function Compose({
   const idem = useRef<{ sig: string; key: string } | null>(null);
   const choiceName = useId();
 
-  const keep = (next: Partial<Kept>) => kept.set(key, { note, picks, choice, ...next });
+  const keep = (next: Partial<Kept>) => store?.set(key, { note, picks, choice, ...next });
 
   // Focus starts in the note with the cursor at the end (C-SHEET-TEAMUP.a11y).
   useLayoutEffect(() => {
@@ -668,7 +712,7 @@ function Compose({
     } else {
       sent = { kind: "teamup", id: "", ideaId, note, brought: [], after: null };
     }
-    kept.delete(key);
+    store?.delete(key);
     // F-MOTION.inside: the spark marks the send, from the button that made it.
     if (sendRef.current?.isConnected) sparkBurst(sendRef.current);
     onSentHere(sent);
@@ -886,14 +930,17 @@ function SentBody({
       </div>
       {error ? <FieldMsg>{error.message}</FieldMsg> : null}
       <div className="tus-f">
-        <Button
-          variant="text"
-          busy={busy}
-          busyLabel={TEAMUP_COPY.withdrawing}
-          onClick={() => void withdraw()}
-        >
-          {TEAMUP_COPY.withdraw}
-        </Button>
+        {/* Withdraw needs the request's id; a reply without one leaves only the way on (BLD-F074). */}
+        {sent.id ? (
+          <Button
+            variant="text"
+            busy={busy}
+            busyLabel={TEAMUP_COPY.withdrawing}
+            onClick={() => void withdraw()}
+          >
+            {TEAMUP_COPY.withdraw}
+          </Button>
+        ) : null}
         <Button ref={doneRef} variant="primary" onClick={onClose}>
           {doneLabel ?? TEAMUP_COPY.done}
         </Button>
