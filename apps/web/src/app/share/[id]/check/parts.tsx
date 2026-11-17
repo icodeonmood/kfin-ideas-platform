@@ -29,9 +29,12 @@ export const PartFrame = forwardRef<
     children?: ReactNode;
     foot?: ReactNode;
     id?: string;
+    /** The heading's own id, for the phone's count links (#pr-sort-h, #pr-sim-h). */
+    headingId?: string;
   }
->(function PartFrame({ n, heading, line, phone, children, foot, id }, ref) {
-  const hid = useId();
+>(function PartFrame({ n, heading, line, phone, children, foot, id, headingId }, ref) {
+  const made = useId();
+  const hid = headingId ?? made;
   return (
     <section className="ck-part" aria-labelledby={hid} id={id} data-part={n}>
       {phone ? null : <p className="ck-count meta">{n === 7 ? C.sendCounter : C.counter(n)}</p>}
@@ -61,6 +64,7 @@ export function WordsBody({
   values,
   attached,
   onSave,
+  errors = {},
   onAttached,
   hidden,
   phone = false,
@@ -68,6 +72,8 @@ export function WordsBody({
   values: Record<WordKey, string>;
   attached: FileItem[];
   onSave(key: WordKey, value: string): Promise<boolean>;
+  /** Submit's `not_ready` for a line (field `title` or `summary`), in the server's words, shown under that line. */
+  errors?: Partial<Record<WordKey, string>>;
   onAttached(): void;
   hidden: ReactNode;
   /** The phone boards' look (PhoneReview.md, PhoneEdit.md): each line labelled, the title too, with a "Change"
@@ -76,8 +82,23 @@ export function WordsBody({
 }) {
   return (
     <div className="ck-words">
-      <EditLine k="title" label={C.words.title} value={values.title} onSave={onSave} title phone={phone} />
-      <EditLine k="summary" label={C.words.summary} value={values.summary} onSave={onSave} phone={phone} />
+      <EditLine
+        k="title"
+        label={C.words.title}
+        value={values.title}
+        onSave={onSave}
+        serverError={errors.title}
+        title
+        phone={phone}
+      />
+      <EditLine
+        k="summary"
+        label={C.words.summary}
+        value={values.summary}
+        onSave={onSave}
+        serverError={errors.summary}
+        phone={phone}
+      />
       <EditLine k="often" label={C.words.often} value={values.often} onSave={onSave} phone={phone} />
       {hidden}
       {attached.length ? (
@@ -112,6 +133,7 @@ function EditLine({
   label,
   value,
   onSave,
+  serverError,
   title,
   phone = false,
 }: {
@@ -119,12 +141,14 @@ function EditLine({
   label: string;
   value: string;
   onSave(key: WordKey, value: string): Promise<boolean>;
+  serverError?: string;
   title?: boolean;
   phone?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
+  const error = localError ?? serverError ?? null;
   const [busy, setBusy] = useState(false);
   const id = useId();
 
@@ -206,6 +230,7 @@ function EditLine({
             <button
               type="button"
               className="tb blue ck-chg"
+              aria-describedby={error ? `${id}-m` : undefined}
               onClick={() => {
                 setText(value);
                 setEditing(true);
@@ -219,6 +244,7 @@ function EditLine({
               type="button"
               className="ck-pen"
               aria-label={C.words.change[k]}
+              aria-describedby={error ? `${id}-m` : undefined}
               onClick={() => {
                 setText(value);
                 setEditing(true);
@@ -511,9 +537,11 @@ export function HelpersBody({
 export type SendState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "unconfirmed" }
+  /** The server's line when it sent one: not confirmed, or confirmed with a field left empty. */
+  | { kind: "unconfirmed"; message?: string }
   | { kind: "failed" }
-  | { kind: "refused"; message: string }
+  /** `final`: nothing more to send from here (`not_a_draft`), so Submit stays unavailable. */
+  | { kind: "refused"; message: string; final?: boolean }
   | { kind: "queued" };
 
 export function SendRows({ view, onChange }: { view: SendViewResponse; onChange(step: string): void }) {
@@ -569,12 +597,15 @@ export function SendBar({
   onGoToSorting(): void;
   back: ReactNode;
 }) {
+  // One Submit button stays on the page through every state ("Try again" after a failed send), so focus never drops
+  // to the page when the words around it change; each message is announced where it appears (WCAG 2.4.3, 4.1.3).
+  const final = state.kind === "refused" && state.final === true;
   return (
     <div className="ck-send">
       <p className="decl">{declaration}</p>
       {state.kind === "unconfirmed" ? (
         <div className="bmsg bad" role="alert">
-          <span>{C.send.unconfirmed}</span>
+          <span>{state.message || C.send.unconfirmed}</span>
           <Button variant="text" onClick={onGoToSorting}>
             {C.send.goToSorting}
           </Button>
@@ -590,26 +621,22 @@ export function SendBar({
           {C.send.offline}
         </p>
       ) : null}
+      {state.kind === "failed" ? (
+        <p className="bmsg bad" role="alert">
+          {C.send.sendFailed}
+        </p>
+      ) : null}
       {blockedLine && !canSubmit ? <p className="bmsg info">{blockedLine}</p> : null}
       <div className="ck-foot">
         {back}
-        {state.kind === "failed" ? (
-          <div className="ck-failed">
-            <p className="bmsg bad" role="alert">
-              {C.send.sendFailed}
-            </p>
-            <Button onClick={onSubmit}>{C.retry}</Button>
-          </div>
-        ) : (
-          <Button
-            disabled={!canSubmit}
-            busy={state.kind === "sending"}
-            busyLabel={C.send.sending}
-            onClick={onSubmit}
-          >
-            {button}
-          </Button>
-        )}
+        <Button
+          disabled={!canSubmit || final}
+          busy={state.kind === "sending"}
+          busyLabel={C.send.sending}
+          onClick={onSubmit}
+        >
+          {state.kind === "failed" ? C.retry : button}
+        </Button>
       </div>
     </div>
   );

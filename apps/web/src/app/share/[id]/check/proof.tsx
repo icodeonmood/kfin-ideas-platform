@@ -19,6 +19,12 @@ import { rowView, splitLinks, type ProofItem } from "./model";
 
 const C = CHECK_COPY.proof;
 
+/** What adding links did: the ones that did not go in (kept in the box), and why. */
+export interface LinkResult {
+  left: string[];
+  problem: "not_a_link" | "failed" | null;
+}
+
 export function ProofBody({
   items,
   limitMb,
@@ -31,14 +37,15 @@ export function ProofBody({
   onRemove,
   showHelps,
   edit,
+  canHide,
 }: {
   items: ProofItem[];
   limitMb: number;
   help: string;
   accept?: string;
   onFiles(files: File[]): void;
-  /** "ok", or what went wrong: a piece that is not a link, or the call failing. */
-  onLinks(links: string[]): Promise<"ok" | "not_a_link" | "failed">;
+  /** Adds the links one by one and says which did not go in, and why. */
+  onLinks(links: string[]): Promise<LinkResult>;
   onRetry(key: string): void;
   onHide(key: string): void;
   onRemove(key: string): void;
@@ -58,6 +65,8 @@ export function ProofBody({
     /** Phone: "Add a photo or file" with its line, in place of the drop area. */
     pick?: { label: string; line: string };
   };
+  /** "Hide it for me" is offered only while `files.blackout` is on (DEC-107, BLD-C064); it starts off. */
+  canHide: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -69,7 +78,8 @@ export function ProofBody({
   const ids = useId();
 
   const addLinks = async () => {
-    const { links, bad: wrong } = splitLinks(text);
+    if (adding) return;
+    const { links, typed, bad: wrong } = splitLinks(text);
     if (wrong) {
       setBad(true);
       return;
@@ -77,11 +87,12 @@ export function ProofBody({
     setBad(false);
     setFailed(false);
     setAdding(true);
-    const result = await onLinks(links);
+    const { left, problem } = await onLinks(links);
     setAdding(false);
-    if (result === "ok") setText("");
-    else if (result === "not_a_link") setBad(true);
-    else setFailed(true);
+    // What went in leaves the box; what did not stays, as typed, to try again.
+    setText(typed.filter((_, i) => left.includes(links[i]!)).join(", "));
+    setBad(problem === "not_a_link");
+    setFailed(problem === "failed");
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -225,7 +236,7 @@ export function ProofBody({
                     {CHECK_COPY.retry}
                   </Button>
                 ) : null}
-                {v.actions.includes("hide") ? (
+                {v.actions.includes("hide") && canHide ? (
                   <Button variant="text-blue" onClick={() => onHide(p.key)}>
                     {C.hideForMe}
                   </Button>

@@ -20,6 +20,24 @@ import type {
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
+
+/** Lane F's real sheet, with what the grid gives it and what it hands back kept for the tests to drive. */
+const sheetHook = vi.hoisted(() => ({
+  options: null as null | Record<string, unknown>,
+  handle: null as null | { open(id: string): void; close(): void },
+}));
+vi.mock("@/components/teamup/teamup-sheet", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/components/teamup/teamup-sheet")>();
+  return {
+    ...real,
+    useTeamUpSheet: (options: Parameters<typeof real.useTeamUpSheet>[0]) => {
+      sheetHook.options = options as Record<string, unknown>;
+      const handle = real.useTeamUpSheet(options);
+      sheetHook.handle = handle;
+      return handle;
+    },
+  };
+});
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
@@ -282,9 +300,13 @@ function base(
   ];
 }
 
-async function mount(routes: Route[], config: ConfigResponse | null = CONFIG) {
+async function mount(
+  routes: Route[],
+  config: ConfigResponse | null = CONFIG,
+  props: { blackout?: boolean } = {},
+) {
   serve(routes);
-  await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config })));
+  await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config, ...props })));
   await settle();
 }
 
@@ -316,7 +338,23 @@ async function railTo(label: string) {
   await click(button(new RegExp(`^(?:\\d )?${label}\\b`)));
 }
 
+/** This browser's storage, in memory, fresh for each test (Node's own `localStorage` is not a browser's). */
+function memoryStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() {
+      return m.size;
+    },
+    clear: () => m.clear(),
+    getItem: (k: string) => m.get(k) ?? null,
+    key: (i: number) => [...m.keys()][i] ?? null,
+    removeItem: (k: string) => void m.delete(k),
+    setItem: (k: string, v: string) => void m.set(k, String(v)),
+  };
+}
+
 beforeEach(() => {
+  vi.stubGlobal("localStorage", memoryStorage());
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -474,9 +512,42 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
     expect(JSON.stringify(link)).not.toMatch(/couldn/);
   });
 
+  it("C-FILE.row BLD-C139: infected and locked rows say the server's words when sent, else the drawn line, with Remove only", () => {
+    const item = (state: FileItem["state"], problem?: string) => ({
+      key: "k",
+      name: "scan.pdf",
+      item: {
+        id: "f",
+        kind: "file" as const,
+        name: "scan.pdf",
+        type: "application/pdf",
+        size: 1,
+        state,
+        added_by: KAVYA,
+        added_at: "",
+        problem,
+      },
+    });
+    expect(model.rowView(item("infected"), 25).message?.text).toBe(
+      "Didn’t upload. Your other files are fine.",
+    );
+    expect(model.rowView(item("locked", "This file has a password."), 25).message?.text).toBe(
+      "This file has a password.",
+    );
+    expect(model.rowView(item("locked"), 25).actions).toEqual(["remove"]);
+    expect(model.rowView({ ...item("checking"), stalled: true }, 25).actions).toEqual(["retry", "remove"]);
+    expect(
+      model.rowView({ ...item("checked"), note: "Something went wrong. Try again." }, 25).message,
+    ).toEqual({
+      kind: "error",
+      text: "Something went wrong. Try again.",
+    });
+  });
+
   it("C-FILE.uploader/3: links one at a time or with commas; anything else is not a link", () => {
     expect(model.splitLinks("intranet.kfintech.example/page, https://teams.example/x")).toEqual({
       links: ["https://intranet.kfintech.example/page", "https://teams.example/x"],
+      typed: ["intranet.kfintech.example/page", "https://teams.example/x"],
       bad: false,
     });
     expect(model.splitLinks("the codes list").bad).toBe(true);
@@ -645,7 +716,7 @@ describe("S-05 screen: sorting (BLD-C131, L-SORT)", () => {
     ).toBe(true);
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 3 of 6");
     expect(buttons().some((b) => /Sorting Suggested, not confirmed yet/.test(nameOf(b)))).toBe(false);
-    expect(button(/^Sorting Investor service, saves time, saves cost$/)).toBeTruthy();
+    expect(button(/^Sorting, done Investor service, saves time, saves cost$/)).toBeTruthy();
   });
 
   it("J-RECOVER/10: one choice changes the area and is saved at once", async () => {
@@ -685,16 +756,76 @@ describe("S-05 screen: similar ideas (BLD-C132, C-SIMGRID, L-SIMILAR)", () => {
     expect(text(dialog)).toContain("Close match: same SMS, same calls");
   });
 
-  it("J-SHARE/9 C-SIMGRID.grid/4: Next keeps theirs separate; back on the part the grid folds, and Show them again opens it", async () => {
+  it("J-SHARE/9 C-SIMGRID.grid/4 (BLD-C131 amended): Next only moves on and records nothing; the grid is still there on the way back", async () => {
     await mount(base());
     await railTo("Similar ideas");
     await click(button("Next"));
-    expect(calls.find((c) => c.url.endsWith("/similar/keep-separate"))?.body).toEqual({ on: true });
+    expect(calls.some((c) => c.url.endsWith("/similar/keep-separate"))).toBe(false);
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 4 of 6");
+    await railTo("Similar ideas");
+    expect(document.body.textContent).not.toContain("Kept separate.");
+    expect(document.querySelector(".simgrid")).toBeTruthy();
+  });
+
+  it("C-SIMGRID.grid/4 V-ACC.share/7 J-SIMILAR/3: Keep mine separate in lane F's sheet records it and folds the grid; on close focus goes to Show them again", async () => {
+    await mount(base());
+    await railTo("Similar ideas");
+    const teamUp = button("Team up on Rejection SMS codes confuse investors")!;
+    // C-SIMGRID.tile: Team up is marked for the sheet to give focus back to (BLD-F074).
+    expect(teamUp.getAttribute("data-teamup-opener")).toBe("IDEA-2026-001412");
+    expect(typeof sheetHook.options?.returnFocus).toBe("function");
+    expect(sheetHook.options?.draftId).toBe(DRAFT_ID);
+    teamUp.focus();
+    await click(teamUp);
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    const sent = {
+      kind: "teamup",
+      id: "tu-1",
+      ideaId: MATCH_RAVI.idea.id,
+      note: "I take these calls at the Hyderabad branch too.",
+      brought: [],
+      after: null,
+    };
+    await act(async () => (sheetHook.options!.onSent as (s: unknown) => void)(sent));
+    await settle();
+    expect(calls.find((c) => c.url.endsWith("/similar/keep-separate"))?.body).toEqual({ on: true });
+    expect(document.body.textContent).toContain(
+      "Kept separate. The review desk still sees the similar ideas next to yours.",
+    );
+    // The sheet stays open over the fold until the person closes it.
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    await act(async () => sheetHook.handle!.close());
+    await settle();
+    expect(document.activeElement).toBe(button("Show them again"));
+  });
+
+  it("L-MERGE.request/1 C-SIMGRID.grid/4: Ask Ravi to merge mine in does not fold the grid; it reloads the merge request", async () => {
+    await mount(base());
+    await railTo("Similar ideas");
+    const before = calls.filter((c) => c.url.endsWith("/merge-request")).length;
+    await act(async () =>
+      (sheetHook.options!.onSent as (s: unknown) => void)({
+        kind: "merge",
+        id: "m-1",
+        ideaId: MATCH_RAVI.idea.id,
+        note: "Please take mine into yours.",
+        brought: [],
+        after: null,
+      }),
+    );
+    await settle();
+    expect(calls.some((c) => c.url.endsWith("/similar/keep-separate"))).toBe(false);
+    expect(calls.filter((c) => c.url.endsWith("/merge-request")).length).toBeGreaterThan(before);
+    expect(document.querySelector(".simgrid")).toBeTruthy();
+  });
+
+  it("C-SIMGRID.grid/4 BLD-C131: the fold follows the draft's kept_separate after a reload; Show them again opens the grid", async () => {
+    await mount(base({ draft: draft({ kept_separate: true }) }));
     await railTo("Similar ideas");
     expect(document.body.textContent).toContain(
       "Kept separate. The review desk still sees the similar ideas next to yours.",
     );
+    expect(document.querySelector(".simgrid")).toBeNull();
     await click(button("Show them again"));
     expect(calls.filter((c) => c.url.endsWith("/similar/keep-separate")).pop()?.body).toEqual({ on: false });
     expect(document.querySelector(".simgrid")).toBeTruthy();
@@ -751,6 +882,37 @@ describe("S-05 screen: similar ideas (BLD-C132, C-SIMGRID, L-SIMILAR)", () => {
     await click(button("Withdraw the request"));
     expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/merge-request"))).toBe(true);
   });
+
+  it("L-MERGE.request/4 WCAG 4.1.3: the bar's live region is on the page before its words; a failed Withdraw on the bar says so on the bar", async () => {
+    await mount(base());
+    const live = document.querySelector('.ck-mlive[role="status"]');
+    expect(live).toBeTruthy();
+    expect(text(live)).toBe("");
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    const waiting = {
+      id: "m1",
+      other_idea_id: MATCH_RAVI.idea.id,
+      state: "waiting",
+      lead: RAVI,
+      after: {
+        state: "waiting",
+        label: "Waiting on Ravi to merge",
+        line: "Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own.",
+        action: { label: "Withdraw the request", op: "withdraw" },
+        can_submit: false,
+      },
+    };
+    await mount([
+      (m, u) => (m === "DELETE" && u.endsWith("/merge-request") ? { status: 502, body: {} } : undefined),
+      ...base({ merge: waiting }),
+    ]);
+    await railTo("Proof");
+    await click(button("Withdraw the request"));
+    const bar = document.querySelector('.ck-mlive[role="status"]')!;
+    expect(text(bar)).toContain("Something went wrong. Try again.");
+    expect(h1()).toBe("Anything that shows it?");
+  });
 });
 
 describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
@@ -789,7 +951,7 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(document.body.textContent).not.toContain("courier-register-photo.png");
   });
 
-  it("J-RECOVER/8 L-HIDE.files: a file with personal data: the found line, Hide it for me and Remove; checking until it settles", async () => {
+  it("J-RECOVER/8 L-HIDE.files: a file with personal data: the found line, Hide it for me (files.blackout on) and Remove; checking until it settles", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const uploaded: FileItem = {
       id: "f9",
@@ -801,24 +963,28 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
       added_by: KAVYA,
       added_at: "",
     };
-    await mount([
-      (m, u) => (m === "POST" && u === "/api/files" ? { status: 201, body: uploaded } : undefined),
-      (m, u) =>
-        m === "GET" && u === "/api/files/f9"
-          ? {
-              body: {
-                ...uploaded,
-                state: "personal_data_found",
-                problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
-              },
-            }
-          : undefined,
-      (m, u) =>
-        m === "POST" && u === "/api/files/f9/hide"
-          ? { body: { ...uploaded, state: "hidden_checked", hidden_note: "Phone hidden" } }
-          : undefined,
-      ...base(),
-    ]);
+    await mount(
+      [
+        (m, u) => (m === "POST" && u === "/api/files" ? { status: 201, body: uploaded } : undefined),
+        (m, u) =>
+          m === "GET" && u === "/api/files/f9"
+            ? {
+                body: {
+                  ...uploaded,
+                  state: "personal_data_found",
+                  problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+                },
+              }
+            : undefined,
+        (m, u) =>
+          m === "POST" && u === "/api/files/f9/hide"
+            ? { body: { ...uploaded, state: "hidden_checked", hidden_note: "Phone hidden" } }
+            : undefined,
+        ...base(),
+      ],
+      CONFIG,
+      { blackout: true },
+    );
     await railTo("Proof");
     await click(button("Attach files"));
     await chooseFile("courier-call-log.pdf", "application/pdf");
@@ -935,6 +1101,214 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(button("Remove https://intranet.kfintech.example/courier-returns")).toBeTruthy();
     expect(document.body.textContent).toContain("Internal link");
     expect(document.body.textContent).not.toMatch(/couldn.t open this link/);
+  });
+
+  const checking = (id: string, name: string, state: FileItem["state"] = "checking"): FileItem => ({
+    id,
+    kind: "file",
+    name,
+    type: "application/pdf",
+    size: 2048,
+    state,
+    added_by: KAVYA,
+    added_at: "",
+  });
+
+  it("DEC-107 BLD-C064: while files.blackout is off, a file with a detail found offers Remove but not Hide it for me", async () => {
+    const found = {
+      ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
+      problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+    };
+    await mount(base({ draft: draft({ files: [found] }) }));
+    await railTo("Proof");
+    expect(document.body.textContent).toContain("Found a phone number on page 1.");
+    expect(button("Hide it for me")).toBeUndefined();
+    expect(button("Remove branch-call-log.pdf")).toBeTruthy();
+  });
+
+  it("L-HIDE.files/3 S-05.rules/5: a Hide it for me that fails says the server's words under its row", async () => {
+    const found = {
+      ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
+      problem: "Found a phone number.",
+    };
+    const paused =
+      "Hiding details inside a file is coming soon. The review desk will look at the file with you.";
+    await mount(
+      [
+        (m, u) =>
+          m === "POST" && u === "/api/files/f4/hide"
+            ? { status: 503, body: { error: { code: "not_available", message: paused } } }
+            : undefined,
+        ...base({ draft: draft({ files: [found] }) }),
+      ],
+      CONFIG,
+      { blackout: true },
+    );
+    await railTo("Proof");
+    await click(button("Hide it for me"));
+    const row = document.querySelector(".frow")!;
+    expect(text(row)).toContain(paused);
+    expect(text(row)).toContain("branch-call-log.pdf");
+  });
+
+  it("C-FILE.row S-05.rules/5: a Remove that fails keeps the row where it was and says so under it", async () => {
+    const a = checking("f1", "first-screenshot.pdf", "checked");
+    const b = checking("f2", "second-report.pdf", "checked");
+    await mount([
+      (m, u) => (m === "DELETE" && u === "/api/files/f1" ? { status: 502, body: {} } : undefined),
+      (m, u) => (m === "DELETE" && u === "/api/files/f2" ? { status: 204 } : undefined),
+      ...base({ draft: draft({ files: [a, b] }) }),
+    ]);
+    await railTo("Proof");
+    await click(button("Remove first-screenshot.pdf"));
+    const rows = Array.from(document.querySelectorAll(".frow"));
+    expect(rows.map((r) => text(r.querySelector(".frow-n")))).toEqual([
+      "first-screenshot.pdf",
+      "second-report.pdf",
+    ]);
+    expect(text(rows[0])).toContain("Something went wrong. Try again.");
+    await click(button("Remove second-report.pdf"));
+    expect(
+      Array.from(document.querySelectorAll(".frow")).map((r) => text(r.querySelector(".frow-n"))),
+    ).toEqual(["first-screenshot.pdf"]);
+  });
+
+  it("A-API.files: Remove while the upload is on its way deletes the file once the upload answers, and never brings the row back", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const answered = new Promise((r) => (answer = r));
+    await mount([
+      (m, u) =>
+        m === "POST" && u === "/api/files"
+          ? { status: 201, body: checking("f7", "courier-log.pdf") }
+          : undefined,
+      (m, u) => (m === "DELETE" && u === "/api/files/f7" ? { status: 204 } : undefined),
+      ...base(),
+    ]);
+    const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i?: RequestInit) => {
+        if (u === "/api/files" && i?.method === "POST") await answered;
+        return real(u, i);
+      }),
+    );
+    await railTo("Proof");
+    await click(button("Attach files"));
+    await chooseFile("courier-log.pdf", "application/pdf");
+    await click(button("Remove courier-log.pdf"));
+    expect(document.body.textContent).not.toContain("courier-log.pdf");
+    await act(async () => answer(null));
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/files/f7")).toBe(true);
+    expect(document.body.textContent).not.toContain("courier-log.pdf");
+  });
+
+  it("C-FILE.row BLD-C139: a failed ask for a file's state waits longer and asks again; it settles when an ask answers", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let asks = 0;
+    await mount([
+      (m, u) => {
+        if (m !== "GET" || u !== "/api/files/f9") return undefined;
+        asks += 1;
+        return asks <= 2 ? { fail: true } : { body: checking("f9", "courier-call-log.pdf", "checked") };
+      },
+      ...base({ draft: draft({ files: [checking("f9", "courier-call-log.pdf")] }) }),
+    ]);
+    await railTo("Proof");
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(asks).toBe(1);
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(asks).toBe(1); // after one failure the next ask waits 4 s
+    await act(async () => vi.advanceTimersByTime(2000));
+    await settle();
+    expect(asks).toBe(2);
+    await act(async () => vi.advanceTimersByTime(8100));
+    await settle();
+    expect(asks).toBe(3);
+    expect(text(document.querySelector(".frow"))).toContain("Checked");
+  });
+
+  it("C-FILE.row BLD-C139: after five failed asks in a row (a 4xx while a switch is off) the row offers Try again, which asks again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let refuse = true;
+    await mount([
+      (m, u) =>
+        m === "GET" && u === "/api/files/f9"
+          ? refuse
+            ? { status: 403, body: { error: { code: "forbidden", message: "" } } }
+            : { body: checking("f9", "courier-call-log.pdf", "checked") }
+          : undefined,
+      ...base({ draft: draft({ files: [checking("f9", "courier-call-log.pdf")] }) }),
+    ]);
+    await railTo("Proof");
+    expect(button("Try again")).toBeUndefined();
+    for (const wait of [2000, 4000, 8000, 16000, 30000]) {
+      await act(async () => vi.advanceTimersByTime(wait + 50));
+      await settle();
+    }
+    expect(calls.filter((c) => c.url === "/api/files/f9")).toHaveLength(5);
+    expect(text(document.querySelector(".frow"))).toContain("Checking for personal details");
+    expect(button("Try again")).toBeTruthy();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    await settle();
+    expect(calls.filter((c) => c.url === "/api/files/f9")).toHaveLength(5);
+    refuse = false;
+    await click(button("Try again"));
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(text(document.querySelector(".frow"))).toContain("Checked");
+    expect(button("Try again")).toBeUndefined();
+  });
+
+  it("C-FILE.uploader/3: several links go in one by one; one that fails stays in the box, and trying again never adds one twice", async () => {
+    let failB = true;
+    await mount([
+      (m, u, b) => {
+        if (m !== "POST" || u !== "/api/links") return undefined;
+        const url = (b as { url: string }).url;
+        if (url.endsWith("/b") && failB) {
+          failB = false;
+          return { status: 502, body: {} };
+        }
+        return {
+          status: 201,
+          body: {
+            id: url.endsWith("/a") ? "la" : "lb",
+            kind: "link",
+            name: url,
+            url,
+            type: "link",
+            state: "ok",
+            link_scope: "internal",
+            added_by: KAVYA,
+            added_at: "",
+          },
+        };
+      },
+      ...base(),
+    ]);
+    await railTo("Proof");
+    const input = document.querySelector<HTMLInputElement>('input[inputmode="url"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "intranet.kfintech.example/a, intranet.kfintech.example/b");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Add a link"));
+    expect(button("Remove https://intranet.kfintech.example/a")).toBeTruthy();
+    expect(input.value).toBe("intranet.kfintech.example/b");
+    expect(document.body.textContent).toContain("Something went wrong. Try again.");
+    await click(button("Add a link"));
+    expect(input.value).toBe("");
+    const posted = calls.filter((c) => c.url === "/api/links").map((c) => (c.body as { url: string }).url);
+    expect(posted).toEqual([
+      "https://intranet.kfintech.example/a",
+      "https://intranet.kfintech.example/b",
+      "https://intranet.kfintech.example/b",
+    ]);
+    expect(document.querySelectorAll(".frow")).toHaveLength(2);
   });
 });
 
@@ -1184,6 +1558,393 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     await click(button("Submit"));
     expect(document.body.textContent).toContain("A file still needs its personal details hidden.");
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+// --- Review round on 4ec8201d (BLD-C138, C139) ---------------------------------------------------------------
+
+function asPhone() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({
+      matches: q.includes("max-width: 720px"),
+      media: q,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
+
+describe("S-05 review fixes: the rail and the phone (S-05.layout, S-05.phone)", () => {
+  it("S-05.layout WCAG 1.1.1: a done part's tick says , done to a screen reader; a part that needs attention keeps its number", async () => {
+    await mount(base());
+    await click(button("Looks right"));
+    const words = button(/^Your words, done Title, what happens, how often$/)!;
+    expect(words).toBeTruthy();
+    expect(words.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+    await railTo("Send it");
+    await click(button("Submit"));
+    await click(button("Go to the sorting"));
+    await railTo("Proof");
+    const sortingButton = button(/^2 Sorting Suggested, not confirmed yet$/)!;
+    expect(sortingButton).toBeTruthy();
+    expect(text(sortingButton.querySelector('.ck-rn[aria-hidden="true"]'))).toBe("!");
+  });
+
+  it("S-05.phone PhoneReview.md: the three counts link to their parts: 1 detail hidden, 4 sortings, 2 similar ideas", async () => {
+    asPhone();
+    await mount(base());
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".ck-stats a"));
+    expect(links.map((a) => [text(a), a.getAttribute("href")])).toEqual([
+      ["1 detail hidden", "#pr-hidden"],
+      ["4 sortings", "#pr-sort-h"],
+      ["2 similar ideas", "#pr-sim-h"],
+    ]);
+    expect(document.getElementById("pr-hidden")?.textContent).toContain("Folio ••••89");
+    expect(text(document.getElementById("pr-sort-h"))).toBe("Is this sorted right?");
+    expect(text(document.getElementById("pr-sim-h"))).toBe("Already raised?");
+  });
+
+  it("S-05.phone: a count of none is left out, so no link points at an empty part", async () => {
+    asPhone();
+    await mount(base({ draft: draft({ hidden: [] }), similar: [] }));
+    expect(Array.from(document.querySelectorAll(".ck-stats a")).map(text)).toEqual(["4 sortings"]);
+  });
+
+  it("L-SORT.rules/4 J-RECOVER/12 on a phone: Change on a Send row and Go to the sorting take focus to that part's heading", async () => {
+    asPhone();
+    await mount(base());
+    await click(button("Change sorting"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sort-h"));
+    await click(button("Change similar ideas"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sim-h"));
+    await click(button("Submit"));
+    expect(document.body.textContent).toContain("Confirm the sorting first, or change any of it.");
+    (document.activeElement as HTMLElement).blur();
+    await click(button("Go to the sorting"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sort-h"));
+    expect(document.body.textContent).toContain("Confirm these, or change any of them, before you send.");
+  });
+});
+
+describe("S-05 review fixes: hidden details (C-HIDDEN.list)", () => {
+  function shownDetail(id: string, masked: string) {
+    return { id, kind: "phone", masked, state: "shown", reason: "made_up_example" };
+  }
+
+  it("C-HIDDEN.list/3 WCAG 2.4.3: after Show it confirms, focus is on the row's Hide it; after Hide it, on its Show it", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/hidden/h1/show")
+          ? {
+              body: {
+                id: "h1",
+                kind: "folio",
+                masked: "Folio ••••89",
+                state: "shown",
+                reason: "internal_reference",
+              },
+            }
+          : undefined,
+      (m, u) =>
+        m === "POST" && u.endsWith("/hidden/h1/hide")
+          ? { body: { id: "h1", kind: "folio", masked: "Folio ••••89", state: "hidden" } }
+          : undefined,
+      ...base(),
+    ]);
+    await click(button("Show it"));
+    await click(Array.from(document.querySelectorAll('[role="radio"]'))[1]);
+    await click(
+      buttons()
+        .filter((b) => nameOf(b) === "Show it")
+        .pop(),
+    );
+    expect(nameOf(document.activeElement!)).toBe("Hide it");
+    await click(button("Hide it"));
+    expect(calls.some((c) => c.url.endsWith("/hidden/h1/hide"))).toBe(true);
+    expect(nameOf(document.activeElement!)).toBe("Show it");
+  });
+
+  it("C-HIDDEN.list: while one detail is being shown, Hide it on another waits too", async () => {
+    let release: (v: unknown) => void = () => undefined;
+    const pending = new Promise((r) => (release = r));
+    const routes = [
+      (m: string, u: string) =>
+        m === "POST" && u.endsWith("/hidden/h1/show")
+          ? {
+              body: {
+                id: "h1",
+                kind: "folio",
+                masked: "Folio ••••89",
+                state: "shown",
+                reason: "internal_reference",
+              },
+            }
+          : undefined,
+      ...base({
+        draft: draft({
+          hidden: [
+            { id: "h1", kind: "folio", masked: "Folio ••••89", state: "hidden" },
+            shownDetail("h2", "Phone ••••12"),
+          ],
+        }),
+      }),
+    ];
+    await mount(routes);
+    const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i?: RequestInit) => {
+        if (u.endsWith("/hidden/h1/show")) await pending;
+        return real(u, i);
+      }),
+    );
+    await click(button("Show it"));
+    await click(Array.from(document.querySelectorAll('[role="radio"]'))[1]);
+    const confirm = buttons()
+      .filter((b) => nameOf(b) === "Show it")
+      .pop()!;
+    await act(async () => confirm.click());
+    expect(button("Hide it")!.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => release(null));
+    await settle();
+    expect(button("Hide it")!.getAttribute("aria-disabled")).toBeNull();
+  });
+});
+
+describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
+  const submitted = {
+    status: 201,
+    body: { idea_id: "IDEA-2026-001483", ref: "IDEA-2026-001483", next: { to: "/ideas/IDEA-2026-001483" } },
+  };
+  const refuse =
+    (status: number, error: Record<string, string>): Route =>
+    (m, u) =>
+      m === "POST" && u.endsWith("/submit") ? { status, body: { error } } : undefined;
+
+  it("V-FIELDS.checkit/14 J-RECOVER/14: a Submit pressed offline is kept on this device (id and key, no words) and sent on the next visit, then cleared", async () => {
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    await click(button("Submit"));
+    const kept = JSON.parse(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)!);
+    expect(Object.keys(kept).sort()).toEqual(["draftId", "key"]);
+    expect(kept.draftId).toBe(DRAFT_ID);
+    expect(kept.key).toMatch(/^s05:/);
+    expect(calls.some((c) => c.url.endsWith("/submit"))).toBe(false);
+    // The tab closes; later, online again, Check it opens for the same draft.
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    online.mockReturnValue(true);
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await settle();
+    const sent = calls.filter((c) => c.url.endsWith("/submit"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.headers["Idempotency-Key"]).toBe(kept.key);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483");
+    expect(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)).toBeNull();
+    online.mockRestore();
+  });
+
+  it("V-FIELDS.checkit/14: storage that cannot be used never breaks Submit offline", async () => {
+    vi.stubGlobal("localStorage", {
+      ...memoryStorage(),
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    });
+    await mount(base({ sorting: sorting(true) }));
+    await railTo("Send it");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    await click(button("Submit"));
+    expect(document.body.textContent).toContain(
+      "You’re offline. Your draft is saved on this device. Submit now and it sends when you’re back online.",
+    );
+    online.mockRestore();
+  });
+
+  it("J-RECOVER/13 WCAG 2.4.3: a failed send keeps the one button, now Try again, with focus on it and the message announced", async () => {
+    await mount([refuse(502, { code: "unavailable", message: "" }), ...base({ sorting: sorting(true) })]);
+    await railTo("Send it");
+    const submitButton = button("Submit")!;
+    submitButton.focus();
+    await click(submitButton);
+    expect(submitButton.isConnected).toBe(true);
+    expect(nameOf(submitButton)).toBe("Try again");
+    expect(document.activeElement).toBe(submitButton);
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toBe(
+      "Couldn’t send. Your draft is safe. Check your connection, then try again.",
+    );
+  });
+
+  it("S-05.rules/5 L-SUBMIT.pre: file_blocked shows under that file's row and takes the person to Proof", async () => {
+    const f: FileItem = {
+      id: "f3",
+      kind: "file",
+      name: "branch-call-log.pdf",
+      type: "application/pdf",
+      size: 2048,
+      state: "checking",
+      added_by: KAVYA,
+      added_at: "",
+    };
+    const line = "This file is still being checked. Wait a moment, or remove it.";
+    await mount([
+      refuse(422, { code: "file_blocked", message: line, field: "f3" }),
+      (m, u) => (m === "GET" && u === "/api/files/f3" ? { body: f } : undefined),
+      ...base({ draft: draft({ files: [f] }), sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(h1()).toBe("Anything that shows it?");
+    expect(text(document.querySelector(".frow"))).toContain(line);
+  });
+
+  it("S-05.rules/5 V-FIELDS.checkit/2: not_ready for what happens goes to Your words and says it under that line", async () => {
+    await mount([
+      refuse(422, {
+        code: "not_ready",
+        message: "Say what happens, in a sentence or two.",
+        field: "summary",
+      }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(h1()).toBe("Is this how you’d put it?");
+    const lines = Array.from(document.querySelectorAll(".ck-w"));
+    expect(text(lines[1])).toContain("Say what happens, in a sentence or two.");
+    expect(text(lines[0])).not.toContain("Say what happens");
+  });
+
+  it("A-API not_a_draft: an idea already sent gets its own line and Submit stays unavailable, with no Try again", async () => {
+    await mount([
+      refuse(409, { code: "not_a_draft", message: "This idea has been sent." }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toBe("This idea has been sent.");
+    expect(document.body.textContent).not.toContain("Check your connection");
+    expect(button("Try again")).toBeUndefined();
+    expect(button("Submit")!.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("L-SORT.rules/2: sorting_unconfirmed shows the server's own line (confirmed, but a field left empty)", async () => {
+    const line = "Confirm these, or change any of them, before you send.";
+    await mount([
+      refuse(422, { code: "sorting_unconfirmed", message: line, field: "sorting" }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toContain(line);
+    expect(button("Go to the sorting")).toBeTruthy();
+  });
+
+  it("S-05.parts/6: words typed for Who would help that wait for a pause are saved before Submit sends", async () => {
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      (m, u) =>
+        m === "PUT" && u.endsWith("/helpers")
+          ? { body: { picks: [], text: "x", line: "", part: { rail: "Added" } } }
+          : undefined,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Who would help");
+    const input = document.querySelector<HTMLInputElement>(".ck-helpers input.fld")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "someone who takes these calls");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await railTo("Send it");
+    await click(button("Submit"));
+    const order = calls.map((c) => `${c.method} ${c.url.split("/").pop()}`);
+    const put = order.indexOf("PUT helpers");
+    expect(put).toBeGreaterThan(-1);
+    expect(put).toBeLessThan(order.indexOf("POST submit"));
+    expect(calls.find((c) => c.url.endsWith("/helpers"))?.body).toEqual({
+      picks: [],
+      text: "someone who takes these calls",
+    });
+  });
+});
+
+describe("S-05 review fixes: the fix sheet (S-05.fix)", () => {
+  async function typeHow(value: string) {
+    const how = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(how, value);
+      how.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("S-05.fix V-FIELDS.checkit/9: the cross saves before closing; a figure it cannot read keeps the sheet open with the line under the figure", async () => {
+    let unclear = true;
+    await mount([
+      (m, u) => {
+        if (m !== "PUT" || !u.endsWith("/fix")) return undefined;
+        if (unclear) {
+          unclear = false;
+          return {
+            status: 422,
+            body: {
+              error: {
+                code: "worth_unclear",
+                message: "Write a rough figure or a range, like 70 to 150.",
+                field: "worth",
+              },
+            },
+          };
+        }
+        return { body: { part: { rail: "Optional", line: "", action: "" } } };
+      },
+      ...base(),
+    ]);
+    await railTo("Your fix");
+    await click(button("Add your fix"));
+    await typeHow("Plain words in the SMS.");
+    await click(button("Time saved"));
+    const hours = document.querySelector<HTMLInputElement>('[role="dialog"] input[inputmode="decimal"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(hours, "lots");
+      hours.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Close, and keep what you wrote"));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(text(dialog)).toContain("Write a rough figure or a range, like 70 to 150.");
+    expect(hours.getAttribute("aria-invalid")).toBe("true");
+    await click(button("Close, and keep what you wrote"));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("You started a fix. It isn’t included yet.");
+  });
+
+  it("S-05.fix: Escape is Cancel and never saves; the page behind the open sheet is inert", async () => {
+    await mount(base());
+    await railTo("Your fix");
+    await click(button("Add your fix"));
+    expect(host.hasAttribute("inert")).toBe(true);
+    await typeHow("Plain words in the SMS.");
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await act(async () =>
+      dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/fix"))).toBe(false);
+    expect(host.hasAttribute("inert")).toBe(false);
+    expect(button("Add your fix")).toBeTruthy();
   });
 });
 

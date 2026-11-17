@@ -17,10 +17,12 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 
 import { IconTick } from "@/components/shell/icons";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
+import type { TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import { Loading, SkeletonRows } from "@/components/ui/skeleton";
 import type {
+  ApiError,
   ConfigResponse,
   HiddenDetail,
   SendViewResponse,
@@ -29,9 +31,9 @@ import type {
   UploadConfig,
 } from "@/lib/contracts";
 
-import { api, sendKey, type Call, type CheckDraft, type MergeState } from "./client";
+import { api, sendKey, sendQueue, type Call, type CheckDraft, type MergeState } from "./client";
 import { CHECK_COPY, PARTS, type PartNo } from "./copy";
-import { FixPartBody, FixSheet, typedAnything, type FixPart } from "./fix";
+import { FixPartBody, FixSheet, typedAnything, type FixPart, type FixProblem } from "./fix";
 import { HiddenTile } from "./hidden";
 import {
   EMPTY_FIX,
@@ -42,6 +44,7 @@ import {
   partFromStep,
   rowView,
   similarRail,
+  sortingCount,
   stepOf,
   type FixForm,
   type SimilarLoad,
@@ -111,9 +114,12 @@ export function usePhone(): boolean {
 export function CheckIt({
   draftId,
   config: initialConfig,
+  blackout = false,
 }: {
   draftId: string;
   config: ConfigResponse | null;
+  /** `files.blackout` (DEC-107, BLD-C064): "Hide it for me" on a file is offered only while it is on. */
+  blackout?: boolean;
 }) {
   const router = useRouter();
   const online = useOnline();
@@ -134,7 +140,7 @@ export function CheckIt({
   const [similar, setSimilar] = useState<SimilarLoad>({ state: "loading" });
   const [merge, setMerge] = useState<MergeState | null>(null);
   const [kept, setKept] = useState(false);
-  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeError, setMergeError] = useState<{ where: "bar" | "grid"; text: string } | null>(null);
 
   const [fixPart, setFixPart] = useState<FixPart>({ kind: "none" });
   const [fixForm, setFixForm] = useState<FixForm>(EMPTY_FIX);
@@ -148,6 +154,10 @@ export function CheckIt({
   const [sendView, setSendView] = useState<SendViewResponse | null>(null);
   const [sendLoad, setSendLoad] = useState<"idle" | "failed">("idle");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
+  /** Bumped when a send kept on this device is found on load, so it is sent once the page is ready. */
+  const [replay, setReplay] = useState(0);
+  /** Submit's `not_ready` for the title or what happens, shown under that line on part 1. */
+  const [wordErrors, setWordErrors] = useState<Partial<Record<"title" | "summary", string>>>({});
 
   const [save, setSave] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<Date | string | null>(null);
@@ -186,6 +196,7 @@ export function CheckIt({
     retryFile,
     hideFile,
     removeFile,
+    noteFile,
   } = useProof(draftId, track, limitMb);
 
   // --- Loading ----------------------------------------------------------------------------------------------------
@@ -233,9 +244,16 @@ export function CheckIt({
       const saved = { picks: body.helpers?.picks ?? [], text: body.helpers?.text ?? "" };
       helpersNow.current = saved;
       setHelpers(saved);
+      const waiting = sendQueue.load(draftId);
+      if (waiting) {
+        idemKey.current = waiting;
+        queued.current = true;
+        setSendState({ kind: "queued" });
+        setReplay((n) => n + 1);
+      }
       void loadSimilar();
     },
-    [loadSimilar, loadProof],
+    [loadSimilar, loadProof, draftId],
   );
 
   useEffect(() => {
@@ -273,6 +291,14 @@ export function CheckIt({
 
   const go = useCallback(
     (n: PartNo, opts: { forwardFrom?: PartNo } = {}) => {
+      if (phone) {
+        // One page: "Go to the sorting", a Send row's "Change" and "Change the attached files" take the person to
+        // that part's heading, scrolled to and focused (L-SORT.rules/4, WCAG 2.4.3).
+        const h = document.querySelector<HTMLElement>(`[data-part="${n}"] .ck-h`);
+        h?.scrollIntoView?.({ block: "start" });
+        h?.focus({ preventScroll: true });
+        return;
+      }
       setDir(n >= part ? 1 : -1);
       if (opts.forwardFrom) {
         const from = opts.forwardFrom;
@@ -287,7 +313,7 @@ export function CheckIt({
       }
       void api.step(draftId, stepOf(n));
     },
-    [draftId, part, loadSend],
+    [draftId, part, loadSend, phone],
   );
 
   useEffect(() => {
@@ -300,6 +326,7 @@ export function CheckIt({
   const saveWord = async (key: "title" | "summary" | "often", value: string) => {
     const r = await track(api.part(draftId, key, value));
     if (!r.ok) return false;
+    if (key !== "often") setWordErrors((e) => ({ ...e, [key]: undefined }));
     const next = (r.body as { draft?: CheckDraft } | null)?.draft;
     setDraft(
       (d) =>
@@ -351,31 +378,39 @@ export function CheckIt({
   const matches = similar.state === "ok" ? similar.matches : [];
   const mv = mergeView(merge, matches);
 
-  const withdraw = async (action: Extract<TileAction, { kind: "waiting" }>) => {
+  /** A failed Withdraw says so where it was pressed: on the bar under the task bar, or under the grid. */
+  const withdraw = async (
+    action: Extract<TileAction, { kind: "waiting" }>,
+    where: "bar" | "grid" = "grid",
+  ) => {
     setMergeError(null);
     const r =
       "merge" in action.withdraw
         ? await track(api.withdrawMerge(draftId))
         : await track(api.withdrawTeamUp(action.withdraw.requestId));
-    if (!r.ok) setMergeError(C.failed);
+    if (!r.ok) setMergeError({ where, text: r.error?.message || C.failed });
     await loadSimilar();
   };
 
   const mergeAction = async () => {
     const a = mv?.action;
     if (!a) return;
-    if (a.op === "withdraw") await withdraw({ kind: "waiting", label: "", withdraw: { merge: true } });
+    if (a.op === "withdraw") await withdraw({ kind: "waiting", label: "", withdraw: { merge: true } }, "bar");
     else if (a.op === "submit") go(7);
   };
 
-  const similarNext = () => {
-    // "None of these the same? Just carry on." Carrying on keeps theirs separate (L-SIMILAR.rules/8, BLD-C095).
-    if (matches.length && !kept && !(mv && mv.state === "waiting")) {
-      void track(api.keepSeparate(draftId, true)).then((r) => {
-        if (r.ok) setKept(true);
-      });
+  // "Next" only moves on: it records nothing. Only an explicit "Keep mine separate" in lane F's sheet does, so the
+  // review desk never reads "kept it separate" for someone who only carried on (BLD-C131, as amended).
+  const similarNext = () => go(4, { forwardFrom: 3 });
+
+  /** The sheet's send. "Keep mine separate" is a team-up request sent with the draft (BLD-F020, BLD-F071): the
+   * draft is kept separate and the grid folds (C-SIMGRID.grid/4, V-ACC.share/7); a merge request reloads the bar. */
+  const teamUpSent = (sent: TeamUpSent) => {
+    if (sent.kind === "teamup") {
+      setKept(true);
+      void track(api.keepSeparate(draftId, true));
     }
-    go(4, { forwardFrom: 3 });
+    void loadSimilar();
   };
 
   const showAgain = async () => {
@@ -408,14 +443,26 @@ export function CheckIt({
     return null;
   };
 
-  const keepFix = async (form: FixForm) => {
-    setSheetOpen(false);
-    // An added fix stays as it was; "Close, and keep what you wrote" keeps a fix that is not added yet.
-    if (fixPart.kind === "added" || !typedAnything(form)) return;
-    setFixForm(form);
+  /** The cross, "Close, and keep what you wrote": saved first, closed after, so nothing is lost on a failed save.
+   * A figure the server cannot read (`worth_unclear`) keeps the sheet open with its line under the figure. */
+  const keepFix = async (form: FixForm): Promise<FixProblem | null> => {
+    // An added fix stays as it was; a sheet with nothing typed just closes.
+    if (fixPart.kind === "added" || !typedAnything(form)) {
+      setSheetOpen(false);
+      return null;
+    }
     const r = await track(api.putFix(draftId, fixRequest(form, false)));
-    if (r.ok) setFixPart({ kind: "started" });
-    else setFixError(C.failed);
+    if (!r.ok) {
+      if (r.error?.code === "worth_unclear") {
+        return { field: "worth", message: r.error.message || C.sheet.worthUnclear };
+      }
+      return { field: null, message: r.error?.message || C.failed };
+    }
+    setFixForm(form);
+    setFixPart({ kind: "started" });
+    setFixError(null);
+    setSheetOpen(false);
+    return null;
   };
 
   const removeFix = async () => {
@@ -454,7 +501,10 @@ export function CheckIt({
     helpersNow.current = next;
     setHelpers(next);
     if (helperTimer.current) clearTimeout(helperTimer.current);
-    helperTimer.current = setTimeout(() => void putHelpers(helpersNow.current), 700);
+    helperTimer.current = setTimeout(() => {
+      helperTimer.current = null;
+      void putHelpers(helpersNow.current);
+    }, 700);
   };
 
   // --- Part 7: send ------------------------------------------------------------------------------------------------
@@ -465,21 +515,36 @@ export function CheckIt({
       : Boolean(sendView?.go_to || sendView?.problems.some((p) => p.code === "sorting_unconfirmed"));
   const canSubmit = !(mv && !mv.canSubmit);
 
-  const submit = useCallback(async () => {
+  /** Offline at Submit: kept on this device and sent when the connection is back (V-FIELDS.checkit/14). */
+  const queue = () => {
+    idemKey.current ??= sendKey(draftId);
+    sendQueue.save(draftId, idemKey.current);
+    queued.current = true;
+    setSendState({ kind: "queued" });
+  };
+
+  const submit = async () => {
     if (!navigator.onLine) {
-      queued.current = true;
-      setSendState({ kind: "queued" });
+      queue();
       return;
     }
     if (sortingUnconfirmed) {
+      sendQueue.clear(draftId);
       setSendState({ kind: "unconfirmed" });
       return;
+    }
+    // Words typed for "Who would help" that are still waiting for a pause go first (S-05 part 6).
+    if (helperTimer.current) {
+      clearTimeout(helperTimer.current);
+      helperTimer.current = null;
+      await putHelpers(helpersNow.current);
     }
     let view = sendView;
     if (!view) {
       const v = await api.send(draftId);
       if (!v.ok) {
-        setSendState({ kind: "failed" });
+        if (v.status === 0 && !navigator.onLine) queue();
+        else setSendState({ kind: "failed" });
         return;
       }
       view = v.body;
@@ -489,38 +554,73 @@ export function CheckIt({
     idemKey.current ??= sendKey(draftId);
     const r = await api.submit(draftId, view.declaration.version, idemKey.current);
     if (r.ok) {
+      sendQueue.clear(draftId);
       const to = r.body.next?.to || `/ideas/${encodeURIComponent(r.body.ref || r.body.idea_id)}`;
       router.replace(to);
       return;
     }
-    if (r.status === 0 && !navigator.onLine) {
-      queued.current = true;
-      setSendState({ kind: "queued" });
+    if (r.status === 0) {
+      if (!navigator.onLine) queue();
+      else setSendState({ kind: "failed" });
       return;
     }
-    const code = r.error?.code;
-    if (code === "sorting_unconfirmed") setSendState({ kind: "unconfirmed" });
-    else if (
-      r.error?.message &&
-      (code === "merge_waiting" ||
-        code === "file_blocked" ||
-        code === "not_ready" ||
-        code === "declaration_changed" ||
-        code === "merged" ||
-        code === "sorting_incomplete")
-    ) {
-      setSendState({ kind: "refused", message: r.error.message });
-      void loadSend();
-    } else setSendState({ kind: "failed" });
-  }, [draftId, sendView, sortingUnconfirmed, router, loadSend]);
+    // The server answered: nothing is left to send from this device.
+    sendQueue.clear(draftId);
+    refused(r.error);
+  };
 
-  // Offline at Submit: it sends when the connection is back (V-FIELDS.checkit/14).
+  /** A refusal goes where it is about (S-05.rules/5, A-API POST /drafts/:id/submit): the file's row, the words, the
+   * sorting, or its own line under Submit; only a failure with no answer is "Couldn't send…" with Try again. */
+  const refused = (error: ApiError["error"] | null) => {
+    const code = error?.code;
+    const message = error?.message || "";
+    const field = error?.field;
+    if (code === "sorting_unconfirmed") {
+      // Not confirmed, or confirmed with a field left empty: the server's own line for which (L-SORT.rules/2).
+      setSendState({ kind: "unconfirmed", message: message || undefined });
+      return;
+    }
+    if (code === "file_blocked" && field && proof.some((p) => p.item?.id === field)) {
+      noteFile(field, message || C.failed);
+      setSendState({ kind: "idle" });
+      go(4);
+      return;
+    }
+    if (code === "not_ready" && (field === "title" || field === "summary")) {
+      setWordErrors((e) => ({ ...e, [field]: message || C.failed }));
+      setSendState({ kind: "idle" });
+      go(1);
+      return;
+    }
+    if (code === "not_a_draft") {
+      // Already sent: its own line, and Submit stays unavailable rather than looping on Try again.
+      setSendState({ kind: "refused", message: message || C.failed, final: true });
+      return;
+    }
+    if (
+      message &&
+      code &&
+      ["merge_waiting", "file_blocked", "declaration_changed", "merged"].includes(code)
+    ) {
+      setSendState({ kind: "refused", message });
+      void loadSend();
+      return;
+    }
+    setSendState({ kind: "failed" });
+  };
+
+  // Offline at Submit, or a send kept on this device from an earlier visit: it goes when the connection is back,
+  // with the page as it is then.
+  const latestSubmit = useRef(submit);
+  useEffect(() => {
+    latestSubmit.current = submit;
+  });
   useEffect(() => {
     if (online && queued.current) {
       queued.current = false;
-      void submit();
+      void latestSubmit.current();
     }
-  }, [online, submit]);
+  }, [online, replay]);
 
   const goToSorting = () => {
     setTriedUnconfirmed(true);
@@ -604,7 +704,14 @@ export function CheckIt({
     </Button>
   );
 
-  const hiddenTile = <HiddenTile details={draft.hidden ?? []} onShow={showHidden} onHide={hideAgain} />;
+  const hiddenTile = (
+    <HiddenTile
+      id={phone ? "pr-hidden" : undefined}
+      details={draft.hidden ?? []}
+      onShow={showHidden}
+      onHide={hideAgain}
+    />
+  );
 
   const content: Record<
     PartNo,
@@ -618,6 +725,7 @@ export function CheckIt({
           values={{ title, summary, often }}
           attached={attached}
           onSave={saveWord}
+          errors={wordErrors}
           onAttached={() => go(4)}
           hidden={hiddenTile}
         />
@@ -681,10 +789,11 @@ export function CheckIt({
               merge={mv}
               keptSeparate={kept}
               onShowAgain={() => void showAgain()}
-              onChanged={() => void loadSimilar()}
-              onWithdraw={withdraw}
+              onSent={teamUpSent}
+              onWithdrawn={() => void loadSimilar()}
+              onWithdraw={(a) => withdraw(a, "grid")}
             />
-            {mergeError ? <FieldMsg>{mergeError}</FieldMsg> : null}
+            {mergeError?.where === "grid" ? <FieldMsg>{mergeError.text}</FieldMsg> : null}
           </>
         ),
       foot: (
@@ -709,6 +818,7 @@ export function CheckIt({
           onHide={(k) => void hideFile(k)}
           onRemove={(k) => void removeFile(k)}
           showHelps={!phone}
+          canHide={blackout}
         />
       ),
       foot: (
@@ -800,20 +910,27 @@ export function CheckIt({
     },
   };
 
-  const bar = mv ? (
-    <div className={`ck-mbar ck-mbar-${mv.state}`} role="status">
-      <p>{mv.line}</p>
-      {mv.action?.to ? (
-        <ButtonLink variant="text-blue" href={mv.action.to}>
-          {mv.action.label}
-        </ButtonLink>
-      ) : mv.action ? (
-        <Button variant="text-blue" onClick={() => void mergeAction()}>
-          {mv.action.label}
-        </Button>
+  // The live region is on the page before its words, so a merge outcome that arrives later is announced (WCAG
+  // 4.1.3); a failed Withdraw pressed here says so here (C-FIELD-MSG).
+  const bar = (
+    <div className="ck-mlive" role="status">
+      {mv ? (
+        <div className={`ck-mbar ck-mbar-${mv.state}`}>
+          <p>{mv.line}</p>
+          {mv.action?.to ? (
+            <ButtonLink variant="text-blue" href={mv.action.to}>
+              {mv.action.label}
+            </ButtonLink>
+          ) : mv.action ? (
+            <Button variant="text-blue" onClick={() => void mergeAction()}>
+              {mv.action.label}
+            </Button>
+          ) : null}
+          {mergeError?.where === "bar" ? <FieldMsg>{mergeError.text}</FieldMsg> : null}
+        </div>
       ) : null}
     </div>
-  ) : null;
+  );
 
   const taskbar = (
     <Taskbar
@@ -830,12 +947,20 @@ export function CheckIt({
       open={sheetOpen}
       initial={fixForm}
       onCancel={() => setSheetOpen(false)}
-      onKeep={(f) => void keepFix(f)}
+      onKeep={keepFix}
       onAdd={addFix}
     />
   );
 
   if (phone) {
+    // PhoneReview.md: "1 detail hidden", "3 sortings", "2 similar ideas", each a link to its part. A count of none
+    // is left out (NOT DRAWN), so no link points at a part with nothing to show (BLD-C138).
+    const hiddenNow = (draft.hidden ?? []).filter((d) => d.state !== "shown").length;
+    const counts = [
+      { n: hiddenNow, words: C.phone.hiddenCount(hiddenNow), href: "#pr-hidden" },
+      { n: sortingCount(sorting), words: C.phone.sortingsCount(sortingCount(sorting)), href: "#pr-sort-h" },
+      { n: matches.length, words: C.phone.similarCount(matches.length), href: "#pr-sim-h" },
+    ].filter((x) => x.n > 0);
     return (
       <div className="ck ck-phone">
         {taskbar}
@@ -843,12 +968,29 @@ export function CheckIt({
         <div className="ck-ph">
           <h1 className="h1">{C.phone.heading}</h1>
           <p className="ck-line">{C.phone.line}</p>
+          {counts.length ? (
+            <div className="ck-stats">
+              {counts.map((x) => (
+                <a key={x.href} className="ck-stat" href={x.href}>
+                  <b className="num">{x.n}</b> {x.words}
+                </a>
+              ))}
+            </div>
+          ) : null}
           <BackToWords href={`/share/${encodeURIComponent(draftId)}`} />
           {PARTS.map(({ n }) => {
             const c = content[n as PartNo];
             const foot = n === 2 && !sorting?.confirmed ? c.foot : undefined;
             return (
-              <PartFrame key={n} n={n as PartNo} heading={c.heading} line={c.line} phone foot={foot}>
+              <PartFrame
+                key={n}
+                n={n as PartNo}
+                heading={c.heading}
+                line={c.line}
+                phone
+                foot={foot}
+                headingId={n === 2 ? "pr-sort-h" : n === 3 ? "pr-sim-h" : undefined}
+              >
                 {c.body}
               </PartFrame>
             );
@@ -889,8 +1031,11 @@ export function CheckIt({
                     <span className="ck-rn" aria-hidden={ok || attention[no] ? true : undefined}>
                       {ok ? <IconTick size={12} /> : attention[no] ? "!" : n}
                     </span>
-                    {ok || attention[no] ? null : " "}
+                    {/* The tick and the "!" are drawn only; a screen reader hears ", done" (the task bar's words)
+                        or the part's number, as the board names the button ("2 Sorting Suggested, …"). */}
+                    {attention[no] && !ok ? <span className="vh">{`${n} `}</span> : ok ? null : " "}
                     <span className="ck-rl">{label}</span>
+                    {ok ? <span className="vh">{C.done}</span> : null}
                     {send ? (
                       <span className="ck-rs ck-rs-gap" aria-hidden="true" />
                     ) : (

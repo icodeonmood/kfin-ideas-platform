@@ -7,8 +7,10 @@
  *
  * The sheet is a right-hand dialog (full screen on a phone), mounted at the page root: six questions, a readiness
  * line that counts what is filled, and the most useful next answer. Only "How would you solve it?" is needed. The
- * cross is "Close, and keep what you wrote" (a started fix, `included: false`); "Cancel" closes without saving
- * (S-05.fix OPEN, P-DECISIONS.open/13). Amounts go to the server as typed and come back normalised (L-WORTH/1).
+ * cross is "Close, and keep what you wrote" (a started fix, `included: false`), saved before the sheet closes;
+ * "Cancel" and Escape close without saving (S-05.fix OPEN, P-DECISIONS.open/13, BLD-C139). While it is open the page
+ * behind it is inert, so neither a pointer nor a screen reader reaches it. Amounts go to the server as typed and come
+ * back normalised (L-WORTH/1).
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -84,6 +86,9 @@ export function FixPartBody({
   );
 }
 
+/** What stops the sheet: a line under "How would you solve it?", under the figures, or at the foot. */
+export type FixProblem = { field: "how" | "worth" | null; message: string };
+
 const BASES = (Object.keys(BASIS_LABEL) as Basis[]).map((b) => ({ value: b, label: BASIS_LABEL[b] }));
 const MEASURES: Array<{ value: FixForm["measures"][number]; label: string }> = [
   { value: "hours", label: S.hours },
@@ -102,10 +107,10 @@ export function FixSheet({
   open: boolean;
   initial: FixForm;
   onCancel(): void;
-  /** The cross: keep what was typed as a started fix (or close if nothing was). */
-  onKeep(form: FixForm): void;
+  /** The cross: keep what was typed as a started fix (or close if nothing was); resolves to what stopped it. */
+  onKeep(form: FixForm): Promise<FixProblem | null>;
   /** "Add my fix": resolves to a field error to show, or null when added. */
-  onAdd(form: FixForm): Promise<{ field: "how" | "worth" | null; message: string } | null>;
+  onAdd(form: FixForm): Promise<FixProblem | null>;
 }) {
   if (!open || typeof document === "undefined") return null;
   return createPortal(
@@ -122,12 +127,14 @@ function Sheet({
 }: {
   initial: FixForm;
   onCancel(): void;
-  onKeep(form: FixForm): void;
-  onAdd(form: FixForm): Promise<{ field: "how" | "worth" | null; message: string } | null>;
+  onKeep(form: FixForm): Promise<FixProblem | null>;
+  onAdd(form: FixForm): Promise<FixProblem | null>;
 }) {
   const [f, setF] = useState<FixForm>(initial);
-  const [error, setError] = useState<{ field: "how" | "worth" | null; message: string } | null>(null);
+  const [error, setError] = useState<FixProblem | null>(null);
   const [busy, setBusy] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
   const opener = useRef<Element | null>(null);
@@ -138,11 +145,27 @@ function Sheet({
   useEffect(() => {
     opener.current = document.activeElement;
     title.current?.focus();
+    // The page behind is inert while the sheet is open (WCAG 2.4.3, 1.3.2): every other child of <body>.
+    const others = Array.from(document.body.children).filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && el !== wrap.current && !el.hasAttribute("inert"),
+    );
+    for (const el of others) el.setAttribute("inert", "");
     return () => {
+      for (const el of others) el.removeAttribute("inert");
       const o = opener.current;
       if (o instanceof HTMLElement && o.isConnected) o.focus();
     };
   }, []);
+
+  /** The cross: saved, then closed; if the save is refused the sheet stays open and says why. */
+  const keep = async () => {
+    if (keeping) return;
+    setKeeping(true);
+    const problem = await onKeep(f);
+    setKeeping(false);
+    if (problem) setError(problem);
+  };
 
   const ready = fixReady(f);
   const next = fixNext(f);
@@ -162,8 +185,9 @@ function Sheet({
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
+      // Escape is Cancel: it never saves without the person asking (only the cross keeps what was written).
       e.preventDefault();
-      onKeep(f);
+      onCancel();
       return;
     }
     if (e.key !== "Tab" || !box.current) return;
@@ -196,7 +220,7 @@ function Sheet({
         inputMode="decimal"
         placeholder={placeholder}
         value={f[key]}
-        aria-describedby={`${ids}-${key}-u`}
+        aria-describedby={`${ids}-${key}-u${error?.field === "worth" ? ` ${ids}-worth-m` : ""}`}
         aria-invalid={error?.field === "worth" ? true : undefined}
         onChange={(e) => set(key, e.target.value)}
       />
@@ -207,8 +231,8 @@ function Sheet({
   );
 
   return (
-    <div className="ck-sheet-wrap">
-      <div className="ck-sheet-scrim" aria-hidden="true" onClick={() => onKeep(f)} />
+    <div className="ck-sheet-wrap" ref={wrap}>
+      <div className="ck-sheet-scrim" aria-hidden="true" />
       <div
         ref={box}
         className="ck-sheet"
@@ -221,7 +245,13 @@ function Sheet({
           <h2 id={`${ids}-t`} ref={title} tabIndex={-1} className="h2">
             {S.title}
           </h2>
-          <button type="button" className="ck-x" aria-label={S.close} onClick={() => onKeep(f)}>
+          <button
+            type="button"
+            className="ck-x"
+            aria-label={S.close}
+            aria-busy={keeping ? true : undefined}
+            onClick={() => void keep()}
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
             </svg>
@@ -297,7 +327,7 @@ function Sheet({
               {f.measures.includes("cost") ? figure("cost", S.money, S.moneyPlaceholder) : null}
               {f.measures.includes("revenue") ? figure("revenue", S.money, S.moneyPlaceholder) : null}
             </div>
-            {error?.field === "worth" ? <FieldMsg>{error.message}</FieldMsg> : null}
+            {error?.field === "worth" ? <FieldMsg id={`${ids}-worth-m`}>{error.message}</FieldMsg> : null}
           </div>
 
           <div className="ck-q">

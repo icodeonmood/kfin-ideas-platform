@@ -5,9 +5,10 @@
  * "Show it" asks why, one of three reasons (C-HIDDEN.list/1); the second "Show it" stays disabled until one is
  * picked (V-ACC.share/8); after showing, the row reads "Shown, because …" with "Hide it" to reverse (/3). Only the
  * masked form is ever on screen here. The question sits after the list, so the button that confirms is always the
- * last "Show it" on the part.
+ * last "Show it" on the part. After "Show it" confirms or "Hide it" swaps, focus moves to the row's new button
+ * (WCAG 2.4.3); while one is saving, both wait.
  */
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ChoiceChips } from "@/components/ui/chips";
@@ -29,11 +30,14 @@ const REASONS = (Object.keys(SHOW_REASON_LABEL) as ShowReason[]).map((r) => ({
 }));
 
 export function HiddenTile({
+  id,
   details,
   onShow,
   onHide,
   phone = false,
 }: {
+  /** The phone's anchor for "1 detail hidden" (#pr-hidden). */
+  id?: string;
   details: HiddenDetail[];
   /** True when shown; a string is the server's own words for a refusal ("The review desk hid this, so it stays
    * hidden.", 403), shown under the tile instead of the general line. */
@@ -46,12 +50,28 @@ export function HiddenTile({
   const [reason, setReason] = useState<ShowReason | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  /** The row whose button was just swapped: its new button takes focus once it is drawn. */
+  const [focusRow, setFocusRow] = useState<string | null>(null);
+  const list = useRef<HTMLUListElement>(null);
   const askId = useId();
+
+  useEffect(() => {
+    if (!focusRow) return;
+    const row = Array.from(list.current?.querySelectorAll<HTMLLIElement>("li[data-hid]") ?? []).find(
+      (li) => li.dataset.hid === focusRow,
+    );
+    const b = row?.querySelector<HTMLButtonElement>("button");
+    if (b) {
+      b.focus();
+      setFocusRow(null);
+    }
+  }, [focusRow, details]);
+
   if (!details.length) return null;
   const asked = details.find((d) => d.id === asking) ?? null;
 
   const confirm = async () => {
-    if (!asked || !reason) return;
+    if (!asked || !reason || busy) return;
     setBusy(true);
     const res = await onShow(asked.id, reason);
     const ok = res === true;
@@ -60,27 +80,30 @@ export function HiddenTile({
     if (ok) {
       setAsking(null);
       setReason(null);
+      setFocusRow(asked.id);
     }
   };
 
+  const hide = async (rowId: string) => {
+    if (busy) return;
+    setBusy(true);
+    const ok = await onHide(rowId);
+    setBusy(false);
+    setFailed(ok ? null : CHECK_COPY.failed);
+    if (ok) setFocusRow(rowId);
+  };
+
   return (
-    <div className="ck-hid tile">
+    <div className="ck-hid tile" id={id} tabIndex={id ? -1 : undefined}>
       <p className="ck-hid-t">{C.label}</p>
-      <ul className="ck-hid-l">
+      <ul className="ck-hid-l" ref={list}>
         {details.map((d) => (
-          <li key={d.id}>
+          <li key={d.id} data-hid={d.id}>
             <span className="ck-mask num">{d.masked}</span>
             {d.state === "shown" ? (
               <>
                 <span className="ck-hid-why">{d.reason ? C.shown(reasonWords(d.reason)) : null}</span>
-                <Button
-                  variant="text-blue"
-                  onClick={async () => {
-                    setBusy(true);
-                    setFailed((await onHide(d.id)) ? null : CHECK_COPY.failed);
-                    setBusy(false);
-                  }}
-                >
+                <Button variant="text-blue" disabled={busy} onClick={() => void hide(d.id)}>
                   {C.hide}
                 </Button>
               </>
@@ -112,7 +135,13 @@ export function HiddenTile({
           />
           <p className="meta">{C.note}</p>
           <div className="ck-hid-acts">
-            <Button variant="text" onClick={() => setAsking(null)}>
+            <Button
+              variant="text"
+              onClick={() => {
+                setAsking(null);
+                setFocusRow(asked.id);
+              }}
+            >
               {C.keep}
             </Button>
             <Button size="sm" disabled={!reason} busy={busy} onClick={() => void confirm()}>

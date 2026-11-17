@@ -89,9 +89,12 @@ function stateFrom(page: EditPageResponse): EditState {
 export function EditIdea({
   ideaId,
   config: initialConfig,
+  blackout = false,
 }: {
   ideaId: string;
   config: ConfigResponse | null;
+  /** `files.blackout` (DEC-107, BLD-C064): "Hide it for me" on a file is offered only while it is on. */
+  blackout?: boolean;
 }) {
   const online = useOnline();
   const phone = usePhone();
@@ -224,11 +227,12 @@ export function EditIdea({
     return null;
   };
 
-  const keepFix = (form: FixForm) => {
+  const keepFix = async (form: FixForm) => {
     setSheetOpen(false);
     // An added fix stays as it was; "Close, and keep what you wrote" keeps a fix that is not added yet, on this page.
-    if (!state || state.fix.part.kind === "added" || !typedAnything(form)) return;
+    if (!state || state.fix.part.kind === "added" || !typedAnything(form)) return null;
     change((s) => ({ ...s, fix: { ...s.fix, part: { kind: "started" }, form } }));
+    return null;
   };
 
   const removeFix = () => {
@@ -445,6 +449,7 @@ export function EditIdea({
           onHide={(k) => void proof.hideFile(k)}
           onRemove={(k) => void proof.removeFile(k)}
           showHelps={!phone}
+          canHide={blackout}
           edit={
             phone
               ? {

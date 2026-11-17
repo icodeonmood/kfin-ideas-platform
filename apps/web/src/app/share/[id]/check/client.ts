@@ -177,3 +177,38 @@ export function sendKey(draftId: string): string {
       : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
   return `s05:${draftId}:${rand}`;
 }
+
+/**
+ * "Your draft is saved on this device. Submit now and it sends when you're back online." (V-FIELDS.checkit/14): a
+ * Submit pressed offline is kept in this browser as the draft's id and its send key, never any words, and sent again
+ * the next time Check it opens for that draft; it goes once the server has answered. Storage that is full or blocked
+ * only means the send waits on this page alone.
+ */
+const queueKey = (draftId: string) => `1pc.s05.queued.${draftId}`;
+
+export const sendQueue = {
+  save(draftId: string, key: string): void {
+    try {
+      localStorage.setItem(queueKey(draftId), JSON.stringify({ draftId, key }));
+    } catch {
+      // Private mode or full storage: the send still waits on this page.
+    }
+  },
+  load(draftId: string): string | null {
+    try {
+      const raw = localStorage.getItem(queueKey(draftId));
+      if (!raw) return null;
+      const v = JSON.parse(raw) as { draftId?: unknown; key?: unknown };
+      return v.draftId === draftId && typeof v.key === "string" && v.key ? v.key : null;
+    } catch {
+      return null;
+    }
+  },
+  clear(draftId: string): void {
+    try {
+      localStorage.removeItem(queueKey(draftId));
+    } catch {
+      // Nothing kept, nothing to clear.
+    }
+  },
+};

@@ -35,6 +35,8 @@ export const CHECK_COPY = {
   skip: "Skip for now",
   optional: "Optional",
   added: "Added",
+  /** The rail's tick, for a screen reader: the task bar's words for a done step (C-TASKBAR). */
+  done: ", done",
   retry: "Try again",
   /** A-API's general failure line (src/server/share.ts FAILED). */
   failed: "Something went wrong. Try again.",
@@ -265,5 +267,10 @@ export const CHECK_COPY = {
       "It helps the review desk weigh it. Add screenshots, files or links that show the problem the way people meet it. We check each one for personal details before anyone else sees it.",
     fix: "Your fix",
     fixLine: "It helps the review desk weigh it. Skipping it is fine: problems on their own get picked too.",
+    /** The three counts under the heading, each a link to its part ("1 detail hidden", "3 sortings", "2 similar
+     * ideas"); the plurals are S-05.phone's ("details hidden, sortings, similar ideas"). */
+    hiddenCount: (n: number) => (n === 1 ? "detail hidden" : "details hidden"),
+    sortingsCount: (n: number) => (n === 1 ? "sorting" : "sortings"),
+    similarCount: (n: number) => (n === 1 ? "similar idea" : "similar ideas"),
   },
 } as const;

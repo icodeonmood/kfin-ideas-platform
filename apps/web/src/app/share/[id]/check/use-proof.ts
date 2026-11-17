@@ -7,12 +7,14 @@
  * rows that are still moving on the server (scan, then the personal-details check) are asked again until they
  * settle. No words are logged here (non-negotiable 3).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { FileItem } from "@/lib/contracts";
 
 import { api, type Call, type ProofTarget } from "./client";
-import { settling, type ProofItem } from "./model";
+import { CHECK_COPY } from "./copy";
+import { POLL, pollDelay, settling, type ProofItem } from "./model";
+import type { LinkResult } from "./proof";
 
 /** Every call the page makes, so its save status can follow it (C-TASKBAR.save). */
 export type Track = <T>(p: Promise<Call<T>>) => Promise<Call<T>>;
@@ -26,6 +28,12 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     [],
   );
 
+  /** Rows removed while their upload was still on its way: the file is deleted when the POST answers. */
+  const removedEarly = useRef(new Set<string>());
+  /** Failed asks in a row for each moving file (C-FILE.row polling, BLD-C139). */
+  const pollFails = useRef(new Map<string, number>());
+  const [pollTick, setPollTick] = useState(0);
+
   /** The rows as the server last sent them (on load, or after a save). */
   const load = useCallback(
     (files: FileItem[]) => setProof(files.map((f) => ({ key: f.id, item: f, name: f.name }))),
@@ -33,8 +41,14 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
   );
 
   const upload = async (key: string, file: File) => {
-    replace(key, { localState: "uploading", refusal: undefined });
+    replace(key, { localState: "uploading", refusal: undefined, note: undefined });
     const r = await track(api.upload(to, file));
+    if (removedEarly.current.has(key)) {
+      // Removed during the upload: what reached the server goes too, so nothing is left behind.
+      removedEarly.current.delete(key);
+      if (r.ok && r.body?.id) void track(api.removeFile(r.body.id));
+      return;
+    }
     if (r.ok) {
       replace(key, {
         item: r.body,
@@ -66,19 +80,41 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     for (const f of fresh) if (f.localState === "uploading") void upload(f.key, f.local);
   };
 
-  const addLinks = async (links: string[]): Promise<"ok" | "not_a_link" | "failed"> => {
+  /** Links one by one (C-FILE.uploader/3): each added link is a row; the ones that failed are handed back to stay in
+   * the box, and a link already on the page is never added twice, so trying again never duplicates one. */
+  const addLinks = async (links: string[]): Promise<LinkResult> => {
+    const have = new Set(proof.map((p) => p.item?.url ?? p.item?.name ?? p.name));
+    const left: string[] = [];
+    let problem: LinkResult["problem"] = null;
     for (const url of links) {
+      if (have.has(url)) continue;
       const r = await track(api.link(to, url));
-      if (!r.ok) return r.error?.code === "not_a_link" ? "not_a_link" : "failed";
+      if (!r.ok) {
+        left.push(url);
+        if (r.error?.code === "not_a_link") problem = "not_a_link";
+        else problem ??= "failed";
+        continue;
+      }
       const item = r.body;
-      setProof((list) => [...list, { key: item.id, item, name: item.name || url }]);
+      have.add(url);
+      setProof((list) =>
+        list.some((x) => x.key === item.id)
+          ? list
+          : [...list, { key: item.id, item, name: item.name || url }],
+      );
     }
-    return "ok";
+    return { left, problem };
   };
 
   const retryFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
     if (!p) return;
+    if (p.stalled) {
+      // Asking for its state had stopped: ask again, from the start.
+      pollFails.current.delete(key);
+      replace(key, { stalled: false, note: undefined });
+      return;
+    }
     if (p.item?.id && !p.localState) {
       replace(key, { item: { ...p.item, state: "uploading" } });
       const r = await track(api.retryFile(p.item.id));
@@ -89,33 +125,63 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
   const hideFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
     if (!p?.item?.id) return;
+    replace(key, { note: undefined });
     const r = await track(api.hideFile(p.item.id));
+    // `files.blackout` off answers 503 `not_available`: the server's words under the row (C-FIELD-MSG).
     if (r.ok && r.body) replace(key, { item: r.body });
+    else replace(key, { note: (!r.ok && r.error?.message) || CHECK_COPY.failed });
   };
 
+  /** Remove takes the row away once the server agrees; if it does not, the row stays where it is and says so. */
   const removeFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
-    setProof((list) => list.filter((x) => x.key !== key));
-    if (p?.item?.id) {
-      const r = await track(api.removeFile(p.item.id));
-      if (!r.ok && r.status !== 404)
-        setProof((list) => (list.some((x) => x.key === key) ? list : [...list, p]));
+    if (!p) return;
+    if (!p.item?.id) {
+      if (p.localState === "uploading") removedEarly.current.add(key);
+      setProof((list) => list.filter((x) => x.key !== key));
+      return;
     }
+    replace(key, { note: undefined });
+    const r = await track(api.removeFile(p.item.id));
+    if (r.ok || r.status === 404) {
+      pollFails.current.delete(key);
+      setProof((list) => list.filter((x) => x.key !== key));
+    } else replace(key, { note: r.error?.message || CHECK_COPY.failed });
   };
 
-  // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row).
+  // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A
+  // failed ask (the network, a 4xx while a switch is off) waits longer and asks again; after five in a row the row
+  // offers "Try again" rather than freezing (BLD-C139).
   useEffect(() => {
     const moving = proof.filter(settling);
     if (!moving.length) return;
+    const worst = Math.max(0, ...moving.map((p) => pollFails.current.get(p.key) ?? 0));
     const t = setTimeout(async () => {
+      let again = false;
       for (const p of moving) {
         if (!p.item?.id) continue;
         const r = await api.file(p.item.id);
-        if (r.ok && r.body) replace(p.key, { item: r.body });
+        if (r.ok && r.body) {
+          pollFails.current.delete(p.key);
+          replace(p.key, { item: r.body });
+          continue;
+        }
+        const fails = (pollFails.current.get(p.key) ?? 0) + 1;
+        pollFails.current.set(p.key, fails);
+        if (fails >= POLL.tries) replace(p.key, { stalled: true });
+        else again = true;
       }
-    }, 2000);
+      if (again) setPollTick((n) => n + 1);
+    }, pollDelay(worst));
     return () => clearTimeout(t);
-  }, [proof, replace]);
+  }, [proof, pollTick, replace]);
 
-  return { proof, load, addFiles, addLinks, retryFile, hideFile, removeFile };
+  /** A refusal about one file (Submit's `file_blocked`): the server's words under its row. */
+  const noteFile = useCallback(
+    (fileId: string, note: string) =>
+      setProof((list) => list.map((p) => (p.item?.id === fileId ? { ...p, note } : p))),
+    [],
+  );
+
+  return { proof, load, addFiles, addLinks, retryFile, hideFile, removeFile, noteFile };
 }
