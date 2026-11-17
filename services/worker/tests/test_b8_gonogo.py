@@ -23,7 +23,11 @@ def _write(folder: Path, name: str, body: Any) -> None:
 
 @pytest.fixture
 def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namespace:
-    monkeypatch.setattr(g, "get_settings", lambda: Settings(privacy_notice_version="1.0"))
+    monkeypatch.setattr(
+        g,
+        "get_settings",
+        lambda: Settings(privacy_notice_version="1.0", speech_mode="fake", speech_hosted_approval=""),
+    )  # voice rows pinned (BLD-A185)
     real = {"route": "anthropic", "version": "0.2.0"}
     _write(tmp_path / "eval", "gatekeeper-0.2.0-1.json",
            real | {"metrics": {"personal_data_recall": 1.0, "false_block_rate": 0.02}})  # fmt: skip

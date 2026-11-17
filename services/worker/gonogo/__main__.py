@@ -20,6 +20,7 @@ from typing import Any
 
 from core.config import REPO_ROOT, get_settings
 from core.db import connect
+from core.speech_route import hosted_problem, key_set, voice_problem
 
 ROOT = REPO_ROOT or Path.cwd()  # in the worker container there is no repo root: /app
 
@@ -47,7 +48,7 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
 OFF_BY_DESIGN: dict[str, str] = {}
 
 VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
-HOSTED = "Hosted speech (Sarvam): on with the DEC-108 approval reference"
+HOSTED = "Hosted speech (Sarvam): switch, approval reference and key match the route (DEC-108)"
 
 
 def _row(name: str, state: str, evidence: str) -> dict[str, str]:
@@ -55,48 +56,43 @@ def _row(name: str, state: str, evidence: str) -> dict[str, str]:
 
 
 def voice_rows(
-    voice_on: bool, hosted_on: bool, speech_mode: str, engine_url: str, approval: str
+    voice_on: bool, hosted_on: bool, speech_mode: str, engine_url: str, approval: str, key: bool
 ) -> tuple[list[dict[str, str]], list[str]]:
     """DEC-108: voice is on at launch through Sarvam (speech to text and Listen; India-hosted, no retention). The
     on-server engine behind the isolated speech service (BLD-C012) stays an allowed fallback; the fake route never
-    is. Off is a row for the product lead to confirm, not "off as expected". Returns the rows and any reasons that
-    rule out Mode A."""
+    is. Off is a row for the product lead to confirm, not "off as expected". The route rules are shared with the
+    smoke check (`core.speech_route`). Returns the rows and any reasons that rule out Mode A."""
     rows: list[dict[str, str]] = []
     reasons: list[str] = []
-    sarvam_ready = hosted_on and bool(approval.strip())
+    problem = voice_problem(voice_on, hosted_on, speech_mode, engine_url, approval, key)
     if not voice_on:
-        rows.append(_row(VOICE, "confirm", "off: DEC-108 plans voice on at launch; switch capture.voice on, or the "
-                                           "product lead launches without it (typing still works)"))  # fmt: skip
-    elif speech_mode == "sarvam" and sarvam_ready:
-        rows.append(
-            _row(VOICE, "met", "on; SPEECH_MODE sarvam with speech.hosted on and its approval reference")
+        evidence = (
+            "off: DEC-108 plans voice on at launch; switch it on, or launch without it (typing still works)"
         )
-    elif speech_mode == "local" and engine_url:
+        rows.append(_row(VOICE, "confirm", evidence))
+    elif problem:
+        rows.append(_row(VOICE, "not met", problem))
+        reasons.append("voice on without a working route")
+    elif speech_mode == "sarvam":
+        rows.append(
+            _row(VOICE, "met", "on; SPEECH_MODE sarvam, speech.hosted on, approval reference and key set")
+        )
+    else:
         rows.append(
             _row(VOICE, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
         )
-    else:
-        if speech_mode == "sarvam":
-            missing = "speech.hosted off" if not hosted_on else "no SPEECH_HOSTED_APPROVAL"
-            evidence = f"on with SPEECH_MODE sarvam but {missing}, so every recording is refused"
-        else:
-            isolation = "isolated service set" if engine_url else "no isolated speech service"
-            evidence = (
-                f"on with SPEECH_MODE {speech_mode}, {isolation}; set the Sarvam route or switch it off"
-            )
-        rows.append(_row(VOICE, "not met", evidence))
-        reasons.append("voice on without a working route")
-    if hosted_on and approval.strip():
-        rows.append(_row(HOSTED, "met", "on with an approval reference (DEC-108)"))
+    hosted = hosted_problem(hosted_on, approval, key)
+    if hosted:
+        rows.append(_row(HOSTED, "not met", hosted))
+        reasons.append("hosted speech on without its approval reference or key")
     elif hosted_on:
-        rows.append(_row(HOSTED, "not met", "on without an approval reference; set SPEECH_HOSTED_APPROVAL"))
-        reasons.append("hosted speech on without its approval reference")
+        rows.append(_row(HOSTED, "met", "on with an approval reference and the key set (DEC-108)"))
     elif speech_mode == "sarvam":
         rows.append(
             _row(HOSTED, "confirm", "off while SPEECH_MODE is sarvam: switch it on with voice (DEC-108)")
         )
     else:
-        rows.append(_row(HOSTED, "met", f"off; SPEECH_MODE {speech_mode} does not use it"))
+        rows.append(_row(HOSTED, "met", f"off; SPEECH_MODE {speech_mode or 'unset'} does not use it"))
     return rows, reasons
 
 
@@ -241,6 +237,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
             s.speech_mode,
             s.speech_engine_url,
             s.speech_hosted_approval,
+            key_set(s),
         )
         rows.extend(got)
         reasons_b.extend(why)
