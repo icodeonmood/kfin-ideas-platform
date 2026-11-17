@@ -45,6 +45,10 @@ services:
       SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-}
       # From the database env file: Sarvam's key, the worker only (DEC-108). Empty: the watch switches voice off.
       SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      # Voice is on at launch through Sarvam (DEC-108): the route and its approval reference unless the app env file
+      # names others (deploy.sh exports the same values).
+      SPEECH_MODE: ${SPEECH_MODE:-sarvam}
+      SPEECH_HOSTED_APPROVAL: ${SPEECH_HOSTED_APPROVAL:-DEC-108}
     volumes: !override ["${UAT_DATA_DIR:?set UAT_DATA_DIR}:/data"]
     ports: !reset []
 

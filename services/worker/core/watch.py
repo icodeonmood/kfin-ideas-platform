@@ -6,7 +6,9 @@
   (`SPEECH_ENGINE_URL`, BLD-C012). Also checked once when the worker starts.
 - `capture.voice` and `speech.hosted`: outside dev and test, `SPEECH_MODE` is `sarvam` (DEC-108, non-negotiable 2's
   voice exception) and `SARVAM_API_KEY` is missing from the worker's env: both go off with the reason "Sarvam key
-  missing (automatic)", which the go/no-go report repeats word for word (BLD-C115).
+  missing (automatic)", which the go/no-go report repeats word for word (BLD-C115). This guard FLIPS the switches:
+  an audited automatic switch-off. Nothing turns them back on when the key arrives; a person puts the key in the
+  worker's env, restarts the worker and switches both on from the Admin page with a reason.
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.

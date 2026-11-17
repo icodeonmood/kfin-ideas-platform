@@ -160,6 +160,12 @@ def test_BLD_C115_deploy_refuses_the_key_in_the_app_env_file() -> None:
     script = (ROOT / "scripts" / "uat" / "deploy.sh").read_text()
     assert '[[ -z "$(value SARVAM_API_KEY "$APP_ENV_FILE")" ]]' in script
     assert '[[ -n "$(value SARVAM_API_KEY "$DB_ENV_FILE")" ]]' in script
+    assert (
+        'export SPEECH_HOSTED_APPROVAL="${approval:-DEC-108}"' in script
+    )  # DEC-108 unless the file names another
+    uat_worker = _compose("uat/compose.uat.yml")["services"]["worker"]["environment"]
+    assert uat_worker["SPEECH_HOSTED_APPROVAL"] == "${SPEECH_HOSTED_APPROVAL:-DEC-108}"
+    assert uat_worker["SPEECH_MODE"] == "${SPEECH_MODE:-sarvam}"
     example = (ROOT / ".env.example").read_text()
     assert "SPEECH_HOSTED_APPROVAL=DEC-108" in example
     assert not any(line.startswith("SARVAM_API_KEY=") for line in example.splitlines())
@@ -186,3 +192,49 @@ def test_BLD_C115_voice_and_hosted_speech_are_on_with_audited_reasons() -> None:
     # the evidence; the states are on unless a test is mid-way.
     assert rows["capture.voice"]["state"] == "on" and rows["speech.hosted"]["state"] == "on"
     assert {a["entity"] for a in audits} >= {"kill_switch:capture.voice", "kill_switch:speech.hosted"}
+
+
+def _up(name: str) -> str:
+    sql = (ROOT / "db" / "migrations" / name).read_text()
+    return sql.split("-- migrate:up", 1)[1].split("-- migrate:down", 1)[0]
+
+
+@pytest.mark.stack
+def test_BLD_C115_lane_as_reasons_then_ours_leave_both_switches_on_and_never_undo_a_switch_off() -> None:
+    """Both migrations in order, from the seeded DEC-096 state, inside a transaction that is rolled back (nothing
+    is left behind): lane A's DEC-108 reasons (20261122100500), then ours (20261122300530), find both switches on.
+    A switch the watch has turned off since stays off."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    seed = (
+        "UPDATE kill_switches SET state = 'off', changed_by = 'migration', reason = CASE name "
+        "WHEN 'capture.voice' THEN 'Off until IT deploys the isolated speech service and the memory, InfoSec agrees "
+        "to the microphone and the model, and the DPO''s privacy notice covers voice notes (DEC-096)' "
+        "ELSE 'Off until InfoSec and the DPO approve a hosted route (DEC-096)' END "
+        "WHERE name IN ('capture.voice', 'speech.hosted')"
+    )
+    lane_a, ours = _up("20261122100500_voice_on_reasons.sql"), _up("20261122300530_voice_on_launch.sql")
+
+    def states(conn: Any) -> dict[str, str]:
+        rows = conn.execute(
+            "SELECT name, state FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
+        ).fetchall()
+        return {r["name"]: r["state"] for r in rows}
+
+    with psycopg.connect(get_settings().database_url, row_factory=dict_row) as conn:
+        try:
+            conn.execute(seed)
+            conn.execute(lane_a)
+            conn.execute(ours)
+            assert states(conn) == {"capture.voice": "on", "speech.hosted": "on"}
+            conn.execute(seed)
+            conn.execute(
+                "UPDATE kill_switches SET changed_by = 'process:watch', reason = %s WHERE name = 'speech.hosted'",
+                (KEY_MISSING,),
+            )
+            conn.execute(lane_a)
+            conn.execute(ours)
+            assert states(conn) == {"capture.voice": "on", "speech.hosted": "off"}
+        finally:
+            conn.rollback()

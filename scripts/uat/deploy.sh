@@ -58,13 +58,19 @@ if [[ -n "$speech_url" ]]; then
 fi
 [[ -z "$(value SPEECH_SERVICE_TOKEN "$APP_ENV_FILE")" ]] \
   || fail "SPEECH_SERVICE_TOKEN belongs in the database env file only: the app env file also reaches the web app"
-# Voice through Sarvam (DEC-108, BLD-C115): the key is the worker's alone, in the database env file. The app env file
-# also reaches the web app, so the key is refused there. With SPEECH_MODE=sarvam the key and the approval are needed.
+# Voice through Sarvam (DEC-108, BLD-C115): on at launch, so the route is sarvam unless the app env file says
+# otherwise. The key is the worker's alone, in the database env file; the app env file also reaches the web app, so
+# the key is refused there. The approval reference is DEC-108 unless the app env file names another. Both are set
+# before the smoke check, which fails loudly without them (as the go/no-go report does).
 [[ -z "$(value SARVAM_API_KEY "$APP_ENV_FILE")" ]] \
   || fail "SARVAM_API_KEY belongs in the database env file only: the app env file also reaches the web app"
-if [[ "$(value SPEECH_MODE "$APP_ENV_FILE")" == "sarvam" ]]; then
+speech_mode="$(value SPEECH_MODE "$APP_ENV_FILE")"
+export SPEECH_MODE="${speech_mode:-sarvam}"
+if [[ "$SPEECH_MODE" == "sarvam" ]]; then
   [[ -n "$(value SARVAM_API_KEY "$DB_ENV_FILE")" ]] || fail "SPEECH_MODE is sarvam: put SARVAM_API_KEY in the database env file"
-  [[ -n "$(value SPEECH_HOSTED_APPROVAL "$APP_ENV_FILE")" ]] || fail "SPEECH_MODE is sarvam: set SPEECH_HOSTED_APPROVAL=DEC-108 in the app env file"
+  approval="$(value SPEECH_HOSTED_APPROVAL "$APP_ENV_FILE")"
+  export SPEECH_HOSTED_APPROVAL="${approval:-DEC-108}"
+  [[ -n "$SPEECH_HOSTED_APPROVAL" ]] || fail "SPEECH_MODE is sarvam: SPEECH_HOSTED_APPROVAL must be set (DEC-108)"
 fi
 [[ -z "$(value INTERNAL_API_TOKEN "$DB_ENV_FILE")" ]] \
   || fail "INTERNAL_API_TOKEN belongs in the app env file only: never next to SPEECH_SERVICE_TOKEN"
