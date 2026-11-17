@@ -224,7 +224,8 @@ test("S-R4, J-COMMITTEE/1: the committee role sees Ones Committee in the sidebar
     expect(await navLabels(page)).toEqual([...BASE, "Ones Committee"]);
     await expectNoSeriousAxeIssues(page);
   } finally {
-    if (added.length > 0) await run("DELETE FROM role_grants WHERE id = $1::bigint", [added[0].id]);
+    const mine = added[0];
+    if (mine) await run("DELETE FROM role_grants WHERE id = $1::bigint", [mine.id]);
   }
 });
 
