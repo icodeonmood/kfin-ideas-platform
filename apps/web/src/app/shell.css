@@ -487,9 +487,11 @@
   box-shadow: var(--sh-popup);
 }
 
+/* The open bar scrolls (.sb-in), so it clips what passes its edge: the menu keeps to the account row's width there */
 .acct-up .acct-menu {
   left: 0;
   bottom: calc(100% - 4px);
+  max-width: 100%;
   transform-origin: bottom left;
 }
 
@@ -649,6 +651,11 @@
   .sb-me {
     width: 52px;
     padding: 6px 4px;
+  }
+
+  /* Folded, nothing clips (.sb-in overflows visibly): the menu takes its full width beside the icons */
+  .acct-up .acct-menu {
+    max-width: none;
   }
 
   .sb-who {
