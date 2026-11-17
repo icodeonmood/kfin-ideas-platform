@@ -273,12 +273,15 @@ export function CommitteeView({
                     </td>
                     <td className="rd-act">
                       {/* "Review the decision on …" as the board names it; "See it" keeps its own words at the
-                          front of the name (WCAG 2.5.3), where the board has "See the decision on …". */}
+                          front of the name (WCAG 2.5.3), where the board has "See the decision on …". The name is
+                          an aria-label: a hidden span is laid out as a block and would put a space before the
+                          comma ("See it , the decision on …"). */}
                       <Button
                         variant="line"
                         size="sm"
                         aria-expanded={isOpen}
                         aria-controls={`cm-${row.window_id}`}
+                        aria-label={`${row.action}${row.action === "Review" ? " the decision on " : ", the decision on "}${row.idea.title}`}
                         onClick={() => {
                           setOpen(isOpen ? null : row.window_id);
                           setReversing(null);
@@ -286,10 +289,6 @@ export function CommitteeView({
                         }}
                       >
                         {row.action}
-                        <span className="vh">
-                          {row.action === "Review" ? " the decision on " : ", the decision on "}
-                          {row.idea.title}
-                        </span>
                       </Button>
                     </td>
                   </tr>
