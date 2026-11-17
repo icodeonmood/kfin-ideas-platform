@@ -34,6 +34,27 @@ def test_purge_removes_only_expired_drafts(db: Any) -> None:
     assert db.execute("SELECT state FROM jobs WHERE type = 'drafts.purge'").fetchone()["state"] == "done"
 
 
+def test_purge_removes_an_expired_draft_with_a_link_and_carries_on(db: Any) -> None:
+    """Review blocker 1 (L-HIDE.files, A-API.files): a link has no stored copy (its key is NULL). Removing it must not
+    reach the store, so the purge succeeds and the next expired draft goes too."""
+    from onepc.context import seal_text
+
+    with_link, after = _draft(db, -2), _draft(db, -1)
+    db.execute(
+        "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, bytes, state, kind, file_state, link_scope, "
+        "url_encrypted) VALUES ('ATT-2026-990001', %s, 'CTR-0a1b2c', 'example.org/report', 0, 'quarantine', 'link', "
+        "'ok', 'external', %s)",
+        (with_link, seal_text("attachments", "url_encrypted", "ATT-2026-990001", "https://example.org/report")),
+    )
+    db.execute("INSERT INTO jobs (type, run_at) VALUES ('drafts.purge', '2000-01-01')")
+    assert run_one(db, "test-worker")
+    ids = {str(r["id"]) for r in db.execute("SELECT id FROM ideas").fetchall()}
+    assert with_link not in ids and after not in ids
+    assert db.execute("SELECT 1 FROM attachments WHERE id = 'ATT-2026-990001'").fetchone() is None
+    job = db.execute("SELECT state, last_error FROM jobs WHERE type = 'drafts.purge' ORDER BY id DESC").fetchone()
+    assert (job["state"], job["last_error"]) == ("done", None)
+
+
 def test_schedule_enqueues_once_a_day(db: Any) -> None:
     db.execute("DELETE FROM jobs")
     ist = ZoneInfo("Asia/Kolkata")
