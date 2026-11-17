@@ -213,8 +213,8 @@ def public(conn: Conn) -> dict[str, Any]:
     if not killswitch.is_on("ones.public", conn):
         return {"paused": True, "ones": []}
     rows = conn.execute(
-        "SELECT o.*, u.name, coalesce(p.public_name_consent, false) AS consent FROM ones o "
-        "JOIN users u ON u.id = o.user_id LEFT JOIN comms_prefs p ON p.user_id = o.user_id "
+        "SELECT o.*, u.name, coalesce(s.show_name_on_wall, true) AS shown FROM ones o "
+        "JOIN users u ON u.id = o.user_id LEFT JOIN person_settings s ON s.user_id = o.user_id "
         "WHERE o.status = 'active' ORDER BY o.inducted_at DESC, o.id DESC"
     ).fetchall()
     out = []
@@ -226,7 +226,7 @@ def public(conn: Conn) -> dict[str, Any]:
         out.append(
             {
                 "number": o["number"], "induction_no": o["induction_no"], **_tier(o["tier"]),
-                "name": o["name"] if o["consent"] else None, "founding": o["way_in"] == "founding",
+                "name": o["name"] if o["shown"] else None, "founding": o["way_in"] == "founding",
                 "way_in": WAY_IN_WORDS[o["way_in"]], "line": line, "stage": stage, "brief": brief,
                 "measures": _public_measures(o["measures"]),
             }
@@ -293,9 +293,10 @@ def my_one(conn: Conn, user_id: str, now: dt.datetime | None = None) -> dict[str
         "SELECT id FROM one_proposals WHERE subject_user_id = %s AND kind = 'impact_brief' AND state = 'proposed'",
         (user_id,),
     ).fetchone()
-    consent = conn.execute(
-        "SELECT public_name_consent FROM comms_prefs WHERE user_id = %s", (user_id,)
+    pref = conn.execute(
+        "SELECT show_name_on_wall FROM person_settings WHERE user_id = %s", (user_id,)
     ).fetchone()
+    shown = pref is None or bool(pref["show_name_on_wall"])  # shown unless hidden (DEC-104)
     glow = conn.execute(
         "SELECT * FROM one_glow_ups WHERE one_id = %s AND seen_at IS NULL ORDER BY id DESC LIMIT 1",
         (one["id"],),
@@ -341,7 +342,7 @@ def my_one(conn: Conn, user_id: str, now: dt.datetime | None = None) -> dict[str
         if one["brief_approved_at"]
         else None,
         "brief_pending": pending is not None,
-        "name_on_wall": bool(consent and consent["public_name_consent"]),
+        "name_on_wall": shown,
         "measures": one["measures"] or {},
         "glow_up": glow_up,
         "showcase_updated": _iso(showcase["updated_at"]) if showcase else None,
@@ -427,8 +428,8 @@ def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
         dict(r)
         for r in conn.execute(
             "SELECT o.id, o.number, o.tier, o.measures, o.user_id, u.name, u.lob_id, "
-            "coalesce(c.public_name_consent, false) AS consent FROM ones o "
-            "JOIN users u ON u.id = o.user_id LEFT JOIN comms_prefs c ON c.user_id = o.user_id "
+            "coalesce(s.show_name_on_wall, true) AS shown FROM ones o "
+            "JOIN users u ON u.id = o.user_id LEFT JOIN person_settings s ON s.user_id = o.user_id "
             "WHERE o.status = 'active'"
         ).fetchall()
     ]
@@ -442,8 +443,8 @@ def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
     people = [
         {
             "rank": i + 1, "number": r["number"], **_tier(r["tier"]),
-            # A name shows only with public-name consent; everyone sees their own (DEC-077, non-negotiable 7).
-            "name": r["name"] if r["consent"] or str(r["user_id"]) == viewer_id else None,
+            # A name shows unless its One hid it; everyone sees their own (DEC-077, DEC-104, non-negotiable 7).
+            "name": r["name"] if r["shown"] or str(r["user_id"]) == viewer_id else None,
             "measures": _public_measures(r["measures"]), "you": str(r["user_id"]) == viewer_id,
         }
         for i, r in enumerate(rows)
@@ -503,9 +504,9 @@ def invite_view(conn: Conn, proposal_id: int, user_id: str) -> dict[str, Any] | 
     from ones.service import roles
 
     p = conn.execute(
-        "SELECT p.*, o.number, u.name, coalesce(c.public_name_consent, false) AS consent FROM one_proposals p "
+        "SELECT p.*, o.number, u.name, coalesce(s.show_name_on_wall, true) AS shown FROM one_proposals p "
         "JOIN ones o ON o.id = p.one_id JOIN users u ON u.id = o.user_id "
-        "LEFT JOIN comms_prefs c ON c.user_id = o.user_id WHERE p.id = %s AND p.kind IN ('tier_up', 'tier_down')",
+        "LEFT JOIN person_settings s ON s.user_id = o.user_id WHERE p.id = %s AND p.kind IN ('tier_up', 'tier_down')",
         (proposal_id,),
     ).fetchone()
     if p is None or p["state"] not in ("proposed", "approved") or str(p["subject_user_id"]) == user_id:
@@ -528,7 +529,7 @@ def invite_view(conn: Conn, proposal_id: int, user_id: str) -> dict[str, Any] | 
     written = conn.execute(
         "SELECT 1 FROM one_messages WHERE proposal_id = %s AND author_user_id = %s", (proposal_id, user_id)
     ).fetchone()
-    display = f"No. {p['number']}, {p['name']}" if p["consent"] else f"One No. {p['number']}"
+    display = f"No. {p['number']}, {p['name']}" if p["shown"] else f"One No. {p['number']}"
     return {
         "one_display": display,
         "tier_to_name": tier_name(p["tier_to"]),
