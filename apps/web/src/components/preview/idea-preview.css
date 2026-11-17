@@ -186,6 +186,22 @@
   border: 22px solid rgba(255, 255, 255, 0.14);
 }
 
+/* Scrim over the band's lower half, so small white text clears 4.5:1 on the #f58256 stop (lane D, 17 Nov:
+   0.34 alpha gives 5.1:1; the pack's colours stay as they are). The band's content sits above it. */
+.pvband::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 55%;
+  background: linear-gradient(to top, rgba(10, 10, 12, 0.34), rgba(10, 10, 12, 0));
+  pointer-events: none;
+}
+
+.pvband > * {
+  position: relative;
+  z-index: 1;
+}
+
 .pvband.hue2 {
   background: linear-gradient(165deg, #7958ee 0%, #4261ec 60%, #1e2e99 120%);
 }
@@ -219,7 +235,7 @@
   margin: 8px 0 0;
   font-size: 14.5px;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.9);
+  color: #ffffff;
   overflow-wrap: anywhere;
 }
 
