@@ -58,11 +58,11 @@ class Settings(BaseSettings):
     embeddings_model_path: str = (
         ""  # bge-m3 only: local folder with the model files (never fetched at run time)
     )
-    # Voice notes in quick capture (DEC-096): speech to text. `fake` (dev and tests) reads the text a synthetic test
-    # recording carries, else a fixed sample; `local` runs the engine on KFin's own server (no network), from
-    # `SPEECH_MODEL_PATH` in images built with WITH_SPEECH=1; `sarvam` is a hosted route through the gateway that
-    # refuses to run without `SPEECH_HOSTED_APPROVAL` and the `speech.hosted` switch (both off until InfoSec and
-    # the DPO approve: raw voice cannot be tagged before it leaves).
+    # Voice (DEC-096, DEC-108): speech to text. `sarvam` is the launch route (DEC-108): Sarvam's APIs through the
+    # gateway (`gateway/sarvam.py`), which refuse to run without `SPEECH_HOSTED_APPROVAL` (DEC-108), the
+    # `speech.hosted` switch and `SARVAM_API_KEY`. `fake` (dev and tests) reads the text a synthetic test recording
+    # carries, else a fixed sample; `local` (the fallback, no further work) runs the engine on KFin's own server
+    # from `SPEECH_MODEL_PATH` in images built with WITH_SPEECH=1.
     speech_mode: str = "fake"  # fake | local | sarvam
     speech_local_engine: str = "faster-whisper"  # faster-whisper | indic-conformer (coming soon)
     speech_model_path: str = ""  # local only: folder with the model files (never fetched at run time)
@@ -79,9 +79,14 @@ class Settings(BaseSettings):
     speech_threads: int = 2  # the engine child's CPU threads
     speech_memory_mb: int = 4096  # the engine child's address-space limit (Linux)
     speech_timeout_s: int = 300  # the engine child's wall-clock limit
-    speech_hosted_approval: str = ""  # the InfoSec and DPO approval reference; empty = hosted routes refuse
-    speech_hosted_key: str = ""
-    speech_hosted_url: str = "https://api.sarvam.ai/speech-to-text"
+    speech_hosted_approval: str = ""  # the approval reference (DEC-108); empty = hosted routes refuse
+    # Sarvam (DEC-108). The key is worker-only: never in the web app's env (compose blanks it there; deploy.sh refuses
+    # it in the app env file). `SARVAM_BASE_URL` points the client at a local fake in dev and test only; outside
+    # them the real service is always used.
+    sarvam_api_key: str = ""
+    sarvam_base_url: str = ""
+    sarvam_stt_mode: str = "codemix"  # codemix | transcribe: the person's own words, as spoken (DEC-108)
+    sarvam_tts_speaker: str = "simran_en_customer"  # one clear Indian English voice (L-LISTEN/6)
     llm_mode: str = "fake"  # fake | anthropic | bedrock (route per InfoSec, D1)
     llm_fast_model: str = "claude-haiku-5-5"
     llm_reasoning_model: str = "claude-sonnet-5-5"
@@ -106,6 +111,9 @@ class Settings(BaseSettings):
     clamav_port: int = 3310
     smtp_url: str = "smtp://localhost:1025"
     app_base_url: str = "http://localhost:3000"
+    # The daily decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203). Built but off at launch: lane B's
+    # BLD-B241 mails nothing about overdue ideas. DECIDE_BY_DIGEST=true and a worker restart switch it on.
+    decide_by_digest: bool = False
 
     # Dev and test only: where host-side tools and tests reach the local stack. A second stack in a worktree
     # sets these in its own `.env` (BLD-200); the defaults are the first stack's ports.

@@ -10,7 +10,8 @@
  * request. Row 3 withdraws the seeded request and sends a "Keep mine separate" team-up; row 4b swaps it for a merge
  * request; Rekha merges it (6a), so Tanvi joins R1's crew. R1 is shared with J-TEAMUP: both only add requests and
  * crew to it, and nobody decides it, so no row here depends on whether R1 is picked. Team up only (6b) and Decline
- * (6c) need requests of their own: GAP-SEED. Row 7 reads the desk merge of T11 into R2 (read only).
+ * (6c) use requests of their own into R1 (lane E, 34249f1): Naveen's N2 and Geetanjali's G2. Row 7 reads the desk
+ * merge of T11 into R2 (read only).
  * Rekha's Inbox keeps the requests Tanvi withdrew, newest first (L-INBOX.rules/4): rows 5 and 6a open the newest.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -261,27 +262,98 @@ step(
   },
 );
 
+/** Rekha's Inbox item for a draft's merge request from `sender`, into R1 (J-SIMILAR/5's wording). */
+async function openRequest(page: Page, sender: string, r1Title: string): Promise<void> {
+  await signInAs(page, "rekha");
+  await page.goto("/inbox");
+  await page
+    .getByRole("button", {
+      name: new RegExp(`^${esc(sender)} asks to team up and merge .*, ${esc(r1Title)}, `),
+    })
+    .first()
+    .click();
+  await expect(page.getByText("Merge request", { exact: true }).first()).toBeVisible();
+}
+
 step(
   "J-SIMILAR/6b",
   "S-H2B",
-  "Rekha teams up only: Tanvi is on the crew, and her draft stays hers to send on its own",
-  {
-    needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"],
-    gapSeed:
-      "a second draft with a merge request waiting on a lead, for Team up only (J-SIMILAR owns only T2's)",
+  "Rekha teams up only: Naveen is on Rekha's crew, and Naveen's draft stays theirs to send on its own",
+  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["N2", "R1"] }, // Naveen joins R1's crew
+  async ({ page, browser }, info) => {
+    // Seed (lane E, 34249f1): Naveen's draft N2 at Check it, its merge request into R1 waiting on Rekha.
+    const n2 = await seeded("N2");
+    const r1 = await seeded("R1");
+    await openRequest(page, "Naveen Reddy", r1.title);
+    await page.getByRole("button", { name: "Team up only", exact: true }).click();
+    await expect(
+      page
+        .getByText(
+          /^Teamed up\. Naveen is on your crew\. (?:Their|Naveen’s) idea stays separate, and (?:they send|Naveen sends) it on its own\. We’ve told (?:them|Naveen)\.$/,
+        )
+        .first(),
+    ).toBeVisible();
+
+    // L-MERGE.request/6: the draft is Naveen's again, no longer held, and not merged.
+    const context = await browser.newContext();
+    const sharer = await context.newPage();
+    try {
+      await signInAs(sharer, "naveen");
+      await sharer.goto(draftUrl(n2, "/check"));
+      await expect(sharer.getByText(n2.title).first()).toBeVisible();
+      await expect(sharer.getByText(/^Waiting on Rekha to merge$/)).toHaveCount(0);
+      await expect(sharer.getByText(/^Merged into /)).toHaveCount(0);
+      await expect(sharer.getByRole("link", { name: "Withdraw the request" })).toHaveCount(0);
+      await expect(sharer.getByRole("button", { name: "Withdraw the request" })).toHaveCount(0);
+    } finally {
+      await snap(sharer, info, "J-SIMILAR/6b", "S-05", "naveen");
+      await context.close();
+    }
   },
-  async () => {},
 );
 
 step(
   "J-SIMILAR/6c",
   "S-H2B",
-  "Rekha declines with a reason: Tanvi reads it, and the button becomes Send mine on its own",
-  {
-    needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"],
-    gapSeed: "a third draft with a merge request waiting on a lead, for Decline (J-SIMILAR owns only T2's)",
+  "Rekha declines with a reason: Geetanjali reads it, and the button becomes Send mine on its own",
+  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["G2"] },
+  async ({ page, browser }, info) => {
+    // Seed (lane E, 34249f1): Geetanjali's draft G2 at Check it, its merge request into R1 waiting on Rekha.
+    const g2 = await seeded("G2");
+    const r1 = await seeded("R1");
+    const reason =
+      "Mine is about the reason on screen, yours is about the note investors get. Better as two.";
+    await openRequest(page, "Geetanjali Dutta", r1.title);
+    // S-H2B.rules/1: Decline opens an optional reason in place, then "Decline the request".
+    await page.getByRole("button", { name: "Decline", exact: true }).click();
+    await page.getByRole("textbox", { name: "Tell Geetanjali why, if you like" }).fill(reason);
+    await page.getByRole("button", { name: "Decline the request" }).click();
+    await expect(
+      page
+        .getByText(
+          new RegExp(
+            `^Declined\\. Geetanjali sees your reason: “${esc(reason)}”\\. (?:They can send theirs|Geetanjali can send (?:theirs|Geetanjali’s|it)) on its own\\.$`,
+          ),
+        )
+        .first(),
+    ).toBeVisible();
+
+    // L-MERGE.request/7: the reason, word for word, and the way on.
+    const context = await browser.newContext();
+    const sharer = await context.newPage();
+    try {
+      await signInAs(sharer, "geetanjali");
+      await sharer.goto(draftUrl(g2, "/check"));
+      await expect(sharer.getByText("Rekha kept it separate").first()).toBeVisible();
+      await expect(
+        sharer.getByText(`Rekha kept that idea separate: “${reason}” Send yours on its own.`).first(),
+      ).toBeVisible();
+      await expect(sharer.getByRole("button", { name: "Send mine on its own" })).toBeEnabled();
+    } finally {
+      await snap(sharer, info, "J-SIMILAR/6c", "S-05", "geetanjali");
+      await context.close();
+    }
   },
-  async () => {},
 );
 
 step(

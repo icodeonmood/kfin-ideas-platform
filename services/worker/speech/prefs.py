@@ -23,8 +23,8 @@ class ReferAsInvalid(ValueError):
 
 
 def parse(value: object) -> str | None:
-    """A wire value to what is stored: she, he or they, or None for unset (also None or "")."""
-    if value is None or value == "" or value == UNSET:
+    """A wire value to what is stored: she, he or they, or None for unset (also None), as the route reads it."""
+    if value is None or value == UNSET:
         return None
     if isinstance(value, str) and value in CHOICES:
         return value

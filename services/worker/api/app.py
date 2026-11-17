@@ -8,7 +8,7 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from psycopg.types.json import Jsonb
 
@@ -148,6 +148,144 @@ def delete_voice(voice_id: str, idea_uuid: str, by: str = "") -> Response:
     return Response(status_code=204)
 
 
+# ---- drafts "By voice" through Sarvam (DEC-108, BLD-C112): the web app checked the person owns the draft ----
+
+
+def _stream_call(fn: Any, *args: Any, **kwargs: Any) -> JSONResponse:
+    from speech import drafts
+
+    try:
+        with connect(autocommit=True) as conn:
+            return JSONResponse(fn(conn, *args, **kwargs))
+    except drafts.VoiceRefused as exc:
+        return JSONResponse({"error": exc.code, **exc.body}, status_code=exc.status)
+
+
+@app.post("/internal/voice-streams", dependencies=[Depends(require_token)])
+def voice_stream_start(body: dict[str, Any]) -> JSONResponse:
+    """Open a stream for the person's draft: `{idea_uuid, by_code, user_id}`."""
+    from speech import drafts
+
+    resp = _stream_call(
+        drafts.start,
+        idea_uuid=str(body.get("idea_uuid", "")),
+        by_code=str(body.get("by_code", "")),
+        user_id=str(body["user_id"]) if body.get("user_id") else None,
+    )
+    if resp.status_code == 200:
+        resp.status_code = 201
+    return resp
+
+
+@app.post("/internal/voice-streams/{stream_id}/chunk", dependencies=[Depends(require_token)])
+async def voice_stream_chunk(
+    stream_id: str, idea_uuid: str, by: str, seq: int, request: Request
+) -> JSONResponse:
+    """About a second of 16 kHz mono 16-bit PCM, relayed to Sarvam as it arrives and never kept."""
+    from starlette.concurrency import run_in_threadpool
+
+    from speech import drafts
+
+    data = b""
+    async for part in request.stream():
+        data += part
+        if len(data) > drafts.MAX_CHUNK_BYTES:
+            return JSONResponse({"error": "chunk_too_large"}, status_code=413)
+    return await run_in_threadpool(
+        _stream_call, drafts.chunk, stream_id, idea_uuid=idea_uuid, by_code=by, seq=seq, data=data
+    )
+
+
+@app.post("/internal/voice-streams/{stream_id}/end", dependencies=[Depends(require_token)])
+def voice_stream_end(stream_id: str, body: dict[str, Any]) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(
+        drafts.end, stream_id, idea_uuid=str(body.get("idea_uuid", "")), by_code=str(body.get("by_code", ""))
+    )
+
+
+@app.get("/internal/voice-streams/{stream_id}", dependencies=[Depends(require_token)])
+def voice_stream_status(stream_id: str, idea_uuid: str, by: str) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(drafts.status, stream_id, idea_uuid=idea_uuid, by_code=by)
+
+
+@app.get("/internal/voice-config", dependencies=[Depends(require_token)])
+def voice_config() -> JSONResponse:
+    """What the screen shows before recording, and what the browser sends (BLD-C116)."""
+    from speech import drafts
+
+    return JSONResponse({"notice": drafts.NOTICE, **drafts.chunk_contract()})
+
+
+# ---- Listen in Sarvam's voice (DEC-108 (4), BLD-C114): the web app checked the desk or committee role ----------
+
+
+@app.get("/internal/listen/{ref}", dependencies=[Depends(require_token)])
+def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")) -> Response:
+    """The idea's audio (MP3). Cached: the whole file, or the asked byte range (seeking by chapter). Not cached:
+    streamed as Sarvam makes it, part by part, and cached at the end."""
+    from fastapi.responses import StreamingResponse
+
+    from attachments import store
+    from gateway import sarvam
+    from gateway.speech import SpeechUnavailable
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            plan = listen.prepare(conn, ref)
+            if plan.cached is None:
+                # Like drafts._hosted_check: the fake route needs no key (BLD-C117). On the Sarvam route,
+                # speech.hosted is read fresh with the approval and the key before anything streams.
+                if get_settings().speech_mode == "sarvam":
+                    sarvam.allowed(conn)
+                listen.outgoing(plan.script)  # every part passes the leak check before the first byte
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    except SpeechUnavailable as exc:  # the player falls back to the on-device voice
+        code = "listen_unavailable" if exc.code == "unmasked_text" else "paused"
+        return JSONResponse({"error": code}, status_code=503)
+    headers = {"Cache-Control": "private, no-store", "Accept-Ranges": "bytes"}
+    if plan.cached is not None:
+        data = store.get(get_settings().s3_bucket_clean, plan.cached.store_key)
+        span = listen.byte_range(range_header, len(data)) if range_header else None
+        if range_header and span is None:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{len(data)}"})
+        if span is not None:
+            start, end = span
+            return Response(
+                content=data[start : end + 1],
+                status_code=206,
+                media_type="audio/mpeg",
+                headers={**headers, "Content-Range": f"bytes {start}-{end}/{len(data)}"},
+            )
+        return Response(content=data, media_type="audio/mpeg", headers=headers)
+
+    def body() -> Any:
+        with connect(autocommit=True) as conn:
+            yield from listen.speak(conn, plan.idea_uuid, plan.script, voice=plan.voice)
+
+    return StreamingResponse(body(), media_type="audio/mpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/internal/listen/{ref}/chapters", dependencies=[Depends(require_token)])
+def listen_chapters(ref: str) -> JSONResponse:
+    """`{ parts: [{ part, start_s }], duration_s }` once the audio is cached; until then 202 `{ pending: true }`."""
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            got = listen.chapters(conn, ref)
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    if got is None:
+        return JSONResponse({"pending": True}, status_code=202)
+    return JSONResponse(got)
+
+
 @app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])
 def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
     """The scan as one viewer may see it. The web app decides `mode` from §3.1 (owner: real)."""
@@ -202,22 +340,71 @@ def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     return JSONResponse(out)
 
 
+def _inbox_call(fn: Any, *args: Any) -> JSONResponse:
+    """L-INBOX for one person (the web app vouches for who they are; the worker checks every item is theirs)."""
+    import uuid
+
+    from notify.inbox import InboxRefused
+
+    try:
+        uuid.UUID(str(args[0]))
+    except ValueError:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    with connect(autocommit=True) as conn:
+        try:
+            return JSONResponse(fn(conn, *args), headers={"Cache-Control": "no-store"})
+        except InboxRefused as exc:
+            return JSONResponse({"error": exc.code}, status_code=exc.status)
+
+
 @app.get("/internal/inbox/{user_id}", dependencies=[Depends(require_token)])
-def inbox_list(user_id: str) -> JSONResponse:
-    """The person's in-app messages, rendered for them (the web app vouches for who they are)."""
-    from comms.inbox import inbox
+def inbox_list(user_id: str, tab: str = "all") -> JSONResponse:
+    """`GET /inbox` (A-API.inbox): the tab's items, every tab's count and the unread total, rendered for them."""
+    from notify import inbox
 
-    with connect(autocommit=True) as conn:
-        return JSONResponse({"messages": inbox(conn, user_id)}, headers={"Cache-Control": "no-store"})
+    return _inbox_call(inbox.items, user_id, tab)
 
 
-@app.post("/internal/inbox/{user_id}/{notification_id}/read", dependencies=[Depends(require_token)])
-def inbox_read(user_id: str, notification_id: int) -> JSONResponse:
-    from comms.inbox import mark_read
+@app.get("/internal/inbox/{user_id}/counts", dependencies=[Depends(require_token)])
+def inbox_counts(user_id: str) -> JSONResponse:
+    """The unread and needs-you numbers for the shell and Home (L-INBOX.rules/1)."""
+    from notify import inbox
 
-    with connect(autocommit=True) as conn:
-        ok = mark_read(conn, user_id, notification_id)
-    return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+    return _inbox_call(inbox.counts, user_id)
+
+
+@app.get("/internal/inbox/{user_id}/needs-you", dependencies=[Depends(require_token)])
+def inbox_needs_you(user_id: str) -> JSONResponse:
+    """Home's "Needs you": the total and the top two (A-API.home)."""
+    from notify import inbox
+
+    return _inbox_call(inbox.needs_you, user_id)
+
+
+@app.post("/internal/inbox/{user_id}/read-all", dependencies=[Depends(require_token)])
+def inbox_read_all(user_id: str) -> JSONResponse:
+    from notify import inbox
+
+    return _inbox_call(inbox.mark_all_read, user_id)
+
+
+@app.post("/internal/inbox/{user_id}/{notification_id}/{verb}", dependencies=[Depends(require_token)])
+def inbox_item(user_id: str, notification_id: int, verb: str) -> JSONResponse:
+    """`read`, `unread` or `archive` one item; archiving an item that still needs the person is refused."""
+    from notify import inbox
+
+    fn = {"read": inbox.mark_read, "unread": inbox.mark_unread, "archive": inbox.archive}.get(verb)
+    if fn is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return _inbox_call(fn, user_id, notification_id)
+
+
+@app.post("/internal/inbox/{user_id}/{notification_id}/actions/{op}", dependencies=[Depends(require_token)])
+def inbox_action(user_id: str, notification_id: int, op: str) -> JSONResponse:
+    """One of the item's server operations, handed to the lane that owns it (`notify.ops`)."""
+    from notify import inbox
+
+    return _inbox_call(inbox.action, user_id, notification_id, op)
 
 
 def _review_call(fn: Any, *args: Any) -> JSONResponse:
@@ -1164,3 +1351,8 @@ app.include_router(_desk_routes(require_token))
 from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
+
+# Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
+from teamup.routes import build as _teamup_routes  # noqa: E402
+
+app.include_router(_teamup_routes(require_token))

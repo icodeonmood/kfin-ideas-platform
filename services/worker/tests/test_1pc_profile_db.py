@@ -19,6 +19,9 @@ pytestmark = pytest.mark.stack
 
 @pytest.fixture
 def profile_db(db: Conn) -> Iterator[Conn]:
+    # Teams as shipped (DEC-105): `comms.teams` exists (lane A's notify migration) and is off; the `db` fixture turns
+    # every switch on, so it is put back. Where the switch does not exist it counts as off (§7.6) all the same.
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
     killswitch.clear_cache()
     kindling.clear_cache()
     yield db
@@ -121,7 +124,8 @@ def test_DEC_105_Teams_stays_off_until_its_switch_is_on(profile_db: Conn) -> Non
         assert profile.profile(db, who["id"])["available"] == {"teams": True}
         assert profile.save_settings(db, who["id"], {"teams": False})["settings"]["teams"] is False
     finally:
-        db.execute("DELETE FROM kill_switches WHERE name = 'comms.teams'")
+        # As shipped: switched off again, not removed (later tests in the run use the switch).
+        db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
         killswitch.clear_cache()
 
 
