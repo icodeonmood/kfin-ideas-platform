@@ -39,21 +39,50 @@ def clean_up_desk_rows(test_database: str) -> Iterator[None]:
     from core.db import connect
     from tests import helpers
 
-    with connect(helpers.db_url(test_database), autocommit=True) as conn, conn.transaction():
+    with connect(helpers.db_url(test_database), autocommit=True) as conn:
+        remove_made(conn, _made["users"], _made["ideas"])
+    _made["users"].clear()
+    _made["ideas"].clear()
+
+
+def remove_made(conn: Conn, users: list[str], ideas: list[str]) -> None:
+    """Delete these people and ideas, everything that hangs off them, and the `jobs` rows keyed to the ideas, their
+    decision windows, merges and question sets (lane A's timers, through `adapters.schedule`), so another lane's
+    job runner never picks one up. Audit rows stay."""
+    with conn.transaction():
         codes = [
             str(r["contributor_code"])
             for r in conn.execute(
-                "SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])",
-                (_made["users"],),
+                "SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])", (users,)
             ).fetchall()
         ]
-        conn.execute(
-            "DELETE FROM ideas WHERE id = ANY(%s::uuid[]) OR contributor_code = ANY(%s)",
-            (_made["ideas"], codes),
-        )
-        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (_made["users"],))
-    _made["users"].clear()
-    _made["ideas"].clear()
+        made = conn.execute(
+            "SELECT id::text AS id FROM ideas WHERE id = ANY(%s::uuid[]) OR contributor_code = ANY(%s)",
+            (ideas, codes),
+        ).fetchall()
+        idea_ids = [str(r["id"]) for r in made]
+        keys = idea_ids + [
+            str(r["id"])
+            for r in conn.execute(
+                "SELECT w.id::text AS id FROM decision_windows w LEFT JOIN idea_decisions d ON d.id = w.decision_id "
+                "LEFT JOIN merges m ON m.id = w.merge_id "
+                "WHERE d.idea_uuid = ANY(%(i)s::uuid[]) OR m.lead_idea_uuid = ANY(%(i)s::uuid[]) "
+                "OR m.merged_idea_uuid = ANY(%(i)s::uuid[]) "
+                "UNION SELECT id::text FROM idea_decisions WHERE idea_uuid = ANY(%(i)s::uuid[]) "
+                "UNION SELECT id::text FROM merges WHERE lead_idea_uuid = ANY(%(i)s::uuid[]) "
+                "OR merged_idea_uuid = ANY(%(i)s::uuid[]) "
+                "UNION SELECT id::text FROM question_sets WHERE idea_uuid = ANY(%(i)s::uuid[])",
+                {"i": idea_ids},
+            ).fetchall()
+        ]
+        if keys:
+            conn.execute(
+                "DELETE FROM jobs j WHERE EXISTS (SELECT 1 FROM unnest(%s::text[]) AS k(id) "
+                "WHERE strpos(j.payload::text, k.id) > 0 OR strpos(coalesce(j.dedupe_key, ''), k.id) > 0)",
+                (keys,),
+            )
+        conn.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (idea_ids,))
+        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
 
 
 def at(d: int, h: int = 0, mi: int = 0, m: int = 11, y: int = 2026) -> dt.datetime:

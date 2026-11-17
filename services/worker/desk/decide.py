@@ -241,9 +241,8 @@ def send(
             "RETURNING id",
             (t, idea["id"]),
         ).fetchall()
-        for (
-            done
-        ) in closed:  # L-INBOX.rules/3: the questions leave the sharer's Needs you with their reminders
+        # L-INBOX.rules/3: the questions leave the sharer's Needs you with their reminders
+        for done in closed:
             adapters.resolve(conn, adapters.questions_key(str(done["id"])))
         adapters.say(conn, str(idea["id"]), "desk.decided", author_user_id=user_id,
                      payload={"decision_id": decision_id, "choice": str(choice)}, at=t)  # fmt: skip

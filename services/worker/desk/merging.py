@@ -151,9 +151,8 @@ def desk_merge(
             "RETURNING id",
             (t, joiner["id"]),
         ).fetchall()
-        for (
-            done
-        ) in closed:  # L-INBOX.rules/3: the joining idea's questions leave Needs you with their reminders
+        # L-INBOX.rules/3: the joining idea's questions leave Needs you with their reminders
+        for done in closed:
             adapters.resolve(conn, adapters.questions_key(str(done["id"])))
         # L-MERGE.effects/4: the joining sharer and their live crew join the lead's crew, never as a second lead
         added: list[str] = []

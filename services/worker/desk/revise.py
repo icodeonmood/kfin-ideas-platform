@@ -91,7 +91,7 @@ def revise_worth(
     the sharer reads at once. Allowed while the idea is on the desk. Body: hours_month, cost_month and
     revenue_month as typed, outside_tools, kind, area, note (all optional; the figures may also come under
     `worth`, as A-API.desk writes it). Errors: own_idea (403), already_decided (409), worth_invalid,
-    outside_tools_invalid, note_too_long, kind_invalid, area_invalid (422)."""
+    outside_tools_invalid, note_invalid, note_too_long, kind_invalid, area_invalid (422)."""
     t = at or now()
     p = promises.get()
     fields: dict[str, Any] = body["worth"] if isinstance(body.get("worth"), dict) else body
@@ -101,7 +101,9 @@ def revise_worth(
         idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "revise_worth")
         ensure_on_desk(idea)
-        typed, errors = worth.read_revision(fields, None if note is None else str(note), p.worth_note_max)
+        if note is not None and not isinstance(note, str):  # a list or object is never stored as its repr
+            raise Refused(422, "note_invalid", "Write the note as text.", "note")
+        typed, errors = worth.read_revision(fields, note, p.worth_note_max)
         if errors:
             e = errors[0]
             raise Refused(422, e.code, e.message, e.field)
@@ -126,8 +128,8 @@ def revise_worth(
         assert row is not None
         worth_id = int(row["id"])
         masked = None
-        if note is not None and str(note).strip():
-            masked, _ = adapters.hide(conn, str(idea["id"]), str(note).strip())
+        if note is not None and note.strip():
+            masked, _ = adapters.hide(conn, str(idea["id"]), note.strip())
             conn.execute(
                 "UPDATE idea_worth SET note_encrypted = %s WHERE id = %s",
                 (seal(masked, "idea_worth", "note_encrypted", worth_id), worth_id),

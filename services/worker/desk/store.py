@@ -118,9 +118,10 @@ def user_of(conn: Conn, code: str | None) -> str | None:
 
 
 # P-PRODUCT.privacy (DEC-104): the review desk and the Ones Committee read a sharer's private words, answers, the worth
-# note and a decision's reason; admins see the stage only. `core_committee` is the committee's role until lane E
-# retires it with the old pages. Only the review desk acts on an idea from the desk.
-READERS = frozenset({"reviewer", "committee", "core_committee"})
+# note and a decision's reason; admins see the stage only. `core_committee` and `core_chair` (its chair, a role of its
+# own elsewhere in the worker, as in `similar.preview.DESK_ROLES`) are the committee's roles until lane E retires them
+# with the old pages: they read only. Only the review desk acts on an idea from the desk.
+READERS = frozenset({"reviewer", "committee", "core_committee", "core_chair"})
 REVIEWERS = frozenset({"reviewer"})
 _NOT_YOURS = {
     READERS: "Only the review desk and the Ones Committee can see this.",
