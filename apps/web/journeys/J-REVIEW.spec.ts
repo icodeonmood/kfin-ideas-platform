@@ -5,12 +5,11 @@
  * Inbox.md (what the sharer reads). BLD-E008: the boards' she/her for the sharer reads as the sharer's first name.
  * Cast: Kavya (sharer) is the record's sharer, Meera (reviewer) the record's reviewer, Ravi the other idea's sharer.
  * Seed: J-REVIEW changes only its own records (lib SEED); R1 is J-SIMILAR's and J-TEAMUP's and is never touched here.
- * P1 (Pallavi's, with the desk, never opened, one question Lavanya queued and never sent) walks the main path and is
- * picked. It fits "decide without asking" as L-REVIEW defines it: a queued question is the reviewer's alone, so P1 is
- * in To review with "No questions asked"; its panel is Asking, whose way on is "Decide without asking"
- * (asking → deciding), and the queued question is dropped when the decision is sent.
- * The ask path (A1 to A3) has a record of its own, K1 (Kiran's, at To review, never opened, Lavanya's question on How
- * often queued and never sent; lane E, 34249f1). Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
+ * P1 (Pallavi's, with the desk, never opened, nothing asked) walks the main path and is picked: row 1 is its first
+ * open, which closes Pallavi's edit window (L-REVIEW.open/1), and "Decide on this idea" takes the panel to Deciding.
+ * The ask path (A1 to A3) has a record of its own, K1 (Kiran's, at To review, never opened, no question set; lane E):
+ * A1 is K1's first open, and "Ask about this" on How often queues that part's suggestion. A question set can't be
+ * queued before the first open (L-REVIEW.open/1, L-QUESTIONS.ask/4), so the seed has none. Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
  * (Bhavesh's, with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is
  * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
  * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
@@ -96,9 +95,9 @@ async function asOther(
 
 // --- J-REVIEW.main: decide without asking (P1, Lavanya; Pallavi shared it) ---------------------------------------------
 
-/** The panel's way into Deciding: "Decide on this idea", or "Decide without asking" while P1's question is queued. */
+/** The panel's way into Deciding with nothing asked (J-REVIEW/5). */
 function decideButton(page: Page): Locator {
-  return page.getByRole("button", { name: /^(?:Decide on this idea|Decide without asking)$/ }).first();
+  return page.getByRole("button", { name: "Decide on this idea", exact: true }).first();
 }
 
 step(
@@ -112,7 +111,7 @@ step(
     await expect(page.getByRole("button", { name: "Time left" })).toHaveAttribute("aria-pressed", "true");
     const row = rowFor(page, p1.title);
     await expect(row).toContainText("Pallavi Joshi, Distributor services, Mumbai");
-    // Lavanya's queued question is hers alone until sent, so nothing has been asked (L-REVIEW.queue, L-QUESTIONS).
+    // Nothing has been asked yet (L-QUESTIONS).
     await expect(row).toContainText("No questions asked");
     await expect(row).toContainText(new RegExp(`${COUNTDOWN} to decide|Overdue by`));
     await expect(row).toContainText(new RegExp(DAY));
@@ -285,13 +284,13 @@ step(
         )
         .first(),
     ).toBeVisible();
-    // S-R2.panel.ask: collapsed by default, even with Lavanya's question queued.
+    // S-R2.panel.ask: collapsed by default.
     await expect(page.getByRole("button", { name: /^Ask Pallavi first/ })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
 
-    // With a question queued the panel is Asking, so the way on reads "Decide without asking" (L-REVIEW.panel).
+    // Nothing asked, so the way on is "Decide on this idea" (L-REVIEW.panel, J-REVIEW/5).
     await decideButton(page).click();
     await expect(page.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
     await expect(
@@ -320,7 +319,7 @@ step(
         .first(),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Send decision to Pallavi" })).toBeVisible();
-    // Back with nothing sent returns to where Lavanya came from (L-REVIEW.panel), the queued question kept.
+    // Back with nothing sent returns to where Lavanya came from (L-REVIEW.panel).
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Review this idea" })).toBeVisible();
     await expect(decideButton(page)).toBeVisible();
@@ -404,28 +403,29 @@ step(
 step(
   "J-REVIEW/A1",
   "S-R2",
-  "Ask Kiran first opens with How often's suggestion queued, the part shown as asked about",
-  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"] },
+  "Ask about this on How often opens Ask Kiran first with that part's suggestion queued",
+  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"], changes: ["K1"] },
   async ({ page }) => {
-    // Seed: Lavanya pressed "Ask about this" on How often (left empty) and never sent it, so that part's first
-    // suggestion is queued (L-QUESTIONS.ask/3); the desk has not opened K1 since.
+    // K1's first open: Lavanya is its reviewer from now on and Kiran's edit window closes (L-REVIEW.open/1).
     const k1 = await seeded("K1");
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(k1));
     await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
+    const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
+    await askAbout(page, "How often").click();
+    await expect(askFirst).toHaveAttribute("aria-expanded", "true");
     await expect(askAbout(page, "How often")).toHaveAttribute("aria-pressed", "true");
-    const askFirst = await openAsk(page);
     await expect(
       page.getByText(
         "Only if something is unclear. Ask in your own words; each question is pinned to its part of the idea, so Kiran answers it right there.",
       ),
     ).toBeVisible();
+    // How often's first suggestion is queued (L-QUESTIONS.ask/3); the header counts what is listed.
     await expect(
       page.getByRole("button", {
         name: "Remove: How often does this happen: a few times a day, a week or a month?",
       }),
     ).toBeVisible();
-    // The header counts what is listed (S-R2.rules/2).
     const n = await page.getByRole("button", { name: /^Remove: / }).count();
     await expect(askFirst).toContainText(new RegExp(`${n} questions? ready`));
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
