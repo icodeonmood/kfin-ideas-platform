@@ -6,6 +6,11 @@ There is no free-text message: the first argument is an event name (`a.b_c`). Fi
 text or personal data, and string values that match a personal-data pattern, are refused. In dev and test
 that raises `LogPolicyError` so the mistake is found at once; in UAT and prod the field is dropped and the
 line records which field names were dropped (names only).
+
+A value that is exactly one of our identifier shapes (a UUID, `DRAFT-<uuid>`, `IDEA-<uuid>`, `user:<uuid>`, a
+hash or a coded ID such as `IDEA-2026-000142`) is kept without the value scan: `value_patterns` checks the shared
+`log_rules.safe_value_regex` first (BLD-087, BLD-A183, BLD-A189). Anything else, an ID with text beside it
+included, is scanned.
 """
 
 from __future__ import annotations

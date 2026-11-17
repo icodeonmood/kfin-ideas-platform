@@ -4,9 +4,12 @@
  * shared contracts land (A-API.me, A-API.inbox-count, A-API.my-drafts, A-API.my-ideas). The shell never stops a page
  * from rendering: each part that cannot be read in time is simply left out.
  */
+import type { CommitteeResponse, DeskResponse } from "@/lib/contracts";
+
 import type { CurrentUser } from "./auth/current";
+import { deskRead } from "./desk";
 import { myIdeas, type MyIdea } from "./ideas";
-import { messagesFor } from "./inbox";
+import { inboxCounts } from "./inbox";
 import { myOne } from "./ones";
 
 /** A row in a sidebar section. `tone` is the status dot (C-SIDEBAR.anatomy/4): warn for "needs you", blue for
@@ -27,7 +30,7 @@ export type ShellData = {
   inboxUnread: number;
   drafts: ShellRow[];
   ideas: ShellRow[];
-  /** Reviewer: "Waiting on sharers"; committee: "Closing soonest". Filled by lanes B once L-REVIEW and L-COMMITTEE land. */
+  /** Reviewer: "Waiting on sharers"; committee: "Closing soonest" (lane B: `deskRows`, `committeeRows`), up to 3 each. */
   desk?: ShellRow[];
   committee?: ShellRow[];
 };
@@ -86,11 +89,50 @@ function titleOf(idea: MyIdea): string {
   return idea.one_line?.trim() || (idea.draft ? "Untitled draft" : "Your idea");
 }
 
+/** C-SIDEBAR.anatomy, the review desk's "Waiting on sharers": the three most urgent, as the desk read sorts them
+ * (L-REVIEW.queue). Dots: blue normal, amber under a day, red overdue (S-R1.rules/5). */
+const DESK_TONE: Record<DeskResponse["waiting_on_sharers"][number]["dot"], ShellRow["tone"]> = {
+  blue: "blue",
+  amber: "warn",
+  red: "bad",
+};
+
+export function deskRows(desk: Pick<DeskResponse, "waiting_on_sharers"> | null): ShellRow[] {
+  return (desk?.waiting_on_sharers ?? []).slice(0, 3).map((w) => ({
+    href: `/desk/ideas/${encodeURIComponent(w.idea_id)}`,
+    title: w.title,
+    tone: DESK_TONE[w.dot],
+  }));
+}
+
+/** C-SIDEBAR.anatomy, the Ones Committee's "Closing soonest" (S-R4.rules/4): the first three in the window, sorted by
+ * closing soonest; each opens its row in place on the committee's page. */
+export function committeeRows(committee: Pick<CommitteeResponse, "items"> | null): ShellRow[] {
+  return (committee?.items ?? [])
+    .filter((r) => r.window.state === "open" || r.window.state === "extended")
+    .slice(0, 3)
+    .map((r) => ({
+      href: `/committee?open=${encodeURIComponent(r.window_id)}`,
+      title: r.idea.title,
+      meta: r.window.left ?? undefined,
+      tone: "blue",
+    }));
+}
+
 export async function shellData(me: CurrentUser): Promise<ShellData> {
-  const [mine, messages, one] = await Promise.all([
+  // Each section only for whoever has its sidebar item (policy/rbac.yaml navigation:), so a read the worker would
+  // refuse (BLD-B232) is never made.
+  const onNav = (key: string) => me.nav.some((n) => n.key === key);
+  const [mine, counts, one, desk, committee] = await Promise.all([
     inTime(myIdeas(me)),
-    inTime(messagesFor(me)),
+    inTime(inboxCounts(me)),
     inTime(myOne(me)),
+    onNav("desk")
+      ? inTime(deskRead<DeskResponse>(me, "/internal/desk", { tab: "waiting", sort: "time_left" }))
+      : null,
+    onNav("committee")
+      ? inTime(deskRead<CommitteeResponse>(me, "/internal/committee", { tab: "window", sort: "closing" }))
+      : null,
   ]);
   const ideas = mine?.ideas ?? [];
   const drafts = ideas
@@ -112,8 +154,10 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
     initials: initialsOf(me.name),
     tier: active?.tier ?? null,
     tierName: active?.tier_name ?? null,
-    inboxUnread: messages?.filter((m) => !m.read).length ?? 0,
+    inboxUnread: counts?.unread ?? 0, // L-INBOX.rules/1: the Inbox's own unread count
     drafts,
     ideas: shared,
+    ...(desk ? { desk: deskRows(desk) } : {}),
+    ...(committee ? { committee: committeeRows(committee) } : {}),
   };
 }
