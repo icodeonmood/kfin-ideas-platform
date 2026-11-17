@@ -158,6 +158,7 @@ def test_l_hide_rules_7_the_desk_hides_a_missed_name_in_every_copy(db: Any) -> N
     assert {(str(r["source_id"]), r["found_by"]) for r in rows} == {(mid, "reviewer"), (m2, "reviewer")}
     audit = db.execute("SELECT actor, after FROM audit_log WHERE action = 'hide.desk_hidden'").fetchone()
     assert audit["actor"] == f"user:{reviewer}" and "Kiran" not in str(audit["after"])
+    assert "sharer_notified" in audit["after"]  # posted once lane A's notify knows the kind (BLD-C063)
     assert helpers.tables_containing(db, "Kiran Rao") == []
 
     with pytest.raises(HideError) as twice:
@@ -198,3 +199,29 @@ def test_l_hide_rules_7_title_and_part_and_drafts_are_not_for_the_desk(db: Any) 
         desk_hide(db, draft, source_kind="title", source_id="title", start=0, end=3, by=reviewer)
     assert hidden_draft.value.code == "not_found"
     _ = uid
+
+
+def test_l_hide_rules_4_the_scope_is_the_idea_row_so_show_it_still_works_after_send(db: Any) -> None:
+    """The draft and the shared idea are one `ideas` row; values sit under `DRAFT-<idea uuid>` before and after send."""
+    uid, code = person(db)
+    iid = idea(db, code)
+    mid, out = message(db, iid, uid, WORDS)
+    assert scope_for(iid) == f"DRAFT-{iid}"
+    db.execute(
+        "UPDATE ideas SET status = 'checking', idea_id = next_idea_ref() WHERE id = %s", (iid,)
+    )  # send
+    folio_id = next(d["id"] for d in out.details if d["kind"] == "folio")
+    shown = show(db, iid, folio_id, reason="internal_reference", by=uid)
+    assert shown["state"] == "shown" and FOLIO in masked_message(db, mid)
+    tag = db.execute("SELECT vault_tag FROM hidden_details WHERE id = %s", (folio_id,)).fetchone()[
+        "vault_tag"
+    ]
+    assert vault.mapping(db, scope_for(iid))[tag][1] == FOLIO  # still resolves after send
+    masked, count = hide_text(db, iid, f"Folio {FOLIO} again", by=uid, source="desk")
+    assert count == 1 and masked == "Folio Folio ••••89 again"
+    tags = db.execute(
+        "SELECT DISTINCT vault_tag FROM hidden_details WHERE idea_uuid = %s AND kind = 'folio'", (iid,)
+    )
+    assert {r["vault_tag"] for r in tags} == {
+        tag
+    }  # the same value keeps one tag across draft and shared idea
