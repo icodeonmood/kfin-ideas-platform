@@ -114,8 +114,11 @@ test("C-SHEET-TEAMUP.compose at 375px: a bottom sheet with 44px targets; axe; Ta
   await expect(sheet).toContainText("We drafted this from your idea. Change anything you like.");
 
   // Phone: the sheet sits on the bottom edge, full width (C-SHEET-TEAMUP.compose, "bottom sheet on phone").
+  // Full width is the page's own width: the desktop browser keeps a scrollbar gutter beside it.
   const box = (await sheet.boundingBox())!;
-  expect(box.width).toBeGreaterThanOrEqual(370);
+  const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+  expect(box.x).toBeLessThan(1);
+  expect(Math.abs(box.width - pageWidth)).toBeLessThan(2);
   expect(Math.abs(box.y + box.height - 812)).toBeLessThan(2);
   // Touch targets (F-A11Y): the cross, the dropdown and Send are 44px or more each way.
   for (const name of ["Close without sending", "Bring your ideas along: None picked", "Send to Ravi"]) {
