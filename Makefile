@@ -60,7 +60,7 @@ seed: migrate ## Create the local company repo, validate it, index it, load synt
 	$(PY) python -m bootstrap.seed
 
 # DEMO_SET=1pc picks the 1% Club seed for the handoff's tables (bootstrap/club_seed.py) instead of the old demo.
-DEMO_SET ?= legacy
+DEMO_SET ?= 1pc
 
 demo: ## Dev only: load the synthetic demo (docs/DEMO.md; DEMO_SET=1pc for the 1% Club seed); a second run changes nothing
 	$(PY) python -m bootstrap.demo --set $(DEMO_SET)
@@ -80,6 +80,7 @@ test-web:
 	$(WEB) npx vitest run
 
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
+	$(PY) python -m bootstrap.demo --set 1pc
 	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" \
 		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test
 
