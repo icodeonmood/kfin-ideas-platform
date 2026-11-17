@@ -29,6 +29,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Pill } from "@/components/ui/pill";
 import type { IdeaPreview } from "@/lib/contracts";
 import { ONEPC } from "@/lib/contracts/enums.gen";
 
@@ -382,11 +383,7 @@ function PreviewBody({
     <>
       <div className={p.hue === 2 ? "pvband hue2" : "pvband hue1"}>
         <div className="pvtop">
-          {/* TODO(lane D, BLD-C100): swap to <StatusPill status={p.status} /> (band variant) from @/components/ui/pill. */}
-          <span className="pill">
-            <i aria-hidden="true" />
-            {status}
-          </span>
+          <Pill variant="band">{status}</Pill>
           <p className="pvref">{p.id}</p>
         </div>
         <h2 id={titleId} className="pvt">
