@@ -74,9 +74,10 @@ export function storedQueue(set: ReviewerQueuedSet | null | undefined): StoredQu
 }
 
 /**
- * The panel as the page opens. A stored queue (S-R2 "Asking Kavya") opens the Ask section with its questions ready
- * to send, as reviewing; on an answered set it is a follow-up the reviewer started, so Back returns to Answered.
- * Questions added in the browser are not stored until sent, so a reload keeps only the stored queue (BLD-B244).
+ * The panel as the page opens. A stored queue (S-R2 "Asking Kavya") is the starting queue: the Ask section's header
+ * reads "{n} questions ready" and the bar "Send {n} questions to Kavya", while the section itself stays folded until
+ * opened (S-R2.panel/2); on an answered set it is a follow-up the reviewer started. Questions added in the browser are
+ * not stored until sent, so a reload keeps only the stored queue (BLD-B244).
  */
 export function initialPanel(
   state: PanelState = "reviewing",
@@ -101,7 +102,6 @@ export function initialPanel(
   return {
     ...base,
     state: "reviewing",
-    askOpen: true,
     queued,
     timeToAnswer: stored.timeToAnswer ?? defaultTime,
     nextKey: queued.length + 1,
