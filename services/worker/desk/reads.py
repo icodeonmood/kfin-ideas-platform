@@ -345,9 +345,10 @@ def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> d
 
     if idea["status"] == "merged":  # first: a Not now that came back and was then merged shows the merge
         return {"state": "merged"}
-    decision = committee.for_idea(conn, str(idea["id"]), user_id, at)
+    decision = committee.for_idea(conn, str(idea["id"]), user_id, at, lines="reviewer")
+    lines = decision.pop("lines") if decision is not None else None  # the reviewer's words (DeskIdea, Decided)
     if decision is not None and idea["status"] not in ON_DESK_STATUSES:
-        return {"state": "decided", "decision": decision}
+        return {"state": "decided", "decision": decision, "lines": lines}
     s = conn.execute(
         "SELECT * FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
         "ORDER BY created_at DESC LIMIT 1",
