@@ -23,7 +23,8 @@ from onepc.context import open_text, seal_text
 class Refused(Exception):
     """An action the rules do not allow. `code` is the A-API error code, `status` the HTTP status, `field` the field
     a message belongs under, `message` text ready to show (A-API.conventions/2). `audit` is written after the
-    rollback, so a refusal that must leave a trace survives it."""
+    rollback, so a refusal that must leave a trace survives it. `extra` adds fixed facts the screen needs beside the
+    message (the wording check's words), never idea text."""
 
     def __init__(
         self,
@@ -32,12 +33,14 @@ class Refused(Exception):
         message: str | None = None,
         field: str | None = None,
         audit: tuple[str, str, str, dict[str, Any]] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(code)
         self.status, self.code, self.message, self.field, self.audit = status, code, message, field, audit
+        self.extra = extra or {}
 
     def body(self) -> dict[str, Any]:
-        err: dict[str, Any] = {"code": self.code, "message": self.message or ""}
+        err: dict[str, Any] = {**self.extra, "code": self.code, "message": self.message or ""}
         if self.field:
             err["field"] = self.field
         return {"error": err}

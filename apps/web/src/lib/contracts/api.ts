@@ -627,6 +627,18 @@ export interface DecisionRequest {
   return_in?: ReturnIn;
   wording_ok?: boolean; // send anyway after the wording check (L-DECIDE.rules/4)
 }
+/** 422 `wording_check` (L-DECIDE.rules/4, BLD-B236): the reason holds a word the product never says to a sharer. It
+ * warns and never blocks: show `message` under the reason, then send again with `wording_ok: true` to send it as
+ * written. `words` are as found in the reason; `suggestions` give a plainer way to say each. */
+export interface WordingCheckError {
+  error: {
+    code: "wording_check";
+    message: string;
+    field: "reason";
+    words: string[]; // ["duplicate"]
+    suggestions: { word: string; suggestion: string }[];
+  };
+}
 export interface DecisionResponse {
   id: string;
   idea_id: string;
