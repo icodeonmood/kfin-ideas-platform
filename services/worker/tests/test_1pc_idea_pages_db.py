@@ -212,6 +212,41 @@ def test_l_questions_answer_5_answers_under_their_parts_come_from_lane_b(
     assert often["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
 
 
+def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b_desk_asking_unmocked(
+    club: dict[str, Any],
+) -> None:
+    """The seam, with nothing stubbed: lane B's real `desk.asking.answers_by_part` reads the seeded T7 set (asked by
+    Harish, answered by Tanvi, closed with the pick) and S-06 shows each sent answer under its part, with its line,
+    exactly as lane B returns it (S-06.layout/5, L-QUESTIONS.answer/5; J-BROWSE/4)."""
+    from desk import asking
+    from ideapage import adapters
+
+    conn, m = club["conn"], club["m"]
+    assert adapters._lane_b_answers() is asking.answers_by_part  # the real module, not a stand-in
+    raw = asking.answers_by_part(conn, m["T7"].uuid)
+    assert list(raw) == ["often"]
+    [sent] = raw["often"]
+    assert (sent["asked_by"], sent["by"], sent["answer"]) == (
+        "Harish",
+        "Tanvi",
+        "Yes, across the six largest branches.",
+    )
+    answered = dt.datetime.fromisoformat(str(sent["answered_at"]))
+    assert answered == NOW - dt.timedelta(days=7.5) + dt.timedelta(hours=20)  # club_seed._questions for T7
+
+    rows = {r["part"]: r for r in view(club, ref(club, "T7"), "tanvi")["page"]["shared"]["rows"]}
+    assert rows["often"]["answers"] == [
+        {
+            "id": sent["question_id"],
+            "text": "Yes, across the six largest branches.",
+            "at": answered.isoformat(),
+            "line": f"From your answer to Harish, {day(answered, NOW)}",
+            "files": [],
+        }
+    ]
+    assert all(not r.get("answers") for part, r in rows.items() if part != "often")
+
+
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "T10"), "tanvi")
     page = v["page"]
