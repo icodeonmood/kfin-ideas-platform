@@ -25,6 +25,7 @@ from core.crypto import CryptoError, decrypt_json, encrypt_json
 from core.db import Conn
 from onepc import enums
 from onepc.context import sealed_context
+from similar.preview import DESK_ROLES
 from submit import adapters, config, own, ready, sorting
 from submit.errors import NotFound, Refused
 from submit.words import clock, countdown, day, join
@@ -44,7 +45,9 @@ FIELD_WORDS = {
     "fix": "Your fix",
     "helpers": "Who would help",
 }
-STAFF_ROLES = ("reviewer", "committee", "core_committee", "core_chair")
+# The review desk and the Ones Committee, as `similar.preview` and lane B's desk read them (DEC-104): E-ENUMS.roles
+# `reviewer` and `committee`, and the committee's older `core_committee` and `core_chair` until lane E retires them.
+STAFF_ROLES = DESK_ROLES
 
 
 def window(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
@@ -505,14 +508,16 @@ def save(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> 
 
 
 def _may_see_versions(conn: Conn, idea: dict[str, Any], user_id: str) -> bool:
-    """The sharer, the review desk and the Ones Committee (DEC-104, P-PRODUCT.privacy)."""
+    """The sharer, the review desk and the Ones Committee (DEC-104, P-PRODUCT.privacy), on a grant live now. A
+    withdrawn idea is found by its sharer alone (L-SUBMIT.withdraw/2, BLD-E011): it has left every queue."""
     code = own.code_of(conn, user_id)
     if code is not None and code == idea["contributor_code"]:
         return True
-    if not own.UUID.match(user_id or ""):
+    if idea["status"] == "withdrawn" or not own.UUID.match(user_id or ""):
         return False
     row = conn.execute(
-        "SELECT 1 FROM role_grants WHERE user_id = %s AND role = ANY(%s) AND valid_to IS NULL LIMIT 1",
+        "SELECT 1 FROM role_grants WHERE user_id = %s AND role = ANY(%s) AND valid_from <= now() "
+        "AND (valid_to IS NULL OR valid_to > now()) LIMIT 1",
         (user_id, list(STAFF_ROLES)),
     ).fetchone()
     return row is not None
