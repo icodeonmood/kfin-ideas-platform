@@ -20,7 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
+  hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
