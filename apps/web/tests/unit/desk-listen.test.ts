@@ -19,12 +19,18 @@ import {
   nowLabel,
   OFFLINE_DAYS,
   PART_GAP_SECONDS,
+  AudioEngine,
+  chaptersTimeline,
+  offlineVersion,
   pickVoice,
   playLabel,
+  readChapters,
+  refreshOffline,
   progressLabel,
   pruneOffline,
   saveOffline,
   spokenText,
+  type ListenAudio,
   type ListenPart,
   type ListenScript,
   type ListenState,
@@ -560,7 +566,11 @@ describe("C-LISTEN.behaviour/4 and L-LISTEN/5 save for offline", () => {
     const storage = new MemoryStorage();
     expect(saveOffline("idea-7", SCRIPT, storage, SAVED_AT)).toBe(true);
     expect([...storage.items.keys()]).toEqual(["listen:idea-7"]);
-    expect(JSON.parse(storage.getItem("listen:idea-7") ?? "")).toEqual({ savedAt: SAVED_AT, script: SCRIPT });
+    expect(JSON.parse(storage.getItem("listen:idea-7") ?? "")).toEqual({
+      savedAt: SAVED_AT,
+      script: SCRIPT,
+      version: null,
+    });
     expect(loadOffline("idea-7", storage, SAVED_AT + DAY)).toEqual(SCRIPT);
   });
 
@@ -631,5 +641,134 @@ describe("L-LISTEN/1 the worker's chapters match the engine's estimate", () => {
       vector.chapters,
     );
     expect(Math.round(timeline.total * 10) / 10).toBe(vector.total_seconds);
+  });
+});
+
+describe("C-LISTEN offline: the saved copy keeps its version and is replaced when the idea changes", () => {
+  it("a saved copy at another version is replaced; at the same one it stays; with none, nothing is saved", () => {
+    const storage = new MemoryStorage();
+    expect(refreshOffline("idea-7", SCRIPT, "v2", storage, SAVED_AT)).toBe(false);
+    expect(storage.getItem("listen:idea-7")).toBeNull();
+    saveOffline("idea-7", SCRIPT, storage, SAVED_AT, "v1");
+    expect(offlineVersion("idea-7", storage, SAVED_AT)).toBe("v1");
+    const changed: ListenScript = {
+      parts: [{ ...SCRIPT.parts[0]!, text: "Answered since: one branch only." }],
+    };
+    expect(refreshOffline("idea-7", changed, "v2", storage, SAVED_AT + DAY)).toBe(true);
+    expect(offlineVersion("idea-7", storage, SAVED_AT + DAY)).toBe("v2");
+    expect(loadOffline("idea-7", storage, SAVED_AT + DAY)).toEqual(changed);
+    expect(refreshOffline("idea-7", SCRIPT, "v2", storage, SAVED_AT + DAY)).toBe(true);
+    expect(loadOffline("idea-7", storage, SAVED_AT + DAY)).toEqual(changed);
+  });
+});
+
+class FakeAudio implements ListenAudio {
+  currentTime = 0;
+  playbackRate = 1;
+  playing = false;
+  refuse = false;
+  private readonly handlers = new Map<string, (() => void)[]>();
+  play(): Promise<void> {
+    if (this.refuse) return Promise.reject(new Error("NotAllowedError"));
+    this.playing = true;
+    this.fire("playing");
+    return Promise.resolve();
+  }
+  pause(): void {
+    this.playing = false;
+    this.fire("pause");
+  }
+  addEventListener(type: string, listener: () => void): void {
+    this.handlers.set(type, [...(this.handlers.get(type) ?? []), listener]);
+  }
+  removeEventListener(type: string, listener: () => void): void {
+    this.handlers.set(
+      type,
+      (this.handlers.get(type) ?? []).filter((l) => l !== listener),
+    );
+  }
+  fire(type: string): void {
+    for (const l of this.handlers.get(type) ?? []) l();
+  }
+  count(): number {
+    return [...this.handlers.values()].reduce((n, l) => n + l.length, 0);
+  }
+}
+
+describe("C-LISTEN with the hosted voice (DEC-108): lane C's chapters and audio behind the same controls", () => {
+  const BODY = {
+    parts: [
+      { part: "summary", start_s: 0 },
+      { part: "often", start_s: 38 },
+      { part: "who", start_s: 52 },
+      { part: "cost", start_s: 70 },
+      { part: "evidence", start_s: 95 },
+      { part: "fix", start_s: 112 },
+    ],
+    duration_s: 130,
+  };
+
+  it("reads the chapters body, and refuses one that is not", () => {
+    expect(readChapters(BODY)?.parts).toHaveLength(6);
+    expect(readChapters({ pending: true })).toBeNull();
+    expect(readChapters({ parts: [{ part: "elsewhere", start_s: 0 }], duration_s: 10 })).toBeNull();
+    expect(readChapters({ parts: [], duration_s: 10 })).toBeNull();
+    expect(readChapters(null)).toBeNull();
+  });
+
+  it("the timeline names each part and runs it to the next one's start", () => {
+    const t = chaptersTimeline(readChapters(BODY)!);
+    expect(t.total).toBe(130);
+    expect(t.parts[1]).toEqual({ part: "often", title: "How often", start: 38, length: 14 });
+    expect(t.parts[3]?.title).toBe("What it’s worth");
+    expect(jumpLabel(t.parts[1]!.title, t.parts[1]!.start)).toBe("Jump to How often, 0:38");
+  });
+
+  it("plays, follows the audio's clock and part, cycles speed and jumps", () => {
+    const audio = new FakeAudio();
+    const e = new AudioEngine({ audio, chapters: readChapters(BODY)! });
+    const seen: ListenState[] = [];
+    e.subscribe((s) => seen.push(s));
+    e.toggle();
+    expect(audio.playing).toBe(true);
+    expect(e.state().playing).toBe(true);
+    audio.currentTime = 42;
+    audio.fire("timeupdate");
+    expect(e.state()).toMatchObject({ position: 42, currentPart: "often", total: 130 });
+    e.cycleSpeed();
+    expect(audio.playbackRate).toBe(1.25);
+    e.jumpTo("evidence");
+    expect(audio.currentTime).toBe(95);
+    expect(e.state().currentPart).toBe("evidence");
+    e.toggle();
+    expect(e.state().playing).toBe(false);
+  });
+
+  it("at the end it stops and goes back to 0:00 (C-LISTEN.behaviour/5)", () => {
+    const audio = new FakeAudio();
+    const e = new AudioEngine({ audio, chapters: readChapters(BODY)! });
+    e.toggle();
+    audio.currentTime = 130;
+    audio.fire("ended");
+    expect(e.state()).toMatchObject({ playing: false, position: 0 });
+    expect(audio.currentTime).toBe(0);
+  });
+
+  it("a refused play or a broken stream shows the error, and dispose lets go of the element", async () => {
+    const audio = new FakeAudio();
+    audio.refuse = true;
+    const e = new AudioEngine({ audio, chapters: readChapters(BODY)! });
+    e.toggle();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(e.state()).toMatchObject({ playing: false, error: true });
+    audio.refuse = false;
+    e.toggle();
+    expect(e.state().error).toBe(false);
+    audio.fire("error");
+    expect(e.state().error).toBe(true);
+    expect(audio.count()).toBe(5);
+    e.dispose();
+    expect(audio.count()).toBe(0);
   });
 });
