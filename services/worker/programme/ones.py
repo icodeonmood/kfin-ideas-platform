@@ -1,19 +1,22 @@
-"""The Ones on measured, confirmed impact (L-ONES.rules/1-3; DEC-102, DEC-106; J-ONE steps 3 and 6).
+"""The Ones on measured, confirmed impact: lane A's side (J-ONE steps 3 and 6; L-ONES.rules/1-3; DEC-102, DEC-106).
 
-- **Becoming a One** (`on_measurement` -> `_induct`): once an idea has shipped and a measurement of it counts,
-  everyone credited on it who has never been a One becomes one: the next free number (`ones.numbers`), the number
-  window from rules/promises.md, and a tier from their measured impact. A person an admin removed is not brought
-  back automatically; the admin's call stands, and marking them a Founding One is the way back.
-- **A measurement counts** once it is entered and, if it carries money, Finance has confirmed it (L-IMPACT/3,
-  BLD-A213). Hours saved and money come from the latest counted measurement of each shipped idea the person is
-  credited on (the 90-day one over the 30-day one, measure by measure).
-- **Tiers** (`rules/tiers.md`, L-ONES.open): the highest tier whose hours or money threshold the person's total
-  meets. A tier only rises on its own, and each rise leaves a glow-up for the One's dashboard (S-ONE, the "moment"
-  of L-ONES.rules/3).
-- **Admin path** (DEC-106): mark a Founding One, remove a One. Both need a reason and are audited.
+Lane E owns L-ONES, and this module calls its entry points (`wall/__init__.py`), never its tables' rules:
 
-The office screen (S-OFFICE) and the Wall's "The Ones" read active Ones with a number from `ones`, and the office
-screen reads `ones.measures`; both are written here, so a new One shows there as soon as they are inducted.
+- **Becoming a One** is `wall.ones.induct_for_idea`: once an idea has shipped and a figure of it counts (money only
+  once Finance confirmed it, `wall.impact.latest_figures`), everyone credited who has never been a One becomes one,
+  with the next free number and the number window. A person an admin removed is not brought back automatically.
+  `on_measurement` calls it after every measurement entered or confirmed (J-ONE step 3's trigger).
+- **Founding Ones and removing a One** are `wall.ones.mark_founding` and `wall.ones.remove_one`, both audited by
+  lane E. The admin page reaches them through `mark_founding` and `remove_one` here, which look the person up and
+  check the admin's grants (BLD-A217).
+- **Tiers** are lane A's part, which lane E's stack does not have (BLD-A214; L-ONES.open default): the highest tier
+  in `rules/tiers.md` whose hours or money threshold the person's total meets, summed over every shipped idea they
+  are credited on with lane E's own figure rules. A new One starts at that tier. An active One's tier only rises,
+  and each rise leaves an unseen glow-up for the dashboard's moment (S-ONE, L-ONES.rules/3; J-ONE step 6).
+- **The office screen** (S-OFFICE) reads `ones.measures`, so the idea's counted figures are copied there.
+
+No Inbox item is posted for a new One or a tier rise at launch (BLD-A186): the moment shows on /one, the Wall and the
+office screen.
 """
 
 from __future__ import annotations
@@ -25,21 +28,11 @@ from psycopg.types.json import Jsonb
 
 from core.config import get_settings
 from core.db import Conn
-from notify import post
-from ones import numbers
-from programme.common import (
-    Refused,
-    audit,
-    credited_users,
-    log,
-    need,
-    now_utc,
-    promise,
-    reason,
-    user_by_email,
-)
+from programme.common import Refused, audit, log, need, now_utc, user_by_email
+from wall import ones as lane_e
+from wall.common import Refused as LaneERefused
+from wall.impact import hours_a_month, latest_figures, measurement_rows, rupees_a_year
 
-MEASURES = ("time", "money", "effort", "scale")
 # The pack's thresholds are open (L-ONES.open); these are the seeded rules/tiers.md values, used only when the rule
 # cannot be read.
 DEFAULT_TIERS: dict[int, tuple[float, float]] = {
@@ -51,6 +44,7 @@ DEFAULT_TIERS: dict[int, tuple[float, float]] = {
     6: (2500, 10_000_000),
     7: (5000, 25_000_000),
 }
+MSG_NOT_A_ONE = "That One is not on the list any more."
 
 
 def tier_rules() -> dict[int, tuple[float, float]]:
@@ -76,52 +70,7 @@ def tier_for(
     return best
 
 
-# --- What counts ------------------------------------------------------------------------------------------------
-
-
-def counted_rows(conn: Conn, idea_uuids: list[str]) -> dict[str, list[dict[str, Any]]]:
-    """Each idea's counted measurements, the 90-day one first."""
-    out: dict[str, list[dict[str, Any]]] = {}
-    if not idea_uuids:
-        return out
-    for r in conn.execute(
-        "SELECT id, idea_uuid, mark, results, finance_confirmed_at FROM delivery_measurements "
-        "WHERE idea_uuid = ANY(%s::uuid[]) AND filled_at IS NOT NULL "
-        "AND (NOT (results ? 'money') OR finance_confirmed_at IS NOT NULL) "
-        "ORDER BY idea_uuid, (mark = 'day_90') DESC",
-        (idea_uuids,),
-    ).fetchall():
-        out.setdefault(str(r["idea_uuid"]), []).append(dict(r))
-    return out
-
-
-def latest(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """The latest counted figure for each measure (L-IMPACT/4)."""
-    out: dict[str, dict[str, Any]] = {}
-    for r in rows:
-        for key in MEASURES:
-            value = (r["results"] or {}).get(key)
-            if key not in out and isinstance(value, dict) and value.get("amount") is not None:
-                out[key] = value
-    return out
-
-
-def hours_a_month(figure: dict[str, Any] | None) -> float:
-    if not figure:
-        return 0.0
-    amount, unit = float(figure.get("amount") or 0), str(figure.get("unit") or "").lower()
-    if "day" in unit:
-        return amount * 8 / (12 if "year" in unit else 1)  # an 8-hour working day
-    if "hour" in unit:
-        return amount / 12 if "year" in unit else amount
-    return 0.0
-
-
-def rupees_a_year(figure: dict[str, Any] | None) -> float:
-    if not figure:
-        return 0.0
-    amount = float(figure.get("amount") or 0)
-    return amount * 12 if "month" in str(figure.get("unit") or "").lower() else amount
+# --- What counts (lane E's figure rules) ---------------------------------------------------------------------------
 
 
 def credited_shipped_ideas(conn: Conn, user_id: str) -> list[str]:
@@ -137,91 +86,75 @@ def credited_shipped_ideas(conn: Conn, user_id: str) -> list[str]:
 
 
 def person_totals(conn: Conn, user_id: str) -> tuple[float, float]:
-    """Hours a month and rupees a year across every shipped idea the person is credited on, counted figures only."""
-    rows = counted_rows(conn, credited_shipped_ideas(conn, user_id))
+    """Hours a month and rupees a year across every shipped idea the person is credited on: the latest figure of each
+    measure that counts (money only once Finance confirmed it), as the Wall and S-ONE count them."""
     hours = money = 0.0
-    for idea_rows in rows.values():
-        figures = latest(idea_rows)
-        hours += hours_a_month(figures.get("time"))
-        money += rupees_a_year(figures.get("money"))
+    for rows in measurement_rows(conn, credited_shipped_ideas(conn, user_id)).values():
+        figures = latest_figures(rows)
+        if "time" in figures:
+            hours += hours_a_month(figures["time"])
+        if "money" in figures:
+            money += rupees_a_year(figures["money"])
     return hours, money
 
 
 def one_measures(conn: Conn, idea_uuid: str) -> dict[str, Any]:
     """The idea's counted figures in the shape `ones.measures` has always had (`{value, unit}`, money with its
-    Finance flag), which the office screen reads."""
-    figures = latest(counted_rows(conn, [idea_uuid]).get(idea_uuid, []))
+    Finance flag), which the office screen and lane E's `figures_from_measures` read."""
+    figures = latest_figures(measurement_rows(conn, [idea_uuid]).get(idea_uuid, []))
     out: dict[str, Any] = {}
     for key, f in figures.items():
-        out[key] = {"value": f["amount"], "unit": f.get("unit")}
+        if f.amount is None:
+            continue
+        value: int | float = int(f.amount) if f.amount == int(f.amount) else f.amount
+        out[key] = {"value": value, "unit": f.unit}
         if key == "money":
             out[key]["finance_confirmed"] = True  # counted money is Finance-confirmed by definition
     return out
 
 
-# --- Becoming a One, and rising ---------------------------------------------------------------------------------
-
-
-def _new_one(
-    conn: Conn, user_id: str, way_in: str, idea_ref: str | None, tier: int, now: dt.datetime
-) -> dict[str, Any]:
-    window = dt.timedelta(days=int(promise("ones", "number_change_days", 30)))
-    n = conn.execute("SELECT next_number('ONE', '') AS n").fetchone()
-    assert n is not None
-    number = numbers.next_number(conn, 0, now)
-    row = conn.execute(
-        "INSERT INTO ones (induction_no, user_id, number, way_in, idea_id, tier, inducted_at, swap_until) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (n["n"], user_id, number, way_in, idea_ref, tier, now, now + window),
-    ).fetchone()
-    assert row is not None
-    one_id = int(row["id"])
-    numbers.wear(conn, one_id, number, "allocated", now)
-    conn.execute("UPDATE users SET tier = %s WHERE id = %s", (tier, user_id))
-    return {"user_id": user_id, "one_id": one_id, "number": number, "tier": tier}
+# --- Becoming a One, and rising (J-ONE steps 3 and 6) ----------------------------------------------------------------
 
 
 def on_measurement(
     conn: Conn, idea_row: dict[str, Any], measurement_id: int, actor: str, now: dt.datetime
 ) -> dict[str, list[dict[str, Any]]]:
-    """Call inside the transaction that entered or confirmed a measurement. Inducts whoever the rules now make a
-    One, raises tiers, refreshes the Ones' measures. Idempotent: nothing happens until a measurement counts."""
+    """Call inside the transaction that entered or confirmed a measurement. Inducts whoever the rules now make a One
+    (lane E), sets or raises tiers, refreshes the Ones' measures. Idempotent: nothing happens until a figure counts."""
     out: dict[str, list[dict[str, Any]]] = {"inducted": [], "tier_rises": []}
     idea_uuid = str(idea_row["id"])
-    if idea_row["status"] != "shipped" or not counted_rows(conn, [idea_uuid]).get(idea_uuid):
+    if idea_row["status"] != "shipped" or not lane_e.impact_confirmed(conn, idea_uuid):
         return out
+    made = {m["user_id"]: dict(m) for m in lane_e.induct_for_idea(conn, idea_uuid, actor=actor, now=now)}
     rules = tier_rules()
-    for user_id in credited_users(conn, idea_uuid):
-        existing = conn.execute("SELECT * FROM ones WHERE user_id = %s FOR UPDATE", (user_id,)).fetchone()
-        hours, money = person_totals(conn, user_id)
-        tier = tier_for(hours, money, rules)
-        if existing is None:
-            one = _new_one(conn, user_id, "accepted_idea", idea_row["idea_id"], tier, now)
-            audit(conn, actor, "ones.inducted", f"one:{one['one_id']}",
-                  {"idea_id": idea_row["idea_id"], "number": one["number"], "tier": tier,
-                   "measurement_id": measurement_id, "how": "measured_impact"})  # fmt: skip
-            post(conn, "stage_moved", [user_id], idea_id=idea_uuid,
-                 refs={"event": "one_inducted", "number": one["number"], "tier": tier},
-                 dedupe_key=f"one_inducted:{one['one_id']}")  # fmt: skip
-            out["inducted"].append(one)
-        elif existing["status"] == "active" and tier > int(existing["tier"]):
-            conn.execute("UPDATE ones SET tier = %s WHERE id = %s", (tier, existing["id"]))
-            conn.execute("UPDATE users SET tier = %s WHERE id = %s", (tier, user_id))
-            conn.execute(
-                "INSERT INTO one_glow_ups (one_id, proposal_id, measurement_id, tier_from, tier_to, created_at) "
-                "VALUES (%s, NULL, %s, %s, %s, %s)",
-                (existing["id"], measurement_id, existing["tier"], tier, now),
-            )
-            audit(conn, actor, "ones.tier_rose", f"one:{existing['id']}",
-                  {"tier_from": int(existing["tier"]), "tier_to": tier, "measurement_id": measurement_id},
-                  before={"tier": int(existing["tier"])})  # fmt: skip
-            post(conn, "stage_moved", [user_id], idea_id=idea_uuid,
-                 refs={"event": "tier_rose", "tier_from": int(existing["tier"]), "tier_to": tier},
-                 dedupe_key=f"tier_rose:{existing['id']}:{tier}")  # fmt: skip
-            out["tier_rises"].append(
-                {"user_id": user_id, "one_id": int(existing["id"]), "tier_from": int(existing["tier"]),
-                 "tier_to": tier}
-            )  # fmt: skip
+    for user_id in lane_e.credited_users(conn, idea_uuid):
+        one = conn.execute(
+            "SELECT id, tier FROM ones WHERE user_id = %s AND status = 'active' FOR UPDATE", (user_id,)
+        ).fetchone()
+        if one is None:
+            continue  # removed by an admin: their call stands
+        one_id, was = int(one["id"]), int(one["tier"])
+        tier = tier_for(*person_totals(conn, user_id), rules)
+        if user_id in made:
+            made[user_id]["tier"] = max(tier, was)
+        if tier <= was:
+            continue  # a tier never falls on its own (rules/tiers.md)
+        conn.execute("UPDATE ones SET tier = %s WHERE id = %s", (tier, one_id))
+        conn.execute("UPDATE users SET tier = %s WHERE id = %s", (tier, user_id))
+        if user_id in made:  # a new One starts at their measured tier: no moment for a rise they never saw
+            audit(conn, actor, "ones.tier_set", f"one:{one_id}", {"tier": tier, "measurement_id": measurement_id},
+                  before={"tier": was})  # fmt: skip
+            continue
+        conn.execute(
+            "INSERT INTO one_glow_ups (one_id, proposal_id, measurement_id, tier_from, tier_to, created_at) "
+            "VALUES (%s, NULL, %s, %s, %s, %s)",
+            (one_id, measurement_id, was, tier, now),
+        )
+        audit(conn, actor, "ones.tier_rose", f"one:{one_id}",
+              {"tier_from": was, "tier_to": tier, "measurement_id": measurement_id},
+              before={"tier": was})  # fmt: skip
+        out["tier_rises"].append({"user_id": user_id, "one_id": one_id, "tier_from": was, "tier_to": tier})
+    out["inducted"] = sorted(made.values(), key=lambda m: m["one_id"])
     measures = one_measures(conn, idea_uuid)
     if measures:
         conn.execute(
@@ -231,79 +164,52 @@ def on_measurement(
     return out
 
 
-# --- The admin path (DEC-106) -----------------------------------------------------------------------------------
+# --- The admin path (DEC-106): lane E's calls, reached from the admin page -----------------------------------------
+
+
+def _lane_e(exc: LaneERefused, field: str | None = None) -> Refused:
+    """Lane E's refusal in this package's shape, with the admin page's own words where lane E sends none."""
+    words = {"forbidden": "You can't do this. Ask an admin.", "not_found": MSG_NOT_A_ONE}
+    return Refused(exc.status, exc.code, exc.message or words.get(exc.code, ""), field=exc.field or field)
 
 
 def mark_founding(
     conn: Conn, actor: str, body: dict[str, Any], now: dt.datetime | None = None
 ) -> dict[str, Any]:
-    """An admin marks a Founding One (L-ONES.rules/1, DEC-102): a One keeps their number and gains the flag; a
-    removed One comes back to the same record; anyone else becomes a One with the next free number."""
+    """An admin marks a Founding One by work email (L-ONES.rules/1, DEC-102): `wall.ones.mark_founding`."""
     now = now or now_utc()
     need(conn, actor, {"admin"})
-    why = reason(body.get("reason"))
-    with conn.transaction():
-        user_id = user_by_email(conn, body.get("email"), "email")
-        existing = conn.execute("SELECT * FROM ones WHERE user_id = %s FOR UPDATE", (user_id,)).fetchone()
-        if existing is not None and existing["status"] == "active":
-            if existing["way_in"] == "founding":
-                raise Refused(
-                    409, "already_founding", "That person is already a Founding One.", field="email"
-                )
-            conn.execute("UPDATE ones SET way_in = 'founding' WHERE id = %s", (existing["id"],))
-            out = {"user_id": user_id, "one_id": int(existing["id"]), "number": existing["number"],
-                   "tier": int(existing["tier"])}  # fmt: skip
-        elif existing is not None:
-            window = dt.timedelta(days=int(promise("ones", "number_change_days", 30)))
-            number = numbers.next_number(conn, int(existing["id"]), now)
-            conn.execute(
-                "UPDATE ones SET status = 'active', number = %s, way_in = 'founding', inducted_at = %s, "
-                "swap_until = %s, retired_at = NULL WHERE id = %s",
-                (number, now, now + window, existing["id"]),
-            )
-            numbers.wear(conn, int(existing["id"]), number, "allocated", now)
-            out = {"user_id": user_id, "one_id": int(existing["id"]), "number": number,
-                   "tier": int(existing["tier"])}  # fmt: skip
-        else:
-            hours, money = person_totals(conn, user_id)
-            out = _new_one(conn, user_id, "founding", None, tier_for(hours, money), now)
-            post(conn, "stage_moved", [user_id], refs={"event": "one_inducted", "number": out["number"],
-                 "tier": out["tier"], "founding": True}, dedupe_key=f"one_inducted:{out['one_id']}")  # fmt: skip
-        audit(conn, actor, "ones.founding_marked", f"one:{out['one_id']}",
-              {"number": out["number"]}, reason=why)  # fmt: skip
-    return out
+    user_id = user_by_email(conn, body.get("email"), "email")
+    already = conn.execute(
+        "SELECT 1 FROM ones WHERE user_id = %s AND status = 'active' AND way_in = 'founding'", (user_id,)
+    ).fetchone()
+    if already is not None:
+        raise Refused(409, "already_founding", "That person is already a Founding One.", field="email")
+    try:
+        return lane_e.mark_founding(conn, actor, user_id, now=now)
+    except LaneERefused as exc:
+        raise _lane_e(exc, "email") from None
 
 
-def remove_one(
-    conn: Conn, actor: str, one_id: Any, body: dict[str, Any], now: dt.datetime | None = None
-) -> dict[str, Any]:
-    """An admin removes a One (DEC-106): their number rests (`ones.numbers`), and their card, posts and light leave
-    the Wall, Home and the office screen, which read active Ones only. The record stays."""
+def remove_one(conn: Conn, actor: str, one_id: Any, now: dt.datetime | None = None) -> dict[str, Any]:
+    """An admin removes a One from the admin page's list (DEC-106): `wall.ones.remove_one`."""
     now = now or now_utc()
     need(conn, actor, {"admin"})
-    why = reason(body.get("reason"))
     try:
         oid = int(one_id)
     except (TypeError, ValueError):
-        raise Refused(404, "not_found", "That One is not on the list any more.") from None
-    with conn.transaction():
-        one = conn.execute(
-            "SELECT * FROM ones WHERE id = %s AND status = 'active' FOR UPDATE", (oid,)
-        ).fetchone()
-        if one is None:
-            raise Refused(404, "not_found", "That One is not on the list any more.")
-        numbers.release(conn, oid, now)
-        conn.execute(
-            "UPDATE ones SET status = 'retired', number = NULL, retired_at = %s WHERE id = %s", (now, oid)
-        )
-        audit(conn, actor, "ones.removed", f"one:{oid}", {"status": "retired"},
-              before={"number": one["number"], "tier": int(one["tier"]), "way_in": one["way_in"]},
-              reason=why)  # fmt: skip
-    return {"one_id": oid, "removed": True}
+        raise Refused(404, "not_found", MSG_NOT_A_ONE) from None
+    row = conn.execute("SELECT user_id FROM ones WHERE id = %s AND status = 'active'", (oid,)).fetchone()
+    if row is None:
+        raise Refused(404, "not_found", MSG_NOT_A_ONE)
+    try:
+        return lane_e.remove_one(conn, actor, str(row["user_id"]), now=now)
+    except LaneERefused as exc:
+        raise _lane_e(exc) from None
 
 
 def list_ones(conn: Conn) -> list[dict[str, Any]]:
-    """Active Ones for the admin page, by number."""
+    """Active Ones for the admin page, by number (staff only: names and work emails, to act on the right person)."""
     rows = conn.execute(
         "SELECT o.id, o.number, o.tier, o.way_in, o.idea_id, o.inducted_at, u.name, u.email FROM ones o "
         "JOIN users u ON u.id = o.user_id WHERE o.status = 'active' AND o.number IS NOT NULL ORDER BY o.number"

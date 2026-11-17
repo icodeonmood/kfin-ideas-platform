@@ -608,16 +608,14 @@ function FinanceCell({ m, onDone }: { m: EnteredRow; onDone: (t: string) => Prom
 function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise<void> }) {
   const id = useId();
   const [email, setEmail] = useState("");
-  const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const out = await send("POST", "/api/admin/ones/founding", { email, reason });
+    const out = await send("POST", "/api/admin/ones/founding", { email });
     if (!out.ok) return setProblem(out.problem);
     setProblem(null);
     setEmail("");
-    setReason("");
     await onDone(`Marked as a Founding One, No. ${String(out.json.number)}.`);
   }
 
@@ -626,7 +624,7 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
       <h2 id={`${id}-title`}>The Ones</h2>
       <p className="muted">
         People become Ones on their own when an idea they are credited on is measured and confirmed. Here you mark
-        Founding Ones and remove a One. Both need a reason and are recorded.
+        Founding Ones and remove a One. Both are recorded with your name and the time.
       </p>
       {ones.length === 0 ? (
         <p>There are no Ones yet.</p>
@@ -675,15 +673,6 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
           {...described(problem, "email", `${id}-err-email`)}
         />
         <FieldError id={`${id}-err-email`} problem={problem} field="email" />
-        <label htmlFor={`${id}-reason`}>Reason</label>
-        <textarea
-          id={`${id}-reason`}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={2}
-          {...described(problem, "reason", `${id}-err-reason`)}
-        />
-        <FieldError id={`${id}-err-reason`} problem={problem} field="reason" />
         <div className="actions">
           <button type="submit" className="button">
             Mark Founding One
@@ -695,55 +684,43 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
 }
 
 function RemoveOne({ one, onDone }: { one: OneRow; onDone: (m: string) => Promise<void> }) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState("");
+  const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
-  if (!open)
+  const errId = `remove-one-${one.id}-err`;
+  if (!asking)
     return (
-      <button
-        type="button"
-        className="button button-secondary"
-        onClick={() => setOpen(true)}
-        aria-label={`Remove No. ${one.number}, ${one.name}`}
-      >
-        Remove…
+      <button type="button" className="button button-secondary" onClick={() => setAsking(true)}>
+        Remove<span className="visually-hidden">: No. {one.number}, {one.name}</span>
       </button>
     );
   return (
-    <form
-      noValidate
-      className="inline-form"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        const out = await send("DELETE", `/api/admin/ones/${one.id}`, { reason });
-        if (!out.ok) return setProblem(out.problem);
-        setOpen(false);
-        await onDone(`${one.name} is no longer a One. No. ${one.number} rests for six months.`);
-      }}
-    >
-      <label htmlFor={`${id}-reason`}>Reason for removing</label>
-      <textarea
-        id={`${id}-reason`}
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        rows={2}
-        aria-invalid={problem ? true : undefined}
-        aria-describedby={problem ? `${id}-err` : undefined}
-      />
+    <div className="inline-form" role="group" aria-label={`Remove No. ${one.number}, ${one.name}`}>
+      <p>
+        Remove No. {one.number}? Their card and posts leave the Wall, Home and the office screen. The number rests
+        for six months.
+      </p>
       {problem ? (
-        <p id={`${id}-err`} role="alert" className="field-error">
+        <p id={errId} role="alert" className="field-error">
           {problem.message}
         </p>
       ) : null}
       <div className="actions">
-        <button type="submit" className="button">
-          Remove One
+        <button
+          type="button"
+          className="button"
+          onClick={async () => {
+            const out = await send("DELETE", `/api/admin/ones/${one.id}`);
+            if (!out.ok) return setProblem(out.problem);
+            setAsking(false);
+            await onDone(`${one.name} is no longer a One. No. ${one.number} rests for six months.`);
+          }}
+        >
+          Yes, remove
         </button>
-        <button type="button" className="button button-secondary" onClick={() => setOpen(false)}>
+        <button type="button" className="button button-secondary" onClick={() => setAsking(false)}>
           Cancel
         </button>
       </div>
-    </form>
+    </div>
   );
 }

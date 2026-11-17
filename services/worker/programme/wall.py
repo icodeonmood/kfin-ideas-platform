@@ -2,8 +2,9 @@
 summary off the Wall, with a reason, and can put it back. Both are audited. It replaces the retired spam hold and
 committee-only visibility; the idea itself, its decision and its people are untouched.
 
-Readers filter with the database function `idea_off_wall(idea uuid)` (20261122100400) or `not_off_wall_sql()` here, so
-there is one definition. Nobody acts on an idea they shared (as on the desk, L-AUDIT.permissions).
+Readers filter with the database function `idea_off_wall(idea uuid)` (20261122100400), through lane E's one Wall
+filter, `wall.common.on_wall_sql` (Kindling, Just in, the live fixes), and the old wall view. Nobody acts on an idea
+they shared (as on the desk, L-AUDIT.permissions).
 """
 
 from __future__ import annotations
@@ -19,15 +20,13 @@ from programme.common import Refused, audit, idea, need, now_utc, owner_user, re
 STAFF = {"reviewer", "admin"}
 
 
-def not_off_wall_sql(alias: str = "i") -> str:
-    """`AND`-able test for "still on the Wall" (the shared filter)."""
-    return f"NOT idea_off_wall({alias}.id)"
-
-
 def _clear_wall_cache() -> None:
+    """The Wall shows the change at once: lane E's Kindling and Just in cache, and the old wall view's."""
     from views.wall import clear_cache
+    from wall import kindling
 
     clear_cache()
+    kindling.clear_cache()
 
 
 def take_off(
