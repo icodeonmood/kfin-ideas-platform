@@ -209,6 +209,81 @@ def test_L_CREW_9_your_crews_waiting_and_on_the_crew(db: Conn, world: dict[str, 
     assert crews["items"][0]["lead"]["area"] == "Operations" and crews["items"][0]["request_id"]
 
 
+def _hide_name(db: Conn, person: dict[str, Any]) -> None:
+    db.execute(
+        "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false) "
+        "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = false",
+        (person["id"],),
+    )
+
+
+def test_BLD_F042_a_lead_who_hid_their_name_is_a_colleague_with_no_user_id(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    """DEC-104, P-PRODUCT.privacy: the card follows the preview's rules for "hide my name"."""
+    w = world
+    _hide_name(db, w["omkar"])
+    _hide_name(db, w["ritu"])
+    card = next(
+        c for c in deck.deck(db, w["leela"]["id"], now=NOW)["items"] if c["id"] == w["close"]["idea_id"]
+    )
+    assert card["lead"]["name"] == "A colleague" and card["lead"]["initials"] == ""
+    assert card["lead"]["id"] != w["omkar"]["id"] and "area" not in card["lead"]
+    faces = {p["name"] for p in card["crew_faces"]}
+    assert "Omkar Joshi" not in faces and "Ritu Bansal" not in faces and "A colleague" in faces
+    text = str(card)
+    for hidden in ("Omkar", "Joshi", w["omkar"]["id"], "Ritu", w["ritu"]["id"]):
+        assert hidden not in text
+    # Someone who has left is hidden the same way.
+    db.execute("UPDATE users SET active = false WHERE id = %s", (w["vikram"]["id"],))
+    touch = next(
+        c for c in deck.deck(db, w["leela"]["id"], now=NOW)["items"] if c["id"] == w["touch"]["idea_id"]
+    )
+    assert touch["lead"]["name"] == "A colleague" and w["vikram"]["id"] not in str(touch)
+
+
+def test_BLD_F042_your_crews_hides_a_waiting_leads_name_and_names_the_crew_you_are_on(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    w = world
+    _hide_name(db, w["vikram"])
+    _hide_name(db, w["omkar"])
+    f.join(db, w["close"], w["leela"], days=2)
+    f.request(db, w["touch"], w["leela"], days=0.5)
+    rows = deck.deck(db, w["leela"]["id"], now=NOW)["your_crews"]["items"]
+    waiting, on = rows
+    assert (waiting["label"], waiting["lead"]["name"]) == ("Waiting for the lead", "A colleague")
+    assert w["vikram"]["id"] not in str(waiting)
+    assert (on["label"], on["lead"]["name"]) == ("On the crew", "Omkar Joshi")
+
+
+def test_BLD_F042_customer_details_on_a_card_come_back_masked(db: Conn, world: dict[str, Any]) -> None:
+    """Synthetic folio and PAN only. The short summary, the title and a typed "Who would help" answer are masked;
+    an answer that cannot be shown gives way to the sharer's picks."""
+    w = world
+    db.execute(
+        "UPDATE ideas SET title = %s, summary = %s, helper_text = %s WHERE id = %s",
+        (
+            "Folio 7700012389 rejected twice at the counter",
+            "An investor with folio 7700012389 and PAN AAAPZ9999Z waits at the branch. More here.",
+            "Call me about PAN AAAPZ9999Z.",
+            w["close"]["id"],
+        ),
+    )
+    card = next(
+        c for c in deck.deck(db, w["leela"]["id"], now=NOW)["items"] if c["id"] == w["close"]["idea_id"]
+    )
+    text = str(card)
+    for raw in ("7700012389", "AAAPZ9999Z"):
+        assert raw not in text
+    assert card["in_their_words"] in (
+        "An investor with folio ••••89 and PAN ••••9Z waits at the branch.",
+        "A short summary is on its way.",
+    )
+    assert card["title"].startswith("Folio ••••89")
+    assert card["looking_for"] in ("Call me about PAN ••••9Z.", "Branch staff")
+
+
 def test_L_CREW_10_home_shows_the_top_three(db: Conn, world: dict[str, Any]) -> None:
     top = deck.home(db, world["leela"]["id"], now=NOW)
     assert (

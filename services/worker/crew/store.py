@@ -1,4 +1,4 @@
-"""Small database helpers for lane F (the crew deck and search): who is asking, people as the screens name them,
+"""Small database helpers for lane F (the crew deck and search): who is asking, the person's own area and office,
 day labels, and refusals in the pack's error shape (A-API.conventions/2).
 
 Conventions from the cut-over (20261121500100): ideas are keyed by `ideas.id` and named on the wire by their IDEA-
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -81,56 +80,8 @@ def roles_of(conn: Conn, user_id: str) -> set[str]:
     }
 
 
-@dataclass(frozen=True)
-class PersonRef:
-    """E-ENTITIES PersonRef. Names show on crew cards and requests (DEC-104)."""
-
-    id: str | None
-    name: str
-    first_name: str
-    initials: str
-    area: str | None
-    city: str | None
-
-    def as_json(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"id": self.id, "name": self.name, "first_name": self.first_name,
-                               "initials": self.initials}  # fmt: skip
-        if self.area:
-            out["area"] = self.area
-        if self.city:
-            out["city"] = self.city
-        return out
-
-
-# Someone erased from contributor_map is anonymised everywhere (BLD-E006 conventions).
-UNKNOWN = PersonRef(None, "A colleague", "A colleague", "1%", None, None)
-
-
-def initials(name: str) -> str:
-    return "".join(w[0] for w in name.split()[:2]).upper() or "1%"
-
-
-def people_by_code(conn: Conn, codes: Iterable[str | None]) -> dict[str, PersonRef]:
-    """PersonRefs for contributor codes, in one query. A code with no person maps to nothing (use UNKNOWN)."""
-    wanted = sorted({c for c in codes if c})
-    if not wanted:
-        return {}
-    out: dict[str, PersonRef] = {}
-    for r in conn.execute(
-        "SELECT m.contributor_code, u.id, u.name, u.first_name, u.area, u.location "
-        "FROM contributor_map m JOIN users u ON u.id = m.user_id WHERE m.contributor_code = ANY(%s)",
-        (wanted,),
-    ).fetchall():
-        name = str(r["name"])
-        out[str(r["contributor_code"])] = PersonRef(
-            str(r["id"]),
-            name,
-            str(r["first_name"] or name.split(" ")[0]),
-            initials(name),
-            r["area"],
-            r["location"],
-        )
-    return out
+# People on cards and in "Your crews" come from `similar.preview.person_refs`, which applies "hide my name" and
+# leavers (BLD-F042); there is deliberately no name lookup here.
 
 
 def now() -> dt.datetime:

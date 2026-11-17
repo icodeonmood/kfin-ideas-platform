@@ -43,14 +43,28 @@ export function passBody(raw: Record<string, unknown>): string {
   return JSON.stringify(typeof raw.idea_id === "string" ? { idea_id: raw.idea_id } : {});
 }
 
+/** The answer when the worker cannot be reached or does not answer in JSON (a plain-text 500, a proxy page). */
+export const UNAVAILABLE = { error: { code: "unavailable", message: "" } } as const;
+
 export async function forward(path: string, init: RequestInit = {}): Promise<NextResponse> {
-  const res = await workerFetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
-  const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
-  return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
+  const headers = { "Cache-Control": "no-store" };
+  let res: Response;
+  try {
+    res = await workerFetch(path, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+  } catch {
+    return NextResponse.json(UNAVAILABLE, { status: 502, headers });
+  }
+  let json: unknown = null;
+  try {
+    const text = await res.text();
+    json = text ? (JSON.parse(text) as unknown) : null;
+  } catch {
+    return NextResponse.json(UNAVAILABLE, { status: 502, headers });
+  }
+  return NextResponse.json(json, { status: res.status, headers });
 }
 
 /** GET handler for a signed-in read: the worker path and the query keys it takes. */

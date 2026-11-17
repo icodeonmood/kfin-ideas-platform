@@ -1,9 +1,11 @@
 """Find your crew (L-CREW/1–10, C-CREW-DECK data, A-API.team-up `GET /crew` and the passes).
 
 The deck is worked out on read from stored facts (ideas, crew_members, teamup_requests, similar_links, crew_passes),
-so it is current whenever the page loads. Cards carry masked text only: the idea's public title and short summary,
-the sharer's "Who would help" answer, and the similar-match reason, which L-SIMILAR stores masked (DEC-104,
-non-negotiable 7). Nothing here opens anyone's sealed words, and nothing is logged.
+so it is current whenever the page loads. Cards follow the preview's rules (DEC-104, non-negotiable 7, BLD-F042):
+the title masked, one checked sentence of the short summary, the sharer's "Who would help" answer checked the same
+way (else their picks), the similar-match reason, which L-SIMILAR stores masked, and people through
+`similar.preview.person_refs`, so a hidden or departed person is "A colleague". Nothing here opens anyone's sealed
+words, and nothing is logged.
 
 Entry points (each takes the `users.id` of the person asking):
 
@@ -23,10 +25,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.db import Conn
-from crew.store import UNKNOWN, PersonRef, Refused, Viewer, day_label, people_by_code, viewer
+from crew.store import Refused, Viewer, day_label, viewer
 from crew.store import now as _now
 from onepc import enums
 from pii.patterns import scan
+from similar.preview import HIDDEN_NAME, SUMMARY_PENDING, checked_sentence, mask_text, person_refs
 
 # L-CREW/2: the one reason a card is shown, strongest first (E-ENUMS.match `crew_reason`).
 REASONS: tuple[str, ...] = tuple(enums.values("crew_reason"))
@@ -74,8 +77,9 @@ def first_sentence(text: str | None, limit: int = 160) -> str:
 
 def looking_for(picks: Sequence[str], text: str | None) -> str | None:
     """ "They're looking for" (L-CREW/4): the sharer's own "Who would help" answer, else their picks from the list.
-    Empty stays empty: there is no AI in this path to write one from the idea (BLD-F031). A typed answer that
-    trips a personal-data pattern is never shown; the picks stand in for it."""
+    Empty stays empty: there is no AI in this path to write one from the idea (BLD-F031). `text` is the answer as
+    `similar.preview.checked_sentence` returns it (masked and checked, BLD-F042); one that still trips a
+    personal-data pattern is never shown, and the picks stand in for it."""
     typed = (text or "").strip()
     if typed and not scan(typed):
         return first_sentence(typed)
@@ -164,8 +168,8 @@ class Card:
     area: str
     city: str
     shared_at: dt.datetime
-    lead: PersonRef
-    faces: tuple[PersonRef, ...]
+    lead: dict[str, Any]  # E-ENTITIES PersonRef, from similar.preview.person_refs (BLD-F042)
+    faces: tuple[dict[str, Any], ...]
     crew_count: int
     in_their_words: str
     looking_for: str | None
@@ -192,8 +196,8 @@ class Card:
             "area": self.area,
             "city": self.city,
             "shared_at": self.shared_at.isoformat(),
-            "lead": self.lead.as_json(),
-            "crew_faces": [p.as_json() for p in self.faces],
+            "lead": dict(self.lead),
+            "crew_faces": [dict(p) for p in self.faces],
             "crew_count": self.crew_count,
             "in_their_words": self.in_their_words,
             "hue": hue(self.ref),
@@ -299,16 +303,20 @@ def cards_for(conn: Conn, v: Viewer, current: dt.datetime) -> list[Card]:
         if lead in codes:
             codes.remove(lead)
         plans.append((dict(r), kind, reason, (REASONS.index(kind), *sub), [lead, *codes], area))
-    people = people_by_code(conn, (c for p in plans for c in p[4]))
+    # The card follows the preview's rules (BLD-F042, DEC-104): a person who hid their name from the Wall, or has
+    # left, is "A colleague" with no user id; "the problem, in their words" and a typed "Who would help" answer are
+    # one masked sentence that passes the tag, pattern and name checks.
+    people = person_refs(conn, sorted({c for p in plans for c in p[4]}), names_always=False)
     cards: list[Card] = []
     for r, kind, reason, strength, codes, area in plans:
-        crew = [people.get(c, UNKNOWN) for c in codes]
+        crew = [people[c] for c in codes]
         wanted = tuple(str(p) for p in (r["helper_picks"] or []))
         cards.append(
             Card(
-                r["uuid"], str(r["idea_id"]), str(r["title"] or ""), str(r["status"]), area, str(r["city"] or ""),
-                r["shared_at"], crew[0], tuple(crew[:FACES]), len(codes), first_sentence(r["summary"]),
-                looking_for(wanted, r["helper_text"]), wanted, kind, reason, strength,
+                r["uuid"], str(r["idea_id"]), mask_text(r["title"]).strip() or str(r["idea_id"]), str(r["status"]),
+                area, str(r["city"] or ""), r["shared_at"], crew[0], tuple(crew[:FACES]), len(codes),
+                checked_sentence(conn, r["summary"]) or SUMMARY_PENDING,
+                looking_for(wanted, checked_sentence(conn, r["helper_text"])), wanted, kind, reason, strength,
             )
         )  # fmt: skip
     return sorted(cards, key=order_key)
@@ -456,7 +464,12 @@ def your_crews(conn: Conn, v: Viewer) -> dict[str, Any]:
         f"ORDER BY at DESC",
         {"code": v.code},
     ).fetchall()
-    people = people_by_code(conn, (str(r["lead_code"]) for r in rows))
+    # BLD-F042: a crew the person is on shows its lead's name (crews see each other's names in the conversation);
+    # a request still waiting follows the card it came from, so a hidden name stays hidden there.
+    on_codes = sorted({str(r["lead_code"]) for r in rows if r["state"] != "waiting"})
+    waiting_codes = sorted({str(r["lead_code"]) for r in rows if r["state"] == "waiting"})
+    named = person_refs(conn, on_codes, names_always=True)
+    shown = person_refs(conn, waiting_codes, names_always=False)
     items = []
     seen: set[str] = set()
     for r in rows:
@@ -464,15 +477,17 @@ def your_crews(conn: Conn, v: Viewer) -> dict[str, Any]:
         if r["idea_id"] in seen:
             continue
         seen.add(r["idea_id"])
-        lead = people.get(str(r["lead_code"]), UNKNOWN)
         waiting = r["state"] == "waiting"
+        lead = (shown if waiting else named)[str(r["lead_code"])]
+        hidden = lead["name"] == HIDDEN_NAME
         label = (
-            (f"Waiting for {lead.first_name}" if lead.id else "Waiting for the lead")
+            ("Waiting for the lead" if hidden else f"Waiting for {lead['first_name']}")
             if waiting
             else "On the crew"
         )
         items.append({
-            "id": r["idea_id"], "title": r["title"] or "", "status": r["status"], "lead": lead.as_json(),
+            "id": r["idea_id"], "title": mask_text(r["title"]).strip() or r["idea_id"], "status": r["status"],
+            "lead": dict(lead),
             "state": r["state"], "label": label, "request_id": r["request_id"], "at": r["at"].isoformat(),
         })  # fmt: skip
     return {"items": items, "teamed_link": TEAMED_LINK}

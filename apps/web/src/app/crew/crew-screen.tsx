@@ -53,7 +53,7 @@ import type {
 import "./crew.css";
 
 // ---------------------------------------------------------------------------------------------------------------
-// Words (reference/copy/Crew.md, C-CREW-DECK.states; lines the pack does not draw are in docs/hr-wording/lane-f.md §5)
+// Words (reference/copy/Crew.md, C-CREW-DECK.states; lines the pack does not draw are in docs/hr-wording/lane-f.md, "Find your crew")
 // ---------------------------------------------------------------------------------------------------------------
 const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
@@ -142,6 +142,14 @@ export function filterCount(filters: Filters): number {
 }
 
 const STATUS = IDEA_STATUS as Record<string, { label: string; pill: PillVariant } | undefined>;
+
+/**
+ * How a card names its lead in a sentence: their first name, or "the lead" when they hid their name from the Wall
+ * or have left (the API sends "A colleague" with no initials, BLD-F042).
+ */
+export function leadFirst(lead: { first_name: string; initials: string }): string {
+  return lead.initials ? lead.first_name : "the lead";
+}
 
 /** The card's status pill: a just-shared idea reads "Shared" here (BLD-F030). */
 export function statusLabel(status: string): string {
@@ -257,7 +265,7 @@ function CardView({
             size="full"
             className="crew-join"
             icon={<TeamUpIcon />}
-            aria-label={CREW_COPY.teamUpOn(card.title, card.lead.first_name)}
+            aria-label={CREW_COPY.teamUpOn(card.title, leadFirst(card.lead))}
             onClick={onTeamUp}
           >
             {CREW_COPY.teamUp}
@@ -407,11 +415,19 @@ export function CrewScreen(): JSX.Element {
     setLoad({ kind: "ready" });
   }, []);
 
+  // Only the latest read may change the screen: a quick run of chip removals, or Clear all then Try again, must
+  // not leave an older deck on screen when its answer comes back last.
+  const latest = useRef(0);
   const fetchDeck = useCallback(
     (filters: Filters) => {
+      const ask = ++latest.current;
       getJson<CrewDeckResponse>(crewUrl(filters))
-        .then((b) => show(b, filtersFrom(b.active)))
-        .catch(() => setLoad({ kind: "failed" }));
+        .then((b) => {
+          if (ask === latest.current) show(b, filtersFrom(b.active));
+        })
+        .catch(() => {
+          if (ask === latest.current) setLoad({ kind: "failed" });
+        });
     },
     [show],
   );
@@ -438,7 +454,7 @@ export function CrewScreen(): JSX.Element {
       setSent((m) => ({ ...m, [s.ideaId]: s }));
       const card = cards.find((c) => c.id === s.ideaId);
       if (card) {
-        const label = s.after?.line ?? CREW_COPY.waiting(card.lead.first_name);
+        const label = s.after?.line ?? CREW_COPY.waiting(leadFirst(card.lead));
         setAdded((rows) => [
           {
             id: card.id,
@@ -679,7 +695,7 @@ export function CrewScreen(): JSX.Element {
               key={c.id}
               card={c}
               front={i === at}
-              waiting={sent[c.id] ? (sent[c.id]?.after?.line ?? CREW_COPY.waiting(c.lead.first_name)) : null}
+              waiting={sent[c.id] ? (sent[c.id]?.after?.line ?? CREW_COPY.waiting(leadFirst(c.lead))) : null}
               onPreview={() => setPreview(c.id)}
               onTeamUp={() => teamUp.open(c.id)}
               titleRef={(el) => {
@@ -856,7 +872,7 @@ export function CrewScreen(): JSX.Element {
           onPrimary={teamUp.open}
           primaryDone={
             previewSent
-              ? (previewSent.after?.line ?? CREW_COPY.waiting(previewCard.lead.first_name))
+              ? (previewSent.after?.line ?? CREW_COPY.waiting(leadFirst(previewCard.lead)))
               : undefined
           }
         />
