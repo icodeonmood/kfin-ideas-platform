@@ -81,7 +81,7 @@ test("5-6: the wall and an idea page", async ({ browser }) => {
 // Desk decisions (step 8) is retired (DEC-106, R10); lane B rebuilds the committee window on /committee.
 test("7: the review desk", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
-  await desk.goto("/review");
+  await desk.goto("/desk"); // S-R1 (the old /review redirects here)
   await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
   await expectNoSeriousAxeIssues(desk);
