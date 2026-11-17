@@ -660,7 +660,7 @@ export function InboxReader({
                   {Icon.unread}
                 </button>
               </div>
-              <div className="ibx-tg">
+              <div className="ibx-tg ibx-nav">
                 <span className="ibx-pos">
                   {position + 1} of {shown.length}
                 </span>

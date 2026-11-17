@@ -772,7 +772,10 @@
     display: inline-flex;
   }
 
-  .ibx-pos {
+  /* The compact bar (S-H5.rules/6): back to the list, Archive and Mark unread. An item is its own screen and the
+     list is the way between items, so the position and Previous and Next stay on the desktop; the bar then fits a
+     320 px screen (WCAG 1.4.10). */
+  .ibx-nav {
     display: none;
   }
 
