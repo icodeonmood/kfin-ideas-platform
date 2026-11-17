@@ -465,6 +465,19 @@
       ]
     },
     {
+      "key": "profile",
+      "label": "Your profile and settings",
+      "href": "/profile",
+      "place": "account"
+    },
+    {
+      "key": "one",
+      "label": "Your One dashboard",
+      "href": "/one",
+      "place": "account",
+      "member": "ones"
+    },
+    {
       "key": "ember",
       "label": "The Ember",
       "href": "/ember",

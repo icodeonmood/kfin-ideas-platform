@@ -34,45 +34,8 @@ test("1-3: share an idea, Find your crew", async ({ browser }) => {
   const kavya = await as(browser, DEMO.employee);
   await kavya.goto("/share");
   await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
-  await kavya.goto("/my-ideas");
-  await kavya
-    .getByRole("link", { name: /Catch missing bank fields|Your idea IDEA-/ })
-    .first()
-    .click();
-  await expect(kavya.getByText("Colleagues are on this").first()).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/inbox");
   await expect(kavya.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible(); // S-H5
-});
-
-test("4: My ideas as a One: the tier dashboard and the glow-up", async ({ browser }) => {
-  const ananya = await as(browser, DEMO.one);
-  await ananya.goto("/my-ideas");
-  const dialog = ananya.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: /your spark is hotter/ })).toBeVisible();
-  await expect(dialog.getByText("Glow suits you", { exact: false })).toBeVisible({ timeout: 10_000 });
-  await expectNoSeriousAxeIssues(ananya);
-  const founding = await as(browser, DEMO.founding);
-  await founding.goto("/my-ideas");
-  await expect(founding.getByRole("heading", { level: 2, name: "You're No. 1" })).toBeVisible();
-  await expectNoSeriousAxeIssues(founding);
-});
-
-test("5-6: the wall and an idea page", async ({ browser }) => {
-  const kavya = await as(browser, DEMO.employee);
-  await kavya.goto("/wall");
-  const ones = kavya.locator(".ones-band");
-  await expect(ones.getByText("Rohit Menon")).toBeVisible();
-  await expect(ones.getByText("One No. 3")).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
-  await kavya
-    .getByRole("link", {
-      name: /status page for every investor service request|Check bank details|One status page/,
-    })
-    .first()
-    .click();
-  await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
 });
 
 /**
@@ -106,11 +69,8 @@ test("7: the review desk, each tab showing what its count says (S-R1)", async ({
 
 // The Ones console (step 9) is retired (DEC-106, R21).
 // The manager view (step 11) is retired (DEC-106, R12).
-test("10, 12: leaderboard and the office screen", async ({ browser }) => {
-  const ananya = await as(browser, DEMO.one);
-  await ananya.goto("/ones/leaderboard");
-  await expect(ananya.getByRole("cell", { name: "Rohit Menon" })).toBeVisible();
-  await expectNoSeriousAxeIssues(ananya);
+// The leaderboard page (step 10) is retired: the Ones leaderboard is on the Wall (S-WALL, S-ONE).
+test("12: the office screen", async ({ browser }) => {
   const rahul = await as(browser, DEMO.manager);
   await rahul.goto("/constellation");
   await expect(rahul.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
