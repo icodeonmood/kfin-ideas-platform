@@ -51,7 +51,16 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (people["ravi"],))
     draft = _draft(db, "CTR-a1b2c3")
     yield {"conn": db, "p": people, "draft": draft}
+    # Clean up what this test made, so the session database is as it was found (crunch rule 14).
+    codes = ["CTR-a1b2c3", "CTR-b2c3d4", "CTR-c3d4e5"]
     db.execute("DELETE FROM jobs WHERE id > %s", (last_job,))
+    db.execute(
+        "DELETE FROM sla_timers WHERE entity_type = 'idea' AND (entity_id = 'IDEA-2026-999999' OR entity_id IN "
+        "(SELECT idea_id FROM ideas WHERE contributor_code = ANY(%s) AND idea_id IS NOT NULL))",
+        (codes,),
+    )
+    db.execute("DELETE FROM ideas WHERE contributor_code = ANY(%s)", (codes,))
+    db.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (list(people.values()),))
     get_settings.cache_clear()
 
 
