@@ -527,8 +527,14 @@ describe("S-05 screen: rail and part 1 (BLD-C131)", () => {
       "4 Proof Optional",
       "5 Your fix Optional",
       "6 Who would help Optional",
-      "7 Send it One last look, then submit",
+      // Its line describes it, so "Submit" names one button (BLD-C130).
+      "7 Send it",
     ]);
+    const send = document.querySelectorAll(".ck-rail button")[6]!;
+    expect(text(document.getElementById(send.getAttribute("aria-describedby")!))).toBe(
+      "One last look, then submit",
+    );
+    expect(buttons().filter((b) => /submit/i.test(nameOf(b)))).toHaveLength(0);
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 1 of 6");
     expect(h1()).toBe("Is this how you’d put it?");
     expect(document.body.textContent).toContain(CHECK_COPY.words.line);
@@ -1038,6 +1044,8 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
       ...base({ sorting: sorting(true) }),
     ]);
     await railTo("Send it");
+    // J-SHARE/11 finds Submit by name, as a substring: exactly one button may match it.
+    expect(buttons().filter((b) => /submit/i.test(nameOf(b)))).toHaveLength(1);
     await click(button("Submit"));
     const sent = calls.find((c) => c.url.endsWith("/submit"))!;
     expect(sent.body).toEqual({ declaration_version: "2026-11-17" });

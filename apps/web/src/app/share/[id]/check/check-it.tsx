@@ -13,7 +13,7 @@
  * declaration's version with an idempotency key and hands over to S-06 with the idea's reference (L-SUBMIT.send).
  */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { IconTick } from "@/components/shell/icons";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
@@ -154,6 +154,7 @@ export function CheckIt({
   const [savedAt, setSavedAt] = useState<Date | string | null>(null);
 
   const heading = useRef<HTMLHeadingElement>(null);
+  const railStatusId = useId();
   const moved = useRef(false);
   const idemKey = useRef<string | null>(null);
   const queued = useRef(false);
@@ -933,6 +934,9 @@ export function CheckIt({
               const no = n as PartNo;
               const now = no === part;
               const ok = isDone(no) && !now;
+              // The Send it row's line ("One last look, then submit") is its description, not part of its name, so
+              // "Submit" names one button on the page (BLD-C130; J-SHARE/11, J-RECOVER/12–14 find Submit by name).
+              const send = no === 7;
               return (
                 <li key={n}>
                   <button
@@ -941,13 +945,18 @@ export function CheckIt({
                       .filter(Boolean)
                       .join(" ")}
                     aria-current={now ? "step" : undefined}
+                    aria-label={send ? (ok || attention[no] ? label : `${n} ${label}`) : undefined}
+                    aria-describedby={send ? railStatusId : undefined}
                     onClick={() => go(no)}
                   >
                     <span className="ck-rn" aria-hidden={ok || attention[no] ? true : undefined}>
                       {ok ? <IconTick size={12} /> : attention[no] ? "!" : n}
                     </span>
                     {ok || attention[no] ? null : " "}
-                    <span className="ck-rl">{label}</span> <span className="ck-rs">{rail[no]}</span>
+                    <span className="ck-rl">{label}</span>{" "}
+                    <span className="ck-rs" id={send ? railStatusId : undefined}>
+                      {rail[no]}
+                    </span>
                   </button>
                 </li>
               );
