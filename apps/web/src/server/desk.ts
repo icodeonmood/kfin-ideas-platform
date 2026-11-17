@@ -110,3 +110,15 @@ export async function deskRead<T>(
   if (!res.ok) throw new Error(`worker answered ${res.status}`);
   return (await res.json()) as T;
 }
+
+/** L-REVIEW.open/1, from the reviewer's page before its read: the first open by a reviewer closes the sharer's edit
+ * window. The worker refuses anyone who is not on the desk; a failure here never stops the page from rendering. */
+export async function deskOpen(me: CurrentUser, ideaId: string): Promise<void> {
+  try {
+    await workerFetch(path(`/internal/desk/ideas/${encodeURIComponent(ideaId)}/open`, me), {
+      method: "POST",
+    });
+  } catch {
+    // the read that follows shows the idea as it is
+  }
+}
