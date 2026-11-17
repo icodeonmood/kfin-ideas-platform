@@ -4,9 +4,10 @@
  * Copy: reference/copy/Desk.md (S-R1), DeskIdea.md (S-R2, C-LISTEN, C-WORTH, C-PREVIEW, C-SHEET-MERGE), Status.md and
  * Inbox.md (what the sharer reads). BLD-E008: the boards' she/her for the sharer reads as the sharer's first name.
  * Cast: Kavya (sharer) is the record's sharer, Meera (reviewer) the record's reviewer, Ravi the other idea's sharer.
- * Seed: R1 (Rekha's, with Lavanya, opened, nothing asked) walks the main path and is picked; P1 (Pallavi's, not
- * opened, a question queued by Lavanya) walks the ask path; Z1 (Zoya's, with Harish, questions overdue) is the clock;
- * B1 (Bhavesh's, with Lavanya, both answered) has its answers read. The merge previews Z1 from T6's page (T6 is
+ * Seed: R1 (Rekha's, with Lavanya, opened 5 days ago, nothing asked, the oldest in To review) walks the main path and
+ * is picked; P1 (Pallavi's, not opened, a question queued by Lavanya) walks the ask path and is opened there; Z1
+ * (Zoya's, with Harish, questions overdue) is the clock; B1 (Bhavesh's, with Lavanya, both answered) has its answers
+ * read. The merge previews Z1 from T6's page (T6 is
  * J-TRACK's and lists Z1 as similar; read only here). No two J-REVIEW ideas list each other as similar: GAP-SEED.
  */
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
@@ -42,9 +43,7 @@ function rowFor(page: Page, title: string): Locator {
 
 /** A control the board draws as a link and a lane may build as a button (or the other way round). */
 function action(scope: Page | Locator, name: string): Locator {
-  return scope
-    .getByRole("button", { name, exact: true })
-    .or(scope.getByRole("link", { name, exact: true }));
+  return scope.getByRole("button", { name, exact: true }).or(scope.getByRole("link", { name, exact: true }));
 }
 
 /** "Ask about How often" on the board; "Ask about this" inside the part's own region is the same control. */
@@ -54,12 +53,12 @@ function askAbout(page: Page, part: string): Locator {
     .or(page.getByRole("region", { name: part, exact: true }).getByRole("button", { name: /^Ask/ }));
 }
 
-/** The text of `loc` once it matches `re`, with its groups. */
-async function capture(loc: Locator, re: RegExp): Promise<RegExpMatchArray> {
+/** The text of `loc` once it matches `re`: its first group, or the whole match when `re` has no group. */
+async function capture(loc: Locator, re: RegExp): Promise<string> {
   await expect(loc).toHaveText(re);
   const m = (await loc.innerText()).replace(/\s+/g, " ").trim().match(re);
   if (!m) throw new Error(`no match for ${re}`);
-  return m;
+  return m[1] ?? m[0];
 }
 
 async function openDesk(page: Page, who: Person, tab: RegExp): Promise<void> {
@@ -153,10 +152,14 @@ step(
 
     // "Her own words" (BLD-E008): the sharer's words as written, before the draft.
     await expect(page.getByText("Rekha’s own words", { exact: true })).toBeVisible();
-    await expect(page.getByText(/^As Rekha wrote them on [A-Z][a-z]+, before the draft\./).first()).toBeVisible();
+    await expect(
+      page.getByText(/^As Rekha wrote them on [A-Z][a-z]+, before the draft\./).first(),
+    ).toBeVisible();
     await action(page, "Read").click();
     await expect(
-      page.getByText("When a SIP debit fails the investor gets no reason. We look it up by hand for every call."),
+      page.getByText(
+        "When a SIP debit fails the investor gets no reason. We look it up by hand for every call.",
+      ),
     ).toBeVisible();
 
     // The parts carry what the sharer gave; the way on is the panel.
@@ -183,11 +186,13 @@ step(
     await page.getByRole("button", { name: /^(Revise|Change) what it’s worth$/ }).click();
     await expect(page.getByText("Rekha sees what you changed, with your note.")).toBeVisible();
     await page.getByRole("textbox", { name: /hours a month/i }).fill(WORTH_HOURS);
-    await page.getByRole("textbox", { name: /note/i }).fill(WORTH_NOTE);
+    await page.getByRole("textbox", { name: /^Note/ }).fill(WORTH_NOTE);
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await expect(
-      page.getByText("You’ve revised what it’s worth. Rekha sees your figures next to theirs when you decide."),
+      page.getByText(
+        "You’ve revised what it’s worth. Rekha sees your figures next to theirs when you decide.",
+      ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Change what it’s worth" })).toBeVisible();
     await expect(page.getByText(`${WORTH_HOURS} hours a month`).first()).toBeVisible();
@@ -197,7 +202,9 @@ step(
       await sharer.goto("/inbox");
       await sharer
         .getByRole("button", {
-          name: new RegExp(`^Lavanya( from the review desk)? revised what your idea is worth, ${esc(r1.title)}`),
+          name: new RegExp(
+            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(r1.title)}`,
+          ),
         })
         .click();
       await sharer.goto(ideaUrl(r1));
@@ -223,7 +230,9 @@ step(
       page.getByText("The same problem, raised by others. Merge them so one team builds one fix.").first(),
     ).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`^${esc(z1.ref ?? "")}, Zoya Mirza, Sales, Mumbai\\. \\d+ on its crew$`)).first(),
+      page
+        .getByText(new RegExp(`^${esc(z1.ref ?? "")}, Zoya Mirza, Sales, Mumbai\\. \\d+ on its crew$`))
+        .first(),
     ).toBeVisible();
     await expect(page.getByText("Related: distributors waiting on us").first()).toBeVisible();
 
@@ -254,17 +263,28 @@ step(
         )
         .first(),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Ask Rekha first/ })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: /^Ask Rekha first/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
 
     await page.getByRole("button", { name: "Decide on this idea" }).click();
     await expect(page.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
-    await expect(page.getByText("Rekha reads your decision and your reason as soon as you send it.")).toBeVisible();
-    await expect(page.getByRole("radio", { name: /^Pick\s*Take it forward\. A build team is chosen next\.$/ })).toBeVisible();
     await expect(
-      page.getByRole("radio", { name: /^Not now\s*Right problem, wrong time\. It comes back on a date you set\.$/ }),
+      page.getByText("Rekha reads your decision and your reason as soon as you send it."),
     ).toBeVisible();
     await expect(
-      page.getByRole("radio", { name: /^Not picked\s*It won’t go ahead\. Say what happens to Rekha’s words\.$/ }),
+      page.getByRole("radio", { name: /^Pick\s*Take it forward\. A build team is chosen next\.$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("radio", {
+        name: /^Not now\s*Right problem, wrong time\. It comes back on a date you set\.$/,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("radio", {
+        name: /^Not picked\s*It won’t go ahead\. Say what happens to Rekha’s words\.$/,
+      }),
     ).toBeVisible();
     await expect(
       page
@@ -295,7 +315,7 @@ step(
     await page.getByRole("radio", { name: /^Pick/ }).click();
     await page.getByRole("textbox", { name: "Why are you picking it?" }).fill(REASON);
     await expect(page.getByText("Rekha reads this word for word.")).toBeVisible();
-    const [, until] = await capture(
+    const until = await capture(
       page.getByText(/^The Ones Committee can review it for 30 days\./).first(),
       new RegExp(`Until (${DAY_Y}) they can reverse it`),
     );
@@ -336,7 +356,7 @@ step(
     await expect(page.getByText("Your reason, as Rekha reads it").first()).toBeVisible();
     await expect(page.getByText(REASON).first()).toBeVisible();
     await expect(page.getByText("Open, 30 days left").first()).toBeVisible();
-    const [, until] = await capture(
+    const until = await capture(
       page.getByText(/^Open until /).first(),
       new RegExp(
         `^Open until (${DAY_Y})\\. The committee can extend it, up to 3 months in all, to ${DAY_Y}\\. If they reverse it, Rekha gets their note and you see it here\\. When the window closes, the decision stands\\.$`,
@@ -367,14 +387,18 @@ step(
     const askFirst = page.getByRole("button", { name: /^Ask Pallavi first/ });
     await askAbout(page, "How often").click();
     await expect(askFirst).toHaveAttribute("aria-expanded", "true");
+    await expect(askAbout(page, "How often")).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByText(
         "Only if something is unclear. Ask in your own words; each question is pinned to its part of the idea, so Pallavi answers it right there.",
       ),
     ).toBeVisible();
-    await expect(page.getByText("You’ll ask").first()).toBeVisible();
-    await expect(askAbout(page, "How often")).toContainText("Asking");
-    await expect(askFirst).toContainText(/\d+ questions? ready/);
+    // The question Lavanya queued before (seed) is still there, and How often's suggestion joined it (S-R2.rules/2).
+    await expect(
+      page.getByRole("button", { name: "Remove: Which distributor segments re-send most?" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Remove: / })).toHaveCount(2);
+    await expect(askFirst).toContainText("2 questions ready");
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Send \d+ questions? to Pallavi$/ })).toBeVisible();
   },
@@ -388,7 +412,16 @@ async function openAsk(page: Page): Promise<Locator> {
 }
 
 function questionBox(page: Page): Locator {
-  return page.getByRole("textbox", { name: /^(What would you like to ask Pallavi\?|Your question for Pallavi)$/ });
+  return page.getByRole("textbox", {
+    name: /^(What would you like to ask Pallavi\?|Your question for Pallavi)$/,
+  });
+}
+
+/** Types a question in the reviewer's own words and adds it ("Add this question", S-R2.panel.ask). */
+async function addQuestion(page: Page, text: string): Promise<void> {
+  await questionBox(page).fill(text);
+  await page.getByRole("button", { name: "Add this question" }).click();
+  await expect(page.getByRole("button", { name: `Remove: ${text}` })).toBeVisible();
 }
 
 step(
@@ -402,12 +435,13 @@ step(
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(p1));
     const askFirst = await openAsk(page);
-    await questionBox(page).fill(typed);
-    await questionBox(page).press("Enter");
-    await expect(page.getByRole("button", { name: `Remove: ${typed}` })).toBeVisible();
+    await addQuestion(page, typed);
     const removes = page.getByRole("button", { name: /^Remove: / });
     const before = await removes.count();
-    await page.getByRole("button", { name: /^Add: / }).first().click();
+    await page
+      .getByRole("button", { name: /^Add: / })
+      .first()
+      .click();
     await expect(removes).toHaveCount(before + 1);
     const n = before + 1;
     await expect(askFirst).toContainText(`${n} questions ready`);
@@ -415,7 +449,7 @@ step(
     // L-QUESTIONS.ask/4: 3 days by default; the deadline follows the choice and shows before sending.
     await expect(page.getByRole("radio", { name: "3 days" })).toBeChecked();
     const deadline = page.getByText(/^Pallavi has until /).first();
-    const [, threeDays] = await capture(deadline, new RegExp(`^Pallavi has until (${DAY}, ${TIME})\\.`));
+    const threeDays = await capture(deadline, new RegExp(`^Pallavi has until (${DAY}, ${TIME})\\.`));
     await page.getByRole("radio", { name: "1 week" }).click();
     await expect(deadline).not.toContainText(threeDays);
     await page.getByRole("radio", { name: "3 days" }).click();
@@ -437,10 +471,9 @@ step(
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(p1));
     await openAsk(page);
-    await questionBox(page).fill("Roughly how many papers come in twice each month?");
-    await questionBox(page).press("Enter");
+    await addQuestion(page, "Roughly how many papers come in twice each month?");
     await page.getByRole("radio", { name: "3 days" }).click();
-    const [, deadline] = await capture(
+    const deadline = await capture(
       page.getByText(/^Pallavi has until /).first(),
       new RegExp(`^Pallavi has until (${DAY}, ${TIME})\\.`),
     );
@@ -485,7 +518,7 @@ step(
     const row = rowFor(page, z1.title);
     await expect(row).toContainText("Zoya Mirza, Sales, Mumbai");
     await expect(row).toContainText("Not seen yet");
-    const [overdue] = await capture(
+    const overdue = await capture(
       row.getByText(/^Overdue by /).first(),
       /^Overdue by \d+ (?:minutes?|hours?|days?)$/,
     );
@@ -499,7 +532,8 @@ step(
     await expect(page.getByText("Not answered yet").first()).toBeVisible();
     await page.getByRole("button", { name: "Give 2 more days" }).click();
     await expect(page.getByText(new RegExp(`^${COUNTDOWN} to answer$`)).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Send a reminder" })).toBeVisible();
+    // The desk's reminder was sent above; the panel offers it again or says it went (S-R1.rules/3, NOT DRAWN).
+    await expect(page.getByRole("button", { name: /^(Send a reminder|Reminded, just now)$/ })).toBeVisible();
   },
 );
 
@@ -534,7 +568,9 @@ step(
 
 // --- J-REVIEW.merge: preview and merge (T6's page lists Z1; read only). The merge itself waits on the seed ------------
 
-async function previewZ1(page: Page): Promise<{ preview: Locator; t6: string; z1Ref: string; z1Title: string }> {
+async function previewZ1(
+  page: Page,
+): Promise<{ preview: Locator; t6: string; z1Ref: string; z1Title: string }> {
   const t6 = await seeded("T6");
   const z1 = await seeded("Z1");
   await signInAs(page, "harish");
@@ -578,8 +614,12 @@ step(
     await expect(sheet).toContainText(
       "Tanvi’s idea joins Zoya’s. Both stay credited, and from now on the review desk decides on one idea.",
     );
-    await expect(sheet.getByRole("radio", { name: new RegExp(`^Zoya’s leads, ${esc(z1Ref)}`) })).toBeChecked();
-    await expect(sheet.getByRole("radio", { name: new RegExp(`^Tanvi’s leads, ${esc(t6)}`) })).not.toBeChecked();
+    await expect(
+      sheet.getByRole("radio", { name: new RegExp(`^Zoya’s leads, ${esc(z1Ref)}`) }),
+    ).toBeChecked();
+    await expect(
+      sheet.getByRole("radio", { name: new RegExp(`^Tanvi’s leads, ${esc(t6)}`) }),
+    ).not.toBeChecked();
     await expect(sheet.getByRole("checkbox", { name: /Team them up/ })).toBeChecked();
     await expect(sheet).toContainText("Tanvi joins Zoya’s crew without a request. Both are told why.");
     await expect(sheet).toContainText(
@@ -606,9 +646,14 @@ step(
     const b1 = await seeded("B1");
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(b1));
-    await page.getByRole("button", { name: /^Merge with / }).first().click();
+    await page
+      .getByRole("button", { name: /^Merge with / })
+      .first()
+      .click();
     const sheet = page.getByRole("dialog", { name: new RegExp(`^Merge with ${REF}\\?$`) });
-    await sheet.getByRole("textbox").fill("You both see papers handled twice at the counter. One team, one fix.");
+    await sheet
+      .getByRole("textbox")
+      .fill("You both see papers handled twice at the counter. One team, one fix.");
     await sheet.getByRole("button", { name: "Merge and tell both" }).click();
     await expect(
       page
@@ -622,7 +667,9 @@ step(
     await expect(page.getByText("Merged", { exact: true }).first()).toBeVisible();
     await asOther(browser, info, "bhavesh", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(b1));
-      await expect(sharer.getByText(/^Merged into IDEA-\d{4}-\d{6} by the review desk/).first()).toBeVisible();
+      await expect(
+        sharer.getByText(/^Merged into IDEA-\d{4}-\d{6} by the review desk/).first(),
+      ).toBeVisible();
     });
   },
 );
