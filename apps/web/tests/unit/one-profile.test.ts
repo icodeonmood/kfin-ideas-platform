@@ -17,7 +17,6 @@ import {
 import { OneUnavailable } from "@/app/one/unavailable";
 import ProfileLoading from "@/app/profile/loading";
 import {
-  isReferAs,
   LOAD_FAILED as PROFILE_FAILED,
   pointsText,
   REACH,
@@ -27,6 +26,7 @@ import {
 } from "@/app/profile/rules";
 import { ProfileUnavailable } from "@/app/profile/unavailable";
 import { figureParts } from "@/components/count-once";
+import { REFER_AS } from "@/lib/refer-as";
 
 describe("V-FIELDS.one S-ONE: the number and the brief", () => {
   it("V-FIELDS.one/1: a whole number from 1 to 999", () => {
@@ -96,16 +96,14 @@ describe("S-H6: Profile's words and switches", () => {
     expect(switchState(null, "show_name_on_wall")).toBeUndefined();
   });
 
-  it("DEC-108: she, he, they and Prefer not to say, sent as lane C's wire values", () => {
+  it("DEC-108 BLD-C111: she, he, they and Prefer not to say, in lane C's wire values and order", () => {
     expect(REFER_AS_OPTIONS.map((o) => [o.value, o.label])).toEqual([
       ["she", "She"],
       ["he", "He"],
       ["they", "They"],
       ["unset", "Prefer not to say"],
     ]);
-    expect(isReferAs("they")).toBe(true);
-    expect(isReferAs(null)).toBe(false);
-    expect(isReferAs("Female")).toBe(false);
+    expect(REFER_AS_OPTIONS.map((o) => o.value)).toEqual([...REFER_AS]);
   });
 
   it("S-H6.layout/2: points in the Indian grouping", () => {
