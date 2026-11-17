@@ -11,6 +11,23 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("POST", "/api/ideas/IDEA-2026-000001/answer")).toEqual(["submissions"]);
   });
 
+  it("pauses team-up, a draft's merge request and crew changes with sharing; their reads stay open (BLD-F019)", () => {
+    const idea = "/api/ideas/IDEA-2026-000001";
+    const req = "/api/team-up/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10";
+    const draft = "/api/drafts/5c2e1a70-6a4b-4f0e-9d1c-7e3b2a1f0c99";
+    expect(switchesFor("POST", `${idea}/team-up`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${req}/answer`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", req)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${draft}/merge-request`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${draft}/merge-request`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${idea}/crew/leave`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${idea}/crew/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a11`)).toEqual([
+      "submissions",
+    ]);
+    for (const read of [`${idea}/team-up`, `${idea}/team-up/draft-note`, req, `${draft}/merge-request`])
+      expect(switchesFor("GET", read)).toEqual([]);
+  });
+
   it("needs both switches to upload a file", () => {
     expect(switchesFor("POST", "/api/submissions/abc/attachments").sort()).toEqual([
       "attachments.upload",
