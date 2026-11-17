@@ -48,8 +48,9 @@ def world() -> Iterator[dict[str, Any]]:
                 "conn": conn, "iid": iid, "ref": ref, "mid": mid, "masked": out.masked, "details": out.details,
                 "sharer": sharer, "other": other, "reviewer": reviewer, "committee": committee,
             }  # fmt: skip
-        finally:
+        finally:  # the people, the idea and its rows go in `people`; audit_log is append-only, so its rows stay
             vault.purge_scope(conn, scope_for(iid))
+            conn.execute("DELETE FROM vault_counters WHERE scope_id = %s", (scope_for(iid),))
 
 
 def test_l_hide_rules_7_s_r2_hide_this_for_the_desk_and_committee_only(world: dict[str, Any]) -> None:

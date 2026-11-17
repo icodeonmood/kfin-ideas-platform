@@ -22,7 +22,8 @@ pytestmark = pytest.mark.stack
 
 @pytest.fixture
 def hdb(db: Any, company_repo: Any) -> Iterator[Any]:
-    """The migrated test database with every switch on (the gatekeeper runs in fake mode) and fresh caches."""
+    """The migrated test database with every switch on (the gatekeeper runs in fake mode) and fresh caches. Each
+    test removes what it made afterwards (`remove_made`)."""
     from core import killswitch
     from gateway import limits
     from gateway.routes import FAKE_SCRIPT
@@ -30,9 +31,46 @@ def hdb(db: Any, company_repo: Any) -> Iterator[Any]:
     killswitch.clear_cache()
     limits.reset()
     FAKE_SCRIPT.clear()
-    yield db
-    FAKE_SCRIPT.clear()
-    killswitch.clear_cache()
+    started = db.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+    try:
+        yield db
+    finally:
+        FAKE_SCRIPT.clear()
+        killswitch.clear_cache()
+        remove_made(db, started)
+
+
+def remove_made(conn: Any, since: Any) -> None:
+    """Everything this module's synthetic people made: their ideas (hidden details, messages, sealed words, parts and
+    status history go with them), the vault values, counters and gateway calls under each idea's hide scope, the
+    gatekeeper's cache entries from this test, and the people. `audit_log` is append-only (its trigger refuses
+    DELETE), so its rows stay; every audit read here is scoped to the test's own `idea:<uuid>`."""
+    from tests.web import remove_people
+
+    users = [
+        str(r["id"])
+        for r in conn.execute(
+            "SELECT id FROM users WHERE emp_id_hash LIKE %s AND email LIKE %s",
+            ("test:%", "tester.%@kfintech.example"),
+        ).fetchall()
+    ]
+    if not users:
+        return
+    ideas = [
+        str(r["id"])
+        for r in conn.execute(
+            "SELECT i.id FROM ideas i JOIN contributor_map cm ON cm.contributor_code = i.contributor_code "
+            "WHERE cm.user_id = ANY(%s::uuid[])",
+            (users,),
+        ).fetchall()
+    ]
+    scopes = [scope_for(i) for i in ideas]
+    conn.execute("DELETE FROM pseudonym_vault WHERE scope_id = ANY(%s::text[])", (scopes,))
+    conn.execute("DELETE FROM vault_counters WHERE scope_id = ANY(%s::text[])", (scopes,))
+    conn.execute("DELETE FROM llm_calls WHERE ref_id = ANY(%s::text[])", (scopes,))
+    conn.execute("DELETE FROM llm_cache WHERE agent = 'gatekeeper' AND created_at >= %s", (since,))
+    conn.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (ideas,))
+    remove_people(conn, users)
 
 
 FOLIO, PAN, PHONE = "1234567/89", "ABCPK1234F", "9876543210"
