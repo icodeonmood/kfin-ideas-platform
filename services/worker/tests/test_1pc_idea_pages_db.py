@@ -38,6 +38,7 @@ def club(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
         str(r["name"]).split()[0].lower(): str(r["id"]) for r in db.execute("SELECT id, name FROM users")
     }
     yield {"conn": db, "m": made, "p": people}
+    club_seed.remove(db)  # the seed's people and all that is theirs, so no rows outlive the test (rule 14)
     get_settings.cache_clear()
     killswitch.clear_cache()
 
