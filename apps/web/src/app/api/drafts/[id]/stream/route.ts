@@ -6,7 +6,7 @@ import { deviceOf, draftError, drafts, UUID } from "@/server/drafts";
 
 export const dynamic = "force-dynamic";
 
-const TICK_MS = 300; // a part lands within a tick of the worker writing it
+const TICK_MS = 600; // a part lands within a tick of the worker writing it; one worker read per tick (BLD-C039)
 const IDLE_TICK_MS = 1_000; // between runs: only looking for the next one
 const HEARTBEAT_MS = 15_000;
 const MAX_OPEN_MS = 5 * 60_000; // the browser reconnects on its own

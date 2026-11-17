@@ -1,9 +1,15 @@
 /** L-DRAFT web side (BLD-C071): the device asking, the A-API error shape, and the kill switches on drafts. */
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { switchesFor } from "@/lib/killswitch-routes";
-import { DRAFT_MESSAGES, DraftApiError, deviceOf, draftError, openElsewhere } from "@/server/drafts";
+import type { CurrentUser } from "@/server/auth/current";
+import { DRAFT_MESSAGES, DraftApiError, deviceOf, draftError, drafts, openElsewhere } from "@/server/drafts";
+import { workerFetch } from "@/server/worker";
+
+vi.mock("@/server/worker", () => ({
+  workerFetch: vi.fn(async () => Response.json({ latest: null, run: null })),
+}));
 
 const req = (headers: Record<string, string>) => new NextRequest("http://localhost/api/drafts", { headers });
 
@@ -67,5 +73,19 @@ describe("kill switches on drafts (§7.6, DEC-105)", () => {
     expect(switchesFor("DELETE", "/api/drafts/x")).toEqual(["submissions"]);
     expect(switchesFor("GET", "/api/drafts/x")).toEqual([]);
     expect(switchesFor("GET", "/api/drafts/x/stream")).toEqual([]);
+  });
+});
+
+describe("A-API.draft-stream: each read keeps its own time limit (BLD-C039)", () => {
+  it("the stream's 5-second read is not stretched to the 15 seconds a write gets", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const me = { id: "00000000-0000-4000-8000-000000000c39", contributorCode: "CTR-0a1b2c" } as CurrentUser;
+    const device = { kind: "laptop" as const, id: null };
+    await drafts.live(me, device, "00000000-0000-4000-8000-0000000000d1");
+    expect(timeout.mock.calls.map((c) => c[0])).toEqual([5_000]);
+    expect(vi.mocked(workerFetch).mock.calls[0]?.[1]?.signal).toBe(timeout.mock.results[0]?.value);
+    await drafts.create(me, device, { channel: "web" });
+    expect(timeout.mock.calls.map((c) => c[0])).toEqual([5_000, 15_000]);
+    timeout.mockRestore();
   });
 });

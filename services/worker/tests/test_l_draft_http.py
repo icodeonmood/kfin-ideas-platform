@@ -119,6 +119,7 @@ def test_j_share_3_to_6_a_draft_starts_streams_and_pins(me: Any) -> None:
                   json={"text": "Distributors ask the same thing every week.", "via": "typed"})  # fmt: skip
     assert sent.status_code == 202, sent.text
     assert sent.json()["message"]["text"] == "Distributors ask the same thing every week."
+    _settled(b, draft["id"])  # crunch rule 14: no test leaves a run in flight
     step = b.request("PATCH", f"/api/drafts/{draft['id']}", headers=LAPTOP, json={"step": "check:1"})
     assert step.status_code == 200 and step.json()["saved_labels"]["status"].startswith("Saved at ")
 

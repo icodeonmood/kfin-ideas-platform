@@ -83,7 +83,8 @@ function query(me: CurrentUser, device: DeviceInfo, extra: Record<string, string
 async function call<T>(path: string, init: RequestInit): Promise<{ status: number; body: T }> {
   let res: Response;
   try {
-    res = await workerFetch(path, { ...init, signal: AbortSignal.timeout(15_000) });
+    // 15 s for a write; a caller's own signal (the stream's 5 s read) wins (BLD-C039).
+    res = await workerFetch(path, { ...init, signal: init.signal ?? AbortSignal.timeout(15_000) });
   } catch {
     throw new DraftApiError(503, "save_failed");
   }
