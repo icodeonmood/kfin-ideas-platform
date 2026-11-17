@@ -10,6 +10,7 @@ import { FieldMsg } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { ProfileResponse } from "@/lib/contracts/api";
 import type { PersonSettings } from "@/lib/contracts/entities";
+import type { ReferAs } from "@/lib/refer-as";
 import { reducedMotion } from "@/lib/motion/flip";
 
 import { ReferAsCard } from "./refer-as";
@@ -116,7 +117,7 @@ function Head({ data }: { data: ProfileResponse }) {
  * reached. Every switch saves at once and shows its new state: no Save button, no toast (S-H6.rules/1). A failed
  * save flips the switch back with "Couldn't save that. Try again." under it. One column on a phone.
  */
-export function ProfileScreen({ data }: { data: ProfileResponse }) {
+export function ProfileScreen({ data, referAs }: { data: ProfileResponse; referAs: ReferAs | null }) {
   const [settings, setSettings] = useState<PersonSettings>(data.person.settings);
   const [errors, setErrors] = useState<Partial<Record<SwitchKey, string>>>({});
   const seq = useRef<Partial<Record<SwitchKey, number>>>({});
@@ -197,7 +198,7 @@ export function ProfileScreen({ data }: { data: ProfileResponse }) {
               />
             ))}
           </section>
-          <ReferAsCard />
+          <ReferAsCard initial={referAs} />
         </div>
       </div>
     </div>

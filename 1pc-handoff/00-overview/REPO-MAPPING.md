@@ -47,7 +47,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
 | `S-H4` | `/how-it-works` | `app/how-it-works`, `lib/how-it-works.ts` (old `app/journey` stays until lane E retires it) | built (16 Nov, BLD-A194) | S | P0 | A |
 | `S-H5` | `/inbox` | `app/inbox` | exists, differs | L | P0 | A |
-| `S-H6` | `/profile` | `app/profile` (`page.tsx`, `profile-screen.tsx`, `refer-as.tsx`, `rules.ts`); data `GET /api/me/profile`, `PATCH /api/me/settings` (worker `wall/profile.py`), lane C's `/api/me/refer-as` | built (17 Nov, BLD-E043) | M | P0 | E |
+| `S-H6` | `/profile` | `app/profile` (`page.tsx`, `profile-screen.tsx`, `refer-as.tsx`, `rules.ts`); data `GET /api/me/profile`, `PATCH /api/me/settings` (worker `wall/profile.py`), lane C's `server/refer-as.ts` and `PUT /api/me/refer-as` | built (17 Nov, BLD-E043) | M | P0 | E |
 | `S-OFFICE` | `/display/office` | `app/display/office`, `lib/display.ts`, `server/display.ts`, worker `display/office.py`, `GET /api/display/office` (old `app/constellation` stays until lane E retires it) | built (16 Nov, BLD-A190, BLD-A191) | M | P0 | A |
 | `S-LAUNCH` | `/display/launch` | `app/display/launch` (`stage.tsx`, `sound.ts`); old `app/launch` stays until lane E retires it | built (16 Nov, BLD-A190, BLD-A193) | S | P0 | A |
 
