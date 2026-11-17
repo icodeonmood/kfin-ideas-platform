@@ -61,9 +61,17 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["ones.public"],
   },
   // The 1% Club's Wall and the Ones' posts (lane E, A-API.wall): the worker checks the same switches again.
-  { methods: ["GET"], pattern: /^\/api\/wall\/(?:kindling|just-in|impact|ember)\/?$/, switches: ["wall.public"] },
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/wall\/(?:kindling|just-in|impact|ember)\/?$/,
+    switches: ["wall.public"],
+  },
   { methods: ["GET"], pattern: /^\/api\/wall\/ones\/?$/, switches: ["wall.public", "ones.public"] },
-  { methods: ["GET", "PUT"], pattern: /^\/api\/ones\/posts(?:\/[^/]+\/like)?\/?$/, switches: ["ones.public"] },
+  {
+    methods: ["GET", "PUT"],
+    pattern: /^\/api\/ones\/posts(?:\/[^/]+\/like)?\/?$/,
+    switches: ["ones.public"],
+  },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },

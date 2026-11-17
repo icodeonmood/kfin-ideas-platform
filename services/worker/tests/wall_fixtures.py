@@ -40,7 +40,9 @@ def person(
     for role in ("employee", *roles):
         conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (uid, role))
     if show_name is not None:
-        conn.execute("INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s)", (uid, show_name))
+        conn.execute(
+            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s)", (uid, show_name)
+        )
     return {"id": uid, "code": code, "name": name}
 
 
@@ -92,7 +94,15 @@ def one(
     row = conn.execute(
         "INSERT INTO ones (induction_no, user_id, number, way_in, idea_id, tier, inducted_at, swap_until) VALUES ("
         "next_number('ONE', ''), %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (who["id"], number, way_in, idea_ref, tier, inducted_at, inducted_at + dt.timedelta(days=window_days)),
+        (
+            who["id"],
+            number,
+            way_in,
+            idea_ref,
+            tier,
+            inducted_at,
+            inducted_at + dt.timedelta(days=window_days),
+        ),
     ).fetchone()
     assert row is not None
     oid = int(row["id"])
@@ -131,5 +141,12 @@ def measurement(
     conn.execute(
         "INSERT INTO delivery_measurements (idea_uuid, mark, due_at, results, filled_at, finance_confirmed_at) "
         "VALUES (%s, %s, %s, %s, %s, %s)",
-        (idea_row["id"], mark, due_at or ago(days=2), Jsonb(results or {}), filled, filled if finance else None),
+        (
+            idea_row["id"],
+            mark,
+            due_at or ago(days=2),
+            Jsonb(results or {}),
+            filled,
+            filled if finance else None,
+        ),
     )

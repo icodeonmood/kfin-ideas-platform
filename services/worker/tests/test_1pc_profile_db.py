@@ -5,6 +5,7 @@ switch so it flips back; Teams stays off; the Wall switch reaches the Wall at on
 from __future__ import annotations
 
 from collections.abc import Iterator
+
 import pytest
 
 from core import killswitch
@@ -43,7 +44,9 @@ def test_S_H6_layout_profile_carries_points_tier_line_and_defaults(profile_db: C
 def test_S_H6_rules_4_a_One_sees_their_One_tier_and_the_link_to_their_dashboard(profile_db: Conn) -> None:
     db = profile_db
     who = f.person(db, "Ritika Sood", tier=1)
-    f.one(db, who, number=17, tier=4, way_in="founding", brief="Bank details are caught before the first debit.")
+    f.one(
+        db, who, number=17, tier=4, way_in="founding", brief="Bank details are caught before the first debit."
+    )
     out = profile.profile(db, who["id"])
     assert out["person"]["tier"] == 4 and out["one_dashboard"] == "/one"
     assert out["person"]["one"]["number"] == 17 and out["person"]["one"]["flag"] == "founding"
@@ -62,7 +65,12 @@ def test_P_PRODUCT_privacy_points_never_leave_the_person(profile_db: Conn) -> No
     idea = f.idea(db, a, title="Payout checks at every branch")
     f.post(db, oid, idea, "Payout checks are live at every branch.")
     assert profile.profile(db, b["id"])["person"]["points"] == 0  # b's own, never a's
-    public = [kindling.just_in(db, now=f.NOW), kindling.kindling(db), ones.one_cards(db), ones.posts(db, b["id"], f.NOW)]
+    public = [
+        kindling.just_in(db, now=f.NOW),
+        kindling.kindling(db),
+        ones.one_cards(db),
+        ones.posts(db, b["id"], f.NOW),
+    ]
     assert "points" not in repr(public)
 
 
@@ -117,7 +125,9 @@ def test_DEC_104_the_Wall_switch_applies_to_every_idea_at_once(profile_db: Conn)
     assert all(r["sharer"] for r in kindling.just_in(db, now=f.NOW)["items"])
     profile.save_settings(db, who["id"], {"show_name_on_wall": False})
     assert all(r["sharer"] is None for r in kindling.just_in(db, now=f.NOW)["items"])
-    consent = db.execute("SELECT public_name_consent FROM comms_prefs WHERE user_id = %s", (who["id"],)).fetchone()
+    consent = db.execute(
+        "SELECT public_name_consent FROM comms_prefs WHERE user_id = %s", (who["id"],)
+    ).fetchone()
     assert consent["public_name_consent"] is False  # old pages agree until they retire
 
 
