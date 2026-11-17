@@ -113,6 +113,10 @@ export function CommitteeView({
   // A4: one action at a time per row, so a double click extends once (and the reversal is sent once)
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const inFlight = useRef(new Set<string>());
+  // The tab and sort on screen now, and the latest list request: a reload that finishes late never puts back an
+  // older tab or list (S-R4.rules/3, after a reversal the person may already be on Reversed).
+  const view = useRef<{ tab: CommitteeTab; sort: CommitteeSort }>({ tab: firstTab, sort: firstSort });
+  const latest = useRef(0);
 
   // The reversing form takes focus when it opens in place (F-MOTION.focus).
   useEffect(() => {
@@ -120,13 +124,17 @@ export function CommitteeView({
   }, [reversing]);
 
   async function load(nextTab: CommitteeTab, nextSort: CommitteeSort) {
+    view.current = { tab: nextTab, sort: nextSort };
+    const request = ++latest.current;
     setTab(nextTab);
     setSort(nextSort);
     setOpen(null);
     setReversing(null);
     router.replace(`/committee?tab=${nextTab}&sort=${nextSort}`, { scroll: false });
     const res = await fetch(`/api/committee?tab=${nextTab}&sort=${nextSort}`);
-    if (res.ok) setData((await res.json()) as CommitteeResponse);
+    if (!res.ok) return;
+    const next = (await res.json()) as CommitteeResponse;
+    if (request === latest.current) setData(next);
   }
 
   function replaceRow(row: CommitteeRow) {
@@ -190,7 +198,7 @@ export function CommitteeView({
       if (sendButton.current) sparkBurst(sendButton.current); // S-R4.rules/3
       setReversing(null);
       setOpen(null);
-      await load(tab, sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
+      await load(view.current.tab, view.current.sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
     });
   }
 

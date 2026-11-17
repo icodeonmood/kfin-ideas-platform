@@ -175,6 +175,9 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
       })
       .fill(NOTE);
     await form.getByRole("button", { name: /Reverse and tell / }).click();
+    // the reversal is sent and the window tab reloaded without the row before moving to Reversed (S-R4.rules/3)
+    await expect(form).toBeHidden();
+    await expect(m.getByRole("rowgroup").filter({ hasText: title })).toHaveCount(0);
     await m.getByRole("tab", { name: /Reversed/ }).click();
     const reversed = m.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
     await expect(reversed).toContainText(/Now: Not picked by .+, \w+day \d{1,2} \w+/);
