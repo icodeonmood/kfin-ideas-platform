@@ -468,12 +468,13 @@ export interface SharerView {
     pill: PillWords;
     breadcrumb: { label: string; to: string; current: string }; // "My ideas, Needs you" / IDEA-2026-001481
     shared_label: string | null; // "Shared 14-Nov-26"
+    reference_line?: string; // the phone's "Reference IDEA-…, shared Saturday 14 November, Investor service"
     share_seconds_label?: string; // "Done in 40 seconds", first arrival only
     first_arrival: boolean;
     /** Null where the sentence names the decision or the questions: compose it from `card_from`'s endpoint. */
-    card: { lead: string; rest: string } | null;
+    card: { lead: string; rest: string; phone_rest?: string } | null; // phone_rest: PhoneStatus.md's shorter rest
     card_from?: "decision" | "question_set";
-    window: { open: boolean; line: string; countdown?: WindowCountdown } | null;
+    window: { open: boolean; line: string; phone_line?: string; countdown?: WindowCountdown } | null;
     actions: {
       conversation: LinkWords;
       edit?: LinkWords;
@@ -515,6 +516,7 @@ export interface SharerView {
       count: number;
       link: LinkWords;
       empty_line?: string;
+      phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };

@@ -1,26 +1,15 @@
-import Link from "next/link";
-
 import { Avatar } from "@/components/ui/avatar";
 import { ButtonLink } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import { Track } from "@/components/ui/track";
 import type { ColleagueView, PublicIdea } from "@/lib/contracts/api";
 
+import { KeptBackLink } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
 /** The phone board says the summary's note shorter (PhoneIdea.md); the words after it are the server's. */
 const DESK_NOTE = "This is the short summary everyone at KFintech sees.";
 const PHONE_NOTE = "The short summary everyone sees.";
-
-export function BackLink({ label, to }: { label: string; to: string }) {
-  const short = label.replace(/^Back to (the )?/, "");
-  return (
-    <Link className="back ip-back" href={to} aria-label={label}>
-      <span className="ip-desk">{label}</span>
-      <span className="ip-phone">{short}</span>
-    </Link>
-  );
-}
 
 /**
  * S-09, a colleague's idea (copy: reference/copy/Idea.md, PhoneIdea.md): the short summary, where it is, and Team
@@ -32,7 +21,7 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
   if (page.state === "withdrawn" || !("title" in view.idea)) {
     return (
       <div className="ip ip-col">
-        <BackLink label={page.back.label} to={page.back.to} />
+        <KeptBackLink label={page.back.label} to={page.back.to} />
         <header className="ip-head">
           <Pill variant={page.pill.variant}>{page.pill.label}</Pill>
           <h1 className="h1 ip-title">{view.idea.ref ?? "This idea"}</h1>
@@ -49,7 +38,7 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
   const note = page.summary_note ?? "";
   return (
     <div className="ip ip-col">
-      <BackLink label={page.back.label} to={page.back.to} />
+      <KeptBackLink label={page.back.label} to={page.back.to} />
 
       <header className="ip-head">
         <p className="ip-ref ip-phone">{idea.ref}</p>
@@ -75,31 +64,8 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
           ) : null}
         </section>
 
-        {track ? (
-          <section className="ip-sec ip-where" aria-labelledby="ip-where-h">
-            <h2 id="ip-where-h" className="ip-h2">
-              Where it is
-            </h2>
-            <Track stages={track} />
-          </section>
-        ) : null}
-
-        {page.about?.length ? (
-          <section className="ip-sec ip-about" aria-labelledby="ip-about-h">
-            <h2 id="ip-about-h" className="ip-h2">
-              About this idea
-            </h2>
-            <dl className="ip-dl">
-              {page.about.map((r) => (
-                <div key={r.label} className="ip-dl-row">
-                  <dt>{r.label}</dt>
-                  <dd>{r.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ) : null}
-
+        {/* Team up comes straight after the summary in the page's order, as both boards read it on a phone and in
+            one column (PhoneIdea.md; WCAG 1.3.2); the desktop grid places it beside the summary. */}
         <section className="ip-sec ip-team card" aria-labelledby="ip-team-h">
           <h2 id="ip-team-h" className="ip-h2">
             Team up on this idea
@@ -138,6 +104,31 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
               onSent gives the new line, "Waiting for {lead}"; onWithdrawn goes back to "Team up" (S-09.states).
               The dialog's name is "Team up with {lead first name}" (J-TEAMUP/2-3). */}
         </section>
+
+        {track ? (
+          <section className="ip-sec ip-where" aria-labelledby="ip-where-h">
+            <h2 id="ip-where-h" className="ip-h2">
+              Where it is
+            </h2>
+            <Track stages={track} />
+          </section>
+        ) : null}
+
+        {page.about?.length ? (
+          <section className="ip-sec ip-about" aria-labelledby="ip-about-h">
+            <h2 id="ip-about-h" className="ip-h2">
+              About this idea
+            </h2>
+            <dl className="ip-dl">
+              {page.about.map((r) => (
+                <div key={r.label} className="ip-dl-row">
+                  <dt>{r.label}</dt>
+                  <dd>{r.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
       </div>
     </div>
   );

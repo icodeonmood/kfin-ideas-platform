@@ -28,6 +28,35 @@
   text-underline-offset: 4px;
 }
 
+/* PhoneStatus: the way back, then the reference, which copies itself */
+.ip-ptop {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+
+.ip-ptop .ip-back {
+  margin: 0;
+}
+
+.ip-copyref {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ip-copyref:hover {
+  color: var(--ink);
+}
+
 .ip-h2 {
   margin: 0;
   font: 500 22px/1.25 var(--fd);
@@ -969,6 +998,10 @@
 
   .ip-phone {
     display: revert;
+  }
+
+  .ip-ptop.ip-phone {
+    display: flex;
   }
 
   .ip-crumb.ip-desk {
