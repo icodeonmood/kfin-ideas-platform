@@ -37,6 +37,13 @@ export interface TeamUpSheetOptions {
   draftTitle?: string;
   doneLabel?: "Done" | "Keep looking";
   me?: { initials: string };
+  /** Where focus goes when the sheet closes, if the opener was re-drawn; else the element marked by `teamUpOpener`. */
+  returnFocus?(): HTMLElement | null | undefined;
+}
+
+/** Spread on whatever stands where "Team up" was ("Waiting for Ravi" with Withdraw), so focus can return to it. */
+export function teamUpOpener(ideaId: string): { "data-teamup-opener": string } {
+  return { "data-teamup-opener": ideaId };
 }
 
 export function useTeamUpSheet(options: TeamUpSheetOptions = {}): {

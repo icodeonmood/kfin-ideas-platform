@@ -742,6 +742,8 @@ describe("S-05 screen: similar ideas (BLD-C132, C-SIMGRID, L-SIMILAR)", () => {
     const line = "Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own.";
     expect(Array.from(document.querySelectorAll("p")).filter((p) => text(p) === line)).toHaveLength(1);
     expect(Array.from(document.querySelectorAll(".tuwait")).map(text)).toEqual(["Waiting for Ravi"]);
+    // Where "Team up" was, marked for lane F's sheet to give focus back to (teamUpOpener, WCAG 2.4.3).
+    expect(document.querySelector('[data-teamup-opener="IDEA-2026-001412"]')?.textContent).toBe("Withdraw");
     expect(button("Withdraw the request")).toBeTruthy();
     await railTo("Send it");
     expect(h1()).toBe("Ready to send?");

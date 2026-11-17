@@ -953,8 +953,9 @@ export function CheckIt({
               const no = n as PartNo;
               const now = no === part;
               const ok = isDone(no) && !now;
-              // The Send it row's line ("One last look, then submit") is its description, not part of its name, so
-              // "Submit" names one button on the page (BLD-C130; J-SHARE/11, J-RECOVER/12–14 find Submit by name).
+              // The Send it row's line ("One last look, then submit") sits beside its button as its description, not
+              // inside it, so "Submit" names one button on the page and the button's name is its visible words
+              // (BLD-C130; J-SHARE/11, J-RECOVER/12–14 find Submit by name; WCAG 2.5.3).
               const send = no === 7;
               return (
                 <li key={n}>
@@ -964,7 +965,6 @@ export function CheckIt({
                       .filter(Boolean)
                       .join(" ")}
                     aria-current={now ? "step" : undefined}
-                    aria-label={send ? (ok || attention[no] ? label : `${n} ${label}`) : undefined}
                     aria-describedby={send ? railStatusId : undefined}
                     onClick={() => go(no)}
                   >
@@ -972,11 +972,21 @@ export function CheckIt({
                       {ok ? <IconTick size={12} /> : attention[no] ? "!" : n}
                     </span>
                     {ok || attention[no] ? null : " "}
-                    <span className="ck-rl">{label}</span>{" "}
-                    <span className="ck-rs" id={send ? railStatusId : undefined}>
+                    <span className="ck-rl">{label}</span>
+                    {send ? (
+                      <span className="ck-rs ck-rs-gap" aria-hidden="true" />
+                    ) : (
+                      <>
+                        {" "}
+                        <span className="ck-rs">{rail[no]}</span>
+                      </>
+                    )}
+                  </button>
+                  {send ? (
+                    <span className="ck-rs ck-rs-over" id={railStatusId}>
                       {rail[no]}
                     </span>
-                  </button>
+                  ) : null}
                 </li>
               );
             })}

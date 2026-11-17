@@ -78,6 +78,10 @@
   gap: 4px;
 }
 
+.ck-rail li {
+  position: relative;
+}
+
 .ck-rb {
   width: 100%;
   min-height: 56px;
@@ -158,6 +162,20 @@
 
 .ck-rb.warn .ck-rs {
   color: var(--warnT);
+}
+
+/* The Send it row: its line is drawn over the button's second row, outside the button (see check-it.tsx). */
+.ck-rs-gap {
+  display: block;
+  min-height: 18px;
+}
+
+.ck-rs-over {
+  position: absolute;
+  left: 50px;
+  right: 12px;
+  bottom: 10px;
+  pointer-events: none;
 }
 
 .ck-stage {

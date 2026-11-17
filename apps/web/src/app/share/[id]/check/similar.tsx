@@ -22,7 +22,7 @@ import { CHECK_COPY } from "./copy";
 import type { MergeView, SimilarLoad, TileAction } from "./model";
 import { tileAction } from "./model";
 // Swaps to "@/components/teamup/teamup-sheet" when lane F's team-up is on main (the shim goes then).
-import { useTeamUpSheet } from "./teamup-shim";
+import { teamUpOpener, useTeamUpSheet } from "./teamup-shim";
 
 const C = CHECK_COPY.similar;
 const SHOWN = 8;
@@ -164,6 +164,7 @@ function Tile({
           <span className="ck-wait">
             <span className="tuwait">{action.label}</span>
             <Button
+              {...teamUpOpener(idea.id)}
               variant="text-blue"
               busy={busy}
               onClick={async () => {
@@ -176,7 +177,9 @@ function Tile({
             </Button>
           </span>
         ) : (
-          <span className="ck-crew">{C.onCrew}</span>
+          <span className="ck-crew" tabIndex={-1} {...teamUpOpener(idea.id)}>
+            {C.onCrew}
+          </span>
         )}
       </div>
     </li>
