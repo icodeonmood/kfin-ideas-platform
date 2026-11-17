@@ -17,6 +17,9 @@ from onepc.context import seal_text
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 NOW = dt.datetime(2026, 11, 17, 12, 0, tzinfo=IST)  # Tuesday
 _counter = iter(range(1, 10**6))
+# What these helpers made, so `clean` removes exactly that when a test ends (lane F rule: tests clean up after
+# themselves; a later test's HR import refuses while active users are left behind).
+_made: dict[str, list[str]] = {"users": [], "ideas": []}
 
 
 def ago(days: float) -> dt.datetime:
@@ -39,6 +42,7 @@ def person(
         (user_id, f"hash-{user_id}", name, f"{name.split()[0].lower()}.{next(_counter)}@example.test",
          name.split()[0], city, area),
     )  # fmt: skip
+    _made["users"].append(user_id)
     ctr = f"CTR-{secrets.token_hex(3)}" if code else None
     if ctr:
         conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (ctr, user_id))
@@ -74,6 +78,7 @@ def idea(
     marks = ", ".join(["%s"] * len(cols))
     row = conn.execute(f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *", tuple(cols.values())).fetchone()  # noqa: S608 (this file's own columns)
     assert row is not None
+    _made["ideas"].append(str(row["id"]))
     if shared is not None:
         conn.execute(
             "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, joined_at) "
@@ -81,6 +86,18 @@ def idea(
             (row["id"], sharer["code"], shared),
         )
     return dict(row)
+
+
+def clean(conn: Conn) -> None:
+    """Delete the rows these helpers made, and only those: ideas first (crews, requests, passes, similar links and
+    messages go with them), then people (contributor codes, roles and passes go with them)."""
+    ideas, users = list(_made["ideas"]), list(_made["users"])
+    _made["ideas"].clear()
+    _made["users"].clear()
+    if ideas:
+        conn.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (ideas,))
+    if users:
+        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
 
 
 def join(conn: Conn, idea_row: dict[str, Any], member: dict[str, Any], *, days: float = 1) -> None:
