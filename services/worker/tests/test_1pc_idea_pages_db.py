@@ -66,6 +66,18 @@ def test_s06_states_just_shared_shows_the_decide_by_date(club: dict[str, Any]) -
     assert page["pill"] == {"status": "with_review_desk", "label": "With the review desk", "variant": "blue"}
     assert page["card"]["lead"] == f"The review desk will look at it by {day(idea['decide_by'], NOW)}."
     assert page["card"]["rest"] == "We’ll tell you on Teams and by email when anything changes."
+    # S-06.phone (PhoneStatus.md): the shorter lines and the reference line under the title
+    assert page["card"]["phone_rest"] == "We’ll tell you on Teams and by email."
+    assert page["window"]["phone_line"] == (
+        f"Open to changes until {day(idea['edit_closes_at'], NOW)}. Edit or withdraw it before the review desk "
+        "opens it."
+    )
+    assert page["reference_line"] == (
+        f"Reference {ref(club, 'T5')}, shared {day(idea['shared_at'], NOW)}, {idea['area']}"
+    )
+    assert page["conversation"]["phone_empty_line"] == (
+        "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
+    )
     assert page["window"]["open"] and page["window"]["line"].startswith(
         f"Open to changes until {day(idea['edit_closes_at'], NOW)}."
     )
@@ -217,6 +229,8 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
     v = view(club, ref(club, "T11"), "tanvi")
     merged = v["page"]["merged"]
     assert merged["line"] == f"Merged into {ref(club, 'R2')} by the review desk"
+    # Said once: the card carries the line, the merged block the note and the link
+    assert v["page"]["card"]["lead"] == f"Merged into {ref(club, 'R2')} by the review desk."
     assert merged["note"] == "Both ideas ask for one clear message after a failed debit."
     assert v["idea"]["stages"] == [] and v["idea"]["merged_into"] == ref(club, "R2")
 
