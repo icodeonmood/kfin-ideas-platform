@@ -445,21 +445,39 @@
 }
 
 .crew-row {
+  position: relative;
   display: grid;
   gap: 4px;
   padding: 10px;
   margin: 0 -10px;
   border-radius: var(--r-sm);
-  color: var(--ink);
-  text-decoration: none;
 }
 
 .crew-row:hover {
   background: rgba(17, 17, 17, 0.05);
 }
 
+/* The title is the link; the whole row takes its click */
 .crew-row-t {
+  color: var(--ink);
   font: 500 15px/1.35 var(--ft);
+  text-decoration: none;
+}
+
+.crew-row-t::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-sm);
+}
+
+.crew-row-t:focus-visible {
+  outline: none;
+}
+
+.crew-row-t:focus-visible::after {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .crew-row-m {
@@ -536,14 +554,21 @@
     min-height: calc(100dvh - 220px);
   }
 
+  /* No stacking context here, so the panel can sit over the phone's tab bar */
+  .crew-fanchor {
+    z-index: auto;
+  }
+
+  /* Above the phone's tab bar (shell.css keeps 96px for it), and over it while open */
   .crew-fpanel {
     position: fixed;
     left: 8px;
     right: 8px;
     top: auto;
-    bottom: 8px;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    z-index: calc(var(--z-sidebar) + 10);
     width: auto;
-    max-height: calc(100dvh - 96px);
+    max-height: calc(100dvh - 180px);
     overflow-y: auto;
   }
 
