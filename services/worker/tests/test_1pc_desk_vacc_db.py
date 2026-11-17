@@ -71,6 +71,7 @@ def test_V_ACC_review_7_the_sharer_is_told_and_the_idea_waits_on_them(
 ) -> None:
     sent = _send(db, cast)
     [item] = told.of("questions")
+    assert item.actions == ["Answer the questions"]
     assert (item.recipients, item.needs_you, item.due_at, item.sender) == (
         [cast["kavya"]["id"]], True, DUE, cast["meera"]["id"]
     )  # fmt: skip
@@ -157,7 +158,7 @@ def test_V_ACC_review_13_both_sharers_are_told_of_a_desk_merge(
     assert m["lead_idea_id"] == theirs["idea_id"]  # the earlier idea leads by default
     [item] = told.of("desk_merge")
     assert sorted(item.recipients) == sorted([cast["kavya"]["id"], cast["ravi"]["id"]])
-    assert (item.needs_you, item.sender) == (False, cast["meera"]["id"])
+    assert (item.needs_you, item.sender, item.actions) == (False, cast["meera"]["id"], ["Open the idea"])
 
 
 def test_V_ACC_committee_4_the_sharer_the_crew_and_the_reviewer_are_told_of_a_reversal(
@@ -169,13 +170,14 @@ def test_V_ACC_committee_4_the_sharer_the_crew_and_the_reviewer_are_told_of_a_re
                     f.at(16, 16, 58))  # fmt: skip
     [decided] = told.of("decision")
     assert (decided.recipients, decided.needs_you) == ([cast["kavya"]["id"], farhan["id"]], False)
+    assert decided.actions == ["Read the decision"]  # L-INBOX.kinds: Read the decision → S-06
     window = db.execute("SELECT id FROM decision_windows WHERE decision_id = %s", (d["id"],)).fetchone()
     assert window is not None
     committee.reverse_window(db, str(window["id"]), cast["rohan"]["id"],
                              {"to": "not_now", "note": NOTE, "return_in": "3m"}, f.at(24, 17, 40))  # fmt: skip
     [item] = told.of("decision_reversed")
     assert item.recipients == [cast["kavya"]["id"], farhan["id"], cast["meera"]["id"]]
-    assert (item.needs_you, item.sender) == (False, cast["rohan"]["id"])
+    assert (item.needs_you, item.sender, item.actions) == (False, cast["rohan"]["id"], ["Read the note"])
     # and the sharer's page shows the committee's card (the lines are pinned in test_1pc_desk_viewer_lines_db)
     got = committee.decision_for_viewer(db, cast["idea"]["idea_id"], cast["kavya"]["id"], f.at(24, 18))
     assert got is not None and got["lines"]["reversal"]["final_line"].startswith("This is final.")

@@ -170,6 +170,7 @@ class Post:
     due_at: dt.datetime | None
     sender: str
     dedupe_key: str | None
+    actions: list[str]  # the buttons' labels
 
 
 class FakeNotify:
@@ -190,7 +191,8 @@ class FakeNotify:
     def post(self, conn: Conn, kind: str, recipients: list[str], **kw: Any) -> None:
         _ = conn
         self.posts.append(Post(kind, list(recipients), bool(kw.get("needs_you")), kw.get("due_at"),
-                               str(kw.get("sender")), kw.get("dedupe_key")))  # fmt: skip
+                               str(kw.get("sender")), kw.get("dedupe_key"),
+                               [a.label for a in kw.get("actions") or ()]))  # fmt: skip
 
     def resolve(self, conn: Conn, dedupe_key: str) -> int:
         _ = conn
