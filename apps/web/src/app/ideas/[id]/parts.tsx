@@ -116,7 +116,7 @@ export function WayBack({ way, carried, children }: { way: Way; carried: Carried
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.pathname !== path && safeDecode(url.pathname) !== safeDecode(path)) return; // not this idea's entry
-    // Only a way back a reload may take again is kept (a `from=IDEA-…` way back holds for the visit only)
+    // Only a way back a reload may take again is kept: a list's view, or a joined idea's lead (S-09.layout/1)
     const keep = (persist || saved) && held && allowedBack(held.to) ? held : null;
     if (url.searchParams.has("from") || url.searchParams.has("back")) {
       url.searchParams.delete("from");
