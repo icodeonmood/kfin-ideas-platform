@@ -26,6 +26,11 @@ __all__ = ["match_shared", "similar_for"]
 log = get_logger("similar")
 
 
+class IdeaNotFound(LookupError):
+    """No draft or idea with this ID. `matching.match_idea` raises it after its savepoint is rolled back; the entry
+    points answer None and -1, the worker route 404 (BLD-C096)."""
+
+
 def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[dict[str, Any]] | None:
     """The draft's similar part (L-SIMILAR.rules/4, BLD-C093): match the draft now (or reuse the last run when its
     words changed too little), then return up to 8 SimilarMatch dicts as its sharer sees them. None when they could
@@ -51,7 +56,7 @@ def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[di
             if owner is None:
                 return None
             found = matches_for(conn, idea_uuid, Viewer.of(conn, str(owner["user_id"])))
-    except LookupError:  # no such draft (matching.IdeaNotFound): nothing was written
+    except IdeaNotFound:  # no such draft: nothing was written
         return None
     except Exception as exc:
         log.error("similar.read_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
@@ -72,7 +77,7 @@ def match_shared(conn: Conn, idea_uuid: str, *, found_while: str) -> int:
         from similar.matching import match_idea
 
         run = match_idea(conn, idea_uuid, found_while=found_while)  # type: ignore[arg-type]
-    except LookupError:  # no such idea (matching.IdeaNotFound): nothing was written
+    except IdeaNotFound:  # no such idea: nothing was written
         return -1
     except Exception as exc:
         log.error("similar.match_shared_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)

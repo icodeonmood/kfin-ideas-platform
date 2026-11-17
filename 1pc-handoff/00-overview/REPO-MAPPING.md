@@ -96,7 +96,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
-| `L-SIMILAR` | `services/worker/similar/` (`index.py` chunks from rows, `matching.py`, `views.py`; entry points `similar_for`, `match_shared`), `agents/judge` 0.3.0, `GET /api/ideas/:id/similar`, `POST /api/ideas/:id/similar/keep-separate`, tables `similar_links`, `similar_runs` (BLD-C091 to C095) | built | P0 | C |
+| `L-SIMILAR` | `services/worker/similar/` (`index.py` chunks from rows, `matching.py`, `views.py`; entry points `similar_for`, `match_shared`), `agents/judge` 0.3.1, `GET /api/ideas/:id/similar`, `POST /api/ideas/:id/similar/keep-separate`, tables `similar_links`, `similar_runs` (BLD-C091 to C099) | built | P0 | C |
 | `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
 | `L-REVIEW` | `services/worker/desk/review.py`, `queue.py`, `reads.py`, `clock.py`, `clocks.py`; web forwarders in `server/desk.ts` | landed at 82668c1 (17 Nov, back end; follow-up on `b/1pc-review-fu`) | P0 | B |
 | `L-DECIDE` | `services/worker/desk/decide.py`, `promises.py`, `when.py`; `idea_decisions` | landed at 82668c1 (17 Nov, back end) | P0 | B |

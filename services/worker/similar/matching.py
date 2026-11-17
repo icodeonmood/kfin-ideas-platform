@@ -32,7 +32,7 @@ from core.db import Conn, vector_literal
 from core.logging import get_logger
 from embeddings import embed
 from onepc.context import open_text
-from similar import index
+from similar import IdeaNotFound, index
 from similar.preview import IDEA_REF, checked_sentence, mask_text
 
 log = get_logger("similar")
@@ -426,11 +426,6 @@ def _record(
         "found = EXCLUDED.found, error_code = EXCLUDED.error_code, ran_at = now()",
         (idea_uuid, state, found_while, labelled_by, hashes, found, error_code),
     )
-
-
-class IdeaNotFound(LookupError):
-    """No draft or idea with this ID. `match_idea` raises it; the entry points answer None and -1, the worker
-    route 404 (BLD-C096)."""
 
 
 def match_idea(
