@@ -44,26 +44,39 @@ export type SessionInfo = {
   needsRefresh: boolean;
 };
 
-/** After the worker fails to answer, how long every request uses the policy's 8 hours before asking again. */
+/** After the worker fails to answer, how long before it is asked again (the last length read holds meanwhile). */
 const PROMISES_RETRY_MS = 60_000;
 let promisesFailedAt = 0;
+/** The last `session.hours` read, in seconds: the policy's 8 hours until the first read lands. */
+let ttlRead = SESSION_TTL_SECONDS;
+let reading: Promise<void> | undefined;
+
+function readSessionHours(): void {
+  if (reading) return;
+  reading = (async () => {
+    try {
+      const hours = (await promises()).session.hours;
+      ttlRead = Number.isFinite(hours) && hours > 0 ? Math.round(hours * 3600) : SESSION_TTL_SECONDS;
+    } catch {
+      promisesFailedAt = Date.now();
+      log.warn("auth.promises_unavailable");
+    } finally {
+      reading = undefined;
+    }
+  })();
+}
 
 /**
  * Session length from P-PRODUCT.promises `session.hours` (rules/promises.md, BLD-A181; L-AUTH.rules/5). Every request
- * asks (readSession), so `promises()` answers from its one-minute cache. If the worker cannot be read, the policy's
- * 8 hours, with one warning, and the worker is not asked again for a minute: a worker that hangs must not hold up
- * every page by its timeout (BLD-A178).
+ * asks (readSession, in the proxy and again in the route), so it never waits on the worker: it answers at once with
+ * the last length read (the policy's 8 hours before the first) and refreshes it in the background from `promises()`'
+ * one-minute cache. Waiting here put a worker round trip between the proxy's kill-switch read and the route's, so
+ * /api/status could still call a feature on after the proxy had refused it (§7.6). If the worker cannot be read,
+ * one warning, and it is not asked again for a minute (BLD-A178).
  */
 export async function sessionTtlSeconds(): Promise<number> {
-  if (Date.now() - promisesFailedAt < PROMISES_RETRY_MS) return SESSION_TTL_SECONDS;
-  try {
-    const hours = (await promises()).session.hours;
-    if (Number.isFinite(hours) && hours > 0) return Math.round(hours * 3600);
-  } catch {
-    promisesFailedAt = Date.now();
-    log.warn("auth.promises_unavailable");
-  }
-  return SESSION_TTL_SECONDS;
+  if (Date.now() - promisesFailedAt >= PROMISES_RETRY_MS) readSessionHours();
+  return ttlRead;
 }
 
 export async function createSession(userId: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<string> {

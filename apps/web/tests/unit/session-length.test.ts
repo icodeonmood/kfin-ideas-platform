@@ -28,6 +28,8 @@ vi.mock("@/server/log", () => ({ log: { warn: vi.fn(), error: vi.fn(), info: vi.
 
 const hours = (h: number) => ({ session: { hours: h } });
 const flat = (q: CompiledQuery) => q.sql.replace(/\s+/g, " ");
+/** Lets the background read of `session.hours` land (only Date is faked, so timers are real). */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** A fresh copy of the module each time, so the one-minute back-off of one test does not reach the next. */
 async function session() {
@@ -46,29 +48,48 @@ afterEach(() => {
 });
 
 describe("L-AUTH.rules/5 session length comes from rules/promises.md", () => {
-  it("is session.hours (8) and follows a change to it", async () => {
+  it("is session.hours and follows a change to it, read in the background", async () => {
     const s = await session();
-    promises.mockResolvedValue(hours(8));
-    expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
     promises.mockResolvedValue(hours(6));
+    expect(await s.sessionTtlSeconds()).toBe(8 * 3600); // the policy's 8 hours until the first read lands
+    await settle();
     expect(await s.sessionTtlSeconds()).toBe(6 * 3600);
+    promises.mockResolvedValue(hours(7));
+    await settle();
+    expect(await s.sessionTtlSeconds()).toBe(6 * 3600); // the last length read, while the new one is read
+    await settle();
+    expect(await s.sessionTtlSeconds()).toBe(7 * 3600);
   });
 
-  it("falls back to the policy's 8 hours when the worker cannot be read, and waits a minute before asking again", async () => {
+  it("never waits on the worker: a hanging read neither holds up a request nor starts another", async () => {
+    const s = await session();
+    promises.mockReturnValue(new Promise(() => {}));
+    expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
+    expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
+    expect(promises).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the policy's 8 hours when the worker cannot be read, and waits a minute before asking again", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-20T04:00:00Z"), toFake: ["Date"] });
     const s = await session();
     promises.mockRejectedValue(new Error("promises_unavailable"));
     expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
+    await settle();
     expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
-    expect(promises).toHaveBeenCalledTimes(1); // a hanging worker does not hold up every page
+    await settle();
+    expect(promises).toHaveBeenCalledTimes(1); // a failing worker is not asked on every page
     promises.mockResolvedValue(hours(7));
     vi.setSystemTime(new Date("2026-11-20T04:01:01Z"));
+    await s.sessionTtlSeconds();
+    await settle();
     expect(await s.sessionTtlSeconds()).toBe(7 * 3600);
   });
 
   it("ignores a value that is not a positive number of hours", async () => {
     const s = await session();
     promises.mockResolvedValue(hours(0));
+    await s.sessionTtlSeconds();
+    await settle();
     expect(await s.sessionTtlSeconds()).toBe(8 * 3600);
   });
 });
