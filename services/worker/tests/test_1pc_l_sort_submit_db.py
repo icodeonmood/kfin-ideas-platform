@@ -948,7 +948,7 @@ def test_l_submit_send_a_listen_prefetch_failure_never_fails_a_send(
     assert _idea(world)["status"] == "checking"
     assert (
         world["conn"]
-        .execute("SELECT count(*) AS n FROM jobs WHERE kind = 'listen.prefetch' AND payload = '{}'::jsonb")
+        .execute("SELECT count(*) AS n FROM jobs WHERE type = 'listen.prefetch' AND payload ? 'probe'")
         .fetchone()["n"]
         == 0
     )  # the savepoint undid what the failed prefetch wrote
