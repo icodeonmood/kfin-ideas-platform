@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from core.db import Conn
 from tests import desk_fixtures as f
 from tests import helpers
+from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 TOKEN = "lane-b-test-token-0123456789abcdef"
 REASON = "A clear problem, a real number and a simple fix for the branch."

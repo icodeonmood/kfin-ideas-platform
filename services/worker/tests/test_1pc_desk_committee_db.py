@@ -13,6 +13,7 @@ from core.db import Conn
 from desk import committee, decide
 from desk.store import Refused
 from tests import desk_fixtures as f
+from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 REASON = "Picked. A clear problem, a real number and a simple fix for the branch."
 NOTE = "Right problem, but the SMS vendor changes in March. Let us look again then."

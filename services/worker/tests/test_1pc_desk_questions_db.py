@@ -17,6 +17,7 @@ from desk import asking, decide
 from desk.questions import AFTER_DECIDE_BY, desk_line
 from desk.store import Refused, unseal
 from tests import desk_fixtures as f
+from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 SENT = f.at(16, 11, 20)  # Monday 16 November 2026, 11:20 am IST
 QS: list[dict[str, Any]] = [
