@@ -20,6 +20,14 @@ NOW = f.NOW
 
 
 @pytest.fixture
+def db(db: Conn) -> Iterator[Conn]:
+    """The shared `db` fixture, plus clean-up: every person and idea these tests made is removed when the test
+    ends (single connection, nothing left behind)."""
+    yield db
+    f.clean(db)
+
+
+@pytest.fixture
 def world(db: Conn) -> dict[str, Any]:
     """Leela (Investor service, Hyderabad) and colleagues' ideas that reach her for each of the four reasons, plus
     ideas she must never see on the deck."""
@@ -221,3 +229,12 @@ def test_A_API_team_up_crew_routes(client: TestClient, world: dict[str, Any]) ->
     assert bad.status_code == 422 and bad.json()["error"]["code"] == "idea_required"
     assert client.get("/internal/crew", params={"user_id": "not-a-uuid"}).status_code == 404
     assert client.get("/internal/crew", params={"user_id": leela, "limit": 0}).status_code == 422
+
+
+def test_L_CREW_fixtures_leave_no_people_ideas_or_passes_behind(db: Conn, world: dict[str, Any]) -> None:
+    deck.pass_idea(db, world["leela"]["id"], world["office"]["idea_id"])
+    f.request(db, world["touch"], world["leela"])
+    f.clean(db)
+    for table in ("users", "contributor_map", "ideas", "crew_members", "crew_passes", "teamup_requests",
+                  "similar_links"):  # fmt: skip
+        assert db.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0, table  # noqa: S608
