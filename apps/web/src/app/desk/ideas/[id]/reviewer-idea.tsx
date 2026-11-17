@@ -825,7 +825,8 @@ function matchLine(s: ReviewerSimilar): string {
   return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
 }
 
-/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open". */
+/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open". Seam: lane C's
+ * "Hide this" (a blacked-out copy, C-HIDDEN) joins "Open" here once it is served for the desk. */
 function FileArtefact({ a }: { a: ReviewerArtefact }) {
   const ext = (a.title.split(".").pop() ?? "").toUpperCase().slice(0, 4);
   return (
