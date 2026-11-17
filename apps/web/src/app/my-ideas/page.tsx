@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextRequest } from "next/server";
 
@@ -37,8 +38,11 @@ export default async function Page({
   }
   let data: MyIdeasResponse | null = null;
   try {
+    // The real request's headers, so the server render knows this device as the API does ("on this laptop")
     const res = await getMyIdeas(
-      new NextRequest(new URL(`/api/me/ideas?${q.toString()}`, "http://web.local")),
+      new NextRequest(new URL(`/api/me/ideas?${q.toString()}`, "http://web.local"), {
+        headers: await headers(),
+      }),
     );
     if (res.ok) data = (await res.json()) as MyIdeasResponse;
   } catch {
