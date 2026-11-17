@@ -69,6 +69,9 @@ class Browser:
     def post(self, url: str, **kw: Any) -> httpx.Response:
         return self.request("POST", url, **kw)
 
+    def put(self, url: str, **kw: Any) -> httpx.Response:
+        return self.request("PUT", url, **kw)
+
 
 def sign_in_with_mock(
     username: str, claims: dict[str, str] | None = None, next_path: str = "/"

@@ -42,6 +42,10 @@
     "veto_desk_decision": {
       "core_committee": "yes"
     },
+    "hide_for_desk": {
+      "reviewer": "yes",
+      "core_committee": "yes"
+    },
     "open_attachments": {
       "contributor": "as_idea"
     },
@@ -106,7 +110,8 @@
       "display": "yes"
     },
     "committee_window": {
-      "committee": "yes"
+      "committee": "yes",
+      "core_committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -131,6 +136,9 @@
       "admin"
     ],
     "comms.email": [
+      "admin"
+    ],
+    "comms.teams": [
       "admin"
     ],
     "wall.public": [
@@ -177,6 +185,10 @@
     "speech.hosted": [
       "infosec"
     ],
+    "files.blackout": [
+      "admin",
+      "infosec"
+    ],
     "desk.listen": [
       "admin",
       "infosec"
@@ -209,12 +221,24 @@
     "GET /api/me                                       signed_in",
     "POST /api/me/privacy-notice                       signed_in",
     "GET /api/me/ideas                                 signed_in",
+    "GET /api/me/shell                                 signed_in",
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
+    "GET /api/me/refer-as                              signed_in",
+    "PUT /api/me/refer-as                              signed_in",
     "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
+    "GET /api/inbox/counts                             signed_in",
+    "GET /api/inbox/needs-you                          signed_in",
+    "POST /api/inbox/read-all                          signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
+    "POST /api/inbox/{id}/unread                       signed_in",
+    "POST /api/inbox/{id}/archive                      signed_in",
+    "POST /api/inbox/{id}/actions/{op}                 signed_in",
+    "GET /api/ideas/{id}/conversation                  signed_in",
+    "POST /api/ideas/{id}/conversation/messages        signed_in",
+    "DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in",
     "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
@@ -230,11 +254,31 @@
     "POST /api/submissions/{id}/voice                  submit",
     "GET /api/submissions/{id}/voice/{voice}           submit",
     "DELETE /api/submissions/{id}/voice/{voice}        submit",
+    "POST /api/drafts/{id}/voice/start                 submit",
+    "POST /api/drafts/{id}/voice/chunk                 submit",
+    "POST /api/drafts/{id}/voice/end                   submit",
+    "GET /api/drafts/{id}/voice/{stream}               submit",
+    "GET /api/voice/config                             signed_in",
+    "GET /api/ideas/{id}/listen                        view_review_queue",
+    "GET /api/ideas/{id}/listen/chapters               view_review_queue",
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
+    "POST /api/ideas/{id}/withdraw                     submit",
+    "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
+    "GET /api/ideas/{id}/team-up                       signed_in",
+    "POST /api/ideas/{id}/team-up                      signed_in",
+    "GET /api/ideas/{id}/team-up/draft-note            signed_in",
+    "GET /api/team-up/{id}                             signed_in",
+    "DELETE /api/team-up/{id}                          signed_in",
+    "POST /api/team-up/{id}/answer                     signed_in",
+    "GET /api/drafts/{id}/merge-request                signed_in",
+    "POST /api/drafts/{id}/merge-request               signed_in",
+    "DELETE /api/drafts/{id}/merge-request             signed_in",
+    "POST /api/ideas/{id}/crew/leave                   signed_in",
+    "DELETE /api/ideas/{id}/crew/{member}              signed_in",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
     "GET /api/review/items                             view_review_queue",
@@ -242,6 +286,9 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
+    "POST /api/desk/ideas/{id}/hide                    hide_for_desk",
+    "POST /api/drafts/{id}/hidden/{hid}/show           submit",
+    "POST /api/drafts/{id}/hidden/{hid}/hide           submit",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",
@@ -294,6 +341,19 @@
     "POST /api/delivery/{id}/writeup/submit            work_delivery",
     "POST /api/delivery/{id}/writeup/approve           work_delivery",
     "POST /api/delivery/{id}/writeup/send-back         work_delivery",
+    "GET /api/wall/kindling                            see_org_ideas",
+    "GET /api/wall/just-in                             see_org_ideas",
+    "GET /api/wall/ones                                see_org_ideas",
+    "GET /api/wall/impact                              see_org_ideas",
+    "GET /api/wall/ember                               see_org_ideas",
+    "GET /api/ones/posts                               signed_in",
+    "PUT /api/ones/posts/{id}/like                     signed_in",
+    "GET /api/one                                      signed_in",
+    "PUT /api/one/number                               signed_in",
+    "POST /api/one/brief                               signed_in",
+    "POST /api/one/glow-up/{id}/seen                   signed_in",
+    "GET /api/me/profile                               signed_in",
+    "PATCH /api/me/settings                            signed_in",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",
     "GET /api/ember/{id}                               signed_in",
@@ -328,12 +388,17 @@
       "POST /api/me/one/number",
       "POST /api/me/one/brief",
       "GET /api/me/one/showcase",
-      "PUT /api/me/one/showcase"
+      "PUT /api/me/one/showcase",
+      "GET /api/one",
+      "PUT /api/one/number",
+      "POST /api/one/brief",
+      "POST /api/one/glow-up/{id}/seen"
     ]
   },
   "pages": [
     "/review                    view_review_queue",
-    "/committee                 veto_desk_decision",
+    "/desk                      view_review_queue",
+    "/committee                 committee_window",
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/display                   open_display",
@@ -343,57 +408,83 @@
   ],
   "navigation": [
     {
-      "label": "Share an idea",
-      "href": "/share"
+      "key": "share",
+      "label": "Share a problem",
+      "href": "/share",
+      "place": "new",
+      "tab": 3
     },
     {
+      "key": "home",
+      "label": "Home",
+      "href": "/",
+      "place": "main",
+      "tab": 1
+    },
+    {
+      "key": "my-ideas",
       "label": "My ideas",
-      "href": "/my-ideas"
+      "href": "/my-ideas",
+      "place": "folded",
+      "tab": 2
     },
     {
+      "key": "wall",
       "label": "Wall",
-      "href": "/wall"
+      "href": "/wall",
+      "place": "main",
+      "tab": 4
     },
     {
-      "label": "Messages",
-      "href": "/inbox"
+      "key": "inbox",
+      "label": "Inbox",
+      "href": "/inbox",
+      "place": "main",
+      "tab": 5
     },
     {
-      "label": "Review",
-      "href": "/review",
+      "key": "desk",
+      "label": "Review desk",
+      "href": "/desk",
+      "place": "main",
       "roles": [
         "reviewer"
       ]
     },
     {
-      "label": "Committee",
+      "key": "committee",
+      "label": "Ones Committee",
       "href": "/committee",
+      "place": "main",
       "roles": [
-        "core_committee",
-        "lob_committee"
-      ],
-      "when_on": "committee.flow"
-    },
-    {
-      "label": "Desk decisions",
-      "href": "/desk-decisions",
-      "roles": [
+        "committee",
         "core_committee"
-      ],
-      "when_off": "committee.flow"
-    },
-    {
-      "label": "Ones",
-      "href": "/ones/console",
-      "roles": [
-        "core_committee",
-        "admin",
-        "ceo"
       ]
     },
     {
+      "key": "profile",
+      "label": "Your profile and settings",
+      "href": "/profile",
+      "place": "account"
+    },
+    {
+      "key": "one",
+      "label": "Your One dashboard",
+      "href": "/one",
+      "place": "account",
+      "member": "ones"
+    },
+    {
+      "key": "ember",
+      "label": "The Ember",
+      "href": "/ember",
+      "place": "account"
+    },
+    {
+      "key": "delivery",
       "label": "Delivery",
       "href": "/delivery",
+      "place": "account",
       "roles": [
         "working_group",
         "sponsor",
@@ -403,17 +494,10 @@
       ]
     },
     {
-      "label": "Lenses",
-      "href": "/lenses",
-      "roles": [
-        "lob_committee",
-        "core_committee",
-        "admin"
-      ]
-    },
-    {
+      "key": "admin",
       "label": "Admin",
       "href": "/admin",
+      "place": "account",
       "roles": [
         "admin",
         "infosec",

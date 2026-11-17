@@ -5,13 +5,14 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, openAccountMenu, PERSONAS, signIn } from "./helpers";
 
-test("everyone reads The Ember's archive from the footer; only the chair and admins write it", async ({
+test("everyone reads The Ember's archive from the account menu; only the chair and admins write it", async ({
   page,
 }) => {
   await signIn(page, PERSONAS.contributor);
-  await page.getByRole("contentinfo").getByRole("link", { name: "The Ember" }).click();
+  await openAccountMenu(page);
+  await page.getByRole("link", { name: "The Ember" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "The Ember" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Work on this month's issue" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
@@ -28,12 +29,9 @@ test("an admin opens Write The Ember", async ({ page }) => {
   await expectNoSeriousAxeIssues(page);
 });
 
-test("My ideas shows your own points, and the journey page explains the steps", async ({ page }) => {
+test("the journey page explains the steps", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
-  await page.goto("/my-ideas");
-  await expect(page.getByRole("heading", { level: 2, name: "Your points" })).toBeVisible();
-  await expect(page.getByText("Only you see your points.")).toBeVisible();
-  await page.getByRole("link", { name: "How an idea becomes a One" }).click();
+  await page.goto("/journey");
   await expect(page.getByRole("heading", { level: 1, name: "How an idea becomes a One" })).toBeVisible();
   await expect(page.getByRole("img", { name: /orange spark landing/ })).toBeVisible();
   await expectNoSeriousAxeIssues(page);

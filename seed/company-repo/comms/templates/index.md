@@ -41,3 +41,5 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [appeal-filed.md](appeal-filed.md) — An appeal for your panel: {{cluster.id}} (draft for HR review)
 - [appeal-decided.md](appeal-decided.md) — Your appeal on {{cluster.id}} has been heard (draft for HR review)
 - [sign-in-code.md](sign-in-code.md) — Your 1% Club sign-in code (draft for HR sign-off)
+- [inbox/](inbox/index.md) — one template per Inbox item kind: the row, the reader and the email (L-INBOX.kinds, L-NOTIFY; drafts for HR)
+- [desk/](desk/index.md) — the decide-by digest to the review desk (L-REVIEW.clock/3; draft for HR)

@@ -1,0 +1,1092 @@
+/*
+ * S-06 (your idea's page) and S-09 (a colleague's idea): board values from reference/css/boards/Status.css,
+ * PhoneStatus.css, Idea.css and PhoneIdea.css on the app's tokens. Lane D's components (pill, track, buttons,
+ * avatars, status) keep their own look; this sheet lays them out. `.ip-desk` and `.ip-phone` hold what differs
+ * between the boards: the width shows one of them.
+ */
+.ip {
+  max-width: 1180px;
+}
+
+.ip-phone {
+  display: none;
+}
+
+.ip-fail {
+  margin-top: 24px;
+}
+
+.ip-back {
+  margin: 0 0 8px;
+  color: var(--ink2);
+  text-decoration: none;
+}
+
+.ip-back:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* PhoneStatus: the way back, then the reference, which copies itself */
+.ip-ptop {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+
+.ip-ptop .ip-back {
+  margin: 0;
+}
+
+.ip-copyref {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ip-copyref:hover {
+  color: var(--ink);
+}
+
+.ip-h2 {
+  margin: 0;
+  font: 500 22px/1.25 var(--fd);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ip-sec {
+  margin-top: 48px;
+}
+
+.ip-sec > .ip-h2 + * {
+  margin-top: 14px;
+}
+
+.ip-sub,
+.ip-mute {
+  color: var(--mute);
+}
+
+.ip-sub {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+}
+
+/* ---------- Breadcrumb (S-06.layout/1) ---------- */
+.ip-crumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14.5px;
+  color: var(--mute);
+}
+
+.ip-crumb li + li::before {
+  content: "/";
+  margin-right: 10px;
+  color: var(--mute);
+}
+
+.ip-crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink2);
+}
+
+.ip-crumb [aria-current] {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- The idea card: dark, the Wall's colours (S-06.layout/2) ---------- */
+.ip-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 16px;
+  padding: 24px 24px 26px 26px;
+  border-radius: 28px;
+  background: #18191d;
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 30px 60px -34px rgba(17, 17, 17, 0.75);
+}
+
+.ip-card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 560px;
+  height: 520px;
+  right: -180px;
+  bottom: -330px;
+  border-radius: 50%;
+  background: conic-gradient(from 210deg, #f35532, #ff9a6b, #f4744c, #ce4327, #f35532);
+  filter: blur(70px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ip-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 460px;
+  height: 320px;
+  left: -160px;
+  top: -200px;
+  border-radius: 50%;
+  background: #395ded;
+  filter: blur(80px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.ip-card :focus-visible {
+  outline-color: #8fa8ff;
+}
+
+.ip-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-height: 40px;
+}
+
+.ip-card .ip-card-top .pill {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.ip-card .ip-card-top .pill i {
+  background: #c4c4cc;
+}
+
+.ip-card .ip-card-top .pill.blue {
+  background: rgba(57, 93, 237, 0.28);
+  color: #d3dbff;
+}
+
+.ip-card .ip-card-top .pill.blue i {
+  background: #8fa8ff;
+}
+
+.ip-card .ip-card-top .pill.ok {
+  background: rgba(77, 209, 135, 0.18);
+  color: #8df3c1;
+}
+
+.ip-card .ip-card-top .pill.ok i {
+  background: #4dd187;
+}
+
+.ip-card .ip-card-top .pill.warn {
+  background: rgba(248, 179, 72, 0.18);
+  color: #ffd38a;
+}
+
+.ip-card .ip-card-top .pill.warn i {
+  background: #f8b348;
+}
+
+.ip-card .ip-card-top .pill.bad {
+  background: rgba(244, 103, 100, 0.2);
+  color: #ffb4ae;
+}
+
+.ip-card .ip-card-top .pill.bad i {
+  background: #ff6b6b;
+}
+
+.ip-card-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+.ip-card-date {
+  font-size: 14px;
+  color: #a9a9b2;
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-card-icon,
+.ip-card .ip-card-act.tb {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  color: #e4e4ea;
+  background: transparent;
+}
+
+.ip-card .ip-card-act.tb {
+  text-decoration-color: rgba(255, 255, 255, 0.45);
+}
+
+.ip-card-icon:hover,
+.ip-card .ip-card-act.tb:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.ip-card-title {
+  margin: 14px 0 0;
+  font: 500 clamp(28px, 3.4vw, 40px) / 1.12 var(--fd);
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.ip-card-ref {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #a9a9b2;
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-card-body {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ip-card-s {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: #b4b4be;
+}
+
+.ip-lead {
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.ip-card-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.ip-card .status {
+  margin-top: 14px;
+}
+
+/* Withdraw confirms in place on the card (S-06.rules/2, L-SUBMIT.withdraw) */
+.ip-confirm {
+  flex-basis: 100%;
+  margin-top: 14px;
+  padding: 20px 20px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.97);
+  color: var(--ink);
+  box-shadow: 0 18px 40px -26px rgba(0, 0, 0, 0.6);
+}
+
+.ip-card .ip-confirm :focus-visible {
+  outline-color: var(--blue);
+}
+
+.ip-confirm-h {
+  margin: 0;
+  font: 500 18px/1.3 var(--fd);
+}
+
+.ip-confirm-l {
+  margin: 6px 0 14px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.ip-confirm-lab {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ip-opt {
+  font-weight: 400;
+  color: var(--mute);
+}
+
+.ip-confirm textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  font: 400 15px/1.45 var(--ft);
+  color: var(--ink);
+  background: #ffffff;
+  resize: vertical;
+}
+
+.ip-confirm-a {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* The questions (C-QCARD) and the committee's card sit on the dark card as white cards */
+.ip-qcard,
+.ip-rcard {
+  padding: 18px 20px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.97);
+  color: var(--ink);
+}
+
+.ip-card .ip-qcard :focus-visible,
+.ip-card .ip-rcard :focus-visible {
+  outline-color: var(--blue);
+}
+
+.ip-q-by {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ip-q-by p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+.ip-q-h {
+  margin: 12px 0 0;
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.01em;
+}
+
+.ip-q-list {
+  margin: 12px 0 0;
+  padding-left: 22px;
+}
+
+.ip-q-list li + li {
+  margin-top: 12px;
+}
+
+.ip-q-t {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ip-q-part {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.ip-q-chip {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--blueT, #1e2e99);
+}
+
+.ip-q-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule2);
+}
+
+.ip-q-foot .btn {
+  margin-left: auto;
+}
+
+.ip-q-due {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
+.ip-quote {
+  margin: 12px 0 0;
+}
+
+.ip-quote blockquote {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+
+.ip-quote figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.ip-was {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
+.ip-was span {
+  color: var(--mute);
+}
+
+.ip-final {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* A merged idea shows where it went (L-MERGE.effects/1) */
+.ip-merged {
+  margin-top: 14px;
+}
+
+.ip-merged-l {
+  margin: 0;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.ip-merged-n {
+  margin: 6px 0 12px;
+  color: #b4b4be;
+}
+
+/* ---------- Where it is, and the window line hanging from it (S-06.layout/3-4) ---------- */
+.ip-window {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 760px;
+  margin-top: 24px;
+  padding: 14px 16px 14px 18px;
+  border-radius: 12px;
+  background: var(--wash);
+  box-shadow: inset 0 0 0 1px #d5ddff;
+}
+
+.ip-window p {
+  flex: 1;
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink2);
+}
+
+/* ---------- Two columns: what you shared; the conversation and similar ideas (S-06.layout/5-9) ---------- */
+.ip-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 427px;
+  gap: 48px;
+  align-items: start;
+}
+
+.ip-side {
+  display: grid;
+  gap: 16px;
+  margin-top: 48px;
+}
+
+.ip-side-card {
+  padding: 24px 26px;
+}
+
+.ip-side-l {
+  margin: 10px 0 16px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.ip-intro {
+  margin: 10px 0 0;
+  max-width: 64ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--mute2);
+}
+
+.ip-dl {
+  margin: 20px 0 0;
+  border-top: 1px solid var(--rule2);
+}
+
+.ip-dl-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 8px 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule2);
+}
+
+.ip-dl dt {
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.ip-dl dd {
+  margin: 0;
+}
+
+.ip-val {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.ip-fig {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
+.ip-rev {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--wash);
+}
+
+.ip-rev-by {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blueT, #1e2e99);
+}
+
+.ip-rev-note {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
+.ip-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ip-more {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 500 14.5px/1 var(--ft);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.ip-answers {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-answers li {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid #d5ddff;
+}
+
+.ip-ans-line {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+.ip-ans-text {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.ip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-chip-more {
+  min-height: 44px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ip-files {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+
+.ip-badge {
+  flex: none;
+  min-width: 40px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: var(--sunk);
+  font: 600 11px/1 var(--ft);
+  text-align: center;
+  color: var(--ink2);
+}
+
+.ip-file-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ip-file-n {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+}
+
+.ip-file-m {
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.ip-file-v {
+  display: inline-grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  color: var(--ink);
+}
+
+/* The decision's reason, word for word (V-ACC.track/6) */
+.ip-reason-q {
+  margin: 14px 0 0;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+
+.ip-reason-by {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+/* Similar ideas (C-SIMGRID) */
+.ip-tiles {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-tile {
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+
+.ip-tile-t {
+  margin: 0;
+  font: 500 16px/1.3 var(--fd);
+}
+
+.ip-tile-t a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.ip-tile-t a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ip-tile-m {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.ip-tile-r {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
+.ip-tile-crew {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: var(--mute2);
+}
+
+.ip-tile-a {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ip-faces {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-faces li + li {
+  margin-left: -8px;
+}
+
+/* Dialogs: the hidden details and the full fix (a bottom sheet on a phone) */
+.ip-dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 34px 70px -34px rgba(17, 17, 17, 0.38);
+}
+
+.ip-dialog::backdrop {
+  background: rgba(17, 17, 17, 0.32);
+}
+
+.ip-dialog-in {
+  padding: 20px 22px 24px;
+}
+
+.ip-dialog-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ip-x {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink2);
+  cursor: pointer;
+}
+
+.ip-x:hover {
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.ip-hidden-all {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- S-09, a colleague's idea ---------- */
+.ip-head {
+  margin-top: 8px;
+}
+
+.ip-head .pill {
+  margin-top: 8px;
+}
+
+.ip-title {
+  margin: 12px 0 0;
+  font: 500 clamp(30px, 3.6vw, 44px) / 1.1 var(--fd);
+  letter-spacing: -0.03em;
+}
+
+.ip-ref {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-meta {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--mute2);
+}
+
+.ip-col-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-areas:
+    "problem team"
+    "where where"
+    "about .";
+  gap: 0 48px;
+  align-items: start;
+}
+
+.ip-problem {
+  grid-area: problem;
+}
+
+.ip-col .ip-where {
+  grid-area: where;
+}
+
+.ip-about {
+  grid-area: about;
+}
+
+.ip-team {
+  grid-area: team;
+  padding: 24px 26px;
+}
+
+.ip-summary {
+  margin: 0;
+  max-width: 66ch;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.ip-note {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.ip-team-count {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink2);
+}
+
+.ip-team .ip-faces {
+  margin-top: 14px;
+}
+
+/* "Waiting for Ravi" with Withdraw beside it (Idea.md, teamUp=Request sent) */
+.ip-team-wait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 14px 0 0;
+}
+
+.ip-team-wait p {
+  margin: 0;
+  font-weight: 500;
+}
+
+.ip-team-err {
+  margin-top: 12px;
+}
+
+/* "You and the review desk" with Open the conversation beside it (Status.md, PhoneStatus.md) */
+.ip-conv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.ip-team-line {
+  margin: 14px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.ip-team-line.ip-ok {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ip-dock {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.ip-closed {
+  margin: 24px 0 0;
+  font-size: 16px;
+  color: var(--ink2);
+}
+
+/* ---------- Narrower desktop: one column ---------- */
+@media (max-width: 1100px) {
+  .ip-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .ip-col-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "problem"
+      "team"
+      "where"
+      "about";
+  }
+
+  .ip-team {
+    margin-top: 32px;
+  }
+}
+
+/* ---------- Phone (PhoneStatus, PhoneIdea): one column, the same order; the track is vertical ---------- */
+@media (max-width: 640px) {
+  .ip-desk {
+    display: none;
+  }
+
+  .ip-phone {
+    display: revert;
+  }
+
+  .ip-ptop.ip-phone {
+    display: flex;
+  }
+
+  .ip-crumb.ip-desk {
+    display: none;
+  }
+
+  .ip-card {
+    padding: 18px 18px 20px;
+    border-radius: 20px;
+  }
+
+  .ip-card::before {
+    width: 340px;
+    height: 320px;
+    right: -140px;
+    bottom: -200px;
+  }
+
+  .ip-card::after {
+    width: 300px;
+    height: 240px;
+    left: -120px;
+    top: -150px;
+  }
+
+  .ip-sec {
+    margin-top: 32px;
+  }
+
+  .ip-window {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .ip-dl-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .ip-side {
+    margin-top: 32px;
+  }
+
+  .ip-side-card,
+  .ip-team {
+    padding: 20px;
+  }
+
+  .ip-desk-h {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ip-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    margin: auto 0 0;
+    border-radius: 20px 20px 0 0;
+  }
+}

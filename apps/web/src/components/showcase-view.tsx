@@ -1,6 +1,7 @@
 /**
  * The Showcase brief (DEC-086): 30 minutes per One in a fixed seven-part format. Each part shows the One's own
- * words if they wrote them, else what their record says. The committee reads it before the Showcase.
+ * words if they wrote them, else what their record says. The One writes it in the sheet on S-ONE
+ * (app/one/showcase-sheet.tsx, BLD-E042); the committee reads and prints it at `/ones/showcase/:id`.
  */
 import { measureList } from "@/lib/measures";
 import type { ShowcaseBrief } from "@/server/ones";
@@ -29,6 +30,7 @@ export function recordText(brief: ShowcaseBrief, key: string, fromRecord: string
   return fromRecord;
 }
 
+/** The printable brief the committee reads at `/ones/showcase/:id` (mapping/screens.md: keep as admin-only). */
 export function ShowcaseView({ brief }: { brief: ShowcaseBrief }) {
   return (
     <ol className="showcase-parts">

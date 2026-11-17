@@ -117,6 +117,8 @@ log_rules:
   allowed_field_names: [reason_code, reason_codes]   # codes from rules/reason-codes.md, never free text
   # Values that cannot be personal data and are skipped by the value scan: commit and file hashes (32+ hex
   # characters with at least one letter, so a bare number never qualifies), row UUIDs (a random UUID can hold a
-  # digit run that looks like a phone or account number), the same UUID as an actor (`user:<uuid>`, BLD-A183) and the
-  # platform's coded IDs.
-  safe_value_regex: '^(?:(?=[0-9a-f]*[a-f])[0-9a-f]{32,64}|(?:user:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:IDEA|SUB|ATT)-[0-9]{4}-[0-9]{6}|CTR-[0-9a-f]{6,8}|REV-[0-9]{4}|(?:CL|SOL|WG)-[0-9]{4}|(?:DEC|HO|APL)-[0-9]{4}-[0-9]{4}|TH-[0-9]{3})$'
+  # digit run that looks like a phone or account number), the same UUID as an actor (`user:<uuid>`, BLD-A183) or
+  # as a draft or idea scope (`DRAFT-<uuid>`, `IDEA-<uuid>`, in lower or upper case, BLD-A189) and the platform's
+  # coded IDs. Only the whole value is exempt: an ID with anything beside it is still scanned. The detection
+  # patterns above are not changed by this list; it is read by the log policy only.
+  safe_value_regex: '^(?:(?=[0-9a-f]*[a-f])[0-9a-f]{32,64}|(?:user:|DRAFT-|IDEA-)?(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})|(?:IDEA|SUB|ATT)-[0-9]{4}-[0-9]{6}|CTR-[0-9a-f]{6,8}|REV-[0-9]{4}|(?:CL|SOL|WG)-[0-9]{4}|(?:DEC|HO|APL)-[0-9]{4}-[0-9]{4}|TH-[0-9]{3})$'

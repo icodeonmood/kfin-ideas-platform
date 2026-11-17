@@ -1,63 +1,143 @@
 /**
- * AT-B2-06: navigation shows: everyone — Share an idea, My ideas, Wall, Messages (B6); review desk — plus Review; core
- * committee — plus Committee (Desk decisions while the committee flow is paused, BLD-227), Ones, Delivery and
- * Lenses; admin — plus Ones, Delivery, Lenses and Admin (the Ones console, DEC-040; delivery and lenses, BLD-115 to
- * BLD-122).
- * AT-B2-07: axe reports no serious or critical issues on the shell pages; every navigation item works by
- * keyboard with a visible focus ring.
+ * The signed-in shell (C-SIDEBAR, C-PHONE-TABS; AT-B2-06, AT-B2-07). On desktop the sidebar shows "Share a problem",
+ * Home, Wall and Inbox for everyone, plus Review desk for a reviewer and Ones Committee for the committee (S-R4, and the core committee until Monday); the
+ * account menu holds the account links for the person's roles, the P shortcut and Sign out. On a phone the tab bar is
+ * Home, My ideas, Share, Wall and Inbox for everyone. axe reports no serious or critical issues on the shell pages;
+ * every item works by keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { Client } from "pg";
 
-import { expectNoSeriousAxeIssues, navLabels, PERSONAS, signIn, switchIsOn } from "./helpers";
+import {
+  expectNoSeriousAxeIssues,
+  navLabels,
+  openAccountMenu,
+  PERSONAS,
+  PHONE_TABS,
+  signIn,
+} from "./helpers";
 
-const BASE = ["Share an idea", "My ideas", "Wall", "Messages"];
+const BASE = ["Share a problem", "Home", "Wall", "Inbox"];
+const isPhone = (info: TestInfo) => info.project.name === "phone-360";
 
-test.describe("navigation by role (AT-B2-06)", () => {
-  // The core committee's second item follows the committee flow switch (BLD-227); it is on from day one (DEC-088).
-  const deskOrCommittee = async () => ((await switchIsOn("committee.flow")) ? "Committee" : "Desk decisions");
-  const cases: Array<[keyof typeof PERSONAS, () => Promise<string[]>]> = [
-    ["contributor", async () => BASE],
-    ["reviewer", async () => [...BASE, "Review"]],
-    ["core", async () => [...BASE, await deskOrCommittee(), "Ones", "Delivery", "Lenses"]],
-    ["admin", async () => [...BASE, "Ones", "Delivery", "Lenses", "Admin"]],
+test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => {
+  const cases: Array<[keyof typeof PERSONAS, string[]]> = [
+    ["contributor", BASE],
+    ["reviewer", [...BASE, "Review desk"]],
+    ["core", [...BASE, "Ones Committee"]], // committee_window until the old roles go on Monday (BLD-B238)
+    ["admin", BASE],
   ];
-  // Another spec may flip the committee flow while this runs, and the menu reads switches through a 10-second cache:
-  // compare the page and the database again (with a reload) until they agree.
   for (const [persona, expected] of cases) {
-    test(`${persona} sees the menu for their roles`, async ({ page }) => {
+    test(`C-SIDEBAR.anatomy: ${persona} sees the items for their roles`, async ({ page }, info) => {
       await signIn(page, PERSONAS[persona]);
-      await expect(async () => {
-        await page.reload();
-        expect(await navLabels(page)).toEqual(await expected());
-      }).toPass({ timeout: 20_000, intervals: [1_000, 2_000, 5_000] });
+      expect(await navLabels(page)).toEqual(isPhone(info) ? PHONE_TABS : expected);
     });
   }
+
+  test("C-SIDEBAR.rules/1: the current page is marked, and Home only on its own path", async ({ page }) => {
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/wall");
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await expect(nav.getByRole("link", { name: "Wall", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(nav.getByRole("link", { name: "Home", exact: true })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  test("S-H6.rules/3: the account menu holds the role's links, the P shortcut and Sign out", async ({
+    page,
+  }) => {
+    await signIn(page, PERSONAS.admin);
+    await openAccountMenu(page);
+    await expect(page.getByRole("link", { name: "Admin" })).toHaveAttribute("href", "/admin");
+    await expect(page.getByRole("link", { name: "Delivery" })).toBeVisible();
+    const shortcut = page.getByRole("switch", { name: "The P shortcut" });
+    await expect(shortcut).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /^Your account, / })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
+  });
+
+  test("C-SIDEBAR.fold: the sidebar folds to icons, names each icon, and remembers", async ({
+    page,
+  }, info) => {
+    test.skip(isPhone(info), "the sidebar is a desktop control");
+    await signIn(page, PERSONAS.contributor);
+    await page.getByRole("button", { name: "Fold the side bar" }).click();
+    const open = page.getByRole("button", { name: "Open the side bar" });
+    await expect(open).toHaveAttribute("aria-expanded", "false");
+    // Folded, My ideas joins the icons and every item keeps its name for a screen reader.
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My ideas" }),
+    ).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    await page.reload();
+    await expect(open).toBeVisible();
+    await open.click();
+    await expect(page.getByRole("button", { name: "Fold the side bar" })).toBeVisible();
+  });
+
+  test("F-A11Y.shortcuts: P opens Share a problem, but not while typing", async ({ page }, info) => {
+    test.skip(isPhone(info), "the P shortcut is for a keyboard at a desk");
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/wall");
+    // The shortcut listens once the page has hydrated; press again until it has.
+    await expect(async () => {
+      await page.keyboard.press("p");
+      await page.waitForURL((url) => url.pathname === "/share", { timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+  });
+
+  test("C-PHONE-TABS, F-SPACE.shell: a phone gives the page its full width whatever the saved fold", async ({
+    page,
+  }, info) => {
+    test.skip(!isPhone(info), "the sidebar's width applies on a desk");
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/wall");
+    const main = page.locator("main#main");
+    // "auto" is the first visit (no choice yet); "folded" and "open" are a choice saved on a desk.
+    for (const fold of ["auto", "folded", "open"]) {
+      await page.evaluate((f) => document.documentElement.setAttribute("data-fold", f), fold);
+      await expect
+        .poll(async () => (await main.boundingBox())?.x ?? Infinity, {
+          message: `main's left edge, fold ${fold}`,
+        })
+        .toBeLessThanOrEqual(24);
+    }
+  });
 });
 
-test("every navigation item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {
-  await signIn(page, PERSONAS.admin);
-  const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
-  // The admin sees every item but Review and Desk decisions: the four for everyone, the Ones console, Delivery,
-  // Lenses and Admin.
-  expect(await navLabels(page)).toEqual([...BASE, "Ones", "Delivery", "Lenses", "Admin"]);
-  await expect(links.filter({ hasText: "Ones" })).toHaveAttribute("href", "/ones/console");
-  const count = await links.count();
-  expect(count).toBe(8);
-  for (let i = 0; i < count; i++) {
+async function tabTo(page: Page, target: ReturnType<Page["locator"]>) {
+  await page.locator("body").press("Tab");
+  for (
+    let presses = 0;
+    presses < 80 && !(await target.evaluate((el) => el === document.activeElement));
+    presses++
+  ) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+}
+
+test("every shell item works by keyboard with a visible focus ring (AT-B2-07)", async ({ page }) => {
+  test.setTimeout(90_000);
+  await signIn(page, PERSONAS.reviewer);
+  const items = page.getByRole("navigation", { name: "Main" }).locator(":is(.sb-new, .sb-i, .ptab):visible");
+  const hrefs = await items.evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""));
+  expect(hrefs.length).toBeGreaterThanOrEqual(5);
+  for (const href of hrefs) {
     await page.goto("/");
-    const target = links.nth(i);
-    const href = await target.getAttribute("href");
-    // Tab from the top of the page until this link has focus: proves it is reachable in order.
-    await page.locator("body").press("Tab");
-    for (
-      let presses = 0;
-      presses < 16 && !(await target.evaluate((el) => el === document.activeElement));
-      presses++
-    ) {
-      await page.keyboard.press("Tab");
-    }
-    await expect(target).toBeFocused();
+    const target = page
+      .getByRole("navigation", { name: "Main" })
+      .locator(`:is(.sb-new, .sb-i, .ptab)[href="${href}"]`);
+    await tabTo(page, target);
     const ring = await target.evaluate((el) => {
       const s = getComputedStyle(el);
       return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
@@ -67,17 +147,19 @@ test("every navigation item works by keyboard with a visible focus ring (AT-B2-0
     await page.keyboard.press("Enter");
     await page.waitForURL((url) => url.pathname === href);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(
-      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: await target.innerText() }),
-    ).toHaveAttribute("aria-current", "page");
+    // A task screen on a phone swaps the tab bar for its dock; everywhere else the item is marked current.
+    const after = page
+      .getByRole("navigation", { name: "Main" })
+      .locator(`:is(.sb-new, .sb-i, .ptab)[href="${href}"]:visible`);
+    if (await after.count()) await expect(after).toHaveAttribute("aria-current", "page");
   }
 });
 
 test.describe("axe on the shell pages (AT-B2-07)", () => {
   const pages: Array<[keyof typeof PERSONAS, string[]]> = [
-    ["contributor", ["/", "/share", "/my-ideas", "/wall"]],
-    ["reviewer", ["/review"]],
-    ["core", ["/committee"]],
+    ["contributor", ["/", "/share", "/my-ideas", "/wall", "/inbox"]],
+    ["reviewer", ["/desk"]], // S-R1; S-R4 has its axe run in review-desk.spec.ts with the committee role
+    ["core", ["/desk", "/committee"]],
     ["admin", ["/admin"]],
   ];
   for (const [persona, paths] of pages) {
@@ -123,7 +205,54 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   await expectNoSeriousAxeIssues(page);
   await page.getByRole("button", { name: /I have read this/ }).click();
   await page.waitForURL((url) => url.pathname === "/");
-  expect(await navLabels(page)).toEqual(BASE);
+  expect(await navLabels(page)).toEqual(isPhone(test.info()) ? PHONE_TABS : BASE);
+});
+
+// S-R4, A9: the pack's committee persona (manoj in the journeys' seed). `make seed`, all CI loads, has no SYN-10004 at
+// all, and the mock IdP sends no email without claims, so a bare sign-in was refused (no_email) and the page sent the
+// test to sign in. The claims are the 1pc seed's own for Manoj (club_seed.py), so the same person signs in either
+// way: the seed's row, found by employee ID, or one made on this first sign-in. The role is given for the test and
+// taken back after it (grants are read on every request). The 1pc seed already gives SYN-10004 `committee` for
+// J-COMMITTEE, so only a grant this test inserted is taken back: the insert returns its id, and `finally` deletes that
+// one row, never the seed's. Desktop only: on a phone the role items live in the account menu.
+test("S-R4, J-COMMITTEE/1: the committee role sees Ones Committee in the sidebar, and its page passes axe (C-SIDEBAR.anatomy)", async ({
+  page,
+}, info) => {
+  test.skip(isPhone(info), "the sidebar is desktop's");
+  const DATABASE_URL =
+    process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
+  const run = async (sql: string, params: unknown[]): Promise<Array<{ id: string }>> => {
+    const c = new Client({ connectionString: DATABASE_URL });
+    await c.connect();
+    try {
+      return (await c.query<{ id: string }>(sql, params)).rows;
+    } finally {
+      await c.end();
+    }
+  };
+  await signIn(page, "SYN-10004", {
+    employeeId: "SYN-10004",
+    email: "manoj.agarwal.1pc@kfintech.example",
+    name: "Manoj Agarwal",
+  });
+  const meRes = await page.request.get("/api/me");
+  expect(meRes.ok(), "SYN-10004 is signed in").toBe(true);
+  const me = (await meRes.json()) as { email: string };
+  const added = await run(
+    "INSERT INTO role_grants (user_id, role) SELECT u.id, 'committee' FROM users u WHERE u.email = $1 AND NOT " +
+      "EXISTS (SELECT 1 FROM role_grants g WHERE g.user_id = u.id AND g.role = 'committee' AND g.valid_to IS NULL) " +
+      "RETURNING id::text AS id",
+    [me.email],
+  );
+  try {
+    await page.goto("/committee");
+    await expect(page.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
+    expect(await navLabels(page)).toEqual([...BASE, "Ones Committee"]);
+    await expectNoSeriousAxeIssues(page);
+  } finally {
+    const mine = added[0];
+    if (mine) await run("DELETE FROM role_grants WHERE id = $1::bigint", [mine.id]);
+  }
 });
 
 test("people without the role are sent home from Review and Admin", async ({ page }) => {
@@ -156,6 +285,7 @@ test("an admin can switch a feature off and on with a reason, and it is shown as
 
 test("sign out ends the session", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
+  await openAccountMenu(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   // S-01 Landing (BLD-A179). Signed in, "/" is Home, so wait for Landing's own heading, not the address.
   await expect(

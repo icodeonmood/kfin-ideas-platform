@@ -427,8 +427,8 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
     return data
 
 
-def _one_display(number: Any, name: str | None, consent: bool) -> str:
-    return f"No. {number}, {name}" if consent and name else f"One No. {number}"
+def _one_display(number: Any, name: str | None, shown: bool) -> str:
+    return f"No. {number}, {name}" if shown and name else f"One No. {number}"
 
 
 # The "Your number" block shows only to the One it belongs to, and only when the number is the news (Ember review):
@@ -440,7 +440,8 @@ def _ones_variables(
     conn: Conn, data: dict[str, Any], event: str, refs: dict[str, Any], base: str, user_id: str
 ) -> None:
     """Variables for the Ones messages (DEC-034 to DEC-087). Reasons and messages are read back from their sealed
-    rows only for the One they concern; the org-wide announcement names a One only with their consent."""
+    rows only for the One they concern; the org-wide announcement names a One unless they hid their name
+    (person_settings.show_name_on_wall, shown when there is no row: DEC-104, P-PRODUCT.privacy)."""
     from ones.text import unseal
     from ones.tiers import tier_name
 
@@ -454,8 +455,8 @@ def _ones_variables(
     one_id = refs.get("one_id") or (proposal["one_id"] if proposal else None)
     if one_id:
         one = conn.execute(
-            "SELECT o.*, u.name, coalesce(p.public_name_consent, false) AS consent FROM ones o "
-            "JOIN users u ON u.id = o.user_id LEFT JOIN comms_prefs p ON p.user_id = o.user_id WHERE o.id = %s",
+            "SELECT o.*, u.name, coalesce(s.show_name_on_wall, true) AS shown FROM ones o "  # DEC-104
+            "JOIN users u ON u.id = o.user_id LEFT JOIN person_settings s ON s.user_id = o.user_id WHERE o.id = %s",
             (one_id,),
         ).fetchone()
         if one:
@@ -471,7 +472,7 @@ def _ones_variables(
                 "swap_until": _date(one["swap_until"]),
                 "tier": int(one["tier"]),
                 "tier_name": tier_name(one["tier"]),
-                "display": _one_display(number, one["name"], one["consent"]),
+                "display": _one_display(number, one["name"], one["shown"]),
                 "show_number": event in YOUR_NUMBER_EVENTS and str(one["user_id"]) == str(user_id),
             }
     if event == "ones.removed" and proposal:
@@ -518,8 +519,8 @@ def _ones_variables(
         ids = [int(i) for i in refs.get("one_ids") or []]
         rows = conn.execute(
             "SELECT o.id, o.number, o.brief_encrypted, o.brief_approved_at, u.name, "
-            "coalesce(p.public_name_consent, false) AS consent FROM ones o JOIN users u ON u.id = o.user_id "
-            "LEFT JOIN comms_prefs p ON p.user_id = o.user_id WHERE o.id = ANY(%s) AND o.status = 'active' "
+            "coalesce(s.show_name_on_wall, true) AS shown FROM ones o JOIN users u ON u.id = o.user_id "  # DEC-104
+            "LEFT JOIN person_settings s ON s.user_id = o.user_id WHERE o.id = ANY(%s) AND o.status = 'active' "
             "ORDER BY o.number",
             (ids,),
         ).fetchall()
@@ -529,7 +530,7 @@ def _ones_variables(
             brief = checked_summary(
                 conn, brief
             )  # no colleague or client named in an org-wide email (BLD-111)
-            who = _one_display(r["number"], r["name"], r["consent"])
+            who = _one_display(r["number"], r["name"], r["shown"])
             lines.append(f"{who}." + (f" {brief}" if brief else ""))
         data["ones"] = {
             "count": len(lines),

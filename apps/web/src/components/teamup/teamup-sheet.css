@@ -1,0 +1,339 @@
+/*
+ * C-SHEET-TEAMUP: the team-up request sheet (lane F, BLD-F070).
+ *
+ * Values from the pack (reference/css/team-up-sheet.css, `.tusheet` and `.rq`); colours, type, radii, shadows and
+ * motion from lane D's OFFER tokens (tokens.css, foundation.css; DEC-101: ink on paper, one blue, black buttons, no
+ * glass). The field, the dropdown, the buttons and the messages are lane D's own (C-FIELD, C-DROPDOWN, C-BUTTON,
+ * C-FIELD-MSG); everything here is scoped under `.tus-wrap`.
+ */
+.tus-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sheet, 41);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.tus-back {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim-sheet, rgba(17, 17, 17, 0.32));
+  animation: tusFade var(--mo-state, 260ms) var(--mo-out) both;
+}
+
+.tus {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 22px 24px 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-sheet);
+  color: var(--ink);
+  font-family: var(--ft);
+  text-align: left;
+  animation: tusIn 340ms var(--mo-out) both;
+}
+
+.tus:focus {
+  outline: none;
+}
+
+.tus-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+}
+
+.tus-pair {
+  display: flex;
+}
+
+.tus-pair .av + .av {
+  margin-left: -10px;
+}
+
+.tus-x {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.tus-x:hover {
+  background: var(--softHover);
+  color: var(--ink);
+}
+
+.tus-x:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.tus-h {
+  margin: 12px 0 0;
+  font: 500 26px/1.15 var(--fd);
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.tus-p {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.tus-sec {
+  margin-top: 18px;
+}
+
+.tus-sk {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Check it: the draft's single choice (L-MERGE.request/1) */
+.tus-choice {
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.tus-choice legend {
+  padding: 0;
+}
+
+.tus-o {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 52px;
+  margin-top: 6px;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  cursor: pointer;
+  transition:
+    box-shadow var(--mo-quick) ease,
+    background-color var(--mo-quick) ease;
+}
+
+.tus-o:hover {
+  box-shadow: inset 0 0 0 1px var(--fieldBorder);
+}
+
+.tus-o:has(input:checked) {
+  background: var(--wash);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+
+.tus-o:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.tus-o input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--blue);
+}
+
+.tus-ot {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tus-on {
+  font: 500 14.5px/1.35 var(--ft);
+  color: var(--ink);
+}
+
+.tus-om {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+.tus-priv {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+.tus-f {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.tus-f .btn-primary {
+  min-width: 150px;
+}
+
+/* Step 2: sent (C-SHEET-TEAMUP.sent) */
+.tus.sent {
+  align-items: center;
+  text-align: center;
+}
+
+.tus.sent .tus-top {
+  align-self: stretch;
+}
+
+.tus-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.tus-ok {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-md);
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.tus.sent .tus-p {
+  max-width: 38ch;
+}
+
+.tus-sum {
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  text-align: left;
+}
+
+.tus-l {
+  margin: 0 0 6px;
+  font: 500 13px/1.3 var(--ft);
+  color: var(--mute);
+}
+
+.tus-q {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tus-sb {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  font: 500 13.5px/1.35 var(--ft);
+  color: var(--blueT);
+}
+
+.tus-sb svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.tus.sent .tus-f {
+  width: 100%;
+  justify-content: center;
+}
+
+.tus .fmsg {
+  margin-top: 12px;
+}
+
+/* Phone: a bottom sheet (C-SHEET-TEAMUP.compose, "bottom sheet on phone") */
+@media (max-width: 640px) {
+  .tus-wrap {
+    align-items: end;
+    padding: 0;
+  }
+
+  .tus {
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    padding: 14px 20px 28px;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    animation-name: tusUp;
+  }
+
+  .tus::before {
+    content: "";
+    display: block;
+    flex: none;
+    width: 40px;
+    height: 5px;
+    margin: 0 auto 10px;
+    border-radius: var(--r-pill);
+    background: var(--rule);
+  }
+
+  .tus-h {
+    font-size: 23px;
+  }
+
+  .tus-f .btn {
+    flex: 1;
+  }
+}
+
+@keyframes tusFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tusIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+
+@keyframes tusUp {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tus,
+  .tus-back {
+    animation: none;
+  }
+}
