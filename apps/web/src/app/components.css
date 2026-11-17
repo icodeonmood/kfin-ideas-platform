@@ -1196,6 +1196,14 @@ textarea:is(.fld, .textarea) {
   font-size: 13px;
 }
 
+.dd-e {
+  margin: 0;
+  padding: 10px;
+  color: var(--mute);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
 /* ---------- C-FILE: rows and the drop area ---------- */
 .flist {
   display: grid;
