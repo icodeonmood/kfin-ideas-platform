@@ -122,11 +122,15 @@ test("S-02.states Session expired mid-draft, L-AUTH.rules/4,5: sign in again and
   expect(new URL(page.url()).pathname).toBe(draft);
 });
 
-test("signed out of the app, the shell's sign-out leaves no expired-draft state behind", async ({ page }) => {
+test("S-01, BLD-A179: the shell's sign-out lands on Landing and leaves no expired-draft state behind", async ({
+  page,
+}) => {
   await signIn(page, PERSONAS.contributor);
   await page.getByRole("button", { name: "Sign out" }).click();
-  await page.waitForURL(/\/signed-out/);
-  await expect(page.getByRole("heading", { level: 1, name: "You have signed out" })).toBeVisible();
+  // Signed in, "/" is Home, so Landing's own heading is the sign that the person is out.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Every fix starts with someone who noticed." }),
+  ).toBeVisible();
   await page.goto(`/sign-in?next=${encodeURIComponent(`/share/${randomUUID()}`)}`);
   await expect(page.getByRole("heading", { level: 1, name: "Sign in to 1% Club" })).toBeVisible();
   await expectNoSeriousAxeIssues(page);

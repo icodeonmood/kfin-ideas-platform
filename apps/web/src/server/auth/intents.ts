@@ -45,7 +45,7 @@ export const isDraftStep = (value: unknown): value is string => isEnumValue("dra
 export function cleanIntent(input: { to?: unknown; draftId?: unknown; step?: unknown }): Intent {
   let to = safeNext(typeof input.to === "string" ? input.to : null);
   // Never back to a sign-in page or route: that would loop.
-  if (/^\/(?:sign-in|signed-out|auth)(?:[/?#]|$)/.test(to)) to = "/";
+  if (/^\/(?:sign-in|auth)(?:[/?#]|$)/.test(to)) to = "/";
   const fromPath = draftFromPath(to);
   const draftId =
     typeof input.draftId === "string" && DRAFT_ID.test(input.draftId)
