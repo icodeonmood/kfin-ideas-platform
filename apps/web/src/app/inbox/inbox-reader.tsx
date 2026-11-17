@@ -143,18 +143,23 @@ function isSet(data: unknown): data is QuestionSet {
 }
 
 /** The words that belong to the item, from the route that owns them (lane B's open question set and decision).
- * Missing or refused: the reader shows the item's own note. The question set is read only while the item needs the
- * person: the first read marks it seen for the desk (L-QUESTIONS.clock/1), and a later set is its own item. */
-async function fetchDetail(item: InboxEntry): Promise<Detail> {
+ * Missing or refused: the reader shows the item's own note. The first read of a question set marks it seen for the
+ * desk (L-QUESTIONS.clock/1), so it is read only when the person has the item open (`readOn`: not while a phone
+ * hydrates the server's desktop layout), only while the item needs them, and only for the item's own set: the route
+ * gets its `set_id` and answers 404, marking nothing, when the open set is another (BLD-B248). */
+async function fetchDetail(item: InboxEntry, readOn: boolean): Promise<Detail> {
   const ref = item.idea?.id;
   if (!ref || !/^IDEA-\d{4}-\d{6}$/.test(ref)) return null;
   try {
-    if ((item.kind === "questions" || item.kind === "answer_reminder") && item.needs_you) {
-      const res = await fetch(`/api/ideas/${ref}/question-set`, { cache: "no-store" });
+    if (item.kind === "questions" || item.kind === "answer_reminder") {
+      const setId = typeof item.body.set_id === "string" ? item.body.set_id : "";
+      if (!readOn || !item.needs_you || !setId) return null;
+      const res = await fetch(`/api/ideas/${ref}/question-set?set_id=${encodeURIComponent(setId)}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return null;
       const set: unknown = await res.json();
-      if (!isSet(set) || (item.body.set_id && set.id !== item.body.set_id)) return null;
-      return { kind: "questions", set };
+      return isSet(set) && set.id === setId ? { kind: "questions", set } : null;
     }
     if (item.kind === "decision") {
       const res = await fetch(`/api/ideas/${ref}/decision`, { cache: "no-store" });
@@ -279,6 +284,7 @@ function OpenItem({
   item,
   now,
   phone,
+  phoneOpen,
   notice,
   busy,
   titleRef,
@@ -289,6 +295,7 @@ function OpenItem({
   item: InboxEntry;
   now: Date;
   phone: boolean;
+  phoneOpen: boolean;
   notice: string;
   busy: boolean;
   titleRef: RefObject<HTMLHeadingElement | null>;
@@ -299,7 +306,9 @@ function OpenItem({
   const [detail, setDetail] = useState<Detail>(null);
   useEffect(() => {
     let live = true;
-    void fetchDetail(item).then((d) => live && setDetail(d));
+    // As the mark-read effect: on a phone an item is open only once the person opens it
+    const readOn = phoneOpen || window.matchMedia(DESKTOP).matches;
+    void fetchDetail(item, readOn).then((d) => live && setDetail(d));
     return () => {
       live = false;
     };
@@ -723,6 +732,7 @@ export function InboxReader({
               item={open}
               now={now}
               phone={!desktop}
+              phoneOpen={phoneOpen}
               notice={notice}
               busy={busy}
               titleRef={titleRef}

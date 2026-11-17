@@ -42,8 +42,9 @@ export async function putAnswer(questionId: string, text: string): Promise<SaveR
   };
 }
 
-/** After the answers send: they leave "Needs you" (L-INBOX.rules/3), so every Inbox count is read again and the
- * shell hears it on the reader's COUNTS_EVENT, as it does when the reader opens or answers an item (V-ACC.track/8).
+/** After the answers send: the item leaves "Needs you" (L-INBOX.rules/3), so every Inbox count is read again and
+ * sent on the reader's COUNTS_EVENT, as the reader does when it opens or answers an item (V-ACC.track/8). The
+ * sidebar shows unread, which sending does not change; its listener keeps it in step with the counts all the same.
  * Never throws; a count that cannot be read waits for the next page. */
 export async function tellInboxCounts(): Promise<void> {
   try {
