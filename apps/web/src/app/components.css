@@ -1741,6 +1741,11 @@ button.opost-cheer[aria-pressed="true"] {
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* Pressed is more than a lighter fill: the flame fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
+button.opost-cheer[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
 .opost-n {
   margin-left: 8px;
   color: rgba(255, 255, 255, 0.8);

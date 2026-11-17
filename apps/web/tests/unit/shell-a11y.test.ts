@@ -6,7 +6,19 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+
+import { OnesPost } from "@/components/ui/ones-fan";
+
+vi.mock("next/link", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: (p: { href: string; className?: string; children?: unknown }) =>
+      h("a", { href: p.href, className: p.className }, p.children as never),
+  };
+});
 
 const APP = fileURLToPath(new URL("../../src/app/", import.meta.url));
 const read = (sheet: string) => readFileSync(`${APP}${sheet}`, "utf8");
@@ -127,5 +139,45 @@ describe("F-A11Y.rules/2: the question box shows the focus ring every field has"
     expect(read("offer.css")).toMatch(/:root[^{]*\{[^}]*--focus:\s*var\(--blue\)/);
     expect(contrast(token("--blue"), "#ffffff")).toBeGreaterThanOrEqual(3);
     expect(contrast(token("--blue"), token("--paper"))).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("C-ONES-FAN.card: the cheer toggle is never colour alone (F-A11Y.rules/4)", () => {
+  const post = (cheered: boolean) =>
+    renderToStaticMarkup(
+      createElement(OnesPost, {
+        name: "Farhan Nair",
+        initials: "FN",
+        number: 17,
+        tier: 3,
+        tierName: "Flame",
+        ago: "2d",
+        sentence: "Courier tracking for physical redemption forms now updates on its own.",
+        figure: "1,240",
+        unit: "calls avoided last quarter",
+        cheers: 156,
+        cheered,
+        onCheer: () => undefined,
+        replies: 12,
+        threadHref: "/ideas/IDEA-2026-000301/conversation",
+      }),
+    );
+
+  it("pressed, the flame fills in; unpressed, it is an outline. No motion on it (DEC-109)", () => {
+    const pressed = style("components.css", 'button.opost-cheer[aria-pressed="true"] svg');
+    expect(pressed.get("fill")).toBe("currentColor");
+    expect([...pressed.keys()].some((k) => k.startsWith("animation") || k.startsWith("transition"))).toBe(
+      false,
+    );
+    expect(post(true)).toMatch(
+      /<button[^>]*class="opost-cheer"[^>]*aria-pressed="true"[^>]*>.*?<svg[^>]*fill="none"/,
+    );
+    expect(post(false)).toMatch(/<button[^>]*class="opost-cheer"[^>]*aria-pressed="false"/);
+  });
+
+  it("keeps its 44px target", () => {
+    const cheer = style("components.css", ".opost-cheer");
+    expect(cheer.get("min-width")).toBe("44px");
+    expect(cheer.get("min-height")).toBe("44px");
   });
 });
