@@ -23,7 +23,7 @@ import type {
   WallIdea,
 } from "@/lib/contracts/api";
 import type { Kind, WallSort } from "@/lib/contracts/enums";
-import { flip } from "@/lib/motion/flip";
+import { flip, reducedMotion } from "@/lib/motion/flip";
 
 import { DESK_STEP, PHONE_STEP, wallHref, type Part, type WallData, type WallState } from "./state";
 
@@ -58,6 +58,10 @@ function moreLabel(total: number, shown: number, step: number): string | null {
 }
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
+
+/** A row's id on the page and in the address's `at`: the same idea can sit in Kindling and in Impact, so each
+ * section prefixes its own ("kin-IDEA-2026-000123"); the way back finds the row in the section it was opened from. */
+const rowId = (section: "kin" | "jin" | "imp", id: string) => `${section}-${id}`;
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
@@ -116,9 +120,12 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
     return `/api/wall/just-in?${q.toString()}`;
   };
 
+  // A change that cannot load puts the chip, the sort and the address back to the view still on screen, so the
+  // same choice can be made again to try again (S-WALL error state)
   const pickKind = async (value: string) => {
     const kind = value as Kind | "all";
     if (kind === st.kind) return;
+    const was = st;
     const next = { ...st, kind, more: 0 };
     setSt(next);
     const n = ++asked.current;
@@ -134,17 +141,26 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
       setJin({ ok: true, data: j });
       setFailed(false);
     } catch {
-      if (n === asked.current) setFailed(true);
+      if (n === asked.current) {
+        setSt(was);
+        setFailed(true);
+      }
     } finally {
       if (n === asked.current) setBusy(false);
     }
   };
 
-  const rows = () => root.current?.querySelectorAll<HTMLElement>(".wl-jin [data-flip]") ?? [];
+  // Only the rows on screen: the other width's copy of each row is laid out nowhere, and would glide in from the
+  // corner (S-WALL.rules/2)
+  const rows = () =>
+    Array.from(root.current?.querySelectorAll<HTMLElement>(".wl-jin [data-flip]") ?? []).filter(
+      (el) => el.getClientRects().length > 0,
+    );
 
   const pickSort = async (value: string) => {
     const sort = value as WallSort;
     if (sort === st.sort) return;
+    const was = st;
     const next = { ...st, sort };
     setSt(next);
     const n = ++asked.current;
@@ -160,7 +176,10 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
         });
       });
     } catch {
-      if (n === asked.current) setFailed(true);
+      if (n === asked.current) {
+        setSt(was);
+        setFailed(true);
+      }
     } finally {
       if (n === asked.current) setBusy(false);
     }
@@ -200,6 +219,15 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
     // Focus moves to the first row the button added, so a keyboard carries on where the new rows start
     const variant = step === PHONE_STEP ? ".wl-jp" : ".wl-jt";
     root.current?.querySelectorAll<HTMLElement>(`${variant} [data-row] a`)[shown]?.focus();
+  };
+
+  /** The Ones in leaderboard order (BLD-E020), in place: the state effect replaces the address, and the list comes
+   * into view once it has rendered. */
+  const showLeaderboard = () => {
+    flushSync(() => setSt({ ...st, ones: "leaderboard" }));
+    document
+      .getElementById("ones")
+      ?.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
   /** Opens an idea with the way back to this exact view: kind, sort, how far Just in is open, and the row. */
@@ -244,7 +272,7 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
         />
       </section>
 
-      <Ones ones={data.ones} order={st.ones} wallState={st} />
+      <Ones ones={data.ones} order={st.ones} onLeaderboard={showLeaderboard} />
       <ImpactSection impact={data.impact} linkTo={linkTo} open={open} />
       <EmberSection ember={data.ember} />
 
@@ -375,15 +403,16 @@ function Kindling({
 
 function KindlingRow({ it, linkTo, open }: { it: WallIdea; linkTo: (to: string) => string; open: Opener }) {
   const href = linkTo(it.to);
+  const row = rowId("kin", it.id);
   return (
-    <li className="wl-row" data-handover="expand" data-row={it.id}>
+    <li className="wl-row" data-handover="expand" data-row={row}>
       <h4 className="wl-rt wl-desk">
-        <Link href={href} onClick={(e) => open(e, it.to, it.id)}>
+        <Link href={href} onClick={(e) => open(e, it.to, row)}>
           {it.title}
         </Link>
       </h4>
       <p className="wl-rm wl-desk">{it.meta}</p>
-      <Link href={href} className="wl-prow wl-phone" onClick={(e) => open(e, it.to, it.id)}>
+      <Link href={href} className="wl-prow wl-phone" onClick={(e) => open(e, it.to, row)}>
         <span className="wl-pmain">
           <span className="wl-pt">{it.title}</span>
           <span className="wl-pm">{phoneMeta(it.meta)}</span>
@@ -465,12 +494,12 @@ function JustIn({
                     key={it.id}
                     className="wl-jrow"
                     data-handover="expand"
-                    data-row={it.id}
+                    data-row={rowId("jin", it.id)}
                     data-flip={it.id}
                   >
                     <div>
                       <h4 className="wl-jtt">
-                        <Link href={linkTo(it.to)} onClick={(e) => open(e, it.to, it.id)}>
+                        <Link href={linkTo(it.to)} onClick={(e) => open(e, it.to, rowId("jin", it.id))}>
                           {it.title}
                         </Link>
                       </h4>
@@ -507,8 +536,18 @@ function JustIn({
           <div className="wl-jp wl-phone">
             <ul className="wl-rows" aria-label="Just in, with the review desk">
               {phone.map((it) => (
-                <li key={it.id} className="wl-row" data-handover="expand" data-row={it.id} data-flip={it.id}>
-                  <Link href={linkTo(it.to)} className="wl-prow" onClick={(e) => open(e, it.to, it.id)}>
+                <li
+                  key={it.id}
+                  className="wl-row"
+                  data-handover="expand"
+                  data-row={rowId("jin", it.id)}
+                  data-flip={it.id}
+                >
+                  <Link
+                    href={linkTo(it.to)}
+                    className="wl-prow"
+                    onClick={(e) => open(e, it.to, rowId("jin", it.id))}
+                  >
                     <span className="wl-pmain">
                       <span className="wl-pt">{it.title}</span>
                       <span className="wl-pm">
@@ -556,11 +595,11 @@ const ONES_ON_WALL = 5;
 function Ones({
   ones,
   order,
-  wallState,
+  onLeaderboard,
 }: {
   ones: Part<OneCardView[]>;
   order: "wall" | "leaderboard";
-  wallState: { kind: Kind | "all"; sort: WallSort; more: number };
+  onLeaderboard: () => void;
 }) {
   if (!ones.ok && ones.paused !== null) return null;
   const list = ones.ok ? (order === "leaderboard" ? ones.data : ones.data.slice(0, ONES_ON_WALL)) : [];
@@ -593,9 +632,19 @@ function Ones({
         )}
         {ones.ok && order === "wall" && ones.data.length > 0 ? (
           <p className="wl-slab-link">
-            <Link href={`${wallHref({ ...wallState, ones: "leaderboard" })}#ones`} scroll={false}>
+            {/* Wall.md: the link is "#ones". The leaderboard opens in place: the order goes in the address without a
+                new history entry, and the list scrolls into view (a link without script still lands on #ones) */}
+            <a
+              href="#ones"
+              onClick={(e) => {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+                  return;
+                e.preventDefault();
+                onLeaderboard();
+              }}
+            >
               The Ones leaderboard
-            </Link>
+            </a>
           </p>
         ) : null}
       </div>
@@ -654,9 +703,9 @@ function ImpactSection({
                 {impact.data.live.map((l) => {
                   const to = `/ideas/${encodeURIComponent(l.id)}?from=wall`;
                   return (
-                    <li key={l.id} className="wl-trow" data-handover="expand" data-row={l.id}>
+                    <li key={l.id} className="wl-trow" data-handover="expand" data-row={rowId("imp", l.id)}>
                       <p className="wl-lw">
-                        <Link href={linkTo(to)} onClick={(e) => open(e, to, l.id)}>
+                        <Link href={linkTo(to)} onClick={(e) => open(e, to, rowId("imp", l.id))}>
                           {l.what}
                         </Link>
                       </p>
