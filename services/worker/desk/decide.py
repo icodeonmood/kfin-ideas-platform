@@ -22,11 +22,10 @@ from desk.store import (
     audited,
     load_idea,
     now,
-    own_codes,
     person_by_code,
     refuse_own,
     seal,
-    user_of,
+    sharers_and_crew,
 )
 from desk.window import add_months, open_window
 
@@ -243,9 +242,8 @@ def send(
         )
         adapters.say(conn, str(idea["id"]), "desk.decided", author_user_id=user_id,
                      payload={"decision_id": decision_id, "choice": str(choice)}, at=t)  # fmt: skip
-        sharers = [u for c in sorted(own_codes(conn, idea)) if (u := user_of(conn, c))]
-        adapters.tell(
-            conn, "decision", sharers, idea_uuid=str(idea["id"]), sender=user_id,
+        adapters.tell(  # L-INBOX.kinds: a decision goes to the sharer and the crew
+            conn, "decision", sharers_and_crew(conn, idea), idea_uuid=str(idea["id"]), sender=user_id,
             actions=[("See the decision", f"/ideas/{idea['idea_id']}", "primary")],
             refs={"decision_id": decision_id, "choice": str(choice)},
         )  # fmt: skip
