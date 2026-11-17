@@ -7,7 +7,8 @@ import datetime as dt
 
 from crew import deck
 from crew.deck import Card
-from crew.store import UNKNOWN, PersonRef, day_label
+from crew.store import day_label
+from similar.preview import hidden_person
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 NOW = dt.datetime(2026, 11, 17, 12, 0, tzinfo=IST)  # Tuesday
@@ -81,7 +82,14 @@ def test_day_labels_in_india_time() -> None:
 def _card(
     ref: str, city: str, area: str, status: str, crew: int, picks: tuple[str, ...], kind: str, days: float
 ) -> Card:
-    lead = PersonRef("u", "Leela Sharma", "Leela", "LS", area, city)
+    lead = {
+        "id": "u",
+        "name": "Leela Sharma",
+        "first_name": "Leela",
+        "initials": "LS",
+        "area": area,
+        "city": city,
+    }
     return Card(
         ref, ref, f"Idea {ref}", status, area, city, NOW - dt.timedelta(days=days), lead, (lead,), crew,
         "One sentence.", None, picks, kind, "Reason", (deck.REASONS.index(kind), 0, 0, 0),
@@ -137,4 +145,6 @@ def test_L_CREW_4_card_json_is_a_crew_card_with_masked_text_only() -> None:
         "in_their_words", "hue", "reason_kind", "reason",
     }  # fmt: skip
     assert "compare" not in body and body["hue"] in (1, 2)
-    assert UNKNOWN.as_json()["name"] == "A colleague"
+    # Someone who hid their name, or has left, is "A colleague" with no user id (BLD-F042).
+    hidden = hidden_person("CTR-0a1b2c")
+    assert hidden["name"] == "A colleague" and hidden["id"].startswith("p") and hidden["initials"] == ""

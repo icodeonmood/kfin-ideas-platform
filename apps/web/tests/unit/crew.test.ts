@@ -10,9 +10,13 @@ const calls: { path: string; init: RequestInit }[] = [];
 let signedInAs: { id: string } | NextResponse = { id: "0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10" };
 
 vi.mock("@/server/auth/authorize", () => ({ signedIn: async () => signedInAs }));
+/** What the next worker call does: answer JSON (the default), answer text that is not JSON, or throw. */
+let worker: "json" | "text" | "throw" = "json";
 vi.mock("@/server/worker", () => ({
   workerFetch: async (path: string, init: RequestInit = {}) => {
     calls.push({ path, init });
+    if (worker === "throw") throw new TypeError("fetch failed");
+    if (worker === "text") return new Response("Internal Server Error", { status: 500 });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   },
 }));
@@ -28,6 +32,7 @@ const ME = "0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10";
 beforeEach(() => {
   calls.length = 0;
   signedInAs = { id: ME };
+  worker = "json";
 });
 
 describe("crew worker paths (L-CREW/5)", () => {
@@ -83,5 +88,23 @@ describe("crew route handlers (A-API.team-up)", () => {
     const res = await deck.GET(new NextRequest("http://app/api/crew"));
     expect(res.status).toBe(401);
     expect(calls).toEqual([]);
+  });
+
+  it("a worker that cannot be reached, or answers in plain text, is a 502 unavailable in the pack's shape", async () => {
+    for (const mode of ["throw", "text"] as const) {
+      worker = mode;
+      const res = await deck.GET(new NextRequest("http://app/api/crew"));
+      expect(res.status, mode).toBe(502);
+      expect(await res.json(), mode).toEqual({ error: { code: "unavailable", message: "" } });
+      expect(res.headers.get("Cache-Control")).toBe("no-store");
+    }
+    worker = "text";
+    const posted = await pass.POST(
+      new NextRequest("http://app/api/crew/pass", {
+        method: "POST",
+        body: JSON.stringify({ idea_id: "IDEA-2026-001481" }),
+      }),
+    );
+    expect(posted.status).toBe(502);
   });
 });

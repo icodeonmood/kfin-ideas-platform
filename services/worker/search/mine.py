@@ -21,6 +21,7 @@ from ideapage.shape import MY_IDEAS_FILTER_LABEL
 from onepc.context import open_text
 from search import rules
 from search.ask import interpret
+from similar.preview import mask_text
 
 LIST_LABEL = {"yours": "Yours", "teamed": "Teamed up"}
 SPECS: tuple[rules.Facet, ...] = (
@@ -141,14 +142,14 @@ def search(
             {
                 "id": r["idea_id"],
                 "uuid": r["uuid"],
-                "title": r["title"] or "",
+                "title": mask_text(r["title"]).strip(),
                 "status": r["status"],
                 "list": r["list"],
                 "filter": r["filter"],
                 "area": r["area"],
                 "score": round(m.score, 3) if m else None,
                 "matched_on": list(m.matched_on) if m else [],
-                "snippet": m.snippet if m else "",
+                "snippet": mask_text(m.snippet) if m else "",
             }
             for r, m in shown
         ],
@@ -163,10 +164,16 @@ def search(
         best = shown[0][0] if shown else None
         fields_hit = {f for _, m in shown if m for f in m.matched_on}
         body["search"] = {
-            "sentence": rules.sentence(query, mine, teamed, best["title"] if best else None),
+            "sentence": rules.sentence(
+                query, mine, teamed, mask_text(best["title"]).strip() if best else None
+            ),
             "matched_on": [k for k, _, _ in rules.FIELDS if k in fields_hit],
             "matched_line": rules.matched_line(fields_hit),
-            "closest": {"id": best["idea_id"], "uuid": best["uuid"], "title": best["title"]}
+            "closest": {
+                "id": best["idea_id"],
+                "uuid": best["uuid"],
+                "title": mask_text(best["title"]).strip(),
+            }
             if best
             else None,
         }
