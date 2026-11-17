@@ -13,8 +13,8 @@ This repo (`kfin-ideas-platform`) is the application code for KFintech's org-wid
 | `1pc-handoff/README.md`, then `00-overview/PRODUCT.md` | The design and behaviour spec: the source of truth for how the product looks, moves, reads and behaves (DEC-102). Read the README once |
 | `docs/SHIP_PLAN_1PC.md` | The plan for shipping the pack: lanes, checkpoints, data, retirements |
 | `docs/DECISIONS.md` | What has been decided and must not be re-opened without asking |
-| `docs/DAY1_PLAN.md` | Blocks B1–B8, dates, and the acceptance tests that define "done" |
-| `docs/ARCHITECTURE.md` (v0.3) | The full specification. Day-one sections: §2 data, §3.1–3.7 shared services, §4.1–4.4, §6, §7, §8, §9 |
+| `docs/DAY1_PLAN.md` | **History. Do not read it.** Blocks B1 to B8 are done; the plan now is `docs/SHIP_PLAN_1PC.md` (BLD-G001) |
+| `docs/ARCHITECTURE.md` (v0.3) | **Read only the section a non-negotiable cites.** The pack wins on product behaviour (DEC-102) |
 | `docs/GARAGE_INHERITANCE.md` | Your first task: copy what this project needs from the Garage project |
 | `agents/*/` | Draft prompts, schemas and configs for `gatekeeper`, `canvas-assist` and `judge` |
 | `seed/company-repo/` | Starting content for the company repo (rules, taxonomy, glossary, comms templates, canvas examples) |
@@ -53,6 +53,7 @@ Stop and ask the user before changing any of these.
 
 1. **Every model call goes through the gateway** (`run_agent` in `services/worker/gateway/`). No model SDK import anywhere else; CI enforces it.
 2. **Tag before sending.** Personal and sensitive values become typed tags (`[[KFIN_EMPLOYEE_1]]`, `[[CLIENT_AMC_1]]`…) before any model call. The leak check re-runs the patterns on the tagged payload and aborts on any hit. Real values are restored only for viewers allowed to see them (§3.2).
+   - Exception (DEC-108): voice audio goes to Sarvam untagged; all text is masked first, and every transcript is masked as it returns. The product lead confirmed it on 17 Nov 2026 with the DPO's approval.
 3. **No idea text, attachment text or personal data in logs, traces, error messages, analytics or `llm_calls`.** Logs carry IDs only. A log-scrubber test must pass.
 4. **Customers' personal details are hidden from everyone but the person who typed them** (DEC-103, `L-HIDE`). Patterns, then `gatekeeper`, run on every message, transcript, edit and file before any other service sees the text. Every other person, service, model, index and log receives only the masked copy. The unmasked value is stored encrypted in a worker-only table, readable by the sharer alone. "Show it" needs one of the three reasons and is logged. A file with a detail found cannot be opened by anyone else until it is hidden or removed.
 5. **Agents propose; people decide.** Agents never write to the company repo or change a stage on their own on day one. Autonomy (§5.6) is off at launch.
@@ -119,8 +120,8 @@ kfin-ideas-platform/
 
 ## How to work
 
-1. Work block by block in `docs/DAY1_PLAN.md`. Do not start a block until the previous block's acceptance tests pass, unless the plan says the blocks can overlap.
-2. At the end of each block: run `make lint test e2e` (and `make eval` from B4), tick the block in `DAY1_PLAN.md`, and add a dated entry to `docs/BUILD_LOG.md`: what is done, what was deferred, anything the user must do.
+1. Work to your lane's scope and checkpoints in `docs/SHIP_PLAN_1PC.md`.
+2. At the end of each block: run `make lint test e2e` (and `make eval` from B4), and add a dated entry to `docs/BUILD_LOG.md`: what is done, what was deferred, anything the user must do.
 3. When the spec is unclear, take the simpler reading that keeps every non-negotiable, write it in `docs/DECISIONS.md` (the next ID in your lane, date, decision, reason, alternative) and carry on. If it touches a non-negotiable, stop and ask.
 4. If a block runs more than half a day late, propose a cut from the drop order in §9.2 rather than squeezing quality.
 5. Small commits with clear messages. Never commit `.env`, data folders, model weights or anything from `~/the-garage` that is not listed for copying.

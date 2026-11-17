@@ -16,7 +16,8 @@
   "extra_roles": [
     "infosec",
     "hr",
-    "ceo"
+    "ceo",
+    "display"
   ],
   "capabilities": {
     "signed_in": {
@@ -98,6 +99,10 @@
     },
     "send_ember": {
       "admin": "yes"
+    },
+    "open_display": {
+      "admin": "yes",
+      "display": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -185,6 +190,7 @@
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
+    "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
     "GET /api/canvas/config                            submit",
@@ -224,6 +230,7 @@
     "PUT /api/admin/kill-switches                      manage_kill_switches",
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
+    "GET /api/display/office                           open_display",
     "GET /api/ones/leaderboard                         signed_in",
     "GET /api/ones/console                             view_ones_console",
     "POST /api/ones/proposals                          propose_ones",
@@ -289,6 +296,7 @@
     "/committee                 veto_desk_decision",
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
+    "/display                   open_display",
     "/ones/showcase             view_ones_console",
     "/delivery                  work_delivery",
     "/ember/compose             write_ember_note"
