@@ -1,0 +1,530 @@
+/*
+ * C-PREVIEW: the preview pop-up for someone else's idea (BLD-C100 to BLD-C104).
+ *
+ * Values from the pack (reference/css/preview-popup.css, F-COLOR.glass, F-COLOR.gradients, F-MOTION.inside);
+ * colours and type from the OFFER tokens on main (offer.css, DEC-101). Everything is scoped under `.pvwrap`, so
+ * nothing here leaks into a screen. Plain CSS and the Web Animations API only (BLD-E005).
+ *
+ * TODO(lane D, BLD-C100): the `.pill`, `.tb`, `.btn` and `.pvav` rules below stand in for C-PILL, C-BUTTON and
+ * C-AVATAR until `@/components/ui/*` reach main; delete them when the component swaps to those primitives.
+ */
+.pvwrap {
+  /* F-MOTION.tokens: lane D's custom properties win once they are on main. */
+  --pv-spring: var(
+    --mo-spring,
+    linear(
+      0,
+      0.009,
+      0.035 2.1%,
+      0.141,
+      0.281 6.7%,
+      0.723 12.9%,
+      0.938 16.7%,
+      1.017,
+      1.077,
+      1.121,
+      1.149 24.3%,
+      1.159,
+      1.163,
+      1.161,
+      1.154 29.9%,
+      1.129 32.8%,
+      1.051 39.6%,
+      1.017 43.1%,
+      0.991,
+      0.977 51%,
+      0.974 53.8%,
+      0.975 57.1%,
+      0.997 69.8%,
+      1.003 76.9%,
+      1.004 83.8%,
+      1
+    )
+  );
+  --pv-out: var(--mo-out, cubic-bezier(0.16, 1, 0.3, 1));
+  --pv-emph: var(--mo-emph, cubic-bezier(0.05, 0.7, 0.1, 1));
+  --pv-state: var(--mo-state, 260ms);
+
+  position: fixed;
+  inset: 0;
+  z-index: 80; /* tokens.json z.popup */
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+/* The frosted page behind (F-COLOR.glass, pop-up backdrop). */
+.pvback {
+  position: absolute;
+  inset: 0;
+  background: rgba(232, 232, 238, 0.42);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  animation: pvFade var(--pv-state) var(--pv-out) both;
+}
+
+/* The pop-up body: centred glass, 560px, radius 28px, scrolls inside with no visible scrollbar. */
+.pvm {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  box-sizing: border-box;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.84));
+  -webkit-backdrop-filter: blur(26px) saturate(1.5);
+  backdrop-filter: blur(26px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 50px 100px -40px rgba(17, 17, 17, 0.5);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  /* F-MOTION.inside: pop-ups arrive on the spring (520ms, from 18px below, scale .94, blur 6px). */
+  animation:
+    pvIn 520ms var(--pv-spring) both,
+    pvClear var(--pv-state) var(--pv-out) both;
+}
+
+.pvm::-webkit-scrollbar {
+  display: none;
+}
+
+/* The dialog itself takes focus on open so Escape and Tab work at once; its controls carry the ring. */
+.pvm:focus {
+  outline: none;
+}
+
+@keyframes pvIn {
+  from {
+    transform: translateY(18px) scale(0.94);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes pvClear {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+@keyframes pvFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Close: a 40px round button on the band, white 22% fill. */
+.pvx {
+  position: absolute;
+  z-index: 2;
+  right: 20px;
+  top: 20px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.pvx:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+/* Blue on the blue band would not show: the ring is white here. */
+.pvx:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+/* Band: gradient hue 1 or hue 2 (F-COLOR.gradients), white text. */
+.pvband {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin: 10px 10px 0;
+  padding: 22px 64px 24px 22px;
+  border-radius: 20px;
+  color: #ffffff;
+  background: linear-gradient(165deg, #3455ec 0%, #6957ee 55%, #f58256 130%);
+}
+
+.pvband::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 220px;
+  height: 220px;
+  right: -60px;
+  top: -70px;
+  border-radius: 50%;
+  border: 22px solid rgba(255, 255, 255, 0.14);
+}
+
+/* Scrim over the band's lower half, so small white text clears 4.5:1 on the #f58256 stop (lane D, 17 Nov:
+   0.34 alpha gives 5.1:1; the pack's colours stay as they are). The band's content sits above it. */
+.pvband::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 55%;
+  background: linear-gradient(to top, rgba(10, 10, 12, 0.34), rgba(10, 10, 12, 0));
+  pointer-events: none;
+}
+
+.pvband > * {
+  position: relative;
+  z-index: 1;
+}
+
+.pvband.hue2 {
+  background: linear-gradient(165deg, #7958ee 0%, #4261ec 60%, #1e2e99 120%);
+}
+
+.pvtop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.pvref {
+  margin: 0;
+  font: 500 12.5px/1.2 var(--font-sans);
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.88);
+  font-variant-numeric: tabular-nums;
+}
+
+.pvt {
+  margin: 14px 0 0;
+  font: 500 28px/1.12 var(--font-display);
+  letter-spacing: -0.024em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: #ffffff;
+}
+
+.pvmeta {
+  margin: 8px 0 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+/* C-PILL on the band (stand-in until `@/components/ui/pill` is on main). */
+.pvwrap .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font: 500 13px/1.4 var(--font-sans);
+}
+
+.pvband .pill {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.pvwrap .pill i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pvbody {
+  padding: 12px 10px 0;
+}
+
+/* Why it matches: one blue-wash line with a spark. */
+.pvwhy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: var(--blue-wash);
+  font: 500 14.5px/1.35 var(--font-sans);
+  color: var(--blue);
+}
+
+.pvwhy svg {
+  flex: none;
+  color: var(--spark);
+}
+
+/* Sections: white 82% tiles. */
+.pvsec {
+  margin-top: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.06);
+}
+
+.pvl {
+  margin: 0;
+  font: 400 13px/1.4 var(--font-sans);
+  letter-spacing: normal;
+  color: var(--ink-muted);
+}
+
+.pva {
+  margin: 6px 0 0;
+  font: 500 18px/1.32 var(--font-display);
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Reviewer's comparison: one column per idea; on a narrow pop-up the part sits above its two values. */
+.pvcmp {
+  container-type: inline-size;
+}
+
+.pvtab {
+  margin-top: 8px;
+}
+
+.pvtr {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.pvtr > :nth-child(2) {
+  grid-column: 2;
+}
+
+.pvtr > :nth-child(3) {
+  grid-column: 3;
+}
+
+.pvtr [role="rowheader"] {
+  color: var(--ink-muted);
+}
+
+.pvth {
+  padding-top: 4px;
+  border-top: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+@container (max-width: 360px) {
+  .pvtr {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .pvtr [role="rowheader"] {
+    grid-column: 1 / -1;
+  }
+
+  .pvtr > :nth-child(2) {
+    grid-column: 1;
+  }
+
+  .pvtr > :nth-child(3) {
+    grid-column: 2;
+  }
+}
+
+/* Crew: faces and one line. */
+.pvcrew {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 6px 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.pvavs {
+  display: inline-flex;
+  flex: none;
+  padding-left: 8px;
+}
+
+/* C-AVATAR crew faces (stand-in until `@/components/ui/avatar` is on main). */
+.pvav {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: #ecece8;
+  color: var(--ink);
+  font: 600 11px/1 var(--font-sans);
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
+.pvav.t1 {
+  background: #ffe7d6;
+}
+
+.pvav.t2 {
+  background: #ffe0d6;
+}
+
+.pvav.t3 {
+  background: #ffdde8;
+}
+
+.pvav.t4 {
+  background: #ffd6d6;
+}
+
+.pvnote {
+  margin: 10px 6px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+/* Footer: "Open the full idea" on the left, exactly one button on the right. */
+.pvf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 18px;
+}
+
+.pvwrap .tb {
+  font: 500 14.5px/1.4 var(--font-sans);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pvfull {
+  white-space: nowrap;
+}
+
+.pvjoin {
+  margin-left: auto;
+  min-height: 48px;
+  padding: 0 22px 0 18px;
+  border-radius: 12px;
+}
+
+.pvok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0 auto;
+  font: 500 15px/1.3 var(--font-sans);
+  color: var(--ok);
+}
+
+.pvok svg {
+  flex: none;
+}
+
+/* Loading: bars at the size the content will take. */
+.pvsk {
+  display: block;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.pvsk + .pvsk {
+  margin-top: 10px;
+}
+
+.pvsec .pvsk {
+  background: var(--line);
+}
+
+.pverr {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+/* Phone: full width less 28px, rising from the bottom (F-MOTION.inside, phone sheets). */
+@media (max-width: 640px) {
+  .pvwrap {
+    place-items: end center;
+    padding: 14px;
+  }
+
+  .pvm {
+    max-height: calc(100vh - 28px);
+    max-height: calc(100dvh - 28px);
+    animation:
+      pvRise 560ms var(--pv-emph) both,
+      pvClear var(--pv-state) var(--pv-out) both;
+  }
+
+  .pvband {
+    padding: 18px 60px 20px 18px;
+  }
+
+  .pvx {
+    right: 18px;
+    top: 18px;
+  }
+
+  .pvt {
+    font-size: 24px;
+  }
+}
+
+@keyframes pvRise {
+  from {
+    transform: translateY(calc(100% + 14px));
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* F-MOTION.reduced: it simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  .pvm,
+  .pvback {
+    animation: none;
+  }
+}
