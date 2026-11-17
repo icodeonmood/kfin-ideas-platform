@@ -215,11 +215,13 @@ def _copy_detail(
     )  # fmt: skip
 
 
-def _rehide(conn: Conn, detail: dict[str, Any]) -> dict[str, Any]:
+def _rehide(conn: Conn, detail: dict[str, Any], *, by_desk: bool = False) -> dict[str, Any]:
+    """Hide a shown detail again. `by_desk`: the review desk hid it, so it becomes the desk's (the owner cannot show
+    it again, BLD-C066)."""
     row = conn.execute(
-        "UPDATE hidden_details SET state = 'hidden', reason = NULL, shown_by = NULL, shown_at = NULL "
-        "WHERE id = %s RETURNING *",
-        (detail["id"],),
+        "UPDATE hidden_details SET state = 'hidden', reason = NULL, shown_by = NULL, shown_at = NULL, "
+        "found_by = CASE WHEN %s THEN 'reviewer' ELSE found_by END WHERE id = %s RETURNING *",
+        (by_desk, detail["id"]),
     ).fetchone()
     assert row is not None
     return dict(row)
@@ -350,7 +352,7 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str =
                         and s is not None
                         and detect.same_value(value, src.owner_text[s:e])
                     ):
-                        details[i] = _rehide(conn, d)
+                        details[i] = _rehide(conn, d, by_desk=True)
                         flipped = True
                         out.rehidden += 1
             taken = [
@@ -566,15 +568,12 @@ def desk_hide(
             details = details_for(conn, idea_uuid, source_kind, src.id)
             o_start, o_end, shown = _owner_range(src, details, start, end)
             if shown is not None:
-                row = _rehide(conn, shown)
+                row = _rehide(
+                    conn, shown, by_desk=True
+                )  # the desk's hide now: the owner cannot show it again
                 details = [row if str(d["id"]) == str(row["id"]) else d for d in details]
                 _write_sealed(conn, idea_uuid, src, details)
                 value = src.owner_text[o_start:o_end]
-                taken = conn.execute(
-                    "UPDATE hidden_details SET found_by = 'reviewer' WHERE id = %s RETURNING *", (row["id"],)
-                ).fetchone()  # the desk's hide now: the owner cannot show it again
-                assert taken is not None
-                row = dict(taken)
             else:
                 o_start, value = _selection(src.owner_text, o_start, o_end)
                 kind = detect.classify(value, src.owner_text, o_start)
