@@ -70,3 +70,15 @@ The sheet's own words are the pack's (`C-SHEET-TEAMUP` and `reference/copy/Crew.
 | `C-SHEET-TEAMUP`, opened while a request still waits but the request did not come back (BLD-F074) | In place of the note, with only "Done" | Waiting for Ravi (the opener's own line, `C-SHEET-TEAMUP.after`) |
 
 Not the sheet's: `Crew.md` view=Request sent also adds "Ravi Nair, Investor service", "Waiting for Ravi" and the link "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea." These are a row in S-H2's "Your crews" list behind the sheet (they replace "Ideas you team up on show here."), so they belong to the crew page, which lane F builds next, and are used there word for word (BLD-F074).
+
+## 5. Find your crew (`S-H2`, `L-CREW`, added 18 Nov)
+
+The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `C-CREW-DECK.states`), used as they stand. "Ravi" stands for the idea's lead and "Saturday" for the day the person shared their own idea: at run time each is the real name or day. The code is `services/worker/crew/deck.py` (the card lines and "Your crews") and `apps/web/src/app/crew/` (the page). These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `L-CREW/2`, "touches their work" (BLD-F034) | The card's reason strip, when the sharer asked for help from the person's line of work | They need someone in Investor service |
+| `L-CREW/2`, "close to an idea of theirs" when the match's reason was written for the other person, or there is none (BLD-F032) | The card's reason strip | Close to your idea from Saturday |
+| `L-CREW/2`, a match reason that does not start "Same …" (BLD-F032) | The card's reason strip | The calls you describe, like your idea from Saturday |
+| `L-CREW/2`, the day in those lines | The card's reason strip | today / yesterday / a weekday within the week / 12 November |
+| `L-CREW/9`, a waiting request whose lead's record was erased (BLD-F035) | "Your crews" | Waiting for the lead (and "A colleague" for the name, the existing BLD-E006 line) |
