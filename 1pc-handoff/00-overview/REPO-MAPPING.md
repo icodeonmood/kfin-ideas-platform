@@ -95,9 +95,9 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
-| `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
+| `L-SORT` | `services/worker/submit/{sorting,routing,config}.py`, `rules/sorting.md` (lists, review routing), `sorting_trust` view; `GET`/`PATCH /api/drafts/:id/sorting` (BLD-C080, BLD-C082) | built (API) | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
-| `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
+| `L-SUBMIT` | `services/worker/submit/{ready,send,check,clock,edit,adapters}.py`, `server/share.ts`; `GET /api/drafts/:id/send`, `POST /api/drafts/:id/submit`, `GET`/`PATCH /api/ideas/:id/edit` (A-API `PATCH /ideas/:id`), `GET /api/ideas/:id/versions`; timer kind `decide_by`; withdraw and restore are lane E's `ideapage/withdraw.py` through `submit/adapters.py`. Old `server/submissions.ts` and `scan/save.py` stay for the old `/share` pages until S-05 replaces them (BLD-C081, BLD-C083 to BLD-C086) | built (API) | P0 | C |
 | `L-REVIEW` | `review/service.py`, `review_items` | exists, differs | P0 | B |
 | `L-DECIDE` | `review/service.py` (tags and groups today) | exists, differs | P0 | B |
 | `L-INBOX` | `notifications`, `comms/inbox.py` | exists, differs | P0 | A |
