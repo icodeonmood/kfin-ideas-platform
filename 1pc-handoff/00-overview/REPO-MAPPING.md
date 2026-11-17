@@ -55,19 +55,19 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | State | Effort | Phase | Lane |
 |---|---|---|---|---|
-| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. The `desk` and `committee` rows are lane B's (`deskRows`, `committeeRows`, 17 Nov) | M to L | P0 | D |
+| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts` (the tier for everyone from `myTier`, 18 Nov). The `desk` and `committee` rows are lane B's (`deskRows`, `committeeRows`, 17 Nov; Closing soonest title only from 18 Nov); their section actions are lane D's (BLD-D013) | M to L | P0 | D |
 | `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
 | `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
 | `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
-| `C-CHIP` | built: `components/ui/chips.tsx` (`ChoiceChips` radio group with arrows, `MultiChips` pressed), `components.css`; the sliding ring waits for the FLIP polish | M | P0 | D |
-| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`) | S | P0 | D |
+| `C-CHIP` | built: `components/ui/chips.tsx` (`ChoiceChips` radio group with arrows, `MultiChips` pressed; `filter` shows the tick on a phone only), `components.css`; the sliding ring waits for the FLIP polish | M | P0 | D |
+| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`; `Pill countdown` is the board's countdown, a clock in place of the dot) | S | P0 | D |
 | `C-FIELD`, `C-FIELD-MSG` | built: `components/ui/field.tsx` (`Field` wires label, help, message, `aria-describedby`, `aria-invalid`; `FieldMsg`); 3:1 border; `code-field.tsx` (six boxes, paste, auto-advance, Backspace, shake, autofill) and `question-box.tsx` ("Pinned to" a part, Enter adds) | S | P0 | D |
 | `C-CARD` | built: `components.css` (`.card`, `.panel`, `.tile`, `.well`, `.note`, `.note.blue`, `.slab`, `.placeholder`, `.card-link`); glass inside the shell (`shell.css`) | M | P0 | D |
 | `C-AVATAR` | built: `components/ui/avatar.tsx` (`Avatar` with sizes, neutral and tier rings, the system mark; `CrewFaces` and `crewLine`) | S | P0 | D |
 | `C-SKELETON` | built: `components/ui/skeleton.tsx` (`Skeleton`, `SkeletonRows`, `Loading`, `Spinner`) | S | P0 | D |
 | `C-EMPTY` | built: `components/ui/empty.tsx`; screens replace their ad hoc lines as they are rebuilt | S | P0 | D |
 | `C-SORTS` | built: `components/ui/sorts.tsx` (row on desktop, cycling button on a phone); row gliding waits for the FLIP polish | S | P0 | D |
-| `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
+| `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`; counts in the board's 22px pills); the sliding underline waits for the FLIP polish | S to M | P0 | D |
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
