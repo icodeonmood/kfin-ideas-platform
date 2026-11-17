@@ -22,7 +22,8 @@ export type SwitchName =
   | "appeals.filing"
   | "capture.mic_hint"
   | "capture.voice"
-  | "speech.hosted";
+  | "speech.hosted"
+  | "desk.listen";
 
 interface Rule {
   methods: readonly string[];
@@ -80,6 +81,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // Listen's audio and chapters through Sarvam (DEC-108, BLD-C114): lane B's player switch and hosted speech.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/ideas\/[^/]+\/listen(?:\/chapters)?\/?$/,
+    switches: ["desk.listen", "speech.hosted"],
+  },
 ];
 
 /**
@@ -110,6 +117,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
   "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
+  // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
+  "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */

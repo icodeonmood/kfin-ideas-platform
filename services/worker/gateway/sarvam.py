@@ -677,7 +677,9 @@ def tts(
 ) -> Iterator[bytes]:
     """Masked text to MP3 with bulbul:v4-flash over one WebSocket: a text message per sentence (under 500
     characters), then a flush; audio is yielded as it arrives, until Sarvam's "final" event."""
-    messages = pieces(masked, TTS_MAX_CHARS)
+    messages = [
+        cut for sentence in sentences(masked) for cut in _cut(sentence, TTS_MAX_CHARS)
+    ]  # a sentence each
     check_masked(masked)
     if not messages:
         return

@@ -60,6 +60,7 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
 
 # No session needed.
 public:
@@ -104,6 +105,8 @@ endpoints:
   - POST /api/drafts/{id}/voice/end                   submit          # their own words and the English copy
   - GET /api/drafts/{id}/voice/{stream}               submit          # polling (A-API.events does not exist yet)
   - GET /api/voice/config                             signed_in       # the notice before recording, and what the browser sends (BLD-C116)
+  - GET /api/ideas/{id}/listen                        view_review_queue   # Listen's audio, Sarvam's voice on the masked script (DEC-108, BLD-C114); behind desk.listen and speech.hosted
+  - GET /api/ideas/{id}/listen/chapters               view_review_queue   # { parts: [{ part, start_s }], duration_s }, or 202 { pending: true }
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit

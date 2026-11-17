@@ -220,6 +220,73 @@ def voice_config() -> JSONResponse:
     return JSONResponse({"notice": drafts.NOTICE, **drafts.chunk_contract()})
 
 
+# ---- Listen in Sarvam's voice (DEC-108 (4), BLD-C114): the web app checked the desk or committee role ----------
+
+
+@app.get("/internal/listen/{ref}", dependencies=[Depends(require_token)])
+def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")) -> Response:
+    """The idea's audio (MP3). Cached: the whole file, or the asked byte range (seeking by chapter). Not cached:
+    streamed as Sarvam makes it, part by part, and cached at the end."""
+    from fastapi.responses import StreamingResponse
+
+    from attachments import store
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            plan = listen.prepare(conn, ref)
+            if plan.cached is None:
+                from gateway import sarvam
+
+                sarvam.allowed(
+                    conn
+                )  # speech.hosted read fresh, the approval and the key, before anything streams
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    except Exception as exc:
+        from gateway.speech import SpeechUnavailable
+
+        if isinstance(exc, SpeechUnavailable):
+            return JSONResponse({"error": "paused"}, status_code=503)
+        raise
+    headers = {"Cache-Control": "private, no-store", "Accept-Ranges": "bytes"}
+    if plan.cached is not None:
+        data = store.get(get_settings().s3_bucket_clean, plan.cached.store_key)
+        span = listen.byte_range(range_header, len(data)) if range_header else None
+        if range_header and span is None:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{len(data)}"})
+        if span is not None:
+            start, end = span
+            return Response(
+                content=data[start : end + 1],
+                status_code=206,
+                media_type="audio/mpeg",
+                headers={**headers, "Content-Range": f"bytes {start}-{end}/{len(data)}"},
+            )
+        return Response(content=data, media_type="audio/mpeg", headers=headers)
+
+    def body() -> Any:
+        with connect(autocommit=True) as conn:
+            yield from listen.speak(conn, plan.idea_uuid, plan.script, voice=plan.voice)
+
+    return StreamingResponse(body(), media_type="audio/mpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/internal/listen/{ref}/chapters", dependencies=[Depends(require_token)])
+def listen_chapters(ref: str) -> JSONResponse:
+    """`{ parts: [{ part, start_s }], duration_s }` once the audio is cached; until then 202 `{ pending: true }`."""
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            got = listen.chapters(conn, ref)
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    if got is None:
+        return JSONResponse({"pending": True}, status_code=202)
+    return JSONResponse(got)
+
+
 @app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])
 def scan_view(idea_uuid: str, mode: str = "neutral") -> JSONResponse:
     """The scan as one viewer may see it. The web app decides `mode` from §3.1 (owner: real)."""

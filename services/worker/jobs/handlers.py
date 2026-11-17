@@ -276,3 +276,20 @@ def voice_sweep(conn: Conn, payload: dict[str, Any]) -> None:
 
     service.sweep(conn)
     drafts.sweep(conn)
+
+
+@handler("listen.prefetch")
+def listen_prefetch(conn: Conn, payload: dict[str, Any]) -> None:
+    """An idea was sent, or its chapters were asked for: make and cache its Listen audio (DEC-108, BLD-C114)."""
+    from speech import listen
+
+    listen.prefetch(conn, str(payload["idea_uuid"]))
+
+
+@handler("listen.prefetch_due")
+def listen_prefetch_due(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 15 minutes: ideas with the desk that have no Listen audio yet; and audio past 30 days goes."""
+    from speech import listen
+
+    listen.prefetch_due(conn)
+    listen.sweep(conn)
