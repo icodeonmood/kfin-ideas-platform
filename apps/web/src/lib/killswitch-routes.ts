@@ -54,6 +54,10 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
+  // The 1% Club's Wall and the Ones' posts (lane E, A-API.wall): the worker checks the same switches again.
+  { methods: ["GET"], pattern: /^\/api\/wall\/(?:kindling|just-in|impact|ember)\/?$/, switches: ["wall.public"] },
+  { methods: ["GET"], pattern: /^\/api\/wall\/ones\/?$/, switches: ["wall.public", "ones.public"] },
+  { methods: ["GET", "PUT"], pattern: /^\/api\/ones\/posts(?:\/[^/]+\/like)?\/?$/, switches: ["ones.public"] },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
@@ -128,6 +132,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
+  // The same on the 1% Club's dashboard (lane E, S-ONE), and a person's own Profile switches (S-H6): their own
+  // record, nothing about ideas. A brief's text checks run inside the call whatever is paused (V-FIELDS.one/4).
+  /^\/api\/one\/(?:number|brief|glow-up\/[^/]+\/seen)\/?$/,
+  /^\/api\/me\/settings\/?$/,
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,

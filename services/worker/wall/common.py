@@ -11,10 +11,11 @@ import datetime as dt
 import re
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
 from core.config import get_settings
 from core.logging import get_logger
-from onepc.enums import TIER_NAME
+from onepc.enums import TIER_NAME, wall_labels
 from pii.patterns import scan
 from pii.tagger import TAG_RE
 
@@ -130,6 +131,21 @@ def public_text(text: Any) -> str | None:
 
 
 # --- Kinds on the Wall (E-ENUMS.kind OPEN default) ---------------------------------------------------------------
+
+
+KIND_LABEL = wall_labels("kind")  # "Problem", "Fix", "Business idea" (S-WALL rows)
+
+
+def plural(n: int, one: str, many: str | None = None) -> str:
+    """ "1 colleague", "4 colleagues"; "1 One", "2 Ones"."""
+    return f"{indian(n)} {one if n == 1 else (many or one + 's')}"
+
+
+def wall_to(idea_id: str, back: str = "/wall") -> str:
+    """Where a Wall row's title goes (S-WALL.rules/4): the idea's page, which shows "Back to the Wall" and returns
+    to `back`, the Wall's own query (J-BROWSE/5). The idea page decides S-06 or S-09 by who opens it."""
+    q = {"from": "wall"} | ({"back": back} if back != "/wall" else {})
+    return f"/ideas/{idea_id}?{urlencode(q)}"
 
 
 def wall_kind_sql(alias: str = "i") -> str:
