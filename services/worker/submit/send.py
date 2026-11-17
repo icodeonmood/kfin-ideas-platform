@@ -2,14 +2,15 @@
 
 1. The idea gets its reference at once, `IDEA-<year>-<six-digit running number>` (`next_idea_ref`, the office year),
    and status `checking` (stage "Shared" done, "Checked and matched" now). The draft row becomes the idea, so its
-   files, hidden details and sealed words stay with it.
+   files, hidden details and sealed words stay with it, and so do the hidden values in the vault: their scope is
+   `DRAFT-<idea uuid>` before and after the send, and nothing here purges or re-keys it (BLD-C087).
 2. The declaration's text version and the time are recorded (`L-SUBMIT.pre/5`); the sorting was confirmed before.
 3. The review clock starts: decide-by 5 working days on (`submit.clock`), on lane A's timer engine (kind
    `decide_by`). The edit window closes when the desk opens the idea, at the latest 3 days on.
 4. The sharer leads their idea's crew (`crew_members`, via `shared`).
 5. "Checked and matched" is queued (`submit.check`): the final hidden-detail pass and similar ideas, then the idea
    goes to the review desk and the sharer is told (`notify.post`, `sent_to_desk`). Voice notes held for the draft go
-   now that it is shared (DEC-096).
+   now that it is shared (DEC-096), and Listen's audio is queued (c/sarvam's `listen.prefetch`, through the adapter).
 6. `audit_log` gets the share, with IDs and codes only.
 
 Submit is idempotent twice over (`L-SUBMIT.send` failures): with an `Idempotency-Key` the first result comes back
@@ -30,7 +31,7 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from jobs.runner import enqueue
-from submit import clock, config, own, ready, sorting
+from submit import adapters, clock, config, own, ready, sorting
 from submit.errors import Refused
 from submit.words import countdown, day, pill, short_date, stage_nodes, when_shared
 
@@ -65,6 +66,15 @@ def _claim_key(conn: Conn, user_id: str, idem: str, request_hash: str) -> dict[s
     if row["response_json"] is None:
         return None
     return dict(row["response_json"])
+
+
+def _keep(conn: Conn, user_id: str, idem: str | None, status: int, result: dict[str, Any]) -> None:
+    """The result for this Idempotency-Key, so a retry with it gets the first answer (A-API.conventions/3)."""
+    if idem:
+        conn.execute(
+            "UPDATE idempotency_keys SET status = %s, response_json = %s WHERE user_id = %s AND key = %s",
+            (status, Jsonb({**result, "_status": status}), user_id, idem),
+        )
 
 
 def checked_line(n_hidden: int, n_similar: int) -> str:
@@ -178,7 +188,9 @@ def submit(
                 return int(first.get("_status", 200)), {k: v for k, v in first.items() if k != "_status"}
         idea, code = own.load_own(conn, key, user_id, lock=True)
         if idea["status"] in SHARED and idea["idea_id"]:
-            return 200, handover(conn, idea, now)  # already sent: never a second idea
+            again = handover(conn, idea, now)  # already sent: never a second idea
+            _keep(conn, user_id, idempotency_key, 200, again)
+            return 200, again
         if idea["status"] not in ("draft", "merged"):
             raise Refused(409, "not_a_draft", "This idea has been sent.", ref=idea["idea_id"])
         found = ready.problems(conn, idea, li)
@@ -248,10 +260,7 @@ def submit(
                 "sorting": {f: (sources.get(f) or {}).get("source") for f in sorting.FIELDS},
             },
         )
+        adapters.prefetch_listen(conn, uid)  # Listen's audio, made before the desk asks (c/sarvam)
         result = handover(conn, shared, now)
-        if idempotency_key:
-            conn.execute(
-                "UPDATE idempotency_keys SET status = 201, response_json = %s WHERE user_id = %s AND key = %s",
-                (Jsonb({**result, "_status": 201}), user_id, idempotency_key),
-            )
+        _keep(conn, user_id, idempotency_key, 201, result)
         return 201, result
