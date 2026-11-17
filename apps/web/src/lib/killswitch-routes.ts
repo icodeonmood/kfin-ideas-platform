@@ -11,6 +11,7 @@ export type SwitchName =
   | "attachments.open"
   | "matching.show"
   | "comms.email"
+  | "comms.teams"
   | "wall.public"
   | "ones.public"
   | "clusters.batch"
@@ -41,6 +42,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
+  // An Inbox item's op (a team-up request's Decline, Team up only or Merge it) changes ideas and crews: it pauses
+  // with sharing (S-H5, notify.ops).
+  { methods: ["POST"], pattern: /^\/api\/inbox\/[^/]+\/actions\/[^/]+\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
@@ -92,7 +96,9 @@ export const BANNERS: Record<SwitchName, string> = {
     "Adding research files is paused for now. You can still share your idea and add links.",
   "attachments.open": "Research files can't be opened right now. Please try again later.",
   "matching.show": "We will show you colleagues with similar ideas a little later.",
-  "comms.email": "Emails are paused for now. Your messages are on your Messages page.",
+  "comms.email": "Emails are paused for now. Your messages are in your Inbox.",
+  // DEC-105: off until IT approves the Teams app. Not a banner: everything still reaches the Inbox and email.
+  "comms.teams": "Teams messages are coming soon. Everything still reaches your Inbox and your email.",
   "wall.public": "The ideas wall is resting for now. Your own ideas are in My ideas.",
   "ones.public": "The Ones are resting from the wall for a little while.",
   "clusters.batch": "Weekly grouping of similar ideas is paused for now.",
@@ -124,7 +130,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/me\/privacy-notice\/?$/, // accepting the notice must work in read-only mode, or nobody could browse
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
-  /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
+  // Reading, marking unread, archiving and "Mark all read" change only the person's own Inbox, nothing about ideas;
+  // they work in read-only mode (L-INBOX).
+  /^\/api\/inbox\/(?:read-all|[^/]+\/(?:read|unread|archive))\/?$/,
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch

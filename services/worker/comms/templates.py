@@ -8,7 +8,7 @@ value is ever interpreted as template syntax or markup. Unknown variables render
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,9 @@ class Template:
     version: str
     subject: str
     body: str
+    # Inbox templates (`comms/templates/inbox/<kind>.md`, L-INBOX.kinds) also carry the reader's kind line
+    # (`heading`), the row text after the sender (`line`) and the reader's short note (`note`).
+    inbox: dict[str, str] = field(default_factory=dict)
 
 
 def _lookup(data: Any, path: str) -> Any:
@@ -64,6 +67,7 @@ def _load(repo: Path, name: str) -> Template:
         version=str(k.get("version", "1.0")),
         subject=str(k.get("subject") or meta.get("title")),
         body=body,
+        inbox={str(key): str(value) for key, value in (k.get("inbox") or {}).items()},
     )
 
 

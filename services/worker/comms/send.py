@@ -52,8 +52,25 @@ def _smtp(to: str, email: email_html.Email) -> None:
         s.send_message(build_message(to, email))
 
 
-def compose(conn: Conn, user_id: str, event: str, template: str, refs: dict[str, Any]) -> email_html.Email:
+def compose(
+    conn: Conn,
+    user_id: str,
+    event: str,
+    template: str,
+    refs: dict[str, Any],
+    row: dict[str, Any] | None = None,
+) -> email_html.Email | None:
+    """The email for one queued notification. An Inbox item (`row["kind"]`) is rendered by `notify.render` from its
+    IDs (L-NOTIFY/3); the decide-by digest lists the ideas as they are now, and is None when none is late any more."""
     base = get_settings().app_base_url
+    if row is not None and row.get("kind"):
+        from notify.render import email as inbox_email
+
+        return inbox_email(conn, row)
+    if event == "review.decide_by_digest":
+        from notify import digest
+
+        return digest.compose(conn, user_id) if digest.overdue(conn, dt.datetime.now(dt.UTC)) else None
     if event == "ember.issue":  # the whole issue, as sent (BLD-128); the in-app copy is the short template
         from ember.render import compose as ember_email
         from ember.service import resolve
@@ -85,7 +102,8 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
     with conn.transaction():
         _drop_inactive(conn)
         rows = conn.execute(
-            "SELECT n.id, n.user_id, n.event, n.template, n.payload, n.attempts, n.urgency, u.email "
+            "SELECT n.id, n.user_id, n.event, n.template, n.payload, n.attempts, n.urgency, u.email, n.kind, "
+            "n.idea_uuid, n.from_user_id, n.due_at, n.created_at, n.actions "
             "FROM notifications n JOIN users u ON u.id = n.user_id WHERE n.channel = 'email' AND n.state = 'queued' "
             "AND n.send_after <= %s AND u.active ORDER BY n.send_after, n.id LIMIT %s FOR UPDATE OF n SKIP LOCKED",
             (now, limit),
@@ -100,7 +118,14 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             if r["urgency"] == "routine" and _hold_back(conn, r, now):
                 continue
             try:
-                _smtp(r["email"], compose(conn, str(r["user_id"]), r["event"], r["template"], r["payload"]))
+                message = compose(conn, str(r["user_id"]), r["event"], r["template"], r["payload"], dict(r))
+                if message is None:  # nothing left to say (every late idea was decided before it went)
+                    conn.execute(
+                        "UPDATE notifications SET state = 'failed', error_code = 'nothing_to_send' WHERE id = %s",
+                        (r["id"],),
+                    )
+                    continue
+                _smtp(r["email"], message)
             except Exception as exc:
                 failed = r["attempts"] + 1 >= MAX_ATTEMPTS
                 conn.execute(
