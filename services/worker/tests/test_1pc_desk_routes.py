@@ -169,3 +169,21 @@ def test_P_PRODUCT_privacy_admins_never_read_or_act_on_the_desk(
     for reader in (cast["meera"], cast["rohan"], core):
         assert client.get(f"/internal/desk/ideas/{ref}", params={"user_id": reader["id"]}).status_code == 200
     assert client.get("/internal/desk", params={"user_id": "not-a-user"}).status_code == 403
+
+
+def test_A_API_conventions_2_numbers_and_lists_in_a_body_answer_422_never_500(
+    client: TestClient, cast: dict[str, Any]
+) -> None:
+    ref, meera, kavya = cast["idea"]["idea_id"], cast["meera"]["id"], cast["kavya"]["id"]
+    sent = client.post(f"/internal/desk/ideas/{ref}/question-sets", params={"user_id": meera},
+                       json={"questions": [{"part": "often", "text": "Is it 40 calls a day at one branch?"}]})  # fmt: skip
+    question_id = sent.json()["questions"][0]["id"]
+    bad = client.put(f"/internal/questions/{question_id}/answer", params={"user_id": kavya},
+                     json={"text": "One branch.", "file_ids": 5})  # fmt: skip
+    assert (bad.status_code, bad.json()["error"]["code"]) == (422, "file_not_found")
+    for body, code in (
+        ({"outside_tools": []}, "outside_tools_invalid"),
+        ({"hours_month": 70}, "worth_invalid"),
+    ):
+        res = client.put(f"/internal/desk/ideas/{ref}/worth", params={"user_id": meera}, json=body)
+        assert (res.status_code, res.json()["error"]["code"]) == (422, code)
