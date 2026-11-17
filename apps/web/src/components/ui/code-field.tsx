@@ -7,7 +7,8 @@ import { FieldMsg } from "./field";
 /**
  * C-FIELD.kinds, the 6-digit code (S-02, built behind the email-code switch, BLD-E002): six boxes on the numeric
  * keypad, one-time-code autofill, paste fills all six, typing moves on, Backspace steps back. A wrong code shakes the
- * boxes and says what to do under them. `onComplete` fires when the sixth digit is in, so the screen can sign in.
+ * boxes and says what to do under them. `onComplete` fires when a full code is in and differs from the one before, so a retry after a wrong code
+ * signs in without clearing the boxes first.
  */
 export function CodeField({
   label,
@@ -32,7 +33,7 @@ export function CodeField({
   const set = (next: string) => {
     const clean = next.replace(/\D/g, "").slice(0, length);
     onChange(clean);
-    if (clean.length === length && value.length < length) onComplete?.(clean);
+    if (clean.length === length && clean !== value) onComplete?.(clean);
     return clean;
   };
 

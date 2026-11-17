@@ -74,8 +74,10 @@ export function SearchBar({
       e.preventDefault();
       e.stopPropagation();
       setOpen(false);
-      returning.current = true;
-      input.current?.focus();
+      if (document.activeElement !== input.current) {
+        returning.current = true;
+        input.current?.focus();
+      }
     }
   };
 

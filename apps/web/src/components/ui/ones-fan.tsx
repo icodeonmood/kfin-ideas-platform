@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 
+import Link from "next/link";
+
 import { reducedMotion } from "@/lib/motion/flip";
 
 import { Avatar } from "./avatar";
@@ -189,7 +191,9 @@ export function OnesFan({
 
 /**
  * C-ONES-FAN.card: a One's post on the dark slab, lit by their tier. The name shows only if the One agreed; otherwise
- * the card says "One No. 17" (the Ones' consent rule).
+ * the card says "One No. 17" (the Ones' consent rule). Footer (reference/copy/Home.md): a cheer toggle named "Cheer
+ * Rohit Menon's fix, 214 cheers" showing the count, and "Read the thread" with the reply count. Without `onCheer`
+ * the count is shown, not pressable.
  */
 export function OnesPost({
   name,
@@ -202,8 +206,10 @@ export function OnesPost({
   adopted,
   figure,
   unit,
-  likes,
-  comments,
+  cheers,
+  cheered = false,
+  onCheer,
+  replies,
   threadHref,
 }: {
   name: string | null;
@@ -218,11 +224,33 @@ export function OnesPost({
   adopted?: string;
   figure: string;
   unit: string;
-  likes: number;
-  comments: number;
+  cheers: number;
+  /** This person has cheered it (the toggle shows pressed). */
+  cheered?: boolean;
+  onCheer?: () => void;
+  replies: number;
   threadHref: string;
 }) {
   const who = name ?? `One No. ${number}`;
+  const cheerWords = `Cheer ${name ? `${name}\u2019s` : `One No. ${number}\u2019s`} fix, `;
+  const count = (
+    <>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1-3.7 2.2-4.8.3 1.6 1 2.6 2 3.1C11 9 11.2 6 12 3z" />
+      </svg>
+      <span className="num">{cheers}</span>
+      <span className="vh"> {cheers === 1 ? "cheer" : "cheers"}</span>
+    </>
+  );
   return (
     <article className="opost" data-tier={tier}>
       <header className="opost-h">
@@ -230,7 +258,7 @@ export function OnesPost({
         <span className="opost-who">
           <b>{who}</b>
           <span>
-            One No. {number}, Tier {tier}, {tierName}
+            {name ? `One No. ${number}, ` : ""}Tier {tier}, {tierName}
           </span>
         </span>
         <span className="opost-ago">{ago}</span>
@@ -245,11 +273,17 @@ export function OnesPost({
         <span className="opost-unit">{unit}</span>
       </p>
       <footer className="opost-f">
-        <span className="num">{likes} likes</span>
-        <a href={threadHref} className="opost-t">
-          Read the thread
-        </a>
-        <span className="num">{comments} comments</span>
+        {onCheer ? (
+          <button type="button" className="opost-cheer" aria-pressed={cheered} onClick={onCheer}>
+            <span className="vh">{cheerWords}</span>
+            {count}
+          </button>
+        ) : (
+          <span className="opost-cheer">{count}</span>
+        )}
+        <Link href={threadHref} className="opost-t">
+          Read the thread <span className="num opost-n">{replies}</span>
+        </Link>
       </footer>
     </article>
   );

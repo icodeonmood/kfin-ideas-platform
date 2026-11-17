@@ -116,6 +116,10 @@ test("C-SEARCH.behaviour/1–2, /6: the panel opens on focus; Backspace removes 
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(box).toHaveValue("sms");
+  // Escape inside the box moves no focus, so coming back to the box opens the panel again
+  await box.blur();
+  await box.focus();
+  await expect(panel).toBeVisible();
 });
 
 test("C-DROPDOWN/2–5: None picked, then a title, then a count; Escape closes the list only", async ({
@@ -171,6 +175,14 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await fan.getByRole("button", { name: "Next post" }).click();
   await expect(fan.getByText("Post 2 of 3")).toBeVisible();
   await expect(fan.getByRole("article")).toContainText("One No. 17");
+  const cheer = fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 24 cheers/ });
+  await expect(cheer).toHaveAttribute("aria-pressed", "false");
+  await cheer.click();
+  await expect(fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 25 cheers/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(fan.getByRole("link", { name: "Read the thread 6" })).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(fan.getByText("Post 3 of 3")).toBeVisible();
   await expect(fan.getByRole("button", { name: "Next post" })).toHaveAttribute("aria-disabled", "true");
@@ -186,8 +198,17 @@ test("C-FIELD.kinds: paste fills the six code boxes; a wrong code is said under 
     document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
   });
   await expect(page.getByRole("textbox", { name: "Digit 6 of 6" })).toHaveValue("0");
-  await expect(page.getByRole("alert").filter({ hasText: "That code didn’t match" })).toBeVisible();
+  const wrong = page.getByRole("alert").filter({ hasText: "That code didn’t match" });
+  await expect(wrong).toBeVisible();
   await expectNoSeriousAxeIssues(page);
+  // A second full code over the first is checked again, with no need to clear the boxes
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.setData("text", "111111");
+    document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+  });
+  await expect(page.getByRole("textbox", { name: "Digit 1 of 6" })).toHaveValue("1");
+  await expect(wrong).toBeVisible();
   await page.keyboard.press("Backspace");
   await expect(page.getByRole("textbox", { name: "Digit 6 of 6" })).toHaveValue("");
 });

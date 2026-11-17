@@ -65,12 +65,18 @@ export function Ambient({ light }: { light: "full" | "quiet" }) {
  */
 /**
  * The layout renders the shell's data once; App Router keeps the layout across soft navigation, so the shell asks
- * again after each one. The Inbox count and the sidebar rows then match the page (C-SIDEBAR.rules/2). A failed ask
- * keeps what is shown.
+ * again after each one, and takes the layout's new data after a refresh. The Inbox count and the sidebar rows then
+ * match the page (C-SIDEBAR.rules/2). A failed ask keeps what is shown.
  */
 function useFreshShellData(initial: ShellData | null, signedIn: boolean): ShellData | null {
   const pathname = usePathname();
   const [data, setData] = useState(initial);
+  // router.refresh() re-renders the layout with new data: take it (the sidebar and the Inbox count follow the page)
+  const [given, setGiven] = useState(initial);
+  if (given !== initial) {
+    setGiven(initial);
+    setData(initial);
+  }
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {

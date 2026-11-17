@@ -33,6 +33,7 @@ export function KitDemo() {
   const [worth, setWorth] = useState<string[]>(["time"]);
   const [sort, setSort] = useState("latest");
   const [tab, setTab] = useState("yours");
+  const [cheered, setCheered] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState("");
   const [tried, setTried] = useState(false);
@@ -396,8 +397,10 @@ export function KitDemo() {
               adopted="Adopted by 3 teams"
               figure={p.f}
               unit={p.u}
-              likes={24}
-              comments={6}
+              cheers={24 + (cheered.includes(p.n) ? 1 : 0)}
+              cheered={cheered.includes(p.n)}
+              onCheer={() => setCheered((c) => (c.includes(p.n) ? c.filter((n) => n !== p.n) : [...c, p.n]))}
+              replies={6}
               threadHref="/kit#k-fan"
             />
           ))}

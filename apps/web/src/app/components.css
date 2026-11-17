@@ -1693,6 +1693,40 @@ textarea:is(.fld, .textarea) {
   font-size: 13.5px;
 }
 
+.opost-cheer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+button.opost-cheer {
+  cursor: pointer;
+}
+
+button.opost-cheer:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+button.opost-cheer[aria-pressed="true"] {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.opost-n {
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+}
+
 .opost-t {
   display: inline-flex;
   align-items: center;
