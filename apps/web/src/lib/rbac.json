@@ -77,13 +77,6 @@
       "admin": "yes",
       "ceo": "yes"
     },
-    "propose_ones": {
-      "core_committee": "yes",
-      "ceo": "yes"
-    },
-    "decide_ones": {
-      "core_committee": "yes"
-    },
     "carry_out_ones": {
       "admin": "yes"
     },
@@ -346,15 +339,7 @@
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/display/office                           open_display",
-    "GET /api/ones/leaderboard                         signed_in",
-    "GET /api/ones/console                             view_ones_console",
-    "POST /api/ones/proposals                          propose_ones",
-    "POST /api/ones/proposals/{id}/decide              decide_ones",
-    "POST /api/ones/proposals/{id}/carry-out           carry_out_ones",
-    "POST /api/ones/proposals/{id}/withdraw            propose_ones",
-    "GET /api/ones/proposals/{id}/invite               signed_in",
     "POST /api/ones/proposals/{id}/messages            signed_in",
-    "POST /api/ones/proposals/{id}/invites             decide_ones",
     "PUT /api/ones/{id}/measures                       carry_out_ones",
     "GET /api/ones/{id}/showcase                       view_ones_console",
     "PUT /api/ones/screen-mode                         carry_out_ones",
@@ -449,7 +434,6 @@
   ],
   "membership_scoped": {
     "ones": [
-      "GET /api/ones/leaderboard",
       "POST /api/me/one/number",
       "POST /api/me/one/brief",
       "GET /api/me/one/showcase",
