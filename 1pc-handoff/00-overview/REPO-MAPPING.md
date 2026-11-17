@@ -31,11 +31,11 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
-| `S-06` | `/ideas/:id` (sharer) | `app/ideas/[id]` | exists, differs | L | P0 | E |
+| `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
-| `S-07` | `/my-ideas` | `app/my-ideas` | exists, differs | M | P0 | E |
+| `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
-| `S-09` | `/ideas/:id` (others) | `app/ideas/[id]` | exists, differs | M | P0 | E |
+| `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
@@ -55,23 +55,23 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | State | Effort | Phase | Lane |
 |---|---|---|---|---|
-| `C-SIDEBAR` | exists, differs | M to L | P0 | D |
-| `C-PHONE-TABS` | missing | M | P0 | D |
-| `C-TASKBAR` | missing | S to M | P0 | D |
-| `C-BUTTON` | exists, differs (26 files use the old `.button`) | M | P0 | D |
-| `C-CHIP` | exists, differs | M | P0 | D |
-| `C-PILL` | missing | S | P0 | D |
-| `C-FIELD`, `C-FIELD-MSG` | exists, differs | S | P0 | D |
-| `C-CARD` | exists, differs (no glass today) | M | P0 | D |
-| `C-AVATAR` | missing | S | P0 | D |
-| `C-SKELETON` | missing | S | P0 | D |
-| `C-EMPTY` | exists, differs | S | P0 | D |
-| `C-SORTS` | missing | S | P0 | D |
-| `C-TABS` | missing | S to M | P0 | D |
-| `C-SEARCH` | missing | M | P0 | D (bar), F (ask) |
-| `C-TRACK` | missing | S to M | P0 | D |
-| `C-FILE` | exists, differs (keep the quarantine and scan logic in `attachments.tsx`) | M | P0 | D (UI), C (wiring) |
-| `C-DROPDOWN` | missing | S | P0 | D |
+| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. Lanes B fill `desk` and `committee` rows | M to L | P0 | D |
+| `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
+| `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
+| `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
+| `C-CHIP` | built: `components/ui/chips.tsx` (`ChoiceChips` radio group with arrows, `MultiChips` pressed), `components.css`; the sliding ring waits for the FLIP polish | M | P0 | D |
+| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`) | S | P0 | D |
+| `C-FIELD`, `C-FIELD-MSG` | built: `components/ui/field.tsx` (`Field` wires label, help, message, `aria-describedby`, `aria-invalid`; `FieldMsg`); 3:1 border; `code-field.tsx` (six boxes, paste, auto-advance, Backspace, shake, autofill) and `question-box.tsx` ("Pinned to" a part, Enter adds) | S | P0 | D |
+| `C-CARD` | built: `components.css` (`.card`, `.panel`, `.tile`, `.well`, `.note`, `.note.blue`, `.slab`, `.placeholder`, `.card-link`); glass inside the shell (`shell.css`) | M | P0 | D |
+| `C-AVATAR` | built: `components/ui/avatar.tsx` (`Avatar` with sizes, neutral and tier rings, the system mark; `CrewFaces` and `crewLine`) | S | P0 | D |
+| `C-SKELETON` | built: `components/ui/skeleton.tsx` (`Skeleton`, `SkeletonRows`, `Loading`, `Spinner`) | S | P0 | D |
+| `C-EMPTY` | built: `components/ui/empty.tsx`; screens replace their ad hoc lines as they are rebuilt | S | P0 | D |
+| `C-SORTS` | built: `components/ui/sorts.tsx` (row on desktop, cycling button on a phone); row gliding waits for the FLIP polish | S | P0 | D |
+| `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
+| `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
+| `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
+| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
+| `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
@@ -84,8 +84,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-LISTEN` | missing | M | P0 | B |
 | `C-SHEET-MERGE` | missing | M | P0 | B |
 | `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
-| `C-CREW-DECK` | exists, differs | L | P0 | D (motion), F (data) |
-| `C-ONES-FAN` | exists, differs | M to L | P0 | D |
+| `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
+| `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |
 
 ## `P-REPO.logic`
 
@@ -98,23 +98,23 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
 | `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
-| `L-REVIEW` | `review/service.py`, `review_items` | exists, differs | P0 | B |
-| `L-DECIDE` | `review/service.py` (tags and groups today) | exists, differs | P0 | B |
+| `L-REVIEW` | `services/worker/desk/review.py`, `queue.py`, `reads.py`, `clock.py`, `clocks.py`; web forwarders in `server/desk.ts` | landed at 82668c1 (17 Nov, back end; follow-up on `b/1pc-review-fu`) | P0 | B |
+| `L-DECIDE` | `services/worker/desk/decide.py`, `promises.py`, `when.py`; `idea_decisions` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-INBOX` | `notifications`, `comms/inbox.py` | exists, differs | P0 | A |
 | `L-NOTIFY` | `comms/*` | exists, differs | P0 (email, in-app), P2 (Teams) | A |
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
 | `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
-| `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P0 | B |
-| `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P0 | B |
+| `L-QUESTIONS` | `services/worker/desk/asking.py`, `questions.py`, `clock.py`; `question_sets`, `questions`, `answers` | landed at 82668c1 (17 Nov, back end) | P0 | B |
+| `L-COMMITTEE` | `services/worker/desk/committee.py`, `window.py`; `decision_windows`, `decision_reversals` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-CONVO` | none | missing | P0 | F |
-| `L-WORTH` | impact estimates (qualify) | exists, differs | P0 | B |
-| `L-MERGE` | `idea_links` | exists, differs | P0 | B (desk), F (request) |
+| `L-WORTH` | `services/worker/desk/worth.py`, `revise.py` | landed at 82668c1 (17 Nov, back end) | P0 | B |
+| `L-MERGE` | desk: `services/worker/desk/merge.py`, `merging.py`, `merges` (landed at 82668c1, 17 Nov, back end); request: `idea_links` (exists, differs) | desk landed, request exists, differs | P0 | B (desk), F (request) |
 | `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
-| `L-LISTEN` | `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | back end built; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
+| `L-LISTEN` | lane B: `services/worker/desk/listen.py`, `reads.script_for`, `GET /api/desk/ideas/:id/listen` (BLD-B237); lane C: `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | lane B's back end landed at 82668c1 (17 Nov); lane C's hosted voice on c/sarvam; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
 
 ## `P-REPO.contracts`
 
@@ -130,6 +130,8 @@ Approach: one cut-over migration in lane E's range (`202611215xxxxx`, sorting af
 ## `P-REPO.tokens`
 
 `01-foundations/tokens.css` is imported as-is into `apps/web/src/app/`, and the OFFER names in `offer.css` become aliases of the pack's tokens, so existing call sites keep working while screens move over. Fonts stay self-hosted through `@fontsource-variable` (BLD-D008); `--fd` and `--ft` are overridden because the pack names "Inter" and the installed family is "Inter Variable". Tier colours change in `services/worker/ones/tiers.py`, the emails and `docs/BRAND.md` too. Detail: `mapping/components.md` §1.
+
+**Built** (lane D, BLD-D010, 16 Nov 2026): `apps/web/src/app/tokens.css` (verbatim), `foundation.css` (the groups tokens.css leaves out, base, type classes, ambient light, reduced motion), `offer.css` (aliases only), `motion.css` (the pack's motion sheet, re-pointed), `src/lib/motion/flip.ts` (WAAPI FLIP, BLD-E005). Tests: `apps/web/tests/unit/foundation.test.ts`.
 
 ## `P-REPO.not-in-pack`
 

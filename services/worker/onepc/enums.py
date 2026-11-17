@@ -34,6 +34,11 @@ def labels(name: str) -> dict[str, str]:
     return dict(_data()["enums"][name].get("labels") or {})
 
 
+def wall_labels(name: str) -> dict[str, str]:
+    """The Wall's own words for an enum's values ("Problem", "Fix", "Business idea"), where the pack has them."""
+    return dict(_data()["enums"][name].get("wall_labels") or {})
+
+
 def is_value(name: str, value: object) -> bool:
     return value in values(name)
 

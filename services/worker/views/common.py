@@ -5,7 +5,8 @@
   moderation step before anything is shown to everyone (BLD-094).
 - Other people see only the neutral summary (re-checked before display), the area tag, the stage in plain
   words and the number of colleagues on it. Never the person's own words, files or contributor code.
-- Names appear only on the wall, and only for people who said yes to `public_name_consent`.
+- Names appear only on the wall, and only for people who have not hidden theirs: `person_settings.show_name_on_wall`,
+  shown when there is no row (DEC-104, P-PRODUCT.privacy).
 """
 
 from __future__ import annotations
@@ -71,13 +72,14 @@ def colleague_codes(conn: Conn, idea_id: str, owner_code: str) -> list[str]:
 
 
 def consenting_names(conn: Conn, codes: list[str]) -> list[str]:
-    """Names of the people behind these codes who agreed to be named on the wall (and still work here)."""
+    """Names of the people behind these codes who have not hidden their name (and still work here). A name shows
+    unless the person hid it, as on the Wall, the idea page and the office screen (DEC-104, P-PRODUCT.privacy)."""
     if not codes:
         return []
     rows = conn.execute(
         "SELECT DISTINCT u.name FROM contributor_map m JOIN users u ON u.id = m.user_id "
-        "JOIN comms_prefs p ON p.user_id = u.id WHERE m.contributor_code = ANY(%s) AND p.public_name_consent "
-        "AND u.active ORDER BY u.name",
+        "LEFT JOIN person_settings s ON s.user_id = u.id WHERE m.contributor_code = ANY(%s) "
+        "AND coalesce(s.show_name_on_wall, true) AND u.active ORDER BY u.name",
         (codes,),
     ).fetchall()
     return [str(r["name"]) for r in rows]

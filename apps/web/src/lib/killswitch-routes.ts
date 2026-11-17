@@ -55,6 +55,8 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
+  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
@@ -65,6 +67,18 @@ export const ROUTE_RULES: readonly Rule[] = [
   {
     methods: ["GET"],
     pattern: /^\/api\/(?:ones(?:\/constellation)?|display\/office)\/?$/,
+    switches: ["ones.public"],
+  },
+  // The 1% Club's Wall and the Ones' posts (lane E, A-API.wall): the worker checks the same switches again.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/wall\/(?:kindling|just-in|impact|ember)\/?$/,
+    switches: ["wall.public"],
+  },
+  { methods: ["GET"], pattern: /^\/api\/wall\/ones\/?$/, switches: ["wall.public", "ones.public"] },
+  {
+    methods: ["GET", "PUT"],
+    pattern: /^\/api\/ones\/posts(?:\/[^/]+\/like)?\/?$/,
     switches: ["ones.public"],
   },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
@@ -153,8 +167,8 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
-  /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/me\/refer-as\/?$/, // how a person wants to be referred to (BLD-C111) changes nothing about ideas
+  /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
   // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
   // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
@@ -162,6 +176,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
+  // The same on the 1% Club's dashboard (lane E, S-ONE), and a person's own Profile switches (S-H6): their own
+  // record, nothing about ideas. A brief's text checks run inside the call whatever is paused (V-FIELDS.one/4).
+  /^\/api\/one\/(?:number|brief|glow-up\/[^/]+\/seen)\/?$/,
+  /^\/api\/me\/settings\/?$/,
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
