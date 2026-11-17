@@ -29,6 +29,8 @@ export type UseVoiceCapture = {
   start: () => Promise<void>;
   stop: () => void;
   reset: () => void;
+  /** Call once the notice is on screen; the first recording then marks it seen (BLD-C127). */
+  noticeShown: () => void;
 };
 
 export function useVoiceCapture(draftId: string, options?: VoiceCaptureOptions): UseVoiceCapture {
@@ -36,5 +38,11 @@ export function useVoiceCapture(draftId: string, options?: VoiceCaptureOptions):
   if (capture.draftId !== draftId) setCapture(new VoiceCapture(draftId, options)); // a different draft
   useEffect(() => () => capture.dispose(), [capture]);
   const state = useSyncExternalStore(capture.subscribe, capture.getState, server);
-  return { state, start: capture.start, stop: capture.stop, reset: capture.reset };
+  return {
+    state,
+    start: capture.start,
+    stop: capture.stop,
+    reset: capture.reset,
+    noticeShown: capture.noticeShown,
+  };
 }

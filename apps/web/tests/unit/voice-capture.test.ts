@@ -14,6 +14,7 @@ import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import {
   MIC_BLOCKED,
+  retryAfterMs,
   VOICE_NOTICE_KEY,
   VoiceCapture,
   type VoiceCaptureOptions,
@@ -220,6 +221,7 @@ describe("C-PROMPT.voice states (BLD-C118, BLD-C119)", () => {
     const storage = memoryStorage();
     const { capture } = make({ storage });
     expect(capture.getState()).toEqual({ status: "idle", notice: VOICE_NOTICE });
+    capture.noticeShown(); // the screen showed it (BLD-C127)
     await capture.start();
     await settle();
     expect(storage.m.get(VOICE_NOTICE_KEY)).toBe("1");
@@ -592,5 +594,221 @@ describe("C-PROMPT.voice useVoiceCapture (BLD-C118)", () => {
     await act(async () => root.unmount());
     expect(stream.track.stopped).toBe(true);
     expect(states).toContain("asking");
+  });
+});
+
+// ── review fixes (BLD-C127) ──────────────────────────────────────────────────────────────────────────────────
+
+describe("C-PROMPT.voice review fixes (BLD-C127)", () => {
+  it("C-PROMPT.voice the notice is marked seen only once the screen has shown it", async () => {
+    const storage = memoryStorage();
+    const { capture } = make({ storage });
+    await capture.start();
+    await settle();
+    expect(capture.getState().status).toBe("recording");
+    expect(storage.m.has(VOICE_NOTICE_KEY)).toBe(false);
+  });
+
+  it("C-PROMPT.voice iOS: the context is made and resumed inside the tap, before anything is awaited", () => {
+    const { capture } = make();
+    void capture.start(); // not awaited: what happened synchronously is what the gesture covers
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]!.resume).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(contexts[0]!.resume.mock.invocationCallOrder[0]!).toBeLessThan(
+      getUserMedia.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("C-PROMPT.voice iOS: recording is set before the resume settles, and a hung resume ends the note after 5 s", async () => {
+    let resolveResume: (() => void) | null = null;
+    class SlowContext extends FakeContext {
+      resume = vi.fn(() => new Promise<void>((r) => (resolveResume = r)));
+    }
+    vi.stubGlobal("AudioContext", SlowContext);
+    const { capture } = make({ resumeTimeoutMs: 5_000 });
+    void capture.start();
+    await settle();
+    expect(capture.getState().status).toBe("recording"); // no audio dropped while the resume is pending
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(capture.getState()).toMatchObject({ status: "failed", reason: "audio_suspended" });
+    expect(stream.track.stopped).toBe(true);
+    expect(ends()).toHaveLength(1);
+    expect(resolveResume).not.toBeNull();
+  });
+
+  it("C-PROMPT.voice a request that hangs is aborted after 10 s and retried", async () => {
+    let hung = true;
+    const hanging = vi.fn(async (input: string, init?: RequestInit) => {
+      if (hung && String(input).includes("/voice/chunk")) {
+        hung = false;
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        });
+      }
+      return fetchMock(input, init);
+    });
+    const { capture } = await recording({
+      fetch: hanging as unknown as typeof fetch,
+      requestTimeoutMs: 10_000,
+    });
+    speak(1);
+    await settle();
+    expect(chunks()).toHaveLength(0); // the first try hangs (the mock records only answered calls)
+    await vi.advanceTimersByTimeAsync(10_000 + 600);
+    expect(chunks().map((c) => c.seq)).toEqual([0]);
+    expect(capture.getState().status).toBe("recording");
+  });
+
+  it("C-PROMPT.voice leaving without React's cleanup (pagehide) sends the last part second and end with keepalive", async () => {
+    const { capture } = await recording();
+    const node = nodes.at(-1)!;
+    node.port.onmessage?.({ data: new Float32Array(24_000).fill(0.1) }); // half a second: not a full chunk yet
+    await settle();
+    fetchMock.mockClear();
+    window.dispatchEvent(new Event("pagehide"));
+    // Earlier tests' captures may still listen; this capture's own calls are the 0.5 s chunk and the end after it.
+    const sent = fetchMock.mock.calls.map(([url, init]) => ({ url: String(url), init: init as RequestInit }));
+    const chunkAt = sent.findIndex(
+      (c) => c.url.includes("/voice/chunk?") && (c.init.body as Uint8Array).byteLength === 16_000, // 0.5 s
+    );
+    expect(chunkAt).toBeGreaterThanOrEqual(0);
+    expect(sent[chunkAt]!.init).toMatchObject({ method: "POST", keepalive: true });
+    const endAt = sent.findIndex((c, i) => i > chunkAt && c.url === `/api/drafts/${DRAFT}/voice/end`);
+    expect(endAt).toBeGreaterThan(chunkAt);
+    expect(sent[endAt]!.init).toMatchObject({ keepalive: true });
+    expect(stream.track.stopped).toBe(true);
+    expect(capture.getState().status).toBe("sending"); // then it reads the note back if the page is still here
+  });
+
+  it("C-PROMPT.voice the page hidden (phone locked, another app) ends the note the same way", async () => {
+    await recording();
+    fetchMock.mockClear();
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.at(-1)).toBe(`/api/drafts/${DRAFT}/voice/end`);
+    expect(stream.track.stopped).toBe(true);
+  });
+
+  it("C-PROMPT.voice leaving the screen flushes the last part second before end (dispose)", async () => {
+    const { capture } = await recording();
+    const node = nodes.at(-1)!;
+    node.port.onmessage?.({ data: new Float32Array(48_000 + 12_000).fill(0.1) }); // 1.25 s
+    await settle();
+    fetchMock.mockClear();
+    capture.dispose();
+    const sent = fetchMock.mock.calls.map(([url, init]) => ({ url: String(url), init: init as RequestInit }));
+    const lastChunk = sent.filter((c) => c.url.includes("/voice/chunk?")).at(-1)!;
+    expect(lastChunk.init).toMatchObject({ keepalive: true });
+    expect((lastChunk.init.body as Uint8Array).byteLength).toBe(8_000); // 0.25 s
+    expect(sent.at(-1)!.url).toBe(`/api/drafts/${DRAFT}/voice/end`);
+  });
+
+  it("C-PROMPT.voice stop while the browser is still asking cancels, and the mic is let go when it arrives", async () => {
+    let grant: ((s: FakeStream) => void) | null = null;
+    getUserMedia.mockImplementationOnce(() => new Promise((r) => (grant = r)));
+    const { capture } = make();
+    const started = capture.start();
+    expect(capture.getState().status).toBe("asking");
+    capture.stop();
+    expect(capture.getState().status).toBe("idle");
+    grant!(stream);
+    await started;
+    await settle();
+    expect(stream.track.stopped).toBe(true);
+    expect(calls.filter((c) => c.path.endsWith("/voice/start"))).toHaveLength(0);
+  });
+
+  it("C-PROMPT.voice reset while asking cancels too", async () => {
+    getUserMedia.mockImplementationOnce(() => new Promise(() => undefined));
+    const { capture } = make();
+    void capture.start();
+    capture.reset();
+    expect(capture.getState().status).toBe("idle");
+  });
+
+  it("L-DRAFT.voice a 409 chunk_out_of_order resyncs from details.next_seq instead of ending the note", async () => {
+    let first = true;
+    route = (call) => {
+      if (call.path.endsWith("/voice/chunk") && first) {
+        first = false;
+        return { status: 409, body: { error: "chunk_out_of_order", details: { next_seq: 1 } } };
+      }
+      return defaultRoute(call);
+    };
+    const { capture } = await recording();
+    speak(3);
+    await settle();
+    expect(capture.getState().status).toBe("recording");
+    // seq 0 was already heard (next_seq 1): it is dropped, and 1 and 2 go on
+    expect(chunks().map((c) => c.seq)).toEqual([0, 1, 2]);
+  });
+
+  it("L-DRAFT.voice a 409 with a gap renumbers what is left from next_seq", async () => {
+    let refused = false;
+    route = (call) => {
+      if (call.path.endsWith("/voice/chunk") && call.seq === 1 && !refused) {
+        refused = true; // the worker lost its place and asks for 0 again
+        return { status: 409, body: { error: "chunk_out_of_order", details: { next_seq: 0 } } };
+      }
+      return defaultRoute(call);
+    };
+    const { capture } = await recording();
+    speak(3);
+    await settle();
+    expect(chunks().map((c) => c.seq)).toEqual([0, 1, 0, 1]); // 1 and 2 go on as 0 and 1
+    speak(1);
+    await settle();
+    expect(chunks().at(-1)!.seq).toBe(2); // and the next one follows them
+    expect(capture.getState().status).toBe("recording");
+  });
+
+  it("L-DRAFT.voice a 429 with Retry-After waits that long before the retry", async () => {
+    let first = true;
+    const limited = vi.fn(async (input: string, init?: RequestInit) => {
+      if (first && String(input).includes("/voice/chunk")) {
+        first = false;
+        calls.push({ method: "POST", path: "/limited" });
+        return {
+          ok: false,
+          status: 429,
+          headers: new Headers({ "Retry-After": "4" }),
+          json: async () => ({}),
+        } as Response;
+      }
+      return fetchMock(input, init);
+    });
+    await recording({ fetch: limited as unknown as typeof fetch, retryDelaysMs: [100, 100, 100] });
+    speak(1);
+    await settle();
+    await vi.advanceTimersByTimeAsync(3_900);
+    expect(chunks()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(chunks().map((c) => c.seq)).toEqual([0]);
+  });
+
+  it("L-DRAFT.voice retryAfterMs reads seconds or a date, capped at 10 s", () => {
+    expect(retryAfterMs("4")).toBe(4_000);
+    expect(retryAfterMs("120")).toBe(10_000);
+    expect(retryAfterMs(new Date(5_000).toUTCString(), 2_000)).toBe(3_000);
+    expect(retryAfterMs(null)).toBeUndefined();
+    expect(retryAfterMs("soon")).toBeUndefined();
+  });
+
+  it("C-PROMPT.voice S-04 has no draft yet: resolveDraft is asked inside start, after the resume", async () => {
+    const resolveDraft = vi.fn(async () => DRAFT);
+    const capture = new VoiceCapture("", {
+      fetch: fetchMock as unknown as typeof fetch,
+      storage: memoryStorage(),
+      device: "desktop",
+      resolveDraft,
+    });
+    await capture.start();
+    await settle();
+    expect(resolveDraft).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.path).toBe(`/api/drafts/${DRAFT}/voice/start`);
+    expect(capture.getState().status).toBe("recording");
   });
 });

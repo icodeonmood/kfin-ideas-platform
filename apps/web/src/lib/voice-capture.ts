@@ -69,6 +69,7 @@ export type VoiceFailure =
   | "signed_out"
   | "stream_lost" // the worker restarted, or the note never finished
   | "unavailable"
+  | "audio_suspended" // the browser kept the audio context suspended (iOS outside a tap): the mic is released
   | (string & Record<never, never>); // the worker's own code: too_many_this_hour, not_a_draft, a failure code…
 
 export type VoiceCaptureState =
@@ -96,13 +97,25 @@ export type VoiceCaptureOptions = {
   pollMs?: number;
   pollForMs?: number;
   maxSeconds?: number;
+  /** S-04 has no draft until the person speaks or types: asked for inside start(), after the audio context is made
+   * and resumed in the tap, so the gesture is kept (BLD-C127). */
+  resolveDraft?: () => Promise<string | null>;
+  /** Each request is aborted after this long, so the retry and poll logic runs on a hung network (BLD-C127). */
+  requestTimeoutMs?: number;
+  /** The audio context must be running within this long of the tap, or the note fails with `audio_suspended`. */
+  resumeTimeoutMs?: number;
 };
 
 export const VOICE_NOTICE_KEY = "1pc.voice.notice-seen";
 const RETRY_DELAYS_MS = [500, 1500, 3000] as const;
 const POLL_MS = 2000;
+const REQUEST_TIMEOUT_MS = 10_000;
+const RESUME_TIMEOUT_MS = 5_000;
+const RETRY_AFTER_MAX_MS = 10_000;
+/** Keepalive requests may carry 64 KB in all; the last chunks sent on leaving stay under it with room for `end`. */
+const KEEPALIVE_BUDGET = 60_000;
 
-type Answer = { ok: boolean; status: number; body: Record<string, unknown> };
+type Answer = { ok: boolean; status: number; body: Record<string, unknown>; retryAfterMs?: number };
 type Capture = {
   ctx: AudioContext;
   stream: MediaStream | null;
@@ -179,6 +192,12 @@ export class VoiceCapture {
   private readonly pollMs: number;
   private readonly pollForMs: number;
   private readonly maxSeconds: number;
+  private readonly resolveDraft: (() => Promise<string | null>) | null;
+  private readonly requestTimeoutMs: number;
+  private readonly resumeTimeoutMs: number;
+  private target: string; // the draft the note belongs to: `draftId`, or the one `resolveDraft` gave
+  private noticeShownOnScreen = false;
+  private detach: (() => void) | null = null;
 
   private run = 0; // bumped by every start, reset and dispose: async work from an older run stops
   private capture: Capture | null = null;
@@ -204,6 +223,10 @@ export class VoiceCapture {
     this.pollMs = options.pollMs ?? POLL_MS;
     this.pollForMs = options.pollForMs ?? (VOICE_IDLE_SECONDS + 300) * 1000;
     this.maxSeconds = options.maxSeconds ?? VOICE_MAX_SECONDS;
+    this.resolveDraft = options.resolveDraft ?? null;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.resumeTimeoutMs = options.resumeTimeoutMs ?? RESUME_TIMEOUT_MS;
+    this.target = draftId;
     this.state = this.idle();
   }
 
@@ -216,7 +239,13 @@ export class VoiceCapture {
     };
   };
 
-  /** The person pressed the mic. Call it from the click handler: the audio context is made inside the gesture. */
+  /** The screen has shown VOICE_NOTICE: only then does the first recording mark it seen on this device. */
+  readonly noticeShown = (): void => {
+    this.noticeShownOnScreen = true;
+  };
+
+  /** The person pressed the mic. Call it from the click handler: the audio context is made and resumed inside the
+   * gesture, before anything is awaited, or iOS Safari keeps it suspended (BLD-C127). */
   readonly start = async (): Promise<void> => {
     const s = this.state.status;
     if (s === "asking" || s === "recording" || s === "sending") return;
@@ -233,6 +262,12 @@ export class VoiceCapture {
     }
     const capture: Capture = { ctx, stream: null, node: null, source: null };
     this.capture = capture;
+    // Still inside the tap: watch the context, and ask it to run, before the first await.
+    ctx.addEventListener("statechange", () => {
+      const st = ctx.state as string;
+      if (st === "suspended" || st === "interrupted") this.interrupted(run);
+    });
+    const resumed = this.resumeWithin(ctx);
     this.set({ status: "asking" });
 
     try {
@@ -251,7 +286,7 @@ export class VoiceCapture {
           : "not_supported",
       );
     }
-    if (run !== this.run) return stopTracks(capture.stream);
+    if (run !== this.run) return stopTracks(capture.stream); // cancelled while asking
 
     try {
       await ctx.audioWorklet.addModule(voiceWorkletUrl());
@@ -267,6 +302,16 @@ export class VoiceCapture {
       if (run !== this.run) return;
       this.release();
       return this.fail("not_supported");
+    }
+
+    if (!this.target && this.resolveDraft) {
+      const got = await this.resolveDraft().catch(() => null);
+      if (run !== this.run) return;
+      if (!got) {
+        this.release();
+        return this.fail("unavailable");
+      }
+      this.target = got;
     }
 
     const opened = await this.call("POST", "start");
@@ -286,30 +331,111 @@ export class VoiceCapture {
     node.port.onmessage = (e: MessageEvent) => this.hear(run, e.data);
     source.connect(node);
     node.connect(ctx.destination); // pulls the graph; the worklet writes silence, so nothing is heard
-    try {
-      await ctx.resume();
-    } catch {
-      // some browsers resolve the context as running already
-    }
-    if (run !== this.run) return;
     for (const track of stream.getAudioTracks()) track.addEventListener("ended", () => this.interrupted(run));
-    ctx.addEventListener("statechange", () => {
-      const st = ctx.state as string;
-      if (st === "suspended" || st === "interrupted") this.interrupted(run);
-    });
-    this.noticeSeen();
+    this.watchLeaving(run);
+    if (this.noticeShownOnScreen) this.noticeSeen();
+    // Recording before the resume settles, so no audio the worklet sends is dropped.
     this.set({ status: "recording", seconds: 0, maxSeconds: this.maxSeconds, text: "", spans: [] });
+    const running = await resumed;
+    if (run !== this.run || running) return;
+    // The context never ran (iOS outside the tap): the mic goes off, the note ends, and the reason is a code.
+    const id = this.streamId;
+    this.release();
+    this.open = false;
+    this.queue = [];
+    if (id) void this.endQuietly(id);
+    this.fail("audio_suspended");
   };
 
-  /** The person pressed stop. */
+  /** ctx.resume(), called now; true once the context runs, false if it is still suspended after the timeout. */
+  private resumeWithin(ctx: AudioContext): Promise<boolean> {
+    let asked: Promise<unknown>;
+    try {
+      asked = Promise.resolve(ctx.resume());
+    } catch {
+      asked = Promise.resolve();
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve((ctx.state as string) === "running"), this.resumeTimeoutMs);
+    });
+    const done = asked.then(
+      () => (ctx.state as string) !== "suspended",
+      () => (ctx.state as string) === "running",
+    );
+    return Promise.race([done, timeout]).finally(() => {
+      if (timer !== null) clearTimeout(timer);
+    });
+  }
+
+  /** Leaving without React's cleanup (a closed tab, a locked phone, another app): the last seconds and the end go
+   * with keepalive, then the page reads the note back if it is still there (BLD-C127). */
+  private watchLeaving(run: number): void {
+    if (typeof window === "undefined") return;
+    const gone = () => this.leaving(run);
+    const hidden = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") this.leaving(run);
+    };
+    window.addEventListener("pagehide", gone);
+    document.addEventListener("visibilitychange", hidden);
+    this.detach = () => {
+      window.removeEventListener("pagehide", gone);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }
+
+  private leaving(run: number): void {
+    if (run !== this.run || !this.open || !this.streamId) return;
+    const s = this.state.status;
+    if (s !== "recording" && s !== "sending") return;
+    this.release();
+    this.sendLastQuietly(this.streamId);
+    this.open = false;
+    this.queue = [];
+    this.wake();
+    this.set({ status: "sending", seconds: this.seconds(), ...this.heard });
+    this.poll(run);
+  }
+
+  /** The chunks still here, the last part second included, then `end`, all with keepalive and under its budget. */
+  private sendLastQuietly(stream: string): void {
+    const last = this.chunker.flush();
+    if (last) this.queue.push(last);
+    let budget = KEEPALIVE_BUDGET;
+    for (const chunk of this.queue) {
+      if (chunk.data.byteLength > budget) break;
+      budget -= chunk.data.byteLength;
+      const q = new URLSearchParams({ stream, seq: String(chunk.seq) });
+      try {
+        void this.fetchImpl(`/api/drafts/${encodeURIComponent(this.target)}/voice/chunk?${q}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: chunk.data,
+          keepalive: true,
+        }).catch(() => undefined);
+      } catch {
+        // the page is going; the worker keeps what it had
+      }
+    }
+    this.queue = [];
+    void this.endQuietly(stream);
+  }
+
+  /** The person pressed stop. While the browser is still asking for the mic, stop cancels. */
   readonly stop = (): void => {
+    if (this.state.status === "asking") {
+      this.begin();
+      this.set(this.idle());
+      return;
+    }
     void this.finish(this.run, "person");
   };
 
   /** Back to idle once the screen has taken the note, or to try again after blocked, paused or failed. */
   readonly reset = (): void => {
     const s = this.state.status;
-    if (s === "asking" || s === "recording" || s === "sending") return;
+    if (s === "recording" || s === "sending") return; // asking can be cancelled
     this.begin();
     this.set(this.idle());
   };
@@ -319,8 +445,8 @@ export class VoiceCapture {
   readonly dispose = (): void => {
     const live = this.open && this.streamId !== null;
     const id = this.streamId;
+    if (live && id) this.sendLastQuietly(id); // the last part second first, then end (BLD-C127)
     this.begin();
-    if (live && id) void this.endQuietly(id);
     this.set(this.idle());
   };
 
@@ -365,6 +491,8 @@ export class VoiceCapture {
   }
 
   private release(): void {
+    this.detach?.();
+    this.detach = null;
     const c = this.capture;
     this.capture = null;
     if (!c) return;
@@ -393,6 +521,7 @@ export class VoiceCapture {
         const chunk = this.queue[0]!;
         const answer = await this.retrying(run, () => this.call("POST", "chunk", chunk));
         if (run !== this.run || !this.open) return;
+        if (!answer.ok && this.resync(answer)) continue;
         if (!answer.ok) {
           this.queue = [];
           return this.refused(run, answer);
@@ -407,6 +536,24 @@ export class VoiceCapture {
         if (this.queue.length === 0 || !this.open) this.wake();
       }
     }
+  }
+
+  /** A 409 chunk_out_of_order with the worker's `next_seq`: drop what it already has, renumber the rest from there,
+   * and carry on, instead of ending the note (BLD-C127). False when there is nothing to resync from. */
+  private resync(answer: Answer): boolean {
+    if (answer.status !== 409 || answer.body.error !== "chunk_out_of_order") return false;
+    const details = isObject(answer.body.details) ? answer.body.details : answer.body;
+    const next = details.next_seq;
+    if (typeof next !== "number" || !Number.isInteger(next) || next < 0) return false;
+    const head = this.queue[0];
+    if (!head) return false;
+    if (head.seq < next) {
+      this.queue = this.queue.filter((c) => c.seq >= next); // already heard
+    } else {
+      this.queue = this.queue.map((c, i) => ({ ...c, seq: next + i })); // a gap: go on from where it is
+    }
+    this.chunker.continueFrom(Math.max(next, (this.queue.at(-1)?.seq ?? next - 1) + 1));
+    return true;
   }
 
   private drained(run: number): Promise<void> {
@@ -425,7 +572,7 @@ export class VoiceCapture {
     let answer = await send();
     for (const delay of this.retryDelays) {
       if (answer.ok || !retryable(answer) || run !== this.run) return answer;
-      await sleep(delay);
+      await sleep(answer.status === 429 && answer.retryAfterMs !== undefined ? answer.retryAfterMs : delay);
       if (run !== this.run) return answer;
       answer = await send();
     }
@@ -437,9 +584,10 @@ export class VoiceCapture {
     what: string,
     body?: PcmChunk | { stream: unknown },
   ): Promise<Answer> {
-    const draft = encodeURIComponent(this.draftId);
+    const draft = encodeURIComponent(this.target);
     let url = `/api/drafts/${draft}/voice/${what}`;
-    const init: RequestInit = { method, credentials: "same-origin", cache: "no-store" };
+    const abort = new AbortController();
+    const init: RequestInit = { method, credentials: "same-origin", cache: "no-store", signal: abort.signal };
     if (body && "seq" in body) {
       url += `?${new URLSearchParams({ stream: this.streamId ?? "", seq: String(body.seq) })}`;
       init.headers = { "Content-Type": "application/octet-stream" };
@@ -448,17 +596,24 @@ export class VoiceCapture {
       init.headers = { "Content-Type": "application/json" };
       init.body = JSON.stringify(body);
     }
+    // A hung request is given up after requestTimeoutMs, so the retry and poll logic runs (BLD-C127).
+    const timer = setTimeout(() => abort.abort(), this.requestTimeoutMs);
     try {
       const res = await this.fetchImpl(url, init);
       const data: unknown = await res.json().catch(() => ({}));
-      return { ok: res.ok, status: res.status, body: isObject(data) ? data : {} };
+      const answer: Answer = { ok: res.ok, status: res.status, body: isObject(data) ? data : {} };
+      const after = res.status === 429 ? retryAfterMs(res.headers?.get?.("Retry-After") ?? null) : undefined;
+      if (after !== undefined) answer.retryAfterMs = after;
+      return answer;
     } catch {
-      return { ok: false, status: 0, body: {} }; // offline, or the connection dropped
+      return { ok: false, status: 0, body: {} }; // offline, timed out, or the connection dropped
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   private async endQuietly(stream: string): Promise<void> {
-    const draft = encodeURIComponent(this.draftId);
+    const draft = encodeURIComponent(this.target);
     try {
       await this.fetchImpl(`/api/drafts/${draft}/voice/end`, {
         method: "POST",
@@ -640,6 +795,15 @@ export class VoiceCapture {
     this.state = next;
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+/** Retry-After in seconds or as a date, as milliseconds to wait, capped; undefined when absent or unreadable. */
+export function retryAfterMs(value: string | null, now: number = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const v = value.trim();
+  const ms = /^\d+$/.test(v) ? Number(v) * 1000 : Date.parse(v) - now;
+  if (!Number.isFinite(ms)) return undefined;
+  return Math.min(RETRY_AFTER_MAX_MS, Math.max(0, ms));
 }
 
 function retryable(a: Answer): boolean {

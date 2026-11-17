@@ -91,6 +91,11 @@ export class PcmChunker {
     return out;
   }
 
+  /** Numbers the next chunk `seq`: after the worker says where it is (a 409 chunk_out_of_order, BLD-C127). */
+  continueFrom(seq: number): void {
+    if (Number.isInteger(seq) && seq >= 0) this.seq = seq;
+  }
+
   /** The last, shorter chunk when the note ends, or null if nothing is left. */
   flush(): PcmChunk | null {
     const rest = this.pending.length - (this.pending.length % 2); // whole samples only
