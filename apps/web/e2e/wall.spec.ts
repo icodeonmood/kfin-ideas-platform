@@ -3,10 +3,22 @@
  * Wall. The first view is the real one from the worker; the kind chips, the sorts and "Show 5 more" fetch
  * `/api/wall/*` in place, so those steps answer from fixtures here (synthetic titles only) and each state the screen
  * lists can be reached on any database: twelve ideas with the desk, nothing of a kind, a part that cannot load. The
- * walk from the Wall to an idea and back on the 1% Club seed is lane G's J-BROWSE/5.
+ * walk from the Wall to an idea and back on the 1% Club seed is lane G's J-BROWSE/5. Who sees what on the Wall
+ * (P-PRODUCT.privacy, DEC-104) is checked on the 1% Club seed (e2e/club.ts), and skips without it.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import {
+  CLUB,
+  clubLoaded,
+  esc,
+  NO_SEED,
+  ONES,
+  OWN_WORDS,
+  seededIdea,
+  showNameOnWall,
+  type IdeaKey,
+} from "./club";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 type Kind = "problem" | "fix" | "business_idea";
@@ -156,27 +168,35 @@ test.describe("S-WALL", () => {
   test("V-ACC.browse/5: the four impact tiles are one height, no number wraps, the unit is in the label", async ({
     page,
   }, info) => {
+    // The figures stand at their value (no count-up), and each width is measured once its layout has settled
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await openWall(page);
     const widths = isPhone(info.project.name) ? [360] : [1440, 1100, 390];
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
       const tiles = page.locator(".wl-tile");
       await expect(tiles).toHaveCount(4);
-      const boxes = await tiles.evaluateAll((els) =>
-        els.map((el) => {
-          const big = el.querySelector<HTMLElement>(".wl-tbig")!;
-          const line = parseFloat(getComputedStyle(big).fontSize) * 1.3;
-          return {
-            h: el.getBoundingClientRect().height,
-            oneLine: big.getBoundingClientRect().height <= line,
-          };
-        }),
-      );
-      expect(new Set(boxes.map((b) => Math.round(b.h))).size, `tile heights at ${width}px`).toBe(1);
-      expect(
-        boxes.every((b) => b.oneLine),
-        `numbers on one line at ${width}px`,
-      ).toBe(true);
+      const measure = () =>
+        tiles.evaluateAll((els) =>
+          els.map((el) => {
+            const big = el.querySelector<HTMLElement>(".wl-tbig")!;
+            const line = parseFloat(getComputedStyle(big).fontSize) * 1.3;
+            return {
+              h: el.getBoundingClientRect().height,
+              oneLine: big.getBoundingClientRect().height <= line,
+            };
+          }),
+        );
+      await expect
+        .poll(async () => new Set((await measure()).map((b) => Math.round(b.h))).size, {
+          message: `tile heights at ${width}px`,
+        })
+        .toBe(1);
+      await expect
+        .poll(async () => (await measure()).every((b) => b.oneLine), {
+          message: `numbers on one line at ${width}px`,
+        })
+        .toBe(true);
       await expect(tiles.locator(".wl-tlabel")).toHaveText([
         "Hours saved a month",
         "Saved a year, Finance confirmed",
@@ -202,7 +222,11 @@ test.describe("S-WALL", () => {
 
     const stages = page.locator(".wl-stage");
     await expect(stages.nth(0).getByRole("link")).toHaveText(KINDLING[0]!.items.map((i) => i.title));
-    await expect(stages.nth(0)).toContainText("Problem, Investor service");
+    // The row's own line, found by its id: "Problem, {area}, {n} colleagues on it"
+    const first = KINDLING[0]!.items[0]!;
+    await expect(stages.nth(0).locator(`[data-row="kin-${first.id}"]`)).toContainText(
+      `Problem, ${first.area}`,
+    );
     await expect(stages.nth(2).getByRole("link")).toHaveCount(0);
 
     const jin = page.locator(".wl-jt");
@@ -325,6 +349,86 @@ test.describe("S-WALL", () => {
     await expect(page.getByRole("heading", { level: 2, name: "The Ones" })).toBeVisible();
   });
 
+  test("V-ACC.browse/2, S-WALL.rules/2: a re-sort glides the rows on screen up or down, never in from the corner; row ids are the section's own", async ({
+    page,
+  }, info) => {
+    test.skip(isPhone(info.project.name), "the desktop table; the phone list uses the same rows() helper");
+    await openWall(page);
+    await mockWall(page, "twelve");
+    await pickKind(page, "Problems");
+    await expect(page.locator(".wl-jt [data-row]")).toHaveCount(5);
+    // Each visible row's id is unique on the page and names its section
+    const ids = await page
+      .locator("[data-row]")
+      .evaluateAll((els) =>
+        els.filter((el) => el.getClientRects().length > 0).map((el) => el.getAttribute("data-row") ?? ""),
+      );
+    expect(new Set(ids).size, ids.join(" | ")).toBe(ids.length);
+    expect(
+      ids.every((id) => /^(kin|jin|imp)-/.test(id)),
+      ids.join(" | "),
+    ).toBe(true);
+    // Press Popular and read where each row's glide starts: rows in one list move up or down only
+    const starts = await page.evaluate(async () => {
+      const btn = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (b) => b.textContent?.trim() === "Popular" && b.getClientRects().length > 0,
+      );
+      btn?.click();
+      const until = performance.now() + 8_000;
+      while (performance.now() < until) {
+        const moves = Array.from(document.querySelectorAll<HTMLElement>(".wl-jt [data-flip]"))
+          .flatMap((r) => r.getAnimations())
+          .map((a) => String((a.effect as KeyframeEffect | null)?.getKeyframes()[0]?.transform ?? ""))
+          .filter((t) => t.startsWith("translate"));
+        if (moves.length) return moves;
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      return [];
+    });
+    expect(starts.length, "rows glide to their new order").toBeGreaterThan(0);
+    for (const t of starts) {
+      const dx = Number(/^translate\((-?[\d.]+)px/.exec(t)?.[1] ?? "NaN");
+      expect(Math.abs(dx), t).toBeLessThan(1);
+    }
+  });
+
+  test("S-WALL error state, I2: a sort that cannot load puts the choice back, and the same choice tries again", async ({
+    page,
+  }, info) => {
+    test.skip(isPhone(info.project.name), "the desktop sort buttons");
+    await openWall(page);
+    await mockWall(page, "twelve");
+    await pickKind(page, "Problems");
+    await expect(page.locator(".wl-jt [data-row]")).toHaveCount(5);
+    let fail = true;
+    await page.route("**/api/wall/just-in**", async (route: Route) => {
+      if (fail) return route.fulfill({ status: 503, json: { error: { code: "try_again", message: "" } } });
+      return route.fallback();
+    });
+    const popular = page.getByRole("button", { name: "Popular", exact: true });
+    await popular.click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "We can't load the wall just now." }).first(),
+    ).toBeVisible();
+    // The choice and the address are back to the view on screen
+    await expect(popular).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByRole("button", { name: "Newest", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page).toHaveURL(/\/wall\?kind=problem$/);
+    // The same choice again loads it
+    fail = false;
+    await popular.click();
+    await expect(popular).toHaveAttribute("aria-pressed", "true");
+    await expect(page).toHaveURL(/\/wall\?kind=problem&sort=popular$/);
+    await expect(page.getByRole("alert").filter({ hasText: "We can't load the wall just now." })).toHaveCount(
+      0,
+    );
+    const top = [...JUST_IN].sort((a, b) => b.opened_7d - a.opened_7d)[0]!;
+    await expect(page.locator(".wl-jt [data-row] h4").first()).toHaveText(top.title);
+  });
+
   test("V-ACC.visual/4 keyboard: the section index, then one stop for the kind chips, arrows choose, then the ideas", async ({
     page,
   }, info) => {
@@ -347,5 +451,103 @@ test.describe("S-WALL", () => {
     );
     await page.keyboard.press("Tab");
     await expect(page.locator(".wl-stage").first().getByRole("link").first()).toBeFocused();
+  });
+});
+
+/** Just in's sort key for each sort (L-WALL.justin/3). */
+const SORT_KEY: Record<
+  string,
+  (it: { opened_7d: number; crew_count: number; ones_count: number }) => number
+> = {
+  popular: (it) => it.opened_7d,
+  crew: (it) => it.crew_count,
+  ones: (it) => it.ones_count,
+};
+
+test.describe("S-WALL on the 1% Club seed", () => {
+  test.describe.configure({ timeout: 90_000 });
+  let seed = false;
+  test.beforeAll(async () => {
+    seed = await clubLoaded();
+  });
+
+  test("V-ACC.browse/4: each sort orders Just in by its figure and ties go to the newest (the real API)", async ({
+    page,
+  }) => {
+    await openWall(page);
+    for (const sort of ["popular", "newest", "crew", "ones"]) {
+      const res = await page.request.get(`/api/wall/just-in?sort=${sort}&limit=50`);
+      expect(res.ok(), sort).toBe(true);
+      const items = ((await res.json()) as { items: (typeof JUST_IN)[number][] }).items;
+      for (let i = 1; i < items.length; i++) {
+        const a = items[i - 1]!;
+        const b = items[i]!;
+        const key = SORT_KEY[sort];
+        const newer = Date.parse(a.shared_at) >= Date.parse(b.shared_at);
+        if (!key) {
+          expect(newer, `${sort}: ${a.id} before ${b.id}`).toBe(true);
+        } else {
+          expect(key(a), `${sort}: ${a.id} before ${b.id}`).toBeGreaterThanOrEqual(key(b));
+          if (key(a) === key(b)) expect(newer, `${sort} tie: ${a.id} before ${b.id}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("P-PRODUCT.privacy, DEC-104: a colleague's own words never reach the Wall, only the short summary", async ({
+    page,
+  }) => {
+    test.skip(!seed, NO_SEED);
+    await signIn(page, CLUB.naveen);
+    await page.goto("/wall");
+    await expect(page.getByRole("heading", { level: 1, name: "Wall" })).toBeVisible();
+    const kindling = (await (await page.request.get("/api/wall/kindling")).json()) as {
+      items: { id: string; title: string; summary: string }[];
+    }[];
+    const justIn = (await (await page.request.get("/api/wall/just-in?limit=50")).json()) as {
+      items: { id: string; title: string; summary: string }[];
+    };
+    const onWall = [...kindling.flatMap((s) => s.items), ...justIn.items];
+    const html = await page.content();
+    const payload = JSON.stringify({ kindling, justIn });
+    let checked = 0;
+    for (const key of Object.keys(OWN_WORDS) as IdeaKey[]) {
+      const words = OWN_WORDS[key]!;
+      expect(html, `${key}'s own words in the page`).not.toContain(words);
+      expect(payload, `${key}'s own words from the Wall's API`).not.toContain(words);
+      const idea = await seededIdea(key);
+      const item = onWall.find((i) => i.id === idea.ref);
+      if (!item) continue;
+      // What the Wall carries is the short summary everyone sees, and the title
+      expect(item.summary).toBe(idea.summary);
+      await expect(page.getByRole("link", { name: new RegExp(`^${esc(idea.title)}`) }).first()).toBeVisible();
+      checked++;
+    }
+    expect(checked, "a seeded idea is on the Wall").toBeGreaterThan(0);
+  });
+
+  test("DEC-104, L-WALL.ones: a One's name shows on the Wall; a One who hides it is One No. N", async ({
+    page,
+  }) => {
+    test.skip(!seed, NO_SEED);
+    const one = ONES.indira;
+    await signIn(page, CLUB.naveen);
+    await page.goto("/wall?ones=leaderboard");
+    const ones = page.getByRole("list", { name: "The Ones" });
+    await expect(ones.getByRole("heading", { level: 3, name: one.name })).toBeVisible();
+    const restore = await showNameOnWall(one.name, false);
+    try {
+      await page.reload();
+      await expect(ones.getByRole("heading", { level: 3, name: `One No. ${one.number}` })).toBeVisible();
+      await expect(ones.getByText(one.name)).toHaveCount(0);
+      // The Ones' API sends no person for the card at all (the rest of the Wall follows within its cache, S-H6.rules/2)
+      const cards = (await (await page.request.get("/api/wall/ones?order=leaderboard")).json()) as {
+        number: number;
+        person: { name: string } | null;
+      }[];
+      expect(cards.find((c) => c.number === one.number)?.person ?? null).toBeNull();
+    } finally {
+      await restore();
+    }
   });
 });
