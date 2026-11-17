@@ -1139,3 +1139,8 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
 from desk.routes import build as _desk_routes  # noqa: E402
 
 app.include_router(_desk_routes(require_token))
+
+# An idea's conversation (lane F; L-CONVO, A-API.inbox). Its routes live with the code in convo/routes.py.
+from convo.routes import build as _convo_routes  # noqa: E402
+
+app.include_router(_convo_routes(require_token))
