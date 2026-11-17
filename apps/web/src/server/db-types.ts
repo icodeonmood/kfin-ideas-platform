@@ -57,6 +57,12 @@ export interface Answers {
   text_encrypted: Buffer | null;
 }
 
+export interface AppNewsRequests {
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  wants: boolean;
+}
+
 export interface Appeals {
   appellant_code: string;
   cluster_id: string;
@@ -1487,6 +1493,7 @@ export interface WorkingGroups {
 export interface DB {
   ai_prescores: AiPrescores;
   answers: Answers;
+  app_news_requests: AppNewsRequests;
   appeals: Appeals;
   assessments: Assessments;
   attachments: Attachments;
