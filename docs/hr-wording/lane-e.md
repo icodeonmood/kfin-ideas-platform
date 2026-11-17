@@ -92,6 +92,6 @@ These words are lane F's, from the team-up sheet, and are already on HR's list i
 
 | Where it shows | File and line | Wording |
 |---|---|---|
-| "Withdraw request" on the card, while it runs | `ideas/[id]/colleague-screen.tsx:227` (word at `components/teamup/teamup-sheet.tsx:91`) | Withdrawing… |
-| Under the card, a withdraw with no answer from the server | `ideas/[id]/colleague-screen.tsx:197` (word at `components/teamup/teamup-sheet.tsx:107`) | Check your connection, then try again. |
+| "Withdraw request" on the card, while it runs | `ideas/[id]/colleague-screen.tsx:227` (word at `apps/web/src/components/teamup/teamup-sheet.tsx:91`) | Withdrawing… |
+| Under the card, a withdraw with no answer from the server | `ideas/[id]/colleague-screen.tsx:197` (word at `apps/web/src/components/teamup/teamup-sheet.tsx:107`) | Check your connection, then try again. |
 | Under the card, a withdraw the server refused | `ideas/[id]/colleague-screen.tsx:188` | The server's own line for that refusal, as the team-up sheet shows it (listed in `docs/hr-wording/lane-f.md`, section 2) |
