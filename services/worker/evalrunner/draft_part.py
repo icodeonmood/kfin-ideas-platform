@@ -99,7 +99,7 @@ def run(ctx: Context) -> dict[str, Any]:
         "tags_in_text": tags <= gates.get("tags_in_text", 0),
         "expectations": metrics["expectations"] >= gates.get("expectations_min", 0.8),
         "dropped": dropped <= gates.get("dropped_max", 1),
-        "first_attempt_problems": first_attempt <= gates.get("first_attempt_problems_max", 3),
+        "first_attempt_problems": first_attempt <= gates.get("first_attempt_problems_max", 2),
     }
     # The harness: no case may fail outright, and nothing the gateway lets through may break the rules, whatever
     # the route (the checks run on every answer, so this holds in fake mode too).
