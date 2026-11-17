@@ -617,6 +617,11 @@ def save_answer(
             if exc.code != "conflict":
                 raise
             raise Refused(409, "answer_in_progress", ANSWER_IN_PROGRESS) from None
+        if existing and not (text and text.strip()):  # an emptied box hides nothing any more
+            conn.execute(
+                "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'answer' AND source_id = %s",
+                (idea["id"], aid),
+            )
         sealed = seal(masked, "answers", "text_encrypted", aid) if masked.strip() else None
         if existing:
             conn.execute(
