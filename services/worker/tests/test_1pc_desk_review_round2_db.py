@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from core.db import Conn
-from desk import asking, revise
+from desk import asking, merging, revise
 from desk.store import Refused
 from tests import desk_fixtures as f
 
@@ -21,6 +21,7 @@ QS: list[dict[str, Any]] = [
     {"part": "evidence", "text": "Can you add a screenshot of the SMS, with the folio hidden?"},
 ]
 REASON = "A clear problem, a real number and a simple fix that the branch can try."
+MERGE_NOTE = "You both found the same R07 calls in Hyderabad."
 
 
 @pytest.fixture
@@ -96,3 +97,36 @@ def test_L_QUESTIONS_answer_a_number_where_the_files_or_the_text_belong_is_refus
         e = _refused(asking.save_answer, db, q1, kavya, text, file_ids)
         assert (e.status, e.code, e.field) == (422, code, field)
     assert asking.save_answer(db, q1, kavya, None, None)["text"] == ""
+
+
+def _merge_ravi_in(db: Conn, cast: dict[str, Any]) -> dict[str, Any]:
+    """Ravi's idea joins Kavya's at the desk: Ravi is credited (own_codes) and joins the crew."""
+    theirs = f.idea(db, cast["ravi"], title="Rejection SMS codes confuse investors", shared_at=f.at(2, 15))
+    merging.desk_merge(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                       {"other_idea_id": theirs["idea_id"], "lead": "this", "team_up": True, "note": MERGE_NOTE},
+                       f.at(16, 10))  # fmt: skip
+    return theirs
+
+
+# ---- finding 4: a credited co-sharer never sees, sends or overwrites another sharer's draft ---------------------
+def test_L_QUESTIONS_answer_4_a_draft_answer_stays_with_the_sharer_who_wrote_it(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    _merge_ravi_in(db, cast)
+    sent = _send(db, cast)
+    ref, kavya, ravi = cast["idea"]["idea_id"], cast["kavya"]["id"], cast["ravi"]["id"]
+    q1, q2 = (q["id"] for q in sent["questions"])
+    asking.save_answer(db, q1, kavya, "One branch, about 40 a day.", at=SENT)
+    seen_by_ravi = asking.open_set_for_sharer(db, ref, ravi, SENT)
+    assert seen_by_ravi is not None and [q["answer"] for q in seen_by_ravi["questions"]] == [None, None]
+    e = _refused(asking.save_answer, db, q1, ravi, "All of Hyderabad.")
+    assert (e.status, e.code) == (409, "answer_in_progress")
+    assert _refused(asking.send_answers, db, sent["id"], ravi).code == "nothing_answered"
+    asking.save_answer(db, q2, ravi, "The SMS says R07 and nothing else.", at=SENT)
+    assert asking.send_answers(db, sent["id"], ravi, SENT)["sent"] == 1
+    mine = asking.open_set_for_sharer(db, ref, kavya, SENT)
+    assert mine is not None
+    first, second = (q["answer"] for q in mine["questions"])
+    assert (first["text"], first["sent"]) == ("One branch, about 40 a day.", False)  # still Kavya's to send
+    assert second["sent"] is True and second["by"]["first_name"] == "Ravi"
+    assert asking.send_answers(db, sent["id"], kavya, SENT)["state"] == "answered"
