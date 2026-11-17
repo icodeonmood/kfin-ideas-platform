@@ -66,6 +66,14 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         params = {"list": list_, "filter": filter_, "sort": sort, "q": q, "row": row}
         return _call(mine, user_id, params, device=device)
 
+    @r.get("/me/{user_id}/shell-lists")
+    def shell_lists(user_id: str, device_id: str | None = None) -> JSONResponse:
+        """C-SIDEBAR.anatomy/4 (A-API.me `drafts`, `ideas`): the sidebar's two drafts and three ideas, as S-07
+        lists them first. `device_id` is the browser's device cookie, for "on this laptop"."""
+        from ideapage.mine import shell_lists as lists
+
+        return _call(lists, user_id, device_id)
+
     @r.post("/ideas/{key}/withdraw")
     def idea_withdraw(key: str, user_id: str, body: dict[str, Any] | None = None) -> JSONResponse:
         from ideapage.withdraw import withdraw
