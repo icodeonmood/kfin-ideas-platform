@@ -134,3 +134,38 @@ def test_L_QUESTIONS_answer_only_the_sharer_reaches_their_questions(
     assert client.post(f"/internal/question-sets/{set_id}/send", params=who).status_code == 404
     mine = client.get(f"/internal/ideas/{ref}/question-set", params={"user_id": cast["kavya"]["id"]})
     assert mine.status_code == 200
+
+
+def test_P_PRODUCT_privacy_admins_never_read_or_act_on_the_desk(
+    db: Conn, client: TestClient, cast: dict[str, Any]
+) -> None:
+    """The web capabilities let admins reach the desk routes; the worker refuses them (DEC-104): the sharer's words,
+    answers, the worth note and the decision's reason are for the sharer, crew, review desk and committee."""
+    ref = cast["idea"]["idea_id"]
+    admin = f.person(db, "Priya Iyer", roles=("admin",))
+    core = f.person(db, "Anil Kapoor", roles=("core_committee",))
+    who = {"user_id": admin["id"]}
+    forbidden = {
+        "error": {"code": "forbidden", "message": "Only the review desk and the Ones Committee can see this."}
+    }
+    for res in (
+        client.get(f"/internal/desk/ideas/{ref}", params=who),
+        client.get("/internal/desk", params=who),
+        client.get(f"/internal/desk/ideas/{ref}/listen", params=who),
+    ):
+        assert (res.status_code, res.json()) == (403, forbidden)
+    for res in (
+        client.post(f"/internal/desk/ideas/{ref}/decision", params=who, json={"choice": "pick", "reason": REASON}),
+        client.post(f"/internal/desk/ideas/{ref}/open", params=who),
+        client.put(f"/internal/desk/ideas/{ref}/worth", params=who, json={"hours_month": "70"}),
+        client.post(f"/internal/desk/ideas/{ref}/question-sets", params=who,
+                    json={"questions": [{"part": "often", "text": "Is it 40 calls a day at one branch?"}]}),
+        # the committee reads the desk but never acts on it
+        client.post(f"/internal/desk/ideas/{ref}/decision", params={"user_id": cast["rohan"]["id"]},
+                    json={"choice": "pick", "reason": REASON}),
+    ):  # fmt: skip
+        assert res.status_code == 403 and res.json()["error"]["code"] == "forbidden"
+    assert db.execute("SELECT count(*) AS n FROM idea_decisions").fetchone()["n"] == 0  # type: ignore[index]
+    for reader in (cast["meera"], cast["rohan"], core):
+        assert client.get(f"/internal/desk/ideas/{ref}", params={"user_id": reader["id"]}).status_code == 200
+    assert client.get("/internal/desk", params={"user_id": "not-a-user"}).status_code == 403

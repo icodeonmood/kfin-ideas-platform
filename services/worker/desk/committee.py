@@ -13,10 +13,12 @@ from typing import Any, Literal
 from core.db import Conn
 from desk import adapters, decide, promises, when
 from desk.store import (
+    READERS,
     Refused,
     actor,
     audit,
     audited,
+    has_role,
     is_own,
     now,
     own_codes,
@@ -379,21 +381,12 @@ def for_idea(
     return out
 
 
-# P-PRODUCT.privacy: the review desk and the committee read a decision's reason; admins do not. `core_committee` is
-# the committee's role until lane E retires it with the old pages.
-READERS = frozenset({"reviewer", "committee", "core_committee"})
-
-
 def may_read_decision(conn: Conn, viewer_id: str, idea: dict[str, Any]) -> bool:
     """P-PRODUCT.privacy: the decision and its reason are for the sharer, the crew, the review desk and the
     committee. Everyone else sees the stage only."""
     if is_own(conn, viewer_id, idea):
         return True
-    if conn.execute(
-        "SELECT 1 FROM role_grants WHERE user_id = %s AND role = ANY(%s) AND valid_from <= now() "
-        "AND (valid_to IS NULL OR valid_to > now()) LIMIT 1",
-        (viewer_id, list(READERS)),
-    ).fetchone():
+    if has_role(conn, viewer_id, READERS):
         return True
     return (
         conn.execute(
