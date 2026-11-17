@@ -108,14 +108,16 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
   const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
   it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and The Ember in the account menu", () =>
     expect(labels("contributor")).toEqual([...base, "The Ember"]));
-  it("the review desk adds Review desk to the sidebar", () =>
-    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]));
-  it("the core committee adds Ones Committee to the sidebar and Delivery to the account menu", () => {
-    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
+  it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
+    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
+    expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
+  });
+  it("the core committee keeps Delivery in the account menu; Ones Committee is the committee role's (S-R4)", () => {
+    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox"]);
     expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
     expect(labels("contributor", "account")).toEqual(["The Ember"]);
   });
-  it("the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
+  it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, the page it may open", () =>
     expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
@@ -141,12 +143,18 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       expect(hrefs).not.toContain(gone);
   });
   it("pages follow the same rules", () => {
+    // /review redirects to /desk (S-R1); its rule keeps everyone else out of the old path
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
+    // S-R1, S-R2: the review desk and the reviewer's page
+    expect(canSeePage(rolesOf("reviewer"), "/desk")).toBe(true);
+    expect(canSeePage(rolesOf("reviewer"), "/desk/ideas/IDEA-2026-001481")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/desk")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
-    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    // S-R4: the Ones Committee's window is the committee role's (committee_window); the old committees no longer open it
+    expect(canSeePage(rolesOf("committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
