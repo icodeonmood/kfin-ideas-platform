@@ -226,3 +226,55 @@ def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_i
 
 def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
+
+
+def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(db: Any) -> None:
+    """J-RESUME/5 and /6 (L-DRAFT.channels, L-HIDE.rules/4): a forwarded email landed as an unsent draft on the email
+    channel, with its origin (subject, when it came) sealed on the draft, no device, its words in via email with the
+    customer detail hidden from everyone but the owner, and a "kept your draft" Inbox item for its owner that opens
+    the draft. The channel is off at launch (DEC-105); the record only has to exist."""
+    import json
+
+    conn = db
+    m = club_seed.load(conn)
+    i2 = m["I2"]
+    idea = conn.execute(
+        "SELECT status, channel, step, saved_device, saved_device_id, archived_at, shared_at, origin_encrypted "
+        "FROM ideas WHERE id = %s",
+        (i2.uuid,),
+    ).fetchone()
+    assert (idea["status"], idea["channel"], idea["step"]) == ("draft", "email", "tell")
+    assert idea["saved_device"] is None and idea["saved_device_id"] is None
+    assert idea["archived_at"] is None and idea["shared_at"] is None
+    origin = json.loads(open_text("ideas", "origin_encrypted", i2.uuid, idea["origin_encrypted"]) or "{}")
+    assert origin["subject"] and origin["note"] and origin["received_at"]
+
+    msgs = conn.execute(
+        "SELECT id, via, device, text_encrypted FROM idea_messages WHERE idea_uuid = %s", (i2.uuid,)
+    ).fetchall()
+    assert [(r["via"], r["device"]) for r in msgs] == [("email", None)]
+    hidden = conn.execute(
+        "SELECT kind, state, source_id FROM hidden_details WHERE idea_uuid = %s", (i2.uuid,)
+    ).fetchall()
+    assert [(h["kind"], h["state"], h["source_id"]) for h in hidden] == [
+        ("folio", "hidden", str(msgs[0]["id"]))
+    ]
+    value = i2.spec.hidden["{folio}"][1]
+    masked = open_text("idea_messages", "text_encrypted", str(msgs[0]["id"]), msgs[0]["text_encrypted"])
+    assert masked and value not in masked and "••••" in masked
+    sealed = _one(
+        conn, "SELECT text_encrypted FROM idea_words_sealed WHERE source = 'message' AND source_id = %s",
+        str(msgs[0]["id"]),
+    )  # fmt: skip
+    own = open_text("idea_words_sealed", "text_encrypted", f"message:{msgs[0]['id']}", sealed, vault=True)
+    assert own and value in own
+
+    kept = conn.execute(
+        "SELECT user_id, from_user_id, needs_you, payload, actions FROM notifications "
+        "WHERE kind = 'draft_kept' AND idea_uuid = %s",
+        (i2.uuid,),
+    ).fetchall()
+    assert len(kept) == 1
+    assert kept[0]["user_id"] == p_id(conn, "indira") and kept[0]["from_user_id"] is None
+    assert kept[0]["payload"] == {"idea_id": None, "channel": "email"}
+    assert [a.get("to") for a in kept[0]["actions"]] == ["draft"]
