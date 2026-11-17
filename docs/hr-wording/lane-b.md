@@ -53,12 +53,27 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | Where | Wording |
 |---|---|
 | The Answer screen, after sending (BLD-E008) | The board says "Meera decides by Friday 20 November, and her decision comes to your Inbox." This now reads "Meera decides by Friday 20 November, and the decision comes to your Inbox." |
-| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee's window. |
+| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee’s window. |
 | The Ones Committee, empty tabs | No decisions in the window. Each desk decision shows here for 30 days after it is made. / Nothing reversed. A decision the committee changes shows here, with its note. / Nothing expired yet. When a window closes, the decision stands and moves here. |
 | The Answer screen with nothing to answer | Nothing to answer right now. When the review desk asks you something about this idea, the questions show here. |
 | The reviewer's page, the reviewer's own idea | Your own idea. Another reviewer decides on it. You can read it here. |
-| The review desk, a reminder that did not go | The reminder didn't go. Try again. |
-| The Ones Committee, a reversal that cannot start | This decision can't be reversed now. |
-| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can't be opened right now. |
-| Any send that fails | That didn't go through. Try again. / Your answers didn't send. Try again. / That didn't save. Try again. / That didn't merge. Try again. |
+| The review desk, a reminder that did not go | The reminder didn’t go. Try again. |
+| The Ones Committee, a reversal that cannot start | This decision can’t be reversed now. |
+| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can’t be opened right now. |
+| Any send that fails | That didn’t go through. Try again. / Your answers didn’t send. Try again. / That didn’t save. Try again. / That didn’t merge. Try again. |
 | The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
+
+## 3. Added on 17 Nov 2026 with the review screens (BLD-B238)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page and the questions card, beside a file the check found a customer detail in | Has a customer detail | DEC-107 lets such a file through, marked; the pack predates it |
+| The same file's Open, for screen readers | Open rejection-sms-1.png, which has a customer detail | The mark is never colour or position alone |
+| The reviewer's page, ideas merged into this one | Merged into this idea | L-MERGE.effects/3 shows what each merged idea brought; not drawn |
+| The reviewer's page, the panel of an idea that joined another | Merged with another idea. The review desk now decides on the idea it joined. | Not drawn |
+| The reviewer's page, the wording check, for each further word found | For “rejected”, say it is not going ahead, and why. | The first word's plainer way is in the worker's message; the rest are listed |
+| The reviewer's page, after the wording check | Send anyway | L-DECIDE.rules/4 warns and never blocks (BLD-B236) |
+| The Ones Committee, the reversal note's box | Why the committee is changing it, in words Kavya will understand | The board's own placeholder, kept as the box's name after "Your note to Kavya" |
+| The reviewer's reason and the committee's reversal note, until long enough | 12 of at least 30 characters | A line of its own under the board's help line ("Kavya reads this word for word."), which now always shows |
+| The Answer screen, a save that did not reach the server (tried again on its own) | Couldn’t save that. Try again. | B3: an answer is never lost or misreported on a network error |
+| The Answer screen, an answer near its limit (from 1,800 characters) | 1,850 of 2,000 characters | V-FIELDS.answer/1 "counter near the limit"; not drawn |

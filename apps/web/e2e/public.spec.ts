@@ -23,7 +23,9 @@ async function shareQuickIdea(page: Page, words: string): Promise<string> {
   return ideaId;
 }
 
-test("a reviewed idea reaches the wall, My ideas and its page, each as §3.1 allows (AT-B7-01..05)", async ({
+// Its review step drove the old desk at /review ("Save decision"), retired for S-R1 and S-R2 (now a redirect to /desk);
+// P-REPO.screens lists this test for a rewrite with S-06 and S-09 (lane E), so it waits for that rewrite.
+test.fixme("a reviewed idea reaches the wall, My ideas and its page, each as §3.1 allows (AT-B7-01..05)", async ({
   browser,
 }, testInfo) => {
   test.setTimeout(180_000);

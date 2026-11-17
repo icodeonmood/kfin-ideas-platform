@@ -350,22 +350,71 @@ def scan_save(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     return JSONResponse(out)
 
 
+def _inbox_call(fn: Any, *args: Any) -> JSONResponse:
+    """L-INBOX for one person (the web app vouches for who they are; the worker checks every item is theirs)."""
+    import uuid
+
+    from notify.inbox import InboxRefused
+
+    try:
+        uuid.UUID(str(args[0]))
+    except ValueError:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    with connect(autocommit=True) as conn:
+        try:
+            return JSONResponse(fn(conn, *args), headers={"Cache-Control": "no-store"})
+        except InboxRefused as exc:
+            return JSONResponse({"error": exc.code}, status_code=exc.status)
+
+
 @app.get("/internal/inbox/{user_id}", dependencies=[Depends(require_token)])
-def inbox_list(user_id: str) -> JSONResponse:
-    """The person's in-app messages, rendered for them (the web app vouches for who they are)."""
-    from comms.inbox import inbox
+def inbox_list(user_id: str, tab: str = "all") -> JSONResponse:
+    """`GET /inbox` (A-API.inbox): the tab's items, every tab's count and the unread total, rendered for them."""
+    from notify import inbox
 
-    with connect(autocommit=True) as conn:
-        return JSONResponse({"messages": inbox(conn, user_id)}, headers={"Cache-Control": "no-store"})
+    return _inbox_call(inbox.items, user_id, tab)
 
 
-@app.post("/internal/inbox/{user_id}/{notification_id}/read", dependencies=[Depends(require_token)])
-def inbox_read(user_id: str, notification_id: int) -> JSONResponse:
-    from comms.inbox import mark_read
+@app.get("/internal/inbox/{user_id}/counts", dependencies=[Depends(require_token)])
+def inbox_counts(user_id: str) -> JSONResponse:
+    """The unread and needs-you numbers for the shell and Home (L-INBOX.rules/1)."""
+    from notify import inbox
 
-    with connect(autocommit=True) as conn:
-        ok = mark_read(conn, user_id, notification_id)
-    return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+    return _inbox_call(inbox.counts, user_id)
+
+
+@app.get("/internal/inbox/{user_id}/needs-you", dependencies=[Depends(require_token)])
+def inbox_needs_you(user_id: str) -> JSONResponse:
+    """Home's "Needs you": the total and the top two (A-API.home)."""
+    from notify import inbox
+
+    return _inbox_call(inbox.needs_you, user_id)
+
+
+@app.post("/internal/inbox/{user_id}/read-all", dependencies=[Depends(require_token)])
+def inbox_read_all(user_id: str) -> JSONResponse:
+    from notify import inbox
+
+    return _inbox_call(inbox.mark_all_read, user_id)
+
+
+@app.post("/internal/inbox/{user_id}/{notification_id}/{verb}", dependencies=[Depends(require_token)])
+def inbox_item(user_id: str, notification_id: int, verb: str) -> JSONResponse:
+    """`read`, `unread` or `archive` one item; archiving an item that still needs the person is refused."""
+    from notify import inbox
+
+    fn = {"read": inbox.mark_read, "unread": inbox.mark_unread, "archive": inbox.archive}.get(verb)
+    if fn is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return _inbox_call(fn, user_id, notification_id)
+
+
+@app.post("/internal/inbox/{user_id}/{notification_id}/actions/{op}", dependencies=[Depends(require_token)])
+def inbox_action(user_id: str, notification_id: int, op: str) -> JSONResponse:
+    """One of the item's server operations, handed to the lane that owns it (`notify.ops`)."""
+    from notify import inbox
+
+    return _inbox_call(inbox.action, user_id, notification_id, op)
 
 
 def _review_call(fn: Any, *args: Any) -> JSONResponse:
@@ -1306,3 +1355,12 @@ app.include_router(_desk_routes(require_token))
 from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
+
+# Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
+from teamup.routes import build as _teamup_routes  # noqa: E402
+
+app.include_router(_teamup_routes(require_token))
+# An idea's conversation (lane F; L-CONVO, A-API.inbox). Its routes live with the code in convo/routes.py.
+from convo.routes import build as _convo_routes  # noqa: E402
+
+app.include_router(_convo_routes(require_token))

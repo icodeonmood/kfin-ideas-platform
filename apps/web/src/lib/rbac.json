@@ -110,7 +110,8 @@
       "display": "yes"
     },
     "committee_window": {
-      "committee": "yes"
+      "committee": "yes",
+      "core_committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -135,6 +136,9 @@
       "admin"
     ],
     "comms.email": [
+      "admin"
+    ],
+    "comms.teams": [
       "admin"
     ],
     "wall.public": [
@@ -217,7 +221,16 @@
     "PUT /api/me/refer-as                              signed_in",
     "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
+    "GET /api/inbox/counts                             signed_in",
+    "GET /api/inbox/needs-you                          signed_in",
+    "POST /api/inbox/read-all                          signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
+    "POST /api/inbox/{id}/unread                       signed_in",
+    "POST /api/inbox/{id}/archive                      signed_in",
+    "POST /api/inbox/{id}/actions/{op}                 signed_in",
+    "GET /api/ideas/{id}/conversation                  signed_in",
+    "POST /api/ideas/{id}/conversation/messages        signed_in",
+    "DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in",
     "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
@@ -258,6 +271,17 @@
     "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
+    "GET /api/ideas/{id}/team-up                       signed_in",
+    "POST /api/ideas/{id}/team-up                      signed_in",
+    "GET /api/ideas/{id}/team-up/draft-note            signed_in",
+    "GET /api/team-up/{id}                             signed_in",
+    "DELETE /api/team-up/{id}                          signed_in",
+    "POST /api/team-up/{id}/answer                     signed_in",
+    "GET /api/drafts/{id}/merge-request                signed_in",
+    "POST /api/drafts/{id}/merge-request               signed_in",
+    "DELETE /api/drafts/{id}/merge-request             signed_in",
+    "POST /api/ideas/{id}/crew/leave                   signed_in",
+    "DELETE /api/ideas/{id}/crew/{member}              signed_in",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
     "GET /api/review/items                             view_review_queue",
@@ -376,7 +400,8 @@
   },
   "pages": [
     "/review                    view_review_queue",
-    "/committee                 veto_desk_decision",
+    "/desk                      view_review_queue",
+    "/committee                 committee_window",
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/display                   open_display",
@@ -423,7 +448,7 @@
     {
       "key": "desk",
       "label": "Review desk",
-      "href": "/review",
+      "href": "/desk",
       "place": "main",
       "roles": [
         "reviewer"

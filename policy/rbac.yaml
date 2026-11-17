@@ -43,7 +43,8 @@ capabilities:
   open_display:               { admin: yes, display: yes }
   # The Ones Committee's window (L-COMMITTEE, S-R4; DEC-102): every desk decision for 30 days, extend, reverse once.
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
-  committee_window:           { committee: yes }
+  # core_committee (and core_chair, through it) keep it until the old roles are dropped on Monday (contracts.md §2.14).
+  committee_window:           { committee: yes, core_committee: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -54,6 +55,7 @@ kill_switch_flippers:
   submissions: [admin]
   matching.show: [admin]
   comms.email: [admin]
+  comms.teams: [admin]                                # DEC-105: Teams messages, off until IT approves the Teams app
   wall.public: [admin, hr]
   ones.public: [admin, hr]
   clusters.batch: [admin]
@@ -95,8 +97,19 @@ endpoints:
   - GET /api/me/refer-as                              signed_in       # she, he, they or unset (BLD-C111, DEC-108)
   - PUT /api/me/refer-as                              signed_in       # asked once in Profile (S-H6); the person only
   - POST /api/me/app-news                             signed_in       # "Tell me when it's out" (S-H3, L-NOTIFY/7)
-  - GET /api/inbox                                    signed_in
-  - POST /api/inbox/{id}/read                         signed_in       # mark one message read (addition to §8)
+  - GET /api/inbox                                    signed_in       # S-H5, A-API.inbox: ?tab=all|needs_you|unread|archived
+  - GET /api/inbox/counts                             signed_in       # unread and needs-you for the shell and Home (L-INBOX.rules/1)
+  - GET /api/inbox/needs-you                          signed_in       # Home's "Needs you": total and top two (A-API.home)
+  - POST /api/inbox/read-all                          signed_in       # "Mark all read" (S-H5)
+  - POST /api/inbox/{id}/read                         signed_in       # opening an item marks it read (L-INBOX.rules/3)
+  - POST /api/inbox/{id}/unread                       signed_in       # "Mark unread" (S-H5)
+  - POST /api/inbox/{id}/archive                      signed_in       # refused while it still needs the person (L-INBOX.rules/5)
+  - POST /api/inbox/{id}/actions/{op}                 signed_in       # the item's op, run by the lane that owns it (notify.ops)
+  # An idea's conversation (lane F; A-API.inbox, L-CONVO). The worker decides who may read or write on each idea
+  # (L-CONVO/2: sharer, crew, desk, committee, build team, a person mentioned) and answers anyone else 404.
+  - GET /api/ideas/{id}/conversation                  signed_in
+  - POST /api/ideas/{id}/conversation/messages        signed_in
+  - DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in  # the sender’s own, within 5 minutes
   - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
@@ -138,6 +151,19 @@ endpoints:
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
+  # Team-up, draft merge requests and crews (lane F; A-API.team-up, L-TEAMUP, L-MERGE.request). Any employee may
+  # ask; the worker checks the rest: only the requester withdraws, only the idea's lead answers or removes.
+  - GET /api/ideas/{id}/team-up                       signed_in
+  - POST /api/ideas/{id}/team-up                      signed_in
+  - GET /api/ideas/{id}/team-up/draft-note            signed_in
+  - GET /api/team-up/{id}                             signed_in       # the requester or the lead only
+  - DELETE /api/team-up/{id}                          signed_in       # the requester only
+  - POST /api/team-up/{id}/answer                     signed_in       # the idea's lead only
+  - GET /api/drafts/{id}/merge-request                signed_in       # the draft's owner only
+  - POST /api/drafts/{id}/merge-request               signed_in       # the draft's owner only
+  - DELETE /api/drafts/{id}/merge-request             signed_in       # the draft's owner only
+  - POST /api/ideas/{id}/crew/leave                   signed_in       # a crew member, never the lead
+  - DELETE /api/ideas/{id}/crew/{member}              signed_in       # the idea's lead only
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
   - GET /api/review/items                             view_review_queue
@@ -269,8 +295,9 @@ membership_scoped:
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
-  - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
-  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
+  - /review                    view_review_queue                    # moved: redirects to /desk (S-R1, S-R2)
+  - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
+  - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
@@ -291,8 +318,8 @@ navigation:
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
-  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
-  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: desk,      label: Review desk,     href: /desk,      place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
