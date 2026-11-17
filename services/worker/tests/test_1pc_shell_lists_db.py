@@ -1,7 +1,7 @@
-"""C-SIDEBAR.anatomy/4 and A-API.me: the sidebar's Drafts and Your ideas (`ideapage.mine.shell_lists`, `GET
-/internal/me/{id}/shell-lists`) against a freshly migrated database loaded with the synthetic 1% Club seed
-(bootstrap/club_seed.py; nobody from the pack's cast). One fixed "now" for the seed and the reads, so the day words
-are stable. Test names carry the module IDs they cover."""
+"""C-SIDEBAR.anatomy/4 and A-API.me: the sidebar's Your ideas (`ideapage.mine.shell_lists`, `GET
+/internal/me/{id}/shell-lists`; the sidebar's drafts are lane C's L-DRAFT read) against a freshly migrated database
+loaded with the synthetic 1% Club seed (bootstrap/club_seed.py; nobody from the pack's cast). One fixed "now" for the
+seed and S-07's reads. Test names carry the module IDs they cover."""
 
 from __future__ import annotations
 
@@ -57,16 +57,14 @@ def client(club: dict[str, Any], test_database: str, monkeypatch: pytest.MonkeyP
     get_settings.cache_clear()
 
 
-def lists(club: dict[str, Any], who: str, device_id: str | None = None) -> dict[str, Any]:
-    return shell_lists(club["conn"], club["p"][who], device_id, now=NOW)
+def lists(club: dict[str, Any], who: str) -> dict[str, Any]:
+    return shell_lists(club["conn"], club["p"][who])
 
 
-def first_in_my_ideas(
-    club: dict[str, Any], who: str, device: str | None = None
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """What S-07 lists first in its default view (Yours, All, Latest activity): its drafts and its shared ideas."""
-    items = my_ideas(club["conn"], club["p"][who], {}, device=device, now=NOW)["items"]
-    return [i for i in items if i["group"] == "drafts"][:2], [i for i in items if i["group"] != "drafts"][:3]
+def first_in_my_ideas(club: dict[str, Any], who: str) -> list[dict[str, Any]]:
+    """What S-07 lists first in its default view (Yours, All, Latest activity): its first three shared ideas."""
+    items = my_ideas(club["conn"], club["p"][who], {}, now=NOW)["items"]
+    return [i for i in items if i["group"] != "drafts"][:3]
 
 
 def ref(club: dict[str, Any], key: str) -> str:
@@ -87,26 +85,9 @@ def owner_of(club: dict[str, Any], key: str) -> str:
     return str(row["user_id"])
 
 
-def test_c_sidebar_anatomy_4_a_api_me_tanvi_gets_two_drafts_and_three_ideas_in_order(
-    club: dict[str, Any],
-) -> None:
-    m = club["m"]
+def test_c_sidebar_anatomy_4_a_api_me_tanvi_gets_her_three_ideas_in_order(club: dict[str, Any]) -> None:
     out = lists(club, "tanvi")
-    assert set(out) == {"drafts", "ideas"}
-    # Most recently saved first; the archived draft (T3) is only under My ideas → Drafts. The board's words:
-    # "Friday, on your phone" (T1 was spoken on the phone on Saturday; T2 typed on the laptop this morning).
-    assert out["drafts"] == [
-        {
-            "id": m["T2"].uuid,
-            "title": "SIP failure SMS gives no reason",
-            "saved_label": "Today, on your laptop",
-        },
-        {
-            "id": m["T1"].uuid,
-            "title": "Walk-in KYC updates queue twice at the branch",
-            "saved_label": "Saturday, on your phone",
-        },
-    ]
+    assert set(out) == {"ideas"}  # ideas only: the sidebar's drafts are lane C's L-DRAFT read
     # Latest activity first: T4 shared minutes ago, T5 shared a day ago, then T10 withdrawn a day ago (T6's
     # questions went the same minute; S-07 breaks the tie on the later share, T10's).
     assert out["ideas"] == [
@@ -114,49 +95,37 @@ def test_c_sidebar_anatomy_4_a_api_me_tanvi_gets_two_drafts_and_three_ideas_in_o
             "id": ref(club, "T4"),
             "title": "Change of address forms come back for one missing tick",
             "status_dot": "blue",
+            "status_label": "Checking",
         },
         {
             "id": ref(club, "T5"),
             "title": "Redemption status is not visible to the branch",
             "status_dot": "blue",
+            "status_label": "With the review desk",
         },
         {
             "id": ref(club, "T10"),
             "title": "Token slips at the branch run out by noon",
             "status_dot": "neutral",
+            "status_label": "Withdrawn",
         },
     ]
 
 
-def test_c_sidebar_anatomy_4_a_api_me_on_this_device_follows_the_device_cookie(club: dict[str, Any]) -> None:
-    """L-DRAFT.autosave/4: "on this laptop" only on the device that saved it, as S-07's rows say it."""
-    here = lists(club, "tanvi", "seed-device-tanvi")
-    assert [d["saved_label"] for d in here["drafts"]] == ["Today, on this laptop", "Saturday, on this phone"]
-    elsewhere = lists(club, "tanvi", "another-device")
-    assert [d["saved_label"] for d in elsewhere["drafts"]] == [
-        "Today, on your laptop",
-        "Saturday, on your phone",
-    ]
-    drafts, _ = first_in_my_ideas(club, "tanvi", device="seed-device-tanvi")
-    assert [d["meta"].rsplit(", ", 1)[1] for d in drafts] == ["on this laptop", "on this phone"]
-
-
 def test_c_sidebar_anatomy_4_a_api_me_lists_match_what_my_ideas_lists_first(club: dict[str, Any]) -> None:
-    """The sidebar and My ideas never disagree: the same rows, order, titles and links, and the dot by S-07's group,
-    for every seeded person."""
+    """The sidebar and My ideas never disagree: the same rows, order, titles and links, the dot by S-07's group and
+    the dot's words from S-07's pill (F-A11Y.rules/4: never colour alone), for every seeded person."""
     checked = 0
     for who in club["p"]:
-        out = lists(club, who, "seed-device-tanvi")
-        drafts, ideas = first_in_my_ideas(club, who, device="seed-device-tanvi")
-        assert [(d["id"], d["title"]) for d in out["drafts"]] == [(d["id"], d["title"]) for d in drafts], who
-        for got, row in zip(out["drafts"], drafts, strict=True):
-            assert row["href"] == f"/share/{got['id']}"
-            assert got["saved_label"].endswith(row["meta"].rsplit(", ", 1)[1]), who  # same device wording
+        out = lists(club, who)
+        ideas = first_in_my_ideas(club, who)
         assert [(i["id"], i["title"]) for i in out["ideas"]] == [(i["id"], i["title"]) for i in ideas], who
         for got, row in zip(out["ideas"], ideas, strict=True):
             assert row["href"].split("?")[0] == f"/ideas/{got['id']}"
             assert got["status_dot"] == DOT[row["group"]], (who, got["id"])
-        checked += bool(out["drafts"] or out["ideas"])
+            assert got["status_label"], (who, got["id"])
+            assert got["status_label"] == row["pill"]["label"], (who, got["id"])
+        checked += bool(out["ideas"])
     assert checked >= 15  # the seed's sharers, not an empty pass
 
 
@@ -169,40 +138,50 @@ def test_c_sidebar_anatomy_4_a_api_me_needs_you_gets_the_warn_dot(club: dict[str
         (NOW - dt.timedelta(minutes=5), club["m"]["T6"].uuid),
     )
     first = lists(club, "tanvi")["ideas"][0]
-    assert first == {"id": t6, "title": "PAN mismatch holds new folios for days", "status_dot": "warn"}
-    _, ideas = first_in_my_ideas(club, "tanvi")
+    assert first == {
+        "id": t6,
+        "title": "PAN mismatch holds new folios for days",
+        "status_dot": "warn",
+        "status_label": "Needs you",
+    }
+    ideas = first_in_my_ideas(club, "tanvi")
     assert ideas[0]["id"] == t6 and ideas[0]["group"] == "needs_you"
+    assert ideas[0]["pill"]["label"] == "Needs you"
     conn.execute("UPDATE ideas SET status = 'needs_you' WHERE idea_id = %s", (t6,))
-    assert lists(club, "tanvi")["ideas"][0]["status_dot"] == "warn"
+    assert lists(club, "tanvi")["ideas"][0] == first
     # Answered: back with the review desk, a blue dot.
     conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
     conn.execute(
         "UPDATE question_sets SET state = 'answered', answered_at = %s WHERE idea_uuid = %s AND state <> 'queued'",
         (NOW - dt.timedelta(minutes=5), club["m"]["T6"].uuid),
     )
-    assert lists(club, "tanvi")["ideas"][0] == {**first, "status_dot": "blue"}
+    assert lists(club, "tanvi")["ideas"][0] == {
+        **first,
+        "status_dot": "blue",
+        "status_label": "With the review desk",
+    }
 
 
-def test_c_sidebar_anatomy_4_a_api_me_someone_with_no_ideas_gets_empty_lists(club: dict[str, Any]) -> None:
-    empty: dict[str, list[Any]] = {"drafts": [], "ideas": []}
+def test_c_sidebar_anatomy_4_a_api_me_someone_with_no_ideas_gets_an_empty_list(club: dict[str, Any]) -> None:
+    empty: dict[str, list[Any]] = {"ideas": []}
     assert lists(club, "harish") == empty  # the review desk, with nothing of his own
     assert my_ideas(club["conn"], club["p"]["harish"], {}, now=NOW)["items"] == []
     conn = club["conn"]
-    assert shell_lists(conn, str(uuid.uuid4()), now=NOW) == empty  # unknown
-    assert shell_lists(conn, "not-a-person", now=NOW) == empty  # not an id at all
+    assert shell_lists(conn, str(uuid.uuid4())) == empty  # unknown
+    assert shell_lists(conn, "not-a-person") == empty  # not an id at all
     conn.execute("UPDATE users SET active = false WHERE id = %s", (club["p"]["tanvi"],))
     assert lists(club, "tanvi") == empty  # inactive
 
 
 def test_c_sidebar_anatomy_4_a_api_me_never_lists_another_persons_ideas(club: dict[str, Any]) -> None:
-    """Only the person's own drafts and ideas: never a colleague's, and not the ideas they teamed up on."""
+    """Only the person's own ideas: never a colleague's, and not the ideas they teamed up on."""
     teamed = {
         i["id"] for i in my_ideas(club["conn"], club["p"]["tanvi"], {"list": "teamed"}, now=NOW)["items"]
     }
     assert teamed  # Tanvi is on two crews
     for who, user_id in club["p"].items():
         out = lists(club, who)
-        for row in [*out["drafts"], *out["ideas"]]:
+        for row in out["ideas"]:
             assert owner_of(club, row["id"]) == user_id, (who, row["id"])
     tanvi = lists(club, "tanvi")
     assert not teamed & {i["id"] for i in tanvi["ideas"]}
@@ -216,16 +195,14 @@ def test_a_api_me_shell_lists_route_reads_the_lists_without_caching(
     club: dict[str, Any], client: TestClient
 ) -> None:
     tanvi = club["p"]["tanvi"]
-    got = client.get(f"/internal/me/{tanvi}/shell-lists", params={"device_id": "seed-device-tanvi"})
+    got = client.get(f"/internal/me/{tanvi}/shell-lists")
     assert got.status_code == 200 and got.headers["cache-control"] == "no-store"
     body = got.json()
-    assert [d["id"] for d in body["drafts"]] == [club["m"]["T2"].uuid, club["m"]["T1"].uuid]
-    assert [d["saved_label"].rsplit(", ", 1)[1] for d in body["drafts"]] == [
-        "on this laptop",
-        "on this phone",
-    ]
-    assert len(body["ideas"]) == 3 and all(set(i) == {"id", "title", "status_dot"} for i in body["ideas"])
+    assert set(body) == {"ideas"}  # no drafts: lane C's L-DRAFT read fills those
+    assert len(body["ideas"]) == 3 and all(
+        set(i) == {"id", "title", "status_dot", "status_label"} and i["status_label"] for i in body["ideas"]
+    )
     for who in (str(uuid.uuid4()), "not-a-person", club["p"]["harish"]):
         empty = client.get(f"/internal/me/{who}/shell-lists")
-        assert empty.status_code == 200 and empty.json() == {"drafts": [], "ideas": []}
+        assert empty.status_code == 200 and empty.json() == {"ideas": []}
     assert TestClient(client.app).get(f"/internal/me/{tanvi}/shell-lists").status_code == 401
