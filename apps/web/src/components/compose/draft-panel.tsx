@@ -225,11 +225,7 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
 
   if (phone) {
     const building = live.running && live.loader !== null;
-    const peekTitle = building
-      ? LOADER_TITLE
-      : hasValue(title)
-        ? String(title.value)
-        : PANEL_COPY.heading;
+    const peekTitle = building ? LOADER_TITLE : hasValue(title) ? String(title.value) : PANEL_COPY.heading;
     const peekLine = offline
       ? PANEL_COPY.phoneOffline
       : building && live.loader
@@ -297,27 +293,23 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
 
 type SlotProps = PanelProps & { editing: EditKey | null; setEditing(k: EditKey | null): void };
 
-/** "Change" as a disclosure: focus comes back to it when its editor closes (Done or Escape). */
-function useChange(key: EditKey, props: SlotProps): {
-  open: boolean;
-  ref: RefObject<HTMLButtonElement | null>;
-  editorId: string;
-  toggle(): void;
-  close(): void;
-} {
-  const ref = useRef<HTMLButtonElement>(null);
+/** "Change" as a disclosure: focus comes back to its button (`button`) when its editor closes (Done or Escape). */
+function useChange(
+  key: EditKey,
+  props: SlotProps,
+  button: RefObject<HTMLButtonElement | null>,
+): { open: boolean; editorId: string; toggle(): void; close(): void } {
   const back = useRef(false);
   const editorId = useId();
   const open = props.editing === key && Boolean(props.onChangePart);
   useEffect(() => {
     if (!open && back.current) {
       back.current = false;
-      ref.current?.focus();
+      button.current?.focus();
     }
-  }, [open]);
+  }, [open, button]);
   return {
     open,
-    ref,
     editorId,
     toggle: () => props.setEditing(open ? null : key),
     close: () => {
@@ -350,7 +342,8 @@ function TitleSlot(props: SlotProps) {
   const title = live.parts.title;
   const summary = live.parts.summary;
   const updating = live.updating.includes("title");
-  const change = useChange("title", props);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const change = useChange("title", props, changeRef);
   const canChange = Boolean(props.onChangePart) && !updating && (hasValue(title) || title.state === "failed");
   return (
     <>
@@ -389,7 +382,7 @@ function TitleSlot(props: SlotProps) {
         )}
         {canChange || change.open ? (
           <button
-            ref={change.ref}
+            ref={changeRef}
             type="button"
             className="tb"
             aria-expanded={change.open}
@@ -420,7 +413,8 @@ function FactRow({ fact, ...props }: SlotProps & { fact: { key: FactKey; label: 
   const p = props.live.parts[fact.key] as Part<unknown>;
   const updating = props.live.updating.includes(fact.key);
   const filled = hasValue(p);
-  const change = useChange(fact.key, props);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const change = useChange(fact.key, props, changeRef);
   let content: ReactNode;
   if (change.open) {
     content = (
@@ -472,7 +466,7 @@ function FactRow({ fact, ...props }: SlotProps & { fact: { key: FactKey; label: 
         {content}
         {canChange || change.open ? (
           <button
-            ref={change.ref}
+            ref={changeRef}
             type="button"
             className="tb"
             aria-expanded={change.open}

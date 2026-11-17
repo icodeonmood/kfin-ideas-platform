@@ -176,7 +176,8 @@ export function spansForBrowser<T>(body: T, depth = 0): T {
   if (depth > 6 || typeof body !== "object" || body === null) return body;
   if (Array.isArray(body)) return body.map((x) => spansForBrowser(x, depth + 1)) as T;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(body as Record<string, unknown>)) out[k] = spansForBrowser(v, depth + 1);
+  for (const [k, v] of Object.entries(body as Record<string, unknown>))
+    out[k] = spansForBrowser(v, depth + 1);
   const text = out.text;
   const spans = out.spans;
   if (typeof text === "string" && Array.isArray(spans) && spans.every(isSpan))

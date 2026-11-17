@@ -18,12 +18,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
-import {
-  DraftPanel,
-  PANEL_COPY,
-  type PanelHandle,
-  type Readiness,
-} from "@/components/compose/draft-panel";
+import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 // Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
 import { teamUpOpener, useTeamUpSheet } from "@/components/compose/teamup-shim";
@@ -628,7 +623,10 @@ export function Compose({
         }
         // Refused: the words that did not go come back to the box, the note still waiting after the typed words.
         setPending((p) => p.filter((x) => !rest.some((r) => r.clientId === x.clientId)));
-        const typedBack = rest.filter((r) => r.via === "typed").map((r) => r.text).join(" ");
+        const typedBack = rest
+          .filter((r) => r.via === "typed")
+          .map((r) => r.text)
+          .join(" ");
         const spokenBack = rest.find((r) => r.via === "voice");
         const back = [typedBack, spokenBack?.text ?? ""].filter(Boolean).join(" ");
         setBox((b) => (b ? `${back}\n${b}` : back));

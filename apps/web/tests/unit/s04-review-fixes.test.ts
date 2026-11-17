@@ -369,7 +369,12 @@ describe("C-PROMPT.voice a failed note's line, by reason (BLD-C127)", () => {
     const link = [...region.querySelectorAll("a")][0]!;
     expect(link.textContent).toBe("Sign in again to carry on");
     expect(link.getAttribute("href")).toBe(`/sign-in?next=${encodeURIComponent(`/share/${DRAFT}`)}`);
-    voice.state = { status: "failed", reason: "too_many_this_hour", text: "", spans: [] } as VoiceCaptureState;
+    voice.state = {
+      status: "failed",
+      reason: "too_many_this_hour",
+      text: "",
+      spans: [],
+    } as VoiceCaptureState;
     type(box(), "xy");
     expect(region.textContent).toBe("");
     voice.state = { status: "failed", reason: "unavailable", text: "", spans: [] } as VoiceCaptureState;
