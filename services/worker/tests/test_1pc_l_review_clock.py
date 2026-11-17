@@ -53,13 +53,17 @@ def test_L_QUESTIONS_clock_3_give_two_more_days_keeps_the_hour() -> None:
     assert clock.give_more_time(at(2026, 11, 19, 18), DEFAULTS) == at(2026, 11, 21, 18)
 
 
-def test_L_QUESTIONS_clock_3_more_time_on_an_overdue_set_counts_from_now() -> None:
+def test_L_QUESTIONS_clock_3_and_5_more_time_on_an_overdue_set_counts_from_now_to_a_working_day() -> None:
     due = at(2026, 11, 19, 18)
     assert clock.give_more_time(due, DEFAULTS, at(2026, 11, 19, 9)) == at(
         2026, 11, 21, 18
     )  # not yet due: as before
-    late = at(2026, 11, 20, 10, 30)
-    assert clock.give_more_time(due, DEFAULTS, late) == at(2026, 11, 22, 10, 30)  # never left overdue
+    late = at(2026, 11, 20, 10, 30)  # Friday: two days on is a Sunday, so the next working day, at 6 pm
+    assert clock.give_more_time(due, DEFAULTS, late, CAL) == at(2026, 11, 23, 18)  # never left overdue
+    # a working day two days on keeps that day, at the deadline hour (L-QUESTIONS.clock/5)
+    assert clock.give_more_time(at(2026, 11, 17, 18), DEFAULTS, at(2026, 11, 18, 9), CAL) == at(
+        2026, 11, 20, 18
+    )
 
 
 def test_L_QUESTIONS_clock_2_reminders_a_day_and_two_hours_before() -> None:
