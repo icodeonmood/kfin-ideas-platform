@@ -54,6 +54,11 @@ from wall.impact import (
 FLAG_LABEL = {"founding": "Founding One", "one": "One"}  # E-ENUMS.tier flags
 BRIEF_MIN, BRIEF_MAX = 20, 140  # V-FIELDS.one/4
 NEAR = 3  # V-FIELDS.one/2: "Free numbers near it: 6, 8, 11."
+# S-ONE.layout/3, reference/copy/OneDashboard.md
+MSG_KEEP = (
+    "Keep No. {n}, or choose any free number from 1 to 999 until {until}. First come, first served. "
+    "After that, it's yours."
+)
 POSTS = 12
 # NOT DRAWN: the pack has no line for a brief that holds a customer's details; listed for HR's sign-off.
 MSG_BRIEF_DETAILS = "Keep customers' details out of your brief."
@@ -220,15 +225,27 @@ def _own(conn: Conn, user_id: str, *, lock: bool = False) -> dict[str, Any]:
     return dict(row)
 
 
+def _closed(one: dict[str, Any], now: dt.datetime) -> bool:
+    """After the window (30 days from becoming a One, L-ONES.rules/2) the number is theirs for good."""
+    return one["swap_until"] is None or now > one["swap_until"]
+
+
 def _window(one: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
+    """The number card (S-ONE.layout/3): open with its end date ("until 1 Dec 2026"), or closed with the line that
+    replaces the field ("No. 1 is yours for good.", V-FIELDS.one/3)."""
     until = one["swap_until"]
-    open_ = until is not None and now <= until
-    return {
+    open_ = not _closed(one, now)
+    out = {
         "open": open_,
         "until": until.isoformat() if until else None,
         "until_label": day_label(until) if until else "",
         "number": one["number"],
     }
+    if open_:
+        out["keep_label"] = MSG_KEEP.format(n=one["number"], until=out["until_label"])
+    else:
+        out["locked_label"] = MSG_YOURS.format(n=one["number"])
+    return out
 
 
 def _story(conn: Conn, user_id: str) -> dict[str, int]:
@@ -267,6 +284,9 @@ def _tier_moment(conn: Conn, one: dict[str, Any], user_id: str) -> dict[str, Any
         "to": int(glow["tier_to"]),
         "from_label": tier_label(int(glow["tier_from"])),
         "to_label": tier_label(int(glow["tier_to"])),
+        # "No. 17, your spark is hotter" / "From Tier 1, Spark to Tier 2, Glow" (L-ONES.rules/3, S-ONE.states)
+        "title": f"No. {one['number']}, your spark is hotter",
+        "line": f"From {tier_label(int(glow['tier_from']))} to {tier_label(int(glow['tier_to']))}",
         "story": _story(conn, user_id),
         "messages": messages,
     }
@@ -293,10 +313,15 @@ def dashboard(conn: Conn, user_id: str, now: dt.datetime | None = None) -> dict[
     if not impact:
         impact = as_impact(figures_from_measures(one["measures"]))
     proposed = one["brief_proposed_at"] is not None
+    c = card(one, self_view=True)
+    since = day_label(one["inducted_at"])
     return {
-        "one": card(one, self_view=True),
+        "one": c,
         "since": one["inducted_at"].isoformat(),
-        "since_label": day_label(one["inducted_at"]),
+        "since_label": since,
+        # "You're No. 1" / "Tier 4, Blaze. Founding One since 1 Nov 2026." (S-ONE.layout/2)
+        "headline": f"You're No. {one['number']}",
+        "since_line": f"{c['tier_label']}. {c['flag_label']} since {since}.",
         "idea": idea,
         "impact": impact,
         "number_window": _window(one, now),
@@ -341,12 +366,14 @@ def set_number(conn: Conn, user_id: str, number: Any, now: dt.datetime | None = 
     """`PUT /one/number` (L-ONES.rules/2, V-FIELDS.one/1–3): any free number 1 to 999 inside the window after
     becoming a One, first come first served; after that the field is locked. Returns the number window."""
     now = now or dt.datetime.now(dt.UTC)
-    _own(conn, user_id)  # membership first (BLD-108)
+    first = _own(conn, user_id)  # membership first (BLD-108)
+    if _closed(first, now):  # V-FIELDS.one/3: a closed window answers the same whatever was typed
+        raise Refused(409, "window_closed", MSG_YOURS.format(n=first["number"]), field="number")
     n = _whole(number)
     try:
         with conn.transaction():
             one = _own(conn, user_id, lock=True)
-            if one["swap_until"] is None or now > one["swap_until"]:
+            if _closed(one, now):
                 raise Refused(409, "window_closed", MSG_YOURS.format(n=one["number"]), field="number")
             if one["number"] != n:
                 if not numbers.is_free(conn, n, int(one["id"]), now):

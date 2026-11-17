@@ -11,6 +11,7 @@ import type {
   DraftPartKey,
   DraftStep,
   IdeaPart,
+  IdeaStatus,
   InboxTab,
   Kind,
   MergeLead,
@@ -20,6 +21,7 @@ import type {
   ReturnIn,
   ShowReason,
   TeamUpAnswer,
+  Tier,
   TimeToAnswer,
   WallSort,
   Brings,
@@ -45,6 +47,7 @@ import type {
   OneCard,
   OnePost,
   Person,
+  PersonRef,
   PersonSettings,
   SimilarMatch,
   Sorting,
@@ -120,9 +123,23 @@ export type ErrorCode =
   // A-API.inbox
   | "needs_you"
   | "empty_message"
-  // A-API.wall
+  // A-API.wall, A-API.ones, A-API.ones-posts, A-API.me (lane E)
   | "taken"
-  | "out_of_range";
+  | "out_of_range"
+  | "not_a_one"
+  | "brief_invalid"
+  | "personal_data"
+  | "liked_required"
+  | "bad_kind"
+  | "bad_sort"
+  | "bad_page"
+  | "bad_order"
+  | "bad_setting"
+  | "teams_off"
+  // Any route
+  | "not_found"
+  | "paused"
+  | "try_again";
 
 // ---------------------------------------------------------------------------------------------------------------
 // A-API.auth
@@ -166,10 +183,41 @@ export interface SessionExpiredError extends ApiError<"expired"> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// A-API.me, A-API.home
+// A-API.me: profile, settings and points. Lane E owns this section.
+// `GET /me` (Person with points and settings) is `GET /api/me/profile`; `GET /api/me` stays the session's own
+// summary (roles, navigation, privacy notice) that the shell reads. Always the signed-in person's own.
 // ---------------------------------------------------------------------------------------------------------------
-export type MeResponse = Person & Required<Pick<Person, "settings">>;
+/** The person with their private points and their settings (self only, P-PRODUCT.privacy). */
+export type MeResponse = Person & Required<Pick<Person, "settings" | "points">>;
+/** `GET /api/me/profile` (S-H6). */
+export interface ProfileResponse {
+  person: MeResponse;
+  /** "Tier 2, Glow". */
+  tier_label: string;
+  /** "Investor service, Hyderabad. Tier 2, Glow." (S-H6.layout/1). */
+  line: string;
+  avatar: { initials: string; tier: Tier };
+  /** "/one" for a One (S-H6.rules/4), otherwise null. */
+  one_dashboard: "/one" | null;
+  one_since_label: string | null;
+  /** Teams messages stay off until IT approves them (DEC-105): the switch shows, cannot be turned on. */
+  available: { teams: boolean };
+}
+/** `PATCH /api/me/settings`: any of the switches; each saves at once (S-H6.rules/1). */
 export type SettingsPatch = Partial<PersonSettings>;
+/** Every switch's state after the save. */
+export interface SettingsResponse {
+  settings: PersonSettings;
+}
+/**
+ * A save that did not happen: `message` is "Couldn't save that. Try again." and `field` names the switch, so the
+ * screen flips it back (V-FIELDS.one/5). Codes: `bad_setting`, `teams_off`, `try_again`.
+ */
+export type SettingsError = ApiError<"bad_setting" | "teams_off" | "try_again" | "not_found">;
+
+// ---------------------------------------------------------------------------------------------------------------
+// A-API.me (shell), A-API.home
+// ---------------------------------------------------------------------------------------------------------------
 export interface ShellResponse {
   inbox_unread: number;
   drafts: { id: string; title: string; saved_label: string }[];
@@ -827,36 +875,191 @@ export interface ConversationMessageCreate {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// A-API.wall, A-API.ones, A-API.search, A-API.config
+// A-API.wall: the Wall (S-WALL, L-WALL). Lane E owns this section.
+// Anyone signed in reads it. Every row is screen-ready: labels are computed on the server (A-API.conventions/6).
+// The sharer is null when they hid their name from the Wall (DEC-104); never their own words, never points.
 // ---------------------------------------------------------------------------------------------------------------
-export type KindlingResponse = [WallStage, WallStage, WallStage];
+/** An idea as the Wall shows it. */
+export interface WallIdea {
+  id: string;
+  title: string;
+  summary: string;
+  kind: Kind;
+  area: string;
+  crew_count: number;
+  sharer: PersonRef | null;
+  /** "Problem, Investor service" (Just in); Kindling adds ", 4 colleagues on it". */
+  meta: string;
+  /** The idea's page with its way back to the Wall: `/ideas/IDEA-…?from=wall&back=…` (J-BROWSE/5). */
+  to: string;
+}
+export interface WallStageView extends Omit<WallStage, "items"> {
+  items: WallIdea[];
+}
+/** `GET /api/wall/kindling?kind=`: Picked, Being built, Shipped. */
+export type KindlingResponse = [WallStageView, WallStageView, WallStageView];
 export interface JustInQuery {
-  kind?: Kind;
+  kind?: Kind | "all";
+  /** Newest by default. */
   sort?: WallSort;
+  /** 5 on desktop, 3 on the phone (L-WALL.justin/5); at most 50. */
   limit?: number;
   offset?: number;
 }
-export type JustInResponse = ListOf<JustInRow>;
-export type OnesResponse = OneCard[];
+export interface JustInItem extends WallIdea, Pick<JustInRow, "opened_7d" | "ones_count"> {
+  shared_at: IsoDate | null;
+  /** "2h ago", "Yesterday", "2 days ago" (the Shared column). */
+  shared_label: string;
+  /** The figure for the current sort, for the phone's second line: "Opened by 233 this week", "Shared 2h ago". */
+  figure_label: string;
+}
+/** `GET /api/wall/just-in`. Ties go to the newest. */
+export interface JustInResponse {
+  items: JustInItem[];
+  total: number;
+  /** Per kind chip, and `all`. */
+  counts: Record<Kind | "all", number>;
+  sort: WallSort;
+  /** The next offset, or null when this page is the last. */
+  next: string | null;
+  /** "12 with the review desk". */
+  sub: string;
+  /** How many the next page adds. */
+  more: number;
+  /** "Show 5 more", "Show 2 more", "Show fewer" (after the last page), or null when everything fits. */
+  more_label: string | null;
+}
+/** A shipped fix in the impact table (L-WALL.impact/2). */
+export interface LiveFixRow extends Omit<LiveFix, "due"> {
+  id: string;
+  /** "90 days", "30 days", "Due 18 Nov". */
+  measured_label: string;
+  due: IsoDate | null;
+}
+/** One impact tile: the number on one line, "lakh" as its suffix, the unit in the label (S-WALL.impact/4). */
+export interface ImpactTile {
+  key: "hours_month" | "money_year" | "fixes_measured" | "reached";
+  value: string;
+  suffix: string;
+  label: string;
+}
+/** `GET /api/wall/impact`. */
 export interface ImpactResponse {
   totals: ImpactTotals;
-  live: LiveFix[];
+  tiles: [ImpactTile, ImpactTile, ImpactTile, ImpactTile];
+  live: LiveFixRow[];
 }
-export type EmberResponse = EmberIssue[];
-export type OnePostsResponse = OnePost[];
+/** An Ember issue; `headline` is null until the issue's content record has one. */
+export interface EmberIssueView extends Omit<EmberIssue, "headline"> {
+  headline: string | null;
+}
+/** `GET /api/wall/ember`: the latest issue, then the next as "Coming soon". */
+export type EmberResponse = EmberIssueView[];
+
+// ---------------------------------------------------------------------------------------------------------------
+// A-API.ones: the Ones' cards and a One's own dashboard (S-WALL.ones, S-ONE, L-ONES). Lane E owns this section.
+// The cards are for everyone signed in; `/api/one` and its writes are the One's alone (403 `not_a_one`).
+// ---------------------------------------------------------------------------------------------------------------
+/** A One's card; `person` is null when they hid their name from the Wall (DEC-104). */
+export interface OneCardView extends Omit<OneCard, "person"> {
+  person: PersonRef | null;
+  /** "Tier 4, Blaze". */
+  tier_label: string;
+  /** "Founding One" / "One". */
+  flag_label: string;
+}
+/** `GET /api/wall/ones?order=wall|leaderboard`: in the order they became Ones, or by tier then hours saved. */
+export type OnesResponse = OneCardView[];
+/** The number card (S-ONE.layout/3, V-FIELDS.one/3). */
+export interface NumberWindow {
+  open: boolean;
+  until: IsoDate | null;
+  /** "1 Dec 2026". */
+  until_label: string;
+  number: number;
+  /** While open: "Keep No. 1, or choose any free number from 1 to 999 until 1 Dec 2026. …". */
+  keep_label?: string;
+  /** Once closed, in place of the field: "No. 1 is yours for good.". */
+  locked_label?: string;
+}
+/** The glow-up waiting to play once (S-ONE.states `showGlowUp`). */
+export interface TierMoment {
+  id: number;
+  from: Tier;
+  to: Tier;
+  from_label: string;
+  to_label: string;
+  /** "No. 17, your spark is hotter". */
+  title: string;
+  /** "From Tier 1, Spark to Tier 2, Glow". */
+  line: string;
+  story: { shared: number; picked: number; shipped: number };
+  /** `from_label`: "From the core committee: Vivek Shenoy". */
+  messages: { text: string; from_label: string }[];
+}
+/** `GET /api/one`. Reading it changes nothing; the moment is marked seen by its own call. */
 export interface OneDashboardResponse {
-  one: OneCard;
-  idea: Idea | null;
+  one: OneCardView;
+  since: IsoDate;
+  since_label: string;
+  /** "You're No. 1". */
+  headline: string;
+  /** "Tier 4, Blaze. Founding One since 1 Nov 2026.". */
+  since_line: string;
+  idea: { id: string | null; title: string; status: IdeaStatus | null } | null;
   impact: Impact;
-  number_window: { open: boolean; until?: IsoDate };
-  tier_moment?: { from: number; to: number; story: { shared: number; picked: number; shipped: number } };
+  number_window: NumberWindow;
+  /** The live brief, and whether a new one waits for the programme team. */
+  brief: { text: string | null; pending: boolean };
+  tier_moment: TierMoment | null;
 }
+/** `PUT /api/one/number`. Errors: `out_of_range`, `taken` (with `near`), `window_closed`, `not_a_one`. */
 export interface NumberRequest {
   number: number;
 }
+export interface NumberResponse {
+  number_window: NumberWindow;
+}
+/** "No. 7 is taken. Free numbers near it: 6, 8, 11." */
+export interface NumberTakenError extends ApiError<"taken"> {
+  error: ApiError<"taken">["error"] & { near: number[] };
+}
+/** `POST /api/one/brief`: one sentence, 20 to 140 characters. Errors: `brief_invalid`, `personal_data`. */
 export interface BriefRequest {
   text: string;
 }
+export interface BriefResponse {
+  brief: { text: string | null; pending: true };
+}
+/** `POST /api/one/glow-up/{id}/seen`. */
+export interface GlowUpSeenResponse {
+  seen: true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A-API.ones-posts: what the Ones post, for Home's fan (C-ONES-FAN, L-ONES.rules/7). Lane E owns this section.
+// ---------------------------------------------------------------------------------------------------------------
+export interface OnePostView extends Omit<OnePost, "one"> {
+  id: string;
+  one: OneCardView;
+  /** Whether the person asking liked it. */
+  liked: boolean;
+}
+/** `GET /api/ones/posts`: newest first. */
+export type OnePostsResponse = OnePostView[];
+/** `PUT /api/ones/posts/{id}/like`. Saying the same twice changes nothing. Error: `liked_required`. */
+export interface LikeRequest {
+  liked: boolean;
+}
+export interface LikeResponse {
+  id: string;
+  liked: boolean;
+  likes: number;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A-API.search, A-API.config
+// ---------------------------------------------------------------------------------------------------------------
 export interface SearchSuggestResponse {
   counts: Record<string, number>;
   examples: [string, string, string];
