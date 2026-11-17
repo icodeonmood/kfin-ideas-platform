@@ -117,7 +117,10 @@ const spansOf = (v: unknown): VoiceSpan[] =>
   Array.isArray(v)
     ? v.filter(
         (s): s is VoiceSpan =>
-          isObject(s) && typeof s.start === "number" && typeof s.end === "number" && typeof s.kind === "string",
+          isObject(s) &&
+          typeof s.start === "number" &&
+          typeof s.end === "number" &&
+          typeof s.kind === "string",
       )
     : [];
 
@@ -155,7 +158,8 @@ export function toNote(view: Record<string, unknown>, streamId: string): VoiceNo
     textEn: str(view.text_en),
     enLabel: VOICE_EN_LABEL,
     seconds: typeof view.seconds === "number" ? view.seconds : 0,
-    endedBy: (["person", "idle", "limit", "replaced", "paused"] as const).find((e) => e === ended) ?? "person",
+    endedBy:
+      (["person", "idle", "limit", "replaced", "paused"] as const).find((e) => e === ended) ?? "person",
     hiddenCount: typeof view.hidden_count === "number" ? view.hidden_count : 0,
     translated: typeof view.translated === "boolean" ? view.translated : null,
     translationFailure: str(view.translation_failure),
@@ -288,8 +292,7 @@ export class VoiceCapture {
       // some browsers resolve the context as running already
     }
     if (run !== this.run) return;
-    for (const track of stream.getAudioTracks())
-      track.addEventListener("ended", () => this.interrupted(run));
+    for (const track of stream.getAudioTracks()) track.addEventListener("ended", () => this.interrupted(run));
     ctx.addEventListener("statechange", () => {
       const st = ctx.state as string;
       if (st === "suspended" || st === "interrupted") this.interrupted(run);
@@ -407,7 +410,8 @@ export class VoiceCapture {
   }
 
   private drained(run: number): Promise<void> {
-    if (run !== this.run || !this.open || (!this.sending && this.queue.length === 0)) return Promise.resolve();
+    if (run !== this.run || !this.open || (!this.sending && this.queue.length === 0))
+      return Promise.resolve();
     return new Promise((resolve) => this.waiters.push(resolve));
   }
 
@@ -428,7 +432,11 @@ export class VoiceCapture {
     return answer;
   }
 
-  private async call(method: "GET" | "POST", what: string, body?: PcmChunk | { stream: unknown }): Promise<Answer> {
+  private async call(
+    method: "GET" | "POST",
+    what: string,
+    body?: PcmChunk | { stream: unknown },
+  ): Promise<Answer> {
     const draft = encodeURIComponent(this.draftId);
     let url = `/api/drafts/${draft}/voice/${what}`;
     const init: RequestInit = { method, credentials: "same-origin", cache: "no-store" };
@@ -491,7 +499,9 @@ export class VoiceCapture {
       const note = toNote(view, id);
       return this.set({ status: "done", note });
     }
-    this.fail(view.state === "failed" ? (str(view.failure) ?? "unavailable") : (str(view.state) ?? "unavailable"));
+    this.fail(
+      view.state === "failed" ? (str(view.failure) ?? "unavailable") : (str(view.state) ?? "unavailable"),
+    );
   }
 
   /** A refused or failed request. */
@@ -521,7 +531,8 @@ export class VoiceCapture {
     if (answer.status === 401) return this.stopWith("signed_out");
     if (answer.status === 410) return this.stopWith("stream_lost");
     const lost =
-      retryable(answer) || (answer.status === 409 && (code === "chunk_out_of_order" || code === "stream_ending"));
+      retryable(answer) ||
+      (answer.status === 409 && (code === "chunk_out_of_order" || code === "stream_ending"));
     if (lost && this.streamId) {
       // A dropped connection: the mic goes off and the worker finishes the note on its own; read it back.
       this.release();
@@ -532,7 +543,7 @@ export class VoiceCapture {
         this.set({ status: "sending", seconds: this.seconds(), ...this.heard });
       return this.poll(run);
     }
-    this.stopWith(lost ? "unavailable" : (code ?? "unavailable"));
+    this.stopWith(code ?? "unavailable"); // the worker's own code when it gave one (too_many_this_hour…)
   }
 
   private stopWith(reason: VoiceFailure): void {
@@ -633,7 +644,14 @@ export class VoiceCapture {
 
 function retryable(a: Answer): boolean {
   if (a.status === 503) return a.body.error !== "paused" && a.body.error !== "voice_paused";
-  return a.status === 0 || a.status === 408 || a.status === 429 || a.status === 500 || a.status === 502 || a.status === 504;
+  return (
+    a.status === 0 ||
+    a.status === 408 ||
+    a.status === 429 ||
+    a.status === 500 ||
+    a.status === 502 ||
+    a.status === 504
+  );
 }
 
 function stopTracks(stream: MediaStream | null): void {

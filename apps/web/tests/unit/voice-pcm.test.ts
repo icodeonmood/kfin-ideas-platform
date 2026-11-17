@@ -111,19 +111,19 @@ describe("L-DRAFT.voice PCM and chunks (BLD-C112, BLD-C118)", () => {
 
 describe("L-DRAFT.voice AudioWorklet source (BLD-C118)", () => {
   function load() {
+    type Processor = new () => { process: (i: Float32Array[][]) => boolean };
     const posted: Float32Array[] = [];
-    let registered: { name: string; ctor: new () => { process: (i: Float32Array[][]) => boolean } } | null = null;
+    const registered: { name: string; ctor: Processor }[] = [];
     class AudioWorkletProcessor {
       port = { postMessage: (data: Float32Array) => posted.push(data.slice()) };
     }
-    const registerProcessor = (name: string, ctor: never) => {
-      registered = { name, ctor };
-    };
+    const registerProcessor = (name: string, ctor: Processor) => registered.push({ name, ctor });
     new Function("AudioWorkletProcessor", "registerProcessor", VOICE_WORKLET_SOURCE)(
       AudioWorkletProcessor,
       registerProcessor,
     );
-    return { posted, registered: registered! as NonNullable<typeof registered> };
+    expect(registered.length).toBe(1);
+    return { posted, registered: registered[0]! };
   }
 
   it("L-DRAFT.voice: registers under its name, mixes stereo to mono and posts blocks of 1,024 frames", () => {
