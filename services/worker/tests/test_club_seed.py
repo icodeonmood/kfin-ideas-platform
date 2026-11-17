@@ -59,7 +59,8 @@ def test_e_entities_seed_fills_every_screen_and_removes_cleanly(unloaded: Any) -
     assert _set(conn, "SELECT status FROM ideas") == stored
     assert _set(conn, "SELECT kind FROM notifications WHERE kind IS NOT NULL") == set(enums.INBOX_KIND)
     assert _set(conn, "SELECT state FROM decision_windows") == set(enums.values("window_state"))
-    assert {"queued", "sent", "seen", "answered", "closed"} <= _set(conn, "SELECT state FROM question_sets")
+    # No set is queued: the ideas the desk has not opened have none (J-REVIEW/1, A1-A3 walk their first open).
+    assert _set(conn, "SELECT state FROM question_sets") == {"sent", "seen", "answered", "closed"}
     assert _one(conn, "SELECT count(*) FROM decision_reversals") == 1
     assert _set(conn, "SELECT state FROM teamup_requests") >= {"sent", "approved_team_only", "declined"}
     assert _set(conn, "SELECT state FROM merge_requests") == {"waiting", "accepted"}
@@ -386,48 +387,53 @@ def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
     assert i2.ref is None and "IDEA-" not in kept[0]["actions"][0]["to"]
 
 
-def test_l_questions_ask_l_review_open_j_review_a1_a3_unopened_idea_with_a_queued_question(
-    seeded: Any,
+@pytest.mark.parametrize(("key", "sharer"), [("P1", "pallavi"), ("K1", "kiran")])
+def test_l_review_open_1_j_review_1_a1_a3_unopened_unassigned_with_no_question_set(
+    db: Any, made: dict[str, club_seed.Made], key: str, sharer: str
 ) -> None:
-    """J-REVIEW/A1 to A3 (L-QUESTIONS.ask/3, /4; L-REVIEW.open/1): Kiran's K1 is at To review and the desk has never
-    opened it. Lavanya queued one question on its empty "How often" part, in the words "Ask about this" queues (the
-    part's first suggestion), and never sent it: no sent_at, no due date, no Inbox item, nothing in the conversation,
-    no answers. Sending it (A3) is what opens the idea and tells Kiran."""
+    """J-REVIEW/1 walks P1's first open and J-REVIEW/A1 K1's (L-REVIEW.open/1, L-QUESTIONS.ask): each is with the
+    review desk at To review, never opened, no reviewer, and no question set at all, so the walk's first open and
+    (A2, A3) its first question are its own. Nothing in the conversation says it was opened or asked, and the
+    sharer has no questions item about it."""
+    conn, m = db, made
+    idea = conn.execute(
+        "SELECT status, idea_id, reviewer_id, opened_at, opened_by, contributor_code FROM ideas WHERE id = %s",
+        (m[key].uuid,),
+    ).fetchone()
+    assert idea["status"] == "with_review_desk" and idea["idea_id"]
+    assert (idea["reviewer_id"], idea["opened_at"], idea["opened_by"]) == (None, None, None)
+    owner = "SELECT user_id FROM contributor_map WHERE contributor_code = %s"
+    assert _one(conn, owner, idea["contributor_code"]) == p_id(conn, sharer)
+
+    assert _one(conn, "SELECT count(*) FROM question_sets WHERE idea_uuid = %s", m[key].uuid) == 0
+    said = (
+        "SELECT count(*) FROM conversation_entries WHERE idea_uuid = %s "
+        "AND (question_set_id IS NOT NULL OR event = 'opened_by_desk')"
+    )
+    assert _one(conn, said, m[key].uuid) == 0
+    asked = (
+        "SELECT count(*) FROM notifications WHERE idea_uuid = %s AND kind IN ('questions', 'answer_reminder')"
+    )
+    assert _one(conn, asked, m[key].uuid) == 0
+
+
+def test_l_questions_ask_j_review_a1_a3_k1_how_often_left_empty_waits(seeded: Any) -> None:
+    """J-REVIEW/A1 to A3 (L-QUESTIONS.ask, L-DRAFT.parts): Kiran's K1 is his only idea, and its "How often" was left
+    empty: no value on the idea, and its part is waiting with no value, reason or quote, not filled with nothing.
+    That gap is what the walk asks about. Kiran has nothing in his Inbox."""
     conn = seeded
-    kiran, lavanya = p_id(conn, "kiran"), p_id(conn, "lavanya")
+    kiran = p_id(conn, "kiran")
     spec = club_seed.IDEAS["K1"]
     ideas = conn.execute(
-        "SELECT i.id, i.idea_id, i.status, i.opened_at, i.opened_by, i.reviewer_id, i.often, i.title FROM ideas i "
+        "SELECT i.id, i.title, i.often FROM ideas i "
         "JOIN contributor_map m ON m.contributor_code = i.contributor_code WHERE m.user_id = %s",
         (kiran,),
     ).fetchall()
     assert len(ideas) == 1  # Kiran's only idea: nothing another step changes is his
-    idea = ideas[0]
-    assert (idea["title"], idea["status"]) == (spec.title, "with_review_desk") and idea["idea_id"]
-    assert idea["opened_at"] is None and idea["opened_by"] is None and idea["reviewer_id"] is None
-    assert not idea["often"]  # the gap the question asks about
-
-    sets = conn.execute(
-        "SELECT id, by_user_id, state, time_to_answer, sent_at, seen_at, due_at, answered_at, closed_at "
-        "FROM question_sets WHERE idea_uuid = %s",
-        (idea["id"],),
-    ).fetchall()
-    assert len(sets) == 1
-    qs = sets[0]
-    assert qs["by_user_id"] == lavanya and qs["state"] == "queued"
-    assert all(
-        qs[c] is None for c in ("time_to_answer", "sent_at", "seen_at", "due_at", "answered_at", "closed_at")
-    )
-    rows = conn.execute(
-        "SELECT id, seq, part, suggested, text_encrypted FROM questions WHERE set_id = %s", (qs["id"],)
-    ).fetchall()
-    assert [(r["seq"], r["part"], r["suggested"]) for r in rows] == [(1, "often", True)]
-    text = open_text("questions", "text_encrypted", str(rows[0]["id"]), rows[0]["text_encrypted"])
-    assert (
-        text == "How often does this happen: a few times a day, a week or a month?"
-    )  # desk/questions.py _GAP
-
-    assert _one(conn, "SELECT count(*) FROM answers WHERE question_id = %s", rows[0]["id"]) == 0
+    assert spec.often is None and ideas[0]["title"] == spec.title and ideas[0]["often"] is None
+    part = conn.execute(
+        "SELECT state, value, why, source_quote FROM idea_parts WHERE idea_uuid = %s AND key = 'often'",
+        (ideas[0]["id"],),
+    ).fetchone()
+    assert dict(part) == {"state": "waiting", "value": None, "why": None, "source_quote": None}
     assert _one(conn, "SELECT count(*) FROM notifications WHERE user_id = %s", kiran) == 0
-    unsent = "SELECT count(*) FROM conversation_entries WHERE idea_uuid = %s AND question_set_id IS NOT NULL"
-    assert _one(conn, unsent, idea["id"]) == 0
