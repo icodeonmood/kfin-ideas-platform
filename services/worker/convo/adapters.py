@@ -19,21 +19,36 @@ from typing import Any
 
 from core.config import get_settings
 from core.db import Conn
+from core.logging import get_logger
 from notify import Action
 from notify import post as notify_post
 from pii.patterns import scan
 
 
-def _lane_c_hide() -> Callable[..., Any] | None:
-    """Lane C's `hide.hide_message` when its package is here (on main from Wed 18 Nov), else None. A guarded import,
-    through importlib so the type check passes the same before and after lane C lands."""
+def _lane_c(module: str, name: str) -> Any:
+    """One of lane C's L-HIDE names when its package is here (on main since 18 Nov), else None. A guarded import,
+    through importlib so the type check passes the same with or without lane C."""
     try:
-        return importlib.import_module("hide").hide_message  # type: ignore[no-any-return]
+        return getattr(importlib.import_module(module), name)
     except (ImportError, AttributeError):
         return None
 
 
-_hide_message = _lane_c_hide()
+_hide_message: Callable[..., Any] | None = _lane_c("hide", "hide_message")
+_hide_lock: Callable[[Conn, str], None] | None = _lane_c("hide.core", "lock")
+_hide_scope: Callable[[str], str] | None = _lane_c("hide.core", "scope_for")
+_HideError: type[Exception] | None = _lane_c("hide.core", "HideError")
+
+
+class HideRefused(Exception):
+    """Lane C refused to hide a text (its `HideError`), carrying its HTTP status only."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(status)
+        self.status = status
+
+
+log = get_logger("convo")
 
 Ref = str | int | bool | None  # lane A's notify refs
 
@@ -78,11 +93,58 @@ def hide(conn: Conn, idea_uuid: str, text: str, *, by: str, entry_id: str) -> tu
     """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103). Call it inside the
     transaction that inserts the entry `entry_id`, written by the user `by` (lane C's contract, BLD-F054)."""
     if _hide_message is not None:
-        done = _hide_message(
-            conn, idea_uuid, text, by=by, source="conversation", source_id=entry_id, gatekeeper=True
-        )
-        return done.masked, done.hidden_count
+        try:
+            done = _hide_message(
+                conn, idea_uuid, text, by=by, source="conversation", source_id=entry_id, gatekeeper=True
+            )
+        except Exception as exc:
+            if _HideError is not None and isinstance(exc, _HideError):
+                raise HideRefused(int(getattr(exc, "status", 503))) from None
+            raise
+        return done.masked, int(done.hidden_count)
     return pattern_mask(text)
+
+
+def forget(conn: Conn, idea_uuid: str, entry_id: str) -> None:
+    """Drop what L-HIDE kept for a removed message (L-CONVO/10, BLD-F067): its hidden details, the writer's sealed
+    words, and each vault value no other text on the idea still uses. Lane C's recipe of 18 Nov, step for step, until
+    its `hide.forget` lands (c/hide-3); then this body becomes that one call.
+
+    Call it inside the removal's transaction, before any row lock: lane C's lock comes first, as every L-HIDE write
+    takes it. IDs and counts only in the log."""
+    if _hide_lock is None or _hide_scope is None:
+        return  # lane C's package is not here, so nothing was kept
+    _hide_lock(conn, idea_uuid)
+    key = (idea_uuid, entry_id)
+    tags = [
+        str(r["vault_tag"])
+        for r in conn.execute(
+            "SELECT vault_tag FROM hidden_details WHERE idea_uuid = %s AND source = 'conversation' "
+            "AND source_id = %s AND vault_tag IS NOT NULL",
+            key,
+        ).fetchall()
+    ]
+    details = conn.execute(
+        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'conversation' AND source_id = %s", key
+    ).rowcount
+    words = conn.execute(
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'conversation' AND source_id = %s",
+        key,
+    ).rowcount
+    values = 0
+    if tags:
+        values = conn.execute(
+            "DELETE FROM pseudonym_vault v WHERE v.scope_id = %s AND v.tag = ANY(%s::text[]) AND NOT EXISTS "
+            "(SELECT 1 FROM hidden_details h WHERE h.idea_uuid = %s AND h.vault_tag = v.tag)",
+            (_hide_scope(idea_uuid), tags, idea_uuid),
+        ).rowcount
+    log.info(
+        "convo.hidden_forgotten",
+        entry_id=entry_id,
+        hidden_count=details,
+        sealed_count=words,
+        vault_rows=values,
+    )
 
 
 def pattern_mask(text: str) -> tuple[str, int]:

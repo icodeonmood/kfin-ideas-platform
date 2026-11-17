@@ -544,7 +544,7 @@ def test_bld_f063_l_convo_7_only_the_sharer_the_desk_and_the_core_committee_add_
         err = refused(send, db, idea["idea_id"], who["id"], {"text": "With my file.", "file_ids": [own]})
         assert (err.status, err.code, err.field) == (422, "files_not_allowed", "file_ids"), who["name"]
         assert err.message == (
-            "Only the person who shared this idea, the review desk and the Ones Committee can add files here."
+            "You can’t add files here. The person who shared this idea or the review desk can add them."
         )
         assert conversation(db, idea["idea_id"], who["id"], at=NOW)["composer"]["can_attach"] is False
         assert send(db, idea["idea_id"], who["id"], {"text": "Words only."})["entry"]["files"] == []
@@ -553,3 +553,75 @@ def test_bld_f063_l_convo_7_only_the_sharer_the_desk_and_the_core_committee_add_
         assert conversation(db, idea["idea_id"], who["id"], at=NOW)["composer"]["can_attach"] is True
         sent = send(db, idea["idea_id"], who["id"], {"file_ids": [own]})
         assert [f["id"] for f in sent["entry"]["files"]] == [own], who["name"]
+
+
+def test_bld_f067_l_convo_10_removing_a_message_drops_what_l_hide_kept_and_keeps_a_value_another_message_uses(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    """Lane C's real `hide_message` through `send` (one connection), then removal in lane C's order: the removed
+    message's hidden details and the writer's sealed words go, and so does a vault value only it used; a value the
+    second message also holds stays (review of f/convo-7, items 3 and 8)."""
+    from hide.core import scope_for
+
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya)
+    first = send(db, idea["idea_id"], kavya["id"],
+                 {"text": "Folio 1234567890 failed, and Folio 9876543210 too."}, at=fx.at(17, 10))  # fmt: skip
+    second = send(
+        db, idea["idea_id"], kavya["id"], {"text": "Folio 9876543210 failed again."}, at=fx.at(17, 10, 1)
+    )
+    one, two = first["entry"]["id"], second["entry"]["id"]
+    assert first["hidden"] >= 2 and "1234567890" not in first["entry"]["text"]
+
+    def rows(table: str, source_id: str) -> list[dict[str, Any]]:
+        return [
+            dict(r)
+            for r in db.execute(
+                f"SELECT * FROM {table} WHERE idea_uuid = %s AND source = 'conversation' AND source_id = %s",  # noqa: S608
+                (idea["id"], source_id),
+            ).fetchall()
+        ]
+
+    def tags(source_id: str) -> set[str]:
+        return {str(r["vault_tag"]) for r in rows("hidden_details", source_id) if r["vault_tag"]}
+
+    def in_vault(tag: str) -> bool:
+        n = db.execute(
+            "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s AND tag = %s",
+            (scope_for(str(idea["id"])), tag),
+        ).fetchone()["n"]
+        return int(n) == 1
+
+    assert len(rows("idea_words_sealed", one)) == 1 and len(rows("idea_words_sealed", two)) == 1
+    only_first, shared = tags(one) - tags(two), tags(one) & tags(two)
+    assert only_first and shared  # 1234567890 is the first's alone; 9876543210 is in both
+    assert all(in_vault(t) for t in tags(one) | tags(two))
+
+    remove(db, idea["idea_id"], kavya["id"], one, at=fx.at(17, 10, 2))
+    assert (
+        rows("hidden_details", one) == [] and rows("idea_words_sealed", one) == []
+    )  # no sealed words remain
+    assert not any(in_vault(t) for t in only_first)
+    assert all(in_vault(t) for t in shared)  # the second message still holds it
+    assert len(rows("idea_words_sealed", two)) == 1 and tags(two) == shared | (tags(two) - shared)
+    [gone] = [m for m in messages(conversation(db, idea["idea_id"], meera["id"], at=NOW)) if m["id"] == one]
+    assert gone["removed"] and gone["text"] == "Message removed"
+
+
+def test_bld_f054_a_refusal_from_l_hide_is_a_ready_503_and_nothing_is_written(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hide.core import HideError
+
+    def refuses(*a: Any, **k: Any) -> Any:
+        raise HideError(503, "gatekeeper_down")
+
+    monkeypatch.setattr("convo.adapters._hide_message", refuses)
+    idea = fx.idea(db, cast["kavya"])
+    err = refused(send, db, idea["idea_id"], cast["kavya"]["id"], {"text": "Folio 1234567890 failed."})
+    assert (err.status, err.code, err.field) == (503, "hide_unavailable", "text")
+    assert (
+        err.message
+        == "We couldn’t check this message for customers’ details just now. Try again in a minute."
+    )
+    assert fx.entries(db, idea["id"]) == [] and told == []

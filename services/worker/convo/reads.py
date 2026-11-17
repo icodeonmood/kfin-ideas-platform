@@ -206,14 +206,14 @@ def _questions(ctx: Ctx, x: dict[str, Any], t: dt.datetime) -> dict[str, Any] | 
     by = ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK)
     n = int(s["count"])
     is_open = s["state"] in OPEN_SET_STATES
-    if (
-        ctx.reader.sharer
-    ):  # Messages.md: "Meera has 3 questions about your idea" / "Meera’s 3 questions, answered"
-        title = (
-            f"{by.first_name} has {plural(n, 'question')} about your idea"
-            if is_open
-            else f"{by.first_name}’s {plural(n, 'question')}, answered"
-        )
+    # The sharer reads Messages.md's lines: "Meera has 3 questions about your idea", "Meera’s 3 questions, answered".
+    if ctx.reader.sharer and is_open:
+        title = f"{by.first_name} has {plural(n, 'question')} about your idea"
+    elif ctx.reader.sharer and s["state"] == "answered":
+        title = f"{by.first_name}’s {plural(n, 'question')}, answered"
+    elif ctx.reader.sharer:
+        # Closed before every answer came, e.g. the desk decided (lane F's line, BLD-F065).
+        title = f"{by.first_name}’s {plural(n, 'question')}, now closed"
     else:
         title = f"{ctx.name(by)} asked {plural(n, 'question')}."
     out: dict[str, Any] = {

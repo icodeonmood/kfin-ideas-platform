@@ -52,9 +52,11 @@ TOO_LATE = "A message can be removed only in the first 5 minutes after sending."
 KEY_REUSED = "This request was already sent with different words. Refresh and try again."
 TOO_MANY_FILES = "Attach up to 5 files to a message."  # BLD-F055: refused, never dropped
 TOO_MANY_MENTIONS = "Mention up to 10 people in a message."
-FILES_NOT_YOURS_TO_ADD = (  # BLD-F063
-    "Only the person who shared this idea, the review desk and the Ones Committee can add files here."
+# BLD-F063: said only to readers who cannot add files, so it names who can without claiming a full list.
+FILES_NOT_YOURS_TO_ADD = (
+    "You can’t add files here. The person who shared this idea or the review desk can add them."
 )
+HIDE_FAILED = "We couldn’t check this message for customers’ details just now. Try again in a minute."
 
 
 def _ids(value: Any, pattern: re.Pattern[str]) -> list[str]:
@@ -110,9 +112,13 @@ def send(
         # The entry's id comes first: lane C's L-HIDE keeps the writer's own words and each hidden value under it
         # (source "conversation"), in this transaction (BLD-F054).
         entry_id = str(uuid.uuid4())
-        masked, hidden = (
-            adapters.hide(conn, str(idea["id"]), text, by=user_id, entry_id=entry_id) if text else ("", 0)
-        )
+        try:
+            masked, hidden = (
+                adapters.hide(conn, str(idea["id"]), text, by=user_id, entry_id=entry_id) if text else ("", 0)
+            )
+        except adapters.HideRefused as exc:  # lane C's HideError: a ready message, never a 500 (BLD-F054)
+            status = 503 if exc.status >= 500 else 422
+            raise Refused(status, "hide_unavailable", HIDE_FAILED, "text") from None
         # After hiding, as lane B's desk takes them (L-HIDE's lock, then this one), so the two locks always come in
         # one order; before the last line's time is read, so two writers cannot tie (BLD-F057).
         conn.execute(LOCK, (str(idea["id"]),))
@@ -243,15 +249,17 @@ def remove(
     conn: Conn, ref: str, user_id: str, entry_id: str, *, at: dt.datetime | None = None
 ) -> dict[str, Any]:
     """`DELETE /ideas/:id/conversation/messages/:entryId`: the sender's own message, within 5 minutes; it then reads
-    "Message removed" for everyone (L-CONVO/10). The words are dropped, not kept, and its files come off it."""
+    "Message removed" for everyone (L-CONVO/10). The words are dropped, not kept: the sealed masked copy, and what
+    L-HIDE kept for the writer (BLD-F067). Its files come off it."""
     t = at or now()
     if not _UUID.match(entry_id):
         raise not_found()
     with conn.transaction():
         idea = load_idea(conn, ref)
         r = reader(conn, idea, user_id)
+        # No row lock yet: L-HIDE's lock must come before any (lane C's recipe), and the UPDATE below guards the race.
         row = conn.execute(
-            "SELECT * FROM conversation_entries WHERE id = %s AND idea_uuid = %s AND type = 'message' FOR UPDATE",
+            "SELECT * FROM conversation_entries WHERE id = %s AND idea_uuid = %s AND type = 'message'",
             (entry_id, idea["id"]),
         ).fetchone()
         if row is None:
@@ -263,13 +271,18 @@ def remove(
         if row["deleted_at"] is None:
             if t > row["at"] + REMOVE_WITHIN:
                 raise Refused(409, "too_late", TOO_LATE)
-            conn.execute(
-                "UPDATE conversation_entries SET deleted_at = %s, text_encrypted = NULL WHERE id = %s",
+            adapters.forget(conn, str(idea["id"]), entry_id)  # L-HIDE's lock first, then what it kept
+            done = conn.execute(
+                "UPDATE conversation_entries SET deleted_at = %s, text_encrypted = NULL "
+                "WHERE id = %s AND deleted_at IS NULL",
                 (t, entry_id),
-            )
-            conn.execute(
-                "UPDATE attachments SET conversation_entry_id = NULL WHERE conversation_entry_id = %s",
-                (entry_id,),
-            )
-            audit(conn, user_id, "convo.message_removed", f"idea:{idea['idea_id']}", {"entry_id": entry_id})
+            ).rowcount
+            if done:
+                conn.execute(
+                    "UPDATE attachments SET conversation_entry_id = NULL WHERE conversation_entry_id = %s",
+                    (entry_id,),
+                )
+                audit(
+                    conn, user_id, "convo.message_removed", f"idea:{idea['idea_id']}", {"entry_id": entry_id}
+                )
         return {"entry": entry_for(conn, idea, user_id, entry_id, t)}

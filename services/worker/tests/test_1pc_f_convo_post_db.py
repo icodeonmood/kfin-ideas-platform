@@ -54,7 +54,6 @@ def test_l_convo_4_post_writes_questions_by_reference(db: Any) -> None:
             "desk.opened",
             {"payload": {"reason": "The crew is full for now, so the review desk asked to wait a week."}},
         ),
-        ("desk.opened", {"payload": {"score": float("nan")}}),  # JSON cannot hold it
         ("desk.asked", {"entry_type": "questions"}),
         ("desk.note", {"entry_type": "message"}),
     ],
@@ -81,6 +80,11 @@ def test_l_convo_3_post_takes_any_json_scalar_so_a_callers_decision_never_rolls_
         post(db, str(idea["id"]), "desk.decide_by_moved", author_user_id=reviewer["id"], payload=payload)
     [row] = fx.entries(db, idea["id"])
     assert row["payload"] == payload
+    # NaN and infinity cannot go in JSON: stored as None, never a refusal (review of f/convo-7, item 10).
+    with db.transaction():
+        post(db, str(idea["id"]), "desk.worth_revised", author_user_id=reviewer["id"],
+             payload={"worth": float("nan"), "spread": float("inf"), "choice": "pick"})  # fmt: skip
+    assert fx.entries(db, idea["id"])[-1]["payload"] == {"worth": None, "spread": None, "choice": "pick"}
 
 
 def _holds_convo_lock(db: Any, idea_uuid: str) -> bool:

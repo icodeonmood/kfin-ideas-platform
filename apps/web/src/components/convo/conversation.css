@@ -99,6 +99,15 @@
   max-width: 600px;
   scroll-margin: 96px 0 160px;
 }
+/* A message takes focus only from the screen (after Remove), never from Tab. */
+.cv-msg:focus {
+  outline: none;
+}
+.cv-msg:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
 .cv-msg.me {
   align-self: flex-end;
   align-items: flex-end;

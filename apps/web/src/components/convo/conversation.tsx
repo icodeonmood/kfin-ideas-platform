@@ -219,6 +219,18 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     }
   }, [base]);
 
+  /** Put an entry the server returned on screen at once (its POST or DELETE answer), replacing it if it is there;
+   * the read that follows confirms it, and if that read fails the entry stays. */
+  function place(entry: unknown) {
+    if (!entry || typeof entry !== "object" || typeof (entry as { id?: unknown }).id !== "string") return;
+    const e = entry as Entry;
+    setView((v) => {
+      const at = v.entries.findIndex((x) => x.id === e.id);
+      const entries = at < 0 ? [...v.entries, e] : v.entries.map((x, i) => (i === at ? e : x));
+      return { ...v, entries, empty: e.type === "message" ? undefined : v.empty };
+    });
+  }
+
   function toBottom() {
     const el = logEnd.current;
     if (el && typeof el.scrollIntoView === "function") {
@@ -255,9 +267,11 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
       setActive((i) => (i + step + choices.length) % choices.length);
-    } else if (e.key === "Enter" || e.key === "Tab") {
+    } else if (e.key === "Enter") {
       e.preventDefault();
       pick(choices[Math.min(active, choices.length - 1)]!);
+    } else if (e.key === "Tab") {
+      setMenu(null); // Tab leaves the box as it always does; the list closes behind it
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -290,10 +304,13 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
         box.current?.focus();
         return;
       }
+      // Sent: the words go, and the message the server returns shows at once, so nothing is sent twice even if
+      // the read after it fails.
       keyRef.current = null;
       setText("");
       setPicked(new Map());
       setMenu(null);
+      place((body as { entry?: unknown } | null)?.entry);
       await refresh();
       toBottom();
     } catch {
@@ -308,11 +325,14 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     setRemoveError(null);
     try {
       const res = await fetch(`${base}/messages/${enc(entryId)}`, { method: "DELETE" });
+      const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        const body: unknown = await res.json().catch(() => null);
         setRemoveError({ id: entryId, text: errorText(body, C.removeFailed) });
         return;
       }
+      place((body as { entry?: unknown } | null)?.entry);
+      // Remove goes with the message it removed: focus moves to that line, now "Message removed" (WCAG 2.4.3).
+      document.getElementById(`entry-${entryId}`)?.focus();
       await refresh();
     } catch {
       setRemoveError({ id: entryId, text: C.removeFailed });
@@ -339,6 +359,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
         key={e.id}
         id={`entry-${e.id}`}
         className={cls("cv-msg", e.you && "me", e.mentions_you && "mentions-you")}
+        tabIndex={-1}
       >
         <p className="cv-who">
           {e.you ? null : <Avatar initials={e.from.initials} size={28} />}
