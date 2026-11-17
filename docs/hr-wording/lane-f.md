@@ -65,3 +65,18 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-CONVO/10`, removing someone else's message | Not drawn | You can remove only your own messages. |
 | `L-CONVO/10`, removing after 5 minutes | Not drawn | A message can be removed only in the first 5 minutes after sending. |
 | `A-API.conventions/3`, the same request sent again with other words | Not drawn | This request was already sent with different words. Refresh and try again. |
+
+### 5. The conversation screen (S-08)
+
+Everything else on S-08 is the pack's copy (Messages.md) or comes from the conversation's own lines above.
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `S-08`, a message that did not reach the server | Not drawn | Your message didn’t send. Try again. |
+| `S-08`, the button on one's own message in its first 5 minutes (L-CONVO/10) | Not drawn | Remove (read out as "Remove your message from Today, 10:07 am") |
+| `S-08`, a removal that did not go through | Not drawn | The message wasn’t removed. Try again. |
+| `S-08`, the Send button while sending | Send | Sending |
+| `S-08`, the @mention list, as read out (L-CONVO/6) | Not drawn | People to mention. "3 people to mention. Use the up and down arrows, then Enter." ("1 person to mention. …" for one) |
+| `S-08.rules/4`, the phone's "i" button and the sheet's button | an "i" button | Who is in this conversation / Close |
+| `S-08`, a file's button and the file lists, as read out | View | View plain-rejection-reasons.xlsx / Files in your message / Files in Ravi Nair’s message / Files with this answer |
+| `S-08`, the questions for a reader who did not ask them (BLD-F065) | Meera has 3 questions about your idea | Meera from the review desk asked 3 questions. / You asked 3 questions. / See them on the idea |

@@ -147,7 +147,6 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<MentionQuery | null>(null);
   const [active, setActive] = useState(0);
-  const [dismissed, setDismissed] = useState<number | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -155,6 +154,9 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const box = useRef<HTMLTextAreaElement>(null);
   const caretAfter = useRef<number | null>(null);
   const keyRef = useRef<string | null>(null);
+  // The "@" whose list Escape closed: it stays closed until a new "@" (a ref, so a select event in the same tick
+  // reads it at once).
+  const dismissed = useRef<number | null>(null);
   const logEnd = useRef<HTMLDivElement>(null);
   const infoButton = useRef<HTMLButtonElement>(null);
   const panelClose = useRef<HTMLButtonElement>(null);
@@ -226,11 +228,11 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
 
   function track(value: string, caret: number) {
     const q = mentionAt(value, caret);
-    if (q && dismissed === q.start) {
+    if (q && dismissed.current === q.start) {
       setMenu(null);
       return;
     }
-    if (!q) setDismissed(null);
+    if (!q) dismissed.current = null;
     // The highlighted choice stays while the query does; a new query starts at the top.
     if (!q || !menu || q.start !== menu.start || q.query !== menu.query) setActive(0);
     setMenu(q);
@@ -259,7 +261,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      setDismissed(menu.start);
+      dismissed.current = menu.start;
       setMenu(null);
     }
   }
