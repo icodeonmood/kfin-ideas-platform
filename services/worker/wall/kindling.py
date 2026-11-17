@@ -15,14 +15,18 @@ from core.db import Conn
 from onepc.enums import KIND, values
 from wall.common import (
     IST,
+    KIND_LABEL,
     SHARER_COLS,
     SHARER_JOIN,
     Refused,
     ago_label,
+    indian,
     on_wall_sql,
+    plural,
     public_text,
     sharer_ref,
     wall_kind_sql,
+    wall_to,
 )
 
 STAGES: tuple[str, ...] = values("wall_stage")  # picked, being_built, shipped (each is also an idea status)
@@ -75,19 +79,29 @@ _OPENED = (
 )
 
 
-def _item(r: dict[str, Any]) -> dict[str, Any] | None:
+def _item(r: dict[str, Any], back: str) -> dict[str, Any] | None:
     title = public_text(r["title"])
     if title is None:
         return None
+    kind, area = str(r["wkind"]), str(r["area"] or "")
     return {
         "id": r["idea_id"],
         "title": title,
         "summary": public_text(r["summary"]) or "",
-        "kind": r["wkind"],
-        "area": r["area"] or "",
+        "kind": kind,
+        "area": area,
         "crew_count": int(r["crew_count"]),
         "sharer": sharer_ref(r),
+        # "Problem, Investor service" (S-WALL.justin; Kindling adds ", 4 colleagues on it")
+        "meta": ", ".join(x for x in (KIND_LABEL.get(kind, ""), area) if x),
+        "to": wall_to(str(r["idea_id"]), back),
     }
+
+
+def _back(kind: str | None, sort: str | None = None) -> str:
+    """The Wall's own address with the state the server knows (kind chip, sort), for the idea's Back link."""
+    q = "&".join(f"{k}={v}" for k, v in (("kind", kind), ("sort", sort)) if v and v != "newest")
+    return "/wall" + (f"?{q}" if q else "")
 
 
 def kindling(conn: Conn, kind: str | None = None) -> list[dict[str, Any]]:
@@ -109,11 +123,27 @@ def _kindling(conn: Conn, kind: str | None) -> list[dict[str, Any]]:
     )
     rows = conn.execute(sql, {"stages": list(STAGES), "kind": kind}).fetchall()
     out = []
+    back = _back(kind)
     for stage in STAGES:
         mine = sorted((dict(r) for r in rows if r["status"] == stage), key=lambda r: r["rn"])
-        items = [x for x in (_item(r) for r in mine) if x is not None][:KINDLING_ITEMS]
+        items = [x for x in (_item(r, back) for r in mine) if x is not None][:KINDLING_ITEMS]
+        for x in items:  # "Problem, Distributor experience, 4 colleagues on it" (S-WALL.kindling)
+            x["meta"] = ", ".join(y for y in (x["meta"], f"{plural(x['crew_count'], 'colleague')} on it") if y)
         out.append({"stage": stage, "count": int(mine[0]["stage_count"]) if mine else 0, "items": items})
     return out
+
+
+def figure_label(sort: str, row: dict[str, Any]) -> str:
+    """The figure for the current sort, as the phone's second line says it (L-WALL.justin/5, S-WALL.phone):
+    "Opened by 233 this week", "Shared 2h ago", "3 on the crew", "1 One on the crew"."""
+    if sort == "popular":
+        return f"Opened by {indian(row['opened_7d'])} this week"
+    if sort == "crew":
+        return f"{indian(row['crew_count'])} on the crew"
+    if sort == "ones":
+        return f"{plural(row['ones_count'], 'One')} on the crew"
+    label = str(row["shared_label"])
+    return f"Shared {label[:1].lower() + label[1:] if label in ('Yesterday', 'Just now') else label}"
 
 
 def _order(sort: str) -> str:
@@ -173,8 +203,9 @@ def _just_in(
         {**params, "limit": limit, "offset": offset},
     ).fetchall()
     items = []
+    back = _back(kind, sort)
     for r in rows:
-        item = _item(dict(r))
+        item = _item(dict(r), back)
         if item is None:
             continue
         shared = r["shared_at"]
@@ -186,13 +217,20 @@ def _just_in(
                 "ones_count": int(r["ones_count"]),
             }
         )
+        item["figure_label"] = figure_label(sort, item)
         items.append(item)
     total = counts["all"] if kind is None else counts.get(kind, 0)
     nxt = offset + limit
+    more = min(limit, total - nxt) if nxt < total else 0
     return {
         "items": items,
         "total": total,
         "counts": {key: counts.get(key, 0) for key in ("all", *KIND)},
         "sort": sort,
         "next": str(nxt) if nxt < total else None,
+        # "12 with the review desk" (L-WALL.justin/1); "Show 5 more", "Show 2 more", then "Show fewer"
+        # (L-WALL.justin/5, V-ACC.browse/3). The page asks for its own page size: 5 on desktop, 3 on the phone.
+        "sub": f"{indian(total)} with the review desk",
+        "more": more,
+        "more_label": f"Show {more} more" if more else ("Show fewer" if offset > 0 else None),
     }

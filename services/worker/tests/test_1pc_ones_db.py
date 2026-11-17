@@ -158,8 +158,13 @@ def test_S_ONE_dashboard_shows_the_number_window_idea_impact_and_brief(ones_db: 
     # Their own name shows to them even though they hid it from the Wall.
     assert out["one"]["person"]["name"] == "Ritika Sood" and out["one"]["tier_label"] == "Tier 4, Blaze"
     assert out["one"]["flag_label"] == "Founding One" and out["since_label"] == "1 Nov 2026"
-    assert out["number_window"] == {"open": True, "until": "2026-12-01T04:30:00+00:00", "until_label": "1 Dec 2026",
-                                    "number": 1}  # fmt: skip
+    assert out["number_window"] == {
+        "open": True, "until": "2026-12-01T04:30:00+00:00", "until_label": "1 Dec 2026", "number": 1,
+        "keep_label": "Keep No. 1, or choose any free number from 1 to 999 until 1 Dec 2026. First come, first "
+                      "served. After that, it's yours.",
+    }  # fmt: skip
+    assert out["headline"] == "You're No. 1"
+    assert out["since_line"] == "Tier 4, Blaze. Founding One since 1 Nov 2026."
     assert out["idea"] == {"id": idea["idea_id"], "title": idea["title"], "status": "shipped"}
     assert out["impact"] == {
         "time": {"value": "620 hours a month", "line": "Fewer bounced-debit cases"},
@@ -191,10 +196,17 @@ def test_L_ONES_rules_2_number_swap_free_taken_out_of_range_and_locked(ones_db: 
     assert ones.set_number(db, who["id"], 17, now=f.NOW)["number_window"]["number"] == 17  # same again: no change
     assert len(_audit(db, "ones.number_changed", mark)) == 1
     assert ones.nearest_free(db, 2, oid, f.NOW) == [1, 6, 8]  # their old number rests for others, not for them
-    later = f.NOW + dt.timedelta(days=31)
-    e = refused("window_closed", ones.set_number, db, who["id"], 18, now=later)
-    assert e.message == "No. 17 is yours for good."
-    assert ones.dashboard(db, who["id"], now=later)["number_window"]["open"] is False
+    # The window is 30 days from becoming a One (f.one: inducted two days before NOW): open a day before it ends,
+    # closed a day after.
+    assert ones.set_number(db, who["id"], 18, now=f.NOW + dt.timedelta(days=27))["number_window"]["open"] is True
+    later = f.NOW + dt.timedelta(days=29)
+    e = refused("window_closed", ones.set_number, db, who["id"], 19, now=later)
+    assert e.message == "No. 18 is yours for good."
+    # A closed window answers the same whatever was typed (V-FIELDS.one/3).
+    assert refused("window_closed", ones.set_number, db, who["id"], "abc", now=later).field == "number"
+    window = ones.dashboard(db, who["id"], now=later)["number_window"]
+    assert window["open"] is False and window["locked_label"] == "No. 18 is yours for good."
+    assert "keep_label" not in window
 
 
 def test_L_ONES_rules_5_a_new_brief_waits_for_the_programme_team(ones_db: Conn) -> None:
@@ -240,6 +252,7 @@ def test_L_ONES_rules_3_the_glow_up_plays_once_with_the_committees_message(ones_
                    "RETURNING id", (oid, p)).fetchone()["id"]  # fmt: skip
     moment = ones.dashboard(db, who["id"], now=f.NOW)["tier_moment"]
     assert moment == {"id": g, "from": 1, "to": 2, "from_label": "Tier 1, Spark", "to_label": "Tier 2, Glow",
+                      "title": "No. 17, your spark is hotter", "line": "From Tier 1, Spark to Tier 2, Glow",
                       "story": {"shared": 3, "picked": 1, "shipped": 1},
                       "messages": [{"text": note, "from_label": "From the core committee: Vikram Chawla"}]}  # fmt: skip
     assert ones.dashboard(db, who["id"], now=f.NOW)["tier_moment"] is not None  # reading changes nothing
