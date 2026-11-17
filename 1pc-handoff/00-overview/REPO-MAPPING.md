@@ -36,7 +36,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
-| `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
+| `S-WALL` | `/wall` | `app/wall/page.tsx` (first view on the server, `app/wall/load.ts`), `wall-screen.tsx` (kind chips, sorts, Show more in place; state in the URL, `state.ts`), `wall.css`; data `GET /api/wall/*` (`server/wall.ts`). Tests `e2e/wall.spec.ts` | built | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
 | `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |

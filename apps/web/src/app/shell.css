@@ -30,7 +30,9 @@
 }
 
 @media (max-width: 640px) {
-  :root {
+  /* No sidebar on a phone, whatever the fold choice: the attribute selectors above would otherwise win */
+  :root,
+  :root[data-fold] {
     --sbw: 0px;
   }
 }
