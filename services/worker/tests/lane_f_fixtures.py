@@ -45,7 +45,9 @@ def person(
     _made["users"].append(user_id)
     ctr = f"CTR-{secrets.token_hex(3)}" if code else None
     if ctr:
-        conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (ctr, user_id))
+        conn.execute(
+            "INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (ctr, user_id)
+        )
     for role in roles:
         conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (user_id, role))
     return {"id": user_id, "code": ctr, "name": name, "first_name": name.split()[0]}
@@ -76,7 +78,8 @@ def idea(
     }  # fmt: skip
     names = ", ".join(cols)
     marks = ", ".join(["%s"] * len(cols))
-    row = conn.execute(f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *", tuple(cols.values())).fetchone()  # noqa: S608 (this file's own columns)
+    sql = f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *"  # noqa: S608 (this file's own columns)
+    row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
     _made["ideas"].append(str(row["id"]))
     if shared is not None:
@@ -107,7 +110,9 @@ def join(conn: Conn, idea_row: dict[str, Any], member: dict[str, Any], *, days: 
     )
 
 
-def request(conn: Conn, idea_row: dict[str, Any], who: dict[str, Any], *, state: str = "sent", days: float = 0.5) -> str:
+def request(
+    conn: Conn, idea_row: dict[str, Any], who: dict[str, Any], *, state: str = "sent", days: float = 0.5
+) -> str:
     rid = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO teamup_requests (id, idea_uuid, from_code, note_encrypted, state, sent_at) "
@@ -119,7 +124,36 @@ def request(conn: Conn, idea_row: dict[str, Any], who: dict[str, Any], *, state:
     return rid
 
 
-def link(conn: Conn, mine: dict[str, Any], other: dict[str, Any], *, strength: str = "close", reason: str = "", rank: int = 1) -> None:
+def merge_request(
+    conn: Conn,
+    draft: dict[str, Any],
+    other: dict[str, Any],
+    who: dict[str, Any],
+    *,
+    state: str = "waiting",
+    days: float = 0.2,
+) -> str:
+    """A draft's merge request (L-MERGE.request) from `who`'s draft to `other`."""
+    rid = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO merge_requests (id, draft_uuid, other_idea_uuid, from_code, note_encrypted, state, sent_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (rid, draft["id"], other["id"], who["code"],
+         seal_text("merge_requests", "note_encrypted", rid, "Mine is the same problem at the counter."),
+         state, ago(days)),
+    )  # fmt: skip
+    return rid
+
+
+def link(
+    conn: Conn,
+    mine: dict[str, Any],
+    other: dict[str, Any],
+    *,
+    strength: str = "close",
+    reason: str = "",
+    rank: int = 1,
+) -> None:
     conn.execute(
         "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason, rank) VALUES (%s, %s, %s, %s, %s)",
         (mine["id"], other["id"], strength, reason, rank),
