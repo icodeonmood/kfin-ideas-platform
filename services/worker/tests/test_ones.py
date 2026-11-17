@@ -17,7 +17,7 @@ from gateway import limits
 from gateway.routes import FAKE_SCRIPT
 from ones import numbers, service, views
 from ones.text import OnesRefused
-from tests import helpers
+from tests import helpers, wall_fixtures
 
 pytestmark = pytest.mark.stack
 NOW = dt.datetime(2026, 12, 14, 10, 0, tzinfo=dt.UTC)
@@ -40,8 +40,10 @@ def ones_db(db: Any, company_repo: Any, test_database: str, monkeypatch: pytest.
 
 
 def person(
-    db: Any, *roles: str, name: str | None = None, consent: bool = False, manager: str | None = None
+    db: Any, *roles: str, name: str | None = None, consent: bool | None = None, manager: str | None = None
 ) -> str:
+    """`consent` None: the person never touched the name toggle, so their name shows (DEC-104). True or False: they
+    chose, and the toggle wrote both flags, the rule and the old copy kept until Monday."""
     tag = secrets.token_hex(3)
     row = db.execute(
         "INSERT INTO users (emp_id_hash, name, email, source, manager_user_id, lob_id) "
@@ -55,8 +57,9 @@ def person(
     )
     for role in roles:
         db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (uid, role))
-    if consent:
-        db.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, true)", (uid,))
+    if consent is not None:
+        db.execute("INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s)", (uid, consent))
+        db.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, %s)", (uid, consent))
     return uid
 
 
@@ -329,7 +332,7 @@ def test_a_tier_change_needs_the_committees_message_and_plays_a_glow_up_once(one
     mine = views.my_one(db, subject, now=NOW)
     assert mine["tier"] == 3 and mine["tier_name"] == "Flame"
     glow = mine["glow_up"]
-    assert glow["from"]["tier"] == 1 and glow["to"]["tier_colour"] == "#FF2E6B" and glow["up"]
+    assert glow["from"]["tier"] == 1 and glow["to"]["tier_colour"] == "#F34770" and glow["up"]
     assert [m["from"] for m in glow["messages"]] == ["committee", "ceo", "peer"]
     assert (
         glow["messages"][0]["name"] == "The 1% Club core committee"
@@ -353,7 +356,7 @@ def test_people_hear_about_their_own_changes_and_everyone_hears_about_new_ones(
 ) -> None:
     db = ones_db
     named = person(db, consent=True, name="Lakshmi Iyer")
-    quiet = person(db, name="Prefers Not Shown")
+    quiet = person(db, name="Prefers Not Shown", consent=False)
     one_named, one_quiet = induct(db, cast, named), induct(db, cast, quiet)
     db.execute("DELETE FROM jobs")
     refused("forbidden", service.announce, db, cast["member"], now=NOW)
@@ -379,7 +382,10 @@ def test_people_hear_about_their_own_changes_and_everyone_hears_about_new_ones(
 
 def test_the_public_view_respects_consent_finance_and_the_switch(ones_db: Any, cast: Any) -> None:
     db = ones_db
-    named, quiet = person(db, consent=True, name="Ananya Rao"), person(db, name="Farhan Qureshi")
+    named, quiet = (
+        person(db, consent=True, name="Ananya Rao"),
+        person(db, name="Farhan Qureshi", consent=False),
+    )
     one_named = induct(db, cast, named, way_in="founding")
     induct(db, cast, quiet)
     service.set_measures(db, cast["admin"], one_named["one_id"], {
@@ -429,18 +435,124 @@ def test_the_public_view_respects_consent_finance_and_the_switch(ones_db: Any, c
 def test_the_leaderboard_is_for_ones_and_ranks_by_tier_then_impact(ones_db: Any, cast: Any) -> None:
     db = ones_db
     a, b = person(db, name="Tier One Synthetic"), person(db, name="Tier Four Synthetic", consent=True)
-    quiet = person(db, name="Tier Two Quiet Synthetic")
+    quiet = person(db, name="Tier Two Quiet Synthetic", consent=False)
     induct(db, cast, a)
     one_b, one_q = induct(db, cast, b), induct(db, cast, quiet)
     db.execute("UPDATE ones SET tier = 4 WHERE id = %s", (one_b["one_id"],))
     db.execute("UPDATE ones SET tier = 2 WHERE id = %s", (one_q["one_id"],))
     assert views.leaderboard(db, cast["employee"]) is None
     board = views.leaderboard(db, a)
-    # Tier first; a name shows only with consent (the quiet One is a number), and you always see your own.
+    # Tier first; a name shows unless hidden (the quiet One hid it: a number), and you always see your own.
     assert [p["name"] for p in board["people"]][:3] == ["Tier Four Synthetic", None, "Tier One Synthetic"]
     assert board["people"][1]["number"] == one_q["number"]
     assert board["people"][2]["you"] and board["teams"][0]["ones"] >= 3
     assert "Tier Two Quiet Synthetic" not in str(board)
+
+
+# --- A name follows person_settings.show_name_on_wall on every surface (DEC-104, P-PRODUCT.privacy, L-ONES) ----------
+
+
+@pytest.fixture
+def names_db(ones_db: Any) -> Iterator[Any]:
+    """The Ones database, emptied of the people and Ones each of these tests made once it ends (rule 14)."""
+    yield ones_db
+    wall_fixtures.leave_clean(ones_db)
+
+
+def _hide(db: Any, uid: str) -> None:
+    """The person hid their name; the old flag still says yes, as a stale copy might, and must decide nothing."""
+    db.execute("INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false)", (uid,))
+    db.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, true)", (uid,))
+
+
+def test_l_ones_public_names_a_one_with_no_settings_row_and_numbers_one_who_hid_it(
+    names_db: Any, cast: Any
+) -> None:
+    """/internal/ones/public, the Ones on Landing (J-ONE/3), reads the rule as the office screen and the Wall do: no
+    person_settings row shows the name; show_name_on_wall false shows the number only."""
+    db = names_db
+    never, old_off, hid = (
+        person(db, name=n) for n in ("Kavitha Ghatge", "Mohan Lokhande", "Hrishikesh Bhat")
+    )
+    # The old flag at its old default (off) decides nothing either.
+    db.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, false)", (old_off,))
+    _hide(db, hid)
+    ones = {who: induct(db, cast, who) for who in (never, old_off, hid)}
+    assert not db.execute(
+        "SELECT 1 FROM person_settings WHERE user_id = ANY(%s::uuid[])", ([never, old_off],)
+    ).fetchone()
+
+    out = views.public(db)
+    cards = {c["number"]: c for c in out["ones"]}
+    assert cards[ones[never]["number"]]["name"] == "Kavitha Ghatge"
+    assert cards[ones[old_off]["number"]]["name"] == "Mohan Lokhande"
+    assert cards[ones[hid]["number"]]["name"] is None and "Hrishikesh Bhat" not in str(out)
+    # Their own /one page and the leaderboard say the same.
+    assert views.my_one(db, never, now=NOW)["name_on_wall"] is True
+    assert views.my_one(db, hid, now=NOW)["name_on_wall"] is False
+    board = {p["number"]: p["name"] for p in views.leaderboard(db, never)["people"]}
+    assert board[ones[old_off]["number"]] == "Mohan Lokhande" and board[ones[hid]["number"]] is None
+
+
+def test_l_ones_announced_email_names_a_one_with_no_settings_row_not_one_who_hid_it(
+    names_db: Any, cast: Any
+) -> None:
+    """The ones.announced email and a One's own emails read the same rule as Landing (DEC-104)."""
+    db = names_db
+    never, hid = person(db, name="Sharmila Dhillon"), person(db, name="Arvind Pawar")
+    _hide(db, hid)
+    one_never, one_hid = induct(db, cast, never), induct(db, cast, hid)
+    db.execute("DELETE FROM jobs")
+    assert service.announce(db, cast["admin"], now=NOW) == {"announced": 2}
+
+    job = db.execute("SELECT payload FROM jobs WHERE type = 'comms.route'").fetchone()
+    data = render.variables(db, cast["employee"], "ones.announced", job["payload"]["refs"])
+    _, body, _ = templates.render("ones-announced", data)
+    assert f"No. {one_never['number']}, Sharmila Dhillon." in body
+    assert f"One No. {one_hid['number']}." in body and "Arvind Pawar" not in body
+    data = render.variables(
+        db, hid, "ones.inducted", {"current_owner_ids": [hid], "one_id": one_hid["one_id"]}
+    )
+    assert data["one"]["display"] == f"One No. {one_hid['number']}"
+
+
+def test_l_ones_old_my_ideas_toggle_writes_both_flags_and_every_surface_follows(
+    names_db: Any, cast: Any
+) -> None:
+    """The old /my-ideas toggle writes the rule and copies it to the old flag until Monday, as Profile does; the Ones
+    on Landing, the old wall's names and /my-ideas itself then agree (DEC-104, P-PRODUCT.privacy)."""
+    from views import common, mine
+
+    db = names_db
+    uid = person(db, name="Rajeshwari Sodhi")
+    one = induct(db, cast, uid)
+    code = db.execute("SELECT contributor_code FROM contributor_map WHERE user_id = %s", (uid,)).fetchone()[
+        "contributor_code"
+    ]
+
+    def flags() -> dict[str, Any]:
+        return dict(
+            db.execute(
+                "SELECT s.show_name_on_wall, c.public_name_consent FROM person_settings s "
+                "JOIN comms_prefs c ON c.user_id = s.user_id WHERE s.user_id = %s",
+                (uid,),
+            ).fetchone()
+        )
+
+    def landing() -> str | None:
+        return next(c["name"] for c in views.public(db)["ones"] if c["number"] == one["number"])
+
+    assert mine.my_ideas(db, uid)["name_on_wall"] is True and common.consenting_names(db, [code]) == [
+        "Rajeshwari Sodhi"
+    ]
+    assert mine.set_name_on_wall(db, uid, False) == {"name_on_wall": False}
+    assert flags() == {"show_name_on_wall": False, "public_name_consent": False}
+    assert mine.my_ideas(db, uid)["name_on_wall"] is False and common.consenting_names(db, [code]) == []
+    assert landing() is None
+
+    mine.set_name_on_wall(db, uid, True)
+    assert flags() == {"show_name_on_wall": True, "public_name_consent": True}
+    assert mine.my_ideas(db, uid)["name_on_wall"] is True and landing() == "Rajeshwari Sodhi"
 
 
 def test_a_manager_sees_counts_for_their_own_team_only(ones_db: Any, cast: Any) -> None:

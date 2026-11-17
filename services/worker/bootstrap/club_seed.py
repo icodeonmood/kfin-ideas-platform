@@ -16,7 +16,8 @@ What it gives every screen of the pack something to show:
 - a team-up request waiting on a lead (with an idea brought along), approved and declined ones, a draft's merge
   request waiting, an accepted one, and a desk merge inside its window;
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
-- every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements.
+- every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
+- one One whose tier rose with the moment not yet shown (J-ONE step 6).
 
 It does not write `sla_timers`: the old SLA tick reads a rule for every running timer and would stop on the new
 clock kinds. Clock dates live on the rows themselves (decide_by, due_at, closes_at, return_at, team_by).
@@ -69,7 +70,7 @@ PEOPLE: list[tuple[str, str, str, str, str, tuple[str, ...], int, bool, str]] = 
     ("SYN-10015", "Zoya Mirza", "Sales", "Mumbai", "LOB-sales", (), 2, True, ""),
     ("SYN-10016", "Bhavesh Patel", "Operations", "Jaipur", "LOB-shared-operations", (), 1, True, ""),
     ("SYN-10017", "Charulata Sen", "Compliance", "Kolkata", "LOB-compliance-legal", (), 2, False, "Hides name on the Wall"),
-    ("SYN-10018", "Dinesh Kamath", "Distributor experience", "Bengaluru", "LOB-digital-platforms", (), 5, True, ""),
+    ("SYN-10018", "Dinesh Kamath", "Distributor experience", "Bengaluru", "LOB-digital-platforms", (), 5, True, "One No. 8, tier just rose"),
     ("SYN-10019", "Esha Talwar", "New business", "Mumbai", "LOB-product-strategy", (), 1, True, ""),
     ("SYN-10020", "Faisal Ansari", "Operations", "Hyderabad", "LOB-mf", (), 1, True, ""),
     ("SYN-10021", "Geetanjali Dutta", "Investor service", "Kolkata", "LOB-mf", (), 2, True, ""),
@@ -986,6 +987,13 @@ ONES: list[tuple[str, int, int, str, str | None, str, int]] = [
     ("indira", 30, 2, "accepted_idea", "I1", "One checklist that stops share transfer returns.", 12),
 ]  # fmt: skip
 
+# J-ONE step 6, S-ONE `showGlowUp` (L-ONES.rules/3): D1's 90-day figures warmed Dinesh from Tier 4, Blaze to Tier 5,
+# White heat (his tier in ONES), and he has not opened his dashboard since, so the moment waits to play once. Not
+# Siddharth: J-ONE/4 and /6 walk his dashboard at Tier 1, and the moment would cover it.
+# (who, tier before, days since the rise, Ones Committee member who signs the note, the note)
+GLOW_UP = ("dinesh", 4, 2.0, "manoj",
+           "Distributors read their statements without calling us now. White heat suits you. Thank you, Dinesh.")  # fmt: skip
+
 
 def _free_number(conn: Conn, wanted: int) -> int:
     n = wanted
@@ -1041,6 +1049,37 @@ def _ones(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.
             conn.execute(
                 "INSERT INTO one_post_likes (post_id, user_id) VALUES (%s, %s)", (pid, p[liker]["id"])
             )
+    _glow_up(conn, p, one_ids, now)
+
+
+def _glow_up(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int], now: dt.datetime) -> None:
+    """GLOW_UP's tier rise, unseen. `one_glow_ups` (20261114000100) hangs off a carried-out `tier_up` proposal, and
+    the committee's note rides on that proposal, which is where `ones.views.my_one` reads "Messages for you"."""
+    who, tier_from, days, by, note = GLOW_UP
+    tier_to = next(tier for person, _n, tier, *_rest in ONES if person == who)
+    risen = _ago(days, now)
+    row = conn.execute(
+        "INSERT INTO one_proposals (kind, one_id, subject_user_id, tier_to, proposed_by, proposed_at, state, approval, "
+        "decided_by, decided_at, carried_out_by, carried_out_at) "
+        "VALUES ('tier_up', %s, %s, %s, %s, %s, 'carried_out', 'chair', %s, %s, %s, %s) RETURNING id",
+        (one_ids[who], p[who]["id"], tier_to, p[by]["id"], risen, p[by]["id"], risen, p["kunal"]["id"], risen),
+    ).fetchone()  # fmt: skip
+    assert row is not None
+    proposal = int(row["id"])
+    row = conn.execute(
+        "INSERT INTO one_messages (proposal_id, author_user_id, author_role, written_at) "
+        "VALUES (%s, %s, 'committee', %s) RETURNING id",
+        (proposal, p[by]["id"], risen),
+    ).fetchone()
+    assert row is not None
+    conn.execute(  # sealed as the Ones module seals it (ones/text.py seal)
+        "UPDATE one_messages SET text_encrypted = %s WHERE id = %s",
+        (encrypt_json({"text": note}, f"one_message:{row['id']}"), row["id"]),
+    )
+    conn.execute(  # seen_at stays empty: it plays once on S-ONE, then glow_up_seen marks it (S-ONE.rules/3)
+        "INSERT INTO one_glow_ups (one_id, proposal_id, tier_from, tier_to, created_at) VALUES (%s, %s, %s, %s, %s)",
+        (one_ids[who], proposal, tier_from, tier_to, risen),
+    )
 
 
 def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:

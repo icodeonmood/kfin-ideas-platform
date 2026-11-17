@@ -313,6 +313,13 @@ def wall_view() -> JSONResponse:
         return JSONResponse(wall(conn), headers={"Cache-Control": "no-store"})
 
 
+# The 1% Club's Wall, the Ones and Profile (lane E; A-API.wall, .ones, .ones-posts, .me). Routes live with the code
+# in wall/routes.py.
+from wall.routes import build as _wall_routes  # noqa: E402
+
+app.include_router(_wall_routes(require_token))
+
+
 @app.get("/internal/me/{user_id}/ideas", dependencies=[Depends(require_token)])
 def my_ideas_view(user_id: str) -> JSONResponse:
     """My ideas (AT-B7-02); the web app vouches for who the person is."""
@@ -1150,3 +1157,9 @@ app.include_router(files_router, dependencies=[Depends(require_token)])
 from desk.routes import build as _desk_routes  # noqa: E402
 
 app.include_router(_desk_routes(require_token))
+
+# An idea's own pages (lane E): the sharer's page, a colleague's view, My ideas, withdraw and restore (A-API.ideas,
+# A-API.my-ideas; S-06, S-07, S-09). Its routes live with the code in ideapage/routes.py.
+from ideapage.routes import build as _idea_page_routes  # noqa: E402
+
+app.include_router(_idea_page_routes(require_token))

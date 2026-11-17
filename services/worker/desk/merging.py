@@ -148,11 +148,13 @@ def merge_locked(
     *,
     note_is_reason: bool = False,
     field: str | None = None,
+    notify: bool = True,
 ) -> dict[str, Any]:
     """The desk merge's checks and effects (L-MERGE.desk/2–4, L-MERGE.effects/1, /4–6), inside the caller's
     transaction with both ideas locked (`lock_pair`). `desk_merge` calls it with the sheet's body; `decide.send` with
     a Pick's `joined_with` (L-MERGE.desk/5, BLD-B235), where the reason, already checked as a reason, is the note to
-    both and a refusal belongs under `field`."""
+    both and a refusal belongs under `field`. `notify=False` leaves telling people to the caller: a Pick's decision
+    already goes to both sharers and both crews, so the merge's own item would tell them twice."""
     refuse_own(conn, user_id, this, "merge")
     refuse_own(conn, user_id, other, "merge")
     this_side, other_side = _side(conn, this), _side(conn, other)
@@ -211,11 +213,12 @@ def merge_locked(
     for idea in (leader, joiner):  # L-MERGE.effects/6: both conversations stay, each gets a line
         adapters.say(conn, str(idea["id"]), "desk.merged", author_user_id=user_id,
                      payload={"merge_id": merge_id}, at=t)  # fmt: skip
-    adapters.tell(
-        conn, "desk_merge", sorted({u for c in credited if (u := user_of(conn, c))}),
-        idea_uuid=str(leader["id"]), sender=user_id,
-        actions=[("Open the idea", f"/ideas/{leader['idea_id']}", "primary")], refs={"merge_id": merge_id},
-    )  # fmt: skip
+    if notify:
+        adapters.tell(
+            conn, "desk_merge", sorted({u for c in credited if (u := user_of(conn, c))}),
+            idea_uuid=str(leader["id"]), sender=user_id,
+            actions=[("Open the idea", f"/ideas/{leader['idea_id']}", "primary")], refs={"merge_id": merge_id},
+        )  # fmt: skip
     adapters.schedule(conn, "committee.window_close", f"merge:{merge_id}", w.closes_at)
     audit(conn, actor(user_id), "desk.merge", f"idea:{joiner['idea_id']}",
           before={"status": joiner["status"]},

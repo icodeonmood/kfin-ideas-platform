@@ -56,7 +56,8 @@ test.describe("the full timed sequence (review A6)", () => {
     await signIn(page, PERSONAS.admin);
     await page.clock.install();
     await page.goto("/launch");
-    await expect(page.locator(".site-header")).toHaveAttribute("inert", "");
+    await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0); // a wall display has no chrome
+    await expect(page.locator(".skip-link")).toHaveAttribute("inert", "");
     await page.getByRole("button", { name: "Start" }).click();
 
     // Nothing is in the reading order before its moment.
@@ -89,8 +90,7 @@ test.describe("the full timed sequence (review A6)", () => {
     if (!/localhost|127\.0\.0\.1/.test(expected)) {
       expect(await qr.getAttribute("aria-label")).not.toMatch(/localhost|127\.0\.0\.1/);
     }
-    await expect(page.locator(".site-header")).toHaveAttribute("inert", "");
-    await expect(page.locator(".site-footer")).toHaveAttribute("inert", "");
+    await expect(page.locator(".skip-link")).toHaveAttribute("inert", "");
     await expect(page.getByRole("button", { name: "Back to start" })).toBeFocused();
     // CSS transitions run on real time, not the test clock: let the fades finish before checking contrast.
     for (const part of [".launch-name", ".launch-tagline", ".launch-invite"]) {
