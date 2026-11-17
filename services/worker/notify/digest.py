@@ -5,6 +5,10 @@ There is no "review desk lead" role in the pack's roles (E-ENUMS.roles), so the 
 one is named. It is queued by the scheduled `comms.digest` job and sent by `comms.send.send_due`, so it has the same
 retries and email switch as every other message; it lists the ideas as they are when it is sent. Each person gets at
 most one a day (the dedupe key holds the date).
+
+Off at launch (BLD-B241: nothing is mailed about overdue ideas; the desk sees them on its list and in the summary
+sentence). `DECIDE_BY_DIGEST=true` and a worker restart switch it on; while it is off nothing is queued, and a digest
+queued before it was switched off is not sent.
 """
 
 from __future__ import annotations
@@ -48,8 +52,15 @@ def recipients(conn: Conn) -> list[str]:
     return [str(r["user_id"]) for r in rows]
 
 
+def enabled() -> bool:
+    """The digest's setting (BLD-A203): off at launch, after BLD-B241."""
+    return get_settings().decide_by_digest
+
+
 def queue(conn: Conn, now: dt.datetime | None = None) -> int:
     """Queue today's digest for each recipient, on working days and only when something is past its date."""
+    if not enabled():
+        return 0  # off at launch (BLD-B241): the desk sees overdue ideas on its list, nothing is mailed
     now = now or dt.datetime.now(dt.UTC)
     if next_send_time(now, "routine") != now:
         return 0  # a weekend, a holiday or out of hours: the next working day's run carries it

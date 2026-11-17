@@ -1,7 +1,8 @@
 """L-NOTIFY and L-INBOX in the database (BLD-A180, BLD-A200 to A203): `notify.post` writes one in-app item per
 recipient and queues email by preference; decisions, reversals and merges always go out (L-NOTIFY/4); Teams waits
 for its switch (DEC-105); no message carries anyone's words or a reason (L-NOTIFY/3); `resolve` takes an item off
-"Needs you"; the Inbox's tabs and counts agree; the decide-by digest goes to the review desk."""
+"Needs you"; the Inbox's tabs and counts agree; the decide-by digest is off at launch (BLD-B241) and, once switched
+on, goes to the review desk."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from psycopg.types.json import Jsonb
 import notify
 from comms.send import send_due
 from core import killswitch
+from core.config import get_settings
 from notify import Action, digest, inbox, ops
 from notify import render as nrender
 from tests.helpers import tables_containing
@@ -515,10 +517,74 @@ def test_L_INBOX_actions_go_to_the_lane_that_owns_the_op(cast: Any) -> None:
     assert seen == [p["kavya"]["id"]]
 
 
-def test_L_REVIEW_clock_3_the_decide_by_digest_goes_to_the_review_desk_once_a_day(
-    cast: Any, monkeypatch: Any
+@pytest.fixture
+def decide_by_digest(monkeypatch: Any) -> Any:
+    """Sets DECIDE_BY_DIGEST for one test (BLD-A203) and leaves the cached settings as they were found."""
+
+    def set_to(on: bool) -> None:
+        monkeypatch.setenv("DECIDE_BY_DIGEST", "true" if on else "false")
+        get_settings.cache_clear()
+
+    yield set_to
+    monkeypatch.delenv("DECIDE_BY_DIGEST", raising=False)
+    get_settings.cache_clear()
+
+
+def _digest_rows(db: Any) -> int:
+    row = db.execute("SELECT count(*) AS n FROM notifications WHERE event = %s", (digest.EVENT,)).fetchone()
+    return int(row["n"])
+
+
+def test_L_REVIEW_clock_3_the_decide_by_digest_is_off_at_launch(cast: Any, decide_by_digest: Any) -> None:
+    """BLD-B241: no overdue digest at launch, even with an idea past its decide-by date on a working day."""
+    db = cast["db"]
+    db.execute("DELETE FROM notifications WHERE event = %s", (digest.EVENT,))
+    decide_by_digest(False)
+    assert get_settings().decide_by_digest is False  # the shipped default, also when the env says nothing
+    assert digest.overdue(db, WORKDAY_NOON)  # Kavya's idea is two days late
+    assert digest.queue(db, now=WORKDAY_NOON) == 0
+    assert _digest_rows(db) == 0
+
+
+def test_L_REVIEW_clock_3_the_job_still_flushes_held_mail_on_mondays_with_the_digest_off(
+    cast: Any, decide_by_digest: Any, monkeypatch: Any
+) -> None:
+    from jobs import handlers
+
+    db = cast["db"]
+    db.execute("DELETE FROM notifications WHERE event = %s", (digest.EVENT,))
+    decide_by_digest(False)
+    flushed: list[Any] = []
+    monkeypatch.setattr("comms.send.send_digests", lambda conn: flushed.append(conn))
+    handlers.comms_digest(db, {"force": True})  # the Monday branch, whatever day the test runs
+    assert flushed == [db]  # mail the old routes held still goes out
+    assert _digest_rows(db) == 0  # and no decide-by email is queued
+
+
+def test_L_REVIEW_clock_3_a_digest_queued_before_it_was_switched_off_is_not_sent(
+    cast: Any, decide_by_digest: Any, monkeypatch: Any
+) -> None:
+    db = cast["db"]
+    decide_by_digest(True)
+    assert digest.queue(db, now=WORKDAY_NOON) == 1
+    decide_by_digest(False)
+    sent: list[Any] = []
+    monkeypatch.setattr("comms.send._smtp", lambda to, email: sent.append((to, email)))
+    db.execute(
+        "UPDATE notifications SET send_after = now() - interval '1 minute' WHERE event = %s", (digest.EVENT,)
+    )
+    assert send_due(db) == 0 and sent == []
+    row = db.execute(
+        "SELECT state, error_code FROM notifications WHERE event = %s", (digest.EVENT,)
+    ).fetchone()
+    assert (row["state"], row["error_code"]) == ("failed", "nothing_to_send")  # marked, never mailed
+
+
+def test_L_REVIEW_clock_3_switched_on_the_decide_by_digest_goes_to_the_review_desk_once_a_day(
+    cast: Any, decide_by_digest: Any, monkeypatch: Any
 ) -> None:
     db, p = cast["db"], cast["p"]
+    decide_by_digest(True)
     assert digest.queue(db, now=dt.datetime(2026, 11, 21, 12, 0, tzinfo=IST)) == 0  # a Saturday
     assert digest.queue(db, now=WORKDAY_NOON) == 1  # Meera, the only reviewer (no lead role yet)
     assert digest.queue(db, now=WORKDAY_NOON) == 0  # once a day

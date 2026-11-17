@@ -139,9 +139,10 @@ def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
 
 @handler("comms.digest")
 def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
-    """The decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203), every working day. The pack has no
-    personal digest: no 1% Club Inbox kind is ever held for one. Mail the old routes held before that is still
-    flushed on Mondays, so nothing already queued is dropped, until those routes retire after launch."""
+    """The decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203), every working day once
+    `DECIDE_BY_DIGEST` is on; off at launch (BLD-B241), so `digest.queue` queues nothing. The pack has no personal
+    digest: no 1% Club Inbox kind is ever held for one. Mail the old routes held before that is still flushed on
+    Mondays, whatever the setting, so nothing already queued is dropped, until those routes retire after launch."""
     import datetime as dt
     from zoneinfo import ZoneInfo
 

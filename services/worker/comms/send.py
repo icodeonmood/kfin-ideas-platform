@@ -61,7 +61,7 @@ def compose(
     row: dict[str, Any] | None = None,
 ) -> email_html.Email | None:
     """The email for one queued notification. An Inbox item (`row["kind"]`) is rendered by `notify.render` from its
-    IDs (L-NOTIFY/3); the decide-by digest lists the ideas as they are now, and is None when none is late any more."""
+    IDs (L-NOTIFY/3); the decide-by digest lists the ideas as they are now, and is None when none is late any more or it is off."""
     base = get_settings().app_base_url
     if row is not None and row.get("kind"):
         from notify.render import email as inbox_email
@@ -70,6 +70,8 @@ def compose(
     if event == "review.decide_by_digest":
         from notify import digest
 
+        if not digest.enabled():  # switched off since it was queued (BLD-A203, BLD-B241)
+            return None
         return digest.compose(conn, user_id) if digest.overdue(conn, dt.datetime.now(dt.UTC)) else None
     if event == "ember.issue":  # the whole issue, as sent (BLD-128); the in-app copy is the short template
         from ember.render import compose as ember_email
