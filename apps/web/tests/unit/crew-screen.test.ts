@@ -403,9 +403,13 @@ describe("S-H2 Find your crew", () => {
     };
     await mount();
     const row = links().find((a) => a.getAttribute("href") === "/ideas/IDEA-2026-001399")!;
-    expect(text(row)).toBe("Nominee updates bounce between two teams, waiting for Ravi. Open the idea.");
+    expect(row.getAttribute("aria-label")).toBe(
+      "Nominee updates bounce between two teams, waiting for Ravi. Open the idea.",
+    );
     expect(text(row.closest("li"))).toContain("Ravi Nair, Investor service");
     expect(text(row.closest("li"))).toContain("Waiting for Ravi");
+    // The link shows only the title, so its label starts with what is seen (axe label-content-name-mismatch).
+    expect(text(row)).toBe("Nominee updates bounce between two teams");
     expect(page()).not.toContain("Ideas you team up on show here.");
   });
 
@@ -461,7 +465,9 @@ describe("S-H2 Find your crew", () => {
     expect(posts()).toEqual([`POST /api/ideas/${C1.id}/team-up`]);
     expect(text(front())).toContain("No script for calls about rejections");
     const row = links().find((a) => a.getAttribute("href") === `/ideas/${C1.id}`)!;
-    expect(text(row)).toBe("Rejection SMS codes confuse investors, waiting for Ravi. Open the idea.");
+    expect(row.getAttribute("aria-label")).toBe(
+      "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea.",
+    );
     expect(text(row.closest("li"))).toContain("Ravi Nair, Investor service");
     // Back on the card it reads Waiting for Ravi, marked as where Team up was (BLD-F074).
     await click(button("Previous idea"));
