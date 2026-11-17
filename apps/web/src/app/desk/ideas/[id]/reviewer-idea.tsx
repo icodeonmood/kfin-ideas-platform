@@ -37,7 +37,7 @@ import type {
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
-import { bottomBar, initialPanel, panelReducer, readyLine } from "@/lib/desk/panel";
+import { bottomBar, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
@@ -145,7 +145,12 @@ export function ReviewerIdea({
   const defaultTime = TIMES[numbers.answerDays.indexOf(numbers.answerDefaultDays)] ?? "3d";
   const serverState: "reviewing" | "sent" | "answered" | "decided" =
     page.panel.state === "merged" ? "reviewing" : page.panel.state;
-  const [panel, dispatch] = useReducer(panelReducer, initialPanel(serverState, defaultTime));
+  // J-REVIEW/A1: the reviewer's own queued set, stored, opens the Ask section ready to send
+  const stored =
+    page.can_act && (page.panel.state === "reviewing" || page.panel.state === "answered")
+      ? storedQueue(page.panel.queued)
+      : null;
+  const [panel, dispatch] = useReducer(panelReducer, initialPanel(serverState, defaultTime, stored));
   const [editingWorth, setEditingWorth] = useState(false);
   const [tiles, setTiles] = useState<WorthTile[]>(page.worth.tiles);
   const [revised, setRevised] = useState(page.worth.revised);
