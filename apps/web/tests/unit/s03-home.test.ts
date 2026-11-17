@@ -320,6 +320,92 @@ describe("S-03.hero: ask first (BLD-C143, C144)", () => {
     expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(WORDS);
     expect(push).not.toHaveBeenCalled();
   });
+  it("J-SHARE/v1, C-PROMPT: a middle click or Space on the send link sends here, never an empty S-04 in a new tab", async () => {
+    const keys: (string | null)[] = [];
+    await show(
+      baseRoutes({
+        "/api/drafts": (init) => {
+          keys.push(new Headers(init?.headers).get("Idempotency-Key"));
+          return { status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } };
+        },
+      }),
+    );
+    type(WORDS);
+    const go = link("Continue to Share a problem")!;
+    const middle = new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true });
+    act(() => void go.dispatchEvent(middle));
+    await flush();
+    expect(middle.defaultPrevented).toBe(true);
+    expect(keys).toHaveLength(1);
+    expect(push).toHaveBeenLastCalledWith(`/share/${NEW_DRAFT}`);
+
+    push.mockReset();
+    act(() => root.unmount());
+    root = createRoot(host);
+    await show(
+      baseRoutes({
+        "/api/drafts": (init) => {
+          keys.push(new Headers(init?.headers).get("Idempotency-Key"));
+          return { status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } };
+        },
+      }),
+    );
+    type(WORDS);
+    const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+    act(() => void link("Continue to Share a problem")!.dispatchEvent(space));
+    await flush();
+    expect(space.defaultPrevented).toBe(true);
+    expect(keys).toHaveLength(2);
+    expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
+  });
+
+  it("A refused send with no words from the server keeps the words, says nothing invented, and frees the box", async () => {
+    let posts = 0;
+    await show(
+      baseRoutes({
+        "/api/drafts": () => {
+          posts += 1;
+          return { status: 400, body: {} }; // a refusal (not retried) that carries no message
+        },
+      }),
+    );
+    type(WORDS);
+    act(() => link("Continue to Share a problem")!.click());
+    await flush();
+    expect(posts).toBe(1);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(text()).not.toContain("Something went wrong");
+    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(WORDS);
+    expect(link("Continue to Share a problem")).toBeDefined(); // not stuck sending
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("J-SHARE/v1: if opening S-04B fails, the box is free again and sending once more opens the same draft", async () => {
+    const keys: (string | null)[] = [];
+    await show(
+      baseRoutes({
+        "/api/drafts": (init) => {
+          keys.push(new Headers(init?.headers).get("Idempotency-Key"));
+          return { status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } };
+        },
+      }),
+    );
+    push.mockImplementationOnce(() => {
+      throw new Error("navigation failed");
+    });
+    type(WORDS);
+    act(() => link("Continue to Share a problem")!.click());
+    await flush();
+    expect(push).toHaveBeenCalledTimes(1);
+    const again = link("Continue to Share a problem");
+    expect(again).toBeDefined(); // the box is not stuck sending
+    act(() => again!.click());
+    await flush();
+    expect(push).toHaveBeenCalledTimes(2);
+    expect(push).toHaveBeenLastCalledWith(`/share/${NEW_DRAFT}`);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]); // the same Idempotency-Key, so the same draft
+  });
 });
 
 describe("S-03.sections (BLD-C143, C145, C146)", () => {
@@ -362,6 +448,40 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
       "When the review desk or a build team asks you something, it shows up here.",
     );
     expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+  });
+
+  it("Needs you and Your ideas: a failed read shows no state, never Nothing needs you or No ideas yet", async () => {
+    await show(
+      baseRoutes({ "/api/me/ideas": () => ({ status: 500, body: { error: { code: "worker_error" } } }) }),
+    );
+    expect(heading(2)).toContain("Needs you");
+    expect(heading(2)).toContain("Your ideas");
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+    expect(text()).not.toContain(HOME_COPY.ideasNoneTitle);
+    expect(text()).not.toContain(HOME_COPY.loadingNeeds);
+    expect(text()).not.toContain(HOME_COPY.loadingIdeas);
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(link("Your ideas")?.getAttribute("href")).toBe("/my-ideas"); // the Jump back in card, with no count
+    expect(link("Your ideas0")).toBeUndefined();
+  });
+
+  it("Needs you: something needs the person but no card can be drawn, so the Inbox link alone", async () => {
+    await show(baseRoutes({ [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 200, body: null }) }));
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: mine([NEEDS, PICKED], { needs_you: 3 }) }),
+        [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 500 }),
+      }),
+    );
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+    expect(link("All 3 in Inbox")?.getAttribute("href")).toBe("/inbox");
   });
 
   it("Your ideas, several: title, reference line and status pill, never the drafts", async () => {

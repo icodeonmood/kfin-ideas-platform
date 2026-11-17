@@ -106,7 +106,8 @@ export const HOME_COPY = {
   ],
   tooLong: "That's a lot for one go. Send this part, then carry on.",
   offline: "Unsaved, you’re offline",
-  failed: "Something went wrong. Please try again.",
+  // A refused send shows the server's own words (DRAFT_MESSAGES); the pack draws no line of Home's own for a failed
+  // send (C-PROMPT, V-FIELDS.tellit), so none is invented here (listed as a copy gap, BLD-C144).
   /** C-SKELETON/7's polite line; not drawn on the boards (listed for HR). */
   loadingNeeds: "Loading what needs you",
   loadingIdeas: "Loading your ideas",
@@ -303,13 +304,20 @@ export function HomeScreen({
     setProblem(null);
     setSending(true);
     if (!createKey.current) createKey.current = newClientId(); // one draft per send, however often it is retried
+    let id: string;
     try {
-      const made = await client.create(createKey.current, box);
-      router.push(`/share/${made.draft.id}`);
+      id = (await client.create(createKey.current, box)).draft.id;
     } catch (err) {
       setSending(false);
       if (err instanceof DraftError && err.offline) setProblem({ text: HOME_COPY.offline, kind: "warn" });
-      else setProblem({ text: (err instanceof DraftError && err.text) || HOME_COPY.failed, kind: "error" });
+      else if (err instanceof DraftError && err.text) setProblem({ text: err.text, kind: "error" });
+      return;
+    }
+    try {
+      router.push(`/share/${id}`);
+    } catch {
+      // The draft is made; the box is free again, and sending once more opens the same draft (same key).
+      setSending(false);
     }
   }, [box, sending, client, router]);
 
@@ -366,8 +374,11 @@ export function HomeScreen({
     if (count !== null) swap(count);
   };
 
-  const ideas = mine.state === "ready" ? (mine.value?.ideas ?? { total: 0, top: [] }) : null;
-  const needs = mine.state === "ready" ? (mine.value?.needs ?? { total: 0, rows: [] }) : null;
+  // A failed read of the person's ideas is not an empty one: its sections show no state at all, never "No ideas yet"
+  // or "Nothing needs you right now." (those are for a successful read that found nothing).
+  const mineFailed = mine.state === "ready" && mine.value === null;
+  const ideas = mine.state === "ready" ? (mine.value?.ideas ?? null) : null;
+  const needs = mine.state === "ready" ? (mine.value?.needs ?? null) : null;
   const draftCount = mine.state === "ready" ? (mine.value?.drafts ?? 0) : 0;
   const crewData = crew.state === "ready" ? (crew.value ?? { total: 0, top: [] }) : null;
   const crewFaces = (crewData?.top[0] ? [crewData.top[0].lead, ...crewData.top[0].crew_faces] : [])
@@ -375,6 +386,8 @@ export function HomeScreen({
     .slice(0, 3)
     .map((p) => p.initials);
   const openSets = sets.state === "ready" ? sets.value : null;
+  // When something needs the person but no card can be drawn (no open set, or a build team's ask), Needs you shows
+  // the Inbox link alone, never "Nothing needs you right now." beside it.
   const needTotal = needs ? Math.max(needs.total, openSets?.length ?? 0) : 0;
 
   const heading = firstVisit ? HOME_COPY.questionFirst(firstName) : HOME_COPY.question(firstName);
@@ -499,7 +512,7 @@ export function HomeScreen({
                 label: needTotal > 1 ? HOME_COPY.needsAll(needTotal) : HOME_COPY.openInbox,
               }}
             />
-            {openSets === null ? (
+            {mineFailed ? null : openSets === null || needs === null ? (
               <SkeletonRows what={HOME_COPY.loadingNeeds} rows={2} />
             ) : openSets.length ? (
               <ul className={`hm-needs${openSets.length === 1 ? " one" : ""}`}>
@@ -509,7 +522,7 @@ export function HomeScreen({
                   </li>
                 ))}
               </ul>
-            ) : (
+            ) : needTotal > 0 ? null : (
               <div className="card hm-nclear" role="status">
                 <span className="hm-nclear-i" aria-hidden="true">
                   <svg
@@ -542,7 +555,7 @@ export function HomeScreen({
                 title={HOME_COPY.yourIdeas}
                 link={{ href: HOME_LINKS.myIdeas, label: HOME_COPY.allMine }}
               />
-              {ideas === null ? (
+              {mineFailed ? null : ideas === null ? (
                 <SkeletonRows what={HOME_COPY.loadingIdeas} rows={3} />
               ) : ideas.top.length ? (
                 <>

@@ -272,6 +272,16 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
                 e.preventDefault(); // the words go with it, so never an empty Tell it in a new tab (P-ROUTES.graph)
                 onSend();
               }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return; // a middle click sends here too, never a new tab with an empty S-04
+                e.preventDefault();
+                onSend();
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== " ") return; // Enter is the link's own click; Space sends as on a button
+                e.preventDefault();
+                onSend();
+              }}
             >
               <IconArrowUp className="arrow" />
             </a>
