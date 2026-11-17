@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 
-import { IDEMPOTENCY_HEADER } from "@/lib/contracts/api";
+import { IDEMPOTENCY_HEADER, type ConfigResponse } from "@/lib/contracts/api";
 
 import type { CurrentUser } from "./auth/current";
 import { promises } from "./promises";
@@ -133,14 +133,8 @@ export function versions(me: CurrentUser, ideaId: string) {
 }
 
 type SortingConfig = {
-  sorting: {
-    affects: { shown: string[]; all: string[]; search_link: string; search_label: string };
-    area: { shown: string[]; all: string[]; search_link: string; search_label: string };
-    kind: { options: { value: string; label: string }[] };
-    brings: { options: { value: string; label: string }[]; exclusive: string };
-    helpers: string[];
-  };
-  declaration: { version: string; submit: string; save: string };
+  sorting: NonNullable<ConfigResponse["sorting"]["controls"]>;
+  declaration: NonNullable<ConfigResponse["declaration"]>;
   windows: { review_working_days: number; edit_window_days: number };
 };
 
@@ -148,7 +142,7 @@ type SortingConfig = {
  * `GET /config` (A-API.config): the numbers the copy shows (P-PRODUCT.promises) and the sorting lists. Lane C's
  * part; uploads, placeholders and flags join it from their lanes.
  */
-export async function publicConfig() {
+export async function publicConfig(): Promise<ConfigResponse> {
   const [p, res] = await Promise.all([promises(), workerFetch("/internal/config/sorting")]);
   if (!res.ok) throw new Error("config_unavailable");
   const c = (await res.json()) as SortingConfig;

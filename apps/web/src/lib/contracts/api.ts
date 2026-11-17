@@ -24,7 +24,9 @@ import type {
   WallSort,
   Brings,
   Channel,
+  IdeaStatus,
   OutsideTools,
+  SortingSource,
 } from "./enums";
 import type {
   CrewCard,
@@ -50,7 +52,7 @@ import type {
   PersonSettings,
   QuestionSet,
   SimilarMatch,
-  Sorting,
+  StageState,
   TeamUpRequest,
   WallStage,
   Worth,
@@ -100,6 +102,20 @@ export type ErrorCode =
   | "merge_waiting"
   | "not_ready"
   | "offline_queued"
+  // Lane C's sorting and sending (L-SORT, L-SUBMIT; BLD-C081 to BLD-C085)
+  | "sorting_incomplete"
+  | "declaration_changed"
+  | "idempotency_key_reused"
+  | "idempotency_key_bad"
+  | "not_a_draft"
+  | "already_shared"
+  | "merged"
+  | "field_needed"
+  | "fix_how_needed"
+  | "worth_unclear"
+  | "send_failed"
+  | "unavailable"
+  | "not_found"
   // A-API.files
   | "too_big"
   | "type_not_allowed"
@@ -209,7 +225,30 @@ export interface AddMessageResponse {
 export type PartPatch = { value: unknown } | { pinned: false };
 export type SortingPatch =
   { affects?: string[]; kind?: Kind; area?: string; brings?: Brings[] } | { confirm: true };
-export type SortingResponse = Sorting;
+/** Lane C: one sorting field with the words beside it ("Suggested because …"); none for the person's own change. */
+export interface SortingChoiceView<T> {
+  value: T;
+  source: SortingSource;
+  why: string | null;
+  why_line: string | null;
+}
+/** `Sorting` as lane C returns it (L-SORT): each field, plus the lines S-05 part 2, the rail and the Send row show. */
+export interface SortingResponse {
+  affects: SortingChoiceView<string[]>;
+  kind: SortingChoiceView<Kind>;
+  area: SortingChoiceView<string | null>;
+  brings: SortingChoiceView<Brings[]>;
+  confirmed: boolean;
+  complete: boolean;
+  confirmed_at: IsoDate | null;
+  /** "Suggested, not confirmed yet" → "Investor service, saves time, saves cost". */
+  rail: string;
+  /** "Not confirmed yet" → "Investor service, affecting investors and KFin teams, saves time, saves cost". */
+  summary: string;
+  /** "These are suggestions from your words. Not confirmed yet." (S-05) or "Confirmed when you shared it. …" (S-06B). */
+  note: string | null;
+  problem: ApiError["error"] | null;
+}
 export interface ShowHiddenRequest {
   reason: ShowReason;
 }
@@ -230,8 +269,44 @@ export interface MergeRequestCreate {
 export interface SubmitRequest {
   declaration_version: string;
 }
+/** `GET /drafts/:id/send` (lane C): the Send part's rows, the declaration, the button and what stops Submit. */
+export interface SendViewResponse {
+  id: string;
+  rows: {
+    key: "title" | "sorting" | "similar" | "proof" | "fix" | "helpers";
+    label: string;
+    value: string | null;
+    ok: boolean;
+    step: DraftStep;
+  }[];
+  declaration: { version: string; text: string };
+  button: "Submit" | "Submit with my fix";
+  ready: boolean;
+  problems: ApiError["error"][];
+  submit_says?: ApiError["error"];
+  go_to?: { label: "Go to the sorting"; step: DraftStep };
+}
+/** What S-06 "Just shared" shows at once (L-SUBMIT.send, V-ACC.share/12), as server-computed words. 201 when sent
+ * now, 200 for a draft sent before (a retry never creates two ideas). */
 export interface SubmitResponse {
   idea_id: string;
+  id: string;
+  ref: string;
+  status: IdeaStatus;
+  pill: { status: IdeaStatus; label: string; variant: string };
+  title: string;
+  shared_at: IsoDate;
+  shared_label: string;
+  stages: (StageState & { label: string; suffix: string })[];
+  next: { to: string; replace: true; state: "just_shared" };
+  review?: { decide_by: IsoDate; by_label: string; line: string };
+  edit_window?: {
+    open: boolean;
+    closes_at: IsoDate;
+    line?: string;
+    countdown?: { label: string; variant: "neutral" | "warn" | "bad"; until: IsoDate };
+    edit?: { label: string; to: string };
+  };
 }
 
 /** Server-sent events on GET /drafts/:id/stream, one run per message. */
@@ -298,6 +373,47 @@ export interface IdeaVersion {
   n: number;
   changed_fields: string[];
   at: IsoDate;
+}
+/** `GET /ideas/:id/edit` (lane C, S-06B): the edit page for the sharer. */
+export interface EditPageResponse {
+  screen: "S-06B";
+  id: string;
+  ref: string;
+  status: IdeaStatus;
+  kind: Kind;
+  bar: { title: string; line: string; back: { label: string; to: string } };
+  window: {
+    open: boolean;
+    closes_at?: IsoDate;
+    opened_by_desk_at?: IsoDate;
+    countdown?: { label: string; variant: "neutral" | "warn" | "bad"; until: IsoDate };
+    line?: string;
+  };
+  fields: { title: string; summary: string; often: string | null };
+  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  sorting: SortingResponse;
+  fix: (Partial<Fix> & { included: true; ready_count: number }) | null;
+  helpers: { picks: string[]; text: string | null };
+  files: Pick<FileItem, "id" | "kind" | "name" | "state" | "hidden_note" | "link_scope">[];
+  prompts: { fix?: string; files?: string };
+  side: { when: string; line: string }[];
+  declaration: { version: string; text: string };
+  versions: { count: number; summary: string };
+  saved_label?: string;
+}
+/** The edit page's Save (`PATCH /ideas/:id/edit`): the new version, or nothing when nothing changed. */
+export interface EditSaveResponse {
+  version: IdeaVersion | null;
+  changed_fields: string[];
+  saved_label?: string;
+  message: string;
+  next: { to: string; replace: true };
+}
+/** `GET /ideas/:id/versions`: "Draft history" for the sharer, the review desk and the Ones Committee. */
+export interface VersionsResponse {
+  count: number;
+  summary: string;
+  items: (IdeaVersion & { label: string; at_label: string; before?: unknown; after?: unknown })[];
 }
 export type SimilarResponse = SimilarMatch[];
 
@@ -452,11 +568,27 @@ export interface SearchSuggestResponse {
   examples: [string, string, string];
 }
 export interface ConfigResponse {
-  promises: Record<string, number | string | string[]>;
-  sorting: { affects: string[]; areas: string[]; brings: Brings[]; helpers: string[] };
-  uploads: UploadConfig;
-  placeholders: [string, string, string];
-  flags: Record<string, "default" | "alternative" | "off">;
+  promises: Record<string, number | string | string[] | number[]>;
+  sorting: {
+    affects: string[];
+    areas: string[];
+    brings: Brings[];
+    helpers: string[];
+    /** Lane C: the chips shown first, the search words and the choice rules (S-05 part 2, S-06B). */
+    controls?: {
+      affects: { shown: string[]; all: string[]; search_link: string; search_label: string; rule: string };
+      area: { shown: string[]; all: string[]; search_link: string; search_label: string; rule: string };
+      kind: { options: { value: Kind; label: string }[]; rule: string };
+      brings: { options: { value: Brings; label: string }[]; exclusive: Brings; rule: string };
+      helpers: string[];
+    };
+  };
+  /** Lane C: the declaration beside Submit and Save (L-SUBMIT.pre/5). */
+  declaration?: { version: string; submit: string; save: string };
+  /** From their lanes as they land (A-API.config). */
+  uploads?: UploadConfig;
+  placeholders?: [string, string, string];
+  flags?: Record<string, "default" | "alternative" | "off">;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
