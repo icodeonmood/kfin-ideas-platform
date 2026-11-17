@@ -7,7 +7,7 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ChoiceChips } from "@/components/ui/chips";
@@ -25,6 +25,7 @@ import type {
   ReturnIn,
   ReversingWordsResponse,
 } from "@/lib/contracts";
+import { sparkBurst } from "@/lib/motion/spark";
 
 const TABS: { value: CommitteeTab; label: string }[] = [
   { value: "window", label: "In the window" },
@@ -71,16 +72,36 @@ async function post<T>(
   return { ok: true, body: json };
 }
 
+/** The reversal's four lines on one row (S-R4.states, Committee board): each on its own line, and read as sentences,
+ * "Now: Picked by Rohan Mehta, Friday 13 November. Reversed Friday 13 November. Final. Kavya has the note." */
+function ReversalLines({ reversal }: { reversal: NonNullable<CommitteeRow["reversal"]> }) {
+  return (
+    <>
+      <span className="body cm-line">
+        {reversal.now_line} <span className="meta cm-line">{reversal.now_by_line}</span>
+      </span>{" "}
+      <span className="meta cm-line">
+        {reversal.reversed_line}
+        <span className="vh">.</span>
+      </span>{" "}
+      <span className="meta cm-line">{reversal.final_line}</span>
+    </>
+  );
+}
+
 export function CommitteeView({
   initial,
   tab: firstTab,
   sort: firstSort,
+  open: firstOpen,
   noteMin,
   returnMonths,
 }: {
   initial: CommitteeResponse;
   tab: CommitteeTab;
   sort: CommitteeSort;
+  /** A row to open in place, from the sidebar's "Closing soonest" (S-R4.rules/4). */
+  open?: string | null;
   noteMin: number;
   returnMonths: number[];
 }) {
@@ -88,13 +109,22 @@ export function CommitteeView({
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState(firstTab);
   const [sort, setSort] = useState(firstSort);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(
+    firstOpen && initial.items.some((r) => r.window_id === firstOpen) ? firstOpen : null,
+  );
+  const reverseTitle = useRef<HTMLHeadingElement>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
   const [reversing, setReversing] = useState<ReversingWordsResponse | null>(null);
   const [to, setTo] = useState<DecisionChoice | null>(null);
   const [returnIn, setReturnIn] = useState<ReturnIn>("3m");
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<{ to?: string; note?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
+
+  // The reversing form takes focus when it opens in place (F-MOTION.focus).
+  useEffect(() => {
+    if (reversing) reverseTitle.current?.focus();
+  }, [reversing]);
 
   async function load(nextTab: CommitteeTab, nextSort: CommitteeSort) {
     setTab(nextTab);
@@ -144,6 +174,7 @@ export function CommitteeView({
       if (e.field === "note") return setErrors({ note: e.message });
       return setErrors({ form: e.message });
     }
+    if (sendButton.current) sparkBurst(sendButton.current); // S-R4.rules/3
     setReversing(null);
     setOpen(null);
     await load(tab, sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
@@ -212,10 +243,7 @@ export function CommitteeView({
                     </td>
                     <td className="cm-win">
                       {row.reversal ? (
-                        <>
-                          <span className="body">{row.reversal.now_line}</span>
-                          <span className="meta">{row.reversal.final_line}</span>
-                        </>
+                        <ReversalLines reversal={row.reversal} />
                       ) : row.window.closed_line ? (
                         <span className="meta">{row.window.closed_line}</span>
                       ) : (
@@ -230,12 +258,13 @@ export function CommitteeView({
                       )}
                     </td>
                     <td className="rd-act">
+                      {/* "Review the decision on …" as the board names it; "See it" keeps its own words at the
+                          front of the name (WCAG 2.5.3), where the board has "See the decision on …". */}
                       <Button
                         variant="line"
                         size="sm"
                         aria-expanded={isOpen}
                         aria-controls={`cm-${row.window_id}`}
-                        aria-label={`${row.action}: ${row.idea.title}`}
                         onClick={() => {
                           setOpen(isOpen ? null : row.window_id);
                           setReversing(null);
@@ -243,6 +272,10 @@ export function CommitteeView({
                         }}
                       >
                         {row.action}
+                        <span className="vh">
+                          {row.action === "Review" ? " the decision on " : ", the decision on "}
+                          {row.idea.title}
+                        </span>
                       </Button>
                     </td>
                   </tr>
@@ -250,14 +283,24 @@ export function CommitteeView({
                     <tr className="cm-detail">
                       <td colSpan={4} id={`cm-${row.window_id}`}>
                         {reversing ? (
+                          // Reversing opens in place, as a non-modal dialog the board names "Reverse the decision"
                           <form
                             className="cm-reverse"
+                            role="dialog"
+                            aria-labelledby={`cm-rev-${row.window_id}`}
                             onSubmit={(e) => {
                               e.preventDefault();
                               void reverse(row);
                             }}
                           >
-                            <h2 className="h3">{reversing.title}</h2>
+                            <h2
+                              id={`cm-rev-${row.window_id}`}
+                              className="h3"
+                              ref={reverseTitle}
+                              tabIndex={-1}
+                            >
+                              {reversing.title}
+                            </h2>
                             <p className="body">{reversing.intro}</p>
                             {reversing.options.length ? (
                               <fieldset
@@ -309,11 +352,15 @@ export function CommitteeView({
                               error={errors.note}
                             >
                               {(p) => (
+                                // The board's box asks "Why the committee is changing it, in words Kavya will
+                                // understand"; the visible label leads the name (WCAG 2.5.3).
                                 <textarea
                                   {...p}
                                   rows={3}
                                   maxLength={1000}
                                   value={note}
+                                  placeholder={`Why the committee is changing it, in words ${row.sharer.first_name} will understand`}
+                                  aria-label={`${reversing.note_label}: why the committee is changing it, in words ${row.sharer.first_name} will understand`}
                                   onChange={(e) => setNote(e.target.value)}
                                 />
                               )}
@@ -323,7 +370,13 @@ export function CommitteeView({
                               <Button type="button" variant="line" onClick={() => setReversing(null)}>
                                 Back
                               </Button>
-                              <Button type="submit" variant="primary" busy={busy}>
+                              <Button
+                                ref={sendButton}
+                                type="submit"
+                                variant="primary"
+                                busy={busy}
+                                busyLabel="Sending…"
+                              >
                                 {reversing.send_label}
                               </Button>
                             </div>
@@ -334,9 +387,13 @@ export function CommitteeView({
                             <blockquote className="well ri-reason">{row.decision.reason}</blockquote>
                             {row.reversal ? (
                               <>
-                                <p className="body">{row.reversal.now_line}</p>
+                                <p className="body">
+                                  {row.reversal.now_line} {row.reversal.now_by_line}
+                                </p>
                                 <blockquote className="well ri-reason">{row.reversal.note}</blockquote>
-                                <p className="meta">{row.reversal.final_line}</p>
+                                <p className="meta">
+                                  {row.reversal.reversed_line}. {row.reversal.final_line}
+                                </p>
                               </>
                             ) : (
                               <p className="meta">{row.window.open_line ?? row.window.closed_line}</p>
