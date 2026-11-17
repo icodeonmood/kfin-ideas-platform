@@ -19,7 +19,7 @@ from teamup.store import (
     crew_role,
     entity_of,
     lead_code,
-    load_idea,
+    load_idea_for,
     require_code,
 )
 from teamup.store import now as clock_now
@@ -34,10 +34,11 @@ def _off(conn: Conn, idea_uuid: Any, code: str, how: str, by: str | None) -> Non
 
 
 def leave(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
-    """`POST /ideas/:id/crew/leave` (BLD-F018). Errors: not_on_crew, lead_stays."""
+    """`POST /ideas/:id/crew/leave` (BLD-F018). Errors: not_on_crew, lead_stays, not_found (a withdrawn idea, to
+    anyone but the people BLD-E011 names, BLD-F023)."""
     with audited(conn), conn.transaction():
-        idea = load_idea(conn, ref, lock=True)
         code = require_code(conn, user_id)
+        idea = load_idea_for(conn, ref, code, lock=True)
         role = crew_role(conn, idea["id"], code)
         if role is None:
             raise Refused(409, "not_on_crew", "You’re not on this crew.")
@@ -51,10 +52,11 @@ def leave(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
 
 def remove(conn: Conn, ref: str, member: str, user_id: str) -> dict[str, Any]:
     """`DELETE /ideas/:id/crew/:member` by the lead (BLD-F018). `member` is the person's id (PersonRef.id, what
-    screens hold) or their contributor code. Errors: not_lead (403, audited), not_on_crew, lead_stays."""
+    screens hold) or their contributor code. Errors: not_lead (403, audited), not_on_crew, lead_stays, not_found (a
+    withdrawn idea, to anyone but the people BLD-E011 names, BLD-F023)."""
     with audited(conn), conn.transaction():
-        idea = load_idea(conn, ref, lock=True)
         code = require_code(conn, user_id)
+        idea = load_idea_for(conn, ref, code, lock=True)
         if lead_code(conn, idea) != code:
             raise Refused(
                 403, "not_lead", "Only the lead of this idea can remove someone.",
