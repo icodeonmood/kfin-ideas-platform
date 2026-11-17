@@ -253,7 +253,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
       <div id="find" className={state.q ? "mi-search" : "mi-search mi-desk"}>
         <SearchBar
           label="Search your ideas, or ask a question"
-          placeholder="Search your ideas, or ask a question"
+          placeholder="Search your ideas"
           text={text}
           onText={(t) => {
             textNow.current = t;
