@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import datetime as dt
 import secrets
+import sys
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -156,3 +158,51 @@ def events(conn: Conn, idea_uuid: Any) -> list[str]:
             "SELECT type, event FROM conversation_entries WHERE idea_uuid = %s ORDER BY at, id", (idea_uuid,)
         ).fetchall()
     ]
+
+
+@dataclass(frozen=True)
+class Post:
+    """One `notify.post` call, as lane B made it."""
+
+    kind: str
+    recipients: list[str]
+    needs_you: bool
+    due_at: dt.datetime | None
+    sender: str
+    dedupe_key: str | None
+
+
+class FakeNotify:
+    """A stand-in for lane A's `notify` (BLD-A180) that records every `post` and `resolve`, so a test can check who is
+    told what (L-INBOX.kinds) without lane A's inbox tables. Installed by the `fake_notify` fixture."""
+
+    def __init__(self) -> None:
+        self.posts: list[Post] = []
+        self.resolved: list[str] = []
+
+    @dataclass(frozen=True)
+    class Action:
+        label: str
+        style: str = "line"
+        to: str | None = None
+        op: str | None = None
+
+    def post(self, conn: Conn, kind: str, recipients: list[str], **kw: Any) -> None:
+        _ = conn
+        self.posts.append(Post(kind, list(recipients), bool(kw.get("needs_you")), kw.get("due_at"),
+                               str(kw.get("sender")), kw.get("dedupe_key")))  # fmt: skip
+
+    def resolve(self, conn: Conn, dedupe_key: str) -> int:
+        _ = conn
+        self.resolved.append(dedupe_key)
+        return 1
+
+    def of(self, kind: str) -> list[Post]:
+        return [p for p in self.posts if p.kind == kind]
+
+
+def install_fake_notify(monkeypatch: pytest.MonkeyPatch) -> FakeNotify:
+    """`notify` in sys.modules for this test only; `monkeypatch` puts the real one back when the test ends."""
+    fake = FakeNotify()
+    monkeypatch.setitem(sys.modules, "notify", fake)
+    return fake
