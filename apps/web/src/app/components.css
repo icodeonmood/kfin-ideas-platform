@@ -482,6 +482,13 @@ textarea:is(.fld, .textarea) {
   display: inline-flex;
 }
 
+/* Filter chips take the tick on a phone only; above it the ring and wash say which is on (C-CHIP.states) */
+@media (min-width: 641px) {
+  .chips.filter .chip .chip-tick {
+    display: none;
+  }
+}
+
 .chip .chip-n {
   color: var(--mute);
   font-variant-numeric: tabular-nums;

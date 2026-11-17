@@ -6,10 +6,14 @@ import { IconTick } from "@/components/shell/icons";
 
 export type ChipOption = { value: string; label: ReactNode; count?: number; disabled?: boolean };
 
+const chipsClass = (scroll?: boolean, filter?: boolean) =>
+  ["chips", scroll ? "scroll" : "", filter ? "filter" : ""].filter(Boolean).join(" ");
+
 /**
  * C-CHIP, single choice ("Pick one"): a radio group of chips. Arrow keys move and select, Space selects, one tab stop
  * (the selected chip, or the first). Selected is a blue ring and wash with a leading tick, never colour alone. Filter
- * chips are the same with an "All" option first and live counts (C-CHIP.behaviour/3).
+ * chips are the same with an "All" option first and live counts (C-CHIP.behaviour/3); pass `filter` and the tick shows
+ * only on a phone (C-CHIP.states: "a leading tick on choice chips (sorting, filters on phone)").
  */
 export function ChoiceChips({
   label,
@@ -17,6 +21,7 @@ export function ChoiceChips({
   value,
   onChange,
   scroll,
+  filter,
 }: {
   /** The group's name, said by a screen reader ("Area"); a visible heading can point at the group instead. */
   label: string;
@@ -25,6 +30,8 @@ export function ChoiceChips({
   onChange: (value: string) => void;
   /** On a phone, scroll the row sideways instead of wrapping (F-SPACE.scroll/4). */
   scroll?: boolean;
+  /** A filter row: the selected chip keeps its ring and wash, and takes the tick only at 640px and narrower. */
+  filter?: boolean;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const enabled = options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
@@ -50,7 +57,7 @@ export function ChoiceChips({
   };
 
   return (
-    <div className={scroll ? "chips scroll" : "chips"} role="radiogroup" aria-label={label}>
+    <div className={chipsClass(scroll, filter)} role="radiogroup" aria-label={label}>
       {options.map((o, i) => (
         <button
           key={o.value}
@@ -87,16 +94,19 @@ export function MultiChips({
   values,
   onChange,
   scroll,
+  filter,
 }: {
   label: string;
   options: ChipOption[];
   values: string[];
   onChange: (values: string[]) => void;
   scroll?: boolean;
+  /** As on ChoiceChips: the tick only on a phone. */
+  filter?: boolean;
 }) {
   const on = new Set(values);
   return (
-    <div className={scroll ? "chips scroll" : "chips"} role="group" aria-label={label}>
+    <div className={chipsClass(scroll, filter)} role="group" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}
