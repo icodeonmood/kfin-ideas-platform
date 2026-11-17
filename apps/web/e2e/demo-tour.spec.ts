@@ -45,7 +45,7 @@ test("1-3: home carousel, share an idea, Find your crew", async ({ browser }) =>
   await expect(kavya.getByText("Colleagues are on this").first()).toBeVisible();
   await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/inbox");
-  await expect(kavya.locator(".inbox li").first()).toBeVisible();
+  await expect(kavya.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible(); // S-H5
 });
 
 test("4: My ideas as a One: the tier dashboard and the glow-up", async ({ browser }) => {
