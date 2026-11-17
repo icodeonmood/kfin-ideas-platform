@@ -207,8 +207,11 @@ def _checked_files(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _questions(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[dict[str, Any]]]:
-    """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3)."""
+def _questions(
+    conn: Conn, idea_uuid: Any, at: dt.datetime, viewer_id: str | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3). "You asked"
+    for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md)."""
     from desk.store import person_by_code, person_by_user, unseal
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -220,10 +223,12 @@ def _questions(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[di
         (idea_uuid,),
     ).fetchall():
         asked_by = person_by_user(conn, r["by_user_id"])
+        mine = viewer_id is not None and str(r["by_user_id"]) == str(viewer_id)
         item: dict[str, Any] = {
             "id": str(r["id"]), "text": unseal(r["text_encrypted"], "questions", "text_encrypted", str(r["id"])),
             "asked_at": r["sent_at"].isoformat(), "asked_by": asked_by.first_name,
-            "asked_line": f"You asked, {when.which_day(r['sent_at'], at)} {when.clock(r['sent_at'])}",
+            "asked_line": f"{'You' if mine else asked_by.first_name} asked, {when.which_day(r['sent_at'], at)} "
+                          f"{when.clock(r['sent_at'])}",
             "state": "Answered" if r["answer_id"] else "Not answered yet", "answer": None,
         }  # fmt: skip
         if r["answer_id"]:
@@ -246,11 +251,11 @@ def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> d
     """Which working state the panel opens in (L-REVIEW.panel), with what it shows."""
     from desk import committee, questions
 
+    if idea["status"] == "merged":  # first: a Not now that came back and was then merged shows the merge
+        return {"state": "merged"}
     decision = committee.for_idea(conn, str(idea["id"]), user_id, at)
     if decision is not None and idea["status"] not in ON_DESK_STATUSES:
         return {"state": "decided", "decision": decision}
-    if idea["status"] == "merged":
-        return {"state": "merged"}
     s = conn.execute(
         "SELECT * FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
         "ORDER BY created_at DESC LIMIT 1",
@@ -355,7 +360,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         artefacts.append({"kind": "versions", "title": "Draft history", "line": " ".join(bits), "action": "See changes"})  # fmt: skip
     sharer_worth, reviewer_worth, revision = revise.current(conn, str(idea["id"]))
     fix = conn.execute("SELECT * FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
-    asked = _questions(conn, idea["id"], t)
+    asked = _questions(conn, idea["id"], t, user_id)
     part_text = {
         "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
         "cost": "", "evidence": _evidence_text(files, hidden_kinds),
