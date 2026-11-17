@@ -10,6 +10,7 @@ import sys
 import types
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -21,7 +22,7 @@ from ideapage.colleague import Paused
 from ideapage.mine import my_ideas, snippet
 from ideapage.route import idea_view
 from ideapage.withdraw import Refused, restore, withdraw
-from ideapage.words import day
+from ideapage.words import IST, day
 from tests import helpers
 
 NOW = dt.datetime(2026, 11, 16, 6, 0, tzinfo=dt.UTC)  # Monday 16 November, 11:30 am in the office
@@ -72,7 +73,8 @@ def test_s06_states_just_shared_shows_the_decide_by_date(club: dict[str, Any]) -
     assert page["actions"]["withdraw"]["confirm"]["confirm_label"] == "Withdraw it"
     assert page["breadcrumb"] == {"label": "My ideas", "to": "/my-ideas", "current": ref(club, "T5")}
     assert nodes(v)[2] == ("reviewed", "now", f"By {day(idea['decide_by'], NOW)}")
-    assert page["questions"]["state"] == "none"
+    # BLD-E012: no question set is open, so the card is lane E's own and nothing is composed from lane B's.
+    assert v["idea"]["has_open_questions"] is False and "card_from" not in page
 
 
 def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(club: dict[str, Any]) -> None:
@@ -234,7 +236,7 @@ def test_p_routes_a_withdrawn_idea_is_seen_by_its_sharer_alone(club: dict[str, A
             view(club, ref(club, "T10"), who)
 
 
-def test_s09_rules_2_bld_e010_a_former_crew_member_gets_one_line_for_a_withdrawn_idea(
+def test_s09_rules_2_bld_e011_a_former_crew_member_gets_one_line_for_a_withdrawn_idea(
     club: dict[str, Any],
 ) -> None:
     conn, t10 = club["conn"], ref(club, "T10")
@@ -359,17 +361,23 @@ def test_s09_the_wall_switch_hides_colleagues_ideas(club: dict[str, Any]) -> Non
 
 
 def test_l_wall_justin_4_a_colleague_opening_counts_once_a_day(club: dict[str, Any]) -> None:
+    conn, uid, who = club["conn"], club["m"]["R1"].uuid, club["p"]["pallavi"]
+    today = NOW.astimezone(IST).date()
+    # Start from no open today, whatever the seed spread over the week.
+    conn.execute("DELETE FROM idea_opens WHERE idea_uuid = %s AND user_id = %s", (uid, who))
     for _ in range(2):
         view(club, ref(club, "R1"), "pallavi")
-    n = (
-        club["conn"]
-        .execute(
-            "SELECT count(*) AS n FROM idea_opens WHERE idea_uuid = %s AND user_id = %s",
-            (club["m"]["R1"].uuid, club["p"]["pallavi"]),
-        )
-        .fetchone()
+    rows = conn.execute(
+        "SELECT day FROM idea_opens WHERE idea_uuid = %s AND user_id = %s", (uid, who)
+    ).fetchall()
+    assert [r["day"] for r in rows] == [today]  # the view's own day in India time, once
+    idea_view(conn, ref(club, "R1"), who, now=NOW + dt.timedelta(days=1))
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM idea_opens WHERE idea_uuid = %s AND user_id = %s", (uid, who)
+        ).fetchone()["n"]
+        == 2
     )
-    assert n["n"] == 1
 
 
 # --- L-SUBMIT.withdraw ----------------------------------------------------------------------------------------------
@@ -436,14 +444,33 @@ def mine(club: dict[str, Any], who: str, **params: Any) -> dict[str, Any]:
     return my_ideas(club["conn"], club["p"][who], params, now=NOW)
 
 
-def test_p_routes_state_my_ideas_restores_tab_sort_and_q_from_the_url(club: dict[str, Any]) -> None:
+def test_p_routes_state_j_browse_3_my_ideas_restores_tab_filter_sort_and_q_from_the_url(
+    club: dict[str, Any],
+) -> None:
     r2 = ref(club, "R2")
-    out = mine(club, "tanvi", list="teamed", sort="stage", q="debit", row=r2)
-    assert out["state"] == {"list": "teamed", "filter": "all", "sort": "stage", "q": "debit", "row": r2}
-    assert out["query"] == f"list=teamed&sort=stage&q=debit&row={r2}"
+    out = mine(club, "tanvi", list="teamed", filter="with_review_desk", sort="stage", q="debit", row=r2)
+    assert out["state"] == {
+        "list": "teamed",
+        "filter": "with_review_desk",
+        "sort": "stage",
+        "q": "debit",
+        "row": r2,
+    }
+    assert out["query"] == f"list=teamed&filter=with_review_desk&sort=stage&q=debit&row={r2}"
+    assert out["url"] == f"/my-ideas?{out['query']}"
     assert [i["id"] for i in out["items"]] == [r2]
     assert out["arrival"] == {"line": "Back where you were: Teamed up.", "row": r2}
-    assert out["items"][0]["href"].startswith(f"/ideas/{r2}?from=my-ideas&back=")
+    # The row's link carries this exact view back (J-BROWSE/2 and /3), the opened row included.
+    href = out["items"][0]["href"]
+    assert href.startswith(f"/ideas/{r2}?from=my-ideas&back=")
+    back = parse_qs(urlsplit(href).query)["back"][0]
+    assert back == out["url"]
+    assert [t["selected"] for t in out["tabs"]] == [False, True]
+    assert [f["filter"] for f in out["filters"] if f["selected"]] == ["with_review_desk"]
+    assert [s["sort"] for s in out["sorts"] if s["selected"]] == ["stage"]
+    # A filter the opened row is not in shows nothing to come back to, and says nothing about arriving.
+    elsewhere = mine(club, "tanvi", list="teamed", filter="shipped", q="debit", row=r2)
+    assert elsewhere["items"] == [] and "arrival" not in elsewhere
     # Unknown values fall back to the defaults; defaults are left out of the canonical URL.
     plain = mine(club, "tanvi", list="nope", filter="nope", sort="nope")
     assert plain["query"] == "" and plain["url"] == "/my-ideas"

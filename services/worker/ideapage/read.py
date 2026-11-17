@@ -257,7 +257,7 @@ def my_teamup(conn: Conn, idea_uuid: str, code: str | None) -> dict[str, Any] | 
 
 def was_involved(conn: Conn, idea_uuid: str, code: str | None) -> bool:
     """Whether this person was ever on the idea's crew or asked to join it: the people a withdrawal is told to
-    (L-SUBMIT.withdraw/4), who may still follow an old link to it (BLD-E010)."""
+    (L-SUBMIT.withdraw/4), who may still follow an old link to it (BLD-E011)."""
     if not code:
         return False
     row = conn.execute(

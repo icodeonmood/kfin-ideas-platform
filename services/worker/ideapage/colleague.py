@@ -9,7 +9,7 @@ they hide it from the Wall (S-09.layout/2, NOT DRAWN default). The Back link nam
 
 A withdrawn idea is seen by nobody else (L-SUBMIT.withdraw/2). Someone who was on its crew or asked to join it,
 and so was told it was withdrawn (L-SUBMIT.withdraw/4), gets the one line S-09.rules/2 asks for and nothing of the
-idea itself (BLD-E010); everyone else gets "not found".
+idea itself (BLD-E011); everyone else gets "not found".
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ def _team_up(
 def withdrawn_view(
     idea: dict[str, Any], *, came_from: str | None = None, back: str | None = None
 ) -> dict[str, Any]:
-    """S-09.rules/2 for a withdrawn idea, for a former crew member or requester only (BLD-E010): its reference and
+    """S-09.rules/2 for a withdrawn idea, for a former crew member or requester only (BLD-E011): its reference and
     one line. No title, summary, sorting, crew, track or name."""
     key = read.key_of(idea)
     return {
