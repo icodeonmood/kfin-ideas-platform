@@ -603,7 +603,7 @@ def test_bld_f067_l_convo_10_removing_a_message_drops_what_l_hide_kept_and_keeps
     )  # no sealed words remain
     assert not any(in_vault(t) for t in only_first)
     assert all(in_vault(t) for t in shared)  # the second message still holds it
-    assert len(rows("idea_words_sealed", two)) == 1 and tags(two) == shared | (tags(two) - shared)
+    assert len(rows("idea_words_sealed", two)) == 1 and shared and shared <= tags(two)
     [gone] = [m for m in messages(conversation(db, idea["idea_id"], meera["id"], at=NOW)) if m["id"] == one]
     assert gone["removed"] and gone["text"] == "Message removed"
 
