@@ -455,8 +455,9 @@ describe("C-PREVIEW data, A-API.idea-preview (BLD-C103)", () => {
   });
 
   it("BLD-C103: Try again shows the loading state until the new fetch settles", async () => {
-    let settle: (r: Response) => void = () => undefined;
-    const pending = new Promise<Response>((resolve) => (settle = resolve));
+    type Reply = Awaited<ReturnType<typeof json>>;
+    let settle: (r: Reply) => void = () => undefined;
+    const pending = new Promise<Reply>((resolve) => (settle = resolve));
     const fetchMock = vi
       .fn()
       .mockReturnValueOnce(json({ error: "not_found" }, 404))
