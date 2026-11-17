@@ -143,6 +143,9 @@ step(
       "Rekha reads your note, then approves or declines. You’ll hear in your Inbox.",
     );
     await expect(sheet).toContainText(NOTE_KEEP);
+    // S-05 saves kept_separate in its own write after the sheet sends; the grid folds once that write is back, so
+    // waiting for the note keeps row 4a's fresh load from racing it (C-SIMGRID.grid/4).
+    await expect(page.getByText(KEPT_NOTE)).toBeVisible();
   },
 );
 
