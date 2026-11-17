@@ -4,7 +4,10 @@ words everywhere but the sharer's sealed copy (DEC-103), and it removes cleanly 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
+
+import pytest
 
 from bootstrap import club_seed
 from identity.codes import emp_id_hash
@@ -76,15 +79,22 @@ def test_e_entities_seed_fills_every_screen_and_removes_cleanly(db: Any) -> None
     assert len(club_seed.seed_user_ids(conn)) == len(club_seed.PEOPLE)
 
 
-def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(db: Any) -> None:
+@pytest.fixture
+def seeded(db: Any) -> Iterator[Any]:
+    """The seed for one test, removed after it, so no rows outlive the test (rule 14)."""
+    club_seed.load(db)
+    yield db
+    club_seed.remove(db)
+
+
+def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(seeded: Any) -> None:
     """J-ONE step 6 (L-ONES.rules/3, S-ONE showGlowUp, S-ONE.rules/3): exactly one One has a tier rise not yet shown.
     my_one hands S-ONE the tiers, the story so far and the committee's note; once seen it does not play again. No
     other One has one waiting, so the dashboards J-ONE/4 and /6 walk are not covered by it."""
     from ones.service import glow_up_seen
     from ones.views import my_one
 
-    conn = db
-    club_seed.load(conn)
+    conn = seeded
     waiting = conn.execute(
         "SELECT g.id, g.tier_from, g.tier_to, o.tier, o.user_id FROM one_glow_ups g JOIN ones o ON o.id = g.one_id "
         "WHERE g.seen_at IS NULL"
