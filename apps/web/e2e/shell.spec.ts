@@ -1,6 +1,6 @@
 /**
  * The signed-in shell (C-SIDEBAR, C-PHONE-TABS; AT-B2-06, AT-B2-07). On desktop the sidebar shows "Share a problem",
- * Home, Wall and Inbox for everyone, plus Review desk for a reviewer and Ones Committee for the core committee; the
+ * Home, Wall and Inbox for everyone, plus Review desk for a reviewer and Ones Committee for the committee (S-R4); the
  * account menu holds the account links for the person's roles, the P shortcut and Sign out. On a phone the tab bar is
  * Home, My ideas, Share, Wall and Inbox for everyone. axe reports no serious or critical issues on the shell pages;
  * every item works by keyboard with a visible focus ring.
@@ -24,7 +24,7 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
   const cases: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", BASE],
     ["reviewer", [...BASE, "Review desk"]],
-    ["core", [...BASE, "Ones Committee"]],
+    ["core", BASE], // the Ones Committee's page is the committee role's (committee_window, S-R4)
     ["admin", BASE],
   ];
   for (const [persona, expected] of cases) {
@@ -157,8 +157,8 @@ test("every shell item works by keyboard with a visible focus ring (AT-B2-07)", 
 test.describe("axe on the shell pages (AT-B2-07)", () => {
   const pages: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", ["/", "/share", "/my-ideas", "/wall", "/inbox"]],
-    ["reviewer", ["/review"]],
-    ["core", ["/committee"]],
+    ["reviewer", ["/desk"]], // S-R1; S-R4 has its axe run in review-desk.spec.ts with the committee role
+    ["core", ["/desk"]],
     ["admin", ["/admin"]],
   ];
   for (const [persona, paths] of pages) {
