@@ -201,6 +201,20 @@ def test_L_QUESTIONS_clock_1_the_sharer_opening_the_set_marks_it_seen_once(
     assert refused.value.code == "not_found"
 
 
+def test_L_QUESTIONS_clock_1_S_H5_the_inbox_reader_marks_only_its_own_set_seen(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """C-QCARD.places S-H5 (BLD-B248): the reader names the item's set; another set is not returned or marked seen."""
+    sent = _send(db, cast)
+    ref, kavya = cast["idea"]["idea_id"], cast["kavya"]["id"]
+    other = "1f0e2d3c-4b5a-4968-8776-655443322110"
+    assert asking.open_set_for_sharer(db, ref, kavya, f.at(16, 12, 5), set_id=other) is None
+    row = db.execute("SELECT state, seen_at FROM question_sets WHERE id = %s", (sent["id"],)).fetchone()
+    assert row is not None and (row["state"], row["seen_at"]) == ("sent", None)
+    got = asking.open_set_for_sharer(db, ref, kavya, f.at(16, 12, 7), set_id=sent["id"])
+    assert got is not None and got["id"] == sent["id"] and _when(got["seen_at"]) == f.at(16, 12, 7)
+
+
 def test_L_QUESTIONS_answer_6_a_saved_answer_is_masked(db: Conn, cast: dict[str, Any]) -> None:
     sent = _send(db, cast)
     kavya = cast["kavya"]["id"]
