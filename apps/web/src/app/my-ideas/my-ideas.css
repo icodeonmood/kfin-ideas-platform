@@ -1,0 +1,334 @@
+/*
+ * S-07, My ideas: board values from reference/css/boards/MyIdeas.css and PhoneMyIdeas.css on the app's tokens. Lane
+ * D's components (search bar, tabs, sorts, chips, pills, empty states, skeleton rows) keep their own look; this sheet
+ * only lays them out. `.mi-desk` and `.mi-phone` hold what differs between the two boards: the width shows one.
+ */
+.mi {
+  max-width: 1180px;
+}
+
+.mi-phone {
+  display: none;
+}
+
+/* ---------- Head ---------- */
+.mi-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mi-title {
+  margin: 0;
+  font: 500 40px/1.1 var(--fd);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.mi-lead {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.mi-fail {
+  margin-top: 28px;
+}
+
+/* ---------- Search, tabs and sorts ---------- */
+.mi-search {
+  position: relative;
+  z-index: 6;
+  margin-top: 28px;
+}
+
+.mi-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-top: 32px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mi-bar .mi-desk {
+  padding-bottom: 8px;
+}
+
+/* The quiet line on coming back (S-07.states, arrival): empty and taking no room until there is something to say */
+.mi-back {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--blueT, #1e2e99);
+}
+
+.mi-back:not(:empty) {
+  display: inline-flex;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--wash);
+  animation: miBackFade 4s ease 3s forwards;
+}
+
+@keyframes miBackFade {
+  to {
+    background: transparent;
+  }
+}
+
+/* ---------- The list ---------- */
+.mi-panel {
+  margin-top: 4px;
+}
+
+.mi-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mi-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 0.8fr) minmax(0, 1.35fr) 204px;
+  gap: 16px 28px;
+  align-items: start;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule2);
+}
+
+.mi-row.mi-hd {
+  padding: 14px 0 10px;
+  border-bottom: 0;
+}
+
+.mi-hd p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+.mi-t {
+  margin: 0;
+  font: 500 18px/1.3 var(--fd);
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+
+.mi-t a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mi-t a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.mi-meta {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.mi-snip {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+/* Where it is: the pill, and under it five segments filled up to the current stage */
+.mi-trk {
+  display: block;
+  margin-top: 10px;
+}
+
+.mi-segs {
+  display: flex;
+  gap: 3px;
+}
+
+.mi-seg {
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+.mi-seg.done {
+  background: var(--ink);
+}
+
+.mi-seg.now {
+  background: var(--blue);
+}
+
+.mi-seg.not_going_ahead {
+  background: none;
+  box-shadow: inset 0 0 0 1px #b8b8b3;
+}
+
+/* Next step: the sentence, and the one action at the right end of the row (its own column) */
+.mi-next {
+  display: contents;
+}
+
+.mi-ns {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink2);
+}
+
+.mi-act {
+  width: 100%;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.mi-next > .status {
+  grid-column: 3 / -1;
+}
+
+.mi-chev {
+  display: none;
+}
+
+/* ---------- Empty states ---------- */
+.mi-emptyc,
+.mi-first {
+  margin-top: 24px;
+  padding: 44px 40px 46px;
+}
+
+.mi-first {
+  margin-top: 32px;
+}
+
+.mi-hint {
+  align-self: center;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+/* ---------- Narrower desktop: the action drops under the sentence ---------- */
+@media (max-width: 1100px) {
+  .mi-row {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1.4fr);
+  }
+
+  .mi-next {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .mi-act {
+    width: auto;
+  }
+}
+
+/* ---------- Phone (PhoneMyIdeas): tabs, then filter chips, sort and Copy link, then the list as cards ---------- */
+@media (max-width: 640px) {
+  .mi-desk {
+    display: none;
+  }
+
+  .mi-phone {
+    display: revert;
+  }
+
+  .mi-title {
+    font-size: 28px;
+  }
+
+  .mi-search {
+    margin-top: 16px;
+  }
+
+  .mi-bar {
+    margin-top: 16px;
+  }
+
+  .mi-pchips {
+    display: block;
+    margin: 16px calc(-1 * var(--page-gutter, 16px)) 0;
+    padding: 0 var(--page-gutter, 16px);
+  }
+
+  .mi-ptools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .mi-back:not(:empty) {
+    margin-top: 12px;
+    font-size: 13.5px;
+  }
+
+  .mi-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0;
+  }
+
+  .mi-row.mi-hd {
+    display: none;
+  }
+
+  .mi-where {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .mi-trk {
+    margin-top: 0;
+  }
+
+  .mi-next {
+    display: block;
+  }
+
+  .mi-ns {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--mute2);
+  }
+
+  /* On a phone the action reads as a quiet link with a chevron at the end of the card */
+  .mi-act.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: auto;
+    min-height: 44px;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--ink);
+    font: 500 14px/1.3 var(--ft);
+  }
+
+  .mi-chev {
+    display: inline-block;
+    color: #6c6c70;
+  }
+
+  .mi-emptyc,
+  .mi-first {
+    padding: 28px 22px;
+  }
+}
