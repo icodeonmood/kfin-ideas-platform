@@ -326,6 +326,35 @@ def test_l_inbox_kinds_l_teamup_l_merge_request_each_teamup_request_item_is_a_wa
     assert bhavesh["actions"] == BRINGS_NOTHING
 
 
+def test_gap_seed_l_inbox_needs_you_and_draft_kept_items_carry_notify_dedupe_keys(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-INBOX (J-TEAMUP's lead Inbox, J-RESUME/5): every seeded lead "Needs you" item carries lane F's
+    `request_key(<request id>)` and every `draft_kept` item `draft_kept:<ideas.id>`, the keys lane A's notify.post
+    stores, so a later post or `notify.resolve` on the same key finds the seeded item instead of adding a second. Each
+    key passes notify's `_KEY` rule, and no other seeded item carries one."""
+    from notify import _KEY
+    from teamup.adapters import request_key
+
+    conn, m = db, made
+    asks = conn.execute(
+        "SELECT payload, dedupe_key FROM notifications WHERE kind = 'teamup_request'"
+    ).fetchall()
+    assert len(asks) == 5
+    assert all(a["dedupe_key"] == request_key(a["payload"]["request_id"]) for a in asks)
+    assert {a["payload"]["request"] for a in asks} == {"teamup", "merge"}
+
+    kept = conn.execute(
+        "SELECT idea_uuid, dedupe_key FROM notifications WHERE kind = 'draft_kept'"
+    ).fetchall()
+    assert sorted(str(k["idea_uuid"]) for k in kept) == sorted([m["T1"].uuid, m["I2"].uuid])
+    assert all(k["dedupe_key"] == f"draft_kept:{k['idea_uuid']}" for k in kept)
+
+    keys = [r["dedupe_key"] for r in [*asks, *kept]]
+    assert all(_KEY.match(k) for k in keys) and len(set(keys)) == len(keys)
+    assert _one(conn, "SELECT count(*) FROM notifications WHERE dedupe_key IS NOT NULL") == len(keys)
+
+
 def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
 
