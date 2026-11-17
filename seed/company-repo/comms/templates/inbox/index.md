@@ -17,3 +17,4 @@ One per Inbox item kind (E-ENUMS.inbox, L-INBOX.kinds): the reader's kind line (
 - [draft_kept.md](draft_kept.md) — Draft kept: "{sender} kept your draft from {{#via.phone}}your phone{{/via.phone}}{{#via.email}}email{{/via.email}}{{#via.teams}}Teams{{/via.teams}}"
 - [sent_to_desk.md](sent_to_desk.md) — Sent to the review desk: "{sender} sent your idea to the review desk"
 - [answer_reminder.md](answer_reminder.md) — Answer reminder: "{sender} {{left}} left to answer {{asker.possessive}} questions"
+- [detail_hidden_by_desk.md](detail_hidden_by_desk.md) — A detail was hidden (L-HIDE/7): "The review desk hid a customer’s detail in your idea"

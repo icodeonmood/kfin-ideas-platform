@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from psycopg.types.json import Jsonb
 
 import notify
 from comms.send import send_due
@@ -46,7 +47,11 @@ def cast(db: Any) -> dict[str, Any]:
     db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (people["meera"]["id"],))
     ideas: dict[str, str] = {}
     for n, (key, owner, status, late) in enumerate(
-        (("mine", "kavya", "with_review_desk", 2), ("ravis", "ravi", "with_review_desk", None), ("draft", "kavya", "draft", None))
+        (
+            ("mine", "kavya", "with_review_desk", 2),
+            ("ravis", "ravi", "with_review_desk", None),
+            ("draft", "kavya", "draft", None),
+        )
     ):
         idea_uuid = str(uuid.uuid4())
         db.execute(
@@ -64,7 +69,8 @@ def cast(db: Any) -> dict[str, Any]:
 
 def _rows(db: Any, user: str) -> list[dict[str, Any]]:
     return db.execute(
-        "SELECT channel, kind, state, needs_you, dedupe_key FROM notifications WHERE user_id = %s ORDER BY id", (user,)
+        "SELECT channel, kind, state, needs_you, dedupe_key FROM notifications WHERE user_id = %s ORDER BY id",
+        (user,),
     ).fetchall()
 
 
@@ -73,17 +79,28 @@ def test_L_NOTIFY_post_writes_in_app_at_once_and_queues_email_by_preference(cast
     posted = notify.post(db, "comment", [p["kavya"]["id"], p["kavya"]["id"], p["ravi"]["id"]],
                          idea_id=ideas["mine"], sender=p["ravi"]["id"], refs={"entry_id": 42})  # fmt: skip
     assert len(posted.ids) == 1  # the sender is never a recipient; a name listed twice gets one item
-    assert [(r["channel"], r["kind"]) for r in _rows(db, p["kavya"]["id"])] == [("in_app", "comment"), ("email", "comment")]
+    assert [(r["channel"], r["kind"]) for r in _rows(db, p["kavya"]["id"])] == [
+        ("in_app", "comment"),
+        ("email", "comment"),
+    ]
     assert _rows(db, p["ravi"]["id"]) == []
-    db.execute("INSERT INTO comms_prefs (user_id, email, teams) VALUES (%s, false, false)", (p["rohan"]["id"],))
-    notify.post(db, "mention", [p["rohan"]["id"], p["left"]["id"]], idea_id=ideas["mine"], sender=p["ravi"]["id"])
+    db.execute(
+        "INSERT INTO comms_prefs (user_id, email, teams) VALUES (%s, false, false)", (p["rohan"]["id"],)
+    )
+    notify.post(
+        db, "mention", [p["rohan"]["id"], p["left"]["id"]], idea_id=ideas["mine"], sender=p["ravi"]["id"]
+    )
     assert [r["channel"] for r in _rows(db, p["rohan"]["id"])] == ["in_app"]  # email off: in-app only
     assert _rows(db, p["left"]["id"]) == []  # people who have left get nothing
 
 
-def test_L_NOTIFY_4_decisions_reversals_and_merges_always_go_out_and_teams_waits_for_its_switch(cast: Any) -> None:
+def test_L_NOTIFY_4_decisions_reversals_and_merges_always_go_out_and_teams_waits_for_its_switch(
+    cast: Any,
+) -> None:
     db, p, ideas = cast["db"], cast["p"], cast["ideas"]
-    db.execute("INSERT INTO comms_prefs (user_id, email, teams) VALUES (%s, false, true)", (p["kavya"]["id"],))
+    db.execute(
+        "INSERT INTO comms_prefs (user_id, email, teams) VALUES (%s, false, true)", (p["kavya"]["id"],)
+    )
     for kind in ("decision", "decision_reversed", "desk_merge"):
         notify.post(db, kind, [p["kavya"]["id"]], idea_id=ideas["mine"], sender=p["meera"]["id"],
                     refs={"choice": "not_picked"})  # fmt: skip
@@ -96,7 +113,10 @@ def test_L_NOTIFY_4_decisions_reversals_and_merges_always_go_out_and_teams_waits
     killswitch.clear_cache()
     notify.post(db, "decision", [p["kavya"]["id"]], idea_id=ideas["mine"], sender=p["meera"]["id"])
     assert _rows(db, p["kavya"]["id"])[-1]["channel"] == "teams"  # Teams carries it once IT switches it on
-    assert notify.outside_channels("answer_reminder", email=True, teams=True, reminders=False, teams_on=True) == []
+    assert (
+        notify.outside_channels("answer_reminder", email=True, teams=True, reminders=False, teams_on=True)
+        == []
+    )
 
 
 def test_L_NOTIFY_3_no_words_reasons_or_free_text_go_in(cast: Any) -> None:
@@ -110,7 +130,9 @@ def test_L_NOTIFY_3_no_words_reasons_or_free_text_go_in(cast: Any) -> None:
         "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (p["kavya"]["id"],)
     ).fetchone()
     mail = nrender.email(db, dict(row), WORKDAY_NOON)
-    assert "declined your team-up request, with a reason" in mail.text and "/ideas/IDEA-2026-000900" in mail.text
+    assert (
+        "declined your team-up request, with a reason" in mail.text and "/ideas/IDEA-2026-000900" in mail.text
+    )
     assert REASON not in mail.text + mail.html  # the reason is read in the app (BLD-E004)
 
 
@@ -129,12 +151,26 @@ def test_L_NOTIFY_dedupe_keeps_one_item_and_resolve_takes_it_off_needs_you(cast:
     assert notify.resolve(db, f"teamup_request:{request}") == 1
     assert notify.resolve(db, f"teamup_request:{request}") == 0  # twice is harmless
     assert inbox.counts(db, p["kavya"]["id"])["needs_you"] == 0
-    # A key resolves the keys under it: both answer reminders of a set go with "answer_reminder:<set>".
+    # A key resolves the keys under it: lane B's "qs:<set>" takes the questions item and both answer reminders
+    # ("qs:<set>:24", "qs:<set>:2") off "Needs you" when the answers are sent (BLD-A180, L-INBOX.rules/3).
     s = str(uuid.uuid4())
+    notify.post(db, "questions", [p["kavya"]["id"]], idea_id=ideas["mine"], needs_you=True, due_at=WORKDAY_NOON,
+                refs={"set_id": s}, dedupe_key=f"qs:{s}")  # fmt: skip
     for hours in (24, 2):
         notify.post(db, "answer_reminder", [p["kavya"]["id"]], idea_id=ideas["mine"], needs_you=True,
-                    due_at=WORKDAY_NOON, refs={"set_id": s}, dedupe_key=f"answer_reminder:{s}:{hours}")  # fmt: skip
-    assert notify.resolve(db, f"answer_reminder:{s}") == 2
+                    due_at=WORKDAY_NOON, refs={"set_id": s}, dedupe_key=f"qs:{s}:{hours}")  # fmt: skip
+    notify.post(
+        db,
+        "questions",
+        [p["kavya"]["id"]],
+        idea_id=ideas["mine"],
+        needs_you=True,
+        due_at=WORKDAY_NOON,
+        refs={"set_id": s},
+        dedupe_key=f"qs:{s}0",
+    )  # another key that only starts the same way
+    assert notify.resolve(db, f"qs:{s}") == 3
+    assert inbox.counts(db, p["kavya"]["id"])["needs_you"] == 1
 
 
 def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None:
@@ -147,7 +183,8 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
     ).fetchone()["id"]
     for seq in (1, 2, 3):
         db.execute(
-            "INSERT INTO questions (set_id, seq, part, text_encrypted) VALUES (%s, %s, 'summary', '\\x00')", (s, seq)
+            "INSERT INTO questions (set_id, seq, part, text_encrypted) VALUES (%s, %s, 'summary', '\\x00')",
+            (s, seq),
         )
     notify.post(db, "questions", [kavya], idea_id=ideas["mine"], sender=p["meera"]["id"], needs_you=True,
                 due_at=WORKDAY_NOON + dt.timedelta(days=3), refs={"set_id": str(s)},
@@ -170,7 +207,9 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
     # The forward action is last and primary; "Open the conversation" is a line button before it (S-H5.rules/3).
     assert [(a["label"], a["style"]) for a in q["actions"]] == [
         ("Open the conversation", "line"), ("Answer the questions", "primary")]  # fmt: skip
-    assert got["items"][0]["actions"] == [{"label": "Carry on", "style": "primary", "to": f"/share/{ideas['draft']}"}]
+    assert got["items"][0]["actions"] == [
+        {"label": "Carry on", "style": "primary", "to": f"/share/{ideas['draft']}"}
+    ]
     assert got["counts"] == {"all": 3, "needs_you": 1, "unread": 3, "archived": 0} and got["unread"] == 3
 
     with pytest.raises(inbox.InboxRefused) as refused:
@@ -188,24 +227,137 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
         inbox.mark_read(db, p["ravi"]["id"], int(q["id"]))  # someone else's item
 
 
-def test_L_INBOX_a_message_with_no_kind_shows_as_a_note_from_1pc_club(cast: Any) -> None:
-    """J-ONE step 3: "You're No. 17." arrives through the Ones flow, which has no Inbox kind (BLD-A202)."""
-    db, p = cast["db"], cast["p"]
+def test_L_INBOX_J_ONE_3_a_new_one_gets_no_inbox_item_and_old_route_messages_stay_out(cast: Any) -> None:
+    """BLD-A186, BLD-A202: "You're No. 17" arrives through the Ones flow by email; the Inbox, its counts and Home's
+    "Needs you" hold only the E-ENUMS.inbox kinds, so the sidebar, the tab bar and the Inbox agree."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
     one = db.execute(
         "INSERT INTO ones (induction_no, user_id, number, tier, way_in, swap_until) "
         "VALUES (9017, %s, 17, 1, 'accepted_idea', now() + interval '30 days') RETURNING id",
-        (p["kavya"]["id"],),
+        (kavya,),
     ).fetchone()["id"]
+    try:
+        db.execute(
+            "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, sent_at) "
+            "VALUES (%s, 'in_app', 'one-inducted', %s, 'ones.inducted', 'immediate', 'sent', now())",
+            (kavya, f'{{"one_id": {one}, "current_owner_ids": ["{kavya}"]}}'),
+        )
+        legacy = db.execute("SELECT id FROM notifications WHERE user_id = %s", (kavya,)).fetchone()["id"]
+        got = inbox.items(db, kavya)
+        assert got["items"] == [] and got["counts"] == {"all": 0, "needs_you": 0, "unread": 0, "archived": 0}
+        with pytest.raises(inbox.InboxRefused):
+            inbox.mark_read(db, kavya, int(legacy))  # not an Inbox item
+        notify.post(db, "stage_moved", [kavya], idea_id=ideas["mine"], refs={"to": "shipped"})
+        assert [it["line"] for it in inbox.items(db, kavya)["items"]] == ["moved your idea to Shipped"]
+        assert inbox.mark_all_read(db, kavya)["unread"] == 0
+        assert (
+            db.execute("SELECT read_at FROM notifications WHERE id = %s", (legacy,)).fetchone()["read_at"]
+            is None
+        )
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+        db.execute("DELETE FROM ones WHERE id = %s", (one,))
+
+
+def test_L_HIDE_7_detail_hidden_by_desk_comes_from_the_review_desk_with_one_action(cast: Any) -> None:
+    """BLD-A205: lane C posts it when a reviewer hides a detail. The reviewer's name is never shown or sent; it is
+    not "Needs you"; it carries no refs; its one action opens the idea."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
+    with pytest.raises(notify.NotifyError):
+        notify.post(db, "detail_hidden_by_desk", [kavya], idea_id=ideas["mine"], refs={"part": "summary"})
+    check = db.execute(
+        "SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = 'notifications_kind_check'"
+    ).fetchone()["d"]
+    widen = (
+        "detail_hidden_by_desk" not in check
+    )  # lane C's c/hide adds the kind to the CHECK; until then, here
+    if widen:
+        db.execute("ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check")
+        db.execute(
+            "ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check "
+            + check.replace(
+                "'answer_reminder'::text", "'answer_reminder'::text, 'detail_hidden_by_desk'::text"
+            )
+        )
+    try:
+        posted = notify.post(
+            db, "detail_hidden_by_desk", [kavya], idea_id=ideas["mine"], sender=p["meera"]["id"]
+        )
+        assert len(posted.ids) == 1
+        item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+        assert item["kind"] == "detail_hidden_by_desk" and item["from"] == "system" and not item["needs_you"]
+        assert (item["body"]["sender"], item["line"]) == (
+            "The review desk",
+            "hid a customer’s detail in your idea",
+        )
+        assert (
+            item["body"]["heading"] == "A detail was hidden"
+            and item["body"]["note"] == "Only you can still see it."
+        )
+        assert item["actions"] == [
+            {"label": "Open your idea", "style": "primary", "to": "/ideas/IDEA-2026-000900"}
+        ]
+        assert "Meera" not in repr(item)
+        row = db.execute(
+            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
+        ).fetchone()
+        assert row["payload"] == {}
+        mail = nrender.email(db, dict(row), WORKDAY_NOON)
+        assert "The review desk hid a customer’s detail in your idea" in mail.text
+        assert "Only you can still see it." in mail.text and "Meera" not in mail.text + mail.html
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+        if widen:
+            db.execute("ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check")
+            db.execute("ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check " + check)
+
+
+def test_L_INBOX_kinds_items_that_name_no_set_choice_or_request_read_them_from_the_idea(cast: Any) -> None:
+    """Items written without refs (the 1% Club seed, BLD-A206) read the set, the decision and the request kind from
+    the idea and the item's own buttons, so their lines match the pack's."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, ravi = p["kavya"]["id"], p["ravi"]["id"]
+    s = db.execute(
+        "INSERT INTO question_sets (idea_uuid, by_user_id, state, sent_at, due_at) VALUES (%s, %s, 'sent', now(), %s) "
+        "RETURNING id",
+        (ideas["mine"], p["meera"]["id"], WORKDAY_NOON + dt.timedelta(days=2)),
+    ).fetchone()["id"]
+    for seq in (1, 2):
+        db.execute(
+            "INSERT INTO questions (set_id, seq, part, text_encrypted) VALUES (%s, %s, 'summary', '\\x00')",
+            (s, seq),
+        )
     db.execute(
-        "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, sent_at) "
-        "VALUES (%s, 'in_app', 'one-inducted', %s, 'ones.inducted', 'immediate', 'sent', now())",
-        (p["kavya"]["id"], f'{{"one_id": {one}, "current_owner_ids": ["{p["kavya"]["id"]}"]}}'),
+        "INSERT INTO idea_decisions (idea_uuid, choice, reason_encrypted, by_user_id) VALUES (%s, 'pick', '\\x00', %s)",
+        (ideas["mine"], p["meera"]["id"]),
     )
-    got = inbox.items(db, p["kavya"]["id"])
-    item = got["items"][0]
-    assert item["kind"] == "notice" and item["from"] == "system" and item["line"].startswith("You're No. 17")
-    assert item["actions"] and item["actions"][0]["to"].startswith("/")
-    assert got["unread"] == 1
+    rows: tuple[tuple[str, str, str | None, bool, dt.datetime | None, list[dict[str, str]]], ...] = (
+        (kavya, "questions", p["meera"]["id"], True, WORKDAY_NOON + dt.timedelta(days=2), []),
+        (kavya, "answer_reminder", None, True, WORKDAY_NOON + dt.timedelta(hours=5), []),
+        (kavya, "decision", p["meera"]["id"], False, None, []),
+        (ravi, "teamup_request", kavya, True, None,
+         [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Merge it", "op": "merge", "style": "primary"}]),
+    )  # fmt: skip
+    for to, kind, sender, needs, due, actions in rows:
+        db.execute(
+            "INSERT INTO notifications (user_id, channel, template, event, payload, state, sent_at, kind, from_user_id, "
+            "idea_uuid, needs_you, due_at, actions) VALUES (%s, 'in_app', %s, %s, '{}', 'sent', now(), %s, %s, %s, %s, "
+            "%s, %s)",
+            (to, f"inbox/{kind}", f"inbox.{kind}", kind, sender, ideas["mine"], needs, due,
+             Jsonb(actions)),
+        )  # fmt: skip
+    mine = {it["kind"]: it for it in inbox.items(db, kavya, now=WORKDAY_NOON)["items"]}
+    assert mine["questions"]["line"] == "asked you 2 questions" and mine["questions"]["body"][
+        "set_id"
+    ] == str(s)
+    assert mine["answer_reminder"]["line"] == "5 hours left to answer Meera's questions"
+    assert mine["answer_reminder"]["body"]["sender"] == "1% Club"
+    assert mine["decision"]["line"] == "picked your idea"
+    request = inbox.items(db, ravi, now=WORKDAY_NOON)["items"][0]
+    assert request["line"] == "asks to team up and merge their idea into yours"
+    assert request["body"]["heading"] == "Merge request"
 
 
 def test_L_INBOX_actions_go_to_the_lane_that_owns_the_op(cast: Any) -> None:
@@ -233,14 +385,18 @@ def test_L_INBOX_actions_go_to_the_lane_that_owns_the_op(cast: Any) -> None:
     assert seen == [p["kavya"]["id"]]
 
 
-def test_L_REVIEW_clock_3_the_decide_by_digest_goes_to_the_review_desk_once_a_day(cast: Any, monkeypatch: Any) -> None:
+def test_L_REVIEW_clock_3_the_decide_by_digest_goes_to_the_review_desk_once_a_day(
+    cast: Any, monkeypatch: Any
+) -> None:
     db, p = cast["db"], cast["p"]
     assert digest.queue(db, now=dt.datetime(2026, 11, 21, 12, 0, tzinfo=IST)) == 0  # a Saturday
     assert digest.queue(db, now=WORKDAY_NOON) == 1  # Meera, the only reviewer (no lead role yet)
     assert digest.queue(db, now=WORKDAY_NOON) == 0  # once a day
     sent: list[Any] = []
     monkeypatch.setattr("comms.send._smtp", lambda to, email: sent.append((to, email)))
-    db.execute("UPDATE notifications SET send_after = now() - interval '1 minute' WHERE event = %s", (digest.EVENT,))
+    db.execute(
+        "UPDATE notifications SET send_after = now() - interval '1 minute' WHERE event = %s", (digest.EVENT,)
+    )
     assert send_due(db) == 1
     to, mail = sent[0]
     assert to == p["meera"]["email"]
@@ -259,7 +415,10 @@ def test_L_NOTIFY_6_a_failing_mail_server_never_reaches_the_caller(cast: Any, mo
     monkeypatch.setattr("comms.send._smtp", refuse)
     assert send_due(db, now=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1)) == 0
     row = db.execute(
-        "SELECT state, attempts FROM notifications WHERE user_id = %s AND channel = 'email'", (p["kavya"]["id"],)
+        "SELECT state, attempts FROM notifications WHERE user_id = %s AND channel = 'email'",
+        (p["kavya"]["id"],),
     ).fetchone()
-    assert row["state"] == "queued" and row["attempts"] == 1  # retried later; the in-app item is already there
+    assert (
+        row["state"] == "queued" and row["attempts"] == 1
+    )  # retried later; the in-app item is already there
     assert tables_containing(db, TITLE) == ["ideas.title"]  # the title lives on the idea only

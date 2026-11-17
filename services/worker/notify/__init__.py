@@ -47,13 +47,17 @@ InboxKind = Literal[
     "draft_kept",
     "sent_to_desk",
     "answer_reminder",
-]  # E-ENUMS.inbox
+    "detail_hidden_by_desk",
+]  # E-ENUMS.inbox, plus L-HIDE/7's kind agreed with lane C (BLD-A205)
 INBOX_KINDS: frozenset[str] = frozenset(InboxKind.__args__)  # type: ignore[attr-defined]
 
 # L-NOTIFY/4: always sent on at least one outside channel, even with both turned off; email is the fallback.
 ALWAYS_OUTSIDE: frozenset[str] = frozenset({"decision", "decision_reversed", "desk_merge"})
 # L-NOTIFY/2: "Reminders before a question is due" is its own setting.
 REMINDER_KINDS: frozenset[str] = frozenset({"answer_reminder"})
+# Kinds that carry no refs at all: the item says only that something happened (L-HIDE/7, /8: a hidden detail is never
+# in a notification, not even as an ID that points at it).
+NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 
 Ref = str | int | bool | None
 
@@ -147,6 +151,8 @@ def post(
         raise NotifyError("recipients are users.id values")
     people = list(dict.fromkeys(_uuid(r, "a recipient") for r in recipients))
     refs = dict(refs or {})
+    if refs and kind in NO_REFS_KINDS:
+        raise NotifyError(f"{kind} carries no refs")
     _check_refs(refs)
     for a in actions:
         if a.to is None and a.op is None:
@@ -206,8 +212,8 @@ def post(
 
 def resolve(conn: Conn, dedupe_key: str, *, recipients: Sequence[str] | None = None) -> int:
     """The action an item asked for is done (or no longer can be): it leaves "Needs you" for everyone who has it,
-    or for `recipients` only. A key also resolves the keys under it (`answer_reminder:<set>` covers
-    `answer_reminder:<set>:24` and `:2`). Returns how many items changed; calling it again changes nothing."""
+    or for `recipients` only. A key also resolves the keys under it (`qs:<set>` covers `qs:<set>:24` and
+    `qs:<set>:2`). Returns how many items changed; calling it again changes nothing."""
     if not _KEY.match(dedupe_key):
         raise NotifyError("dedupe_key must be IDs and enums joined by ':'")
     people = None if recipients is None else [_uuid(r, "a recipient") for r in recipients]
