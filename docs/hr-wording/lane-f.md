@@ -176,3 +176,14 @@ Everything else on S-08 is the pack's copy (Messages.md) or comes from the conve
 | `S-08`, a file's button and the file lists, as read out | View | View plain-rejection-reasons.xlsx / Files in your message / Files in Ravi Nair’s message / Files with this answer |
 | `S-08`, the questions for a reader who did not ask them (BLD-F065) | Meera has 3 questions about your idea | Meera from the review desk asked 3 questions. / You asked 3 questions. / See them on the idea |
 | `S-08`, the sharer's questions once closed before every answer came (BLD-F065) | Meera’s 3 questions, answered | Meera’s 3 questions, now closed |
+## 5. Find your crew (`S-H2`, `L-CREW`, added 18 Nov)
+
+The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `C-CREW-DECK.states`), used as they stand. "Ravi" stands for the idea's lead and "Saturday" for the day the person shared their own idea: at run time each is the real name or day. The code is `services/worker/crew/deck.py` (the card lines and "Your crews") and `apps/web/src/app/crew/` (the page). These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `L-CREW/2`, "touches their work" (BLD-F034) | The card's reason strip, when the sharer asked for help from the person's line of work | They need someone in Investor service |
+| `L-CREW/2`, "close to an idea of theirs" when the match's reason was written for the other person, or there is none (BLD-F032) | The card's reason strip | Close to your idea from Saturday |
+| `L-CREW/2`, a match reason that does not start "Same …" (BLD-F032) | The card's reason strip | The calls you describe, like your idea from Saturday |
+| `L-CREW/2`, the day in those lines | The card's reason strip | today / yesterday / a weekday within the week / 12 November |
+| `L-CREW/9`, a waiting request whose lead's record was erased (BLD-F035) | "Your crews" | Waiting for the lead (and "A colleague" for the name, the existing BLD-E006 line) |
