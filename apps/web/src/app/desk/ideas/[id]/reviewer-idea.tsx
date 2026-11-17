@@ -836,7 +836,9 @@ export function ReviewerIdea({
           onClose={() => setMerging(null)}
           // Opened from the row or from the preview's Merge (gone with the preview), focus comes back to the row's
           // Merge for that idea; once merged that is a "Merged" pill, so it comes to the Similar ideas heading
-          returnFocus={() => focusBackTo(mergeButtons.current.get(merging), similarTitle.current)}
+          returnFocus={() =>
+            focusBackTo<HTMLElement>(mergeButtons.current.get(merging), similarTitle.current)
+          }
           onMerged={(m) => {
             setBanner(m.banner);
             setMergedIds((s) => new Set(s).add(merging));
