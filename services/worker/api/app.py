@@ -1111,3 +1111,10 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     body["quarter"] = quarter or reports.current_quarter()
     body["quarters"] = reports.recent_quarters()
     return _json(body)
+
+
+# The programme team's admin path (lane A; J-ONE steps 1, 2, 3 and 6; L-DECIDE.after, L-IMPACT, L-ONES admin,
+# "Take off the Wall"). Routes live with the code in programme/routes.py.
+from programme.routes import build as _admin_routes  # noqa: E402
+
+app.include_router(_admin_routes(require_token))

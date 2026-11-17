@@ -40,6 +40,7 @@ EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
     "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
     "voice.sweep": 15,  # voice notes held past 24 hours or for an idea already shared (DEC-096)
+    "impact.sweep": 60,  # measurements that have fallen due get one "Needs you" item (L-IMPACT, BLD-A213)
 }
 
 
