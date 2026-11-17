@@ -8,7 +8,7 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from psycopg.types.json import Jsonb
 
@@ -156,6 +156,144 @@ def delete_voice(voice_id: str, idea_uuid: str, by: str = "") -> Response:
     with connect(autocommit=True) as conn:
         voice.remove_for(conn, voice_id, idea_uuid, by or None)
     return Response(status_code=204)
+
+
+# ---- drafts "By voice" through Sarvam (DEC-108, BLD-C112): the web app checked the person owns the draft ----
+
+
+def _stream_call(fn: Any, *args: Any, **kwargs: Any) -> JSONResponse:
+    from speech import drafts
+
+    try:
+        with connect(autocommit=True) as conn:
+            return JSONResponse(fn(conn, *args, **kwargs))
+    except drafts.VoiceRefused as exc:
+        return JSONResponse({"error": exc.code, **exc.body}, status_code=exc.status)
+
+
+@app.post("/internal/voice-streams", dependencies=[Depends(require_token)])
+def voice_stream_start(body: dict[str, Any]) -> JSONResponse:
+    """Open a stream for the person's draft: `{idea_uuid, by_code, user_id}`."""
+    from speech import drafts
+
+    resp = _stream_call(
+        drafts.start,
+        idea_uuid=str(body.get("idea_uuid", "")),
+        by_code=str(body.get("by_code", "")),
+        user_id=str(body["user_id"]) if body.get("user_id") else None,
+    )
+    if resp.status_code == 200:
+        resp.status_code = 201
+    return resp
+
+
+@app.post("/internal/voice-streams/{stream_id}/chunk", dependencies=[Depends(require_token)])
+async def voice_stream_chunk(
+    stream_id: str, idea_uuid: str, by: str, seq: int, request: Request
+) -> JSONResponse:
+    """About a second of 16 kHz mono 16-bit PCM, relayed to Sarvam as it arrives and never kept."""
+    from starlette.concurrency import run_in_threadpool
+
+    from speech import drafts
+
+    data = b""
+    async for part in request.stream():
+        data += part
+        if len(data) > drafts.MAX_CHUNK_BYTES:
+            return JSONResponse({"error": "chunk_too_large"}, status_code=413)
+    return await run_in_threadpool(
+        _stream_call, drafts.chunk, stream_id, idea_uuid=idea_uuid, by_code=by, seq=seq, data=data
+    )
+
+
+@app.post("/internal/voice-streams/{stream_id}/end", dependencies=[Depends(require_token)])
+def voice_stream_end(stream_id: str, body: dict[str, Any]) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(
+        drafts.end, stream_id, idea_uuid=str(body.get("idea_uuid", "")), by_code=str(body.get("by_code", ""))
+    )
+
+
+@app.get("/internal/voice-streams/{stream_id}", dependencies=[Depends(require_token)])
+def voice_stream_status(stream_id: str, idea_uuid: str, by: str) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(drafts.status, stream_id, idea_uuid=idea_uuid, by_code=by)
+
+
+@app.get("/internal/voice-config", dependencies=[Depends(require_token)])
+def voice_config() -> JSONResponse:
+    """What the screen shows before recording, and what the browser sends (BLD-C116)."""
+    from speech import drafts
+
+    return JSONResponse({"notice": drafts.NOTICE, **drafts.chunk_contract()})
+
+
+# ---- Listen in Sarvam's voice (DEC-108 (4), BLD-C114): the web app checked the desk or committee role ----------
+
+
+@app.get("/internal/listen/{ref}", dependencies=[Depends(require_token)])
+def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")) -> Response:
+    """The idea's audio (MP3). Cached: the whole file, or the asked byte range (seeking by chapter). Not cached:
+    streamed as Sarvam makes it, part by part, and cached at the end."""
+    from fastapi.responses import StreamingResponse
+
+    from attachments import store
+    from gateway import sarvam
+    from gateway.speech import SpeechUnavailable
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            plan = listen.prepare(conn, ref)
+            if plan.cached is None:
+                # Like drafts._hosted_check: the fake route needs no key (BLD-C117). On the Sarvam route,
+                # speech.hosted is read fresh with the approval and the key before anything streams.
+                if get_settings().speech_mode == "sarvam":
+                    sarvam.allowed(conn)
+                listen.outgoing(plan.script)  # every part passes the leak check before the first byte
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    except SpeechUnavailable as exc:  # the player falls back to the on-device voice
+        code = "listen_unavailable" if exc.code == "unmasked_text" else "paused"
+        return JSONResponse({"error": code}, status_code=503)
+    headers = {"Cache-Control": "private, no-store", "Accept-Ranges": "bytes"}
+    if plan.cached is not None:
+        data = store.get(get_settings().s3_bucket_clean, plan.cached.store_key)
+        span = listen.byte_range(range_header, len(data)) if range_header else None
+        if range_header and span is None:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{len(data)}"})
+        if span is not None:
+            start, end = span
+            return Response(
+                content=data[start : end + 1],
+                status_code=206,
+                media_type="audio/mpeg",
+                headers={**headers, "Content-Range": f"bytes {start}-{end}/{len(data)}"},
+            )
+        return Response(content=data, media_type="audio/mpeg", headers=headers)
+
+    def body() -> Any:
+        with connect(autocommit=True) as conn:
+            yield from listen.speak(conn, plan.idea_uuid, plan.script, voice=plan.voice)
+
+    return StreamingResponse(body(), media_type="audio/mpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/internal/listen/{ref}/chapters", dependencies=[Depends(require_token)])
+def listen_chapters(ref: str) -> JSONResponse:
+    """`{ parts: [{ part, start_s }], duration_s }` once the audio is cached; until then 202 `{ pending: true }`."""
+    from speech import listen
+
+    try:
+        with connect(autocommit=True) as conn:
+            got = listen.chapters(conn, ref)
+    except listen.ListenRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    if got is None:
+        return JSONResponse({"pending": True}, status_code=202)
+    return JSONResponse(got)
 
 
 @app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])

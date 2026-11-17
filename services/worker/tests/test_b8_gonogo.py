@@ -24,11 +24,15 @@ def _write(folder: Path, name: str, body: Any) -> None:
 
 @pytest.fixture
 def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namespace:
-    monkeypatch.setattr(
-        g,
-        "get_settings",
-        lambda: Settings(privacy_notice_version="1.0", speech_mode="fake", speech_hosted_approval=""),
-    )  # voice rows pinned (BLD-A185)
+    # Voice is on at launch through Sarvam (DEC-108): the evidence of a ready launch includes the route, the approval
+    # and a key (a synthetic one here; the report says present or absent, never the value).
+    ready = Settings(
+        privacy_notice_version="1.0",
+        speech_mode="sarvam",
+        speech_hosted_approval="DEC-108",
+        sarvam_api_key="synthetic-test-key",
+    )
+    monkeypatch.setattr(g, "get_settings", lambda: ready)
     real = {"route": "anthropic", "version": "0.2.0"}
     _write(tmp_path / "eval", "gatekeeper-0.2.0-1.json",
            real | {"metrics": {"personal_data_recall": 1.0, "false_block_rate": 0.02}})  # fmt: skip
@@ -49,11 +53,12 @@ def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namesp
 def test_mode_a_needs_every_criterion(evidence: argparse.Namespace) -> None:
     out = g.collect(evidence)
     assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # the CI row is always a person's
-    # the CI row is always a person's; voice is seeded off, which DEC-108 makes a row to confirm
+    # the CI row is always a person's; voice is on from migration 20261122300530 (BLD-C115) and the evidence above
+    # carries the Sarvam route, the approval and a key, so both voice rows are met
     assert [(r["criterion"], r["state"]) for r in out["rows"] if r["state"] != "met"] == [
         ("Every B1–B7 acceptance test passes in UAT", "confirm"),
-        (g.VOICE, "confirm"),
     ]
+    assert {r["criterion"]: r["state"] for r in out["rows"]}[g.VOICE] == "met"
 
 
 def test_a_load_rehearsal_or_a_failed_drill_rules_out_mode_a(evidence: argparse.Namespace) -> None:

@@ -41,6 +41,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
+  // Drafts by voice through Sarvam (DEC-108, BLD-C112): starting, sending and ending a note need voice notes, the
+  // hosted speech route and sharing. Reading a finished note's words carries on.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/drafts\/[^/]+\/voice\/(?:start|chunk|end)\/?$/,
+    switches: ["capture.voice", "speech.hosted", "submissions"],
+  },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   // The live draft (L-DRAFT): saving pauses with sharing. It never needs `ai.all`: with the assistant off the parts
   // are filled by hand (DEC-105).
@@ -82,6 +89,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // Listen's audio and chapters through Sarvam (DEC-108, BLD-C114): lane B's player switch and hosted speech.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/ideas\/[^/]+\/listen(?:\/chapters)?\/?$/,
+    switches: ["desk.listen", "speech.hosted"],
+  },
   // The Ones Committee's window (L-COMMITTEE): extending and reversing pause with the committee's flow.
   {
     methods: ["POST"],
@@ -121,8 +134,8 @@ export const BANNERS: Record<SwitchName, string> = {
   // DEC-096: off only hides the hint under the quick capture box; nothing else changes, so no banner shows it.
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
   "capture.voice": "Voice notes are coming soon.",
-  // Employees never see a vendor's name (DEC-096).
-  "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
+  "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
   // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
   "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
@@ -144,6 +157,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
   /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
+  /^\/api\/me\/refer-as\/?$/, // how a person wants to be referred to (BLD-C111) changes nothing about ideas
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
   // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
   // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
