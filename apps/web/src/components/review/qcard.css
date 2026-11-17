@@ -1,0 +1,88 @@
+/* C-QCARD (board Status: .verq, .qn). Tokens only. */
+.qcard {
+  display: grid;
+  gap: 12px;
+}
+.qcard-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.qcard-h .pill {
+  margin-left: auto;
+}
+.qcard h3,
+.qcard p {
+  margin: 0;
+}
+.qcard-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+.qcard-list li {
+  display: grid;
+  gap: 2px;
+}
+.qcard-a {
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+}
+.qcard-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.qcard-tick {
+  color: var(--okT);
+  font-weight: 600;
+}
+.qcard-files {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+/* Home's "Needs you" (Home.md) and the Inbox reader (Inbox.md) */
+.qcard-t {
+  font-weight: 500;
+}
+.qcard-links,
+.qcard-plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.qcard-q {
+  display: grid;
+  gap: 2px;
+  min-height: 24px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--r-sm);
+}
+.qcard-q:hover .body,
+.qcard-q:focus-visible .body {
+  text-decoration: underline;
+}
+.qcard-plain li {
+  display: grid;
+  gap: 2px;
+}
+.qcard-who {
+  display: grid;
+  gap: 2px;
+}
+.qcard-inbox {
+  display: grid;
+  gap: 12px;
+}
+.qcard-inbox h2 {
+  margin: 0;
+}
