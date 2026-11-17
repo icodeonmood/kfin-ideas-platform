@@ -347,6 +347,7 @@ def send_set(
         adapters.tell(
             conn, "questions", _sharers(conn, idea), idea_uuid=str(idea["id"]), sender=user_id, needs_you=True,
             due_at=due, actions=[_answer_action(idea)], refs={"set_id": set_id, "count": len(asked)},
+            dedupe_key=adapters.questions_key(set_id),
         )  # fmt: skip
         _schedule_reminders(conn, set_id, t, due, p)
         audit(conn, actor(user_id), "desk.ask", f"idea:{idea['idea_id']}",
@@ -402,7 +403,7 @@ def _remind(
     adapters.tell(
         conn, "answer_reminder", recipients, idea_uuid=str(idea["id"]), sender=sender, needs_you=True,
         due_at=s["due_at"], actions=[_answer_action(idea)], refs={"set_id": sid},
-        dedupe_key=dedupe_key or f"answer_reminder:{sid}:{day}:{t.astimezone(clock.office_calendar().tz):%H}",
+        dedupe_key=dedupe_key or f"{adapters.questions_key(sid)}:{day}:{t.astimezone(clock.office_calendar().tz):%H}",
     )  # fmt: skip
     conn.execute("UPDATE question_sets SET reminded_at = %s WHERE id = %s", (t, sid))
 
@@ -457,7 +458,9 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
         if not recipients:
             return False
         # one per (set, threshold): a retry or an overlapping run never sends it twice (lane A's ask)
-        _remind(conn, idea, s, recipients, "system", t, f"answer_reminder:{sid}:{crossed:%Y%m%dT%H%M%z}")
+        _remind(
+            conn, idea, s, recipients, "system", t, f"{adapters.questions_key(sid)}:{crossed:%Y%m%dT%H%M%z}"
+        )
         audit(conn, "system", "desk.answer_reminder", f"idea:{idea['idea_id']}", after={"set_id": sid})
         return True
 
@@ -635,6 +638,8 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
         conn.execute("UPDATE question_sets SET state = %s, answered_at = %s WHERE id = %s", (state, t, sid))
         if state == "answered" and idea["status"] == "needs_you":
             conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE id = %s", (idea["id"],))
+        if state == "answered":  # every question answered: the item and its reminders leave Needs you
+            adapters.resolve(conn, adapters.questions_key(sid))
         adapters.say(conn, str(idea["id"]), "sharer.answered", payload={"set_id": sid, "count": len(ready)},
                      author_code=code, question_set_id=sid, entry_type="answers", at=t)  # fmt: skip
         audit(conn, actor(user_id), "desk.answers_sent", f"idea:{idea['idea_id']}",

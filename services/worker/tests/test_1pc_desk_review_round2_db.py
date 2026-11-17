@@ -326,3 +326,73 @@ def test_L_DECIDE_rules_7_a_failing_item_is_logged_and_the_sweep_carries_on(
         other.close()
     monkeypatch.setattr(decide, "return_from_not_now", real)
     assert clocks.run_due(db, f.at(17, 9, 5, m=12))["returned"] == 1  # the next run picks it up
+
+
+# ---- finding 11: a Needs you item leaves the list once its action is done (L-INBOX.rules/3) ----------------------
+class _Notify:
+    """A stand-in for lane A's `notify` with `resolve`: records each key, as `notify.resolve` would clear it."""
+
+    def __init__(self, with_resolve: bool) -> None:
+        self.posted: list[tuple[str, str | None]] = []
+        self.resolved: list[str] = []
+        if with_resolve:
+            self.resolve = self._resolve
+
+    def post(self, conn: Conn, kind: str, recipients: list[str], **kw: Any) -> None:
+        self.posted.append((kind, kw.get("dedupe_key")))
+
+    def Action(self, **kw: Any) -> dict[str, Any]:  # notify.Action is a class
+        return kw
+
+    def _resolve(self, conn: Conn, dedupe_key: str, *, recipients: Any = None) -> int:
+        self.resolved.append(dedupe_key)
+        return 1
+
+
+def test_L_INBOX_rules_3_answers_sent_and_a_decision_resolve_the_questions_item(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    notify = _Notify(with_resolve=True)
+    monkeypatch.setitem(sys.modules, "notify", notify)
+    sent = _send(db, cast)
+    sid, kavya = sent["id"], cast["kavya"]["id"]
+    assert ("questions", f"qs:{sid}") in notify.posted
+    q1, q2 = (q["id"] for q in sent["questions"])
+    asking.save_answer(db, q1, kavya, "One branch, about 40 a day.", at=SENT)
+    asking.send_answers(db, sid, kavya, SENT)
+    assert notify.resolved == []  # one of two answered: the questions still need Kavya
+    asking.save_answer(db, q2, kavya, "The SMS says R07 and nothing else.", at=SENT)
+    asking.send_answers(db, sid, kavya, SENT)
+    assert notify.resolved == [f"qs:{sid}"]  # every reminder key sits under it
+    # a decision closes an open set: its item goes too
+    second = f.idea(db, cast["ravi"], title="Branch queue times are not tracked anywhere")
+    other = asking.send_set(db, second["idea_id"], cast["meera"]["id"], {"questions": QS[:1]}, SENT)
+    decide.send(
+        db, second["idea_id"], cast["meera"]["id"], {"choice": "pick", "reason": REASON}, f.at(16, 12)
+    )
+    assert notify.resolved[-1] == f"qs:{other['id']}"
+    # and so does a desk merge that closes the joining idea's set
+    third = f.idea(db, cast["anil"], title="SMS codes, one more time", shared_at=f.at(15, 9))
+    joined = asking.send_set(db, third["idea_id"], cast["meera"]["id"], {"questions": QS[:1]}, SENT)
+    merging.desk_merge(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                       {"other_idea_id": third["idea_id"], "lead": "this", "team_up": False, "note": MERGE_NOTE},
+                       f.at(16, 13))  # fmt: skip
+    assert notify.resolved[-1] == f"qs:{joined['id']}"
+
+
+def test_L_INBOX_rules_3_without_notify_resolve_nothing_happens(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    notify = _Notify(with_resolve=False)
+    monkeypatch.setitem(sys.modules, "notify", notify)
+    assert adapters.resolve(db, "qs:00000000-0000-4000-8000-000000000001") == 0
+    sent = _send(db, cast)
+    q1, q2 = (q["id"] for q in sent["questions"])
+    for q in (q1, q2):
+        asking.save_answer(db, q, cast["kavya"]["id"], "Answered for the test.", at=SENT)
+    assert asking.send_answers(db, sent["id"], cast["kavya"]["id"], SENT)["state"] == "answered"
+    assert notify.resolved == [] and not hasattr(notify, "resolve")

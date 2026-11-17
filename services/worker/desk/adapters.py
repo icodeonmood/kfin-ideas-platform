@@ -1,6 +1,8 @@
 """The other lanes' entry points, each behind one function, so a change to theirs touches only this file.
 
 - `tell`: L-NOTIFY and L-INBOX (lane A, `notify.post`, BLD-A180). A no-op until `notify` is importable.
+- `resolve`: L-INBOX.rules/3 (lane A, `notify.resolve`): a Needs you item, and every item keyed under it, leaves the
+  list once its action is done. A no-op until `notify` has `resolve` (it lands with lane A's inbox).
 - `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Writes `conversation_entries`
   directly until `convo` is importable.
 - `hide`: L-HIDE (lane C): free text masked before it is stored or shown to anyone else. Until lane C's entry point
@@ -52,6 +54,27 @@ def tell(
         due_at=due_at, actions=[notify.Action(label=a, to=t, style=s) for a, t, s in actions], refs=refs,
         dedupe_key=dedupe_key,
     )  # fmt: skip
+
+
+def questions_key(set_id: str) -> str:
+    """A question set's inbox key (L-INBOX.kinds "Questions from the review desk"); every reminder for the set is
+    keyed under it (`qs:<set>:<threshold>`), so resolving it clears them all (L-INBOX.rules/3)."""
+    return f"qs:{set_id}"
+
+
+def resolve(conn: Conn, dedupe_key: str) -> int:
+    """Clear the Needs you item posted under `dedupe_key`, and every key under it (`qs:<set>` also clears the
+    reminders `qs:<set>:<threshold>`), in the caller's transaction. Safe to call twice. Returns how many items it
+    cleared; 0 while lane A's `notify.resolve` is not there."""
+    try:
+        notify = importlib.import_module("notify")
+    except ModuleNotFoundError:
+        notify = None
+    fn = getattr(notify, "resolve", None)
+    if fn is None:
+        log.info("desk.resolve.pending")  # the key holds a row id: not logged
+        return 0
+    return int(fn(conn, dedupe_key) or 0)
 
 
 def say(

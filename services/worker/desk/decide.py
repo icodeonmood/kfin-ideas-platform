@@ -236,10 +236,15 @@ def send(
         )
         # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel)
         conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
-        conn.execute(
-            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed'",
+        closed = conn.execute(
+            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
+            "RETURNING id",
             (t, idea["id"]),
-        )
+        ).fetchall()
+        for (
+            done
+        ) in closed:  # L-INBOX.rules/3: the questions leave the sharer's Needs you with their reminders
+            adapters.resolve(conn, adapters.questions_key(str(done["id"])))
         adapters.say(conn, str(idea["id"]), "desk.decided", author_user_id=user_id,
                      payload={"decision_id": decision_id, "choice": str(choice)}, at=t)  # fmt: skip
         adapters.tell(  # L-INBOX.kinds: a decision goes to the sharer and the crew
