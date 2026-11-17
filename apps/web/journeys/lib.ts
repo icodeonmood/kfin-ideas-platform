@@ -170,13 +170,23 @@ export async function seeded(key: SeedKey): Promise<SeededIdea> {
   }
 }
 
+/** Where a shared idea lives (P-ROUTES.screens: S-06 for its sharer, S-09 for anyone else). One place to change. */
+export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): string {
+  return `/ideas/${idea.ref ?? idea.uuid}${sub}`;
+}
+
+/** A draft on Tell it (`S-04B`) or Check it (`sub` = "/check", `S-05`). */
+export function draftUrl(idea: { uuid: string }, sub = ""): string {
+  return `/share/${idea.uuid}${sub}`;
+}
+
 // --- Which modules are on main ---------------------------------------------------------------------------------------
 
-/** Off on purpose, so a step that needs them stays fixme even though code exists (reason shown on the board). */
+/** Off on purpose, so a step that needs them stays fixme even though code exists (reason shown on the board).
+ * `L-AUTH.email-code` is not a pack anchor: it names the email-code route of `L-AUTH.rules` for this list. */
 export const FORCE_FIXME: Readonly<Record<string, string>> = {
   "L-DRAFT.channels": "email and Teams intake off until IT (DEC-105)",
-  "L-AUTH.code": "email-code sign-in off until InfoSec (BLD-E002)",
-  "L-DRAFT.voice": "streamed voice off until IT, InfoSec and the DPO (DEC-105)",
+  "L-AUTH.email-code": "email-code sign-in off until InfoSec (BLD-E002)",
 };
 
 const WEB = path.resolve(__dirname, "..");

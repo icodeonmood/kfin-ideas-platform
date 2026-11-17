@@ -6,7 +6,7 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-import { seeded, signInAs, step } from "./lib";
+import { ideaUrl, seeded, signInAs, step } from "./lib";
 
 const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
@@ -87,7 +87,7 @@ step(
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
     const sharer = await (await browser.newContext()).newPage();
     await signInAs(sharer, "charulata");
-    await sharer.goto(`/ideas/${c1.ref}`);
+    await sharer.goto(ideaUrl(c1));
     await expect(
       sharer.getByText(
         `The Ones Committee can review this decision until ${newDate.replace(/ \d{4}$/, "")}. If they change it, their note comes to your Inbox. After that, it stands.`,
@@ -131,7 +131,7 @@ step(
     // Hand-off: the sharer's page takes the new decision, with the note word for word and "This is final."
     const sharer = await (await browser.newContext()).newPage();
     await signInAs(sharer, "faisal");
-    await sharer.goto(`/ideas/${f1.ref}`);
+    await sharer.goto(ideaUrl(f1));
     await expect(sharer.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
     await expect(sharer.getByText("The committee’s note to you")).toBeVisible();
     await expect(sharer.getByText(note)).toBeVisible();
