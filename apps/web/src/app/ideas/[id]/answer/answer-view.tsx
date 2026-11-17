@@ -15,6 +15,8 @@ import { Field, FieldMsg } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { SendAnswersResponse, SharerQuestionSetResponse, SetQuestion } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
+import { MAX_ANSWER, NEAR_LIMIT, putAnswer, RETRY_MS, SAVE_AFTER_MS } from "@/lib/desk/answers";
+import { call } from "@/lib/desk/reply";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
@@ -66,6 +68,15 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
       (initial?.questions ?? []).map((q) => [q.id, q.answer?.sent ? "" : (q.answer?.text ?? "")]),
     ),
   );
+  // What the server holds for each answer, from its own reply: the Sent list reads only these (B3)
+  const [stored, setStored] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (initial?.questions ?? []).flatMap((q) =>
+        q.answer && !q.answer.sent ? [[q.id, q.answer.text] as const] : [],
+      ),
+    ),
+  );
+  const latest = useRef(texts);
   const [saving, setSaving] = useState<Saving>("idle");
   const [sent, setSent] = useState<SendAnswersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,49 +129,63 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
   const ready = questions.filter((q) => (texts[q.id] ?? "").trim()).length;
   const answeredCount = answeredBefore.length + ready;
 
+  /** Saves one answer now; the reply's text is what the server holds. A failed save shows the failure line and is
+   * tried again after a pause, unless the person has typed since (that typing saves it). */
+  async function store(id: string, text: string): Promise<boolean> {
+    setSaving("saving");
+    const r = await putAnswer(id, text);
+    if (r.ok) {
+      setStored((m) => ({ ...m, [id]: r.text }));
+      setSaving("saved");
+      setError(null);
+      return true;
+    }
+    setSaving("failed");
+    setError(r.message);
+    if (r.retry) {
+      timers.current[id] = setTimeout(() => {
+        delete timers.current[id];
+        if (latest.current[id] === text) void store(id, text);
+      }, RETRY_MS);
+    }
+    return false;
+  }
+
   function save(q: SetQuestion, text: string) {
+    latest.current = { ...latest.current, [q.id]: text };
     setTexts((t) => ({ ...t, [q.id]: text }));
     clearTimeout(timers.current[q.id]);
-    timers.current[q.id] = setTimeout(async () => {
-      setSaving("saving");
-      const res = await fetch(`/api/questions/${encodeURIComponent(q.id)}/answer`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      }).catch(() => null);
-      if (res?.ok) setSaving("saved");
-      else {
-        setSaving("failed");
-        const body = (await res?.json().catch(() => null)) as { error?: { message: string } } | null;
-        if (body?.error?.message) setError(body.error.message);
-      }
-    }, 700);
+    timers.current[q.id] = setTimeout(() => {
+      delete timers.current[q.id]; // fired: gone, so a send never flushes it twice
+      void store(q.id, text);
+    }, SAVE_AFTER_MS);
   }
 
   async function sendAll() {
+    if (busy) return;
     setBusy(true);
     setError(null);
-    // flush any answer still waiting to save, then send
-    await Promise.all(
-      questions.map(async (q) => {
-        const pending = timers.current[q.id];
-        if (!pending) return;
-        clearTimeout(pending);
-        delete timers.current[q.id];
-        await fetch(`/api/questions/${encodeURIComponent(q.id)}/answer`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: texts[q.id] ?? "" }),
+    try {
+      // Flush every answer the server does not hold yet (still waiting, or failed), and stop if any fails
+      const flushes = questions
+        .filter((q) => timers.current[q.id] !== undefined || (texts[q.id] ?? "") !== (stored[q.id] ?? ""))
+        .map((q) => {
+          clearTimeout(timers.current[q.id]);
+          delete timers.current[q.id];
+          return store(q.id, texts[q.id] ?? "");
         });
-      }),
-    );
-    const res = await fetch(`/api/question-sets/${encodeURIComponent(set!.id)}/send`, { method: "POST" });
-    const body = (await res.json().catch(() => ({}))) as SendAnswersResponse & {
-      error?: { message: string };
-    };
-    setBusy(false);
-    if (!res.ok || body.error) return setError(body.error?.message ?? "Your answers didn’t send. Try again.");
-    setSent(body);
+      if (!(await Promise.all(flushes)).every(Boolean)) return;
+      const r = await call<SendAnswersResponse>(`/api/question-sets/${encodeURIComponent(set!.id)}/send`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        setError(r.status === 0 ? "Your answers didn’t send. Try again." : r.error.message);
+        return;
+      }
+      setSent(r.body);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const bar = (
@@ -169,9 +194,9 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         Answer the review desk
       </h1>
       <p className="body">
-        {reviewer} from the review desk has {set.count} question{set.count === 1 ? "" : "s"} about “
-        {set.idea.title}”. Answer them one at a time. Skip any you can’t answer yet and come back before you
-        send.
+        {reviewer} from the review desk has {set.count} question{set.count === 1 ? "" : "s"} about &quot;
+        {set.idea.title}&quot;. Answer them one at a time. Skip any you can’t answer yet and come back before
+        you send.
       </p>
       <p className="ans-due">
         {live ? (
@@ -192,8 +217,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         <header className="ans-bar">
           <h1 className="h2">Answer the review desk</h1>
           <p className="body">
-            {reviewer} from the review desk had {sent.count} question{sent.count === 1 ? "" : "s"} about “
-            {set.idea.title}”.{" "}
+            {reviewer} from the review desk had {sent.count} question{sent.count === 1 ? "" : "s"} about
+            &quot;{set.idea.title}&quot;.{" "}
             {all ? `You answered all ${sent.count}.` : `You answered ${sent.answered} of ${sent.count}.`}
           </p>
           <p className="ans-due">
@@ -204,7 +229,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         <nav className="ans-steps" aria-label="Questions">
           <ol>
             {set.questions.map((x, i) => {
-              const done = Boolean((texts[x.id] ?? "").trim() || x.answer?.sent);
+              const done = Boolean((stored[x.id] ?? "").trim() || x.answer?.sent);
               return (
                 <li key={x.id}>
                   <button type="button" className={done ? "done" : undefined} aria-disabled="true">
@@ -241,8 +266,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
                 <p className="body">{q.text}</p>
                 <p className="meta">Added to {q.part_name}</p>
                 <p className="body">
-                  {(texts[q.id] ?? "").trim() ||
-                    q.answer?.text ||
+                  {(q.answer?.sent ? q.answer.text : (stored[q.id] ?? "")).trim() ||
                     "Not answered. It stays open until the deadline."}
                 </p>
               </li>
@@ -259,6 +283,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
 
   const checking = step >= n;
   const q = questions[step];
+  const length = q ? (texts[q.id] ?? "").trim().length : 0;
 
   return (
     <div className="ans">
@@ -306,7 +331,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
                   {(texts[x.id] ?? "").trim() || "Not answered. It stays open until the deadline."}
                 </p>
                 <Button variant="text" onClick={() => setStep(i)}>
-                  Change
+                  Change<span className="vh"> your answer to question {i + 1}</span>
                 </Button>
               </li>
             ))}
@@ -347,16 +372,27 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
           <Field
             label={`Your answer to question ${step + 1}`}
             multiline
-            help="Press Enter to go on. Shift + Enter adds a new line."
+            help={
+              <>
+                <span className="help-l">Press Enter to go on. Shift + Enter adds a new line.</span>
+                {length >= NEAR_LIMIT ? (
+                  <span className="help-l" aria-live="polite">
+                    {length.toLocaleString("en-IN")} of {MAX_ANSWER.toLocaleString("en-IN")} characters
+                  </span>
+                ) : null}
+              </>
+            }
           >
             {(p) => (
               <textarea
                 {...p}
                 rows={5}
-                maxLength={2000}
+                maxLength={MAX_ANSWER}
                 value={texts[q.id] ?? ""}
                 onChange={(e) => save(q, e.target.value)}
                 onKeyDown={(e) => {
+                  // An IME's Enter picks a word; it never moves on
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     setStep(step + 1);
@@ -365,7 +401,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               />
             )}
           </Field>
-          {saving === "failed" && error ? (
+          {error ? (
             <FieldMsg kind="error">
               <span role="alert">{error}</span>
             </FieldMsg>

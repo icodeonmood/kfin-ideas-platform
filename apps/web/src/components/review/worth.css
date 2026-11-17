@@ -1,0 +1,45 @@
+/* C-WORTH: its own sheet, imported by the component, so it looks the same wherever it is placed (S-R2, and S-05 for lane C). */
+.wv {
+  display: grid;
+  gap: 12px;
+}
+.wv-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+.wv-tiles dd {
+  margin: 0;
+}
+.wv-empty {
+  color: var(--mute);
+}
+.wv-changed {
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.wv-edit {
+  display: grid;
+  gap: 14px;
+}
+.wv-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.wv-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.wv-actions p {
+  margin: 0 auto 0 0;
+}
+
+@media (max-width: 640px) {
+  .wv-fields,
+  .wv-tiles {
+    grid-template-columns: 1fr;
+  }
+}

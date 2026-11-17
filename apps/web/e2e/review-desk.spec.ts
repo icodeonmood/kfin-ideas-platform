@@ -215,14 +215,28 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
   await expectNoSidewaysScroll(s);
+  // B3: the first save is dropped; the screen says so, tries again on its own, and the message clears once saved
+  let dropped = false;
+  await s.route("**/api/questions/*/answer", (route) => {
+    if (dropped) return route.fallback();
+    dropped = true;
+    return route.abort();
+  });
   await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("Our Hyderabad branch alone.");
+  await expect(s.getByText("Couldn’t save that. Try again.")).toBeVisible();
+  await expect(s.getByText(/· Saved$/)).toBeVisible({ timeout: 15_000 });
+  await expect(s.getByText("Couldn’t save that. Try again.")).toHaveCount(0);
+  await s.unroute("**/api/questions/*/answer");
   await s.getByRole("button", { name: "Next" }).click();
   await expect(s.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
   await s.getByRole("button", { name: "Skip for now" }).click();
   await expect(s.getByRole("heading", { name: "Check your answers" })).toBeVisible();
   await expect(s.getByText("Not answered. It stays open until the deadline.")).toBeVisible();
+  await expect(s.getByRole("button", { name: "Change your answer to question 1" })).toBeVisible();
   await s.getByRole("button", { name: /Send 1 answer to / }).click();
   await expect(s.getByRole("heading", { name: "Your answers are with the review desk" })).toBeVisible();
+  // The Sent list is the server's own copy of each answer (B3)
+  await expect(s.getByText("Our Hyderabad branch alone.", { exact: true })).toBeVisible();
   await expect(s.getByText(/^Sent to .+, \d{1,2}(?::\d{2})? (?:am|pm)$/)).toBeVisible();
   await expect(s.getByRole("link", { name: "See your idea" })).toHaveAttribute("href", `/ideas/${ideaId}`);
   await expectNoSeriousAxeIssues(s);

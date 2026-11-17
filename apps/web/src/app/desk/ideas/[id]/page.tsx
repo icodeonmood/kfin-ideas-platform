@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 
 import type { ReviewerIdeaResponse, SuggestedQuestionsResponse } from "@/lib/contracts";
 import { currentUser } from "@/server/auth/current";
-import { deskRead } from "@/server/desk";
+import { can } from "@/lib/rbac";
+import { deskOpen, deskRead } from "@/server/desk";
 import { promises } from "@/server/promises";
 
 import { ReviewerIdea, type ReviewPromises } from "./reviewer-idea";
@@ -18,6 +19,9 @@ export default async function ReviewerIdeaPage({ params }: { params: Promise<{ i
   const me = await currentUser();
   if (!me) redirect("/sign-in");
   const { id } = await params;
+  // L-REVIEW.open/1 (J-REVIEW/1): a reviewer who may act opens the idea before it is read, so the page already shows
+  // it opened and the sharer's edit window is closed. Idempotent; the worker leaves a reviewer's own idea alone.
+  if (can(me.roles, "work_review_queue")) await deskOpen(me, id);
   const [page, suggested, p] = await Promise.all([
     deskRead<ReviewerIdeaResponse>(me, `/internal/desk/ideas/${encodeURIComponent(id)}`),
     deskRead<SuggestedQuestionsResponse>(
