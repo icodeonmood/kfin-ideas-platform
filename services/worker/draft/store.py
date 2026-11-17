@@ -102,7 +102,8 @@ def _lang(text: str) -> str:
 _DRAFT_SELECT = (
     "SELECT id, contributor_code, status, channel, origin_encrypted, step, saved_at, saved_device, saved_device_id, "
     "char_count, archived_at, editor_device_id, editor_device, editor_at, kind, affects, area, brings, "
-    "sorting_sources, sorting_confirmed_at, helper_picks, helper_text, created_at FROM ideas WHERE id = %s"
+    "sorting_sources, sorting_confirmed_at, helper_picks, helper_text, kept_separate, created_at FROM ideas "
+    "WHERE id = %s"
 )
 
 
@@ -760,6 +761,9 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
         "parts_from_chars": r.parts_from_chars,
         "char_count": int(row["char_count"]),
         "archived": row["archived_at"] is not None,
+        # "Keep mine separate" was chosen (lane F's team-up with draft_id, BLD-F020): S-05's similar grid stays
+        # folded to its note after a reload (C-SIMGRID.grid/4, BLD-C152).
+        "kept_separate": bool(row["kept_separate"]),
         "assistant": runs.ai_on(conn),
         "run": {"id": str(last["id"]), "state": last["state"]} if last else None,
         "editor": {

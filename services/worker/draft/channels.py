@@ -132,7 +132,9 @@ def _bounce(channel: str, reason: str) -> dict[str, Any]:
 def kept(conn: Conn, owner: Owner, idea_uuid: str, via: str) -> None:
     """The Inbox item "kept your draft from your phone / email / Teams" (L-INBOX "Draft kept", L-DRAFT.channels).
     `refs.via` (`phone`, `email` or `teams`) is what lane A's Inbox renderer reads for the words; the action is
-    "Check and send" for a forwarded draft and "Carry on" for one kept from the phone, both to the draft on S-04B."""
+    "Check and send" for a forwarded draft and "Carry on" for one kept from the phone, both to the draft on S-04B.
+    Only the email and Teams intake post it today: L-DRAFT does not say when a draft counts as kept from the phone
+    (its "App" row is `OPEN:`, coming soon), so `via="phone"` is ready and recorded as open (BLD-C152)."""
     from notify import Action, post
 
     label = KEPT_ACTION.get(via)

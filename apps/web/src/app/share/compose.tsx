@@ -12,7 +12,10 @@
  * with its client_id and `at`, and goes when the browser is back online (L-DRAFT.autosave/7).
  * Voice (C-PROMPT.voice, DEC-108): `useVoiceCapture`; a finished note goes into the draft as a message with its
  * stream, so the server keeps the English copy with it. Into an empty S-04 box it is the first message at once; after
- * typed words it waits in the box, editable, and goes as its own message after the typed one (BLD-C150).
+ * typed words it waits in the box, editable, and goes as its own message after the typed one; a second note while one
+ * waits does the same after it (BLD-C150).
+ * Team up from a similar idea's preview opens lane F's own sheet (`useTeamUpSheet`, C-SHEET-TEAMUP) with this draft,
+ * so "Keep mine separate" or a merge request goes with it (J-SIMILAR/3–5, BLD-C129).
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,10 +23,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
 import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
-// Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
-import { teamUpOpener, useTeamUpSheet } from "@/components/compose/teamup-shim";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
+import { teamUpOpener, useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import type {
@@ -35,11 +37,14 @@ import type {
   ShowReason,
 } from "@/lib/contracts";
 import {
+  backInBox,
   DraftClient,
   DraftError,
+  englishFor,
+  firstEnd,
   messagesFor,
   newClientId,
-  noteStart,
+  spokenAfterFirst,
   type HeldNote,
   type Outgoing,
 } from "@/lib/compose/client";
@@ -187,7 +192,8 @@ export function Compose({
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
-  const [voiceNote, setVoiceNote] = useState<HeldNote | null>(null);
+  // The voice notes waiting in the box, in the order spoken; each goes as its own message (BLD-C150).
+  const [voiceNotes, setVoiceNotes] = useState<HeldNote[]>([]);
   const panelRef = useRef<PanelHandle>(null);
   const [elsewhere, setElsewhere] = useState<string | null>(null);
   const [netTick, setNetTick] = useState(0);
@@ -451,8 +457,7 @@ export function Compose({
   );
 
   // A note waiting after the typed words (BLD-C150) is not part of the first message: only what was typed saves.
-  const heldAt = voiceNote ? noteStart(box, voiceNote) : -1;
-  const boxTyped = heldAt >= 0 ? box.slice(0, heldAt) : box;
+  const boxTyped = box.slice(0, firstEnd(box, voiceNotes));
   useEffect(() => {
     if (conversation || !boxTyped.trim() || boxTyped === savedText.current) return;
     const t = setTimeout(
@@ -495,14 +500,19 @@ export function Compose({
       const words = note.text;
       if (!words.trim()) return;
       const first = !conversation && !firstMid.current && !savedText.current && !box.trim();
+      if (voiceNotes.some((n) => n.streamId === note.streamId)) return; // taken already
       if (!first) {
-        // BLD-C150: the note waits after the typed words, editable, and goes as its own message.
+        // BLD-C150: the note waits after the typed words, editable, and goes as its own message. A second note
+        // while one waits joins after it with its own stream and English copy.
         const prefix = box.trim() ? box.replace(/\s+$/, "") : "";
-        setVoiceNote({ streamId: note.streamId, text: words, textEn: note.textEn, prefix });
+        setVoiceNotes((held) => [
+          ...held,
+          { streamId: note.streamId, text: words, textEn: note.textEn, prefix },
+        ]);
         setBox(prefix ? `${prefix} ${words}` : words);
         return;
       }
-      setVoiceNote({ streamId: note.streamId, text: words, textEn: note.textEn, prefix: null });
+      setVoiceNotes([{ streamId: note.streamId, text: words, textEn: note.textEn, prefix: null }]);
       setBox(words);
       markSaved(words); // the autosave waits for this post rather than racing it
       const run = async () => {
@@ -528,7 +538,7 @@ export function Compose({
       };
       chain.current = chain.current.then(run, run);
     },
-    [box, conversation, client, adopt, failed, ensureDraft, markSaved],
+    [box, voiceNotes, conversation, client, adopt, failed, ensureDraft, markSaved],
   );
 
   const handled = useRef<VoiceCaptureState | null>(null);
@@ -557,36 +567,40 @@ export function Compose({
   const send = useCallback(async () => {
     const text = box.trim();
     if (!text) return;
-    const out = messagesFor(box, voiceNote);
+    const out = messagesFor(box, voiceNotes);
     if (out.some((m) => m.text.length > MAX_MESSAGE)) {
       setProblem(COMPOSE_COPY.tooLong);
       return;
     }
     setProblem(null);
-    const held = voiceNote;
+    const held = voiceNotes;
 
     if (!conversation) {
       // S-04: the typed words are already the first message (saved as typed, or a voice note posted when it
-      // finished); a note waiting after them goes now as its own message (BLD-C150), then the conversation opens.
-      const at = held ? noteStart(box, held) : -1;
-      const typed = at >= 0 ? box.slice(0, at) : box;
-      const spoken = at >= 0 ? out.find((m) => m.via === "voice") : undefined;
+      // finished); each note waiting after them goes now as its own message (BLD-C150), then the
+      // conversation opens.
+      const typed = box.slice(0, firstEnd(box, held));
+      const spoken = spokenAfterFirst(box, held);
       await saveBox(typed);
       await chain.current;
       const id = idRef.current;
       if (!id || !firstMid.current || savedText.current !== typed) return; // not saved yet (offline): every word stays
-      if (spoken) {
+      for (let i = 0; i < spoken.length; i += 1) {
         setSave("saving");
         try {
-          const sent = await client.addMessage(id, spoken);
+          const sent = await client.addMessage(id, spoken[i]!);
           adopt(sent.draft, sent.run_id);
           setSave("saved");
-          setVoiceNote(null);
         } catch (err) {
-          failed(err); // the note stays in the box with its stream; nothing is lost
+          // The notes that did not go stay in the box, each with its stream; the ones that went are not sent twice.
+          const back = backInBox(typed, spoken.slice(i), held);
+          setBox(back.box);
+          setVoiceNotes(back.notes);
+          failed(err);
           return;
         }
       }
+      setVoiceNotes([]);
       handedOver.add(id);
       router.push(`/share/${id}`);
       return;
@@ -596,7 +610,7 @@ export function Compose({
     const id = idRef.current;
     if (!id) return;
     setBox("");
-    setVoiceNote(null);
+    setVoiceNotes([]);
     setPending((p) => [...p, ...out.map((m) => ({ ...m, queued: false }))]);
     setSave("saving");
     for (let i = 0; i < out.length; i += 1) {
@@ -621,22 +635,17 @@ export function Compose({
           setSave("offline");
           return;
         }
-        // Refused: the words that did not go come back to the box, the note still waiting after the typed words.
+        // Refused: the words that did not go come back to the box, each note still waiting with its own stream.
         setPending((p) => p.filter((x) => !rest.some((r) => r.clientId === x.clientId)));
-        const typedBack = rest
-          .filter((r) => r.via === "typed")
-          .map((r) => r.text)
-          .join(" ");
-        const spokenBack = rest.find((r) => r.via === "voice");
-        const back = [typedBack, spokenBack?.text ?? ""].filter(Boolean).join(" ");
-        setBox((b) => (b ? `${back}\n${b}` : back));
-        if (held && spokenBack) setVoiceNote({ ...held, prefix: typedBack });
+        const back = backInBox("", rest, held);
+        setBox((b) => (b ? `${back.box}\n${b}` : back.box));
+        setVoiceNotes(back.notes);
         failed(err);
         return;
       }
     }
     setSave(client.outbox(id).length ? "offline" : "saved");
-  }, [box, voiceNote, conversation, client, adopt, failed, saveBox, router]);
+  }, [box, voiceNotes, conversation, client, adopt, failed, saveBox, router]);
 
   // ── Team up from a similar idea (C-PREVIEW → lane F's C-SHEET-TEAMUP; J-SIMILAR/3–5) ───────────────────────
   const [waiting, setWaiting] = useState<Record<string, string>>({});
@@ -728,13 +737,8 @@ export function Compose({
     : undefined;
   const boxIsSaved = boxTyped === savedBox;
   const hasWords = box.trim().length > 0 || Boolean(draftId);
-  // The note's English copy shows while its words are as heard (DEC-108): changed, the server keeps no copy.
-  const spokenNow = voiceNote && heldAt >= 0 ? box.slice(heldAt).trim() : box.trim();
-  const english =
-    voiceNote &&
-    (voiceNote.prefix === null ? box.includes(voiceNote.text) : spokenNow === voiceNote.text.trim())
-      ? voiceNote.textEn
-      : null;
+  // Each note's English copy shows while its words are as heard (DEC-108): changed, the server keeps no copy.
+  const english = englishFor(box, voiceNotes);
   const failedVoice = voice.state.status === "failed" ? voiceFailedLine(voice.state.reason) : null;
   const signInHref = `/sign-in?next=${encodeURIComponent(draftId ? `/share/${draftId}` : "/share")}`;
   const count = countLine(conversation ? chars + box.trim().length : box.trim().length, minChars);
@@ -745,7 +749,7 @@ export function Compose({
       value={box}
       onChange={(v) => {
         setBox(v);
-        if (!v.trim()) setVoiceNote(null); // an emptied box holds no note any more
+        if (!v.trim()) setVoiceNotes([]); // an emptied box holds no note any more
         if (problem) setProblem(null);
       }}
       onSend={() => void send()}

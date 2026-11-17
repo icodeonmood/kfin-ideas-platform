@@ -624,3 +624,13 @@ def test_l_inbox_draft_kept_posts_refs_via_with_its_action_j_resume_3_6(
     assert (action.label, action.style, action.to) == (label, "primary", "/share/idea-1")  # S-04B
     with pytest.raises(ValueError):
         kept(cast(Any, None), owner, "idea-1", "web")
+
+
+def test_l_draft_l_hide_the_vault_scope_is_hide_core_scope_for_uuid_normalised_bld_c151() -> None:
+    # One scope for the draft whoever builds it: L-HIDE's details, the values an edit took out, and the run.
+    from draft import runs
+    from hide.core import scope_for
+
+    lower = "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+    for given in (lower, lower.upper(), lower.replace("-", "")):
+        assert adapters.vault_scope(given) == runs.scope(given) == scope_for(lower) == f"DRAFT-{lower}"

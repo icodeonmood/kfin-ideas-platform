@@ -10,7 +10,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Draft, HiddenDetail } from "@/lib/contracts";
+import type { Draft, HiddenDetail, IdeaPreview, SimilarMatch } from "@/lib/contracts";
 import type { VoiceCaptureState } from "@/lib/voice-capture";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -338,6 +338,178 @@ describe("BLD-C150 typed words, then a voice note (J-SHARE/3 by voice)", () => {
     ]);
     expect(posts[0]!.key).not.toBe(posts[1]!.key);
     expect(posts.map((p) => p.body.client_id)).toEqual(posts.map((p) => p.key));
+  });
+});
+
+describe("BLD-C150 a second voice note while one waits keeps its own message", () => {
+  const ONE = {
+    streamId: STREAM,
+    text: "Branch mein roz das log aate hain",
+    spans: [],
+    textEn: "Ten people come to the branch every day",
+    enLabel: "Typed up in English",
+    seconds: 6,
+    endedBy: "person",
+    hiddenCount: 0,
+    translated: true,
+    translationFailure: null,
+    lang: "hi-IN",
+    language: "Hindi",
+    summary: "Voice message, 6 seconds, in Hindi",
+  };
+  const TWO = {
+    ...ONE,
+    streamId: "1b2c3d4e-5f60-4b7c-9d8e-0f1a2b3c4d5e",
+    text: "Har ek ko do din lagte hain",
+    textEn: "Each one takes two days",
+    seconds: 4,
+    summary: "Voice message, 4 seconds, in Hindi",
+  };
+
+  it("C-PROMPT.voice S-04B: typed, then each note as voice with its own stream; both English copies show", async () => {
+    route = (s) =>
+      s.method === "POST"
+        ? { status: 202, body: { run_id: "r-9", message: { id: `m-${sent.length}` }, draft: draft() } }
+        : { status: 200, body: draft() };
+    await mount(DRAFT);
+    const typed = "The mandate screen asks for the IFSC twice.";
+    type(box(), typed);
+    voice.state = { status: "done", note: ONE } as VoiceCaptureState;
+    type(box(), `${typed} `);
+    await tick();
+    voice.state = { status: "done", note: TWO } as VoiceCaptureState;
+    type(box(), `${box().value} `);
+    await tick();
+    expect(box().value).toBe(`${typed} ${ONE.text} ${TWO.text}`);
+    expect(text()).toContain(ONE.textEn);
+    expect(text()).toContain(TWO.textEn); // the first note's English copy is not lost to the second
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const posts = sent.filter((s) => s.method === "POST");
+    expect(posts.map((p) => [p.body.via, p.body.text, p.body.stream_id])).toEqual([
+      ["typed", typed, undefined],
+      ["voice", ONE.text, ONE.streamId],
+      ["voice", TWO.text, TWO.streamId],
+    ]);
+    expect(new Set(posts.map((p) => p.key)).size).toBe(3);
+  });
+
+  it("C-PROMPT.voice S-04B refused on the second note: its words come back, still a voice note with its stream", async () => {
+    let n = 0;
+    route = (s) => {
+      if (s.method !== "POST") return { status: 200, body: draft() };
+      n += 1;
+      return n < 3
+        ? { status: 202, body: { run_id: "r-9", message: { id: `m-${n}` }, draft: draft() } }
+        : { status: 422, body: { error: { code: "too_long", message: "That message is too long." } } };
+    };
+    await mount(DRAFT);
+    const typed = "The mandate screen asks for the IFSC twice.";
+    type(box(), typed);
+    voice.state = { status: "done", note: ONE } as VoiceCaptureState;
+    type(box(), `${typed} `);
+    await tick();
+    voice.state = { status: "done", note: TWO } as VoiceCaptureState;
+    type(box(), `${box().value} `);
+    await tick();
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(box().value).toBe(TWO.text);
+    expect(text()).toContain(TWO.textEn);
+    route = (s) =>
+      s.method === "POST"
+        ? { status: 202, body: { run_id: "r-9", message: { id: "m-9" }, draft: draft() } }
+        : { status: 200, body: draft() };
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const last = sent.filter((s) => s.method === "POST").at(-1)!;
+    expect([last.body.via, last.body.text, last.body.stream_id]).toEqual(["voice", TWO.text, TWO.streamId]);
+  });
+});
+
+describe("S-04B similar strip: Team up opens lane F's own sheet with the draft (J-SIMILAR/3–5; BLD-C129)", () => {
+  const RAVI = { id: "p-ravi", name: "Ravi Nair", first_name: "Ravi", initials: "RN" };
+  const MATCH = {
+    idea: {
+      id: "IDEA-2026-001412",
+      title: "Rejection SMS codes confuse investors",
+      status: "with_review_desk",
+      area: "Investor service",
+      city: "Hyderabad",
+      shared_at: "2026-11-02T10:30:00+05:30",
+      lead: RAVI,
+      crew_faces: [RAVI],
+      crew_count: 4,
+      in_their_words: "Investors get a code, not a reason, and then they call us.",
+      looking_for: "Someone who takes these calls at a branch every day.",
+      hue: 1,
+    } as IdeaPreview,
+    strength: "close",
+    reason: "Close match: the same R07 SMS and the same calls",
+  } as SimilarMatch;
+
+  it("C-SHEET-TEAMUP from the strip's Preview: the real sheet loads for that idea with 'Your draft', and the row is its opener", async () => {
+    route = (s) => {
+      if (s.url === "/api/ideas/IDEA-2026-001412/team-up")
+        return {
+          status: 200,
+          body: {
+            idea_id: "IDEA-2026-001412",
+            lead: RAVI,
+            me: null,
+            crew_count: 4,
+            can_request: true,
+            why_not: null,
+            request: null,
+          },
+        };
+      if (s.url === "/api/ideas/IDEA-2026-001412/team-up/draft-note")
+        return {
+          status: 200,
+          body: {
+            note: "Hi Ravi, I see the same R07 calls at our branch. I'd like to help.",
+            own_ideas: [],
+            idea: { id: "IDEA-2026-001412", title: MATCH.idea.title },
+            lead: RAVI,
+          },
+        };
+      if (s.url === "/api/me")
+        return { status: 200, body: { name: "Kavya Iyer", contributor_code: "CTR-0a1b2c" } };
+      return {
+        status: 200,
+        body: draft({
+          parts: { ...draft().parts, similar: { state: "filled", value: [MATCH] } },
+        }),
+      };
+    };
+    await mount(DRAFT);
+    act(() => (host.querySelector("button.simb") as HTMLButtonElement).click());
+    const row = button(`Preview: ${MATCH.idea.title}`)!;
+    expect(row.getAttribute("data-teamup-opener")).toBe("IDEA-2026-001412"); // lane F's teamUpOpener
+    await act(async () => row.click());
+    const preview = document.querySelector('[role="dialog"]')!;
+    const teamUp = [...preview.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Team up")!;
+    await act(async () => teamUp.click());
+    await tick();
+    const sheet = [...document.querySelectorAll('[role="dialog"]')].find((d) =>
+      d.textContent?.includes("Team up with Ravi"),
+    )!;
+    expect(sheet).toBeTruthy();
+    expect(sheet.textContent).toContain("Your draft");
+    expect(sheet.textContent).toContain("Keep mine separate"); // the draft id reached the sheet (BLD-F071)
+    expect(sent.map((x) => x.url)).toEqual(
+      expect.arrayContaining([
+        "/api/ideas/IDEA-2026-001412/team-up",
+        "/api/ideas/IDEA-2026-001412/team-up/draft-note",
+        "/api/me",
+      ]),
+    );
   });
 });
 
