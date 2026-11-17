@@ -123,32 +123,51 @@ type TeamUpWords = ColleagueView["page"]["team_up"];
  */
 export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
   const router = useRouter();
-  // "Team up" comes back where Withdraw was: focus goes to it once the page has it again (WCAG 2.4.3)
-  const backToTeamUp = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
   const teamUpButton = useRef<HTMLButtonElement>(null);
-  const teamUp = useTeamUpSheet({
-    onSent: () => router.refresh(),
-    onWithdrawn: () => {
-      backToTeamUp.current = true;
-      router.refresh();
-    },
-  });
   const [busy, setBusy] = useState(false);
+  // The request withdrawn here: Withdraw stays busy until the page reads a new state, so a second press never sends
+  // a second DELETE against the request already gone
+  const [withdrawn, setWithdrawn] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
   const ask = t.state === "not_asked" && t.can_team_up && t.action?.op === "teamup.open" ? t.action : null;
   const sent = t.state === "request_sent" ? t : null;
   const withdrawId = sent && sent.action?.op === "teamup.withdraw" ? sent.action.request_id : undefined;
   const crewLink = t.state === "on_crew" && t.action?.to ? { label: t.action.label, to: t.action.to } : null;
+  const stateKey = `${t.state}:${withdrawId ?? ""}`;
+  const waiting = busy || (withdrawId !== undefined && withdrawn === withdrawId);
 
+  // After a withdraw the control that was pressed goes. Once the page has its new state, focus goes to "Team up",
+  // back where Withdraw was, or to the card's heading when there is no Team up (the lead had answered first)
+  // (WCAG 2.4.3). `refocusFrom` is the state the withdraw started from; a page read that still shows a request
+  // waiting (a send read back before its withdraw) waits for the next one.
+  const refocusFrom = useRef<string | null>(null);
   useEffect(() => {
-    if (!ask || !backToTeamUp.current) return;
-    backToTeamUp.current = false;
-    teamUpButton.current?.focus();
-  }, [ask]);
+    const from = refocusFrom.current;
+    if (from === null || from === stateKey) return;
+    if (ask) {
+      refocusFrom.current = null;
+      teamUpButton.current?.focus();
+    } else if (t.state === "request_sent") {
+      refocusFrom.current = stateKey;
+    } else {
+      refocusFrom.current = null;
+      heading.current?.focus();
+    }
+  }, [stateKey, ask, t.state]);
+
+  const teamUp = useTeamUpSheet({
+    onSent: () => router.refresh(),
+    onWithdrawn: () => {
+      refocusFrom.current = stateKey;
+      router.refresh();
+    },
+  });
 
   const withdraw = async () => {
-    if (!withdrawId || busy) return;
+    if (!withdrawId || waiting) return;
+    const from = stateKey;
     setBusy(true);
     setFailed(null);
     try {
@@ -157,15 +176,24 @@ export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
         credentials: "same-origin",
         headers: { accept: "application/json" },
       });
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => null);
-        // The API's own message, as the sheet shows it (BLD-F073); nothing is logged (non-negotiable 3)
-        setFailed(errorFrom(res.status, body).message);
+      if (res.ok) {
+        setWithdrawn(withdrawId);
+        refocusFrom.current = from;
+        router.refresh();
         return;
       }
-      backToTeamUp.current = true;
-      router.refresh();
+      const body: unknown = await res.json().catch(() => null);
+      // NOT DRAWN (BLD-E046): HR sign-off. The API's own message, as the sheet shows it (BLD-F073); nothing is
+      // logged (non-negotiable 3)
+      setFailed(errorFrom(res.status, body).message);
+      if (res.status === 404 || res.status === 409) {
+        // The lead answered first, or the request has gone: the message stays, and the card is read again so it
+        // shows where things stand
+        refocusFrom.current = from;
+        router.refresh();
+      }
     } catch {
+      // NOT DRAWN (BLD-E046): HR sign-off
       setFailed(TEAMUP_COPY.offline);
     } finally {
       setBusy(false);
@@ -174,7 +202,7 @@ export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
 
   return (
     <section className="ip-sec ip-team card" aria-labelledby="ip-team-h">
-      <h2 id="ip-team-h" className="ip-h2">
+      <h2 id="ip-team-h" ref={heading} tabIndex={-1} className="ip-h2">
         Team up on this idea
       </h2>
       {t.count_line ? <p className="ip-team-count">{t.count_line}</p> : null}
@@ -194,7 +222,8 @@ export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
             // Stands where "Team up" was, so the sheet gives focus back to it on close (BLD-F074)
             <Button
               variant="text"
-              busy={busy}
+              busy={waiting}
+              // NOT DRAWN (BLD-E046): HR sign-off. Idea.md draws no busy word; this is the sheet's
               busyLabel={TEAMUP_COPY.withdrawing}
               onClick={() => void withdraw()}
               {...teamUpOpener(ideaId)}
@@ -207,6 +236,7 @@ export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
       <p className={t.state === "on_crew" ? "ip-team-line ip-ok" : "ip-team-line"} role="status">
         {t.line}
       </p>
+      {/* NOT DRAWN (BLD-E046): HR sign-off. The API's error line, or the offline line, after a refused withdraw */}
       {failed ? <Status kind="error" title={failed} role="alert" className="ip-team-err" /> : null}
       {t.link ? (
         <ButtonLink href={t.link.to} variant="line" aria-label={t.link.accessible_name}>
