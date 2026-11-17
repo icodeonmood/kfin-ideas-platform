@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bottomBar,
+  focusBackTo,
   initialPanel,
   panelReducer,
   readyLine,
@@ -183,5 +184,23 @@ describe("S-R2 Asking: the reviewer's stored queue (J-REVIEW/A1–A3, BLD-B244)"
   it("a stored queue never reopens a sent or decided panel", () => {
     expect(initialPanel("sent", "3d", storedQueue(set)).queued).toEqual([]);
     expect(initialPanel("decided", "3d", storedQueue(set)).state).toBe("decided");
+  });
+});
+
+describe("C-SHEET-MERGE focus on close (V-ACC.visual/11, J-REVIEW/M2–M3)", () => {
+  const el = (name: string, isConnected = true) => ({ name, isConnected });
+  it("goes back to the row's Merge for that idea, also when the sheet was opened from the preview's Merge", () => {
+    const rowMerge = el("row merge");
+    expect(focusBackTo(rowMerge, el("Similar ideas"), el("preview merge", false))).toBe(rowMerge);
+  });
+  it("comes to the Similar ideas heading when the row's Merge is gone (merged) or was never there", () => {
+    const heading = el("Similar ideas");
+    expect(focusBackTo(el("row merge", false), heading, el("preview merge", false))).toBe(heading);
+    expect(focusBackTo(undefined, heading)).toBe(heading);
+  });
+  it("falls back to whatever had focus on open, and to nothing when all of them are gone", () => {
+    const opener = el("opener");
+    expect(focusBackTo(null, null, opener)).toBe(opener);
+    expect(focusBackTo(el("a", false), null, el("b", false))).toBeNull();
   });
 });

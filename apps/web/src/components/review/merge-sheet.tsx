@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldMsg } from "@/components/ui/field";
 import type { DeskMergeResponse, MergeLead, MergeSheetResponse } from "@/lib/contracts";
+import { focusBackTo } from "@/lib/desk/panel";
 import { sparkBurst } from "@/lib/motion/spark";
 
 import "./merge-sheet.css";
@@ -19,11 +20,17 @@ export function MergeSheet({
   otherId,
   onClose,
   onMerged,
+  returnFocus,
 }: {
   ideaId: string;
   otherId: string;
   onClose: () => void;
   onMerged: (merged: DeskMergeResponse) => void;
+  /**
+   * Where focus goes on close, found as the sheet closes. The preview's Merge closes with the preview, so the page
+   * names the row's Merge for that idea or, with none, its Similar ideas heading (V-ACC.visual/11).
+   */
+  returnFocus?: () => HTMLElement | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -34,11 +41,17 @@ export function MergeSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // On close, focus goes back to whatever opened the sheet (a Merge button, or the preview's), if it is still there
+  // On close, focus goes back to the opener (V-ACC.visual/11): where the page says, else whatever had focus when
+  // the sheet opened, if it is still there
+  const returnTo = useRef(returnFocus);
+  useEffect(() => {
+    returnTo.current = returnFocus;
+  });
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const back = returnTo;
     return () => {
-      if (opener?.isConnected) opener.focus();
+      focusBackTo(back.current?.(), opener)?.focus();
     };
   }, []);
 

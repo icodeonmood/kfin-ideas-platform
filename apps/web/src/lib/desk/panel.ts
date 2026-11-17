@@ -196,3 +196,14 @@ export function readyLine(p: Panel): string | null {
   const n = p.queued.length;
   return n ? `${n} question${n === 1 ? "" : "s"} ready` : null;
 }
+
+/**
+ * Where focus goes back to when a sheet on the reviewer's page closes (V-ACC.visual/11): the first of the candidates
+ * still on the page. For the merge sheet that is the row's Merge for that idea, then the Similar ideas heading, then
+ * whatever had focus when it opened (C-SHEET-MERGE, J-REVIEW/M2–M3).
+ */
+export function focusBackTo<T extends { isConnected: boolean }>(
+  ...candidates: (T | null | undefined)[]
+): T | null {
+  return candidates.find((c): c is T => c != null && c.isConnected) ?? null;
+}
