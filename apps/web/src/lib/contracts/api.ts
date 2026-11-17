@@ -537,14 +537,27 @@ export interface ReviewerContribution {
 /** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
 export interface ReviewerDecisionLines {
   title: string; // "Decision sent to Kavya"
-  sent_line: string; // "Today, 4:58 pm. Kavya has it now."
-  reason_heading: string; // "Your reason, as Kavya reads it"
+  // "Today, 4:58 pm. Kavya has it now." for the reviewer who decided; "Today, 4:58 pm. Meera sent it." for any other
+  sent_line: string;
+  // "Your reason, as Kavya reads it" for the reviewer who decided; "The review desk’s reason, as Kavya read it" else
+  reason_heading: string;
   committee_heading: string; // "Ones Committee review"
   window_state: string | null; // "Open, 30 days left", "Extended once, 52 days left", "Reversed Friday 20 November"
-  window_line: string | null; // "Open until Wednesday 16 December. The committee can extend it, up to 3 months in all, to …"; null once closed
+  // "Open until Wednesday 16 December. The committee can extend it, up to 3 months in all, to …"; at the limit
+  // "Open until … At the 3-month limit. If they reverse it, …"; null once closed
+  window_line: string | null;
+}
+/** The question set this reviewer queued and has not sent (S-R2.panel Asking; J-REVIEW/A1). Theirs alone: another
+ * reviewer's queued set is never on the page. */
+export interface ReviewerQueuedSet {
+  set_id: string;
+  questions: { id: string; part: string; part_name: string; text: string | null; suggested: boolean }[];
+  time_to_answer: string | null; // null until chosen; the panel defaults to 3 days
+  ready_line: string; // "3 questions ready"
+  send_label: string; // "Send 3 questions to Kavya"
 }
 export type ReviewerPanel =
-  | { state: "reviewing"; decision: CommitteeRow | null }
+  | { state: "reviewing"; decision: CommitteeRow | null; queued: ReviewerQueuedSet | null }
   | {
       state: "decided";
       decision: CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null };
@@ -563,6 +576,7 @@ export type ReviewerPanel =
       variant: CountdownVariant;
       sent_line: string; // "Sent today, 11:20 am. Seen 12:05 pm."
       decide_by_line: string | null;
+      queued?: ReviewerQueuedSet | null; // "answered" only: a follow-up the reviewer queued
     };
 export interface ReviewerIdeaResponse {
   idea: {
@@ -768,6 +782,10 @@ export interface ReverseRequest {
 }
 /** The sharer's words for a decision (S-06; reference/copy/Status.md), for the sharer and the crew. */
 export interface SharerDecisionLines {
+  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "Meera from the review desk picked it on
+  // Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." On the
+  // joined idea's page it names the lead. null for any other decision.
+  joined_line: string | null;
   // "The Ones Committee can review this decision until Wednesday 16 December. If they change it, their note comes to
   // your Inbox. After that, it stands." While the window is open; it follows an extension. null once it closes.
   committee_line: string | null;
@@ -784,7 +802,12 @@ export interface SharerDecisionLines {
 /** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else.
  * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. */
 export type DecisionForViewerResponse =
-  | (CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null; lines: SharerDecisionLines | null })
+  | (CommitteeRow & {
+      decided_at: IsoDate;
+      return_at: IsoDate | null;
+      lines: SharerDecisionLines | null;
+      joined_into: string | null; // on an idea a Pick joined (status merged): the lead, whose Pick this is
+    })
   | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
   | null;
 
