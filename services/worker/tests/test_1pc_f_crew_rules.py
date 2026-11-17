@@ -27,7 +27,10 @@ def test_L_CREW_4_looking_for_is_the_sharers_answer_then_their_picks_else_nothin
     assert deck.looking_for(["Branch staff"], "Someone who takes these calls every day. And more.") == (
         "Someone who takes these calls every day."
     )
-    assert deck.looking_for(["Someone from tech", "Data or reports"], None) == "Someone from tech, data or reports"
+    assert (
+        deck.looking_for(["Someone from tech", "Data or reports"], None)
+        == "Someone from tech, data or reports"
+    )
     assert deck.looking_for([], "   ") is None
     # A typed answer that trips a personal-data pattern never shows; the picks stand in (non-negotiable 4).
     assert deck.looking_for(["Branch staff"], "Call me on 9876543210 about it") == "Branch staff"
@@ -50,12 +53,18 @@ def test_L_CREW_2_touches_their_work_when_the_sharer_asks_for_their_line_of_work
 
 def test_L_CREW_2_reason_lines() -> None:
     sat = dt.datetime(2026, 11, 14, 10, 0, tzinfo=IST)
-    assert deck.close_reason("Close match: same R07 SMS", True, sat, NOW) == "Same R07 SMS as your idea from Saturday"
+    assert (
+        deck.close_reason("Close match: same R07 SMS", True, sat, NOW)
+        == "Same R07 SMS as your idea from Saturday"
+    )
     assert deck.close_reason("Related: the calls branches take", True, sat, NOW) == (
         "The calls branches take, like your idea from Saturday"
     )
     # A match found for someone else's newer idea speaks to them, so the card names this person's idea instead.
-    assert deck.close_reason("Related: the calls you describe", False, sat, NOW) == "Close to your idea from Saturday"
+    assert (
+        deck.close_reason("Related: the calls you describe", False, sat, NOW)
+        == "Close to your idea from Saturday"
+    )
     assert deck.close_reason("", True, sat, NOW) == "Close to your idea from Saturday"
     assert deck.area_reason("Investor service") == "Your area, Investor service"
     assert deck.office_reason("Hyderabad") == "Same office as you, Hyderabad"
@@ -69,7 +78,9 @@ def test_day_labels_in_india_time() -> None:
     assert day_label(dt.datetime(2026, 11, 2, 10, 0, tzinfo=IST), NOW) == "2 November"
 
 
-def _card(ref: str, city: str, area: str, status: str, crew: int, picks: tuple[str, ...], kind: str, days: float) -> Card:
+def _card(
+    ref: str, city: str, area: str, status: str, crew: int, picks: tuple[str, ...], kind: str, days: float
+) -> Card:
     lead = PersonRef("u", "Leela Sharma", "Leela", "LS", area, city)
     return Card(
         ref, ref, f"Idea {ref}", status, area, city, NOW - dt.timedelta(days=days), lead, (lead,), crew,
@@ -89,7 +100,9 @@ BOARD = [
 
 def test_L_CREW_5_counts_are_live_given_the_other_filters_as_on_the_board() -> None:
     active = deck.normalise({"location": ["Hyderabad"]})
-    groups = {g["key"]: {o["label"]: o["count"] for o in g["options"]} for g in deck.facet_groups(BOARD, active)}
+    groups = {
+        g["key"]: {o["label"]: o["count"] for o in g["options"]} for g in deck.facet_groups(BOARD, active)
+    }
     # Board "Filters open": Hyderabad 2, Mumbai 1, Chennai 1, Pune 1; Investor service 1, Operations 1; Shared 1,
     # With the review desk 1, Picked 0; Just the lead 1, 2 to 3 people 0, 4 or more 1.
     assert groups["location"] == {"Hyderabad": 2, "Mumbai": 1, "Chennai": 1, "Pune": 1}
