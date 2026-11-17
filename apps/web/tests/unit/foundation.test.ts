@@ -1,13 +1,16 @@
 /**
  * The foundation (lane D; F-COLOR, F-SPACE, F-MOTION; DEC-102, BLD-D010). The pack's tokens.css is imported unchanged so
- * a TOKEN delta changes one value; later sheets only alias it; the colour pairs the pack relies on meet WCAG; and the
- * FLIP helper's maths is right.
+ * a TOKEN delta changes one value; later sheets only alias it; the colour pairs the pack relies on meet WCAG, including
+ * the tab counts' and countdown pills' words on their fills (C-TABS/1, C-PILL.rules/3); and the FLIP helper's maths is
+ * right.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { Pill, type PillVariant } from "@/components/ui/pill";
 import { FLIP_LIMIT, invert, isStill } from "@/lib/motion/flip";
 
 const APP = fileURLToPath(new URL("../../src/app/", import.meta.url));
@@ -73,9 +76,9 @@ function componentRule(selector: string): Record<string, string> {
 
 /** A CSS colour as painted over `under` (a hex): a token, a hex, white, transparent or an rgba() fill. */
 function paint(value: string, under: string, tokens: Map<string, string>): string {
-  const v = value.trim().toLowerCase();
-  const token = v.match(/^var\((--[\w-]+)\)$/);
+  const token = value.trim().match(/^var\((--[\w-]+)\)$/);
   if (token) return paint(tokens.get(token[1]!) ?? "", under, tokens);
+  const v = value.trim().toLowerCase();
   if (v === "transparent") return under;
   if (v === "white" || v === "#fff") return "#ffffff";
   if (/^#[0-9a-f]{6}$/.test(v)) return v;
@@ -197,6 +200,64 @@ describe("F-COLOR.contrast and F-A11Y.rules/1", () => {
       expect(contrast(paint(r.color!, disc, t), disc), `${sel} on ${disc}`).toBeGreaterThanOrEqual(4.5);
     }
   });
+});
+
+describe("C-PILL.rules/3, S-R1.layout/4: the countdown pill", () => {
+  const t = packTokens();
+  // Pill holds no state, so calling it gives the element to render
+  const pill = (variant: PillVariant | undefined, countdown: boolean) =>
+    renderToStaticMarkup(Pill({ variant, countdown, children: "3 days to answer" }));
+
+  it.each([
+    [undefined, "due"],
+    ["neutral", "due"],
+    ["warn", "due soon"],
+    ["bad", "due over"],
+    ["ok", "due done"],
+  ] as const)("variant %s draws a clock and no dot, as class %s", (variant, cls) => {
+    const html = pill(variant, true);
+    expect(html).toMatch(new RegExp(`^<span class="${cls}"><svg[^>]*aria-hidden="true"`));
+    expect(html).not.toContain("<i");
+    expect(html).toContain("3 days to answer");
+  });
+
+  it("a Pill without countdown is unchanged: the dot, the pill class, no clock", () => {
+    expect(pill("bad", false)).toBe(
+      '<span class="pill bad"><i aria-hidden="true"></i>3 days to answer</span>',
+    );
+    expect(pill(undefined, false)).toBe(
+      '<span class="pill"><i aria-hidden="true"></i>3 days to answer</span>',
+    );
+  });
+
+  it("the board's look (Desk .due): 28px, 0 11px 0 9px, 6px gap, 500 13px/1, tabular figures", () => {
+    expect(componentRule(".due")).toMatchObject({
+      "min-height": "28px",
+      padding: "0 11px 0 9px",
+      gap: "6px",
+      font: "500 13px/1 var(--ft)",
+      "font-variant-numeric": "tabular-nums",
+      background: "rgba(17, 17, 17, 0.05)",
+      color: "var(--ink2)",
+    });
+  });
+
+  it("overdue is solid: white words on --badT", () => {
+    expect(componentRule(".due.over")).toMatchObject({ background: "var(--badT)", color: "#ffffff" });
+  });
+
+  it.each([".due", ".due.soon", ".due.over", ".due.done"])(
+    "F-COLOR.contrast: %s words reach 4.5:1 on its fill over --paper and --card",
+    (sel) => {
+      const own = componentRule(sel);
+      const base = componentRule(".due");
+      for (const under of [t.get("--paper")!, t.get("--card")!]) {
+        const fill = paint(own.background ?? base.background!, under, t);
+        const words = paint(own.color ?? base.color!, fill, t);
+        expect(contrast(words, fill), `${sel} over ${under}`).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 });
 
 describe("F-MOTION FLIP helper (BLD-E005)", () => {
