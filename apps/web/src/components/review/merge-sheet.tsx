@@ -12,6 +12,8 @@ import { Field, FieldMsg } from "@/components/ui/field";
 import type { DeskMergeResponse, MergeLead, MergeSheetResponse } from "@/lib/contracts";
 import { sparkBurst } from "@/lib/motion/spark";
 
+import "./merge-sheet.css";
+
 export function MergeSheet({
   ideaId,
   otherId,
