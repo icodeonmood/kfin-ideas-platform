@@ -4,6 +4,7 @@ answer files by check state (DEC-107), more time on an overdue set and a sweep t
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,32 @@ def test_L_QUESTIONS_answer_a_number_where_the_files_or_the_text_belong_is_refus
         e = _refused(asking.save_answer, db, q1, kavya, text, file_ids)
         assert (e.status, e.code, e.field) == (422, code, field)
     assert asking.save_answer(db, q1, kavya, None, None)["text"] == ""
+
+
+# ---- finding 6: WorthResponse is what the worker returns (figures, the person under reviewer.by) ----------------
+def test_L_WORTH_the_revision_response_matches_the_shared_sample(db: Conn, cast: dict[str, Any]) -> None:
+    """desk/worth_response_sample.json is what apps/web/tests/unit/desk-worth.test.ts checks `WorthResponse` against."""
+    import json
+
+    sample = json.loads(
+        (Path(__file__).parents[1] / "desk" / "worth_response_sample.json").read_text("utf-8")
+    )
+    sample.pop("_about")
+    db.execute(
+        "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, outside_tools, at) "
+        "VALUES (%s, 'sharer', %s, 70, 150, 25000, 'none', %s)",
+        (cast["idea"]["id"], cast["kavya"]["code"], f.at(14, 10)),
+    )
+    got = revise.revise_worth(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                              {"hours_month": "120 to 200", "outside_tools": "partly",
+                               "note": "Every branch in the region takes these calls, not one."}, SENT)  # fmt: skip
+    got = json.loads(json.dumps(got))
+    for key in ("idea_id", "worth_id"):
+        got[key] = sample[key]
+    got["reviewer"]["by"]["id"] = sample["reviewer"]["by"]["id"]
+    assert dt.datetime.fromisoformat(got["reviewer"]["at"]) == SENT
+    got["reviewer"]["at"] = sample["reviewer"]["at"]
+    assert got == sample
 
 
 def _merge_ravi_in(db: Conn, cast: dict[str, Any]) -> dict[str, Any]:

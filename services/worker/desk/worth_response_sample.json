@@ -1,0 +1,26 @@
+{
+  "_about": "PUT /desk/ideas/:id/worth as the worker returns it (L-WORTH/2-7, revise.revise_worth). Pinned by services/worker/tests/test_1pc_desk_review_round2_db.py and apps/web/tests/unit/desk-worth.test.ts (WorthResponse). Synthetic people only.",
+  "idea_id": "IDEA-2026-001401",
+  "worth_id": 2,
+  "tiles": [
+    {"measure": "hours_month", "label": "Time saved", "value": "120 to 200 hours a month", "was": "was 70 to 150 hours a month", "changed": true},
+    {"measure": "cost_month", "label": "Cost saved", "value": "₹25,000 a month", "was": null, "changed": false},
+    {"measure": "revenue_month", "label": "Revenue", "value": "Not given", "was": null, "changed": false},
+    {"measure": "outside_tools", "label": "Outside tools", "value": "Partly less reliance", "was": "was No change", "changed": true}
+  ],
+  "sharer": {
+    "hours_month": {"low": 70, "high": 150, "text": "70 to 150 hours a month"},
+    "cost_month": {"low": 25000, "high": null, "text": "₹25,000 a month"},
+    "outside_tools": "none"
+  },
+  "reviewer": {
+    "hours_month": {"low": 120, "high": 200, "text": "120 to 200 hours a month"},
+    "cost_month": {"low": 25000, "high": null, "text": "₹25,000 a month"},
+    "outside_tools": "partly",
+    "note": "Every branch in the region takes these calls, not one.",
+    "by": {"id": "00000000-0000-4000-8000-000000000001", "name": "Meera Iyer", "first_name": "Meera", "initials": "MI", "city": "Hyderabad", "area": "Investor service"},
+    "at": "2026-11-16T11:20:00+05:30"
+  },
+  "kind": "problem",
+  "area": "Investor service"
+}
