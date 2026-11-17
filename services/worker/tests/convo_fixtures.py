@@ -96,3 +96,51 @@ def entries(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
             "SELECT * FROM conversation_entries WHERE idea_uuid = %s ORDER BY at, id", (idea_uuid,)
         ).fetchall()
     ]
+
+
+def question_set(
+    conn: Conn, idea_row: dict[str, Any], reviewer: dict[str, str], parts: tuple[str, ...], at_: dt.datetime
+) -> str:
+    """A sent question set (lane B writes these; here for the conversation's reading only)."""
+    from onepc.context import seal_text
+
+    set_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, sent_at, due_at) "
+        "VALUES (%s, %s, %s, 'sent', '3d', %s, %s)",
+        (set_id, idea_row["id"], reviewer["id"], at_, at_ + dt.timedelta(days=3)),
+    )
+    for seq, part in enumerate(parts, start=1):
+        qid = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO questions (id, set_id, seq, part, text_encrypted) VALUES (%s, %s, %s, %s, %s)",
+            (qid, set_id, seq, part, seal_text("questions", "text_encrypted", qid, f"Synthetic question {seq}?")),
+        )
+    return set_id
+
+
+def answer_all(conn: Conn, set_id: str, sharer: dict[str, str], at_: dt.datetime) -> None:
+    from onepc.context import seal_text
+
+    for q in conn.execute("SELECT id, seq, part FROM questions WHERE set_id = %s ORDER BY seq", (set_id,)).fetchall():
+        aid = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO answers (id, question_id, by_code, text_encrypted, added_to, saved_at, sent_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (aid, q["id"], sharer["code"], seal_text("answers", "text_encrypted", aid, f"Synthetic answer {q['seq']}."),
+             q["part"], at_, at_),
+        )  # fmt: skip
+    conn.execute("UPDATE question_sets SET state = 'answered', answered_at = %s WHERE id = %s", (at_, set_id))
+
+
+def attachment(
+    conn: Conn, idea_row: dict[str, Any], owner: dict[str, str], file_state: str = "checked",
+    name: str = "plain-rejection-reasons.xlsx",
+) -> str:  # fmt: skip
+    att_id = f"ATT-2026-{next(_counter) + 500000:06d}"
+    conn.execute(
+        "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, store_key, state, kind, "
+        "file_state) VALUES (%s, %s, %s, %s, %s, 2048, %s, 'clean', 'file', %s)",
+        (att_id, idea_row["id"], owner["code"], name, "application/vnd.ms-excel", f"clean/{att_id}", file_state),
+    )
+    return att_id
