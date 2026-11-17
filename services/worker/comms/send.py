@@ -103,7 +103,7 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
         _drop_inactive(conn)
         rows = conn.execute(
             "SELECT n.id, n.user_id, n.event, n.template, n.payload, n.attempts, n.urgency, u.email, n.kind, "
-            "n.idea_uuid, n.from_user_id, n.due_at, n.created_at, n.actions "
+            "n.idea_uuid, n.from_user_id, n.due_at, n.created_at, n.actions, n.channel, n.dedupe_key "
             "FROM notifications n JOIN users u ON u.id = n.user_id WHERE n.channel = 'email' AND n.state = 'queued' "
             "AND n.send_after <= %s AND u.active ORDER BY n.send_after, n.id LIMIT %s FOR UPDATE OF n SKIP LOCKED",
             (now, limit),

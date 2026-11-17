@@ -17,6 +17,7 @@ from comms import email_html
 from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
+from notify import AS_THE_DESK
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -28,8 +29,7 @@ COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; 
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}
 SYSTEM = {"display": "1% Club", "name": "1% Club", "first_name": "1% Club", "initials": "1%", "system": True}
 # L-HIDE/7 (BLD-A205): a detail hidden by a reviewer comes from the review desk as a whole, shown with the mark. The
-# reviewer's name is never shown or sent, whoever the caller passed as the sender.
-AS_THE_DESK = frozenset({"detail_hidden_by_desk"})
+# reviewer's name is never shown or sent, nor stored (`notify.AS_THE_DESK`).
 REVIEW_DESK = {
     **SYSTEM,
     "display": "The review desk",
@@ -63,11 +63,30 @@ DEFAULT_ACTIONS: dict[str, list[dict[str, str]]] = {
     "mention": [{"label": "Open the conversation", "to": "conversation", "style": "primary"}],
     "crew_joined": [{"label": "Open the idea", "to": "idea", "style": "primary"}],
     "comment": [{"label": "Open the conversation", "to": "conversation", "style": "primary"}],
-    "draft_kept": [{"label": "Carry on", "to": "draft", "style": "primary"}],
+    "draft_kept": [{"label": "Carry on", "to": "draft", "style": "primary"}],  # by `via`: `default_actions`
     "sent_to_desk": [{"label": "Open the idea", "to": "idea", "style": "primary"}],
     "detail_hidden_by_desk": [{"label": "Open your idea", "to": "idea", "style": "primary"}],
 }
 _STYLE_ORDER = {"text": 0, "line": 1, "primary": 2}
+# Where a kept draft came from (BLD-A188): lane C posts `via`. A draft sent in by email or Teams is checked and sent
+# (J-RESUME/6); one from the phone, or from nowhere the refs say, is carried on (J-RESUME/3).
+VIA = ("phone", "email", "teams")
+SENT_IN = frozenset({"email", "teams"})
+CHECK_AND_SEND: list[dict[str, str]] = [{"label": "Check and send", "to": "draft", "style": "primary"}]
+# `item_id` when an "inbox" link opens the row itself (the in-app item being read); None opens the Inbox.
+OWN_ROW: Any = object()
+
+
+def _via(refs: dict[str, Any]) -> str | None:
+    via = refs.get("via")
+    return via if isinstance(via, str) and via in VIA else None
+
+
+def default_actions(kind: str, refs: dict[str, Any]) -> list[dict[str, str]]:
+    """The kind's own buttons when the caller gives none (L-INBOX.kinds "Reader action"); a kept draft's by `via`."""
+    if kind == "draft_kept" and _via(refs) in SENT_IN:
+        return CHECK_AND_SEND
+    return DEFAULT_ACTIONS.get(kind, [])
 
 
 def initials(name: str) -> str:
@@ -317,16 +336,23 @@ def _kind_vars(
         to = refs.get("to") or refs.get("stage") or (idea or {}).get("status")
         out["stage"] = {"words": STAGE_WORDS.get(str(to), "its next stage")}
     elif kind == "draft_kept":
-        via = refs.get("via") if refs.get("via") in ("phone", "email", "teams") else "phone"
-        out["via"] = {v: via == v for v in ("phone", "email", "teams")}
+        # A missing or unknown `via` says nothing about where: the plain "kept your draft" with "Carry on" (BLD-A188).
+        via = _via(refs)
+        out["via"] = {**{v: via == v for v in VIA}, "sent_in": via in SENT_IN, "kept": via not in SENT_IN}
     return out
 
 
 def variables(
-    conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime, *, absolute: bool = False
+    conn: Conn,
+    row: dict[str, Any],
+    viewer: str,
+    now: dt.datetime,
+    *,
+    absolute: bool = False,
+    item_id: Any = OWN_ROW,
 ) -> tuple[Template, dict[str, Any]]:
     """The template and its variables for one item and one reader. Links are app paths, or full addresses for an
-    email (`absolute`)."""
+    email (`absolute`). `item_id` is the in-app item an "inbox" link opens (`OWN_ROW`: this row; None: the Inbox)."""
     kind = str(row["kind"])
     tpl = load(f"inbox/{kind}")
     refs = dict(row.get("payload") or {})
@@ -334,7 +360,7 @@ def variables(
     me = person(conn, viewer) or {"first_name": "there"}
     who = sender(kind, person(conn, row.get("from_user_id")))
     base = get_settings().app_base_url.rstrip("/") if absolute else ""
-    actions = resolved_actions(row, idea)
+    actions = resolved_actions(row, idea, item_id=item_id)
     forward = next((a for a in reversed(actions) if a.get("to")), None)
 
     def link(path: str | None) -> str:
@@ -357,17 +383,21 @@ def variables(
     return tpl, data
 
 
-def resolved_actions(row: dict[str, Any], idea: dict[str, Any] | None) -> list[dict[str, Any]]:
+def resolved_actions(
+    row: dict[str, Any], idea: dict[str, Any] | None, *, item_id: Any = OWN_ROW
+) -> list[dict[str, Any]]:
     """The item's buttons, in footer order: the forward one last, as the primary (S-H5.rules/3), with "Open the
     conversation" as a line button before it when the item is about a shared idea (L-INBOX.rules/6)."""
     kind = str(row["kind"])
-    given = [dict(a) for a in (row.get("actions") or [])] or [dict(a) for a in DEFAULT_ACTIONS.get(kind, [])]
+    given = [dict(a) for a in (row.get("actions") or [])] or [
+        dict(a) for a in default_actions(kind, dict(row.get("payload") or {}))
+    ]
     out: list[dict[str, Any]] = []
     for a in given:
         entry: dict[str, Any] = {"label": str(a.get("label") or ""), "style": a.get("style") or "line"}
         if a.get("op"):
             entry["op"] = str(a["op"])
-        path = route(a.get("to"), idea, row.get("id"))
+        path = route(a.get("to"), idea, row.get("id") if item_id is OWN_ROW else item_id)
         if path:
             entry["to"] = path
         if entry.get("to") or entry.get("op"):
@@ -434,7 +464,40 @@ def item(conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime) -> dict
     return out
 
 
+def in_app_item(conn: Conn, row: dict[str, Any]) -> int | None:
+    """The person's in-app item an email (or Teams) row stands for, so its "Open the request" opens that item: the
+    one with the same key, else the latest of its kind on the same idea posted with it or before it. None: there is
+    none, and the link is the Inbox itself. The row's own id is never an item (an email row is not in the Inbox)."""
+    user, kind, idea = row.get("user_id"), row.get("kind"), row.get("idea_uuid")
+    if not user or not kind:
+        return None
+    if row.get("dedupe_key"):
+        found = conn.execute(
+            "SELECT id FROM notifications WHERE user_id = %s AND channel = 'in_app' AND dedupe_key = %s",
+            (str(user), str(row["dedupe_key"])),
+        ).fetchone()
+        if found is not None:
+            return int(found["id"])
+    if idea:
+        found = conn.execute(
+            "SELECT id FROM notifications WHERE user_id = %s AND channel = 'in_app' AND kind = %s AND idea_uuid = %s "
+            "AND (%s::bigint IS NULL OR id < %s::bigint) ORDER BY id DESC LIMIT 1",
+            (str(user), str(kind), str(idea), row.get("id"), row.get("id")),
+        ).fetchone()
+        if found is not None:
+            return int(found["id"])
+    return None
+
+
 def email(conn: Conn, row: dict[str, Any], now: dt.datetime | None = None) -> email_html.Email:
-    """The email for one queued inbox item: the idea's title, what happened, any date and a link (L-NOTIFY/3)."""
-    tpl, data = variables(conn, row, str(row["user_id"]), now or dt.datetime.now(dt.UTC), absolute=True)
+    """The email for one queued inbox item: the idea's title, what happened, any date and a link (L-NOTIFY/3). An
+    "inbox" link opens the person's in-app item, never the email row's own id."""
+    tpl, data = variables(
+        conn,
+        row,
+        str(row["user_id"]),
+        now or dt.datetime.now(dt.UTC),
+        absolute=True,
+        item_id=in_app_item(conn, row),
+    )
     return email_html.compose(tpl, data, get_settings().app_base_url)
