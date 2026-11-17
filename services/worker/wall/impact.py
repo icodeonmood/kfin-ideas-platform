@@ -17,8 +17,9 @@ money. The rules read here:
   money  unit "rupees a year" or "rupees a month", amount in rupees  (line is always "Finance confirmed")
   effort unit e.g. "fewer steps"                                     line e.g. "Per new mandate"
   scale  unit the noun reached, e.g. "branches", "distributors"      line e.g. "Using it every day"
-The synthetic seed's older form, `{"value": "620", "line": "hours a month"}` (figure as text, unit in `line`), is
-read too, as are the Ones' own `measures` from before the cut-over (`{"value": 620, "unit": …}`).
+The synthetic seed's older form, `{"value": "620", "line": "hours a month"}` (figure as text, unit in `line`; when
+the figure already carries its words, as `{"value": "2 fewer steps", "line": "per online form"}`, `line` is the line
+under it), is read too, as are the Ones' own `measures` from before the cut-over (`{"value": 620, "unit": …}`).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ BEING_MEASURED = "Being measured"  # S-WALL.impact live-fixes table, a fix befor
 FINANCE_CONFIRMED = "Finance confirmed"  # S-ONE "Impact so far", the Money tile
 
 _NUM = re.compile(r"(\d[\d,]*(?:\.\d+)?)")
+_AMOUNT_ONLY = re.compile(r"^\s*₹?\s*\d[\d,]*(?:\.\d+)?\s*%?")  # the number at the head of a figure
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,12 @@ def figure(key: str, raw: Any) -> Figure | None:
     if not value:
         return None
     amount = _rupee_amount(value) if key == "money" else _number(value)
+    words = _AMOUNT_ONLY.sub("", value).strip()
+    if key != "money" and words:
+        # The figure already says what it counts ("2 fewer steps"), so `line` is what goes under it ("per online
+        # form" → "Per online form"), as S-ONE draws "3 fewer steps" / "Per new mandate".
+        line = unit[:1].upper() + unit[1:] if unit else None
+        return Figure(key, amount, words, value, line)
     return Figure(key, amount, unit, f"{value} {unit}".strip(), None)
 
 
