@@ -354,6 +354,15 @@ def test_gap_seed_l_inbox_needs_you_and_draft_kept_items_carry_notify_dedupe_key
     assert all(_KEY.match(k) for k in keys) and len(set(keys)) == len(keys)
     assert _one(conn, "SELECT count(*) FROM notifications WHERE dedupe_key IS NOT NULL") == len(keys)
 
+    # The hand-off to the lead's answer (J-TEAMUP): lane F's resolve, by request id, clears that seeded item only.
+    from teamup import adapters
+
+    rid = asks[0]["payload"]["request_id"]
+    adapters.resolve(conn, rid)
+    still = "SELECT count(*) FROM notifications WHERE kind = 'teamup_request' AND needs_you"
+    assert _one(conn, still) == len(asks) - 1
+    assert not _one(conn, "SELECT needs_you FROM notifications WHERE dedupe_key = %s", request_key(rid))
+
 
 def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
