@@ -128,6 +128,17 @@ _NOT_YOURS = {
 }
 
 
+# Files by check state (E-ENUMS.file). Everyone allowed to see an idea's files sees the checked ones; a file in which
+# the scan found a customer detail can still be sent (DEC-107) and opens only for its sharer, the review desk and the
+# Ones Committee, marked `customer_detail`; never for the crew or anyone else. Nobody else sees a file still
+# uploading or checking, infected, locked or failed. `SHOWN_FILE` takes the states as its one parameter; a file from
+# before the cut-over has no `file_state` and counts when the old pipeline marked it clean.
+FILES_CHECKED: tuple[str, ...] = ("checked", "hidden_checked", "ok")
+CUSTOMER_DETAIL = "personal_data_found"
+DESK_SEES: tuple[str, ...] = (*FILES_CHECKED, CUSTOMER_DETAIL)
+SHOWN_FILE = "(file_state = ANY(%s) OR (file_state IS NULL AND state = 'clean'))"
+
+
 def has_role(conn: Conn, user_id: str, roles: Iterable[str]) -> bool:
     """A live grant of any of `roles` (role_grants, from and to dates). Anything that is not a user id has none."""
     try:
