@@ -288,6 +288,49 @@
       ],
       "additionalProperties": false
     },
+    "files": {
+      "type": "object",
+      "properties": {
+        "limit_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "docx",
+              "pptx",
+              "xlsx",
+              "csv",
+              "md",
+              "html",
+              "zip",
+              "png",
+              "jpg"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "internal_link_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+          }
+        }
+      },
+      "required": [
+        "limit_mb",
+        "types",
+        "internal_link_domains"
+      ],
+      "additionalProperties": false
+    },
     "scan": {
       "type": "object",
       "properties": {

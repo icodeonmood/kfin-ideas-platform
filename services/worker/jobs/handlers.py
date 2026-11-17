@@ -41,7 +41,12 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
             )  # first: the FK restricts (BLD-C006)
             conn.execute("DELETE FROM ideas WHERE id = %s", (c["id"],))
             deleted += 1
-    log.info("drafts.purged", deleted_count=deleted, file_count=files)
+    from attachments import files as onepc_files
+
+    swept = onepc_files.sweep_failed_copies(
+        conn
+    )  # failed uploads' copies past their retention (L-HIDE.files)
+    log.info("drafts.purged", deleted_count=deleted, file_count=files, swept_count=swept)
 
 
 @handler("attachment.process")
@@ -184,6 +189,21 @@ def cluster_batch(conn: Conn, payload: dict[str, Any]) -> None:
     from cluster.batch import run_batch
 
     run_batch(conn, manual_by=payload.get("manual_by"))
+
+
+@handler("file.check")
+def check_file(conn: Conn, payload: dict[str, Any]) -> None:
+    """A file added on the 1% Club: virus scan, then its text, then hiding customers' details (L-HIDE.files)."""
+    from attachments import files
+
+    files.check(conn, str(payload["attachment_id"]))
+
+
+@on_dead("file.check")
+def file_check_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    from attachments import files
+
+    files.gave_up(conn, str(payload["attachment_id"]))
 
 
 @handler("attachment.digest")
