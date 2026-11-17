@@ -192,15 +192,14 @@ export const FORCE_FIXME: Readonly<Record<string, string>> = {
 
 const WEB = path.resolve(__dirname, "..");
 const REPO = path.resolve(WEB, "..", "..");
-const TEST_DIRS = [
-  path.join(WEB, "e2e"),
-  path.join(WEB, "tests"),
-  path.join(REPO, "services", "worker", "tests"),
-];
+const E2E_DIRS = [path.join(WEB, "e2e")];
+const TEST_DIRS = [...E2E_DIRS, path.join(WEB, "tests"), path.join(REPO, "services", "worker", "tests")];
 
-let corpus: string | undefined;
-function testCorpus(): string {
-  if (corpus !== undefined) return corpus;
+const corpora = new Map<string, string>();
+function corpusOf(dirs: readonly string[]): string {
+  const key = dirs.join("|");
+  const cached = corpora.get(key);
+  if (cached !== undefined) return cached;
   const parts: string[] = [];
   const walk = (dir: string) => {
     if (!fs.existsSync(dir)) return;
@@ -210,20 +209,26 @@ function testCorpus(): string {
       else if (/\.(ts|tsx|py)$/.test(entry.name)) parts.push(fs.readFileSync(p, "utf8"));
     }
   };
-  TEST_DIRS.forEach(walk);
-  corpus = parts.join("\n");
+  dirs.forEach(walk);
+  const corpus = parts.join("\n");
+  corpora.set(key, corpus);
   return corpus;
 }
 
-/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). `P-` modules
- * are product rules, not code (P-ROUTES.state is kept by the screens that use it), so they never hold a step back. */
+/**
+ * A module is on main once a test outside this suite names it ("L-SORT", "S-R2.panel/3"…). A screen (`S-`) counts
+ * only when an end-to-end test in apps/web/e2e names it: back-end and unit tests name the screens their data serves
+ * before the screen is drawn (BLD-G003). `P-` modules are product rules, not code (P-ROUTES.state is kept by the
+ * screens that use it), so they never hold a step back.
+ */
 export function onMain(id: string): boolean {
   if (id in FORCE_FIXME) return false;
   if (id.startsWith("P-")) return true;
   const base = id.split(".")[0]!;
+  const corpus = corpusOf(id.startsWith("S-") ? E2E_DIRS : TEST_DIRS);
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
-  return base === id ? exact.test(testCorpus()) : exact.test(testCorpus()) || onMain(base);
+  return base === id ? exact.test(corpus) : exact.test(corpus) || onMain(base);
 }
 
 // --- Steps -------------------------------------------------------------------------------------------------------------
@@ -237,7 +242,12 @@ export type StepOptions = {
   changes?: readonly SeedKey[];
   /** The seed has no record at the stage this step needs: fixme "GAP-SEED", and lane G tells lane E. */
   gapSeed?: string;
+  /** Earlier steps of the same journey this one takes data from (a draft, a URL): fixme while any of them is. */
+  after?: readonly StepRef[];
 };
+
+/** Steps collected as fixme so far, for `after`. Specs collect in file order, so an earlier step is already here. */
+const FIXME_REFS = new Set<StepRef>();
 
 export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) => Promise<void>;
 
@@ -257,16 +267,18 @@ export function step(ref: StepRef, screen: string, title: string, opts: StepOpti
     }
   }
   const name = `${ref} ${screen} · ${title}`;
-  if (opts.gapSeed) {
-    test.fixme(name, { annotation: { type: "fixme", description: `GAP-SEED: ${opts.gapSeed}` } }, () => {});
-    return;
-  }
+  const fixme = (description: string) => {
+    FIXME_REFS.add(ref);
+    test.fixme(name, { annotation: { type: "fixme", description } }, () => {});
+  };
+  if (opts.gapSeed) return fixme(`GAP-SEED: ${opts.gapSeed}`);
   const missing = opts.needs.filter((m) => !onMain(m));
   if (missing.length) {
     const why = missing.map((m) => (m in FORCE_FIXME ? `${m} (${FORCE_FIXME[m]})` : m)).join(", ");
-    test.fixme(name, { annotation: { type: "fixme", description: `not on main: ${why}` } }, () => {});
-    return;
+    return fixme(`not on main: ${why}`);
   }
+  const waiting = (opts.after ?? []).filter((r) => FIXME_REFS.has(r));
+  if (waiting.length) return fixme(`waits for ${waiting.join(", ")}`);
   test(
     name,
     { annotation: { type: "needs", description: opts.needs.join(", ") } },
