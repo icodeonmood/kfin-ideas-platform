@@ -6,8 +6,9 @@
  * (`GET /api/ideas/:id/conversation`, BLD-F059); this screen lays them out, sends and removes messages, and reads the
  * conversation again after each action (no live channel yet, BLD-F050).
  *
- * - The questions: a plain entry with the card's title, the sharer's deadline and "Answer the questions" (S-R3,
- *   S-08.rules/1) until lane B's C-QCARD is on main (BLD-F065).
+ * - The questions: for the sharer while the set is open, lane B's C-QCARD read from that set (BLD-B249); for anyone
+ *   else, or until the set is read, a plain entry with the card's title, the sharer's deadline and "Answer the
+ *   questions" (S-R3, S-08.rules/1, BLD-F065).
  * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
  * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
@@ -26,6 +27,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { QuestionsCardFor } from "@/components/review/qcard-for";
 import { PhoneBar } from "@/components/shell/phone";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
@@ -397,6 +399,22 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     );
   }
 
+  function plainQuestions(e: QuestionsEntry) {
+    return (
+      <div className={cls("cv-ask", !e.answer_url && "done")}>
+        <p className="cv-askt">{e.title}</p>
+        {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
+        <p className="cv-aska">
+          {e.answer_url ? (
+            <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
+          ) : (
+            <Link href={ideaHref}>{C.seeOnIdea}</Link>
+          )}
+        </p>
+      </div>
+    );
+  }
+
   function renderQuestions(e: QuestionsEntry) {
     return (
       <li key={e.id} id={`entry-${e.id}`} className="cv-msg wide">
@@ -405,17 +423,21 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           <b>{e.by_label}</b>
           <span>{e.at_label}</span>
         </p>
-        <div className={cls("cv-ask", !e.answer_url && "done")}>
-          <p className="cv-askt">{e.title}</p>
-          {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
-          <p className="cv-aska">
-            {e.answer_url ? (
-              <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
-            ) : (
-              <Link href={ideaHref}>{C.seeOnIdea}</Link>
-            )}
-          </p>
-        </div>
+        {e.answer_url ? (
+          // BLD-B249: `answer_url` comes only to the sharer while the set is open; the card reads that set and
+          // takes the conversation's words for its title and deadline (Messages.md)
+          <QuestionsCardFor
+            key={`${e.set_id}:${e.state}:${e.answered}`}
+            ideaId={view.idea.id}
+            setId={e.set_id}
+            title={e.title}
+            deadline={e.deadline}
+            byline={false}
+            fallback={plainQuestions(e)}
+          />
+        ) : (
+          plainQuestions(e)
+        )}
       </li>
     );
   }
