@@ -725,7 +725,8 @@
   top: 12px;
   right: 12px;
   bottom: 12px;
-  width: min(560px, calc(100vw - 24px));
+  left: auto;
+  width: min(560px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   border-radius: 24px;
@@ -1021,7 +1022,7 @@
 
   .ck-sheet {
     inset: 0;
-    width: 100vw;
+    width: auto;
     border-radius: 0;
   }
 
