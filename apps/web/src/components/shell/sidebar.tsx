@@ -38,7 +38,8 @@ function typingSomewhere(target: EventTarget | null): boolean {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
-/** The dot's meaning in words, so it is never colour alone (F-A11Y.rules/4). */
+/** The dot's meaning in words, so it is never colour alone (F-A11Y.rules/4). A row's own words win: the section
+ * knows what its dot means (an idea's stage; on the desk, amber is "Under a day left", not "Needs you"). */
 const TONE_WORDS: Record<ShellRow["tone"], string> = {
   draft: "Draft",
   warn: "Needs you",
@@ -47,13 +48,15 @@ const TONE_WORDS: Record<ShellRow["tone"], string> = {
   neutral: "",
 };
 
+const dotWords = (r: ShellRow): string => r.words ?? TONE_WORDS[r.tone];
+
 function SectionRows({ rows }: { rows: ShellRow[] }) {
   return (
     <>
       {rows.map((r) => (
         <Link key={r.href} href={r.href} className={r.meta ? "sb-r sb-dr" : "sb-r"} title={r.title}>
           <i className={`sb-d ${r.tone}`} aria-hidden="true" />
-          {TONE_WORDS[r.tone] ? <span className="vh">{TONE_WORDS[r.tone]}: </span> : null}
+          {dotWords(r) ? <span className="vh">{dotWords(r)}: </span> : null}
           {r.meta ? (
             <span className="sb-dc">
               <span className="sb-dt">{r.title}</span>

@@ -27,9 +27,24 @@ describe("S-R1.rules/5: Waiting on sharers", () => {
       ],
     });
     expect(rows).toEqual([
-      { href: "/desk/ideas/IDEA-2026-001481", title: "Rejection SMS codes need plain words", tone: "bad" },
-      { href: "/desk/ideas/IDEA-2026-001470", title: "Branch queue times are not tracked", tone: "warn" },
-      { href: "/desk/ideas/IDEA-2026-001455", title: "Cheque scans need re-uploading", tone: "blue" },
+      {
+        href: "/desk/ideas/IDEA-2026-001481",
+        title: "Rejection SMS codes need plain words",
+        tone: "bad",
+        words: "Overdue",
+      },
+      {
+        href: "/desk/ideas/IDEA-2026-001470",
+        title: "Branch queue times are not tracked",
+        tone: "warn",
+        words: "Under a day left",
+      },
+      {
+        href: "/desk/ideas/IDEA-2026-001455",
+        title: "Cheque scans need re-uploading",
+        tone: "blue",
+        words: "Waiting on the sharer",
+      },
     ]);
   });
 
