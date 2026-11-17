@@ -1,12 +1,13 @@
 /**
  * The signed-in shell (C-SIDEBAR, C-PHONE-TABS; AT-B2-06, AT-B2-07). On desktop the sidebar shows "Share a problem",
- * Home, Wall and Inbox for everyone, plus Review desk for a reviewer and Ones Committee for the committee (S-R4); the
+ * Home, Wall and Inbox for everyone, plus Review desk for a reviewer and Ones Committee for the committee (S-R4, and the core committee until Monday); the
  * account menu holds the account links for the person's roles, the P shortcut and Sign out. On a phone the tab bar is
  * Home, My ideas, Share, Wall and Inbox for everyone. axe reports no serious or critical issues on the shell pages;
  * every item works by keyboard with a visible focus ring.
  * Needs `make seed` (personas) and the running stack.
  */
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { Client } from "pg";
 
 import {
   expectNoSeriousAxeIssues,
@@ -24,7 +25,7 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
   const cases: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", BASE],
     ["reviewer", [...BASE, "Review desk"]],
-    ["core", BASE], // the Ones Committee's page is the committee role's (committee_window, S-R4)
+    ["core", [...BASE, "Ones Committee"]], // committee_window until the old roles go on Monday (BLD-B238)
     ["admin", BASE],
   ];
   for (const [persona, expected] of cases) {
@@ -158,7 +159,7 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
   const pages: Array<[keyof typeof PERSONAS, string[]]> = [
     ["contributor", ["/", "/share", "/my-ideas", "/wall", "/inbox"]],
     ["reviewer", ["/desk"]], // S-R1; S-R4 has its axe run in review-desk.spec.ts with the committee role
-    ["core", ["/desk"]],
+    ["core", ["/desk", "/committee"]],
     ["admin", ["/admin"]],
   ];
   for (const [persona, paths] of pages) {
@@ -205,6 +206,44 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   await page.getByRole("button", { name: /I have read this/ }).click();
   await page.waitForURL((url) => url.pathname === "/");
   expect(await navLabels(page)).toEqual(isPhone(test.info()) ? PHONE_TABS : BASE);
+});
+
+// S-R4, A9: the pack's committee persona (manoj in the journeys' seed). `make seed` has no such grant, so the role is
+// given to this persona for the test and taken back after it (grants are read on every request). Desktop only: on a
+// phone the role items live in the account menu.
+test("S-R4: the committee role sees Ones Committee in the sidebar, and its page passes axe (C-SIDEBAR.anatomy)", async ({
+  page,
+}, info) => {
+  test.skip(isPhone(info), "the sidebar is desktop's");
+  const DATABASE_URL =
+    process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
+  const grant = async (sql: string, email: string) => {
+    const c = new Client({ connectionString: DATABASE_URL });
+    await c.connect();
+    try {
+      await c.query(sql, [email]);
+    } finally {
+      await c.end();
+    }
+  };
+  await signIn(page, "SYN-10004");
+  const me = (await (await page.request.get("/api/me")).json()) as { email: string };
+  await grant(
+    "INSERT INTO role_grants (user_id, role) SELECT u.id, 'committee' FROM users u WHERE u.email = $1 AND NOT " +
+      "EXISTS (SELECT 1 FROM role_grants g WHERE g.user_id = u.id AND g.role = 'committee')",
+    me.email,
+  );
+  try {
+    await page.goto("/committee");
+    await expect(page.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
+    expect(await navLabels(page)).toEqual([...BASE, "Ones Committee"]);
+    await expectNoSeriousAxeIssues(page);
+  } finally {
+    await grant(
+      "DELETE FROM role_grants WHERE role = 'committee' AND user_id = (SELECT id FROM users WHERE email = $1)",
+      me.email,
+    );
+  }
 });
 
 test("people without the role are sent home from Review and Admin", async ({ page }) => {

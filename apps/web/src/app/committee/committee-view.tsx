@@ -25,6 +25,7 @@ import type {
   ReturnIn,
   ReversingWordsResponse,
 } from "@/lib/contracts";
+import { call } from "@/lib/desk/reply";
 import { sparkBurst } from "@/lib/motion/spark";
 
 const TABS: { value: CommitteeTab; label: string }[] = [
@@ -55,21 +56,10 @@ const EMPTY: Record<CommitteeTab, { title: string; line: string }> = {
   },
 };
 
-type Err = { code?: string; message: string; field?: string };
-
-async function post<T>(
-  url: string,
-  body?: unknown,
-): Promise<{ ok: true; body: T } | { ok: false; error: Err }> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = (await res.json().catch(() => ({}))) as T & { error?: Err };
-  if (!res.ok || json.error)
-    return { ok: false, error: json.error ?? { message: "That didn’t go through. Try again." } };
-  return { ok: true, body: json };
+/** A committee action. A paused committee (committee.flow off, 503) shows its banner; a refusal the web gives with a
+ * bare code (401, 403) shows F-COPY's failure line; the worker's own refusals show its words (non-negotiable 9). */
+function post<T>(url: string, body?: unknown) {
+  return call<T>(url, { method: "POST", body });
 }
 
 /** The reversal's four lines on one row (S-R4.states, Committee board): each on its own line, and read as sentences,
@@ -120,6 +110,9 @@ export function CommitteeView({
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<{ to?: string; note?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
+  // A4: one action at a time per row, so a double click extends once (and the reversal is sent once)
+  const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
+  const inFlight = useRef(new Set<string>());
 
   // The reversing form takes focus when it opens in place (F-MOTION.focus).
   useEffect(() => {
@@ -140,44 +133,65 @@ export function CommitteeView({
     setData((d) => ({ ...d, items: d.items.map((r) => (r.window_id === row.window_id ? row : r)) }));
   }
 
-  async function extend(row: CommitteeRow) {
-    setErrors({});
-    const r = await post<CommitteeRow>(`/api/committee/windows/${encodeURIComponent(row.window_id)}/extend`);
-    if (r.ok) replaceRow(r.body);
-    else setErrors({ form: r.error.message });
+  /** Runs `act` for a row unless an action for that row is already on its way. */
+  async function once(windowId: string, act: () => Promise<void>) {
+    if (inFlight.current.has(windowId)) return;
+    inFlight.current.add(windowId);
+    setPending(new Set(inFlight.current));
+    try {
+      await act();
+    } finally {
+      inFlight.current.delete(windowId);
+      setPending(new Set(inFlight.current));
+    }
+  }
+
+  function extend(row: CommitteeRow) {
+    return once(row.window_id, async () => {
+      setErrors({});
+      const r = await post<CommitteeRow>(
+        `/api/committee/windows/${encodeURIComponent(row.window_id)}/extend`,
+      );
+      if (r.ok) replaceRow(r.body);
+      else setErrors({ form: r.error.message });
+    });
   }
 
   async function startReverse(row: CommitteeRow) {
     setErrors({});
     setTo(null);
     setNote("");
-    const res = await fetch(`/api/committee/windows/${encodeURIComponent(row.window_id)}/reversing`);
-    if (res.ok) setReversing((await res.json()) as ReversingWordsResponse);
-    else setErrors({ form: "This decision can’t be reversed now." });
+    const r = await call<ReversingWordsResponse>(
+      `/api/committee/windows/${encodeURIComponent(row.window_id)}/reversing`,
+    );
+    if (r.ok) setReversing(r.body);
+    else setErrors({ form: r.status === 503 ? r.error.message : "This decision can’t be reversed now." });
   }
 
-  async function reverse(row: CommitteeRow) {
-    setErrors({});
-    setBusy(true);
-    const r = await post<CommitteeRow>(
-      `/api/committee/windows/${encodeURIComponent(row.window_id)}/reverse`,
-      {
-        to: row.kind === "merge" ? undefined : (to ?? undefined),
-        note,
-        return_in: to === "not_now" ? returnIn : undefined,
-      },
-    );
-    setBusy(false);
-    if (!r.ok) {
-      const e = r.error;
-      if (e.field === "to") return setErrors({ to: e.message });
-      if (e.field === "note") return setErrors({ note: e.message });
-      return setErrors({ form: e.message });
-    }
-    if (sendButton.current) sparkBurst(sendButton.current); // S-R4.rules/3
-    setReversing(null);
-    setOpen(null);
-    await load(tab, sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
+  function reverse(row: CommitteeRow) {
+    return once(row.window_id, async () => {
+      setErrors({});
+      setBusy(true);
+      const r = await post<CommitteeRow>(
+        `/api/committee/windows/${encodeURIComponent(row.window_id)}/reverse`,
+        {
+          to: row.kind === "merge" ? undefined : (to ?? undefined),
+          note,
+          return_in: to === "not_now" ? returnIn : undefined,
+        },
+      );
+      setBusy(false);
+      if (!r.ok) {
+        const e = r.error;
+        if (e.field === "to") return setErrors({ to: e.message });
+        if (e.field === "note") return setErrors({ note: e.message });
+        return setErrors({ form: e.message });
+      }
+      if (sendButton.current) sparkBurst(sendButton.current); // S-R4.rules/3
+      setReversing(null);
+      setOpen(null);
+      await load(tab, sort); // the row moves to Reversed and the counts follow (S-R4.rules/3)
+    });
   }
 
   const tabs = TABS.map((t) => ({ ...t, count: data.counts[t.value] }));
@@ -345,9 +359,16 @@ export function CommitteeView({
                               label={reversing.note_label}
                               multiline
                               help={
-                                note.trim().length < noteMin
-                                  ? `${note.trim().length} of at least ${noteMin} characters`
-                                  : reversing.note_help
+                                // The board's help line stays; the count is a line of its own until the note is
+                                // long enough (S-R4.states, A8)
+                                <>
+                                  <span className="help-l">{reversing.note_help}</span>
+                                  {note.trim().length < noteMin ? (
+                                    <span className="help-l">
+                                      {note.trim().length} of at least {noteMin} characters
+                                    </span>
+                                  ) : null}
+                                </>
                               }
                               error={errors.note}
                             >
@@ -374,7 +395,7 @@ export function CommitteeView({
                                 ref={sendButton}
                                 type="submit"
                                 variant="primary"
-                                busy={busy}
+                                busy={busy || pending.has(row.window_id)}
                                 busyLabel="Sending…"
                               >
                                 {reversing.send_label}
@@ -401,7 +422,11 @@ export function CommitteeView({
                             {row.window.state === "open" || row.window.state === "extended" ? (
                               <div className="cm-acts">
                                 {row.can_extend && row.window.extend_to ? (
-                                  <Button variant="line" onClick={() => void extend(row)}>
+                                  <Button
+                                    variant="line"
+                                    busy={pending.has(row.window_id)}
+                                    onClick={() => void extend(row)}
+                                  >
                                     {row.window.extend_to}
                                   </Button>
                                 ) : row.window.limit_line ? (

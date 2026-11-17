@@ -139,3 +139,8 @@
     width: 100%;
   }
 }
+
+/* A help line and a counter under one field, each on its own line (S-R2 Deciding, S-R4 Reversing) */
+.help-l {
+  display: block;
+}
