@@ -327,8 +327,9 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
     if m["via"] == "review_desk":
         by = "by the review desk"
     else:
+        # The lead's name only when they show it on the Wall (DEC-104), as the colleague's page does.
         lead = read.person_by_code(conn, m.get("lead_code"))
-        by = f"by {lead['first_name']}" if lead else "by its lead"
+        by = f"by {lead['first_name']}" if lead and read.shows_name(lead) else "by its lead"
     return {
         "to": m["lead_ref"],
         "title": m.get("lead_title") or "",
