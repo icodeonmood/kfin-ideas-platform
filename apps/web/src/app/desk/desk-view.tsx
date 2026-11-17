@@ -43,7 +43,7 @@ const EMPTY: Record<DeskTab, { title: string; line: string }> = {
   answered: { title: "No answers waiting", line: "Answers come back here as soon as a sharer sends them." },
   decided: {
     title: "Nothing decided this week",
-    line: "Decisions stay here for seven days, with the Ones Committee's window.",
+    line: "Decisions stay here for seven days, with the Ones Committee’s window.",
   },
 };
 
