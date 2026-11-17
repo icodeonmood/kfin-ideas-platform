@@ -4,7 +4,7 @@ import { utf16ToCodePoints } from "@/server/hide-offsets";
 import {
   HIDE_NEXT,
   HIDE_WORDS,
-  extendStep,
+  caretStep,
   hideBody,
   hideErrorWords,
   hideUrl,
@@ -112,49 +112,101 @@ describe("L-HIDE.rules/7 S-R2 Hide this from the keyboard (WCAG 2.1.1, 4.1.3; BL
     expect(HIDE_NEXT).toBe("Hide this is next. Press Tab.");
   });
 
-  it("extends the selection with Shift and an arrow, Home or End", () => {
-    expect(extendStep(key("ArrowRight", { shift: true }))).toEqual({
+  it("moves the caret with an arrow, Home or End, so the selection can start mid-text (R2)", () => {
+    expect(caretStep(key("ArrowRight"))).toEqual({
+      alter: "move",
       direction: "forward",
       granularity: "character",
     });
-    expect(extendStep(key("ArrowLeft", { shift: true, ctrl: true }))).toEqual({
+    expect(caretStep(key("ArrowLeft"))).toEqual({
+      alter: "move",
       direction: "backward",
-      granularity: "word",
+      granularity: "character",
     });
-    expect(extendStep(key("ArrowRight", { shift: true, alt: true }))).toEqual({
+    expect(caretStep(key("ArrowRight", { ctrl: true }))).toEqual({
+      alter: "move",
       direction: "forward",
       granularity: "word",
     });
-    expect(extendStep(key("ArrowDown", { shift: true }))).toEqual({
-      direction: "forward",
-      granularity: "line",
-    });
-    expect(extendStep(key("ArrowUp", { shift: true }))).toEqual({
+    expect(caretStep(key("ArrowLeft", { alt: true }), true)).toEqual({
+      alter: "move",
       direction: "backward",
-      granularity: "line",
+      granularity: "word",
     });
-    expect(extendStep(key("End", { shift: true }))).toEqual({
+    expect(caretStep(key("ArrowDown"))).toEqual({ alter: "move", direction: "forward", granularity: "line" });
+    expect(caretStep(key("ArrowUp"))).toEqual({ alter: "move", direction: "backward", granularity: "line" });
+    expect(caretStep(key("End"))).toEqual({
+      alter: "move",
       direction: "forward",
       granularity: "lineboundary",
     });
-    expect(extendStep(key("Home", { shift: true }))).toEqual({
+    expect(caretStep(key("Home"))).toEqual({
+      alter: "move",
       direction: "backward",
       granularity: "lineboundary",
     });
   });
 
-  it("leaves other keys to the browser", () => {
-    expect(extendStep(key("ArrowRight"))).toBeNull();
-    expect(extendStep(key("ArrowRight", { shift: true, meta: true }))).toBeNull();
-    expect(extendStep(key("a", { shift: true }))).toBeNull();
+  it("extends the selection from the caret with Shift and an arrow, Home or End", () => {
+    expect(caretStep(key("ArrowRight", { shift: true }))).toEqual({
+      alter: "extend",
+      direction: "forward",
+      granularity: "character",
+    });
+    expect(caretStep(key("ArrowLeft", { shift: true, ctrl: true }))).toEqual({
+      alter: "extend",
+      direction: "backward",
+      granularity: "word",
+    });
+    expect(caretStep(key("ArrowRight", { shift: true, alt: true }), true)).toEqual({
+      alter: "extend",
+      direction: "forward",
+      granularity: "word",
+    });
+    expect(caretStep(key("ArrowDown", { shift: true }))).toEqual({
+      alter: "extend",
+      direction: "forward",
+      granularity: "line",
+    });
+    expect(caretStep(key("ArrowUp", { shift: true }))).toEqual({
+      alter: "extend",
+      direction: "backward",
+      granularity: "line",
+    });
+    expect(caretStep(key("End", { shift: true }))).toEqual({
+      alter: "extend",
+      direction: "forward",
+      granularity: "lineboundary",
+    });
+    expect(caretStep(key("Home", { shift: true }))).toEqual({
+      alter: "extend",
+      direction: "backward",
+      granularity: "lineboundary",
+    });
   });
 
-  it("moves to Hide this on Enter or Alt+H, including Option+H on a Mac", () => {
+  it("leaves the browser's own keys to the browser", () => {
+    // Alt and an arrow is Back and Forward off a Mac; Cmd and an arrow is the Mac's own line and page keys
+    expect(caretStep(key("ArrowLeft", { alt: true }))).toBeNull();
+    expect(caretStep(key("ArrowRight", { shift: true, alt: true }))).toBeNull();
+    expect(caretStep(key("ArrowRight", { shift: true, meta: true }))).toBeNull();
+    expect(caretStep(key("ArrowLeft", { meta: true }), true)).toBeNull();
+    expect(caretStep(key("a", { shift: true }))).toBeNull();
+    expect(caretStep(key("Tab"))).toBeNull();
+    expect(caretStep(key("Enter"))).toBeNull();
+  });
+
+  it("moves to Hide this on Enter only; Alt+H is the browser's Help menu on Windows", () => {
     expect(opensHide(key("Enter"))).toBe(true);
-    expect(opensHide(key("h", { alt: true, code: "KeyH" }))).toBe(true);
-    expect(opensHide(key("˙", { alt: true, code: "KeyH" }))).toBe(true);
     expect(opensHide(key("Enter", { shift: true }))).toBe(false);
+    expect(opensHide(key("Enter", { ctrl: true }))).toBe(false);
+    expect(opensHide(key("Enter", { alt: true }))).toBe(false);
+    expect(opensHide(key("h", { alt: true, code: "KeyH" }))).toBe(false);
+    expect(opensHide(key("˙", { alt: true, code: "KeyH" }))).toBe(false);
     expect(opensHide(key("h"))).toBe(false);
-    expect(opensHide(key("h", { alt: true, ctrl: true, code: "KeyH" }))).toBe(false);
+  });
+
+  it("says Select again. when the page's text is not the stored text (R3)", () => {
+    expect(HIDE_WORDS.select_again).toBe("Select again.");
   });
 });
