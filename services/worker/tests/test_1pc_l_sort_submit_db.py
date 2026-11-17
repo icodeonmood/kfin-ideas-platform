@@ -993,6 +993,70 @@ def test_s05_fix_and_helpers_sent_back_masked_keep_what_was_hidden(world: dict[s
     assert _hide_rows(conn, draft) == before
 
 
+def test_l_submit_edit_fix_figures_cleared_then_added_again(world: dict[str, Any]) -> None:
+    """J-RECOVER edit step, L-WORTH/7 (`replace_worth=False`): clearing every figure adds an all-empty sharer row, so
+    the fix counts no size and its size line drops the figures; adding figures again counts and reads them. Each
+    earlier row stays."""
+    conn, asha, uid = world["conn"], world["p"]["asha"], world["draft"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=1)
+    how = "Send the reason in plain words in the SMS."
+
+    def save(worth: dict[str, Any], minutes: int) -> dict[str, Any]:
+        body = {
+            "declaration_version": DECLARATION_VERSION,
+            "fix": {"how": how, "solved_already": "partly", "worth": worth},
+        }
+        return edit.save(conn, ref, asha, body, now=later + dt.timedelta(minutes=minutes))
+
+    def shown() -> dict[str, Any]:
+        part = edit.page(conn, ref, asha, now=later)["fix"]
+        assert part is not None
+        return dict(part)
+
+    def sharer_rows() -> list[dict[str, Any]]:
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT hours_low, cost_low, cost_about, revenue_low, outside_tools FROM idea_worth "
+                "WHERE idea_uuid = %s AND by_side = 'sharer' ORDER BY id",
+                (uid,),
+            ).fetchall()
+        ]
+
+    assert save({"hours_month": "70 to 150", "cost_month": "about 25k"}, 0)["changed_fields"] == ["fix"]
+    part = shown()
+    assert part["ready_count"] == 3 and part["readiness"] == "3 of 5 ready for the review desk"
+    assert part["part"]["size_line"] == (
+        "70 to 150 hours a month, about ₹25,000 a month saved, solved elsewhere: partly"
+    )
+
+    cleared = save({"hours_month": "", "cost_month": ""}, 1)
+    assert cleared["changed_fields"] == ["fix"] and cleared["version"]["n"] == 3
+    part = shown()
+    assert "worth" not in part
+    assert part["ready_count"] == 2 and part["part"]["line"] == "Included, 2 of 5 ready"
+    assert part["next"] == {"key": "worth", "line": "Most useful next: a rough size. A range is fine."}
+    assert part["part"]["size_line"] == "solved elsewhere: partly"
+    rows = sharer_rows()
+    assert len(rows) == 2 and all(
+        v is None for v in rows[-1].values()
+    )  # the earlier figures stay (L-WORTH/7)
+
+    added = save({"cost_month": "2L"}, 2)
+    assert added["changed_fields"] == ["fix"] and added["version"]["n"] == 4
+    part = shown()
+    assert part["worth"] == {"cost_month": {"low": 200000.0, "text": "₹2,00,000 a month"}}
+    assert part["ready_count"] == 3 and part["next"] == {
+        "key": "basis",
+        "line": "Most useful next: what that is based on.",
+    }
+    assert part["part"]["size_line"] == "₹2,00,000 a month saved, solved elsewhere: partly"
+    assert len(sharer_rows()) == 3
+    assert save({"cost_month": "2L"}, 3)["version"] is None  # the same figures again: no row, no version
+    assert len(sharer_rows()) == 3
+
+
 # --- BLD-C087 verification fixes ------------------------------------------------------------------------------------
 
 
