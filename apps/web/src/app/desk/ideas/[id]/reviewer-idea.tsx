@@ -625,6 +625,11 @@ export function ReviewerIdea({
               />
             ) : panel.state === "answered" && page.panel.state === "answered" ? (
               <SentOrAnswered p={page.panel} titleRef={title} questions={allQuestions} now={now} />
+            ) : panel.state === "sent" ? (
+              // Just sent: the page's new read, with the clock, is on its way
+              <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
+                Waiting on {first}
+              </h2>
             ) : (
               <>
                 <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
