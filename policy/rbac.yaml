@@ -97,6 +97,18 @@ endpoints:
   - POST /api/submissions/{id}/voice                  submit          # a voice note (DEC-096; behind capture.voice)
   - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
   - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
+  # L-DRAFT, the live draft (A-API.drafts, BLD-C071). Owner only: the worker checks the draft is the person's.
+  - GET /api/drafts                                   submit          # recent drafts; archived=1 to restore
+  - POST /api/drafts                                  submit
+  - GET /api/drafts/{id}                              submit          # owner only; open=1 takes over as the one editor
+  - PATCH /api/drafts/{id}                            submit          # the step
+  - DELETE /api/drafts/{id}                           submit          # archives, never deletes
+  - POST /api/drafts/{id}/restore                     submit
+  - POST /api/drafts/{id}/messages                    submit
+  - PATCH /api/drafts/{id}/messages/{mid}             submit
+  - PATCH /api/drafts/{id}/parts/{part}               submit          # pin with a value, or unpin
+  - POST /api/drafts/{id}/runs                        submit          # try again, or build after the interview
+  - GET /api/drafts/{id}/stream                       submit          # server-sent events (A-API.draft-stream)
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit

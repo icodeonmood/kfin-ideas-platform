@@ -141,13 +141,35 @@ export interface HiddenDetail {
 
 export interface Message {
   id: string;
+  /** The person's own words, as typed or spoken (owner only). */
   text: string;
+  /** DEC-108: an English copy of a voice note or another language, labelled as a translation. Never quoted. */
+  text_en?: string;
   lang?: string;
   at: IsoDate;
+  /** "Just now", "Friday, 8:42 pm, on your phone" (L-DRAFT, BLD-C071). */
+  at_label?: string;
+  edited_at?: IsoDate;
   device: Device;
   via: MessageVia;
   files: FileItem[];
   spans: HiddenSpan[];
+}
+
+/** Where and when a draft was saved, as each screen says it (A-API.conventions/6; L-DRAFT.autosave/4, /6). */
+export interface SavedLabels {
+  /** "Friday, on your phone" (side bar, lists). */
+  sidebar: string;
+  /** "Last saved on your phone, Friday 8:42 pm." (resuming). */
+  resume: string;
+  /** "Friday" in "You have a draft from Friday: …" ("today", "yesterday", a weekday, or a date). */
+  prompt_day: string;
+  /** "Last saved on your phone, 8:42 pm." or "Saved on this phone, 8:42 pm." */
+  prompt_line: string;
+  /** "Saved at 1:38 pm" (the save status). */
+  status: string;
+  /** "Saved yesterday, on this laptop", "Saved 8:42 pm Friday, on your phone" (My ideas). */
+  my_ideas: string;
 }
 
 export interface Part<T> {
@@ -236,12 +258,24 @@ export interface Draft {
   step: DraftStep;
   saved_at: IsoDate;
   saved_on: { device: Device; this_device: boolean };
-  /** L-DRAFT.parts/7: title, summary and area present. */
+  /** L-DRAFT.parts/7: title, summary and area present, the minimum reached, nothing still building. */
   ready: boolean;
   min_chars: number;
   char_count: number;
   receipt?: string[];
   suggestions?: string[];
+  // Additions for L-DRAFT (BLD-C071)
+  saved_labels?: SavedLabels | null;
+  /** Parts start forming from here (about 25 characters, L-DRAFT.parts/3). */
+  parts_from_chars?: number;
+  /** Archived after 30 days untouched; restore to carry on (L-DRAFT.autosave/8). */
+  archived?: boolean;
+  /** False while the assistant is off (DEC-105): every part is filled by hand. */
+  assistant?: boolean;
+  /** The newest run, to open the stream on (A-API.draft-stream). */
+  run?: { id: string; state: "running" | "done" | "failed" } | null;
+  /** The one device editing it (L-DRAFT.autosave/5). */
+  editor?: { device: Device | null; this_device: boolean } | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

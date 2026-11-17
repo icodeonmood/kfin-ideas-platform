@@ -56,6 +56,8 @@ import type {
   Worth,
   Conversation,
   ConversationEntry,
+  Message,
+  SavedLabels,
 } from "./entities";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -195,16 +197,52 @@ export interface HomeResponse {
 // ---------------------------------------------------------------------------------------------------------------
 export interface CreateDraftRequest {
   text?: string;
+  /** DEC-108: the English copy of a voice note or another language. */
+  text_en?: string;
+  via?: MessageVia;
   files?: string[];
   channel: Channel;
+}
+export interface CreateDraftResponse {
+  draft: Draft;
+  run_id: string | null;
 }
 export interface AddMessageRequest {
   text: string;
   via: MessageVia;
+  /** DEC-108: the English copy of a voice note or another language; context only, never quoted. */
+  text_en?: string;
+  /** When it was typed, for a message sent again after being offline (L-DRAFT.autosave/7). */
+  at?: IsoDate;
+  /** Keep the words without building (the S1 interview's answers until the last, L-DRAFT.parts/10). */
+  defer_run?: boolean;
   files?: string[];
 }
+/** `run_id` is null when nothing was built: under the minimum, deferred, or every part pinned. */
 export interface AddMessageResponse {
-  run_id: string;
+  run_id: string | null;
+  message: Message;
+  draft: Draft;
+}
+export interface EditMessageRequest {
+  text: string;
+  text_en?: string;
+}
+export interface PartResponse {
+  run_id: string | null;
+  draft: Draft;
+}
+/** One row of GET /drafts?recent=1 (L-DRAFT.autosave/6, /8). */
+export interface DraftListItem {
+  id: string;
+  title: string;
+  saved_at: IsoDate | null;
+  saved_on: Draft["saved_on"];
+  saved_labels: SavedLabels | null;
+  step: DraftStep;
+  char_count: number;
+  channel: Channel;
+  archived: boolean;
 }
 export type PartPatch = { value: unknown } | { pinned: false };
 export type SortingPatch =

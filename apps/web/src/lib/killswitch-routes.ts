@@ -41,6 +41,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
+  // The live draft (L-DRAFT): saving pauses with sharing. It never needs `ai.all`: with the assistant off the parts
+  // are filled by hand (DEC-105).
+  { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],

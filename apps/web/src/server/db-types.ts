@@ -640,6 +640,7 @@ export interface IdeaLinks {
 
 export interface IdeaMessages {
   char_count: Generated<number>;
+  client_id: string | null;
   created_at: Generated<Timestamp>;
   device: string | null;
   edited_at: Timestamp | null;
@@ -648,6 +649,7 @@ export interface IdeaMessages {
   lang: string | null;
   seq: number;
   spans: Generated<Json>;
+  text_en_encrypted: Buffer | null;
   text_encrypted: Buffer;
   via: string;
 }
@@ -704,6 +706,9 @@ export interface Ideas {
   draft_encrypted: Buffer | null;
   draft_expires_at: Timestamp | null;
   edit_closes_at: Timestamp | null;
+  editor_at: Timestamp | null;
+  editor_device: string | null;
+  editor_device_id: string | null;
   helper_picks: Generated<string[]>;
   helper_text: string | null;
   id: Generated<string>;
