@@ -284,14 +284,26 @@ def add_message(
     at: dt.datetime | None = None,
     defer_run: bool = False,
     files: list[str] | None = None,
+    stream_id: str | None = None,
 ) -> tuple[str, str | None]:
     """`POST /drafts/:id/messages`: one more message (typed, a voice note's words, an email or Teams arrival).
     `text` is the person's own words; `text_en`, for a voice note or another language, an English copy labelled as
-    a translation (DEC-108): context for the parts, never quoted. `defer_run` keeps the words without building (the
-    S1 interview's answers until the last, L-DRAFT.parts/10)."""
+    a translation (DEC-108): context for the parts, never quoted. A voice note names its `stream_id`: the finished
+    note is taken over from the voice service (c/sarvam), its English copy kept only if the person did not change
+    the words. `defer_run` keeps the words without building (the S1 interview's answers until the last,
+    L-DRAFT.parts/10)."""
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
         _writable(row, device)
+        if via == "voice" and stream_id:
+            note = adapters.voice_message(conn, stream_id, idea_uuid=idea_uuid, by_code=owner.code)
+            if (
+                note is not None
+                and not text_en
+                and isinstance(text, str)
+                and text.strip() == note.text.strip()
+            ):
+                text_en = note.text_en
         return _add(conn, owner, idea_uuid, device, text=text, via=via, text_en=text_en or None,
                     client_id=client_id, at=at, defer_run=defer_run, files=files)  # fmt: skip
 

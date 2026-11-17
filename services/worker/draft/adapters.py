@@ -4,6 +4,10 @@
   (its entry points, BLD-C060). Until c/hide is on main they mask the customer details of DEC-103 with the level-1
   patterns alone; L-HIDE adds the gatekeeper's pass and names next to a detail, and keeps each detail's id across
   edits. TODO(c/hide): replace the three with `from hide import hide_message, hide_text, preview` once c/hide lands.
+- Voice (DEC-108, branch c/sarvam): `voice_message` has the signature of `speech.drafts.voice_to_message`: a
+  finished voice note handed to the draft as one message, the person's words plus an English copy. Until c/sarvam is
+  on main it returns None, and the words the client sends are kept as they are.
+  TODO(c/sarvam): replace with `from speech.drafts import voice_to_message` once c/sarvam lands.
 - L-SIMILAR (branch c/similar): `similar_for`. Until it is on main similar ideas are not looked for here and the
   part says so ("Couldn't check for similar ideas. The review desk will.", `L-SIMILAR.failure`), never "none found".
   TODO(c/similar): switch to `from similar import …` once c/similar lands.
@@ -168,4 +172,12 @@ def hide_text(
 def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[dict[str, Any]] | None:
     """Up to 8 similar ideas (`SimilarMatch[]`), or None when they could not be looked for (the part then fails and
     the review desk checks instead). L-SIMILAR owns the matching; until it lands this is None."""
+    return None
+
+
+def voice_message(
+    conn: Conn, stream_id: str, *, idea_uuid: str, by_code: str, consume: bool = True
+) -> Any | None:
+    """A finished voice note for this draft (`text`, `text_en`, `lang`, …), handed over once, or None when there is
+    none to hand over. c/sarvam's `voice_to_message`; until it lands, None."""
     return None

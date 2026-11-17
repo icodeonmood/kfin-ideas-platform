@@ -197,6 +197,7 @@ async def add_message(idea_uuid: str, request: Request) -> Response:
                 at=_at(data.get("at")),
                 defer_run=data.get("defer_run") is True,
                 files=_files(data),
+                stream_id=data.get("stream_id") if isinstance(data.get("stream_id"), str) else None,
             )
             runs.dispatch(run_id)
             draft = store.view(conn, owner, idea_uuid, device)
