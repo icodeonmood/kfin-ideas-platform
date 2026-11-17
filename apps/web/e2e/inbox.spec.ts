@@ -237,9 +237,11 @@ test.describe("S-H5 Inbox", () => {
     await expect(mention).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("2 of 4", { exact: true })).toBeVisible();
 
-    // An item that still needs the person is not archived (L-INBOX.rules/5).
+    // An item that still needs the person is not archived (L-INBOX.rules/5). Archive is marked unavailable
+    // (aria-disabled) but still says why when pressed, so it is pressed from the keyboard.
     await questions.click();
-    await page.getByRole("button", { name: "Archive" }).click();
+    await page.getByRole("button", { name: "Archive" }).focus();
+    await page.keyboard.press("Enter");
     await expect(
       page.getByText("This still needs you, so it stays in your Inbox until it's done.", { exact: true }),
     ).toBeVisible();
@@ -295,7 +297,12 @@ test.describe("S-H5 Inbox", () => {
       db.query("SELECT id FROM notifications WHERE user_id = $1 AND kind = 'mention'", [userId]),
     );
     await page.goto(`/inbox/${rows[0].id}`);
-    await expect(row(page, /mentioned you, /)).toHaveAttribute("aria-pressed", "true");
+    if (isPhone(page)) {
+      // On a phone the item opens as its own screen (S-H5.rules/6): the list is hidden and the title is the h1.
+      await expect(page.getByRole("heading", { level: 1, name: "mentioned you" })).toBeVisible();
+    } else {
+      await expect(row(page, /mentioned you, /)).toHaveAttribute("aria-pressed", "true");
+    }
     await expect(page.getByRole("link", { name: "Open the conversation" })).toBeVisible();
   });
 });
