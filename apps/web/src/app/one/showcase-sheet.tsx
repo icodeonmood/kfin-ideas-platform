@@ -12,7 +12,10 @@ import type { ShowcaseBrief } from "@/server/ones";
 const LEAD =
   "Thirty minutes at The Showcase, in seven parts. Parts you leave empty show what your record says. The core committee reads this before the event.";
 const SAVED = "Saved. The committee sees your latest version.";
+// NOT DRAWN (BLD-E042): HR sign-off
 const LOAD_FAILED = "We can't load your Showcase brief just now. Please try again in a minute.";
+// NOT DRAWN (BLD-E042): HR sign-off
+const CLOSE = "Close";
 const ERRORS: Record<string, string> = {
   personal_data: "Please take out any personal details (numbers, addresses, investor names) and try again.",
   text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
@@ -101,7 +104,7 @@ export function ShowcaseSheet({ onClose }: { onClose: () => void }) {
           Your Showcase brief
         </h2>
         <button type="button" className={buttonClass("text")} onClick={close}>
-          Close
+          {CLOSE}
         </button>
       </div>
       <p className="body">{LEAD}</p>
