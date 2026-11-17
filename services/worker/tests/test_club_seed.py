@@ -377,10 +377,13 @@ def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
         (i2.uuid,),
     ).fetchall()
     assert len(kept) == 1
+    # To the sharer's users.id, from the system.
     assert kept[0]["user_id"] == p_id(conn, "indira") and kept[0]["from_user_id"] is None
-    # Exactly what lane C's intake posts (draft/channels.py `_kept`): refs the channel, one "Check and send".
-    assert kept[0]["payload"] == {"channel": "email"} and not kept[0]["needs_you"]
+    # Exactly what lane C's intake posts (L-DRAFT.channels): refs `via` only, one "Check and send" to the draft by
+    # its ideas.id uuid, never an IDEA- reference (a draft has none).
+    assert kept[0]["payload"] == {"via": "email"} and not kept[0]["needs_you"]
     assert kept[0]["actions"] == [{"label": "Check and send", "style": "primary", "to": f"/share/{i2.uuid}"}]
+    assert i2.ref is None and "IDEA-" not in kept[0]["actions"][0]["to"]
 
 
 def test_l_questions_ask_l_review_open_j_review_a1_a3_unopened_idea_with_a_queued_question(

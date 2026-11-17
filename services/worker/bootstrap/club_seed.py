@@ -1310,10 +1310,11 @@ def _inbox(
             _inbox_item(conn, p[m[key].spec.owner]["id"], "teamup_request", ask.sender, m[key].uuid,
                         {"request_id": ask.request_id, "request": ask.request, "brought": ask.brought}, ask.at,
                         actions=_lead_answers(ask.brought > 0), needs=True)  # fmt: skip
-    # J-RESUME/5: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as the
-    # draft (draft/channels.py `_kept`, L-DRAFT.channels): from the system, refs the channel only, "Check and send".
+    # J-RESUME/5 and /6: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as
+    # the draft (L-DRAFT.channels): to the sharer's users.id, from the system, refs how it came in (`via`) only, and
+    # one "Check and send" to the draft by its ideas.id (a draft has no IDEA- reference).
     email = m["I2"]
-    _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid, {"channel": email.spec.channel},
+    _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid, {"via": email.spec.channel},
                 _ago(email.spec.saved_days + 0.05, now),
                 actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}])  # fmt: skip
 
