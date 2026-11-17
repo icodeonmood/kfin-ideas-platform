@@ -92,6 +92,7 @@ def public_idea(
     qset: dict[str, Any] | None,
     carried_into: str | None = None,
     reviewer_first: str | None = None,
+    sees_reversal: bool | None = None,
 ) -> dict[str, Any]:
     """E-ENTITIES `Idea`, the fields anyone may see once it is shared: the short summary, never the person's own
     words (non-negotiable 7). The sharer is null to others when they hide their name from the Wall."""
@@ -120,6 +121,7 @@ def public_idea(
         qset=qset,
         carried_into=carried_into,
         reviewer_first=reviewer_first,
+        sees_reversal=sees_reversal,
     )
     return {
         "id": read.key_of(idea),
