@@ -177,6 +177,7 @@ def cast(db: Conn, repo: Path) -> Iterator[dict[str, Any]]:
     }  # fmt: skip
     f.crew(db, out["idea"], arjun)
     ideas = [str(out["idea"]["id"]), str(out["draft"]["id"])]
+    started = db.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
     yield out
     s = get_settings()
     rows = db.execute(
@@ -188,7 +189,13 @@ def cast(db: Conn, repo: Path) -> Iterator[dict[str, Any]]:
                 store.delete(s.s3_bucket_quarantine, key)
                 store.delete(s.s3_bucket_clean, key)
     ids = [str(r["id"]) for r in rows]
-    db.execute("DELETE FROM jobs WHERE type = %s AND payload->>'attachment_id' = ANY(%s)", (F.JOB, ids))
+    # Every check job this test queued, its file removed or not: another module's `run_one` must never pick one up
+    # (test_b3_04_drafts_purge runs the next due job of any type).
+    db.execute(
+        "DELETE FROM jobs WHERE type = %s AND (payload->>'attachment_id' = ANY(%s) OR (created_at >= %s AND NOT "
+        "EXISTS (SELECT 1 FROM attachments a WHERE a.id = jobs.payload->>'attachment_id')))",
+        (F.JOB, ids, started),
+    )
     for i in ideas:
         vault.purge_scope(db, scope_for(i))
         db.execute("DELETE FROM vault_counters WHERE scope_id = %s", (scope_for(i),))
@@ -243,7 +250,7 @@ def test_L_HIDE_files_1_2_a_clean_file_is_checking_then_checked_and_opens_for_cr
     assert job is not None and job["dedupe_key"] == f"{F.JOB}:{att}"
     s = get_settings()
     key = _row(db, att)["store_key"]
-    assert key.startswith(f"att/{att}/") and store.exists(s.s3_bucket_quarantine, key)
+    assert key.startswith(f"files/{att}-") and store.exists(s.s3_bucket_quarantine, key)
 
     # Until the checks finish, only Kavya sees it, and nobody opens it (non-negotiable 8).
     for who in ("arjun", "meera", "rohan", "sam"):
@@ -523,6 +530,12 @@ def test_A_API_files_part_2_try_again_remove_and_hide_it_for_me(db: Conn, cast: 
     F.remove(db, att, kavya["id"])
     assert db.execute("SELECT 1 FROM attachments WHERE id = %s", (att,)).fetchone() is None
     assert db.execute("SELECT 1 FROM hidden_details WHERE source_id = %s", (att,)).fetchone() is None
+    assert (
+        db.execute(
+            "SELECT 1 FROM jobs WHERE type = %s AND payload->>'attachment_id' = %s", (F.JOB, att)
+        ).fetchone()
+        is None
+    )
     assert not store.exists(get_settings().s3_bucket_clean, key)
     assert [a["file_id"] for a in _audits(db, idea["id"], "file.removed")] == [att]
     assert _refused(F.get_item, db, att, kavya["id"]).code == "not_found"

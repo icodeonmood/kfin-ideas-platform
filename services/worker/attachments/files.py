@@ -429,8 +429,9 @@ def _next_id(conn: Conn) -> str:
 
 def _key(att_id: str) -> str:
     """The object's key: the id and a random part, so a key never names an object an earlier database left in a
-    shared store (dev and test stacks share one), and nothing can be guessed from it."""
-    return f"att/{att_id}/{uuid.uuid4().hex}"
+    shared store (dev and test stacks share one), and nothing can be guessed from it. Flat, under its own prefix:
+    MinIO cannot put `att/<id>/…` while the old pipeline's `att/<id>` object exists."""
+    return f"files/{att_id}-{uuid.uuid4().hex}"
 
 
 def _audit(conn: Conn, user_id: str, action: str, idea_uuid: str, after: dict[str, Any]) -> None:
@@ -747,6 +748,11 @@ def remove(conn: Conn, att_id: str, user_id: str) -> None:
             if key:
                 store.delete(bucket, key)
         hide_files.forget(conn, att_id)
+        # Its checks still waiting go too, so a job runner never picks up work for a file that is gone.
+        conn.execute(
+            "DELETE FROM jobs WHERE type = %s AND state = 'queued' AND payload->>'attachment_id' = %s",
+            (JOB, att_id),
+        )
         conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))
         _audit(conn, user_id, "file.removed", str(row["idea_uuid"]),
                {"file_id": att_id, "state": effective_state(row), "kind": row["kind"]})  # fmt: skip
