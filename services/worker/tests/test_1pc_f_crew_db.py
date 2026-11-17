@@ -52,7 +52,14 @@ def world(db: Conn) -> dict[str, Any]:
                     city="Hyderabad", shared_days=0.5, helpers=("Operations",))  # fmt: skip
     # Never on Leela's deck: no reason, closed, shipped, a draft, and her own.
     f.idea(db, tarun, "Sales targets sheet is emailed weekly", area="Sales", city="Kolkata")
-    f.idea(db, pooja, "Old idea that was not picked", status="not_picked", area="Investor service", city="Hyderabad")
+    f.idea(
+        db,
+        pooja,
+        "Old idea that was not picked",
+        status="not_picked",
+        area="Investor service",
+        city="Hyderabad",
+    )
     f.idea(db, pooja, "Shipped already", status="shipped", area="Investor service", city="Hyderabad")
     f.idea(db, ritu, "A draft in her area", area="Investor service", shared_days=None)
     return {"leela": leela, "omkar": omkar, "ritu": ritu, "vikram": vikram, "pooja": pooja, "tarun": tarun,
@@ -66,7 +73,12 @@ def _ids(body: dict[str, Any]) -> list[str]:
 def test_L_CREW_1_to_3_one_reason_per_card_strongest_first(db: Conn, world: dict[str, Any]) -> None:
     body = deck.deck(db, world["leela"]["id"], now=NOW)
     w = world
-    assert _ids(body) == [w["close"]["idea_id"], w["touch"]["idea_id"], w["area"]["idea_id"], w["office"]["idea_id"]]
+    assert _ids(body) == [
+        w["close"]["idea_id"],
+        w["touch"]["idea_id"],
+        w["area"]["idea_id"],
+        w["office"]["idea_id"],
+    ]
     assert [(c["reason_kind"], c["reason"]) for c in body["items"]] == [
         ("close_to_yours", "Same R07 SMS as your idea from Saturday"),
         ("touches_your_work", "They need someone in Investor service"),
@@ -117,7 +129,13 @@ def test_L_CREW_5_filters_with_live_counts_and_chips(db: Conn, world: dict[str, 
     assert _ids(body) == [world["office"]["idea_id"]] and body["total"] == 1 and body["deck_total"] == 4
     assert body["active"] == [{"key": "location", "value": "Hyderabad", "label": "Hyderabad"}]
     groups = {g["key"]: g for g in body["filters"]}
-    assert [g["label"] for g in body["filters"]] == ["Location", "Category", "Idea status", "Team size", "Looking for"]
+    assert [g["label"] for g in body["filters"]] == [
+        "Location",
+        "Category",
+        "Idea status",
+        "Team size",
+        "Looking for",
+    ]
     assert {o["value"]: o["count"] for o in groups["location"]["options"]} == {
         "Mumbai": 1, "Pune": 1, "Chennai": 1, "Hyderabad": 1,
     }  # fmt: skip
@@ -125,7 +143,9 @@ def test_L_CREW_5_filters_with_live_counts_and_chips(db: Conn, world: dict[str, 
         "Just the lead": 1, "2 to 3 people": 0, "4 or more": 0,
     }  # fmt: skip
     assert body["counts"]["location:Mumbai"] == 1 and body["counts"]["status:checking"] == 1
-    both = deck.deck(db, world["leela"]["id"], {"category": ["Operations"], "team_size": ["four_plus"]}, now=NOW)
+    both = deck.deck(
+        db, world["leela"]["id"], {"category": ["Operations"], "team_size": ["four_plus"]}, now=NOW
+    )
     assert _ids(both) == [world["close"]["idea_id"]]
 
 
@@ -148,7 +168,12 @@ def test_V_ACC_teamup_8_pass_every_card_then_undo_last_then_reset(db: Conn, worl
     again = deck.reset(db, leela)
     assert again == {"reset": 2, "passed": 0, "last_passed": None}
     assert _ids(deck.deck(db, leela, now=NOW)) == ids
-    assert deck.undo_last(db, leela, now=NOW) == {"restored": None, "card": None, "passed": 0, "last_passed": None}
+    assert deck.undo_last(db, leela, now=NOW) == {
+        "restored": None,
+        "card": None,
+        "passed": 0,
+        "last_passed": None,
+    }
 
 
 def test_L_CREW_6_only_a_colleagues_shared_idea_can_be_passed(db: Conn, world: dict[str, Any]) -> None:
@@ -186,7 +211,10 @@ def test_L_CREW_9_your_crews_waiting_and_on_the_crew(db: Conn, world: dict[str, 
 
 def test_L_CREW_10_home_shows_the_top_three(db: Conn, world: dict[str, Any]) -> None:
     top = deck.home(db, world["leela"]["id"], now=NOW)
-    assert top["total"] == 4 and [c["id"] for c in top["top"]] == _ids(deck.deck(db, world["leela"]["id"], now=NOW))[:3]
+    assert (
+        top["total"] == 4
+        and [c["id"] for c in top["top"]] == _ids(deck.deck(db, world["leela"]["id"], now=NOW))[:3]
+    )
 
 
 def test_L_CREW_2_close_to_yours_from_a_newer_idea_that_matched_hers(db: Conn, world: dict[str, Any]) -> None:
@@ -198,8 +226,27 @@ def test_L_CREW_2_close_to_yours_from_a_newer_idea_that_matched_hers(db: Conn, w
     assert cards[1]["reason"] == "Close to your idea from Saturday"
 
 
+def test_J_SIMILAR_4b_a_waiting_merge_request_is_asking_to_join(db: Conn, world: dict[str, Any]) -> None:
+    """BLD-F038: a draft's merge request to an idea takes it off the deck and puts it in Your crews, waiting."""
+    w = world
+    draft = f.idea(db, w["leela"], "Rejection SMS again, from my counter", shared_days=None)
+    rid = f.merge_request(db, draft, w["area"], w["leela"])
+    body = deck.deck(db, w["leela"]["id"], now=NOW)
+    assert w["area"]["idea_id"] not in _ids(body)
+    rows = body["your_crews"]["items"]
+    assert [(r["id"], r["state"], r["label"], r["request_id"]) for r in rows] == [
+        (w["area"]["idea_id"], "waiting", "Waiting for Ritu", rid)
+    ]
+    assert (body["pending"], body["asked"]) == (1, 1)
+    db.execute("UPDATE merge_requests SET state = 'withdrawn' WHERE id = %s", (rid,))
+    again = deck.deck(db, w["leela"]["id"], now=NOW)
+    assert w["area"]["idea_id"] in _ids(again) and again["your_crews"]["items"] == []
+
+
 @pytest.fixture
-def client(db: Conn, test_database: str, company_repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+def client(
+    db: Conn, test_database: str, company_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
     from core.config import get_settings
 
     monkeypatch.setenv("COMPANY_REPO_PATH", str(company_repo))
@@ -222,7 +269,10 @@ def test_A_API_team_up_crew_routes(client: TestClient, world: dict[str, Any]) ->
     home = client.get("/internal/crew", params={"user_id": leela, "limit": 3}).json()
     assert len(home["items"]) == 3 and home["total"] == 4
     ref = home["items"][0]["id"]
-    assert client.post("/internal/crew/pass", params={"user_id": leela}, json={"idea_id": ref}).json()["passed"] == 1
+    assert (
+        client.post("/internal/crew/pass", params={"user_id": leela}, json={"idea_id": ref}).json()["passed"]
+        == 1
+    )
     assert client.post("/internal/crew/pass/undo", params={"user_id": leela}).json()["restored"] == ref
     assert client.post("/internal/crew/pass/reset", params={"user_id": leela}).json()["passed"] == 0
     bad = client.post("/internal/crew/pass", params={"user_id": leela}, json={})
