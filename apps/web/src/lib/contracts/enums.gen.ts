@@ -367,6 +367,7 @@ export const ONEPC = {
     },
     "inbox_kind": {
       "source": "E-ENUMS.inbox",
+      "note": "detail_hidden_by_desk is the repo's (lane C, L-HIDE.rules/7: a reviewer hid a detail the checks missed; BLD-C063). The notice never carries the hidden value.",
       "values": [
         "questions",
         "teamup_request",
@@ -382,7 +383,8 @@ export const ONEPC = {
         "comment",
         "draft_kept",
         "sent_to_desk",
-        "answer_reminder"
+        "answer_reminder",
+        "detail_hidden_by_desk"
       ]
     },
     "role": {

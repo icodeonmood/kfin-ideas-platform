@@ -1076,6 +1076,8 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Open the idea", "to": "idea", "style": "line"}]),
         ("tanvi", "comment", "harish", "T7", 4.5, False, None, True, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "line"}]),
+        ("tanvi", "detail_hidden_by_desk", "harish", "T7", 4.8, False, None, True, False,
+         [{"label": "Open your idea", "to": "idea", "style": "line"}]),
         ("rekha", "teamup_request", "bhavesh", "R1", 1.2, True, None, False, False,
          [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Approve", "op": "team_only", "style": "primary"}]),
         ("aparna", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,

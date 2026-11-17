@@ -345,26 +345,20 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, skip: tuple[str, s
     return changed
 
 
-def _notify_sharer(conn: Conn, idea: dict[str, Any], by: str, hid: str, kind: str) -> None:
-    from notify import INBOX_KINDS, post
+def _notify_sharer(conn: Conn, idea: dict[str, Any], by: str) -> bool:
+    """Tell the sharer the review desk hid a detail (Inbox kind `detail_hidden_by_desk`, BLD-C063). IDs only: no refs,
+    so the notice never carries the hidden value (L-HIDE.rules/8). Until lane A's notify knows the kind, the audit
+    row is the record and nothing is posted. Returns whether a notice was posted."""
+    import notify
 
     sharer = idea.get("sharer_user_id")
     if not sharer or str(sharer) == by:
-        return
-    if (
-        NOTIFY_KIND not in INBOX_KINDS
-    ):  # lane A adds the kind to E-ENUMS.inbox (BLD-C063); the audit row stands
-        log.info("hide.notify_kind_pending", idea_id=str(idea["id"]), hidden_id=hid)
-        return
-    post(
-        conn,
-        NOTIFY_KIND,  # type: ignore[arg-type]
-        [str(sharer)],
-        idea_id=str(idea["id"]),
-        sender=by,
-        refs={"hidden_id": hid, "kind": kind},
-        dedupe_key=f"{NOTIFY_KIND}:{hid}",
-    )
+        return False
+    if NOTIFY_KIND not in notify.INBOX_KINDS:
+        log.info("hide.notify_kind_pending", idea_id=str(idea["id"]))
+        return False
+    notify.post(conn, NOTIFY_KIND, [str(sharer)], idea_id=str(idea["id"]), sender=by)  # type: ignore[arg-type]
+    return True
 
 
 def desk_hide(
@@ -433,15 +427,15 @@ def desk_hide(
             skip = (source_kind, source_id)
         changed = _sweep(conn, idea_uuid, value, str(row["kind"]), skip)
         hid = str(row["id"])
+        notified = _notify_sharer(conn, idea, by)
         audit(
             conn,
             by,
             "hide.desk_hidden",
             idea_uuid,
             {"hidden_id": hid, "kind": row["kind"], "source": source_kind, "source_id": source_id,
-             "other_copies": changed},
+             "other_copies": changed, "sharer_notified": notified},
         )  # fmt: skip
-        _notify_sharer(conn, idea, by, hid, str(row["kind"]))
     log.info("hide.desk_hidden", idea_id=idea_uuid, hidden_id=hid, other_copies=changed)
     return detail_view(row)
 

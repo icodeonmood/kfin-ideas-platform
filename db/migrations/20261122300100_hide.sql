@@ -1,5 +1,5 @@
 -- migrate:up
--- L-HIDE (lane C, BLD-C060 to BLD-C062). Additive only.
+-- L-HIDE (lane C, BLD-C060 to BLD-C064). Additive only.
 -- 1. A hidden detail can sit in text the desk wrote (`desk`), in the idea's title, summary or how-often line
 --    (`title`) and in a part of the draft (`part`), as well as in messages, answers, the conversation, edits and
 --    files. The reviewer's "Hide this" (L-HIDE.rules/7) works on all of them.
@@ -21,7 +21,21 @@ SELECT 'migration', 'kill_switch.set', 'kill_switch:' || name, NULL, '{"state": 
        'Off until black-out passes review (DEC-107)'
   FROM added;
 
+-- 3. The sharer's Inbox item when the review desk hides a detail the checks missed (L-HIDE.rules/7; lane A agreed the
+--    kind, 17 Nov; BLD-C063). E-ENUMS.inbox in contracts/1pc/enums.json carries it too. The item never holds the value.
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (kind IN (
+  'questions', 'teamup_request', 'teamup_answer', 'decision', 'decision_reversed',
+  'desk_merge', 'worth_revised', 'stage_moved', 'build_ask', 'mention', 'crew_joined',
+  'comment', 'draft_kept', 'sent_to_desk', 'answer_reminder', 'detail_hidden_by_desk'));
+
 -- migrate:down
+DELETE FROM notifications WHERE kind = 'detail_hidden_by_desk';
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (kind IN (
+  'questions', 'teamup_request', 'teamup_answer', 'decision', 'decision_reversed',
+  'desk_merge', 'worth_revised', 'stage_moved', 'build_ask', 'mention', 'crew_joined',
+  'comment', 'draft_kept', 'sent_to_desk', 'answer_reminder'));
 DELETE FROM kill_switches WHERE name = 'files.blackout';
 DELETE FROM hidden_details WHERE source IN ('desk', 'title', 'part');
 ALTER TABLE hidden_details DROP CONSTRAINT IF EXISTS hidden_details_source_check;
