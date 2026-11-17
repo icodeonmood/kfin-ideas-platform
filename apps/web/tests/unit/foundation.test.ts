@@ -56,6 +56,39 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
+/** The declarations of the rule whose selector is exactly `selector` in components.css, comments dropped. */
+function componentRule(selector: string): Record<string, string> {
+  const css = read(`${APP}components.css`).replace(/\/\*[\s\S]*?\*\//g, "");
+  const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const body = css.match(new RegExp(`(?:^|\\})\\s*${esc}\\s*\\{([^}]*)\\}`))?.[1];
+  if (body === undefined) throw new Error(`components.css has no rule ${selector}`);
+  return Object.fromEntries(
+    body
+      .split(";")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]),
+  );
+}
+
+/** A CSS colour as painted over `under` (a hex): a token, a hex, white, transparent or an rgba() fill. */
+function paint(value: string, under: string, tokens: Map<string, string>): string {
+  const v = value.trim().toLowerCase();
+  const token = v.match(/^var\((--[\w-]+)\)$/);
+  if (token) return paint(tokens.get(token[1]!) ?? "", under, tokens);
+  if (v === "transparent") return under;
+  if (v === "white" || v === "#fff") return "#ffffff";
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  const fill = v.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/);
+  if (!fill) throw new Error(`cannot paint ${value}`);
+  const [r, g, b, a] = fill.slice(1).map(Number) as [number, number, number, number];
+  const u = under.replace("#", "");
+  return `#${[r, g, b]
+    .map((c, i) => Math.round(c * a + parseInt(u.slice(i * 2, i * 2 + 2), 16) * (1 - a)))
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 describe("F-COLOR tokens", () => {
   it("F-COLOR: apps/web/src/app/tokens.css is the pack's tokens.css, unchanged", () => {
     expect(read(`${APP}tokens.css`)).toBe(read(`${PACK}tokens.css`));
@@ -137,6 +170,32 @@ describe("F-COLOR.contrast and F-A11Y.rules/1", () => {
     // The pack's gradient band runs #3455ec to #f58256; the Shipped pill on a One's post sits on --slab.
     for (const bg of ["#3455ec", "#f58256", hex("--slab")])
       expect(contrast("#ffffff", over(bg)), `white on .pill.band over ${bg}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("C-TABS/1: every count is a 22px pill in tabular figures, as the board draws it (Desk .mtab .n)", () => {
+    const n = componentRule(".tab-n");
+    expect(n).toMatchObject({
+      "min-width": "22px",
+      height: "22px",
+      padding: "0 7px",
+      "border-radius": "var(--r-pill)",
+      background: "rgba(17, 17, 17, 0.06)",
+      color: "var(--mute2)",
+      font: "600 12px/22px var(--ft)",
+      "font-variant-numeric": "tabular-nums",
+    });
+    expect(componentRule('[aria-selected="true"] > .tab-n')).toMatchObject({
+      background: "var(--ink)",
+      color: "#ffffff",
+    });
+  });
+
+  it("C-TABS/1, F-COLOR.contrast: a count reaches 4.5:1 on its disc over --paper, selected or not", () => {
+    for (const sel of [".tab-n", '[aria-selected="true"] > .tab-n']) {
+      const r = componentRule(sel);
+      const disc = paint(r.background!, hex("--paper"), t);
+      expect(contrast(paint(r.color!, disc, t), disc), `${sel} on ${disc}`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 
