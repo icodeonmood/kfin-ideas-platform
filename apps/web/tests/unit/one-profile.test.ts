@@ -9,9 +9,13 @@ import { describe, expect, it } from "vitest";
 import OneLoading from "@/app/one/loading";
 import {
   briefProblem,
+  isNotAOne,
   LOAD_FAILED as ONE_FAILED,
   MSG_BRIEF,
+  rememberUnsentSeen,
   splitFigure,
+  takeUnsentSeen,
+  UNSENT_SEEN_KEY,
   wholeNumber,
 } from "@/app/one/rules";
 import { OneUnavailable } from "@/app/one/unavailable";
@@ -43,6 +47,64 @@ describe("V-FIELDS.one S-ONE: the number and the brief", () => {
     expect(briefProblem("x".repeat(141))).toBe(MSG_BRIEF);
     expect(briefProblem("Branches stopped calling us. Investors are happier now too.")).toBe(MSG_BRIEF);
     expect(briefProblem(`  Wrong bank details are   caught before the first debit.  `)).toBeNull();
+  });
+});
+
+describe("S-ONE.rules/1 and /3: who goes to Profile, and a moment that plays once", () => {
+  it("S-ONE.rules/1: only the worker's 403 not_a_one sends a person to Profile", () => {
+    expect(isNotAOne(403, { error: { code: "not_a_one", message: "" } })).toBe(true);
+    // A role the worker refuses, a kill switch or an unreadable answer is not "not a One": the error state shows.
+    expect(isNotAOne(403, { error: { code: "forbidden", message: "" } })).toBe(false);
+    expect(isNotAOne(403, { error: "forbidden" })).toBe(false);
+    expect(isNotAOne(403, null)).toBe(false);
+    expect(isNotAOne(503, { error: { code: "paused", message: "", switch: "ones.public" } })).toBe(false);
+    expect(isNotAOne(503, { error: { code: "not_a_one" } })).toBe(false);
+    expect(isNotAOne(undefined, undefined)).toBe(false);
+  });
+
+  /** A device's storage, as much of it as the screen uses. */
+  const store = () => {
+    const m = new Map<string, string>();
+    return {
+      m,
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+    };
+  };
+
+  it("S-ONE.rules/3: a seen that did not land is retried once on the next load, not played again", () => {
+    const s = store();
+    expect(takeUnsentSeen(s, 41)).toBe(false); // nothing waiting: the moment plays
+    rememberUnsentSeen(s, 41);
+    expect(s.m.get(UNSENT_SEEN_KEY)).toBe("41"); // the moment's id only
+    expect(takeUnsentSeen(s, 41)).toBe(true); // next load: send "seen" again, do not play
+    expect(takeUnsentSeen(s, 41)).toBe(false); // once only: the note is used up
+    expect(s.m.has(UNSENT_SEEN_KEY)).toBe(false);
+  });
+
+  it("S-ONE.rules/3: a note for another moment is dropped and that moment plays", () => {
+    const s = store();
+    rememberUnsentSeen(s, 41);
+    expect(takeUnsentSeen(s, 42)).toBe(false);
+    expect(s.m.has(UNSENT_SEEN_KEY)).toBe(false);
+  });
+
+  it("S-ONE.rules/3: without storage the moment simply plays as before", () => {
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => rememberUnsentSeen(blocked, 41)).not.toThrow();
+    expect(takeUnsentSeen(blocked, 41)).toBe(false);
+    expect(takeUnsentSeen(null, 41)).toBe(false);
   });
 });
 

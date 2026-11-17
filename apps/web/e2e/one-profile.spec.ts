@@ -430,6 +430,45 @@ test.describe("S-ONE, a One's dashboard", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
+  test("J-ONE/6 S-ONE.rules/3 L-ONES.rules/3: a seen that did not land is sent once more on the next load, and the moment does not play again", async ({
+    page,
+  }, info) => {
+    const me = await signInFresh(page, info);
+    one = await makeOne(me.id, { tier: 2, glowFrom: 1 });
+    const seen = /\/api\/one\/glow-up\/[^/]+\/seen$/;
+    await page.route(seen, (r) =>
+      r.fulfill({ status: 503, json: { error: { code: "try_again", message: "" } } }),
+    );
+    const failed = page.waitForResponse((r) => seen.test(r.url()) && r.status() === 503);
+    await page.goto("/one");
+    const moment = page.getByRole("dialog", { name: `No. ${one.number}, your spark is hotter` });
+    await expect(moment).toBeVisible();
+    await failed;
+    await page.keyboard.press("Escape");
+    await expect(moment).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("one.glow-up.unsent")))
+      .not.toBeNull();
+    expect(
+      (await sql("SELECT 1 FROM one_glow_ups WHERE one_id = $1 AND seen_at IS NULL", [one.oneId])).length,
+    ).toBe(1);
+
+    await page.unroute(seen);
+    const retried = page.waitForResponse((r) => seen.test(r.url()) && r.request().method() === "POST");
+    await page.reload();
+    expect((await retried).ok()).toBe(true);
+    await expect(page.getByRole("heading", { level: 1, name: `You're No. ${one.number}` })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          (await sql("SELECT 1 FROM one_glow_ups WHERE one_id = $1 AND seen_at IS NULL", [one!.oneId]))
+            .length,
+      )
+      .toBe(0);
+    expect(await page.evaluate(() => window.localStorage.getItem("one.glow-up.unsent"))).toBeNull();
+  });
+
   test("S-ONE.rules/3 F-MOTION/4: under reduced motion the moment appears already settled; Back to my dashboard closes it", async ({
     page,
   }, info) => {

@@ -12,6 +12,11 @@ import type { Impact } from "@/lib/contracts/entities";
 
 import { GlowUp } from "./glow-up";
 import {
+  BEING_MEASURED,
+  BRIEF_CANCEL,
+  BRIEF_FIELD,
+  BRIEF_SEND,
+  briefCount,
   briefProblem,
   MSG_BRIEF_PENDING,
   MSG_NO_BRIEF,
@@ -223,7 +228,7 @@ function BriefCard({ brief, onProposed }: { brief: OneDashboardResponse["brief"]
       </p>
       {open ? (
         <form className="on-briefform" onSubmit={send} noValidate>
-          <Field label="Your new brief" help={`${text.length} of 140 characters`} error={error} multiline>
+          <Field label={BRIEF_FIELD} help={briefCount(text.length)} error={error} multiline>
             {(ctl) => (
               <textarea
                 {...ctl}
@@ -239,10 +244,10 @@ function BriefCard({ brief, onProposed }: { brief: OneDashboardResponse["brief"]
           </Field>
           <div className="btn-row on-actions">
             <button type="button" className={buttonClass("text")} onClick={close}>
-              Cancel
+              {BRIEF_CANCEL}
             </button>
             <button type="submit" className={buttonClass("line")} aria-busy={busy || undefined}>
-              Send for approval
+              {BRIEF_SEND}
             </button>
           </div>
         </form>
@@ -283,7 +288,7 @@ function ImpactSoFar({ impact }: { impact: Impact }) {
                   <p className="on-note">{f.line}</p>
                 </>
               ) : (
-                <p className="on-wait">Being measured</p>
+                <p className="on-wait">{BEING_MEASURED}</p>
               )}
             </li>
           );
@@ -400,6 +405,7 @@ export function OneScreen({ data }: { data: OneDashboardResponse }) {
       ) : null}
       {moment ? (
         <GlowUp
+          key={moment.id}
           moment={moment}
           number={number}
           onClose={() => {
