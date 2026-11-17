@@ -7,13 +7,14 @@ and again after sharing ("Checked and matched"), against every shared idea that 
    reciprocal rank. A hit on a merged idea resolves to the surviving idea. The person's own ideas never match.
 3. Labels: the `judge` agent, through the gateway (`run_agent`; the payload is tagged first): `same` -> `close`,
    `related` -> `related`, `different` -> dropped. The judge sees each side's masked title and short summary only,
-   never the person's messages, because its phrase is read by both sharers (DEC-104, BLD-C097). With the assistant off (`ai.all`) or the judge failing, the
-   strength comes from code: cosine for `close`, cosine or shared keywords for `related`.
+   never the person's messages, because its phrase is read by both sharers (DEC-104, BLD-C097). With the assistant
+   off (`ai.all`) or the judge failing, the strength comes from code: cosine for `close`, cosine or shared keywords
+   for `related`.
 4. The reason ("Close match: same SMS, same calls") is the judge's short phrase if it passes the tag, pattern and
    name checks, else one built by code from the words the two ideas share. It is shown to both sharers.
 5. At most 8, `close` first, kept in `similar_links` with the run in `similar_runs`. A run that fails is recorded
    and never blocks sharing (`L-SIMILAR.failure`); the next run, at the latest after sharing, tries again. Every
-   step after the call runs in one savepoint, so nothing here can abort the caller's transaction (BLD-C096).
+   step from the lookup on runs in one savepoint, so nothing here can abort the caller's transaction (BLD-C096).
 
 Logs carry IDs and counts only (non-negotiable 3).
 """

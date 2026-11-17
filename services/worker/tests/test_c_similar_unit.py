@@ -140,7 +140,10 @@ def test_bld_c097_the_judge_reads_the_masked_title_and_summary_only() -> None:
     title, summary = m.judge_text(idea)
     assert "AAAPZ9999Z" not in title and title.startswith("SIP SMS for PAN")
     assert summary == "Investors call the branch to ask why."
-    assert m.judge_text({"title": None, "summary": None, "neutral_summary": "Old summary."}) == ("", "Old summary.")
+    assert m.judge_text({"title": None, "summary": None, "neutral_summary": "Old summary."}) == (
+        "",
+        "Old summary.",
+    )
     long_title, long_summary = m.judge_text({"title": "word " * 100, "summary": "word " * 200})
     assert len(long_title) <= m.TITLE_CHARS and len(long_summary) <= m.SUMMARY_CHARS
     assert m.judge_text({"title": "", "summary": ""}) == ("", "")
