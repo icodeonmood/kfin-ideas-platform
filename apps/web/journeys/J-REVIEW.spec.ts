@@ -9,7 +9,8 @@
  * open, which closes Pallavi's edit window (L-REVIEW.open/1), and "Decide on this idea" takes the panel to Deciding.
  * The ask path (A1 to A3) has a record of its own, K1 (Kiran's, at To review, never opened, no question set; lane E):
  * A1 is K1's first open, and "Ask about this" on How often queues that part's suggestion. A question set can't be
- * queued before the first open (L-REVIEW.open/1, L-QUESTIONS.ask/4), so the seed has none. Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
+ * queued before the first open (L-REVIEW.open/1, L-QUESTIONS.ask/4), so the seed has none.
+ * Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
  * (Bhavesh's, with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is
  * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
  * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
@@ -93,7 +94,7 @@ async function asOther(
   }
 }
 
-// --- J-REVIEW.main: decide without asking (P1, Lavanya; Pallavi shared it) ---------------------------------------------
+// --- J-REVIEW.main: open, read, decide (P1, Lavanya; Pallavi shared it) ----------------------------------------------
 
 /** The panel's way into Deciding with nothing asked (J-REVIEW/5). */
 function decideButton(page: Page): Locator {
