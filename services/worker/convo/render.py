@@ -226,20 +226,30 @@ def event_line(ctx: Ctx, row: dict[str, Any]) -> Line | None:
         into = ctx.idea_ref(p.get("idea_id") or p.get("lead_idea_id"))
         return _carries_on(into) if into else ("It’s now part of another idea.", None)
     if code == "merge.from":
-        came = ctx.idea_ref(p.get("idea_id") or p.get("merged_idea_id"))
-        sharer = _sharer_of(ctx, p.get("idea_id") or p.get("merged_idea_id"))
-        if came is None or sharer is None:
+        came_from = p.get("idea_id") or p.get("merged_idea_id")
+        if not came_from and p.get("merge_id"):  # a draft merged in has no reference (J-SIMILAR/6a)
+            m = _merge(ctx, p.get("merge_id"))
+            came_from = str(m["merged_idea_uuid"]) if m else None
+        came, sharer = ctx.idea_ref(came_from), _sharer_of(ctx, came_from)
+        if sharer is None:
             return "Another idea is now part of it.", None
+        if came is None:  # "Kavya Menon’s idea is now part of it, with credit to them." (BLD-E008)
+            if ctx.is_me(sharer):
+                return "Your idea is now part of it, with credit to you.", None
+            return f"{sharer.label}’s idea is now part of it, with credit to them.", None
         return f"{came} is now part of it, with credit to {ctx.obj(sharer)}.", None
     log.info("convo.render.unknown_code", code=code, entry_id=str(row.get("id")))
     return None
 
 
 def _requester(ctx: Ctx, request_id: Any) -> Person | None:
+    """Who asked: a team-up request, or a draft's merge request (F1 answers both by one id, BLD-F010)."""
     if not request_id:
         return None
     row = ctx.conn.execute(
-        "SELECT from_code FROM teamup_requests WHERE id::text = %s", (str(request_id),)
+        "SELECT from_code FROM teamup_requests WHERE id::text = %s UNION ALL "
+        "SELECT from_code FROM merge_requests WHERE id::text = %s LIMIT 1",
+        (str(request_id), str(request_id)),
     ).fetchone()
     return ctx.people.by_code(str(row["from_code"])) if row else None
 
