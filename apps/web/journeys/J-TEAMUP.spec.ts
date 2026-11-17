@@ -123,7 +123,9 @@ step(
     await signInAs(page, "rekha");
     await page.goto("/inbox");
     await page
-      .getByRole("button", { name: new RegExp(`^Bhavesh Patel asks to team up, ${esc(r1.title)}, `) })
+      .getByRole("button", {
+        name: new RegExp(`^Bhavesh Patel asks to team up(?: [^,]+)?, ${esc(r1.title)}, `),
+      })
       .click();
     await expect(page.getByText(NOTE, { exact: true })).toBeVisible();
     // L-TEAMUP.rules/6: no idea brought, so Approve (team up only) or Decline.
