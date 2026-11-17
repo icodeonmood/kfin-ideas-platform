@@ -40,6 +40,11 @@ _PART_POOL = ThreadPoolExecutor(max_workers=24, thread_name_prefix="draft-part")
 _means_cache: dict[str, Any] = {"at": 0.0, "means": None}
 
 
+def _open() -> Conn:
+    """A connection for work off the request (the run and each part). Tests point it at their database."""
+    return connect(autocommit=True)
+
+
 def scope(idea_uuid: str) -> str:
     """The draft's vault scope, as the seed and the gateway's auto switch-offs know it (`DRAFT-…`)."""
     return f"DRAFT-{idea_uuid}"
@@ -223,7 +228,7 @@ def _safe_execute(run_id: str) -> None:
     except Exception:
         log.exception("draft.run_crashed", run_id=run_id)
         try:
-            with connect(autocommit=True) as conn:
+            with _open() as conn:
                 row = conn.execute(
                     "UPDATE draft_runs SET state = 'failed', finished_at = now() WHERE id = %s AND state = 'running' "
                     "RETURNING idea_uuid",
@@ -238,7 +243,7 @@ def _safe_execute(run_id: str) -> None:
 
 def execute(run_id: str) -> None:
     """Build the run's parts in parallel, then write the receipt. Tests call this directly; the API dispatches it."""
-    with connect(autocommit=True) as conn:
+    with _open() as conn:
         run = conn.execute(
             "SELECT idea_uuid, state, parts FROM draft_runs WHERE id = %s", (run_id,)
         ).fetchone()
@@ -290,7 +295,7 @@ def result_of(
 
 def _run_part(run_id: str, idea_uuid: str, key: str, said: list[dict[str, Any]]) -> None:
     started = time.monotonic()
-    with connect(autocommit=True) as conn:
+    with _open() as conn:
         state, value, why, quote, code = "failed", None, None, None, None
         try:
             if key == "similar":
