@@ -6,7 +6,7 @@
    which refines `L-SUBMIT.pre/3`): it opens only for the sharer, the review desk and the Ones Committee.
 4. No merge request is waiting on a lead (`L-MERGE.request/4`); a merged draft is not sent at all.
 5. The declaration is shown beside the button; pressing Submit is the acceptance (`submit.send` records it).
-6. Everything else is optional: proof, a fix, who would help.
+6. Everything else is optional: proof, a fix, who would help (S-05.fix and part 6 count nothing toward these).
 
 The first problem is what Submit says (A-API `POST /drafts/:id/submit` errors), with the field it belongs under.
 """
@@ -17,7 +17,7 @@ import datetime as dt
 from typing import Any
 
 from core.db import Conn
-from submit import check, config, helpers, own, sorting
+from submit import check, config, fix, helpers, own, sorting
 from submit.errors import Refused
 from submit.words import join
 
@@ -101,10 +101,7 @@ def fix_line(conn: Conn, idea_uuid: str) -> str | None:
     row = conn.execute(
         "SELECT how FROM idea_fix WHERE idea_uuid = %s AND included AND coalesce(how, '') <> ''", (idea_uuid,)
     ).fetchone()
-    if row is None:
-        return None
-    how = " ".join(str(row["how"]).split())
-    return how if len(how) <= 140 else how[:139].rstrip() + "…"
+    return None if row is None else fix.one_line(str(row["how"]))
 
 
 def problems(conn: Conn, idea: dict[str, Any], li: config.Lists) -> list[Refused]:
