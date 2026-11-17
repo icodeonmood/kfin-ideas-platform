@@ -477,7 +477,7 @@ export type TeamUpCardState = "not_asked" | "request_sent" | "on_crew" | "closed
 export interface ColleagueView {
   view: "colleague";
   screen: "S-09";
-  /** A withdrawn idea (for a former crew member only) carries `id`, `ref` and `status` alone (BLD-E010). */
+  /** A withdrawn idea (for a former crew member only) carries `id`, `ref` and `status` alone (BLD-E011). */
   idea: PublicIdea | { id: string; ref: string | null; status: "withdrawn" };
   page: {
     state?: "withdrawn";
