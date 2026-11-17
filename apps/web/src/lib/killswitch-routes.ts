@@ -106,13 +106,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
+  // Lane C's hosted audio for the same player (DEC-108), GET /api/ideas/:id/listen and its /chapters, has its rule
+  // in lane C's c/sarvam (desk.listen and speech.hosted), so there is one rule for those paths (BLD-B245).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
-  // Lane C's hosted audio for the same player (DEC-108): Listen's switch hides it too, whichever voice reads.
-  {
-    methods: ["GET"],
-    pattern: /^\/api\/ideas\/[^/]+\/listen(?:\/chapters)?\/?$/,
-    switches: ["desk.listen"],
-  },
 ];
 
 /**
