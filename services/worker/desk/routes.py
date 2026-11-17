@@ -131,8 +131,7 @@ def build(require_token: Callable[..., None]) -> APIRouter:
     def sharer_answer(question_id: str, user_id: str, body: dict[str, Any]) -> JSONResponse:
         from desk import asking
 
-        return _call(asking.save_answer, question_id, user_id, str(body.get("text") or ""),
-                     tuple(body.get("file_ids") or ()))  # fmt: skip
+        return _call(asking.save_answer, question_id, user_id, body.get("text"), body.get("file_ids"))
 
     @r.post("/question-sets/{set_id}/send")
     def sharer_send(set_id: str, user_id: str) -> JSONResponse:
