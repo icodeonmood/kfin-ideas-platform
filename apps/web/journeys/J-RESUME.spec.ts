@@ -97,7 +97,7 @@ step(
   "J-RESUME/3",
   "S-04B",
   "Carry on opens it where it was left: picked up, last saved on your phone at the same time, the words as they were",
-  { needs: ["S-04B", "C-SIDEBAR", "L-DRAFT"] },
+  { needs: ["S-04B", "C-SIDEBAR", "L-DRAFT"], after: ["J-RESUME/1"] },
   async ({ page }) => {
     await signInMe(page);
     await page.goto("/home");
@@ -118,7 +118,7 @@ step(
   "J-RESUME/4",
   "S-04",
   "Starting fresh while the draft exists: S-04 offers it back, and Continue that draft opens the same one",
-  { needs: ["S-04", "S-04B", "L-DRAFT"] },
+  { needs: ["S-04", "S-04B", "L-DRAFT"], after: ["J-RESUME/3"] },
   async ({ page }) => {
     await signInMe(page);
     await page.goto("/share");
@@ -179,7 +179,7 @@ step(
   "J-RESUME/7",
   "S-02",
   "The session expires mid-draft: Sign in again to carry on, and back to the same draft",
-  { needs: ["S-02", "L-AUTH", "S-04B", "L-DRAFT"] },
+  { needs: ["S-02", "L-AUTH", "S-04B", "L-DRAFT"], after: ["J-RESUME/3"] },
   async ({ page }) => {
     const draft = need("draft", "J-RESUME/3");
     await signInMe(page);
