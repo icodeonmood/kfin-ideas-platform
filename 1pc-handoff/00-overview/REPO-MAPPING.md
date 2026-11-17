@@ -38,10 +38,10 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
-| `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
-| `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
-| `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
-| `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P0 | B |
+| `S-R1` | `/desk` | `app/desk` (`page.tsx`, `desk-view.tsx`, `desk.css`), `server/desk.ts` `deskRead`, worker `desk/reads.py`; `/review` redirects here (old page, actions and `review.spec.ts` retired) | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
+| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files}.ts`; `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
+| `S-R3` | `/ideas/:id/answer` | `app/ideas/[id]/answer` (`page.tsx`, `answer-view.tsx`, `answer.css`); files on an answer and the voice are seams | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
+| `S-R4` | `/committee` | `app/committee` (`page.tsx`, `committee-view.tsx`, `committee.css`; the scoring-round page replaced), worker `desk/committee.py`; page rule `committee_window` | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
 | `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
@@ -55,7 +55,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | State | Effort | Phase | Lane |
 |---|---|---|---|---|
-| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. Lanes B fill `desk` and `committee` rows | M to L | P0 | D |
+| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. The `desk` and `committee` rows are lane B's (`deskRows`, `committeeRows`, 17 Nov) | M to L | P0 | D |
 | `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
 | `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
 | `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
@@ -78,11 +78,11 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-HIDDEN` | exists, differs | M | P0 | C |
 | `C-SIMGRID` | exists, differs | M | P0 | C |
 | `C-PREVIEW` | missing | M | P0 | C |
-| `C-WORTH` | exists, differs | M | P0 | C, B |
-| `C-QCARD` | missing | M | P0 | B |
+| `C-WORTH` | reviewer's view and editor built (lane B): `components/review/worth.tsx` (`WorthView`, `WorthEditor` from `WorthResponse`), its sheet `worth.css` imported with it, so S-05 can place `WorthView` | M | P0 | C, B |
+| `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it | M | P0 | B |
 | `C-INBOX-READER` | exists, differs | L | P0 | A |
-| `C-LISTEN` | missing | M | P0 | B |
-| `C-SHEET-MERGE` | missing | M | P0 | B |
+| `C-LISTEN` | built (lane B): `components/review/listen-player.tsx` with `listen.css`, `lib/desk/listen.ts`; lane C's hosted audio and chapters first (DEC-108, `AudioEngine`), the browser's voice (BLD-B230, `ListenEngine`) on a 404 or 503 (BLD-B245) | M | P0 | B |
+| `C-SHEET-MERGE` | built (lane B): `components/review/merge-sheet.tsx` with `merge-sheet.css`, opened from S-R2's rows and C-PREVIEW's Merge | M | P0 | B |
 | `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
 | `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
 | `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |

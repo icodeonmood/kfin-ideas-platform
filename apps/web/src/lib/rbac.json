@@ -110,7 +110,8 @@
       "display": "yes"
     },
     "committee_window": {
-      "committee": "yes"
+      "committee": "yes",
+      "core_committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -352,7 +353,8 @@
   },
   "pages": [
     "/review                    view_review_queue",
-    "/committee                 veto_desk_decision",
+    "/desk                      view_review_queue",
+    "/committee                 committee_window",
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/display                   open_display",
@@ -399,7 +401,7 @@
     {
       "key": "desk",
       "label": "Review desk",
-      "href": "/review",
+      "href": "/desk",
       "place": "main",
       "roles": [
         "reviewer"

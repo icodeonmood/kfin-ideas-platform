@@ -43,7 +43,8 @@ capabilities:
   open_display:               { admin: yes, display: yes }
   # The Ones Committee's window (L-COMMITTEE, S-R4; DEC-102): every desk decision for 30 days, extend, reverse once.
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
-  committee_window:           { committee: yes }
+  # core_committee (and core_chair, through it) keep it until the old roles are dropped on Monday (contracts.md §2.14).
+  committee_window:           { committee: yes, core_committee: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -248,8 +249,9 @@ membership_scoped:
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
-  - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
-  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
+  - /review                    view_review_queue                    # moved: redirects to /desk (S-R1, S-R2)
+  - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
+  - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
@@ -270,8 +272,8 @@ navigation:
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
-  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
-  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: desk,      label: Review desk,     href: /desk,      place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
