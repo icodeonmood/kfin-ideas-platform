@@ -42,7 +42,10 @@ TO_JUDGE = 12  # candidates sent to the judge (its schema allows 20)
 MIN_CHARS = 50  # a draft is matched once it has this much to go on (mapping/logic.md, L-SIMILAR row)
 QUERY_CHARS = 2000
 CLOSE_COSINE = 0.80  # code-only `close`: near-identical meaning (BGE-M3); the judge decides when it runs
-RELATED_SHARED_WORDS = 2  # code-only `related` on keywords alone
+RELATED_SHARED_WORDS = 2  # code-only `related` on keywords alone: at least this many shared words …
+RELATED_OVERLAP = 0.25  # … making up at least this share of the other idea's words
+CLOSE_SHARED_WORDS = 4  # code-only `close` on words: near-identical wording
+CLOSE_OVERLAP = 0.6
 REASON_WORDS = 14
 NEVER_MATCH = ("draft", "withdrawn")
 DEFAULTS = {"cosine_floor": 0.45, "top_k_each": 50, "rrf_k": 60, "rerun_if_edit_share": 0.2}
@@ -237,10 +240,20 @@ def _display(word: str) -> str:
     return word if word.isupper() or not word.isalpha() else word.lower()
 
 
+def overlap(hit: Hit, shared: list[str]) -> float:
+    """The share of the other idea's words that this one shares (title and summary)."""
+    return len(shared) / max(1, len(words(f"{hit.title}\n{hit.summary}")))
+
+
 def code_strength(hit: Hit, shared: list[str], floor: float) -> Strength | None:
-    if hit.cosine >= CLOSE_COSINE:
+    """With the assistant off (`ai.all`, D1): meaning first (cosine), then words. Shared words alone make a match
+    only when they are a good part of the other idea, so one common word ("investors") is never enough."""
+    share = overlap(hit, shared)
+    if hit.cosine >= CLOSE_COSINE or (len(shared) >= CLOSE_SHARED_WORDS and share >= CLOSE_OVERLAP):
         return "close"
-    if hit.cosine >= floor or (hit.keyword and len(shared) >= RELATED_SHARED_WORDS):
+    if hit.cosine >= floor or (
+        hit.keyword and len(shared) >= RELATED_SHARED_WORDS and share >= RELATED_OVERLAP
+    ):
         return "related"
     return None
 
@@ -388,16 +401,28 @@ def _record(
 
 
 def match_idea(
-    conn: Conn, idea_uuid: str, *, found_while: FoundWhile = "drafting", force: bool = False
+    conn: Conn,
+    idea_uuid: str,
+    *,
+    found_while: FoundWhile = "drafting",
+    force: bool = False,
+    title: str | None = None,
+    summary: str | None = None,
 ) -> Run:
     """Match a draft or an idea and keep the result (L-SIMILAR.rules/4, /5). Never raises for a matching failure:
-    it is recorded as `failed` (L-SIMILAR.failure) and the caller carries on.
+    it is recorded as `failed` (L-SIMILAR.failure) and the caller carries on. Safe inside the caller's transaction:
+    the work runs in a savepoint, so a failure here never aborts it.
 
-    Skipped (`unchanged`) when the last run succeeded, at the same point (`found_while`), and the words changed
-    less than `rerun_if_edit_share`; `force` runs anyway (after sharing, or from the review desk)."""
+    `title` and `summary` stand in for the row's (a draft run passes its newest title part). Skipped (`unchanged`)
+    when the last run succeeded and the words changed less than `rerun_if_edit_share`, at the same point or after an
+    edit (`later`); `force` runs anyway. Sharing (`checking`) always runs."""
     idea = _idea(conn, idea_uuid)
     if idea is None:
         raise LookupError("idea_not_found")
+    if title is not None:
+        idea["title"] = title or idea.get("title")
+    if summary is not None:
+        idea["summary"] = summary or idea.get("summary")
     text = query_text(conn, idea)
     if len(text) < MIN_CHARS:
         return Run("too_short")
@@ -408,26 +433,28 @@ def match_idea(
     ).fetchone()
     if (
         not force
+        and found_while != "checking"
         and last is not None
         and last["state"] == "done"
-        and last["found_while"] == found_while
+        and (last["found_while"] == found_while or found_while == "later")
         and not material_change(list(last["word_hashes"]), hashes, _settings()["rerun_if_edit_share"])
     ):
         return Run("unchanged", int(last["found"]), last["labelled_by"])
     try:
-        index.sync(conn)
-        hits = retrieve(conn, idea, text, _owner_codes(conn, str(idea["contributor_code"])))
-        found, labelled_by = label(conn, idea, text, hits)
+        with conn.transaction():  # a savepoint inside the caller's transaction
+            index.sync(conn)
+            hits = retrieve(conn, idea, text, _owner_codes(conn, str(idea["contributor_code"])))
+            found, labelled_by = label(conn, idea, text, hits)
+            save(conn, idea_uuid, found, found_while)
+            _record(conn, idea_uuid, "done", found_while, labelled_by, hashes, len(found), None)
     except Exception as exc:
         log.error("similar.match_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         try:
-            _record(conn, idea_uuid, "failed", found_while, None, hashes, 0, type(exc).__name__)
-        except Exception as again:  # the caller's transaction may be aborted; sharing still goes on
+            with conn.transaction():
+                _record(conn, idea_uuid, "failed", found_while, None, hashes, 0, type(exc).__name__)
+        except Exception as again:  # the caller's transaction may be unusable; sharing still goes on
             log.error("similar.record_failed", idea_uuid=idea_uuid, error_type=type(again).__name__)
         return Run("failed")
-    with conn.transaction():
-        save(conn, idea_uuid, found, found_while)
-        _record(conn, idea_uuid, "done", found_while, labelled_by, hashes, len(found), None)
     log.info(
         "similar.matched", idea_uuid=idea_uuid, found_count=len(found), labelled_by=labelled_by,
         found_while=found_while,

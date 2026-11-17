@@ -89,7 +89,7 @@ def my_request(conn: Conn, other_uuid: str, viewer: Viewer) -> dict[str, Any] | 
     return out
 
 
-def similar_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | None:
+def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | None:
     """SimilarMatch[] for the draft or idea `key` (IDEA- reference or row ID), or None (answer 404)."""
     idea = find_idea(conn, key)
     if idea is None:

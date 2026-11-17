@@ -364,10 +364,10 @@ def idea_preview_view(idea_key: str, user_id: str, compare_with: str | None = No
 def similar_view(idea_key: str, user_id: str) -> JSONResponse:
     """SimilarMatch[] from the stored links (L-SIMILAR, BLD-C092): the sharer, or the desk and committee."""
     from similar.preview import Viewer
-    from similar.views import similar_for
+    from similar.views import matches_for
 
     with connect(autocommit=True) as conn:
-        out = similar_for(conn, idea_key, Viewer.of(conn, user_id))
+        out = matches_for(conn, idea_key, Viewer.of(conn, user_id))
     if out is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
