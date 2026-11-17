@@ -37,7 +37,9 @@ export default async function Page({
   }
   let data: MyIdeasResponse | null = null;
   try {
-    const res = await getMyIdeas(new NextRequest(new URL(`/api/me/ideas?${q.toString()}`, "http://web.local")));
+    const res = await getMyIdeas(
+      new NextRequest(new URL(`/api/me/ideas?${q.toString()}`, "http://web.local")),
+    );
     if (res.ok) data = (await res.json()) as MyIdeasResponse;
   } catch {
     data = null;

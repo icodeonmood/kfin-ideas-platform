@@ -83,11 +83,13 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
 
   // What the person asked for last, ahead of the server's answer, so quick changes build on each other
   const want = useRef<ListState | null>(null);
+  const [wanted, setWanted] = useState<ListState | null>(null);
   const [given, setGiven] = useState(data);
   if (given !== data) {
     setGiven(data);
     setText(data?.state.q ?? "");
     setFading(false);
+    setWanted(null);
   }
   useEffect(() => {
     textNow.current = data?.state.q ?? "";
@@ -101,7 +103,9 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   }, [data]);
 
   // Back from an idea (S-07.return, J-BROWSE/3): the row is where it was, focused and washed once, and a quiet
-  // line says so. The row and its offset leave the address once used, so it reads as the list's own again.
+  // line says so. The line shows first and the row is placed after it has rendered, so the line never pushes the row
+  // away from where it sat. The row and its offset leave the address once used, so it reads as the list's own again.
+  const [restore, setRestore] = useState<{ row: string; dy: number | null } | null>(null);
   useEffect(() => {
     if (!data) return;
     const url = new URL(window.location.href);
@@ -109,8 +113,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
     if (!row) return;
     const dyRaw = url.searchParams.get("dy");
     const frame = requestAnimationFrame(() => {
-      const found = restoreRow(root.current, row, dyRaw ? Number(dyRaw) : null);
-      if (found) {
+      if (root.current?.querySelector(`[data-row="${CSS.escape(row)}"]`)) {
         const tab = data.tabs.find((t) => t.selected)?.label ?? "Yours";
         const filter = data.filters.find((f) => f.selected)?.short_label ?? "All";
         const sort = data.sorts.find((s) => s.selected)?.label.toLowerCase() ?? "latest activity";
@@ -118,13 +121,20 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           desk: data.arrival?.line ?? `Back where you were: ${tab}.`,
           phone: `Back where you were: ${filter}, ${sort} first.`,
         });
+        setRestore({ row, dy: dyRaw ? Number(dyRaw) : null });
       }
       url.searchParams.delete("row");
       url.searchParams.delete("dy");
-      window.history.replaceState(null, "", url.pathname + url.search);
+      window.history.replaceState(window.history.state, "", url.pathname + url.search);
     });
     return () => cancelAnimationFrame(frame);
   }, [data]);
+  const restored = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    if (!restore || restored.current === restore) return;
+    restored.current = restore;
+    restoreRow(root.current, restore.row, restore.dy);
+  }, [restore]);
 
   if (!data) {
     return (
@@ -143,6 +153,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const go = (patch: Partial<ListState>, how: "sort" | "fade" = "fade") => {
     const next = { ...cur(), ...patch };
     want.current = next;
+    setWanted(next);
     setArrival(null);
     const url = myIdeasHref(next);
     if (how === "sort") {
@@ -183,11 +194,19 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
 
   const emptyAction = (a: MyIdeasEmpty["actions"][number], i: number) =>
     a.to.startsWith("/my-ideas") ? (
-      <Button key={a.label} variant={a.style === "primary" ? "primary" : "line"} onClick={() => go(stateFromHref(a.to, cur()))}>
+      <Button
+        key={a.label}
+        variant={a.style === "primary" ? "primary" : "line"}
+        onClick={() => go(stateFromHref(a.to, cur()))}
+      >
         {a.label}
       </Button>
     ) : (
-      <ButtonLink key={a.label} href={a.to} variant={a.style === "line" || (i > 0 && !a.style) ? "line" : "primary"}>
+      <ButtonLink
+        key={a.label}
+        href={a.to}
+        variant={a.style === "line" || (i > 0 && !a.style) ? "line" : "primary"}
+      >
         {a.label}
       </ButtonLink>
     );
@@ -214,8 +233,8 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           >
             <span className="mi-desk">{e.line}</span>
             <span className="mi-phone">
-              Spot something that keeps going wrong? Say it in your own words, typed or spoken. It takes about two
-              minutes.
+              Spot something that keeps going wrong? Say it in your own words, typed or spoken. It takes about
+              two minutes.
             </span>
           </Empty>
         </div>
@@ -224,7 +243,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   }
 
   const loading = pending && fading;
-  const state = cur();
+  const state = wanted ?? data.state;
   const list = loading ? state.list : data.state.list;
   const picked = state.filter !== "all" ? [state.filter] : [];
 
@@ -254,7 +273,9 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           // (L-SEARCH/4-5, C-SEARCH.behaviour/1) wait for lane F's search; today's search matches titles, short
           // summaries and references, and says so in its matched line.
           answer={
-            data.search && !loading ? { line: data.search.sentence, source: data.search.matched_line } : undefined
+            data.search && !loading
+              ? { line: data.search.sentence, source: data.search.matched_line }
+              : undefined
           }
         />
       </div>
@@ -293,6 +314,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           onChange={(v) => go({ filter: v as MyIdeasFilter })}
         />
         <div className="mi-ptools">
+          {/* On a phone C-SORTS shows itself as one cycler, "Sorted by latest activity" (S-07.phone) */}
           <Sorts
             options={data.sorts.map((s) => ({ value: s.sort, label: s.label }))}
             value={state.sort}
@@ -380,7 +402,10 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
                         </Button>
                       ) : null}
                       {failed === r.id ? (
-                        <Status kind="error" title="We can't do that just now. Please try again in a minute." />
+                        <Status
+                          kind="error"
+                          title="We can't do that just now. Please try again in a minute."
+                        />
                       ) : null}
                     </div>
                   </li>
@@ -398,7 +423,9 @@ function Head() {
   return (
     <header className="mi-head">
       <h1 className="h1 mi-title">My ideas</h1>
-      <p className="mi-lead mi-desk">Everything you&apos;ve shared or teamed up on, where it is and what happens next.</p>
+      <p className="mi-lead mi-desk">
+        Everything you’ve shared or teamed up on, where it is and what happens next.
+      </p>
     </header>
   );
 }
