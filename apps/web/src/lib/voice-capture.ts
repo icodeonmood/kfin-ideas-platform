@@ -211,6 +211,7 @@ export class VoiceCapture {
   private samples = 0;
   private heard: { text: string; spans: VoiceSpan[] } = { text: "", spans: [] };
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private inflight = new Set<AbortController>(); // aborted by reset and dispose: an old run's request stops
 
   constructor(
     readonly draftId: string,
@@ -337,7 +338,8 @@ export class VoiceCapture {
     // Recording before the resume settles, so no audio the worklet sends is dropped.
     this.set({ status: "recording", seconds: 0, maxSeconds: this.maxSeconds, text: "", spans: [] });
     const running = await resumed;
-    if (run !== this.run || running) return;
+    // Stopped, ended or left while the resume was settling: that path owns the note, and its end is already sent.
+    if (run !== this.run || running || this.getState().status !== "recording") return;
     // The context never ran (iOS outside the tap): the mic goes off, the note ends, and the reason is a code.
     const id = this.streamId;
     this.release();
@@ -572,7 +574,7 @@ export class VoiceCapture {
     let answer = await send();
     for (const delay of this.retryDelays) {
       if (answer.ok || !retryable(answer) || run !== this.run) return answer;
-      await sleep(answer.status === 429 && answer.retryAfterMs !== undefined ? answer.retryAfterMs : delay);
+      await sleep(answer.retryAfterMs ?? delay); // 429, or a busy 503, may say how long to wait
       if (run !== this.run) return answer;
       answer = await send();
     }
@@ -587,6 +589,7 @@ export class VoiceCapture {
     const draft = encodeURIComponent(this.target);
     let url = `/api/drafts/${draft}/voice/${what}`;
     const abort = new AbortController();
+    this.inflight.add(abort);
     const init: RequestInit = { method, credentials: "same-origin", cache: "no-store", signal: abort.signal };
     if (body && "seq" in body) {
       url += `?${new URLSearchParams({ stream: this.streamId ?? "", seq: String(body.seq) })}`;
@@ -602,13 +605,17 @@ export class VoiceCapture {
       const res = await this.fetchImpl(url, init);
       const data: unknown = await res.json().catch(() => ({}));
       const answer: Answer = { ok: res.ok, status: res.status, body: isObject(data) ? data : {} };
-      const after = res.status === 429 ? retryAfterMs(res.headers?.get?.("Retry-After") ?? null) : undefined;
+      const after =
+        res.status === 429 || res.status === 503
+          ? retryAfterMs(res.headers?.get?.("Retry-After") ?? null)
+          : undefined;
       if (after !== undefined) answer.retryAfterMs = after;
       return answer;
     } catch {
       return { ok: false, status: 0, body: {} }; // offline, timed out, or the connection dropped
     } finally {
       clearTimeout(timer);
+      this.inflight.delete(abort);
     }
   }
 
@@ -751,6 +758,8 @@ export class VoiceCapture {
 
   private begin(): number {
     this.run += 1;
+    for (const a of this.inflight) a.abort(); // the older run's requests stop; their answers are ignored anyway
+    this.inflight.clear();
     this.release();
     this.clearPoll();
     this.wake();

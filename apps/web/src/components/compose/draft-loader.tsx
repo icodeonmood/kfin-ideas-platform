@@ -11,6 +11,17 @@ import { barValue, LOADER_ALL_IN, LOADER_TITLE, loaderLine, type LoaderRun } fro
 const TICK_MS = 200;
 const HOLD_MS = 900; // "after a short hold the strip folds away" (maths/7)
 
+/** The page's clock while a run builds: the bar, its line and the phone peek's line move with it. */
+export function useLoaderClock(run: LoaderRun | null, done: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!run || done) return;
+    const t = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(t);
+  }, [run, done]);
+  return now;
+}
+
 export function DraftLoader({
   run,
   done,
@@ -21,17 +32,11 @@ export function DraftLoader({
   /** Every part is in (the `done` event): the bar fills and the strip folds. */
   done: boolean;
   phone?: boolean;
-  /** For tests: a fixed clock. */
+  /** A clock from outside (the phone peek shares its own), or a fixed one in tests. */
   now?: number;
 }) {
-  const [now, setNow] = useState(() => fixedNow ?? Date.now());
+  const ticking = useLoaderClock(fixedNow === undefined ? run : null, done);
   const [folded, setFolded] = useState<LoaderRun | null>(null);
-
-  useEffect(() => {
-    if (fixedNow !== undefined || !run || done) return;
-    const t = setInterval(() => setNow(Date.now()), TICK_MS);
-    return () => clearInterval(t);
-  }, [run, done, fixedNow]);
 
   useEffect(() => {
     if (!done || !run) return;
@@ -40,7 +45,7 @@ export function DraftLoader({
   }, [done, run]);
 
   if (!run) return null;
-  const at = fixedNow ?? now;
+  const at = fixedNow ?? ticking;
   // The sum only grows with time and answers, so the bar never moves back (maths/4).
   const value = done ? 1 : barValue(run, at);
   const line = done ? LOADER_ALL_IN : loaderLine(run, at);

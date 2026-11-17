@@ -71,6 +71,22 @@ export function shownLine(reason: ShowReason | undefined): string {
 
 export type Segment = { text: string; kind?: HiddenKind; at: number };
 
+/** Where a part's source phrase sits in the person's text, for the underline (C-DRAFT-PANEL.behaviour/3), in the
+ * text's own UTF-16 offsets. Case is ignored without changing the text: lower-casing first moves every offset after
+ * a letter such as "İ", which lower-cases to two units. */
+export function quoteRange(text: string, quote: string | null): { start: number; end: number } | null {
+  if (!quote) return null;
+  const exact = text.indexOf(quote);
+  if (exact >= 0) return { start: exact, end: exact + quote.length };
+  let m: RegExpExecArray | null;
+  try {
+    m = new RegExp(quote.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu").exec(text);
+  } catch {
+    return null;
+  }
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
 /** The person's text cut at each span, so the detail can be underlined without changing a character. Spans that
  * overlap, run past the end or are out of order are clipped; the text joined back is always the text given. */
 export function segments(text: string, spans: HiddenSpan[] | undefined): Segment[] {

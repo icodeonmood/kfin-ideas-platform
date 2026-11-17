@@ -2,8 +2,10 @@
 /**
  * C-HIDDEN in the draft panel (BLD-C121): one folded bar, "Personal details hidden", the kinds and a count; it opens
  * to a list. Each row shows only the masked form. "Show it" asks why (three reasons, one choice) and stays disabled
- * until one is picked (V-FIELDS.tellit/8); after showing, the row says why, with "Hide it" to reverse. Focusing a row
- * underlines the matching phrase in the person's own text (`onFocusDetail`).
+ * until one is picked (V-FIELDS.tellit/8); after showing, the row says why, with "Hide it" to reverse. A refused
+ * "Show it" or "Hide it" shows the server's own words (A-API.conventions/2); with none, nothing is invented (the pack
+ * draws no line, listed for HR). `onFocusDetail` (C-HIDDEN.list/4) reports the row in focus; the screen cannot yet
+ * underline it, because a message's spans carry start, end and kind but no detail id (BLD-C121).
  */
 import { useId, useState } from "react";
 
@@ -157,13 +159,10 @@ function HiddenRow({
               {HIDDEN_COPY.show}
             </Button>
           </div>
-          {failed ? (
-            <p className="fmsg err" role="alert">
-              {failed}
-            </p>
-          ) : null}
         </div>
       ) : null}
+      {/* Mounted with the row, so a refusal of either action is announced when its words arrive. */}
+      <div role="alert">{failed ? <p className="fmsg err">{failed}</p> : null}</div>
     </li>
   );
 }

@@ -5,12 +5,25 @@
  * details bar (C-HIDDEN), the similar-ideas line (C-PREVIEW on demand), and "Move to Review" pinned to the bottom
  * with its readiness line. The loader (C-DRAFT-LOADER) sits at the top while parts build; each part shows its own
  * skeleton. "Change" opens a part in place; the person's own value is pinned and reads "Your call" (L-DRAFT.pins).
- * On a phone the panel is a bottom sheet that peeks with the title and the loader's tube (C-DRAFT-PANEL.behaviour/6).
+ * On a phone the panel is a bottom sheet that peeks with the title and the loader's tube (C-DRAFT-PANEL.behaviour/6);
+ * while parts build the peek reads "Building your draft" and the loader's line (PhoneComposeResume.md, loader=Held for
+ * review), and Escape closes the open sheet. Each part that lands is said once in a polite live region, on both
+ * layouts (behaviour/2). "Change" is a real disclosure: `aria-expanded`, and focus comes back to it after Done or
+ * Escape. One part is edited at a time; `editTitle()` opens the title from a receipt's "Change the title".
  */
-import { useId, useState, type ReactNode } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { HiddenDetails, type HiddenActions } from "@/components/compose/hidden";
-import { DraftLoader } from "@/components/compose/draft-loader";
+import { DraftLoader, useLoaderClock } from "@/components/compose/draft-loader";
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
 import { IconTick } from "@/components/shell/icons";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -19,6 +32,7 @@ import { Field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BRINGS_LABEL, type Brings, type DraftPartKey, type Part, type SimilarMatch } from "@/lib/contracts";
 import { hasValue, type Live } from "@/lib/compose/live";
+import { LOADER_TITLE, loaderLine } from "@/lib/compose/loader";
 
 export const PANEL_COPY = {
   heading: "Your draft",
@@ -37,8 +51,14 @@ export const PANEL_COPY = {
   similarSub: "Colleagues raised something close",
   preview: "Preview",
   phonePeekEmpty: "Forms here as you write. Tap to see it.",
+  /** PhoneCompose.md, state Speaking: the peek's line while the draft updates and the run's parts are not known. */
   phoneUpdating: "Updating your draft",
+  /** PhoneCompose.md, state Offline. */
   phoneOffline: "Paused while you’re offline",
+  /** L-SIMILAR.failure, C-DRAFT-LOADER.failure/2; the same characters as Check it's (c/sort-submit, check.py). */
+  similarFailed: "Couldn’t check for similar ideas. The review desk will.",
+  /** A receipt's suggestion that opens the title (C-DRAFT-PANEL.behaviour/5). */
+  changeTitle: "Change the title",
 } as const;
 
 /** S-04.rules/2: the line under "Move to Review". */
@@ -52,6 +72,7 @@ export const READINESS = {
 export type Readiness = keyof typeof READINESS;
 
 type FactKey = "often" | "who" | "value" | "area";
+type EditKey = FactKey | "title";
 const FACTS: { key: FactKey; label: string }[] = [
   { key: "often", label: "How often" },
   { key: "who", label: "Who it affects" },
@@ -96,8 +117,42 @@ export type PanelProps = {
   onBlocked?(): void;
   /** Team up from a similar idea's preview (lane F's sheet, C-SHEET-TEAMUP): `open` is C-PREVIEW's `onPrimary`;
    * `waiting` holds, per idea, the line to show once a request is sent ("" when the sheet gave none). */
-  teamUp?: { open(ideaId: string): void; waiting: Record<string, string> };
+  teamUp?: {
+    open(ideaId: string): void;
+    waiting: Record<string, string>;
+    /** Lane F's `teamUpOpener`: marks where focus returns when the sheet closes (WCAG 2.4.3, BLD-F074). */
+    opener?(ideaId: string): Record<string, string>;
+  };
 };
+
+export type PanelHandle = {
+  /** Opens the title's editor (and the sheet, on a phone): a receipt's "Change the title". */
+  editTitle(): void;
+};
+
+/** C-DRAFT-PANEL.behaviour/2: the part that landed last, said once ("How often: About 15 times a week …"). */
+export function landedLine(live: Live): string {
+  const answered = live.loader?.answered ?? {};
+  let key: EditKey | "similar" | null = null;
+  let at = -Infinity;
+  for (const [k, t] of Object.entries(answered)) {
+    if (typeof t === "number" && t >= at && !live.updating.includes(k as never)) {
+      key = k as EditKey | "similar";
+      at = t;
+    }
+  }
+  if (!key) return "";
+  const p = live.parts[key] as Part<unknown>;
+  const label = key === "title" ? "Title" : key === "similar" ? "" : FACTS.find((f) => f.key === key)!.label;
+  if (p.state === "failed")
+    return key === "similar" ? PANEL_COPY.similarFailed : `${label}: ${PANEL_COPY.failed}`;
+  if (!hasValue(p)) return "";
+  if (key === "similar") {
+    const n = Array.isArray(p.value) ? p.value.length : 0;
+    return `${n} similar ${n === 1 ? "idea" : "ideas"}`;
+  }
+  return `${label}: ${factText(key, p)}`;
+}
 
 export function panelStatus(live: Live): string {
   if (live.running) return PANEL_COPY.updating;
@@ -105,13 +160,28 @@ export function panelStatus(live: Live): string {
   return any ? PANEL_COPY.upToDate : PANEL_COPY.forms;
 }
 
-export function DraftPanel(props: PanelProps) {
+export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPanel(props, ref) {
   const { live, readiness, moveHref, onMove, phone, offline } = props;
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<EditKey | null>(null);
+  const peekRef = useRef<HTMLButtonElement>(null);
   const bodyId = useId();
   const status = panelStatus(live);
   const ready = readiness === "ready" && Boolean(moveHref);
   const title = live.parts.title;
+  const now = useLoaderClock(live.loader, !live.running);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      editTitle: () => {
+        if (!props.onChangePart) return;
+        setOpen(true);
+        setEditing("title");
+      },
+    }),
+    [props.onChangePart],
+  );
 
   const move =
     ready && moveHref ? (
@@ -124,14 +194,16 @@ export function DraftPanel(props: PanelProps) {
       </Button>
     );
 
+  const slots = { ...props, editing, setEditing };
   const body = (
     <>
-      <DraftLoader run={live.loader} done={!live.running} phone={false} />
+      {/* On a phone the one loader is the tube under the peek (C-DRAFT-LOADER.anatomy/3). */}
+      {phone ? null : <DraftLoader run={live.loader} done={!live.running} phone={false} />}
       <div className="cvb">
-        <TitleSlot {...props} />
+        <TitleSlot {...slots} />
         <dl className="rows">
           {FACTS.map((f) => (
-            <FactRow key={f.key} fact={f} {...props} />
+            <FactRow key={f.key} fact={f} {...slots} />
           ))}
         </dl>
         {props.hidden ? (
@@ -145,19 +217,37 @@ export function DraftPanel(props: PanelProps) {
       </div>
     </>
   );
+  const landed = (
+    <p className="vh" aria-live="polite">
+      {landedLine(live)}
+    </p>
+  );
 
   if (phone) {
-    const peekTitle = hasValue(title) ? String(title.value) : PANEL_COPY.heading;
+    const building = live.running && live.loader !== null;
+    const peekTitle = building ? LOADER_TITLE : hasValue(title) ? String(title.value) : PANEL_COPY.heading;
     const peekLine = offline
       ? PANEL_COPY.phoneOffline
-      : live.running
-        ? PANEL_COPY.phoneUpdating
-        : hasValue(title)
-          ? peekSummary(live)
-          : PANEL_COPY.phonePeekEmpty;
+      : building && live.loader
+        ? loaderLine(live.loader, now)
+        : live.running
+          ? PANEL_COPY.phoneUpdating
+          : hasValue(title)
+            ? peekSummary(live)
+            : PANEL_COPY.phonePeekEmpty;
     return (
-      <section className={`dsheet${open ? " open" : ""}`} aria-label={PANEL_COPY.heading}>
+      <section
+        className={`dsheet${open ? " open" : ""}`}
+        aria-label={PANEL_COPY.heading}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape" || !open) return;
+          e.stopPropagation();
+          setOpen(false);
+          peekRef.current?.focus();
+        }}
+      >
         <button
+          ref={peekRef}
           type="button"
           className="dpeek"
           aria-expanded={open}
@@ -167,7 +257,8 @@ export function DraftPanel(props: PanelProps) {
           <span className="dpeek-t">{peekTitle}</span>
           <span className="dpeek-s">{peekLine}</span>
         </button>
-        <DraftLoader run={live.loader} done={!live.running} phone />
+        <DraftLoader run={live.loader} done={!live.running} phone now={now} />
+        {landed}
         <div id={bodyId} className="dsheet-b" hidden={!open}>
           <h2 className="cvt">{PANEL_COPY.heading}</h2>
           {body}
@@ -190,6 +281,7 @@ export function DraftPanel(props: PanelProps) {
           {status}
         </span>
       </header>
+      {landed}
       {body}
       <footer className="cvf">
         <p className="cvfn">{READINESS[readiness]}</p>
@@ -197,6 +289,34 @@ export function DraftPanel(props: PanelProps) {
       </footer>
     </section>
   );
+});
+
+type SlotProps = PanelProps & { editing: EditKey | null; setEditing(k: EditKey | null): void };
+
+/** "Change" as a disclosure: focus comes back to its button (`button`) when its editor closes (Done or Escape). */
+function useChange(
+  key: EditKey,
+  props: SlotProps,
+  button: RefObject<HTMLButtonElement | null>,
+): { open: boolean; editorId: string; toggle(): void; close(): void } {
+  const back = useRef(false);
+  const editorId = useId();
+  const open = props.editing === key && Boolean(props.onChangePart);
+  useEffect(() => {
+    if (!open && back.current) {
+      back.current = false;
+      button.current?.focus();
+    }
+  }, [open, button]);
+  return {
+    open,
+    editorId,
+    toggle: () => props.setEditing(open ? null : key),
+    close: () => {
+      back.current = true;
+      props.setEditing(null);
+    },
+  };
 }
 
 /** The phone peek's line: "Hid 3 details, 3 sortings, 2 similar ideas" (PhoneCompose.md). */
@@ -217,28 +337,14 @@ function Why({ part, fallback }: { part: Part<unknown>; fallback?: string }) {
   return why ? <span className="why">{why}</span> : null;
 }
 
-function TitleSlot(props: PanelProps) {
+function TitleSlot(props: SlotProps) {
   const { live } = props;
   const title = live.parts.title;
   const summary = live.parts.summary;
-  const [editing, setEditing] = useState(false);
   const updating = live.updating.includes("title");
-  if (editing && props.onChangePart) {
-    return (
-      <div className="tslot">
-        <PartEditor
-          label="Title"
-          initial={hasValue(title) ? String(title.value) : ""}
-          maxLength={70}
-          onCancel={() => setEditing(false)}
-          onSave={async (v) => {
-            await props.onChangePart?.("title", v);
-            setEditing(false);
-          }}
-        />
-      </div>
-    );
-  }
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const change = useChange("title", props, changeRef);
+  const canChange = Boolean(props.onChangePart) && !updating && (hasValue(title) || title.state === "failed");
   return (
     <>
       <div
@@ -246,7 +352,20 @@ function TitleSlot(props: PanelProps) {
         onFocus={() => props.onFocusQuote?.(title.source_quote ?? null)}
         onBlur={() => props.onFocusQuote?.(null)}
       >
-        {updating ? (
+        {change.open ? (
+          <div id={change.editorId}>
+            <PartEditor
+              label="Title"
+              initial={hasValue(title) ? String(title.value) : ""}
+              maxLength={70}
+              onCancel={change.close}
+              onSave={async (v) => {
+                await props.onChangePart?.("title", v);
+                change.close();
+              }}
+            />
+          </div>
+        ) : updating ? (
           <span className="sk-group" aria-hidden="true">
             <Skeleton width="78%" height={18} tint />
             <Skeleton width="48%" height={18} tint />
@@ -261,8 +380,15 @@ function TitleSlot(props: PanelProps) {
         ) : (
           <p className="wait dt-wait">{PANEL_COPY.titleWaiting}</p>
         )}
-        {props.onChangePart && !updating && (hasValue(title) || title.state === "failed") ? (
-          <button type="button" className="tb" aria-expanded={false} onClick={() => setEditing(true)}>
+        {canChange || change.open ? (
+          <button
+            ref={changeRef}
+            type="button"
+            className="tb"
+            aria-expanded={change.open}
+            aria-controls={change.open ? change.editorId : undefined}
+            onClick={change.toggle}
+          >
             {PANEL_COPY.change}
             <span className="vh"> the title</span>
           </button>
@@ -283,33 +409,36 @@ function TitleSlot(props: PanelProps) {
   );
 }
 
-function FactRow({ fact, ...props }: PanelProps & { fact: { key: FactKey; label: string } }) {
+function FactRow({ fact, ...props }: SlotProps & { fact: { key: FactKey; label: string } }) {
   const p = props.live.parts[fact.key] as Part<unknown>;
-  const [editing, setEditing] = useState(false);
   const updating = props.live.updating.includes(fact.key);
   const filled = hasValue(p);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const change = useChange(fact.key, props, changeRef);
   let content: ReactNode;
-  if (editing && props.onChangePart) {
+  if (change.open) {
     content = (
-      <PartEditor
-        label={fact.label}
-        kind={fact.key === "value" ? "brings" : "text"}
-        initial={
-          fact.key === "value"
-            ? Array.isArray(p.value)
-              ? (p.value as string[])
-              : []
-            : filled
-              ? factText(fact.key, p)
-              : ""
-        }
-        onCancel={() => setEditing(false)}
-        onSave={async (v) => {
-          const value = fact.key === "who" && typeof v === "string" ? [v] : v;
-          await props.onChangePart?.(fact.key, value);
-          setEditing(false);
-        }}
-      />
+      <div id={change.editorId}>
+        <PartEditor
+          label={fact.label}
+          kind={fact.key === "value" ? "brings" : "text"}
+          initial={
+            fact.key === "value"
+              ? Array.isArray(p.value)
+                ? (p.value as string[])
+                : []
+              : filled
+                ? factText(fact.key, p)
+                : ""
+          }
+          onCancel={change.close}
+          onSave={async (v) => {
+            const value = fact.key === "who" && typeof v === "string" ? [v] : v;
+            await props.onChangePart?.(fact.key, value);
+            change.close();
+          }}
+        />
+      </div>
     );
   } else if (updating) {
     content = <Skeleton width="70%" height={13} tint style={{ marginTop: 12 }} />;
@@ -325,6 +454,7 @@ function FactRow({ fact, ...props }: PanelProps & { fact: { key: FactKey; label:
   } else {
     content = <span className="wait">{PANEL_COPY.waiting}</span>;
   }
+  const canChange = Boolean(props.onChangePart) && !updating && (filled || p.state === "failed");
   return (
     <div
       className="row"
@@ -334,8 +464,15 @@ function FactRow({ fact, ...props }: PanelProps & { fact: { key: FactKey; label:
       <dt>{fact.label}</dt>
       <dd>
         {content}
-        {props.onChangePart && !editing && !updating && (filled || p.state === "failed") ? (
-          <button type="button" className="tb" aria-expanded={false} onClick={() => setEditing(true)}>
+        {canChange || change.open ? (
+          <button
+            ref={changeRef}
+            type="button"
+            className="tb"
+            aria-expanded={change.open}
+            aria-controls={change.open ? change.editorId : undefined}
+            onClick={change.toggle}
+          >
             {PANEL_COPY.change}
             <span className="vh"> {fact.label}</span>
           </button>
@@ -476,6 +613,7 @@ function Similar({
       </div>
     );
   }
+  if (part.state === "failed") return <p className="sim-f wait">{PANEL_COPY.similarFailed}</p>;
   const matches = Array.isArray(part.value) ? part.value : [];
   if (part.state !== "filled" || !matches.length) return null;
   const n = matches.length;
@@ -514,7 +652,14 @@ function Similar({
                 <p className="st">{m.idea.title}</p>
                 <p className="sm">{m.reason}</p>
               </span>
-              <Button variant="line" size="sm" className="spv" onClick={() => setPreview(m)}>
+              {/* C-PREVIEW closes before the sheet opens, so this row's Preview is where focus comes back. */}
+              <Button
+                variant="line"
+                size="sm"
+                className="spv"
+                onClick={() => setPreview(m)}
+                {...(teamUp?.opener?.(m.idea.id) ?? {})}
+              >
                 {PANEL_COPY.preview}
                 <span className="vh">: {m.idea.title}</span>
               </Button>

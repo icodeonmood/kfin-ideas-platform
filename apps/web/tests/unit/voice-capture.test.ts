@@ -812,3 +812,94 @@ describe("C-PROMPT.voice review fixes (BLD-C127)", () => {
     expect(capture.getState().status).toBe("recording");
   });
 });
+
+describe("C-PROMPT.voice review round 2 (BLD-C127)", () => {
+  function slowResume() {
+    const handle: { resolve: (() => void) | null; reject: ((e: unknown) => void) | null } = {
+      resolve: null,
+      reject: null,
+    };
+    class SlowContext extends FakeContext {
+      override resume = vi.fn(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            handle.resolve = resolve;
+            handle.reject = reject;
+          }),
+      );
+    }
+    vi.stubGlobal("AudioContext", SlowContext);
+    return handle;
+  }
+
+  it("C-PROMPT.voice stop before the resume settles keeps the note: no audio_suspended, one end", async () => {
+    slowResume();
+    const { capture } = make({ resumeTimeoutMs: 5_000 });
+    void capture.start();
+    await settle();
+    expect(capture.getState().status).toBe("recording");
+    capture.stop();
+    await settle();
+    expect(capture.getState()).toMatchObject({ status: "done" });
+    await vi.advanceTimersByTimeAsync(5_000); // the resume's timeout says "not running", late
+    expect(capture.getState()).toMatchObject({ status: "done" });
+    expect(ends()).toHaveLength(1);
+  });
+
+  it("C-PROMPT.voice a resume that rejects after the context was closed does not fail a good note", async () => {
+    const resume = slowResume();
+    const { capture } = make({ resumeTimeoutMs: 5_000 });
+    void capture.start();
+    await settle();
+    capture.stop(); // the mic goes off and the context closes
+    await settle();
+    resume.reject?.(new DOMException("closed", "InvalidStateError"));
+    await settle();
+    expect(capture.getState()).toMatchObject({ status: "done" });
+    expect(ends()).toHaveLength(1);
+  });
+
+  it("L-DRAFT.voice a busy 503 with Retry-After waits that long too", async () => {
+    let first = true;
+    const busy = vi.fn(async (input: string, init?: RequestInit) => {
+      if (first && String(input).includes("/voice/chunk")) {
+        first = false;
+        return {
+          ok: false,
+          status: 503,
+          headers: new Headers({ "Retry-After": "3" }),
+          json: async () => ({ error: "busy" }),
+        } as Response;
+      }
+      return fetchMock(input, init);
+    });
+    await recording({ fetch: busy as unknown as typeof fetch, retryDelaysMs: [100, 100, 100] });
+    speak(1);
+    await settle();
+    await vi.advanceTimersByTimeAsync(2_900);
+    expect(chunks()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(chunks().map((c) => c.seq)).toEqual([0]);
+  });
+
+  it("C-PROMPT.voice reset aborts the requests still in flight", async () => {
+    const signals: AbortSignal[] = [];
+    const hanging = vi.fn(async (input: string, init?: RequestInit) => {
+      if (String(input).includes(`/voice/${STREAM}`)) {
+        if (init?.signal) signals.push(init.signal);
+        return new Promise<Response>(() => undefined); // never answers
+      }
+      return fetchMock(input, init);
+    });
+    route = (call) =>
+      call.path.endsWith("/voice/chunk") ? { status: 503, body: { error: "paused" } } : defaultRoute(call);
+    const { capture } = await recording({ fetch: hanging as unknown as typeof fetch });
+    speak(1);
+    await settle();
+    expect(capture.getState().status).toBe("paused");
+    await vi.advanceTimersByTimeAsync(2_000); // the poll asks for the note
+    expect(signals).toHaveLength(1);
+    capture.reset();
+    expect(signals[0]!.aborted).toBe(true);
+  });
+});

@@ -11,16 +11,17 @@
  * and the draft panel. Each message carries its own client_id on every try; one that cannot go waits on this device
  * with its client_id and `at`, and goes when the browser is back online (L-DRAFT.autosave/7).
  * Voice (C-PROMPT.voice, DEC-108): `useVoiceCapture`; a finished note goes into the draft as a message with its
- * stream, so the server keeps the English copy with it.
+ * stream, so the server keeps the English copy with it. Into an empty S-04 box it is the first message at once; after
+ * typed words it waits in the box, editable, and goes as its own message after the typed one (BLD-C150).
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
-import { DraftPanel, PANEL_COPY, type Readiness } from "@/components/compose/draft-panel";
+import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 // Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
-import { useTeamUpSheet } from "@/components/compose/teamup-shim";
+import { teamUpOpener, useTeamUpSheet } from "@/components/compose/teamup-shim";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -33,9 +34,25 @@ import type {
   Message,
   ShowReason,
 } from "@/lib/contracts";
-import { DraftClient, DraftError, newClientId, type Outgoing } from "@/lib/compose/client";
-import { segments } from "@/lib/compose/hidden";
-import { applyEvent, fromDraft, withDraft, type Live } from "@/lib/compose/live";
+import {
+  DraftClient,
+  DraftError,
+  messagesFor,
+  newClientId,
+  noteStart,
+  type HeldNote,
+  type Outgoing,
+} from "@/lib/compose/client";
+import { quoteRange, segments } from "@/lib/compose/hidden";
+import {
+  applyEvent,
+  fromDraft,
+  giveUp,
+  loseStream,
+  withDraft,
+  withDraftAfterLoss,
+  type Live,
+} from "@/lib/compose/live";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
 
@@ -67,16 +84,37 @@ export const COMPOSE_COPY = {
   emailNote: "We turned it into this draft. Nothing has been sent.",
   queued: "Queued. Goes in once the one above is done.",
   tooLong: "That's a lot for one go. Send this part, then carry on.",
-  /** A note that failed: the pack draws no line (listed for HR); the nearest line in the build (BLD-C038). */
-  voiceFailed: "Voice notes are paused just now. Please type it instead.",
+  /** A note paused or unavailable: the pack draws no line (listed for HR); the nearest line in the build (BLD-C038). */
+  voicePaused: "Voice notes are paused just now. Please type it instead.",
+  /** A note that failed because the session ended: L-AUTH.states "Session expired mid-draft" (SignIn.md). */
+  signInAgain: "Sign in again to carry on",
   enough: "Enough to work with",
   moreChars: (n: number) => `${n} more ${n === 1 ? "character" : "characters"}`,
 } as const;
+
+/** C-PROMPT.states, the phone's live count (PhoneCompose.md: "30 more characters", then "Enough to work with"). */
+export function countLine(chars: number, min: number = MIN_CHARS): string {
+  return chars >= min ? COMPOSE_COPY.enough : COMPOSE_COPY.moreChars(min - chars);
+}
+
+/** C-PROMPT.voice, a note that failed (BLD-C127): signed out → the sign-in line; paused or unavailable → the paused
+ * line; any other reason (no microphone, an old browser, audio suspended, too many this hour, a lost stream) has no
+ * line in the pack, so nothing is invented and the mic is simply ready again (listed for HR). */
+export function voiceFailedLine(reason: string): "sign_in" | "paused" | null {
+  if (reason === "signed_out") return "sign_in";
+  if (["paused", "unavailable", "voice_paused", "voice_unavailable"].includes(reason)) return "paused";
+  return null;
+}
 
 const MIN_CHARS = 30; // V-FIELDS.tellit/1
 const MAX_MESSAGE = 5000; // V-FIELDS.tellit/2
 const CREATE_PAUSE_MS = 1000; // L-DRAFT.autosave/1: from the first keystroke after a 1-second pause
 const SAVE_PAUSE_MS = 1500; // within 2 seconds of the person stopping
+const GIVE_UP_TICK_MS = 1000; // C-DRAFT-LOADER.failure/1 is checked once a second
+const RECONNECTS = 2; // the browser's own reconnects allowed before the stream counts as lost
+const NO_RUN_MS = 20_000; // a stream that never sends its run while parts wait counts as lost
+const RECOVER_MS = 3000; // after a lost stream, the draft is read again this often while the server builds…
+const RECOVER_TRIES = 20; // …for about a minute
 
 /** Drafts this tab opened from S-04's "Start my draft": no "Picked up where you left off." on those. */
 const handedOver = new Set<string>();
@@ -98,13 +136,6 @@ function useIsPhone(): boolean {
 function isEditable(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
-}
-
-/** Where the person's quote sits in a text, for the underline (C-DRAFT-PANEL.behaviour/3). */
-function quoteRange(text: string, quote: string | null): { start: number; end: number } | null {
-  if (!quote) return null;
-  const at = text.toLowerCase().indexOf(quote.toLowerCase());
-  return at < 0 ? null : { start: at, end: at + quote.length };
 }
 
 function Words({ text, spans, quote }: { text: string; spans: HiddenSpan[]; quote: string | null }) {
@@ -156,11 +187,8 @@ export function Compose({
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
-  const [voiceNote, setVoiceNote] = useState<{
-    streamId: string;
-    text: string;
-    textEn: string | null;
-  } | null>(null);
+  const [voiceNote, setVoiceNote] = useState<HeldNote | null>(null);
+  const panelRef = useRef<PanelHandle>(null);
   const [elsewhere, setElsewhere] = useState<string | null>(null);
   const [netTick, setNetTick] = useState(0);
 
@@ -191,10 +219,10 @@ export function Compose({
         return;
       }
       if (err.code === "open_elsewhere") {
-        setElsewhere(err.text);
-        return;
+        setElsewhere(err.text); // and the task bar stops saying "Saving…": these words are not saved yet
+      } else {
+        setProblem(err.text);
       }
-      setProblem(err.text);
     } else {
       setProblem(null);
     }
@@ -239,34 +267,112 @@ export function Compose({
   }, [givenId, startNew, client, adopt]);
 
   // ── the stream: one run at a time, from its start (A-API.draft-stream `?run=`) ───────────────────────────────
+  // C-DRAFT-LOADER.failure: a part past 10 × its mean is given up; a stream that is closed, sends the server's
+  // `error`, keeps failing to reconnect or ends while parts wait is lost, and every part still out fails. Either way
+  // the draft is read again, and again every few seconds while the server is still building, so no slot waits on a
+  // stream that will never come (J-RECOVER).
+  const liveRef = useRef(live);
   useEffect(() => {
-    if (!draftId || !streamRun || typeof EventSource === "undefined") return;
-    const es = new EventSource(
+    liveRef.current = live;
+  }, [live]);
+  useEffect(() => {
+    if (!draftId || !streamRun) return;
+    let closed = false; // this effect is gone (a newer run, or the screen)
+    let settled = false; // done or lost: nothing more from this stream
+    let errors = 0;
+    let poll: ReturnType<typeof setTimeout> | null = null;
+    let tick: ReturnType<typeof setInterval> | null = null;
+    let es: EventSource | null = null;
+    const opened = Date.now();
+
+    const reread = (lost: boolean, left: number) => {
+      client.get(draftId).then(
+        (d) => {
+          if (closed) return;
+          setDraft(d);
+          setLive((l) => (lost ? withDraftAfterLoss(l, d) : withDraft(l, d)));
+          // S-04's box: the saved message's spans, as the web edge converted them (BLD-C121).
+          const first = d.messages.find((m) => m.id === firstMid.current);
+          if (first) setBoxSpans(first.spans ?? null);
+          if (d.run?.state === "running" && left > 1)
+            poll = setTimeout(() => reread(lost, left - 1), RECOVER_MS);
+        },
+        () => {
+          if (!closed && left > 1) poll = setTimeout(() => reread(lost, left - 1), RECOVER_MS);
+        },
+      );
+    };
+    const finish = () => {
+      settled = true;
+      es?.close();
+      if (tick) clearInterval(tick);
+    };
+    const lose = () => {
+      if (settled || closed) return;
+      finish();
+      setLive((l) => loseStream(l, Date.now()));
+      reread(true, RECOVER_TRIES);
+    };
+
+    if (typeof EventSource === "undefined") {
+      reread(false, RECOVER_TRIES); // no stream in this browser: the parts arrive by reading the draft
+      return () => {
+        closed = true;
+        if (poll) clearTimeout(poll);
+      };
+    }
+    const source = new EventSource(
       `/api/drafts/${encodeURIComponent(draftId)}/stream?run=${encodeURIComponent(streamRun)}`,
     );
+    es = source;
     const on = (name: DraftStreamEvent["event"]) => (e: MessageEvent<string>) => {
+      if (settled) return;
       let data: unknown;
       try {
         data = JSON.parse(e.data);
       } catch {
         return;
       }
+      errors = 0;
       setLive((l) => applyEvent(l, { event: name, data } as DraftStreamEvent, Date.now()));
       if (name === "done") {
-        es.close();
-        client
-          .get(draftId)
-          .then((d) => {
-            setDraft(d);
-            setLive((l) => withDraft(l, d));
-          })
-          .catch(() => undefined);
+        finish();
+        reread(false, 1);
       }
     };
     for (const name of ["run", "hidden", "part", "receipt", "done"] as const)
-      es.addEventListener(name, on(name));
-    es.addEventListener("end", () => es.close());
-    return () => es.close();
+      source.addEventListener(name, on(name));
+    source.addEventListener("end", () => {
+      if (liveRef.current.running) lose();
+      else finish();
+    });
+    source.addEventListener("error", (e) => {
+      // The server's own `event: error` carries data; a dropped connection does not, and the browser tries again.
+      const said = typeof (e as MessageEvent).data === "string";
+      if (said || source.readyState === 2 || ++errors > RECONNECTS) lose();
+    });
+    tick = setInterval(() => {
+      if (settled || closed) return;
+      const now = Date.now();
+      const l = liveRef.current;
+      if (!l.running) return;
+      if (!l.loader) {
+        if (now - opened > NO_RUN_MS) lose();
+        return;
+      }
+      const next = giveUp(l, now);
+      if (next === l) return;
+      setLive((cur) => giveUp(cur, now));
+      if (!next.running) {
+        finish();
+        reread(true, RECOVER_TRIES);
+      }
+    }, GIVE_UP_TICK_MS);
+    return () => {
+      closed = true;
+      finish();
+      if (poll) clearTimeout(poll);
+    };
   }, [draftId, streamRun, client]);
 
   // ── the outbox: back online, the waiting messages go, in order ───────────────────────────────────────────────
@@ -344,17 +450,20 @@ export function Compose({
     [client, adopt, failed, markSaved],
   );
 
+  // A note waiting after the typed words (BLD-C150) is not part of the first message: only what was typed saves.
+  const heldAt = voiceNote ? noteStart(box, voiceNote) : -1;
+  const boxTyped = heldAt >= 0 ? box.slice(0, heldAt) : box;
   useEffect(() => {
-    if (conversation || !box.trim() || box === savedText.current) return;
+    if (conversation || !boxTyped.trim() || boxTyped === savedText.current) return;
     const t = setTimeout(
       () => {
         if (typeof navigator !== "undefined" && navigator.onLine === false) setSave("offline");
-        else void saveBox(box);
+        else void saveBox(boxTyped);
       },
       firstMid.current ? SAVE_PAUSE_MS : CREATE_PAUSE_MS,
     );
     return () => clearTimeout(t);
-  }, [box, conversation, saveBox, netTick]);
+  }, [boxTyped, conversation, saveBox, netTick]);
 
   // ── voice ─────────────────────────────────────────────────────────────────────────────────────────────────
   const ensureDraft = useCallback(async (): Promise<string | null> => {
@@ -385,12 +494,15 @@ export function Compose({
     (note: VoiceNote) => {
       const words = note.text;
       if (!words.trim()) return;
-      setVoiceNote({ streamId: note.streamId, text: words, textEn: note.textEn });
       const first = !conversation && !firstMid.current && !savedText.current && !box.trim();
       if (!first) {
-        setBox(box.trim() ? `${box.replace(/\s+$/, "")} ${words}` : words);
+        // BLD-C150: the note waits after the typed words, editable, and goes as its own message.
+        const prefix = box.trim() ? box.replace(/\s+$/, "") : "";
+        setVoiceNote({ streamId: note.streamId, text: words, textEn: note.textEn, prefix });
+        setBox(prefix ? `${prefix} ${words}` : words);
         return;
       }
+      setVoiceNote({ streamId: note.streamId, text: words, textEn: note.textEn, prefix: null });
       setBox(words);
       markSaved(words); // the autosave waits for this post rather than racing it
       const run = async () => {
@@ -445,57 +557,85 @@ export function Compose({
   const send = useCallback(async () => {
     const text = box.trim();
     if (!text) return;
-    if (text.length > MAX_MESSAGE) {
+    const out = messagesFor(box, voiceNote);
+    if (out.some((m) => m.text.length > MAX_MESSAGE)) {
       setProblem(COMPOSE_COPY.tooLong);
       return;
     }
     setProblem(null);
-    const note = voiceNote;
-    const viaVoice = Boolean(note && box.includes(note.text));
+    const held = voiceNote;
 
     if (!conversation) {
-      // S-04: the box is already the first message (saved as typed, or a voice note posted when it finished).
-      await saveBox(box);
+      // S-04: the typed words are already the first message (saved as typed, or a voice note posted when it
+      // finished); a note waiting after them goes now as its own message (BLD-C150), then the conversation opens.
+      const at = held ? noteStart(box, held) : -1;
+      const typed = at >= 0 ? box.slice(0, at) : box;
+      const spoken = at >= 0 ? out.find((m) => m.via === "voice") : undefined;
+      await saveBox(typed);
       await chain.current;
       const id = idRef.current;
-      if (!id || !firstMid.current || savedText.current !== box) return; // not saved yet (offline): every word stays
+      if (!id || !firstMid.current || savedText.current !== typed) return; // not saved yet (offline): every word stays
+      if (spoken) {
+        setSave("saving");
+        try {
+          const sent = await client.addMessage(id, spoken);
+          adopt(sent.draft, sent.run_id);
+          setSave("saved");
+          setVoiceNote(null);
+        } catch (err) {
+          failed(err); // the note stays in the box with its stream; nothing is lost
+          return;
+        }
+      }
       handedOver.add(id);
       router.push(`/share/${id}`);
       return;
     }
 
-    // S-04B: a new message, with its own client_id on every try.
+    // S-04B: each message with its own client_id on every try, in order; what cannot go yet waits, in order.
     const id = idRef.current;
     if (!id) return;
-    const m: Outgoing = {
-      clientId: newClientId(),
-      text,
-      via: viaVoice ? "voice" : "typed",
-      ...(viaVoice && note ? { streamId: note.streamId } : {}),
-    };
     setBox("");
     setVoiceNote(null);
-    setPending((p) => [...p, { ...m, queued: false }]);
+    setPending((p) => [...p, ...out.map((m) => ({ ...m, queued: false }))]);
     setSave("saving");
-    try {
-      const out = await client.addMessage(id, m);
-      setPending((p) => p.filter((x) => x.clientId !== m.clientId));
-      adopt(out.draft, out.run_id);
-      setSave(client.outbox(id).length ? "offline" : "saved");
-    } catch (err) {
-      if (
-        err instanceof DraftError &&
-        (err.offline || err.status >= 500 || err.status === 408 || err.status === 429)
-      ) {
-        const kept = client.queue(id, m);
-        setPending((p) => p.map((x) => (x.clientId === m.clientId ? { ...kept, queued: true } : x)));
-        setSave("offline");
+    for (let i = 0; i < out.length; i += 1) {
+      const m = out[i]!;
+      try {
+        const sent = await client.addMessage(id, m);
+        setPending((p) => p.filter((x) => x.clientId !== m.clientId));
+        adopt(sent.draft, sent.run_id);
+      } catch (err) {
+        const rest = out.slice(i);
+        if (
+          err instanceof DraftError &&
+          (err.offline || err.status >= 500 || err.status === 408 || err.status === 429)
+        ) {
+          const kept = rest.map((x) => client.queue(id, x));
+          setPending((p) =>
+            p.map((x) => {
+              const k = kept.find((y) => y.clientId === x.clientId);
+              return k ? { ...k, queued: true } : x;
+            }),
+          );
+          setSave("offline");
+          return;
+        }
+        // Refused: the words that did not go come back to the box, the note still waiting after the typed words.
+        setPending((p) => p.filter((x) => !rest.some((r) => r.clientId === x.clientId)));
+        const typedBack = rest
+          .filter((r) => r.via === "typed")
+          .map((r) => r.text)
+          .join(" ");
+        const spokenBack = rest.find((r) => r.via === "voice");
+        const back = [typedBack, spokenBack?.text ?? ""].filter(Boolean).join(" ");
+        setBox((b) => (b ? `${back}\n${b}` : back));
+        if (held && spokenBack) setVoiceNote({ ...held, prefix: typedBack });
+        failed(err);
         return;
       }
-      setPending((p) => p.filter((x) => x.clientId !== m.clientId));
-      setBox((b) => (b ? `${text}\n${b}` : text)); // refused: the words come back to the box
-      failed(err);
     }
+    setSave(client.outbox(id).length ? "offline" : "saved");
   }, [box, voiceNote, conversation, client, adopt, failed, saveBox, router]);
 
   // ── Team up from a similar idea (C-PREVIEW → lane F's C-SHEET-TEAMUP; J-SIMILAR/3–5) ───────────────────────
@@ -566,7 +706,7 @@ export function Compose({
           ? "working"
           : live.ready || draft?.ready
             ? "ready"
-            : "working";
+            : "more"; // nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1)
   const checkHref = draftId ? `/share/${draftId}/check` : null;
   const hiddenActions = draftId
     ? {
@@ -586,9 +726,18 @@ export function Compose({
         adopt(out.draft, out.run_id);
       }
     : undefined;
-  const boxIsSaved = box === savedBox;
+  const boxIsSaved = boxTyped === savedBox;
   const hasWords = box.trim().length > 0 || Boolean(draftId);
-  const english = voiceNote && box.includes(voiceNote.text) ? voiceNote.textEn : null;
+  // The note's English copy shows while its words are as heard (DEC-108): changed, the server keeps no copy.
+  const spokenNow = voiceNote && heldAt >= 0 ? box.slice(heldAt).trim() : box.trim();
+  const english =
+    voiceNote &&
+    (voiceNote.prefix === null ? box.includes(voiceNote.text) : spokenNow === voiceNote.text.trim())
+      ? voiceNote.textEn
+      : null;
+  const failedVoice = voice.state.status === "failed" ? voiceFailedLine(voice.state.reason) : null;
+  const signInHref = `/sign-in?next=${encodeURIComponent(draftId ? `/share/${draftId}` : "/share")}`;
+  const count = countLine(conversation ? chars + box.trim().length : box.trim().length, minChars);
 
   const prompt = (
     <Prompt
@@ -596,6 +745,7 @@ export function Compose({
       value={box}
       onChange={(v) => {
         setBox(v);
+        if (!v.trim()) setVoiceNote(null); // an emptied box holds no note any more
         if (problem) setProblem(null);
       }}
       onSend={() => void send()}
@@ -612,7 +762,9 @@ export function Compose({
             : PROMPT_COPY.firstPlaceholder
       }
       keyHint={!conversation}
-      spans={!conversation && boxIsSaved ? (boxSpans ?? live.spans) : null}
+      spans={!conversation && boxIsSaved ? boxSpans : null}
+      // C-PROMPT.anatomy/2: the attach button (C-FILE.uploader) mounts in `attach` once POST /api/files lands
+      // (c/files-2); a later round passes it here (BLD-C124, P-GAPS).
       source={!conversation ? quoteRange(box, quote) : null}
       voice={{
         state: voice.state,
@@ -625,16 +777,19 @@ export function Compose({
       english={english}
     >
       {problem ? <FieldMsg>{problem}</FieldMsg> : null}
-      {voice.state.status === "paused" ? (
-        <p className="vnotice" role="status">
-          {voice.state.banner}
-        </p>
-      ) : null}
-      {voice.state.status === "failed" ? (
-        <p className="vnotice" role="status">
-          {COMPOSE_COPY.voiceFailed}
-        </p>
-      ) : null}
+      {/* Both regions stay mounted, so a notice that appears in them is announced (WCAG 4.1.3). */}
+      <div className="vlive" role="status">
+        {voice.state.status === "paused" ? <p className="vnotice">{voice.state.banner}</p> : null}
+      </div>
+      <div className="vlive" role="alert">
+        {failedVoice === "paused" ? (
+          <p className="vnotice">{COMPOSE_COPY.voicePaused}</p>
+        ) : failedVoice === "sign_in" ? (
+          <p className="vnotice">
+            <a href={signInHref}>{COMPOSE_COPY.signInAgain}</a>
+          </p>
+        ) : null}
+      </div>
     </Prompt>
   );
 
@@ -683,6 +838,8 @@ export function Compose({
                   .then((d) => {
                     adopt(d);
                     setElsewhere(null);
+                    setSave(savedText.current === boxTyped ? "saved" : "changed");
+                    setNetTick((n) => n + 1); // S-04's box saves again now that this device is the editor
                   })
                   .catch(failed);
               }}
@@ -718,6 +875,11 @@ export function Compose({
                       </div>
                     </div>
                   ) : null}
+                  {/* The phone board's heading and help on this state (PhoneComposeResume.md, default). */}
+                  <div className="chero ph-only">
+                    <h1 className="cq">{COMPOSE_COPY.questionPhone}</h1>
+                    <p className="cql">{COMPOSE_COPY.helpPhone}</p>
+                  </div>
                   {draft?.origin && "label" in draft.origin ? (
                     <div className="ban blue" role="region" aria-label="From your email">
                       <span className="ic" aria-hidden="true">
@@ -741,7 +903,11 @@ export function Compose({
                       receipt={live.receipt}
                       suggestions={live.suggestions}
                       running={live.running}
-                      onSuggestion={() => boxRef.current?.focus()}
+                      onSuggestion={(s) => {
+                        // A suggestion does what it says: "Change the title" opens the title (behaviour/5).
+                        if (s === PANEL_COPY.changeTitle && changePart) panelRef.current?.editTitle();
+                        else boxRef.current?.focus();
+                      }}
                     />
                   ))}
                   {pending.map((m) => (
@@ -759,6 +925,8 @@ export function Compose({
                 <p className="phint">
                   {live.running || sendingDetail ? COMPOSE_COPY.working : COMPOSE_COPY.more}
                 </p>
+                <p className="ccount ph-only">{count}</p>
+                <p className="cpriv ph-only">{COMPOSE_COPY.privacyPhone}</p>
               </div>
             </>
           ) : (
@@ -801,11 +969,7 @@ export function Compose({
               ) : null}
               {prompt}
               <p className="hpnote dk-only">{PROMPT_COPY.help}</p>
-              <p className="ccount ph-only" aria-live="polite">
-                {box.trim().length >= MIN_CHARS
-                  ? COMPOSE_COPY.enough
-                  : COMPOSE_COPY.moreChars(MIN_CHARS - box.trim().length)}
-              </p>
+              <p className="ccount ph-only">{count}</p>
               {!box.trim() && !existing ? (
                 <Starters
                   device={device}
@@ -824,7 +988,12 @@ export function Compose({
             </div>
           )}
         </section>
+        {/* Said once when the words become enough, not on every key (C-PROMPT.states). */}
+        <p className="vh ph-only" aria-live="polite">
+          {count === COMPOSE_COPY.enough ? count : ""}
+        </p>
         <DraftPanel
+          ref={panelRef}
           live={live}
           readiness={readiness}
           moveHref={checkHref}
@@ -834,7 +1003,7 @@ export function Compose({
           phone={phone}
           offline={save === "offline"}
           onBlocked={() => boxRef.current?.focus()}
-          teamUp={{ open: teamUp.open, waiting }}
+          teamUp={{ open: teamUp.open, waiting, opener: teamUpOpener }}
         />
         {teamUp.sheet}
       </div>

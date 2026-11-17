@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BANNERS } from "@/lib/killswitch-routes";
 
 import type { CurrentUser } from "./auth/current";
+import { spansToUtf16, type CodePointSpan } from "./hide-offsets";
 import { workerFetch } from "./worker";
 
 export type DeviceKind = "phone" | "laptop";
@@ -157,6 +158,32 @@ export function draftError(err: unknown): NextResponse {
 }
 
 export const noStore = { "Cache-Control": "no-store" };
+
+const isSpan = (v: unknown): v is CodePointSpan =>
+  typeof v === "object" &&
+  v !== null &&
+  typeof (v as CodePointSpan).start === "number" &&
+  typeof (v as CodePointSpan).end === "number";
+
+/**
+ * L-HIDE offsets at the web edge (BLD-C121): the worker counts code points, the browser draws the dotted underline in
+ * UTF-16 units, and the two part after any emoji. Every `{ text, spans }` in a body leaving for the browser (a draft's
+ * messages, the message a write returns, a voice note's words) has its spans converted against its own text with the
+ * server's `spansToUtf16` (hide-offsets.ts). The stream's `hidden` event carries no text, so the screen draws only
+ * these converted spans. Nothing else in the body changes.
+ */
+export function spansForBrowser<T>(body: T, depth = 0): T {
+  if (depth > 6 || typeof body !== "object" || body === null) return body;
+  if (Array.isArray(body)) return body.map((x) => spansForBrowser(x, depth + 1)) as T;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body as Record<string, unknown>))
+    out[k] = spansForBrowser(v, depth + 1);
+  const text = out.text;
+  const spans = out.spans;
+  if (typeof text === "string" && Array.isArray(spans) && spans.every(isSpan))
+    out.spans = spansToUtf16(text, spans);
+  return out as T;
+}
 
 /** A JSON body, or {} when it is not one. */
 export async function bodyOf(request: Request): Promise<Record<string, unknown>> {

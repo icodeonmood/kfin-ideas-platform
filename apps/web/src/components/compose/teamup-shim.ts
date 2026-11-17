@@ -35,6 +35,13 @@ export interface TeamUpSheetOptions {
   doneLabel?: "Done" | "Keep looking";
   me?: { initials: string };
   onClose?(): void;
+  /** Where focus goes on close when the opener is gone; without it, the element marked `teamUpOpener` (BLD-F074). */
+  returnFocus?(): HTMLElement | null | undefined;
+}
+
+/** Spread on whatever stands where "Team up" was, so focus can return to it when the sheet closes (WCAG 2.4.3). */
+export function teamUpOpener(ideaId: string): { "data-teamup-opener": string } {
+  return { "data-teamup-opener": ideaId };
 }
 
 export function useTeamUpSheet(options: TeamUpSheetOptions = {}): {

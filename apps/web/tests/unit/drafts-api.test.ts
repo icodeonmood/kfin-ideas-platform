@@ -4,7 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { switchesFor } from "@/lib/killswitch-routes";
 import type { CurrentUser } from "@/server/auth/current";
-import { DRAFT_MESSAGES, DraftApiError, deviceOf, draftError, drafts, openElsewhere } from "@/server/drafts";
+import { segments } from "@/lib/compose/hidden";
+import {
+  DRAFT_MESSAGES,
+  DraftApiError,
+  deviceOf,
+  draftError,
+  drafts,
+  openElsewhere,
+  spansForBrowser,
+} from "@/server/drafts";
 import { workerFetch } from "@/server/worker";
 
 vi.mock("@/server/worker", () => ({
@@ -87,5 +96,44 @@ describe("A-API.draft-stream: each read keeps its own time limit (BLD-C039)", ()
     await drafts.create(me, device, { channel: "web" });
     expect(timeout.mock.calls.map((c) => c[0])).toEqual([5_000, 15_000]);
     timeout.mockRestore();
+  });
+});
+
+describe("L-HIDE offsets leave the server as the browser counts them (C-HIDDEN.where/1, BLD-C121)", () => {
+  // Synthetic words. "🙂" is one code point (the worker's count) and two UTF-16 units (the browser's).
+  const text = "🙂 Folio 1234567/89 called again";
+  const folio = "Folio 1234567/89";
+  const cp = { start: 2, end: 2 + folio.length, kind: "folio" }; // code points, after "🙂 "
+
+  it("C-HIDDEN.where/1 an emoji before a detail: the underline still lands on the detail, not one unit early", () => {
+    const body = {
+      run_id: "r-1",
+      message: { id: "m-1", text, spans: [cp] },
+      draft: { id: "d-1", messages: [{ id: "m-1", text, spans: [cp] }], parts: { title: { value: "x" } } },
+    };
+    const out = spansForBrowser(body);
+    expect(out.message.spans).toEqual([{ start: 3, end: 3 + folio.length, kind: "folio" }]);
+    expect(out.draft.messages[0]!.spans).toEqual(out.message.spans);
+    const cut = segments(text, out.message.spans as never).find((s) => s.kind);
+    expect(cut?.text).toBe(folio);
+    // Without the conversion the browser underlines from the space before "Folio" (the bug the review found).
+    expect(segments(text, [cp] as never).find((s) => s.kind)?.text).not.toBe(folio);
+    expect(out.run_id).toBe("r-1");
+    expect(body.message.spans[0]).toBe(cp); // the worker's body is not changed in place
+  });
+
+  it("A-API.drafts the routes send the converted spans (GET /api/drafts/:id)", async () => {
+    vi.mocked(workerFetch).mockResolvedValueOnce(
+      Response.json({ id: "d-1", messages: [{ id: "m-1", text, spans: [cp] }] }),
+    );
+    vi.doMock("@/server/auth/authorize", () => ({
+      authorize: vi.fn(async () => ({ id: "u-1", contributorCode: "C-0001" })),
+    }));
+    const { GET } = await import("@/app/api/drafts/[id]/route");
+    const res = await GET(new NextRequest("http://localhost/api/drafts/d-1"), {
+      params: Promise.resolve({ id: "d-1" }),
+    });
+    const body = (await res.json()) as { messages: { spans: { start: number }[] }[] };
+    expect(body.messages[0]!.spans[0]!.start).toBe(3);
   });
 });
