@@ -195,7 +195,12 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
   return (
     <div className={`cbox prompt${className ? ` ${className}` : ""}`}>
       <div className="tx">
-        <Mirror text={shown} spans={recording ? null : spans} source={recording ? null : source} />
+        {/* The mirror sizes the box: with no words yet it holds the placeholder, so the example is never cut. */}
+        <Mirror
+          text={shown || placeholder}
+          spans={recording || !shown ? null : spans}
+          source={recording || !shown ? null : source}
+        />
         <label className="vh" htmlFor={id}>
           {label}
         </label>

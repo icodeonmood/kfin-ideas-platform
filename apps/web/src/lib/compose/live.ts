@@ -74,7 +74,9 @@ export function withDraft(live: Live, d: Draft): Live {
   if (live.running && live.runId && d.run?.id === live.runId && d.run.state === "running") {
     return { ...next, loader: live.loader, updating: live.updating, spans: live.spans };
   }
-  return { ...next, spans: live.spans };
+  // The run the loader showed has finished: keep it, so the strip can fill, say "All 6 parts are in" and fold.
+  const same = live.loader && live.runId && d.run?.id === live.runId;
+  return { ...next, loader: same ? live.loader : null, spans: live.spans };
 }
 
 /** One stream event. `now` is the page's clock (ms), for the loader. */

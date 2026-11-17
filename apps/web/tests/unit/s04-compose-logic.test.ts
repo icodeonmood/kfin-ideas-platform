@@ -406,8 +406,10 @@ describe("the draft as the stream builds it (C-DRAFT-PANEL, A-API.draft-stream; 
     live = withDraft(live, draft({ run: { id: "r-2", state: "running" } }));
     expect(live.loader?.parts[0]!.key).toBe("area");
     live = withDraft(live, draft({ run: { id: "r-2", state: "done" } }));
-    expect(live.loader).toBeNull();
+    expect(live.loader?.parts[0]!.key).toBe("area"); // kept, so the strip fills and folds (maths/7)
     expect(live.running).toBe(false);
+    live = withDraft(live, draft({ run: { id: "r-3", state: "done" } }));
+    expect(live.loader).toBeNull();
   });
 
   it("C-DRAFT-PANEL.states a value shows when filled or changed by the person, and not when empty", () => {

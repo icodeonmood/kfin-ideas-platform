@@ -518,6 +518,14 @@ export function Compose({
     if (!conversation) boxRef.current?.focus(); // S-04.empty/1: focus is in the box
   }, [conversation]);
 
+  // The newest words and the receipt stay in view as the conversation grows.
+  const threadRef = useRef<HTMLDivElement>(null);
+  const lastCount = (draft?.messages.length ?? 0) + pending.length;
+  useEffect(() => {
+    const el = threadRef.current;
+    if (el && typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight });
+  }, [lastCount, live.receipt]);
+
   // ── what the screen shows ─────────────────────────────────────────────────────────────────────────────────
   const messages: Message[] = draft?.messages ?? [];
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
@@ -663,7 +671,13 @@ export function Compose({
         <section className="convo" aria-label="Tell it">
           {conversation ? (
             <>
-              <div className="thread" role="log" aria-label="Your words and what the draft did">
+              <div
+                ref={threadRef}
+                className="thread"
+                role="log"
+                aria-label="Your words and what the draft did"
+                tabIndex={0}
+              >
                 <div className="tin">
                   {pickedUp && draft ? (
                     <div className="ban" role="region" aria-label="Your draft">
