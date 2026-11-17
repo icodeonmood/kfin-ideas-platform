@@ -175,28 +175,6 @@
   color: var(--mute);
 }
 
-/* Back from an idea: the row it came from is washed once (J-BROWSE/5) */
-.is-back {
-  animation: wlBack 2.2s var(--mo-out, ease) 1;
-}
-
-@keyframes wlBack {
-  0%,
-  35% {
-    background-color: var(--wash);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .is-back {
-    animation: none;
-    background-color: var(--wash);
-  }
-}
-
 /* ---------- Just in ---------- */
 .wl-jin {
   margin-top: 40px;
