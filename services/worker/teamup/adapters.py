@@ -97,7 +97,12 @@ def say(
     entry_type: str = "event",
     at: dt.datetime | None = None,
 ) -> None:
-    """A line in the idea's conversation, rendered from its code at read time. Payload: IDs only."""
+    """A line in the idea's conversation, rendered from its code at read time. Payload: IDs only.
+
+    The conversation reads `ORDER BY at, id` and ids are random, so lines said in one action at one time would
+    come out shuffled ("Kavya joined" before "Ravi merged"). Each line is placed just after the idea's last line
+    when its time would tie or come before it, so the conversation reads in the order things were said."""
+    at = _next_at(conn, idea_uuid, at)
     convo = _module("convo")
     post = getattr(convo, "post", None) if convo is not None else None
     if post is not None:
@@ -120,6 +125,16 @@ def say(
             at,
         ),
     )
+
+
+def _next_at(conn: Conn, idea_uuid: str, at: dt.datetime | None) -> dt.datetime:
+    """`at` (now by default), or one microsecond after the idea's last conversation line if that is not earlier."""
+    t = at or dt.datetime.now(dt.UTC)
+    row = conn.execute(
+        "SELECT max(at) AS last FROM conversation_entries WHERE idea_uuid = %s", (idea_uuid,)
+    ).fetchone()
+    last = row["last"] if row else None
+    return last + dt.timedelta(microseconds=1) if last is not None and last >= t else t
 
 
 _KINDS = {"Mobile": "Phone", "Email": "Email", "Bank": "Account", "Date": "Date of birth"}
