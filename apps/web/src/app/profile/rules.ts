@@ -3,6 +3,7 @@
  * them directly. The worker (services/worker/wall/profile.py) owns the values and checks every save again.
  */
 import type { PersonSettings } from "@/lib/contracts/entities";
+import type { ReferAs } from "@/lib/refer-as";
 
 /** V-FIELDS.one/5 (S-H6.rules/1, NOT DRAWN default): a switch that did not save flips back with this under it. */
 export const SAVE_FAILED = "Couldn't save that. Try again.";
@@ -42,10 +43,7 @@ export function switchState(
   return typeof v === "boolean" ? v : undefined;
 }
 
-/** Lane C's `GET/PUT /api/me/refer-as` values (DEC-108, BLD-C111); "unset" is "Prefer not to say". */
-export const REFER_AS = ["she", "he", "they", "unset"] as const;
-export type ReferAs = (typeof REFER_AS)[number];
-
+/** DEC-108 (3): the four answers in lane C's values (`lib/refer-as.ts`, BLD-C111); "unset" is "Prefer not to say". */
 export const REFER_AS_OPTIONS: readonly { value: ReferAs; label: string }[] = [
   { value: "she", label: "She" },
   { value: "he", label: "He" },
@@ -56,10 +54,6 @@ export const REFER_AS_OPTIONS: readonly { value: ReferAs; label: string }[] = [
 /** DEC-108 (3): the question, and the one thing the answer is used for (BLD-E043, NOT DRAWN). */
 export const REFER_AS_TITLE = "How should we refer to you?";
 export const REFER_AS_LINE = "We use this only to word the English copy of your voice notes.";
-
-export function isReferAs(value: unknown): value is ReferAs {
-  return typeof value === "string" && (REFER_AS as readonly string[]).includes(value);
-}
 
 /** "340"; "1,340" in the Indian grouping once it passes a thousand. */
 export const pointsText = (points: number) => Math.max(0, Math.trunc(points)).toLocaleString("en-IN");
