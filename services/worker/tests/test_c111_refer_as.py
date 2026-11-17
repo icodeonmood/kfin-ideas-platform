@@ -22,15 +22,8 @@ def test_BLD_C111_only_she_or_he_sends_a_gender_to_the_translation(
 
 
 def test_BLD_C111_wire_values_are_she_he_they_or_unset() -> None:
-    assert [prefs.parse(v) for v in ("she", "he", "they", "unset", None, "")] == [
-        "she",
-        "he",
-        "they",
-        None,
-        None,
-        None,
-    ]
-    for bad in ("She", "her", "female", 1, True):
+    assert [prefs.parse(v) for v in ("she", "he", "they", "unset", None)] == ["she", "he", "they", None, None]
+    for bad in ("She", "her", "female", "", 1, True):  # "" is refused, as the route refuses it
         with pytest.raises(prefs.ReferAsInvalid):
             prefs.parse(bad)
     assert prefs.wire(None) == "unset" and prefs.wire("they") == "they" and prefs.wire("x") == "unset"

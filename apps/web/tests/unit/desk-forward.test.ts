@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/server/auth/authorize", () => ({ authorize: vi.fn(), signedIn: vi.fn() }));
 
-import { forward, WORKER_FAILED } from "@/server/desk";
+import type { CurrentUser } from "@/server/auth/current";
+import { deskRead, forward, paramId, WORKER_FAILED } from "@/server/desk";
 
 describe("A-API.conventions/2: desk forward", () => {
   const saved = { ...process.env };
@@ -63,5 +64,31 @@ describe("A-API.conventions/2: desk forward", () => {
     const res = await forward("/internal/question-sets/x/remind?user_id=u", { method: "POST" });
     expect(res.status).toBe(200);
     expect(await res.json()).toBeNull();
+  });
+
+  // A3: an admin holds the web's desk capabilities and the worker refuses them (BLD-B232); the page sends them home
+  it("S-R1, S-R2: deskRead reads a 403 or a 404 as nothing, so the page sends the person home", async () => {
+    const me = { id: "u" } as CurrentUser;
+    for (const status of [403, 404]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify({ error: { code: "forbidden" } }), { status })),
+      );
+      expect(await deskRead(me, "/internal/desk")).toBeNull();
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 500 })),
+    );
+    await expect(deskRead(me, "/internal/desk")).rejects.toThrow("worker answered 500");
+  });
+});
+
+describe("paramId (A-API.desk, A-API.committee)", () => {
+  it("reads the route's id, and gives an empty id to a route without one instead of failing", async () => {
+    expect(await paramId({ params: Promise.resolve({ id: "IDEA-2026-000123" }) })).toBe("IDEA-2026-000123");
+    expect(await paramId({ params: Promise.resolve({}) })).toBe("");
+    expect(await paramId({})).toBe("");
+    expect(await paramId(undefined)).toBe("");
   });
 });

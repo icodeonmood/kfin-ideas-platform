@@ -1,0 +1,137 @@
+/**
+ * S-08's plain logic, kept apart from the screen so it is tested on its own: the words the screen owns, the @mention
+ * picker's query, putting a picked name in the box, which mentions the words still carry, the highlighted names in a
+ * message, an error's words and a file's lines. Everything the server words (lines, placeholders, visibility,
+ * titles) comes in `ConversationView` and is shown as it is (A-API.conventions/6).
+ */
+import type { FileItem } from "@/lib/contracts";
+
+type Person = { id: string; name: string; first_name: string; initials: string };
+
+/** S-08's own words: the pack's (Messages.md), and lane F's where the pack draws none (docs/hr-wording/lane-f.md). */
+export const S08_COPY = {
+  heading: "Conversation",
+  side: "In this conversation",
+  sideNote:
+    "This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email.",
+  send: "Send",
+  sending: "Sending",
+  empty: "Write a message or attach a file first.",
+  answer: "Answer the questions",
+  addedTo: "Added to",
+  // Lane F's (not drawn by the pack):
+  failed: "Your message didn’t send. Try again.",
+  removeFailed: "The message wasn’t removed. Try again.",
+  remove: "Remove",
+  seeOnIdea: "See them on the idea",
+  mentionList: "People to mention",
+  people: "Who is in this conversation",
+  close: "Close",
+  view: "View",
+} as const;
+
+/** "1 person to mention. …" / "3 people to mention. …": announced when the list opens or narrows. */
+export function mentionHint(n: number): string {
+  if (n === 0) return "";
+  return `${n} ${n === 1 ? "person" : "people"} to mention. Use the up and down arrows, then Enter.`;
+}
+
+export interface MentionQuery {
+  /** Where the "@" is. */
+  start: number;
+  /** What follows it up to the caret. */
+  query: string;
+}
+
+/** The "@…" being typed at the caret: an "@" at the start or after a space, with no line break before the caret. */
+export function mentionAt(text: string, caret: number): MentionQuery | null {
+  const before = text.slice(0, caret);
+  const at = before.lastIndexOf("@");
+  if (at < 0) return null;
+  if (at > 0 && !/\s/.test(before[at - 1]!)) return null;
+  const query = before.slice(at + 1);
+  if (query.length > 40 || /[\n\r]/.test(query)) return null;
+  return { start: at, query };
+}
+
+/** The people whose name or first name starts with the query, at most 6, the reader never among them. */
+export function mentionChoices<P extends Person>(people: P[], query: string): P[] {
+  const q = query.toLowerCase();
+  return people
+    .filter((p) => {
+      const name = p.name.toLowerCase();
+      return name.startsWith(q) || p.first_name.toLowerCase().startsWith(q) || name.includes(` ${q}`);
+    })
+    .slice(0, 6);
+}
+
+/** The box's words with "@Full Name " in place of the "@…" being typed, and where the caret goes. */
+export function putMention(
+  text: string,
+  q: MentionQuery,
+  caret: number,
+  person: Person,
+): { text: string; caret: number } {
+  const inserted = `@${person.name} `;
+  return {
+    text: text.slice(0, q.start) + inserted + text.slice(caret),
+    caret: q.start + inserted.length,
+  };
+}
+
+/** The mentions the words still carry: a picked person whose "@Name" was deleted is not mentioned. */
+export function mentionsIn(text: string, picked: ReadonlyMap<string, string>): string[] {
+  return [...picked].filter(([, name]) => text.includes(`@${name}`)).map(([id]) => id);
+}
+
+/** A message's words split around each "@Name" it mentions, for the highlight (Messages.md, `.ment`). */
+export function withMentions(text: string, names: string[]): { text: string; mention: boolean }[] {
+  const tags = [...new Set(names.filter(Boolean).map((n) => `@${n}`))].sort((a, b) => b.length - a.length);
+  if (!tags.length) return [{ text, mention: false }];
+  const out: { text: string; mention: boolean }[] = [];
+  let i = 0;
+  let plain = "";
+  while (i < text.length) {
+    const tag = tags.find((t) => text.startsWith(t, i));
+    if (tag) {
+      if (plain) out.push({ text: plain, mention: false });
+      out.push({ text: tag, mention: true });
+      plain = "";
+      i += tag.length;
+    } else {
+      plain += text[i];
+      i += 1;
+    }
+  }
+  if (plain) out.push({ text: plain, mention: false });
+  return out;
+}
+
+/**
+ * What to say when a write fails: the worker's message (`{ error: { code, message, field } }`), the proxy's banner
+ * when writing is paused (`{ error: "paused", banner }`), or lane F's plain line.
+ */
+export function errorText(body: unknown, fallback: string = S08_COPY.failed): string {
+  if (body && typeof body === "object") {
+    const b = body as { error?: unknown; banner?: unknown };
+    if (b.error && typeof b.error === "object") {
+      const m = (b.error as { message?: unknown }).message;
+      if (typeof m === "string" && m.trim()) return m;
+    }
+    if (typeof b.banner === "string" && b.banner.trim()) return b.banner;
+  }
+  return fallback;
+}
+
+/** "12 KB", "2.4 MB": a file's size as people read it. */
+export function fileSize(bytes: number | undefined): string | undefined {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return undefined;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+}
+
+/** C-FILE's status for a checked file: "Checked", or the note on what was hidden in it. */
+export function fileStatus(f: FileItem): { status: "checked" | "hidden"; text: string } {
+  if (f.state === "hidden_checked") return { status: "hidden", text: f.hidden_note || "Checked" };
+  return { status: "checked", text: "Checked" };
+}

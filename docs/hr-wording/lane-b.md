@@ -53,12 +53,50 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | Where | Wording |
 |---|---|
 | The Answer screen, after sending (BLD-E008) | The board says "Meera decides by Friday 20 November, and her decision comes to your Inbox." This now reads "Meera decides by Friday 20 November, and the decision comes to your Inbox." |
-| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee's window. |
+| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee’s window. |
 | The Ones Committee, empty tabs | No decisions in the window. Each desk decision shows here for 30 days after it is made. / Nothing reversed. A decision the committee changes shows here, with its note. / Nothing expired yet. When a window closes, the decision stands and moves here. |
 | The Answer screen with nothing to answer | Nothing to answer right now. When the review desk asks you something about this idea, the questions show here. |
 | The reviewer's page, the reviewer's own idea | Your own idea. Another reviewer decides on it. You can read it here. |
-| The review desk, a reminder that did not go | The reminder didn't go. Try again. |
-| The Ones Committee, a reversal that cannot start | This decision can't be reversed now. |
-| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can't be opened right now. |
-| Any send that fails | That didn't go through. Try again. / Your answers didn't send. Try again. / That didn't save. Try again. / That didn't merge. Try again. |
+| The review desk, a reminder that did not go | The reminder didn’t go. Try again. |
+| The Ones Committee, a reversal that cannot start | This decision can’t be reversed now. |
+| The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can’t be opened right now. |
+| Any send that fails | That didn’t go through. Try again. / Your answers didn’t send. Try again. / That didn’t save. Try again. / That didn’t merge. Try again. |
 | The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
+
+## 3. Added on 17 Nov 2026 with the review screens (BLD-B238)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page and the questions card, beside a file the check found a customer detail in | Has a customer detail | DEC-107 lets such a file through, marked; the pack predates it |
+| The same file's Open, for screen readers | Open rejection-sms-1.png, which has a customer detail | The mark is never colour or position alone |
+| The reviewer's page, ideas merged into this one | Merged into this idea | L-MERGE.effects/3 shows what each merged idea brought; not drawn |
+| The reviewer's page, the panel of an idea that joined another | Merged with another idea. The review desk now decides on the idea it joined. | Not drawn |
+| The reviewer's page, the wording check, for each further word found | For “rejected”, say it is not going ahead, and why. | The first word's plainer way is in the worker's message; the rest are listed |
+| The reviewer's page, after the wording check | Send anyway | L-DECIDE.rules/4 warns and never blocks (BLD-B236) |
+| The Ones Committee, the reversal note's box | Why the committee is changing it, in words Kavya will understand | The board's own placeholder, kept as the box's name after "Your note to Kavya" |
+| The reviewer's reason and the committee's reversal note, until long enough | 12 of at least 30 characters | A line of its own under the board's help line ("Kavya reads this word for word."), which now always shows |
+| The Answer screen, a save that did not reach the server (tried again on its own) | Couldn’t save that. Try again. | B3: an answer is never lost or misreported on a network error |
+| The Answer screen, an answer near its limit (from 1,800 characters) | 1,850 of 2,000 characters | V-FIELDS.answer/1 "counter near the limit"; not drawn |
+
+## 5. Added on 17 Nov 2026 with "Hide this" on the reviewer's page (BLD-B246)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page, next to words the reviewer selects | Hide this | L-HIDE.rules/7: a reviewer can hide a detail the checks missed; not drawn |
+| The same, when fewer than 3 letters or numbers are selected | Select at least 3 letters or numbers. | Lane C refuses shorter selections, which would mask pieces of other words |
+| The same, when the selection is already hidden | That’s already hidden. | Not drawn |
+| The same, when the hide fails for any other reason | That didn’t go through. Try again. | F-COPY's failure line, as on every other send on the review side |
+| The same, read out to a screen reader once the words are hidden | Hidden from everyone. | C-HIDDEN's own words for a hidden detail |
+| The reviewer's page, the Attached part, under "… is hidden from everyone." | Folio shown, because it’s an internal reference. (also "it’s a scheme or product code" and "it’s made up for the example") | L-HIDE.rules/6: the desk sees the sharer's reason; the reasons are C-HIDDEN's |
+
+## 6. Added on 18 Nov 2026 with the "Hide this" fixes (BLD-B247)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page, read out to a screen reader each time "Hide this" appears after a selection | Hide this is next. Press Tab. | WCAG 4.1.3: the button appears without moving focus, so the screen reader is told where it is; said again for every new selection |
+| The reviewer's page, the name a screen reader reads for each text "Hide this" works on | The problem, text (also "How often, text", "Fix, text", "The title, text", "The answer, text", "Their own words, 1 of 3, text") | WCAG 2.1.1 and 4.1.2: each such text can now take focus from the keyboard, so it needs a name |
+| The reviewer's page, under the text, when the words changed before "Hide this" went through | The page changed. Select again. | Another reviewer hid something in the same text; the page is read again and the reviewer selects once more |
+| The reviewer's page, under the text (and read out), when words are selected in a text the page shows differently from how it was stored | Select again. | "Hide this" is offered only on the exact stored text, so a reviewer is told to try again rather than shown nothing; rare (a line break stored as two characters) |
+| The Answer screen, when an answer could not be stored with its details hidden | Couldn’t save that. Try again. | The line added with the review screens (section 3 of 17 Nov), now also for this case, never a raw error |
+| The Answer screen, when the answers could not be checked for customer details on send | Your answers didn’t send. Try again. | The screen's existing send failure line, never a raw error |
+| The reviewer's page, the Attached part, the kind in "… shown, because …" | Phone shown, because it’s made up for the example. (also "Account", "Email", "Aadhaar", "Name", "Folio", "PAN") | L-HIDE.detect's "Label shown" for each kind; replaces "Phone number shown" and "Account number shown" |

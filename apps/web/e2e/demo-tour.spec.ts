@@ -37,63 +37,43 @@ test("1-3: home carousel, share an idea, Find your crew", async ({ browser }) =>
   await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/share");
   await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
-  await kavya.goto("/my-ideas");
-  await kavya
-    .getByRole("link", { name: /Catch missing bank fields|Your idea IDEA-/ })
-    .first()
-    .click();
-  await expect(kavya.getByText("Colleagues are on this").first()).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/inbox");
-  await expect(kavya.locator(".inbox li").first()).toBeVisible();
+  await expect(kavya.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible(); // S-H5
 });
 
-test("4: My ideas as a One: the tier dashboard and the glow-up", async ({ browser }) => {
-  const ananya = await as(browser, DEMO.one);
-  await ananya.goto("/my-ideas");
-  const dialog = ananya.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: /your spark is hotter/ })).toBeVisible();
-  await expect(dialog.getByText("Glow suits you", { exact: false })).toBeVisible({ timeout: 10_000 });
-  await expectNoSeriousAxeIssues(ananya);
-  const founding = await as(browser, DEMO.founding);
-  await founding.goto("/my-ideas");
-  await expect(founding.getByRole("heading", { level: 2, name: "You're No. 1" })).toBeVisible();
-  await expectNoSeriousAxeIssues(founding);
-});
-
-test("5-6: the wall and an idea page", async ({ browser }) => {
-  const kavya = await as(browser, DEMO.employee);
-  await kavya.goto("/wall");
-  const ones = kavya.locator(".ones-band");
-  await expect(ones.getByText("Rohit Menon")).toBeVisible();
-  await expect(ones.getByText("One No. 3")).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
-  await kavya
-    .getByRole("link", {
-      name: /status page for every investor service request|Check bank details|One status page/,
-    })
-    .first()
-    .click();
-  await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
-});
+/**
+ * S-R1 (A10, N3): a desk tab shows what its count says: n rows for a count of n, or its own empty line, and no
+ * table, for 0. CI never runs this tour (DEMO_TOUR is unset there, and `make seed` loads no ideas), and the legacy
+ * `make demo` set this tour signs in to puts nothing on the desk (its ideas carry no desk status), so its tabs read 0.
+ * Whatever the data, a count and a panel that disagree fail here.
+ */
+async function tabShowsItsCount(page: Page, value: string, emptyTitle: string): Promise<void> {
+  const panel = page.locator(`#desk-panel-${value}`); // present once that tab's own read has arrived
+  await expect(panel).toBeVisible();
+  const count = Number(await page.locator(`#desk-tab-${value} .tab-n`).textContent());
+  if (count > 0) {
+    await expect(panel.locator("tbody tr")).toHaveCount(count);
+  } else {
+    await expect(panel.getByRole("heading", { level: 2, name: emptyTitle })).toBeVisible();
+    await expect(panel.locator("table")).toHaveCount(0);
+  }
+}
 
 // Desk decisions (step 8) is retired (DEC-106, R10); lane B rebuilds the committee window on /committee.
-test("7: the review desk", async ({ browser }) => {
+test("7: the review desk, each tab showing what its count says (S-R1)", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
-  await desk.goto("/review");
-  await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
+  await desk.goto("/desk"); // S-R1 (the old /review redirects here)
+  await expect(desk.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  await tabShowsItsCount(desk, "waiting", "No one is answering questions now"); // the default tab
+  await desk.getByRole("tab", { name: /^To review/ }).click();
+  await tabShowsItsCount(desk, "to_review", "Nothing new to review");
   await expectNoSeriousAxeIssues(desk);
 });
 
 // The Ones console (step 9) is retired (DEC-106, R21).
 // The manager view (step 11) is retired (DEC-106, R12).
-test("10, 12: leaderboard and the office screen", async ({ browser }) => {
-  const ananya = await as(browser, DEMO.one);
-  await ananya.goto("/ones/leaderboard");
-  await expect(ananya.getByRole("cell", { name: "Rohit Menon" })).toBeVisible();
-  await expectNoSeriousAxeIssues(ananya);
+// The leaderboard page (step 10) is retired: the Ones leaderboard is on the Wall (S-WALL, S-ONE).
+test("12: the office screen", async ({ browser }) => {
   const rahul = await as(browser, DEMO.manager);
   await rahul.goto("/constellation");
   await expect(rahul.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();

@@ -3,6 +3,8 @@
  * person's live grants; this module passes who is acting and turns refusals into codes (never echoed text).
  */
 import type { CurrentUser } from "./auth/current";
+import { getDb } from "./db";
+import { log } from "./log";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
 
@@ -126,11 +128,16 @@ export type ShowcaseBrief = Tiered & {
   parts: { key: string; own: string; from_record: string | null }[];
 };
 
-async function call<T>(path: string, init: RequestInit = {}, fallback = "ones_unavailable"): Promise<T> {
+async function call<T>(
+  path: string,
+  init: RequestInit = {},
+  fallback = "ones_unavailable",
+  timeoutMs = 30_000,
+): Promise<T> {
   const res = await workerFetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const out = (await res.json().catch(() => ({ error: fallback }))) as Record<string, unknown>;
   if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? fallback));
@@ -150,7 +157,67 @@ const body = (input: unknown): Record<string, unknown> =>
 
 // --- Reads -------------------------------------------------------------------------------------------------------
 
-export const publicOnes = () => call<{ paused: boolean; ones: PublicOne[] }>("/internal/ones/public");
+export type OnesList = { paused: boolean; ones: PublicOne[] };
+
+/** Who has hidden their name from the Wall in Profile (`person_settings.show_name_on_wall`, DEC-104). */
+export interface WallNameSettings {
+  /** The induction numbers, of those given, whose One has switched their name off. No row: not hidden. */
+  hiddenFor(inductionNos: number[]): Promise<Set<number>>;
+}
+
+export const pgWallNameSettings: WallNameSettings = {
+  async hiddenFor(inductionNos) {
+    if (inductionNos.length === 0) return new Set();
+    const rows = await getDb()
+      .selectFrom("ones")
+      .innerJoin("person_settings", "person_settings.user_id", "ones.user_id")
+      .select("ones.induction_no")
+      .where("ones.induction_no", "in", inductionNos)
+      .where("person_settings.show_name_on_wall", "=", false)
+      .execute();
+    return new Set(rows.map((r) => r.induction_no));
+  },
+};
+
+let nameSettings: WallNameSettings = pgWallNameSettings;
+
+export function setWallNameSettings(next: WallNameSettings) {
+  nameSettings = next;
+}
+
+/**
+ * P-PRODUCT.privacy "The sharer's name on the Wall: their choice, in Profile" (DEC-104): a One who switched their
+ * name off shows by number only, wherever the Ones are shown. The worker still leaves out a name it has no consent
+ * for; this never puts one back. If the switches cannot be read, no name shows (fail closed).
+ */
+async function withNamesHidden(list: OnesList): Promise<OnesList> {
+  if (list.paused || !list.ones.some((o) => o.name)) return list;
+  let hidden: Set<number> | null;
+  try {
+    hidden = await nameSettings.hiddenFor(list.ones.map((o) => o.induction_no));
+  } catch {
+    log.warn("ones.name_settings_unavailable");
+    hidden = null;
+  }
+  return {
+    ...list,
+    ones: list.ones.map((o) => (hidden && !hidden.has(o.induction_no) ? o : { ...o, name: null })),
+  };
+}
+
+/** Every active One, for signed-in people (the Wall, Home, `GET /api/ones`), names as their owners chose. */
+export const wallOnes = async () => withNamesHidden(await call<OnesList>("/internal/ones/public"));
+
+/**
+ * The Ones signed-out people see (S-01 Landing, S-01.rules/3, A-API.ones): only Ones whose brief is public (the
+ * committee approved it, and it passed its checks), names as their owners chose. `ones.public` off: none.
+ * Landing passes a short `timeoutMs` so a slow worker never holds the front door (BLD-A172).
+ */
+export async function publicOnes(timeoutMs?: number): Promise<OnesList> {
+  const list = await call<OnesList>("/internal/ones/public", {}, undefined, timeoutMs);
+  if (list.paused) return { paused: true, ones: [] };
+  return withNamesHidden({ paused: false, ones: list.ones.filter((o) => Boolean(o.brief?.trim())) });
+}
 
 export const constellation = () =>
   call<{

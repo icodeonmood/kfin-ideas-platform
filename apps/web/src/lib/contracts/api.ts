@@ -10,6 +10,7 @@ import type {
   DeskSort,
   DraftPartKey,
   DraftStep,
+  HiddenKind,
   IdeaPart,
   IdeaStatus,
   InboxTab,
@@ -206,15 +207,9 @@ export interface ProfileResponse {
   one_since_label: string | null;
   /** Teams messages stay off until IT approves them (DEC-105): the switch shows, cannot be turned on. */
   available: { teams: boolean };
-  /**
-   * "How should we refer to you?" (DEC-108, BLD-E010); "unset" is the default and "Prefer not to say".
-   * TODO(lane C): lane C owns the answer and its store through `GET/PUT /api/me/refer-as`; S-H6 saves there
-   * directly. Until that route is on main this is always "unset".
-   */
-  refer_as: ReferAs;
+  // "How should we refer to you?" is not here: lane C's `GET/PUT /api/me/refer-as` is its only source (BLD-C111,
+  // `lib/refer-as.ts`).
 }
-/** Lane C's `/api/me/refer-as` values (DEC-108). */
-export type ReferAs = "she" | "he" | "they" | "unset";
 /** `PATCH /api/me/settings`: any of the switches; each saves at once (S-H6.rules/1). */
 export type SettingsPatch = Partial<PersonSettings>;
 /** Every switch's state after the save. */
@@ -468,12 +463,13 @@ export interface SharerView {
     pill: PillWords;
     breadcrumb: { label: string; to: string; current: string }; // "My ideas, Needs you" / IDEA-2026-001481
     shared_label: string | null; // "Shared 14-Nov-26"
+    reference_line?: string; // the phone's "Reference IDEA-…, shared Saturday 14 November, Investor service"
     share_seconds_label?: string; // "Done in 40 seconds", first arrival only
     first_arrival: boolean;
     /** Null where the sentence names the decision or the questions: compose it from `card_from`'s endpoint. */
-    card: { lead: string; rest: string } | null;
+    card: { lead: string; rest: string; phone_rest?: string } | null; // phone_rest: PhoneStatus.md's shorter rest
     card_from?: "decision" | "question_set";
-    window: { open: boolean; line: string; countdown?: WindowCountdown } | null;
+    window: { open: boolean; line: string; phone_line?: string; countdown?: WindowCountdown } | null;
     actions: {
       conversation: LinkWords;
       edit?: LinkWords;
@@ -515,6 +511,7 @@ export interface SharerView {
       count: number;
       link: LinkWords;
       empty_line?: string;
+      phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
@@ -591,6 +588,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
     action: {
       label: string;
       to?: string;
@@ -611,7 +609,9 @@ export interface MyIdeasEmpty {
   kind: "first_time" | "filtered" | "no_results" | "list";
   title: string;
   line: string;
-  actions: { label: string; to: string; style?: "primary" | "line" }[];
+  phone_line?: string; // the phone board's wording where it differs ("…their impact is measured.")
+  // desk_only: the desktop board's action only ("See 1 in Teamed up"); the phone offers "Show all ideas" alone
+  actions: { label: string; to: string; style?: "primary" | "line"; desk_only?: boolean }[];
   hint?: string; // "or press P anywhere"
 }
 export interface MyIdeasResponse {
@@ -843,6 +843,7 @@ export interface ReviewerQuestion {
   asked_line: string; // "You asked, today 11:20 am"; another reviewer's: "Meera asked, today 11:20 am"
   state: "Answered" | "Not answered yet";
   answer: {
+    id: string; // the answer row: S-R2 "Hide this" source { kind: "answer", id } (L-HIDE.rules/7)
     text: string | null;
     at: IsoDate;
     by: string;
@@ -899,7 +900,26 @@ export interface ReviewerContribution {
   label: string; // "Ravi’s idea, IDEA-2026-001412"
   parts: ReviewerPart[];
   files: ReviewerArtefact[]; // kind "file" only
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
+}
+/** One of the sharer's messages, the masked copy; `id` is the "Hide this" source { kind: "message", id }. */
+export interface ReviewerOwnWords {
+  id: string;
+  seq: number;
+  via: string;
+  at: IsoDate;
+  text: string | null;
+}
+/** A detail the sharer chose to show, as the review desk reads it (L-HIDE.rules/6, `desk.reads._shown`): one per
+ * value, never the value itself. */
+export interface ReviewerShown {
+  kind: HiddenKind;
+  kind_label: string; // "Folio"
+  reason: ShowReason;
+  because: string; // "it’s an internal reference"
+  by: string; // the first name of who showed it
+  at: IsoDate;
+  line: string; // "Folio shown, because it’s an internal reference."
 }
 /** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
 export interface ReviewerDecisionLines {
@@ -961,10 +981,11 @@ export interface ReviewerIdeaResponse {
   can_act: boolean;
   decide_by: { at: IsoDate | null; label: string | null; left: string | null };
   artefacts: ReviewerArtefact[];
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
   parts: ReviewerPart[];
   worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
   similar: ReviewerSimilar[];
+  shown: ReviewerShown[]; // L-HIDE.rules/6: the desk and the committee only; empty for anyone else
   contributions: ReviewerContribution[];
   panel: ReviewerPanel;
 }
@@ -1183,11 +1204,52 @@ export type DecisionForViewerResponse =
 // ---------------------------------------------------------------------------------------------------------------
 export interface TeamUpDraftNote {
   note: string;
-  own_ideas: { id: string; title: string; status: string }[];
+  own_ideas: { id: string; title: string; status: string; meta?: string }[];
+  /** The idea asked about and its lead, for the sheet's title and line (C-SHEET-TEAMUP.compose/2). */
+  idea?: { id: string; title: string };
+  lead?: import("./entities").PersonRef;
+  /** 30 (`notes.teamup_note_min_chars`) and 600 (BLD-F021). */
+  min_chars?: number;
+  max_chars?: number;
 }
 export interface TeamUpCreate {
   note: string;
   brought_idea_ids: string[];
+  /** "Keep mine separate" from Check it: the person's own draft (BLD-F020). */
+  draft_id?: string;
+}
+/** What the screen that opened the sheet shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4–8 on Check it). */
+export interface TeamUpAfter {
+  state: string;
+  line: string;
+  label?: string;
+  detail?: string;
+  action?: { label: string; op?: string; to?: string } | null;
+  can_submit?: boolean;
+}
+/** POST /ideas/:id/team-up and DELETE /team-up/:id: the request, its kind, and what the opener shows now. */
+export type TeamUpSendResponse = TeamUpRequest & { request?: "teamup" | "merge"; after: TeamUpAfter | null };
+/** GET /ideas/:id/team-up (BLD-F015): the signed-in person's team-up state on one idea. */
+export interface TeamUpMine {
+  idea_id: string;
+  lead: import("./entities").PersonRef;
+  /** "lead" or "member" when on the crew. */
+  me: string | null;
+  crew_count: number;
+  can_request: boolean;
+  why_not: "already_on_crew" | "idea_closed" | "already_requested" | null;
+  request: (TeamUpRequest & { request?: "teamup" | "merge" }) | null;
+  after: TeamUpAfter | null;
+}
+/** GET and POST /drafts/:id/merge-request: the draft's latest merge request (`{state: 'none'}` when none). */
+export interface DraftMergeRequestState {
+  id?: string;
+  other_idea_id?: string;
+  state: string;
+  note?: string;
+  lead?: import("./entities").PersonRef;
+  lead_reason?: string;
+  after: TeamUpAfter | null;
 }
 export type TeamUpResponse = TeamUpRequest;
 export interface TeamUpAnswerRequest {
@@ -1213,8 +1275,135 @@ export type ConversationResponse = Conversation;
 export interface ConversationMessageCreate {
   text: string;
   file_ids?: string[];
+  /** users.id of each person mentioned with @name (L-CONVO/6). */
   mentions?: string[];
 }
+
+/**
+ * What `GET /ideas/:id/conversation` returns (lane F, `services/worker/convo/reads.py`): the pack's `Conversation`
+ * with each entry's `id`, and the words S-08 shows around the timeline worked out on the server
+ * (A-API.conventions/6). Event `text` is the whole line, time included ("You shared it. Saturday 14 November,
+ * 10:05 am"). Question sets come by reference: the card is lane B's `C-QCARD`, filled from
+ * `GET /ideas/:id/question-set` (L-CONVO/4).
+ */
+type ConvoPerson = import("./entities").PersonRef;
+export type ConversationEntryView =
+  | {
+      type: "event";
+      id: string;
+      code: string;
+      text: string;
+      at: IsoDate;
+      /** The merged idea's closing line links to the idea it joined (L-MERGE.effects/6). */
+      link?: { label: string; to: string };
+    }
+  | {
+      type: "message";
+      id: string;
+      from: ConvoPerson;
+      /** "Meera from the review desk", "Ravi Nair", "You". */
+      from_label: string;
+      you: boolean;
+      /** The masked copy (L-CONVO/7); "Message removed" once removed (L-CONVO/10). */
+      text: string;
+      files: FileItem[];
+      at: IsoDate;
+      at_label: string;
+      mentions: ConvoPerson[];
+      mentions_you: boolean;
+      removed: boolean;
+      /** Only on the reader's own message, while it can still be removed. */
+      can_remove_until?: IsoDate;
+    }
+  | {
+      type: "questions";
+      id: string;
+      set_id: string;
+      state: import("./enums").QuestionSetState;
+      by: ConvoPerson;
+      by_label: string;
+      count: number;
+      answered: number;
+      due_at: IsoDate | null;
+      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
+       * review desk asked 3 questions." for others (BLD-F065). */
+      title: string;
+      /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
+       * answer is added to its part of your idea." */
+      deadline?: string;
+      /** The sharer's, while open: S-R3 (S-08.rules/1). */
+      answer_url?: string;
+      at: IsoDate;
+      at_label: string;
+    }
+  | {
+      type: "answers";
+      id: string;
+      set_id: string;
+      from: ConvoPerson;
+      /** "Your answers to Meera’s 3 questions". */
+      title: string;
+      answers: {
+        id: string;
+        question_id: string;
+        text: string;
+        added_to: string;
+        /** "The problem", "How often" … ("Added to <part>"). */
+        added_to_label: string;
+        at: IsoDate;
+        files: FileItem[];
+      }[];
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
+       * Friday 20 November." (S-08 "Answers sent"). */
+      footer?: string;
+      at: IsoDate;
+      at_label: string;
+    };
+export interface ConversationView extends Omit<Conversation, "entries" | "participants"> {
+  /** "Your idea" / "The idea", and the line under the header (S-08.layout/1). */
+  header: { whose: string; line: string };
+  participants: { person: ConvoPerson; label: string; doing: string; you: boolean }[];
+  entries: ConversationEntryView[];
+  composer: {
+    /** By audience (L-CONVO/5): "Message the review desk", "Message the crew", "Reply to Sanjay". */
+    placeholder: string;
+    /** "Only you and the review desk see this conversation." */
+    visibility: string;
+    /** For the sharer while questions are open (L-CONVO/4). */
+    questions_line?: string;
+    /** A merged idea's conversation takes no new messages: why, and where to write. */
+    closed?: string;
+    /** Whether the reader may add files: the sharer, the review desk and the core committee (BLD-F063). S-08
+     * shows the attach control only then. */
+    can_attach: boolean;
+  };
+  /** For the sharer before anyone has written ("No messages yet"). */
+  empty?: { title: string; body: string };
+}
+export interface ConversationMessageResponse {
+  entry: ConversationEntryView;
+  /** How many details were hidden from the words as sent. */
+  hidden: number;
+}
+/** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `files_not_allowed`,
+ * `hide_unavailable`, `file_unavailable`, `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`,
+ * `not_yours`, `too_late`, `not_found`. */
+export type ConversationErrorCode =
+  | "empty_message"
+  | "too_long"
+  | "too_many_files"
+  | "too_many_mentions"
+  | "files_not_allowed"
+  | "hide_unavailable"
+  | "file_unavailable"
+  | "file_not_checked"
+  | "file_has_detail"
+  | "conversation_closed"
+  | "idempotency_key_reused"
+  | "in_progress"
+  | "not_yours"
+  | "too_late"
+  | "not_found";
 
 // ---------------------------------------------------------------------------------------------------------------
 // A-API.wall: the Wall (S-WALL, L-WALL). Lane E owns this section.

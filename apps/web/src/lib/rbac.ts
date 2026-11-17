@@ -31,6 +31,7 @@ function compile(line: string): Route {
 
 const endpoints = (policy.endpoints as string[]).map(compile);
 const publicRoutes = (policy.public as string[]).map(compile);
+const authExempt = (policy.auth_exempt as string[]).map(compile);
 const beforePrivacy = (policy.before_privacy_notice as string[]).map(compile);
 const pages = (policy.pages as string[]).map((line) => {
   const [path, ...caps] = line.trim().split(/\s+/);
@@ -82,6 +83,8 @@ export function decide(roles: Set<string>, method: string, path: string): Decisi
 }
 
 export const isPublic = (method: string, path: string) => Boolean(find(publicRoutes, method, path));
+/** A sign-in route listed in `auth_exempt`: it runs without a session. Any other /auth path is refused (BLD-A177). */
+export const isAuthExempt = (method: string, path: string) => Boolean(find(authExempt, method, path));
 export const allowedBeforePrivacyNotice = (method: string, path: string) =>
   Boolean(find(beforePrivacy, method, path));
 
@@ -100,17 +103,24 @@ export function canSeePage(roles: Set<string>, path: string): boolean {
 export type NavPlace = "new" | "main" | "folded" | "account";
 export type NavItem = { key: string; label: string; href: string; place: NavPlace; tab?: number };
 
-type NavRule = NavItem & { roles?: string[]; when_on?: string; when_off?: string };
+type NavRule = NavItem & { roles?: string[]; when_on?: string; when_off?: string; member?: string };
 
 /**
  * The menu for these roles. `switchesOn` names the kill switches that are on; an item tied to a switch shows only
  * while it is on (`when_on`) or off (`when_off`). Without it every switch counts as off (fail closed, §7.6).
+ * `groups` names the membership groups the person belongs to ("ones" for an active One); an item with `member`
+ * shows only to members, and without it nobody is a member (fail closed, BLD-E040).
  */
-export function navFor(roles: Set<string>, switchesOn: ReadonlySet<string> = new Set()): NavItem[] {
+export function navFor(
+  roles: Set<string>,
+  switchesOn: ReadonlySet<string> = new Set(),
+  groups: ReadonlySet<string> = new Set(),
+): NavItem[] {
   return (policy.navigation as NavRule[])
     .filter((item) => !item.roles || item.roles.some((r) => roles.has(r)))
     .filter((item) => !item.when_on || switchesOn.has(item.when_on))
     .filter((item) => !item.when_off || !switchesOn.has(item.when_off))
+    .filter((item) => !item.member || groups.has(item.member))
     .map(({ key, label, href, place, tab }) =>
       tab ? { key, label, href, place, tab } : { key, label, href, place },
     );
@@ -127,6 +137,11 @@ export function canFlip(roles: Set<string>, switchName: string): boolean {
       : undefined;
   return Boolean(key && flippers[key]!.some((r) => roles.has(r)));
 }
+
+/** Every sign-in route in the policy, for tests. */
+export const AUTH_EXEMPT: ReadonlyArray<{ method: string; template: string }> = authExempt.map(
+  ({ method, template }) => ({ method, template }),
+);
 
 /** Every endpoint in the policy, for tests and documentation. */
 export const ENDPOINTS: ReadonlyArray<{ method: string; template: string; capabilities: string[] }> =
