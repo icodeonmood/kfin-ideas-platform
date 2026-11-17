@@ -476,9 +476,7 @@ def screen(data: bytes, name: str, cfg: Uploads) -> str:
     if locked_before_scan(data):
         raise FileRefused(422, "locked", LOCKED)
     kind = kind_before_scan(data, name)
-    allowed = (
-        any(t in cfg.types for t in CONTAINER_TYPES) if kind == CONTAINER else kind in cfg.types
-    )
+    allowed = any(t in cfg.types for t in CONTAINER_TYPES) if kind == CONTAINER else kind in cfg.types
     if kind is None or not allowed:
         raise FileRefused(415, "type_not_allowed", cfg.help_text)
     return kind

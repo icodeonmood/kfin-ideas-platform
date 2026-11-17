@@ -113,7 +113,9 @@ def test_A_API_files_http_upload_check_and_view_through_the_web(world: dict[str,
     found = sharer.post(
         "/api/files",
         data={"idea_id": world["ref"]},
-        files={"file": ("calls.pdf", make.pdf(["The investor with PAN ABCPK4321F called."]), "application/pdf")},
+        files={
+            "file": ("calls.pdf", make.pdf(["The investor with PAN ABCPK4321F called."]), "application/pdf")
+        },
     )
     assert found.status_code == 201, found.text
     assert _settled(sharer, found.json()["id"])["state"] == "personal_data_found"

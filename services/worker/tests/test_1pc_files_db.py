@@ -95,7 +95,10 @@ def test_L_HIDE_files_6_screen_reads_the_bytes_only_never_a_zip_directory_before
     named .docx all pass as one container; which type it is, and any password, are read after the scan."""
     from attachments import filetype
 
-    docx, pptx = make.docx(["Branch notes"]), make.with_part(make.docx(["x"]), "ppt/slides/slide1.xml", "<p/>")
+    docx, pptx = (
+        make.docx(["Branch notes"]),
+        make.with_part(make.docx(["x"]), "ppt/slides/slide1.xml", "<p/>"),
+    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("a.md", "# Notes\n")
@@ -347,7 +350,11 @@ def test_L_HIDE_files_3_DEC_107_a_customer_detail_marks_the_file_and_keeps_it_fr
     for who in ("kavya", "meera", "rohan", "dev"):
         assert F.content(db, att, cast[who]["id"])[0] == data
         assert F.get_item(db, att, cast[who]["id"])["customer_detail"] is True
-    for who in ("meera", "rohan", "dev"):  # the found line and its actions are the uploader's (a copy gap for the desk)
+    for who in (
+        "meera",
+        "rohan",
+        "dev",
+    ):  # the found line and its actions are the uploader's (a copy gap for the desk)
         seen = F.get_item(db, att, cast[who]["id"])
         assert "problem" not in seen and "hidden_note" not in seen
     for who in ("arjun", "sam"):  # never the crew, never anyone else
@@ -385,7 +392,9 @@ def test_L_HIDE_files_values_the_desk_hid_on_the_idea_are_hidden_in_a_file_too(
     assert F.check(db, att) == "personal_data_found"
     row = _row(db, att)
     assert row["checks"]["found"] == [{"kind": "name", "page": None}] and row["hidden_note"] is None
-    assert F.get_item(db, att, kavya["id"])["problem"] == "Found a name. Nobody can open it until it’s hidden."
+    assert (
+        F.get_item(db, att, kavya["id"])["problem"] == "Found a name. Nobody can open it until it’s hidden."
+    )
 
 
 def test_L_HIDE_files_6_an_infected_file_is_deleted_and_never_opens(db: Conn, cast: dict[str, Any]) -> None:
@@ -438,7 +447,9 @@ def test_L_HIDE_files_5_6_a_zip_family_file_is_typed_from_its_directory_after_th
     """A Word file named .zip is read as Word once scanned; a ZIP holding a type the rules file leaves out, or a
     member with a password, is not checked (upload_failed, its copy deleted: Try again cannot change it)."""
     idea, kavya = cast["idea"], cast["kavya"]
-    word = _add(db, kavya, make.docx(["Calls double on Mondays."]), "notes.zip", idea_id=idea["idea_id"])["id"]
+    word = _add(db, kavya, make.docx(["Calls double on Mondays."]), "notes.zip", idea_id=idea["idea_id"])[
+        "id"
+    ]
     assert _row(db, word)["mime"] == F.MIME["zip"]  # the badge while checking, from the name
     assert F.check(db, word) == "checked"
     row = _row(db, word)
@@ -560,7 +571,9 @@ def test_A_API_files_links_are_classed_stored_sealed_and_never_opened(
     assert b"sharepoint" not in bytes(row["url_encrypted"])
     assert open_text("attachments", "url_encrypted", inside["id"], row["url_encrypted"]) == inside["url"]
     crew = F.get_item(db, inside["id"], cast["arjun"]["id"])
-    assert crew["name"] == row["name"] == "kfintech.sharepoint.com/sites/ops/sms.docx" and "view_url" not in crew
+    assert (
+        crew["name"] == row["name"] == "kfintech.sharepoint.com/sites/ops/sms.docx" and "view_url" not in crew
+    )
     assert crew["url"] == "https://kfintech.sharepoint.com/sites/ops/sms.docx"
     for typed, name in (
         ("https://Kfintech.SharePoint.com/ops/R07?web=1#top", "kfintech.sharepoint.com/ops/R07"),
@@ -638,7 +651,13 @@ def _gatekeeper_says(*spans: dict[str, Any]) -> dict[str, Any]:
 
 
 def _address() -> dict[str, Any]:
-    return {"field": "details", "quote": ADDRESS, "data_type": "address", "confidence": 0.9, "reason": "Address"}
+    return {
+        "field": "details",
+        "quote": ADDRESS,
+        "data_type": "address",
+        "confidence": 0.9,
+        "reason": "Address",
+    }
 
 
 def _first_due(db: Conn, att: str, *, last_try: bool = False) -> None:
@@ -680,7 +699,8 @@ def test_L_HIDE_files_1_DEC_103_a_long_file_is_read_by_the_gatekeeper_piece_by_p
     assert F.check(db, att) == "personal_data_found"
     assert not FAKE_SCRIPT  # one call per piece
     detail = db.execute(
-        "SELECT kind, found_by, span_start FROM hidden_details WHERE source = 'file' AND source_id = %s", (att,)
+        "SELECT kind, found_by, span_start FROM hidden_details WHERE source = 'file' AND source_id = %s",
+        (att,),
     ).fetchone()
     assert detail is not None and detail["found_by"] == "gatekeeper" and detail["kind"] == "name"
     assert detail["span_start"] > hide_files.CHUNK_CHARS  # only in the second piece
@@ -726,7 +746,11 @@ def test_L_HIDE_files_1_DEC_103_the_gateway_failing_keeps_the_file_checking_then
     assert run_one(db, "test-files")
     assert _job(db, att)["state"] == "dead"
     row = _row(db, att)
-    assert (row["file_state"], row["state"], row["checks"]["result"]) == ("upload_failed", "rejected", "check_failed")
+    assert (row["file_state"], row["state"], row["checks"]["result"]) == (
+        "upload_failed",
+        "rejected",
+        "check_failed",
+    )
     assert store.exists(get_settings().s3_bucket_quarantine, row["store_key"])  # kept for Try again
     failed = F.get_item(db, att, kavya["id"])
     assert failed["problem"] == "Didn’t upload. Your other files are fine." and "view_url" not in failed
@@ -748,13 +772,17 @@ def test_L_HIDE_files_1_DEC_103_only_a_person_switching_the_gatekeeper_off_gives
     scope = scope_for(str(idea["id"]))
 
     def calls() -> int:
-        return int(db.execute("SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s", (scope,)).fetchone()["n"])
+        return int(
+            db.execute("SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s", (scope,)).fetchone()["n"]
+        )
 
     clean = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
     pan = _pan()
     found = _add(db, kavya, make.pdf([f"PAN {pan} called twice."]), idea_id=idea["idea_id"])["id"]
     before = calls()
-    killswitch.set_switch(db, "ai.all", "off", reason="Testing files with the assistant off", actor="REV-0001")
+    killswitch.set_switch(
+        db, "ai.all", "off", reason="Testing files with the assistant off", actor="REV-0001"
+    )
     killswitch.clear_cache()
     try:
         assert F.check(db, clean) == "checked"
@@ -775,7 +803,9 @@ def test_L_HIDE_files_1_DEC_103_only_a_person_switching_the_gatekeeper_off_gives
         with pytest.raises(F.CheckWaits):
             F.check(db, waits)
     finally:
-        killswitch.set_switch(db, "agent.gatekeeper", "on", reason="Testing files: gatekeeper back on", actor="REV-0001")
+        killswitch.set_switch(
+            db, "agent.gatekeeper", "on", reason="Testing files: gatekeeper back on", actor="REV-0001"
+        )
         killswitch.clear_cache()
     assert _row(db, waits)["file_state"] == "checking"
 

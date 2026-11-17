@@ -43,7 +43,9 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
             deleted += 1
     from attachments import files as onepc_files
 
-    swept = onepc_files.sweep_failed_copies(conn)  # failed uploads' copies past their retention (L-HIDE.files)
+    swept = onepc_files.sweep_failed_copies(
+        conn
+    )  # failed uploads' copies past their retention (L-HIDE.files)
     log.info("drafts.purged", deleted_count=deleted, file_count=files, swept_count=swept)
 
 

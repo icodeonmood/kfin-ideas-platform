@@ -128,7 +128,8 @@ def _off_on_purpose(conn: Conn) -> bool | None:
     if all(killswitch.is_on(name, conn) for name in GATEKEEPER_SWITCHES):
         return None
     rows = conn.execute(
-        "SELECT changed_by FROM kill_switches WHERE name = ANY(%s) AND state = 'off'", (list(GATEKEEPER_SWITCHES),)
+        "SELECT changed_by FROM kill_switches WHERE name = ANY(%s) AND state = 'off'",
+        (list(GATEKEEPER_SWITCHES),),
     ).fetchall()
     return any((r["changed_by"] or "") != GATEWAY for r in rows)
 
