@@ -4,7 +4,7 @@ Written 16 Nov 2026 by the planning session (lane E); revised the same afternoon
 
 ## 1. Summary
 
-The revised design replaces the product's front end and most of its review machinery. It keeps the platform underneath: the gateway, personal-data detection, file checks, speech to text, timers, email, Ones numbers and tiers, impact measurement and matching. Everything in the pack ships for the inauguration on Friday 20 November, in one cut-over, built by six lanes in parallel (DEC-105). Channels that need IT or InfoSec are built and switched off until their approvals land: Teams, email intake, email-code sign-in, streamed voice and a hosted voice for Listen. While InfoSec's model-route approval (D1) is open, the draft's parts are filled by hand.
+The revised design replaces the product's front end and most of its review machinery. It keeps the platform underneath: the gateway, personal-data detection, file checks, speech to text, timers, email, Ones numbers and tiers, impact measurement and matching. Everything in the pack ships for the inauguration on Friday 20 November, in one cut-over, built by six lanes in parallel (DEC-105). Channels that need IT or InfoSec are built and switched off until their approvals land: Teams, email intake and email-code sign-in. Voice is on at launch through Sarvam (DEC-108, confirmed with the DPO's approval on 17 Nov): speech to text with the person's own words plus a labelled English copy, streaming, and Listen with Sarvam's voice (on-device voice as fallback). While InfoSec's model-route approval (D1) is open, the draft's parts are filled by hand.
 
 ## 2. Decisions
 
@@ -17,7 +17,7 @@ The revised design replaces the product's front end and most of its review machi
 | DEC-106 | The retirements in section 6 |
 | BLD-E001 | Links are never fetched; classified by domain only |
 | BLD-E002 | Email-code sign-in behind a switch, off until InfoSec approves |
-| BLD-E003 | Listen uses the browser's local voice on the masked script |
+| BLD-E003 | Superseded by DEC-108: Listen uses Sarvam's voice on the masked script, with the browser's on-device voice as fallback |
 | BLD-E004 | A decision's reason is read in the app only |
 | BLD-E005 | No animation library; CSS, the Web Animations API and a FLIP helper |
 | BLD-E006 | The cut-over evolves `public` in place, in lane E's migration range |
@@ -48,7 +48,7 @@ Still needed from outside the build: the DPO's privacy notice covering names and
 
 ## 4. Scope (DEC-105)
 
-All 10 journeys, 25 screens, 33 components and 24 logic modules. Built and switched off until approved: Teams notifications and intake, email intake (`S-H3` shows the page, arrivals say "coming soon"), email-code sign-in, streamed voice, a hosted Listen voice. With `ai.all` off (D1 open), Tell it saves the words and offers every part to fill in by hand, which the pack draws as the failed-part state (`C-DRAFT-LOADER.failure`, `L-DRAFT.errors`); hidden-detail patterns run without AI.
+All 10 journeys, 25 screens, 33 components and 24 logic modules. Built and switched off until approved: Teams notifications and intake, email intake (`S-H3` shows the page, arrivals say "coming soon"), email-code sign-in. Voice and Listen are on at launch through Sarvam (DEC-108). With `ai.all` off (D1 open), Tell it saves the words and offers every part to fill in by hand, which the pack draws as the failed-part state (`C-DRAFT-LOADER.failure`, `L-DRAFT.errors`); hidden-detail patterns run without AI.
 
 If Thursday's go/no-go finds a lane short, the product lead chooses from this drop order (each item is switched off, not half-shipped): Listen; search "ask in your own words" (filters stay); the S1 to S3 alternatives (defaults stay); crew-deck and Ones-fan motion (static cards stay); `S-H4`.
 
@@ -125,7 +125,7 @@ Old specs for retired pages are deleted with the pages (about 50 routes; the lis
 | Review desk lead | Area-to-reviewer map (`L-SORT.rules/7`) | Thursday | Any reviewer, never the sharer |
 | IT | Teams app, the 1% Club mailbox, Graph permissions | After launch | In-app and email only |
 | InfoSec | Email-code sign-in | After launch | Single sign-on only |
-| IT, InfoSec, DPO | Speech service and voice | After launch | Typing only; the mic says "coming soon" |
+| Sarvam (DEC-108) | Speech to text, translation and Listen, India-hosted, no retention, no training on our data; DPO approved, InfoSec told | Friday | Typing still works; Listen falls back to the on-device voice. The IT asks for the on-server speech container are withdrawn (it stays an optional fallback) |
 
 ## 9. Risks
 
