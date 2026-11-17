@@ -1,6 +1,6 @@
 import { Empty } from "@/components/ui/empty";
 
-import { LOAD_FAILED } from "./rules";
+import { LOAD_FAILED, TRY_AGAIN } from "./rules";
 
 /**
  * S-H6's error state (BLD-E043): the profile could not be read. Says so in its place, with one way on: "Try again"
@@ -15,7 +15,7 @@ export function ProfileUnavailable() {
           title={LOAD_FAILED}
           action={
             <a href="/profile" className="btn btn-secondary">
-              Try again
+              {TRY_AGAIN}
             </a>
           }
         />

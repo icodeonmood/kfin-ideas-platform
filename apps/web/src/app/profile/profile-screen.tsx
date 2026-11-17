@@ -14,7 +14,16 @@ import type { ReferAs } from "@/lib/refer-as";
 import { reducedMotion } from "@/lib/motion/flip";
 
 import { ReferAsCard } from "./refer-as";
-import { pointsText, REACH, SAVE_FAILED, switchState, WALL_LINE, type SwitchKey } from "./rules";
+import {
+  COMING_SOON,
+  ONE_DASHBOARD_LINK,
+  pointsText,
+  REACH,
+  SAVE_FAILED,
+  switchState,
+  WALL_LINE,
+  type SwitchKey,
+} from "./rules";
 
 /**
  * C-SWITCH as S-H6.rules/5 draws it: `role="switch"` with `aria-checked`, labelled by its title and described by its
@@ -50,7 +59,7 @@ function SettingSwitch({
             {soon ? (
               <>
                 {" "}
-                <Pill variant="soon">Coming soon</Pill>
+                <Pill variant="soon">{COMING_SOON}</Pill>
               </>
             ) : null}
           </p>
@@ -103,7 +112,7 @@ function Head({ data }: { data: ProfileResponse }) {
         {data.one_dashboard ? (
           <p className="pf-one">
             <Link href={data.one_dashboard} className={buttonClass("text-blue")}>
-              Your One dashboard
+              {ONE_DASHBOARD_LINK}
             </Link>
           </p>
         ) : null}

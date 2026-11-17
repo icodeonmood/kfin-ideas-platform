@@ -7,7 +7,19 @@ import type { ReferAs } from "@/lib/refer-as";
 
 /** V-FIELDS.one/5 (S-H6.rules/1, NOT DRAWN default): a switch that did not save flips back with this under it. */
 export const SAVE_FAILED = "Couldn't save that. Try again.";
+
+// S-H6's parts the board does not draw (BLD-E043). Each line below waits for HR's sign-off (docs/BUILD_LOG.md).
+// NOT DRAWN (BLD-E043): HR sign-off
 export const LOAD_FAILED = "We can't load your profile just now. Please try again in a minute.";
+/** F-COPY.states/3's one way on from the error state. */
+// NOT DRAWN (BLD-E043): HR sign-off
+export const TRY_AGAIN = "Try again";
+/** On the Teams switch while IT has not approved Teams (DEC-105). */
+// NOT DRAWN (BLD-E043): HR sign-off
+export const COMING_SOON = "Coming soon";
+/** A One's link under the line in the head (S-H6.rules/4). */
+// NOT DRAWN (BLD-E043): HR sign-off
+export const ONE_DASHBOARD_LINK = "Your One dashboard";
 
 /** S-H6.layout/3: the Wall switch's line follows its state (Profile.md, `wall` Shown and Hidden). */
 export const WALL_LINE = {
@@ -45,14 +57,20 @@ export function switchState(
 
 /** DEC-108 (3): the four answers in lane C's values (`lib/refer-as.ts`, BLD-C111); "unset" is "Prefer not to say". */
 export const REFER_AS_OPTIONS: readonly { value: ReferAs; label: string }[] = [
+  // NOT DRAWN (BLD-E043): HR sign-off
   { value: "she", label: "She" },
+  // NOT DRAWN (BLD-E043): HR sign-off
   { value: "he", label: "He" },
+  // NOT DRAWN (BLD-E043): HR sign-off
   { value: "they", label: "They" },
+  // NOT DRAWN (BLD-E043): HR sign-off
   { value: "unset", label: "Prefer not to say" },
 ];
 
-/** DEC-108 (3): the question, and the one thing the answer is used for (BLD-E043, NOT DRAWN). */
+/** DEC-108 (3): the question, and the one thing the answer is used for. */
+// NOT DRAWN (BLD-E043): HR sign-off
 export const REFER_AS_TITLE = "How should we refer to you?";
+// NOT DRAWN (BLD-E043): HR sign-off
 export const REFER_AS_LINE = "We use this only to word the English copy of your voice notes.";
 
 /** "340"; "1,340" in the Indian grouping once it passes a thousand. */
