@@ -17,24 +17,32 @@ describe("DEC-107: files with a customer detail, on S-R2 and C-QCARD", () => {
   });
 });
 
-describe("S-R2.left/2 fileHref: Open goes through lane C's view route, which applies DEC-107 (BLD-B243)", () => {
-  it("every listed file opens through /api/files/:id/view, a customer detail included", () => {
-    expect(fileHref({ id: "ATT-2026-000101" })).toBe("/api/files/ATT-2026-000101/view");
+describe("S-R2.left/2 fileHref: Open only where today's route serves the file (BLD-B243)", () => {
+  it("a checked file, or one from before the new pipeline, opens through the attachments route", () => {
+    expect(fileHref({ id: "ATT-2026-000101" })).toBe("/api/attachments/ATT-2026-000101");
     expect(fileHref({ id: "ATT-2026-000102", file_state: "checked", state: "clean" })).toBe(
-      "/api/files/ATT-2026-000102/view",
+      "/api/attachments/ATT-2026-000102",
     );
-    expect(fileHref({ id: "ATT-2026-000105", customer_detail: true })).toBe(
-      "/api/files/ATT-2026-000105/view",
+    expect(fileHref({ id: "ATT-2026-000103", file_state: "hidden_checked" })).toBe(
+      "/api/attachments/ATT-2026-000103",
     );
-    expect(fileHref({ id: "ATT-2026-000106", file_state: "personal_data_found" })).toBe(
-      "/api/files/ATT-2026-000106/view",
+    expect(fileHref({ id: "ATT-2026-000104", file_state: null, state: "clean" })).toBe(
+      "/api/attachments/ATT-2026-000104",
     );
-    expect(fileHref({ id: "ATT 7/x" })).toBe("/api/files/ATT%207%2Fx/view");
   });
 
-  it("a row with no id gets no Open, and fileHref is the view route", () => {
+  it("a file holding a customer detail, or not checked, gets no Open: that route would answer a raw 403", () => {
+    expect(fileHref({ id: "ATT-2026-000105", customer_detail: true })).toBeNull();
+    expect(fileHref({ id: "ATT-2026-000106", file_state: "personal_data_found" })).toBeNull();
+    expect(fileHref({ id: "ATT-2026-000107", file_state: "checking" })).toBeNull();
+    expect(fileHref({ id: "ATT-2026-000108", file_state: null, state: "quarantined" })).toBeNull();
     expect(fileHref({ customer_detail: false })).toBeNull();
+  });
+
+  it("lane C's view route is ready for the one-line switch, and opens every listed file", () => {
+    expect(filesViewRoute({ id: "ATT-2026-000105", customer_detail: true })).toBe(
+      "/api/files/ATT-2026-000105/view",
+    );
     expect(filesViewRoute({})).toBeNull();
-    expect(fileHref({ id: "ATT-2026-000107" })).toBe(filesViewRoute({ id: "ATT-2026-000107" }));
   });
 });
