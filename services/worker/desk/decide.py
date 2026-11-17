@@ -200,14 +200,18 @@ def send(
         errors = check_decision(choice, reason, return_in, sharer.first_name, p)
         if errors:
             raise _refused(errors[0])
+        # L-DECIDE.rules/4 warns and never blocks (BLD-B236): refused once with the words found, then sent as written
+        # when the reviewer sends it again with `wording_ok`
         notes = wording_check(reason)
-        if notes and not body.get("wording_ok"):
+        if notes and body.get("wording_ok") is not True:
             words = ", ".join(f"“{n.word}”" for n in notes)
             raise Refused(
                 422, "wording_check",
                 f"{sharer.first_name} reads this word for word. The product never says {words}: "
                 f"{notes[0].suggestion}. Send it anyway if you mean it.",
                 "reason",
+                extra={"words": [n.word for n in notes],
+                       "suggestions": [{"word": n.word, "suggestion": n.suggestion} for n in notes]},
             )  # fmt: skip
         # L-MERGE.desk/5: a Pick that joins a similar idea is a desk merge in the same transaction, the picked idea
         # leading, Team them up on, the reason as the note to both (BLD-B235); any refusal undoes the decision too
