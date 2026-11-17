@@ -811,11 +811,15 @@ export function CrewScreen(): JSX.Element {
           <ul className="crew-rows">
             {crews.map((r) => (
               <li key={r.id} className="crew-row">
-                {/* The title is the link (the whole row takes the click); its name carries the state, as the board
-                    names it, and the visible title comes first in it (WCAG 2.5.3). */}
-                <Link className="crew-row-t" href={`/ideas/${encodeURIComponent(r.id)}`}>
+                {/* The title is the link (the whole row takes the click). Its name carries the state, as the board
+                    names it, and starts with the visible title (WCAG 2.5.3); a hidden suffix would gain a space in
+                    browsers' names, so it is a label. */}
+                <Link
+                  className="crew-row-t"
+                  href={`/ideas/${encodeURIComponent(r.id)}`}
+                  aria-label={CREW_COPY.crewRow(r.title, r)}
+                >
                   {r.title}
-                  <span className="vh">{CREW_COPY.crewRowRest(r)}</span>
                 </Link>
                 <span className="crew-row-m">{CREW_COPY.leadLine(r.lead.name, r.lead.area)}</span>
                 <span className={r.state === "waiting" ? "crew-row-s" : "crew-row-s ok"}>
