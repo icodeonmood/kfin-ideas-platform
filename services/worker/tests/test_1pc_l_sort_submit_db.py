@@ -658,7 +658,11 @@ def test_l_submit_edit_3_a_customer_detail_in_an_edit_is_hidden(world: dict[str,
         },
         now=NOW + dt.timedelta(hours=1),
     )
-    assert _idea(world)["summary"] == "Folio Folio ••••90 gets the SMS with only R07."
+    # The folio is masked. Since L-HIDE (c/hide) is on main, a name-like word in the same sentence may be hidden too
+    # (L-HIDE.detect/4), so only the folio's part of the line is pinned here.
+    summary = _idea(world)["summary"]
+    assert summary.startswith("Folio Folio ••••90 gets the SMS with only ")
+    assert "1234567890" not in summary
     sealed = conn.execute(
         "SELECT owner_user_id FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'edit'",
         (world["draft"],),
