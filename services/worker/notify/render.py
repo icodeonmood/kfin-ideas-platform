@@ -18,6 +18,7 @@ from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
 from notify import AS_THE_DESK
+from similar.preview import HIDDEN_NAME, hidden_person, person_refs
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -106,6 +107,26 @@ def person(conn: Conn, user_id: Any) -> dict[str, Any] | None:
     name = str(row["name"])
     first = str(row["first_name"] or name.split()[0])
     return {"id": str(row["id"]), "name": name, "first_name": first, "initials": initials(name)}
+
+
+def lead_seen_by_requester(conn: Conn, user_id: Any, idea: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The lead as a requester they declined may see them (DEC-104, BLD-A196), by lane C's rule as lane F's team-up
+    reads use it (`similar.preview.person_refs`, never the desk's `names_always`; BLD-F029): a lead who hid their
+    name from the Wall, or has left, is lane C's `hidden_person` ("A colleague", no initials, an opaque `p…` id) with
+    `hidden` set, and their users.id is not in it. The lead's code is the one on their idea, else one of theirs; a
+    lead with none is hidden too (fail closed). An approved requester is on the crew and reads `person`."""
+    if not user_id:
+        return None
+    codes = _codes(conn, str(user_id))
+    code = (idea or {}).get("contributor_code")
+    if code not in codes:
+        code = min(codes) if codes else None
+    if code is None:
+        return {**hidden_person(f"user:{user_id}"), "hidden": True}
+    ref = person_refs(conn, [str(code)], names_always=False)[str(code)]
+    if ref["id"] == hidden_person(str(code))["id"]:
+        return {**ref, "hidden": True}
+    return {k: ref[k] for k in ("id", "name", "first_name", "initials")}
 
 
 def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
@@ -372,7 +393,12 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    who = sender(kind, person(conn, row.get("from_user_id")))
+    if kind == "teamup_answer" and refs.get("answer") == "decline":
+        who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea))
+    else:
+        who = sender(kind, person(conn, row.get("from_user_id")))
+    if who.get("hidden"):  # the template's word for a sender who is not named ("The lead", BLD-A196)
+        who["display"] = tpl.inbox.get("hidden_sender") or HIDDEN_NAME
     base = get_settings().app_base_url.rstrip("/") if absolute else ""
     actions = resolved_actions(row, idea, item_id=item_id)
     forward = next((a for a in reversed(actions) if a.get("to")), None)

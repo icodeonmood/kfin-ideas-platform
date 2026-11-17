@@ -7,6 +7,8 @@ on, goes to the review desk."""
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 import secrets
 import uuid
 from typing import Any
@@ -623,3 +625,44 @@ def test_L_NOTIFY_6_a_failing_mail_server_never_reaches_the_caller(cast: Any, mo
         row["state"] == "queued" and row["attempts"] == 1
     )  # retried later; the in-app item is already there
     assert tables_containing(db, TITLE) == ["ideas.title"]  # the title lives on the idea only
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") != "true", reason="the CI database only; never the demo's on :5432 (BLD-A196)"
+)
+@pytest.mark.parametrize("case", ["hid their name", "has left", "shows their name", "approved"])
+def test_DEC_104_teamup_answer_names_the_lead_only_to_a_requester_who_may_see_them(
+    cast: Any, case: str
+) -> None:
+    """BLD-A196 against the real tables: a declined requester reads "The lead", "A colleague" with no initials and an
+    opaque id when the lead hid their name from the Wall or has left, in the item, its JSON and the email; a lead
+    who shows their name is named; an approved requester is on the crew and reads the name even when it is hidden."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    ravi, kavya = p["ravi"]["id"], p["kavya"]["id"]
+    if case in ("hid their name", "approved"):
+        db.execute(
+            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false) "
+            "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = false",
+            (ravi,),
+        )
+    if case == "has left":
+        db.execute("UPDATE users SET active = false WHERE id = %s", (ravi,))
+    answer = "team_only" if case == "approved" else "decline"
+    notify.post(db, "teamup_answer", [kavya], idea_id=ideas["ravis"], sender=ravi,
+                refs={"request_id": str(uuid.uuid4()), "request": "teamup", "answer": answer, "has_reason": True})  # fmt: skip
+    item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+    row = db.execute(
+        "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND kind = 'teamup_answer'",
+        (kavya,),
+    ).fetchone()
+    mail = nrender.email(db, dict(row), WORKDAY_NOON)
+    seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
+    if case in ("hid their name", "has left"):
+        assert item["from"]["name"] == "A colleague" and item["from"]["initials"] == ""
+        assert item["from"]["id"].startswith("p") and item["body"]["sender"] == "The lead"
+        assert mail.subject == "The lead answered your team-up request"
+        assert "The lead declined your team-up request, with a reason" in mail.text
+        assert ravi not in seen and "Ravi" not in seen
+    else:
+        assert item["from"]["id"] == ravi and item["body"]["sender"] == "Ravi Nair"
+        assert mail.subject == "Ravi Nair answered your team-up request"
