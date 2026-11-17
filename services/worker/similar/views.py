@@ -5,7 +5,9 @@ links, so Check it never waits on matching.
   gets None (answer 404). With `matching.show` off the sharer sees none; the desk keeps the list.
 - What: the ideas found for this one (forward links), and for a shared idea also the newer shared ideas that
   found it (reverse links: "Colleagues on something similar" for its sharer, "Similar ideas" for the reviewer).
-  Merged ideas resolve to the surviving idea; one entry per idea, the stronger link kept, `close` first.
+  Merged ideas resolve to the surviving idea; one entry per idea, the stronger link kept, `close` first, at most 8
+  after sorting (L-SIMILAR.rules/3, BLD-C099). Withdrawn ideas and every idea of the sharer (all their contributor
+  codes, as retrieval has them) never show.
 - Each `idea` is the IdeaPreview this viewer may see (masked, names unless hidden from the Wall); for the desk its
   `compare` sits next to this idea's (`compare_with`). `my_request` is the viewer's own team-up request to that
   idea (lane F's table, read only), unless they withdrew it.
@@ -18,7 +20,7 @@ from typing import Any
 from core import killswitch
 from core.db import Conn
 from onepc.context import open_text
-from similar.matching import survivor
+from similar.matching import MAX_MATCHES, owner_codes, survivor
 from similar.preview import Viewer, find_idea, idea_preview, iso, person_refs
 
 RANK = {"close": 0, "related": 1}
@@ -103,14 +105,11 @@ def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | 
     if not viewer.desk and not killswitch.is_on("matching.show", conn):
         return []
 
+    own = owner_codes(conn, str(idea["contributor_code"]))
     best: dict[str, dict[str, Any]] = {}
     for link in _links(conn, idea):
         row = survivor(conn, str(link["other"]))
-        if (
-            row is None
-            or str(row["id"]) == str(idea["id"])
-            or row["contributor_code"] == idea["contributor_code"]
-        ):
+        if row is None or str(row["id"]) == str(idea["id"]) or row["contributor_code"] in own:
             continue
         key_ = str(row["id"])
         order = (RANK[link["strength"]], not link["forward"], link["rank"], -link["created_at"].timestamp())
@@ -119,6 +118,9 @@ def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | 
 
     out: list[dict[str, Any]] = []
     for other, link in sorted(best.items(), key=lambda kv: kv[1]["order"]):
+        # Forward links kept after an outcome, and reverse links, have no cap of their own: cap the list here.
+        if len(out) == MAX_MATCHES:
+            break
         preview = idea_preview(
             conn, other, viewer=viewer, compare_with=str(idea["id"]) if viewer.desk else None
         )

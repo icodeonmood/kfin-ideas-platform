@@ -5,7 +5,8 @@ Ideas are one chunk (title, what it is, who it touches); other concept files are
 Deleting a file removes its chunks, links, terms and read-model row.
 
 Since DEC-106 nothing writes ideas to the repo. Every poll also brings the shared ideas' chunks in line with their
-database rows (`similar.index.sync`, BLD-C091); the new matcher reads only those, never a repo idea file.
+database rows (`similar.index.sync`, BLD-C091), sweeping every shared idea (`full=True`, BLD-C098); each match run
+reads only the ideas changed since their chunk. The new matcher reads only those chunks, never a repo idea file.
 """
 
 from __future__ import annotations
@@ -213,14 +214,15 @@ class Indexer:
         from similar.index import sync
 
         try:
-            counts = sync(conn)
+            counts = sync(conn, full=True)
         except Exception as exc:
             log.error("indexer.ideas_failed", error_type=type(exc).__name__)
             return
-        if counts["embedded"] or counts["removed"]:
+        if counts["embedded"] or counts["refreshed"] or counts["removed"]:
             log.info(
-                "indexer.ideas_synced", embedded_count=counts["embedded"], removed_count=counts["removed"]
-            )
+                "indexer.ideas_synced", embedded_count=counts["embedded"], refreshed_count=counts["refreshed"],
+                removed_count=counts["removed"],
+            )  # fmt: skip
 
     # ---- per file ----------------------------------------------------------------------------------
     def _delete(self, conn: Conn, rel: str) -> None:

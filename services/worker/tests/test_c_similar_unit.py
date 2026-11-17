@@ -127,3 +127,20 @@ def test_bld_c092_code_reasons_name_what_is_shared() -> None:
     assert m.code_reason("related", ["SIP", "debit", "x"], "", False) == "Related: also about SIP and debit"
     assert m.code_reason("related", [], "Operations", True) == "Related: also in Operations"
     assert m.code_reason("related", [], "Operations", False) == "Related: a similar problem"
+
+
+def test_bld_c097_the_judge_reads_the_masked_title_and_summary_only() -> None:
+    """L-SIMILAR.rules/2, DEC-104: what the judge reads of a draft is its masked title and short summary, trimmed
+    as the candidates are; the person's messages are not an input to it."""
+    idea = {
+        "title": "SIP SMS for PAN AAAPZ9999Z",
+        "summary": "Investors   call the branch\n to ask why.",
+        "neutral_summary": "Old summary.",
+    }
+    title, summary = m.judge_text(idea)
+    assert "AAAPZ9999Z" not in title and title.startswith("SIP SMS for PAN")
+    assert summary == "Investors call the branch to ask why."
+    assert m.judge_text({"title": None, "summary": None, "neutral_summary": "Old summary."}) == ("", "Old summary.")
+    long_title, long_summary = m.judge_text({"title": "word " * 100, "summary": "word " * 200})
+    assert len(long_title) <= m.TITLE_CHARS and len(long_summary) <= m.SUMMARY_CHARS
+    assert m.judge_text({"title": "", "summary": ""}) == ("", "")

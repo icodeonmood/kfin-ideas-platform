@@ -1,9 +1,12 @@
-"""L-SIMILAR on the 1% Club seed (BLD-C091 to BLD-C093): chunks from database rows, matching with the judge or by
-code, the stored links, and SimilarMatch[] as each person may see it. The seed is removed after each test."""
+"""L-SIMILAR on the 1% Club seed (BLD-C091 to BLD-C099): chunks from database rows, matching with the judge or by
+code, the stored links, and SimilarMatch[] as each person may see it. The seed is removed after each test, with the
+gateway rows its runs wrote (`llm_calls` and the vault by the seed ideas' scopes, the judge's new cache entries);
+`audit_log` refuses deletes and these tests write none."""
 
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -13,9 +16,11 @@ import pytest
 import gateway
 from bootstrap import club_seed
 from core import killswitch
+from onepc.context import seal_text
 from similar import index, match_shared, similar_for
 from similar import matching as m
-from similar.preview import Viewer
+from similar import views
+from similar.preview import Viewer, checked_sentence, mask_text
 from similar.views import keep_separate, matches_for
 
 
@@ -29,15 +34,31 @@ def _switch(conn: Any, name: str, state: str) -> None:
     killswitch.clear_cache()
 
 
+def _scopes(conn: Any, made: dict[str, Any]) -> list[str]:
+    """The gateway scopes of the seed's ideas as they are now: a draft's, and its reference once shared."""
+    rows = conn.execute(
+        "SELECT id, idea_id FROM ideas WHERE id = ANY(%s::uuid[])", ([x.uuid for x in made.values()],)
+    ).fetchall()
+    return [str(r["idea_id"]) for r in rows if r["idea_id"]] + [f"DRAFT-{r['id']}" for r in rows]
+
+
 @pytest.fixture
 def seeded(db: Any) -> Iterator[dict[str, Any]]:
     killswitch.clear_cache()
+    cached = [bytes(r["key"]) for r in db.execute("SELECT key FROM llm_cache WHERE agent = 'judge'").fetchall()]
     made = club_seed.load(db)
     try:
         yield made
     finally:
         for name in ("ai.all", "matching.show"):
             _switch(db, name, "on")
+        scopes = _scopes(db, made)  # crunch rule 14: what the runs wrote goes with the seed
+        db.execute("DELETE FROM llm_calls WHERE ref_id = ANY(%s)", (scopes,))
+        db.execute("DELETE FROM pseudonym_vault WHERE scope_id = ANY(%s)", (scopes,))
+        db.execute("DELETE FROM vault_counters WHERE scope_id = ANY(%s)", (scopes,))
+        db.execute(
+            "DELETE FROM llm_cache WHERE agent = 'judge' AND NOT (key = ANY(%s::bytea[]))", (cached,)
+        )
         club_seed.remove(db)
 
 
@@ -108,12 +129,13 @@ def test_bld_c092_with_the_assistant_off_matching_works_by_code(db: Any, seeded:
 
 
 def test_bld_c092_the_judge_labels_through_the_gateway(db: Any, seeded: dict[str, Any]) -> None:
-    """L-SIMILAR.rules/2: the judge labels by meaning, through run_agent."""
+    """L-SIMILAR.rules/2: the judge labels by meaning, through run_agent: one call per run, on the draft's scope."""
     t2 = seeded["T2"]
+    count = "SELECT count(*) AS n FROM llm_calls WHERE agent = 'judge' AND ref_id = %s"
+    before = db.execute(count, (f"DRAFT-{t2.uuid}",)).fetchone()["n"]
     run = m.match_idea(db, t2.uuid)
     assert run.state == "done" and run.labelled_by == "judge"
-    calls = db.execute("SELECT count(*) AS n FROM llm_calls WHERE agent = 'judge'").fetchone()
-    assert calls["n"] >= 1
+    assert db.execute(count, (f"DRAFT-{t2.uuid}",)).fetchone()["n"] == before + 1
 
 
 def test_bld_c092_judge_labels_become_close_related_or_nothing(

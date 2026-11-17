@@ -19,32 +19,43 @@ from __future__ import annotations
 from typing import Any
 
 from core.db import Conn
+from core.logging import get_logger
 
 __all__ = ["match_shared", "similar_for"]
+
+log = get_logger("similar")
 
 
 def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[dict[str, Any]] | None:
     """The draft's similar part (L-SIMILAR.rules/4, BLD-C093): match the draft now (or reuse the last run when its
     words changed too little), then return up to 8 SimilarMatch dicts as its sharer sees them. None when they could
     not be looked for: the part then says "Couldn't check for similar ideas. The review desk will."
-    (L-SIMILAR.failure), never "none found". `title` and `summary` are the draft's newest title part."""
+    (L-SIMILAR.failure), never "none found". `title` and `summary` are the draft's newest title part.
+
+    Never raises and never aborts the caller's transaction (BLD-C096): an unknown draft, a failed run or a failure
+    while reading the matches back all answer None, and each step runs in its own savepoint."""
     from similar.matching import MAX_MATCHES, match_idea
     from similar.preview import Viewer
     from similar.views import matches_for
 
-    run = match_idea(conn, idea_uuid, found_while="drafting", title=title, summary=summary)
+    try:
+        run = match_idea(conn, idea_uuid, found_while="drafting", title=title, summary=summary)
+    except LookupError:
+        return None
     if run.state == "failed":
         return None
-    owner = conn.execute(
-        "SELECT m.user_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
-        "WHERE i.id = %s",
-        (idea_uuid,),
-    ).fetchone()
-    if owner is None:
-        return None
     try:
-        found = matches_for(conn, idea_uuid, Viewer.of(conn, str(owner["user_id"])))
-    except Exception:
+        with conn.transaction():  # a savepoint: a database error here leaves the caller's transaction usable
+            owner = conn.execute(
+                "SELECT m.user_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
+                "WHERE i.id = %s",
+                (idea_uuid,),
+            ).fetchone()
+            if owner is None:
+                return None
+            found = matches_for(conn, idea_uuid, Viewer.of(conn, str(owner["user_id"])))
+    except Exception as exc:
+        log.error("similar.read_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         return None
     return None if found is None else found[:MAX_MATCHES]
 
@@ -52,11 +63,15 @@ def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[di
 def match_shared(conn: Conn, idea_uuid: str, *, found_while: str) -> int:
     """Match a shared idea at send (`checking`, always runs) or after an edit (`later`, runs on a material change)
     and keep the links (L-SIMILAR.rules/5, BLD-C093). Returns how many matches are stored for it, or -1 when
-    matching failed (recorded, retried on the next run; sharing goes on, L-SIMILAR.failure). Safe inside the
-    caller's transaction."""
+    matching could not be checked: it failed (recorded, retried on the next run; sharing goes on,
+    L-SIMILAR.failure) or the idea was not found. Safe inside the caller's transaction (BLD-C096). Raises only
+    ValueError, for a `found_while` that is not one of the three."""
     from similar.matching import match_idea
 
     if found_while not in ("drafting", "checking", "later"):
         raise ValueError("found_while")
-    run = match_idea(conn, idea_uuid, found_while=found_while)  # type: ignore[arg-type]
+    try:
+        run = match_idea(conn, idea_uuid, found_while=found_while)  # type: ignore[arg-type]
+    except LookupError:
+        return -1
     return -1 if run.state == "failed" else run.found

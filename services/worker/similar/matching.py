@@ -6,12 +6,14 @@ and again after sharing ("Checked and matched"), against every shared idea that 
 2. Retrieval over the ideas' own chunks (`similar.index`): meaning (cosine, above the floor) and keywords, fused by
    reciprocal rank. A hit on a merged idea resolves to the surviving idea. The person's own ideas never match.
 3. Labels: the `judge` agent, through the gateway (`run_agent`; the payload is tagged first): `same` -> `close`,
-   `related` -> `related`, `different` -> dropped. With the assistant off (`ai.all`) or the judge failing, the
+   `related` -> `related`, `different` -> dropped. The judge sees each side's masked title and short summary only,
+   never the person's messages, because its phrase is read by both sharers (DEC-104, BLD-C097). With the assistant off (`ai.all`) or the judge failing, the
    strength comes from code: cosine for `close`, cosine or shared keywords for `related`.
 4. The reason ("Close match: same SMS, same calls") is the judge's short phrase if it passes the tag, pattern and
    name checks, else one built by code from the words the two ideas share. It is shown to both sharers.
 5. At most 8, `close` first, kept in `similar_links` with the run in `similar_runs`. A run that fails is recorded
-   and never blocks sharing (`L-SIMILAR.failure`); the next run, at the latest after sharing, tries again.
+   and never blocks sharing (`L-SIMILAR.failure`); the next run, at the latest after sharing, tries again. Every
+   step after the call runs in one savepoint, so nothing here can abort the caller's transaction (BLD-C096).
 
 Logs carry IDs and counts only (non-negotiable 3).
 """
@@ -41,6 +43,8 @@ MAX_MATCHES = 8  # L-SIMILAR.rules/3
 TO_JUDGE = 12  # candidates sent to the judge (its schema allows 20)
 MIN_CHARS = 50  # a draft is matched once it has this much to go on (mapping/logic.md, L-SIMILAR row)
 QUERY_CHARS = 2000
+TITLE_CHARS = 160  # what the judge reads of each side (BLD-C097)
+SUMMARY_CHARS = 480
 CLOSE_COSINE = 0.80  # code-only `close`: near-identical meaning (BGE-M3); the judge decides when it runs
 RELATED_SHARED_WORDS = 2  # code-only `related` on keywords alone: at least this many shared words …
 RELATED_OVERLAP = 0.25  # … making up at least this share of the other idea's words
@@ -169,11 +173,15 @@ def survivor(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
     return None
 
 
-def retrieve(conn: Conn, idea: dict[str, Any], text: str, owner_codes: set[str]) -> list[Hit]:
-    """Candidates by meaning and keywords over the ideas' chunks, merged ideas resolved, own ideas left out."""
-    s = _settings()
+def retrieve(
+    conn: Conn, idea: dict[str, Any], text: str, owner_codes: set[str], *,
+    vec: list[float] | None = None, settings: dict[str, float] | None = None,
+) -> list[Hit]:  # fmt: skip
+    """Candidates by meaning and keywords over the ideas' chunks, merged ideas resolved, own ideas left out.
+    `vec` is the query's embedding when the caller already has it (one embedding per run)."""
+    s = settings or _settings()
     floor, top_k, rrf_k = s["cosine_floor"], int(s["top_k_each"]), s["rrf_k"]
-    vec = embed([text])[0]
+    vec = vec if vec is not None else embed([text])[0]
     with conn.transaction():
         conn.execute("SET LOCAL hnsw.ef_search = 400")
         conn.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
@@ -280,17 +288,32 @@ def judge_reason(conn: Conn, strength: Strength, reason: Any) -> str | None:
     return checked_sentence(conn, line)
 
 
-def judge(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> dict[str, dict[str, Any]] | None:
-    """The judge's labels by IDEA- reference, or None when it is off or failed (the caller labels by code)."""
+def judge_text(idea: dict[str, Any]) -> tuple[str, str]:
+    """What the judge sees of the draft or idea: its masked title and short summary, trimmed as the candidates'
+    are. Never the person's messages: the judge's phrase is read by both sharers, and a word only in this
+    person's messages must not reach the other one (DEC-104, non-negotiable 7, BLD-C097)."""
+    title = " ".join(mask_text(idea.get("title")).split())[:TITLE_CHARS]
+    summary = " ".join(mask_text(idea.get("summary") or idea.get("neutral_summary")).split())[:SUMMARY_CHARS]
+    return title, summary
+
+
+def judge(
+    conn: Conn, idea: dict[str, Any], hits: list[Hit], vec: list[float]
+) -> dict[str, dict[str, Any]] | None:
+    """The judge's labels by IDEA- reference, or None when it is off, failed or has nothing to read (the caller
+    labels by code). `vec` (the query's embedding) only finds the reviewers' past corrections."""
     from gateway import AgentFailed, run_agent
     from router.corrections import corrections_for
 
     if not hits or not killswitch.is_on("ai.all", conn) or not killswitch.is_on("agent.judge", conn):
         return None
+    one_line, details = judge_text(idea)
+    if not (one_line or details):
+        return None
     card = {
         "kind": idea.get("kind"),
-        "one_line": mask_text(idea.get("title")).strip(),
-        "details": " ".join(text.split())[:1200],
+        "one_line": one_line,
+        "details": details,
         "who": {"segments": list(idea.get("affects") or [])},
         "category": None,
         "play": None,
@@ -302,8 +325,8 @@ def judge(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> dict[
         {
             "cid": h.ref,
             "type": "idea",
-            "title": h.title[:160],
-            "summary": " ".join(h.summary.split())[:480],
+            "title": h.title[:TITLE_CHARS],
+            "summary": " ".join(h.summary.split())[:SUMMARY_CHARS],
             "stage": h.status,
             "areas": [h.area] if h.area else [],
             "lobs": [],
@@ -318,7 +341,7 @@ def judge(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> dict[
             {
                 "card": card,
                 "candidates": candidates,
-                "past_corrections": corrections_for(conn, embed([text])[0], field="match"),
+                "past_corrections": corrections_for(conn, vec, field="match"),
             },
             scope,
             conn=conn,
@@ -329,11 +352,15 @@ def judge(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> dict[
     return {str(r["cid"]): r for r in out.data.get("results") or []}
 
 
-def label(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> tuple[list[Found], str]:
-    """Strength and reason per hit, close first, at most MAX_MATCHES. Returns (found, labelled_by)."""
-    floor = _settings()["cosine_floor"]
+def label(
+    conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit], *,
+    vec: list[float] | None = None, settings: dict[str, float] | None = None,
+) -> tuple[list[Found], str]:  # fmt: skip
+    """Strength and reason per hit, close first, at most MAX_MATCHES. Returns (found, labelled_by). The code
+    reason names only the other idea's own title and summary words, so it is safe for both sharers."""
+    floor = (settings or _settings())["cosine_floor"]
     sent = hits[:TO_JUDGE]
-    labels = judge(conn, idea, text, sent)
+    labels = judge(conn, idea, sent, vec if vec is not None else embed([text])[0])
     found: list[Found] = []
     for h in sent if labels is not None else hits:
         shared = shared_words(text, h)
@@ -360,7 +387,7 @@ def label(conn: Conn, idea: dict[str, Any], text: str, hits: list[Hit]) -> tuple
 # ---- runs --------------------------------------------------------------------------------------------------------
 
 
-def _owner_codes(conn: Conn, code: str) -> set[str]:
+def owner_codes(conn: Conn, code: str) -> set[str]:
     """Every contributor code of the person behind `code` (one today; a re-hire could have two)."""
     rows = conn.execute(
         "SELECT m2.contributor_code FROM contributor_map m JOIN contributor_map m2 ON m2.user_id = m.user_id "
@@ -400,6 +427,11 @@ def _record(
     )
 
 
+class IdeaNotFound(LookupError):
+    """No draft or idea with this ID. `match_idea` raises it; the entry points answer None and -1, the worker
+    route 404 (BLD-C096)."""
+
+
 def match_idea(
     conn: Conn,
     idea_uuid: str,
@@ -411,42 +443,50 @@ def match_idea(
 ) -> Run:
     """Match a draft or an idea and keep the result (L-SIMILAR.rules/4, /5). Never raises for a matching failure:
     it is recorded as `failed` (L-SIMILAR.failure) and the caller carries on. Safe inside the caller's transaction:
-    the work runs in a savepoint, so a failure here never aborts it.
+    everything from the lookup on runs in one savepoint, so a decrypt error, a database error or a missing row here
+    never aborts it (BLD-C096). Raises `IdeaNotFound` (a LookupError) for an unknown ID, after the savepoint is
+    rolled back.
 
     `title` and `summary` stand in for the row's (a draft run passes its newest title part). Skipped (`unchanged`)
     when the last run succeeded and the words changed less than `rerun_if_edit_share`, at the same point or after an
     edit (`later`); `force` runs anyway. Sharing (`checking`) always runs."""
-    idea = _idea(conn, idea_uuid)
-    if idea is None:
-        raise LookupError("idea_not_found")
-    if title is not None:
-        idea["title"] = title or idea.get("title")
-    if summary is not None:
-        idea["summary"] = summary or idea.get("summary")
-    text = query_text(conn, idea)
-    if len(text) < MIN_CHARS:
-        return Run("too_short")
-    hashes = word_hashes(text)
-    last = conn.execute(
-        "SELECT state, found_while, word_hashes, found, labelled_by FROM similar_runs WHERE idea_uuid = %s",
-        (idea_uuid,),
-    ).fetchone()
-    if (
-        not force
-        and found_while != "checking"
-        and last is not None
-        and last["state"] == "done"
-        and (last["found_while"] == found_while or found_while == "later")
-        and not material_change(list(last["word_hashes"]), hashes, _settings()["rerun_if_edit_share"])
-    ):
-        return Run("unchanged", int(last["found"]), last["labelled_by"])
+    hashes: list[str] = []
     try:
         with conn.transaction():  # a savepoint inside the caller's transaction
+            idea = _idea(conn, idea_uuid)
+            if idea is None:
+                raise IdeaNotFound("idea_not_found")
+            if title is not None:
+                idea["title"] = title or idea.get("title")
+            if summary is not None:
+                idea["summary"] = summary or idea.get("summary")
+            text = query_text(conn, idea)
+            if len(text) < MIN_CHARS:
+                return Run("too_short")
+            hashes = word_hashes(text)
+            settings = _settings()
+            last = conn.execute(
+                "SELECT state, found_while, word_hashes, found, labelled_by FROM similar_runs WHERE idea_uuid = %s",
+                (idea_uuid,),
+            ).fetchone()
+            if (
+                not force
+                and found_while != "checking"
+                and last is not None
+                and last["state"] == "done"
+                and (last["found_while"] == found_while or found_while == "later")
+                and not material_change(list(last["word_hashes"]), hashes, settings["rerun_if_edit_share"])
+            ):
+                return Run("unchanged", int(last["found"]), last["labelled_by"])
             index.sync(conn)
-            hits = retrieve(conn, idea, text, _owner_codes(conn, str(idea["contributor_code"])))
-            found, labelled_by = label(conn, idea, text, hits)
+            vec = embed([text])[0]  # once per run: retrieval and the judge's past corrections
+            owners = owner_codes(conn, str(idea["contributor_code"]))
+            hits = retrieve(conn, idea, text, owners, vec=vec, settings=settings)
+            found, labelled_by = label(conn, idea, text, hits, vec=vec, settings=settings)
             save(conn, idea_uuid, found, found_while)
             _record(conn, idea_uuid, "done", found_while, labelled_by, hashes, len(found), None)
+    except IdeaNotFound:
+        raise
     except Exception as exc:
         log.error("similar.match_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         try:

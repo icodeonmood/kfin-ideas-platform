@@ -3,8 +3,10 @@
 The chunk is what everyone may already see of the idea: its masked title and short summary (P-PRODUCT.privacy),
 masked again here. Never the sharer's messages, answers or files. Shared ideas that are not withdrawn, and ideas
 merged into others (a hit on one resolves to the surviving idea), are indexed; drafts and withdrawn ideas are not.
-`sync` re-embeds only the ideas whose text changed and drops chunks of ideas that left, so it is cheap to call
-before every match and from the indexer's loop.
+`sync` re-embeds only the ideas whose text changed, refreshes the stage and area of the rest, and drops chunks of
+ideas that left. Before every match it reads only the ideas changed since their chunk was written, or with no chunk
+yet (`full=False`); the indexer's loop sweeps every shared idea (`full=True`) and catches anything that slipped past
+the timestamps (BLD-C098).
 """
 
 from __future__ import annotations
@@ -30,20 +32,34 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def sync(conn: Conn) -> dict[str, int]:
-    """Bring the idea chunks in line with the ideas table. Returns counts, never text."""
+def sync(conn: Conn, *, full: bool = False) -> dict[str, int]:
+    """Bring the idea chunks in line with the ideas table. Returns counts, never text.
+
+    `full=False` (each match run): only ideas updated after their chunk, or with none. `full=True` (the indexer's
+    loop): every shared idea. A row whose text is unchanged gets its stage and area refreshed and its chunk's time
+    moved on, so it is not read again until the idea changes."""
+    changed = "" if full else " AND (c.idea_uuid IS NULL OR i.updated_at > c.updated_at)"
     rows = conn.execute(
         "SELECT i.id, i.status, i.area, i.title, i.summary, i.canvas->>'neutral_summary' AS neutral_summary, "  # noqa: S608
-        f"c.text_hash FROM ideas i LEFT JOIN chunks c ON c.idea_uuid = i.id WHERE {ELIGIBLE}"
+        "c.idea_uuid AS chunk, c.text_hash, c.stage, c.area_ids, i.updated_at > c.updated_at AS behind "
+        f"FROM ideas i LEFT JOIN chunks c ON c.idea_uuid = i.id WHERE {ELIGIBLE}{changed}"
     ).fetchall()
     stale: list[tuple[dict[str, Any], str]] = []
     empty: list[str] = []
+    refreshed = 0
     for r in rows:
         text = chunk_text(dict(r))
+        areas = [r["area"]] if r["area"] else []
         if not text:
             empty.append(str(r["id"]))
         elif r["text_hash"] != text_hash(text):
             stale.append((dict(r), text))
+        elif r["behind"] or r["stage"] != r["status"] or list(r["area_ids"] or []) != areas:
+            conn.execute(
+                "UPDATE chunks SET stage = %s, area_ids = %s, updated_at = now() WHERE idea_uuid = %s",
+                (r["status"], areas, r["id"]),
+            )
+            refreshed += 1
     for start in range(0, len(stale), BATCH):
         part = stale[start : start + BATCH]
         vectors = embed([text for _, text in part])
@@ -61,4 +77,4 @@ def sync(conn: Conn) -> dict[str, int]:
         f"(SELECT 1 FROM ideas i WHERE i.id = c.idea_uuid AND {ELIGIBLE}))",
         (empty,),
     ).rowcount
-    return {"embedded": len(stale), "removed": max(0, gone), "indexed": len(rows) - len(empty)}
+    return {"embedded": len(stale), "refreshed": refreshed, "removed": max(0, gone), "read": len(rows)}
