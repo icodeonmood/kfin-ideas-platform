@@ -5,10 +5,13 @@ logs with IDs only. Synthetic people only.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from psycopg.pq import TransactionStatus
 
 from convo import post
 from convo.messages import remove, send
@@ -73,8 +76,14 @@ def test_l_convo_5_nothing_typed_or_attached_is_refused_with_the_boards_words(
 
 
 def test_l_convo_7_a_message_is_masked_then_sealed_before_anyone_else_sees_it(
-    db: Any, cast: dict[str, Any], told: list[dict[str, Any]], captured_logs: Any
+    db: Any,
+    cast: dict[str, Any],
+    told: list[dict[str, Any]],
+    captured_logs: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The fallback while lane C's L-HIDE cannot be imported: the shared patterns (BLD-F054)."""
+    monkeypatch.setattr("convo.adapters._hide_message", None)
     kavya, meera = cast["kavya"], cast["meera"]
     idea = fx.idea(db, kavya)
     typed = "Folio 1234567890 was rejected twice, Kavya Menon says R07 again."
@@ -318,3 +327,201 @@ def test_l_convo_routes_are_mounted_on_the_worker_behind_the_internal_token(
                 assert c.request(method, path, params={"user_id": "x"}).status_code == 401, (method, path)
     finally:
         get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Review fixes (f/convo-5 review, 17 Nov): BLD-F062, BLD-F054, BLD-F055, BLD-F057 and the gaps it listed
+# ---------------------------------------------------------------------------------------------------------------
+def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_lets_open_them(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    """The sharer, the desk and the core committee get the file with its link; the crew, a plain committee holder,
+    the build team and a mentioned person get the message without it (DEC-107)."""
+    kavya, meera, meghna, tara = cast["kavya"], cast["meera"], cast["meghna"], cast["colleague"]
+    core = fx.person(db, "Rohan Mehta", roles=(("core_committee", None),))
+    plain = fx.person(db, "Nisha Rao", roles=(("committee", None),))
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, status="being_built")
+    fx.join_crew(db, idea, meghna)
+    fx.build_team(db, idea, arjun)
+    att = fx.attachment(db, idea, kavya)
+    sent = send(db, idea["idea_id"], kavya["id"],
+                {"text": "The rejection list, for Tara too.", "file_ids": [att], "mentions": [tara["id"]]},
+                at=fx.at(17, 10))  # fmt: skip
+    assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/attachments/{att}"]  # the sharer's own
+    for who in (kavya, meera, core):
+        [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
+        assert [f["id"] for f in m["files"]] == [att], who["name"]
+    for who in (meghna, plain, arjun, tara):
+        [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
+        assert m["files"] == [] and m["text"] == "The rejection list, for Tara too.", who["name"]
+
+
+def test_bld_f062_l_convo_6_a_mention_only_reader_sees_neither_files_nor_the_crews_messages(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    sanjay, meghna, kavya = cast["sanjay"], cast["meghna"], cast["kavya"]
+    idea = fx.idea(db, sanjay, status="picked")
+    fx.join_crew(db, idea, meghna)
+    crew_only = send(db, idea["idea_id"], meghna["id"], {"text": "Crew only: draft one."}, at=fx.at(17, 9))
+    att = fx.attachment(db, idea, sanjay)
+    asked = send(db, idea["idea_id"], sanjay["id"],
+                 {"text": "@Kavya Menon does this match your R07 calls?", "file_ids": [att],
+                  "mentions": [kavya["id"]]}, at=fx.at(17, 9, 5))  # fmt: skip
+    view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    assert [e["id"] for e in view["entries"]] == [asked["entry"]["id"]]
+    assert crew_only["entry"]["id"] not in [e["id"] for e in view["entries"]]
+    assert view["entries"][0]["files"] == []
+
+
+def test_bld_f054_l_convo_7_a_message_is_hidden_through_lane_cs_hide_message_when_it_is_importable(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stand-in for lane C's `hide.hide_message`: called once, with source "conversation", the entry's id and
+    the author's users.id, inside the transaction that inserts the entry; its masked copy is what is sealed."""
+
+    @dataclass
+    class Hidden:
+        masked: str
+        hidden_count: int
+
+    calls: list[dict[str, Any]] = []
+
+    def stand_in(conn: Any, idea_uuid: str, text: str, **kw: Any) -> Hidden:
+        calls.append(
+            {
+                "idea": idea_uuid,
+                "text": text,
+                "in_tx": conn.info.transaction_status == TransactionStatus.INTRANS,
+                **kw,
+            }
+        )
+        return Hidden(masked="Folio ••••90 was rejected, Ravi ••••ir says.", hidden_count=2)
+
+    monkeypatch.setattr("convo.adapters._hide_message", stand_in)
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya)
+    typed = "Folio 1234567890 was rejected, Ravi Nair says."
+    out = send(db, idea["idea_id"], meera["id"], {"text": typed}, at=fx.at(17, 10))
+    [row] = fx.entries(db, idea["id"])
+    [call] = calls
+    assert call == {"idea": str(idea["id"]), "text": typed, "in_tx": True, "by": meera["id"],
+                    "source": "conversation", "source_id": str(row["id"])}  # fmt: skip
+    assert (
+        unseal(bytes(row["text_encrypted"]), str(row["id"])) == "Folio ••••90 was rejected, Ravi ••••ir says."
+    )
+    assert out["hidden"] == 2 and out["entry"]["id"] == str(row["id"])
+    assert refused(send, db, idea["idea_id"], meera["id"], {"text": "   "}).code == "empty_message"
+    assert len(calls) == 1  # nothing to hide, nothing called
+
+
+def test_a_api_conventions_3_one_idempotency_key_on_two_ideas_is_refused_not_read_as_a_repeat(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    kavya = cast["kavya"]
+    first_idea, second_idea = fx.idea(db, kavya), fx.idea(db, kavya)
+    body = {"text": "Same words on both."}
+    send(db, first_idea["idea_id"], kavya["id"], body, idempotency_key="key-two-ideas-0001")
+    err = refused(send, db, second_idea["idea_id"], kavya["id"], body, idempotency_key="key-two-ideas-0001")
+    assert (err.status, err.code) == (409, "idempotency_key_reused")
+    assert len(fx.entries(db, first_idea["id"])) == 1 and fx.entries(db, second_idea["id"]) == []
+    stored = db.execute("SELECT route FROM idempotency_keys WHERE key = 'key-two-ideas-0001'").fetchone()
+    assert stored["route"] == f"POST /ideas/{first_idea['idea_id']}/conversation/messages"
+
+
+def test_l_convo_6_a_removed_message_no_longer_lets_a_mentioned_person_read(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    sanjay, kavya = cast["sanjay"], cast["kavya"]
+    idea = fx.idea(db, sanjay)
+    sent = send(db, idea["idea_id"], sanjay["id"], {"text": "@Kavya Menon a quick look?", "mentions": [kavya["id"]]},
+                at=fx.at(17, 10))  # fmt: skip
+    assert len(conversation(db, idea["idea_id"], kavya["id"], at=NOW)["entries"]) == 1
+    remove(db, idea["idea_id"], sanjay["id"], sent["entry"]["id"], at=fx.at(17, 10, 1))
+    assert refused(conversation, db, idea["idea_id"], kavya["id"], at=NOW).status == 404
+    assert refused(send, db, idea["idea_id"], kavya["id"], {"text": "Here."}).status == 404
+
+
+def test_bld_f055_a_sixth_file_or_an_eleventh_mention_is_refused_not_dropped(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    kavya, colleague = cast["kavya"], cast["colleague"]
+    idea = fx.idea(db, kavya)
+    files = [fx.attachment(db, idea, kavya) for _ in range(6)]
+    people = [fx.person(db, f"Crew Member{n}")["id"] for n in range(11)]
+    err = refused(send, db, idea["idea_id"], kavya["id"], {"text": "All six.", "file_ids": files})
+    assert (err.status, err.code, err.message, err.field) == (
+        422, "too_many_files", "Attach up to 5 files to a message.", "file_ids",
+    )  # fmt: skip
+    err = refused(send, db, idea["idea_id"], kavya["id"], {"text": "All of you.", "mentions": people})
+    assert (err.status, err.code, err.message, err.field) == (
+        422, "too_many_mentions", "Mention up to 10 people in a message.", "mentions",
+    )  # fmt: skip
+    assert fx.entries(db, idea["id"]) == [] and told == []
+    assert (
+        refused(send, db, idea["idea_id"], colleague["id"], {"file_ids": files}).status == 404
+    )  # access first
+    ok = send(
+        db, idea["idea_id"], kavya["id"], {"text": "Five.", "file_ids": files[:5], "mentions": people[:10]}
+    )
+    assert len(ok["entry"]["files"]) == 5 and len(ok["entry"]["mentions"]) == 10
+
+
+def test_s_08_layout_1_the_header_reads_the_shared_day_against_the_time_asked_not_the_clock(
+    db: Any, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kavya = cast["kavya"]
+    idea = fx.idea(db, kavya)
+    monkeypatch.setattr("convo.reads.now", lambda: dt.datetime(2027, 1, 5, 10, tzinfo=dt.UTC))  # after 31 Dec
+    view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    assert view["header"]["line"] == "Your idea, shared Saturday 14 November"
+
+
+def test_l_convo_5_a_committee_member_and_a_build_team_member_write_and_read_as_themselves(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    kavya = cast["kavya"]
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, status="being_built")
+    fx.build_team(db, idea, arjun)
+    send(db, idea["idea_id"], rohan["id"], {"text": "The committee is watching this one."}, at=fx.at(17, 9))
+    built = send(db, idea["idea_id"], arjun["id"], {"text": "First screens are up."}, at=fx.at(17, 9, 10))
+    rows = fx.entries(db, idea["id"])
+    assert [str(r["author_user_id"]) for r in rows] == [rohan["id"], arjun["id"]]
+    assert all(r["author_code"] is None for r in rows)
+    assert built["entry"]["you"] and built["entry"]["from_label"] == "You"
+    labels = [m["from_label"] for m in messages(conversation(db, idea["idea_id"], kavya["id"], at=NOW))]
+    assert labels == ["Rohan Mehta from the Ones Committee", "Arjun Rao"]
+    assert [c["to"] for c in told if c["kind"] == "comment"] == [[kavya["id"]], [kavya["id"]]]
+
+
+def test_l_convo_10_a_message_can_be_removed_at_exactly_5_minutes_and_not_a_moment_after(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    kavya = cast["kavya"]
+    idea = fx.idea(db, kavya)
+    sent = send(db, idea["idea_id"], kavya["id"], {"text": "Typo."}, at=fx.at(17, 10))
+    late = send(db, idea["idea_id"], kavya["id"], {"text": "Another typo."}, at=fx.at(17, 10))
+    late_at = late["entry"]["at"]  # a microsecond after the first (BLD-F057)
+    over = late_at + dt.timedelta(minutes=5, microseconds=1)
+    assert refused(remove, db, idea["idea_id"], kavya["id"], late["entry"]["id"], at=over).code == "too_late"
+    out = remove(
+        db,
+        idea["idea_id"],
+        kavya["id"],
+        sent["entry"]["id"],
+        at=sent["entry"]["at"] + dt.timedelta(minutes=5),
+    )
+    assert out["entry"]["removed"]
+
+
+def test_bld_f056_l_inbox_comment_a_new_hour_starts_a_new_comment_item(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya)
+    send(db, idea["idea_id"], meera["id"], {"text": "Before ten."}, at=fx.at(17, 9, 59))
+    send(db, idea["idea_id"], meera["id"], {"text": "After ten."}, at=fx.at(17, 10, 0))
+    keys = [c["dedupe_key"] for c in told if c["kind"] == "comment"]
+    assert keys == [f"convo.comment:{idea['id']}:2026111709", f"convo.comment:{idea['id']}:2026111710"]

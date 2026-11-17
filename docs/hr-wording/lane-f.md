@@ -105,6 +105,9 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-MERGE.effects/6`, the lead accepted a merge (on the idea that joins) | "a closing line with a link" | It’s now part of IDEA-2026-001412. The conversation carries on there. |
 | `L-MERGE.effects`, the lead accepted a merge (on the lead idea) | Not drawn | IDEA-2026-001481 is now part of it, with credit to Kavya Menon. |
 | `L-CONVO/3`, the build team starts, as its lead reads it, or with no lead named (BLD-F061) | Arjun Rao’s team started building it. | Your team started building it. / The build team started building it. |
+| `L-CONVO/3`, the desk decides with a choice the line does not know | Meera from the review desk picked it. | Meera from the review desk decided. |
+| `L-COMMITTEE`, a decision reversed with no outcome named | Not drawn | Rohan Mehta from the Ones Committee reversed the decision. |
+| `L-TEAMUP.rules/7`, the person who asked is no longer there | Ravi Nair approved your team-up request. | Ravi Nair approved a team-up request. |
 | `L-CONVO/3`, Checked and matched with nothing hidden or found | Checked and matched. 1 folio number hidden, 2 similar ideas found. | Checked and matched. Nothing to hide, no similar ideas found. (and "2 folio numbers and 1 PAN hidden" for more than one kind) |
 | A line whose person or idea is no longer there | Not drawn | A colleague (for a person erased from the records) / It’s now part of another idea. / Another idea is now part of it. / Meera from the review desk joined it with another idea. |
 
@@ -117,7 +120,8 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `S-08.layout/3`, the visibility line as others read it | Only you and the review desk see this conversation. | Only Kavya and the review desk see this conversation. |
 | `S-08.layout/3`, a build team's idea read by anyone but the sharer (the sharer reads the board's line, crew or not, BLD-F060) | You, the build team and the review desk see this conversation. | The crew, the build team and the review desk see this conversation. (with a crew) / Kavya, the build team and the review desk see this conversation. |
 | `S-08.layout/3`, a mentioned person on an idea with no crew | The crew, the review desk and anyone they mention see this conversation. | Kavya, the review desk and anyone they mention see this conversation. |
-| `L-MERGE.effects/6`, the box on a merged idea | Not drawn | This idea is now part of another one. Write in IDEA-2026-001412’s conversation. |
+| `L-MERGE.effects/6`, the box on a merged idea | Not drawn | This idea is now part of another one. Write in IDEA-2026-001412’s conversation. (when the idea it joined is no longer there: … Write in the idea it joined.) |
+| `L-CONVO/5`, the box's placeholder for the review desk, the committee or the build team writing to a sharer with no crew | Reply to Sanjay (a mentioned person's box) | Reply to Kavya (the sharer's first name) |
 | `L-CONVO/4`, the answers message as the reviewer reads it | Your answers to Meera’s 3 questions | Kavya’s answers to your 3 questions |
 
 ### 4. Messages under the box (A-API errors)
@@ -125,6 +129,8 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | Module | Pack line | Our line |
 |---|---|---|
 | `L-CONVO/5`, a message over 4,000 characters (BLD-F055) | Not drawn | Keep a message under 4,000 characters. |
+| `L-CONVO/7`, a sixth file on one message (BLD-F055) | Not drawn | Attach up to 5 files to a message. |
+| `L-CONVO/6`, an eleventh person mentioned in one message (BLD-F055) | Not drawn | Mention up to 10 people in a message. |
 | `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
 | `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
 | `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |
