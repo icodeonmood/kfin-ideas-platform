@@ -434,6 +434,48 @@ def test_l_similar_failure_minus_one_is_couldnt_check_not_zero(
     assert adapters.find_similar(None, "u-1", found_while="later") is None  # type: ignore[arg-type]
 
 
+def test_l_submit_send_3_without_the_sharers_users_id_the_final_pass_is_skipped_bld_c087(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hide's `by` is a users.id (the one person who may read the values): with no mapping for the sharer the check
+    gives no made-up actor, skips the final pass with an id-only warning, and still sends the idea on."""
+    import contextlib
+
+    from submit import adapters, check
+
+    uid = str(uuid.uuid4())
+    sql: list[tuple[str, Any]] = []
+
+    class Row:
+        def __init__(self, row: dict[str, Any] | None) -> None:
+            self.row = row
+
+        def fetchone(self) -> dict[str, Any] | None:
+            return self.row
+
+    class Conn:
+        def transaction(self) -> contextlib.nullcontext[None]:
+            return contextlib.nullcontext()
+
+        def execute(self, query: str, params: Any = None) -> Row:
+            sql.append((query, params))
+            if query.startswith("SELECT * FROM ideas"):
+                return Row({"id": uid, "status": "checking", "contributor_code": "CTR-000000", "title": "T"})
+            return Row(None)  # no contributor_map row
+
+    def no_hiding(*a: Any, **k: Any) -> None:
+        raise AssertionError("hidden with no users.id")
+
+    monkeypatch.setattr(adapters, "mask_text", no_hiding)
+    monkeypatch.setattr(adapters, "find_similar", lambda conn, idea_uuid, *, found_while: None)
+    warned: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(check.log, "warning", lambda event, **kw: warned.append((event, kw)))
+    check.run(Conn(), uid)  # type: ignore[arg-type]
+    assert warned == [("submit.check_no_sharer", {"idea_uuid": uid})]
+    moved = [p for q, p in sql if q.startswith("UPDATE ideas SET status = 'with_review_desk'")]
+    assert moved == [("failed", uid)]  # couldn't check: recorded, never "none found"
+
+
 def test_l_submit_send_queues_listen_once_c_sarvam_is_here(monkeypatch: pytest.MonkeyPatch) -> None:
     """c/sarvam's `speech.listen.enqueue_prefetch(conn, idea_uuid) -> None`, after a send; nothing until it lands."""
     import types

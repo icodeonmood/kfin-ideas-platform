@@ -728,7 +728,7 @@ def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world
     assert out["how"] == "Send the reason in plain words in the SMS, as for PAN PAN ••••4F."
     assert out["worth"] == {
         "hours_month": {"low": 70.0, "high": 150.0, "text": "70 to 150 hours a month"},
-        "cost_month": {"low": 25000.0, "high": None, "text": "₹25,000 a month"},
+        "cost_month": {"low": 25000.0, "text": "₹25,000 a month"},
     }
     assert out["ready_count"] == 3 and out["included"] is True
     assert out["readiness"] == "3 of 5 ready for the review desk"
@@ -886,9 +886,7 @@ def test_l_submit_edit_fix_and_helpers_save_as_a_version_with_range_text(world: 
     out = edit.save(conn, ref, asha, body, now=later)
     assert out["changed_fields"] == ["fix", "helpers"] and out["version"]["n"] == 2
     page = edit.page(conn, ref, asha, now=later)
-    assert page["fix"]["worth"] == {
-        "cost_month": {"low": 200000.0, "high": None, "text": "₹2,00,000 a month"}
-    }
+    assert page["fix"]["worth"] == {"cost_month": {"low": 200000.0, "text": "₹2,00,000 a month"}}
     assert page["fix"]["part"]["size_line"] == "₹2,00,000 a month saved"
     assert page["helpers"]["line"] == "Someone from tech"
     assert edit.save(conn, ref, asha, body, now=later)["version"] is None  # nothing changed, no version

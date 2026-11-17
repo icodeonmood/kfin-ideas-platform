@@ -221,8 +221,11 @@ def view(conn: Conn, idea_uuid: str, *, started_too: bool = False) -> dict[str, 
         for k in ("how", "needs", "solved_already", "solved_note", "basis", "risks")
         if row[k] is not None
     }
-    if worth is not None:
-        out["worth"] = worth.as_json()
+    if worth is not None:  # E-ENTITIES `Range { low, high?, text }`: no `high` for a single figure
+        out["worth"] = {
+            m: {k: v for k, v in r.items() if v is not None} if isinstance(r, dict) else r
+            for m, r in worth.as_json().items()
+        }
     size = size_line(worth, row["solved_already"])
     out.update(
         ready_count=n,
