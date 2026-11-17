@@ -1141,6 +1141,12 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     return _json(body)
 
 
+# Sorting and sending (lane C): the sorting confirm, Submit, the edit page and its versions, and lane C's values for
+# GET /config (A-API.drafts, A-API.ideas, A-API.config). Its routes live with the code in submit/routes.py.
+from submit.routes import build as _sort_submit_routes  # noqa: E402
+
+app.include_router(_sort_submit_routes(require_token))
+
 # L-HIDE (lane C): "Hide this", "Show it", "Hide it" and files, in their own module so lanes don't collide here.
 from hide.api import router as hide_router  # noqa: E402
 

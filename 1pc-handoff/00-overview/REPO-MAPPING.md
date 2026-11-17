@@ -30,7 +30,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
-| `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
+| `S-05` | `/share/:draftId/check` | built: `app/share/[id]/check/` (`check-it.tsx` the rail and stage, phone as one page; `parts.tsx`, `similar.tsx`, `proof.tsx`, `fix.tsx`, `hidden.tsx`; `client.ts` the calls, `model.ts` the rules, `copy.ts` the words). The old `share/[id]/done/` stays until the old canvas flow retires with `S-04B` | built (lane C, BLD-C130 to C137); draft, similar, files and team-up routes from their branches | L | P0 | C |
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
 | `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
@@ -70,14 +70,14 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
-| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
+| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); wired on `S-05` part 4 in `app/share/[id]/check/proof.tsx` against A-API.files (BLD-C133); the old canvas's `share/[id]/attachments.tsx` retires with it; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
 | `C-HIDDEN` | exists, differs | M | P0 | C |
-| `C-SIMGRID` | exists, differs | M | P0 | C |
-| `C-PREVIEW` | missing | M | P0 | C |
+| `C-SIMGRID` | grid built on `S-05`: `app/share/[id]/check/similar.tsx` (yours first, tiles, waiting and on the crew, fold after "Keep mine separate"); team-up through lane F's sheet behind `teamup-shim.tsx` until team-up is on main | M | P0 | C |
+| `C-PREVIEW` | built: `components/preview/idea-preview.tsx` (`IdeaPreviewDialog`), the band's status is lane D's `<Pill variant="band">` (BLD-D012); used on `S-05` | M | P0 | C |
 | `C-WORTH` | exists, differs | M | P0 | C, B |
 | `C-QCARD` | missing | M | P0 | B |
 | `C-INBOX-READER` | exists, differs | L | P0 | A |
@@ -95,9 +95,9 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
-| `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
+| `L-SORT` | `services/worker/submit/{sorting,routing,config}.py`, `rules/sorting.md` (lists, review routing), `sorting_trust` view; `GET`/`PATCH /api/drafts/:id/sorting` (BLD-C080, BLD-C082) | built (API) | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
-| `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
+| `L-SUBMIT` | `services/worker/submit/{ready,send,check,clock,edit,fix,helpers,adapters}.py`, `server/share.ts`; `GET /api/drafts/:id/send`, `PUT`/`DELETE /api/drafts/:id/fix` and `PUT /api/drafts/:id/helpers` (S-05.fix and part 6; figures through lane B's `desk/worth.py`), `POST /api/drafts/:id/submit`, `GET`/`PATCH /api/ideas/:id/edit` (A-API `PATCH /ideas/:id`), `GET /api/ideas/:id/versions`; timer kind `decide_by`; withdraw and restore are lane E's `ideapage/withdraw.py` through `submit/adapters.py`. Old `server/submissions.ts` and `scan/save.py` stay for the old `/share` pages until S-05 replaces them (BLD-C081, BLD-C083 to BLD-C086) | built (API) | P0 | C |
 | `L-REVIEW` | `services/worker/desk/review.py`, `queue.py`, `reads.py`, `clock.py`, `clocks.py`; web forwarders in `server/desk.ts` | landed at 82668c1 (17 Nov, back end; follow-up on `b/1pc-review-fu`) | P0 | B |
 | `L-DECIDE` | `services/worker/desk/decide.py`, `promises.py`, `when.py`; `idea_decisions` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-INBOX` | `notifications`, `comms/inbox.py` | exists, differs | P0 | A |
