@@ -165,7 +165,7 @@ def test_P_PRODUCT_privacy_admins_never_read_or_act_on_the_desk(
                     json={"choice": "pick", "reason": REASON}),
     ):  # fmt: skip
         assert res.status_code == 403 and res.json()["error"]["code"] == "forbidden"
-    assert db.execute("SELECT count(*) AS n FROM idea_decisions").fetchone()["n"] == 0  # type: ignore[index]
+    assert db.execute("SELECT count(*) AS n FROM idea_decisions").fetchone() == {"n": 0}
     for reader in (cast["meera"], cast["rohan"], core):
         assert client.get(f"/internal/desk/ideas/{ref}", params={"user_id": reader["id"]}).status_code == 200
     assert client.get("/internal/desk", params={"user_id": "not-a-user"}).status_code == 403
