@@ -34,7 +34,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
 | `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
-| `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
+| `S-08` | `/ideas/:id/conversation` | `app/ideas/[id]/conversation/page.tsx` over `server/convo.ts` (`readConversation`); the screen `components/convo/conversation.tsx` (+ `compose.ts`, `conversation.css`); dev-only `app/kit/conversation` for e2e. Questions as a plain entry until `C-QCARD` lands (BLD-F065); no attach control until a conversation upload route exists (BLD-F064) | built (18 Nov, `f/convo-7`) | L | P0 | F |
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
