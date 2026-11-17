@@ -122,6 +122,34 @@ def mp3_seconds(data: bytes) -> float:
     return total
 
 
+def strip_leading(data: bytes, *, final: bool = False) -> bytes | None:
+    """A part's audio without its leading ID3 tag and its Xing, Info or VBRI header frame. Six parts become one
+    stream, and a player reading the first part's header would take the whole file for that part's length. Returns
+    None while more bytes are needed to decide (unless `final`)."""
+    i = 0
+    if data[:3] == b"ID3":
+        if len(data) < 10:
+            return data if final else None
+        i = 10 + _syncsafe(data[6:10])
+        if len(data) < i + 4:
+            return data[i:] if final else None
+    if len(data) < i + 4 or data[i] != 0xFF or (data[i + 1] & 0xE0) != 0xE0:
+        return data[i:] if final or len(data) >= i + 4 else None
+    b1, b2 = data[i + 1], data[i + 2]
+    version, bitrate_index, rate_index = (b1 >> 3) & 0x03, (b2 >> 4) & 0x0F, (b2 >> 2) & 0x03
+    if version == 1 or bitrate_index in (0, 15) or rate_index == 3:
+        return data[i:]
+    rate = _RATES[version][rate_index]
+    kbps = _BITRATES[1 if version == 3 else 2][bitrate_index]
+    length = (144 if version == 3 else 72) * kbps * 1000 // rate + ((b2 >> 1) & 0x01)
+    if len(data) < i + length:
+        return data[i:] if final else None
+    frame = data[i : i + length]
+    if any(tag in frame[:64] for tag in (b"Xing", b"Info", b"VBRI")):
+        return data[i + length :]
+    return data[i:]
+
+
 # ---- the plan, the cache, the audio -------------------------------------------------------------------------
 
 
@@ -196,11 +224,24 @@ def speak(
     at = 0.0
     for part in _ordered(masked_script):
         made = bytearray()
+        head: bytearray | None = (
+            bytearray()
+        )  # the part's first bytes, until its leading tag and header are gone
         for chunk in sarvam.tts(
             spoken(part.title, part.text), lang=lang, speaker=v, conn=conn, ref_id=f"idea:{idea_uuid}"
         ):
+            if head is not None:
+                head += chunk
+                clean = strip_leading(bytes(head))
+                if clean is None:
+                    continue
+                chunk, head = clean, None
             made += chunk
             yield chunk
+        if head:  # a part shorter than its header check: what is left is the audio
+            tail = strip_leading(bytes(head), final=True) or b""
+            made += tail
+            yield tail
         seconds = mp3_seconds(bytes(made))
         chapters.append({"part": part.part, "start_s": round(at, 2)})
         at += seconds

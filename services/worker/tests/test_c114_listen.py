@@ -93,6 +93,17 @@ def test_BLD_C114_mp3_length_is_counted_from_frame_headers() -> None:
         listen.mp3_seconds(b"not audio at all")
 
 
+def test_BLD_C114_each_parts_tag_and_vbr_header_are_dropped() -> None:
+    frames = sarvam.fake_frames(3)
+    header = bytearray(sarvam.fake_frames(1))
+    header[4 + 13 : 4 + 17] = b"Xing"  # where an encoder writes it, inside the first frame
+    tag = b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"x" * 5
+    assert listen.strip_leading(tag + bytes(header) + frames) == frames
+    assert listen.strip_leading(frames) == frames  # a plain first frame is audio and stays
+    assert listen.strip_leading(tag[:8]) is None  # not enough yet to decide
+    assert listen.strip_leading(tag[:8], final=True) == tag[:8]
+
+
 def test_BLD_C114_parts_in_order_chapters_from_real_lengths_then_cached(env: dict[str, Any]) -> None:
     conn = env["conn"]
     s = env["current"]["script"]
