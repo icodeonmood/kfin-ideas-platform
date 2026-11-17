@@ -36,9 +36,10 @@
 }
 .ri-card-h {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: 4px 12px;
   margin-bottom: 14px;
 }
 .ri-arts-list,
@@ -57,6 +58,11 @@
   grid-template-columns: 40px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
+}
+.ri-art-b strong,
+.ri-sim-t,
+.ri-a-files span {
+  overflow-wrap: anywhere;
 }
 .ri-art-b,
 .ri-sim-b {
@@ -95,8 +101,9 @@
 }
 .ri-part-h {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 8px 16px;
 }
 .ri-part-h h2 {
   margin-right: auto;
@@ -260,6 +267,7 @@
   border-top: 1px solid var(--rule);
   padding: 16px 24px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
 }
@@ -574,6 +582,14 @@
   }
 }
 @media (max-width: 640px) {
+  .ri-panel-in,
+  .ri-bar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .ri-bar .btn {
+    flex: 1 1 auto;
+  }
   .wv-fields,
   .wv-tiles {
     grid-template-columns: 1fr;
