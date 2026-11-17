@@ -2,13 +2,15 @@
 
 /**
  * S-R2 The idea, for the reviewer. Left: listen, attachments and artefacts, the idea part by part with questions and
- * answers under each, what it's worth, similar ideas. Right: the panel, sticky, in its working states
- * (L-REVIEW.panel): reviewing (asking first is optional and folded away), sent, answered, deciding, decided.
+ * answers under each, what it's worth, what merged-in ideas brought, similar ideas. Right: the panel, sticky, in its
+ * working states (L-REVIEW.panel): reviewing (asking first is optional and folded away), sent, answered, deciding,
+ * decided. The words are the worker's (A-API.conventions/6) or the board's, with names for the sharer (BLD-E008).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState, type RefObject } from "react";
 
+import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
 import { ListenPlayer } from "@/components/review/listen-player";
 import { MergeSheet } from "@/components/review/merge-sheet";
 import { WorthEditor, WorthView } from "@/components/review/worth";
@@ -21,14 +23,23 @@ import type {
   DecisionChoice,
   IdeaPart,
   ReturnIn,
+  ReviewerArtefact,
+  ReviewerContribution,
   ReviewerIdeaResponse,
   ReviewerPanel,
+  ReviewerPart,
+  ReviewerQuestion,
+  ReviewerSimilar,
   SuggestedQuestionsResponse,
   TimeToAnswer,
+  WorthFigures,
   WorthTile,
 } from "@/lib/contracts";
+import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
+import { CUSTOMER_DETAIL, openFileName } from "@/lib/desk/files";
 import { bottomBar, initialPanel, panelReducer, readyLine } from "@/lib/desk/panel";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
+import { sparkBurst } from "@/lib/motion/spark";
 
 export type ReviewPromises = {
   reasonMin: number;
@@ -52,6 +63,8 @@ const PARTS: { value: IdeaPart; label: string }[] = [
   { value: "fix", label: "Fix" },
 ];
 const PART_NAME = Object.fromEntries(PARTS.map((p) => [p.value, p.label])) as Record<IdeaPart, string>;
+/** "Ask about The problem", and "Ask about what it’s worth" in the board's own case. */
+const ASK_NAME: Record<IdeaPart, string> = { ...PART_NAME, cost: "what it’s worth" };
 const TIMES: TimeToAnswer[] = ["1d", "3d", "1w"];
 const RETURNS: ReturnIn[] = ["1m", "3m", "6m"];
 const PILL: Record<string, PillVariant> = { blue: "blue", warn: "warn", ok: "ok", neutral: "neutral" };
@@ -60,6 +73,7 @@ const DECISION_PILL: Record<DecisionChoice, PillVariant> = {
   not_now: "warn",
   not_picked: "neutral",
 };
+const SEND_ANYWAY = "Send anyway";
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -70,23 +84,68 @@ function daysWord(n: number) {
 function monthsWord(n: number) {
   return plural(n, "month");
 }
+/** "Today, 4:32 pm" or "Friday 13 November, 4:32 pm". */
+function whenSaid(at: string | Date, now: Date) {
+  const today = dayLabel(at, now) === dayLabel(now, now);
+  return `${today ? "Today" : dayLabel(at, now)}, ${clockLabel(at)}`;
+}
+
+type ApiError = {
+  code: string;
+  message: string;
+  field?: string;
+  words?: string[];
+  suggestions?: { word: string; suggestion: string }[];
+};
 
 async function send<T>(url: string, method: "POST" | "PUT", body?: unknown) {
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = (await res.json().catch(() => ({}))) as
-    T | { error?: { code: string; message: string; field?: string } };
+  const failed: ApiError = { code: "failed", message: "That didn’t go through. Try again." };
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false as const, error: failed };
+  }
+  const json = (await res.json().catch(() => ({}))) as T | { error?: ApiError };
   if (!res.ok || (json && typeof json === "object" && "error" in json && json.error)) {
-    const e = (json as { error?: { code: string; message: string; field?: string } }).error;
-    return {
-      ok: false as const,
-      error: e ?? { code: "failed", message: "That didn’t go through. Try again." },
-    };
+    return { ok: false as const, error: (json as { error?: ApiError }).error ?? failed };
   }
   return { ok: true as const, body: json as T };
+}
+
+/** The time now, refreshed on each whole minute: every countdown label can only change then. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setNow(new Date());
+      timer = setTimeout(tick, nextTickMs());
+    };
+    timer = setTimeout(tick, nextTickMs());
+    return () => clearTimeout(timer);
+  }, []);
+  return now;
+}
+
+/**
+ * The page is read again after each send, and a new state mounts a fresh panel (page.tsx keys it by state), so the
+ * focus asked for by S-R2.rules/4 is carried across that remount here.
+ */
+let focusPanelOnMount = false;
+let carried: { ideaId: string; banner: string } | null = null;
+function refreshInto(router: ReturnType<typeof useRouter>) {
+  focusPanelOnMount = true;
+  router.refresh();
+}
+
+/** "70 to 150" back out of "70 to 150 hours a month", for the editor's fields. */
+function typed(figure: { text: string } | undefined): string | undefined {
+  return figure?.text.replace(/ (?:hours? )?a month$/, "").replace(/ a month$/, "");
 }
 
 export function ReviewerIdea({
@@ -106,45 +165,61 @@ export function ReviewerIdea({
   ) as Record<TimeToAnswer, number>;
   const defaultTime = TIMES[numbers.answerDays.indexOf(numbers.answerDefaultDays)] ?? "3d";
   const serverState: "reviewing" | "sent" | "answered" | "decided" =
-    page.panel.state === "merged" ? "decided" : page.panel.state;
+    page.panel.state === "merged" ? "reviewing" : page.panel.state;
   const [panel, dispatch] = useReducer(panelReducer, initialPanel(serverState, defaultTime));
   const [editingWorth, setEditingWorth] = useState(false);
   const [tiles, setTiles] = useState<WorthTile[]>(page.worth.tiles);
   const [revised, setRevised] = useState(page.worth.revised);
+  // The reviewer's own figures and note, once saved here, so "Change what it’s worth" opens on them (L-WORTH/2)
+  const [mine, setMine] = useState<(WorthFigures & { note: string | null }) | null>(null);
   const [kind, setKind] = useState(idea.kind);
   const [area, setArea] = useState(idea.area);
-  const [ownWordsOpen, setOwnWordsOpen] = useState(false);
+  const [previewing, setPreviewing] = useState<ReviewerSimilar | null>(null);
   const [merging, setMerging] = useState<string | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(() =>
+    carried?.ideaId === idea.id ? carried.banner : null,
+  );
   const [mergedIds, setMergedIds] = useState<Set<string>>(
     () => new Set(page.similar.filter((s) => s.merged).map((s) => s.idea_id)),
   );
-  const [errors, setErrors] = useState<{ choice?: string; reason?: string; wording?: string; form?: string }>(
-    {},
-  );
+  const [errors, setErrors] = useState<{ choice?: string; reason?: string; form?: string }>({});
+  const [wording, setWording] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminded, setReminded] = useState(false);
   const title = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   const worthRef = useRef<HTMLDivElement>(null);
-  const similarRef = useRef<HTMLElement>(null);
+  const similarTitle = useRef<HTMLHeadingElement>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const now = useMinute();
+
+  // The carried banner shows once
+  useEffect(() => {
+    if (carried?.ideaId === idea.id) carried = null;
+  }, [idea.id]);
 
   // L-REVIEW.open/1: the first open by a reviewer closes the sharer's edit window. Idempotent.
   useEffect(() => {
     if (page.can_act) void fetch(`/api/desk/ideas/${encodeURIComponent(idea.id)}/open`, { method: "POST" });
   }, [page.can_act, idea.id]);
 
-  // S-R2.rules/4: focus moves to the panel's title on every state change.
+  // S-R2.rules/4: focus moves to the panel's title on every state change, including the one a new read brings.
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
-      return;
+      if (!focusPanelOnMount) return;
+      focusPanelOnMount = false;
     }
     title.current?.focus();
   }, [panel.state]);
 
   const suggestionFor = (part: IdeaPart) => suggested.find((s) => s.part === part)?.text ?? null;
   const queuedFor = (part: IdeaPart) => panel.queued.filter((q) => q.part === part);
+  const asking = page.can_act && panel.state === "reviewing";
+
+  function spark() {
+    if (sendButton.current) sparkBurst(sendButton.current); // S-R2.rules/3
+  }
 
   async function sendQuestions() {
     setBusy(true);
@@ -154,12 +229,16 @@ export function ReviewerIdea({
     });
     setBusy(false);
     if (!r.ok) return setErrors({ form: r.error.message });
+    spark();
     dispatch({ type: "questions_sent" });
-    router.refresh();
+    refreshInto(router);
   }
 
+  // L-DECIDE.rules/4, BLD-B236: a reason holding a word the product never says to a sharer comes back once as a
+  // 422 wording_check with the words and a plainer way to say each; "Send anyway" sends it as written.
   async function sendDecision(wordingOk = false) {
     setErrors({});
+    setWording(null);
     setBusy(true);
     const r = await send(`/api/desk/ideas/${encodeURIComponent(idea.id)}/decision`, "POST", {
       choice: panel.choice ?? undefined,
@@ -171,13 +250,14 @@ export function ReviewerIdea({
     setBusy(false);
     if (!r.ok) {
       const e = r.error;
-      if (e.code === "wording_check") return setErrors({ wording: e.message });
+      if (e.code === "wording_check") return setWording(e);
       if (e.field === "choice") return setErrors({ choice: e.message });
       if (e.field === "reason") return setErrors({ reason: e.message });
       return setErrors({ form: e.message });
     }
+    spark();
     dispatch({ type: "decision_sent" });
-    router.refresh();
+    refreshInto(router);
   }
 
   async function giveMoreTime(setId: string) {
@@ -192,7 +272,11 @@ export function ReviewerIdea({
     else setErrors({ form: r.error.message });
   }
 
-  const now = new Date();
+  function openWorth() {
+    setEditingWorth(true);
+    worthRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   const due = answerDue(now, panel.timeToAnswer, timeCodes, numbers.deadlineHour);
   const afterDecideBy = page.decide_by.at ? due > new Date(page.decide_by.at) : false;
   const bar = bottomBar(panel, first);
@@ -202,14 +286,14 @@ export function ReviewerIdea({
     not_now: "Why not now, and what would change it?",
     not_picked: "Why isn’t it going ahead?",
   };
-  const returnCode = panel.returnIn;
-  const returnMonths = numbers.returnMonths[RETURNS.indexOf(returnCode)] ?? 3;
+  const returnMonths = numbers.returnMonths[RETURNS.indexOf(panel.returnIn)] ?? 3;
   const returnDate = new Date(now);
   returnDate.setMonth(returnDate.getMonth() + returnMonths);
   const windowCloses = new Date(now.getTime() + numbers.windowDays * 86_400_000);
   const joinable = page.similar.filter(
     (s) => !mergedIds.has(s.idea_id) && !["merged", "withdrawn"].includes(s.status),
   );
+  const allQuestions = page.parts.flatMap((x) => x.questions);
 
   return (
     <div className="ri">
@@ -238,63 +322,14 @@ export function ReviewerIdea({
         <div className="ri-left">
           <ListenPlayer ideaId={idea.id} decided={!page.can_act && page.panel.state === "decided"} />
 
-          <section className="card ri-arts" aria-labelledby="arts-t">
-            <div className="ri-card-h">
-              <h2 id="arts-t" className="h3">
-                Attachments and artefacts
-              </h2>
-              <span className="meta">Everything that came with the idea</span>
-            </div>
-            <ul className="ri-arts-list">
-              {page.artefacts.map((a, i) => (
-                <li key={`${a.kind}-${a.id ?? i}`} className="tile ri-art">
-                  <span className={`fbadge ri-art-ic ri-art-${a.kind}`} aria-hidden="true">
-                    {a.kind === "file" ? (a.title.split(".").pop() ?? "").toUpperCase().slice(0, 4) : ""}
-                  </span>
-                  <span className="ri-art-b">
-                    <strong>{a.title}</strong>
-                    <span className="meta">{a.line}</span>
-                  </span>
-                  {a.kind === "file" && a.id ? (
-                    <a
-                      className="btn-text"
-                      href={`/api/attachments/${encodeURIComponent(a.id)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {a.action}
-                    </a>
-                  ) : a.kind === "own_words" ? (
-                    <button
-                      type="button"
-                      className="btn-text"
-                      aria-expanded={ownWordsOpen}
-                      onClick={() => setOwnWordsOpen((o) => !o)}
-                    >
-                      {a.action}
-                    </button>
-                  ) : a.kind === "similar_found" ? (
-                    <button
-                      type="button"
-                      className="btn-text"
-                      onClick={() => similarRef.current?.scrollIntoView({ behavior: "smooth" })}
-                    >
-                      {a.action}
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            {ownWordsOpen ? (
-              <div className="well ri-words">
-                {page.own_words.map((m) => (
-                  <p key={m.seq} className="body">
-                    {m.text}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-          </section>
+          <Artefacts
+            artefacts={page.artefacts}
+            ownWords={page.own_words}
+            onCompare={() => {
+              similarTitle.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              similarTitle.current?.focus({ preventScroll: true });
+            }}
+          />
 
           <section className="card ri-parts" aria-label="The idea, part by part">
             {page.parts.map((part) => {
@@ -305,16 +340,23 @@ export function ReviewerIdea({
                     <h2 id={`part-${part.part}`} className="h3">
                       {part.name}
                     </h2>
-                    {part.part === "cost" && page.can_act && !editingWorth ? (
-                      <button type="button" className="btn-text" onClick={() => setEditingWorth(true)}>
+                    {part.part === "cost" && page.can_act ? (
+                      <Button
+                        variant="text"
+                        aria-expanded={editingWorth}
+                        aria-controls="ri-worth"
+                        onClick={() => setEditingWorth(true)}
+                      >
                         Revise and recategorise
-                      </button>
+                      </Button>
                     ) : null}
-                    {page.can_act && panel.state !== "decided" ? (
+                    {asking ? (
                       <Button
                         variant="line"
                         size="sm"
                         className={queued.length ? "ri-asking" : undefined}
+                        aria-label={`Ask about ${ASK_NAME[part.part]}`}
+                        aria-pressed={queued.length > 0}
                         onClick={() =>
                           dispatch({
                             type: "ask_about",
@@ -328,7 +370,7 @@ export function ReviewerIdea({
                     ) : null}
                   </div>
                   {part.part === "cost" ? (
-                    <div ref={worthRef}>
+                    <div ref={worthRef} id="ri-worth">
                       {editingWorth ? (
                         <WorthEditor
                           ideaId={idea.id}
@@ -336,10 +378,22 @@ export function ReviewerIdea({
                           kind={kind}
                           area={area}
                           tiles={tiles}
+                          initial={
+                            mine
+                              ? {
+                                  hours: typed(mine.hours_month),
+                                  cost: typed(mine.cost_month),
+                                  revenue: typed(mine.revenue_month),
+                                  tools: mine.outside_tools,
+                                  note: mine.note ?? undefined,
+                                }
+                              : undefined
+                          }
                           onCancel={() => setEditingWorth(false)}
                           onSaved={(saved) => {
                             setTiles(saved.tiles);
                             setRevised(true);
+                            setMine(saved.reviewer);
                             setKind(saved.kind);
                             setArea(saved.area);
                             setEditingWorth(false);
@@ -359,40 +413,25 @@ export function ReviewerIdea({
                     </div>
                   ))}
                   {part.questions.map((q) => (
-                    <div key={q.id} className="ri-q">
-                      <p className="meta">
-                        {q.asked_line} · <span>{q.state}</span>
-                      </p>
-                      <p className="body ri-q-t">{q.text}</p>
-                      {q.answer ? (
-                        <div className="ri-a">
-                          <p className="meta">{q.answer.line}</p>
-                          <p className="body">{q.answer.text}</p>
-                          {q.answer.files.map((f) => (
-                            <p key={f.id} className="meta">
-                              {f.name}
-                              {f.hidden ? ` · ${f.hidden}` : ""}
-                            </p>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
+                    <AskedQuestion key={q.id} q={q} />
                   ))}
                 </section>
               );
             })}
           </section>
 
+          {page.contributions.length ? <Contributions contributions={page.contributions} /> : null}
+
           {page.similar.length ? (
-            <section className="card ri-sim" aria-labelledby="sim-t" ref={similarRef}>
-              <h2 id="sim-t" className="h3">
+            <section className="card ri-sim" aria-labelledby="sim-t">
+              <h2 id="sim-t" className="h3" ref={similarTitle} tabIndex={-1}>
                 Similar ideas
               </h2>
               <p className="meta">
                 The same problem, raised by others. Merge them so one team builds one fix.
               </p>
               {banner ? (
-                <p className="note blue ri-banner" role="status">
+                <p className="note ri-banner" role="status">
                   {banner}
                 </p>
               ) : null}
@@ -400,24 +439,34 @@ export function ReviewerIdea({
                 {page.similar.map((s) => (
                   <li key={s.idea_id} className="ri-sim-row">
                     <span className="ri-sim-b">
-                      <strong>{s.title}</strong>
+                      <button
+                        type="button"
+                        className="ri-sim-t"
+                        aria-haspopup="dialog"
+                        onClick={() => setPreviewing(s)}
+                      >
+                        {s.title}
+                      </button>
                       <span className="meta">{s.meta}</span>
-                      <span className="meta">
-                        {s.strength === "close" ? "Close match" : "Related"}: {s.reason}
-                      </span>
+                      <span className="meta">{matchLine(s)}</span>
                     </span>
-                    <a
-                      className="btn-text"
-                      href={`/ideas/${encodeURIComponent(s.idea_id)}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <Button
+                      variant="text"
+                      aria-haspopup="dialog"
+                      aria-label={`Preview ${s.title}`}
+                      onClick={() => setPreviewing(s)}
                     >
                       Preview
-                    </a>
+                    </Button>
                     {mergedIds.has(s.idea_id) ? (
                       <Pill variant="neutral">Merged</Pill>
                     ) : page.can_act ? (
-                      <Button variant="line" size="sm" onClick={() => setMerging(s.idea_id)}>
+                      <Button
+                        variant="line"
+                        size="sm"
+                        aria-label={`Merge with ${s.title}`}
+                        onClick={() => setMerging(s.idea_id)}
+                      >
                         Merge
                       </Button>
                     ) : null}
@@ -437,8 +486,15 @@ export function ReviewerIdea({
                 </h2>
                 <p className="meta">Another reviewer decides on it. You can read it here.</p>
               </>
+            ) : page.panel.state === "merged" ? (
+              <>
+                <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
+                  Merged with another idea
+                </h2>
+                <p className="meta">The review desk now decides on the idea it joined.</p>
+              </>
             ) : panel.state === "decided" ? (
-              <Decided panel={page.panel} first={first} />
+              <Decided panel={page.panel} first={first} titleRef={title} now={now} />
             ) : panel.state === "deciding" ? (
               <>
                 <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
@@ -467,16 +523,11 @@ export function ReviewerIdea({
                         onChange={() => dispatch({ type: "choose", choice: value })}
                       />
                       <span>
-                        <strong>{label}</strong>
-                        <span className="meta">{line}</span>
+                        <strong>{label}</strong> <span className="meta">{line}</span>
                       </span>
                     </label>
                   ))}
-                  {errors.choice ? (
-                    <FieldMsg id="choice-err" kind="error">
-                      {errors.choice}
-                    </FieldMsg>
-                  ) : null}
+                  {errors.choice ? <FieldMsg id="choice-err">{errors.choice}</FieldMsg> : null}
                 </fieldset>
                 {panel.choice === "pick" && joinable.length ? (
                   <div className="chips ri-join">
@@ -523,7 +574,7 @@ export function ReviewerIdea({
                       : `${first} reads this word for word.`
                   }
                   error={errors.reason}
-                  warning={errors.wording}
+                  warning={wording?.message}
                 >
                   {(p) => (
                     <textarea
@@ -531,14 +582,29 @@ export function ReviewerIdea({
                       rows={4}
                       maxLength={1000}
                       value={panel.reason}
-                      onChange={(e) => dispatch({ type: "type_reason", text: e.target.value })}
+                      onChange={(e) => {
+                        setWording(null);
+                        dispatch({ type: "type_reason", text: e.target.value });
+                      }}
                     />
                   )}
                 </Field>
-                {errors.wording ? (
-                  <Button variant="text" onClick={() => void sendDecision(true)}>
-                    Send it anyway
-                  </Button>
+                {wording ? (
+                  <div className="ri-wording">
+                    {/* The message names every word and the plainer way for the first; the rest are listed */}
+                    {(wording.suggestions ?? []).length > 1 ? (
+                      <ul className="ri-wording-l" aria-label="Plainer ways to say it">
+                        {(wording.suggestions ?? []).slice(1).map((w) => (
+                          <li key={w.word} className="meta">
+                            For “{w.word}”, {w.suggestion}.
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <Button variant="line" size="sm" busy={busy} onClick={() => void sendDecision(true)}>
+                      {SEND_ANYWAY}
+                    </Button>
+                  </div>
                 ) : null}
                 <p className="meta ri-shield">
                   The Ones Committee can review it for {numbers.windowDays} days. Until{" "}
@@ -550,18 +616,15 @@ export function ReviewerIdea({
               <SentOrAnswered
                 p={page.panel}
                 titleRef={title}
-                questions={page.parts.flatMap((x) => x.questions)}
+                questions={allQuestions}
+                now={now}
                 reminded={reminded}
                 extendDays={numbers.extendDays}
                 onMore={() => void giveMoreTime(page.panel.state === "sent" ? page.panel.set_id : "")}
                 onRemind={() => void remind(page.panel.state === "sent" ? page.panel.set_id : "")}
               />
             ) : panel.state === "answered" && page.panel.state === "answered" ? (
-              <SentOrAnswered
-                p={page.panel}
-                titleRef={title}
-                questions={page.parts.flatMap((x) => x.questions)}
-              />
+              <SentOrAnswered p={page.panel} titleRef={title} questions={allQuestions} now={now} />
             ) : (
               <>
                 <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
@@ -572,122 +635,119 @@ export function ReviewerIdea({
                     ? `You’ve revised what it’s worth. ${first} sees your figures next to theirs when you decide.`
                     : page.worth.line}
                 </p>
-                <button
-                  type="button"
-                  className="btn-text ri-revise"
-                  onClick={() => {
-                    setEditingWorth(true);
-                    worthRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                    <path
-                      d="M2 12l1-3 6.5-6.5 2 2L5 11z"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      fill="none"
-                    />
-                  </svg>
-                  {revised ? "Change what it’s worth" : "Revise what it’s worth"}
-                </button>
-                <div className="ri-ask">
-                  <button
-                    type="button"
-                    className="ri-ask-h"
-                    aria-expanded={panel.askOpen}
-                    aria-controls="ask-body"
-                    onClick={() => dispatch({ type: "toggle_ask" })}
-                  >
-                    <span>Ask {first} first</span>
-                    <span className="meta">{readyLine(panel) ?? "Optional"}</span>
-                  </button>
-                  {panel.askOpen ? (
-                    <div id="ask-body" className="ri-ask-b">
-                      <p className="meta">
-                        Only if something is unclear. Ask in your own words; each question is pinned to its
-                        part of the idea, so {first} answers it right there.
-                      </p>
-                      <QuestionBox
-                        label={`Your question for ${first}`}
-                        parts={PARTS}
-                        pinned={panel.draft.part}
-                        onPinned={(part) => dispatch({ type: "pin_question", part: part as IdeaPart })}
-                        onAdd={(q, part) => {
-                          dispatch({ type: "pin_question", part: part as IdeaPart });
-                          dispatch({ type: "type_question", text: q, guessed: part as IdeaPart });
-                          dispatch({ type: "add_question" });
-                        }}
-                      />
-                      {panel.queued.length ? (
-                        <div className="ri-queued">
-                          <h3 className="label">
-                            Your questions <span className="meta">{panel.queued.length}</span>
-                          </h3>
-                          <ul>
-                            {panel.queued.map((q) => (
-                              <li key={q.key}>
-                                <span className="chip">{PART_NAME[q.part]}</span>
-                                <span className="body">{q.text}</span>
-                                <button
-                                  type="button"
-                                  className="qx"
-                                  aria-label={`Remove: ${q.text}`}
-                                  onClick={() => dispatch({ type: "remove_question", key: q.key })}
-                                >
-                                  ×
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                {page.can_act ? (
+                  <>
+                    <Button variant="text" className="ri-revise" onClick={openWorth}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                        <path
+                          d="M2 12l1-3 6.5-6.5 2 2L5 11z"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          fill="none"
+                        />
+                      </svg>
+                      {revised ? "Change what it’s worth" : "Revise what it’s worth"}
+                    </Button>
+                    <div className="ri-ask">
+                      <button
+                        type="button"
+                        className="ri-ask-h"
+                        aria-expanded={panel.askOpen}
+                        aria-controls="ask-body"
+                        onClick={() => dispatch({ type: "toggle_ask" })}
+                      >
+                        <span>Ask {first} first</span>{" "}
+                        <span className="meta">
+                          Optional
+                          {readyLine(panel) ? <span className="ri-ready"> {readyLine(panel)}</span> : null}
+                        </span>
+                      </button>
+                      {panel.askOpen ? (
+                        <div id="ask-body" className="ri-ask-b">
+                          <p className="meta">
+                            Only if something is unclear. Ask in your own words; each question is pinned to
+                            its part of the idea, so {first} answers it right there.
+                          </p>
+                          <QuestionBox
+                            label={`What would you like to ask ${first}?`}
+                            parts={PARTS}
+                            pinned={panel.draft.part}
+                            onPinned={(part) => dispatch({ type: "pin_question", part: part as IdeaPart })}
+                            onAdd={(q, part) => {
+                              dispatch({ type: "pin_question", part: part as IdeaPart });
+                              dispatch({ type: "type_question", text: q, guessed: part as IdeaPart });
+                              dispatch({ type: "add_question" });
+                            }}
+                          />
+                          {panel.queued.length ? (
+                            <div className="ri-queued">
+                              <h3 className="label">
+                                Your questions <span className="meta">{panel.queued.length}</span>
+                              </h3>
+                              <ul>
+                                {panel.queued.map((q) => (
+                                  <li key={q.key}>
+                                    <span className="chip">{PART_NAME[q.part]}</span>
+                                    <span className="body">{q.text}</span>
+                                    <button
+                                      type="button"
+                                      className="qx"
+                                      aria-label={`Remove: ${q.text}`}
+                                      onClick={() => dispatch({ type: "remove_question", key: q.key })}
+                                    >
+                                      <span aria-hidden="true">×</span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {suggested.length ? (
+                            <div className="ri-sugg">
+                              <h3 className="label">Suggested from this idea</h3>
+                              <ul>
+                                {suggested
+                                  .filter((s) => !panel.queued.some((q) => q.text === s.text))
+                                  .map((s) => (
+                                    <li key={s.text}>
+                                      <button
+                                        type="button"
+                                        className="qsug"
+                                        aria-label={`Add: ${s.text}`}
+                                        onClick={() =>
+                                          dispatch({ type: "add_suggestion", part: s.part, text: s.text })
+                                        }
+                                      >
+                                        <span aria-hidden="true">+</span> {s.text}{" "}
+                                        <span className="meta">{PART_NAME[s.part]}</span>
+                                      </button>
+                                    </li>
+                                  ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <ChoiceChips
+                            label="Time to answer"
+                            options={TIMES.map((t) => ({ value: t, label: daysWord(timeCodes[t]) }))}
+                            value={panel.timeToAnswer}
+                            onChange={(v) => dispatch({ type: "set_time", time: v as TimeToAnswer })}
+                          />
+                          <p className="meta">
+                            {first} has until {deadlineLabel(due, now)}.
+                          </p>
+                          {afterDecideBy ? (
+                            <FieldMsg kind="warn">
+                              That’s after you decide, so you’d need to move your date.
+                            </FieldMsg>
+                          ) : null}
                         </div>
-                      ) : null}
-                      {suggested.length ? (
-                        <div className="ri-sugg">
-                          <h3 className="label">Suggested from this idea</h3>
-                          <ul>
-                            {suggested
-                              .filter((s) => !panel.queued.some((q) => q.text === s.text))
-                              .map((s) => (
-                                <li key={s.text}>
-                                  <button
-                                    type="button"
-                                    className="qsug"
-                                    onClick={() =>
-                                      dispatch({ type: "add_suggestion", part: s.part, text: s.text })
-                                    }
-                                  >
-                                    <span aria-hidden="true">+</span> {s.text}{" "}
-                                    <span className="meta">{PART_NAME[s.part]}</span>
-                                  </button>
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      <ChoiceChips
-                        label="Time to answer"
-                        options={TIMES.map((t) => ({ value: t, label: daysWord(timeCodes[t]) }))}
-                        value={panel.timeToAnswer}
-                        onChange={(v) => dispatch({ type: "set_time", time: v as TimeToAnswer })}
-                      />
-                      <p className="meta">
-                        {first} has until {deadlineLabel(due, now)}.
-                      </p>
-                      {afterDecideBy ? (
-                        <FieldMsg kind="warn">
-                          That’s after you decide, so you’d need to move your date.
-                        </FieldMsg>
                       ) : null}
                     </div>
-                  ) : null}
-                </div>
+                  </>
+                ) : null}
               </>
             )}
-            {errors.form ? (
-              <FieldMsg kind="error">
-                <span role="alert">{errors.form}</span>
-              </FieldMsg>
-            ) : null}
+            {errors.form ? <FieldMsg kind="error">{errors.form}</FieldMsg> : null}
           </div>
 
           {page.can_act && bar.primary ? (
@@ -701,6 +761,7 @@ export function ReviewerIdea({
                 </Button>
               ) : null}
               <Button
+                ref={sendButton}
                 variant="primary"
                 size={bar.secondary ? "regular" : "full"}
                 busy={busy}
@@ -727,6 +788,18 @@ export function ReviewerIdea({
         </aside>
       </div>
 
+      {/* S-R2.rules/5: the preview and the merge sheet mount at the page root */}
+      <IdeaPreviewDialog
+        ideaId={previewing?.idea_id ?? ""}
+        view="reviewer"
+        open={previewing !== null}
+        onClose={() => setPreviewing(null)}
+        onPrimary={page.can_act ? (id) => setMerging(id) : undefined}
+        primaryDone={previewing && mergedIds.has(previewing.idea_id) ? "Merged" : undefined}
+        matchReason={previewing ? matchLine(previewing) : undefined}
+        compareWith={{ name: first }}
+        compareWithId={idea.id}
+      />
       {merging ? (
         <MergeSheet
           ideaId={idea.id}
@@ -736,6 +809,9 @@ export function ReviewerIdea({
             setBanner(m.banner);
             setMergedIds((s) => new Set(s).add(merging));
             setMerging(null);
+            // When this idea is the one that joined, its status changes and the page mounts afresh: the banner
+            // stays (C-SHEET-MERGE.after)
+            carried = { ideaId: idea.id, banner: m.banner };
             router.refresh();
           }}
         />
@@ -744,38 +820,262 @@ export function ReviewerIdea({
   );
 }
 
+/** The match line under a similar idea and in its preview: "Close match: …" or "Related: …" (DeskIdea board). */
+function matchLine(s: ReviewerSimilar): string {
+  return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
+}
+
+/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open". */
+function FileArtefact({ a }: { a: ReviewerArtefact }) {
+  const ext = (a.title.split(".").pop() ?? "").toUpperCase().slice(0, 4);
+  return (
+    <li className="tile ri-art">
+      <span className="fbadge ri-art-ic ri-art-file" aria-hidden="true">
+        {ext}
+      </span>
+      <span className="ri-art-b">
+        <strong>{a.title}</strong>
+        <span className="meta">{a.line}</span>
+        {a.customer_detail ? (
+          <span>
+            <Pill variant="warn">{CUSTOMER_DETAIL}</Pill>
+          </span>
+        ) : null}
+      </span>
+      {a.id ? (
+        // Opened through the attachments route (clean files, logged); DEC-107 lets the desk open a marked one
+        <a
+          className="tb blue"
+          href={`/api/attachments/${encodeURIComponent(a.id)}`}
+          aria-label={openFileName(a.title, Boolean(a.customer_detail))}
+        >
+          {a.action}
+        </a>
+      ) : null}
+    </li>
+  );
+}
+
+function OwnWords({
+  words,
+  open,
+  id,
+}: {
+  words: ReviewerIdeaResponse["own_words"];
+  open: boolean;
+  id: string;
+}) {
+  return open ? (
+    <div id={id} className="well ri-words">
+      {words.map((m) => (
+        <p key={m.seq} className="body">
+          {m.text}
+        </p>
+      ))}
+    </div>
+  ) : null;
+}
+
+/** S-R2.left/2: "Everything that came with the idea": files, the sharer's own words, similar ideas found, draft history. */
+function Artefacts({
+  artefacts,
+  ownWords,
+  onCompare,
+}: {
+  artefacts: ReviewerArtefact[];
+  ownWords: ReviewerIdeaResponse["own_words"];
+  onCompare: () => void;
+}) {
+  const [wordsOpen, setWordsOpen] = useState(false);
+  return (
+    <section className="card ri-arts" aria-labelledby="arts-t">
+      <div className="ri-card-h">
+        <h2 id="arts-t" className="h3">
+          Attachments and artefacts
+        </h2>
+        <span className="meta">Everything that came with the idea</span>
+      </div>
+      <ul className="ri-arts-list">
+        {artefacts.map((a, i) =>
+          a.kind === "file" ? (
+            <FileArtefact key={`file-${a.id ?? i}`} a={a} />
+          ) : (
+            <li key={`${a.kind}-${i}`} className="tile ri-art">
+              <span className={`fbadge ri-art-ic ri-art-${a.kind}`} aria-hidden="true" />
+              <span className="ri-art-b">
+                <strong>{a.title}</strong>
+                <span className="meta">{a.line}</span>
+              </span>
+              {a.kind === "own_words" ? (
+                <Button
+                  variant="text-blue"
+                  aria-expanded={wordsOpen}
+                  aria-controls="ri-own-words"
+                  onClick={() => setWordsOpen((o) => !o)}
+                >
+                  {a.action}
+                </Button>
+              ) : a.kind === "similar_found" ? (
+                <Button variant="text-blue" onClick={onCompare}>
+                  {a.action}
+                </Button>
+              ) : // Draft history ("See changes") opens once A-API's idea versions route is served; until then
+              // the row says how many versions there are and what changed.
+              null}
+            </li>
+          ),
+        )}
+      </ul>
+      <OwnWords words={ownWords} open={wordsOpen} id="ri-own-words" />
+    </section>
+  );
+}
+
+/** A question the desk asked, under its part: who asked and when, its state, the words, then the answer. */
+function AskedQuestion({ q }: { q: ReviewerQuestion }) {
+  return (
+    <div className="ri-q">
+      <p className="meta">{q.asked_line}</p>
+      <p className="meta ri-q-state">{q.state}</p>
+      <p className="body ri-q-t">{q.text}</p>
+      {q.answer ? (
+        <div className="ri-a">
+          <p className="meta">{q.answer.line}</p>
+          <p className="body">{q.answer.text}</p>
+          {q.answer.files.length ? (
+            <ul className="ri-a-files" aria-label="Files with this answer">
+              {q.answer.files.map((f) => (
+                <li key={f.id} className="meta">
+                  <span>{f.name}</span>
+                  {f.hidden ? <span>{f.hidden}</span> : null}
+                  {f.customer_detail ? <Pill variant="warn">{CUSTOMER_DETAIL}</Pill> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContributionPart({ part }: { part: ReviewerPart }) {
+  if (!part.text && !part.questions.length) return null;
+  return (
+    <div className="ri-part">
+      <p className="label">{part.name}</p>
+      {part.text ? <p className="body ri-part-t">{part.text}</p> : null}
+      {part.questions.map((q) => (
+        <AskedQuestion key={q.id} q={q} />
+      ))}
+    </div>
+  );
+}
+
+/** L-MERGE.effects/3: what each idea merged into this one brought, under its sharer's first name. */
+function Contributions({ contributions }: { contributions: ReviewerContribution[] }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  return (
+    <section className="card ri-contribs" aria-labelledby="contribs-t">
+      <h2 id="contribs-t" className="h3">
+        Merged into this idea
+      </h2>
+      {contributions.map((c) => {
+        const wordsId = `ri-words-${c.idea_id}`;
+        const wordsOpen = open.has(c.idea_id);
+        return (
+          <section key={c.idea_id} className="ri-contrib" aria-labelledby={`contrib-${c.idea_id}`}>
+            <h3 id={`contrib-${c.idea_id}`} className="h3">
+              {c.label}
+            </h3>
+            <p className="meta">{c.title}</p>
+            {c.parts.map((p) => (
+              <ContributionPart key={p.part} part={p} />
+            ))}
+            {c.files.length || c.own_words.length ? (
+              <ul className="ri-arts-list">
+                {c.files.map((f, i) => (
+                  <FileArtefact key={`file-${f.id ?? i}`} a={f} />
+                ))}
+                {c.own_words.length ? (
+                  <li className="tile ri-art">
+                    <span className="fbadge ri-art-ic ri-art-own_words" aria-hidden="true" />
+                    <span className="ri-art-b">
+                      <strong>{c.sharer.first_name}’s own words</strong>
+                    </span>
+                    <Button
+                      variant="text-blue"
+                      aria-expanded={wordsOpen}
+                      aria-controls={wordsId}
+                      onClick={() =>
+                        setOpen((s) => {
+                          const next = new Set(s);
+                          if (next.has(c.idea_id)) next.delete(c.idea_id);
+                          else next.add(c.idea_id);
+                          return next;
+                        })
+                      }
+                    >
+                      Read<span className="vh"> {c.sharer.first_name}’s own words</span>
+                    </Button>
+                  </li>
+                ) : null}
+              </ul>
+            ) : null}
+            <OwnWords words={c.own_words} open={wordsOpen} id={wordsId} />
+          </section>
+        );
+      })}
+    </section>
+  );
+}
+
 function SentOrAnswered({
   p,
   titleRef,
   questions,
+  now,
   reminded,
   extendDays,
   onMore,
   onRemind,
 }: {
   p: Extract<ReviewerPanel, { state: "sent" | "answered" }>;
-  titleRef: React.RefObject<HTMLHeadingElement | null>;
-  questions: { id: string; text: string | null; state: string }[];
+  titleRef: RefObject<HTMLHeadingElement | null>;
+  questions: ReviewerQuestion[];
+  now: Date;
   reminded?: boolean;
   extendDays?: number;
   onMore?: () => void;
   onRemind?: () => void;
 }) {
+  // The clock ticks here as on the desk (L-QUESTIONS.clock/1): "3 days to answer", "07:38 to answer", "Overdue by …"
+  const live = countdown(p.due_at, now);
+  const answeredAt = questions
+    .map((q) => q.answer?.at)
+    .filter((t): t is string => Boolean(t))
+    .sort()
+    .pop();
   return (
     <>
       <h2 id="panel-t" ref={titleRef} tabIndex={-1} className="h3">
         {p.title}
       </h2>
       {p.state === "sent" ? (
-        <p>
-          <Pill variant={p.variant === "bad" ? "bad" : p.variant === "warn" ? "warn" : "neutral"}>
-            {p.countdown}
-          </Pill>
-        </p>
+        <>
+          <p className="ri-clock">
+            <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+              {countdownLabel(live, "to answer")}
+            </Pill>
+          </p>
+          <p className="meta">{p.sent_line}</p>
+        </>
       ) : (
-        <p className="meta">{p.spare_line}</p>
+        <>
+          {p.spare_line ? <p className="body">{p.spare_line}</p> : null}
+          {answeredAt ? <p className="meta">{whenSaid(answeredAt, now)}</p> : null}
+        </>
       )}
-      <p className="meta">{p.sent_line}</p>
       <ul className="ri-sent-qs">
         {questions.map((q) => (
           <li key={q.id}>
@@ -798,18 +1098,28 @@ function SentOrAnswered({
   );
 }
 
-function Decided({ panel, first }: { panel: ReviewerPanel; first: string }) {
+/** S-R2.panel/6 Decided, in the reviewer's words from the worker (ReviewerDecisionLines), with the committee's window
+ * as it stands: open with its progress, or reversed with the committee's note, or closed. */
+function Decided({
+  panel,
+  first,
+  titleRef,
+  now,
+}: {
+  panel: ReviewerPanel;
+  first: string;
+  titleRef: RefObject<HTMLHeadingElement | null>;
+  now: Date;
+}) {
   if (panel.state !== "decided") {
+    // Just sent: the page's new read is on its way
     return (
-      <h2 id="panel-t" tabIndex={-1} className="h3">
+      <h2 id="panel-t" ref={titleRef} tabIndex={-1} className="h3">
         Decision sent to {first}
       </h2>
     );
   }
-  const d = panel.decision;
-  const now = new Date();
-  const at = new Date(d.decided_at);
-  const today = dayLabel(at, now) === dayLabel(now, now);
+  const { decision: d, lines } = panel;
   const choice = d.decision.choice;
   const opens = new Date(d.window.opens_at).getTime();
   const closes = new Date(d.window.closes_at).getTime();
@@ -817,44 +1127,45 @@ function Decided({ panel, first }: { panel: ReviewerPanel; first: string }) {
   const open = d.window.state === "open" || d.window.state === "extended";
   return (
     <>
-      <h2 id="panel-t" tabIndex={-1} className="h3">
-        Decision sent to {first}
+      <h2 id="panel-t" ref={titleRef} tabIndex={-1} className="h3">
+        {lines.title}
       </h2>
       <p className="ri-decided">
         {choice ? <Pill variant={DECISION_PILL[choice]}>{d.decision.label}</Pill> : null}
-        <span className="meta">
-          {today ? `Today, ${clockLabel(at)}.` : `${dayLabel(at, now)}, ${clockLabel(at)}.`} {first} has it
-          now.
-        </span>
+        <span className="meta">{lines.sent_line}</span>
       </p>
       {choice === "not_now" && d.return_at ? (
         <p className="meta">
           Comes back to you and {first} on {dayLabel(d.return_at, now)}
         </p>
       ) : null}
-      <h3 className="label">Your reason, as {first} reads it</h3>
+      <h3 className="label">{lines.reason_heading}</h3>
       <blockquote className="well ri-reason">{d.decision.reason}</blockquote>
-      <h3 className="label">Ones Committee review</h3>
+      <h3 className="label">{lines.committee_heading}</h3>
       {d.reversal ? (
         <>
-          <p className="body">{d.reversal.now_line}</p>
+          <p className="body">
+            {d.reversal.now_line} {d.reversal.now_by_line}
+          </p>
           <blockquote className="well ri-reason">{d.reversal.note}</blockquote>
-          <p className="meta">{d.reversal.final_line}</p>
-        </>
-      ) : open ? (
-        <>
-          <p className="body">Open, {d.window.left}</p>
-          <div className="ri-progress" role="img" aria-label={`Open, ${d.window.left}`}>
-            <i style={{ width: `${progress * 100}%` }} />
-          </div>
           <p className="meta">
-            Open until {dayLabel(d.window.closes_at, now)}. The committee can extend it, up to 3 months in
-            all, to {dayLabel(d.window.max_closes_at, now)}. If they reverse it, {first} gets their note and
-            you see it here. When the window closes, the decision stands.
+            {d.reversal.reversed_line}. {d.reversal.final_line}
           </p>
         </>
       ) : (
-        <p className="meta">{d.window.closed_line}</p>
+        <>
+          {lines.window_state ? <p className="body">{lines.window_state}</p> : null}
+          {open ? (
+            <div className="ri-progress" aria-hidden="true">
+              <i style={{ width: `${progress * 100}%` }} />
+            </div>
+          ) : null}
+          {lines.window_line ? (
+            <p className="meta">{lines.window_line}</p>
+          ) : d.window.closed_line ? (
+            <p className="meta">{d.window.closed_line}</p>
+          ) : null}
+        </>
       )}
     </>
   );
