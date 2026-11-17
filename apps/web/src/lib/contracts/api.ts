@@ -1294,8 +1294,135 @@ export type ConversationResponse = Conversation;
 export interface ConversationMessageCreate {
   text: string;
   file_ids?: string[];
+  /** users.id of each person mentioned with @name (L-CONVO/6). */
   mentions?: string[];
 }
+
+/**
+ * What `GET /ideas/:id/conversation` returns (lane F, `services/worker/convo/reads.py`): the pack's `Conversation`
+ * with each entry's `id`, and the words S-08 shows around the timeline worked out on the server
+ * (A-API.conventions/6). Event `text` is the whole line, time included ("You shared it. Saturday 14 November,
+ * 10:05 am"). Question sets come by reference: the card is lane B's `C-QCARD`, filled from
+ * `GET /ideas/:id/question-set` (L-CONVO/4).
+ */
+type ConvoPerson = import("./entities").PersonRef;
+export type ConversationEntryView =
+  | {
+      type: "event";
+      id: string;
+      code: string;
+      text: string;
+      at: IsoDate;
+      /** The merged idea's closing line links to the idea it joined (L-MERGE.effects/6). */
+      link?: { label: string; to: string };
+    }
+  | {
+      type: "message";
+      id: string;
+      from: ConvoPerson;
+      /** "Meera from the review desk", "Ravi Nair", "You". */
+      from_label: string;
+      you: boolean;
+      /** The masked copy (L-CONVO/7); "Message removed" once removed (L-CONVO/10). */
+      text: string;
+      files: FileItem[];
+      at: IsoDate;
+      at_label: string;
+      mentions: ConvoPerson[];
+      mentions_you: boolean;
+      removed: boolean;
+      /** Only on the reader's own message, while it can still be removed. */
+      can_remove_until?: IsoDate;
+    }
+  | {
+      type: "questions";
+      id: string;
+      set_id: string;
+      state: import("./enums").QuestionSetState;
+      by: ConvoPerson;
+      by_label: string;
+      count: number;
+      answered: number;
+      due_at: IsoDate | null;
+      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
+       * review desk asked 3 questions." for others (BLD-F065). */
+      title: string;
+      /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
+       * answer is added to its part of your idea." */
+      deadline?: string;
+      /** The sharer's, while open: S-R3 (S-08.rules/1). */
+      answer_url?: string;
+      at: IsoDate;
+      at_label: string;
+    }
+  | {
+      type: "answers";
+      id: string;
+      set_id: string;
+      from: ConvoPerson;
+      /** "Your answers to Meera’s 3 questions". */
+      title: string;
+      answers: {
+        id: string;
+        question_id: string;
+        text: string;
+        added_to: string;
+        /** "The problem", "How often" … ("Added to <part>"). */
+        added_to_label: string;
+        at: IsoDate;
+        files: FileItem[];
+      }[];
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
+       * Friday 20 November." (S-08 "Answers sent"). */
+      footer?: string;
+      at: IsoDate;
+      at_label: string;
+    };
+export interface ConversationView extends Omit<Conversation, "entries" | "participants"> {
+  /** "Your idea" / "The idea", and the line under the header (S-08.layout/1). */
+  header: { whose: string; line: string };
+  participants: { person: ConvoPerson; label: string; doing: string; you: boolean }[];
+  entries: ConversationEntryView[];
+  composer: {
+    /** By audience (L-CONVO/5): "Message the review desk", "Message the crew", "Reply to Sanjay". */
+    placeholder: string;
+    /** "Only you and the review desk see this conversation." */
+    visibility: string;
+    /** For the sharer while questions are open (L-CONVO/4). */
+    questions_line?: string;
+    /** A merged idea's conversation takes no new messages: why, and where to write. */
+    closed?: string;
+    /** Whether the reader may add files: the sharer, the review desk and the core committee (BLD-F063). S-08
+     * shows the attach control only then. */
+    can_attach: boolean;
+  };
+  /** For the sharer before anyone has written ("No messages yet"). */
+  empty?: { title: string; body: string };
+}
+export interface ConversationMessageResponse {
+  entry: ConversationEntryView;
+  /** How many details were hidden from the words as sent. */
+  hidden: number;
+}
+/** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `files_not_allowed`,
+ * `hide_unavailable`, `file_unavailable`, `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`,
+ * `not_yours`, `too_late`, `not_found`. */
+export type ConversationErrorCode =
+  | "empty_message"
+  | "too_long"
+  | "too_many_files"
+  | "too_many_mentions"
+  | "files_not_allowed"
+  | "hide_unavailable"
+  | "file_unavailable"
+  | "file_not_checked"
+  | "file_has_detail"
+  | "conversation_closed"
+  | "idempotency_key_reused"
+  | "in_progress"
+  | "not_yours"
+  | "too_late"
+  | "not_found";
 
 // ---------------------------------------------------------------------------------------------------------------
 // A-API.wall: the Wall (S-WALL, L-WALL). Lane E owns this section.
