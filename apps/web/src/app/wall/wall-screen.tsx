@@ -571,6 +571,10 @@ function JustIn({
   );
 }
 
+/** A One who hides their name from the Wall is shown by number (BLD-E013). */
+// NOT DRAWN (BLD-E044): HR sign-off
+const hiddenOneName = (n: number) => `One No. ${n}`;
+
 function OneCard({ one }: { one: OneCardView }) {
   return (
     <li className="jersey wl-one" data-tier={String(Math.min(7, Math.max(1, one.tier)))}>
@@ -582,7 +586,7 @@ function OneCard({ one }: { one: OneCardView }) {
         <span className="vh">Number </span>
         {one.number}
       </p>
-      <h3 className="wl-one-name">{one.person?.name ?? `One No. ${one.number}`}</h3>
+      <h3 className="wl-one-name">{one.person?.name ?? hiddenOneName(one.number)}</h3>
       <p className="wl-one-tier">{one.tier_label}</p>
       {one.brief ? <p className="wl-one-brief">{one.brief}</p> : null}
     </li>
