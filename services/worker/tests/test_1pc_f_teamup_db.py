@@ -60,10 +60,14 @@ def test_L_TEAMUP_rules_1_who_can_ask(db: Conn, cast: dict[str, Any], inbox: f.I
     body = {"note": NOTE, "brought_idea_ids": []}
     assert _refused(requests.send, db, lead_ref, cast["ravi"]["id"], body).code == "already_on_crew"
     assert _refused(requests.send, db, lead_ref, cast["asha"]["id"], body).code == "already_on_crew"
-    for status in ("withdrawn", "merged", "not_picked", "not_now"):
+    for status in ("merged", "not_picked", "not_now"):
         closed = f.idea(db, cast["ravi"], status=status)
         r = _refused(requests.send, db, closed["idea_id"], cast["kavya"]["id"], body)
         assert (r.status, r.code) == (409, "idea_closed")
+    # a withdrawn idea is not found for Kavya, who never asked to join it (BLD-E011, L-SUBMIT.withdraw/2)
+    withdrawn = f.idea(db, cast["ravi"], status="withdrawn")
+    r = _refused(requests.send, db, withdrawn["idea_id"], cast["kavya"]["id"], body)
+    assert (r.status, r.code, r.message) == (404, "not_found", "We couldn’t find that.")
     draft = f.draft(db, cast["ravi"])
     assert _refused(requests.send, db, str(draft["id"]), cast["kavya"]["id"], body).status == 404
     assert (
@@ -121,6 +125,16 @@ def test_the_same_idempotency_key_returns_the_first_request(
     a = requests.send(db, cast["lead"]["idea_id"], cast["kavya"]["id"], body, "key-0001-teamup")
     b = requests.send(db, cast["lead"]["idea_id"], cast["kavya"]["id"], body, "key-0001-teamup")
     assert a["id"] == b["id"] and len(inbox.of("teamup_request")) == 1
+    # BLD-F026: the same key on another idea, or with other words, is refused, never answered with the first
+    other = f.idea(db, cast["asha"])
+    for ref, sent in ((other["idea_id"], body), (cast["lead"]["idea_id"], {**body, "note": NOTE + " More."})):
+        r = _refused(requests.send, db, ref, cast["kavya"]["id"], sent, "key-0001-teamup")
+        assert (r.status, r.code) == (409, "key_reused")
+    draft = f.draft(db, cast["kavya"])
+    r = _refused(drafts.ask, db, str(draft["id"]), cast["kavya"]["id"],
+                 {"other_idea_id": other["idea_id"], "note": NOTE}, "key-0001-teamup")  # fmt: skip
+    assert r.code == "key_reused"
+    assert len(inbox.of("teamup_request")) == 1
 
 
 # --- V-ACC.teamup/4–6 -------------------------------------------------------------------------------------------
@@ -303,12 +317,64 @@ def test_L_TEAMUP_states_closed_when_the_idea_closes_first(
 ) -> None:
     sent = _send(db, cast)
     db.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (cast["lead"]["id"],))
+    # V-ACC.similar/8: someone who is not the lead hears only that, audited, and nothing changes
+    r = _refused(requests.answer, db, sent["id"], cast["asha"]["id"], {"answer": "team_only"})
+    assert (r.status, r.code) == (403, "not_lead")
+    assert len(f.audit_rows(db, "teamup.answer_refused", sent["id"])) == 1
+    state = db.execute("SELECT state FROM teamup_requests WHERE id = %s", (sent["id"],)).fetchone()["state"]
+    assert state == "sent" and inbox.resolved == []
     r = _refused(requests.answer, db, sent["id"], cast["ravi"]["id"], {"answer": "team_only"})
     assert r.code == "idea_closed"
     state = db.execute("SELECT state FROM teamup_requests WHERE id = %s", (sent["id"],)).fetchone()["state"]
     assert state == "closed" and f"teamup_request:{sent['id']}" in inbox.resolved
     mine = requests.my_state(db, cast["lead"]["idea_id"], cast["kavya"]["id"])
     assert mine["why_not"] == "idea_closed" and mine["after"] is None
+    # withdrawing a request that closed with its idea says so; it was never answered
+    late = _refused(requests.withdraw, db, sent["id"], cast["kavya"]["id"])
+    assert (late.status, late.code, late.message) == (
+        409,
+        "idea_closed",
+        "This idea is no longer open to team up.",
+    )
+    gone = _refused(requests.withdraw, db, "0b6c3d2e-0000-4000-8000-00000000dead", cast["kavya"]["id"])
+    assert (gone.status, gone.code, gone.message) == (404, "not_found", "We couldn’t find that.")
+
+
+def test_L_SUBMIT_withdraw_2_a_withdrawn_idea_is_not_found_by_strangers_in_team_up(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """BLD-E011: hidden from everyone but its sharer, its crew (past or present) and the people who asked to join."""
+    left = f.person(db, "Meera Iyer")
+    f.crew(db, cast["lead"], left)
+    crew.leave(db, cast["lead"]["idea_id"], left["id"])
+    _send(db, cast)  # Kavya asked to join it
+    pradeep = f.person(db, "Pradeep Kumar")
+    pradeep_draft = f.draft(db, pradeep)
+    db.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (cast["lead"]["id"],))
+    ref = cast["lead"]["idea_id"]
+    body = {"note": NOTE, "brought_idea_ids": []}
+    for call in (
+        lambda: requests.my_state(db, ref, pradeep["id"]),
+        lambda: requests.draft_note(db, ref, pradeep["id"]),
+        lambda: requests.send(db, ref, pradeep["id"], body),
+        lambda: drafts.ask(db, str(pradeep_draft["id"]), pradeep["id"], {"other_idea_id": ref, "note": NOTE}),
+    ):
+        r = _refused(call)
+        assert (r.status, r.code, r.message) == (404, "not_found", "We couldn’t find that.")
+    assert (
+        db.execute(
+            "SELECT count(*) AS n FROM teamup_requests WHERE idea_uuid = %s AND from_code = %s",
+            (cast["lead"]["id"], pradeep["code"]),
+        ).fetchone()["n"]
+        == 0
+    )
+    # the sharer, the crew, someone who left it and someone who asked still find it, closed
+    assert requests.my_state(db, ref, cast["ravi"]["id"])["me"] == "lead"
+    assert requests.my_state(db, ref, cast["asha"]["id"])["me"] == "crew"
+    for who in (left, cast["kavya"]):
+        mine = requests.my_state(db, ref, who["id"])
+        assert mine["why_not"] == "idea_closed" and mine["can_request"] is False
+        assert _refused(requests.send, db, ref, who["id"], body).code == "idea_closed"
 
 
 def test_a_merge_closes_requests_waiting_on_the_merged_idea(
@@ -344,13 +410,18 @@ def test_L_TEAMUP_rules_11_a_member_leaves_and_the_lead_removes(
     gone = [r for r in f.crew_rows(db, cast["lead"]) if r["contributor_code"] == cast["kavya"]["code"]]
     assert gone[0]["left_how"] == "removed" and gone[0]["removed_by_code"] == cast["ravi"]["code"]
     assert ("crew.removed", {"member_code": cast["kavya"]["code"]}) in f.events(db, cast["lead"])
-    assert [a["action"] for a in f.audit_rows(db, "crew.")] == [
+    assert [a["action"] for a in f.audit_rows(db, "crew.") if a["entity"] == f"idea:{ref}"] == [
         "crew.leave",
         "crew.remove_refused",
         "crew.remove",
     ]
-    # a member who left can ask again
-    assert _send(db, cast)["state"] == "sent"
+    # a member who left can ask again, and join again
+    again = _send(db, cast)
+    assert again["state"] == "sent"
+    requests.answer(db, again["id"], cast["ravi"]["id"], {"answer": "team_only"})
+    assert f.live_crew(db, cast["lead"])[cast["kavya"]["code"]] == "crew"
+    kavya_rows = [r for r in f.crew_rows(db, cast["lead"]) if r["contributor_code"] == cast["kavya"]["code"]]
+    assert [r["left_how"] for r in kavya_rows] == ["removed", None]
 
 
 # --- adapters --------------------------------------------------------------------------------------------------
@@ -644,6 +715,81 @@ def test_L_MERGE_request_8_withdrawing_returns_the_draft_to_normal(
         db, str(draft["id"]), cast["kavya"]["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE}
     )
     assert again["state"] == "waiting" and again["id"] != rid
+
+
+def test_L_MERGE_request_3_the_lead_reads_the_draft_only_while_the_request_waits(
+    db: Conn, cast: dict[str, Any], held: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """BLD-F022: once the request has left `waiting`, the lead gets the draft's id and status only."""
+    draft = held["draft"]
+    bare = [{"id": str(draft["id"]), "title": "", "status": "draft"}]
+    page = requests.read(db, held["asked"]["id"], cast["ravi"]["id"])
+    assert page["brought"][0]["title"] == draft["title"] and page["brought"][0]["summary"] == draft["summary"]
+    # after a withdraw
+    drafts.withdraw(db, str(draft["id"]), cast["kavya"]["id"])
+    page = requests.read(db, held["asked"]["id"], cast["ravi"]["id"])
+    assert page["state"] == "withdrawn" and page["brought"] == bare and page["answers"] == []
+    # after a decline
+    again = drafts.ask(db, str(draft["id"]), cast["kavya"]["id"],
+                       {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE})  # fmt: skip
+    out = requests.answer(db, again["id"], cast["ravi"]["id"], {"answer": "decline", "reason": REASON})
+    assert out["request"]["brought"] == bare
+    page = requests.read(db, again["id"], cast["ravi"]["id"])
+    assert page["state"] == "declined" and page["brought"] == bare
+    # the sharer still reads their own draft's title
+    theirs = requests.read(db, again["id"], cast["kavya"]["id"])
+    assert theirs["brought"][0]["title"] == draft["title"]
+
+
+def test_BLD_F022_the_lead_never_reads_a_brought_idea_its_sharer_withdrew(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    sent = _send(db, cast, [cast["mine"]["idea_id"]])
+    db.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (cast["mine"]["id"],))
+    page = requests.read(db, sent["id"], cast["ravi"]["id"])
+    assert page["brought"] == [{"id": cast["mine"]["idea_id"], "title": "", "status": "withdrawn"}]
+
+
+def test_L_TEAMUP_rules_5_what_the_lead_reads_passes_the_summary_checks(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """BLD-C090, DEC-104: a title or summary that fails the tag, pattern and name checks is not shown."""
+    risky = f.idea(db, cast["kavya"], title="Calls from 9876543210 about R07",
+                   summary="[[KFIN_EMPLOYEE_1]] takes these calls every day.")  # fmt: skip
+    sent = _send(db, cast, [risky["idea_id"]])
+    (b,) = requests.read(db, sent["id"], cast["ravi"]["id"])["brought"]
+    assert b["title"] == risky["idea_id"] and b["summary"] == "A short summary is on its way."
+
+
+def test_L_MERGE_request_4_a_draft_sent_or_archived_while_its_request_waits_ends_the_request(
+    db: Conn, cast: dict[str, Any], held: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """BLD-F024: lane C's Submit refuses `merge_waiting`; a draft sent before that check, or archived, ends its
+    request as if withdrawn, instead of leaving the lead a request that fails with `brought_not_open`."""
+    rid, draft = held["asked"]["id"], held["draft"]
+    db.execute("UPDATE ideas SET status = 'with_review_desk' WHERE id = %s", (draft["id"],))  # sent anyway
+    page = requests.read(db, rid, cast["ravi"]["id"])
+    assert page["state"] == "withdrawn" and page["answers"] == [] and "result" not in page
+    assert page["brought"] == [{"id": str(draft["id"]), "title": "", "status": "with_review_desk"}]
+    assert f"teamup_request:{rid}" in inbox.resolved
+    assert [a["action"] for a in f.audit_rows(db, "merge_request.ended", rid)] == [
+        "merge_request.ended_with_draft"
+    ]
+    late = _refused(requests.answer, db, rid, cast["ravi"]["id"], {"answer": "merge"})
+    assert (late.status, late.code, late.message) == (409, "not_waiting", "Kavya withdrew this request.")
+    # archived while waiting, and the lead answers before anyone reads it: ended by the answer itself
+    other = f.draft(db, cast["kavya"])
+    asked = drafts.ask(db, str(other["id"]), cast["kavya"]["id"],
+                       {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE})  # fmt: skip
+    db.execute("UPDATE ideas SET archived_at = now() WHERE id = %s", (other["id"],))
+    late = _refused(requests.answer, db, asked["id"], cast["ravi"]["id"], {"answer": "team_only"})
+    assert (late.code, late.message) == ("not_waiting", "Kavya withdrew this request.")
+    row = db.execute("SELECT state FROM merge_requests WHERE id = %s", (asked["id"],)).fetchone()
+    assert row["state"] == "withdrawn" and f"teamup_request:{asked['id']}" in inbox.resolved
+    assert cast["kavya"]["code"] not in f.live_crew(db, cast["lead"])
+    assert db.execute("SELECT count(*) AS n FROM merges").fetchone()["n"] == 0
+    # nothing is left waiting on Ravi, so Kavya can ask again
+    assert requests.my_state(db, cast["lead"]["idea_id"], cast["kavya"]["id"])["can_request"] is True
 
 
 def test_L_TEAMUP_states_a_draft_merge_request_ends_when_the_idea_closes(

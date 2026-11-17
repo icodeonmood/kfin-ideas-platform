@@ -24,10 +24,14 @@ from onepc.enums import CLOSED_STATUSES
 
 UUID_LEN = 36
 
+# Every 404 says the same, whatever is missing or hidden, so it never tells anyone that something exists (BLD-F025).
+NOT_FOUND = "We couldn’t find that."
+
 
 class Refused(Exception):
     """An action the rules do not allow, answered as `{error: {code, message, field?}}` (A-API.conventions/2).
-    `audit` is written after the rollback, so a refused attempt that must leave a trace survives it."""
+    `audit` is written after the rollback, so a refused attempt that must leave a trace survives it. A 404
+    `not_found` carries the one message ready to show (`NOT_FOUND`)."""
 
     def __init__(
         self,
@@ -38,6 +42,8 @@ class Refused(Exception):
         audit: tuple[str, str, str, dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(code)
+        if message is None and code == "not_found":
+            message = NOT_FOUND
         self.status, self.code, self.message, self.field, self.audit = status, code, message, field, audit
 
     def body(self) -> dict[str, Any]:
@@ -123,6 +129,33 @@ def load_idea(conn: Conn, ref: str, *, lock: bool = False) -> dict[str, Any]:
     if row is None or row["status"] == "draft":
         raise Refused(404, "not_found")
     return dict(row)
+
+
+def hidden_from(conn: Conn, idea: dict[str, Any], code: str | None) -> bool:
+    """BLD-E011, BLD-F023, L-SUBMIT.withdraw/2: a withdrawn idea is hidden from everyone but its sharer, the people who were
+    on its crew (whether or not they have left) and the people who asked to join it (a team-up request or a draft
+    merge request, in any state)."""
+    if idea["status"] != "withdrawn":
+        return False
+    if code is None:
+        return True
+    if idea["contributor_code"] == code:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM crew_members WHERE idea_uuid = %s AND contributor_code = %s "
+        "UNION ALL SELECT 1 FROM teamup_requests WHERE idea_uuid = %s AND from_code = %s "
+        "UNION ALL SELECT 1 FROM merge_requests WHERE other_idea_uuid = %s AND from_code = %s LIMIT 1",
+        (idea["id"], code, idea["id"], code, idea["id"], code),
+    ).fetchone()
+    return row is None
+
+
+def load_idea_for(conn: Conn, ref: str, code: str | None, *, lock: bool = False) -> dict[str, Any]:
+    """`load_idea` for this person: a withdrawn idea they may not see is not found, exactly like a missing one."""
+    idea = load_idea(conn, ref, lock=lock)
+    if hidden_from(conn, idea, code):
+        raise Refused(404, "not_found")
+    return idea
 
 
 def load_draft(conn: Conn, draft_id: str, code: str | None, *, lock: bool = False) -> dict[str, Any]:
@@ -258,30 +291,40 @@ def _usable_key(key: str | None) -> str | None:
     return None
 
 
-def remembered(conn: Conn, user_id: str, key: str | None, route: str) -> str | None:
-    """The row id a create with this key already made, if it is still remembered (24 hours)."""
+def _digest(body: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def remembered(conn: Conn, user_id: str, key: str | None, route: str, body: dict[str, Any]) -> str | None:
+    """The row id a create with this key already made, if it is still remembered (24 hours). The same key sent with
+    another request (another idea, another draft, other words, or another route) is refused, never answered with
+    the first result (BLD-F026). Callers check before and again after taking their lock."""
     k = _usable_key(key)
     if k is None:
         return None
     row = conn.execute(
-        "SELECT response_json FROM idempotency_keys WHERE user_id = %s AND key = %s AND route = %s "
+        "SELECT route, request_hash, response_json FROM idempotency_keys WHERE user_id = %s AND key = %s "
         "AND expires_at > now()",
-        (user_id, k, route),
+        (user_id, k),
     ).fetchone()
-    if row is None or not isinstance(row["response_json"], dict):
+    if row is None:
         return None
-    made = row["response_json"].get("id")
+    if row["route"] != route or row["request_hash"] != _digest(body):
+        raise Refused(
+            409, "key_reused", "Something changed since you last sent this. Refresh the page and try again."
+        )
+    made = row["response_json"].get("id") if isinstance(row["response_json"], dict) else None
     return str(made) if made else None
 
 
 def remember(
     conn: Conn, user_id: str, key: str | None, route: str, body: dict[str, Any], made_id: str
 ) -> None:
-    """Keep the created row's id (IDs only; the table's rule) against the key."""
+    """Keep the created row's id (IDs only; the table's rule) against the key and a hash of the request."""
     k = _usable_key(key)
     if k is None:
         return
-    digest = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+    digest = _digest(body)
     conn.execute(
         "INSERT INTO idempotency_keys (key, user_id, route, request_hash, status, response_json) "
         "VALUES (%s, %s, %s, %s, 201, %s) ON CONFLICT (user_id, key) DO NOTHING",
