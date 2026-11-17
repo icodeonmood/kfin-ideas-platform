@@ -9,12 +9,13 @@
  * Ravi (lead) is Rekha.
  * Seed: J-TEAMUP may change Tanvi's crew-deck passes (row 1 passes one card) and answer the team-up request waiting on
  * Rekha: Bhavesh's on R1, sent with no idea brought. Row 2 withdraws it so the sheet can be written again, row 3 sends
- * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). R1 itself is J-REVIEW's;
- * only its crew changes here, as the seed intends.
+ * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). R1 is shared with
+ * J-SIMILAR (lib SEED): both only add requests, crew and messages, and nobody decides it, so no row here depends on
+ * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts.
  */
 import { expect, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step } from "./lib";
+import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 
@@ -56,10 +57,20 @@ step(
     await expect(
       page.getByRole("button", { name: /^Team up on .+: send [A-Z][a-z]+ a note$/ }).first(),
     ).toBeVisible();
-    // L-CREW: Next on a card is a pass (C-CREW-DECK.anatomy/4).
+    // L-CREW: Next on a card is a pass (C-CREW-DECK.behaviour/4).
     await page.getByRole("button", { name: "Next idea" }).click();
     await expect(page.getByText(`Idea 2 of ${total}`)).toBeVisible();
     await expect(page.getByText(/^\d+ passed$/).first()).toBeVisible();
+
+    // The hand-off to row 2: Team up on the card in front opens the sheet (Crew.md "view=Request"). Nothing is sent.
+    await page
+      .getByRole("button", { name: /^Team up on .+: send [A-Z][a-z]+ a note$/ })
+      .first()
+      .click();
+    const sheet = page.getByRole("dialog", { name: /^Team up with [A-Z][a-z]+$/ });
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText(/[A-Z][a-z]+ leads “.+” and decides who joins\./);
+    await expect(sheet.getByRole("button", { name: /^Send to [A-Z][a-z]+$/ })).toBeVisible();
   },
 );
 
@@ -67,7 +78,7 @@ step(
   "J-TEAMUP/2",
   "S-09",
   "The sheet: Team up with Rekha, the drafted note, Bring your ideas along with none picked, Send to Rekha",
-  { needs: ["S-09", "C-SHEET-TEAMUP", "L-TEAMUP"] },
+  { needs: ["S-09", "C-SHEET-TEAMUP", "L-TEAMUP"], changes: ["R1"] }, // withdraws the seeded request on R1
   async ({ page }) => {
     const r1 = await r1ForBhavesh(page);
     // The seeded request waits on Rekha; withdrawn, the card is back to Team up (C-SHEET-TEAMUP.after).
@@ -92,7 +103,7 @@ step(
   "J-TEAMUP/3",
   "S-09",
   "Send to Rekha: Sent to Rekha with the note shown back; the card reads Waiting for Rekha, with Withdraw",
-  { needs: ["S-09", "C-SHEET-TEAMUP", "L-TEAMUP"] },
+  { needs: ["S-09", "C-SHEET-TEAMUP", "L-TEAMUP"], changes: ["R1"] }, // a new request on R1
   async ({ page }) => {
     await r1ForBhavesh(page);
     await page.getByRole("button", { name: "Team up", exact: true }).click();
@@ -117,15 +128,17 @@ step(
   "J-TEAMUP/4",
   "S-H2B",
   "Rekha reads Bhavesh's note word for word in her Inbox and approves",
-  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP"] },
+  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP"], changes: ["R1"] }, // Bhavesh joins R1's crew
   async ({ page }) => {
     const r1 = await seeded("R1");
     await signInAs(page, "rekha");
     await page.goto("/inbox");
+    // The request withdrawn in row 2 may still be listed; newest first (L-INBOX.rules/4), so row 3's is the first.
     await page
       .getByRole("button", {
         name: new RegExp(`^Bhavesh Patel asks to team up(?: [^,]+)?, ${esc(r1.title)}, `),
       })
+      .first()
       .click();
     await expect(page.getByText(NOTE, { exact: true })).toBeVisible();
     // L-TEAMUP.rules/6: no idea brought, so Approve (team up only) or Decline.
@@ -172,8 +185,8 @@ step(
   "J-TEAMUP/6",
   "S-08",
   "Both in the idea's conversation: what Bhavesh writes is what Rekha reads",
-  { needs: ["S-08", "L-CONVO", "L-TEAMUP"] },
-  async ({ page, browser }) => {
+  { needs: ["S-08", "L-CONVO", "L-TEAMUP"], changes: ["R1"] }, // a message in R1's conversation
+  async ({ page, browser }, info) => {
     const r1 = await seeded("R1");
     await signInAs(page, "bhavesh");
     await page.goto(ideaUrl(r1, "/conversation"));
@@ -183,11 +196,16 @@ step(
     await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByText(HELLO, { exact: true })).toBeVisible();
 
-    const lead = await (await browser.newContext()).newPage();
-    await signInAs(lead, "rekha");
-    await lead.goto(ideaUrl(r1, "/conversation"));
-    await expect(lead.getByText(HELLO, { exact: true })).toBeVisible();
-    await expect(lead.getByText("Bhavesh Patel", { exact: true }).first()).toBeVisible();
-    await lead.context().close();
+    const context = await browser.newContext();
+    const lead = await context.newPage();
+    try {
+      await signInAs(lead, "rekha");
+      await lead.goto(ideaUrl(r1, "/conversation"));
+      await expect(lead.getByText(HELLO, { exact: true })).toBeVisible();
+      await expect(lead.getByText("Bhavesh Patel", { exact: true }).first()).toBeVisible();
+    } finally {
+      await snap(lead, info, "J-TEAMUP/6", "S-08", "rekha");
+      await context.close();
+    }
   },
 );

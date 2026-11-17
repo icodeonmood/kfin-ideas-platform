@@ -5,11 +5,12 @@
  * Inbox.md (S-H5), Wall.md (S-WALL), Idea.md (S-09 "Back to the Wall").
  * Cast: Tanvi browses her ideas, her Inbox and the Wall; Harish the review desk; Naveen opens Tanvi's shared link.
  * Seed: read only. Rows open T5 (Tanvi's, with the desk), Z1 (with Harish, waiting on Zoya), T6's questions in the
- * Inbox (its answer screen is opened, nothing sent) and R1 from the Wall.
+ * Inbox (its answer screen is opened, nothing sent) and A1 from the Wall: being built, one of only two in Kindling's
+ * Being built card (up to three each, S-WALL.kindling), so it is always drawn, never behind "Show 5 more".
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step } from "./lib";
+import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const SEARCH = "Redemption"; // T5: "Redemption status is not visible to the branch"
 
@@ -100,7 +101,7 @@ step(
   "S-R1",
   "The same on the review desk (tab and sort) and in the Inbox (tab and the open item)",
   { needs: ["S-R1", "S-R2", "C-TABS", "C-SORTS", "S-H5", "C-INBOX-READER", "S-R3", "P-ROUTES"] },
-  async ({ page, browser }) => {
+  async ({ page, browser }, info) => {
     const z1 = await seeded("Z1");
     const t6 = await seeded("T6");
     await signInAs(page, "harish");
@@ -113,20 +114,25 @@ step(
     await expect(page.getByRole("tab", { name: /^Waiting on the sharer/, selected: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
 
-    const sharer = await (await browser.newContext()).newPage();
-    await signInAs(sharer, "tanvi");
-    await sharer.goto("/inbox");
-    await sharer.getByRole("tab", { name: /^Needs you/ }).click();
-    const item = sharer.getByRole("button", {
-      name: new RegExp(`^Harish from the review desk asked you 3 questions, ${esc(t6.title)}, `),
-    });
-    await item.click();
-    await sharer.getByRole("link", { name: "Answer the questions" }).click();
-    await sharer.waitForURL(new RegExp(`${esc(ideaUrl(t6, "/answer"))}$`));
-    await sharer.goBack();
-    await expect(sharer.getByRole("tab", { name: /^Needs you/, selected: true })).toBeVisible();
-    await expect(item).toHaveAttribute("aria-pressed", "true");
-    await sharer.context().close();
+    const context = await browser.newContext();
+    const sharer = await context.newPage();
+    try {
+      await signInAs(sharer, "tanvi");
+      await sharer.goto("/inbox");
+      await sharer.getByRole("tab", { name: /^Needs you/ }).click();
+      const item = sharer.getByRole("button", {
+        name: new RegExp(`^Harish from the review desk asked you 3 questions, ${esc(t6.title)}, `),
+      });
+      await item.click();
+      await sharer.getByRole("link", { name: "Answer the questions" }).click();
+      await sharer.waitForURL(new RegExp(`${esc(ideaUrl(t6, "/answer"))}$`));
+      await sharer.goBack();
+      await expect(sharer.getByRole("tab", { name: /^Needs you/, selected: true })).toBeVisible();
+      await expect(item).toHaveAttribute("aria-pressed", "true");
+    } finally {
+      await snap(sharer, info, "J-BROWSE/4", "S-H5", "tanvi");
+      await context.close();
+    }
   },
 );
 
@@ -136,20 +142,30 @@ step(
   "From the Wall: the idea's Back link says Back to the Wall and returns to the same sort and scroll",
   { needs: ["S-WALL", "S-09", "P-ROUTES"] },
   async ({ page }) => {
-    const r1 = await seeded("R1");
+    const a1 = await seeded("A1");
     await signInAs(page, "tanvi");
     await page.goto("/wall");
     await expect(page.getByRole("heading", { level: 1, name: "Wall" })).toBeVisible();
     await page.getByRole("button", { name: "Popular", exact: true }).click();
-    const link = page.getByRole("link", { name: r1.title, exact: true }).first();
-    await link.scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Popular", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Scroll on purpose, so the card sits near the top of the window and the page is well down from the top; the
+    // click then needs no scrolling of its own, and the position to come back to is this one.
+    const link = page.getByRole("link", { name: a1.title, exact: true }).first();
+    await link.evaluate((el) =>
+      window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 120),
+    );
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
     const y = await page.evaluate(() => window.scrollY);
     await link.click();
-    await page.waitForURL(new RegExp(`${esc(ideaUrl(r1))}$`));
-    await expect(page.getByRole("heading", { level: 1, name: r1.title })).toBeVisible();
+    await page.waitForURL(new RegExp(`${esc(ideaUrl(a1))}$`));
+    await expect(page.getByRole("heading", { level: 1, name: a1.title })).toBeVisible();
 
     await page.getByRole("link", { name: "Back to the Wall" }).click();
-    await page.waitForURL(/\/wall(\?|$)/);
+    await page.waitForURL(/\/wall(\?|#|$)/);
     await expect(page.getByRole("button", { name: "Popular", exact: true })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -164,7 +180,7 @@ step(
   "S-07",
   "A shared link to a filtered list reproduces the view, for what each person may see",
   { needs: ["S-07", "P-ROUTES"] },
-  async ({ page, browser }) => {
+  async ({ page, browser }, info) => {
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
     await page.goto(listUrl());
@@ -172,13 +188,21 @@ step(
     await expect(rowLink(page, t5.title)).toBeVisible();
 
     // Someone else opening the same link gets the same view of their own ideas: never Tanvi's.
-    const other = await (await browser.newContext()).newPage();
-    await signInAs(other, "naveen");
-    await other.goto(listUrl());
-    await expect(other.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
-    await expect(other.getByRole("searchbox", { name: /^Search/ })).toHaveValue(SEARCH);
-    await expect(other.getByRole("button", { name: "Date shared" })).toHaveAttribute("aria-pressed", "true");
-    await expect(rowLink(other, t5.title)).toHaveCount(0);
-    await other.context().close();
+    const context = await browser.newContext();
+    const other = await context.newPage();
+    try {
+      await signInAs(other, "naveen");
+      await other.goto(listUrl());
+      await expect(other.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
+      await expect(other.getByRole("searchbox", { name: /^Search/ })).toHaveValue(SEARCH);
+      await expect(other.getByRole("button", { name: "Date shared" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(rowLink(other, t5.title)).toHaveCount(0);
+    } finally {
+      await snap(other, info, "J-BROWSE/6", "S-07", "naveen");
+      await context.close();
+    }
   },
 );

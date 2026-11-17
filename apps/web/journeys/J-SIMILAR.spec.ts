@@ -8,12 +8,14 @@
  * Cast: Kavya (sharer) is Tanvi, Ravi (lead) Rekha, Meera (reviewer) Lavanya.
  * Seed: T2 (Tanvi's draft at Check it, close to Rekha's R1, a merge request waiting on Rekha) is J-SIMILAR's with that
  * request. Row 3 withdraws the seeded request and sends a "Keep mine separate" team-up; row 4b swaps it for a merge
- * request; Rekha merges it (6a), so Tanvi joins R1's crew. Team up only (6b) and Decline (6c) need requests of their
- * own: GAP-SEED. Row 7 reads the desk merge of T11 into R2 (read only).
+ * request; Rekha merges it (6a), so Tanvi joins R1's crew. R1 is shared with J-TEAMUP: both only add requests and
+ * crew to it, and nobody decides it, so no row here depends on whether R1 is picked. Team up only (6b) and Decline
+ * (6c) need requests of their own: GAP-SEED. Row 7 reads the desk merge of T11 into R2 (read only).
+ * Rekha's Inbox keeps the requests Tanvi withdrew, newest first (L-INBOX.rules/4): rows 5 and 6a open the newest.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { draftUrl, ideaUrl, seeded, signInAs, step } from "./lib";
+import { draftUrl, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 
@@ -102,7 +104,10 @@ step(
   "J-SIMILAR/3",
   "S-05",
   "The sheet from the tile: a note of 30+ characters, Ask Rekha to merge mine in or Keep mine separate, Send",
-  { needs: ["S-05", "C-SIMGRID", "C-SHEET-TEAMUP", "L-MERGE", "L-TEAMUP"], changes: ["T2"] },
+  {
+    needs: ["S-05", "C-SIMGRID", "C-SHEET-TEAMUP", "L-MERGE", "L-TEAMUP"],
+    changes: ["T2", "R1"], // the team-up request goes to R1
+  },
   async ({ page }) => {
     const { r1Title } = await similarPart(page);
     await withdrawWaiting(page);
@@ -147,7 +152,7 @@ step(
   "J-SIMILAR/4b",
   "S-05",
   "Asks Rekha to merge: Sent to Rekha, the draft is held, Submit is unavailable, the request can be withdrawn",
-  { needs: ["S-05", "C-SIMGRID", "C-SHEET-TEAMUP", "L-MERGE"], changes: ["T2"] },
+  { needs: ["S-05", "C-SIMGRID", "C-SHEET-TEAMUP", "L-MERGE"], changes: ["T2", "R1"] },
   async ({ page }) => {
     const { r1Title } = await similarPart(page);
     await withdrawWaiting(page);
@@ -172,8 +177,12 @@ step(
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Withdraw the request" })).toBeVisible();
     await page.getByRole("button", { name: /^(?:\d )?Send it\b/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Ready to send?" })).toBeVisible();
+    // Unavailable: Submit is left out, or drawn disabled. Either way nothing here sends it.
     await expect(
-      page.getByRole("button", { name: "Submit" }).or(page.getByRole("link", { name: "Submit" })),
+      page
+        .getByRole("button", { name: "Submit", disabled: false })
+        .or(page.getByRole("link", { name: "Submit", disabled: false })),
     ).toHaveCount(0);
   },
 );
@@ -188,18 +197,20 @@ step(
     const r1 = await seeded("R1");
     await signInAs(page, "rekha");
     await page.goto("/inbox");
+    // BLD-E008, BLD-E010: no seeded person chose how to be referred to, so "their" or Tanvi's name.
     await page
       .getByRole("button", {
         name: new RegExp(
-          `^Tanvi Deshmukh asks to team up and merge (?:her|their) idea into yours, ${esc(r1.title)}, `,
+          `^Tanvi Deshmukh asks to team up and merge (?:their|Tanvi’s) idea into yours, ${esc(r1.title)}, `,
         ),
       })
+      .first()
       .click();
     await expect(page.getByText("Merge request", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(NOTE_MERGE, { exact: true })).toBeVisible();
     await expect(page.getByText(t2.title, { exact: true }).first()).toBeVisible();
     await expect(
-      page.getByText(/^Merge it, and (?:her|their|Tanvi’s) idea joins yours: /).first(),
+      page.getByText(/^Merge it, and (?:their|Tanvi’s) idea joins yours: /).first(),
     ).toBeVisible();
     for (const answer of ["Decline", "Team up only", "Merge it"]) {
       await expect(page.getByRole("button", { name: answer, exact: true })).toBeEnabled();
@@ -211,8 +222,8 @@ step(
   "J-SIMILAR/6a",
   "S-H2B",
   "Rekha merges it: Tanvi is on Rekha's crew, and her draft reads Merged into R1, with credit to her",
-  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2"] },
-  async ({ page, browser }) => {
+  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2", "R1"] }, // Tanvi joins R1's crew
+  async ({ page, browser }, info) => {
     const t2 = await seeded("T2");
     const r1 = await seeded("R1");
     await signInAs(page, "rekha");
@@ -221,6 +232,7 @@ step(
       .getByRole("button", {
         name: new RegExp(`^Tanvi Deshmukh asks to team up and merge .*, ${esc(r1.title)}, `),
       })
+      .first()
       .click();
     await page.getByRole("button", { name: "Merge it", exact: true }).click();
     await expect(
@@ -233,16 +245,21 @@ step(
     await expect(page.getByRole("link", { name: "Say hello to Tanvi" })).toBeVisible();
 
     // L-MERGE.request/5: what Tanvi reads on her draft.
-    const sharer = await (await browser.newContext()).newPage();
-    await signInAs(sharer, "tanvi");
-    await sharer.goto(draftUrl(t2, "/check"));
-    await expect(sharer.getByText(`Merged into ${r1.ref}`, { exact: true }).first()).toBeVisible();
-    await expect(
-      sharer.getByText(
-        `Rekha accepted. Yours is now part of ${r1.ref}, with credit to you. Nothing else to send.`,
-      ),
-    ).toBeVisible();
-    await sharer.context().close();
+    const context = await browser.newContext();
+    const sharer = await context.newPage();
+    try {
+      await signInAs(sharer, "tanvi");
+      await sharer.goto(draftUrl(t2, "/check"));
+      await expect(sharer.getByText(`Merged into ${r1.ref}`, { exact: true }).first()).toBeVisible();
+      await expect(
+        sharer.getByText(
+          `Rekha accepted. Yours is now part of ${r1.ref}, with credit to you. Nothing else to send.`,
+        ),
+      ).toBeVisible();
+    } finally {
+      await snap(sharer, info, "J-SIMILAR/6a", "S-05", "tanvi");
+      await context.close();
+    }
   },
 );
 
@@ -274,7 +291,7 @@ step(
   "S-R2",
   "Later, the review desk merged two separate ideas: the lead idea lists it as Merged, and its sharer's page says where it went",
   { needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "S-06"] },
-  async ({ page, browser }) => {
+  async ({ page, browser }, info) => {
     const r2 = await seeded("R2");
     const t11 = await seeded("T11");
     await signInAs(page, "lavanya");
@@ -284,16 +301,21 @@ step(
     await expect(page.getByText("Merged", { exact: true }).first()).toBeVisible();
 
     // L-MERGE.effects/1: the merged idea's page shows where it went, with the note, for its sharer.
-    const sharer = await (await browser.newContext()).newPage();
-    await signInAs(sharer, "tanvi");
-    await sharer.goto(ideaUrl(t11));
-    await expect(
-      sharer.getByText(new RegExp(`^Merged into ${esc(r2.ref ?? "")} by the review desk`)).first(),
-    ).toBeVisible();
-    await expect(
-      sharer.getByText("Both ideas ask for one clear message after a failed debit.").first(),
-    ).toBeVisible();
-    await expect(sharer.getByRole("link", { name: new RegExp(REF) }).first()).toBeVisible();
-    await sharer.context().close();
+    const context = await browser.newContext();
+    const sharer = await context.newPage();
+    try {
+      await signInAs(sharer, "tanvi");
+      await sharer.goto(ideaUrl(t11));
+      await expect(
+        sharer.getByText(new RegExp(`^Merged into ${esc(r2.ref ?? "")} by the review desk`)).first(),
+      ).toBeVisible();
+      await expect(
+        sharer.getByText("Both ideas ask for one clear message after a failed debit.").first(),
+      ).toBeVisible();
+      await expect(sharer.getByRole("link", { name: new RegExp(REF) }).first()).toBeVisible();
+    } finally {
+      await snap(sharer, info, "J-SIMILAR/7", "S-06", "tanvi");
+      await context.close();
+    }
   },
 );
