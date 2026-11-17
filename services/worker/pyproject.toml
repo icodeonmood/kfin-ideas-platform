@@ -75,10 +75,12 @@ ignore = [
 "google.generativeai".msg = "Model SDKs are allowed only in services/worker/gateway/."
 "langchain".msg = "Model SDKs are allowed only in services/worker/gateway/."
 "litellm".msg = "Model SDKs are allowed only in services/worker/gateway/."
+"websockets".msg = "Sarvam's streaming calls live only in services/worker/gateway/sarvam.py (DEC-108, non-negotiable 1)."
 
 [tool.ruff.lint.per-file-ignores]
 "gateway/**" = ["TID251"]
 "tests/**" = ["S105", "S106", "S108", "S310", "S311"]
+"tests/sarvam_fakes.py" = ["S105", "S106", "S108", "S310", "S311", "TID251"]  # the local fake Sarvam server
 "bootstrap/**" = ["S311"]
 "pii/vectors.py" = ["S311"]   # test vectors, not secrets
 

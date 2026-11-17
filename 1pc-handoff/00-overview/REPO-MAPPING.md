@@ -93,7 +93,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
-| `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
+| `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
@@ -114,7 +114,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
-| `L-LISTEN` | none | missing | P0 | B |
+| `L-LISTEN` | `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | back end built; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
 
 ## `P-REPO.contracts`
 
