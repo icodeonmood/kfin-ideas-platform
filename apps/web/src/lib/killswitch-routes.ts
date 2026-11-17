@@ -90,6 +90,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
+  // Team up, a draft's merge request and crews (lane F; L-TEAMUP, L-MERGE.request, BLD-F019) pause with sharing:
+  // each one writes a note or a reason, changes who is on a crew, or merges an idea. Reads stay open, so a
+  // request already sent still reads "Waiting for Ravi".
+  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/team-up\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/team-up\/[^/]+(?:\/answer)?\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/drafts\/[^/]+\/merge-request\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/crew\/[^/]+\/?$/, switches: ["submissions"] },
 ];
 
 /**
