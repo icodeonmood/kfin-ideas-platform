@@ -2,8 +2,14 @@
 summary, where it is, and one action, Team up (lane F's sheet).
 
 Nothing private (S-09.rules/1, DEC-104): no raw words, no answers, no files, no reason for a decision beyond the
-stage. The sharer's name is left out when they hide it from the Wall (S-09.layout/2, NOT DRAWN default). The Back
-link names where the person came from (P-ROUTES.state).
+stage. The decision itself is lane B's (`GET /ideas/:id/decision`, the stage only for anyone but the sharer, crew,
+desk and committee); this view reads it for the track's stage and date alone. The sharer's name is left out when
+they hide it from the Wall (S-09.layout/2, NOT DRAWN default). The Back link names where the person came from
+(P-ROUTES.state).
+
+A withdrawn idea is seen by nobody else (L-SUBMIT.withdraw/2). Someone who was on its crew or asked to join it,
+and so was told it was withdrawn (L-SUBMIT.withdraw/4), gets the one line S-09.rules/2 asks for and nothing of the
+idea itself (BLD-E010); everyone else gets "not found".
 """
 
 from __future__ import annotations
@@ -110,6 +116,29 @@ def _team_up(
             }
         )
     return out
+
+
+def withdrawn_view(
+    idea: dict[str, Any], *, came_from: str | None = None, back: str | None = None
+) -> dict[str, Any]:
+    """S-09.rules/2 for a withdrawn idea, for a former crew member or requester only (BLD-E010): its reference and
+    one line. No title, summary, sorting, crew, track or name."""
+    key = read.key_of(idea)
+    return {
+        "view": "colleague",
+        "screen": "S-09",
+        "idea": {"id": key, "ref": idea["idea_id"], "status": "withdrawn"},
+        "page": {
+            "state": "withdrawn",
+            "back": back_link(came_from, back),
+            "pill": pill("withdrawn"),
+            "team_up": {
+                "state": "withdrawn",
+                "line": "The person who shared it withdrew it, so nobody else can see it now.",
+                "can_team_up": False,
+            },
+        },
+    }
 
 
 def colleague_view(
