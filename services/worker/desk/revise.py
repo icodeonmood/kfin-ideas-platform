@@ -129,7 +129,7 @@ def revise_worth(
         worth_id = int(row["id"])
         masked = None
         if note is not None and note.strip():
-            masked, _ = adapters.hide(conn, str(idea["id"]), note.strip())
+            masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id)
             conn.execute(
                 "UPDATE idea_worth SET note_encrypted = %s WHERE id = %s",
                 (seal(masked, "idea_worth", "note_encrypted", worth_id), worth_id),
