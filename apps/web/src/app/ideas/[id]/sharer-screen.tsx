@@ -6,8 +6,9 @@ import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } fr
 
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
 import { Status } from "@/components/status";
+import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Avatar } from "@/components/ui/avatar";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import { Track } from "@/components/ui/track";
 import type {
@@ -315,7 +316,10 @@ function Withdraw({ action, onDone }: { action: PostAction; onDone: (line: strin
 }
 
 function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
+  const router = useRouter();
   const [preview, setPreview] = useState<SimilarTile | null>(null);
+  // Lane F's C-SHEET-TEAMUP from a tile's "Team up" or from C-PREVIEW's; the tile stays, so focus comes back to it
+  const teamUp = useTeamUpSheet({ onSent: () => router.refresh(), onWithdrawn: () => router.refresh() });
   if (!similar.tiles.length) return null;
   return (
     <section className="card ip-side-card" aria-labelledby="ip-sim-h">
@@ -343,9 +347,8 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
               <span>{t.count_line}</span>
             </div>
             <div className="ip-tile-a">
-              {t.actions
-                .filter((a) => a.op === "preview")
-                .map((a) => (
+              {t.actions.map((a) =>
+                a.op === "preview" ? (
                   <Button
                     key={a.op}
                     variant="line"
@@ -356,11 +359,19 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
                   >
                     {a.label}
                   </Button>
-                ))}
-              {/* TODO(lane F): C-SHEET-TEAMUP (f/sheet-teamup-2, 37acc2e; not on main yet). Once it lands:
-                  const teamUp = useTeamUpSheet({ onSent: refresh }) from "@/components/teamup/teamup-sheet",
-                  render {teamUp.sheet}, the tile's "Team up" onClick={() => teamUp.open(t.idea.id)}, and
-                  C-PREVIEW's onPrimary={teamUp.open}. */}
+                ) : a.op === "team_up" ? (
+                  <Button
+                    key={a.op}
+                    variant="primary"
+                    size="sm"
+                    aria-label={a.accessible_name}
+                    aria-haspopup="dialog"
+                    onClick={() => teamUp.open(t.idea.id)}
+                  >
+                    {a.label}
+                  </Button>
+                ) : null,
+              )}
             </div>
           </li>
         ))}
@@ -374,8 +385,10 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
           matchReason={preview.reason}
           fullHref={preview.to}
           onClose={() => setPreview(null)}
+          onPrimary={teamUp.open}
         />
       ) : null}
+      {teamUp.sheet}
     </section>
   );
 }
@@ -430,8 +443,14 @@ export function SharerScreen({
     (page.card_from === "decision" && d ? decisionSentence(d, reviewer, stages) : null) ??
     (idea.next_step && !qset && !reversed ? { lead: idea.next_step.sentence, rest: "" } : null);
   const committee = d?.lines?.committee_line ?? null;
+  // Status.md and PhoneStatus.md say the line about the review desk once, under "Open the conversation": the
+  // decided line the API sends with the conversation, or else the window's line once the desk has the idea (it can't
+  // be changed now). That line then leaves the track, so it is said once (BLD-E045).
+  const conv = page.conversation;
+  const closedWindow = conv && !conv.sub_line && page.window && !page.window.open ? page.window : null;
+  const deskLine = conv ? (conv.sub_line ?? closedWindow?.line ?? null) : null;
   const windowLine: SharerView["page"]["window"] =
-    page.window ?? (committee ? { open: false, line: committee } : null);
+    (closedWindow ? null : page.window) ?? (committee ? { open: false, line: committee } : null);
 
   const done = (line: string) => {
     setSaid(line);
@@ -696,29 +715,33 @@ export function SharerScreen({
         </div>
 
         <aside className="ip-side" aria-label="The conversation and similar ideas">
-          {page.conversation ? (
+          {conv ? (
             <section className="card ip-side-card" aria-labelledby="ip-conv-h">
-              <h2 id="ip-conv-h" className="ip-h2">
-                {page.conversation.heading}
-              </h2>
-              {page.conversation.sub_line ? <p className="ip-side-l">{page.conversation.sub_line}</p> : null}
-              {page.conversation.empty_line ? (
+              {/* The heading with "Open the conversation" beside it, then the line about the review desk, as
+                  Status.md and PhoneStatus.md draw them; the link goes to S-08 */}
+              <div className="ip-conv-head">
+                <h2 id="ip-conv-h" className="ip-h2">
+                  {conv.heading}
+                </h2>
+                <Link className={buttonClass("text")} href={conv.link.to}>
+                  {conv.link.label}
+                </Link>
+              </div>
+              {deskLine ? <p className="ip-side-l">{deskLine}</p> : null}
+              {conv.empty_line ? (
                 <p className="ip-side-l">
-                  {page.conversation.phone_empty_line ? (
+                  {conv.phone_empty_line ? (
                     <>
-                      <span className="ip-desk">{page.conversation.empty_line}</span>
-                      <span className="ip-phone">{page.conversation.phone_empty_line}</span>
+                      <span className="ip-desk">{conv.empty_line}</span>
+                      <span className="ip-phone">{conv.phone_empty_line}</span>
                     </>
                   ) : (
-                    page.conversation.empty_line
+                    conv.empty_line
                   )}
                 </p>
               ) : null}
               {/* TODO(lane F): the conversation's latest entries (S-06.layout/8, L-CONVO): no entries field on
                   SharerView yet; the card carries the count, its lines and the link. */}
-              <ButtonLink href={page.conversation.link.to} variant="line">
-                {page.conversation.link.label}
-              </ButtonLink>
             </section>
           ) : null}
           <SimilarCard similar={page.similar} />
