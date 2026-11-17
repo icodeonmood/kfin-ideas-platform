@@ -27,8 +27,27 @@ WORDS = (
 
 @pytest.fixture
 def me() -> Iterator[Any]:
+    """Synthetic people of their own; their drafts and the drafts' vault entries go with them afterwards."""
     with connect(autocommit=True) as conn, people(conn) as make:
-        yield make(), make
+        codes: list[str] = []
+
+        def person(*args: Any, **kw: Any) -> Any:
+            made = make(*args, **kw)
+            codes.append(made.contributor_code)
+            return made
+
+        try:
+            yield person(), person
+        finally:
+            gone = [
+                f"DRAFT-{r['id']}"
+                for r in conn.execute(
+                    "DELETE FROM ideas WHERE contributor_code = ANY(%s) RETURNING id", (codes,)
+                ).fetchall()
+            ]
+            for table in ("pseudonym_vault", "vault_counters", "llm_calls"):
+                column = "ref_id" if table == "llm_calls" else "scope_id"
+                conn.execute(f"DELETE FROM {table} WHERE {column} = ANY(%s)", (gone,))  # noqa: S608
 
 
 def _settled(b: Any, draft_id: str, timeout: float = 45.0) -> dict[str, Any]:
