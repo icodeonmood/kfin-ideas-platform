@@ -43,6 +43,11 @@ capabilities:
   # The Ones Committee's window (L-COMMITTEE, S-R4; DEC-102): every desk decision for 30 days, extend, reverse once.
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
   committee_window:           { committee: yes }
+  # The programme team's admin page (lane A; L-DECIDE.after, L-IMPACT, L-ONES admin path, L-AUDIT.flags). The worker
+  # checks the person's grants again. "Take off the Wall" is for the review desk and admins (DEC-106, §6.3).
+  run_programme:              { admin: yes }
+  take_off_wall:              { reviewer: yes, admin: yes }
+  manage_flags:               { admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -199,6 +204,21 @@ endpoints:
   - PUT /api/ember/{id}/note                          write_ember_note
   - POST /api/ember/{id}/ready                        write_ember_note   # the worker allows the core committee chair only (BLD-134)
   - POST /api/ember/{id}/send                         send_ember
+  # The 1% Club's configuration for the screens (A-API.config): the promises and the person's own flags.
+  - GET /api/config                                   signed_in
+  # The admin page (lane A; J-ONE steps 1, 2, 3 and 6). Everything is audited (non-negotiable 9).
+  - GET /api/admin/programme                          run_programme take_off_wall   # each sees their own parts
+  - POST /api/admin/ideas/{id}/build-team             run_programme   # L-DECIDE.after: team chosen
+  - POST /api/admin/ideas/{id}/shipped                run_programme   # L-DECIDE.after: shipped
+  - PUT /api/admin/ideas/{id}/measurements/{mark}     run_programme   # L-IMPACT/2, /8
+  - POST /api/admin/ideas/{id}/measurements/{mark}/finance  run_programme   # L-IMPACT/3: a second person
+  - POST /api/admin/ideas/{id}/wall-removal           take_off_wall   # "Take off the Wall"
+  - DELETE /api/admin/ideas/{id}/wall-removal         take_off_wall   # and back on
+  - POST /api/admin/ones/founding                     run_programme   # DEC-106: mark a Founding One
+  - DELETE /api/admin/ones/{id}                       run_programme   # DEC-106: remove a One
+  - GET /api/admin/flags                              manage_flags    # L-AUDIT.flags
+  - PUT /api/admin/flags/{key}                        manage_flags
+  - PUT /api/admin/flags/{key}/people                 manage_flags
 
   # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
   # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
@@ -244,7 +264,7 @@ pages:
   - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
   - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
   # First match wins: a page under /admin with its own rule must come before /admin.
-  - /admin                     manage_kill_switches grant_roles     # any of these
+  - /admin                     manage_kill_switches grant_roles run_programme take_off_wall manage_flags   # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
