@@ -457,9 +457,11 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
         (idea["id"],),
     ).fetchone()
+    # the idea as shared is version 1, as lanes C and E count it (E-ENTITIES: "3 versions. Title changed once,
+    # sorting confirmed."); a row for the shared version, with no changed fields, is not counted twice
     versions = conn.execute(
-        "SELECT count(*) AS n, count(*) FILTER (WHERE 'title' = ANY(changed_fields)) AS titles "
-        "FROM idea_versions WHERE idea_uuid = %s",
+        "SELECT count(*) FILTER (WHERE cardinality(changed_fields) > 0) AS edits, "
+        "count(*) FILTER (WHERE 'title' = ANY(changed_fields)) AS titles FROM idea_versions WHERE idea_uuid = %s",
         (idea["id"],),
     ).fetchone()
     first = sharer.first_name
@@ -475,8 +477,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         kept = f" {first} kept it separate." if idea["kept_separate"] else ""
         artefacts.append({"kind": "similar_found", "title": "Similar ideas",
                           "line": f"{n} found while {first} wrote.{kept}", "action": "Compare"})  # fmt: skip
-    if versions and versions["n"]:
-        n, titles = int(versions["n"]), int(versions["titles"])
+    if versions and versions["edits"]:  # only once it has been changed
+        n, titles = 1 + int(versions["edits"]), int(versions["titles"])
         bits = [f"{n} version{'s' * (n != 1)}."]
         if titles:
             bits.append(
