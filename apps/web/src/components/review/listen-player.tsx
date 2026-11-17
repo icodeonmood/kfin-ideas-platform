@@ -29,6 +29,8 @@ import {
   type ListenVoice,
 } from "@/lib/desk/listen";
 
+import "./listen.css";
+
 function storage(): Storage | null {
   try {
     return window.localStorage;
