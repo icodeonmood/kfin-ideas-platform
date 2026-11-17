@@ -333,9 +333,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea["id"],))
     ]  # fmt: skip
     hidden_kinds = _hidden_kinds(conn, idea["id"])
-    files = _checked_files(
-        conn, idea["id"], DESK_SEES
-    )  # the desk opens a file with a customer detail (DEC-107)
+    # the desk opens a file holding a customer detail, marked (DEC-107)
+    files = _checked_files(conn, idea["id"], DESK_SEES)
     similar_n = conn.execute(
         "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
         (idea["id"],),
