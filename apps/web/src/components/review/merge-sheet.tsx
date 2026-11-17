@@ -8,8 +8,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FieldMsg } from "@/components/ui/field";
 import type { DeskMergeResponse, MergeLead, MergeSheetResponse } from "@/lib/contracts";
+import { sparkBurst } from "@/lib/motion/spark";
 
 export function MergeSheet({
   ideaId,
@@ -23,6 +24,7 @@ export function MergeSheet({
   onMerged: (merged: DeskMergeResponse) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const [sheet, setSheet] = useState<MergeSheetResponse | null>(null);
   const [lead, setLead] = useState<MergeLead>("other");
   const [teamUp, setTeamUp] = useState(true);
@@ -74,6 +76,8 @@ export function MergeSheet({
         );
         return;
       }
+      // S-R2.rules/3: a merge fires the spark burst once, from the button, as the sheet closes
+      if (button.current) sparkBurst(button.current);
       dialog.current?.close();
       onMerged(body);
     } catch {
@@ -155,8 +159,10 @@ export function MergeSheet({
             )}
           </Field>
           <p className="meta">{sheet.small_print}</p>
+          {refusal ? <FieldMsg kind="warn">{refusal}</FieldMsg> : null}
           <div className="mg-actions">
             <Button
+              ref={button}
               type="submit"
               variant="primary"
               busy={busy}
