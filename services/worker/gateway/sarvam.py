@@ -173,7 +173,7 @@ def meter(
     call; a route error may switch `speech.hosted` off."""
     if conn is None:
         return
-    latency = int((time.monotonic() - started) * 1000) if started is not None else None
+    latency = max(0, int((time.monotonic() - started) * 1000)) if started is not None else None
     try:
         conn.execute(
             "INSERT INTO speech_calls (call, model, ref_id, outcome, error_code, speech_seconds, char_count, "
