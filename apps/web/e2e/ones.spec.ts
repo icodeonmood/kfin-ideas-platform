@@ -212,10 +212,6 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     const someone = await as(browser, PERSONAS.contributor);
     await someone.goto("/ones/leaderboard");
     await expect(someone.getByText("The leaderboard is for Ones.")).toBeVisible();
-    await someone.goto("/");
-    await expect(someone.getByRole("heading", { name: "What the Ones are up to" })).toBeVisible();
-    await someone.getByRole("button", { name: "Next One" }).click();
-    await expectNoSeriousAxeIssues(someone);
     await someone.goto("/constellation");
     await expect(someone.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
     await expect(someone.getByRole("navigation", { name: "Main" })).toHaveCount(0); // a wall display has no chrome

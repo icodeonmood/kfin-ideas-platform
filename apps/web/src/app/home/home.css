@@ -1,0 +1,756 @@
+/*
+ * S-03 Home (BLD-C143): the board's layout (reference/css/boards/Home.css, PhoneHome.css) on lane D's tokens and
+ * primitives. Screen rules only: the prompt box is Tell it's (app/share/compose.css, under .cz), and buttons, pills,
+ * cards, the deck, the Ones fan and the slab are lane D's and are not restyled here.
+ */
+
+.hm {
+  position: relative;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--page-gutter) 120px;
+  box-sizing: border-box;
+}
+
+/* Desktop and phone words for one place: only one is ever displayed, so only one is read out. */
+.hm .hm-ph,
+.hm .hm-ph-contents,
+.hm .hm-ph-flex {
+  display: none;
+}
+
+.hm .hm-dt-contents {
+  display: contents;
+}
+
+/* ---------- the hero: one calm screen; sections start below the fold on a 900px window (S-03.rules/3) ---------- */
+.hm-hero {
+  min-height: clamp(720px, calc(100svh - 24px), 900px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 72px 0 40px;
+  box-sizing: border-box;
+}
+
+.hm-hero-in {
+  width: min(720px, 100%);
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.hm-hello {
+  margin: 0;
+  max-width: 26ch;
+  font: 500 40px/1.12 var(--fd);
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--ink);
+}
+
+.hm .cz .hm-prompt {
+  width: 100%;
+  margin-top: 32px;
+  border-radius: 28px;
+  text-align: left;
+}
+
+.hm-pnote {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--mute);
+  text-align: center;
+}
+
+.hm .cz .hm-starters {
+  margin-top: 22px;
+}
+
+/* "Jump back in": waits quietly at the bottom of the first screen */
+.hm-jump {
+  width: min(720px, 100%);
+  margin-top: auto;
+  padding-top: 56px;
+}
+
+.hm-jump-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 4px 10px;
+}
+
+.hm-jl {
+  margin: 0;
+  font: 500 13.5px/1.3 var(--ft);
+  color: var(--mute);
+}
+
+.hm-jall {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 500 13.5px/1.3 var(--ft);
+  color: var(--mute);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.hm-jall:hover {
+  color: var(--ink);
+}
+
+.hm-jcards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hm-jc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 14px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.08);
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.hm-jc:hover {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.14);
+}
+
+.hm-jc:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.hm-jt {
+  min-width: 0;
+  overflow: hidden;
+  font: 500 14px/1.25 var(--ft);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hm-jm {
+  margin-left: auto;
+  flex: none;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.hm-jfaces {
+  display: inline-flex;
+  flex: none;
+}
+
+.hm-jface {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--sunk);
+  box-shadow: 0 0 0 2px #ffffff;
+  font: 600 10px/1 var(--ft);
+  color: var(--ink);
+}
+
+.hm-jface:first-child {
+  margin-left: 0;
+}
+
+/* ---------- sections ---------- */
+.hm-sec {
+  margin-top: 72px;
+}
+
+.hm-shead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+}
+
+.hm-shead .h2 {
+  margin: 0;
+}
+
+.hm-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 500 15px/1 var(--ft);
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--underline);
+}
+
+/* 1. Needs you */
+.hm-needs {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.hm-needs > li {
+  display: flex;
+}
+
+.hm-needs > li > * {
+  flex: 1;
+}
+
+.hm .qcard-home {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 24px;
+}
+
+.hm .qcard-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.hm .qcard-t,
+.hm .qcard-home > .meta {
+  margin: 0;
+}
+
+.hm .qcard-t {
+  font-weight: 500;
+}
+
+.hm .qcard-links {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  border-radius: var(--r-sm);
+  background: rgba(17, 17, 17, 0.035);
+}
+
+.hm .qcard-links li + li {
+  border-top: 1px solid rgba(17, 17, 17, 0.07);
+}
+
+.hm .qcard-q {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 11px 14px;
+  box-sizing: border-box;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.hm .qcard-q .label {
+  color: var(--warnT);
+}
+
+.hm .qcard-q:hover .body {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.hm .qcard-f {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.hm-nclear {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 18px 22px;
+}
+
+.hm-nclear-i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.hm-nclear p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink2);
+}
+
+.hm-nclear b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* 2 and 3: Your ideas beside Find your crew */
+.hm-grid {
+  margin-top: 72px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch;
+}
+
+.hm-grid > section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 28px 32px 14px;
+  box-sizing: border-box;
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--rule2);
+}
+
+.hm-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.hm-idea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 20px;
+  align-items: center;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.hm-idea:last-child {
+  border-bottom: 0;
+}
+
+.hm-idea-b {
+  min-width: 0;
+}
+
+.hm-idea-b .meta {
+  margin: 4px 0 0;
+}
+
+.hm-it {
+  margin: 0;
+  font: 500 18px/1.3 var(--fd);
+  letter-spacing: -0.012em;
+}
+
+.hm-it a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.hm-it a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.hm-ione {
+  margin: 16px 0;
+}
+
+.hm-iempty,
+.hm-cnone {
+  margin-top: 16px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hm-iempty :is(.h3, .body),
+.hm-cnone :is(.h3, .body) {
+  margin: 0;
+}
+
+.hm-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding-top: 6px;
+}
+
+/* Find your crew: lane D's deck, lane F's card content (C-CREW-DECK.card without "They're looking for") */
+.hm-crewbox {
+  margin: 18px 0 14px;
+}
+
+.hm-pcard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  padding: 20px 22px;
+  box-sizing: border-box;
+  border-radius: 28px;
+  background: #ffffff;
+}
+
+.hm-pc-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hm-pc-top :is(.h3, .meta),
+.hm-pc-q p {
+  margin: 0;
+}
+
+.hm-pc-why {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  font: 500 14px/1.35 var(--ft);
+  color: var(--blueT);
+}
+
+.hm-pc-why svg {
+  flex: none;
+  color: #c63d00;
+}
+
+.hm-pc-q {
+  display: grid;
+  gap: 4px;
+}
+
+.hm-pc-foot {
+  margin-top: auto;
+  display: grid;
+  gap: 12px;
+}
+
+/* 4. Or share from where you already are */
+.hm-ways-intro {
+  margin: 6px 0 0;
+}
+
+.hm-ways {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.hm-way {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 22px 20px;
+}
+
+.hm-way :is(.h3, .meta, .hm-addr) {
+  margin: 0;
+}
+
+.hm-way .h3 {
+  font-size: 17px;
+}
+
+.hm-way .h3 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.hm-way .h3 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.hm-way-ic {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-sm);
+  background: rgba(17, 17, 17, 0.05);
+  color: var(--ink);
+}
+
+.hm-addr {
+  font: 500 15px/1.4 var(--ft);
+  color: var(--ink);
+}
+
+/* First visit: the five stages (S-03.sections, "Start here") */
+.hm-how {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 20px 24px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--rule2);
+}
+
+.hm-how li {
+  position: relative;
+  padding-top: 30px;
+}
+
+.hm-how li::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--ink);
+  background: #ffffff;
+}
+
+.hm-how li::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 22px;
+  right: -10px;
+  height: 2px;
+  background: var(--rule);
+}
+
+.hm-how li:last-child::after {
+  display: none;
+}
+
+.hm-how :is(.h3, .meta) {
+  margin: 0;
+}
+
+.hm-how .h3 {
+  font-size: 17px;
+}
+
+.hm-how .meta {
+  margin-top: 4px;
+}
+
+/* 5. The Ones, on lane D's slab */
+.hm-slab {
+  margin-top: 88px;
+  padding: 44px 48px 48px;
+  border-radius: 28px;
+  background: var(--slab);
+  color: #ffffff;
+}
+
+.hm-slab a {
+  color: #ffffff;
+}
+
+.hm-slab a:focus-visible {
+  outline-color: #8fa8ff;
+}
+
+.hm-o-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.hm-o-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: #ffffff;
+  font: 500 30px/1.18 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.hm-o-title span {
+  font: 400 16px/1.4 var(--ft);
+  letter-spacing: 0;
+  color: #b4b4bd;
+}
+
+.hm-o-empty {
+  padding: 26px 28px;
+  border-radius: 28px;
+  background: #18191d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.hm-o-et {
+  margin: 0;
+  font: 500 20px/1.3 var(--fd);
+  color: #ffffff;
+}
+
+.hm-o-ep {
+  margin: 8px 0 0;
+  max-width: 56ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #b4b4bd;
+}
+
+.hm-o-next {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.hm-o-nt {
+  margin: 0;
+  font: 500 22px/1.25 var(--fd);
+  color: #ffffff;
+}
+
+.hm-o-np {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #b4b4bd;
+}
+
+.hm-o-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 500 15px/1 var(--ft);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* ---------- narrower windows (F-SPACE.breakpoints) ---------- */
+@media (max-width: 1100px) {
+  .hm-grid,
+  .hm-needs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hm-ways {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hm-how {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hm-how li::after {
+    display: none;
+  }
+}
+
+/* ---------- phone (S-03.phone): the greeting in open space, four starters, the sections in the same order ---------- */
+@media (max-width: 640px) {
+  .hm .hm-dt,
+  .hm .hm-dt-contents {
+    display: none;
+  }
+
+  .hm .hm-ph {
+    display: inline;
+  }
+
+  .hm .hm-ph-contents {
+    display: contents;
+  }
+
+  .hm .hm-ph-flex {
+    display: flex;
+  }
+
+  .hm-hero {
+    min-height: 0;
+    padding: 24px 0 8px;
+  }
+
+  .hm-hello {
+    font-size: 32px;
+  }
+
+  .hm .cz .hm-prompt {
+    margin-top: 24px;
+  }
+
+  .hm-jump {
+    padding-top: 32px;
+  }
+
+  .hm-jcards {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: 0 var(--page-gutter) 4px;
+  }
+
+  .hm-jc {
+    flex: none;
+    min-height: 44px;
+    scroll-snap-align: start;
+    border-radius: var(--r-pill);
+  }
+
+  .hm-sec,
+  .hm-grid {
+    margin-top: 48px;
+  }
+
+  .hm-grid > section {
+    padding: 22px 18px 10px;
+  }
+
+  .hm-ways {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hm-slab {
+    margin-top: 56px;
+    padding: 28px 20px 32px;
+  }
+
+  .hm-o-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

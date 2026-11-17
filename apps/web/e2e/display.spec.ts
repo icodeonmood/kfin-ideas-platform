@@ -36,7 +36,7 @@ test.describe("S-LAUNCH: the launch screen", () => {
   test("L-DISPLAY.launch/5: nobody but the display role and admins opens it", async ({ page }) => {
     await signIn(page, PERSONAS.reviewer);
     await page.goto("/display/launch");
-    await expect(page).toHaveURL((url) => url.pathname === "/");
+    await expect(page).toHaveURL((url) => url.pathname === "/home");
   });
 
   test("S-LAUNCH/2, V-ACC.visual/4: the operator frame, Start first, axe clean", async ({ page }) => {
@@ -169,7 +169,7 @@ test.describe("S-OFFICE: the office screen", () => {
   test("L-DISPLAY.office/1: nobody but the display role and admins opens it", async ({ page }) => {
     await signIn(page, PERSONAS.contributor);
     await page.goto("/display/office");
-    await expect(page).toHaveURL((url) => url.pathname === "/");
+    await expect(page).toHaveURL((url) => url.pathname === "/home");
     expect((await page.request.get("/api/display/office")).status()).toBe(403);
   });
 

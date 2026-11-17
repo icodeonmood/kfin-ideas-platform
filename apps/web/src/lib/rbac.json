@@ -384,7 +384,7 @@
     {
       "key": "home",
       "label": "Home",
-      "href": "/",
+      "href": "/home",
       "place": "main",
       "tab": 1
     },
