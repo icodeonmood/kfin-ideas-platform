@@ -315,7 +315,7 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             told = list(dict.fromkeys([*sharers_and_crew(conn, idea), str(desk_user)]))
             adapters.tell(
                 conn, "decision_reversed", told, idea_uuid=str(r["idea_uuid"]), sender=user_id,
-                actions=[("See the decision", f"/ideas/{r['idea_id']}", "primary")],
+                actions=[("Read the note", f"/ideas/{r['idea_id']}", "primary")],  # L-INBOX.kinds
                 refs={"window_id": window_id, "to": str(to)},
             )  # fmt: skip
             if return_at:

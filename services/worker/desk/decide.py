@@ -256,7 +256,7 @@ def send(
                      payload={"decision_id": decision_id, "choice": str(choice)}, at=t)  # fmt: skip
         adapters.tell(  # L-INBOX.kinds: a decision goes to the sharer and the crew
             conn, "decision", sharers_and_crew(conn, idea), idea_uuid=str(idea["id"]), sender=user_id,
-            actions=[("See the decision", f"/ideas/{idea['idea_id']}", "primary")],
+            actions=[("Read the decision", f"/ideas/{idea['idea_id']}", "primary")],  # L-INBOX.kinds
             refs={"decision_id": decision_id, "choice": str(choice)},
         )  # fmt: skip
         if dates.return_at:
