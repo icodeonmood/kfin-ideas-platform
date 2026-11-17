@@ -21,8 +21,8 @@ from typing import Any
 from core.config import REPO_ROOT, get_settings
 from core.db import connect
 from core.speech_route import hosted_problem, key_set, voice_problem
-from pii.vault import EVAL_SCOPE_LIKE
 from core.watch import SARVAM_KEY_MISSING
+from pii.vault import EVAL_SCOPE_LIKE
 
 ROOT = REPO_ROOT or Path.cwd()  # in the worker container there is no repo root: /app
 
