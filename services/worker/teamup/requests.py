@@ -463,9 +463,8 @@ def send(
         if made is not None:
             req = load_request(conn, made)
             return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
-        lead = lead_seen_by(
-            conn, idea, user_id, code
-        )  # BLD-F029: "Waiting for the lead" when not named to them
+        # BLD-F029: "Waiting for the lead" when the lead is not named to them
+        lead = lead_seen_by(conn, idea, user_id, code)
         if is_closed(str(idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
         if crew_role(conn, idea["id"], code) is not None:
