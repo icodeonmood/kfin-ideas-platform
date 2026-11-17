@@ -226,7 +226,12 @@ test("S-05 V-ACC: each part of Check it, the preview, the fix sheet and the Send
   await expect(
     page.getByText("Found a phone number on page 2. Nobody can open it until it’s hidden."),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Hide it for me" })).toBeVisible();
+  // "Hide it for me" waits for `files.blackout`, off at launch (DEC-107, BLD-C064): shown only while it is on.
+  const status = (await (await page.request.get("/api/status")).json()) as {
+    paused: Array<{ switch: string }>;
+  };
+  const blackoutOn = !status.paused.some((p) => p.switch === "files.blackout");
+  await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(blackoutOn ? 1 : 0);
   await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
 

@@ -30,7 +30,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
-| `S-05` | `/share/:draftId/check` | built: `app/share/[id]/check/` (`check-it.tsx` the rail and stage, phone as one page; `parts.tsx`, `similar.tsx`, `proof.tsx`, `fix.tsx`, `hidden.tsx`; `client.ts` the calls, `model.ts` the rules, `copy.ts` the words). The old `share/[id]/done/` stays until the old canvas flow retires with `S-04B` | built (lane C, BLD-C130 to C137); draft, similar, files and team-up routes from their branches | L | P0 | C |
+| `S-05` | `/share/:draftId/check` | built: `app/share/[id]/check/` (`check-it.tsx` the rail and stage, phone as one page; `parts.tsx`, `similar.tsx`, `proof.tsx`, `fix.tsx`, `hidden.tsx`; `client.ts` the calls, `model.ts` the rules, `copy.ts` the words). The old `share/[id]/done/` stays until the old canvas flow retires with `S-04B` | built (lane C, BLD-C130 to C139); draft, similar, files and team-up routes from their branches | L | P0 | C |
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
 | `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
@@ -76,7 +76,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
 | `C-HIDDEN` | exists, differs | M | P0 | C |
-| `C-SIMGRID` | grid built on `S-05`: `app/share/[id]/check/similar.tsx` (yours first, tiles, waiting and on the crew, fold after "Keep mine separate"); team-up through lane F's sheet behind `teamup-shim.tsx` until team-up is on main | M | P0 | C |
+| `C-SIMGRID` | grid built on `S-05`: `app/share/[id]/check/similar.tsx` (yours first, tiles, waiting and on the crew, fold after "Keep mine separate" in the sheet, BLD-C131); team-up through lane F's `components/teamup/teamup-sheet.tsx` (`useTeamUpSheet` with `returnFocus`, `teamUpOpener` on Team up and Withdraw) | M | P0 | C |
 | `C-PREVIEW` | built: `components/preview/idea-preview.tsx` (`IdeaPreviewDialog`), the band's status is lane D's `<Pill variant="band">` (BLD-D012); used on `S-05` | M | P0 | C |
 | `C-WORTH` | reviewer's view and editor built (lane B): `components/review/worth.tsx` (`WorthView`, `WorthEditor` from `WorthResponse`), its sheet `worth.css` imported with it, so S-05 can place `WorthView` | M | P0 | C, B |
 | `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it | M | P0 | B |
