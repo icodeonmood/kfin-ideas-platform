@@ -29,9 +29,12 @@ export const PartFrame = forwardRef<
     children?: ReactNode;
     foot?: ReactNode;
     id?: string;
+    /** The heading's own id, for the phone's count links (#pr-sort-h, #pr-sim-h). */
+    headingId?: string;
   }
->(function PartFrame({ n, heading, line, phone, children, foot, id }, ref) {
-  const hid = useId();
+>(function PartFrame({ n, heading, line, phone, children, foot, id, headingId }, ref) {
+  const made = useId();
+  const hid = headingId ?? made;
   return (
     <section className="ck-part" aria-labelledby={hid} id={id} data-part={n}>
       {phone ? null : <p className="ck-count meta">{n === 7 ? C.sendCounter : C.counter(n)}</p>}

@@ -20,6 +20,24 @@ import type {
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
+
+/** Lane F's real sheet, with what the grid gives it and what it hands back kept for the tests to drive. */
+const sheetHook = vi.hoisted(() => ({
+  options: null as null | Record<string, unknown>,
+  handle: null as null | { open(id: string): void; close(): void },
+}));
+vi.mock("@/components/teamup/teamup-sheet", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/components/teamup/teamup-sheet")>();
+  return {
+    ...real,
+    useTeamUpSheet: (options: Parameters<typeof real.useTeamUpSheet>[0]) => {
+      sheetHook.options = options as Record<string, unknown>;
+      const handle = real.useTeamUpSheet(options);
+      sheetHook.handle = handle;
+      return handle;
+    },
+  };
+});
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
@@ -645,7 +663,7 @@ describe("S-05 screen: sorting (BLD-C131, L-SORT)", () => {
     ).toBe(true);
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 3 of 6");
     expect(buttons().some((b) => /Sorting Suggested, not confirmed yet/.test(nameOf(b)))).toBe(false);
-    expect(button(/^Sorting Investor service, saves time, saves cost$/)).toBeTruthy();
+    expect(button(/^Sorting, done Investor service, saves time, saves cost$/)).toBeTruthy();
   });
 
   it("J-RECOVER/10: one choice changes the area and is saved at once", async () => {
@@ -685,16 +703,76 @@ describe("S-05 screen: similar ideas (BLD-C132, C-SIMGRID, L-SIMILAR)", () => {
     expect(text(dialog)).toContain("Close match: same SMS, same calls");
   });
 
-  it("J-SHARE/9 C-SIMGRID.grid/4: Next keeps theirs separate; back on the part the grid folds, and Show them again opens it", async () => {
+  it("J-SHARE/9 C-SIMGRID.grid/4 (BLD-C131 amended): Next only moves on and records nothing; the grid is still there on the way back", async () => {
     await mount(base());
     await railTo("Similar ideas");
     await click(button("Next"));
-    expect(calls.find((c) => c.url.endsWith("/similar/keep-separate"))?.body).toEqual({ on: true });
+    expect(calls.some((c) => c.url.endsWith("/similar/keep-separate"))).toBe(false);
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 4 of 6");
+    await railTo("Similar ideas");
+    expect(document.body.textContent).not.toContain("Kept separate.");
+    expect(document.querySelector(".simgrid")).toBeTruthy();
+  });
+
+  it("C-SIMGRID.grid/4 V-ACC.share/7 J-SIMILAR/3: Keep mine separate in lane F's sheet records it and folds the grid; on close focus goes to Show them again", async () => {
+    await mount(base());
+    await railTo("Similar ideas");
+    const teamUp = button("Team up on Rejection SMS codes confuse investors")!;
+    // C-SIMGRID.tile: Team up is marked for the sheet to give focus back to (BLD-F074).
+    expect(teamUp.getAttribute("data-teamup-opener")).toBe("IDEA-2026-001412");
+    expect(typeof sheetHook.options?.returnFocus).toBe("function");
+    expect(sheetHook.options?.draftId).toBe(DRAFT_ID);
+    teamUp.focus();
+    await click(teamUp);
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    const sent = {
+      kind: "teamup",
+      id: "tu-1",
+      ideaId: MATCH_RAVI.idea.id,
+      note: "I take these calls at the Hyderabad branch too.",
+      brought: [],
+      after: null,
+    };
+    await act(async () => (sheetHook.options!.onSent as (s: unknown) => void)(sent));
+    await settle();
+    expect(calls.find((c) => c.url.endsWith("/similar/keep-separate"))?.body).toEqual({ on: true });
+    expect(document.body.textContent).toContain(
+      "Kept separate. The review desk still sees the similar ideas next to yours.",
+    );
+    // The sheet stays open over the fold until the person closes it.
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    await act(async () => sheetHook.handle!.close());
+    await settle();
+    expect(document.activeElement).toBe(button("Show them again"));
+  });
+
+  it("L-MERGE.request/1 C-SIMGRID.grid/4: Ask Ravi to merge mine in does not fold the grid; it reloads the merge request", async () => {
+    await mount(base());
+    await railTo("Similar ideas");
+    const before = calls.filter((c) => c.url.endsWith("/merge-request")).length;
+    await act(async () =>
+      (sheetHook.options!.onSent as (s: unknown) => void)({
+        kind: "merge",
+        id: "m-1",
+        ideaId: MATCH_RAVI.idea.id,
+        note: "Please take mine into yours.",
+        brought: [],
+        after: null,
+      }),
+    );
+    await settle();
+    expect(calls.some((c) => c.url.endsWith("/similar/keep-separate"))).toBe(false);
+    expect(calls.filter((c) => c.url.endsWith("/merge-request")).length).toBeGreaterThan(before);
+    expect(document.querySelector(".simgrid")).toBeTruthy();
+  });
+
+  it("C-SIMGRID.grid/4 BLD-C131: the fold follows the draft's kept_separate after a reload; Show them again opens the grid", async () => {
+    await mount(base({ draft: draft({ kept_separate: true }) }));
     await railTo("Similar ideas");
     expect(document.body.textContent).toContain(
       "Kept separate. The review desk still sees the similar ideas next to yours.",
     );
+    expect(document.querySelector(".simgrid")).toBeNull();
     await click(button("Show them again"));
     expect(calls.filter((c) => c.url.endsWith("/similar/keep-separate")).pop()?.body).toEqual({ on: false });
     expect(document.querySelector(".simgrid")).toBeTruthy();
@@ -750,6 +828,37 @@ describe("S-05 screen: similar ideas (BLD-C132, C-SIMGRID, L-SIMILAR)", () => {
     expect(button("Submit")!.getAttribute("aria-disabled")).toBe("true");
     await click(button("Withdraw the request"));
     expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/merge-request"))).toBe(true);
+  });
+
+  it("L-MERGE.request/4 WCAG 4.1.3: the bar's live region is on the page before its words; a failed Withdraw on the bar says so on the bar", async () => {
+    await mount(base());
+    const live = document.querySelector('.ck-mlive[role="status"]');
+    expect(live).toBeTruthy();
+    expect(text(live)).toBe("");
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    const waiting = {
+      id: "m1",
+      other_idea_id: MATCH_RAVI.idea.id,
+      state: "waiting",
+      lead: RAVI,
+      after: {
+        state: "waiting",
+        label: "Waiting on Ravi to merge",
+        line: "Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own.",
+        action: { label: "Withdraw the request", op: "withdraw" },
+        can_submit: false,
+      },
+    };
+    await mount([
+      (m, u) => (m === "DELETE" && u.endsWith("/merge-request") ? { status: 502, body: {} } : undefined),
+      ...base({ merge: waiting }),
+    ]);
+    await railTo("Proof");
+    await click(button("Withdraw the request"));
+    const bar = document.querySelector('.ck-mlive[role="status"]')!;
+    expect(text(bar)).toContain("Something went wrong. Try again.");
+    expect(h1()).toBe("Anything that shows it?");
   });
 });
 
@@ -1184,6 +1293,157 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     await click(button("Submit"));
     expect(document.body.textContent).toContain("A file still needs its personal details hidden.");
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+// --- Review round on 4ec8201d (BLD-C138, C139) ---------------------------------------------------------------
+
+function asPhone() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({
+      matches: q.includes("max-width: 720px"),
+      media: q,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
+
+describe("S-05 review fixes: the rail and the phone (S-05.layout, S-05.phone)", () => {
+  it("S-05.layout WCAG 1.1.1: a done part's tick says , done to a screen reader; a part that needs attention keeps its number", async () => {
+    await mount(base());
+    await click(button("Looks right"));
+    const words = button(/^Your words, done Title, what happens, how often$/)!;
+    expect(words).toBeTruthy();
+    expect(words.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+    await railTo("Send it");
+    await click(button("Submit"));
+    await click(button("Go to the sorting"));
+    await railTo("Proof");
+    const sortingButton = button(/^2 Sorting Suggested, not confirmed yet$/)!;
+    expect(sortingButton).toBeTruthy();
+    expect(text(sortingButton.querySelector('.ck-rn[aria-hidden="true"]'))).toBe("!");
+  });
+
+  it("S-05.phone PhoneReview.md: the three counts link to their parts: 1 detail hidden, 4 sortings, 2 similar ideas", async () => {
+    asPhone();
+    await mount(base());
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".ck-stats a"));
+    expect(links.map((a) => [text(a), a.getAttribute("href")])).toEqual([
+      ["1 detail hidden", "#pr-hidden"],
+      ["4 sortings", "#pr-sort-h"],
+      ["2 similar ideas", "#pr-sim-h"],
+    ]);
+    expect(document.getElementById("pr-hidden")?.textContent).toContain("Folio ••••89");
+    expect(text(document.getElementById("pr-sort-h"))).toBe("Is this sorted right?");
+    expect(text(document.getElementById("pr-sim-h"))).toBe("Already raised?");
+  });
+
+  it("S-05.phone: a count of none is left out, so no link points at an empty part", async () => {
+    asPhone();
+    await mount(base({ draft: draft({ hidden: [] }), similar: [] }));
+    expect(Array.from(document.querySelectorAll(".ck-stats a")).map(text)).toEqual(["4 sortings"]);
+  });
+
+  it("L-SORT.rules/4 J-RECOVER/12 on a phone: Change on a Send row and Go to the sorting take focus to that part's heading", async () => {
+    asPhone();
+    await mount(base());
+    await click(button("Change sorting"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sort-h"));
+    await click(button("Change similar ideas"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sim-h"));
+    await click(button("Submit"));
+    expect(document.body.textContent).toContain("Confirm the sorting first, or change any of it.");
+    (document.activeElement as HTMLElement).blur();
+    await click(button("Go to the sorting"));
+    expect(document.activeElement).toBe(document.getElementById("pr-sort-h"));
+    expect(document.body.textContent).toContain("Confirm these, or change any of them, before you send.");
+  });
+});
+
+describe("S-05 review fixes: hidden details (C-HIDDEN.list)", () => {
+  function shownDetail(id: string, masked: string) {
+    return { id, kind: "phone", masked, state: "shown", reason: "made_up_example" };
+  }
+
+  it("C-HIDDEN.list/3 WCAG 2.4.3: after Show it confirms, focus is on the row's Hide it; after Hide it, on its Show it", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/hidden/h1/show")
+          ? {
+              body: {
+                id: "h1",
+                kind: "folio",
+                masked: "Folio ••••89",
+                state: "shown",
+                reason: "internal_reference",
+              },
+            }
+          : undefined,
+      (m, u) =>
+        m === "POST" && u.endsWith("/hidden/h1/hide")
+          ? { body: { id: "h1", kind: "folio", masked: "Folio ••••89", state: "hidden" } }
+          : undefined,
+      ...base(),
+    ]);
+    await click(button("Show it"));
+    await click(Array.from(document.querySelectorAll('[role="radio"]'))[1]);
+    await click(
+      buttons()
+        .filter((b) => nameOf(b) === "Show it")
+        .pop(),
+    );
+    expect(nameOf(document.activeElement!)).toBe("Hide it");
+    await click(button("Hide it"));
+    expect(calls.some((c) => c.url.endsWith("/hidden/h1/hide"))).toBe(true);
+    expect(nameOf(document.activeElement!)).toBe("Show it");
+  });
+
+  it("C-HIDDEN.list: while one detail is being shown, Hide it on another waits too", async () => {
+    let release: (v: unknown) => void = () => undefined;
+    const pending = new Promise((r) => (release = r));
+    const routes = [
+      (m: string, u: string) =>
+        m === "POST" && u.endsWith("/hidden/h1/show")
+          ? {
+              body: {
+                id: "h1",
+                kind: "folio",
+                masked: "Folio ••••89",
+                state: "shown",
+                reason: "internal_reference",
+              },
+            }
+          : undefined,
+      ...base({
+        draft: draft({
+          hidden: [
+            { id: "h1", kind: "folio", masked: "Folio ••••89", state: "hidden" },
+            shownDetail("h2", "Phone ••••12"),
+          ],
+        }),
+      }),
+    ];
+    await mount(routes);
+    const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i?: RequestInit) => {
+        if (u.endsWith("/hidden/h1/show")) await pending;
+        return real(u, i);
+      }),
+    );
+    await click(button("Show it"));
+    await click(Array.from(document.querySelectorAll('[role="radio"]'))[1]);
+    const confirm = buttons()
+      .filter((b) => nameOf(b) === "Show it")
+      .pop()!;
+    await act(async () => confirm.click());
+    expect(button("Hide it")!.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => release(null));
+    await settle();
+    expect(button("Hide it")!.getAttribute("aria-disabled")).toBeNull();
   });
 });
 

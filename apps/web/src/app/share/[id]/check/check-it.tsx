@@ -17,6 +17,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 
 import { IconTick } from "@/components/shell/icons";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
+import type { TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import { Loading, SkeletonRows } from "@/components/ui/skeleton";
@@ -43,6 +44,7 @@ import {
   rowView,
   settling,
   similarRail,
+  sortingCount,
   stepOf,
   type FixForm,
   type ProofItem,
@@ -135,7 +137,7 @@ export function CheckIt({
   const [similar, setSimilar] = useState<SimilarLoad>({ state: "loading" });
   const [merge, setMerge] = useState<MergeState | null>(null);
   const [kept, setKept] = useState(false);
-  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeError, setMergeError] = useState<{ where: "bar" | "grid"; text: string } | null>(null);
 
   const [proof, setProof] = useState<ProofItem[]>([]);
 
@@ -263,6 +265,14 @@ export function CheckIt({
 
   const go = useCallback(
     (n: PartNo, opts: { forwardFrom?: PartNo } = {}) => {
+      if (phone) {
+        // One page: "Go to the sorting", a Send row's "Change" and "Change the attached files" take the person to
+        // that part's heading, scrolled to and focused (L-SORT.rules/4, WCAG 2.4.3).
+        const h = document.querySelector<HTMLElement>(`[data-part="${n}"] .ck-h`);
+        h?.scrollIntoView?.({ block: "start" });
+        h?.focus({ preventScroll: true });
+        return;
+      }
       setDir(n >= part ? 1 : -1);
       if (opts.forwardFrom) {
         const from = opts.forwardFrom;
@@ -277,7 +287,7 @@ export function CheckIt({
       }
       void api.step(draftId, stepOf(n));
     },
-    [draftId, part, loadSend],
+    [draftId, part, loadSend, phone],
   );
 
   useEffect(() => {
@@ -341,31 +351,39 @@ export function CheckIt({
   const matches = similar.state === "ok" ? similar.matches : [];
   const mv = mergeView(merge, matches);
 
-  const withdraw = async (action: Extract<TileAction, { kind: "waiting" }>) => {
+  /** A failed Withdraw says so where it was pressed: on the bar under the task bar, or under the grid. */
+  const withdraw = async (
+    action: Extract<TileAction, { kind: "waiting" }>,
+    where: "bar" | "grid" = "grid",
+  ) => {
     setMergeError(null);
     const r =
       "merge" in action.withdraw
         ? await track(api.withdrawMerge(draftId))
         : await track(api.withdrawTeamUp(action.withdraw.requestId));
-    if (!r.ok) setMergeError(C.failed);
+    if (!r.ok) setMergeError({ where, text: r.error?.message || C.failed });
     await loadSimilar();
   };
 
   const mergeAction = async () => {
     const a = mv?.action;
     if (!a) return;
-    if (a.op === "withdraw") await withdraw({ kind: "waiting", label: "", withdraw: { merge: true } });
+    if (a.op === "withdraw") await withdraw({ kind: "waiting", label: "", withdraw: { merge: true } }, "bar");
     else if (a.op === "submit") go(7);
   };
 
-  const similarNext = () => {
-    // "None of these the same? Just carry on." Carrying on keeps theirs separate (L-SIMILAR.rules/8, BLD-C095).
-    if (matches.length && !kept && !(mv && mv.state === "waiting")) {
-      void track(api.keepSeparate(draftId, true)).then((r) => {
-        if (r.ok) setKept(true);
-      });
+  // "Next" only moves on: it records nothing. Only an explicit "Keep mine separate" in lane F's sheet does, so the
+  // review desk never reads "kept it separate" for someone who only carried on (BLD-C131, as amended).
+  const similarNext = () => go(4, { forwardFrom: 3 });
+
+  /** The sheet's send. "Keep mine separate" is a team-up request sent with the draft (BLD-F020, BLD-F071): the
+   * draft is kept separate and the grid folds (C-SIMGRID.grid/4, V-ACC.share/7); a merge request reloads the bar. */
+  const teamUpSent = (sent: TeamUpSent) => {
+    if (sent.kind === "teamup") {
+      setKept(true);
+      void track(api.keepSeparate(draftId, true));
     }
-    go(4, { forwardFrom: 3 });
+    void loadSimilar();
   };
 
   const showAgain = async () => {
@@ -686,7 +704,14 @@ export function CheckIt({
     </Button>
   );
 
-  const hiddenTile = <HiddenTile details={draft.hidden ?? []} onShow={showHidden} onHide={hideAgain} />;
+  const hiddenTile = (
+    <HiddenTile
+      id={phone ? "pr-hidden" : undefined}
+      details={draft.hidden ?? []}
+      onShow={showHidden}
+      onHide={hideAgain}
+    />
+  );
 
   const content: Record<
     PartNo,
@@ -763,10 +788,11 @@ export function CheckIt({
               merge={mv}
               keptSeparate={kept}
               onShowAgain={() => void showAgain()}
-              onChanged={() => void loadSimilar()}
-              onWithdraw={withdraw}
+              onSent={teamUpSent}
+              onWithdrawn={() => void loadSimilar()}
+              onWithdraw={(a) => withdraw(a, "grid")}
             />
-            {mergeError ? <FieldMsg>{mergeError}</FieldMsg> : null}
+            {mergeError?.where === "grid" ? <FieldMsg>{mergeError.text}</FieldMsg> : null}
           </>
         ),
       foot: (
@@ -882,20 +908,27 @@ export function CheckIt({
     },
   };
 
-  const bar = mv ? (
-    <div className={`ck-mbar ck-mbar-${mv.state}`} role="status">
-      <p>{mv.line}</p>
-      {mv.action?.to ? (
-        <ButtonLink variant="text-blue" href={mv.action.to}>
-          {mv.action.label}
-        </ButtonLink>
-      ) : mv.action ? (
-        <Button variant="text-blue" onClick={() => void mergeAction()}>
-          {mv.action.label}
-        </Button>
+  // The live region is on the page before its words, so a merge outcome that arrives later is announced (WCAG
+  // 4.1.3); a failed Withdraw pressed here says so here (C-FIELD-MSG).
+  const bar = (
+    <div className="ck-mlive" role="status">
+      {mv ? (
+        <div className={`ck-mbar ck-mbar-${mv.state}`}>
+          <p>{mv.line}</p>
+          {mv.action?.to ? (
+            <ButtonLink variant="text-blue" href={mv.action.to}>
+              {mv.action.label}
+            </ButtonLink>
+          ) : mv.action ? (
+            <Button variant="text-blue" onClick={() => void mergeAction()}>
+              {mv.action.label}
+            </Button>
+          ) : null}
+          {mergeError?.where === "bar" ? <FieldMsg>{mergeError.text}</FieldMsg> : null}
+        </div>
       ) : null}
     </div>
-  ) : null;
+  );
 
   const taskbar = (
     <Taskbar
@@ -918,6 +951,14 @@ export function CheckIt({
   );
 
   if (phone) {
+    // PhoneReview.md: "1 detail hidden", "3 sortings", "2 similar ideas", each a link to its part. A count of none
+    // is left out (NOT DRAWN), so no link points at a part with nothing to show (BLD-C138).
+    const hiddenNow = (draft.hidden ?? []).filter((d) => d.state !== "shown").length;
+    const counts = [
+      { n: hiddenNow, words: C.phone.hiddenCount(hiddenNow), href: "#pr-hidden" },
+      { n: sortingCount(sorting), words: C.phone.sortingsCount(sortingCount(sorting)), href: "#pr-sort-h" },
+      { n: matches.length, words: C.phone.similarCount(matches.length), href: "#pr-sim-h" },
+    ].filter((x) => x.n > 0);
     return (
       <div className="ck ck-phone">
         {taskbar}
@@ -925,12 +966,29 @@ export function CheckIt({
         <div className="ck-ph">
           <h1 className="h1">{C.phone.heading}</h1>
           <p className="ck-line">{C.phone.line}</p>
+          {counts.length ? (
+            <div className="ck-stats">
+              {counts.map((x) => (
+                <a key={x.href} className="ck-stat" href={x.href}>
+                  <b className="num">{x.n}</b> {x.words}
+                </a>
+              ))}
+            </div>
+          ) : null}
           <BackToWords href={`/share/${encodeURIComponent(draftId)}`} />
           {PARTS.map(({ n }) => {
             const c = content[n as PartNo];
             const foot = n === 2 && !sorting?.confirmed ? c.foot : undefined;
             return (
-              <PartFrame key={n} n={n as PartNo} heading={c.heading} line={c.line} phone foot={foot}>
+              <PartFrame
+                key={n}
+                n={n as PartNo}
+                heading={c.heading}
+                line={c.line}
+                phone
+                foot={foot}
+                headingId={n === 2 ? "pr-sort-h" : n === 3 ? "pr-sim-h" : undefined}
+              >
                 {c.body}
               </PartFrame>
             );
@@ -971,8 +1029,11 @@ export function CheckIt({
                     <span className="ck-rn" aria-hidden={ok || attention[no] ? true : undefined}>
                       {ok ? <IconTick size={12} /> : attention[no] ? "!" : n}
                     </span>
-                    {ok || attention[no] ? null : " "}
+                    {/* The tick and the "!" are drawn only; a screen reader hears ", done" (the task bar's words)
+                        or the part's number, as the board names the button ("2 Sorting Suggested, …"). */}
+                    {attention[no] && !ok ? <span className="vh">{`${n} `}</span> : ok ? null : " "}
                     <span className="ck-rl">{label}</span>
+                    {ok ? <span className="vh">{C.done}</span> : null}
                     {send ? (
                       <span className="ck-rs ck-rs-gap" aria-hidden="true" />
                     ) : (

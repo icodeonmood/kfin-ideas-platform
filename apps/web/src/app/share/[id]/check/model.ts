@@ -4,7 +4,7 @@
  * (S-05.fix). Pure functions, so the vitest suite covers them without a browser.
  */
 import type { FileStatus } from "@/components/ui/file";
-import type { DraftStep, FileItem, FixRequest, SimilarMatch } from "@/lib/contracts";
+import type { DraftStep, FileItem, FixRequest, SimilarMatch, SortingResponse } from "@/lib/contracts";
 
 import { CHECK_COPY, type PartNo } from "./copy";
 import type { MergeState } from "./client";
@@ -20,6 +20,12 @@ export function partFromStep(step: DraftStep | string | undefined | null): PartN
 
 export function stepOf(part: PartNo): DraftStep {
   return part === 7 ? "send" : (`check:${part}` as DraftStep);
+}
+
+/** The phone's "3 sortings" (PhoneReview.md): the sorting fields that hold a value, of the four (BLD-C138). */
+export function sortingCount(s: SortingResponse | null): number {
+  if (!s) return 0;
+  return [s.affects.value?.length, s.kind.value, s.area.value, s.brings.value?.length].filter(Boolean).length;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
