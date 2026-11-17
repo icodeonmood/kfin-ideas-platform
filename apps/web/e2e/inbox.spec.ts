@@ -257,12 +257,14 @@ test.describe("S-H5 Inbox", () => {
     await expect(row(page, /picked your idea, /)).toBeVisible();
     await expectNoSeriousAxeIssues(page);
 
-    // Mark all read, and Mark unread on the open item.
+    // Mark unread on the open item, then Mark all read. Archiving opened the next item, the stage move, so nothing
+    // is unread here and Mark all read is unavailable (aria-disabled) until something is.
     await tab(page, /^All 3$/).click();
-    await page.getByRole("button", { name: "Mark all read" }).click();
     await expect(page.getByText("0 unread", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Mark unread" }).click();
     await expect(page.getByText("1 unread", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Mark all read" }).click();
+    await expect(page.getByText("0 unread", { exact: true })).toBeVisible();
   });
 
   test("S-H5.rules/6 V-ACC.visual/4: on a phone the list is the screen and an item opens as its own screen", async ({
