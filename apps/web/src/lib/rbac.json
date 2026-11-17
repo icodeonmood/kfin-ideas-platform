@@ -345,7 +345,6 @@
     "/admin                     manage_kill_switches grant_roles",
     "/launch                    grant_roles",
     "/display                   open_display",
-    "/ones/showcase             view_ones_console",
     "/delivery                  work_delivery",
     "/ember/compose             write_ember_note"
   ],
@@ -403,6 +402,19 @@
         "committee",
         "core_committee"
       ]
+    },
+    {
+      "key": "profile",
+      "label": "Your profile and settings",
+      "href": "/profile",
+      "place": "account"
+    },
+    {
+      "key": "one",
+      "label": "Your One dashboard",
+      "href": "/one",
+      "place": "account",
+      "member": "ones"
     },
     {
       "key": "ember",
