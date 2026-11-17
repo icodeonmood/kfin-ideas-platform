@@ -197,13 +197,19 @@ describe("S-09.states: the Team up card draws what the API sends", () => {
 });
 
 describe("S-09 Withdraw on the page (J-TEAMUP/3, L-TEAMUP.rules/3)", () => {
+  const refused = (status: number, message: string) =>
+    vi.fn(async () => new Response(JSON.stringify({ error: { code: "x", message } }), { status }));
+  const press = async (name: string) => {
+    await act(async () => {
+      button(name)!.click();
+    });
+  };
+
   it("withdraws the request, reads the page again, and puts focus on Team up when it comes back", async () => {
     const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     show(SENT);
-    await act(async () => {
-      button("Withdraw")!.click();
-    });
+    await press("Withdraw");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/team-up/r-41",
       expect.objectContaining({ method: "DELETE" }),
@@ -213,20 +219,61 @@ describe("S-09 Withdraw on the page (J-TEAMUP/3, L-TEAMUP.rules/3)", () => {
     expect(document.activeElement).toBe(button("Team up"));
   });
 
-  it("a withdraw the API refuses shows the API's own message and keeps Withdraw", async () => {
+  it("after a withdraw that worked, Withdraw stays busy until the page has its new state: no second DELETE", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    show(SENT);
+    await press("Withdraw");
+    // The refresh has not landed: the same request is still on the page
+    show(SENT);
+    expect(button("Withdraw")!.getAttribute("aria-busy")).toBe("true");
+    await press("Withdraw");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(q("[role=alert]")).toBeNull();
+  });
+
+  it("a withdraw refused because the lead answered first (409) keeps the API's message and reads the card again", async () => {
     const message = "That request has already been answered.";
+    vi.stubGlobal("fetch", refused(409, message));
+    show(SENT);
+    await press("Withdraw");
+    expect(q("[role=alert]")!.textContent).toContain(message);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    // The lead had approved: the card says so, the message stays, focus goes to the card's heading (no Team up)
+    show(ON_CREW);
+    expect(q("[role=alert]")!.textContent).toContain(message);
+    expect(document.activeElement).toBe(q("#ip-team-h"));
+  });
+
+  it("a request already gone (404) reads the card again too", async () => {
+    vi.stubGlobal("fetch", refused(404, "We couldn’t find that."));
+    show(SENT);
+    await press("Withdraw");
+    expect(q("[role=alert]")!.textContent).toContain("We couldn’t find that.");
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("any other refusal keeps the card and Withdraw, says so, and does not read the page again", async () => {
+    vi.stubGlobal("fetch", refused(500, "Something went wrong. Please try again."));
+    show(SENT);
+    await press("Withdraw");
+    expect(q("[role=alert]")!.textContent).toContain("Something went wrong. Please try again.");
+    expect(button("Withdraw")!.getAttribute("aria-busy")).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("offline: the sheet's line, and Withdraw can be pressed again", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () => new Response(JSON.stringify({ error: { code: "conflict", message } }), { status: 409 }),
-      ),
+      vi.fn(async () => {
+        throw new TypeError("network");
+      }),
     );
     show(SENT);
-    await act(async () => {
-      button("Withdraw")!.click();
-    });
-    expect(q("[role=alert]")!.textContent).toContain(message);
-    expect(button("Withdraw")).toBeDefined();
+    await press("Withdraw");
+    expect(q("[role=alert]")!.textContent).toContain("Check your connection, then try again.");
+    expect(button("Withdraw")!.getAttribute("aria-busy")).toBeNull();
     expect(refresh).not.toHaveBeenCalled();
   });
 
@@ -234,6 +281,15 @@ describe("S-09 Withdraw on the page (J-TEAMUP/3, L-TEAMUP.rules/3)", () => {
     show(SENT);
     act(() => lastOptions().onWithdrawn?.({} as never));
     show(NOT_ASKED);
+    expect(document.activeElement).toBe(button("Team up"));
+  });
+
+  it("withdrawn from the sheet before its send was read back, focus waits for the page that has Team up", () => {
+    show(NOT_ASKED);
+    act(() => lastOptions().onWithdrawn?.({} as never));
+    show(SENT); // the send's own page read
+    expect(document.activeElement).not.toBe(button("Withdraw"));
+    show(NOT_ASKED); // the withdraw's
     expect(document.activeElement).toBe(button("Team up"));
   });
 });
