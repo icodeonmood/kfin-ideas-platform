@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/server/auth/authorize", () => ({ authorize: vi.fn(), signedIn: vi.fn() }));
 
 import type { CurrentUser } from "@/server/auth/current";
-import { deskRead, forward, WORKER_FAILED } from "@/server/desk";
+import { deskRead, forward, paramId, WORKER_FAILED } from "@/server/desk";
 
 describe("A-API.conventions/2: desk forward", () => {
   const saved = { ...process.env };
@@ -81,5 +81,14 @@ describe("A-API.conventions/2: desk forward", () => {
       vi.fn(async () => new Response("{}", { status: 500 })),
     );
     await expect(deskRead(me, "/internal/desk")).rejects.toThrow("worker answered 500");
+  });
+});
+
+describe("paramId (A-API.desk, A-API.committee)", () => {
+  it("reads the route's id, and gives an empty id to a route without one instead of failing", async () => {
+    expect(await paramId({ params: Promise.resolve({ id: "IDEA-2026-000123" }) })).toBe("IDEA-2026-000123");
+    expect(await paramId({ params: Promise.resolve({}) })).toBe("");
+    expect(await paramId({})).toBe("");
+    expect(await paramId(undefined)).toBe("");
   });
 });
