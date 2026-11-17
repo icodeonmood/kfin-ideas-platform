@@ -5,7 +5,6 @@
  */
 import type {
   CommitteeSort,
-  IdeaStatus,
   CommitteeTab,
   DecisionChoice,
   DeskSort,

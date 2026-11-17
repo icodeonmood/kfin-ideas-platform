@@ -16,6 +16,7 @@ export function Deck({
   cards,
   index,
   onIndexChange,
+  onPastEnd,
 }: {
   /** The region's name ("Ideas close to yours"). */
   label: string;
@@ -25,6 +26,12 @@ export function Deck({
   cards: ReactNode[];
   index: number;
   onIndexChange: (index: number) => void;
+  /**
+   * Optional (lane F, BLD-F036): Next stays available on the last card and calls this instead of moving, so a host
+   * can treat Next as a pass and show what comes after the deck (S-H2: "That's everyone for now"). Without it the
+   * deck behaves as before: Next is unavailable on the last card.
+   */
+  onPastEnd?: () => void;
 }) {
   const count = cards.length;
   const at = Math.min(Math.max(index, 0), Math.max(count - 1, 0));
@@ -47,12 +54,17 @@ export function Deck({
     onIndexChange(to);
   };
 
+  const next = () => {
+    if (onPastEnd && count > 0 && at >= count - 1) onPastEnd();
+    else go(at + 1);
+  };
+
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
     if (t.closest("input, textarea, select, [contenteditable='true']")) return;
     if (e.key === "ArrowRight") {
       e.preventDefault();
-      go(at + 1);
+      next();
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       go(at - 1);
@@ -119,8 +131,8 @@ export function Deck({
           type="button"
           className="round-btn deck-b"
           aria-label={`Next ${noun.toLowerCase()}`}
-          aria-disabled={at >= count - 1 ? true : undefined}
-          onClick={() => go(at + 1)}
+          aria-disabled={at >= count - 1 && !(onPastEnd && count > 0) ? true : undefined}
+          onClick={next}
         >
           <svg
             width="18"
