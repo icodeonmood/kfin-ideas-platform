@@ -34,6 +34,8 @@ from teamup.store import (
     lead_code,
     load_draft,
     load_idea,
+    load_idea_for,
+    lock_ideas,
     person_by_code,
     remember,
     remembered,
@@ -136,11 +138,44 @@ def close_requests_for(conn: Conn, idea_uuid: Any, at: dt.datetime | None = None
     return len(ids)
 
 
+def end_sent_drafts(conn: Conn, idea_uuid: Any, at: dt.datetime | None = None) -> int:
+    """BLD-F024: a draft merge request waiting on this idea whose draft has been sent or archived since is withdrawn,
+    as if its sharer had withdrawn it, and the lead's "Needs you" item is resolved. Lane C's Submit refuses while a
+    merge request waits (`merge_waiting`), so this mends only a draft sent before that check, or archived."""
+    t = at or clock_now()
+    rows = conn.execute(
+        "UPDATE merge_requests r SET state = 'withdrawn', answered_at = %s FROM ideas d "
+        "WHERE d.id = r.draft_uuid AND r.other_idea_uuid = %s AND r.state = 'waiting' "
+        "AND (d.status <> 'draft' OR d.archived_at IS NOT NULL) RETURNING r.id, r.draft_uuid",
+        (t, idea_uuid),
+    ).fetchall()
+    for r in rows:
+        adapters.resolve(conn, str(r["id"]))
+        audit(conn, "system", "merge_request.ended_with_draft", f"draft:{r['draft_uuid']}",
+              after={"request_id": str(r["id"])})  # fmt: skip
+    return len(rows)
+
+
 def settle(conn: Conn, idea: dict[str, Any]) -> None:
-    """Close what is still waiting on an idea that has closed, so every read agrees (lazy, idempotent)."""
-    if is_closed(str(idea["status"])):
-        with conn.transaction():
+    """Close what is still waiting on an idea that has closed, and end draft merge requests whose draft was sent or
+    archived since, so every read agrees (lazy, idempotent)."""
+    with conn.transaction():
+        if is_closed(str(idea["status"])):
             close_requests_for(conn, idea["id"])
+        else:
+            end_sent_drafts(conn, idea["id"])
+
+
+def _draft_open(draft: dict[str, Any]) -> bool:
+    return draft["status"] == "draft" and draft.get("archived_at") is None
+
+
+def ended(req: Req) -> bool:
+    """A waiting request nobody can answer any more: its idea has closed, or (a draft merge request) its draft has
+    been sent or archived since (BLD-F024). `settle` puts it in its closed state."""
+    if not req.waiting:
+        return False
+    return is_closed(str(req.idea["status"])) or (req.kind == "merge" and not _draft_open(req.brought[0]))
 
 
 # --- shapes ----------------------------------------------------------------------------------------------------
@@ -155,8 +190,10 @@ def _byline(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> str:
 def idea_ref(
     conn: Conn, idea: dict[str, Any], now: dt.datetime | None = None, *, full: bool = False
 ) -> dict[str, Any]:
-    """E-ENTITIES IdeaRef (a draft has no reference: its row id, status `draft`). With `full`, the masked summary
-    and byline the lead's reader shows; never the sharer's own words (P-PRODUCT.privacy)."""
+    """E-ENTITIES IdeaRef (a draft has no reference: its row id, status `draft`). With `full`, what the lead's
+    reader shows of another person's idea: the masked title and summary, each passed through the tag, pattern and
+    name checks (`views.common.checked_summary`, BLD-C090, DEC-104), and the byline; never the sharer's own words
+    (P-PRODUCT.privacy). A title that fails the checks shows the reference; a summary, the placeholder."""
     ref = idea.get("idea_id")
     out: dict[str, Any] = {
         "id": ref or str(idea["id"]),
@@ -166,15 +203,32 @@ def idea_ref(
     if ref:
         out["meta"] = rules.status_meta(str(ref), str(idea["status"]))
     if full:
-        out["summary"] = idea.get("summary") or ""
+        from views.common import SUMMARY_PENDING, checked_summary  # the shared check, cached for ten minutes
+
+        out["title"] = checked_summary(conn, out["title"]) or (ref or "")
+        out["summary"] = checked_summary(conn, idea.get("summary")) or SUMMARY_PENDING
         out["byline"] = _byline(conn, idea, now or clock_now())
         out["shared_at"] = idea["shared_at"].isoformat() if idea.get("shared_at") else None
     return out
 
 
+def _lead_reads(req: Req, brought: dict[str, Any]) -> bool:
+    """BLD-F022: the lead reads a draft's title, summary and byline only while its merge request waits
+    (L-MERGE.request/3: the draft is not shared by this), and never an idea its sharer has withdrawn (BLD-E011)."""
+    if req.kind == "merge":
+        return req.waiting and _draft_open(brought)
+    return str(brought["status"]) != "withdrawn"
+
+
+def _brought_ref(conn: Conn, req: Req, brought: dict[str, Any], t: dt.datetime, full: bool) -> dict[str, Any]:
+    if full and not _lead_reads(req, brought):
+        return {"id": brought.get("idea_id") or str(brought["id"]), "title": "", "status": brought["status"]}
+    return idea_ref(conn, brought, t, full=full)
+
+
 def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
     """E-ENTITIES TeamUpRequest, plus `request` ('teamup' or 'merge'). A draft merge request reads with team-up
-    states. Only its two parties ever get one (the requester and the lead)."""
+    states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view."""
     t = clock_now()
     out: dict[str, Any] = {
         "id": req.id,
@@ -182,7 +236,7 @@ def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
         "idea_id": req.idea.get("idea_id"),
         "from": person_by_code(conn, req.row["from_code"]).as_json(),
         "note": unseal(req.row["note_encrypted"], req.table, "note_encrypted", req.id) or "",
-        "brought": [idea_ref(conn, b, t, full=full) for b in req.brought],
+        "brought": [_brought_ref(conn, req, b, t, full) for b in req.brought],
         "state": req.teamup_state,
         "sent_at": req.row["sent_at"].isoformat(),
     }
@@ -241,7 +295,7 @@ def _closest(conn: Conn, target: Any, own: list[dict[str, Any]]) -> dict[str, An
 def draft_note(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
     """`GET /ideas/:id/team-up/draft-note`: the pre-filled note (L-TEAMUP.rules/2, BLD-F011) and the person's own
     shared ideas that can be brought (none is selected, C-SHEET-TEAMUP.compose/4)."""
-    idea = load_idea(conn, ref)
+    idea = load_idea_for(conn, ref, code_of(conn, user_id))
     code = require_code(conn, user_id)
     me = person_by_code(conn, code)
     own = own_open_ideas(conn, code, exclude=idea["id"])
@@ -296,9 +350,9 @@ def after_for(conn: Conn, req: Req, role: str | None) -> dict[str, object] | Non
 def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
     """`GET /ideas/:id/team-up` (BLD-F015): this idea's team-up state for the signed-in person, so every screen
     that shows the idea agrees: "Waiting for {lead}" with Withdraw (V-ACC.teamup/4), on the crew, or Team up."""
-    idea = load_idea(conn, ref)
-    settle(conn, idea)
     code = code_of(conn, user_id)
+    idea = load_idea_for(conn, ref, code)
+    settle(conn, idea)
     role = crew_role(conn, idea["id"], code) if code else None
     lead = person_by_code(conn, lead_code(conn, idea))
     mine = _latest_mine(conn, idea, code) if code else None
@@ -346,17 +400,24 @@ def send(
 ) -> dict[str, Any]:
     """`POST /ideas/:id/team-up` `{note, brought_idea_ids, draft_id?}` (L-TEAMUP.rules/1–4). Returns the
     TeamUpRequest and the sheet's "Sent" state. Errors: note_too_short (30), already_requested, already_on_crew,
-    idea_closed. `draft_id` marks "Keep mine separate" from Check it on that draft's similar ideas (V-ACC.similar/7)."""
+    idea_closed, not_found (a withdrawn idea, to anyone but the people BLD-E011 names), key_reused (BLD-F026).
+    `draft_id` marks "Keep mine separate" from Check it on that draft's similar ideas (V-ACC.similar/7)."""
     note = str(body.get("note") or "")
-    made = remembered(conn, user_id, idempotency_key, ROUTE_SEND)
+    asked = {"ref": ref, **body}
+    made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
     if made is not None:
         req = load_request(conn, made)
         return {**request_json(conn, req), "after": after_for(conn, req, None)}
-    idea = load_idea(conn, ref)
+    idea = load_idea_for(conn, ref, code_of(conn, user_id))
     settle(conn, idea)
     with audited(conn), conn.transaction():
-        idea = load_idea(conn, ref, lock=True)
         code = require_code(conn, user_id)
+        idea = load_idea_for(conn, ref, code, lock=True)
+        # the same key sent twice at once: the second waited for the lock, and returns the first
+        made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
+        if made is not None:
+            req = load_request(conn, made)
+            return {**request_json(conn, req), "after": after_for(conn, req, None)}
         lead = person_by_code(conn, lead_code(conn, idea))
         if is_closed(str(idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
@@ -397,7 +458,7 @@ def send(
         tell_lead(conn, rid, "teamup", idea, len(brought), user_id)
         audit(conn, actor(user_id), "teamup.request", entity_of(idea),
               after={"request_id": rid, "brought": len(brought), "from_draft": bool(draft_id)})  # fmt: skip
-        remember(conn, user_id, idempotency_key, ROUTE_SEND, {"ref": ref, **body}, rid)
+        remember(conn, user_id, idempotency_key, ROUTE_SEND, asked, rid)
         req = load_request(conn, rid)
         return {**request_json(conn, req), "after": after_for(conn, req, None)}
 
@@ -412,7 +473,7 @@ def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
     is_from = code is not None and req.row["from_code"] == code
     if not (is_lead or is_from):
         raise Refused(404, "not_found")
-    if req.waiting and is_closed(str(req.idea["status"])):
+    if ended(req):  # its idea closed, or its draft was sent or archived: read in its closed state (BLD-F024)
         settle(conn, req.idea)
         req = load_request(conn, request_id)
     out = request_json(conn, req, full=is_lead)
@@ -450,6 +511,8 @@ def withdraw(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
         if req.row["from_code"] != code:
             raise Refused(404, "not_found")
         if req.state != "withdrawn":
+            if req.state == "closed":  # the idea closed first (L-TEAMUP.states): nothing was answered
+                raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
             if not req.waiting:
                 raise Refused(409, "not_waiting", "This request has already been answered.")
             conn.execute(f"UPDATE {req.table} SET state = 'withdrawn' WHERE id = %s", (req.id,))  # noqa: S608
@@ -489,85 +552,100 @@ def answer(conn: Conn, request_id: str, user_id: str, body: dict[str, Any]) -> d
     Merge it: the requester joins the crew and every idea brought merges into the lead's (L-MERGE.effects, via
     `apply_lead_merge`). Team up only / Approve: the requester joins; anything brought stays separate. Decline:
     nothing changes; an optional reason goes to the requester, masked. The requester is told at once
-    (L-TEAMUP.rules/7). Returns the request, the lead's result line (S-H2B.states) and "Say hello to {requester}"."""
+    (L-TEAMUP.rules/7). Returns the request, the lead's result line (S-H2B.states) and "Say hello to {requester}".
+
+    A request nobody can answer any more (its idea closed, or its draft was sent or archived, BLD-F024) is put in
+    its closed state and refused: `idea_closed`, or `not_waiting` with "{requester} withdrew this request."."""
     choice = body.get("answer")
     if choice not in rules.ANSWERS:
         raise Refused(422, "answer_required", "Choose an answer.", "answer")
     ans: Answer = choice
-    reason = str(body.get("reason") or "").strip() if ans == "decline" else ""
-    peek = load_request(conn, request_id)
-    if peek.waiting and is_closed(str(peek.idea["status"])):
-        settle(conn, peek.idea)
-        raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
-    with audited(conn), conn.transaction():
-        # the lead's idea first, then the request: the same order as a merge, so answers cannot deadlock
-        conn.execute("SELECT 1 FROM ideas WHERE id = %s FOR UPDATE", (peek.idea["id"],))
-        req = load_request(conn, request_id, lock=True)
+    with audited(conn):
+        peek = load_request(conn, request_id)
         code = code_of(conn, user_id)
-        if code is None or lead_code(conn, req.idea) != code:
-            raise Refused(
-                403, "not_lead", "Only the lead of this idea can answer.",
-                audit=(actor(user_id), "teamup.answer_refused", entity_of(req.idea),
-                       {"request_id": req.id, "answer": ans}),
-            )  # fmt: skip
-        who = person_by_code(conn, req.row["from_code"])
-        if not req.waiting:
-            raise _not_waiting(req, who)
+        _require_lead(conn, peek, code, user_id, ans)  # V-ACC.similar/8: before anything else is said
+        with conn.transaction():
+            # Every idea the answer touches first, in id order (`lock_ideas`), then the request row. A merge
+            # (`apply_lead_merge`) and a draft's ask lock ideas the same way, so two leads answering each other's
+            # requests at once wait for each other instead of deadlocking. The ideas a request names never change.
+            lock_ideas(conn, peek.idea["id"], *(b["id"] for b in peek.brought))
+            req = load_request(conn, request_id, lock=True)
+            _require_lead(conn, req, code, user_id, ans)
+            who = person_by_code(conn, req.row["from_code"])
+            if not ended(req):
+                return _answer(conn, req, who, str(code), user_id, ans, body)
+            settle(conn, req.idea)  # kept: the transaction ends normally and the refusal follows
         if is_closed(str(req.idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
-        mergeable = _open_brought(req)
-        if ans == "merge":
-            if not req.brought:
-                raise Refused(422, "nothing_brought",
-                              f"Nothing was brought to merge. Approve puts {who.first_name} on your crew.", "answer")  # fmt: skip
-            if not mergeable:
-                raise Refused(409, "brought_not_open", "That idea is no longer open to merge.")
-        if reason:
-            problem = rules.check_reason(reason)
-            if problem:
-                raise Refused(problem.status, problem.code, problem.message, problem.field)
-        t = clock_now()
-        state = (rules.TEAMUP_STATE_FOR if req.kind == "teamup" else rules.MERGE_STATE_FOR)[ans]
-        masked_reason = adapters.hide(conn, str(req.idea["id"]), reason)[0] if reason else None
-        conn.execute(
-            f"UPDATE {req.table} SET state = %s, lead_reason_encrypted = %s, answered_by_code = %s, "  # noqa: S608
-            "answered_at = %s WHERE id = %s",
-            (state, seal(masked_reason, req.table, "lead_reason_encrypted", req.id) if masked_reason else None,
-             code, t, req.id),
+        raise _not_waiting(load_request(conn, request_id), who)
+
+
+def _require_lead(conn: Conn, req: Req, code: str | None, user_id: str, ans: Answer) -> None:
+    if code is None or lead_code(conn, req.idea) != code:
+        raise Refused(
+            403, "not_lead", "Only the lead of this idea can answer.",
+            audit=(actor(user_id), "teamup.answer_refused", entity_of(req.idea), {"request_id": req.id, "answer": ans}),
         )  # fmt: skip
-        requester = str(req.row["from_code"])
-        teamup_id = req.id if req.kind == "teamup" else None
-        lead_uuid = str(req.idea["id"])
-        merged = 0
-        if ans == "merge":
-            adapters.say(conn, lead_uuid, "teamup.approved_merged", author_code=code,
-                         payload={"request_id": req.id, "request": req.kind}, at=t)  # fmt: skip
-            note = unseal(req.row["note_encrypted"], req.table, "note_encrypted", req.id) or ""
-            for b in mergeable:
-                apply_lead_merge(
-                    conn, lead_uuid=lead_uuid, merged_uuid=b["id"], by_code=code, requester_code=requester,
-                    note_masked=note, teamup_request_id=teamup_id,
-                    merge_request_id=req.id if req.kind == "merge" else None, at=t,
-                )  # fmt: skip
-                merged += 1
-        elif ans == "team_only":
-            adapters.say(conn, lead_uuid, "teamup.approved_team_only", author_code=code,
-                         payload={"request_id": req.id, "request": req.kind}, at=t)  # fmt: skip
-            join_crew(conn, req.idea, [requester], via="teamup", at=t, teamup_request_id=teamup_id,
-                      payload={"request_id": req.id})  # fmt: skip
-        adapters.resolve(conn, req.id)
-        tell_requester(conn, req, ans, bool(masked_reason), user_id)
-        audit(conn, actor(user_id), "teamup.answer", entity_of(req.idea),
-              after={"request_id": req.id, "request": req.kind, "answer": ans, "merged": merged,
-                     "has_reason": bool(masked_reason)})  # fmt: skip
-        done = load_request(conn, request_id)
-        return {
-            "request": request_json(conn, done, full=True),
-            "result": rules.lead_result(ans, who.first_name, len(req.brought), masked_reason),
-            "say_hello": None
-            if ans == "decline"
-            else rules.say_hello(who.first_name, str(req.idea["idea_id"])),
-        }
+
+
+def _answer(
+    conn: Conn, req: Req, who: Person, code: str, user_id: str, ans: Answer, body: dict[str, Any]
+) -> dict[str, Any]:
+    """The answer itself, in `answer`'s transaction, with every idea and the request row locked."""
+    if not req.waiting:
+        raise _not_waiting(req, who)
+    reason = str(body.get("reason") or "").strip() if ans == "decline" else ""
+    mergeable = _open_brought(req)
+    if ans == "merge":
+        if not req.brought:
+            raise Refused(422, "nothing_brought",
+                          f"Nothing was brought to merge. Approve puts {who.first_name} on your crew.", "answer")  # fmt: skip
+        if not mergeable:
+            raise Refused(409, "brought_not_open", "That idea is no longer open to merge.")
+    if reason:
+        problem = rules.check_reason(reason)
+        if problem:
+            raise Refused(problem.status, problem.code, problem.message, problem.field)
+    t = clock_now()
+    state = (rules.TEAMUP_STATE_FOR if req.kind == "teamup" else rules.MERGE_STATE_FOR)[ans]
+    masked_reason = adapters.hide(conn, str(req.idea["id"]), reason)[0] if reason else None
+    conn.execute(
+        f"UPDATE {req.table} SET state = %s, lead_reason_encrypted = %s, answered_by_code = %s, "  # noqa: S608
+        "answered_at = %s WHERE id = %s",
+        (state, seal(masked_reason, req.table, "lead_reason_encrypted", req.id) if masked_reason else None,
+         code, t, req.id),
+    )  # fmt: skip
+    requester = str(req.row["from_code"])
+    teamup_id = req.id if req.kind == "teamup" else None
+    lead_uuid = str(req.idea["id"])
+    merged = 0
+    if ans == "merge":
+        adapters.say(conn, lead_uuid, "teamup.approved_merged", author_code=code,
+                     payload={"request_id": req.id, "request": req.kind}, at=t)  # fmt: skip
+        note = unseal(req.row["note_encrypted"], req.table, "note_encrypted", req.id) or ""
+        for b in mergeable:
+            apply_lead_merge(
+                conn, lead_uuid=lead_uuid, merged_uuid=b["id"], by_code=code, requester_code=requester,
+                note_masked=note, teamup_request_id=teamup_id,
+                merge_request_id=req.id if req.kind == "merge" else None, at=t,
+            )  # fmt: skip
+            merged += 1
+    elif ans == "team_only":
+        adapters.say(conn, lead_uuid, "teamup.approved_team_only", author_code=code,
+                     payload={"request_id": req.id, "request": req.kind}, at=t)  # fmt: skip
+        join_crew(conn, req.idea, [requester], via="teamup", at=t, teamup_request_id=teamup_id,
+                  payload={"request_id": req.id})  # fmt: skip
+    adapters.resolve(conn, req.id)
+    tell_requester(conn, req, ans, bool(masked_reason), user_id)
+    audit(conn, actor(user_id), "teamup.answer", entity_of(req.idea),
+          after={"request_id": req.id, "request": req.kind, "answer": ans, "merged": merged,
+                 "has_reason": bool(masked_reason)})  # fmt: skip
+    done = load_request(conn, req.id)
+    return {
+        "request": request_json(conn, done, full=True),
+        "result": rules.lead_result(ans, who.first_name, len(req.brought), masked_reason),
+        "say_hello": None if ans == "decline" else rules.say_hello(who.first_name, str(req.idea["idea_id"])),
+    }
 
 
 def tell_requester(conn: Conn, req: Req, ans: Answer, has_reason: bool, sender: str) -> None:
