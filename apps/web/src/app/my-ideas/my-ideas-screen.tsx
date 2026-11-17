@@ -47,6 +47,14 @@ function stateFromHref(href: string, base: ListState): ListState {
 }
 
 const LOAD_FAILED = "We can't load your ideas just now. Please try again in a minute.";
+/** MyIdeas.md, `search=Suggestions open`: the example questions and what search reads. */
+const ASKS = [
+  "Which of my ideas need me this week?",
+  "Ideas about the rejection SMS",
+  "What did the review desk say no to, and why?",
+];
+const SEARCH_READS =
+  "Search reads your titles, your own words, your files and the review desk’s notes, so it finds ideas by meaning, not only exact words.";
 
 function MiniTrack({ track }: { track: NonNullable<MyIdeaRow["track"]> }) {
   return (
@@ -192,11 +200,14 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
     }
   };
 
+  // An action only the desktop board draws ("See 1 in Teamed up") is not shown on a phone, whose empty states
+  // offer "Show all ideas" alone (PhoneMyIdeas.md)
   const emptyAction = (a: MyIdeasEmpty["actions"][number], i: number) =>
     a.to.startsWith("/my-ideas") ? (
       <Button
         key={a.label}
         variant={a.style === "primary" ? "primary" : "line"}
+        className={a.desk_only ? "mi-desk" : undefined}
         onClick={() => go(stateFromHref(a.to, cur()))}
       >
         {a.label}
@@ -206,6 +217,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
         key={a.label}
         href={a.to}
         variant={a.style === "line" || (i > 0 && !a.style) ? "line" : "primary"}
+        className={a.desk_only ? "mi-desk" : undefined}
       >
         {a.label}
       </ButtonLink>
@@ -269,9 +281,17 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
             go(textNow.current === "" ? { filter, q: "" } : { filter });
           }}
           onSubmit={(t) => go({ q: t.trim() })}
-          // TODO(lane F): "Or ask in your own words", the example questions and the line on what search reads
-          // (L-SEARCH/4-5, C-SEARCH.behaviour/1) wait for lane F's search; today's search matches titles, short
-          // summaries and references, and says so in its matched line.
+          // The panel's "Or ask in your own words", its three example questions and the line on what search reads,
+          // as MyIdeas.md's "Suggestions open" state draws them (C-SEARCH.behaviour/1). A question goes in `q`
+          // like any search.
+          // TODO(lane F): answering a question in your own words ("Read your question as “Needs you”…",
+          // L-SEARCH/4-5) is lane F's search on the same `q`; until it lands the words are matched as text.
+          asks={ASKS}
+          onAsk={(question) => {
+            textNow.current = question;
+            go({ q: question });
+          }}
+          foot={SEARCH_READS}
           answer={
             data.search && !loading
               ? { line: data.search.sentence, source: data.search.matched_line }
@@ -350,7 +370,14 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
         ) : data.empty ? (
           <div className="card mi-emptyc">
             <Empty title={data.empty.title} action={<>{data.empty.actions.map(emptyAction)}</>}>
-              {data.empty.line}
+              {data.empty.phone_line ? (
+                <>
+                  <span className="mi-desk">{data.empty.line}</span>
+                  <span className="mi-phone">{data.empty.phone_line}</span>
+                </>
+              ) : (
+                data.empty.line
+              )}
             </Empty>
           </div>
         ) : (
@@ -379,7 +406,14 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
                       {r.track ? <MiniTrack track={r.track} /> : null}
                     </div>
                     <div className="mi-next">
-                      <p className="mi-ns">{r.next_step.sentence}</p>
+                      {r.next_step.phone_sentence ? (
+                        <p className="mi-ns">
+                          <span className="mi-desk">{r.next_step.sentence}</span>
+                          <span className="mi-phone">{r.next_step.phone_sentence}</span>
+                        </p>
+                      ) : (
+                        <p className="mi-ns">{r.next_step.sentence}</p>
+                      )}
                       {a.to ? (
                         <ButtonLink
                           href={a.to}

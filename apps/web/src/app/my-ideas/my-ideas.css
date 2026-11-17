@@ -70,7 +70,13 @@
   padding: 8px 12px;
   border-radius: 12px;
   background: var(--wash);
-  animation: miBackFade 4s ease 3s forwards;
+}
+
+/* The wash fades only for people who have not asked for less motion (F-MOTION.reduced) */
+@media (prefers-reduced-motion: no-preference) {
+  .mi-back:not(:empty) {
+    animation: miBackFade 4s ease 3s forwards;
+  }
 }
 
 @keyframes miBackFade {
@@ -236,7 +242,8 @@
 
 /* ---------- Phone (PhoneMyIdeas): tabs, then filter chips, sort and Copy link, then the list as cards ---------- */
 @media (max-width: 640px) {
-  .mi-desk {
+  /* .mi in front: a desktop-only button keeps its own display otherwise */
+  .mi .mi-desk {
     display: none;
   }
 
