@@ -221,3 +221,47 @@ def test_S_R2_left_3_another_reviewers_question_reads_with_their_first_name(
 
     assert lines("meera") == ["Anil asked, today 11:20 am"] * 2
     assert lines("anil") == ["You asked, today 11:20 am"] * 2
+
+
+# ---- finding 10 (DEC-107): the desk sees checked files and marked customer-detail ones; nobody sees checking ------
+def _file(db: Conn, idea: dict[str, Any], sharer: dict[str, str], n: int, state: str) -> str:
+    fid = f"ATT-2026-{n:06d}"
+    db.execute(
+        "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, store_key, kind, file_state) "
+        "VALUES (%s, %s, %s, %s, 'image/png', 2048, %s, 'file', %s)",
+        (fid, idea["id"], sharer["code"], f"sms-{n}.png", f"clean/{fid}", state),
+    )
+    return fid
+
+
+def test_S_R2_DEC_107_files_by_check_state_on_the_reviewer_page_and_for_a_co_sharer(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    _merge_ravi_in(db, cast)
+    kavya, idea = cast["kavya"], cast["idea"]
+    attached = {s: _file(db, idea, kavya, n, s) for n, s in enumerate(
+        ("checked", "personal_data_found", "checking", "infected", "locked"), start=801)}  # fmt: skip
+    sent = _send(db, cast)
+    q2 = sent["questions"][1]["id"]
+    on_answer = {s: _file(db, idea, kavya, n, s) for n, s in enumerate(
+        ("hidden_checked", "personal_data_found", "checking", "infected"), start=811)}  # fmt: skip
+    asking.save_answer(db, q2, kavya["id"], "Two screenshots of the SMS.", list(on_answer.values()), SENT)
+    asking.send_answers(db, sent["id"], kavya["id"], SENT)
+    page = reads.reviewer_idea(db, idea["idea_id"], cast["meera"]["id"], SENT)
+    files = [(a["id"], a["customer_detail"]) for a in page["artefacts"] if a["kind"] == "file"]
+    assert files == [
+        (attached["checked"], False), (attached["personal_data_found"], True),
+        (on_answer["hidden_checked"], False), (on_answer["personal_data_found"], True),
+    ]  # fmt: skip
+    answer = next(p for p in page["parts"] if p["part"] == "evidence")["questions"][0]["answer"]
+    assert [(x["id"], x["customer_detail"]) for x in answer["files"]] == [
+        (on_answer["hidden_checked"], False), (on_answer["personal_data_found"], True)
+    ]  # fmt: skip
+    # Ravi, credited through the merge, reads Kavya's sent answer: the checked file only, never the marked one
+    seen = asking.open_set_for_sharer(db, idea["idea_id"], cast["ravi"]["id"], SENT)
+    assert seen is not None
+    assert [x["id"] for x in seen["questions"][1]["answer"]["files"]] == [on_answer["hidden_checked"]]
+    # the listen script is the same for every viewer: no file with a customer detail is named in it
+    script = reads.listen_script(db, idea["idea_id"], cast["meera"]["id"])
+    evidence = next(p for p in script["parts"] if p["part"] == "evidence")["text"]
+    assert "sms-801.png" in evidence and "sms-802.png" not in evidence
