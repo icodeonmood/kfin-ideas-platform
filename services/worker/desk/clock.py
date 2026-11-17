@@ -84,11 +84,20 @@ def answer_due(sent_at: dt.datetime, time_to_answer: str, p: Promises, cal: Cale
     return cal.at(sent_at.astimezone(cal.tz).date() + dt.timedelta(days=days), p.deadline_hour)
 
 
-def give_more_time(due_at: dt.datetime, p: Promises, now: dt.datetime | None = None) -> dt.datetime:
-    """'Give 2 more days': the deadline moves two days on from where it stands, keeping its time of day; once it has
-    passed, two days on from `now`, so more time on an overdue set never leaves it overdue (L-QUESTIONS.clock/3)."""
-    base = due_at if now is None or due_at >= now else now
-    return base + dt.timedelta(days=p.give_more_days)
+def give_more_time(
+    due_at: dt.datetime, p: Promises, now: dt.datetime | None = None, cal: Calendar | None = None
+) -> dt.datetime:
+    """'Give 2 more days': the deadline moves two days on from where it stands, keeping its time of day
+    (L-QUESTIONS.clock/3). Once it has passed, it counts from `now`, so more time on an overdue set never leaves it
+    overdue, and lands as any deadline does: at the deadline hour, office time, on the day two days on, or the next
+    working day after it (L-QUESTIONS.clock/5)."""
+    if now is None or due_at >= now:
+        return due_at + dt.timedelta(days=p.give_more_days)
+    cal = cal or Calendar()
+    day = now.astimezone(cal.tz).date() + dt.timedelta(days=p.give_more_days)
+    while not cal.working(day):
+        day += dt.timedelta(days=1)
+    return cal.at(day, p.deadline_hour)
 
 
 def reminders(sent_at: dt.datetime, due_at: dt.datetime, p: Promises) -> list[dt.datetime]:

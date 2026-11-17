@@ -566,6 +566,18 @@
         "stage"
       ]
     },
+    "my_ideas_filter": {
+      "source": "S-07.filters (lane E): the filters of My ideas; closed and picked_and_building are the idea_status groups",
+      "values": [
+        "all",
+        "needs_you",
+        "drafts",
+        "with_review_desk",
+        "picked_and_building",
+        "shipped",
+        "closed"
+      ]
+    },
     "inbox_tab": {
       "source": "A-API.inbox",
       "values": [

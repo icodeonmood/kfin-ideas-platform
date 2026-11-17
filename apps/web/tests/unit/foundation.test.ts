@@ -114,6 +114,30 @@ describe("F-COLOR.contrast and F-A11Y.rules/1", () => {
     const rule = offer.slice(offer.indexOf(".input,\n.textarea,\n.select {"));
     expect(rule.slice(0, rule.indexOf("}"))).toContain("var(--fieldBorder)");
   });
+
+  it("C-PILL.variants, F-COLOR.contrast: white words on the band pill reach 4.5:1 over both band ends and the slab (BLD-D012)", () => {
+    const css = read(`${APP}components.css`).replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = css.match(/(?:^|\})\s*\.pill\.band\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(
+      rule
+        .match(/(?:^|;)\s*color:\s*([^;]+);/)?.[1]
+        ?.trim()
+        .toLowerCase(),
+    ).toMatch(/^(#fff|#ffffff|white)$/);
+    const fill = rule.match(/background:\s*rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/);
+    if (!fill) throw new Error(`.pill.band background is not an rgba() fill: ${rule.trim()}`);
+    const [r, g, b, a] = fill.slice(1).map(Number) as [number, number, number, number];
+    const over = (bg: string) => {
+      const v = bg.replace("#", "");
+      return `#${[r, g, b]
+        .map((c, i) => Math.round(c * a + parseInt(v.slice(i * 2, i * 2 + 2), 16) * (1 - a)))
+        .map((c) => c.toString(16).padStart(2, "0"))
+        .join("")}`;
+    };
+    // The pack's gradient band runs #3455ec to #f58256; the Shipped pill on a One's post sits on --slab.
+    for (const bg of ["#3455ec", "#f58256", hex("--slab")])
+      expect(contrast("#ffffff", over(bg)), `white on .pill.band over ${bg}`).toBeGreaterThanOrEqual(4.5);
+  });
 });
 
 describe("F-MOTION FLIP helper (BLD-E005)", () => {
