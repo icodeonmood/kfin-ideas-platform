@@ -128,7 +128,9 @@ def _kindling(conn: Conn, kind: str | None) -> list[dict[str, Any]]:
         mine = sorted((dict(r) for r in rows if r["status"] == stage), key=lambda r: r["rn"])
         items = [x for x in (_item(r, back) for r in mine) if x is not None][:KINDLING_ITEMS]
         for x in items:  # "Problem, Distributor experience, 4 colleagues on it" (S-WALL.kindling)
-            x["meta"] = ", ".join(y for y in (x["meta"], f"{plural(x['crew_count'], 'colleague')} on it") if y)
+            x["meta"] = ", ".join(
+                y for y in (x["meta"], f"{plural(x['crew_count'], 'colleague')} on it") if y
+            )
         out.append({"stage": stage, "count": int(mine[0]["stage_count"]) if mine else 0, "items": items})
     return out
 
