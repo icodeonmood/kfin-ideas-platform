@@ -94,8 +94,8 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
     });
   }
 
-  test("public pages: sign in and signed out", async ({ page }) => {
-    for (const path of ["/sign-in", "/signed-out"]) {
+  test("public pages: sign in and Landing (S-01, S-02)", async ({ page }) => {
+    for (const path of ["/sign-in", "/"]) {
       await page.goto(path);
       await expectNoSeriousAxeIssues(page);
     }
@@ -157,7 +157,10 @@ test("an admin can switch a feature off and on with a reason, and it is shown as
 test("sign out ends the session", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
   await page.getByRole("button", { name: "Sign out" }).click();
-  await page.waitForURL(/\/signed-out/);
+  // S-01 Landing (BLD-A179). Signed in, "/" is Home, so wait for Landing's own heading, not the address.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Every fix starts with someone who noticed." }),
+  ).toBeVisible();
   await page.goto("/my-ideas");
   await expect(page).toHaveURL(/\/sign-in\?next=%2Fmy-ideas/);
 });

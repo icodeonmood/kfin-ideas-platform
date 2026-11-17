@@ -6,6 +6,7 @@ import datetime as dt
 import re
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -61,7 +62,8 @@ def test_sign_out_revokes_the_session() -> None:
     token = browser.cookies["ideas_session"]
     assert browser.get("/api/me").status_code == 200
     out = browser.post("/auth/logout")
-    assert out.status_code == 303 and out.headers["location"].endswith("/signed-out")
+    # S-01: signed out, the person is back at the front door (the separate signed-out page is retired, BLD-A179).
+    assert out.status_code == 303 and urlsplit(out.headers["location"]).path == "/"
     replay = httpx.get(WEB + "/api/me", headers={"Cookie": f"ideas_session={token}"}, timeout=10)
     assert replay.status_code == 401, "a revoked token must not work even if someone kept a copy"
 
