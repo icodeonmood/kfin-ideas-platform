@@ -24,10 +24,10 @@ from teamup.store import (
     hidden_from,
     is_closed,
     lead_code,
+    lead_seen_by,
     load_draft,
     load_idea_for,
     lock_ideas,
-    person_by_code,
     remember,
     remembered,
     require_code,
@@ -55,21 +55,22 @@ def waiting_merge_request(conn: Conn, draft_uuid: Any) -> str | None:
     return str(row["id"]) if row else None
 
 
-def merge_request_json(conn: Conn, req: Req | None) -> dict[str, Any]:
+def merge_request_json(conn: Conn, req: Req | None, user_id: str) -> dict[str, Any]:
     """E-ENTITIES Draft.merge_request `{other_idea_id, state, note, lead_reason?}`, plus the request id, the lead
-    and what Check it shows (`after`, L-MERGE.request/4–8). `{state: 'none'}` when there has been none."""
+    and what Check it shows (`after`, L-MERGE.request/4–8). `{state: 'none'}` when there has been none. Only the
+    draft's owner (`user_id`) reads it; the lead is named to them only as DEC-104 allows (BLD-F029)."""
     if req is None:
         return {"state": "none", "after": None}
-    lead = person_by_code(conn, lead_code(conn, req.idea))
+    lead = lead_seen_by(conn, req.idea, user_id, str(req.row["from_code"]))
     reason = unseal(req.row["lead_reason_encrypted"], "merge_requests", "lead_reason_encrypted", req.id)
     out: dict[str, Any] = {
         "id": req.id,
         "other_idea_id": req.idea["idea_id"],
         "state": req.state,
         "note": unseal(req.row["note_encrypted"], "merge_requests", "note_encrypted", req.id) or "",
-        "lead": lead.as_json(),
+        "lead": lead.ref,
         "after": rules.draft_after(
-            req.state, lead_first=lead.first_name, lead_ref=str(req.idea["idea_id"]), reason=reason
+            req.state, lead_first=lead.first, lead_ref=str(req.idea["idea_id"]), reason=reason
         ),
     }
     if reason:
@@ -84,7 +85,7 @@ def state(conn: Conn, draft_id: str, user_id: str) -> dict[str, Any]:
     if req is not None and ended(req):  # the idea closed, or this draft was sent or archived (BLD-F024)
         settle(conn, req.idea)
         req = _latest(conn, draft["id"])
-    return merge_request_json(conn, req)
+    return merge_request_json(conn, req, user_id)
 
 
 def ask(
@@ -98,7 +99,7 @@ def ask(
     asked = {"draft": draft_id, **body}
     made = remembered(conn, user_id, idempotency_key, ROUTE_ASK, asked)
     if made is not None:
-        return merge_request_json(conn, load_request(conn, made))
+        return merge_request_json(conn, load_request(conn, made), user_id)
     note = str(body.get("note") or "")
     with audited(conn), conn.transaction():
         draft = load_draft(conn, draft_id, code)
@@ -110,7 +111,7 @@ def ask(
         # the same key sent twice at once: the second waited for the lock, and returns the first
         made = remembered(conn, user_id, idempotency_key, ROUTE_ASK, asked)
         if made is not None:
-            return merge_request_json(conn, load_request(conn, made))
+            return merge_request_json(conn, load_request(conn, made), user_id)
         if draft["status"] != "draft" or draft["archived_at"] is not None:
             raise Refused(409, "draft_closed", "This draft has already been sent.")
         if is_closed(str(other["status"])):
@@ -118,11 +119,13 @@ def ask(
         lead_of_other = lead_code(conn, other)
         if lead_of_other == code:
             raise Refused(409, "already_on_crew", "You lead this idea.")
-        lead = person_by_code(conn, lead_of_other)
+        lead = lead_seen_by(
+            conn, other, user_id, code
+        )  # BLD-F029: "Waiting on the lead to merge" when not named
         # a request from a draft sent since does not count as open (BLD-F024)
         end_sent_drafts(conn, other["id"])
         if waiting_merge_request(conn, draft["id"]) or waiting_from(conn, other["id"], code):
-            raise Refused(409, "already_requested", f"Waiting on {lead.first_name} to merge")
+            raise Refused(409, "already_requested", rules.waiting_on_merge(lead.first))
         problem = rules.check_note(note, adapters.note_min())
         if problem:
             raise Refused(problem.status, problem.code, problem.message, problem.field)
@@ -137,7 +140,7 @@ def ask(
                      clock_now()),
                 )  # fmt: skip
         except psycopg.errors.UniqueViolation:
-            raise Refused(409, "already_requested", f"Waiting on {lead.first_name} to merge") from None
+            raise Refused(409, "already_requested", rules.waiting_on_merge(lead.first)) from None
         # L-AUDIT.metrics; the reviewer's page reads it (V-ACC.similar/7 reads `kept_separate` the same way)
         conn.execute(
             "UPDATE similar_links SET outcome = 'merge_asked' WHERE idea_uuid = %s AND other_idea_uuid = %s",
@@ -147,7 +150,7 @@ def ask(
         audit(conn, actor(user_id), "merge_request.ask", f"draft:{draft['id']}",
               after={"request_id": rid, "other_idea_id": other["idea_id"]})  # fmt: skip
         remember(conn, user_id, idempotency_key, ROUTE_ASK, asked, rid)
-        return merge_request_json(conn, load_request(conn, rid))
+        return merge_request_json(conn, load_request(conn, rid), user_id)
 
 
 def withdraw(conn: Conn, draft_id: str, user_id: str) -> dict[str, Any]:
@@ -162,4 +165,4 @@ def withdraw(conn: Conn, draft_id: str, user_id: str) -> dict[str, Any]:
     latest = _latest(conn, draft["id"])
     if latest is None:
         raise Refused(404, "not_found")
-    return merge_request_json(conn, latest)
+    return merge_request_json(conn, latest, user_id)
