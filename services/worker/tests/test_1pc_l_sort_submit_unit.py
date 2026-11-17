@@ -411,6 +411,52 @@ def test_l_hide_an_edit_goes_through_c_hide_once_it_is_here(monkeypatch: pytest.
     ]  # fmt: skip
 
 
+def test_l_submit_edit_3_words_sent_back_as_stored_are_not_masked_again_bld_c141(
+    monkeypatch: pytest.MonkeyPatch, seed_rules: None
+) -> None:
+    """An unchanged Save (and a draft's who would help sent again): words sent back exactly as their stored masked
+    copies reach neither hide nor the database, so no hidden-detail or sealed rows are written again."""
+    from submit import adapters, config, edit, helpers
+
+    def no_hide(*a: Any, **k: Any) -> Any:
+        raise AssertionError("masked again")
+
+    monkeypatch.setattr(adapters, "mask_text", no_hide)
+
+    class NoWrites:
+        def execute(self, *a: Any, **k: Any) -> Any:
+            raise AssertionError("an unchanged save wrote a row")
+
+    idea: dict[str, Any] = {
+        "id": str(uuid.uuid4()),
+        "title": "SMS codes confuse investors",
+        "summary": "Folio Folio ••••90 gets the SMS with only a code.",
+        "helper_picks": ["Someone from tech"],
+        "helper_text": "whoever has Phone ••••10",
+    }
+    s = edit._Save(NoWrites(), idea, str(uuid.uuid4()), 3)  # type: ignore[arg-type]
+    edit._save_texts(
+        s,
+        {
+            "title": "SMS codes confuse investors",
+            "summary": " Folio Folio ••••90 gets  the SMS with only a code. ",
+        },
+    )
+    edit._save_helpers(
+        s, {"helpers": {"picks": ["someone from tech"], "text": "whoever has Phone ••••10"}}, config.lists()
+    )
+    assert s.after == {}
+    kept = helpers.mask(
+        NoWrites(),  # type: ignore[arg-type]
+        idea["id"],
+        "u",
+        "whoever has Phone ••••10",
+        source_id=f"{idea['id']}:draft:helpers",
+        stored="whoever has Phone ••••10",
+    )
+    assert kept == "whoever has Phone ••••10"
+
+
 @pytest.mark.parametrize(("returned", "expected"), [(3, 3), (0, 0), (-1, None)])
 def test_l_similar_failure_minus_one_is_couldnt_check_not_zero(
     monkeypatch: pytest.MonkeyPatch, returned: int, expected: int | None
@@ -602,6 +648,40 @@ def test_s05_fix_the_size_line_reads_as_the_board() -> None:
     )
     assert fix.size_line(None, "dont_know") == ""
     assert fix.size_line(Worth(outside_tools="fully"), None) == "less reliance on outside tools"
+
+
+def test_s05_fix_about_is_kept_before_a_single_figure_bld_c140() -> None:
+    """S-05.fix, Review.md "about ₹25,000 a month saved": the flag written per figure (`idea_worth.<m>_about`) and
+    the text rebuilt from the stored numbers with it, so Check it, Send it and the edit page all keep "about"."""
+    import types
+
+    from desk.worth import parse
+    from submit import fix
+
+    assert fix.about(parse("cost_month", "about 25k")) is True
+    assert fix.about(parse("hours_month", "~70")) is True
+    assert fix.about(parse("cost_month", "25k")) is False
+    assert fix.about(parse("hours_month", "about 70 to 150")) is False  # a range never keeps it
+    assert fix.about(None) is None
+    row: dict[str, Any] = {
+        "hours_low": 70, "hours_high": 150, "hours_about": None,
+        "cost_low": 25000, "cost_high": None, "cost_about": True,
+        "revenue_low": 1200000, "revenue_high": None, "revenue_about": None,  # a row from before the flag
+        "outside_tools": None,
+    }  # fmt: skip
+
+    class Conn:
+        def execute(self, query: str, params: Any = None) -> Any:
+            assert "by_side = 'sharer'" in query
+            return types.SimpleNamespace(fetchone=lambda: row)
+
+    w = fix.sharer_worth(Conn(), str(uuid.uuid4()))  # type: ignore[arg-type]
+    assert w is not None and w.cost_month is not None
+    assert w.cost_month.text == "about ₹25,000 a month"
+    assert fix.size_line(w, "partly") == (
+        "70 to 150 hours a month, about ₹25,000 a month saved, ₹12,00,000 a month in new revenue, "
+        "solved elsewhere: partly"
+    )
 
 
 def test_s05_part6_who_would_help_picks_come_from_the_list(seed_rules: None) -> None:

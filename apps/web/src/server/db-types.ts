@@ -801,8 +801,10 @@ export interface IdeaWorth {
   by_code: string | null;
   by_side: string;
   by_user_id: string | null;
+  cost_about: boolean | null;
   cost_high: Numeric | null;
   cost_low: Numeric | null;
+  hours_about: boolean | null;
   hours_high: Numeric | null;
   hours_low: Numeric | null;
   id: Generated<Int8>;
@@ -810,6 +812,7 @@ export interface IdeaWorth {
   kind: string | null;
   note_encrypted: Buffer | null;
   outside_tools: string | null;
+  revenue_about: boolean | null;
   revenue_high: Numeric | null;
   revenue_low: Numeric | null;
 }

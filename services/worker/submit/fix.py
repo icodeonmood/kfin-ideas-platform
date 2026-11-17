@@ -8,10 +8,12 @@
 2. Only how is needed to add a fix, at least 20 characters (V-FIELDS.checkit/8). "Close, and keep what you wrote" keeps
    a started fix with `included: false`: "You started a fix. It isn't included yet."
 3. Amounts in any Indian form (2 lakh, 2L, 2,00,000, 25k, ranges) are read by the platform's one quantity reader,
-   lane B's `desk.worth` (L-WORTH/1), and come back normalised in `Range.text` ("70 to 150 hours a month").
+   lane B's `desk.worth` (L-WORTH/1), and come back normalised in `Range.text` ("70 to 150 hours a month"). "About"
+   before a single figure stays ("about ₹25,000 a month saved", as drawn): `idea_worth.<measure>_about` keeps it.
 4. Every answer in words goes through hide like any part (`submit.adapters.mask_text`, DEC-103): only the masked
    copy is kept here; the words as typed are sealed for the sharer alone. One source id per answer, so saving the
-   sheet again replaces what was hidden from that answer before.
+   sheet again replaces what was hidden from that answer before. An answer sent back exactly as its stored masked
+   copy is unchanged and is not masked again: no hidden-detail or sealed rows are written for it (BLD-C141).
 5. A fix never holds Submit (L-SUBMIT.pre/6); with one included the button reads "Submit with my fix".
 
 The sharer's figures are rows in `idea_worth` (by_side 'sharer'; the latest counts). On a draft they are replaced,
@@ -146,8 +148,17 @@ def read_answers(raw: Any, *, need_how: bool, at: str = "") -> Answers:
 # --- Reading ------------------------------------------------------------------------------------------------------
 
 
+def about(r: Range | None) -> bool | None:
+    """Whether one figure was typed with "about" (`idea_worth.<measure>_about`): None when it is not given, and only a
+    single figure keeps it, since `desk.worth` leaves it off a range."""
+    if r is None:
+        return None
+    return r.high is None and r.text.startswith("about ")
+
+
 def sharer_worth(conn: Conn, idea_uuid: str) -> Worth | None:
-    """The sharer's latest figures, normalised again from the stored numbers (`desk.worth` writes the text)."""
+    """The sharer's latest figures, normalised again from the stored numbers (`desk.worth` writes the text), with
+    "about" again before a single figure the sharer wrote it on (a row from before the flag reads as plain)."""
     row = conn.execute(
         "SELECT * FROM idea_worth WHERE idea_uuid = %s AND by_side = 'sharer' ORDER BY at DESC, id DESC LIMIT 1",
         (idea_uuid,),
@@ -161,6 +172,8 @@ def sharer_worth(conn: Conn, idea_uuid: str) -> Worth | None:
             ranges[measure] = None
             continue
         typed = _plain(float(low)) if high is None else f"{_plain(float(low))} to {_plain(float(high))}"
+        if high is None and row.get(f"{prefix}_about"):
+            typed = f"about {typed}"
         ranges[measure] = parse(measure, typed)  # type: ignore[arg-type]
     tools = row["outside_tools"] if row["outside_tools"] in OUTSIDE_TOOLS else None
     w = Worth(**ranges, outside_tools=tools)
@@ -273,10 +286,15 @@ def store(
     """Mask the words (hide, one source id per answer under `stem`), keep the masked copy in `idea_fix` and the
     figures in `idea_worth`. Inside the caller's transaction."""
     ids = source_ids(idea_uuid, stem)
+    stored = conn.execute(
+        "SELECT how, needs, solved_note, risks FROM idea_fix WHERE idea_uuid = %s", (idea_uuid,)
+    ).fetchone()
     masked: dict[str, str | None] = {}
     emptied: list[str] = []
     for key, text in answers.words.items():
-        if text:
+        if text and stored is not None and text == stored[key]:
+            masked[key] = text  # the stored masked copy sent back: hide already holds what it hid from it
+        elif text:
             masked[key] = adapters.mask_text(conn, idea_uuid, text, by=user_id, source_id=ids[key]).text
         else:
             masked[key] = None
@@ -308,11 +326,16 @@ def store(
         r = getattr(w, m)
         return r.high if r is not None else None
 
+    def ab(m: str) -> bool | None:
+        return about(getattr(w, m))
+
     conn.execute(
-        "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, cost_high, "
-        "revenue_low, revenue_high, outside_tools) VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s, %s, %s)",
-        (idea_uuid, code, lo("hours_month"), hi("hours_month"), lo("cost_month"), hi("cost_month"),
-         lo("revenue_month"), hi("revenue_month"), w.outside_tools),
+        "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, hours_about, cost_low, "
+        "cost_high, cost_about, revenue_low, revenue_high, revenue_about, outside_tools) "
+        "VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (idea_uuid, code, lo("hours_month"), hi("hours_month"), ab("hours_month"), lo("cost_month"),
+         hi("cost_month"), ab("cost_month"), lo("revenue_month"), hi("revenue_month"), ab("revenue_month"),
+         w.outside_tools),
     )  # fmt: skip
 
 

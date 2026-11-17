@@ -720,8 +720,9 @@ def test_l_submit_keys_never_reach_sql_unless_well_formed() -> None:
 
 
 def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world: dict[str, Any]) -> None:
-    """S-05.fix: "Add my fix" with figures in any Indian form → `Fix` with `ready_count` and `Range.text`; a PAN in
-    the words is hidden like any part, and saving again replaces what was hidden from that answer."""
+    """S-05.fix: "Add my fix" with figures in any Indian form → `Fix` with `ready_count` and `Range.text`, "about"
+    kept before a single figure (BLD-C140, Review.md "about ₹25,000 a month saved"); a PAN in the words is hidden
+    like any part, and saving again replaces what was hidden from that answer."""
     conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
     body = {
         "how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F.",  # a made-up PAN
@@ -732,7 +733,7 @@ def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world
     assert out["how"] == "Send the reason in plain words in the SMS, as for PAN PAN ••••4F."
     assert out["worth"] == {
         "hours_month": {"low": 70.0, "high": 150.0, "text": "70 to 150 hours a month"},
-        "cost_month": {"low": 25000.0, "text": "₹25,000 a month"},
+        "cost_month": {"low": 25000.0, "text": "about ₹25,000 a month"},
     }
     assert out["ready_count"] == 3 and out["included"] is True
     assert out["readiness"] == "3 of 5 ready for the review desk"
@@ -741,8 +742,13 @@ def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world
         "rail": "Added",
         "line": "Included, 3 of 5 ready",
         "fix_line": "Send the reason in plain words in the SMS, as for PAN PAN ••••4F.",
-        "size_line": "70 to 150 hours a month, ₹25,000 a month saved, solved elsewhere: partly",
+        "size_line": "70 to 150 hours a month, about ₹25,000 a month saved, solved elsewhere: partly",
     }
+    flags = conn.execute(
+        "SELECT hours_about, cost_about, revenue_about FROM idea_worth WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (draft,),
+    ).fetchone()
+    assert (flags["hours_about"], flags["cost_about"], flags["revenue_about"]) == (False, True, None)
     hid = conn.execute(
         "SELECT kind, masked FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
     ).fetchall()
@@ -899,6 +905,160 @@ def test_l_submit_edit_fix_and_helpers_save_as_a_version_with_range_text(world: 
             conn, ref, asha, {**body, "fix": {"how": "Send it.", "worth": {"cost_month": "lots"}}}, now=later
         )
     assert err.value.field == "fix.how"
+
+
+def _hide_rows(conn: Any, uid: str) -> dict[str, Any]:
+    """What hide holds for an idea: its hidden details and the sealed words, each row as it is stored."""
+    hidden = conn.execute(
+        "SELECT id, source, source_id, kind, masked FROM hidden_details WHERE idea_uuid = %s ORDER BY id",
+        (uid,),
+    ).fetchall()
+    sealed = conn.execute(
+        "SELECT id, source_id, text_encrypted FROM idea_words_sealed WHERE idea_uuid = %s ORDER BY id", (uid,)
+    ).fetchall()
+    return {"hidden": [dict(r) for r in hidden], "sealed": [dict(r) for r in sealed]}
+
+
+def test_l_submit_edit_3_an_unchanged_save_hides_nothing_again(world: dict[str, Any]) -> None:
+    """BLD-C141, J-RECOVER edit step: words sent back exactly as their stored masked copies (the summary, the fix and
+    who would help, as the edit page gave them) are not masked again, so a repeat Save adds no hidden-detail or
+    sealed rows, no figures and no version."""
+    conn, asha, uid = world["conn"], world["p"]["asha"], world["draft"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=1)
+    first = edit.save(
+        conn,
+        ref,
+        asha,
+        {
+            "declaration_version": DECLARATION_VERSION,
+            "summary": "Folio 1234567890 gets the SMS with only R07.",  # a made-up folio
+            "fix": {
+                "how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F.",  # a made-up PAN
+                "worth": {"cost_month": "about 25k"},
+            },
+            "helpers": {"picks": ["Someone from tech"], "text": "whoever has 9876543210"},  # a made-up phone
+        },
+        now=later,
+    )
+    assert first["changed_fields"] == ["summary", "fix", "helpers"]
+    before = _hide_rows(conn, uid)
+    kinds = {r["kind"] for r in before["hidden"]}
+    assert {"folio", "pan", "phone"} <= kinds and len(before["sealed"]) >= 3
+    worth_rows = conn.execute("SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s", (uid,)).fetchone()[
+        "n"
+    ]
+    idea = _idea(world)
+    page = edit.page(conn, ref, asha, now=later)
+    assert "1234567890" not in idea["summary"] and "9876543210" not in idea["helper_text"]
+    assert "ABCPE1234F" not in page["fix"]["how"]
+    again = edit.save(
+        conn,
+        ref,
+        asha,
+        {
+            "declaration_version": DECLARATION_VERSION,
+            "summary": idea["summary"],
+            "fix": {"how": page["fix"]["how"], "worth": page["fix"]["worth"]},
+            "helpers": {"picks": list(idea["helper_picks"]), "text": idea["helper_text"]},
+        },
+        now=later + dt.timedelta(minutes=5),
+    )
+    assert again["version"] is None and again["changed_fields"] == []
+    assert _hide_rows(conn, uid) == before
+    assert (
+        conn.execute("SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s", (uid,)).fetchone()["n"]
+        == worth_rows
+    )  # "about ₹25,000 a month" reads back the same, so no new figures row (BLD-C140)
+
+
+def test_s05_fix_and_helpers_sent_back_masked_keep_what_was_hidden(world: dict[str, Any]) -> None:
+    """BLD-C141 on a draft (one source id per answer): the fix sheet or who would help sent again with the masked copy
+    it got back keeps the hidden detail and the sealed words as they were, instead of hiding nothing from the masked
+    copy and dropping them."""
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    out = fix.put_draft(
+        conn,
+        draft,
+        asha,
+        {"how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F."},
+        now=NOW,
+    )
+    said = helpers.put_draft(
+        conn, draft, asha, {"picks": ["Data or reports"], "text": "whoever has 9876543210"}, now=NOW
+    )
+    before = _hide_rows(conn, draft)
+    assert {r["kind"] for r in before["hidden"]} >= {"pan", "phone"}
+    fix.put_draft(conn, draft, asha, {"how": out["how"], "basis": "report"}, now=NOW)
+    again = helpers.put_draft(
+        conn, draft, asha, {"picks": ["Data or reports", "Someone from tech"], "text": said["text"]}, now=NOW
+    )
+    assert again["text"] == "whoever has Phone ••••10"
+    assert _hide_rows(conn, draft) == before
+
+
+def test_l_submit_edit_fix_figures_cleared_then_added_again(world: dict[str, Any]) -> None:
+    """J-RECOVER edit step, L-WORTH/7 (`replace_worth=False`): clearing every figure adds an all-empty sharer row, so
+    the fix counts no size and its size line drops the figures; adding figures again counts and reads them. Each
+    earlier row stays."""
+    conn, asha, uid = world["conn"], world["p"]["asha"], world["draft"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=1)
+    how = "Send the reason in plain words in the SMS."
+
+    def save(worth: dict[str, Any], minutes: int) -> dict[str, Any]:
+        body = {
+            "declaration_version": DECLARATION_VERSION,
+            "fix": {"how": how, "solved_already": "partly", "worth": worth},
+        }
+        return edit.save(conn, ref, asha, body, now=later + dt.timedelta(minutes=minutes))
+
+    def shown() -> dict[str, Any]:
+        part = edit.page(conn, ref, asha, now=later)["fix"]
+        assert part is not None
+        return dict(part)
+
+    def sharer_rows() -> list[dict[str, Any]]:
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT hours_low, cost_low, cost_about, revenue_low, outside_tools FROM idea_worth "
+                "WHERE idea_uuid = %s AND by_side = 'sharer' ORDER BY id",
+                (uid,),
+            ).fetchall()
+        ]
+
+    assert save({"hours_month": "70 to 150", "cost_month": "about 25k"}, 0)["changed_fields"] == ["fix"]
+    part = shown()
+    assert part["ready_count"] == 3 and part["readiness"] == "3 of 5 ready for the review desk"
+    assert part["part"]["size_line"] == (
+        "70 to 150 hours a month, about ₹25,000 a month saved, solved elsewhere: partly"
+    )
+
+    cleared = save({"hours_month": "", "cost_month": ""}, 1)
+    assert cleared["changed_fields"] == ["fix"] and cleared["version"]["n"] == 3
+    part = shown()
+    assert "worth" not in part
+    assert part["ready_count"] == 2 and part["part"]["line"] == "Included, 2 of 5 ready"
+    assert part["next"] == {"key": "worth", "line": "Most useful next: a rough size. A range is fine."}
+    assert part["part"]["size_line"] == "solved elsewhere: partly"
+    rows = sharer_rows()
+    assert len(rows) == 2 and all(
+        v is None for v in rows[-1].values()
+    )  # the earlier figures stay (L-WORTH/7)
+
+    added = save({"cost_month": "2L"}, 2)
+    assert added["changed_fields"] == ["fix"] and added["version"]["n"] == 4
+    part = shown()
+    assert part["worth"] == {"cost_month": {"low": 200000.0, "text": "₹2,00,000 a month"}}
+    assert part["ready_count"] == 3 and part["next"] == {
+        "key": "basis",
+        "line": "Most useful next: what that is based on.",
+    }
+    assert part["part"]["size_line"] == "₹2,00,000 a month saved, solved elsewhere: partly"
+    assert len(sharer_rows()) == 3
+    assert save({"cost_month": "2L"}, 3)["version"] is None  # the same figures again: no row, no version
+    assert len(sharer_rows()) == 3
 
 
 # --- BLD-C087 verification fixes ------------------------------------------------------------------------------------

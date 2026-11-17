@@ -49,11 +49,16 @@ def read(raw: Any, li: config.Lists, *, at: str = "") -> tuple[list[str], str | 
     return picks, words
 
 
-def mask(conn: Conn, idea_uuid: str, user_id: str, words: str | None, *, source_id: str) -> str | None:
-    """The masked copy of the person's own words; emptied words take what was hidden from them along."""
+def mask(
+    conn: Conn, idea_uuid: str, user_id: str, words: str | None, *, source_id: str, stored: str | None = None
+) -> str | None:
+    """The masked copy of the person's own words; emptied words take what was hidden from them along. Words sent
+    back exactly as the stored masked copy are that copy, and nothing is masked or written again (BLD-C141)."""
     if not words:
         adapters.forget_words(conn, idea_uuid, [source_id])
         return None
+    if words == stored:
+        return words
     return adapters.mask_text(conn, idea_uuid, words, by=user_id, source_id=source_id).text
 
 
@@ -89,7 +94,9 @@ def put_draft(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime
                 "This idea has been sent. Change it from its page while it’s open to changes.",
             )
         uid = str(idea["id"])
-        text = mask(conn, uid, user_id, words, source_id=f"{uid}:draft:helpers")
+        text = mask(
+            conn, uid, user_id, words, source_id=f"{uid}:draft:helpers", stored=idea.get("helper_text")
+        )
         if picks != list(idea.get("helper_picks") or []) or text != idea.get("helper_text"):
             conn.execute(
                 "UPDATE ideas SET helper_picks = %s, helper_text = %s, saved_at = %s WHERE id = %s",
