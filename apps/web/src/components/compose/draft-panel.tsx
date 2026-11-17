@@ -18,11 +18,13 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
 
 import { HiddenDetails, type HiddenActions } from "@/components/compose/hidden";
+import { INTERVIEW_COPY, InterviewIntro } from "@/components/compose/interview";
 import { DraftLoader, useLoaderClock } from "@/components/compose/draft-loader";
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
 import { IconTick } from "@/components/shell/icons";
@@ -96,13 +98,19 @@ export function factText(key: FactKey | "title", p: Part<unknown>): string {
   return typeof v === "string" ? v : "";
 }
 
+/** Flag S1 "Interview" (BLD-C172): before the first telling the panel lists the three questions; while they are
+ * asked, the desktop panel waits (the card is in the conversation) and the phone's sheet holds the card; then the
+ * panel is the draft as usual. */
+export type PanelInterview = { stage: "intro" } | { stage: "asking"; card: ReactNode; soFar: string };
+
 export type PanelProps = {
   live: Live;
   /** The words have reached the point where parts form (L-DRAFT.parts/3); before that, slots wait. */
   readiness: Readiness;
   /** "Move to Review": where it goes once ready. */
   moveHref: string | null;
-  onMove?(): void;
+  /** Called on "Move to Review" before it goes; `preventDefault()` keeps it here (S1 builds the draft first). */
+  onMove?(e: MouseEvent<HTMLAnchorElement>): void;
   /** Set and pin a part (PATCH /api/drafts/:id/parts/:part). Rejects with the refusal's words, if any. */
   onChangePart?(part: DraftPartKey | "summary", value: unknown): Promise<void>;
   hidden: HiddenActions | null;
@@ -123,6 +131,8 @@ export type PanelProps = {
     /** Lane F's `teamUpOpener`: marks where focus returns when the sheet closes (WCAG 2.4.3, BLD-F074). */
     opener?(ideaId: string): Record<string, string>;
   };
+  /** Flag S1 "Interview"; absent or null is the default, the live draft. */
+  interview?: PanelInterview | null;
 };
 
 export type PanelHandle = {
@@ -170,6 +180,15 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
   const ready = readiness === "ready" && Boolean(moveHref);
   const title = live.parts.title;
   const now = useLoaderClock(live.loader, !live.running);
+  const iv = props.interview ?? null;
+  const asking = iv?.stage === "asking" ? iv : null;
+  // The phone's sheet opens on the first question (PhoneCompose.md, `simulatorS1=Interview`), once.
+  const openedForQuestions = useRef(false);
+  useEffect(() => {
+    if (!phone || !asking || openedForQuestions.current) return;
+    openedForQuestions.current = true;
+    setOpen(true);
+  }, [phone, asking]);
 
   useImperativeHandle(
     ref,
@@ -195,7 +214,37 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
     );
 
   const slots = { ...props, editing, setEditing };
-  const body = (
+  const questions = iv ? (
+    <div className="cvb">
+      {iv.stage === "intro" ? (
+        <InterviewIntro />
+      ) : phone && asking ? (
+        <>
+          <div className="dhead">
+            <span className={`dstat${live.running ? " ing" : ""}`} role="status">
+              <i aria-hidden="true" />
+              {status}
+            </span>
+            <button
+              type="button"
+              className="tb"
+              onClick={() => {
+                setOpen(false);
+                peekRef.current?.focus();
+              }}
+            >
+              {INTERVIEW_COPY.done}
+            </button>
+          </div>
+          <p className="rcpt">{asking.soFar}</p>
+          {asking.card}
+        </>
+      ) : (
+        <p className="wait cvwait">{INTERVIEW_COPY.wait}</p>
+      )}
+    </div>
+  ) : null;
+  const body = questions ?? (
     <>
       {/* On a phone the one loader is the tube under the peek (C-DRAFT-LOADER.anatomy/3). */}
       {phone ? null : <DraftLoader run={live.loader} done={!live.running} phone={false} />}
@@ -219,22 +268,26 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
   );
   const landed = (
     <p className="vh" aria-live="polite">
-      {landedLine(live)}
+      {iv ? "" : landedLine(live)}
     </p>
   );
 
   if (phone) {
-    const building = live.running && live.loader !== null;
-    const peekTitle = building ? LOADER_TITLE : hasValue(title) ? String(title.value) : PANEL_COPY.heading;
+    // While S1's questions wait, the draft is not shown yet: no loader, and the peek says what comes next.
+    const building = !iv && live.running && live.loader !== null;
+    const titled = iv?.stage !== "intro" && hasValue(title);
+    const peekTitle = building ? LOADER_TITLE : titled ? String(title.value) : PANEL_COPY.heading;
     const peekLine = offline
       ? PANEL_COPY.phoneOffline
       : building && live.loader
         ? loaderLine(live.loader, now)
         : live.running
           ? PANEL_COPY.phoneUpdating
-          : hasValue(title)
-            ? peekSummary(live)
-            : PANEL_COPY.phonePeekEmpty;
+          : asking
+            ? INTERVIEW_COPY.peek
+            : titled
+              ? peekSummary(live)
+              : PANEL_COPY.phonePeekEmpty;
     return (
       <section
         className={`dsheet${open ? " open" : ""}`}
@@ -257,7 +310,7 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
           <span className="dpeek-t">{peekTitle}</span>
           <span className="dpeek-s">{peekLine}</span>
         </button>
-        <DraftLoader run={live.loader} done={!live.running} phone now={now} />
+        <DraftLoader run={iv ? null : live.loader} done={!live.running} phone now={now} />
         {landed}
         <div id={bodyId} className="dsheet-b" hidden={!open}>
           <h2 className="cvt">{PANEL_COPY.heading}</h2>

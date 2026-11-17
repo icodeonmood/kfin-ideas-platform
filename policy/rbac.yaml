@@ -136,11 +136,15 @@ endpoints:
   - PATCH /api/drafts/{id}/messages/{mid}             submit
   - PATCH /api/drafts/{id}/parts/{part}               submit          # pin with a value, or unpin
   - POST /api/drafts/{id}/runs                        submit          # try again, or build after the interview
+  - POST /api/drafts/{id}/interview                   submit          # flag S1 "Interview": start, answer, skip, finish (BLD-C172)
   - GET /api/drafts/{id}/stream                       submit          # server-sent events (A-API.draft-stream)
   - POST /api/drafts/{id}/voice/start                 submit          # a voice note streamed through Sarvam (DEC-108, BLD-C112); the sharer only
   - POST /api/drafts/{id}/voice/chunk                 submit          # ~1 s of 16 kHz PCM, relayed and never kept; answers the words so far
   - POST /api/drafts/{id}/voice/end                   submit          # their own words and the English copy
   - GET /api/drafts/{id}/voice/{stream}               submit          # polling (A-API.events does not exist yet)
+  # The S1 to S3 experiments (P-DECISIONS.experiments, BLD-C173, BLD-C174): the server decides the variant; codes only.
+  - POST /api/flags/exposure                          signed_in       # the screen that differs was rendered, once per page load
+  - POST /api/flags/events                            signed_in       # a deciding event the tables do not hold already
   - GET /api/voice/config                             signed_in       # the notice before recording, and what the browser sends (BLD-C116)
   - GET /api/ideas/{id}/listen                        view_review_queue   # Listen's audio, Sarvam's voice on the masked script (DEC-108, BLD-C114); behind desk.listen and speech.hosted
   - GET /api/ideas/{id}/listen/chapters               view_review_queue   # { parts: [{ part, start_s }], duration_s }, or 202 { pending: true }

@@ -16,12 +16,24 @@
  * waits does the same after it (BLD-C150).
  * Team up from a similar idea's preview opens lane F's own sheet (`useTeamUpSheet`, C-SHEET-TEAMUP) with this draft,
  * so "Keep mine separate" or a merge request goes with it (J-SIMILAR/3–5, BLD-C129).
+ * Flags (P-DECISIONS.experiments, BLD-C170 to C179), handed in by the page, never picked here: S1 "Interview" asks
+ * up to three skippable questions after the first telling, its place kept with the draft, then builds the draft once;
+ * S3 "Voice first" starts listening at once on a phone's empty S-04 once the page is shown and the microphone is
+ * allowed, with "Type instead" and "Stop, 0:14" in the dock. Without `flags` (and with both at their default) the
+ * screen is exactly the default.
  */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
-import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
+import {
+  DraftPanel,
+  PANEL_COPY,
+  type PanelHandle,
+  type PanelInterview,
+  type Readiness,
+} from "@/components/compose/draft-panel";
+import { INTERVIEW_COPY, InterviewCard, soFarLine } from "@/components/compose/interview";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
@@ -38,6 +50,7 @@ import type {
 } from "@/lib/contracts";
 import {
   backInBox,
+  boxParts,
   DraftClient,
   DraftError,
   englishFor,
@@ -46,6 +59,7 @@ import {
   newClientId,
   spokenAfterFirst,
   type HeldNote,
+  type InterviewStep,
   type Outgoing,
 } from "@/lib/compose/client";
 import { quoteRange, segments } from "@/lib/compose/hidden";
@@ -58,6 +72,15 @@ import {
   withDraftAfterLoss,
   type Live,
 } from "@/lib/compose/live";
+import {
+  flagEvent,
+  NO_INTERVIEW,
+  nextQuestion,
+  useFlagExposure,
+  type ComposeFlags,
+  type InterviewPlace,
+  type InterviewQuestion,
+} from "@/lib/flags";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
@@ -96,7 +119,40 @@ export const COMPOSE_COPY = {
   signInAgain: "Sign in again to carry on",
   enough: "Enough to work with",
   moreChars: (n: number) => `${n} more ${n === 1 ? "character" : "characters"}`,
+  /** S3 "Voice first": the dock while listening (PhoneCompose.md, state Speaking; "Stop" before any words are
+   * heard, PhoneCompose.dc.html). */
+  typeInstead: "Type instead",
+  stop: "Stop",
+  stopAt: (seconds: number) => `Stop, ${clock(seconds)}`,
 } as const;
+
+/** "0:14": minutes and seconds of a voice note so far. */
+export function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** S3: whether the browser already allows the microphone. Never asks: with no answer, or "prompt", it is no. */
+export async function micAllowed(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    return status?.state === "granted";
+  } catch {
+    return false;
+  }
+}
+
+/** S3's second metric: for each voice note going with this send, whether its words are as heard or were changed
+ * first (codes only, BLD-C175). A note already sent as S-04's first message is as heard while the box still holds
+ * its words. */
+export function noteOutcomes(box: string, notes: readonly HeldNote[]): ("as_heard" | "corrected")[] {
+  const out: ("as_heard" | "corrected")[] = [];
+  for (const n of notes)
+    if (n.prefix === null) out.push(box.includes(n.text.trim()) ? "as_heard" : "corrected");
+  for (const p of boxParts(box, notes))
+    if (p.note) out.push(!p.whole && p.text.trim() === p.note.text.trim() ? "as_heard" : "corrected");
+  return out;
+}
 
 /** C-PROMPT.states, the phone's live count (PhoneCompose.md: "30 more characters", then "Enough to work with"). */
 export function countLine(chars: number, min: number = MIN_CHARS): string {
@@ -167,17 +223,28 @@ export function Compose({
   firstName,
   draftId: givenId,
   startNew = false,
+  flags = null,
+  interviewPlace = null,
 }: {
   firstName: string;
   draftId: string | null;
   /** `/share?new=1`: "Start a new one instead", so no offer of the earlier draft. */
   startNew?: boolean;
+  /** S1 and S3 as the server decided them for this person (P-DECISIONS.experiments). Null: the default, and no
+   * exposure is logged. */
+  flags?: ComposeFlags | null;
+  /** S1: where this draft's questions stand, kept with the draft (S-04B). */
+  interviewPlace?: InterviewPlace | null;
 }) {
   const router = useRouter();
   const phone = useIsPhone();
   const device = phone ? "phone" : "desktop";
   const client = useMemo(() => new DraftClient(), []);
   const conversation = givenId !== null; // S-04B
+  // One exposure per page load for each flag this screen carries, only when the page handed the flags in (S3 on a
+  // phone only). The server decides the variant it logs.
+  useFlagExposure("s1", conversation ? "S-04B" : "S-04", flags !== null);
+  useFlagExposure("s3", conversation ? "S-04B" : "S-04", flags !== null && phone);
 
   const [draftId, setDraftId] = useState<string | null>(givenId);
   const idRef = useRef<string | null>(givenId);
@@ -198,6 +265,16 @@ export function Compose({
   const panelRef = useRef<PanelHandle>(null);
   const [elsewhere, setElsewhere] = useState<string | null>(null);
   const [netTick, setNetTick] = useState(0);
+  // S-04: the offer of an earlier draft has been looked for (S3 listens only once it is known there is none).
+  const [recentChecked, setRecentChecked] = useState(startNew || givenId !== null);
+  // S1 "Interview" (BLD-C172).
+  const interviewOn = Boolean(flags?.interview);
+  const [place, setPlace] = useState<InterviewPlace>(interviewPlace ?? NO_INTERVIEW);
+  const [ivBusy, setIvBusy] = useState(false);
+  const [ivError, setIvError] = useState<string | null>(null);
+  const [ivMoved, setIvMoved] = useState(false);
+  const ivAsked = useRef<{ start: boolean; finish: boolean }>({ start: false, finish: false });
+  const answerKeys = useRef<Partial<Record<InterviewQuestion, string>>>({});
 
   // S-04's box is the draft's first message once saved.
   const firstMid = useRef<string | null>(null);
@@ -266,7 +343,10 @@ export function Compose({
         .then((list) => {
           if (!gone && list[0]) setExisting(list[0]);
         })
-        .catch(() => undefined); // the offer is a convenience; the box works without it
+        .catch(() => undefined) // the offer is a convenience; the box works without it
+        .finally(() => {
+          if (!gone) setRecentChecked(true);
+        });
     }
     return () => {
       gone = true;
@@ -564,6 +644,55 @@ export function Compose({
     return () => clearTimeout(t);
   }, [voiceState, voiceReset, takeNote]);
 
+  // ── S3 "Voice first" (BLD-C175): on a phone's empty S-04, listening starts at once, once the page is shown, no
+  // earlier draft is offered and the browser already allows the microphone; otherwise the phone starts with typing,
+  // exactly as the default does. Kill switches beat the flag: the page says "voice_off" when voice cannot run. ──
+  const screen = conversation ? "S-04B" : "S-04";
+  const voiceFirst = phone ? (flags?.voiceFirst ?? null) : null;
+  const listenTried = useRef(false);
+  const autoListen = useRef<"waiting" | "logged" | null>(null);
+  const live$ = useRef({ box, status: voice.state.status });
+  useEffect(() => {
+    live$.current = { box, status: voice.state.status };
+  });
+  const { start: voiceStart, stop: voiceStop } = voice;
+  useEffect(() => {
+    if (listenTried.current || !voiceFirst || conversation || !recentChecked || existing) return;
+    listenTried.current = true;
+    if (voiceFirst === "voice_off") {
+      flagEvent("s3", "s3.listen", "voice_off", "S-04");
+      return;
+    }
+    void micAllowed().then((ok) => {
+      if (!ok) {
+        flagEvent("s3", "s3.listen", "no_permission", "S-04");
+        return;
+      }
+      // Not if the person has begun typing or speaking meanwhile.
+      if (live$.current.box.trim() || live$.current.status !== "idle") return;
+      autoListen.current = "waiting";
+      void voiceStart();
+    });
+  }, [voiceFirst, conversation, recentChecked, existing, voiceStart]);
+  useEffect(() => {
+    if (autoListen.current !== "waiting") return;
+    const s = voiceState.status;
+    if (s === "recording") {
+      autoListen.current = "logged";
+      flagEvent("s3", "s3.listen", "started", "S-04", idRef.current);
+    } else if (s === "failed" || s === "blocked" || s === "paused") {
+      autoListen.current = "logged";
+      flagEvent("s3", "s3.listen", "failed", "S-04", idRef.current);
+    }
+  }, [voiceState]);
+  const listening =
+    voiceFirst === "listen" && ["asking", "recording", "sending"].includes(voice.state.status);
+  const typeInstead = () => {
+    voiceStop();
+    flagEvent("s3", "s3.listen", "typed_instead", screen, idRef.current);
+    requestAnimationFrame(() => boxRef.current?.focus());
+  };
+
   // ── sending ───────────────────────────────────────────────────────────────────────────────────────────────
   const send = useCallback(async () => {
     const text = box.trim();
@@ -575,6 +704,11 @@ export function Compose({
     }
     setProblem(null);
     const held = voiceNotes;
+    // S3's second metric, on a phone with the flags in play: each voice note going now, as heard or corrected.
+    const notesSent = flags && phone ? noteOutcomes(box, held) : [];
+    const logNotes = (id: string) => {
+      for (const outcome of notesSent) flagEvent("s3", "s3.note", outcome, screen, id);
+    };
 
     if (!conversation) {
       // S-04: the typed words are already the first message (saved as typed, or a voice note posted when it
@@ -602,6 +736,7 @@ export function Compose({
         }
       }
       setVoiceNotes([]);
+      logNotes(id);
       handedOver.add(id);
       router.push(`/share/${id}`);
       return;
@@ -645,8 +780,9 @@ export function Compose({
         return;
       }
     }
+    logNotes(id);
     setSave(client.outbox(id).length ? "offline" : "saved");
-  }, [box, voiceNotes, conversation, client, adopt, failed, saveBox, router]);
+  }, [box, voiceNotes, conversation, client, adopt, failed, saveBox, router, flags, phone, screen]);
 
   // ── Team up from a similar idea (C-PREVIEW → lane F's C-SHEET-TEAMUP; J-SIMILAR/3–5) ───────────────────────
   const [waiting, setWaiting] = useState<Record<string, string>>({});
@@ -670,6 +806,92 @@ export function Compose({
     draftId: draftId ?? undefined,
     draftTitle: typeof live.parts.title.value === "string" ? live.parts.title.value : undefined,
   });
+
+  // ── S1 "Interview" (BLD-C172): after the first telling, up to three skippable questions, then the draft ───────
+  // The questions start on S-04B for a draft just told on this device (from S-04's "Start my draft" or Home), never
+  // on one picked up later (ComposeResume.md draws the default there); a reload or another device carries on from
+  // the place the server keeps. Each answer goes into the draft through the messages path, kept without building;
+  // the last question, or moving on, builds it once.
+  const told = (draft?.char_count ?? 0) >= (draft?.min_chars ?? MIN_CHARS);
+  const question = interviewOn && conversation ? nextQuestion(place) : null;
+  useEffect(() => {
+    const id = draft?.id;
+    if (!interviewOn || !conversation || !id || !told || pickedUp || place.started || place.ended) return;
+    if (ivAsked.current.start) return;
+    ivAsked.current.start = true;
+    client.interview(id, { action: "start" }).then(
+      (out) => setPlace(out.interview),
+      () => setPlace((p) => (p.started ? p : { ...p, started: true })), // asked anyway; the first answer starts it
+    );
+  }, [interviewOn, conversation, draft?.id, told, pickedUp, place.started, place.ended, client]);
+  // The flag turned off with answers waiting: they are built now, so nothing waits for a build that will not come.
+  useEffect(() => {
+    const id = draft?.id;
+    if (interviewOn || !id || ivAsked.current.finish) return;
+    if (!place.started || place.ended || !Object.values(place.done).includes("answered")) return;
+    ivAsked.current.finish = true;
+    client.interview(id, { action: "finish" }).then(
+      (out) => {
+        setPlace(out.interview);
+        if (out.draft) adopt(out.draft, out.run_id);
+      },
+      () => undefined,
+    );
+  }, [interviewOn, draft?.id, place, client, adopt]);
+
+  const ivStep = useCallback(
+    async (step: InterviewStep): Promise<void> => {
+      const id = idRef.current;
+      if (!id) return;
+      setIvBusy(true);
+      setIvError(null);
+      try {
+        const out = await client.interview(id, step);
+        setIvMoved(true);
+        setPlace(out.interview);
+        if (out.draft) adopt(out.draft, out.run_id);
+        else if (out.run_id) setStreamRun(out.run_id);
+        if (out.interview.ended) requestAnimationFrame(() => boxRef.current?.focus());
+      } catch (err) {
+        if (err instanceof DraftError && err.offline) setSave("offline");
+        else setIvError(err instanceof DraftError ? err.text : null);
+      } finally {
+        setIvBusy(false);
+      }
+    },
+    [client, adopt],
+  );
+  /** "Move to Review" while questions wait: the draft is built with what was answered, then on to Check it. */
+  const moveDuringQuestions = (e: MouseEvent<HTMLAnchorElement>) => {
+    const href = draftId ? `/share/${draftId}/check` : null;
+    if (!question || !href) return;
+    e.preventDefault();
+    void ivStep({ action: "finish" }).then(() => router.push(href));
+  };
+  const oftenWords = live.parts.often.value;
+  const interviewCard = question ? (
+    <InterviewCard
+      key={question}
+      question={question}
+      suggestion={typeof oftenWords === "string" && oftenWords.trim() ? oftenWords : null}
+      busy={ivBusy}
+      error={ivError}
+      headingLevel={phone ? 3 : 2}
+      focusOnShow={ivMoved}
+      onAnswer={(text) => {
+        const clientId = (answerKeys.current[question] ??= newClientId());
+        void ivStep({ action: "answer", question, text, clientId });
+      }}
+      onSkip={() => void ivStep({ action: "skip", question })}
+    />
+  ) : null;
+  const panelInterview: PanelInterview | null = !interviewOn
+    ? null
+    : !conversation
+      ? { stage: "intro" }
+      : question
+        ? { stage: "asking", card: phone ? interviewCard : null, soFar: soFarLine(live) }
+        : null;
 
   // ── keys: P focuses the box (C-PROMPT.keys/3) ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -905,8 +1127,8 @@ export function Compose({
                         adopt(out.draft, out.run_id);
                       }}
                       last={i === messages.length - 1 && pending.length === 0}
-                      receipt={live.receipt}
-                      suggestions={live.suggestions}
+                      receipt={question ? [] : live.receipt}
+                      suggestions={question ? [] : live.suggestions}
                       running={live.running}
                       onSuggestion={(s) => {
                         // A suggestion does what it says: "Change the title" opens the title (behaviour/5).
@@ -923,6 +1145,16 @@ export function Compose({
                       {m.queued ? <p className="qtag">{COMPOSE_COPY.queued}</p> : null}
                     </div>
                   ))}
+                  {question ? (
+                    <div className="sysg ivg">
+                      <div className="msg sys">
+                        <span className="sdot" aria-hidden="true" />
+                        <p>{INTERVIEW_COPY.lead}</p>
+                      </div>
+                      {/* On a phone the card is in the draft's sheet (PhoneCompose.md). */}
+                      {phone ? null : interviewCard}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="cdock">
@@ -1009,13 +1241,36 @@ export function Compose({
           offline={save === "offline"}
           onBlocked={() => boxRef.current?.focus()}
           teamUp={{ open: teamUp.open, waiting, opener: teamUpOpener }}
+          interview={panelInterview}
+          onMove={question ? moveDuringQuestions : undefined}
         />
         {teamUp.sheet}
       </div>
-      {phone ? (
+      {phone && listening ? (
+        // S3 "Voice first": while listening the dock holds "Type instead" and the stop with its count (PhoneCompose.md,
+        // state Speaking).
+        <Dock>
+          <div className="vdock">
+            <button type="button" className="tb tinst" onClick={typeInstead}>
+              {COMPOSE_COPY.typeInstead}
+            </button>
+            <Button
+              size="full"
+              className="stopb"
+              busy={voice.state.status === "sending"}
+              onClick={voiceStop}
+              icon={<span className="stopsq" aria-hidden="true" />}
+            >
+              {voice.state.status === "recording" && voice.state.text.trim()
+                ? COMPOSE_COPY.stopAt(voice.state.seconds)
+                : COMPOSE_COPY.stop}
+            </Button>
+          </div>
+        </Dock>
+      ) : phone ? (
         <Dock>
           {readiness === "ready" && checkHref ? (
-            <ButtonLink href={checkHref} size="full">
+            <ButtonLink href={checkHref} size="full" onClick={question ? moveDuringQuestions : undefined}>
               {PANEL_COPY.move}
             </ButtonLink>
           ) : (

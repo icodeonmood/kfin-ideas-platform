@@ -228,6 +228,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
+  // The experiments' exposures and events (P-DECISIONS.experiments, BLD-C173): codes about what a screen showed,
+  // nothing about ideas; logging must never depend on what is paused. The interview's answers stay behind
+  // submissions (/api/drafts above).
+  /^\/api\/flags\/(?:exposure|events)\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
