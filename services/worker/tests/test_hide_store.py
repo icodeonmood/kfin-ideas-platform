@@ -778,3 +778,89 @@ def test_l_hide_rules_4_l_convo_10_forget_drops_a_removed_entry_and_keeps_a_valu
     assert count(db, audits, entity) == before + 2
     with pytest.raises(ValueError):
         forget(db, iid, source="nowhere", source_id=kept)
+
+
+def test_l_hide_rules_7_stale_when_the_text_changed_under_the_selection(hdb: Any) -> None:
+    """F (lane B's `selected`, BLD-C066): another hide moved the masked copy under the page, so the old range with the
+    words the reviewer selected is refused with `stale` and nothing is hidden; read again, the same words hide. A
+    title works the same; without `selected` a range off the text is still `range_invalid`; a selection over 300
+    characters is `selection_too_long`."""
+    db = hdb
+    NAME, OTHER = made_up_name(), made_up_name()
+    reviewer, _ = person(db)
+    second, _ = person(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True, title="A 5 day wait for refunds")
+    mid, _ = message(db, iid, uid, f"Refund late 😀 for {OTHER} and then {NAME} again")
+    seen = masked_message(db, mid)
+    at, o = seen.index(NAME), seen.index(OTHER)
+    start, end = to_utf16(seen, at), to_utf16(seen, at + len(NAME))
+    desk_hide(
+        db, iid, source_kind="message", source_id=mid, start=to_utf16(seen, o), end=to_utf16(seen, o + len(OTHER)),
+        by=second, units="utf16", selected=OTHER,
+    )  # fmt: skip
+    details = "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s"
+    before = count(db, details, iid)
+    with pytest.raises(HideError) as stale:
+        desk_hide(
+            db, iid, source_kind="message", source_id=mid, start=start, end=end, by=reviewer, units="utf16",
+            selected=NAME,
+        )  # fmt: skip
+    assert (stale.value.status, stale.value.code) == (409, "stale")
+    assert count(db, details, iid) == before and NAME in masked_message(db, mid)
+    now = masked_message(db, mid)
+    at = now.index(NAME)
+    d = desk_hide(
+        db, iid, source_kind="message", source_id=mid, start=to_utf16(now, at), end=to_utf16(now, at + len(NAME)),
+        by=reviewer, units="utf16", selected=f" {NAME} ",
+    )  # fmt: skip
+    assert d["masked"] == mask("name", NAME) and NAME not in masked_message(db, mid)
+
+    with pytest.raises(HideError) as title_stale:
+        desk_hide(
+            db, iid, source_kind="title", source_id="title", start=2, end=7, by=reviewer, units="utf16",
+            selected="9 day",
+        )  # fmt: skip
+    assert title_stale.value.code == "stale"
+    with pytest.raises(HideError) as off_text:
+        desk_hide(
+            db, iid, source_kind="title", source_id="title", start=2, end=900, by=reviewer, units="utf16"
+        )
+    assert off_text.value.code == "range_invalid"
+    long_id, _ = message(db, iid, uid, "Refunds wait. " * 30, seq=2)
+    with pytest.raises(HideError) as too_long:
+        desk_hide(
+            db, iid, source_kind="message", source_id=long_id, start=0, end=301, by=reviewer, units="utf16",
+            selected=("Refunds wait. " * 30)[:301],
+        )  # fmt: skip
+    assert (too_long.value.status, too_long.value.code) == (422, "selection_too_long")
+    assert count(db, details, iid) == before + 1
+
+
+def test_l_hide_rules_7_a_reviewer_never_hides_on_their_own_or_a_merged_in_idea(hdb: Any) -> None:
+    """G (BLD-C066): as lane B's `refuse_own` and the desk page's `own`, a reviewer is refused with 403 `forbidden`
+    on their own idea and on an idea their contribution was merged into; the refusal carries its audit row (IDs and
+    the action only) and changes nothing. Another reviewer hides as usual."""
+    db = hdb
+    NAME = made_up_name()
+    reviewer, r_code = person(db)
+    other, _ = person(db)
+    _, code = person(db)
+    own = idea(db, r_code, shared=True, title=f"{NAME} waits for refunds")
+    with pytest.raises(HideError) as mine:
+        desk_hide(db, own, source_kind="title", source_id="title", start=0, end=len(NAME), by=reviewer)
+    assert (mine.value.status, mine.value.code) == (403, "forbidden")
+    assert mine.value.audit == (reviewer, "hide.own_idea_refused", own, {"action": "desk_hide"})
+
+    lead = idea(db, code, shared=True, title=f"{NAME} waits again")
+    db.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s)",
+        (lead, own, other),
+    )
+    with pytest.raises(HideError) as merged:
+        desk_hide(db, lead, source_kind="title", source_id="title", start=0, end=len(NAME), by=reviewer)
+    assert (merged.value.status, merged.value.code) == (403, "forbidden")
+    assert count(db, "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s", lead) == 0
+    assert db.execute("SELECT title FROM ideas WHERE id = %s", (lead,)).fetchone()["title"].startswith(NAME)
+    d = desk_hide(db, lead, source_kind="title", source_id="title", start=0, end=len(NAME), by=other)
+    assert d["kind"] == "name"

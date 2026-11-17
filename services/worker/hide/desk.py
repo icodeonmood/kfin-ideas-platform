@@ -6,7 +6,11 @@ other copy of the idea (`_sweep`): messages (and their English copy), answers, c
 summary, how-often line and helper line, the parts, the fix, the desk's questions, the saved versions, the
 similar-idea reasons and the draft's receipts. Each changed copy gets a `hidden_details` row, the value is stored
 sealed, the action is audited and the sharer is told (`detail_hidden_by_desk`). A selection must be at least three
-characters with a letter or digit in it.
+characters with a letter or digit in it, and at most 300 (`selection_too_long` above that). When the page sends the
+words it selected (`selected`, the masked words as the desk sees them) and the stored text no longer has them at
+those offsets, the hide is refused with `stale` (409), so a range never lands on words the reviewer did not select.
+A reviewer never hides on their own idea or on one their contribution was merged into (`forbidden`, as lane B's
+`refuse_own`; the attempt is audited).
 
 "Show it" needs one of the three reasons and puts the value back in the copy others read; "Hide it" masks it again.
 Both are the owner's alone and are audited; the desk reads "Shown, because …" from `hidden_details`. A detail the
@@ -47,7 +51,8 @@ log = get_logger("hide")
 
 DESK_SOURCES = ("part", "message", "answer", "title", "conversation", "fix")
 NOTIFY_KIND = "detail_hidden_by_desk"
-MAX_SELECTION = 300
+MAX_SELECTION = 300  # code points; a longer selection is `selection_too_long` (422)
+SELECTED_MAX = 10_000  # UTF-16 units of `selected`: twice the longest text (a 5,000-character message, V-FIELDS.submit/2)
 MIN_SELECTION = 3  # shorter selections ("a", "5") would mask pieces of other words (BLD-C066)
 PART_KEYS = ("title", "often", "who", "value", "area", "similar")
 TITLE_FIELDS = ("title", "summary", "often", "helper_text")  # ideas columns the desk reads
@@ -527,6 +532,40 @@ def _code_points(text: str, start: int, end: int, units: str) -> tuple[int, int]
     return s, e
 
 
+def _range(text: str, start: int, end: int, units: str, selected: str | None) -> tuple[int, int]:
+    """The reviewer's range in `text` (the masked copy they read), in code points. With `selected`, the words must
+    still be there: `text[start:end]` and `selected`, each without the spaces at its ends, compared after the UTF-16
+    conversion (the same words in either count); a range that no longer fits the text is the same case. Errors:
+    `stale` (409) with `selected`, else `range_invalid`; `selection_too_long` (422) above MAX_SELECTION."""
+    try:
+        s, e = _code_points(text, start, end, units)
+        if e > len(text):
+            raise HideError(400, "range_invalid")
+    except HideError:
+        if selected is not None:
+            raise HideError(409, "stale") from None
+        raise
+    if selected is not None and text[s:e].strip() != selected.strip():
+        raise HideError(409, "stale")
+    if e - s > MAX_SELECTION:
+        raise HideError(422, "selection_too_long")
+    return s, e
+
+
+def _refuse_own(conn: Conn, by: str, idea: dict[str, Any]) -> None:
+    """A reviewer never hides on their own idea, nor on one their contribution was merged into: lane B's rule for the
+    desk page's `own` (`desk.store.is_own`, P-PRODUCT.roles/3). 403 `forbidden`; the attempt is audited after the
+    rollback (`hide/api.py`)."""
+    from desk.store import is_own
+
+    if is_uuid(by) and is_own(conn, by, idea):
+        raise HideError(
+            403,
+            "forbidden",
+            audit=(by, "hide.own_idea_refused", str(idea["id"]), {"action": "desk_hide"}),
+        )
+
+
 def desk_hide(
     conn: Conn,
     idea_uuid: str,
@@ -537,9 +576,13 @@ def desk_hide(
     end: int,
     by: str,
     units: str = "cp",
+    selected: object = None,
 ) -> dict[str, Any]:
     """A reviewer's "Hide this". `units`: "cp" (code points, Python callers) or "utf16" (the browser's offsets, which
-    the web passes on as they are). Returns the HiddenDetail. Errors: not_found, range_invalid, already_hidden."""
+    the web passes on as they are). `selected`: optional, the masked words the reviewer selected; when the stored text
+    no longer has them at those offsets the hide is refused with `stale` (`_range`). Returns the HiddenDetail.
+    Errors: not_found, range_invalid, already_hidden, stale (409), selection_too_long (422), forbidden (403: the
+    reviewer's own idea, `_refuse_own`)."""
     if source_kind not in DESK_SOURCES or units not in UNITS:
         raise HideError(400, "range_invalid")
     if (
@@ -549,21 +592,24 @@ def desk_hide(
         or isinstance(end, bool)
     ):
         raise HideError(400, "range_invalid")
-    if start < 0 or end <= start or end - start > MAX_SELECTION * (2 if units == "utf16" else 1):
+    if selected is not None and not isinstance(selected, str):
+        raise HideError(400, "range_invalid")
+    if selected is not None and detect.to_utf16(selected, len(selected)) > SELECTED_MAX:
+        raise HideError(422, "selection_too_long")
+    if start < 0 or end <= start:
         raise HideError(400, "range_invalid")
     with conn.transaction():
         idea = idea_row(conn, idea_uuid)
         if idea["status"] == "draft":
             raise HideError(404, "not_found")  # the desk never sees a draft
+        _refuse_own(conn, by, idea)
         lock(conn, idea_uuid)
         if source_kind in ("message", "answer", "conversation"):
             found = load_sealed(conn, idea_uuid, source_kind, source_id)
             if not found:
                 raise HideError(404, "not_found")
             src = found[0]
-            start, end = _code_points(src.masked_now, start, end, units)
-            if end > len(src.masked_now) or end - start > MAX_SELECTION:
-                raise HideError(400, "range_invalid")
+            start, end = _range(src.masked_now, start, end, units, selected)
             _selection(src.masked_now, start, end)
             details = details_for(conn, idea_uuid, source_kind, src.id)
             o_start, o_end, shown = _owner_range(src, details, start, end)
@@ -584,9 +630,7 @@ def desk_hide(
                 _write_sealed(conn, idea_uuid, src, details)
         else:
             text, write = _plain_text(conn, idea_uuid, source_kind, source_id)
-            start, end = _code_points(text, start, end, units)
-            if end > len(text) or end - start > MAX_SELECTION:
-                raise HideError(400, "range_invalid")
+            start, end = _range(text, start, end, units, selected)
             for a, b in detect.mask_tokens(text):
                 if a < end and start < b:
                     raise (

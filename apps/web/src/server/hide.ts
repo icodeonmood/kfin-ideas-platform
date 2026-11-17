@@ -7,7 +7,10 @@
  *   whose words they are, only.
  * Errors follow A-API.conventions/2: `{ error: { code, message } }`. Messages never echo the person's text.
  * Offsets: the browser's "Hide this" range is in UTF-16 units and goes on as `units: "utf16"`; spans going out are
- * converted with `spansToUtf16` (`hide-offsets.ts`, BLD-C068).
+ * converted with `spansToUtf16` (`hide-offsets.ts`, BLD-C068). The page also sends `selected`, the masked words it
+ * selected (at most `SELECTED_MAX` UTF-16 units); the worker, which alone holds the text, compares them with the
+ * text at that range after converting the offsets, and refuses with `stale` (409) when the text changed under the
+ * selection. A reviewer never hides on their own idea or one their contribution was merged into (`forbidden`).
  */
 import { NextResponse } from "next/server";
 
@@ -21,25 +24,43 @@ import { workerFetch } from "./worker";
 export { codePointsToUtf16, spansToUtf16, utf16ToCodePoints } from "./hide-offsets";
 
 export type HideErrorCode =
-  "forbidden" | "not_found" | "range_invalid" | "already_hidden" | "reason_required" | "hide_failed";
+  | "forbidden"
+  | "not_found"
+  | "range_invalid"
+  | "already_hidden"
+  | "stale"
+  | "selection_too_long"
+  | "reason_required"
+  | "hide_failed";
 
 export const HIDE_MESSAGES: Record<HideErrorCode, string> = {
   forbidden: "The review desk hid this, so it stays hidden.",
   not_found: "We couldn't find that. It may have changed. Refresh and try again.",
   range_invalid: "Select only the words to hide, then try again.",
   already_hidden: "That is already hidden from everyone.",
+  stale: "The page changed. Select again.",
+  selection_too_long: "That is too much to hide at once. Select only the words to hide.",
   reason_required: "Choose what it is first.",
   hide_failed: "We couldn't do that just now. Please try again.",
 };
+
+/** The desk's `forbidden`: the reviewer's own idea, or one their contribution was merged into (lane B's words). */
+export const OWN_IDEA = "This is your own idea. Another reviewer takes it.";
 
 const STATUS: Record<HideErrorCode, number> = {
   forbidden: 403,
   not_found: 404,
   range_invalid: 400,
   already_hidden: 409,
+  stale: 409,
+  selection_too_long: 422,
   reason_required: 400,
   hide_failed: 502,
 };
+
+/** The longest `selected` the desk may send, in UTF-16 units: twice the longest text one part holds (a message of
+ * 5,000 characters, V-FIELDS.submit/2), so a whole long text always reaches the worker's own checks. */
+export const SELECTED_MAX = 10_000;
 
 export const SHOW_REASONS: readonly ShowReason[] = [
   "scheme_or_product_code",
@@ -51,7 +72,10 @@ export const DESK_SOURCE_KINDS = ["part", "message", "answer", "title", "convers
 export type DeskSourceKind = (typeof DESK_SOURCE_KINDS)[number];
 
 export class HideError extends Error {
-  constructor(public code: HideErrorCode) {
+  constructor(
+    public code: HideErrorCode,
+    public words?: string,
+  ) {
     super(code);
   }
 }
@@ -59,7 +83,7 @@ export class HideError extends Error {
 export function hideErrorResponse(err: unknown): NextResponse<ApiError<HideErrorCode>> {
   if (!(err instanceof HideError)) throw err;
   return NextResponse.json(
-    { error: { code: err.code, message: HIDE_MESSAGES[err.code] } },
+    { error: { code: err.code, message: err.words ?? HIDE_MESSAGES[err.code] } },
     { status: STATUS[err.code], headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -95,14 +119,19 @@ async function callWorker(path: string, body: Record<string, unknown>): Promise<
   return out as unknown as HiddenDetail;
 }
 
-/** The desk's and committee's "Hide this" on any text they read on a shared idea. */
+/**
+ * The desk's and committee's "Hide this" on any text they read on a shared idea. Body `{ source: { kind, id }, start,
+ * end, selected? }`: `selected` is the masked words the page selected, compared by the worker (`stale` when the text
+ * changed). Never on the reviewer's own idea or one their contribution was merged into: the worker refuses both
+ * (`forbidden`, audited), and the answer carries lane B's words for it (`OWN_IDEA`).
+ */
 export async function deskHide(me: CurrentUser, ideaId: string, body: Record<string, unknown>) {
   const idea = await findIdea(ideaId);
   if (!idea || idea.status === "draft") throw new HideError("not_found");
   const source = (body.source ?? {}) as Record<string, unknown>;
   const kind = source.kind;
   const sourceId = source.id;
-  const { start, end } = body;
+  const { start, end, selected } = body;
   if (
     typeof kind !== "string" ||
     !(DESK_SOURCE_KINDS as readonly string[]).includes(kind) ||
@@ -110,16 +139,27 @@ export async function deskHide(me: CurrentUser, ideaId: string, body: Record<str
     sourceId.length === 0 ||
     sourceId.length > 100 ||
     !Number.isInteger(start) ||
-    !Number.isInteger(end)
+    !Number.isInteger(end) ||
+    (selected !== undefined && selected !== null && typeof selected !== "string")
   )
     throw new HideError("range_invalid");
-  return callWorker(`/internal/hide/desk/${encodeURIComponent(idea.id)}`, {
-    source: { kind, id: sourceId },
-    start,
-    end,
-    units: "utf16", // the browser's offsets; the worker converts them against the text the reviewer read
-    by: me.id,
-  });
+  if (typeof selected === "string" && selected.length > SELECTED_MAX)
+    throw new HideError("selection_too_long");
+  try {
+    return await callWorker(`/internal/hide/desk/${encodeURIComponent(idea.id)}`, {
+      source: { kind, id: sourceId },
+      start,
+      end,
+      units: "utf16", // the browser's offsets; the worker converts them against the text the reviewer read
+      ...(typeof selected === "string" ? { selected } : {}),
+      by: me.id,
+    });
+  } catch (err) {
+    // The worker's only `forbidden` here: the reviewer's own idea or one their contribution was merged into, the rule
+    // of lane B's `refuse_own`. It decides (and audits) both, so every refusal leaves one trace.
+    if (err instanceof HideError && err.code === "forbidden") throw new HideError("forbidden", OWN_IDEA);
+    throw err;
+  }
 }
 
 /** The person's own idea or draft; anyone else's looks exactly like a missing one. */
