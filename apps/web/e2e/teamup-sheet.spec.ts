@@ -7,7 +7,7 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
 const IDEA = "IDEA-2026-001412";
 const TITLE = "Rejection SMS codes confuse investors";
@@ -116,6 +116,8 @@ test("C-SHEET-TEAMUP.compose at 375px: a bottom sheet with 44px targets; axe; Ta
   // Phone: the sheet sits on the bottom edge, full width (C-SHEET-TEAMUP.compose, "bottom sheet on phone").
   // Measured against the overlay it sits in, which spans the window less any scrollbar CI's desktop browser keeps
   // (runs 44133551604 and 44138881091 measured the sheet 15px under the page width).
+  // The sheet rises from the bottom edge (340ms): finish that first, or the box is read mid-rise (run 44142798068).
+  await settleMotion(page);
   const box = (await sheet.boundingBox())!;
   const overlay = (await page.locator(".tus-wrap").boundingBox())!;
   expect(overlay.width).toBeGreaterThanOrEqual(375 * 0.9);
