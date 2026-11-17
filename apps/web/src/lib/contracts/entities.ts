@@ -278,6 +278,8 @@ export interface Draft {
   run?: { id: string; state: "running" | "done" | "failed" } | null;
   /** The one device editing it (L-DRAFT.autosave/5). */
   editor?: { device: Device | null; this_device: boolean } | null;
+  /** "Keep mine separate" was chosen: S-05's similar grid stays folded to its note (C-SIMGRID.grid/4, BLD-C152). */
+  kept_separate?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

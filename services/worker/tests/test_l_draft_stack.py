@@ -494,6 +494,17 @@ def test_l_draft_recent_lists_titles_and_where_they_were_saved(drafting: Any) ->
     assert items[1]["saved_labels"]["sidebar"] == "Today, on your phone"
 
 
+def test_l_draft_c_simgrid_grid_4_the_draft_says_it_was_kept_separate_bld_c152(drafting: Any) -> None:
+    # "Keep mine separate" sets ideas.kept_separate (lane F, BLD-F020); GET /drafts/:id carries it, so S-05's
+    # similar grid stays folded to its note after a reload (C-SIMGRID.grid/4).
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, _ = store.create(db, owner, PHONE, text=W1)
+    assert store.view(db, owner, idea, LAPTOP)["kept_separate"] is False
+    db.execute("UPDATE ideas SET kept_separate = true WHERE id = %s", (idea,))
+    assert store.view(db, owner, idea, LAPTOP)["kept_separate"] is True
+
+
 # ---- L-DRAFT.channels: built and off (DEC-105) ---------------------------------------------------------------------
 
 
