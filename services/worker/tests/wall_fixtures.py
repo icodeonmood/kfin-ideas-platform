@@ -20,6 +20,12 @@ NOW = dt.datetime(2026, 11, 16, 14, 0, tzinfo=IST)  # a Monday afternoon, launch
 _n = iter(range(1, 10**6))
 
 
+def leave_clean(conn: Conn) -> None:
+    """Empty what these tests wrote, so a later test on the same session database starts as it expects (the seed's
+    HR import refuses when most active users would vanish, AT-B1-03). People, ideas and all that hangs off them."""
+    conn.execute("TRUNCATE ideas, users RESTART IDENTITY CASCADE")
+
+
 def ago(*, days: float = 0, hours: float = 0) -> dt.datetime:
     return NOW - dt.timedelta(days=days, hours=hours)
 
@@ -31,8 +37,8 @@ def person(
     uid = str(uuid.uuid4())
     code = f"CTR-{secrets.token_hex(3)}"
     conn.execute(
-        "INSERT INTO users (id, emp_id_hash, name, email, first_name, location, area, tier) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        "INSERT INTO users (id, emp_id_hash, name, email, first_name, location, area, tier, source) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'sign_in')",
         (uid, f"hash-{uid}", name, f"{name.split()[0].lower()}.{next(_n)}@kfintech.example", name.split()[0],
          city, area, tier),
     )  # fmt: skip
