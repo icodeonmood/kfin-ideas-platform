@@ -384,7 +384,12 @@ def send(
             conn.execute("INSERT INTO teamup_brought (request_id, idea_uuid) VALUES (%s, %s)", (rid, b["id"]))
         draft_id = body.get("draft_id")
         if isinstance(draft_id, str) and draft_id:
+            # "Keep mine separate" from Check it (L-SIMILAR.rules/8, V-ACC.similar/7): the draft is marked, which
+            # Check it's summary and the reviewer's page read ("kept it separate"), and the link's outcome is kept
+            # for L-AUDIT.metrics.
             draft = load_draft(conn, draft_id, code)
+            if draft["status"] == "draft":
+                conn.execute("UPDATE ideas SET kept_separate = true WHERE id = %s", (draft["id"],))
             conn.execute(
                 "UPDATE similar_links SET outcome = 'kept_separate' WHERE idea_uuid = %s AND other_idea_uuid = %s",
                 (draft["id"], idea["id"]),

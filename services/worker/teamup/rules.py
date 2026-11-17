@@ -86,6 +86,12 @@ def answers_for(brings: bool) -> list[dict[str, str]]:
     ]
 
 
+def quoted(reason: str) -> str:
+    """A reason in curly quotes, closed with a full stop unless it ends with its own, as the boards print both:
+    “The crew is full for now”. and “… Better as two.”"""
+    return f"“{reason}”" + ("" if reason.rstrip().endswith((".", "!", "?")) else ".")
+
+
 # --- C-SHEET-TEAMUP.compose/3: the pre-filled note ------------------------------------------------------------
 def draft_note(*, area: str | None, role: str | None, closest_title: str | None) -> str:
     """L-TEAMUP.rules/2: a first draft from the person's own closest idea and their role. No model is called
@@ -152,7 +158,7 @@ def lead_result(answer: Answer, first: str, brought: int, reason: str | None) ->
         )
         return {"state": "teamed_up", "text": f"Teamed up. {first} is on your crew. {stays} We’ve told them."}
     told = (
-        f"{first} sees your reason: “{reason}”." if reason else f"We’ve told {first}."
+        f"{first} sees your reason: {quoted(reason)}" if reason else f"We’ve told {first}."
     )  # no reason: NOT DRAWN
     tail = " They can send theirs on its own." if brought else ""
     return {"state": "declined", "text": f"Declined. {told}{tail}"}
@@ -170,7 +176,7 @@ def requester_after(
     """C-SHEET-TEAMUP.after for a team-up request, by its E-ENUMS.teamup state. None means "back to Team up"."""
     if state == "sent":
         return {"state": "waiting", "line": f"Waiting for {lead_first}",
-                "detail": f"{lead_first} reads your note and decides. You’ll hear in your Inbox.",
+                "detail": f"{lead_first} reads your note, then approves or declines. You’ll hear in your Inbox.",
                 "action": {"label": "Withdraw", "op": "withdraw"}}  # fmt: skip
     if state == "approved_team_only":
         return {"state": "on_crew", "line": "You’re on the crew. You’ll get its updates.",
@@ -179,7 +185,7 @@ def requester_after(
         return {"state": "merged", "line": f"Merged into {lead_ref}, with credit to you.",
                 "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation"}}  # fmt: skip
     if state == "declined":  # NOT DRAWN: "The lead's reason if given; the person can send theirs on its own"
-        said = f"{lead_first} declined: “{reason}”." if reason else f"{lead_first} declined."
+        said = f"{lead_first} declined: {quoted(reason)}" if reason else f"{lead_first} declined."
         return {"state": "declined", "line": said + (" Send yours on its own." if brought else ""),
                 "action": None}  # fmt: skip
     return None  # withdrawn or closed: back to "Team up"
@@ -216,12 +222,11 @@ def draft_after(
             "can_submit": True,
         }
     if state == "declined":
+        # no reason: NOT DRAWN
         said = (
-            f"{lead_first} kept that idea separate: “{reason}”"
+            f"{lead_first} kept that idea separate: {quoted(reason)}"
             if reason
-            else (
-                f"{lead_first} kept that idea separate."  # no reason: NOT DRAWN
-            )
+            else f"{lead_first} kept that idea separate."
         )
         return {
             "state": "declined",
