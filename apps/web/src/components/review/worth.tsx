@@ -12,6 +12,8 @@ import { ChoiceChips } from "@/components/ui/chips";
 import { Field, FieldMsg } from "@/components/ui/field";
 import type { Kind, OutsideTools, WorthResponse, WorthTile } from "@/lib/contracts";
 
+import "./worth.css";
+
 export const KIND_LABELS: Partial<Record<Kind, string>> = {
   problem: "A problem to fix",
   business_idea: "A new business idea",

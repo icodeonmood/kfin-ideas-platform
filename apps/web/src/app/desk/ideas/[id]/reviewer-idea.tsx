@@ -177,10 +177,7 @@ export function ReviewerIdea({
     if (carried?.ideaId === idea.id) carried = null;
   }, [idea.id]);
 
-  // L-REVIEW.open/1: the first open by a reviewer closes the sharer's edit window. Idempotent.
-  useEffect(() => {
-    if (page.can_act) void fetch(`/api/desk/ideas/${encodeURIComponent(idea.id)}/open`, { method: "POST" });
-  }, [page.can_act, idea.id]);
+  // L-REVIEW.open/1: page.tsx opens the idea for a reviewer before it is read (J-REVIEW/1).
 
   // S-R2.rules/4: focus moves to the panel's title on every state change, including the one a new read brings.
   useEffect(() => {
@@ -366,7 +363,9 @@ export function ReviewerIdea({
                                   tools: mine.outside_tools,
                                   note: mine.note ?? undefined,
                                 }
-                              : undefined
+                              : // After a reload the figures are the revised tiles; the note is the revision's
+                                // (L-WORTH/2)
+                                { note: page.worth.revision?.note ?? undefined }
                           }
                           onCancel={() => setEditingWorth(false)}
                           onSaved={(saved) => {
@@ -788,6 +787,7 @@ export function ReviewerIdea({
         matchReason={previewing ? matchLine(previewing) : undefined}
         compareWith={{ name: first }}
         compareWithId={idea.id}
+        fullHref={previewing ? `/desk/ideas/${encodeURIComponent(previewing.idea_id)}` : undefined}
       />
       {merging ? (
         <MergeSheet
