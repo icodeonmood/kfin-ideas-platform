@@ -38,7 +38,7 @@ import type {
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
-import { partSource } from "@/lib/desk/hide";
+import { hideableName, partSource } from "@/lib/desk/hide";
 import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
@@ -326,6 +326,7 @@ export function ReviewerIdea({
           as="h1"
           className="h1 ri-title"
           ideaId={idea.id}
+          name={hideableName("The title")}
           source={{ kind: "title", id: "title" }}
           text={idea.title}
         />
@@ -425,6 +426,7 @@ export function ReviewerIdea({
                     <Hideable
                       className="body ri-part-t"
                       ideaId={idea.id}
+                      name={hideableName(part.name)}
                       source={partSource(part.part)}
                       text={part.text}
                     />
@@ -927,12 +929,13 @@ function OwnWords({
 }) {
   return open ? (
     <div id={id} className="well ri-words">
-      {words.map((m) =>
+      {words.map((m, i) =>
         m.text ? (
           <Hideable
             key={m.seq}
             className="body"
             ideaId={ideaId}
+            name={hideableName(`Their own words, ${i + 1} of ${words.length}`)}
             source={{ kind: "message", id: m.id }}
             text={m.text}
           />
@@ -1018,6 +1021,7 @@ function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: string }) {
             <Hideable
               className="body"
               ideaId={ideaId}
+              name={hideableName("The answer")}
               source={{ kind: "answer", id: q.answer.id }}
               text={q.answer.text}
             />
@@ -1048,6 +1052,7 @@ function ContributionPart({ part, ideaId }: { part: ReviewerPart; ideaId: string
         <Hideable
           className="body ri-part-t"
           ideaId={ideaId}
+          name={hideableName(part.name)}
           source={partSource(part.part)}
           text={part.text}
         />
