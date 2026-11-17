@@ -6,7 +6,15 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, expireSession, PERSONAS, signIn, switchIsOn, WEB_HOST } from "./helpers";
+import {
+  expectNoSeriousAxeIssues,
+  expireSession,
+  openAccountMenu,
+  PERSONAS,
+  signIn,
+  switchIsOn,
+  WEB_HOST,
+} from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -126,6 +134,8 @@ test("S-01, BLD-A179: the shell's sign-out lands on Landing and leaves no expire
   page,
 }) => {
   await signIn(page, PERSONAS.contributor);
+  // Sign out sits in the shell's account menu (C-SIDEBAR, C-PHONE-TABS; lane D's shell)
+  await openAccountMenu(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   // Signed in, "/" is Home, so Landing's own heading is the sign that the person is out.
   await expect(
