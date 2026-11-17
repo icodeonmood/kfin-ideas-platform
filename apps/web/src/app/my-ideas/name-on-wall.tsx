@@ -1,7 +1,7 @@
 "use client";
 
-/** Whether the person's name may appear on the wall next to ideas they shared (`public_name_consent`, off by
- * default). Names never appear anywhere else. */
+/** Whether the person's name may appear on the wall next to ideas they shared (`person_settings.show_name_on_wall`,
+ * shown unless they hide it: DEC-104, BLD-E013). Names never appear anywhere else. */
 import { useState } from "react";
 
 export function NameOnWall({ initial }: { initial: boolean }) {

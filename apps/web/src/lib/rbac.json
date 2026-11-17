@@ -8,7 +8,8 @@
     "appeal_panel",
     "working_group",
     "sponsor",
-    "admin"
+    "admin",
+    "committee"
   ],
   "role_aliases": {
     "core_chair": "core_committee"
@@ -103,6 +104,9 @@
     "open_display": {
       "admin": "yes",
       "display": "yes"
+    },
+    "committee_window": {
+      "committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -172,6 +176,10 @@
     ],
     "speech.hosted": [
       "infosec"
+    ],
+    "desk.listen": [
+      "admin",
+      "infosec"
     ]
   },
   "public": [
@@ -187,6 +195,7 @@
     "GET /api/me                                       signed_in",
     "POST /api/me/privacy-notice                       signed_in",
     "GET /api/me/ideas                                 signed_in",
+    "GET /api/me/shell                                 signed_in",
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
@@ -213,6 +222,8 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
+    "POST /api/ideas/{id}/withdraw                     submit",
+    "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/attachments/{id}                         open_attachments",
@@ -274,13 +285,46 @@
     "POST /api/delivery/{id}/writeup/submit            work_delivery",
     "POST /api/delivery/{id}/writeup/approve           work_delivery",
     "POST /api/delivery/{id}/writeup/send-back         work_delivery",
+    "GET /api/wall/kindling                            see_org_ideas",
+    "GET /api/wall/just-in                             see_org_ideas",
+    "GET /api/wall/ones                                see_org_ideas",
+    "GET /api/wall/impact                              see_org_ideas",
+    "GET /api/wall/ember                               see_org_ideas",
+    "GET /api/ones/posts                               signed_in",
+    "PUT /api/ones/posts/{id}/like                     signed_in",
+    "GET /api/one                                      signed_in",
+    "PUT /api/one/number                               signed_in",
+    "POST /api/one/brief                               signed_in",
+    "POST /api/one/glow-up/{id}/seen                   signed_in",
+    "GET /api/me/profile                               signed_in",
+    "PATCH /api/me/settings                            signed_in",
     "GET /api/ember                                    signed_in",
     "GET /api/ember/current                            write_ember_note",
     "GET /api/ember/{id}                               signed_in",
     "POST /api/ember/drafts                            send_ember",
     "PUT /api/ember/{id}/note                          write_ember_note",
     "POST /api/ember/{id}/ready                        write_ember_note",
-    "POST /api/ember/{id}/send                         send_ember"
+    "POST /api/ember/{id}/send                         send_ember",
+    "GET /api/desk                                     view_review_queue",
+    "GET /api/desk/ideas/{id}                          view_review_queue",
+    "GET /api/desk/ideas/{id}/listen                   view_review_queue",
+    "POST /api/desk/ideas/{id}/open                    work_review_queue",
+    "PUT /api/desk/ideas/{id}/worth                    work_review_queue",
+    "POST /api/desk/ideas/{id}/decision                work_review_queue",
+    "GET /api/desk/ideas/{id}/merge-sheet              work_review_queue",
+    "POST /api/desk/ideas/{id}/merge                   work_review_queue",
+    "GET /api/desk/ideas/{id}/suggested-questions      work_review_queue",
+    "POST /api/desk/ideas/{id}/question-sets           work_review_queue",
+    "POST /api/question-sets/{id}/extend               work_review_queue",
+    "POST /api/question-sets/{id}/remind               work_review_queue",
+    "GET /api/ideas/{id}/question-set                  signed_in",
+    "PUT /api/questions/{id}/answer                    signed_in",
+    "POST /api/question-sets/{id}/send                 signed_in",
+    "GET /api/ideas/{id}/decision                      signed_in",
+    "GET /api/committee                                committee_window",
+    "GET /api/committee/windows/{id}/reversing         committee_window",
+    "POST /api/committee/windows/{id}/extend           committee_window",
+    "POST /api/committee/windows/{id}/reverse          committee_window"
   ],
   "membership_scoped": {
     "ones": [
@@ -288,7 +332,11 @@
       "POST /api/me/one/number",
       "POST /api/me/one/brief",
       "GET /api/me/one/showcase",
-      "PUT /api/me/one/showcase"
+      "PUT /api/me/one/showcase",
+      "GET /api/one",
+      "PUT /api/one/number",
+      "POST /api/one/brief",
+      "POST /api/one/glow-up/{id}/seen"
     ]
   },
   "pages": [
@@ -303,57 +351,70 @@
   ],
   "navigation": [
     {
-      "label": "Share an idea",
-      "href": "/share"
+      "key": "share",
+      "label": "Share a problem",
+      "href": "/share",
+      "place": "new",
+      "tab": 3
     },
     {
+      "key": "home",
+      "label": "Home",
+      "href": "/",
+      "place": "main",
+      "tab": 1
+    },
+    {
+      "key": "my-ideas",
       "label": "My ideas",
-      "href": "/my-ideas"
+      "href": "/my-ideas",
+      "place": "folded",
+      "tab": 2
     },
     {
+      "key": "wall",
       "label": "Wall",
-      "href": "/wall"
+      "href": "/wall",
+      "place": "main",
+      "tab": 4
     },
     {
-      "label": "Messages",
-      "href": "/inbox"
+      "key": "inbox",
+      "label": "Inbox",
+      "href": "/inbox",
+      "place": "main",
+      "tab": 5
     },
     {
-      "label": "Review",
+      "key": "desk",
+      "label": "Review desk",
       "href": "/review",
+      "place": "main",
       "roles": [
         "reviewer"
       ]
     },
     {
-      "label": "Committee",
+      "key": "committee",
+      "label": "Ones Committee",
       "href": "/committee",
+      "place": "main",
       "roles": [
-        "core_committee",
-        "lob_committee"
-      ],
-      "when_on": "committee.flow"
-    },
-    {
-      "label": "Desk decisions",
-      "href": "/desk-decisions",
-      "roles": [
+        "committee",
         "core_committee"
-      ],
-      "when_off": "committee.flow"
-    },
-    {
-      "label": "Ones",
-      "href": "/ones/console",
-      "roles": [
-        "core_committee",
-        "admin",
-        "ceo"
       ]
     },
     {
+      "key": "ember",
+      "label": "The Ember",
+      "href": "/ember",
+      "place": "account"
+    },
+    {
+      "key": "delivery",
       "label": "Delivery",
       "href": "/delivery",
+      "place": "account",
       "roles": [
         "working_group",
         "sponsor",
@@ -363,17 +424,10 @@
       ]
     },
     {
-      "label": "Lenses",
-      "href": "/lenses",
-      "roles": [
-        "lob_committee",
-        "core_committee",
-        "admin"
-      ]
-    },
-    {
+      "key": "admin",
       "label": "Admin",
       "href": "/admin",
+      "place": "account",
       "roles": [
         "admin",
         "infosec",

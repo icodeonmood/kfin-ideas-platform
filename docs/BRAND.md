@@ -30,6 +30,8 @@ Voice: like a colleague who has seen everything and still believes in you. Short
 
 ## 2. Colour (DEC-028)
 
+**Superseded for the app by the design pack (DEC-102).** The interface colours, tier colours, type, radii and motion now come from `1pc-handoff/01-foundations/` (`tokens.json`, `F-COLOR`), imported as `apps/web/src/app/tokens.css`. The table below is kept as the brand's history; where it differs, the pack wins. The spark is `#F46835`.
+
 | Token | Hex | Use | Contrast |
 |---|---|---|---|
 | `--zed` | `#0A0A0C` | Brand surfaces: header, wall hero, club pages, launch page. Text on white | White on it 19.7:1 |
@@ -73,19 +75,19 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 
 ## 4a. Spark tiers (DEC-075, DEC-080 to DEC-083)
 
-Only Ones have a tier. The spark is lit at Tier 1 on induction, and the committee moves it up or down through the console (propose, approve, carry out). The colours are DEC-098's; the names and order are unchanged.
+Only Ones have a tier. The colours are the design pack's (`F-COLOR.tiers`, DEC-102, conditioned to 87% chroma), and the names and order are unchanged. Each tier also has a conic ring (`--tier-N-ring` in `tokens.css`) drawn round the avatar. `services/worker/ones/tiers.py` and `tokens.css` hold the same values and change together.
 
 | Tier | Name | Colour |
 |---|---|---|
-| 1 | Spark | `#FF7F14` |
-| 2 | Glow | `#FF4313` |
-| 3 | Flame | `#FF2E6B` |
-| 4 | Blaze | `#FF0000` |
-| 5 | White heat | `#27D57F` |
-| 6 | Blue flame | `#8C2FF1` |
-| 7 | Star | `#1E46D9` |
+| 1 | Spark | `#F5863B` |
+| 2 | Glow | `#F35532` |
+| 3 | Flame | `#F34770` |
+| 4 | Blaze | `#F23729` |
+| 5 | White heat | `#4DD187` |
+| 6 | Blue flame | `#8841E1` |
+| 7 | Star | `#264DC9` |
 
-A tier colour is light and fill only, never small text: the One's spark, badge, swatch and dashboard accent. A One's number is drawn from a pale core (`heat-core`) to the tier colour, because Tiers 6 and 7 fail as text on Zed (Star is about 2.8:1). In email the number stays white and the tier shows as a filled swatch beside its name. On white screens, a tier colour never sits beside an error, a success mark or a control, so Blaze is not read as an error, White heat as success or Star as something to press. The Spark mark (logo) keeps `#FF5B14` whatever anyone's tier.
+A tier colour is light and fill only, never small text: the One's spark, badge, swatch and dashboard accent. A One's number is drawn from a pale core (`heat-core`) to the tier colour, because Tiers 6 and 7 fail as text on Zed (Star is about 2.8:1). In email the number stays white and the tier shows as a filled swatch beside its name. On white screens, a tier colour never sits beside an error, a success mark or a control, so Blaze is not read as an error, White heat as success or Star as something to press. The Spark mark (logo) keeps `#F46835` whatever anyone's tier.
 
 A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once.
 

@@ -303,6 +303,10 @@ def _people(conn: Conn) -> dict[str, dict[str, str]]:
         code = assign_contributor_code(conn, uid, emp)
         for role in roles:
             conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (uid, role))
+        # The name choice as the toggle writes it: the rule, and the old copy kept until Monday (BLD-E013).
+        conn.execute(
+            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s)", (uid, consent)
+        )
         conn.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, %s)", (uid, consent))
         conn.execute(
             "INSERT INTO privacy_acceptances (user_id, notice_version) VALUES (%s, %s)", (uid, version)

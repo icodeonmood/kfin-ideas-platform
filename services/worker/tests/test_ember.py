@@ -102,7 +102,7 @@ def test_draft_note_send_and_the_archive(ones_db: Any, cast: Any) -> None:
     """The chair approves the note (server-side `ready`), and a different admin sends with the confirm token."""
     db = ones_db
     named = person(db, name="Ananya Rao", consent=True)
-    quiet = person(db, name="Synthetic Quiet One")
+    quiet = person(db, name="Synthetic Quiet One", consent=False)
     induct(db, cast, named, now=NOW)
     induct(db, cast, quiet, now=NOW)
 
@@ -116,7 +116,7 @@ def test_draft_note_send_and_the_archive(ones_db: Any, cast: Any) -> None:
     refused("not_found", service.view, db, cast["employee"], issue["id"])  # a draft is not for everyone
     draft_view = service.view(db, cast["chair"], issue["id"])
     names = [o["name"] for o in draft_view["new_ones"]]
-    assert "Ananya Rao" in names and "Synthetic Quiet One" not in names  # consent decides
+    assert "Ananya Rao" in names and "Synthetic Quiet One" not in names  # her choice decides (DEC-104)
 
     refused("not_ready", service.send, db, cast["admin"], issue["id"], {}, now=NOW)
     refused("note_required", service.approve_note, db, cast["chair"], issue["id"], now=NOW)
@@ -155,8 +155,8 @@ def test_draft_note_send_and_the_archive(ones_db: Any, cast: Any) -> None:
     assert row["chair_note_encrypted"] is None and row["ready_token"] is None  # kept once, in the sent issue
     assert "Ananya Rao" not in str(row["content"])  # Ones are stored as references, never names
 
-    # She withdraws her consent: the archive stops naming her at once (DPDPA).
-    db.execute("UPDATE comms_prefs SET public_name_consent = false WHERE user_id = %s", (named,))
+    # She hides her name: the archive stops naming her at once (DPDPA, DEC-104).
+    db.execute("UPDATE person_settings SET show_name_on_wall = false WHERE user_id = %s", (named,))
     later = service.view(db, cast["employee"], issue["id"])
     assert "Ananya Rao" not in [o["name"] for o in later["new_ones"]] and later["new_ones"]
     actions = [r["action"] for r in db.execute(

@@ -22,7 +22,8 @@ export type SwitchName =
   | "appeals.filing"
   | "capture.mic_hint"
   | "capture.voice"
-  | "speech.hosted";
+  | "speech.hosted"
+  | "desk.listen";
 
 interface Rule {
   methods: readonly string[];
@@ -47,6 +48,8 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
+  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
@@ -57,6 +60,18 @@ export const ROUTE_RULES: readonly Rule[] = [
   {
     methods: ["GET"],
     pattern: /^\/api\/(?:ones(?:\/constellation)?|display\/office)\/?$/,
+    switches: ["ones.public"],
+  },
+  // The 1% Club's Wall and the Ones' posts (lane E, A-API.wall): the worker checks the same switches again.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/wall\/(?:kindling|just-in|impact|ember)\/?$/,
+    switches: ["wall.public"],
+  },
+  { methods: ["GET"], pattern: /^\/api\/wall\/ones\/?$/, switches: ["wall.public", "ones.public"] },
+  {
+    methods: ["GET", "PUT"],
+    pattern: /^\/api\/ones\/posts(?:\/[^/]+\/like)?\/?$/,
     switches: ["ones.public"],
   },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
@@ -78,6 +93,17 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // The Ones Committee's window (L-COMMITTEE): extending and reversing pause with the committee's flow.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/committee\/windows\/[^/]+\/(?:extend|reverse)\/?$/,
+    switches: ["committee.flow"],
+  },
+  // The sharer answering the review desk (S-R3) is editing their idea: read-only mode (§7.6) pauses it too.
+  { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
+  { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
+  // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
+  { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
 ];
 
 /**
@@ -108,6 +134,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096).
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
+  "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
@@ -135,12 +163,21 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
+  // The same on the 1% Club's dashboard (lane E, S-ONE), and a person's own Profile switches (S-H6): their own
+  // record, nothing about ideas. A brief's text checks run inside the call whatever is paused (V-FIELDS.one/4).
+  /^\/api\/one\/(?:number|brief|glow-up\/[^/]+\/seen)\/?$/,
+  /^\/api\/me\/settings\/?$/,
   // Delivery (§4.8 to §4.11) is the work itself: owners, sponsors and PMs keep recording it whatever is paused,
   // like the review desk. Text checks inside these calls answer 503 on their own when the assistant is off.
   /^\/api\/delivery(?:\/[^/]+\/(?:pack|submit|approve|send-back|link|phase|milestones(?:\/[^/]+)?|complete|approve-completion|checkin|evidence\/[^/]+|writeup(?:\/(?:submit|send-back))?|measurements\/[^/]+(?:\/(?:confirm|finance))?))?\/?$/,
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
+  // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
+  // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
+  /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
+  // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
+  /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
