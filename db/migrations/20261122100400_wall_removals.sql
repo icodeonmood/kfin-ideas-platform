@@ -18,6 +18,9 @@ CREATE TABLE wall_removals (
 );
 CREATE UNIQUE INDEX wall_removals_live ON wall_removals (idea_uuid) WHERE restored_at IS NULL;
 CREATE INDEX wall_removals_at ON wall_removals (at DESC);
+-- An audit-like record: only the worker takes off and puts back (programme/wall.py); the web role may read and
+-- insert, never change or remove a row (pinned in test_b4_service_roles.APPEND_ONLY_FOR_WEB).
+REVOKE UPDATE, DELETE ON wall_removals FROM ideas_web_svc;
 
 -- THE shared test every Wall reader adds (views/wall.py today; lane E's wall/common.py `on_wall_sql`, the office
 -- screen and any other public reader): `AND NOT idea_off_wall(i.id)`. Callable from both service roles, so the
@@ -28,5 +31,6 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- migrate:down
+GRANT UPDATE, DELETE ON wall_removals TO ideas_web_svc;
 DROP FUNCTION IF EXISTS idea_off_wall(uuid);
 DROP TABLE IF EXISTS wall_removals;

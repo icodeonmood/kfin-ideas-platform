@@ -156,10 +156,10 @@ def on_measurement(
         out["tier_rises"].append({"user_id": user_id, "one_id": one_id, "tier_from": was, "tier_to": tier})
     out["inducted"] = sorted(made.values(), key=lambda m: m["one_id"])
     measures = one_measures(conn, idea_uuid)
+    # By the idea only: a One later marked Founding keeps their idea, and its figures keep refreshing.
     if measures:
         conn.execute(
-            "UPDATE ones SET measures = %s WHERE idea_id = %s AND way_in = 'accepted_idea'",
-            (Jsonb(measures), idea_row["idea_id"]),
+            "UPDATE ones SET measures = %s WHERE idea_id = %s", (Jsonb(measures), idea_row["idea_id"])
         )
     return out
 

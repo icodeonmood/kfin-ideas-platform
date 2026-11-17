@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from programme import build, flags, impact, ones, view, wall
@@ -353,6 +354,24 @@ def test_j_one_6_l_ones_rules_3_at_90_days_a_tier_rises_with_a_glow_up(
     assert db.execute("SELECT tier FROM ones WHERE id = %s", (one["id"],)).fetchone()["tier"] == 4
 
 
+def test_j_one_6_l_impact_a_one_later_marked_founding_keeps_their_ideas_measures_fresh(
+    db: Conn, cast: Any, posted: Any
+) -> None:
+    """S-OFFICE reads `ones.measures`: an idea's One who is then marked Founding keeps the idea, so the 90-day figures
+    still reach their card (lane E's `mark_founding` changes `way_in`, not `idea_id`)."""
+    idea = shipped_idea(db, cast, posted)
+    impact.enter(db, cast["admin"]["id"], idea["idea_id"], "day_30", HOURS_ONLY, now=NOW)
+    ones.mark_founding(db, cast["admin"]["id"], {"email": cast["sharer"]["email"]})
+    one = db.execute("SELECT way_in, idea_id, measures FROM ones WHERE user_id = %s", (cast["sharer"]["id"],))
+    row = one.fetchone()
+    assert (row["way_in"], row["idea_id"]) == ("founding", idea["idea_id"])
+    assert row["measures"]["time"]["value"] == 120
+    impact.enter(db, cast["admin"]["id"], idea["idea_id"], "day_90", {"time": {"amount": 620}},
+                 now=NOW + dt.timedelta(days=60))  # fmt: skip
+    measures = db.execute("SELECT measures FROM ones WHERE user_id = %s", (cast["sharer"]["id"],)).fetchone()
+    assert measures["measures"]["time"] == {"value": 620, "unit": "hours a month"}
+
+
 def test_j_one_3_dec_106_founding_and_removal_go_through_lane_e_and_are_audited(
     db: Conn, cast: Any, posted: Any
 ) -> None:
@@ -446,13 +465,26 @@ def test_dec_106_take_off_the_wall_hides_the_idea_from_wall_readers_and_restores
 
 def test_dec_106_lane_e_wall_views_honour_take_off_the_wall(db: Conn, cast: Any, posted: Any) -> None:
     """The hand-off to lane E's Wall (S-WALL, L-WALL): its one filter, `on_wall_sql`, carries the removal, so Just
-    in, Kindling and the live fixes all drop the idea at once and bring it back on restore."""
+    in, Kindling and the live fixes all drop the idea at once and bring it back on restore. The two readers outside
+    that filter follow it too: a One's post about the idea on Home (L-ONES.rules/7, with its /ideas/<ref> link) and
+    the idea line of the old /api/ones cards. A post about no idea always stays (BLD-A212)."""
+    from ones import views as ones_views
+    from wall import ones as lane_e_ones
     from wall.common import on_wall_sql
 
     desk = an_idea(db, cast["merged"], status="with_review_desk", title="Branch queue tokens")
     shipped = shipped_idea(db, cast, posted)
+    impact.enter(db, cast["admin"]["id"], shipped["idea_id"], "day_30", HOURS_ONLY, now=NOW)  # a One now
+    one = db.execute("SELECT id FROM ones WHERE user_id = %s", (cast["sharer"]["id"],)).fetchone()
+    about = wall_fixtures.post(db, one["id"], shipped, "Bounced first debits are down by a third")
+    general = wall_fixtures.post(db, one["id"], None, "Thank you to every branch that tried it first")
+    # The old public cards read the legacy stage and canvas (ones/views.py), so give the idea both.
+    db.execute(
+        "UPDATE ideas SET stage = 'shipped', canvas = %s WHERE id = %s",
+        (Jsonb({"neutral_summary": "Mandate checks run before the first debit"}), shipped["id"]),
+    )
 
-    def visible() -> dict[str, bool]:
+    def visible() -> dict[str, Any]:
         on = {
             r["idea_id"]
             for r in db.execute(f"SELECT i.idea_id FROM ideas i WHERE {on_wall_sql('i')}").fetchall()  # noqa: S608
@@ -460,17 +492,25 @@ def test_dec_106_lane_e_wall_views_honour_take_off_the_wall(db: Conn, cast: Any,
         live = {f["id"] for f in wall_impact.live_fixes(db, NOW)}
         kind = {x["id"] for stage in kindling.kindling(db) for x in stage["items"]}
         just_in = {r["id"] for r in kindling.just_in(db, now=NOW)["items"]}
+        home = {p["id"]: p["thread_to"] for p in lane_e_ones.posts(db, cast["nobody"]["id"], NOW)}
+        public = ones_views.public(db)
+        assert public["paused"] is False
+        [card] = public["ones"]  # the sharer, the only One
         return {
             "desk": desk["idea_id"] in on and desk["idea_id"] in just_in,
             "shipped": shipped["idea_id"] in on and shipped["idea_id"] in live and shipped["idea_id"] in kind,
+            "posts": home,
+            "line": card["line"],
         }
 
-    assert visible() == {"desk": True, "shipped": True}
+    both = {about: f"/ideas/{shipped['idea_id']}", general: "/wall"}
+    line = "Mandate checks run before the first debit"
+    assert visible() == {"desk": True, "shipped": True, "posts": both, "line": line}
     wall.take_off(db, cast["reviewer"]["id"], desk["idea_id"], {"reason": "Names a customer's branch"})
     wall.take_off(db, cast["admin"]["id"], shipped["idea_id"], {"reason": "Waiting on a legal check"})
-    assert visible() == {"desk": False, "shipped": False}
+    assert visible() == {"desk": False, "shipped": False, "posts": {general: "/wall"}, "line": None}
     wall.restore(db, cast["admin"]["id"], shipped["idea_id"], {"reason": "Legal cleared it this morning"})
-    assert visible() == {"desk": False, "shipped": True}
+    assert visible() == {"desk": False, "shipped": True, "posts": both, "line": line}
 
 
 def test_dec_106_take_off_the_wall_filters_the_old_wall_view(

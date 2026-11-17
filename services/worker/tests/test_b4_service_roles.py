@@ -23,9 +23,10 @@ HIDDEN_FROM_WEB = {
     "idea_words_sealed",  # the sharer's unmasked words, readable by them alone (DEC-103, L-HIDE.rules/4)
 }  # fmt: skip
 # Final or audit-like records of the handoff cut-over: the web role inserts and reads them, never changes or removes
-# them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags).
+# them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags; "Take off the Wall", DEC-106).
 APPEND_ONLY_FOR_WEB = {
     "idea_decisions", "decision_reversals", "idea_versions", "flag_exposures", "idea_opens", "idea_status_history",
+    "wall_removals",
 }  # fmt: skip
 
 
