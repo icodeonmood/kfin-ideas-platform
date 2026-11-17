@@ -433,6 +433,86 @@ describe("BLD-C150 a second voice note while one waits keeps its own message", (
   });
 });
 
+describe("S-04B similar strip: Team up opens lane F's own sheet with the draft (J-SIMILAR/3–5; BLD-C129)", () => {
+  const RAVI = { id: "p-ravi", name: "Ravi Nair", first_name: "Ravi", initials: "RN" };
+  const MATCH = {
+    idea: {
+      id: "IDEA-2026-001412",
+      title: "Rejection SMS codes confuse investors",
+      summary: "Investors get a code, not a reason, and then they call the branch.",
+      area: "Investor service",
+      stage: "with_desk",
+      stage_label: "With the review desk",
+      lead: RAVI,
+      crew_faces: [RAVI],
+      crew_count: 4,
+      in_their_words: "Investors get a code, not a reason, and then they call us.",
+      looking_for: "Someone who takes these calls at a branch every day.",
+      hue: 1,
+    },
+    strength: "close",
+    reason: "Close match: the same R07 SMS and the same calls",
+  };
+
+  it("C-SHEET-TEAMUP from the strip's Preview: the real sheet loads for that idea with 'Your draft', and the row is its opener", async () => {
+    route = (s) => {
+      if (s.url === "/api/ideas/IDEA-2026-001412/team-up")
+        return {
+          status: 200,
+          body: {
+            idea_id: "IDEA-2026-001412",
+            lead: RAVI,
+            me: null,
+            crew_count: 4,
+            can_request: true,
+            why_not: null,
+            request: null,
+          },
+        };
+      if (s.url === "/api/ideas/IDEA-2026-001412/team-up/draft-note")
+        return {
+          status: 200,
+          body: {
+            note: "Hi Ravi, I see the same R07 calls at our branch. I'd like to help.",
+            own_ideas: [],
+            idea: { id: "IDEA-2026-001412", title: MATCH.idea.title },
+            lead: RAVI,
+          },
+        };
+      if (s.url === "/api/me")
+        return { status: 200, body: { name: "Kavya Iyer", contributor_code: "CTR-0a1b2c" } };
+      return {
+        status: 200,
+        body: draft({
+          parts: { ...draft().parts, similar: { state: "filled", value: [MATCH] } } as Draft["parts"],
+        }),
+      };
+    };
+    await mount(DRAFT);
+    act(() => (host.querySelector("button.simb") as HTMLButtonElement).click());
+    const row = button(`Preview: ${MATCH.idea.title}`)!;
+    expect(row.getAttribute("data-teamup-opener")).toBe("IDEA-2026-001412"); // lane F's teamUpOpener
+    await act(async () => row.click());
+    const preview = document.querySelector('[role="dialog"]')!;
+    const teamUp = [...preview.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Team up")!;
+    await act(async () => teamUp.click());
+    await tick();
+    const sheet = [...document.querySelectorAll('[role="dialog"]')].find((d) =>
+      d.textContent?.includes("Team up with Ravi"),
+    )!;
+    expect(sheet).toBeTruthy();
+    expect(sheet.textContent).toContain("Your draft");
+    expect(sheet.textContent).toContain("Keep mine separate"); // the draft id reached the sheet (BLD-F071)
+    expect(sent.map((x) => x.url)).toEqual(
+      expect.arrayContaining([
+        "/api/ideas/IDEA-2026-001412/team-up",
+        "/api/ideas/IDEA-2026-001412/team-up/draft-note",
+        "/api/me",
+      ]),
+    );
+  });
+});
+
 describe("C-PROMPT.voice a failed note's line, by reason (BLD-C127)", () => {
   it("C-PROMPT.voice signed out → the sign-in line; paused or unavailable → the paused line; the rest → nothing invented", () => {
     expect(voiceFailedLine("signed_out")).toBe("sign_in");

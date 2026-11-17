@@ -12,7 +12,10 @@
  * with its client_id and `at`, and goes when the browser is back online (L-DRAFT.autosave/7).
  * Voice (C-PROMPT.voice, DEC-108): `useVoiceCapture`; a finished note goes into the draft as a message with its
  * stream, so the server keeps the English copy with it. Into an empty S-04 box it is the first message at once; after
- * typed words it waits in the box, editable, and goes as its own message after the typed one (BLD-C150).
+ * typed words it waits in the box, editable, and goes as its own message after the typed one; a second note while one
+ * waits does the same after it (BLD-C150).
+ * Team up from a similar idea's preview opens lane F's own sheet (`useTeamUpSheet`, C-SHEET-TEAMUP) with this draft,
+ * so "Keep mine separate" or a merge request goes with it (J-SIMILAR/3–5, BLD-C129).
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,10 +23,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
 import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
-// Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
-import { teamUpOpener, useTeamUpSheet } from "@/components/compose/teamup-shim";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
+import { teamUpOpener, useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import type {
