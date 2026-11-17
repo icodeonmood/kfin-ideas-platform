@@ -8,7 +8,8 @@ the context "<table>.<column>:<row id>"; audit entries carry IDs, never text (no
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterator
+import uuid
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -114,6 +115,40 @@ def user_of(conn: Conn, code: str | None) -> str | None:
         return None
     row = conn.execute("SELECT user_id FROM contributor_map WHERE contributor_code = %s", (code,)).fetchone()
     return str(row["user_id"]) if row else None
+
+
+# P-PRODUCT.privacy (DEC-104): the review desk and the Ones Committee read a sharer's private words, answers, the worth
+# note and a decision's reason; admins see the stage only. `core_committee` is the committee's role until lane E
+# retires it with the old pages. Only the review desk acts on an idea from the desk.
+READERS = frozenset({"reviewer", "committee", "core_committee"})
+REVIEWERS = frozenset({"reviewer"})
+_NOT_YOURS = {
+    READERS: "Only the review desk and the Ones Committee can see this.",
+    REVIEWERS: "Only the review desk can do this.",
+}
+
+
+def has_role(conn: Conn, user_id: str, roles: Iterable[str]) -> bool:
+    """A live grant of any of `roles` (role_grants, from and to dates). Anything that is not a user id has none."""
+    try:
+        uuid.UUID(str(user_id))
+    except ValueError:
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM role_grants WHERE user_id = %s AND role = ANY(%s) AND valid_from <= now() "
+            "AND (valid_to IS NULL OR valid_to > now()) LIMIT 1",
+            (user_id, sorted(roles)),
+        ).fetchone()
+        is not None
+    )
+
+
+def require_role(conn: Conn, user_id: str, roles: frozenset[str]) -> None:
+    """403 `forbidden` unless the person holds one of `roles`: every desk read needs READERS, every desk write
+    REVIEWERS. The web app's capabilities let admins reach the desk routes; the worker does not (P-PRODUCT.privacy)."""
+    if not has_role(conn, user_id, roles):
+        raise Refused(403, "forbidden", _NOT_YOURS.get(roles, _NOT_YOURS[REVIEWERS]))
 
 
 def own_codes(conn: Conn, idea: dict[str, Any]) -> set[str]:
