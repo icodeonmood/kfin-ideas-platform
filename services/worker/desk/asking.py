@@ -373,10 +373,10 @@ def give_more_time(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None
     sid = _uuid(set_id)
     with audited(conn), conn.transaction():
         idea, s = _reviewer_set(conn, sid, user_id, "give_more_time")
-        due = clock.give_more_time(s["due_at"], p)
+        due = clock.give_more_time(s["due_at"], p, t)  # from now when it is overdue
         n = int(s["extended_times"]) + 1
         conn.execute("UPDATE question_sets SET due_at = %s, extended_times = %s WHERE id = %s", (due, n, sid))
-        _schedule_reminders(conn, sid, t, due, p)
+        _schedule_reminders(conn, sid, t, due, p)  # 1 day and 2 hours before the new deadline
         audit(conn, actor(user_id), "desk.give_more_time", f"idea:{idea['idea_id']}",
               before={"set_id": sid, "due_at": _iso(s["due_at"])},
               after={"set_id": sid, "due_at": due.isoformat(), "extended_times": n})  # fmt: skip
