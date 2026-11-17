@@ -635,6 +635,8 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
     assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    # S-07.phone (PhoneMyIdeas.md): the phone names who asked
+    assert t6["next_step"]["phone_sentence"] == "Harish from the review desk asked you 3 questions yesterday."
     assert t6["next_step"]["action"]["label"] == "Answer the questions"
     assert t6["next_step"]["action"]["to"] == f"/ideas/{ref(club, 'T6')}/answer"
     assert (
@@ -732,6 +734,12 @@ def test_s07_states_empty_first_time_and_filtered(club: dict[str, Any]) -> None:
     shipped = mine(club, "tanvi", filter="shipped")
     assert shipped["empty"]["title"] == "Nothing shipped yet."
     assert [a["label"] for a in shipped["empty"]["actions"]] == ["See 1 in Teamed up", "Show all ideas"]
+    # S-07.phone: the phone says "impact" where the desktop says "effect", and offers "Show all ideas" alone
+    assert shipped["empty"]["line"] == "Ideas land here once they ship and their effect is measured."
+    assert shipped["empty"]["phone_line"] == "Ideas land here once they ship and their impact is measured."
+    assert [a["label"] for a in shipped["empty"]["actions"] if not a.get("desk_only")] == ["Show all ideas"]
+    closed = mine(club, "tanvi", list="teamed", filter="closed")["empty"]
+    assert "phone_line" not in closed
     desk = mine(club, "tanvi", list="teamed", filter="with_review_desk")
     assert desk["total"] == 1  # R2
 

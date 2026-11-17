@@ -56,6 +56,14 @@ test.describe("S-07 on the 1% Club seed", () => {
     );
     await expect(page.getByRole("link", { name: `Read the decision: ${IDEAS.T9}` })).toBeVisible();
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
+    // The Needs-you sentence: the phone names who asked (PhoneMyIdeas.md), the desktop says the review desk
+    await expect(
+      page.getByText(
+        isPhone(info.project.name)
+          ? /^Harish from the review desk asked you 3 questions/
+          : /^The review desk asked you 3 questions/,
+      ),
+    ).toBeVisible();
     if (isPhone(info.project.name)) {
       await expect(page.getByRole("radiogroup", { name: "Filter" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Sorted by latest activity" })).toBeVisible();
@@ -177,12 +185,18 @@ test.describe("S-07 on the 1% Club seed", () => {
   }, info) => {
     await open(page, "/my-ideas?filter=shipped");
     await expect(page.getByRole("heading", { name: "Nothing shipped yet." })).toBeVisible();
-    await expect(
-      page.getByText("Ideas land here once they ship and their effect is measured."),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "See 1 in Teamed up" })).toBeVisible();
     if (isPhone(info.project.name)) {
+      // S-07.phone (PhoneMyIdeas.md): "impact", and "Show all ideas" is the only way out
+      await expect(
+        page.getByText("Ideas land here once they ship and their impact is measured."),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "See 1 in Teamed up" })).toBeHidden();
       await expect(page.getByRole("radio", { name: /^Shipped/ })).toHaveAttribute("aria-checked", "true");
+    } else {
+      await expect(
+        page.getByText("Ideas land here once they ship and their effect is measured."),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "See 1 in Teamed up" })).toBeVisible();
     }
     await expectNoSeriousAxeIssues(page);
     await page.getByRole("button", { name: "Show all ideas" }).click();
@@ -211,6 +225,34 @@ test.describe("S-07 on the 1% Club seed", () => {
         isPhone(info.project.name) ? /^Back where you were: All,/ : "Back where you were: Teamed up.",
       ),
     ).toBeVisible();
+  });
+
+  test("S-07.filters, C-SEARCH.behaviour/1 (MyIdeas search=Suggestions open): the panel offers the example questions and says what search reads", async ({
+    page,
+  }, info) => {
+    test.skip(isPhone(info.project.name), "the phone shows the search bar once there is a search");
+    await open(page);
+    await page.getByRole("searchbox", { name: "Search your ideas, or ask a question" }).focus();
+    await expect(page.getByText("Narrow it to")).toBeVisible();
+    await expect(page.getByText("Or ask in your own words")).toBeVisible();
+    for (const q of [
+      "Which of my ideas need me this week?",
+      "Ideas about the rejection SMS",
+      "What did the review desk say no to, and why?",
+    ]) {
+      await expect(page.getByRole("button", { name: q })).toBeVisible();
+    }
+    await expect(
+      page.getByText(
+        "Search reads your titles, your own words, your files and the review desk’s notes, so it finds ideas by meaning, not only exact words.",
+      ),
+    ).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    // A question goes in the address like any search
+    await page.getByRole("button", { name: "Ideas about the rejection SMS" }).click();
+    await soon
+      .poll(() => here(page))
+      .toBe(`/my-ideas?${new URLSearchParams({ q: "Ideas about the rejection SMS" }).toString()}`);
   });
 
   test("S-07.states view=Loading: three skeleton rows while the next view comes", async ({ page }) => {
