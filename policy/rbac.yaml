@@ -20,6 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
+  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -66,6 +67,7 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  files.blackout: [admin, infosec]                    # DEC-107: "Hide it for me" for PDFs and images, after review
   desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
 
 # No session needed.
@@ -122,6 +124,11 @@ endpoints:
   - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
+  # L-HIDE (lane C, BLD-C060): the desk's "Hide this"; the sharer's "Show it" and "Hide it" (the worker checks
+  # whose words they are).
+  - POST /api/desk/ideas/{id}/hide                    hide_for_desk
+  - POST /api/drafts/{id}/hidden/{hid}/show           submit
+  - POST /api/drafts/{id}/hidden/{hid}/hide           submit
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
