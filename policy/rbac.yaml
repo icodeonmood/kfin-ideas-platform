@@ -262,6 +262,11 @@ endpoints:
   - GET /api/committee/windows/{id}/reversing         committee_window
   - POST /api/committee/windows/{id}/extend           committee_window
   - POST /api/committee/windows/{id}/reverse          committee_window
+  # Find your crew (lane F; A-API.team-up, L-CREW). Everyone signed in has a deck; the worker shapes it for them.
+  - GET /api/crew                                     signed_in
+  - POST /api/crew/pass                               signed_in
+  - POST /api/crew/pass/undo                          signed_in
+  - POST /api/crew/pass/reset                         signed_in
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403

@@ -5,6 +5,7 @@
  */
 import type {
   CommitteeSort,
+  IdeaStatus,
   CommitteeTab,
   DecisionChoice,
   DeskSort,
@@ -1238,6 +1239,54 @@ export interface CrewResponse extends ListOf<CrewCard> {
   joined: number;
   pending: number;
   passed: number;
+}
+/** L-CREW/5: the deck's filters, in the filter panel's order. */
+export type CrewFilterKey = "location" | "category" | "status" | "team_size" | "looking_for";
+export interface CrewFilterGroup {
+  key: CrewFilterKey;
+  label: string;
+  /** Each option's count is what it would show with the other filters as they are. */
+  options: { value: string; label: string; count: number; active: boolean }[];
+}
+/** L-CREW/9: an idea in "Your crews". `label` is "Waiting for Ravi" or "On the crew". */
+export interface YourCrew {
+  id: string;
+  title: string;
+  status: IdeaStatus;
+  lead: PersonRef;
+  state: "waiting" | "on_crew";
+  label: string;
+  request_id: string | null;
+  at: IsoDate;
+}
+/**
+ * What `GET /crew` returns (lane F, `services/worker/crew/deck.py`): `CrewResponse` plus the filter panel, the
+ * active chips, the deck's state (L-CREW/7–8), `asked` for "You asked to team up on 1 idea", the last pass for
+ * "Undo last pass", and "Your crews". `counts` keys are "<filter>:<value>".
+ */
+export interface CrewDeckResponse extends CrewResponse {
+  filters: CrewFilterGroup[];
+  active: { key: CrewFilterKey; value: string; label: string }[];
+  deck_total: number;
+  state: "cards" | "everyone_seen" | "nothing_yet";
+  asked: number;
+  last_passed: string | null;
+  your_crews?: { items: YourCrew[]; teamed_link: string };
+}
+export interface CrewPassRequest {
+  idea_id: string;
+}
+export interface CrewPassResponse {
+  passed: number;
+  last_passed: string | null;
+}
+/** "Undo last pass": the card comes back when it is still one the person could join. */
+export interface CrewUndoResponse extends CrewPassResponse {
+  restored: string | null;
+  card: CrewCard | null;
+}
+export interface CrewResetResponse extends CrewPassResponse {
+  reset: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
