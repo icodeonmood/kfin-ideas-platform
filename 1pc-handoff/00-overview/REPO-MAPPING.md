@@ -70,7 +70,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
-| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
+| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx` until S-05 moves to the files API; no "couldn't open this link" state (BLD-E001). Files API (lane C, BLD-C105 to C109): `services/worker/attachments/files.py`, `files_api.py`, `hide/files.py`; web `server/files.ts`, `/api/files`, `/api/files/:id`, `/view`, `/retry`, `/hide`, `/api/links`, `/api/config/uploads` | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | built: `components/ui/dropdown.tsx`; named "{label}: {summary}", with `optional` and `empty` (lane F, BLD-F070) | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |

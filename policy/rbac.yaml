@@ -177,6 +177,17 @@ endpoints:
   - POST /api/desk/ideas/{id}/hide                    hide_for_desk
   - POST /api/drafts/{id}/hidden/{hid}/show           submit
   - POST /api/drafts/{id}/hidden/{hid}/hide           submit
+  # Files and links (lane C; A-API.files, L-HIDE.files, BLD-C105 to C109). The worker decides who may add, see,
+  # open, retry or remove each one (DEC-107): a file with a customer detail opens only for the person who added it,
+  # the review desk and the Ones Committee.
+  - GET /api/config/uploads                           signed_in       # the one limit, type list and help line
+  - POST /api/files                                   submit          # multipart; one of draft_id, idea_id, answer_id
+  - POST /api/links                                   submit          # never fetched (BLD-E001)
+  - GET /api/files/{id}                               open_attachments
+  - GET /api/files/{id}/view                          open_attachments  # the checked copy only
+  - POST /api/files/{id}/retry                        submit
+  - DELETE /api/files/{id}                            submit
+  - POST /api/files/{id}/hide                         submit          # not_available while files.blackout is off
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles

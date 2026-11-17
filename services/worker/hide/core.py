@@ -349,16 +349,19 @@ def hide_into(
     source_id: str,
     gatekeeper: bool = True,
     seal: bool = True,
+    gate: detect.Gate | None = None,
 ) -> Hidden:
     """Detect, store each value sealed, keep earlier "Show it" choices for the same values, and return the result.
-    Re-running on an edited text keeps each detail's id where its value is still there.
+    Re-running on an edited text keeps each detail's id where its value is still there. `gate`: the gatekeeper's
+    finds the caller already has (a file's text, asked piece by piece, `hide/files.py`); then no model is called here.
 
     Call it inside the same transaction as the write that stores the masked copy (see `hide/__init__.py`): the
     idea's lock is held until that transaction ends, so a desk hide cannot land in between. Its own work runs in
     savepoints, so a failure here leaves the caller's transaction usable."""
     return _hide(
-        conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=gatekeeper, seal=seal
-    )[0]
+        conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=gatekeeper, seal=seal,
+        gate=gate,
+    )[0]  # fmt: skip
 
 
 def _hide(
@@ -372,6 +375,7 @@ def _hide(
     gatekeeper: bool = True,
     seal: bool = True,
     recheck: bool = False,
+    gate: detect.Gate | None = None,
 ) -> tuple[Hidden, list[dict[str, Any]]]:
     """`hide_into`, also returning the stored rows. `recheck`: a queued re-check, which raises
     `GatekeeperUnavailable` instead of going on without the gatekeeper."""
@@ -379,10 +383,11 @@ def _hide(
         raise ValueError("unknown hide source")
     idea_row(conn, idea_uuid)
     scope = scope_for(idea_uuid)
-    gate = detect.Gate([])
-    if gatekeeper:
-        with conn.transaction():  # the model call comes before the idea's lock (BLD-C067)
-            gate = detect.gatekeeper_finds(conn, text, scope)
+    if gate is None:
+        gate = detect.Gate([])
+        if gatekeeper:
+            with conn.transaction():  # the model call comes before the idea's lock (BLD-C067)
+                gate = detect.gatekeeper_finds(conn, text, scope)
     if recheck and gate.skipped:
         raise GatekeeperUnavailable(gate.skipped)
     with conn.transaction():
