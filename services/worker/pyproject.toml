@@ -22,6 +22,7 @@ dependencies = [
   "anthropic[bedrock]>=2.6.0",
   "numpy>=2.0",          # weekly clustering (already installed through spaCy; now used directly)
   "pillow>=11",          # images for OCR (already installed through python-pptx; now used directly)
+  "websockets>=14",
 ]
 
 [dependency-groups]
