@@ -214,9 +214,11 @@ function testCorpus(): string {
   return corpus;
 }
 
-/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). */
+/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). `P-` modules
+ * are product rules, not code (P-ROUTES.state is kept by the screens that use it), so they never hold a step back. */
 export function onMain(id: string): boolean {
   if (id in FORCE_FIXME) return false;
+  if (id.startsWith("P-")) return true;
   const base = id.split(".")[0]!;
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
