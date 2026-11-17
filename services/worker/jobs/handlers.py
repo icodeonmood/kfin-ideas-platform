@@ -281,3 +281,12 @@ def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
     from desk.clocks import run_due
 
     run_due(conn)
+
+
+@handler("impact.sweep")
+def impact_sweep(conn: Conn, payload: dict[str, Any]) -> None:
+    """Hourly: a measurement that has fallen due and is not entered gets one "Needs you" item for the build team
+    and the admins (L-IMPACT, J-ONE steps 2 and 6). A sweep over the table, not an sla timer."""
+    from programme.impact import sweep
+
+    log.info("impact.sweep_done", measurement_count=sweep(conn))
