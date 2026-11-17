@@ -97,8 +97,9 @@ export type PromptProps = {
   device: "desktop" | "phone";
   /** The empty first box: the round button is the microphone, with "Tap to start speaking" (S-04.empty/1). */
   micFirst?: boolean;
-  /** The English copy of a voice note in another language, under the box (L-DRAFT.voice/4). */
-  english?: string | null;
+  /** The English copy of a voice note in another language, under the box (L-DRAFT.voice/4); one line per note
+   * when the box holds several (BLD-C150). */
+  english?: string | readonly string[] | null;
   /** C-PROMPT.anatomy/2: the attach button (C-FILE.uploader), first in the tool row. Mounted by a later round once
    * POST /api/files lands (c/files-2, BLD-C124); until then the row has the mic and send only. */
   attach?: ReactNode;
@@ -180,6 +181,7 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
         : PROMPT_COPY.speakInstead;
   const roundIsMic = Boolean(voice) && micFirst && !has && !recording && !blocked;
   const canSend = has && !recording && !sending;
+  const englishLines = english ? (typeof english === "string" ? [english] : english) : [];
 
   const mic = voice ? (
     <button
@@ -272,10 +274,14 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
           )}
         </span>
       </div>
-      {english ? (
+      {englishLines.length ? (
         <div className="cen">
           <p className="cen-l">{VOICE_EN_LABEL}</p>
-          <p className="cen-t">{english}</p>
+          {englishLines.map((line, i) => (
+            <p key={i} className="cen-t">
+              {line}
+            </p>
+          ))}
         </div>
       ) : null}
       {blocked ? (

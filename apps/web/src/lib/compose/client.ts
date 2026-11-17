@@ -56,7 +56,8 @@ export type Outgoing = {
 };
 
 /** A finished voice note waiting in the box after what was typed (BLD-C150). `prefix` is the box as it was when the
- * note joined it; null once the note is already the draft's first message (S-04, an empty box). */
+ * note joined it; null once the note is already the draft's first message (S-04, an empty box). The box can hold
+ * several, in the order they were spoken (BLD-C150): each keeps its own stream. */
 export type HeldNote = { streamId: string; text: string; textEn: string | null; prefix: string | null };
 
 /** Where the note's words start in the box: after the typed words as they were, or, if those were changed, where
@@ -68,24 +69,95 @@ export function noteStart(box: string, note: HeldNote): number {
   return end.endsWith(note.text) ? end.length - note.text.length : -1;
 }
 
+/** One stretch of the box: what was typed first (`note` null), or a held note's words from `at`. `whole` marks the
+ * stretch from the start of the box that could not be cut any further (both sides of a cut were changed). */
+export type BoxPart = { at: number; text: string; note: HeldNote | null; whole?: boolean };
+
 /**
- * BLD-C150: what is typed is sent first as its own typed message, then the voice note as its own message (via
- * `voice` with its `stream_id`, so the server keeps its English copy, DEC-108), each with its own client_id. A box
- * that cannot be split (both parts changed) goes as one message with the note's stream: the server keeps the
- * person's changed words without the English copy (L-DRAFT.voice).
+ * The box cut where each held note starts (BLD-C150), found from the last note back: what was typed first,
+ * then each note's words (with anything typed after them). A note already sent as the first message (prefix null)
+ * is not cut out. Where a cut cannot be found, everything before it stays one stretch with that note.
  */
-export function messagesFor(box: string, note: HeldNote | null): Outgoing[] {
-  const text = box.trim();
-  if (!text) return [];
-  if (!note || note.prefix === null) return [{ clientId: newClientId(), text, via: "typed" }];
-  const at = noteStart(box, note);
-  if (at < 0) return [{ clientId: newClientId(), text, via: "voice", streamId: note.streamId }];
-  const typed = box.slice(0, at).trim();
-  const spoken = box.slice(at).trim();
+export function boxParts(box: string, notes: HeldNote | readonly HeldNote[] | null): BoxPart[] {
+  const held = (notes === null ? [] : "streamId" in notes ? [notes] : [...notes]).filter(
+    (n) => n.prefix !== null,
+  );
+  const parts: BoxPart[] = [];
+  let end = box.length;
+  for (let i = held.length - 1; i >= 0; i -= 1) {
+    const note = held[i]!;
+    const at = noteStart(box.slice(0, end), note);
+    if (at < 0) return [{ at: 0, text: box.slice(0, end), note, whole: true }, ...parts];
+    parts.unshift({ at, text: box.slice(at, end), note });
+    end = at;
+  }
+  return [{ at: 0, text: box.slice(0, end), note: null }, ...parts];
+}
+
+function partsOut(parts: readonly BoxPart[]): Outgoing[] {
   const out: Outgoing[] = [];
-  if (typed) out.push({ clientId: newClientId(), text: typed, via: "typed" });
-  if (spoken) out.push({ clientId: newClientId(), text: spoken, via: "voice", streamId: note.streamId });
+  for (const p of parts) {
+    const text = p.text.trim();
+    if (!text) continue;
+    out.push(
+      p.note
+        ? { clientId: newClientId(), text, via: "voice", streamId: p.note.streamId }
+        : { clientId: newClientId(), text, via: "typed" },
+    );
+  }
   return out;
+}
+
+/**
+ * BLD-C150: what is typed is sent first as its own typed message, then each voice note as its own message (via
+ * `voice` with its `stream_id`, so the server keeps its English copy, DEC-108), each with its own client_id; a second
+ * note held while one waits keeps its own message too (BLD-C150). A box that cannot be split (both parts changed)
+ * goes as one message with the note's stream: the server keeps the person's changed words without the English copy
+ * (L-DRAFT.voice).
+ */
+export function messagesFor(box: string, notes: HeldNote | readonly HeldNote[] | null): Outgoing[] {
+  return partsOut(boxParts(box, notes));
+}
+
+/** S-04: where the first message ends: at the first held note that can be cut out, or the whole box when none can
+ * (it then saves as typed). */
+export function firstEnd(box: string, notes: readonly HeldNote[]): number {
+  const cut = boxParts(box, notes).find((p) => p.note && !p.whole);
+  return cut ? cut.at : box.length;
+}
+
+/** S-04: the held notes after the first message, each its own voice message with its stream (BLD-C150). */
+export function spokenAfterFirst(box: string, notes: readonly HeldNote[]): Outgoing[] {
+  return partsOut(boxParts(box, notes).filter((p) => p.note && !p.whole));
+}
+
+/** The English copies to show under the box (DEC-108): each note's, while its words are as heard. */
+export function englishFor(box: string, notes: readonly HeldNote[]): string[] {
+  const shown: string[] = [];
+  for (const n of notes) if (n.prefix === null && n.textEn && box.includes(n.text)) shown.push(n.textEn);
+  for (const p of boxParts(box, notes))
+    if (p.note && !p.whole && p.note.textEn && p.text.trim() === p.note.text.trim())
+      shown.push(p.note.textEn);
+  return shown;
+}
+
+/**
+ * Refused, or failed part-way: the words that did not go come back to the box in order after `before`, and each
+ * note among them waits again with its own stream (BLD-C150). A note already sent as the first message stays.
+ */
+export function backInBox(
+  before: string,
+  rest: readonly Outgoing[],
+  held: readonly HeldNote[],
+): { box: string; notes: HeldNote[] } {
+  let box = before.replace(/\s+$/, "");
+  const notes: HeldNote[] = held.filter((n) => n.prefix === null);
+  for (const r of rest) {
+    const n = r.via === "voice" ? held.find((h) => h.streamId === r.streamId) : undefined;
+    if (n) notes.push({ ...n, prefix: box });
+    box = box ? `${box} ${r.text}` : r.text;
+  }
+  return { box, notes };
 }
 
 /** Sign-out: no one's waiting words stay on a shared device (the outbox holds raw text; S-04.rules/4 keeps the

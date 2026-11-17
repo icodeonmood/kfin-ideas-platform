@@ -9,10 +9,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Draft, DraftStreamEvent } from "@/lib/contracts";
 import {
+  backInBox,
   clearOutboxes,
   DraftClient,
   DraftError,
+  englishFor,
+  firstEnd,
   messagesFor,
+  spokenAfterFirst,
   type HeldNote,
   type Outgoing,
 } from "@/lib/compose/client";
@@ -572,6 +576,70 @@ describe("BLD-C150 a voice note after typed words goes as its own message", () =
     expect(messagesFor(note("").text, note("")).map((m) => m.via)).toEqual(["voice"]);
     expect(messagesFor("Only typed words here.", null).map((m) => m.via)).toEqual(["typed"]);
     expect(messagesFor("   ", note("x"))).toEqual([]);
+  });
+});
+
+describe("BLD-C150 a second voice note held while one waits keeps its own message", () => {
+  const typed = "The mandate screen asks for the IFSC twice.";
+  const one: HeldNote = {
+    streamId: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    text: "Branch mein roz das log aate hain",
+    textEn: "Ten people come to the branch every day",
+    prefix: typed,
+  };
+  const two: HeldNote = {
+    streamId: "1b2c3d4e-5f60-4b7c-9d8e-0f1a2b3c4d5e",
+    text: "Har ek ko do din lagte hain",
+    textEn: "Each one takes two days",
+    prefix: `${typed} ${one.text}`,
+  };
+  const box = `${typed} ${one.text} ${two.text}`;
+
+  it("C-PROMPT.voice typed, then each note as voice with its own stream, in the order spoken", () => {
+    const out = messagesFor(box, [one, two]);
+    expect(out.map((m) => [m.via, m.text, m.streamId])).toEqual([
+      ["typed", typed, undefined],
+      ["voice", one.text, one.streamId],
+      ["voice", two.text, two.streamId],
+    ]);
+    expect(new Set(out.map((m) => m.clientId)).size).toBe(3);
+  });
+
+  it("C-PROMPT.voice the first note edited still cuts; each English copy shows only while its words are as heard", () => {
+    const edited = `${typed} Branch mein roz bees log aate hain ${two.text}`;
+    expect(messagesFor(edited, [one, two]).map((m) => [m.via, m.text, m.streamId])).toEqual([
+      ["typed", typed, undefined],
+      ["voice", "Branch mein roz bees log aate hain", one.streamId],
+      ["voice", two.text, two.streamId],
+    ]);
+    expect(englishFor(box, [one, two])).toEqual([one.textEn, two.textEn]);
+    expect(englishFor(edited, [one, two])).toEqual([two.textEn]);
+  });
+
+  it("C-PROMPT.voice S-04: the first message ends where the first note starts; both notes go after it", () => {
+    expect(firstEnd(box, [one, two])).toBe(typed.length);
+    expect(spokenAfterFirst(box, [one, two]).map((m) => m.streamId)).toEqual([one.streamId, two.streamId]);
+    const spoken: HeldNote = { ...one, prefix: null }; // the first message was itself a note
+    const after: HeldNote = { ...two, prefix: one.text };
+    expect(firstEnd(`${one.text} ${two.text}`, [spoken, after])).toBe(one.text.length);
+    expect(spokenAfterFirst(`${one.text} ${two.text}`, [spoken, after]).map((m) => m.streamId)).toEqual([
+      two.streamId,
+    ]);
+    expect(englishFor(`${one.text} ${two.text}`, [spoken, after])).toEqual([one.textEn, two.textEn]);
+  });
+
+  it("C-PROMPT.voice what did not go comes back in order, each note waiting again with its stream", () => {
+    const rest = messagesFor(box, [one, two]).slice(1);
+    const back = backInBox(typed, rest, [one, two]);
+    expect(back.box).toBe(box);
+    expect(messagesFor(back.box, back.notes).map((m) => [m.via, m.streamId])).toEqual([
+      ["typed", undefined],
+      ["voice", one.streamId],
+      ["voice", two.streamId],
+    ]);
+    const onlyTwo = backInBox("", rest.slice(1), [one, two]);
+    expect(onlyTwo.box).toBe(two.text);
+    expect(onlyTwo.notes.map((n) => [n.streamId, n.prefix])).toEqual([[two.streamId, ""]]);
   });
 });
 

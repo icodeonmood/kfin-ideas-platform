@@ -341,6 +341,98 @@ describe("BLD-C150 typed words, then a voice note (J-SHARE/3 by voice)", () => {
   });
 });
 
+describe("BLD-C150 a second voice note while one waits keeps its own message", () => {
+  const ONE = {
+    streamId: STREAM,
+    text: "Branch mein roz das log aate hain",
+    spans: [],
+    textEn: "Ten people come to the branch every day",
+    enLabel: "Typed up in English",
+    seconds: 6,
+    endedBy: "person",
+    hiddenCount: 0,
+    translated: true,
+    translationFailure: null,
+    lang: "hi-IN",
+    language: "Hindi",
+    summary: "Voice message, 6 seconds, in Hindi",
+  };
+  const TWO = {
+    ...ONE,
+    streamId: "1b2c3d4e-5f60-4b7c-9d8e-0f1a2b3c4d5e",
+    text: "Har ek ko do din lagte hain",
+    textEn: "Each one takes two days",
+    seconds: 4,
+    summary: "Voice message, 4 seconds, in Hindi",
+  };
+
+  it("C-PROMPT.voice S-04B: typed, then each note as voice with its own stream; both English copies show", async () => {
+    route = (s) =>
+      s.method === "POST"
+        ? { status: 202, body: { run_id: "r-9", message: { id: `m-${sent.length}` }, draft: draft() } }
+        : { status: 200, body: draft() };
+    await mount(DRAFT);
+    const typed = "The mandate screen asks for the IFSC twice.";
+    type(box(), typed);
+    voice.state = { status: "done", note: ONE } as VoiceCaptureState;
+    type(box(), `${typed} `);
+    await tick();
+    voice.state = { status: "done", note: TWO } as VoiceCaptureState;
+    type(box(), `${box().value} `);
+    await tick();
+    expect(box().value).toBe(`${typed} ${ONE.text} ${TWO.text}`);
+    expect(text()).toContain(ONE.textEn);
+    expect(text()).toContain(TWO.textEn); // the first note's English copy is not lost to the second
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const posts = sent.filter((s) => s.method === "POST");
+    expect(posts.map((p) => [p.body.via, p.body.text, p.body.stream_id])).toEqual([
+      ["typed", typed, undefined],
+      ["voice", ONE.text, ONE.streamId],
+      ["voice", TWO.text, TWO.streamId],
+    ]);
+    expect(new Set(posts.map((p) => p.key)).size).toBe(3);
+  });
+
+  it("C-PROMPT.voice S-04B refused on the second note: its words come back, still a voice note with its stream", async () => {
+    let n = 0;
+    route = (s) => {
+      if (s.method !== "POST") return { status: 200, body: draft() };
+      n += 1;
+      return n < 3
+        ? { status: 202, body: { run_id: "r-9", message: { id: `m-${n}` }, draft: draft() } }
+        : { status: 422, body: { error: { code: "too_long", message: "That message is too long." } } };
+    };
+    await mount(DRAFT);
+    const typed = "The mandate screen asks for the IFSC twice.";
+    type(box(), typed);
+    voice.state = { status: "done", note: ONE } as VoiceCaptureState;
+    type(box(), `${typed} `);
+    await tick();
+    voice.state = { status: "done", note: TWO } as VoiceCaptureState;
+    type(box(), `${box().value} `);
+    await tick();
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(box().value).toBe(TWO.text);
+    expect(text()).toContain(TWO.textEn);
+    route = (s) =>
+      s.method === "POST"
+        ? { status: 202, body: { run_id: "r-9", message: { id: "m-9" }, draft: draft() } }
+        : { status: 200, body: draft() };
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const last = sent.filter((s) => s.method === "POST").at(-1)!;
+    expect([last.body.via, last.body.text, last.body.stream_id]).toEqual(["voice", TWO.text, TWO.streamId]);
+  });
+});
+
 describe("C-PROMPT.voice a failed note's line, by reason (BLD-C127)", () => {
   it("C-PROMPT.voice signed out → the sign-in line; paused or unavailable → the paused line; the rest → nothing invented", () => {
     expect(voiceFailedLine("signed_out")).toBe("sign_in");
