@@ -1,0 +1,649 @@
+/*
+ * S-ONE, a One's dashboard: board values from reference/css/boards/OneDashboard.css and the prototype's own markup, on
+ * the app's tokens. Lane D's components (slab, card, field, pill, buttons) keep their look; this sheet lays them out.
+ * `--on-tier` is the One's tier colour (F-COLOR.tiers): the glow, the flag bar and the dot. One column on a phone,
+ * the hero first (S-ONE.rules/5).
+ */
+.on {
+  --on-tier: var(--tier-1);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding-top: 4px;
+}
+
+/* ---------- Breadcrumb ---------- */
+.on-crumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.on-crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--mute);
+  text-decoration: none;
+}
+
+.on-crumb a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.on-crumb li[aria-current="page"] {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.on-sep {
+  margin: 0 8px;
+  color: var(--mute);
+  font-weight: 400;
+}
+
+/* ---------- Hero: the dark slab with the tier as a glow ---------- */
+.on-slab {
+  padding: 56px 56px 60px;
+}
+
+.on-glow {
+  position: absolute;
+  inset: -45% 40% 20% -25%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--on-tier) 36%, transparent),
+    color-mix(in srgb, var(--on-tier) 0%, transparent)
+  );
+  pointer-events: none;
+}
+
+.on-glow-card {
+  inset: -40% -40% 45% -40%;
+}
+
+.on-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 56px;
+  align-items: end;
+}
+
+.on-jersey {
+  position: relative;
+  overflow: hidden;
+  padding: 26px 26px 28px;
+  border-radius: var(--r-md);
+  background: #141418;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.on-jersey-in {
+  position: relative;
+}
+
+.on-flag {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.on-flag-left {
+  justify-content: flex-start;
+}
+
+.on-bar {
+  flex: none;
+  width: 28px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--on-tier);
+}
+
+.on-big {
+  margin: 30px 0 0;
+  font: 500 168px/0.9 var(--fd);
+  letter-spacing: -0.04em;
+  color: #ffffff;
+}
+
+.on-name {
+  margin: 22px 0 0;
+  font: 500 20px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.on-tier {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.on-head {
+  position: relative;
+  min-width: 0;
+}
+
+.on-h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(45px, 5.4vw, 84px);
+}
+
+.on-h1:focus {
+  outline: none;
+}
+
+.on-since {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.on-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--on-tier);
+  box-shadow: 0 0 12px var(--on-tier);
+}
+
+.on-idea {
+  max-width: 640px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.on-ebd {
+  margin: 0;
+  font: 500 14px/1.35 var(--ft);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.on-white {
+  color: #ffffff;
+}
+
+.on-idea-t {
+  margin: 10px 0 0;
+  font: 400 19px/1.5 var(--ft);
+  color: #ffffff;
+}
+
+/* ---------- Your number, Your impact brief ---------- */
+.on-g2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.on-card {
+  padding: 28px 30px 30px;
+}
+
+.on-t4 {
+  margin: 0;
+  font: 500 24px/1.15 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.on-hint {
+  margin-top: 10px;
+}
+
+.on-hint:empty {
+  display: none;
+}
+
+.on-fld {
+  margin-top: 20px;
+}
+
+.on-numrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.on .on-numin {
+  width: 120px;
+  height: 52px;
+  font: 500 24px/1 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.on-locked {
+  margin: 16px 0 0;
+  font: 400 19px/1.5 var(--ft);
+  color: var(--ink);
+}
+
+.on-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.on-brief {
+  margin: 16px 0 0;
+  font: 400 19px/1.5 var(--ft);
+  color: var(--ink);
+}
+
+.on-actions {
+  margin-top: 22px;
+}
+
+.on-briefform {
+  margin-top: 20px;
+}
+
+.on-briefform .on-actions {
+  justify-content: flex-end;
+}
+
+/* ---------- Impact so far ---------- */
+.on-sec {
+  margin-top: 72px;
+}
+
+.on-sec-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.on-g4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ink);
+}
+
+.on-g4 > li {
+  min-width: 0;
+  padding-top: 20px;
+}
+
+.on-eb {
+  margin: 0;
+  font: 500 14px/1.35 var(--ft);
+  color: var(--mute);
+}
+
+.on-fig {
+  margin: 14px 0 0;
+  font: 500 52px/1 var(--fd);
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+
+.on-unit {
+  font-size: 0.38em;
+  letter-spacing: -0.01em;
+}
+
+.on-note {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.on-wait {
+  margin: 14px 0 0;
+  font: 500 19px/1.3 var(--fd);
+  color: var(--mute);
+}
+
+/* ---------- More for Ones ---------- */
+.on-more ul {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.on-more li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.on-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 18px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.015em;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.on-link:hover {
+  color: var(--blueT);
+}
+
+.on-link svg {
+  flex: none;
+}
+
+/* ---------- The error state ---------- */
+.on-h1-quiet {
+  margin: 0 0 24px;
+}
+
+.on-fail {
+  max-width: 720px;
+}
+
+/* ---------- The glow-up moment (S-ONE.states showGlowUp) ---------- */
+.on-moment {
+  width: min(720px, calc(100% - 40px));
+  max-height: calc(100dvh - 40px);
+  margin: 88px auto auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--ink);
+  color: #ffffff;
+  overflow: auto;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
+}
+
+.on-moment::backdrop {
+  background: rgba(17, 17, 17, 0.55);
+}
+
+.on-moment[open] {
+  animation: onSheetIn 0.7s var(--mo-out) both;
+}
+
+.on-moment-glow {
+  position: absolute;
+  inset: -40% 10% 40% -20%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--on-to, var(--tier-2)) 42%, transparent),
+    color-mix(in srgb, var(--on-to, var(--tier-2)) 0%, transparent)
+  );
+  pointer-events: none;
+}
+
+.on-moment-in {
+  position: relative;
+  padding: 44px 44px 40px;
+}
+
+.on-moment .on-bar {
+  background: linear-gradient(90deg, var(--tier-1), var(--on-to, var(--tier-2)), var(--on-to, var(--tier-2)));
+  background-size: 300% 100%;
+}
+
+.on-heat {
+  animation: onHeat 2.4s var(--mo-out) 0.3s both;
+}
+
+.on-moment-no {
+  margin: 26px 0 0;
+  font: 500 152px/0.9 var(--fd);
+  letter-spacing: -0.04em;
+  color: #ffffff;
+}
+
+.on-moment-t {
+  margin-top: 18px;
+  color: #ffffff;
+}
+
+.on-moment-t:focus {
+  outline: none;
+}
+
+.on-moment-line {
+  margin: 12px 0 0;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.on-moment-line strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.on-moment-story {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.on-story {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0 0;
+}
+
+.on-story dt {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.on-story dd {
+  margin: 8px 0 0;
+  font: 500 40px/1 var(--fd);
+  letter-spacing: -0.04em;
+}
+
+.on-msgs-h {
+  margin-top: 26px;
+}
+
+.on-msg {
+  margin: 14px 0 0;
+  padding: 16px 18px;
+  border-radius: var(--r-sm);
+  background: #141418;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.on-msg blockquote {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+
+.on-msg figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.on-moment-act {
+  margin-top: 28px;
+}
+
+.on-wbtn {
+  min-height: 52px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.on-wbtn:hover {
+  background: var(--sunk);
+  color: var(--ink);
+}
+
+.on-moment :focus-visible {
+  outline-color: #8fa8ff;
+}
+
+@keyframes onSheetIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes onHeat {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 100% 0;
+  }
+}
+
+/* ---------- The Showcase brief sheet ---------- */
+.on-sheet {
+  width: min(760px, calc(100% - 32px));
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 32px 32px 28px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 40px 90px rgba(17, 17, 17, 0.35);
+  overflow: auto;
+}
+
+.on-sheet::backdrop {
+  background: rgba(17, 17, 17, 0.45);
+}
+
+.on-sheet[open] {
+  animation: onSheetIn 0.52s var(--mo-spring) both;
+}
+
+.on-sheet-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.on-sheet-top h2:focus {
+  outline: none;
+}
+
+.on-sheet-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.on-sheet-sk {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.on-sheet-fail {
+  margin-top: 18px;
+}
+
+.on-saved:empty {
+  display: none;
+}
+
+.on-sheet-act {
+  justify-content: flex-end;
+}
+
+/* ---------- Narrower screens (F-SPACE.breakpoints) ---------- */
+@media (max-width: 1000px) {
+  .on-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .on-g4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .on-slab {
+    padding: 32px 20px 36px;
+    border-radius: var(--r-md);
+  }
+
+  .on-big {
+    font-size: 120px;
+  }
+
+  .on-g2,
+  .on-g4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .on-card {
+    padding: 22px 20px 24px;
+  }
+
+  .on-moment {
+    margin-top: 20px;
+  }
+
+  .on-moment-in {
+    padding: 32px 22px 28px;
+  }
+
+  .on-moment-no {
+    font-size: 112px;
+  }
+
+  .on-story {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .on-sheet {
+    padding: 24px 20px 22px;
+  }
+}
+
+/* Reduced motion: the moment and the sheet appear already settled (S-ONE.rules/3, F-MOTION/4) */
+@media (prefers-reduced-motion: reduce) {
+  .on-moment[open],
+  .on-sheet[open],
+  .on-heat {
+    animation: none;
+  }
+}

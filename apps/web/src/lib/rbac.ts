@@ -100,17 +100,24 @@ export function canSeePage(roles: Set<string>, path: string): boolean {
 export type NavPlace = "new" | "main" | "folded" | "account";
 export type NavItem = { key: string; label: string; href: string; place: NavPlace; tab?: number };
 
-type NavRule = NavItem & { roles?: string[]; when_on?: string; when_off?: string };
+type NavRule = NavItem & { roles?: string[]; when_on?: string; when_off?: string; member?: string };
 
 /**
  * The menu for these roles. `switchesOn` names the kill switches that are on; an item tied to a switch shows only
  * while it is on (`when_on`) or off (`when_off`). Without it every switch counts as off (fail closed, §7.6).
+ * `groups` names the membership groups the person belongs to ("ones" for an active One); an item with `member`
+ * shows only to members, and without it nobody is a member (fail closed, BLD-E040).
  */
-export function navFor(roles: Set<string>, switchesOn: ReadonlySet<string> = new Set()): NavItem[] {
+export function navFor(
+  roles: Set<string>,
+  switchesOn: ReadonlySet<string> = new Set(),
+  groups: ReadonlySet<string> = new Set(),
+): NavItem[] {
   return (policy.navigation as NavRule[])
     .filter((item) => !item.roles || item.roles.some((r) => roles.has(r)))
     .filter((item) => !item.when_on || switchesOn.has(item.when_on))
     .filter((item) => !item.when_off || !switchesOn.has(item.when_off))
+    .filter((item) => !item.member || groups.has(item.member))
     .map(({ key, label, href, place, tab }) =>
       tab ? { key, label, href, place, tab } : { key, label, href, place },
     );
