@@ -15,7 +15,8 @@
 }
 .ans-bar h1:focus,
 .ans-sheet h2:focus,
-.ans-sent h1:focus {
+.ans-sent h1:focus,
+.ans-sent h2:focus {
   outline: none;
 }
 .ans-bar p {
@@ -60,6 +61,13 @@
 .ans-sheet p,
 .ans-sent p {
   margin: 0;
+}
+.ans-sent-h {
+  display: grid;
+  gap: 8px;
+}
+.ans-steps button[aria-disabled="true"] {
+  cursor: default;
 }
 .ans-list {
   margin: 0;
