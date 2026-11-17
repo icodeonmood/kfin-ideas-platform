@@ -142,10 +142,9 @@ def test_s06_states_decisions_leave_the_decision_to_lane_b(club: dict[str, Any])
 def test_l_questions_answer_5_answers_under_their_parts_come_from_lane_b(
     club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Lane B's desk.asking is on main (82668c1), so the page reads whatever it returns. A stand-in fixes what it
+    # returns, so this test checks lane E's mapping (an answer under its part, its line) and not lane B's data.
     t7 = ref(club, "T7")
-    assert all(
-        r.get("answers") == [] for r in view(club, t7, "tanvi")["page"]["shared"]["rows"] if "answers" in r
-    )
     asked = NOW - dt.timedelta(days=6)
     fake = types.ModuleType("desk.asking")
     fake.answers_by_part = lambda conn, uuid: {
