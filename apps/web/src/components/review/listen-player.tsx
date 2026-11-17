@@ -4,6 +4,10 @@
  * C-LISTEN: "Listen to the whole idea" on the reviewer's page (S-R2.left/1). The browser reads the masked script
  * part by part with a local voice (BLD-B230): nothing leaves the device. The player is not shown when the browser
  * has no local English voice, or when Listen is switched off (desk.listen).
+ *
+ * Seam for the hosted voice (DEC-108): when lane C's `GET /api/ideas/:id/listen` streams Sarvam's audio, the engine
+ * from `lib/desk/listen.ts` takes it in place of `speechSynthesis`, keeping the same chapters, controls and words;
+ * the local voice stays the fallback.
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
