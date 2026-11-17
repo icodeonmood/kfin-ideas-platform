@@ -80,6 +80,7 @@ test-web:
 	$(WEB) npx vitest run
 
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
+	$(PY) python -m bootstrap.demo --set 1pc
 	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" \
 		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test
 
