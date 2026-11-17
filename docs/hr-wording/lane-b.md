@@ -53,7 +53,7 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | Where | Wording |
 |---|---|
 | The Answer screen, after sending (BLD-E008) | The board says "Meera decides by Friday 20 November, and her decision comes to your Inbox." This now reads "Meera decides by Friday 20 November, and the decision comes to your Inbox." |
-| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee's window. |
+| The review desk, empty tabs | Nothing new to review. Ideas shared with the review desk show here first. / No one is answering questions now. When you ask a sharer something, its clock shows here. / No answers waiting. Answers come back here as soon as a sharer sends them. / Nothing decided this week. Decisions stay here for seven days, with the Ones Committee’s window. |
 | The Ones Committee, empty tabs | No decisions in the window. Each desk decision shows here for 30 days after it is made. / Nothing reversed. A decision the committee changes shows here, with its note. / Nothing expired yet. When a window closes, the decision stands and moves here. |
 | The Answer screen with nothing to answer | Nothing to answer right now. When the review desk asks you something about this idea, the questions show here. |
 | The reviewer's page, the reviewer's own idea | Your own idea. Another reviewer decides on it. You can read it here. |
@@ -74,3 +74,4 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The reviewer's page, the wording check, for each further word found | For "rejected", say it is not going ahead, and why. | The first word's plainer way is in the worker's message; the rest are listed |
 | The reviewer's page, after the wording check | Send anyway | L-DECIDE.rules/4 warns and never blocks (BLD-B236) |
 | The Ones Committee, the reversal note's box | Why the committee is changing it, in words Kavya will understand | The board's own placeholder, kept as the box's name after "Your note to Kavya" |
+| The reviewer's reason and the committee's reversal note, until long enough | 12 of at least 30 characters | A line of its own under the board's help line ("Kavya reads this word for word."), which now always shows |
