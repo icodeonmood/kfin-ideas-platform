@@ -37,7 +37,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
-| `S-ONE` | `/one` | `app/one` (`page.tsx`, `one-screen.tsx`, `glow-up.tsx`, `showcase-sheet.tsx`, `rules.ts`); data `GET /api/one` and its writes (`server/wall.ts`, worker `wall/ones.py`); the old pages under `/ones/*` and `/my-ideas/showcase` retired (BLD-E042) | built (17 Nov, BLD-E040 to BLD-E042) | S to M | P0 | E |
+| `S-ONE` | `/one` | `app/one` (`page.tsx`, `one-screen.tsx`, `glow-up.tsx`, `showcase-sheet.tsx`, `rules.ts`); data `GET /api/one` and its writes (`server/wall.ts`, worker `wall/ones.py`); `/ones/leaderboard` and `/my-ideas/showcase` retired, `/ones/write/:id` and `/ones/showcase/:id` (admin-only) kept (BLD-E042) | built (17 Nov, BLD-E040 to BLD-E042) | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
 | `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
 | `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
