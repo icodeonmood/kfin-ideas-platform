@@ -5,12 +5,20 @@ and the same store as every other text (`hide.core.hide_into`): each value seale
 scope, a `hidden_details` row per detail with `source = 'file'` and the attachment id, never the value anywhere
 else. A file has no "your words" copy: `file` is not a sealed source.
 
-What comes back is kinds and page numbers only, for the file row's two lines (`reference/copy/Edit.md`,
+The gatekeeper reads every file, however long (non-negotiable 4, DEC-103): `gate_for` asks it about the text one
+piece at a time (about 8,000 characters, overlapping so a name cut by a boundary is whole in the next piece), each
+piece through the gateway (`run_agent`, which tags the patterns' finds before sending), and every value it names is
+then hidden wherever it appears in the file. When it cannot run, the file waits (`GatekeeperWaits`): the check job
+tries again, and the file is never `checked` on the patterns alone. Only a person switching `ai.all` or
+`agent.gatekeeper` off sends a file on with the patterns and names, as typed text goes on (BLD-C107).
+
+What comes back is kinds and page numbers only, for the file row's lines (`reference/copy/Edit.md`,
 `reference/copy/DeskIdea.md`):
 - `found_line`: "Found a phone number on page 2. Nobody can open it until it’s hidden." (C-FILE.row, the
   personal-data state), shown to the person who added the file;
-- `hidden_note`: "A phone number on page 2 is hidden." or "Folio hidden" (L-HIDE.files/4), the line the review
-  desk's file rows and the sharer's answer rows read (`attachments.hidden_note`).
+- `hidden_note`: "A phone number on page 2 is hidden." or "Folio hidden" (L-HIDE.files/4), only once a black-out
+  has hidden the regions in the stored copy ("Hide it for me", not built: DEC-107). A file with a detail found and
+  nothing blacked out has no hidden note.
 """
 
 from __future__ import annotations
@@ -21,9 +29,11 @@ from dataclasses import dataclass, field
 
 from core.db import Conn
 from hide import detect
-from hide.core import hide_into
+from hide.core import hide_into, scope_for
 
-GATEKEEPER_MAX_CHARS = 8_000  # about 2,000 tokens: a longer file is checked by the patterns and names only
+CHUNK_CHARS = 8_000  # about 2,000 tokens: what the gatekeeper reads at once
+CHUNK_OVERLAP = 200  # a name or a number cut by a piece's end is whole at the start of the next
+GATEKEEPER_SWITCHES = ("ai.all", "agent.gatekeeper")
 _SEP = "\n\n"
 _PAGE = re.compile(r"^page (\d+)\b")
 NAME_SUFFIX = ":name"  # the file name's details are stored under `<attachment id>:name`
@@ -75,6 +85,8 @@ def _join(pieces: list[tuple[str, str]]) -> tuple[str, list[int], list[str]]:
     parts: list[str] = []
     pos = 0
     for location, text in pieces:
+        if not (text and text.strip()):
+            continue
         starts.append(pos)
         where.append(location)
         parts.append(text)
@@ -82,17 +94,102 @@ def _join(pieces: list[tuple[str, str]]) -> tuple[str, list[int], list[str]]:
     return _SEP.join(parts), starts, where
 
 
+def text_of(pieces: list[tuple[str, str]]) -> str:
+    """The file's text as hide reads it: its pieces joined, empty ones left out."""
+    return _join(pieces)[0]
+
+
+def chunks(text: str) -> list[tuple[int, str]]:
+    """(offset, piece) for the gatekeeper: pieces of at most `CHUNK_CHARS`, each overlapping the one before by
+    `CHUNK_OVERLAP`."""
+    if not text.strip():
+        return []
+    out: list[tuple[int, str]] = []
+    start = 0
+    while True:
+        out.append((start, text[start : start + CHUNK_CHARS]))
+        if start + CHUNK_CHARS >= len(text):
+            return out
+        start += CHUNK_CHARS - CHUNK_OVERLAP
+
+
+class GatekeeperWaits(Exception):
+    """The gatekeeper could not read a file's text (the gateway failed or timed out, or is held off by its own
+    automatic switch-off or the day's budget), and no person switched it off: the file stays `checking` and the
+    check job tries again. Carries the gateway's code only."""
+
+
+def _off_on_purpose(conn: Conn) -> bool | None:
+    """None while `ai.all` and `agent.gatekeeper` are both on; True when a person switched one of them off; False
+    when only the gateway's own automatic switch-off holds it off (that is a failure, not a choice)."""
+    from core import killswitch
+    from gateway.core import ACTOR as GATEWAY
+
+    if all(killswitch.is_on(name, conn) for name in GATEKEEPER_SWITCHES):
+        return None
+    rows = conn.execute(
+        "SELECT changed_by FROM kill_switches WHERE name = ANY(%s) AND state = 'off'", (list(GATEKEEPER_SWITCHES),)
+    ).fetchall()
+    return any((r["changed_by"] or "") != GATEWAY for r in rows)
+
+
+def _placed(text: str, named: dict[str, str], *, switched_off: bool = False) -> detect.Gate:
+    """Every value the gatekeeper named, wherever it appears in the whole text (a piece names it once)."""
+    found: dict[tuple[int, int, str], detect.Found] = {}
+    for value, kind in named.items():
+        for s, e in detect.occurrences(text, value):
+            found.setdefault((s, e, kind), detect.Found(s, e, kind, value, "gatekeeper"))
+    finds = sorted(found.values(), key=lambda f: (f.start, f.end))
+    return detect.Gate(finds, "switched_off", True) if switched_off else detect.Gate(finds)
+
+
+def gate_for(conn: Conn, idea_uuid: str, text: str) -> detect.Gate:
+    """The gatekeeper's finds in a file's text, asked piece by piece (`chunks`), each value it names placed wherever
+    it appears in the whole text. Call it before taking any lock: each piece is a model call.
+
+    Raises `GatekeeperWaits` when a piece could not be read and the gatekeeper was not switched off on purpose. When
+    a person has switched it off, the rest of the file goes on with the patterns, names and the idea's hidden
+    values, as typed text does (`switched_off` is set on what comes back)."""
+
+    def held() -> bool:
+        off = _off_on_purpose(conn)
+        if off is False:
+            raise GatekeeperWaits("switched_off")
+        return off is True
+
+    if held():
+        return detect.Gate([], "switched_off", True)
+    scope = scope_for(idea_uuid)
+    named: dict[str, str] = {}
+    for _offset, piece in chunks(text):
+        with conn.transaction():  # its own savepoint, as `hide_into` asks it (BLD-C067)
+            gate = detect.gatekeeper_finds(conn, piece, scope)
+        for f in gate.finds:
+            named.setdefault(f.value, f.kind)
+        if held():  # a person switched it off while the file was read
+            return _placed(text, named, switched_off=True)
+        if gate.skipped:
+            raise GatekeeperWaits(gate.skipped)
+    return _placed(text, named)
+
+
 def hide_file(
-    conn: Conn, idea_uuid: str, pieces: list[tuple[str, str]], *, by: str, att_id: str
+    conn: Conn,
+    idea_uuid: str,
+    pieces: list[tuple[str, str]],
+    *,
+    by: str,
+    att_id: str,
+    gate: detect.Gate | None = None,
 ) -> FileFinds:
     """Detect and store the details in a file's text, in the caller's transaction. Re-running it on the same file
     (a retry) keeps the same rows. `by` is the users.id of whoever added the file: the one person who may read the
-    values. Returns kinds and pages only."""
-    text, starts, where = _join([(w, t) for w, t in pieces if t and t.strip()])
-    done = hide_into(
-        conn, idea_uuid, text, by=by, source="file", source_id=att_id,
-        gatekeeper=len(text) <= GATEKEEPER_MAX_CHARS, seal=False,
-    )  # fmt: skip
+    values. `gate`: `gate_for` on this text, asked before the caller took its locks (asked here when not given; it
+    may raise `GatekeeperWaits`). Returns kinds and pages only."""
+    text, starts, where = _join(pieces)
+    if gate is None:
+        gate = gate_for(conn, idea_uuid, text)
+    done = hide_into(conn, idea_uuid, text, by=by, source="file", source_id=att_id, seal=False, gate=gate)
     found: list[tuple[str, int | None]] = []
     for span in done.spans:
         i = bisect.bisect_right(starts, int(span["start"])) - 1
@@ -143,8 +240,9 @@ def found_line(finds: FileFinds) -> str | None:
 
 
 def hidden_note(finds: FileFinds) -> str | None:
-    """L-HIDE.files/4: "A phone number on page 2 is hidden." for one kind on one page; otherwise the labels, as the
-    answer rows have it: "Folio hidden", "Folio number, PAN and phone number hidden"."""
+    """L-HIDE.files/4, after a black-out only ("Hide it for me", not built: DEC-107): "A phone number on page 2 is
+    hidden." for one kind on one page; otherwise the labels, as the answer rows have it: "Folio hidden", "Folio
+    number, PAN and phone number hidden". Never for a file whose details were found and not blacked out."""
     if not finds.count:
         return None
     kinds = finds.kinds

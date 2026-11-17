@@ -41,7 +41,10 @@ def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
             )  # first: the FK restricts (BLD-C006)
             conn.execute("DELETE FROM ideas WHERE id = %s", (c["id"],))
             deleted += 1
-    log.info("drafts.purged", deleted_count=deleted, file_count=files)
+    from attachments import files as onepc_files
+
+    swept = onepc_files.sweep_failed_copies(conn)  # failed uploads' copies past their retention (L-HIDE.files)
+    log.info("drafts.purged", deleted_count=deleted, file_count=files, swept_count=swept)
 
 
 @handler("attachment.process")

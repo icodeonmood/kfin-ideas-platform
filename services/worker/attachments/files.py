@@ -6,17 +6,23 @@ A file's life (`attachments.file_state`, E-ENUMS.file):
 1. `POST /files`: one configurable size limit and type list (BLD-E007; `rules/thresholds.md` `files`), a locked
    file refused, the name's details hidden, the bytes into the quarantine bucket, the row `checking`, and the
    `file.check` job queued. "Uploading" is the browser's own progress: a row exists once the bytes are stored.
-2. The job (`check`): the virus scan first; then the text layer (OCR for images and scanned pages, every cell of a
-   spreadsheet, every file in a ZIP); then hide's detection on that text (`hide.files`). Nothing reads the file's
-   contents before the scan passes, and nobody opens it before both checks finish (non-negotiable 8).
+2. The job (`check`): the virus scan first; then, in the sandbox, the file's structure (which Office type a ZIP
+   is, a password, the types inside a ZIP) and its text layer (OCR for images and scanned pages, every cell of a
+   spreadsheet, every file in a ZIP); then the gatekeeper on that text, piece by piece, and hide's detection
+   (`hide.files`). Before the scan only the bytes' size and magic numbers are read: nothing is unpacked or parsed,
+   and nobody opens the file before both checks finish (non-negotiable 8, L-HIDE.files/6).
 3. The result: `checked`, or `personal_data_found` (DEC-107: it can still be sent, and opens only for the person
    who added it, the review desk and the Ones Committee), or `infected`, `locked`, `too_big`, `upload_failed`.
    A checked or found file moves to the clean bucket; the scan's verdict, not the bucket, decides who opens it.
+   When the scanner, OCR, the store or the gatekeeper does not answer, the file stays `checking` and the job tries
+   again; after its last try the file is `upload_failed`, with Try again. It is never `checked` without the
+   gatekeeper unless a person switched the gatekeeper off (non-negotiable 4, DEC-103; BLD-C107).
 4. The old `state` column is kept in step only for the checked states, which are its `clean`; nothing else is ever
    marked clean, so the old `/api/attachments/:id` route never serves a file DEC-107 keeps from people.
 
 A link (`POST /links`) is never fetched (non-negotiable 8, BLD-E001): it is classed internal or external by its
-domain only, stored encrypted, and its details hidden like any text.
+domain only, stored encrypted, and its details hidden like any text. Its row is named by its address, host and
+path as the boards show it ("kfintech.sharepoint.com/ops/R07").
 
 Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 17 Nov), in `rights`:
 - the person who added it: the row in every state; opens it once checked or found;
@@ -44,7 +50,7 @@ from psycopg.types.json import Jsonb
 
 from attachments import clamav, sandbox, store
 from attachments.extract import Extracted
-from attachments.filetype import is_locked, kind_of
+from attachments.filetype import CONTAINER, CONTAINER_TYPES, kind_before_scan, locked_before_scan
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
@@ -254,6 +260,17 @@ def _url(row: dict[str, Any]) -> str | None:
     return open_text("attachments", "url_encrypted", str(row["id"]), row["url_encrypted"])
 
 
+def _shown_url(conn: Conn, row: dict[str, Any], raw: str | None) -> str:
+    """A link's address for everyone but the person who added it: the whole address with its hidden details masked
+    (the details `hide_name` stored for it), so the review desk can still try it."""
+    from hide.core import details_for, layout
+
+    if raw is None:
+        return str(row["name"])
+    details = details_for(conn, str(row["idea_uuid"]), "file", f"{row['id']}{hide_files.NAME_SUFFIX}")
+    return layout(raw, details)[0]
+
+
 def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -> dict[str, Any]:
     """E-ENTITIES FileItem, plus `customer_detail` as lane B's rows carry it (DEC-107)."""
     from desk.store import person_by_code
@@ -274,22 +291,26 @@ def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -
         out["count"] = int(row["item_count"])
     if row.get("hidden_note"):
         out["hidden_note"] = row["hidden_note"]
-    problem = _problem(row, state)
+    problem = _problem(row, state, uploader=uploader)
     if problem:
         out["problem"] = problem
     if kind == "link":
         out["link_scope"] = row.get("link_scope")
         raw = _url(row)
-        # the person who added it gets the address as typed; everyone else the masked copy (the row's name),
-        # which is the same address unless a customer's detail was in it
-        out["url"] = raw if uploader else row["name"]
+        # the person who added it gets the address as typed; everyone else the same address with any customer's
+        # detail in it masked. The row's name is its host and path (`link_name`).
+        out["url"] = raw if uploader else _shown_url(conn, row, raw)
     if opens:
         out["view_url"] = f"/api/files/{row['id']}/view"
     return out
 
 
-def _problem(row: dict[str, Any], state: str) -> str | None:
+def _problem(row: dict[str, Any], state: str, *, uploader: bool) -> str | None:
     if state == CUSTOMER_DETAIL:
+        # C-FILE.row's found line is the uploader's, with Hide it for me and Remove file. The pack has no line for
+        # the review desk's view of such a file: it reads `customer_detail` (a copy gap, not invented here).
+        if not uploader:
+            return None
         return hide_files.found_line(hide_files.FileFinds.from_codes((row.get("checks") or {}).get("found")))
     if state == "upload_failed":
         return UPLOAD_FAILED
@@ -444,18 +465,33 @@ def _audit(conn: Conn, user_id: str, action: str, idea_uuid: str, after: dict[st
 
 
 def screen(data: bytes, name: str, cfg: Uploads) -> str:
-    """The checks before anything is stored, from the bytes' structure only: size, a password, the type. Returns
-    the type. Pure, so each refusal has its own unit test."""
+    """The checks before anything is stored, from the bytes alone: the size, the magic numbers, and a locked Office
+    file's marker. Nothing is unpacked or parsed before the virus scan (non-negotiable 8, L-HIDE.files/6). Returns
+    the type, or `CONTAINER` for a file that starts as a ZIP: whether it is Word, PowerPoint, Excel or a plain ZIP,
+    whether it has a password and what is inside are read after the scan. Pure, so each refusal has its own test."""
     if not data:
         raise FileRefused(400, "file_empty", UPLOAD_FAILED)
     if len(data) > cfg.limit_bytes:
         raise FileRefused(413, "too_big", too_big_line(cfg.limit_mb), limit_mb=cfg.limit_mb)
-    if is_locked(data):
+    if locked_before_scan(data):
         raise FileRefused(422, "locked", LOCKED)
-    kind = kind_of(data, name)
-    if kind is None or kind not in cfg.types:
+    kind = kind_before_scan(data, name)
+    allowed = (
+        any(t in cfg.types for t in CONTAINER_TYPES) if kind == CONTAINER else kind in cfg.types
+    )
+    if kind is None or not allowed:
         raise FileRefused(415, "type_not_allowed", cfg.help_text)
     return kind
+
+
+def _shown_mime(kind: str, name: str) -> str:
+    """The type the row shows while the file is checked. A ZIP-family file's type is read from its directory after
+    the scan, which replaces this; until then the name's extension picks among Word, PowerPoint, Excel and ZIP, for
+    the row's badge only (nothing is opened or served by it)."""
+    if kind != CONTAINER:
+        return MIME[kind]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return MIME[ext if ext in CONTAINER_TYPES else "zip"]
 
 
 def accept(
@@ -468,34 +504,44 @@ def accept(
     idea_id: str | None = None,
     answer_id: str | None = None,
 ) -> dict[str, Any]:
-    """`POST /files`: store the bytes in quarantine and queue the checks. Returns the FileItem, `checking`."""
+    """`POST /files`: store the bytes in quarantine and queue the checks. Returns the FileItem, `checking`. If the
+    row cannot be written after the bytes are stored, the stored copy is deleted again (no orphan in the store)."""
     cfg = uploads()
     kind = screen(data, name, cfg)
     s = get_settings()
-    with conn.transaction():
-        owner = _owner(conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id)
-        att_id = _next_id(conn)
-        key = _key(att_id)
-        shown = hide_files.hide_name(conn, owner.idea_uuid, _clean_name(name), by=user_id, att_id=att_id)
-        try:
-            store.put(s.s3_bucket_quarantine, key, data)
-        except Exception:
-            log.error("files.store_failed", attachment_id=att_id)
-            raise FileRefused(502, "upload_failed", UPLOAD_FAILED) from None
-        conn.execute(
-            "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, mime, bytes, sha256, "
-            "store_key, state, kind, file_state, answer_id, checks) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s)",
-            (att_id, owner.idea_uuid, owner.code, user_id, shown[:200], MIME[kind], len(data),
-             hashlib.sha256(data).hexdigest(), key, CHECKING, owner.answer_id, Jsonb({"type": kind})),
-        )  # fmt: skip
-        conn.execute(
-            "INSERT INTO jobs (type, payload, dedupe_key) VALUES (%s, %s, %s)",
-            (JOB, Jsonb({"attachment_id": att_id}), f"{JOB}:{att_id}"),
-        )
-        _audit(conn, user_id, "file.added", owner.idea_uuid,
-               {"file_id": att_id, "type": kind, "answer_id": owner.answer_id})  # fmt: skip
-        row = _load(conn, att_id)
+    stored: str | None = None
+    try:
+        with conn.transaction():
+            owner = _owner(conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id)
+            att_id = _next_id(conn)
+            key = _key(att_id)
+            clean_name = _clean_name(name)
+            shown = hide_files.hide_name(conn, owner.idea_uuid, clean_name, by=user_id, att_id=att_id)
+            try:
+                store.put(s.s3_bucket_quarantine, key, data)
+            except Exception:
+                log.error("files.store_failed", attachment_id=att_id)
+                raise FileRefused(502, "upload_failed", UPLOAD_FAILED) from None
+            stored = key
+            conn.execute(
+                "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, mime, bytes, "
+                "sha256, store_key, state, kind, file_state, answer_id, checks) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s)",
+                (att_id, owner.idea_uuid, owner.code, user_id, shown[:200], _shown_mime(kind, clean_name),
+                 len(data), hashlib.sha256(data).hexdigest(), key, CHECKING, owner.answer_id,
+                 Jsonb({"type": kind})),
+            )  # fmt: skip
+            conn.execute(
+                "INSERT INTO jobs (type, payload, dedupe_key) VALUES (%s, %s, %s)",
+                (JOB, Jsonb({"attachment_id": att_id}), f"{JOB}:{att_id}"),
+            )
+            _audit(conn, user_id, "file.added", owner.idea_uuid,
+                   {"file_id": att_id, "type": kind, "answer_id": owner.answer_id})  # fmt: skip
+            row = _load(conn, att_id)
+    except BaseException:
+        if stored is not None:
+            _delete_quietly(s.s3_bucket_quarantine, stored)
+        raise
     log.info("files.added", attachment_id=att_id, file_type=kind, byte_count=len(data))
     return item_json(conn, row, uploader=True, opens=False)
 
@@ -531,6 +577,17 @@ def parse_link(text: str) -> tuple[str, str]:
     return url, host
 
 
+def link_name(shown: str, host: str) -> str:
+    """The row's name for a link: its host and path, as the boards show it ("kfintech.sharepoint.com/ops/R07"), from
+    the masked address. No scheme, query or fragment; the host in lower case; a bare "/" path left off."""
+    rest = re.sub(r"(?i)^[a-z][a-z0-9+.-]*://", "", shown)
+    rest = re.split(r"[?#]", rest, maxsplit=1)[0]
+    head, slash, path = rest.partition("/")
+    if head.lower().rstrip(".").split(":")[0] == host:
+        head = head.lower()
+    return head + (slash + path if path else "")
+
+
 def link_scope(host: str, cfg: Uploads) -> str:
     """Internal when the host is one of the internal domains or under one (SharePoint, Teams, KFintech's own
     domains, the 1% Club); external otherwise. By the domain only (BLD-E001)."""
@@ -562,7 +619,7 @@ def accept_link(
             "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, bytes, state, kind, "
             "file_state, link_scope, url_encrypted, answer_id) "
             "VALUES (%s, %s, %s, %s, %s, 0, 'quarantine', 'link', 'ok', %s, %s, %s)",
-            (att_id, owner.idea_uuid, owner.code, user_id, shown[:URL_MAX], scope,
+            (att_id, owner.idea_uuid, owner.code, user_id, link_name(shown, host)[:URL_MAX], scope,
              seal_text("attachments", "url_encrypted", att_id, address), owner.answer_id),
         )  # fmt: skip
         _audit(conn, user_id, "file.link_added", owner.idea_uuid,
@@ -576,13 +633,26 @@ def accept_link(
 
 
 class CheckWaits(Exception):
-    """The check cannot run yet (the scanner, OCR or the store is not answering): the job retries; after its last
-    try the file is `upload_failed`, with Try again."""
+    """The check cannot run yet (the scanner, OCR, the store or the gatekeeper is not answering): the job retries;
+    after its last try the file is `upload_failed`, with Try again. The message is a reason code only."""
+
+
+ENDS_COPY = ("not_checkable",)  # a failure Try again cannot change: the quarantine copy goes at once
+
+
+def _delete_quietly(bucket: str, key: str | None) -> None:
+    """Delete a stored object, never failing the caller: a link has no key, and a copy already gone is fine."""
+    if not key:
+        return
+    try:
+        store.delete(bucket, key)
+    except Exception:
+        log.warning("files.store_delete_failed")
 
 
 def _finish(conn: Conn, row: dict[str, Any], state: str, code: str) -> str:
     """A check that ended without a stored copy to open. An infected, locked or too-big file's quarantine copy is
-    deleted at once; a failed one is kept so Try again can run the checks again."""
+    deleted at once; a failed one is kept so Try again can run the checks again, unless nothing could change."""
     s = get_settings()
     with conn.transaction():
         live = conn.execute(
@@ -590,12 +660,13 @@ def _finish(conn: Conn, row: dict[str, Any], state: str, code: str) -> str:
         ).fetchone()
         if live is None or live["file_state"] != CHECKING:
             return str(live["file_state"]) if live else "missing"
-        if state != "upload_failed":
+        if (state != "upload_failed" or code in ENDS_COPY) and row.get("store_key"):
             store.delete(s.s3_bucket_quarantine, row["store_key"])
         conn.execute(
-            "UPDATE attachments SET file_state = %s, state = %s, checks = coalesce(checks, '{}'::jsonb) || %s, "
-            "updated_at = now() WHERE id = %s",
-            (state, old_state(state), Jsonb({"result": code}), row["id"]),
+            "UPDATE attachments SET file_state = %s, state = %s, updated_at = now(), "
+            "checks = coalesce(checks, '{}'::jsonb) || jsonb_build_object('result', %s::text, 'ended_at', now()) "
+            "WHERE id = %s",
+            (state, old_state(state), code, row["id"]),
         )
         _audit(conn, "system:files", "file.checked", str(row["idea_uuid"]),
                {"file_id": row["id"], "state": state, "result": code})  # fmt: skip
@@ -603,7 +674,11 @@ def _finish(conn: Conn, row: dict[str, Any], state: str, code: str) -> str:
     return state
 
 
-def _extract(kind: str, data: bytes) -> Extracted:
+def _extract(kind: str, data: bytes, types: tuple[str, ...]) -> Extracted:
+    """The file's structure and text, in the sandbox, after the scan. A ZIP-family file (`CONTAINER`) is read there
+    as what its directory says it is, within the configured types; `got.kind` is that type."""
+    if kind == CONTAINER:
+        return sandbox.extract("container", data, options={"types": list(types)})
     ocr = kind in ("png", "jpg")
     extractor = f"{kind}_ocr" if ocr else kind
     got = sandbox.extract(extractor, data, timeout_s=OCR_TIMEOUT_S if ocr else 90.0)
@@ -611,11 +686,14 @@ def _extract(kind: str, data: bytes) -> Extracted:
         pages = got.pages
         got = sandbox.extract("pdf_ocr", data, timeout_s=OCR_TIMEOUT_S)
         got.pages = got.pages or pages
+    got.kind = kind
     return got
 
 
 def check(conn: Conn, att_id: str) -> str:
-    """Virus scan, then the text layer, then hide's detection (L-HIDE.files/1, /6). Returns the new state."""
+    """Virus scan, then the file's structure and text layer in the sandbox, then the gatekeeper and hide's
+    detection (L-HIDE.files/1, /6). Returns the new state. Raises `CheckWaits` while a service it needs is down.
+    A job for a file that is gone, or no longer checking, changes nothing."""
     s = get_settings()
     found = conn.execute(
         "SELECT id, idea_uuid, store_key, file_state, uploaded_by_user, uploaded_by_code, checks "
@@ -625,6 +703,8 @@ def check(conn: Conn, att_id: str) -> str:
     if found is None or found["file_state"] != CHECKING:
         return str(found["file_state"]) if found else "missing"
     row = dict(found)
+    if not row.get("store_key"):
+        return _finish(conn, row, "upload_failed", "no_copy")
     try:
         data = store.get(s.s3_bucket_quarantine, row["store_key"])
     except ClientError as exc:
@@ -637,39 +717,49 @@ def check(conn: Conn, att_id: str) -> str:
         raise CheckWaits("scanner") from None
     if not verdict.clean:
         return _finish(conn, row, "infected", "virus")
-    kind = str((row.get("checks") or {}).get("type") or kind_of(data) or "")
+    kind = str((row.get("checks") or {}).get("type") or kind_before_scan(data) or "")
     try:
-        got = _extract(kind, data)
+        got = _extract(kind, data, uploads().types)
     except sandbox.ExtractionFailed as exc:
         if exc.code == "ocr_unavailable":
             raise CheckWaits("ocr") from None
         state = {"locked": "locked", "too_big": "too_big"}.get(exc.code, "upload_failed")
         return _finish(conn, row, state, exc.code)
+    real = got.kind if got.kind in MIME else kind
     by = str(row["uploaded_by_user"] or "") or None
     if by is None:
         from desk.store import user_of
 
         by = user_of(conn, row["uploaded_by_code"]) or "system:files"
+    # The gatekeeper reads the text before the file's row is locked, so Remove and Try again never wait on a model
+    # (BLD-C107). It cannot run: the file stays checking and the job tries again (non-negotiable 4, DEC-103).
+    try:
+        gate = hide_files.gate_for(conn, str(row["idea_uuid"]), hide_files.text_of(got.pieces))
+    except hide_files.GatekeeperWaits:
+        raise CheckWaits("gatekeeper") from None
     with conn.transaction():
         live = conn.execute(
             "SELECT file_state FROM attachments WHERE id = %s FOR UPDATE", (att_id,)
         ).fetchone()
         if live is None or live["file_state"] != CHECKING:  # removed, or checked by another run, meanwhile
             return str(live["file_state"]) if live else "missing"
-        finds = hide_files.hide_file(conn, str(row["idea_uuid"]), got.pieces, by=by, att_id=att_id)
+        finds = hide_files.hide_file(conn, str(row["idea_uuid"]), got.pieces, by=by, att_id=att_id, gate=gate)
         state = CUSTOMER_DETAIL if finds.count else "checked"
         store.put(s.s3_bucket_clean, row["store_key"], data)
         store.delete(s.s3_bucket_quarantine, row["store_key"])
+        # No hidden note: nothing is blacked out until "Hide it for me" (DEC-107); the found line is the problem.
         conn.execute(
-            "UPDATE attachments SET file_state = %s, state = %s, pages = %s, hidden_note = %s, "
+            "UPDATE attachments SET file_state = %s, state = %s, pages = %s, mime = %s, hidden_note = NULL, "
             "checks = coalesce(checks, '{}'::jsonb) || %s, updated_at = now() WHERE id = %s",
-            (state, old_state(state), got.pages, hide_files.hidden_note(finds),
-             Jsonb({"result": "found" if finds.count else "clean", "found": finds.codes(),
-                    "ocr": kind in ("png", "jpg") or any("(scanned)" in w for w, _ in got.pieces)}),
+            (state, old_state(state), got.pages, MIME.get(real, "application/octet-stream"),
+             Jsonb({"type": real, "result": "found" if finds.count else "clean", "found": finds.codes(),
+                    "gatekeeper": "off" if gate.switched_off else "ran",
+                    "ocr": real in ("png", "jpg") or any("(scanned)" in w for w, _ in got.pieces)}),
              att_id),
         )  # fmt: skip
         _audit(conn, "system:files", "file.checked", str(row["idea_uuid"]),
-               {"file_id": att_id, "state": state, "kinds": finds.kinds, "count": finds.count})  # fmt: skip
+               {"file_id": att_id, "state": state, "kinds": finds.kinds, "count": finds.count,
+                "gatekeeper": "off" if gate.switched_off else "ran"})  # fmt: skip
     log.info("files.checked", attachment_id=att_id, file_state=state, hidden_count=finds.count)
     return state
 
@@ -737,26 +827,63 @@ def retry(conn: Conn, att_id: str, user_id: str) -> dict[str, Any]:
 def remove(conn: Conn, att_id: str, user_id: str) -> None:
     """`DELETE /files/:id` ("Remove", "Remove file"): every stored copy, the row and its hidden details go. Only the
     person who added it; it works in any state, after an answer is sent too (DEC-107: the desk may ask for it)."""
-    s = get_settings()
     with conn.transaction():
         row = _own_row(conn, att_id, user_id)
-        for bucket, key in (
-            (s.s3_bucket_quarantine, row.get("store_key")),
-            (s.s3_bucket_clean, row.get("store_key")),
-            (s.s3_bucket_clean, row.get("masked_store_key")),
-        ):
-            if key:
-                store.delete(bucket, key)
-        hide_files.forget(conn, att_id)
-        # Its checks still waiting go too, so a job runner never picks up work for a file that is gone.
-        conn.execute(
-            "DELETE FROM jobs WHERE type = %s AND state = 'queued' AND payload->>'attachment_id' = %s",
-            (JOB, att_id),
-        )
-        conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))
+        drop(conn, row)
         _audit(conn, user_id, "file.removed", str(row["idea_uuid"]),
                {"file_id": att_id, "state": effective_state(row), "kind": row["kind"]})  # fmt: skip
     log.info("files.removed", attachment_id=att_id)
+
+
+def drop(conn: Conn, row: dict[str, Any]) -> None:
+    """Every stored copy of a file, its hidden details, its queued checks and its row, in the caller's transaction
+    holding the row's lock. A link has no stored copy. Used by Remove, the old remove route and the draft purge."""
+    s = get_settings()
+    for bucket, key in (
+        (s.s3_bucket_quarantine, row.get("store_key")),
+        (s.s3_bucket_clean, row.get("store_key")),
+        (s.s3_bucket_quarantine, row.get("masked_store_key")),
+        (s.s3_bucket_clean, row.get("masked_store_key")),
+    ):
+        if key:
+            store.delete(bucket, key)
+    hide_files.forget(conn, str(row["id"]))
+    # Its checks still waiting go too, so a job runner never picks up work for a file that is gone.
+    conn.execute(
+        "DELETE FROM jobs WHERE type = %s AND state = 'queued' AND payload->>'attachment_id' = %s",
+        (JOB, str(row["id"])),
+    )
+    conn.execute("DELETE FROM attachments WHERE id = %s", (row["id"],))
+
+
+def sweep_failed_copies(conn: Conn) -> int:
+    """The quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
+    `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. Returns how many."""
+    from rules import load_rule
+
+    try:
+        hours = int(
+            load_rule(Path(get_settings().company_repo_path), "thresholds").data["attachments"][
+                "rejected_retention_hours"
+            ]
+        )
+    except Exception:  # an unreadable rules file keeps the configured default
+        hours = 24
+    s = get_settings()
+    rows = conn.execute(
+        "SELECT id, store_key FROM attachments WHERE kind = 'file' AND file_state = 'upload_failed' "
+        "AND store_key IS NOT NULL AND (checks->>'ended_at')::timestamptz < now() - make_interval(hours => %s) "
+        "AND coalesce(checks->>'copy', '') <> 'gone'",
+        (hours,),
+    ).fetchall()
+    for r in rows:
+        _delete_quietly(s.s3_bucket_quarantine, r["store_key"])
+        conn.execute(
+            "UPDATE attachments SET checks = coalesce(checks, '{}'::jsonb) || '{\"copy\": \"gone\"}'::jsonb "
+            "WHERE id = %s",
+            (r["id"],),
+        )
+    return len(rows)
 
 
 def hide_for_me(conn: Conn, att_id: str, user_id: str) -> dict[str, Any]:

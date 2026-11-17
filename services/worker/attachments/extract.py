@@ -21,6 +21,7 @@ import html
 import io
 import re
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 MAX_CELLS = 500_000
@@ -38,7 +39,8 @@ class Locked(Exception):
 
 
 class NotCheckable(Exception):
-    """A file inside a ZIP is of a type the checks cannot read (L-HIDE.files/5: each file is checked)."""
+    """A file, or a file inside a ZIP, is of a type the checks cannot read or the configured list leaves out
+    (L-HIDE.files/5: each file is checked)."""
 
 
 @dataclass
@@ -49,6 +51,7 @@ class Extracted:
     )  # (location, values) for the column check
     scanned: bool = False
     pages: int | None = None  # a PDF's page count, for the file row ("140 KB, 3 pages")
+    kind: str | None = None  # the type the file was read as (a ZIP-family file's, from its directory)
 
 
 def _col(n: int) -> str:
@@ -341,28 +344,46 @@ def _inner(kind: str, data: bytes) -> Extracted:
     return EXTRACTORS[kind](data)
 
 
-def zip_files(data: bytes) -> Extracted:
+def zip_files(data: bytes, types: Iterable[str] = ()) -> Extracted:
     """A ZIP is unpacked and every file in it checked (L-HIDE.files/5). Locations name a file by its position, never
-    by its name. A file the checks cannot read, a ZIP inside the ZIP or a locked file stops the whole ZIP."""
+    by its name. A file the checks cannot read or that is not of a configured type (`types`, the rules file's list;
+    every readable type when empty), a ZIP inside the ZIP or a locked file stops the whole ZIP. Runs in the sandbox,
+    after the virus scan."""
     from attachments.filetype import kind_of
 
+    allowed = INNER_KINDS & frozenset(types) if types else INNER_KINDS
     check_zip(data)
-    out = Extracted()
+    out = Extracted(kind="zip")
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         members = [i for i in z.infolist() if not i.is_dir() and not _JUNK.search(i.filename)]
         if len(members) > MAX_ZIP_FILES:
             raise TooBigToCheck("too_many_files")
+        if any(i.flag_bits & 0x1 for i in members):
+            raise Locked("zip_password")
         for n, info in enumerate(members, start=1):
-            if info.flag_bits & 0x1:
-                raise Locked("zip_password")
             inner = z.read(info)
             kind = kind_of(inner, info.filename)
-            if kind is None or kind == "zip" or kind not in INNER_KINDS:
+            if kind is None or kind not in allowed:
                 raise NotCheckable("zip_member_type")
             got = _inner(kind, inner)
             out.pieces.extend((f"file {n} in the ZIP, {where}", text) for where, text in got.pieces)
             out.columns.extend((f"file {n} in the ZIP, {where}", values) for where, values in got.columns)
     return out
+
+
+def container(data: bytes, types: Iterable[str] = ()) -> Extracted:
+    """A file that started as a ZIP (`filetype.CONTAINER`), after the virus scan, in the sandbox: its directory says
+    whether it is Word, PowerPoint, Excel or a plain ZIP; a type not in `types` is not checked; then it is read as
+    that type. `kind` on the result is the type found."""
+    from attachments.filetype import CONTAINER_TYPES, container_kind
+
+    allowed = frozenset(types) if types else frozenset(CONTAINER_TYPES)
+    kind = container_kind(data)
+    if kind is None or kind not in allowed:
+        raise NotCheckable("type_not_allowed")
+    got = zip_files(data, types) if kind == "zip" else EXTRACTORS[kind](data)
+    got.kind = kind
+    return got
 
 
 EXTRACTORS = {
@@ -377,5 +398,6 @@ EXTRACTORS = {
     "md": text_file,
     "html": html_text,
     "zip": zip_files,
+    "container": container,
 }
 INNER_KINDS = frozenset({"pdf", "docx", "pptx", "xlsx", "csv", "png", "jpg", "md", "html"})

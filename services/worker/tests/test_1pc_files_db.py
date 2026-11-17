@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from attachments import files as F
 from attachments import store
@@ -82,6 +83,34 @@ def test_L_HIDE_files_5_screen_refuses_empty_too_big_locked_and_other_types() ->
     with pytest.raises(F.FileRefused) as e:
         F.screen(make.png(), "shot.png", pdf_only)
     assert e.value.code == "type_not_allowed"
+    with pytest.raises(F.FileRefused) as e:  # a ZIP-family file when no ZIP-family type is configured
+        F.screen(make.docx(["Notes"]), "notes.docx", pdf_only)
+    assert e.value.code == "type_not_allowed"
+
+
+def test_L_HIDE_files_6_screen_reads_the_bytes_only_never_a_zip_directory_before_the_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-negotiable 8: before the virus scan, the size and magic numbers only. A Word file, a plain ZIP and a ZIP
+    named .docx all pass as one container; which type it is, and any password, are read after the scan."""
+    from attachments import filetype
+
+    docx, pptx = make.docx(["Branch notes"]), make.with_part(make.docx(["x"]), "ppt/slides/slide1.xml", "<p/>")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("a.md", "# Notes\n")
+    plain = buf.getvalue()
+
+    def never(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("a ZIP directory was read before the scan")
+
+    monkeypatch.setattr(zipfile, "ZipFile", never)
+    for data, name in ((docx, "notes.docx"), (pptx, "deck.pptx"), (plain, "pack.zip"), (plain, "notes.docx")):
+        assert F.screen(data, name, ALL) == filetype.CONTAINER
+    assert F._shown_mime(filetype.CONTAINER, "notes.docx") == F.MIME["docx"]  # the row's badge while checking
+    assert F._shown_mime(filetype.CONTAINER, "pack") == F.MIME["zip"]
+    monkeypatch.undo()
+    assert filetype.container_kind(docx) == "docx" and filetype.container_kind(plain) == "zip"
 
 
 SEES = {"uploader", "sharer", "crew", "desk", "other"}
@@ -298,8 +327,9 @@ def test_L_HIDE_files_3_DEC_107_a_customer_detail_marks_the_file_and_keeps_it_fr
 
     row = _row(db, att)
     assert row["file_state"] == "personal_data_found" and row["state"] != "clean"  # never marked clean
-    assert row["hidden_note"] == "A PAN on page 2 is hidden."
-    assert row["checks"]["found"] == [{"kind": "pan", "page": 2}]
+    # Nothing is blacked out ("Hide it for me" is not built, DEC-107), so nothing says it is hidden.
+    assert row["hidden_note"] is None
+    assert row["checks"]["found"] == [{"kind": "pan", "page": 2}] and row["checks"]["gatekeeper"] == "ran"
     details = db.execute(
         "SELECT source, source_id, kind, masked FROM hidden_details WHERE idea_uuid = %s", (idea["id"],)
     ).fetchall()
@@ -312,11 +342,14 @@ def test_L_HIDE_files_3_DEC_107_a_customer_detail_marks_the_file_and_keeps_it_fr
 
     mine = F.get_item(db, att, kavya["id"])
     assert mine["state"] == "personal_data_found" and mine["customer_detail"] is True
-    assert mine["problem"] == "Found a PAN on page 2. Nobody can open it until it’s hidden."
-    assert mine["hidden_note"] == "A PAN on page 2 is hidden." and mine["view_url"]
+    assert mine["problem"] == "Found a PAN on page 2. Nobody can open it until it’s hidden."  # C-FILE.row
+    assert "hidden_note" not in mine and mine["view_url"]
     for who in ("kavya", "meera", "rohan", "dev"):
         assert F.content(db, att, cast[who]["id"])[0] == data
         assert F.get_item(db, att, cast[who]["id"])["customer_detail"] is True
+    for who in ("meera", "rohan", "dev"):  # the found line and its actions are the uploader's (a copy gap for the desk)
+        seen = F.get_item(db, att, cast[who]["id"])
+        assert "problem" not in seen and "hidden_note" not in seen
     for who in ("arjun", "sam"):  # never the crew, never anyone else
         assert _refused(F.get_item, db, att, cast[who]["id"]).code == "not_found"
         assert _refused(F.content, db, att, cast[who]["id"]).code == "not_found"
@@ -350,7 +383,9 @@ def test_L_HIDE_files_values_the_desk_hid_on_the_idea_are_hidden_in_a_file_too(
         idea_id=idea["idea_id"],
     )["id"]
     assert F.check(db, att) == "personal_data_found"
-    assert _row(db, att)["hidden_note"] == "Name hidden"  # not a page: the label, as the answer rows have it
+    row = _row(db, att)
+    assert row["checks"]["found"] == [{"kind": "name", "page": None}] and row["hidden_note"] is None
+    assert F.get_item(db, att, kavya["id"])["problem"] == "Found a name. Nobody can open it until it’s hidden."
 
 
 def test_L_HIDE_files_6_an_infected_file_is_deleted_and_never_opens(db: Conn, cast: dict[str, Any]) -> None:
@@ -392,7 +427,41 @@ def test_L_HIDE_files_5_a_zip_is_unpacked_and_each_file_checked(db: Conn, cast: 
     att = _add(db, cast["kavya"], buf.getvalue(), "pack.zip", idea_id=cast["idea"]["idea_id"])["id"]
     assert _row(db, att)["mime"] == "application/zip"
     assert F.check(db, att) == "personal_data_found"
-    assert _row(db, att)["hidden_note"] == "PAN hidden"
+    row = _row(db, att)
+    assert row["checks"]["found"] == [{"kind": "pan", "page": None}] and row["checks"]["type"] == "zip"
+    assert row["hidden_note"] is None
+
+
+def test_L_HIDE_files_5_6_a_zip_family_file_is_typed_from_its_directory_after_the_scan(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Word file named .zip is read as Word once scanned; a ZIP holding a type the rules file leaves out, or a
+    member with a password, is not checked (upload_failed, its copy deleted: Try again cannot change it)."""
+    idea, kavya = cast["idea"], cast["kavya"]
+    word = _add(db, kavya, make.docx(["Calls double on Mondays."]), "notes.zip", idea_id=idea["idea_id"])["id"]
+    assert _row(db, word)["mime"] == F.MIME["zip"]  # the badge while checking, from the name
+    assert F.check(db, word) == "checked"
+    row = _row(db, word)
+    assert row["mime"] == F.MIME["docx"] and row["checks"]["type"] == "docx"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("a.md", "# Clean notes\n")
+        z.writestr("shot.png", make.png())
+    no_images = F.Uploads(limit_mb=25, types=("pdf", "md", "zip"), internal_domains=())
+    monkeypatch.setattr(F, "uploads", lambda: no_images)
+    att = _add(db, kavya, buf.getvalue(), "pack.zip", idea_id=idea["idea_id"])["id"]
+    assert F.check(db, att) == "upload_failed"
+    row = _row(db, att)
+    assert row["checks"]["result"] == "not_checkable"
+    assert not store.exists(get_settings().s3_bucket_quarantine, row["store_key"])
+    assert F.get_item(db, att, kavya["id"])["problem"] == "Didn’t upload. Your other files are fine."
+    assert _refused(F.retry, db, att, kavya["id"]).code == "upload_again"
+
+    word_only = F.Uploads(limit_mb=25, types=("pdf", "docx"), internal_domains=())
+    monkeypatch.setattr(F, "uploads", lambda: word_only)
+    zipped = _add(db, kavya, buf.getvalue(), "pack.docx", idea_id=idea["idea_id"])["id"]
+    assert F.check(db, zipped) == "upload_failed"  # a plain ZIP named .docx, when ZIPs are not on the list
 
 
 def test_A_API_files_one_target_a_draft_is_its_owners_alone(db: Conn, cast: dict[str, Any]) -> None:
@@ -449,9 +518,7 @@ def test_A_API_files_answer_files_sit_on_the_answer_and_the_answers_idea(
     assert [(x["id"], x["state"], x["customer_detail"]) for x in shown] == [
         (att, "personal_data_found", True)
     ]
-    assert (
-        shown[0]["hidden_note"] == "PAN hidden"
-    )  # an image has no pages: the label, as the answer rows have it
+    assert shown[0]["hidden_note"] is None  # found, not blacked out: nothing says it is hidden
 
     asking.send_answers(db, sent["id"], kavya["id"])
     assert F.get_item(db, att, cast["meera"]["id"])["customer_detail"] is True
@@ -485,12 +552,23 @@ def test_A_API_files_links_are_classed_stored_sealed_and_never_opened(
         "link",
     )
     assert inside["url"] == "https://kfintech.sharepoint.com/sites/ops/sms.docx"
+    # C-FILE, S-05 and J-RECOVER/9: a link's row is named by its address, host and path, as the boards show it.
+    assert inside["name"] == "kfintech.sharepoint.com/sites/ops/sms.docx"
+    assert outside["name"] == "example.org/report"
     assert outside["link_scope"] == "external" and "size" not in outside and "view_url" not in outside
     row = _row(db, inside["id"])
     assert b"sharepoint" not in bytes(row["url_encrypted"])
     assert open_text("attachments", "url_encrypted", inside["id"], row["url_encrypted"]) == inside["url"]
     crew = F.get_item(db, inside["id"], cast["arjun"]["id"])
-    assert crew["url"] == row["name"] and "view_url" not in crew
+    assert crew["name"] == row["name"] == "kfintech.sharepoint.com/sites/ops/sms.docx" and "view_url" not in crew
+    assert crew["url"] == "https://kfintech.sharepoint.com/sites/ops/sms.docx"
+    for typed, name in (
+        ("https://Kfintech.SharePoint.com/ops/R07?web=1#top", "kfintech.sharepoint.com/ops/R07"),
+        ("intranet.kfintech.com/", "intranet.kfintech.com"),
+        ("http://intranet.kfintech.com:8080/page", "intranet.kfintech.com:8080/page"),
+    ):
+        got = F.accept_link(db, user_id=kavya["id"], url=typed, idea_id=idea["idea_id"])
+        assert got["name"] == name, typed
     assert _refused(F.content, db, inside["id"], kavya["id"]).code == "not_available"
     bad = _refused(F.accept_link, db, user_id=kavya["id"], url="not a link", idea_id=idea["idea_id"])
     assert (bad.status, bad.code) == (422, "not_a_link")
@@ -500,8 +578,9 @@ def test_A_API_files_links_are_classed_stored_sealed_and_never_opened(
         db, user_id=kavya["id"], url=f"https://example.org/lookup?pan={pan}", idea_id=idea["idea_id"]
     )
     assert pan in masked["url"]  # the person who added it gets the address as typed
-    assert pan not in F.get_item(db, masked["id"], cast["meera"]["id"])["url"]
-    assert pan not in _row(db, masked["id"])["name"]
+    desk = F.get_item(db, masked["id"], cast["meera"]["id"])["url"]
+    assert pan not in desk and desk.startswith("https://example.org/lookup?pan=")  # the whole address, masked
+    assert _row(db, masked["id"])["name"] == "example.org/lookup"
 
 
 def test_A_API_files_part_2_try_again_remove_and_hide_it_for_me(db: Conn, cast: dict[str, Any]) -> None:
@@ -539,6 +618,252 @@ def test_A_API_files_part_2_try_again_remove_and_hide_it_for_me(db: Conn, cast: 
     assert not store.exists(get_settings().s3_bucket_clean, key)
     assert [a["file_id"] for a in _audits(db, idea["id"], "file.removed")] == [att]
     assert _refused(F.get_item, db, att, kavya["id"]).code == "not_found"
+
+
+# ---- the gatekeeper on every file (non-negotiable 4, DEC-103; BLD-C107) -----------------------------------------
+
+ADDRESS = "Flat 12, Green Park, Pune"
+
+
+def _gatekeeper_says(*spans: dict[str, Any]) -> dict[str, Any]:
+    from gateway.spec import load
+
+    out = dict(load("gatekeeper").example("01-problem-clean.json").output)
+    out["personal_data"] = (
+        {"found": True, "confidence": 0.9, "spans": list(spans)}
+        if spans
+        else {"found": False, "confidence": 0.9, "spans": []}
+    )
+    return out
+
+
+def _address() -> dict[str, Any]:
+    return {"field": "details", "quote": ADDRESS, "data_type": "address", "confidence": 0.9, "reason": "Address"}
+
+
+def _first_due(db: Conn, att: str, *, last_try: bool = False) -> None:
+    """Put this file's check job first in the queue (and on its last try), so `run_one` runs it."""
+    db.execute(
+        "UPDATE jobs SET run_at = '2000-01-01', state = 'queued', "
+        "attempts = CASE WHEN %s THEN max_attempts - 1 ELSE attempts END "
+        "WHERE type = %s AND payload->>'attachment_id' = %s",
+        (last_try, F.JOB, att),
+    )
+
+
+def _job(db: Conn, att: str) -> dict[str, Any]:
+    row = db.execute(
+        "SELECT state, attempts, last_error FROM jobs WHERE type = %s AND payload->>'attachment_id' = %s",
+        (F.JOB, att),
+    ).fetchone()
+    assert row is not None
+    return dict(row)
+
+
+def test_L_HIDE_files_1_DEC_103_a_long_file_is_read_by_the_gatekeeper_piece_by_piece(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """Review blocker 2a: a file longer than one piece goes to the gatekeeper in overlapping pieces; an address
+    that only the gatekeeper knows, only in the second piece, is found and hidden."""
+    from gateway.routes import FAKE_SCRIPT
+    from hide import files as hide_files
+
+    idea, kavya = cast["idea"], cast["kavya"]
+    filler = f"Calls double on Mondays at the branch and the queue grows {secrets.token_hex(4)}."
+    lines = ["# Branch notes", *[filler] * 150, f"Forms come back from {ADDRESS} every week.", *[filler] * 40]
+    data = "\n".join(lines).encode()
+    att = _add(db, kavya, data, "notes.md", idea_id=idea["idea_id"])["id"]
+    text_len = len(hide_files.text_of([(f"line {i}", t) for i, t in enumerate(lines, start=1)]))
+    pieces = hide_files.chunks("x" * text_len)
+    assert len(pieces) == 2 and pieces[1][0] == hide_files.CHUNK_CHARS - hide_files.CHUNK_OVERLAP
+    FAKE_SCRIPT.extend([_gatekeeper_says(), _gatekeeper_says(_address())])
+    assert F.check(db, att) == "personal_data_found"
+    assert not FAKE_SCRIPT  # one call per piece
+    detail = db.execute(
+        "SELECT kind, found_by, span_start FROM hidden_details WHERE source = 'file' AND source_id = %s", (att,)
+    ).fetchone()
+    assert detail is not None and detail["found_by"] == "gatekeeper" and detail["kind"] == "name"
+    assert detail["span_start"] > hide_files.CHUNK_CHARS  # only in the second piece
+    row = _row(db, att)
+    assert row["checks"]["gatekeeper"] == "ran" and row["checks"]["found"] == [{"kind": "name", "page": None}]
+    assert _refused(F.get_item, db, att, cast["arjun"]["id"]).code == "not_found"  # never the crew
+    for audit in _audits(db, idea["id"], "file.checked"):
+        assert ADDRESS not in str(audit)
+
+
+def test_L_HIDE_files_1_DEC_103_the_gateway_failing_keeps_the_file_checking_then_upload_failed(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """Review blocker 2b and lane E: a file the gatekeeper could not read is never `checked` and never opens for the
+    crew. The job retries while the file stays `checking`; after its last try the file is `upload_failed` with the
+    pack's line and Try again (its copy kept)."""
+    from gateway.routes import FAKE_SCRIPT, RouteError
+    from jobs import handlers  # noqa: F401 (registers the job types)
+    from jobs.runner import run_one
+
+    idea, kavya, arjun = cast["idea"], cast["kavya"], cast["arjun"]
+    att = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
+    FAKE_SCRIPT.append(RouteError("connection"))
+    with pytest.raises(F.CheckWaits):
+        F.check(db, att)
+    assert _row(db, att)["file_state"] == "checking"
+
+    _first_due(db, att)
+    FAKE_SCRIPT.append(RouteError("connection"))
+    assert run_one(db, "test-files")
+    job = _job(db, att)
+    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")  # it tries again later
+    assert _row(db, att)["file_state"] == "checking"
+    assert F.get_item(db, att, kavya["id"])["state"] == "checking"
+    assert _refused(F.content, db, att, kavya["id"]).code == "not_available"
+    for who in ("arjun", "meera"):
+        assert _refused(F.get_item, db, att, cast[who]["id"]).code == "not_found"
+        assert _refused(F.content, db, att, cast[who]["id"]).code == "not_found"
+    assert F.items_for(db, str(idea["id"]), arjun["id"]) == []
+
+    _first_due(db, att, last_try=True)
+    FAKE_SCRIPT.append(RouteError("connection"))
+    assert run_one(db, "test-files")
+    assert _job(db, att)["state"] == "dead"
+    row = _row(db, att)
+    assert (row["file_state"], row["state"], row["checks"]["result"]) == ("upload_failed", "rejected", "check_failed")
+    assert store.exists(get_settings().s3_bucket_quarantine, row["store_key"])  # kept for Try again
+    failed = F.get_item(db, att, kavya["id"])
+    assert failed["problem"] == "Didn’t upload. Your other files are fine." and "view_url" not in failed
+    assert _refused(F.get_item, db, att, arjun["id"]).code == "not_found"
+    assert not db.execute(
+        "SELECT 1 FROM hidden_details WHERE source = 'file' AND source_id = %s", (att,)
+    ).fetchone()
+
+
+def test_L_HIDE_files_1_DEC_103_only_a_person_switching_the_gatekeeper_off_gives_patterns_only(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """Review blocker 2b: with `ai.all` switched off by a person, a file goes on with the patterns and names, as
+    typed text does (`checked`, no model call); held off only by the gateway's own automatic switch-off, it waits."""
+    from core import killswitch
+    from gateway.core import ACTOR as GATEWAY
+
+    idea, kavya = cast["idea"], cast["kavya"]
+    scope = scope_for(str(idea["id"]))
+
+    def calls() -> int:
+        return int(db.execute("SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s", (scope,)).fetchone()["n"])
+
+    clean = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
+    pan = _pan()
+    found = _add(db, kavya, make.pdf([f"PAN {pan} called twice."]), idea_id=idea["idea_id"])["id"]
+    before = calls()
+    killswitch.set_switch(db, "ai.all", "off", reason="Testing files with the assistant off", actor="REV-0001")
+    killswitch.clear_cache()
+    try:
+        assert F.check(db, clean) == "checked"
+        assert F.check(db, found) == "personal_data_found"  # the patterns still run
+    finally:
+        killswitch.set_switch(db, "ai.all", "on", reason="Testing files: assistant back on", actor="REV-0001")
+        killswitch.clear_cache()
+    assert calls() == before
+    assert _row(db, clean)["checks"]["gatekeeper"] == "off" and _row(db, found)["checks"]["found"] == [
+        {"kind": "pan", "page": 1}
+    ]
+    assert F.get_item(db, clean, cast["arjun"]["id"])["view_url"]  # checked: the crew opens it
+
+    waits = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
+    killswitch.set_switch(db, "agent.gatekeeper", "off", reason="Error rate over the limit", actor=GATEWAY)
+    killswitch.clear_cache()
+    try:
+        with pytest.raises(F.CheckWaits):
+            F.check(db, waits)
+    finally:
+        killswitch.set_switch(db, "agent.gatekeeper", "on", reason="Testing files: gatekeeper back on", actor="REV-0001")
+        killswitch.clear_cache()
+    assert _row(db, waits)["file_state"] == "checking"
+
+
+def test_L_HIDE_files_6_the_scanner_down_waits_then_upload_failed_with_the_copy_kept(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from attachments import clamav
+    from jobs import handlers  # noqa: F401 (registers the job types)
+    from jobs.runner import run_one
+
+    def down(_data: bytes) -> Any:
+        raise clamav.ScannerUnavailable("down")
+
+    kavya = cast["kavya"]
+    att = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=cast["idea"]["idea_id"])["id"]
+    monkeypatch.setattr(clamav, "scan_bytes", down)
+    _first_due(db, att)
+    assert run_one(db, "test-files")
+    assert _job(db, att)["state"] == "queued" and _row(db, att)["file_state"] == "checking"
+    _first_due(db, att, last_try=True)
+    assert run_one(db, "test-files")
+    assert _job(db, att)["state"] == "dead"
+    row = _row(db, att)
+    assert row["file_state"] == "upload_failed"
+    assert store.exists(get_settings().s3_bucket_quarantine, row["store_key"])  # kept for Try again
+    assert F.get_item(db, att, kavya["id"])["problem"] == "Didn’t upload. Your other files are fine."
+    monkeypatch.undo()
+    assert F.retry(db, att, kavya["id"])["state"] == "checking"
+    assert F.check(db, att) == "checked"
+
+
+def test_A_API_files_a_check_job_for_a_removed_file_does_nothing(db: Conn, cast: dict[str, Any]) -> None:
+    from jobs import handlers  # noqa: F401 (registers the job types)
+    from jobs.runner import run_one
+
+    kavya = cast["kavya"]
+    att = _add(db, kavya, make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
+    F.remove(db, att, kavya["id"])
+    assert F.check(db, att) == "missing"
+    db.execute(
+        "INSERT INTO jobs (type, payload, run_at) VALUES (%s, %s, '2000-01-01')",
+        (F.JOB, Jsonb({"attachment_id": att})),
+    )
+    assert run_one(db, "test-files")
+    assert _job(db, att)["state"] == "done"
+    F.gave_up(db, att)  # the dead handler too
+    assert db.execute("SELECT 1 FROM attachments WHERE id = %s", (att,)).fetchone() is None
+
+
+def test_A_API_files_a_row_that_cannot_be_written_leaves_no_stored_copy(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    put: list[str] = []
+    real_put = store.put
+
+    def recording_put(bucket: str, key: str, data: bytes) -> None:
+        put.append(key)
+        real_put(bucket, key, data)
+
+    def broken_audit(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("audit down")
+
+    monkeypatch.setattr(store, "put", recording_put)
+    monkeypatch.setattr(F, "_audit", broken_audit)
+    with pytest.raises(RuntimeError):
+        _add(db, cast["kavya"], make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])
+    assert len(put) == 1 and not store.exists(get_settings().s3_bucket_quarantine, put[0])
+    assert db.execute("SELECT 1 FROM attachments WHERE store_key = %s", (put[0],)).fetchone() is None
+
+
+def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    kavya = cast["kavya"]
+    att = _add(db, kavya, make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
+    F.gave_up(db, att)
+    key = _row(db, att)["store_key"]
+    assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
+    db.execute(
+        "UPDATE attachments SET checks = checks || jsonb_build_object('ended_at', now() - interval '25 hours') "
+        "WHERE id = %s",
+        (att,),
+    )
+    assert F.sweep_failed_copies(db) == 1
+    assert not store.exists(get_settings().s3_bucket_quarantine, key)
+    assert F.sweep_failed_copies(db) == 0
+    assert _refused(F.retry, db, att, kavya["id"]).code == "upload_again"
 
 
 # ---- the worker's routes (A-API.files behind the internal token) ----------------------------------------------------
