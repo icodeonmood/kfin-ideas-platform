@@ -82,9 +82,11 @@ def decided(d: dict[str, Any] | None) -> Decided | None:
     )
 
 
-def reviewed_line(dec: Decided, now: dt.datetime) -> str:
-    """'Picked, Monday 16 November', or 'Picked, then moved to not now by the Ones Committee'."""
-    if dec.reversed:
+def reviewed_line(dec: Decided, now: dt.datetime, *, sees_reversal: bool) -> str:
+    """'Picked, Monday 16 November', or 'Picked, then moved to not now by the Ones Committee'. The reversal is
+    worded only for the sharer, the crew, the review desk and the Ones Committee; a colleague sees the stage as it
+    stands now and its date (P-PRODUCT.privacy, DEC-104)."""
+    if dec.reversed and sees_reversal:
         return (
             f"{DECISION_LABEL[dec.desk_choice]}, then moved to {DECISION_LABEL[dec.choice].lower()} "
             "by the Ones Committee"
@@ -116,9 +118,12 @@ def stages(
     qset: dict[str, Any] | None,
     carried_into: str | None = None,
     reviewer_first: str | None = None,
+    sees_reversal: bool | None = None,
 ) -> list[Node]:
     """Five nodes, or none for a draft or a merged idea (E-ENUMS.idea-status: 'none; links to the surviving
-    idea')."""
+    idea'). `sees_reversal` (default: the sharer only) says whether the Reviewed node may say the Ones Committee
+    moved the decision; the crew, the desk and the committee may, a colleague may not."""
+    insider = for_sharer if sees_reversal is None else sees_reversal
     status = str(idea["status"])
     if status in ("draft", "merged") or idea["shared_at"] is None:
         return []
@@ -132,7 +137,8 @@ def stages(
             Node("to_come", "If it’s picked"),
             Node("to_come", "Then we measure what changed"),
         ]
-    hid = read.hidden(conn, uid) if for_sharer else []
+    # Only the details still hidden: one the sharer brought back with "Show it" is no longer hidden (L-HIDE).
+    hid = [h for h in read.hidden(conn, uid) if h["state"] == "hidden"] if for_sharer else []
     checked = Node(
         "done",
         checked_line(
@@ -162,7 +168,9 @@ def stages(
                 )
         return [shared, checked, Node("now", line), built_later, shipped_later]
 
-    reviewed = Node("done", reviewed_line(dec, now) if dec else None, dec.at if dec else None)
+    reviewed = Node(
+        "done", reviewed_line(dec, now, sees_reversal=insider) if dec else None, dec.at if dec else None
+    )
     if status == "picked":
         team = f"Team chosen by {day(dec.team_by, now)}" if dec and dec.team_by else None
         return [shared, checked, reviewed, Node("now", team), shipped_later]
