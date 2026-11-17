@@ -38,9 +38,7 @@ async function reviewDays(): Promise<number | null> {
 
 async function landingOnes(): Promise<PublicOne[]> {
   try {
-    const res = await publicOnes();
-    if (res.paused) return [];
-    return res.ones.filter((o) => o.brief).slice(0, 3);
+    return (await publicOnes()).ones.slice(0, 3);
   } catch {
     return [];
   }
