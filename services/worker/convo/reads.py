@@ -173,7 +173,7 @@ def _entry(
     if x["type"] == "questions":
         return _questions(ctx, x)
     if x["type"] == "answers":
-        return _answers(ctx, x, staff_as)
+        return _answers(ctx, x, staff_as, t)
     return None
 
 
@@ -202,7 +202,7 @@ def _questions(ctx: Ctx, x: dict[str, Any]) -> dict[str, Any] | None:
     }  # fmt: skip
 
 
-def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> dict[str, Any] | None:
+def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking, t: dt.datetime) -> dict[str, Any] | None:
     """One message: "Your answers to Meera’s 3 questions", each answer with the part it was added to."""
     s = _set(ctx, str(x["question_set_id"]))
     if s is None:
@@ -236,10 +236,18 @@ def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> dict[str, Any]
     n = int((x.get("payload") or {}).get("count") or len(answers))
     whose = "Your" if ctx.is_me(who) else f"{who.first_name}’s"
     asker = "your" if ctx.is_me(reviewer) else f"{reviewer.first_name}’s"
-    return {
+    out: dict[str, Any] = {
         "type": "answers", "id": str(x["id"]), "set_id": str(s["id"]), "from": who.ref(),
         "title": f"{whose} answers to {asker} {plural(n, 'question')}", "answers": answers,
     }  # fmt: skip
+    decide_by = ctx.idea.get("decide_by")
+    if ctx.reader.sharer and decide_by and ctx.idea["status"] == "with_review_desk":  # S-08 "Answers sent"
+        today = t.astimezone(render.IST).date()
+        out["footer"] = (
+            f"Each answer was added to its part of your idea. {reviewer.first_name} decides by "
+            f"{render.day(decide_by, today)}."
+        )
+    return out
 
 
 def render_answer(a: dict[str, Any]) -> str:
@@ -307,8 +315,9 @@ def _header(ctx: Ctx, sharer: Person, team: dict[str, Any] | None) -> dict[str, 
     being built by Arjun Rao’s team' (S-08.layout/1)."""
     mine = ctx.reader.sharer
     whose = "Your idea" if mine else f"{sharer.name}’s idea"
-    if team:
-        line = f"{whose}, being built by {team['name']}"
+    if team:  # named after its lead, as the board draws it (J-TRACK/9); the team's own name if it has no lead
+        lead = ctx.people.by_user(str(team["lead_user_id"])) if team["lead_user_id"] else None
+        line = f"{whose}, being built by {f'{lead.name}’s team' if lead and lead.id else team['name']}"
     elif mine and ctx.idea.get("shared_at"):
         line = f"{whose}, shared {render.day(ctx.idea['shared_at'], now().astimezone(render.IST).date())}"
     else:
@@ -443,10 +452,10 @@ def _visibility(ctx: Ctx, audience: str, has_crew: bool, sharer: Person) -> str:
             return "The crew, the review desk and anyone they mention see this conversation."
         return f"{sharer.first_name}, the review desk and anyone they mention see this conversation."
     if audience == "build_team":
+        if r.sharer:  # the board's line for the sharer, crew or not (BLD-F060, J-TRACK/9)
+            return "You, the build team and the review desk see this conversation."
         if has_crew:
             return "The crew, the build team and the review desk see this conversation."
-        if r.sharer:
-            return "You, the build team and the review desk see this conversation."
         return f"{sharer.first_name}, the build team and the review desk see this conversation."
     if audience == "crew_and_desk":
         return "The crew and the review desk see this conversation."

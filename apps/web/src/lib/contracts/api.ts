@@ -893,6 +893,9 @@ export type ConversationEntryView =
         at: IsoDate;
         files: FileItem[];
       }[];
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
+       * Friday 20 November." (S-08 "Answers sent"). */
+      footer?: string;
       at: IsoDate;
       at_label: string;
     };
