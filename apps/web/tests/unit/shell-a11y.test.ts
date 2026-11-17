@@ -62,6 +62,24 @@ function style(sheet: string, selector: string, at?: (a: string) => boolean): Ma
   return merged;
 }
 
+/** A token's hex value from the pack's tokens.css. */
+function token(name: string): string {
+  const v = read("tokens.css").match(new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{6})`))?.[1];
+  if (!v) throw new Error(`${name} is not a hex token`);
+  return v;
+}
+
+function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r!) + 0.7152 * lin(g!) + 0.0722 * lin(b!);
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
 /** The px size a declaration block sets, from `font-size` or the `font` shorthand. */
 function fontPx(decls: Map<string, string>): number {
   const size = decls.get("font-size") ?? decls.get("font")?.match(/(\d+(?:\.\d+)?)px/)?.[1];
@@ -92,5 +110,22 @@ describe("Print: the page only", () => {
   ])("%s (%s) is hidden in print, from lane D's own sheet", (selector) => {
     const printed = style("shell.css", selector, (a) => a === "@media print");
     expect(printed.get("display")).toMatch(/^none(\s*!important)?$/);
+  });
+});
+
+describe("F-A11Y.rules/2: the question box shows the focus ring every field has", () => {
+  it("C-SEARCH: the box draws a 2px --focus outline, 3px out, while its input has focus", () => {
+    expect(style("components.css", ".qbox input").get("outline")).toBe("none");
+    const ring = style("components.css", ".qbox:has(input:focus-visible)");
+    expect(ring.get("outline")).toBe("2px solid var(--focus)");
+    expect(ring.get("outline-offset")).toBe("3px");
+    // The old ring was a 1px line at 55% plus a 12% halo; nothing else may stand in for the outline
+    expect(style("components.css", ".qbox:focus-within").size).toBe(0);
+  });
+
+  it("C-SEARCH: --focus is --blue on light screens and reaches 3:1 on white and on paper", () => {
+    expect(read("offer.css")).toMatch(/:root[^{]*\{[^}]*--focus:\s*var\(--blue\)/);
+    expect(contrast(token("--blue"), "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(contrast(token("--blue"), token("--paper"))).toBeGreaterThanOrEqual(3);
   });
 });
