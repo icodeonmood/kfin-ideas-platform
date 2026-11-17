@@ -44,7 +44,12 @@ const FALLBACK_CODE: Record<number, string> = { 400: "bad_request", 404: "not_fo
  */
 async function relay(
   path: string,
-  { method = "GET", body, failMessage = "", field }: { method?: Method; body?: unknown; failMessage?: string; field?: string } = {},
+  {
+    method = "GET",
+    body,
+    failMessage = "",
+    field,
+  }: { method?: Method; body?: unknown; failMessage?: string; field?: string } = {},
 ): Promise<NextResponse> {
   let res: Response;
   try {
