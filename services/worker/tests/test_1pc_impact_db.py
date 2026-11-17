@@ -111,6 +111,12 @@ def test_L_IMPACT_3_unconfirmed_money_never_shows(impact_db: Conn) -> None:
                                     "time": {"amount": 70, "unit": "hours a month", "line": "Fewer returns"}})  # fmt: skip
     shown = impact.idea_impact(db, a["id"])
     assert "money" not in shown and shown["time"] == {"value": "70 hours a month", "line": "Fewer returns"}
-    db.execute("UPDATE delivery_measurements SET finance_confirmed_at = now() WHERE idea_uuid = %s", (a["id"],))
+    db.execute(
+        "UPDATE delivery_measurements SET finance_confirmed_at = now() WHERE idea_uuid = %s", (a["id"],)
+    )
     shown = impact.idea_impact(db, a["id"])
-    assert shown["money"] == {"value": "₹6 lakh a year", "line": "Finance confirmed", "finance_confirmed": True}
+    assert shown["money"] == {
+        "value": "₹6 lakh a year",
+        "line": "Finance confirmed",
+        "finance_confirmed": True,
+    }
