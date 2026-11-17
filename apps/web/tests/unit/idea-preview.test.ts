@@ -454,6 +454,25 @@ describe("C-PREVIEW data, A-API.idea-preview (BLD-C103)", () => {
     expect(textOf(document.getElementById(d.getAttribute("aria-labelledby")!))).toBe(RAVI.title);
   });
 
+  it("BLD-C103: Try again shows the loading state until the new fetch settles", async () => {
+    let settle: (r: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => (settle = resolve));
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(json({ error: "not_found" }, 404))
+      .mockReturnValueOnce(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    await render({ preview: undefined });
+    await act(async () => undefined);
+
+    const d = dialog()!;
+    await act(async () => buttonNamed("Try again")!.click());
+    expect(textOf(document.getElementById(d.getAttribute("aria-labelledby")!))).toBe("Loading the idea");
+    await act(async () => settle(await json(RAVI)));
+    await act(async () => undefined);
+    expect(textOf(document.getElementById(d.getAttribute("aria-labelledby")!))).toBe(RAVI.title);
+  });
+
   it("BLD-C103 non-negotiable 7: a body that is not an IdeaPreview is not shown", async () => {
     vi.stubGlobal(
       "fetch",

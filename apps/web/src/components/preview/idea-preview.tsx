@@ -54,7 +54,10 @@ export interface IdeaPreviewDialogProps {
    * the name comes from `compare_with.owner`.
    */
   compareWith?: { name: string };
-  /** The idea this one is compared with, sent as `?compare_with=`; the route adds `compare_with` for reviewers. */
+  /**
+   * The idea this one is compared with, sent as `?compare_with=`; the route adds `compare_with` for reviewers.
+   * Reviewer view: pass it with `compareWith`, or the other column reads "Not given" on every row.
+   */
   compareWithId?: string;
   /** Optional prefetched data; otherwise GET /api/ideas/:id/preview. */
   preview?: IdeaPreview;
@@ -143,22 +146,27 @@ function isPreview(x: unknown): x is IdeaPreview {
   );
 }
 
-/** Fetches one preview while `url` is set. The component is keyed by the URL's inputs, so it never changes. */
+/**
+ * Fetches one preview while `url` is set. The component is keyed by the URL's inputs, so it never changes. Each
+ * result remembers the attempt it answers, so "Try again" shows the loading state until the new fetch settles.
+ */
 function usePreview(url: string | null, attempt: number): Load<IdeaPreview> {
-  const [load, setLoad] = useState<Load<IdeaPreview>>({ state: "loading" });
+  const [result, setResult] = useState<{ attempt: number; load: Load<IdeaPreview> } | null>(null);
   useEffect(() => {
     if (!url) return;
     const ac = new AbortController();
     fetch(url, { headers: { accept: "application/json" }, credentials: "same-origin", signal: ac.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((body: unknown) => setLoad(isPreview(body) ? { state: "ready", data: body } : { state: "error" }))
+      .then((body: unknown) =>
+        setResult({ attempt, load: isPreview(body) ? { state: "ready", data: body } : { state: "error" } }),
+      )
       .catch(() => {
         // IDs only, and nothing logged: the pop-up shows its own message (non-negotiable 3).
-        if (!ac.signal.aborted) setLoad({ state: "error" });
+        if (!ac.signal.aborted) setResult({ attempt, load: { state: "error" } });
       });
     return () => ac.abort();
   }, [url, attempt]);
-  return load;
+  return result && result.attempt === attempt ? result.load : { state: "loading" };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
