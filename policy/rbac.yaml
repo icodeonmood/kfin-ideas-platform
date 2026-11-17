@@ -99,6 +99,11 @@ endpoints:
   - POST /api/submissions/{id}/voice                  submit          # a voice note (DEC-096; behind capture.voice)
   - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
   - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
+  - POST /api/drafts/{id}/voice/start                 submit          # a voice note streamed through Sarvam (DEC-108, BLD-C112); the sharer only
+  - POST /api/drafts/{id}/voice/chunk                 submit          # ~1 s of 16 kHz PCM, relayed and never kept; answers the words so far
+  - POST /api/drafts/{id}/voice/end                   submit          # their own words and the English copy
+  - GET /api/drafts/{id}/voice/{stream}               submit          # polling (A-API.events does not exist yet)
+  - GET /api/voice/config                             signed_in       # the notice before recording, and what the browser sends (BLD-C116)
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit

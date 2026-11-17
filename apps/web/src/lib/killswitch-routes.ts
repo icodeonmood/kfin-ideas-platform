@@ -40,6 +40,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
+  // Drafts by voice through Sarvam (DEC-108, BLD-C112): starting, sending and ending a note need voice notes, the
+  // hosted speech route and sharing. Reading a finished note's words carries on.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/drafts\/[^/]+\/voice\/(?:start|chunk|end)\/?$/,
+    switches: ["capture.voice", "speech.hosted", "submissions"],
+  },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
