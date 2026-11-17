@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useId, useRef, useState, type PointerEvent } from "react";
 
 import { CountOnce } from "@/components/count-once";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonClass } from "@/components/ui/button";
-import { Empty } from "@/components/ui/empty";
 import { FieldMsg } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { ProfileResponse } from "@/lib/contracts/api";
@@ -15,27 +13,7 @@ import type { PersonSettings } from "@/lib/contracts/entities";
 import { reducedMotion } from "@/lib/motion/flip";
 
 import { ReferAsCard } from "./refer-as";
-import { LOAD_FAILED, pointsText, REACH, SAVE_FAILED, switchState, WALL_LINE, type SwitchKey } from "./rules";
-
-/** S-H6 error state: the profile could not be read. Says so in its place, with one way on (F-COPY.states). */
-export function ProfileUnavailable() {
-  const router = useRouter();
-  return (
-    <div className="pf">
-      <h1 className="pf-t">Profile and settings</h1>
-      <div className="pf-card pf-fail">
-        <Empty
-          title={LOAD_FAILED}
-          action={
-            <button type="button" className={buttonClass("line")} onClick={() => router.refresh()}>
-              Try again
-            </button>
-          }
-        />
-      </div>
-    </div>
-  );
-}
+import { pointsText, REACH, SAVE_FAILED, switchState, WALL_LINE, type SwitchKey } from "./rules";
 
 /**
  * C-SWITCH as S-H6.rules/5 draws it: `role="switch"` with `aria-checked`, labelled by its title and described by its

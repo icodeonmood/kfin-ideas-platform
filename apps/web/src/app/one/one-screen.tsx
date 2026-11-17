@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
 import { CountOnce } from "@/components/count-once";
 import { buttonClass } from "@/components/ui/button";
-import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { NumberWindow, OneDashboardResponse, TierMoment } from "@/lib/contracts/api";
@@ -15,7 +13,6 @@ import type { Impact } from "@/lib/contracts/entities";
 import { GlowUp } from "./glow-up";
 import {
   briefProblem,
-  LOAD_FAILED,
   MSG_BRIEF_PENDING,
   MSG_NO_BRIEF,
   MSG_OUT_OF_RANGE,
@@ -67,27 +64,6 @@ function Crumbs() {
         </li>
       </ol>
     </nav>
-  );
-}
-
-/** S-ONE error state: the dashboard could not be read. Says so in its place and offers one way on (F-COPY.states). */
-export function OneUnavailable() {
-  const router = useRouter();
-  return (
-    <div className="on">
-      <Crumbs />
-      <h1 className="d1 on-h1-quiet">Your One dashboard</h1>
-      <div className="card on-fail">
-        <Empty
-          title={LOAD_FAILED}
-          action={
-            <button type="button" className={buttonClass("line")} onClick={() => router.refresh()}>
-              Try again
-            </button>
-          }
-        />
-      </div>
-    </div>
   );
 }
 
