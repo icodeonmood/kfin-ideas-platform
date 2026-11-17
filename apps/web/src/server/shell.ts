@@ -8,13 +8,14 @@ import { cookies, headers } from "next/headers";
 
 import { DEVICE_COOKIE } from "@/lib/compose/client";
 import type { CommitteeResponse, DeskResponse, DraftListItem } from "@/lib/contracts";
+import { TIER_NAME } from "@/lib/contracts/enums";
 
 import type { CurrentUser } from "./auth/current";
+import { getDb } from "./db";
 import { deskRead } from "./desk";
 import { drafts as draftApi, type DeviceInfo } from "./drafts";
 import { myIdeas, type MyIdea } from "./ideas";
 import { inboxCounts } from "./inbox";
-import { myOne } from "./ones";
 
 /** A row in a sidebar section. `tone` is the status dot (C-SIDEBAR.anatomy/4): warn for "needs you", blue for
  * active, neutral otherwise; drafts take the hollow dot. `words` says what the dot means in this section, so it is
@@ -30,8 +31,10 @@ export type ShellRow = {
 export type ShellData = {
   name: string;
   initials: string;
-  /** 1 to 7 when the person is a One (F-COLOR.tiers/1: their own account button keeps the tier ring). */
+  /** 1 to 7 for everyone (L-ONES.rules/4); null only when it cannot be read. Their own account button keeps the tier
+   * ring (F-COLOR.tiers/1) and says "Tier 3, Flame" (C-SIDEBAR.anatomy/5). */
   tier: number | null;
+  /** The tier's name from E-ENUMS.tier ("Flame"). */
   tierName: string | null;
   inboxUnread: number;
   drafts: ShellRow[];
@@ -182,15 +185,32 @@ export function committeeRows(committee: Pick<CommitteeResponse, "items"> | null
     }));
 }
 
+/** L-ONES.rules/3–4: an active One's tier, else the person's own (`users.tier`, never null). One read, and nothing
+ * else of the One or of points; myOne() stays for the One-only screens. */
+export async function myTier(me: CurrentUser): Promise<number | null> {
+  const row = await getDb()
+    .selectFrom("users as u")
+    .leftJoin("ones as o", (join) =>
+      join.onRef("o.user_id", "=", "u.id").on("o.status", "=", "active").on("o.number", "is not", null),
+    )
+    .select((eb) => eb.fn.coalesce("o.tier", "u.tier").as("tier"))
+    .where("u.id", "=", me.id)
+    .executeTakeFirst();
+  return row?.tier ?? null;
+}
+
+const tierName = (tier: number | null): string | null =>
+  tier === null ? null : (TIER_NAME[String(tier) as keyof typeof TIER_NAME] ?? null);
+
 export async function shellData(me: CurrentUser): Promise<ShellData> {
   const device = await askingDevice();
   // Each section only for whoever has its sidebar item (policy/rbac.yaml navigation:), so a read the worker would
   // refuse (BLD-B232) is never made.
   const onNav = (key: string) => me.nav.some((n) => n.key === key);
-  const [mine, counts, one, saved, desk, committee] = await Promise.all([
+  const [mine, counts, tier, saved, desk, committee] = await Promise.all([
     inTime(myIdeas(me)),
     inTime(inboxCounts(me)),
-    inTime(myOne(me)),
+    inTime(myTier(me)),
     me.contributorCode
       ? inTime(
           draftApi.list(me, device, false).then((r) => (r.body as { items?: DraftListItem[] }).items ?? []),
@@ -209,12 +229,11 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
     .filter((i) => !i.draft && i.idea_id)
     .slice(0, 3)
     .map(ideaRow);
-  const active = one?.active ? one : null;
   return {
     name: me.name,
     initials: initialsOf(me.name),
-    tier: active?.tier ?? null,
-    tierName: active?.tier_name ?? null,
+    tier,
+    tierName: tierName(tier),
     inboxUnread: counts?.unread ?? 0, // L-INBOX.rules/1: the Inbox's own unread count
     drafts,
     ideas: shared,
