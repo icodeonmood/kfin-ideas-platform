@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 WEEK_DAYS = 6  # within this many days a day is named by its weekday ("Friday"); older ones carry the date
+TYPED_UP_IN_ENGLISH = "Typed up in English"  # an English copy's label (L-DRAFT.voice/4, the `Ways` board)
 
 
 def clock(at: dt.datetime) -> str:

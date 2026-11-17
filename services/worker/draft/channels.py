@@ -9,7 +9,7 @@ gets a polite bounce, which comms sends from the code returned here. The person'
 masked before anything is stored (DEC-103) and becomes the draft's first message. A forwarded thread is context
 only: it is kept masked with the draft's origin for the person to read, and never quoted by the parts. Nothing that
 arrives this way is shared until the person goes through Check it; their Inbox says the draft was kept
-(`draft_kept`, "Check and send").
+(`draft_kept` with `refs.via`, "Check and send").
 """
 
 from __future__ import annotations
@@ -28,6 +28,9 @@ from onepc.context import seal_text
 
 log = get_logger("draft.channels")
 SWITCH = {"email": "intake.email", "teams": "intake.teams"}
+# The Inbox item's one action, by where the draft came from (BLD-C037): a forwarded draft is checked and sent
+# (J-RESUME/6, S-H3), the person's own draft kept from their phone is carried on (J-RESUME/3, L-INBOX "Draft kept").
+KEPT_ACTION = {"phone": "Carry on", "email": "Check and send", "teams": "Check and send"}
 SUBJECT_MAX = 200
 THREAD_MAX = 20_000
 
@@ -115,7 +118,7 @@ def intake(conn: Conn, arrival: Arrival) -> dict[str, Any]:
         )
         _, run_id = _add(conn, owner, idea_uuid, device, text=arrival.note, via=arrival.channel,
                          text_en=arrival.note_en)  # fmt: skip
-        _kept(conn, owner, idea_uuid, arrival.channel)
+        kept(conn, owner, idea_uuid, arrival.channel)
     log.info("intake.kept", channel_code=arrival.channel, idea_uuid=idea_uuid, run_id=run_id)
     return {"draft_id": idea_uuid, "run_id": run_id}
 
@@ -126,16 +129,21 @@ def _bounce(channel: str, reason: str) -> dict[str, Any]:
     return {"bounced": True, "reason_code": reason}
 
 
-def _kept(conn: Conn, owner: Owner, idea_uuid: str, channel: str) -> None:
-    """The Inbox item "kept your draft from your email" with "Check and send" (L-DRAFT.channels, L-NOTIFY)."""
+def kept(conn: Conn, owner: Owner, idea_uuid: str, via: str) -> None:
+    """The Inbox item "kept your draft from your phone / email / Teams" (L-INBOX "Draft kept", L-DRAFT.channels).
+    `refs.via` (`phone`, `email` or `teams`) is what lane A's Inbox renderer reads for the words; the action is
+    "Check and send" for a forwarded draft and "Carry on" for one kept from the phone, both to the draft on S-04B."""
     from notify import Action, post
 
+    label = KEPT_ACTION.get(via)
+    if label is None:
+        raise ValueError("draft_kept takes phone, email or teams")
     post(
         conn,
         "draft_kept",
         [owner.user_id],
         idea_id=idea_uuid,
-        actions=(Action("Check and send", style="primary", to=f"/share/{idea_uuid}"),),
-        refs={"channel": channel},
+        actions=(Action(label, style="primary", to=f"/share/{idea_uuid}"),),
+        refs={"via": via},
         dedupe_key=f"draft_kept:{idea_uuid}",
     )

@@ -208,7 +208,8 @@ export interface AddMessageRequest {
   via: MessageVia;
   /** DEC-108: the English copy of a voice note or another language; context only, never quoted. */
   text_en?: string;
-  /** A voice note's stream (DEC-108): its English copy is taken from the voice service if the words are unchanged. */
+  /** A voice note's stream (DEC-108): the message is taken from the voice service, its words and its English copy;
+   * words changed before sending are kept without the copy. Without voice in this build: `voice_unavailable`. */
   stream_id?: string;
   /** When it was typed, for a message sent again after being offline (L-DRAFT.autosave/7). */
   at?: IsoDate;

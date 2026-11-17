@@ -36,6 +36,8 @@ UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CODE_RE = re.compile(r"^CTR-[0-9a-f]{6,8}$")
 OFFLINE_DAYS = 30  # a message typed offline keeps its own time only within this window
+# A message stamped later than this, and after the editor's last save, is live, not an offline replay (BLD-C036).
+REPLAY_AFTER = dt.timedelta(seconds=60)
 CREATE_ROUTE = "POST /drafts"
 FILE_ID_RE = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
 MAX_FILES = 20
@@ -118,6 +120,16 @@ def _writable(row: dict[str, Any], device: Device) -> None:
         raise DraftError(409, "archived")
     if device.id and row["editor_device_id"] and row["editor_device_id"] != device.id:
         raise DraftError(409, "open_elsewhere", device=row["editor_device"])
+
+
+def offline_replay(at: dt.datetime | None, editor_at: dt.datetime | None, now: dt.datetime) -> bool:
+    """Whether a message sent with its own time `at` is a true offline replay (L-DRAFT.autosave/7 over /5,
+    BLD-C036): typed before the current editor's last save, or more than a minute ago, and within the window its own
+    time is kept for. Anything else, "now" included, is a live message and passes the one-editor check: a stale
+    second tab cannot write past "Carry on here?" by naming the time."""
+    if at is None or not now - dt.timedelta(days=OFFLINE_DAYS) <= at <= now:
+        return False
+    return (editor_at is not None and at < editor_at) or at < now - REPLAY_AFTER
 
 
 def _touch(conn: Conn, idea_uuid: str, device: Device) -> None:
@@ -222,9 +234,11 @@ def _add(
     at: dt.datetime | None = None,
     defer_run: bool = False,
     files: list[str] | None = None,
+    lang: str | None = None,
 ) -> tuple[str, str | None]:
     """Inside a transaction: mask, store the masked copy, seal the person's words, record what was hidden, link the
-    files added with it, save, then begin the run. Returns (message id, run id)."""
+    files added with it, save, then begin the run. Returns (message id, run id). `lang` is the language the voice
+    service heard; otherwise the script decides."""
     text = _check_text(text)
     english = _check_text(text_en, field="text_en") if text_en else None
     if via not in enums.values("message_via"):
@@ -251,7 +265,7 @@ def _add(
     conn.execute(
         "INSERT INTO idea_messages (id, idea_uuid, seq, via, device, lang, text_encrypted, spans, char_count, "
         "created_at, client_id, text_en_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (mid, idea_uuid, int(stats["last"]) + 1, via, device.kind, _lang(text),
+        (mid, idea_uuid, int(stats["last"]) + 1, via, device.kind, lang or _lang(text),
          seal_text("idea_messages", "text_encrypted", mid, hidden.masked), Jsonb(_spans(hidden)), len(text), when,
          client_id,
          seal_text("idea_messages", "text_en_encrypted", mid, masked_en) if masked_en else None),
@@ -304,33 +318,51 @@ def add_message(
 ) -> tuple[str, str | None]:
     """`POST /drafts/:id/messages`: one more message (typed, a voice note's words, an email or Teams arrival).
     `text` is the person's own words; `text_en`, for a voice note or another language, an English copy labelled as
-    a translation (DEC-108): context for the parts, never quoted. A voice note names its `stream_id`: the finished
-    note is taken over from the voice service (c/sarvam), its English copy kept only if the person did not change
-    the words. `defer_run` keeps the words without building (the S1 interview's answers until the last,
-    L-DRAFT.parts/10)."""
+    a translation (DEC-108): context for the parts, never quoted. A voice note names its `stream_id`: the message
+    is taken from the voice service (`_from_voice`) and then hidden and built exactly like typed words.
+    `defer_run` keeps the words without building (the S1 interview's answers until the last, L-DRAFT.parts/10)."""
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
         known = _by_client_id(conn, idea_uuid, client_id) if client_id else None
         if known:
             return known, None  # sent before (a retry, or a replay): kept once, whoever edits now
-        if client_id and at is not None:
-            # An offline replay (L-DRAFT.autosave/7): what was typed on the device is never discarded, so it is
+        if client_id and offline_replay(at, row["editor_at"], _now(conn)):
+            # A true offline replay (L-DRAFT.autosave/7): what was typed on the device is never discarded, so it is
             # kept, in time order, even when another device has carried on since. It does not take over (BLD-C036).
             if row["archived_at"] is not None:
                 raise DraftError(409, "archived")
         else:
             _writable(row, device)
+        lang = None
         if via == "voice" and stream_id:
-            note = adapters.voice_message(conn, stream_id, idea_uuid=idea_uuid, by_code=owner.code)
-            if (
-                note is not None
-                and not text_en
-                and isinstance(text, str)
-                and text.strip() == note.text.strip()
-            ):
-                text_en = note.text_en
+            text, text_en, lang = _from_voice(conn, owner, idea_uuid, stream_id, text, text_en)
         return _add(conn, owner, idea_uuid, device, text=text, via=via, text_en=text_en or None,
-                    client_id=client_id, at=at, defer_run=defer_run, files=files)  # fmt: skip
+                    client_id=client_id, at=at, defer_run=defer_run, files=files, lang=lang)  # fmt: skip
+
+
+def _from_voice(
+    conn: Conn, owner: Owner, idea_uuid: str, stream_id: str, text: Any, text_en: Any
+) -> tuple[Any, Any, str | None]:
+    """(text, text_en, lang) for a voice note's message (L-DRAFT.voice/2, /4; DEC-108; BLD-C038). The finished note
+    is handed over once (c/sarvam's `voice_to_message`, in this transaction: a refused message hands nothing over).
+    Sent as heard, or with no words in the box: the note's own words and its English copy, "Typed up in English".
+    Changed in the box before sending: the person's changed words, and no English copy, since the note's no longer
+    matches them. A note that is not theirs, not finished, already handed over or past its 24 hours: the words in
+    the box, as sent. Without voice in this build: `voice_unavailable`."""
+    try:
+        note = (
+            adapters.voice_message(conn, stream_id, idea_uuid=idea_uuid, by_code=owner.code)
+            if UUID_RE.match(stream_id)
+            else None
+        )
+    except adapters.VoiceUnavailable:
+        raise DraftError(503, "voice_unavailable") from None
+    if note is None:
+        return text, text_en, None
+    typed = text.strip() if isinstance(text, str) else ""
+    if not typed or typed == note.text.strip():
+        return note.text, note.text_en or text_en, note.lang
+    return text, text_en, note.lang
 
 
 def edit_message(
@@ -648,8 +680,9 @@ def _messages(
             "files": [f for f in files if f.get("message_id") == mid],
             "spans": r["spans"] if own is not None else [],
         }
-        if english:
+        if english:  # labelled as a translation (L-DRAFT.voice/4, DEC-108): context, never quoted
             msg["text_en"] = english
+            msg["text_en_label"] = labels.TYPED_UP_IN_ENGLISH
         if r["edited_at"]:
             msg["edited_at"] = r["edited_at"].isoformat()
         out.append(msg)

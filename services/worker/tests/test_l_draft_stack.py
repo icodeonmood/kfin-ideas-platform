@@ -300,6 +300,81 @@ def test_l_draft_autosave_7_an_offline_replay_is_kept_while_another_device_edits
     assert err.value.code == "open_elsewhere"
 
 
+def test_l_draft_autosave_5_a_message_stamped_now_from_another_device_is_live_bld_c036(drafting: Any) -> None:
+    """A stale second tab cannot write past "Carry on here?" by naming the time: only a message typed before the
+    editor's last save (or over a minute ago) is an offline replay. A stored client_id still answers first."""
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, _ = store.create(db, owner, PHONE, text=W1)
+    db.execute(
+        "UPDATE idea_messages SET created_at = now() - interval '10 minutes' WHERE idea_uuid = %s", (idea,)
+    )
+    store.view(db, owner, idea, LAPTOP, open_=True)  # the laptop is the editor now
+    editor_at = db.execute("SELECT editor_at FROM ideas WHERE id = %s", (idea,)).fetchone()["editor_at"]
+    with pytest.raises(DraftError) as err:
+        store.add_message(
+            db, owner, idea, PHONE, text=W2, client_id="stale-phone-0001", at=dt.datetime.now(dt.UTC)
+        )
+    assert (err.value.code, err.value.extra) == ("open_elsewhere", {"device": "laptop"})
+    assert err.value.status == 409
+    typed = editor_at - dt.timedelta(seconds=30)  # typed on the phone, offline, before the laptop carried on
+    mid, _ = store.add_message(db, owner, idea, PHONE, text=W2, client_id="offline-phone-0003", at=typed)
+    again, run = store.add_message(
+        db, owner, idea, PHONE, text=W2, client_id="offline-phone-0003", at=dt.datetime.now(dt.UTC)
+    )
+    assert again == mid and run is None  # the stored message, before any check
+    draft = store.view(db, owner, idea, LAPTOP)
+    assert [m["text"] for m in draft["messages"]] == [W1, W2]
+    assert draft["editor"] == {"device": "laptop", "this_device": True}  # the replay did not take over
+
+
+STREAM = "5f0c2d3e-8a41-4c6b-9f7e-2b1d0c9a8e71"
+
+
+def test_l_draft_voice_4_a_voice_note_is_hidden_and_kept_with_its_english_copy_bld_c038(
+    drafting: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POST /drafts/:id/messages with via voice and a stream id: the message is c/sarvam's voice_to_message (here a
+    stand-in), then hidden, sealed and kept like typed words, with the English copy labelled and masked."""
+    import generators
+
+    from draft import adapters
+
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, _ = store.create(db, owner, PHONE, text=W1)
+    pan = generators.pan(generators.default_rng(11))
+    heard = f"R07 ka matlab kisi ko nahi pata, isliye sab branch ko call karte hain. Ek investor ne PAN {pan} bola."
+    english = f"Nobody knows what R07 means, so everyone calls the branch. An investor read out PAN {pan}."
+    handed: list[tuple[Any, ...]] = []
+
+    def voice_message(
+        conn: Any, stream_id: str, *, idea_uuid: str, by_code: str, consume: bool = True
+    ) -> Any:
+        handed.append((stream_id, idea_uuid, by_code, consume))
+        return adapters.VoiceNote(text=heard, text_en=english, lang="hi")
+
+    monkeypatch.setattr(adapters, "voice_message", voice_message)
+    mid, _ = store.add_message(db, owner, idea, PHONE, text=heard, via="voice", stream_id=STREAM)
+    assert handed == [(STREAM, idea, owner.code, True)]
+    msg = next(m for m in store.view(db, owner, idea, PHONE)["messages"] if m["id"] == mid)
+    assert (msg["via"], msg["lang"], msg["text"]) == ("voice", "hi", heard)  # their own words, to them
+    assert msg["text_en_label"] == "Typed up in English"
+    assert msg["text_en"].startswith("Nobody knows what R07 means") and pan not in msg["text_en"]
+    row = db.execute("SELECT text_encrypted FROM idea_messages WHERE id = %s", (mid,)).fetchone()
+    assert pan not in (open_text("idea_messages", "text_encrypted", mid, row["text_encrypted"]) or pan)
+    assert msg["spans"] and msg["spans"][0]["kind"] == "pan"  # hidden first, like typed words
+
+    def unavailable(*_: Any, **__: Any) -> Any:
+        raise adapters.VoiceUnavailable
+
+    monkeypatch.setattr(adapters, "voice_message", unavailable)
+    with pytest.raises(DraftError) as err:
+        store.add_message(db, owner, idea, PHONE, text=heard, via="voice", stream_id=STREAM)
+    assert (err.value.status, err.value.code) == (503, "voice_unavailable")
+    assert len(store.view(db, owner, idea, PHONE)["messages"]) == 2  # nothing kept
+
+
 def test_l_draft_autosave_8_untouched_drafts_are_archived_never_deleted(drafting: Any) -> None:
     db, owner = drafting
     old, _ = store.create(db, owner, LAPTOP, text=W1)

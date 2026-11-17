@@ -5,10 +5,11 @@
   soon as the `hide` package is on main (a guarded import, BLD-C038). Until then it masks the customer details of
   DEC-103 with the level-1 patterns alone; L-HIDE adds the gatekeeper's pass and names next to a detail, and keeps
   each detail's id across edits. `hide_text` and `preview` go through the same masking.
-- Voice (DEC-108, branch c/sarvam): `voice_message` has the signature of `speech.drafts.voice_to_message`: a
-  finished voice note handed to the draft as one message, the person's words plus an English copy. Until c/sarvam is
-  on main it returns None, and the words the client sends are kept as they are.
-  TODO(c/sarvam): replace with `from speech.drafts import voice_to_message` once c/sarvam lands.
+- Voice (DEC-108, branch c/sarvam): `voice_message` calls c/sarvam's `speech.drafts.voice_to_message(conn,
+  stream_id, *, idea_uuid, by_code, consume=True) -> VoiceMessage | None` as soon as the `speech` package is on main
+  (a guarded import): a finished voice note handed to the draft once, as one message, the person's own words
+  (`text`) plus the labelled English copy (`text_en`). Until then it raises `VoiceUnavailable` and the message route
+  answers `voice_unavailable`.
 - L-SIMILAR (branch c/similar): `similar_for` calls c/similar's `similar.similar_for(conn, idea_uuid, title,
   summary) -> list[dict] | None` (None: couldn't check) as soon as it is on main (a guarded import, BLD-C038). Until
   then similar ideas are not looked for here and the part says so ("Couldn't check for similar ideas. The review
@@ -84,8 +85,9 @@ def landed(module: str, name: str) -> Callable[..., Any] | None:
     try:
         mod = importlib.import_module(module)
     except ModuleNotFoundError as exc:
-        if exc.name != module:
-            raise
+        missing = exc.name or ""
+        if not missing or not (module == missing or module.startswith(missing + ".")):
+            raise  # the package is there and one of its own imports is missing: broken, not absent
         return None
     fn = getattr(mod, name, None)
     return fn if callable(fn) else None
@@ -240,9 +242,38 @@ def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[di
     return found
 
 
+class VoiceUnavailable(Exception):
+    """Voice notes are not in this build: c/sarvam's `speech` package is not on main."""
+
+
+@dataclass(frozen=True)
+class VoiceNote:
+    """A finished voice note as the draft keeps it (L-DRAFT.voice/4). `text`: the person's own words as heard (hidden
+    and sealed by the message path like typed words). `text_en`: the English copy, labelled "Typed up in English";
+    None when the note was not translated. `lang`: the language heard ("te" for "te-IN"), or None."""
+
+    text: str
+    text_en: str | None
+    lang: str | None
+
+
 def voice_message(
     conn: Conn, stream_id: str, *, idea_uuid: str, by_code: str, consume: bool = True
-) -> Any | None:
-    """A finished voice note for this draft (`text`, `text_en`, `lang`, …), handed over once, or None when there is
-    none to hand over. c/sarvam's `voice_to_message`; until it lands, None."""
-    return None
+) -> VoiceNote | None:
+    """The finished voice note for this draft, handed over once (with `consume`, in the caller's transaction), or
+    None when there is none to hand over: not theirs, not finished, already handed over or past its 24 hours.
+    Raises VoiceUnavailable until c/sarvam's `voice_to_message` is on main."""
+    hand = landed("speech.drafts", "voice_to_message")
+    if hand is None:
+        raise VoiceUnavailable
+    got = hand(conn, stream_id, idea_uuid=idea_uuid, by_code=by_code, consume=consume)
+    text = getattr(got, "text", None)
+    if not isinstance(text, str) or not text.strip():
+        return None
+    english = getattr(got, "text_en", None)
+    lang = getattr(got, "lang", None)
+    return VoiceNote(
+        text=text,
+        text_en=english if isinstance(english, str) and english.strip() else None,
+        lang=lang.split("-")[0].lower() if isinstance(lang, str) and lang else None,
+    )

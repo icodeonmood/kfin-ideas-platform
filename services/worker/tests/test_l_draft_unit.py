@@ -441,3 +441,179 @@ def test_l_draft_sort_lists_from_l_sort_carry_draftings_cues() -> None:
     assert [o.label for o in merged.affects] == ["Investors", "KFin teams", "AMC clients"]  # never "Others"
     assert "investor" in merged.affects[0].cues and merged.area[1].cues == ()
     assert with_sorting(RULES, None) is RULES
+
+
+# ---- L-DRAFT.autosave/5, /7: a true offline replay only (BLD-C036) --------------------------------------------------
+
+
+def test_l_draft_autosave_5_a_message_stamped_now_is_live_not_an_offline_replay_bld_c036() -> None:
+    from draft.store import offline_replay
+
+    now = dt.datetime(2026, 11, 17, 21, 0, tzinfo=IST)
+    editor_at = now - dt.timedelta(seconds=20)  # the other device saved 20 seconds ago
+    assert offline_replay(now, editor_at, now) is False  # a stale tab naming "now" gets "Carry on here?"
+    # after the editor's last save, and a clock ahead, are not offline either
+    assert offline_replay(now - dt.timedelta(seconds=5), editor_at, now) is False
+    assert offline_replay(None, editor_at, now) is False
+    assert offline_replay(now + dt.timedelta(minutes=5), editor_at, now) is False
+    assert offline_replay(now - dt.timedelta(days=31), editor_at, now) is False  # past the 30-day window
+
+
+def test_l_draft_autosave_7_typed_before_the_editors_save_or_a_minute_ago_is_a_replay_bld_c036() -> None:
+    from draft.store import offline_replay
+
+    now = dt.datetime(2026, 11, 17, 21, 0, tzinfo=IST)
+    assert offline_replay(now - dt.timedelta(seconds=30), now - dt.timedelta(seconds=10), now) is True
+    assert offline_replay(now - dt.timedelta(minutes=2), now, now) is True  # before the other device saved
+    assert offline_replay(now - dt.timedelta(seconds=61), None, now) is True  # over a minute old
+    assert offline_replay(now - dt.timedelta(days=29), now, now) is True
+
+
+# ---- L-DRAFT.voice: a voice note's message from c/sarvam's voice_to_message (DEC-108, BLD-C038) ---------------------
+
+
+STREAM = "5f0c2d3e-8a41-4c6b-9f7e-2b1d0c9a8e71"
+HEARD = "R07 ka matlab kisi ko nahi pata, isliye sab branch ko call karte hain."
+HEARD_EN = "Nobody knows what R07 means, so everyone calls the branch."
+
+
+def _speech(monkeypatch: pytest.MonkeyPatch, note: Any) -> dict[str, Any]:
+    """A stand-in `speech.drafts` with c/sarvam's signature."""
+    import sys
+    import types
+
+    seen: dict[str, Any] = {}
+
+    def voice_to_message(
+        conn: Any, stream_id: str, *, idea_uuid: str, by_code: str, consume: bool = True
+    ) -> Any:
+        seen["call"] = (stream_id, idea_uuid, by_code, consume)
+        return note
+
+    pkg, mod = types.ModuleType("speech"), types.ModuleType("speech.drafts")
+    mod.voice_to_message = voice_to_message
+    pkg.drafts = mod
+    monkeypatch.setitem(sys.modules, "speech", pkg)
+    monkeypatch.setitem(sys.modules, "speech.drafts", mod)
+    return seen
+
+
+def _note(text: str = HEARD, text_en: str | None = HEARD_EN, lang: str | None = "hi-IN") -> Any:
+    import types
+
+    return types.SimpleNamespace(
+        stream_id=STREAM, text=text, text_masked=text, spans=[], text_en=text_en,
+        text_en_label="Typed up in English", translated=True, lang=lang, language="Hindi", seconds=12.0,
+        summary="Voice message, 12 seconds, in Hindi", via="voice",
+    )  # fmt: skip
+
+
+def test_l_draft_voice_the_adapter_hands_over_the_note_once_by_c_sarvams_name_bld_c038(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _speech(monkeypatch, _note())
+    got = adapters.voice_message(cast(Any, None), STREAM, idea_uuid="idea-1", by_code="CTR-0a1b2c")
+    assert got == adapters.VoiceNote(text=HEARD, text_en=HEARD_EN, lang="hi")
+    assert seen["call"] == (STREAM, "idea-1", "CTR-0a1b2c", True)  # consumed: the held copies go
+    _speech(monkeypatch, None)  # not theirs, not finished, handed over or expired
+    assert adapters.voice_message(cast(Any, None), STREAM, idea_uuid="idea-1", by_code="CTR-0a1b2c") is None
+    _speech(monkeypatch, _note(text_en="  ", lang=None))  # the translation failed
+    untranslated = adapters.voice_message(cast(Any, None), STREAM, idea_uuid="i", by_code="CTR-0a1b2c")
+    assert untranslated == adapters.VoiceNote(text=HEARD, text_en=None, lang=None)
+
+
+def test_l_draft_voice_without_speech_in_the_build_the_adapter_says_unavailable_bld_c038(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "speech.drafts", None)  # absent, whatever the checkout holds
+    with pytest.raises(adapters.VoiceUnavailable):
+        adapters.voice_message(cast(Any, None), STREAM, idea_uuid="idea-1", by_code="CTR-0a1b2c")
+    assert adapters.landed("no_such_lane_pkg.drafts", "voice_to_message") is None  # a missing parent too
+
+
+def test_l_draft_voice_a_landed_package_that_breaks_on_import_is_an_error_bld_c038(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+
+    pkg = tmp_path / "brokenlane"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "drafts.py").write_text("import no_such_dependency_xyz\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "brokenlane", raising=False)
+    with pytest.raises(ModuleNotFoundError):
+        adapters.landed("brokenlane.drafts", "voice_to_message")
+
+
+def test_l_draft_voice_4_sent_as_heard_keeps_the_own_words_and_the_english_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from draft.store import Owner, _from_voice
+
+    owner = Owner("0b5e7f7a-1c2d-4e3f-8a9b-0c1d2e3f4a5b", "CTR-0a1b2c")
+    seen = _speech(monkeypatch, _note())
+    assert _from_voice(cast(Any, None), owner, "idea-1", STREAM, HEARD, None) == (HEARD, HEARD_EN, "hi")
+    assert seen["call"] == (STREAM, "idea-1", "CTR-0a1b2c", True)
+    _speech(monkeypatch, _note())
+    assert _from_voice(cast(Any, None), owner, "idea-1", STREAM, None, None) == (HEARD, HEARD_EN, "hi")
+    _speech(monkeypatch, _note())
+    assert _from_voice(cast(Any, None), owner, "idea-1", STREAM, "  ", None) == (HEARD, HEARD_EN, "hi")
+
+
+def test_l_draft_voice_2_words_changed_before_sending_are_kept_without_the_notes_english(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from draft.store import Owner, _from_voice
+
+    owner = Owner("0b5e7f7a-1c2d-4e3f-8a9b-0c1d2e3f4a5b", "CTR-0a1b2c")
+    changed = HEARD + " Roz 40 call aate hain."
+    _speech(monkeypatch, _note())
+    assert _from_voice(cast(Any, None), owner, "idea-1", STREAM, changed, None) == (changed, None, "hi")
+    _speech(monkeypatch, None)  # nothing to hand over: the words in the box, as sent
+    assert _from_voice(cast(Any, None), owner, "idea-1", STREAM, changed, None) == (changed, None, None)
+    seen = _speech(monkeypatch, _note())
+    got = _from_voice(cast(Any, None), owner, "idea-1", "not-a-stream", changed, None)
+    assert got == (changed, None, None)
+    assert "call" not in seen  # a malformed stream id is never looked up
+
+
+def test_l_draft_voice_without_speech_the_message_route_answers_voice_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from draft.store import DraftError, Owner, _from_voice
+
+    owner = Owner("0b5e7f7a-1c2d-4e3f-8a9b-0c1d2e3f4a5b", "CTR-0a1b2c")
+    monkeypatch.setitem(sys.modules, "speech.drafts", None)
+    with pytest.raises(DraftError) as err:
+        _from_voice(cast(Any, None), owner, "idea-1", STREAM, HEARD, None)
+    assert (err.value.status, err.value.body()) == (503, {"error": "voice_unavailable"})
+
+
+# ---- L-INBOX "Draft kept": refs.via and the action by source (J-RESUME/3, /6) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("via", "label"), [("email", "Check and send"), ("teams", "Check and send"), ("phone", "Carry on")]
+)
+def test_l_inbox_draft_kept_posts_refs_via_with_its_action_j_resume_3_6(
+    monkeypatch: pytest.MonkeyPatch, via: str, label: str
+) -> None:
+    import notify
+    from draft.channels import kept
+    from draft.store import Owner
+
+    owner = Owner("0b5e7f7a-1c2d-4e3f-8a9b-0c1d2e3f4a5b", "CTR-0a1b2c")
+    posted: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(notify, "post", lambda conn, kind, to, **kw: posted.append((kind, to, kw)))
+    kept(cast(Any, None), owner, "idea-1", via)
+    [(kind, to, kw)] = posted
+    assert (kind, to, kw["refs"]) == ("draft_kept", [owner.user_id], {"via": via})  # never `channel`
+    [action] = kw["actions"]
+    assert (action.label, action.style, action.to) == (label, "primary", "/share/idea-1")  # S-04B
+    with pytest.raises(ValueError):
+        kept(cast(Any, None), owner, "idea-1", "web")

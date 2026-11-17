@@ -93,7 +93,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
-| `L-DRAFT` | `services/worker/draft/` (store, runs, parts, labels, adapters, archive), `services/worker/api/drafts.py`, `agents/draft-part`, `apps/web/src/app/api/drafts/*`, `apps/web/src/server/drafts.ts`, `apps/web/src/lib/draft-stream.ts`, `rules/drafting.md` (BLD-C070 to C079; review fixes BLD-C033 to C039) | built (c/draft): parts, runs, pins, receipts, autosave, one editor, offline, archive; email and Teams intake built and off (DEC-105); calls c/hide's `hide_message` and c/similar's `similar_for` once they land | P0 | C |
+| `L-DRAFT` | `services/worker/draft/` (store, runs, parts, labels, adapters, archive), `services/worker/api/drafts.py`, `agents/draft-part`, `apps/web/src/app/api/drafts/*`, `apps/web/src/server/drafts.ts`, `apps/web/src/lib/draft-stream.ts`, `rules/drafting.md` (BLD-C070 to C079; review fixes BLD-C033 to C039) | built (c/draft): parts, runs, pins, receipts, autosave, one editor, offline, archive; email and Teams intake built and off (DEC-105); calls c/hide's `hide_message`, c/similar's `similar_for` and c/sarvam's `voice_to_message` (voice notes into the draft) once they land | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |

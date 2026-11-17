@@ -145,6 +145,8 @@ export interface Message {
   text: string;
   /** DEC-108: an English copy of a voice note or another language, labelled as a translation. Never quoted. */
   text_en?: string;
+  /** With `text_en`: "Typed up in English" (L-DRAFT.voice/4). */
+  text_en_label?: string;
   lang?: string;
   at: IsoDate;
   /** "Just now", "Friday, 8:42 pm, on your phone" (L-DRAFT, BLD-C071). */
