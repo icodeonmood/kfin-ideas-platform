@@ -1,8 +1,11 @@
-"""Re-index what changed between the last indexed commit and HEAD (§2.6–2.7).
+"""Re-index what changed between the last indexed commit and HEAD (§2.6–2.7), and shared ideas from the database.
 
 Reads file content from the commit, never the working tree, so a write in progress cannot be half-indexed.
 Ideas are one chunk (title, what it is, who it touches); other concept files are split by `##` section.
 Deleting a file removes its chunks, links, terms and read-model row.
+
+Since DEC-106 nothing writes ideas to the repo. Every poll also brings the shared ideas' chunks in line with their
+database rows (`similar.index.sync`, BLD-C091); the new matcher reads only those, never a repo idea file.
 """
 
 from __future__ import annotations
@@ -146,6 +149,7 @@ class Indexer:
     def run_once(self, *, rebuild: bool = False) -> IndexResult:
         head = self.git.head() if self.git.is_repo() else None
         with connect(self.database_url, autocommit=True) as conn:
+            self._sync_ideas(conn)
             state = conn.execute("SELECT last_commit FROM index_state WHERE id = 1").fetchone()
             last = state["last_commit"] if state else None
             result = IndexResult(from_commit=last, to_commit=head)
@@ -160,8 +164,9 @@ class Indexer:
                 paths = [(c.path, c.status) for c in self.git.diff(last, head)]
             with conn.transaction():
                 if full:
-                    # Research-file text is indexed from the file store, not the repo (§4.2 step 6): keep it.
-                    conn.execute("DELETE FROM chunks WHERE attachment_id IS NULL")
+                    # Research-file text is indexed from the file store, not the repo (§4.2 step 6), and shared
+                    # ideas from their database rows (BLD-C091): keep both.
+                    conn.execute("DELETE FROM chunks WHERE attachment_id IS NULL AND idea_uuid IS NULL")
                     for table in ("links", "terms", "repo_files"):
                         conn.execute(f"DELETE FROM {table}")  # noqa: S608 - fixed table names
                 for rel, status in paths:
@@ -200,6 +205,22 @@ class Indexer:
             except Exception:
                 log.exception("indexer.failed")
             time.sleep(self.settings.index_poll_seconds)
+
+    @staticmethod
+    def _sync_ideas(conn: Conn) -> None:
+        """Shared ideas are indexed from their database rows, not the repo (L-SIMILAR, BLD-C091, DEC-106). A
+        failure here is logged by type and never stops the repo's own indexing."""
+        from similar.index import sync
+
+        try:
+            counts = sync(conn)
+        except Exception as exc:
+            log.error("indexer.ideas_failed", error_type=type(exc).__name__)
+            return
+        if counts["embedded"] or counts["removed"]:
+            log.info(
+                "indexer.ideas_synced", embedded_count=counts["embedded"], removed_count=counts["removed"]
+            )
 
     # ---- per file ----------------------------------------------------------------------------------
     def _delete(self, conn: Conn, rel: str) -> None:
