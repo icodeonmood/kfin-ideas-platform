@@ -13,8 +13,9 @@ What it gives every screen of the pack something to show:
   steps and one archived, each with its messages, six parts, hidden details and sorting;
 - the review desk's four tabs: to review, waiting on the sharer (one overdue), answered, decided;
 - decisions inside the Ones Committee's window (one extended), expired ones, and a reversal;
-- a team-up request waiting on a lead (with an idea brought along), approved and declined ones, a draft's merge
-  request waiting, an accepted one, and a desk merge inside its window;
+- a team-up request waiting on a lead (with an idea brought along), approved and declined ones, three drafts' merge
+  requests waiting on one lead (each in her Inbox, one per answer J-SIMILAR/6 walks), an accepted one, and a desk
+  merge inside its window;
 - two ideas on one reviewer's desk, opened, that list each other as similar, ready for a desk merge (J-REVIEW/M3);
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
@@ -297,6 +298,20 @@ IDEAS: dict[str, Spec] = {
                 "goes by post. The distributor takes the calls while they wait."],
                often="Every week, across my distributors", shared_days=3.5, opened_days=2.0, reviewer="lavanya",
                affects=["Distributors", "Investors"]),
+    # J-SIMILAR/6b and /6c (L-MERGE.request/6, 7): drafts whose merge requests wait on Rekha, as T2's does.
+    "N2": Spec("naveen", "draft", "problem", "Branch staff see no reason when a SIP debit bounces",
+               "When an investor asks why a SIP debit bounced, the branch has no reason to give. Staff raise a mail "
+               "each time.",
+               "Investor service",
+               ["Investors come to the counter to ask why their SIP debit bounced. We have no reason on our screen, "
+                "so we raise a mail and ask them to come back."],
+               often="Several times a day", step="check:6", saved_days=0.3),
+    "G2": Spec("geetanjali", "draft", "problem", "Failed SIP debit notes show only a bank code",
+               "The note for a failed SIP debit shows only a bank code. Investors cannot tell what to fix.",
+               "Investor service",
+               ["The note an investor gets for a failed SIP debit shows only a bank code. They cannot tell whether "
+                "to add money or change the mandate, so they call us."],
+               often="About ten calls a week at our branch", step="check:6", saved_days=0.5),
 }  # fmt: skip
 # J2 was written after F2 was shared, so it found F2 while drafting (L-SIMILAR.rules/4, 5); F2 got J2 when J2 was
 # shared (L-SIMILAR.rules/6). Nobody asked to merge: the desk can (L-MERGE.desk/1), F2 leading as shared first.
@@ -794,6 +809,8 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         ("T5", "P1", "related", "Related: papers asked for twice", "kept_separate"),
         ("T6", "Z1", "related", "Related: distributors waiting on us", "previewed"),
         ("T11", "R2", "close", "Close match: one message after a failed debit", None),
+        ("N2", "R1", "close", "Close match: no reason given for a failed SIP debit", "merge_asked"),
+        ("G2", "R1", "close", "Close match: investors cannot tell why a SIP debit failed", "merge_asked"),
     ):
         conn.execute(
             "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason, outcome) VALUES (%s, %s, %s, %s, %s)",
@@ -813,9 +830,24 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         (m[later].uuid,),
     )
 
-    # T2's merge request waits on Rekha (Submit is held). N1's was accepted into T7.
+    # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
+    # (L-TEAMUP.rules/5, J-SIMILAR/5). N1's was accepted into T7.
     for key, other, state, note, days in (
         ("T2", "R1", "waiting", "Mine is the same failed SIP SMS. Happy for it to be part of yours.", 0.3),
+        (
+            "N2",
+            "R1",
+            "waiting",
+            "Investors ask me the same thing at the counter. Please take mine into yours.",
+            0.25,
+        ),
+        (
+            "G2",
+            "R1",
+            "waiting",
+            "My branch hears the same question about failed debits. Happy to join yours.",
+            0.45,
+        ),
         (
             "N1",
             "T7",
@@ -833,6 +865,10 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
              tanvi["code"] if state == "accepted" else None, _ago(days, now),
              _ago(days - 0.4, now) if state == "accepted" else None),
         )  # fmt: skip
+        if state == "waiting":  # as the request's sender posts it: the draft comes along (brought 1)
+            _inbox_item(conn, p[m[other].spec.owner]["id"], "teamup_request", p[m[key].spec.owner]["id"],
+                        m[other].uuid, {"idea_id": m[other].ref, "request_id": rid, "request": "merge", "brought": 1},
+                        _ago(days, now), needs=True, actions=ANSWERS_WITH_MERGE)  # fmt: skip
         if state == "accepted":
             merge_id = str(uuid.uuid4())
             conn.execute(
@@ -1114,6 +1150,30 @@ def _glow_up(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int], 
     )
 
 
+# A team-up request with an idea brought along, or a draft's merge request: the lead's three answers (L-TEAMUP.rules/5).
+ANSWERS_WITH_MERGE = [
+    {"label": "Decline", "op": "decline", "style": "text"},
+    {"label": "Team up only", "op": "team_only", "style": "line"},
+    {"label": "Merge it", "op": "merge", "style": "primary"},
+]
+
+
+def _inbox_item(
+    conn: Conn, to: str, kind: str, sender: str | None, idea_uuid: str, refs: dict[str, Any], at: dt.datetime, *,
+    actions: list[dict[str, str]], needs: bool = False, due: dt.datetime | None = None, read: bool = False,
+    archived: bool = False,
+) -> None:  # fmt: skip
+    """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088)."""
+    conn.execute(
+        "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
+        "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
+        "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (to, f"inbox/{kind}", f"inbox.{kind}", Jsonb(refs), "read" if read else "sent", at, at,
+         at + dt.timedelta(hours=1) if read else None, kind, sender, idea_uuid, needs, due,
+         at + dt.timedelta(days=1) if archived else None, Jsonb(actions)),
+    )  # fmt: skip
+
+
 def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
     """Every Inbox kind (E-ENUMS.inbox) at least once. Text is rendered from templates at read time (BLD-088)."""
     items = (
@@ -1122,9 +1182,7 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
         ("tanvi", "answer_reminder", None, "T6", 0.1, True, 2.0, False, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
-        ("tanvi", "teamup_request", "esha", "T5", 0.5, True, None, False, False,
-         [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Team up only", "op": "team_only", "style": "line"},
-          {"label": "Merge it", "op": "merge", "style": "primary"}]),
+        ("tanvi", "teamup_request", "esha", "T5", 0.5, True, None, False, False, ANSWERS_WITH_MERGE),
         ("tanvi", "decision", "harish", "T7", 5.0, False, None, True, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("tanvi", "decision_reversed", "manoj", "T9", 2.0, False, None, False, False,
@@ -1163,17 +1221,9 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Read the note", "to": "idea", "style": "line"}]),
     )  # fmt: skip
     for to, kind, sender, key, days, needs, due, read, archived, actions in items:
-        at = _ago(days, now)
-        conn.execute(
-            "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
-            "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
-            "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (p[to]["id"], f"inbox/{kind}", f"inbox.{kind}", Jsonb({"idea_id": m[key].ref}),
-             "read" if read else "sent", at, at, at + dt.timedelta(hours=1) if read else None, kind,
-             p[sender]["id"] if sender else None, m[key].uuid, needs,
-             now + dt.timedelta(days=due) if due is not None else None,
-             at + dt.timedelta(days=1) if archived else None, Jsonb(actions)),
-        )  # fmt: skip
+        _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
+                    {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
+                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
