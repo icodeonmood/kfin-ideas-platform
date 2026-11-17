@@ -1336,11 +1336,52 @@ export type DecisionForViewerResponse =
 // ---------------------------------------------------------------------------------------------------------------
 export interface TeamUpDraftNote {
   note: string;
-  own_ideas: { id: string; title: string; status: string }[];
+  own_ideas: { id: string; title: string; status: string; meta?: string }[];
+  /** The idea asked about and its lead, for the sheet's title and line (C-SHEET-TEAMUP.compose/2). */
+  idea?: { id: string; title: string };
+  lead?: import("./entities").PersonRef;
+  /** 30 (`notes.teamup_note_min_chars`) and 600 (BLD-F021). */
+  min_chars?: number;
+  max_chars?: number;
 }
 export interface TeamUpCreate {
   note: string;
   brought_idea_ids: string[];
+  /** "Keep mine separate" from Check it: the person's own draft (BLD-F020). */
+  draft_id?: string;
+}
+/** What the screen that opened the sheet shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4–8 on Check it). */
+export interface TeamUpAfter {
+  state: string;
+  line: string;
+  label?: string;
+  detail?: string;
+  action?: { label: string; op?: string; to?: string } | null;
+  can_submit?: boolean;
+}
+/** POST /ideas/:id/team-up and DELETE /team-up/:id: the request, its kind, and what the opener shows now. */
+export type TeamUpSendResponse = TeamUpRequest & { request?: "teamup" | "merge"; after: TeamUpAfter | null };
+/** GET /ideas/:id/team-up (BLD-F015): the signed-in person's team-up state on one idea. */
+export interface TeamUpMine {
+  idea_id: string;
+  lead: import("./entities").PersonRef;
+  /** "lead" or "member" when on the crew. */
+  me: string | null;
+  crew_count: number;
+  can_request: boolean;
+  why_not: "already_on_crew" | "idea_closed" | "already_requested" | null;
+  request: (TeamUpRequest & { request?: "teamup" | "merge" }) | null;
+  after: TeamUpAfter | null;
+}
+/** GET and POST /drafts/:id/merge-request: the draft's latest merge request (`{state: 'none'}` when none). */
+export interface DraftMergeRequestState {
+  id?: string;
+  other_idea_id?: string;
+  state: string;
+  note?: string;
+  lead?: import("./entities").PersonRef;
+  lead_reason?: string;
+  after: TeamUpAfter | null;
 }
 export type TeamUpResponse = TeamUpRequest;
 export interface TeamUpAnswerRequest {

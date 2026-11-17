@@ -155,11 +155,17 @@ def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
 
 @handler("comms.digest")
 def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
+    """The decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203), every working day once
+    `DECIDE_BY_DIGEST` is on; off at launch (BLD-B241), so `digest.queue` queues nothing. The pack has no personal
+    digest: no 1% Club Inbox kind is ever held for one. Mail the old routes held before that is still flushed on
+    Mondays, whatever the setting, so nothing already queued is dropped, until those routes retire after launch."""
     import datetime as dt
     from zoneinfo import ZoneInfo
 
     from comms.send import send_digests
+    from notify import digest
 
+    digest.queue(conn)
     if dt.datetime.now(ZoneInfo("Asia/Kolkata")).weekday() == 0 or payload.get("force"):
         send_digests(conn)
 
@@ -285,10 +291,30 @@ def voice_purge(conn: Conn, payload: dict[str, Any]) -> None:
 
 @handler("voice.sweep")
 def voice_sweep(conn: Conn, payload: dict[str, Any]) -> None:
-    """Every 15 minutes: anything held past 24 hours, or for an idea no longer a draft (DEC-096)."""
+    """Every 15 minutes: anything held past 24 hours, or for an idea no longer a draft (DEC-096); and what a
+    streamed voice note heard, held past 24 hours without the draft taking it (DEC-108, BLD-C112)."""
+    from speech import drafts
     from voice import service
 
     service.sweep(conn)
+    drafts.sweep(conn)
+
+
+@handler("listen.prefetch")
+def listen_prefetch(conn: Conn, payload: dict[str, Any]) -> None:
+    """An idea was sent, or its chapters were asked for: make and cache its Listen audio (DEC-108, BLD-C114)."""
+    from speech import listen
+
+    listen.prefetch(conn, str(payload["idea_uuid"]))
+
+
+@handler("listen.prefetch_due")
+def listen_prefetch_due(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 15 minutes: ideas with the desk that have no Listen audio yet; and audio past 30 days goes."""
+    from speech import listen
+
+    listen.prefetch_due(conn)
+    listen.sweep(conn)
 
 
 @handler("desk.clocks")
@@ -297,3 +323,12 @@ def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
     from desk.clocks import run_due
 
     run_due(conn)
+
+
+@handler("hide.recheck")
+def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-HIDE.detect: the gatekeeper was down when a text was hidden; run it again on the person's sealed words
+    (BLD-C067). Fails while the gateway is still down, so the runner's backoff tries again."""
+    from hide import recheck
+
+    recheck.run(conn, payload)

@@ -45,7 +45,7 @@ test("1-3: home carousel, share an idea, Find your crew", async ({ browser }) =>
   await expect(kavya.getByText("Colleagues are on this").first()).toBeVisible();
   await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/inbox");
-  await expect(kavya.locator(".inbox li").first()).toBeVisible();
+  await expect(kavya.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible(); // S-H5
 });
 
 test("4: My ideas as a One: the tier dashboard and the glow-up", async ({ browser }) => {
@@ -78,12 +78,32 @@ test("5-6: the wall and an idea page", async ({ browser }) => {
   await expectNoSeriousAxeIssues(kavya);
 });
 
+/**
+ * S-R1 (A10, N3): a desk tab shows what its count says: n rows for a count of n, or its own empty line, and no
+ * table, for 0. CI never runs this tour (DEMO_TOUR is unset there, and `make seed` loads no ideas), and the legacy
+ * `make demo` set this tour signs in to puts nothing on the desk (its ideas carry no desk status), so its tabs read 0.
+ * Whatever the data, a count and a panel that disagree fail here.
+ */
+async function tabShowsItsCount(page: Page, value: string, emptyTitle: string): Promise<void> {
+  const panel = page.locator(`#desk-panel-${value}`); // present once that tab's own read has arrived
+  await expect(panel).toBeVisible();
+  const count = Number(await page.locator(`#desk-tab-${value} .tab-n`).textContent());
+  if (count > 0) {
+    await expect(panel.locator("tbody tr")).toHaveCount(count);
+  } else {
+    await expect(panel.getByRole("heading", { level: 2, name: emptyTitle })).toBeVisible();
+    await expect(panel.locator("table")).toHaveCount(0);
+  }
+}
+
 // Desk decisions (step 8) is retired (DEC-106, R10); lane B rebuilds the committee window on /committee.
-test("7: the review desk", async ({ browser }) => {
+test("7: the review desk, each tab showing what its count says (S-R1)", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
-  await desk.goto("/review");
-  await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
+  await desk.goto("/desk"); // S-R1 (the old /review redirects here)
+  await expect(desk.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  await tabShowsItsCount(desk, "waiting", "No one is answering questions now"); // the default tab
+  await desk.getByRole("tab", { name: /^To review/ }).click();
+  await tabShowsItsCount(desk, "to_review", "Nothing new to review");
   await expectNoSeriousAxeIssues(desk);
 });
 

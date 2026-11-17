@@ -12,10 +12,11 @@
   never in Git), like BGE-M3 (BLD-080). faster-whisper first; the engine interface lets AI4Bharat IndicConformer
   slot in for Indian languages ("coming soon").
 - `fake` is refused outside dev and test (`fake_not_allowed`, BLD-C007).
-- Hosted routes (`sarvam` first): a model call that sends raw voice to a third party. Voice cannot be tagged
-  before it leaves (non-negotiable 2), so a hosted route refuses unless BOTH `SPEECH_HOSTED_APPROVAL` names the
-  InfoSec and DPO approval AND the `speech.hosted` switch is on. Both are off at launch. Plain HTTP, no vendor
-  SDK (non-negotiable 1); the vendor's reply is never logged or kept beyond the transcript.
+- Hosted routes (`sarvam`, the launch route since DEC-108): raw voice goes to Sarvam untagged, by the product
+  lead's choice (DEC-108 bends non-negotiable 2 for audio only). A hosted route refuses unless BOTH
+  `SPEECH_HOSTED_APPROVAL` names the approval (DEC-108) AND the `speech.hosted` switch is on, read fresh. Both are
+  on at launch. The client is `gateway/sarvam.py`: plain HTTP and WebSocket, no vendor SDK (non-negotiable 1); the
+  vendor's reply is never logged or kept beyond the transcript, which the caller masks as it returns (DEC-103).
 
 Nothing here logs the recording or the text. Errors carry a code only.
 """
@@ -51,7 +52,7 @@ class SpeechUnavailable(Exception):
 
 
 class HostedRefused(SpeechUnavailable):
-    """A hosted route was asked for without its approval and its switch (DEC-096)."""
+    """A hosted route was asked for without its approval and its switch (DEC-096, DEC-108)."""
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ def transcribe(data: bytes, mime: str, conn: Conn | None = None) -> Transcript:
         return local_engine().transcribe(data, mime)
     if mode in HOSTED:
         hosted_allowed(conn)
-        return _sarvam(data, mime)
+        return _sarvam(data, mime, conn)
     raise SpeechUnavailable("unknown_mode")
 
 
@@ -212,32 +213,12 @@ class FasterWhisper:
         )
 
 
-# ---- hosted routes (off until InfoSec and the DPO approve) -------------------------------------------------
+# ---- hosted routes (DEC-108: Sarvam, on at launch) -----------------------------------------------------------
 
 
-def _sarvam(data: bytes, mime: str) -> Transcript:
-    """Sarvam's speech-to-text API, language detected. Built for DEC-096 and never exercised against the real
-    service: check the request against Sarvam's current documentation before the switch goes on."""
-    import httpx
+def _sarvam(data: bytes, mime: str, conn: Conn | None = None) -> Transcript:
+    """Sarvam's REST speech-to-text (saaras:v4) for a short clip; the client, its gate and its metering are in
+    `gateway/sarvam.py` (BLD-C110). Notes longer than 30 seconds stream instead (`speech.drafts`)."""
+    from gateway import sarvam
 
-    s = get_settings()
-    if not s.speech_hosted_key:
-        raise SpeechUnavailable("hosted_key_missing")
-    try:
-        r = httpx.post(
-            s.speech_hosted_url,
-            headers={"api-subscription-key": s.speech_hosted_key},
-            files={"file": ("voice-note", data, mime)},
-            data={"model": "saarika:v2.5", "language_code": "unknown"},
-            timeout=60.0,
-        )
-    except httpx.HTTPError:
-        raise SpeechUnavailable("hosted_unreachable") from None
-    if r.status_code != 200:
-        raise SpeechUnavailable(f"hosted_{r.status_code}")
-    try:
-        body = r.json()
-        text = str(body["transcript"]).strip()
-    except (ValueError, KeyError, TypeError):
-        raise SpeechUnavailable("hosted_bad_reply") from None
-    return Transcript(text=text, language=body.get("language_code"), seconds=None)
+    return sarvam.stt_rest(data, mime, conn=conn)

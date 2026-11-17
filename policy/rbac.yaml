@@ -20,6 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
+  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -42,7 +43,8 @@ capabilities:
   open_display:               { admin: yes, display: yes }
   # The Ones Committee's window (L-COMMITTEE, S-R4; DEC-102): every desk decision for 30 days, extend, reverse once.
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
-  committee_window:           { committee: yes }
+  # core_committee (and core_chair, through it) keep it until the old roles are dropped on Monday (contracts.md §2.14).
+  committee_window:           { committee: yes, core_committee: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -53,6 +55,7 @@ kill_switch_flippers:
   submissions: [admin]
   matching.show: [admin]
   comms.email: [admin]
+  comms.teams: [admin]                                # DEC-105: Teams messages, off until IT approves the Teams app
   wall.public: [admin, hr]
   ones.public: [admin, hr]
   clusters.batch: [admin]
@@ -66,6 +69,7 @@ kill_switch_flippers:
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
   capture.voice: [admin, infosec]                     # DEC-096: voice notes in quick capture
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
+  files.blackout: [admin, infosec]                    # DEC-107: "Hide it for me" for PDFs and images, after review
   desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
 
 # No session needed.
@@ -88,9 +92,17 @@ endpoints:
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
+  - GET /api/me/refer-as                              signed_in       # she, he, they or unset (BLD-C111, DEC-108)
+  - PUT /api/me/refer-as                              signed_in       # asked once in Profile (S-H6); the person only
   - POST /api/me/app-news                             signed_in       # "Tell me when it's out" (S-H3, L-NOTIFY/7)
-  - GET /api/inbox                                    signed_in
-  - POST /api/inbox/{id}/read                         signed_in       # mark one message read (addition to §8)
+  - GET /api/inbox                                    signed_in       # S-H5, A-API.inbox: ?tab=all|needs_you|unread|archived
+  - GET /api/inbox/counts                             signed_in       # unread and needs-you for the shell and Home (L-INBOX.rules/1)
+  - GET /api/inbox/needs-you                          signed_in       # Home's "Needs you": total and top two (A-API.home)
+  - POST /api/inbox/read-all                          signed_in       # "Mark all read" (S-H5)
+  - POST /api/inbox/{id}/read                         signed_in       # opening an item marks it read (L-INBOX.rules/3)
+  - POST /api/inbox/{id}/unread                       signed_in       # "Mark unread" (S-H5)
+  - POST /api/inbox/{id}/archive                      signed_in       # refused while it still needs the person (L-INBOX.rules/5)
+  - POST /api/inbox/{id}/actions/{op}                 signed_in       # the item's op, run by the lane that owns it (notify.ops)
   - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
@@ -106,6 +118,13 @@ endpoints:
   - POST /api/submissions/{id}/voice                  submit          # a voice note (DEC-096; behind capture.voice)
   - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
   - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
+  - POST /api/drafts/{id}/voice/start                 submit          # a voice note streamed through Sarvam (DEC-108, BLD-C112); the sharer only
+  - POST /api/drafts/{id}/voice/chunk                 submit          # ~1 s of 16 kHz PCM, relayed and never kept; answers the words so far
+  - POST /api/drafts/{id}/voice/end                   submit          # their own words and the English copy
+  - GET /api/drafts/{id}/voice/{stream}               submit          # polling (A-API.events does not exist yet)
+  - GET /api/voice/config                             signed_in       # the notice before recording, and what the browser sends (BLD-C116)
+  - GET /api/ideas/{id}/listen                        view_review_queue   # Listen's audio, Sarvam's voice on the masked script (DEC-108, BLD-C114); behind desk.listen and speech.hosted
+  - GET /api/ideas/{id}/listen/chapters               view_review_queue   # { parts: [{ part, start_s }], duration_s }, or 202 { pending: true }
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas   # S-06 for the sharer, S-09 for others; the worker decides (lane E)
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
@@ -125,6 +144,19 @@ endpoints:
   - GET /api/ideas/{id}/edit                          submit          # S-06B: the edit page (the sharer, in the edit window)
   - PATCH /api/ideas/{id}/edit                        submit          # A-API PATCH /ideas/:id: Save changes, a version each time
   - GET /api/ideas/{id}/versions                      signed_in       # Draft history: the sharer, the desk, the committee (the worker checks)
+  # Team-up, draft merge requests and crews (lane F; A-API.team-up, L-TEAMUP, L-MERGE.request). Any employee may
+  # ask; the worker checks the rest: only the requester withdraws, only the idea's lead answers or removes.
+  - GET /api/ideas/{id}/team-up                       signed_in
+  - POST /api/ideas/{id}/team-up                      signed_in
+  - GET /api/ideas/{id}/team-up/draft-note            signed_in
+  - GET /api/team-up/{id}                             signed_in       # the requester or the lead only
+  - DELETE /api/team-up/{id}                          signed_in       # the requester only
+  - POST /api/team-up/{id}/answer                     signed_in       # the idea's lead only
+  - GET /api/drafts/{id}/merge-request                signed_in       # the draft's owner only
+  - POST /api/drafts/{id}/merge-request               signed_in       # the draft's owner only
+  - DELETE /api/drafts/{id}/merge-request             signed_in       # the draft's owner only
+  - POST /api/ideas/{id}/crew/leave                   signed_in       # a crew member, never the lead
+  - DELETE /api/ideas/{id}/crew/{member}              signed_in       # the idea's lead only
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
   - GET /api/review/items                             view_review_queue
@@ -132,6 +164,11 @@ endpoints:
   - POST /api/review/items/{id}/action                work_review_queue veto_desk_decision   # any; a member acts only on an item they vetoed (BLD-092)
   - GET /api/review/desk-decisions                    view_review_queue
   - POST /api/review/items/{id}/veto                  veto_desk_decision
+  # L-HIDE (lane C, BLD-C060): the desk's "Hide this"; the sharer's "Show it" and "Hide it" (the worker checks
+  # whose words they are).
+  - POST /api/desk/ideas/{id}/hide                    hide_for_desk
+  - POST /api/drafts/{id}/hidden/{hid}/show           submit
+  - POST /api/drafts/{id}/hidden/{hid}/hide           submit
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
@@ -251,8 +288,9 @@ membership_scoped:
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
-  - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
-  - /committee                 veto_desk_decision                   # the core committee; rebuilt as S-R4 (DEC-106 retired scoring)
+  - /review                    view_review_queue                    # moved: redirects to /desk (S-R1, S-R2)
+  - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
+  - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
@@ -273,8 +311,8 @@ navigation:
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
-  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
-  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: desk,      label: Review desk,     href: /desk,      place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
