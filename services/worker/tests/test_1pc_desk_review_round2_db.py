@@ -283,3 +283,46 @@ def test_L_QUESTIONS_clock_3_more_time_on_an_overdue_set_is_never_still_overdue(
     assert clocks.run_due(db, f.at(19, 9))["reminded"] == 0
     assert clocks.run_due(db, f.at(19, 10, 5))["reminded"] == 1  # a day before the new deadline
     assert clocks.run_due(db, f.at(20, 8, 5))["reminded"] == 1  # and two hours before
+
+
+# ---- finding 12: one failing item never undoes the rest of the sweep, and the lock is let go --------------------
+def test_L_DECIDE_rules_7_a_failing_item_is_logged_and_the_sweep_carries_on(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from core.db import connect
+    from tests import helpers
+
+    meera = cast["meera"]["id"]
+    second = f.idea(db, cast["ravi"], title="Branch queue times are not tracked anywhere")
+    for idea in (cast["idea"], second):
+        decide.send(db, idea["idea_id"], meera, {"choice": "not_now", "reason": REASON, "return_in": "1m"},
+                    f.at(16, 10))  # fmt: skip
+    real = decide.return_from_not_now
+
+    def flaky(conn: Conn, idea_uuid: str, at: Any = None) -> bool:
+        if idea_uuid == str(cast["idea"]["id"]):
+            raise RuntimeError("synthetic failure")
+        return real(conn, idea_uuid, at)
+
+    monkeypatch.setattr(decide, "return_from_not_now", flaky)
+    got = clocks.run_due(db, f.at(17, 9, m=12))
+    assert got == {"returned": 1, "windows_closed": 2, "reminded": 0}  # both 30-day windows ended too
+
+    def status(idea: dict[str, Any]) -> str:
+        row = db.execute("SELECT status FROM ideas WHERE id = %s", (idea["id"],)).fetchone()
+        assert row is not None
+        return str(row["status"])
+
+    assert (status(cast["idea"]), status(second)) == ("not_now", "with_review_desk")
+    assert db.execute("SELECT count(*) AS n FROM decision_windows WHERE state = 'expired'").fetchone() == {
+        "n": 2
+    }
+    other = connect(helpers.db_url(test_database), autocommit=True)
+    try:  # the session lock was let go: another connection takes it at once
+        held = other.execute("SELECT pg_try_advisory_lock(%s) AS got", (clocks.SWEEP_LOCK,)).fetchone()
+        assert held == {"got": True}
+        other.execute("SELECT pg_advisory_unlock(%s)", (clocks.SWEEP_LOCK,))
+    finally:
+        other.close()
+    monkeypatch.setattr(decide, "return_from_not_now", real)
+    assert clocks.run_due(db, f.at(17, 9, 5, m=12))["returned"] == 1  # the next run picks it up
