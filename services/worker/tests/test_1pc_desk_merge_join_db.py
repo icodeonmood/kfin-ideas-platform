@@ -80,7 +80,7 @@ def test_L_MERGE_effects_3_merged_ideas_show_on_the_lead_as_contributions_throug
     ravi = got[0]
     assert ravi["label"] == f"Ravi’s idea, {ravis['idea_id']}" and ravi["title"] == ravis["title"]
     parts = {p["part"]: p for p in ravi["parts"]}
-    assert parts["who"]["text"] == "Investors"
+    assert parts["who"]["text"] == "Investors."
     question = parts["often"]["questions"][0]
     assert (question["asked_line"], question["state"]) == ("You asked, today 9 am", "Answered")
     assert question["answer"]["text"] == "Every branch in Hyderabad."

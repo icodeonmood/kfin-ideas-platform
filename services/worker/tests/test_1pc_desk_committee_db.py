@@ -170,7 +170,7 @@ def test_L_COMMITTEE_rules_9_a_member_cannot_reverse_their_own_idea(db: Conn, ca
 def test_S_R4_reversing_words(db: Conn, cast: dict[str, Any]) -> None:
     w = committee.reversing_words(db, cast["window"])
     assert w["intro"].startswith(
-        f"On “{cast['idea']['title']}”. The review desk picked it. Kavya reads your note"
+        f"On “{cast['idea']['title']}”. The review desk said picked it. Kavya reads your note"
     )
     assert [o["to"] for o in w["options"]] == ["not_now", "not_picked"]
     assert (

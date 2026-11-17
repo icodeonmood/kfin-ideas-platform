@@ -37,8 +37,9 @@ def page(db: Conn, repo: Path) -> dict[str, Any]:
                   sorting_confirmed_at=f.at(14, 10, 5), kept_separate=True)  # fmt: skip
     other = f.idea(db, ravi, title="Rejection SMS codes confuse investors", shared_at=f.at(2, 15))
     msg = db.execute(
-        "INSERT INTO idea_messages (idea_uuid, seq, via, text_encrypted) VALUES (%s, 1, 'typed', %s) RETURNING id",
-        (idea["id"], b"x"),
+        "INSERT INTO idea_messages (idea_uuid, seq, via, text_encrypted, created_at) VALUES (%s, 1, 'typed', %s, %s) "
+        "RETURNING id",
+        (idea["id"], b"x", f.at(14, 9, 50)),  # Saturday, before the draft
     ).fetchone()
     assert msg is not None
     db.execute("UPDATE idea_messages SET text_encrypted = %s WHERE id = %s",
@@ -97,7 +98,7 @@ def test_S_R2_left_3_and_5_parts_and_similar_ideas(db: Conn, page: dict[str, Any
     assert [p["name"] for p in got["parts"]] == [
         "The problem", "How often", "Who it affects", "What it’s worth", "Attached", "Fix"
     ]  # fmt: skip
-    assert got["parts"][2]["text"] == "Investors, KFin teams"
+    assert got["parts"][2]["text"] == "Investors, KFin teams."  # with its full stop, as on the DeskIdea board
     sim = got["similar"][0]
     assert sim["meta"] == f"{page['other']['idea_id']}, Ravi Nair, Investor service, Hyderabad. 1 on its crew"
     assert sim["merged"] is False
@@ -119,6 +120,6 @@ def test_S_R2_panel_6_decided(db: Conn, page: dict[str, Any]) -> None:
 def test_L_LISTEN_2_the_script_reads_the_masked_idea(db: Conn, page: dict[str, Any]) -> None:
     s = reads.listen_script(db, page["idea"]["idea_id"], page["meera"]["id"])
     parts = {p["part"]: p["text"] for p in s["parts"]}
-    assert parts["who"] == "Investors, KFin teams"
+    assert parts["who"] == "Investors, KFin teams."
     assert parts["evidence"].startswith("One file:") and "hidden" in parts["evidence"]
     assert parts["fix"] == "No fix suggested. It was optional."

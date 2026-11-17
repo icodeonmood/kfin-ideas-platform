@@ -44,7 +44,11 @@ REVERSE_LINES = {
     "not_now": "Right problem, wrong time. It comes back to the review desk in {months}.",
     "not_picked": "It won’t go ahead.",
 }
-_DESK_SAID = {"pick": "picked it", "not_now": "said not now", "not_picked": "didn’t pick it"}
+_DESK_SAID = {
+    "pick": "said picked it",
+    "not_now": "said not now",
+    "not_picked": "didn’t pick it",
+}  # S-R4 Reversing
 
 _ROWS = """
 SELECT w.id AS window_id, w.state, w.opens_at, w.closes_at, w.max_closes_at, w.extended_times,
