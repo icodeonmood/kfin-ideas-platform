@@ -177,3 +177,62 @@ def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_
         assert _one(conn, sql, pair) == 0, table
     matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
     assert _one(conn, matched, m[later].uuid) == "1"
+
+
+def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_items(db: Any) -> None:
+    """J-SIMILAR/5, /6b and /6c (L-MERGE.request/1-4, L-TEAMUP.rules/5): besides T2, two more unsent drafts from
+    other sharers each have a merge request waiting on Rekha's R1, so Team up only and Decline each have a request
+    of their own to answer. Each waiting request is in Rekha's Inbox under Needs you with the three answers; refs
+    carry IDs and small values only."""
+    conn = db
+    m = club_seed.load(conn)
+    rekha = p_id(conn, "rekha")
+    lead_code = _one(
+        conn, "SELECT contributor_code FROM crew_members WHERE idea_uuid = %s AND role = 'lead'", m["R1"].uuid
+    )
+    assert _one(conn, "SELECT user_id FROM contributor_map WHERE contributor_code = %s", lead_code) == rekha
+    assert _one(conn, "SELECT status FROM ideas WHERE id = %s", m["R1"].uuid) == "with_review_desk"
+
+    owners = set()
+    for key in ("T2", "N2", "G2"):
+        draft = conn.execute(
+            "SELECT status, archived_at, shared_at, contributor_code FROM ideas WHERE id = %s", (m[key].uuid,)
+        ).fetchone()
+        assert draft["status"] == "draft" and draft["archived_at"] is None and draft["shared_at"] is None, key
+        assert draft["contributor_code"] != lead_code
+        owners.add(draft["contributor_code"])
+        reqs = conn.execute(
+            "SELECT id, other_idea_uuid, from_code, state, note_encrypted FROM merge_requests WHERE draft_uuid = %s",
+            (m[key].uuid,),
+        ).fetchall()
+        assert len(reqs) == 1, key
+        req = reqs[0]
+        assert (str(req["other_idea_uuid"]), req["from_code"], req["state"]) == (
+            m["R1"].uuid, draft["contributor_code"], "waiting"
+        )  # fmt: skip
+        note = open_text("merge_requests", "note_encrypted", str(req["id"]), req["note_encrypted"])
+        assert note and len(note) >= 30
+        outcome = "SELECT outcome FROM similar_links WHERE idea_uuid = %s AND other_idea_uuid = %s"
+        assert _one(conn, outcome, m[key].uuid, m["R1"].uuid) == "merge_asked"
+        on_crew = "SELECT count(*) FROM crew_members WHERE idea_uuid = %s AND contributor_code = %s"
+        assert _one(conn, on_crew, m["R1"].uuid, draft["contributor_code"]) == 0
+
+        items = conn.execute(
+            "SELECT n.from_user_id, n.idea_uuid, n.needs_you, n.payload, n.actions FROM notifications n "
+            "WHERE n.user_id = %s AND n.kind = 'teamup_request' AND n.payload->>'request_id' = %s",
+            (rekha, str(req["id"])),
+        ).fetchall()
+        assert len(items) == 1, key
+        item = items[0]
+        sender = _one(
+            conn, "SELECT user_id FROM contributor_map WHERE contributor_code = %s", draft["contributor_code"]
+        )
+        assert item["from_user_id"] == sender and str(item["idea_uuid"]) == m["R1"].uuid and item["needs_you"]
+        assert item["payload"] == {"idea_id": m["R1"].ref, "request_id": str(req["id"]), "request": "merge",
+                                   "brought": 1}  # fmt: skip
+        assert [a["label"] for a in item["actions"]] == ["Decline", "Team up only", "Merge it"]
+    assert len(owners) == 3  # one sharer per request (L-TEAMUP.rules/4)
+
+
+def p_id(conn: Any, first: str) -> Any:
+    return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
