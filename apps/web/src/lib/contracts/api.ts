@@ -332,6 +332,8 @@ export interface AnswerFile {
   pages: number | null;
   state: string | null;
   hidden_note: string | null;
+  /** DEC-107: the scan found a customer detail. Only the sharer, the review desk and the Ones Committee get it. */
+  customer_detail: boolean;
 }
 export interface SetAnswer {
   id: string;
@@ -471,14 +473,14 @@ export interface ReviewerQuestion {
   text: string | null;
   asked_at: IsoDate;
   asked_by: string;
-  asked_line: string; // "You asked, today 11:20 am"
+  asked_line: string; // "You asked, today 11:20 am"; another reviewer's: "Meera asked, today 11:20 am"
   state: "Answered" | "Not answered yet";
   answer: {
     text: string | null;
     at: IsoDate;
     by: string;
     line: string; // "Kavya answered, today 4:32 pm"
-    files: { id: string; name: string; hidden: string | null }[];
+    files: { id: string; name: string; hidden: string | null; customer_detail: boolean }[]; // DEC-107
   } | null;
 }
 export interface ReviewerPart {
@@ -508,6 +510,7 @@ export interface ReviewerArtefact {
   title: string;
   line: string;
   action: string; // "Open", "Read", "Compare", "See changes"
+  customer_detail?: boolean; // a file: the scan found a customer detail (DEC-107); the desk opens it, marked
 }
 export interface ReviewerSimilar {
   idea_id: string;
