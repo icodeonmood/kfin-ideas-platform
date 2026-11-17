@@ -193,6 +193,39 @@ def test_l_draft_pins_a_pinned_part_is_never_overwritten_and_unpinning_suggests_
     assert _parts(db, idea)["often"]["state"] == "filled"
 
 
+def test_l_draft_parts_4_a_dropped_answer_keeps_the_filled_part_until_its_words_go_bld_c033(drafting: Any) -> None:
+    """The planted "a lot of money" makes the fake quote a figure nobody gave, on both asks: the gateway drops it
+    (`ungrounded_dropped`) and the part keeps what it showed, while its own quote still stands in the words."""
+    db, owner = drafting
+    idea, run_id = store.create(db, owner, LAPTOP, text=f"{W1} {W2}")
+    _run(run_id)
+    assert _parts(db, idea)["often"]["value"] == "About 40 calls a day"
+    _, again = store.add_message(db, owner, idea, LAPTOP, text="It costs us a lot of money every month.")
+    assert "often" in db.execute("SELECT parts FROM draft_runs WHERE id = %s", (again,)).fetchone()["parts"]
+    _run(again)
+    often = _parts(db, idea)["often"]
+    assert (often["state"], often["value"], often["source_quote"]) == (
+        "filled",
+        "About 40 calls a day",
+        "about 40 calls a day",
+    )
+    dropped = db.execute(
+        "SELECT outcome FROM llm_calls WHERE agent = 'draft-part' AND error_code = 'ungrounded_dropped'"
+    ).fetchall()
+    assert [r["outcome"] for r in dropped] == ["ok_after_retry"]  # one part, re-asked once, then dropped
+    run = db.execute("SELECT part_ms, receipt FROM draft_runs WHERE id = %s", (again,)).fetchone()
+    assert run["part_ms"]["often"] == 0  # not a sample for the loader's means
+    assert not any(line.startswith("Noted how often:") for line in run["receipt"])  # nothing changed
+    # An edit takes the quoted words out: the part is emptied, never left showing words that are gone.
+    first = db.execute(
+        "SELECT id FROM idea_messages WHERE idea_uuid = %s ORDER BY seq LIMIT 1", (idea,)
+    ).fetchone()["id"]
+    _, edited = store.edit_message(db, owner, idea, str(first), LAPTOP, text=W1)
+    _run(edited)
+    often = _parts(db, idea)["often"]
+    assert (often["state"], often["value"], often["source_quote"]) == ("failed", None, None)
+
+
 def test_l_draft_parts_4_a_message_without_new_facts_rebuilds_only_the_title(drafting: Any) -> None:
     db, owner = drafting
     idea, run_id = store.create(db, owner, LAPTOP, text=f"{W1} {W2}")

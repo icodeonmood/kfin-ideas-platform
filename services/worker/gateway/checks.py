@@ -275,7 +275,6 @@ DRAFT_TEXT = ("title", "summary", "often", "reason")
 _DRAFT_EMPTY: dict[str, Any] = {
     "title": None, "summary": None, "often": None, "who": [], "worth": [], "area": None, "reason": None,
 }  # fmt: skip
-_SENTENCES = re.compile(r"[.!?।](?=\s|$)")
 
 
 def _draft_words(sent: dict[str, Any]) -> list[str]:
@@ -325,7 +324,7 @@ def draft_part(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -
             problems.append(
                 f"{key} holds a number the person did not give{' in the quotes' if allowed is quoted else ''}"
             )
-    if isinstance(out.get("summary"), str) and len(_SENTENCES.findall(out["summary"].strip() + " ")) > 3:
+    if isinstance(out.get("summary"), str) and len(grounding.split_sentences(out["summary"])) > 3:
         problems.append("summary must be at most 3 sentences")
     choices = [c for c in ((sent.get("options") or {}).get("choices") or []) if isinstance(c, dict)]
     labels = {str(c.get("label")) for c in choices}

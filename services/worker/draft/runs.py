@@ -26,6 +26,7 @@ from core.logging import get_logger
 from draft import adapters, parts
 from draft.config import PART_KEYS, rules
 from gateway import AgentFailed, run_agent
+from gateway.core import DROPPED
 from onepc import enums
 from onepc.context import open_text
 from pii import vault
@@ -190,14 +191,18 @@ def begin(
     return run_id
 
 
-def _settle(conn: Conn, idea_uuid: str, key: str, run_id: str) -> None:
-    """A part this run will not build: back to what it showed, or `failed` when it had nothing."""
-    conn.execute(
-        "UPDATE idea_parts SET state = CASE WHEN value IS NULL OR value IN ('null'::jsonb, '[]'::jsonb, '\"\"'::jsonb) "
-        "OR (key = 'title' AND coalesce(value->>'title', '') = '') THEN 'failed' "
-        "WHEN key = 'title' AND value->'pinned' @> '[\"title\", \"summary\"]'::jsonb THEN 'pinned' ELSE 'filled' END "
-        "WHERE idea_uuid = %s AND key = %s AND run_id = %s AND state = 'updating'",
-        (idea_uuid, key, run_id),
+def _settle(conn: Conn, idea_uuid: str, key: str, run_id: str) -> bool:
+    """A part this run will not build: back to what it showed, or `failed` when it had nothing. False when the part
+    is no longer this run's to settle."""
+    return (
+        conn.execute(
+            "UPDATE idea_parts SET state = CASE WHEN value IS NULL OR value IN ('null'::jsonb, '[]'::jsonb, '\"\"'::jsonb) "
+            "OR (key = 'title' AND coalesce(value->>'title', '') = '') THEN 'failed' "
+            "WHEN key = 'title' AND value->'pinned' @> '[\"title\", \"summary\"]'::jsonb THEN 'pinned' ELSE 'filled' END "
+            "WHERE idea_uuid = %s AND key = %s AND run_id = %s AND state = 'updating'",
+            (idea_uuid, key, run_id),
+        ).rowcount
+        > 0
     )
 
 
@@ -280,8 +285,9 @@ def _restored(conn: Conn, idea_uuid: str, node: Any) -> Any:
 def result_of(
     key: str, data: dict[str, Any], said: list[dict[str, Any]], prior: Any
 ) -> tuple[Any, str | None, str | None, list[str]]:
-    """(value, why, source quote, quotes) from one tagged answer, before restoring. `prior` keeps a pinned title
-    or summary as the person left it."""
+    """(value, why, source quote, quotes) from one answer, restored first (`_restored`), so its quotes are in the
+    person's masked words as `said` is and the "why" finds their sentence. `prior` keeps a pinned title or summary
+    as the person left it."""
     quotes = [str(q) for q in data.get("evidence") or []]
     texts = [str(w["text"]) for w in said]
     if key == "title":
@@ -302,10 +308,18 @@ def result_of(
     return value, why, (quotes[0] if quotes else None), quotes
 
 
+def _prior(conn: Conn, idea_uuid: str, key: str) -> tuple[Any, str | None]:
+    """What the part shows now, and the quote it came from."""
+    row = conn.execute(
+        "SELECT value, source_quote FROM idea_parts WHERE idea_uuid = %s AND key = %s", (idea_uuid, key)
+    ).fetchone()
+    return (row["value"], row["source_quote"]) if row else (None, None)
+
+
 def _run_part(run_id: str, idea_uuid: str, key: str, said: list[dict[str, Any]]) -> None:
     started = time.monotonic()
     with _open() as conn:
-        state, value, why, quote, code = "failed", None, None, None, None
+        state, value, why, quote, code = "keep", None, None, None, None
         try:
             if key == "similar":
                 title = (values(conn, idea_uuid).get("title") or {}) or {}
@@ -314,60 +328,70 @@ def _run_part(run_id: str, idea_uuid: str, key: str, said: list[dict[str, Any]])
                 )
                 if found is not None:
                     state, value = "filled", found[:8]
+                else:
+                    code = "similar_unavailable"
             else:
                 inputs: dict[str, Any] = {"part": key, "words": said}
                 opts = options_for(key)
                 if opts is not None:
                     inputs["options"] = opts
                 out = run_agent(AGENT, inputs, scope(idea_uuid), conn=conn)
-                prior = current(conn, idea_uuid).get(key, ("waiting", None))[1]
-                value, why, quote, _ = result_of(key, out.data, said, prior)
-                value, why, quote = _restored(conn, idea_uuid, [value, why, quote])
-                state = "waiting" if parts.is_empty(key, value) and key != "title" else "filled"
-                if key == "title" and value is None:
-                    state = "waiting"
+                prior, prior_quote = _prior(conn, idea_uuid, key)
+                value, why, quote, _ = result_of(key, _restored(conn, idea_uuid, out.data), said, prior)
+                if out.dropped:
+                    code = DROPPED  # the gateway's own code, on llm_calls as on this line
+                texts = [str(w["text"]) for w in said]
+                state = parts.landing(key, value, prior, prior_quote, texts, dropped=bool(out.dropped))
+                if state == "failed" and key != "title":
+                    value = None  # emptied: what it showed is no longer in the words
+                if state == "failed":
+                    why = quote = None
         except AgentFailed as exc:
             code = exc.code
         took = max(1, int((time.monotonic() - started) * 1000))
-        _write(conn, run_id, idea_uuid, key, state, value, why, quote, took)
+        landed = _write(conn, run_id, idea_uuid, key, state, value, why, quote, took, timed=code is None)
         log.info(
-            "draft.part_done", run_id=run_id, part=key, state_code=state, error_code=code, latency_ms=took
-        )
+            "draft.part_done", run_id=run_id, part=key, state_code=state, error_code=code, latency_ms=took,
+            landed=landed,
+        )  # fmt: skip
 
 
 def _write(
     conn: Conn, run_id: str, idea_uuid: str, key: str, state: str, value: Any, why: str | None,
-    quote: str | None, took: int,
-) -> None:  # fmt: skip
+    quote: str | None, took: int, *, timed: bool,
+) -> bool:  # fmt: skip
+    """One part's result, written only while the part is still this run's and `updating`. `keep` settles it back to
+    what it showed. The run's `part_ms` (the loader's means, and the stream's "this part has landed") records the
+    time of an answer that was used, 0 for a part that failed or was dropped (the means leave those out), and
+    nothing for a write a newer run or the person's own change overtook (BLD-C033)."""
     with conn.transaction():
-        if state == "failed":
-            _settle(conn, idea_uuid, key, run_id)  # keeps a value it had; failed only when there was none
-            conn.execute(
-                "UPDATE idea_parts SET took_ms = %s WHERE idea_uuid = %s AND key = %s AND run_id = %s",
-                (took, idea_uuid, key, run_id),
-            )
+        if state == "keep":
+            # Keeps a value it had; failed only when there was none.
+            landed = _settle(conn, idea_uuid, key, run_id)
+            if landed:
+                conn.execute(
+                    "UPDATE idea_parts SET took_ms = %s WHERE idea_uuid = %s AND key = %s AND run_id = %s",
+                    (took, idea_uuid, key, run_id),
+                )
         else:
             row_state = (
                 "pinned" if key == "title" and parts.pinned_fields(value) >= {"title", "summary"} else state
             )
+            landed = (
+                conn.execute(
+                    "UPDATE idea_parts SET state = %s, value = %s, why = %s, source_quote = %s, took_ms = %s "
+                    "WHERE idea_uuid = %s AND key = %s AND run_id = %s AND state = 'updating'",
+                    (row_state, Jsonb(value) if value is not None else None, why, quote, took, idea_uuid, key,
+                     run_id),
+                ).rowcount
+                > 0
+            )  # fmt: skip
+        if landed:
             conn.execute(
-                "UPDATE idea_parts SET state = %s, value = %s, why = %s, source_quote = %s, took_ms = %s "
-                "WHERE idea_uuid = %s AND key = %s AND run_id = %s AND state = 'updating'",
-                (
-                    row_state,
-                    Jsonb(value) if value is not None else None,
-                    why,
-                    quote,
-                    took,
-                    idea_uuid,
-                    key,
-                    run_id,
-                ),
+                "UPDATE draft_runs SET part_ms = part_ms || jsonb_build_object(%s::text, %s::int) WHERE id = %s",
+                (key, took if timed else 0, run_id),
             )
-        conn.execute(
-            "UPDATE draft_runs SET part_ms = part_ms || jsonb_build_object(%s::text, %s::int) WHERE id = %s",
-            (key, took, run_id),
-        )
+    return landed
 
 
 # ---- finish: the receipt (L-DRAFT.parts/8) -----------------------------------------------------------------------

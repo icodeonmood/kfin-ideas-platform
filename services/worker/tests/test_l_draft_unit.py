@@ -76,6 +76,40 @@ def test_l_draft_parts_4_a_message_reruns_only_what_it_could_change() -> None:
     ]
 
 
+def test_l_draft_parts_4_a_masked_detail_or_a_bare_number_reruns_neither_often_nor_worth_bld_c033() -> None:
+    filled = {
+        "title": ("filled", {"title": "T", "summary": "S", "pinned": []}),
+        "often": ("filled", "About 40 calls a day"),
+        "value": ("filled", ["saves_time"]),
+    }
+    for text in ("He read out Folio ••••89 and Phone ••••10 on the call.", "Form 2B is the one they reject."):
+        got = parts.affected(text, filled, RULES.affects, RULES.area)
+        assert "often" not in got and "value" not in got, text
+    got = parts.affected("It happens 3x on Mondays, about 50k gone.", filled, RULES.affects, RULES.area)
+    assert "often" in got and "value" in got  # a number with its unit still counts
+
+
+def test_l_draft_parts_4_a_drop_or_an_empty_answer_keeps_a_filled_part_bld_c033() -> None:
+    texts, q = [W1, W2], "about 40 calls a day"
+    often = "About 40 calls a day"
+    # "Unchanged parts keep their value": a drop, or an empty answer, while the part's own quote still stands.
+    assert parts.landing("often", None, often, q, texts, dropped=True) == "keep"
+    assert parts.landing("often", None, often, q, texts, dropped=False) == "keep"
+    assert parts.landing("value", ["not_sure"], ["saves_time"], "5 to 10 minutes", texts, dropped=False) == "keep"
+    title = {"title": "Rejection codes confuse investors", "summary": "S.", "pinned": []}
+    assert parts.landing("title", None, title, "the SMS to the investor", texts, dropped=False) == "keep"
+    # An edit took the quoted words out: the part is emptied, never left showing words that are gone.
+    assert parts.landing("often", None, often, q, [W1], dropped=False) == "waiting"
+    assert parts.landing("often", None, often, q, [W1], dropped=True) == "failed"
+    # Nothing before: a drop settles to "Add it yourself" (keep -> failed); an empty answer waits for words.
+    assert parts.landing("often", None, None, None, texts, dropped=True) == "keep"
+    assert parts.landing("often", None, None, None, texts, dropped=False) == "waiting"
+    assert parts.landing("value", ["not_sure"], None, None, texts, dropped=False) == "filled"
+    # A new answer always lands.
+    assert parts.landing("often", "About 60 calls a day", often, q, texts, dropped=False) == "filled"
+    assert parts.still_said(q, texts) and not parts.still_said(q, [W1]) and parts.still_said(None, [])
+
+
 def test_l_draft_pins_a_pinned_part_is_never_rerun() -> None:
     pinned = {
         "title": ("filled", {"title": "Mine", "summary": "S", "pinned": ["title"]}),
@@ -290,6 +324,35 @@ def test_l_draft_parts_the_fake_passes_its_own_checks(part: str) -> None:
     out = fakes.draft_part(spec, inputs)
     assert checks.draft_part(inputs, out, None) == []
     assert out["part"] == part
+
+
+def test_l_draft_parts_a_summary_sentence_does_not_end_at_rs_or_eg_bld_c033() -> None:
+    assert parts.sentences(["It costs Rs. 500 a month, e.g. for couriers. Then more! And a tail"]) == [
+        "It costs Rs. 500 a month, e.g. for couriers.",
+        "Then more!",
+        "And a tail",
+    ]
+    ex = example("01-title.json")
+    summary = (
+        "The rejection SMS only gives a code, e.g. R07. Investors don't know what it means, so they call the "
+        "branch. One branch takes about 40 of these calls a day, at 5 to 10 minutes each."
+    )
+    assert checks.draft_part(ex["input"], {**ex["output"], "summary": summary}, None) == []
+    four = summary + " They call again."
+    assert any("3 sentences" in p for p in checks.draft_part(ex["input"], {**ex["output"], "summary": four}, None))
+
+
+def test_l_draft_parts_the_fake_keeps_the_summary_and_who_limits_bld_c033() -> None:
+    spec = load("draft-part", AGENTS)
+    long_words = [{"n": i, "text": "Investors call the branch about " + "the same code again " * 20 + "."}
+                  for i in (1, 2, 3)]  # fmt: skip
+    out = fakes.draft_part(spec, {"part": "title", "words": long_words})
+    assert out["summary"] and len(out["summary"]) <= parts.LIMITS["summary"]
+    assert not out["summary"].endswith(" ")
+    choices = [{"label": f"Group {n}", "cues": [f"cue{n}"]} for n in range(10)]
+    said = [{"n": 1, "text": " ".join(f"we see cue{n} often" for n in range(10))}]
+    who = fakes.draft_part(spec, {"part": "who", "words": said, "options": {"choices": choices}})
+    assert len(who["who"]) == parts.MAX_PICKS == 8
 
 
 def test_l_draft_parts_the_fake_plants_an_unbacked_figure_for_the_drop_path() -> None:

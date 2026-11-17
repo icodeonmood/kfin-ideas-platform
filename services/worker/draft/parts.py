@@ -30,17 +30,21 @@ BRINGS = enums.BRINGS
 BRINGS_LABELS = enums.labels("brings")
 NOT_SURE = "not_sure"
 
+# What makes a message touch "how often" or "what it's worth" (L-DRAFT.parts/4). A number alone does not: a masked
+# detail ("Folio ••••89") or a branch code would re-run both on every message (BLD-C033). A number counts only with
+# its unit ("3x", "50k", "2 lakh"); the words around it do the rest.
 _FREQUENCY = re.compile(
-    r"\d|\b(?:daily|weekly|monthly|yearly|every|each|times?|once|twice|often|always|per|day|days|week|weeks|month|"
-    r"months|hour|hours|minutes?|roz|har|hafte|mahine)\b",
+    r"(?<![•\w])\d+\s*x\b|\b(?:daily|weekly|monthly|yearly|hourly|quarterly|annually|fortnightly|every|each|times?|"
+    r"once|twice|often|always|usually|regularly|repeatedly|sometimes|per|day|days|week|weeks|month|months|quarter|"
+    r"quarters|year|years|hour|hours|minutes?|roz|har|hafte|mahine)\b",
     re.I,
 )
 _WORTH = re.compile(
-    r"\d|₹|\b(?:rs|inr|lakhs?|crores?|cost|costs|costly|money|save|saves|saving|savings|time|hours?|minutes?|manual|"
-    r"manually|hand|re-?key|revenue|fee|fees|sell|paid|pay|vendor|tool|tools|outside|third[- ]party|excel|effort)\b",
+    r"(?<![•\w])\d+(?:\.\d+)?\s*(?:k|l|cr|lacs?)\b|₹|\b(?:rs|inr|rupees?|lakhs?|crores?|cost|costs|costly|money|"
+    r"save|saves|saving|savings|time|hours?|minutes?|manual|manually|hand|re-?key|revenue|fee|fees|sell|paid|pay|"
+    r"vendor|tool|tools|outside|third[- ]party|excel|effort)\b",
     re.I,
 )
-_SENTENCE_END = re.compile(r"[.!?।](?=\s|$)")
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 
 
@@ -160,18 +164,42 @@ def clean_value(wire_key: str, value: Any) -> Any:
 
 
 def sentences(texts: Sequence[str]) -> list[str]:
-    out: list[str] = []
-    for text in texts:
-        start = 0
-        for m in _SENTENCE_END.finditer(text):
-            piece = text[start : m.end()].strip()
-            if piece:
-                out.append(piece)
-            start = m.end()
-        tail = text[start:].strip()
-        if tail:
-            out.append(tail)
-    return out
+    """Every sentence of the person's words, in order. "Rs." or "e.g." does not end one (`grounding`'s rule)."""
+    return [piece for text in texts for piece in grounding.split_sentences(text)]
+
+
+def still_said(quote: str | None, texts: Sequence[str]) -> bool:
+    """Whether a part's source quote still stands word for word in the person's words (an edit may have taken it
+    out). A part with no quote has nothing to re-check."""
+    if not quote:
+        return True
+    needle = f" {grounding.normalise(quote)} "
+    return needle.strip() != "" and any(needle in f" {grounding.normalise(t)} " for t in texts)
+
+
+def blank(row_key: str, value: Any) -> bool:
+    """An answer that says nothing new: empty, or only "not sure yet" for what it's worth."""
+    return is_empty(row_key, value) or (row_key == "value" and value == [NOT_SURE])
+
+
+def landing(
+    row_key: str, value: Any, prior: Any, prior_quote: str | None, texts: Sequence[str], *, dropped: bool
+) -> str:
+    """How one answer lands on its part (L-DRAFT.parts/4, "unchanged parts keep their value"; BLD-C033):
+    - `keep`: the part goes back to what it showed (or `failed`, "Add it yourself", when it showed nothing): the
+      gateway dropped an answer the words did not back, or the answer is empty while the part's own value still
+      stands in the words;
+    - `failed`: dropped, and what the part showed is no longer in the words (an edit took it out): emptied;
+    - `waiting`: nothing in the words backs the part, and nothing it showed still stands ("Waiting for your words");
+    - `filled`: the new answer."""
+    stands = not blank(row_key, prior) and still_said(prior_quote, texts)
+    if dropped:
+        return "keep" if stands or blank(row_key, prior) else "failed"
+    if blank(row_key, value):
+        if stands:
+            return "keep"
+        return "filled" if row_key == "value" and value == [NOT_SURE] else "waiting"
+    return "filled"
 
 
 def from_sentence(quote: str, texts: Sequence[str]) -> str:
