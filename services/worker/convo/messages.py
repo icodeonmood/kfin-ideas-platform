@@ -1,8 +1,8 @@
 """Writing in an idea's conversation: `POST /ideas/:id/conversation/messages` and removing one's own message
 (L-CONVO/5–7, /9, /10; A-API.inbox).
 
-A message is masked before anyone else can see it (L-CONVO/7, through `adapters.hide`), then sealed; it is never
-edited. Files are attached by ID only, and only once their checks have passed: this module never opens a file
+A message is masked before anyone else can see it (L-CONVO/7, through `adapters.hide`: lane C's L-HIDE), then sealed;
+it is never edited. Files are attached by ID only, and only once their checks have passed: this module never opens a file
 (non-negotiable 8). A mention tells the person (`mention`), and gives a person who is not already in the
 conversation that one message to read (L-CONVO/6, BLD-F052). The sharer hears of anyone else's message (`comment`),
 once per hour of messages (BLD-F056). Logs and audit rows carry IDs only.
@@ -18,7 +18,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from convo import adapters
+from convo import LOCK, adapters
 from convo.access import may_read_full, reader
 from convo.reads import CLEAN_FILE_STATES, REMOVE_WITHIN, _mine, closed_message, entry_for
 from convo.render import IST
@@ -33,7 +33,7 @@ MAX_FILES = 5
 MAX_MENTIONS = 10
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _ATT = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
-_ROUTE = "POST /ideas/:id/conversation/messages"
+_ROUTE = "POST /ideas/{}/conversation/messages"  # with the idea's reference: a key is for one idea (A-API.conventions/3)
 # As `convo.post` (BLD-F057): placed one microsecond after the idea's last line when its time would not be later.
 _INSERT = (
     "INSERT INTO conversation_entries (id, idea_uuid, type, author_code, author_user_id, text_encrypted, mentions, at) "
@@ -50,16 +50,20 @@ FILE_HAS_DETAIL = "This file has a customer detail in it. Hide the detail or rem
 NOT_YOURS = "You can remove only your own messages."
 TOO_LATE = "A message can be removed only in the first 5 minutes after sending."
 KEY_REUSED = "This request was already sent with different words. Refresh and try again."
+TOO_MANY_FILES = "Attach up to 5 files to a message."  # BLD-F055: refused, never dropped
+TOO_MANY_MENTIONS = "Mention up to 10 people in a message."
 
 
-def _ids(value: Any, pattern: re.Pattern[str], limit: int) -> list[str]:
+def _ids(value: Any, pattern: re.Pattern[str]) -> list[str]:
+    """Each well-formed ID once, in the order given. The limits are checked after access, so a stranger still
+    gets 404."""
     if not isinstance(value, list):
         return []
     out: list[str] = []
     for v in value:
         if isinstance(v, str) and pattern.match(v) and v not in out:
             out.append(v)
-    return out[:limit]
+    return out
 
 
 def send(
@@ -75,8 +79,8 @@ def send(
     hidden from it."""
     raw = body.get("text")
     text = raw.strip() if isinstance(raw, str) else ""
-    file_ids = _ids(body.get("file_ids"), _ATT, MAX_FILES)
-    mention_ids = [u for u in _ids(body.get("mentions"), _UUID, MAX_MENTIONS) if u != user_id]
+    file_ids = _ids(body.get("file_ids"), _ATT)
+    mention_ids = [u for u in _ids(body.get("mentions"), _UUID) if u != user_id]
     t = at or now()
     with conn.transaction():
         idea = load_idea(conn, ref)
@@ -87,15 +91,26 @@ def send(
             raise Refused(422, "empty_message", EMPTY, "text")
         if len(text) > MAX_CHARS:
             raise Refused(422, "too_long", TOO_LONG, "text")
-        masked, hidden = adapters.hide(conn, str(idea["id"]), text) if text else ("", 0)
+        if len(file_ids) > MAX_FILES:
+            raise Refused(422, "too_many_files", TOO_MANY_FILES, "file_ids")
+        if len(mention_ids) > MAX_MENTIONS:
+            raise Refused(422, "too_many_mentions", TOO_MANY_MENTIONS, "mentions")
         if idempotency_key:
-            first = _idempotent(conn, user_id, idempotency_key, masked, file_ids, mention_ids)
+            first = _idempotent(conn, idea, user_id, idempotency_key, text, file_ids, mention_ids)
             if first is not None:
                 return {"entry": entry_for(conn, idea, user_id, first, t), "hidden": 0}
         _check_files(conn, idea, r.code, file_ids)
         mentioned = _people(conn, mention_ids)
 
+        # The entry's id comes first: lane C's L-HIDE keeps the writer's own words and each hidden value under it
+        # (source "conversation"), in this transaction (BLD-F054).
         entry_id = str(uuid.uuid4())
+        masked, hidden = (
+            adapters.hide(conn, str(idea["id"]), text, by=user_id, entry_id=entry_id) if text else ("", 0)
+        )
+        # After hiding, as lane B's desk takes them (L-HIDE's lock, then this one), so the two locks always come in
+        # one order; before the last line's time is read, so two writers cannot tie (BLD-F057).
+        conn.execute(LOCK, (str(idea["id"]),))
         as_code = r.code if (r.sharer or r.crew) else None
         placed = conn.execute(
             _INSERT,
@@ -120,19 +135,29 @@ def send(
 
 
 def _idempotent(
-    conn: Conn, user_id: str, key: str, masked: str, file_ids: list[str], mention_ids: list[str]
+    conn: Conn,
+    idea: dict[str, Any],
+    user_id: str,
+    key: str,
+    text: str,
+    file_ids: list[str],
+    mention_ids: list[str],
 ) -> str | None:
-    """A-API.conventions/3: the first result for a repeated key (the entry id), or None to go ahead. The hash is of
-    the masked words and the IDs, never the typed words."""
+    """A-API.conventions/3: the first result for a repeated key (the entry id), or None to go ahead. The route and
+    the hash carry the idea, so one key on two ideas is refused rather than read as a repeat. The hash is of the
+    words masked by the shared patterns (stable between two tries, unlike a model's finds) and the IDs, never the
+    typed words."""
     if not 8 <= len(key) <= 200:
         raise Refused(422, "idempotency_key_invalid", "", "Idempotency-Key")
+    masked = adapters.pattern_mask(text)[0] if text else ""
+    route = _ROUTE.format(idea["idea_id"])
     digest = hashlib.sha256(
-        "\x1f".join([masked, ",".join(file_ids), ",".join(sorted(mention_ids))]).encode()
+        "\x1f".join([str(idea["id"]), masked, ",".join(file_ids), ",".join(sorted(mention_ids))]).encode()
     ).hexdigest()
     made = conn.execute(
         "INSERT INTO idempotency_keys (key, user_id, route, request_hash) VALUES (%s, %s, %s, %s) "
         "ON CONFLICT (user_id, key) DO NOTHING RETURNING key",
-        (key, user_id, _ROUTE, digest),
+        (key, user_id, route, digest),
     ).fetchone()
     if made is not None:
         return None
@@ -140,7 +165,7 @@ def _idempotent(
         "SELECT route, request_hash, response_json FROM idempotency_keys WHERE user_id = %s AND key = %s",
         (user_id, key),
     ).fetchone()
-    if row is None or row["route"] != _ROUTE or row["request_hash"] != digest:
+    if row is None or row["route"] != route or row["request_hash"] != digest:
         raise Refused(409, "idempotency_key_reused", KEY_REUSED)
     first = (row["response_json"] or {}).get("entry_id")
     if not first:

@@ -49,8 +49,14 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
             "SELECT * FROM conversation_entries WHERE idea_uuid = %s ORDER BY at, id", (idea["id"],)
         ).fetchall()
     ]
-    if not r.full:  # mentioned only: the messages that mention them, and their own replies (BLD-F052)
-        rows = [x for x in rows if x["type"] == "message" and (user_id in _mentions(x) or _mine(x, r))]
+    # Mentioned only: the messages that mention them (not removed), and their own replies (BLD-F052).
+    if not r.full:
+        rows = [
+            x
+            for x in rows
+            if x["type"] == "message"
+            and ((user_id in _mentions(x) and x["deleted_at"] is None) or _mine(x, r))
+        ]
     files = _files(conn, ctx, [str(x["id"]) for x in rows if x["type"] == "message" and not x["deleted_at"]])
 
     timeline: list[tuple[dt.datetime, int, dict[str, Any]]] = []
@@ -81,7 +87,7 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
     sharer = ctx.people.by_code(idea["contributor_code"])
     out: dict[str, Any] = {
         "idea": _idea_ref(idea),
-        "header": _header(ctx, sharer, team),
+        "header": _header(ctx, sharer, team, t),
         "audience": audience,
         "participants": _participants(ctx, idea, crew, team, rows, staff_as, sharer, t),
         "entries": entries,
@@ -257,7 +263,8 @@ def render_answer(a: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Files: only checked ones, by ID, never opened here (non-negotiable 8)
+# Files: only checked ones, by ID, never opened here (non-negotiable 8), and only to readers the attachment route
+# lets open them (BLD-F062): other readers get the entry without its files
 # ---------------------------------------------------------------------------------------------------------------
 _FILE_SQL = (
     "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, hidden_note, uploaded_by_code, created_at, "
@@ -283,7 +290,7 @@ def _file_item(ctx: Ctx, f: dict[str, Any]) -> dict[str, Any]:
 
 def _files(conn: Conn, ctx: Ctx, entry_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not entry_ids:
+    if not entry_ids or not ctx.reader.files:
         return out
     sql = _FILE_SQL.format(key="conversation_entry_id")
     for f in conn.execute(sql, (entry_ids, list(CLEAN_FILE_STATES))).fetchall():
@@ -293,7 +300,7 @@ def _files(conn: Conn, ctx: Ctx, entry_ids: list[str]) -> dict[str, list[dict[st
 
 def _answer_files(ctx: Ctx, answer_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not answer_ids:
+    if not answer_ids or not ctx.reader.files:
         return out
     sql = _FILE_SQL.format(key="answer_id")
     for f in ctx.conn.execute(sql, (answer_ids, list(CLEAN_FILE_STATES))).fetchall():
@@ -310,7 +317,7 @@ def _idea_ref(idea: dict[str, Any]) -> dict[str, Any]:
     return {"id": idea["idea_id"], "title": idea.get("title") or "", "status": idea["status"], "meta": meta}
 
 
-def _header(ctx: Ctx, sharer: Person, team: dict[str, Any] | None) -> dict[str, str]:
+def _header(ctx: Ctx, sharer: Person, team: dict[str, Any] | None, t: dt.datetime) -> dict[str, str]:
     """'Your idea, shared Saturday 14 November' / 'Ravi Nair’s idea, Investor service, Hyderabad' / 'Your idea,
     being built by Arjun Rao’s team' (S-08.layout/1)."""
     mine = ctx.reader.sharer
@@ -319,7 +326,7 @@ def _header(ctx: Ctx, sharer: Person, team: dict[str, Any] | None) -> dict[str, 
         lead = ctx.people.by_user(str(team["lead_user_id"])) if team["lead_user_id"] else None
         line = f"{whose}, being built by {f'{lead.name}’s team' if lead and lead.id else team['name']}"
     elif mine and ctx.idea.get("shared_at"):
-        line = f"{whose}, shared {render.day(ctx.idea['shared_at'], now().astimezone(render.IST).date())}"
+        line = f"{whose}, shared {render.day(ctx.idea['shared_at'], t.astimezone(render.IST).date())}"
     else:
         line = ", ".join(x for x in (whose, ctx.idea.get("area"), ctx.idea.get("city")) if x)
     return {"whose": "Your idea" if mine else "The idea", "line": line}

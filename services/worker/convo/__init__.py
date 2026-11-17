@@ -4,14 +4,17 @@
 transaction, so the line exists exactly when the change that caused it does. The arguments are those of lane B's
 `desk/adapters.say`, so lane B and builder F1 switch to it by one line.
 
-What goes in is a code and IDs: `event` is a dotted code (`desk.opened`, `crew.joined`), `payload` holds IDs, enums,
-numbers and booleans only (non-negotiable 3). Lane F turns the code into the words of
+What goes in is a code and IDs: `event` is a dotted code (`desk.opened`, `crew.joined`), `payload` holds JSON scalars
+only: IDs, enums, times, numbers and booleans, each string at most 64 characters (non-negotiable 3). A payload never
+refuses for its shape alone, so a caller's decision is not rolled back over a timestamp or a float. Lane F turns the code into the words of
 `1pc-handoff/reference/copy/Messages.md` when the conversation is read (`convo.render`), with names resolved then, so
 a renamed or erased person reads right everywhere. A new code needs a line in `convo.render`: send it to lane F.
 
 Order: every line is placed just after the idea's last line whenever its time would tie with it or come before it
 (BLD-F013, BLD-F057). Ids are random and one transaction has one `now()`, so without this the lines one
 action writes ("Ravi Nair approved…", "Kavya joined the crew.") would read back shuffled. Messages use the same rule.
+The idea's conversation lock (`LOCK`, a transaction-level advisory lock) is taken before the last line's time is
+read, so two writers on one idea cannot tie; it is held until the caller's transaction ends.
 
 People's messages do not come through here: they are written by `convo.messages.send`, which masks and seals them.
 """
@@ -19,6 +22,7 @@ People's messages do not come through here: they are written by `convo.messages.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 from collections.abc import Mapping
 
@@ -26,10 +30,12 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 
-Ref = str | int | bool | None
+Ref = str | int | float | bool | None
 
 EVENT_CODE = re.compile(r"^[a-z_]+(\.[a-z_]+)*$")  # conversation_entries.event's CHECK
-REF_VALUE = re.compile(r"^[A-Za-z0-9_.:@-]{1,120}$")  # an ID or an enum: no spaces, so never a sentence
+REF_MAX = 64  # an ID, an enum or an ISO time; longer is free text, which never goes in a payload
+# One writer at a time per idea, from before the last line's time is read until the transaction ends (BLD-F057).
+LOCK = "SELECT pg_advisory_xact_lock(hashtext(%s::uuid::text))"
 # The entry's time is `at` (now by default), or one microsecond after the idea's last line if that is not earlier;
 # `greatest` skips the NULL of an empty conversation. `convo.messages` writes the same expression (BLD-F057).
 _INSERT = (
@@ -63,7 +69,8 @@ def post(
     - `event`: the dotted code the line is rendered from at read time.
     - `author_user_id` (staff, a `users.id`) or `author_code` (a contributor code, `CTR-…`): who did it; both
       optional for a system line.
-    - `payload`: IDs, enums, numbers and booleans only, never text (a string with a space is refused).
+    - `payload`: JSON scalars only (str, int, float, bool, None): IDs, enums, ISO times, numbers and booleans.
+      A string over 64 characters (free text), a nested value or a float that JSON cannot hold is refused.
     - `question_set_id`, `entry_type`: a question set (`"questions"`) or its answers (`"answers"`) appear by
       reference to the set.
     - `at`: when it happened; now by default. A line that would tie with or come before the idea's last line is
@@ -77,17 +84,23 @@ def post(
         raise ConvoError("questions and answers entries need question_set_id")
     body = dict(payload or {})
     for key, value in body.items():
-        if not isinstance(value, str | int | bool) and value is not None:
-            raise ConvoError(f"payload {key!r} must be an ID, enum, number or boolean")
-        if isinstance(value, str) and not REF_VALUE.match(value):
-            raise ConvoError(f"payload {key!r} must be an ID or an enum, not text")
-    row = conn.execute(
-        _INSERT,
-        {"idea": idea_uuid, "type": entry_type, "event": event, "payload": Jsonb(body), "user": author_user_id,
-         "code": author_code, "set": question_set_id, "at": at},
-    ).fetchone()  # fmt: skip
+        if value is not None and not isinstance(value, str | int | float | bool):
+            raise ConvoError(f"payload {key!r} must be a JSON scalar")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ConvoError(f"payload {key!r} must be a finite number")
+        if isinstance(value, str) and len(value) > REF_MAX:
+            raise ConvoError(f"payload {key!r} must be an ID, enum or time, not text")
+    # A savepoint inside the caller's transaction; its own transaction on an autocommit connection, so the lock
+    # always covers the read of the last line's time and the insert.
+    with conn.transaction():
+        conn.execute(LOCK, (idea_uuid,))
+        row = conn.execute(
+            _INSERT,
+            {"idea": idea_uuid, "type": entry_type, "event": event, "payload": Jsonb(body), "user": author_user_id,
+             "code": author_code, "set": question_set_id, "at": at},
+        ).fetchone()  # fmt: skip
     assert row is not None
     return str(row["id"])
 
 
-__all__ = ["ConvoError", "Ref", "post"]
+__all__ = ["LOCK", "ConvoError", "Ref", "post"]

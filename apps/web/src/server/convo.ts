@@ -33,7 +33,9 @@ async function forward(path: string, init: RequestInit = {}): Promise<NextRespon
   return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 
-/** Only the fields the worker reads, each of the right type; anything else is dropped. */
+/** Only the fields the worker reads, each of the right type; anything else is dropped. The cap of 20 only bounds
+ * the body: it is above the worker's limits (5 files, 10 mentions), so a longer list still reaches the worker as
+ * too long and is refused with 422, never trimmed to fit (BLD-F055). */
 export function messageBody(raw: unknown): ConversationMessageCreate {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const ids = (v: unknown): string[] | undefined =>

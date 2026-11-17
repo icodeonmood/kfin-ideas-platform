@@ -1312,11 +1312,14 @@ export interface ConversationMessageResponse {
   /** How many details were hidden from the words as sent. */
   hidden: number;
 }
-/** Error codes: `empty_message`, `too_long`, `file_unavailable`, `file_not_checked`, `file_has_detail`,
- * `conversation_closed`, `idempotency_key_reused`, `not_yours`, `too_late`, `not_found`. */
+/** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `file_unavailable`,
+ * `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`, `not_yours`, `too_late`,
+ * `not_found`. */
 export type ConversationErrorCode =
   | "empty_message"
   | "too_long"
+  | "too_many_files"
+  | "too_many_mentions"
   | "file_unavailable"
   | "file_not_checked"
   | "file_has_detail"
