@@ -5,7 +5,11 @@ import { teamupGet, teamupWrite } from "@/server/teamup";
 type Ctx = { params: Promise<{ id: string }> };
 
 const mine = teamupGet((id) => `/internal/ideas/${id}/team-up`);
-const send = teamupWrite("POST", (id) => `/internal/ideas/${id}/team-up`, ["note", "brought_idea_ids", "draft_id"]);
+const send = teamupWrite("POST", (id) => `/internal/ideas/${id}/team-up`, [
+  "note",
+  "brought_idea_ids",
+  "draft_id",
+]);
 
 /** GET /api/ideas/{id}/team-up: this idea's team-up state for the signed-in person ("Waiting for Ravi"). */
 export async function GET(request: NextRequest, ctx: Ctx) {
