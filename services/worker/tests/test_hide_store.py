@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -17,6 +18,22 @@ from pii import vault
 from tests import helpers
 
 pytestmark = pytest.mark.stack
+
+
+@pytest.fixture
+def hdb(db: Any, company_repo: Any) -> Iterator[Any]:
+    """The migrated test database with every switch on (the gatekeeper runs in fake mode) and fresh caches."""
+    from core import killswitch
+    from gateway import limits
+    from gateway.routes import FAKE_SCRIPT
+
+    killswitch.clear_cache()
+    limits.reset()
+    FAKE_SCRIPT.clear()
+    yield db
+    FAKE_SCRIPT.clear()
+    killswitch.clear_cache()
+
 
 FOLIO, PAN, PHONE = "1234567/89", "ABCPK1234F", "9876543210"
 WORDS = f"SIP failed for the investor. Folio {FOLIO}, PAN {PAN}, call {PHONE} after 6."
@@ -63,7 +80,8 @@ def masked_message(conn: Any, mid: str) -> str:
     return text
 
 
-def test_l_hide_rules_3_4_the_masked_copy_is_all_others_get_and_no_value_is_stored_in_clear(db: Any) -> None:
+def test_l_hide_rules_3_4_the_masked_copy_is_all_others_get_and_no_value_is_stored_in_clear(hdb: Any) -> None:
+    db = hdb
     uid, code = person(db)
     iid = idea(db, code)
     mid, out = message(db, iid, uid, WORDS)
@@ -87,12 +105,15 @@ def test_l_hide_rules_3_4_the_masked_copy_is_all_others_get_and_no_value_is_stor
     }
     values = {t: v for t, (_, v) in vault.mapping(db, scope_for(iid)).items() if t in tags}
     assert sorted(values.values()) == sorted([FOLIO, PAN, PHONE])
-    audit = db.execute("SELECT after FROM audit_log WHERE action = 'hide.detected'").fetchone()
+    audit = db.execute(
+        "SELECT after FROM audit_log WHERE action = 'hide.detected' AND entity = %s", (f"idea:{iid}",)
+    ).fetchone()
     assert audit["after"]["kinds"] == {"folio": 1, "pan": 1, "phone": 1}
     assert masked_message(db, mid) == out.masked
 
 
-def test_l_hide_rules_6_show_needs_a_reason_and_an_edit_keeps_the_choice(db: Any) -> None:
+def test_l_hide_rules_6_show_needs_a_reason_and_an_edit_keeps_the_choice(hdb: Any) -> None:
+    db = hdb
     uid, code = person(db)
     other, _ = person(db)
     iid = idea(db, code)
@@ -107,7 +128,9 @@ def test_l_hide_rules_6_show_needs_a_reason_and_an_edit_keeps_the_choice(db: Any
     shown = show(db, iid, pan_id, reason="made_up_example", by=uid)
     assert shown["state"] == "shown" and shown["reason"] == "made_up_example" and "shown_at" in shown
     assert PAN in masked_message(db, mid) and "Folio ••••89" in masked_message(db, mid)
-    audit = db.execute("SELECT reason, after FROM audit_log WHERE action = 'hide.shown'").fetchone()
+    audit = db.execute(
+        "SELECT reason, after FROM audit_log WHERE action = 'hide.shown' AND entity = %s", (f"idea:{iid}",)
+    ).fetchone()
     assert audit["reason"] == "made_up_example" and PAN not in str(audit["after"])
 
     again = hide_message(db, iid, WORDS + " Thanks.", by=uid, source_id=mid, gatekeeper=False)
@@ -120,7 +143,8 @@ def test_l_hide_rules_6_show_needs_a_reason_and_an_edit_keeps_the_choice(db: Any
     assert PAN not in masked_message(db, mid)
 
 
-def test_l_hide_rules_1_hide_text_for_desk_written_text(db: Any) -> None:
+def test_l_hide_rules_1_hide_text_for_desk_written_text(hdb: Any) -> None:
+    db = hdb
     reviewer, _ = person(db)
     _, code = person(db)
     iid = idea(db, code, shared=True)
@@ -132,7 +156,8 @@ def test_l_hide_rules_1_hide_text_for_desk_written_text(db: Any) -> None:
     assert (row["source"], row["found_by"]) == ("desk", "patterns")
 
 
-def test_l_hide_rules_7_the_desk_hides_a_missed_name_in_every_copy(db: Any) -> None:
+def test_l_hide_rules_7_the_desk_hides_a_missed_name_in_every_copy(hdb: Any) -> None:
+    db = hdb
     reviewer, _ = person(db)
     uid, code = person(db)
     iid = idea(db, code, shared=True, title="Kiran Rao waits for SIP refunds")
@@ -156,7 +181,10 @@ def test_l_hide_rules_7_the_desk_hides_a_missed_name_in_every_copy(db: Any) -> N
         "SELECT source_id, found_by FROM hidden_details WHERE idea_uuid = %s AND kind = 'name'", (iid,)
     ).fetchall()
     assert {(str(r["source_id"]), r["found_by"]) for r in rows} == {(mid, "reviewer"), (m2, "reviewer")}
-    audit = db.execute("SELECT actor, after FROM audit_log WHERE action = 'hide.desk_hidden'").fetchone()
+    audit = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.desk_hidden' AND entity = %s",
+        (f"idea:{iid}",),
+    ).fetchone()
     assert audit["actor"] == f"user:{reviewer}" and "Kiran" not in str(audit["after"])
     assert "sharer_notified" in audit["after"]  # posted once lane A's notify knows the kind (BLD-C063)
     assert helpers.tables_containing(db, "Kiran Rao") == []
@@ -173,7 +201,8 @@ def test_l_hide_rules_7_the_desk_hides_a_missed_name_in_every_copy(db: Any) -> N
     assert later.masked == "Name ••••ao again"
 
 
-def test_l_hide_rules_7_title_and_part_and_drafts_are_not_for_the_desk(db: Any) -> None:
+def test_l_hide_rules_7_title_and_part_and_drafts_are_not_for_the_desk(hdb: Any) -> None:
+    db = hdb
     reviewer, _ = person(db)
     uid, code = person(db)
     iid = idea(db, code, shared=True, title=f"Folio {FOLIO} shows the wrong nominee")
@@ -201,7 +230,8 @@ def test_l_hide_rules_7_title_and_part_and_drafts_are_not_for_the_desk(db: Any) 
     _ = uid
 
 
-def test_l_hide_rules_4_the_scope_is_the_idea_row_so_show_it_still_works_after_send(db: Any) -> None:
+def test_l_hide_rules_4_the_scope_is_the_idea_row_so_show_it_still_works_after_send(hdb: Any) -> None:
+    db = hdb
     """The draft and the shared idea are one `ideas` row; values sit under `DRAFT-<idea uuid>` before and after send."""
     uid, code = person(db)
     iid = idea(db, code)

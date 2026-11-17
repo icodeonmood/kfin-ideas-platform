@@ -149,7 +149,7 @@ def known_values(
     appear: value -> (kind, found_by). Read from the vault; never leaves the worker."""
     rows = conn.execute(
         "SELECT DISTINCT vault_tag, kind, found_by FROM hidden_details WHERE idea_uuid = %s AND vault_tag IS NOT NULL "
-        "AND state = 'hidden' AND (found_by IN ('reviewer', 'gatekeeper') OR vault_tag = ANY(%s))",
+        "AND state = 'hidden' AND (found_by IN ('reviewer', 'gatekeeper') OR vault_tag = ANY(%s::text[]))",
         (idea_uuid, sorted(extra_tags or set())),
     ).fetchall()
     if not rows:

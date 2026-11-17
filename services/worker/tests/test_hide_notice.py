@@ -20,7 +20,12 @@ REVIEWER = "0b6f1c1e-3333-4a4a-8a8a-000000000003"
 @pytest.fixture
 def posted(monkeypatch: pytest.MonkeyPatch) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-    monkeypatch.setattr(notify, "post", lambda *a, **kw: calls.append((a, kw)) or notify.Posted())
+
+    def record(*a: Any, **kw: Any) -> notify.Posted:
+        calls.append((a, kw))
+        return notify.Posted()
+
+    monkeypatch.setattr(notify, "post", record)
     return calls
 
 

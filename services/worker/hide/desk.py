@@ -144,7 +144,7 @@ def _owner_range(
     returns that detail (the reviewer masks it again)."""
     rebuilt, segs = layout(src.owner_text, details)
     if rebuilt == src.masked_now:
-        hit = [s for s in segs if s.m_start < end and start < s.m_end]
+        hit = [s for s in segs if s.m_end > s.m_start and s.m_start < end and start < s.m_end]
         for s in hit:
             if s.detail is not None and s.detail["state"] == "hidden":
                 inside = s.m_start <= start and end <= s.m_end
