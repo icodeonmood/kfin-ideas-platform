@@ -1,6 +1,9 @@
 """Synthetic people and ideas for the review side's database tests (non-negotiable 11: invented names only).
 
-Every helper writes through the same `db` connection the test uses (autocommit) and returns plain values.
+Every helper writes through the same `db` connection the test uses (autocommit) and returns plain values. What
+they make is removed when the test ends (`clean_up_desk_rows`, autouse in every lane B database test module that
+imports it), so no synthetic person or idea is left in the shared test database for another lane's tests: on 17 Nov
+leftover users broke the seed test.
 """
 
 from __future__ import annotations
@@ -8,12 +11,49 @@ from __future__ import annotations
 import datetime as dt
 import secrets
 import uuid
+from collections.abc import Iterator
 from typing import Any
+
+import pytest
 
 from core.db import Conn
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 _counter = iter(range(1, 10**6))
+_made: dict[str, list[str]] = {
+    "users": [],
+    "ideas": [],
+}  # what this test's helpers created, removed at its end
+
+
+@pytest.fixture(autouse=True)
+def clean_up_desk_rows(test_database: str) -> Iterator[None]:
+    """Remove every idea and person the helpers made in this test, with what hangs off them: ideas first (their
+    decisions, windows, merges, question sets, answers, files and crew go with them), then the people (contributor
+    codes and role grants go with them). Rows the services wrote about them by ID only, such as `audit_log`, stay."""
+    _made["users"].clear()
+    _made["ideas"].clear()
+    yield
+    if not (_made["users"] or _made["ideas"]):
+        return
+    from core.db import connect
+    from tests import helpers
+
+    with connect(helpers.db_url(test_database), autocommit=True) as conn, conn.transaction():
+        codes = [
+            str(r["contributor_code"])
+            for r in conn.execute(
+                "SELECT contributor_code FROM contributor_map WHERE user_id = ANY(%s::uuid[])",
+                (_made["users"],),
+            ).fetchall()
+        ]
+        conn.execute(
+            "DELETE FROM ideas WHERE id = ANY(%s::uuid[]) OR contributor_code = ANY(%s)",
+            (_made["ideas"], codes),
+        )
+        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (_made["users"],))
+    _made["users"].clear()
+    _made["ideas"].clear()
 
 
 def at(d: int, h: int = 0, mi: int = 0, m: int = 11, y: int = 2026) -> dt.datetime:
@@ -33,6 +73,7 @@ def person(conn: Conn, name: str, *, city: str = "Hyderabad", area: str = "Inves
     conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, user_id))
     for role in roles:
         conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (user_id, role))
+    _made["users"].append(user_id)
     return {"id": user_id, "code": code, "name": name, "first_name": name.split()[0]}
 
 
@@ -55,6 +96,7 @@ def idea(conn: Conn, sharer: dict[str, str], *, title: str = "Investors call to 
     sql = f"INSERT INTO ideas ({names}) VALUES ({marks}) RETURNING *"  # noqa: S608 (column names are this file's own)
     row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
+    _made["ideas"].append(str(row["id"]))
     conn.execute(
         "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'lead', 'shared')",
         (row["id"], sharer["code"]),

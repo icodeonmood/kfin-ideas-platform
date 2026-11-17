@@ -16,6 +16,7 @@ from core.db import Conn
 from desk import asking, clocks, committee, decide, merging, reads, revise
 from desk.store import Refused, own_codes
 from tests import desk_fixtures as f
+from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 REASON = "Right problem, wrong time: the new SMS vendor arrives in February."
 NOTE = "Picked after all: the branch counts make the case on their own."
