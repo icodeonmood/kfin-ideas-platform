@@ -102,13 +102,27 @@ def test_V_ACC_review_9_nothing_is_sent_without_a_choice_and_a_reason(db: Conn, 
     assert db.execute("SELECT count(*) AS n FROM idea_decisions").fetchone() == {"n": 0}
 
 
-def test_L_DECIDE_rules_4_the_wording_check_warns_then_lets_it_through(
+def test_L_DECIDE_rules_4_BLD_B236_the_wording_check_warns_with_the_words_then_lets_it_through(
     db: Conn, cast: dict[str, Any]
 ) -> None:
     ref, reason = cast["idea"]["idea_id"], "This is a duplicate of the SMS idea, so it is not going ahead."
     with pytest.raises(Refused) as refused:
         decide.send(db, ref, cast["meera"]["id"], {"choice": "not_picked", "reason": reason})
     assert refused.value.code == "wording_check" and "“duplicate”" in (refused.value.message or "")
+    err = refused.value.body()["error"]
+    assert (refused.value.status, err["field"], err["words"]) == (422, "reason", ["duplicate"])
+    assert err["suggestions"] == [
+        {"word": "duplicate", "suggestion": "say it is the same problem as another idea, and name it"}
+    ]
+    assert db.execute("SELECT count(*) AS n FROM idea_decisions").fetchone() == {"n": 0}
+    for not_yes in ("true", 1):  # only a real `true` sends it as written
+        with pytest.raises(Refused):
+            decide.send(
+                db,
+                ref,
+                cast["meera"]["id"],
+                {"choice": "not_picked", "reason": reason, "wording_ok": not_yes},
+            )
     d = decide.send(
         db, ref, cast["meera"]["id"], {"choice": "not_picked", "reason": reason, "wording_ok": True}
     )
