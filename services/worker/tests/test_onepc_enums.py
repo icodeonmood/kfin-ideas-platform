@@ -23,12 +23,19 @@ _CHECK = re.compile(r"CHECK \(\s*(\w+) IN \(([^)]*)\)|CHECK \(\s*(\w+) <@ ARRAY\
 _LITERAL = re.compile(r"'([^']*)'")
 
 
+# Migrations after the cut-over that widen one of its CHECKs (lane C's `detail_hidden_by_desk`, BLD-C063).
+LATER = sorted(p for p in (ROOT / "db" / "migrations").glob("*.sql") if p.name > MIGRATION.name)
+
+
 def checks_in_migration(sql: str) -> dict[str, frozenset[str]]:
     up = sql.split("-- migrate:down")[0]
     tables = [(m.start(), m.group(1)) for m in _TABLE.finditer(up)]
     out: dict[str, frozenset[str]] = {}
     for m in _CHECK.finditer(up):
-        table = [name for at, name in tables if at < m.start()][-1]
+        before = [name for at, name in tables if at < m.start()]
+        if not before:
+            continue
+        table = before[-1]
         column, listed = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
         out[f"{table}.{column}"] = frozenset(_LITERAL.findall(listed))
     return out
@@ -52,6 +59,12 @@ def test_e_enums_idea_status_is_the_packs_eleven() -> None:
 
 def test_e_enums_every_check_in_the_migration_equals_its_enum() -> None:
     found = checks_in_migration(MIGRATION.read_text(encoding="utf-8"))
+    for (
+        later
+    ) in LATER:  # a later migration that replaces one of these CHECKs wins, as it does in the database
+        found.update(
+            {k: v for k, v in checks_in_migration(later.read_text(encoding="utf-8")).items() if k in found}
+        )
     for key in enums.db_checks():
         assert key in found, f"{key}: no CHECK in the cut-over migration"
         assert found[key] == enums.expected_check_values(key), key

@@ -23,6 +23,7 @@ export type SwitchName =
   | "capture.mic_hint"
   | "capture.voice"
   | "speech.hosted"
+  | "files.blackout"
   | "desk.listen";
 
 interface Rule {
@@ -49,6 +50,8 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["capture.voice", "speech.hosted", "submissions"],
   },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
+  // "Show it" puts a hidden detail back in what others read: it waits while sharing is paused (L-HIDE.rules/6).
+  { methods: ["POST"], pattern: /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/show\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
@@ -147,6 +150,9 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
   "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
+  // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
+  "files.blackout":
+    "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
   // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
   "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
@@ -186,6 +192,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
+  // L-HIDE (BLD-C060): hiding only ever protects someone, so the desk's "Hide this" and the sharer's "Hide it" work
+  // whatever is paused.
+  /^\/api\/desk\/ideas\/[^/]+\/hide\/?$/,
+  /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/hide\/?$/,
   // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
   // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
