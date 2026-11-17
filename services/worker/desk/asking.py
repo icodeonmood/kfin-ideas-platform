@@ -24,6 +24,9 @@ from desk import adapters, clock, promises, questions, review, when
 from desk.decide import FieldError
 from desk.questions import PART_NAMES, PARTS, SetFacts
 from desk.store import (
+    CUSTOMER_DETAIL,
+    DESK_SEES,
+    FILES_CHECKED,
     Person,
     Refused,
     actor,
@@ -44,7 +47,6 @@ from desk.store import (
 OPEN: tuple[str, ...] = ("sent", "seen", "partly_answered")  # a set the sharer can still answer
 CLOSED = "The review desk has decided, so these questions are closed."
 NOTHING_ANSWERED = "Answer at least one question"
-FILE_HAS_PERSONAL_DATA = "This file has personal details. Hide them or remove the file before you send."
 ANSWER_IN_PROGRESS = (
     "Someone else who shared this idea is answering this question. You can answer the others."
 )
@@ -161,7 +163,8 @@ def _answer_text(r: dict[str, Any]) -> str:
 
 
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
-    """E-ENTITIES FileItem, short form, for the files attached to each answer."""
+    """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
+    of their own. `customer_detail` marks a file in which the scan found a customer detail (DEC-107)."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
@@ -172,9 +175,16 @@ def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, An
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
             {"id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"], "size": r["bytes"],
-             "pages": r["pages"], "state": r["file_state"], "hidden_note": r["hidden_note"]}
+             "pages": r["pages"], "state": r["file_state"], "hidden_note": r["hidden_note"],
+             "customer_detail": r["file_state"] == CUSTOMER_DETAIL}
         )  # fmt: skip
     return out
+
+
+def _only(files: list[dict[str, Any]], states: Sequence[str]) -> list[dict[str, Any]]:
+    """What someone other than the file's sharer may see (DEC-107): the desk `DESK_SEES`, a co-sharer the checked
+    files only. Never a file still checking, infected or locked."""
+    return [x for x in files if x["state"] in states]
 
 
 def _set_facts(s: dict[str, Any], rows: Sequence[dict[str, Any]]) -> SetFacts:
@@ -214,8 +224,11 @@ def _set_json(
         answer = None
         aid = str(r["answer_id"]) if r["answer_id"] else None
         if aid in shown:
+            theirs = files.get(aid or "", [])
+            if r["by_code"] != viewer_code:  # the desk, or a co-sharer reading another sharer's sent answer
+                theirs = _only(theirs, DESK_SEES if viewer_code is None else FILES_CHECKED)
             answer = {
-                "id": aid, "question_id": str(r["id"]), "text": _answer_text(r), "files": files.get(aid or "", []),
+                "id": aid, "question_id": str(r["id"]), "text": _answer_text(r), "files": theirs,
                 "by": by(str(r["by_code"])), "at": _iso(r["sent_at"] or r["saved_at"]), "added_to": r["added_to"],
                 "added_to_name": PART_NAMES.get(str(r["added_to"]), ""), "saved_at": _iso(r["saved_at"]),
                 "sent_at": _iso(r["sent_at"]), "sent": r["sent_at"] is not None,
@@ -494,13 +507,12 @@ def open_set_for_sharer(
 
 
 def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequence[str]) -> None:
-    """Attach `file_ids` to the answer. Only the idea's own files, not on another answer. A file newly attached
-    with personal details found is refused (S-R3.rules/3); one found after attaching blocks the send instead, so
-    autosaving the text keeps working. Nothing is detached here: removing a file is the file row's own action."""
+    """Attach `file_ids` to the answer. Only the idea's own files, not on another answer. A file holding a customer
+    detail can be attached and sent (DEC-107): it is marked, and only the sharer, the desk and the committee open it.
+    Nothing is detached here: removing a file is the file row's own action."""
     ids = sorted({str(i) for i in file_ids})
     if not ids:
         return
-    linked = {str(f["id"]) for f in _files(conn, [answer_id]).get(answer_id, [])}
     rows = {
         str(r["id"]): dict(r)
         for r in conn.execute(
@@ -512,8 +524,6 @@ def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequ
         r = rows.get(fid)
         if r is None or r["idea_uuid"] != idea["id"] or (r["answer_id"] and str(r["answer_id"]) != answer_id):
             raise Refused(422, "file_not_found", FILE_CANT_BE_ADDED, "file_ids")
-        if r["file_state"] == "personal_data_found" and fid not in linked:
-            raise Refused(422, "file_has_personal_data", FILE_HAS_PERSONAL_DATA, "file_ids")
     conn.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer_id, ids))
 
 
@@ -615,10 +625,7 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
         ready = [r for r in unsent if _answer_text(r).strip() or files.get(str(r["answer_id"]))]
         if not ready:
             raise Refused(422, "nothing_answered", NOTHING_ANSWERED)
-        if any(
-            f["state"] == "personal_data_found" for r in ready for f in files.get(str(r["answer_id"]), [])
-        ):
-            raise Refused(422, "file_has_personal_data", FILE_HAS_PERSONAL_DATA, "file_ids")
+        # DEC-107: a file holding a customer detail goes too, marked; the desk decides whether it stays
         conn.execute(
             "UPDATE answers SET sent_at = %s WHERE id = ANY(%s::uuid[])",
             (t, [str(r["answer_id"]) for r in ready]),
@@ -685,7 +692,10 @@ def answers_by_part(conn: Conn, idea_uuid: Any) -> dict[str, list[dict[str, Any]
             (idea_uuid,),
         ).fetchall()
     ]
-    files = _files(conn, [str(r["answer_id"]) for r in rows if r["answer_id"]])
+    files = {
+        k: _only(v, DESK_SEES)
+        for k, v in _files(conn, [str(r["answer_id"]) for r in rows if r["answer_id"]]).items()
+    }
     staff: dict[str, str] = {}
     sharers: dict[str, str] = {}
     out: dict[str, list[dict[str, Any]]] = {}
