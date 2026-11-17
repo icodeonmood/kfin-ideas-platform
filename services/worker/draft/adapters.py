@@ -12,7 +12,7 @@
   answers `voice_unavailable`.
 - L-SIMILAR (branch c/similar): `similar_for` calls c/similar's `similar.similar_for(conn, idea_uuid, title,
   summary) -> list[dict] | None` (None: couldn't check) as soon as it is on main (a guarded import, BLD-C038). Until
-  then similar ideas are not looked for here and the part says so ("Couldn't check for similar ideas. The review
+  then similar ideas are not looked for here and the part says so ("Couldn’t check for similar ideas. The review
   desk will.", `L-SIMILAR.failure`), never "none found".
 
 Nothing here logs a value: only kinds, counts and IDs.
