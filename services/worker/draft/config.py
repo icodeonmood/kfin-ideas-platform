@@ -57,7 +57,8 @@ DEFAULT_DRAFTING: dict[str, Any] = {
         {"label": "Investors", "cues": ["investor", "investors", "customer", "customers"]},
         {"label": "KFin teams", "cues": ["branch", "team", "ops", "operations", "staff"]},
         {"label": "Distributors", "cues": ["distributor", "distributors", "ifa", "mfd", "broker"]},
-        {"label": "AMCs", "cues": ["amc", "amcs", "fund house"]},
+        {"label": "AMC clients", "cues": ["amc", "amcs", "fund house"]},
+        {"label": "Issuer and corporate clients", "cues": ["issuer", "company", "shareholder", "ipo", "agm"]},
     ],
     "area": [
         {"label": "Investor service", "cues": ["investor", "investors", "sms", "call", "calls", "complaint"]},
@@ -117,9 +118,47 @@ def rules(*, fresh: bool = False) -> DraftRules:
     except (RulesConfigError, OSError, KeyError) as exc:
         log.warning("draft.rules_default", rule_code="promises", error_type=type(exc).__name__)
         draft_promises = DEFAULT_PROMISES
-    built = build(drafting, draft_promises)
+    built = with_sorting(build(drafting, draft_promises), _sorting_lists(repo))
     _cache.update(at=now, rules=built)
     return built
+
+
+NOT_SUGGESTED = frozenset({"others"})  # a catch-all the person may choose, never one words can back
+
+
+def _sorting_lists(repo: Any) -> dict[str, list[str]] | None:
+    """L-SORT's lists (`rules/sorting.md`, c/sort-submit) when that rule exists: then they are the ones offered."""
+    from rules import load_rule
+    from rules.loader import RULE_PATHS, RulesConfigError
+
+    if "sorting" not in RULE_PATHS:
+        return None
+    try:
+        data = load_rule(repo, "sorting").data
+    except (RulesConfigError, OSError):
+        return None
+    out = {}
+    for key, field in (("affects", "affects"), ("area", "areas")):
+        lists = data.get(field) or {}
+        out[key] = [str(x) for x in [*(lists.get("shown") or []), *(lists.get("more") or [])]]
+    return out
+
+
+def with_sorting(r: DraftRules, lists: dict[str, list[str]] | None) -> DraftRules:
+    """The sorting lists' labels, each with the cues `rules/drafting.md` gives that label (none if it gives none)."""
+    if not lists:
+        return r
+
+    def merged(own: tuple[Option, ...], labels: list[str]) -> tuple[Option, ...]:
+        cues = {o.label.casefold(): o.cues for o in own}
+        keep = [lab for lab in labels if lab.casefold() not in NOT_SUGGESTED]
+        return tuple(Option(lab, cues.get(lab.casefold(), ())) for lab in keep) or own
+
+    from dataclasses import replace
+
+    return replace(
+        r, affects=merged(r.affects, lists.get("affects") or []), area=merged(r.area, lists.get("area") or [])
+    )
 
 
 def clear_cache() -> None:

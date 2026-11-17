@@ -321,3 +321,16 @@ def test_l_draft_channels_origin_labels_are_the_boards() -> None:
     teams = {"received_at": "2026-11-16T19:02:00+05:30"}
     assert origin_label("teams", teams, now) == "From Teams, yesterday 7:02 pm"
     assert origin_label("email", {"received_at": "not a date"}, now) is None
+
+
+def test_l_draft_sort_lists_from_l_sort_carry_draftings_cues() -> None:
+    from draft.config import with_sorting
+
+    lists = {
+        "affects": ["Investors", "KFin teams", "AMC clients", "Others"],
+        "area": ["Investor service", "Payments"],
+    }
+    merged = with_sorting(RULES, lists)
+    assert [o.label for o in merged.affects] == ["Investors", "KFin teams", "AMC clients"]  # never "Others"
+    assert "investor" in merged.affects[0].cues and merged.area[1].cues == ()
+    assert with_sorting(RULES, None) is RULES

@@ -1,7 +1,7 @@
 # draft-part — one part of the live draft (L-DRAFT.parts), asked once per part, the parts in parallel. Bump `version`
 # and add a CHANGELOG line on any change; `make eval` must pass.
 name: draft-part
-version: 0.1.0
+version: 0.1.1
 tier: fast
 model: claude-haiku-5-5
 effort: low             # no temperature: current models reject non-default sampling (BLD-070)

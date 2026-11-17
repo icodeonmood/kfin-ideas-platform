@@ -17,7 +17,7 @@ kfin:
 
 How "Tell it" turns a person's words into a draft (`L-DRAFT` in the design handoff). The parts start forming once the words reach `parts_from_chars`; similar ideas are looked for from `similar_from_chars`. The minimum before a draft can move to Check it, and how long a draft is kept, are promises: they live in `rules/promises.md`.
 
-`affects` and `area` are the sorting lists (`E-ENUMS.sorting`). The assistant may only choose from them, and only when the person's words back the choice. `cues` are words that suggest an item; they help the assistant and decide which parts a new message can change. They are never shown. Changes go through a pull request approved by an admin.
+`affects` and `area` are the sorting lists (`E-ENUMS.sorting`). The assistant may only choose from them, and only when the person's words back the choice. Once `rules/sorting.md` (L-SORT) is in the company repo, its lists are the ones offered and these labels only carry their cues. `cues` are words that suggest an item; they help the assistant and decide which parts a new message can change. They are never shown. Changes go through a pull request approved by an admin.
 
 `default_means_ms` are the loader's starting times per part (`C-DRAFT-LOADER.maths`) until a week of real timings exists.
 
@@ -43,12 +43,10 @@ affects:
     cues: [branch, branches, team, ops, operations, colleagues, staff, desk, "call centre", "back office"]
   - label: Distributors
     cues: [distributor, distributors, ifa, mfd, broker, brokers, arn, euin, partner]
-  - label: AMCs
+  - label: AMC clients
     cues: [amc, amcs, "fund house", "fund houses", scheme, schemes]
-  - label: Listed companies
+  - label: Issuer and corporate clients
     cues: [issuer, issuers, company, companies, shareholder, shareholders, ipo, agm, dividend]
-  - label: Pension subscribers
-    cues: [nps, pran, subscriber, subscribers, pension, apy]
 area:
   - label: Investor service
     cues: [investor, investors, sms, call, calls, complaint, complaints, kyc, query, queries]
