@@ -152,3 +152,29 @@ def test_C_SHEET_TEAMUP_sent_the_waiting_detail_uses_the_sheet_words() -> None:
     w = rules.requester_after("sent", lead_first="Ravi", lead_ref="x", reason=None, brought=0)
     assert w is not None
     assert w["detail"] == "Ravi reads your note, then approves or declines. You’ll hear in your Inbox."
+
+
+def test_BLD_F029_a_lead_not_named_to_the_requester_is_the_lead_in_every_line() -> None:
+    """DEC-104: a lead who hid their name from the Wall, or has left, is "the lead" to someone not on the crew."""
+    assert rules.waiting_for(None) == "Waiting for the lead"
+    assert rules.waiting_for("Ravi") == "Waiting for Ravi"
+    assert rules.waiting_on_merge(None) == "Waiting on the lead to merge"
+    w = rules.requester_after("sent", lead_first=None, lead_ref="IDEA-2026-001412", reason=None, brought=0)
+    assert w is not None and w["line"] == "Waiting for the lead"
+    assert w["detail"] == "The lead reads your note, then approves or declines. You’ll hear in your Inbox."
+    d = rules.requester_after("declined", lead_first=None, lead_ref="x", reason="Full for now", brought=1)
+    assert d is not None and d["line"] == "The lead declined: “Full for now”. Send yours on its own."
+    bare = rules.requester_after("declined", lead_first=None, lead_ref="x", reason=None, brought=0)
+    assert bare is not None and bare["line"] == "The lead declined."
+    m = rules.draft_after("waiting", lead_first=None, lead_ref="IDEA-2026-001412", reason=None)
+    assert m is not None and m["label"] == "Waiting on the lead to merge"
+    assert m["line"] == (
+        "Waiting for the lead to accept the merge. If the lead declines, you can send yours on its own."
+    )
+    k = rules.draft_after("declined", lead_first=None, lead_ref="x", reason="Better as two")
+    assert k is not None and k["label"] == "The lead kept it separate"
+    assert k["line"] == "The lead kept that idea separate: “Better as two”. Send yours on its own."
+    a = rules.draft_after("accepted", lead_first=None, lead_ref="IDEA-2026-001412", reason=None)
+    assert a is not None and a["line"].startswith("The lead accepted.")
+    for words in (w, d, bare, m, k, a):
+        assert not PRONOUN.search(str(words)) and "A colleague" not in str(words)
