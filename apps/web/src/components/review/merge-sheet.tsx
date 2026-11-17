@@ -34,6 +34,14 @@ export function MergeSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // On close, focus goes back to whatever opened the sheet (a Merge button, or the preview's), if it is still there
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+
   useEffect(() => {
     dialog.current?.showModal();
     let gone = false;
@@ -156,7 +164,11 @@ export function MergeSheet({
                 rows={3}
                 maxLength={sheet.note.max}
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(e) => {
+                  setNote(e.target.value);
+                  // V-FIELDS/4: the message clears as soon as the note is long enough
+                  if (error && e.target.value.trim().length >= sheet.note.min) setError(null);
+                }}
               />
             )}
           </Field>
