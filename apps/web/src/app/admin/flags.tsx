@@ -21,6 +21,8 @@ export type Flag = {
 };
 
 const count = new Intl.NumberFormat("en-IN");
+/** The server's words for the same refusal (`setFlag`, src/server/flags.ts). */
+const PERCENT_NOT_VALID = "Enter a whole number from 0 to 100.";
 
 export function Flags({ initial }: { initial: Flag[] }) {
   const id = useId();
@@ -63,6 +65,13 @@ function FlagForm({ flag, onDone }: { flag: Flag; onDone: (m: string) => Promise
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // An empty share is not 0 per cent: say so here, before anything is sent (the server refuses it too).
+    if (!/^\s*\d+\s*$/.test(percent))
+      return setProblem({
+        code: "percent_not_valid",
+        message: PERCENT_NOT_VALID,
+        field: "alternative_percent",
+      });
     const out = await send("PUT", `/api/admin/flags/${flag.key}`, {
       state,
       alternative_percent: Number(percent),

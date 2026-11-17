@@ -156,7 +156,10 @@ export async function setFlag(input: {
   const reason = reasonOf(input.reason);
   if (input.state !== "on" && input.state !== "off")
     throw new FlagError("state_required", 422, "Choose on or off.", "state");
-  const percent = Number(input.alternativePercent);
+  // An empty field is not 0 per cent (BLD-A216): only a number, or a string of digits, counts.
+  const raw = input.alternativePercent;
+  const percent =
+    typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
   if (!Number.isInteger(percent) || percent < 0 || percent > 100)
     throw new FlagError(
       "percent_not_valid",

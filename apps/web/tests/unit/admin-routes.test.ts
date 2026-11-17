@@ -32,7 +32,8 @@ const { POST: financePOST } = await import("@/app/api/admin/ideas/[id]/measureme
 const wallRoute = await import("@/app/api/admin/ideas/[id]/wall-removal/route");
 const { POST: foundingPOST } = await import("@/app/api/admin/ones/founding/route");
 const { DELETE: oneDELETE } = await import("@/app/api/admin/ones/[id]/route");
-const { bucket } = await import("@/server/flags");
+const { bucket, FlagError, setFlag } = await import("@/server/flags");
+const { PUT: flagPUT } = await import("@/app/api/admin/flags/[key]/route");
 
 const ME = "0b6c1f0e-1d2a-4c3b-9e8f-7a6b5c4d3e21";
 const REF = "IDEA-2026-000123";
@@ -217,5 +218,45 @@ describe("L-AUDIT.flags: one bucket rule on both sides", () => {
     expect(bucket("s1", "00000000-0000-0000-0000-000000000001")).toBe(62);
     expect(bucket("s2", "00000000-0000-0000-0000-000000000002")).toBe(62);
     expect(bucket("s3", "11111111-2222-3333-4444-555555555555")).toBe(86);
+  });
+});
+
+describe("L-AUDIT.flags: an empty share is not 0 per cent (BLD-A216)", () => {
+  const change = (alternativePercent: unknown) =>
+    setFlag({
+      key: "s1",
+      state: "on",
+      alternativePercent,
+      reason: "Trying the new check screen",
+      actorUserId: ME,
+    });
+
+  it("setFlag refuses an empty, blank, missing or non-number share before it reaches the database", async () => {
+    for (const bad of ["", "   ", null, undefined, true, [], "12.5", "-1", "101", 101, 2.5]) {
+      const err = await change(bad).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(FlagError);
+      expect(err).toMatchObject({ code: "percent_not_valid", status: 422, field: "alternative_percent" });
+    }
+  });
+
+  it("the route answers 422 on the share field for an empty share", async () => {
+    const res = await flagPUT(
+      req("/api/admin/flags/s1", {
+        method: "PUT",
+        body: { state: "on", alternative_percent: "", reason: "Trying the new check screen" },
+      }),
+      { params: Promise.resolve({ key: "s1" }) },
+    );
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "percent_not_valid",
+        message: "Enter a whole number from 0 to 100.",
+        field: "alternative_percent",
+      },
+    });
   });
 });
