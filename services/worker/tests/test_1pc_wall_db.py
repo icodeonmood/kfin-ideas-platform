@@ -49,7 +49,9 @@ def _ids(rows: list[dict[str, Any]]) -> list[str]:
     return [r["id"] for r in rows]
 
 
-def test_S_WALL_justin_1_lists_only_ideas_with_the_review_desk_newest_first(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_S_WALL_justin_1_lists_only_ideas_with_the_review_desk_newest_first(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     i = desk["i"]
     f.idea(wall_db, desk["p"]["rhea"], title="Already picked one", status="picked")
     f.idea(wall_db, desk["p"]["rhea"], title="Still a draft", status="draft")
@@ -60,7 +62,9 @@ def test_S_WALL_justin_1_lists_only_ideas_with_the_review_desk_newest_first(wall
     assert out["items"][4]["shared_label"] == "2 days ago"
 
 
-def test_V_ACC_browse_3_just_in_pages_by_five_then_shows_the_rest(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_V_ACC_browse_3_just_in_pages_by_five_then_shows_the_rest(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     first = kindling.just_in(wall_db, now=f.NOW)
     assert len(first["items"]) == 5 and first["next"] == "5" and first["total"] == 7
     assert first["sub"] == "7 with the review desk"
@@ -83,7 +87,9 @@ def test_V_ACC_browse_3_twelve_with_the_desk_show_5_more_then_2_more_then_fewer(
     assert kindling.just_in(db, now=f.NOW)["sub"] == "12 with the review desk"
 
 
-def test_S_WALL_phone_each_row_carries_the_figure_for_the_current_sort(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_S_WALL_phone_each_row_carries_the_figure_for_the_current_sort(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     """L-WALL.justin/5: "Opened by 233 this week", "Shared 2h ago", "3 on the crew", "1 One on the crew"."""
     db, p, i = wall_db, desk["p"], desk["i"]
     for viewer in ("rhea", "kabir"):
@@ -102,7 +108,9 @@ def test_S_WALL_phone_each_row_carries_the_figure_for_the_current_sort(wall_db: 
     assert line("newest", c) == "Shared yesterday" and line("ones", c) == "0 Ones on the crew"
 
 
-def test_J_BROWSE_5_a_Wall_row_opens_the_idea_with_its_way_back_to_the_Wall(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_J_BROWSE_5_a_Wall_row_opens_the_idea_with_its_way_back_to_the_Wall(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     """S-WALL.rules/4: the title opens the idea page; it says "Back to the Wall" and returns to the same sort and
     kind chip (the idea page reads `from` and `back`)."""
     db, i = wall_db, desk["i"]
@@ -110,11 +118,15 @@ def test_J_BROWSE_5_a_Wall_row_opens_the_idea_with_its_way_back_to_the_Wall(wall
     plain = kindling.just_in(db, limit=50, now=f.NOW)["items"][0]
     assert plain["id"] == a and plain["to"] == f"/ideas/{a}?from=wall"
     assert plain["meta"] == "Problem, Investor service"
-    sorted_ = next(r for r in kindling.just_in(db, kind="problem", sort="popular", now=f.NOW)["items"] if r["id"] == a)
+    sorted_ = next(
+        r for r in kindling.just_in(db, kind="problem", sort="popular", now=f.NOW)["items"] if r["id"] == a
+    )
     assert sorted_["to"] == f"/ideas/{a}?from=wall&back=%2Fwall%3Fkind%3Dproblem%26sort%3Dpopular"
 
 
-def test_S_WALL_justin_2_sorts_Popular_by_distinct_openers_in_7_days(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_S_WALL_justin_2_sorts_Popular_by_distinct_openers_in_7_days(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     """L-WALL.justin/4: distinct colleagues in the last 7 days; not the sharer, not a reviewer, not twice."""
     db, p, i = wall_db, desk["p"], desk["i"]
     for viewer in ("rhea", "kabir", "nisha"):
@@ -132,7 +144,9 @@ def test_S_WALL_justin_2_sorts_Popular_by_distinct_openers_in_7_days(wall_db: Co
     assert _ids(out["items"])[2:] == [i[k]["idea_id"] for k in "abdef"]
 
 
-def test_S_WALL_justin_3_sorts_by_crew_size_and_by_Ones_on_the_crew(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_S_WALL_justin_3_sorts_by_crew_size_and_by_Ones_on_the_crew(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     db, i = wall_db, desk["i"]
     farah, arvind, sunil = (f.person(db, n) for n in ("Farah Qureshi", "Arvind Pillay", "Sunil Bakshi"))
     for member in (farah, arvind, sunil):
@@ -161,14 +175,20 @@ def test_V_ACC_browse_6_a_kind_chip_filters_Kindling_and_Just_in_and_the_counts_
     assert problems["total"] == 5 and {r["kind"] for r in problems["items"]} == {"problem"}
     assert problems["counts"] == {"all": 7, "problem": 5, "fix": 1, "business_idea": 1}
     stages = {s["stage"]: s for s in kindling.kindling(db, "problem")}
-    assert stages["picked"]["count"] == 1 and [x["title"] for x in stages["picked"]["items"]] == ["Picked problem"]
+    assert stages["picked"]["count"] == 1 and [x["title"] for x in stages["picked"]["items"]] == [
+        "Picked problem"
+    ]
     assert kindling.kindling(db, None)[0]["count"] == 2
 
 
-def test_S_WALL_kindling_three_stages_with_counts_and_up_to_three_ideas(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_S_WALL_kindling_three_stages_with_counts_and_up_to_three_ideas(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     db, p = wall_db, desk["p"]
     for n in range(4):
-        f.idea(db, p["rhea"], title=f"Being built number {n}", status="being_built", shared_at=f.ago(days=10 - n))
+        f.idea(
+            db, p["rhea"], title=f"Being built number {n}", status="being_built", shared_at=f.ago(days=10 - n)
+        )
     shipped = f.idea(db, p["kabir"], title="Shipped fix", status="shipped")
     f.idea(db, p["kabir"], title="Problem with a fix attached", status="shipped")
     db.execute("INSERT INTO idea_fix (idea_uuid, how) VALUES ((SELECT id FROM ideas WHERE title = %s), 'x')",
@@ -178,7 +198,11 @@ def test_S_WALL_kindling_three_stages_with_counts_and_up_to_three_ideas(wall_db:
     assert [s["stage"] for s in out] == ["picked", "being_built", "shipped"]
     built = out[1]
     assert built["count"] == 4 and len(built["items"]) == 3
-    assert [x["title"] for x in built["items"]] == ["Being built number 3", "Being built number 2", "Being built number 1"]
+    assert [x["title"] for x in built["items"]] == [
+        "Being built number 3",
+        "Being built number 2",
+        "Being built number 1",
+    ]
     kinds = {x["title"]: x for x in out[2]["items"]}
     # E-ENUMS.kind OPEN default: a problem shared with a fix shows as a Fix on the Wall.
     assert kinds["Problem with a fix attached"]["kind"] == "fix"
@@ -213,7 +237,9 @@ def test_P_PRODUCT_privacy_the_Wall_carries_the_short_summary_never_own_words_or
     assert "points" not in str(out) and "own_words" not in str(out)
 
 
-def test_L_WALL_a_title_that_still_holds_a_detail_or_a_tag_is_left_out(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_L_WALL_a_title_that_still_holds_a_detail_or_a_tag_is_left_out(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     db = wall_db
     f.idea(db, desk["p"]["rhea"], title="Call the investor on 9876543210 today", shared_at=f.ago(hours=1))
     f.idea(db, desk["p"]["rhea"], title="Folio [[CLIENT_FOLIO_1]] keeps bouncing", shared_at=f.ago(hours=1))
@@ -221,7 +247,9 @@ def test_L_WALL_a_title_that_still_holds_a_detail_or_a_tag_is_left_out(wall_db: 
     assert not any("9876543210" in t or "[[" in t for t in titles)
 
 
-def test_DEC_106_the_on_the_Wall_hook_keeps_restricted_and_merged_ideas_off(wall_db: Conn, desk: dict[str, Any]) -> None:
+def test_DEC_106_the_on_the_Wall_hook_keeps_restricted_and_merged_ideas_off(
+    wall_db: Conn, desk: dict[str, Any]
+) -> None:
     db, i = wall_db, desk["i"]
     db.execute("UPDATE ideas SET visibility = 'committee' WHERE id = %s", (i["a"]["id"],))
     db.execute("UPDATE ideas SET merged_into = %s WHERE id = %s", (i["c"]["id"], i["b"]["id"]))
