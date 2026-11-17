@@ -178,9 +178,9 @@ export function LaunchScreen({ url, shownUrl, qr }: Props) {
                 <polygon
                   className={on("dl-spark", s >= 1)}
                   points="34,236 146.9,27.2 169.1,40.8"
-                  fill="#FF5B14"
+                  fill="#F46835"
                 />
-                <circle className={on("dl-ember", s >= 1)} cx="171.6" cy="11.8" r="8" fill="#FF5B14" />
+                <circle className={on("dl-ember", s >= 1)} cx="171.6" cy="11.8" r="8" fill="#F46835" />
               </svg>
               {/* Each part stays out of the reading order until its moment (review A3). */}
               <h1 className={on("dl-name", s >= 3)} aria-hidden={s < 3 ? true : undefined}>

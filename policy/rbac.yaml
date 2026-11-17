@@ -83,7 +83,8 @@ endpoints:
   - GET /api/status                                   signed_in
   - GET /api/me                                       signed_in
   - POST /api/me/privacy-notice                       signed_in
-  - GET /api/me/ideas                                 signed_in
+  - GET /api/me/ideas                                 signed_in       # S-07, My ideas: the person's own list (lane E)
+  - GET /api/me/shell                                 signed_in       # the shell's drafts, ideas and Inbox count (C-SIDEBAR.rules/2)
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
@@ -106,8 +107,10 @@ endpoints:
   - GET /api/submissions/{id}/voice/{voice}           submit          # its state and, once ready, its text (owner only)
   - DELETE /api/submissions/{id}/voice/{voice}        submit          # the recording and held text go
   - GET /api/ideas                                    see_org_ideas
-  - GET /api/ideas/{id}                               see_org_ideas
+  - GET /api/ideas/{id}                               see_org_ideas   # S-06 for the sharer, S-09 for others; the worker decides (lane E)
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
+  - POST /api/ideas/{id}/withdraw                     submit          # the sharer only, inside the edit window, checked by the worker (L-SUBMIT.withdraw)
+  - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
   # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.
@@ -184,6 +187,21 @@ endpoints:
   - POST /api/delivery/{id}/writeup/submit            work_delivery   # the owner or an admin
   - POST /api/delivery/{id}/writeup/approve           work_delivery   # the named sponsor, never the submitter; publishes
   - POST /api/delivery/{id}/writeup/send-back         work_delivery   # the named sponsor
+  # The 1% Club's Wall, the Ones and Profile (lane E; A-API.wall, A-API.ones, A-API.ones-posts, A-API.me). The worker
+  # checks the rest: /one is the One's alone (membership below), a profile and its points are only ever the caller's.
+  - GET /api/wall/kindling                            see_org_ideas
+  - GET /api/wall/just-in                             see_org_ideas
+  - GET /api/wall/ones                                see_org_ideas
+  - GET /api/wall/impact                              see_org_ideas
+  - GET /api/wall/ember                               see_org_ideas
+  - GET /api/ones/posts                               signed_in
+  - PUT /api/ones/posts/{id}/like                     signed_in
+  - GET /api/one                                      signed_in
+  - PUT /api/one/number                               signed_in
+  - POST /api/one/brief                               signed_in
+  - POST /api/one/glow-up/{id}/seen                   signed_in
+  - GET /api/me/profile                               signed_in       # always the signed-in person's own
+  - PATCH /api/me/settings                            signed_in       # always the signed-in person's own
   - GET /api/ember                                    signed_in
   - GET /api/ember/current                            write_ember_note
   - GET /api/ember/{id}                               signed_in
@@ -226,6 +244,10 @@ membership_scoped:
     - POST /api/me/one/brief
     - GET /api/me/one/showcase
     - PUT /api/me/one/showcase
+    - GET /api/one                                  # S-ONE.rules/1: a One's own dashboard (lane E)
+    - PUT /api/one/number
+    - POST /api/one/brief
+    - POST /api/one/glow-up/{id}/seen
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
@@ -239,20 +261,20 @@ pages:
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
-# Navigation (AT-B2-06): everyone gets the first four; the rest by role. `when_on` / `when_off` name a kill switch:
-# the item shows only while that switch is on (or off). An unknown switch counts as off, as everywhere (§7.6).
-# BLD-227: with the committee flow on, "Committee" takes Desk decisions' place for the core committee (Desk
-# decisions stays one link away on /committee) and LOB committees get it too; with the flow paused, core members
-# keep their direct Desk decisions link.
+# Navigation (AT-B2-06): items without `roles` are everyone's; the rest by role. `when_on` / `when_off` may name a
+# kill switch: the item shows only while that switch is on (or off). An unknown switch counts as off (§7.6).
 navigation:
-  - { label: Share an idea,   href: /share }
-  - { label: My ideas,        href: /my-ideas }
-  - { label: Wall,            href: /wall }
-  - { label: Messages,        href: /inbox }
-  - { label: Review,          href: /review,          roles: [reviewer] }
-  - { label: Committee,       href: /committee,       roles: [core_committee, lob_committee], when_on: committee.flow }
-  - { label: Desk decisions,  href: /desk-decisions,  roles: [core_committee], when_off: committee.flow }
-  - { label: Ones,            href: /ones/console,    roles: [core_committee, admin, ceo] }
-  - { label: Delivery,        href: /delivery,        roles: [working_group, sponsor, core_committee, admin, ceo] }
-  - { label: Lenses,          href: /lenses,          roles: [lob_committee, core_committee, admin] }
-  - { label: Admin,           href: /admin,           roles: [admin, infosec, hr] }
+  # The signed-in shell (C-SIDEBAR, C-PHONE-TABS; lane D, BLD-D011). The only place the shell reads its links.
+  # place: new = the "Share a problem" button; main = a sidebar item; folded = only while the sidebar is folded;
+  # account = the account menu. tab = the item's place in the phone tab bar (Home, My ideas, Share, Wall, Inbox).
+  # A screen that moves or lands (Find your crew /crew, Profile /profile, Home /home) changes or adds its row here.
+  - { key: share,     label: Share a problem, href: /share,     place: new,    tab: 3 }
+  - { key: home,      label: Home,            href: /,          place: main,   tab: 1 }
+  - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
+  - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
+  - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
+  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: ember,     label: The Ember,       href: /ember,     place: account }
+  - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
+  - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
