@@ -33,8 +33,8 @@ export const DRAFT_MESSAGES: Record<string, string> = {
   not_editable: "This part can't be changed here.",
   assistant_off: BANNERS["ai.all"],
   save_failed: "Couldn't save. Trying again.",
-  /** A voice note sent while voice is not in this build (BLD-C038): the voice panel's own words for a pause. */
-  voice_unavailable: "Voice notes are paused just now. Please type it instead.",
+  /** A voice note sent while voice is off or not in this build: every voice-off line reads the same (BLD-C149). */
+  voice_unavailable: BANNERS["capture.voice"],
 };
 const FALLBACK = "Something went wrong. Please try again.";
 

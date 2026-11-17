@@ -58,6 +58,7 @@ import {
   withDraftAfterLoss,
   type Live,
 } from "@/lib/compose/live";
+import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
 
@@ -89,8 +90,8 @@ export const COMPOSE_COPY = {
   emailNote: "We turned it into this draft. Nothing has been sent.",
   queued: "Queued. Goes in once the one above is done.",
   tooLong: "That's a lot for one go. Send this part, then carry on.",
-  /** A note paused or unavailable: the pack draws no line (listed for HR); the nearest line in the build (BLD-C038). */
-  voicePaused: "Voice notes are paused just now. Please type it instead.",
+  /** A note paused or unavailable: every voice-off line reads the same, the product lead's decision of 18 Nov (BLD-C149). */
+  voicePaused: BANNERS["capture.voice"], // the voice-off line from the one source (BLD-157)
   /** A note that failed because the session ended: L-AUTH.states "Session expired mid-draft" (SignIn.md). */
   signInAgain: "Sign in again to carry on",
   enough: "Enough to work with",

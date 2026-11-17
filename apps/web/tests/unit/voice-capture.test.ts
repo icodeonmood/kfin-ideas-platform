@@ -407,7 +407,7 @@ describe("L-DRAFT.voice paused and lost (BLD-C112, BLD-C119)", () => {
     await settle();
     expect(capture.getState()).toEqual({
       status: "paused",
-      banner: "Voice notes are paused for a short while. You can type instead.",
+      banner: "Voice notes are coming soon.", // BLD-C149
       switchName: "speech.hosted",
       text: "Folio wale customers",
       spans: [],

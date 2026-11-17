@@ -551,7 +551,7 @@ describe("C-PROMPT.voice a failed note's line, by reason (BLD-C127)", () => {
     expect(region.textContent).toBe("");
     voice.state = { status: "failed", reason: "unavailable", text: "", spans: [] } as VoiceCaptureState;
     type(box(), "xyz");
-    expect(region.textContent).toBe("Voice notes are paused just now. Please type it instead.");
+    expect(region.textContent).toBe("Voice notes are coming soon."); // BLD-C149
   });
 });
 

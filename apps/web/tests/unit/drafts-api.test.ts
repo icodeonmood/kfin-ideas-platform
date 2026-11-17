@@ -69,6 +69,14 @@ describe("A-API.conventions/2 on drafts", () => {
       expect(text).not.toMatch(/rejected|invalid|duplicate|garage/i);
   });
 
+  it("BLD-C149: a voice note sent while voice is off reads the product lead's line, word for word", async () => {
+    expect(DRAFT_MESSAGES.voice_unavailable).toBe("Voice notes are coming soon.");
+    const res = draftError(new DraftApiError(503, "voice_unavailable"));
+    expect(await res.json()).toMatchObject({
+      error: { code: "voice_unavailable", message: "Voice notes are coming soon." },
+    });
+  });
+
   it("rethrows what it does not know", () => {
     expect(() => draftError(new Error("boom"))).toThrow("boom");
   });
