@@ -202,7 +202,15 @@ export interface ProfileResponse {
   one_since_label: string | null;
   /** Teams messages stay off until IT approves them (DEC-105): the switch shows, cannot be turned on. */
   available: { teams: boolean };
+  /**
+   * "How should we refer to you?" (DEC-108, BLD-E010); "unset" is the default and "Prefer not to say".
+   * TODO(lane C): lane C owns the answer and its store through `GET/PUT /api/me/refer-as`; S-H6 saves there
+   * directly. Until that route is on main this is always "unset".
+   */
+  refer_as: ReferAs;
 }
+/** Lane C's `/api/me/refer-as` values (DEC-108). */
+export type ReferAs = "she" | "he" | "they" | "unset";
 /** `PATCH /api/me/settings`: any of the switches; each saves at once (S-H6.rules/1). */
 export type SettingsPatch = Partial<PersonSettings>;
 /** Every switch's state after the save. */

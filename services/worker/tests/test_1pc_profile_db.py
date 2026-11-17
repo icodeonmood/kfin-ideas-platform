@@ -41,6 +41,13 @@ def test_S_H6_layout_profile_carries_points_tier_line_and_defaults(profile_db: C
     assert out["available"] == {"teams": False} and "one" not in p
 
 
+def test_S_H6_refer_as_reads_unset_until_lane_Cs_route_lands(profile_db: Conn) -> None:
+    """DEC-108, BLD-E010: Profile asks "How should we refer to you?" and saves through lane C's `/api/me/refer-as`.
+    Until that route is on main the profile carries lane C's default, "unset" (neutral wording, BLD-E008)."""
+    who = f.person(profile_db, "Ritika Sood")
+    assert profile.profile(profile_db, who["id"])["refer_as"] == "unset"
+
+
 def test_S_H6_rules_4_a_One_sees_their_One_tier_and_the_link_to_their_dashboard(profile_db: Conn) -> None:
     db = profile_db
     who = f.person(db, "Ritika Sood", tier=1)
