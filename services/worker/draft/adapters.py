@@ -27,6 +27,7 @@ from typing import Any
 
 from core.config import get_settings
 from core.db import Conn
+from hide.core import scope_for
 from onepc.context import seal_text
 from pii import vault
 from pii.patterns import scan
@@ -77,6 +78,12 @@ class Hidden:
     @property
     def hidden_count(self) -> int:
         return sum(self.counts.values())
+
+
+def vault_scope(idea_uuid: str) -> str:
+    """The draft's vault scope, built by L-HIDE's own `hide.core.scope_for` (uuid-normalised, BLD-C151): the hidden
+    details L-HIDE keeps, the values an edit took out and the gateway's run all name the same scope."""
+    return scope_for(idea_uuid)
 
 
 def landed(module: str, name: str) -> Callable[..., Any] | None:
@@ -165,7 +172,7 @@ def hide_message(
         _drop_unreferenced(conn, idea_uuid, held)
         return hidden
     found = find(text)
-    scope = f"DRAFT-{idea_uuid}"
+    scope = vault_scope(idea_uuid)
     with conn.transaction():
         before = [
             r["vault_tag"]
@@ -227,7 +234,7 @@ def _drop_unreferenced(conn: Conn, idea_uuid: str, tags: list[Any]) -> None:
         conn.execute(
             "DELETE FROM pseudonym_vault v WHERE v.scope_id = %s AND v.tag = ANY(%s) AND NOT EXISTS "
             "(SELECT 1 FROM hidden_details h WHERE h.idea_uuid = %s AND h.vault_tag = v.tag)",
-            (f"DRAFT-{idea_uuid}", held, idea_uuid),
+            (vault_scope(idea_uuid), held, idea_uuid),
         )
 
 

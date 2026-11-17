@@ -47,8 +47,9 @@ def _open() -> Conn:
 
 
 def scope(idea_uuid: str) -> str:
-    """The draft's vault scope, as the seed and the gateway's auto switch-offs know it (`DRAFT-…`)."""
-    return f"DRAFT-{idea_uuid}"
+    """The draft's vault scope, as L-HIDE, the seed and the gateway's auto switch-offs know it (`DRAFT-…`), from
+    `hide.core.scope_for` (BLD-C151)."""
+    return adapters.vault_scope(idea_uuid)
 
 
 def ai_on(conn: Conn) -> bool:
