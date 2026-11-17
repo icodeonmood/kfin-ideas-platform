@@ -163,7 +163,7 @@ def test_a_api_6_dates_read_as_the_boards_write_them() -> None:
 # --- L-SORT.rules/3 and the lines beside the sorting --------------------------------------------------------------
 
 
-def _choices(source: str = "confirmed") -> dict[str, Any]:
+def _choices(source: str = "confirmed") -> Any:
     from submit.sorting import Choice
 
     return {
