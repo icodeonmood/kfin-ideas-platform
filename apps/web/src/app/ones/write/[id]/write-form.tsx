@@ -3,15 +3,31 @@
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
+// No board draws this form (BLD-E042 keeps /ones/write/:id); every line below waits for HR's sign-off
 const ERRORS: Record<string, string> = {
+  // NOT DRAWN (BLD-E044): HR sign-off
   personal_data: "Please take out any personal details (numbers, addresses, investor names).",
+  // NOT DRAWN (BLD-E044): HR sign-off
   text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
+  // NOT DRAWN (BLD-E044): HR sign-off
   names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
+  // NOT DRAWN (BLD-E044): HR sign-off
   text_too_short: "Please write at least a short sentence.",
+  // NOT DRAWN (BLD-E044): HR sign-off
   text_too_long: "Please keep it under 600 characters.",
+  // NOT DRAWN (BLD-E044): HR sign-off
   already_written: "You've already written a message for this.",
+  // NOT DRAWN (BLD-E044): HR sign-off
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
 };
+// NOT DRAWN (BLD-E044): HR sign-off
+const NOT_SAVED = "That didn't save. Please try again.";
+// NOT DRAWN (BLD-E044): HR sign-off
+const LABEL = "Your message";
+// NOT DRAWN (BLD-E044): HR sign-off
+const HINT = "A few sentences. What did they do that mattered? No personal details.";
+// NOT DRAWN (BLD-E044): HR sign-off
+const SEND = "Send your message";
 
 export function WriteForm({ proposalId, as }: { proposalId: string; as: "ceo" | "peer" | "committee" }) {
   const router = useRouter();
@@ -35,12 +51,12 @@ export function WriteForm({ proposalId, as }: { proposalId: string; as: "ceo" | 
         const code = res
           ? String(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "")
           : "";
-        setError(ERRORS[code] ?? "That didn't save. Please try again.");
+        setError(ERRORS[code] ?? NOT_SAVED);
       }}
     >
-      <label htmlFor={id}>Your message</label>
+      <label htmlFor={id}>{LABEL}</label>
       <p className="hint" id={`${id}-hint`}>
-        A few sentences. What did they do that mattered? No personal details.
+        {HINT}
       </p>
       <textarea
         id={id}
@@ -58,7 +74,7 @@ export function WriteForm({ proposalId, as }: { proposalId: string; as: "ceo" | 
       ) : null}
       <div className="actions">
         <button type="submit" className="button">
-          Send your message
+          {SEND}
         </button>
       </div>
     </form>
