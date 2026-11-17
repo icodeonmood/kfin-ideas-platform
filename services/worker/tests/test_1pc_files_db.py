@@ -800,6 +800,81 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     assert _row(db, waits)["file_state"] == "checking"
 
 
+def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it_checks_the_same_file(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 18 Nov rule (BLD-C107): `check` raises `CheckWaits` while `ai.all` is off, then, switched back on, checks
+    the same stored file (no new upload) and records that the gatekeeper ran. A switch-off while the file is read
+    (between two pieces, the second `held()`) waits the same way. A person's switch-off through the job runner
+    leaves the job queued with `CheckWaits` and the file checking, then the next run checks it."""
+    from core import killswitch
+    from gateway.routes import FAKE_SCRIPT
+    from hide import detect
+    from jobs import handlers  # noqa: F401 (registers the job types)
+    from jobs.runner import run_one
+
+    idea, kavya = cast["idea"], cast["kavya"]
+
+    def switch(state: str) -> None:
+        killswitch.set_switch(
+            db, "ai.all", state, reason=f"Testing files: assistant {state}", actor="REV-0001"
+        )
+        killswitch.clear_cache()
+
+    att = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
+    key = _row(db, att)["store_key"]
+    switch("off")
+    try:
+        with pytest.raises(F.CheckWaits):
+            F.check(db, att)
+    finally:
+        switch("on")
+    assert _row(db, att)["file_state"] == "checking"
+    assert F.check(db, att) == "checked"
+    row = _row(db, att)
+    assert row["store_key"] == key and row["checks"]["gatekeeper"] == "ran"
+    assert _audits(db, idea["id"], "file.checked")[-1]["gatekeeper"] == "ran"
+
+    # Switched off while the file is read: the first piece is asked, then the second `held()` makes it wait.
+    filler = f"Calls double on Mondays at the branch and the queue grows {secrets.token_hex(4)}."
+    long = _add(db, kavya, "\n".join(["# Branch notes", *[filler] * 200]).encode(), "notes.md",
+                idea_id=idea["idea_id"])["id"]  # fmt: skip
+    real = detect.gatekeeper_finds
+
+    def then_off(conn: Any, text: str, scope: str) -> Any:
+        out = real(conn, text, scope)
+        switch("off")
+        return out
+
+    monkeypatch.setattr(detect, "gatekeeper_finds", then_off)
+    FAKE_SCRIPT.append(_gatekeeper_says())
+    try:
+        with pytest.raises(F.CheckWaits):
+            F.check(db, long)
+    finally:
+        monkeypatch.setattr(detect, "gatekeeper_finds", real)
+        switch("on")
+    assert _row(db, long)["file_state"] == "checking"
+    FAKE_SCRIPT.extend([_gatekeeper_says(), _gatekeeper_says()])
+    assert F.check(db, long) == "checked"
+    assert not FAKE_SCRIPT  # both pieces read again, from the start
+
+    # A person's switch-off, through the job runner.
+    queued = _add(db, kavya, make.pdf(["The SMS gives a code, not a reason."]), idea_id=idea["idea_id"])["id"]
+    _first_due(db, queued)
+    switch("off")
+    try:
+        assert run_one(db, "test-files")
+    finally:
+        switch("on")
+    job = _job(db, queued)
+    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")
+    assert _row(db, queued)["file_state"] == "checking"
+    _first_due(db, queued)
+    assert run_one(db, "test-files")
+    assert _job(db, queued)["state"] == "done" and _row(db, queued)["file_state"] == "checked"
+
+
 def test_L_HIDE_files_6_the_scanner_down_waits_then_upload_failed_with_the_copy_kept(
     db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -115,42 +115,26 @@ def chunks(text: str) -> list[tuple[int, str]]:
 
 
 class GatekeeperWaits(Exception):
-    """The gatekeeper could not read a file's text (the gateway failed or timed out, or is held off by its own
-    automatic switch-off or the day's budget), and no person switched it off: the file stays `checking` and the
-    check job tries again. Carries the gateway's code only."""
+    """The gatekeeper could not read a file's text (the gateway failed or timed out, `ai.all` or `agent.gatekeeper`
+    is switched off by anyone, or the day's budget is spent): the file stays `checking` and the check job tries
+    again. Carries the gateway's code (or `switched_off`) only."""
 
 
-def switched_off_by_person(changed_by: str | None) -> bool:
-    """True only for a person's switch-off. Every automatic actor writes `changed_by` as `process:<name>` (the
-    gateway's own switch-off, the eval runner on a golden-set regression, the watcher), and an unknown actor (NULL)
-    is treated as automatic too: an automatic switch-off is a failure to wait out, never a choice to skip the
-    gatekeeper (non-negotiable 4, DEC-103, BLD-C107)."""
-    return bool(changed_by) and not str(changed_by).startswith("process:")
-
-
-def _off_on_purpose(conn: Conn) -> bool | None:
-    """None while `ai.all` and `agent.gatekeeper` are both on; True when a person switched one of them off; False
-    when only an automatic switch-off (the gateway, the eval runner, the watcher, or an unknown actor) holds it off
-    (that is a failure, not a choice)."""
+def _switched_off(conn: Conn) -> bool:
+    """`ai.all` or `agent.gatekeeper` is off, whoever switched it (a person, the gateway, the eval runner, the
+    watcher): for a file that is always a wait, never a choice to skip the gatekeeper (BLD-C107)."""
     from core import killswitch
 
-    if all(killswitch.is_on(name, conn) for name in GATEKEEPER_SWITCHES):
-        return None
-    rows = conn.execute(
-        "SELECT changed_by FROM kill_switches WHERE name = ANY(%s) AND state = 'off'",
-        (list(GATEKEEPER_SWITCHES),),
-    ).fetchall()
-    return any(switched_off_by_person(r["changed_by"]) for r in rows)
+    return not all(killswitch.is_on(name, conn) for name in GATEKEEPER_SWITCHES)
 
 
-def _placed(text: str, named: dict[str, str], *, switched_off: bool = False) -> detect.Gate:
+def _placed(text: str, named: dict[str, str]) -> detect.Gate:
     """Every value the gatekeeper named, wherever it appears in the whole text (a piece names it once)."""
     found: dict[tuple[int, int, str], detect.Found] = {}
     for value, kind in named.items():
         for s, e in detect.occurrences(text, value):
             found.setdefault((s, e, kind), detect.Found(s, e, kind, value, "gatekeeper"))
-    finds = sorted(found.values(), key=lambda f: (f.start, f.end))
-    return detect.Gate(finds, "switched_off", True) if switched_off else detect.Gate(finds)
+    return detect.Gate(sorted(found.values(), key=lambda f: (f.start, f.end)))
 
 
 def gate_for(conn: Conn, idea_uuid: str, text: str) -> detect.Gate:
@@ -162,7 +146,7 @@ def gate_for(conn: Conn, idea_uuid: str, text: str) -> detect.Gate:
     gatekeeper (non-negotiable 4): it waits in `checking` and the check job tries again."""
 
     def held() -> None:
-        if _off_on_purpose(conn) is not None:  # switched off, by a person or a process: wait, never skip
+        if _switched_off(conn):  # by a person or a process: wait, never skip
             raise GatekeeperWaits("switched_off")
 
     held()

@@ -20,33 +20,18 @@ export type DeskFile = {
   state?: string | null;
 };
 
-/** The new pipeline's checked states. Only these read `state = 'clean'` in the old column (lane C, 17 Nov). */
-const CHECKED: ReadonlySet<string> = new Set(["checked", "hidden_checked", "ok"]);
-
-/**
- * Today's route, `GET /api/attachments/:id`: it serves a file whose old state is clean, to its owner and the review
- * desk, and answers anything else with a raw 403 (or 404). So it is offered only for a file it serves: checked, or
- * from before the new pipeline, and never one holding a customer detail. The row still shows, with its label, but
- * without "Open" (BLD-B243).
- */
-function attachmentsRoute(file: DeskFile): string | null {
-  if (!file.id || file.customer_detail) return null;
-  if (file.file_state != null && !CHECKED.has(file.file_state)) return null;
-  if (file.state != null && file.state !== "clean") return null;
-  return `/api/attachments/${encodeURIComponent(file.id)}`;
-}
-
 /** Lane C's `GET /api/files/:id/view` (A-API.files): it applies DEC-107 itself, committee roles included, so every
  * listed file opens through it. */
 export function filesViewRoute(file: DeskFile): string | null {
   return file.id ? `/api/files/${encodeURIComponent(file.id)}/view` : null;
 }
 
-/** The one place the review side chooses a file's route. When lane C's route is on main, this line becomes
- * `const route = filesViewRoute;` and nothing else changes. */
-const route: (file: DeskFile) => string | null = attachmentsRoute;
-
-/** Where a file's "Open" goes, or null when no route can open it for this viewer yet (no "Open" is shown). */
+/**
+ * Where a file's "Open" goes, or null when the row has no id (no "Open" is shown). Every file the review side lists
+ * opens through lane C's view route, which decides who may open what (DEC-107: a file holding a customer detail
+ * opens for the sharer, the review desk and the Ones Committee); it replaced the old `/api/attachments/:id`, which
+ * served only clean files and answered the rest with a raw 403 (BLD-B243, lane C's c/hide-3).
+ */
 export function fileHref(file: DeskFile): string | null {
-  return route(file);
+  return filesViewRoute(file);
 }
