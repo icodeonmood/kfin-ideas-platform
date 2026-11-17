@@ -4,6 +4,8 @@ V-ACC.similar/3–8, L-TEAMUP.rules/1, /4, /6, /11, states, L-MERGE.request/2–
 
 from __future__ import annotations
 
+import sys
+import types
 from collections.abc import Iterator
 from typing import Any
 
@@ -11,7 +13,7 @@ import pytest
 
 from core.db import Conn
 from onepc.context import open_text
-from teamup import adapters, crew, drafts, merging, requests
+from teamup import adapters, crew, drafts, inbox_ops, merging, requests
 from teamup.store import Refused
 from tests import f_teamup_fixtures as f
 
@@ -173,8 +175,10 @@ def test_V_ACC_teamup_5_the_lead_sees_the_note_the_idea_brought_and_three_answer
     assert page["reader"]["kind"] == "Merge request"
     (item,) = inbox.of("teamup_request")
     assert item["refs"]["brought"] == 1 and [a.op for a in item["actions"]] == [
-        "teamup.answer.decline", "teamup.answer.team_only", "teamup.answer.merge",
-    ]  # fmt: skip
+        "decline",
+        "team_only",
+        "merge",
+    ]
     # nobody else can read it
     assert _refused(requests.read, db, sent["id"], cast["asha"]["id"]).status == 404
 
@@ -832,6 +836,126 @@ def test_L_TEAMUP_states_a_draft_merge_request_ends_when_the_idea_closes(
     sent = _refused(drafts.ask, db, str(draft["id"]), cast["kavya"]["id"],
                     {"other_idea_id": f.idea(db, cast["asha"])["idea_id"], "note": NOTE})  # fmt: skip
     assert sent.code == "draft_closed"
+
+
+# --- BLD-F028: the lead's answers as Inbox buttons (J-TEAMUP/4, J-SIMILAR/5–6c) ---------------------------------
+def _item(inbox: f.Inbox) -> dict[str, Any]:
+    """The lead's latest `teamup_request` item as lane A's Inbox hands it over: its refs are stored as `payload`."""
+    item = inbox.of("teamup_request")[-1]
+    return {
+        "kind": "teamup_request",
+        "payload": dict(item["refs"]),
+        "actions": [{"op": a.op} for a in item["actions"]],
+    }
+
+
+def test_BLD_F028_V_ACC_teamup_6_the_inbox_buttons_answer_like_the_route(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """Each op answers through `requests.answer` with no reason and returns what `POST /team-up/:id/answer` does."""
+    # Decline, with nothing brought (the buttons are Decline and Approve)
+    sent = _send(db, cast)
+    row = _item(inbox)
+    assert [a["op"] for a in row["actions"]] == ["decline", "team_only"]
+    out = inbox_ops.decline(db, cast["ravi"]["id"], row)
+    assert out["request"]["state"] == "declined" and "lead_reason" not in out["request"]
+    assert (
+        out["result"] == {"state": "declined", "text": "Declined. We’ve told Kavya."}
+        and out["say_hello"] is None
+    )
+    assert [a["after"]["answer"] for a in f.audit_rows(db, "teamup.answer", sent["id"])] == ["decline"]
+    (told,) = inbox.of("teamup_answer")
+    assert told["refs"] == {
+        "request_id": sent["id"],
+        "request": "teamup",
+        "answer": "decline",
+        "has_reason": False,
+    }
+    # Approve: Kavya is on the crew
+    again = _send(db, cast)
+    out = inbox_ops.team_only(db, cast["ravi"]["id"], _item(inbox))
+    assert out["request"]["id"] == again["id"] and out["result"]["state"] == "teamed_up"
+    assert f.live_crew(db, cast["lead"])[cast["kavya"]["code"]] == "crew"
+    # Merge it, from a draft's merge request (J-SIMILAR/6a)
+    pradeep = f.person(db, "Pradeep Kumar")
+    draft = f.draft(db, pradeep)
+    asked = drafts.ask(
+        db, str(draft["id"]), pradeep["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE}
+    )
+    row = _item(inbox)
+    assert row["payload"]["request"] == "merge" and [a["op"] for a in row["actions"]] == [
+        "decline", "team_only", "merge",
+    ]  # fmt: skip
+    out = inbox_ops.merge(db, cast["ravi"]["id"], row)
+    assert out["request"]["id"] == asked["id"] and out["result"]["state"] == "merged"
+    assert f.status_of(db, draft)["status"] == "merged"
+
+
+def test_BLD_F028_V_ACC_similar_8_an_inbox_button_is_refused_and_audited_like_the_route(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent = _send(db, cast, [cast["mine"]["idea_id"]])
+    row = _item(inbox)
+    # without lane A's Inbox module: the route's own refusal
+    monkeypatch.setitem(sys.modules, "notify.inbox", None)
+    r = _refused(inbox_ops.merge, db, cast["asha"]["id"], row)
+    assert (r.status, r.code) == (403, "not_lead")
+    assert [a["after"]["answer"] for a in f.audit_rows(db, "teamup.answer_refused", sent["id"])] == ["merge"]
+    gone = _refused(inbox_ops.decline, db, cast["ravi"]["id"], {"kind": "teamup_request", "payload": {}})
+    assert (gone.status, gone.code) == (404, "not_found")
+    # with it: the same code and status as lane A's refusal, the route's refusal as its cause
+    fake = types.ModuleType("notify.inbox")
+
+    class InboxRefused(Exception):
+        def __init__(self, code: str, status: int = 409) -> None:
+            super().__init__(code)
+            self.code, self.status = code, status
+
+    fake.InboxRefused = InboxRefused
+    monkeypatch.setitem(sys.modules, "notify.inbox", fake)
+    with pytest.raises(InboxRefused) as exc:
+        inbox_ops.team_only(db, cast["asha"]["id"], row)
+    assert (exc.value.code, exc.value.status) == ("not_lead", 403) and isinstance(
+        exc.value.__cause__, Refused
+    )
+    assert len(f.audit_rows(db, "teamup.answer_refused", sent["id"])) == 2
+    inbox_ops.decline(db, cast["ravi"]["id"], row)
+    with pytest.raises(InboxRefused) as exc:
+        inbox_ops.merge(db, cast["ravi"]["id"], row)
+    assert (exc.value.code, exc.value.status) == ("not_waiting", 409)
+    assert db.execute("SELECT count(*) AS n FROM merges").fetchone()["n"] == 0
+
+
+def test_BLD_F028_the_handlers_register_in_lane_A_registry_when_it_is_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "notify.ops", None)
+    assert inbox_ops.register() is False
+    registered: dict[tuple[str, str], Any] = {}
+    fake = types.ModuleType("notify.ops")
+
+    def register(kind: str, op: str) -> Any:
+        def wrap(fn: Any) -> Any:
+            registered[(kind, op)] = fn
+            return fn
+
+        return wrap
+
+    fake.register = register
+    monkeypatch.setitem(sys.modules, "notify.ops", fake)
+    assert inbox_ops.register() is True
+    assert registered == {
+        ("teamup_request", "decline"): inbox_ops.decline,
+        ("teamup_request", "team_only"): inbox_ops.team_only,
+        ("teamup_request", "merge"): inbox_ops.merge,
+    }
+
+
+def test_BLD_F028_lane_A_registry_holds_the_three_handlers_once_teamup_has_loaded() -> None:
+    ops = pytest.importorskip("notify.ops")  # lane A's Inbox registry: skipped until it is on main
+    inbox_ops.register()
+    for op in ("decline", "team_only", "merge"):
+        assert ops.handler("teamup_request", op) is inbox_ops.HANDLERS[op]
 
 
 # --- BLD-F027 lock order, BLD-F024 reads that write only when something ended ------------------------------------
