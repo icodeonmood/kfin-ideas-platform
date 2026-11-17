@@ -33,6 +33,7 @@ def ones_db(db: Conn, company_repo: Path, monkeypatch: pytest.MonkeyPatch) -> It
     limits.reset()
     FAKE_SCRIPT.clear()
     yield db
+    f.leave_clean(db)
     monkeypatch.undo()
     get_settings.cache_clear()
 
