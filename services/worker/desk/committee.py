@@ -297,7 +297,7 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             raise Refused(
                 409, "window_closed", "A newer decision has replaced this one. There is nothing to reverse."
             )
-        masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip())
+        masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip(), by=user_id)
         reversal_id = str(uuid.uuid4())
         return_at = decide.return_at(t, return_in or p.return_default, p) if to == "not_now" else None
         conn.execute(

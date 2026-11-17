@@ -5,9 +5,8 @@
   list once its action is done. A no-op until `notify` has `resolve` (it lands with lane A's inbox).
 - `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Writes `conversation_entries`
   directly until `convo` is importable.
-- `hide`: L-HIDE (lane C): free text masked before it is stored or shown to anyone else. Until lane C's entry point
-  lands it masks what the shared patterns find (kind + •••• + last two), so nothing a reviewer types reaches a
-  sharer unmasked.
+- `hide`: L-HIDE (lane C, `hide.hide_text`): free text masked before it is stored or shown to anyone else, each value
+  kept sealed in the vault under the idea with a `hidden_details` row. `by` is the users.id of whoever typed it.
 - `schedule`: lane A's timers. A no-op until lane A publishes its interface; every screen works it out on read.
 """
 
@@ -20,10 +19,9 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
-from pii.patterns import scan
+from hide import hide_text
 
 log = get_logger("desk")
 
@@ -121,33 +119,14 @@ def say(
     )
 
 
-_KINDS = {"Mobile": "Phone", "Email": "Email", "Bank": "Account", "Date": "Date of birth"}
-
-
-def _mask(value: str, label: str, before: str) -> str:
-    """'Folio ••••89': the kind, unless the words just before already name it, then the last two characters."""
-    first = label.split(" ")[0]
-    kind = _KINDS.get(first, first)
-    tail = "".join(ch for ch in value if ch.isalnum())[-2:]
-    named = before[-16:].lower().rstrip(" :#-").endswith(kind.lower()) or before[-16:].lower().rstrip(
-        " :#-"
-    ).endswith(first.lower())
-    return f"••••{tail}" if named else f"{kind} ••••{tail}"
-
-
-def hide(conn: Conn, idea_uuid: str, text: str) -> tuple[str, int]:
-    """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103)."""
-    _ = (conn, idea_uuid)  # lane C's version keeps the values in the vault under the idea's scope
-    matches = sorted(scan(text, kfin_domains=get_settings().kfin_domains), key=lambda m: m.start)
-    out, last, n = [], 0, 0
-    for m in matches:
-        if m.start < last:
-            continue
-        out.append(text[last : m.start])
-        out.append(_mask(text[m.start : m.end], m.label, text[: m.start]))
-        last, n = m.end, n + 1
-    out.append(text[last:])
-    return "".join(out), n
+def hide(
+    conn: Conn, idea_uuid: str, text: str, *, by: str, source: str = "desk", source_id: str | None = None
+) -> tuple[str, int]:
+    """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103), through lane C's `hide_text`
+    inside the caller's transaction. The desk's own words (a question, a reason, a note) are `source="desk"`; a
+    sharer's answer is `source="answer"` with its row id, so its details keep their ids across autosaves and the
+    sharer's own words are sealed for them alone (BLD-B246)."""
+    return hide_text(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
 
 
 def schedule(
