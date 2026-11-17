@@ -595,41 +595,8 @@ def _actor(body: dict[str, Any]) -> str:
     return str(body.get("actor_user_id") or "")
 
 
-@app.get("/internal/ones/console", dependencies=[Depends(require_token)])
-def ones_console() -> JSONResponse:
-    from ones.views import console
-
-    return _ones_call(console)
-
-
-@app.post("/internal/ones/proposals", dependencies=[Depends(require_token)])
-def ones_propose(body: dict[str, Any]) -> JSONResponse:
-    from ones.service import propose
-
-    return _ones_call(propose, _actor(body), body, status=201)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/decide", dependencies=[Depends(require_token)])
-def ones_decide(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import decide
-
-    return _ones_call(decide, _actor(body), proposal_id, body)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/carry-out", dependencies=[Depends(require_token)])
-def ones_carry_out(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import carry_out
-
-    return _ones_call(carry_out, _actor(body), proposal_id)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/withdraw", dependencies=[Depends(require_token)])
-def ones_withdraw(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import withdraw
-
-    return _ones_call(withdraw, _actor(body), proposal_id)
-
-
+# The Ones console, its proposals API (propose, decide, carry out, withdraw, invite a colleague) and the Ones-only
+# leaderboard are retired (DEC-106, BLD-E049). `/ones/write/:id` still reads its invitation and posts its message here.
 @app.get("/internal/ones/proposals/{proposal_id}/invite/{user_id}", dependencies=[Depends(require_token)])
 def ones_invite_view(proposal_id: int, user_id: str) -> JSONResponse:
     from ones.views import invite_view
@@ -646,13 +613,6 @@ def ones_message(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
     from ones.service import add_message
 
     return _ones_call(add_message, _actor(body), proposal_id, body, status=201)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/invites", dependencies=[Depends(require_token)])
-def ones_invite(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import invite_peer
-
-    return _ones_call(invite_peer, _actor(body), proposal_id, str(body.get("email") or ""))
 
 
 @app.put("/internal/ones/{one_id}/measures", dependencies=[Depends(require_token)])
@@ -784,17 +744,6 @@ def ones_constellation() -> JSONResponse:
     from ones.views import constellation
 
     return _ones_call(constellation)
-
-
-@app.get("/internal/ones/leaderboard/{user_id}", dependencies=[Depends(require_token)])
-def ones_leaderboard(user_id: str) -> JSONResponse:
-    from ones.views import leaderboard
-
-    with connect(autocommit=True) as conn:
-        out = leaderboard(conn, user_id)
-    if out is None:
-        return JSONResponse({"error": "ones_only"}, status_code=403)
-    return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/internal/me/{user_id}/one", dependencies=[Depends(require_token)])

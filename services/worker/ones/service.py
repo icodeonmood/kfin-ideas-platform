@@ -12,6 +12,12 @@ Every change goes through a proposal:
 A tier change also needs the committee's message to the One (required), and may carry the CEO's and colleagues'
 (DEC-084). Every message passes the checks in `ones.text` before it is stored. Every step is audited with IDs and
 codes only; no text is ever logged.
+
+Retired (DEC-106, BLD-E049): the console's proposals API, inviting a colleague (`ones.message_invited`) and
+withdrawing. Lane A's admin page marks Founding Ones and removes a One through `wall.ones`. `propose`, `decide`,
+`carry_out` and `induct_from_decision` have no caller in the product since then: the tests still build Ones, tier
+changes and glow-ups with them for what stays (`add_message` and `views.invite_view` for `/ones/write/:id`,
+`views.my_one`, the tier-changed email), so they go with the tables in the cleanup after launch.
 """
 
 from __future__ import annotations
@@ -206,8 +212,9 @@ def propose_brief(conn: Conn, user_id: str, text: Any, now: dt.datetime | None =
 def add_message(
     conn: Conn, actor: str, proposal_id: int, body: dict[str, Any], now: dt.datetime | None = None
 ) -> dict[str, Any]:
-    """A message to the One for a tier change: the committee's (required before carry-out), the CEO's (optional)
-    or a colleague's (optional, invited from the console)."""
+    """A message to the One for a tier change, written at `/ones/write/:id` (BLD-E042): the committee's (required
+    before carry-out), the CEO's (optional) or a colleague's (optional, only on an invitation already made: inviting
+    is retired, BLD-E049)."""
     now = now or dt.datetime.now(dt.UTC)
     who = body.get("from")
     if who not in MESSAGE_FROM:
@@ -252,29 +259,7 @@ def add_message(
     return {"id": mid}
 
 
-def invite_peer(conn: Conn, actor: str, proposal_id: int, email: str) -> dict[str, Any]:
-    """A committee member invites a colleague to write a message for the One's tier change."""
-    _need(conn, actor, {"core_committee", "core_chair"})
-    p = conn.execute("SELECT * FROM one_proposals WHERE id = %s", (proposal_id,)).fetchone()
-    if p is None or p["kind"] not in ("tier_up", "tier_down"):
-        raise OnesRefused(404, "not_found")
-    if p["state"] not in ("proposed", "approved"):
-        raise OnesRefused(409, "not_open")
-    peer = _user_by_email(conn, email)
-    if peer == str(p["subject_user_id"]):
-        raise OnesRefused(409, "own_proposal")
-    with conn.transaction():
-        conn.execute(
-            "INSERT INTO one_message_invites (proposal_id, user_id, invited_by) VALUES (%s, %s, %s) "
-            "ON CONFLICT DO NOTHING",
-            (proposal_id, peer, actor),
-        )
-        emit(conn, "ones.message_invited", {"current_owner_ids": [peer], "proposal_id": proposal_id})
-        _audit(conn, actor, "ones.peer_invited", f"one_proposal:{proposal_id}", {"invited": peer})
-    return {"invited": True}
-
-
-# --- Approve, decline, withdraw --------------------------------------------------------------------------------
+# --- Approve or decline ----------------------------------------------------------------------------------------
 
 
 def decide(
@@ -324,20 +309,6 @@ def decide(
             )
             state = "carried_out"
     return {"id": proposal_id, "state": state}
-
-
-def withdraw(conn: Conn, actor: str, proposal_id: int) -> dict[str, Any]:
-    with conn.transaction():
-        p = conn.execute("SELECT * FROM one_proposals WHERE id = %s FOR UPDATE", (proposal_id,)).fetchone()
-        if p is None:
-            raise OnesRefused(404, "not_found")
-        if str(p["proposed_by"]) != actor:
-            raise OnesRefused(403, "forbidden")
-        if p["state"] not in ("proposed", "approved"):
-            raise OnesRefused(409, "not_open")
-        conn.execute("UPDATE one_proposals SET state = 'withdrawn' WHERE id = %s", (proposal_id,))
-        _audit(conn, actor, "ones.withdrawn", f"one_proposal:{proposal_id}", {"kind": p["kind"]})
-    return {"id": proposal_id, "state": "withdrawn"}
 
 
 def _apply_brief(conn: Conn, p: dict[str, Any], now: dt.datetime) -> None:
