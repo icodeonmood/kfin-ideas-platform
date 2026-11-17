@@ -53,6 +53,15 @@ def test_L_QUESTIONS_clock_3_give_two_more_days_keeps_the_hour() -> None:
     assert clock.give_more_time(at(2026, 11, 19, 18), DEFAULTS) == at(2026, 11, 21, 18)
 
 
+def test_L_QUESTIONS_clock_3_more_time_on_an_overdue_set_counts_from_now() -> None:
+    due = at(2026, 11, 19, 18)
+    assert clock.give_more_time(due, DEFAULTS, at(2026, 11, 19, 9)) == at(
+        2026, 11, 21, 18
+    )  # not yet due: as before
+    late = at(2026, 11, 20, 10, 30)
+    assert clock.give_more_time(due, DEFAULTS, late) == at(2026, 11, 22, 10, 30)  # never left overdue
+
+
 def test_L_QUESTIONS_clock_2_reminders_a_day_and_two_hours_before() -> None:
     due = clock.answer_due(NOW, "3d", DEFAULTS, CAL)
     assert clock.reminders(NOW, due, DEFAULTS) == [at(2026, 11, 18, 18), at(2026, 11, 19, 16)]
