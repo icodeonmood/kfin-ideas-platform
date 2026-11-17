@@ -2,8 +2,12 @@
 
 The sharer and the review desk from the start; the crew once there is one; the build team once chosen; the Ones
 Committee always (L-AUDIT.permissions). A person mentioned in a message who is none of these may read the messages
-that mention them, and their own replies, and nothing else (BLD-F052). Anyone else gets 404, never 403, so the
-answer never says that the conversation exists.
+that mention them, and their own replies, and nothing else (BLD-F052); a removed message grants nothing. Anyone
+else gets 404, never 403, so the answer never says that the conversation exists.
+
+Files on messages and answers go only to readers the attachment route lets open them (BLD-F062, DEC-107): the
+sharer, and the roles `view_review_queue` names in `policy/rbac.yaml` (`apps/web/src/server/attachments.ts`,
+`accessible()`).
 """
 
 from __future__ import annotations
@@ -16,6 +20,9 @@ from core.db import Conn
 
 DESK_ROLES = ("reviewer",)
 COMMITTEE_ROLES = ("committee", "core_committee", "core_chair")
+# `view_review_queue` in policy/rbac.yaml (core_chair is an alias of core_committee): who opens a file besides the
+# sharer. Keep in step with `accessible()` in apps/web/src/server/attachments.ts (BLD-F062).
+FILE_ROLES = ("reviewer", "core_committee", "core_chair", "admin")
 
 
 @dataclass(frozen=True)
@@ -27,7 +34,8 @@ class Reader:
     desk: bool = False
     committee: bool = False
     build: bool = False
-    mentioned: bool = False  # mentioned in at least one message
+    mentioned: bool = False  # mentioned in at least one message that is not removed
+    files: bool = False  # may open the files on messages and answers (BLD-F062)
 
     @property
     def full(self) -> bool:
@@ -73,20 +81,23 @@ def reader(conn: Conn, idea: dict[str, Any], user_id: str) -> Reader:
     )
     mentioned = (
         conn.execute(
-            "SELECT 1 FROM conversation_entries WHERE idea_uuid = %s AND type = 'message' AND mentions @> ARRAY[%s]::uuid[]",
+            "SELECT 1 FROM conversation_entries WHERE idea_uuid = %s AND type = 'message' AND deleted_at IS NULL "
+            "AND mentions @> ARRAY[%s]::uuid[]",
             (idea["id"], user_id),
         ).fetchone()
         is not None
     )
+    sharer = code is not None and code == idea["contributor_code"]
     r = Reader(
         user_id=user_id,
         code=code,
-        sharer=code is not None and code == idea["contributor_code"],
+        sharer=sharer,
         crew=crew,
         desk=bool(roles & set(DESK_ROLES)),
         committee=bool(roles & set(COMMITTEE_ROLES)),
         build=is_build_member(conn, idea, user_id),
         mentioned=mentioned,
+        files=sharer or bool(roles & set(FILE_ROLES)),
     )
     if not (r.full or r.mentioned):
         raise not_found()
