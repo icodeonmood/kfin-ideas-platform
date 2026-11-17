@@ -158,7 +158,7 @@ The renderer (`services/worker/comms/email_html.py`; The Ember in `services/work
 | Your idea | `submitted`, `question`, `redirected`, `reviewed` (digest only), `reconsidered`, `withdrawn-no-answer`, `quick-capture-nudge` (inline link only), `joined` (digest only) | "Track or improve your idea", "Reply here", "Go to {team}", "See your idea", "Reopen your idea", "See your crew" | No |
 | Your group and the committee | `cluster-approved`, `gate-outcome`, `round-opened`, `not-shortlisted`, `invited-to-present`, `presentation-confirmed`, `accepted`, `not-accepted`, `not-presented`, `appeal-filed`, `appeal-decided`, `adoption-requested` | "See your idea", "Open the review", "Accept the invitation", "See the details", "Open the appeal", "Open the request" | No |
 | Delivery | `delivery-approval-needed`, `-checkin-blocked`, `-completion`, `-fix-checkin`, `-measure-confirm`, `-measure-due`, `-overdue`, `-phase-changed`, `-writeup-decided`, `-writeup-submitted` | "Open it", "See the check-in", "Open the delivery", "Read the write-up" | No |
-| Ones | `one-inducted`, `one-tier-changed`, `one-message-invited`, `one-removed` (no button), `ones-announced` | "Open your dashboard", "Write your message", "See the Ones" | **Yes** on inducted and tier-changed |
+| Ones | `one-inducted`, `one-tier-changed`, `one-removed` (no button), `ones-announced` (`one-message-invited` retired, BLD-E049) | "Open your dashboard", "See the Ones" | **Yes** on inducted and tier-changed |
 | Time limits | `sla-breached` (email only), `sla-reminder` (in-app only) | "Open it" | No |
 | The Ember | `ember` (whole issue from `ember/render.py`) | "Read it in the app" (template says "Read The Ember") | No |
 

@@ -196,9 +196,10 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
 
-@pytest.mark.parametrize("name", ["one-message-invited", "one-removed", "ones-announced", "submitted"])
+@pytest.mark.parametrize("name", ["one-removed", "ones-announced", "submitted"])
 def test_the_number_block_is_only_for_the_ones_own_news(name: str) -> None:
-    """A peer's invitation, a removal or any other message never shows a number (Ember review)."""
+    """A removal or any other message never shows a number (Ember review; the peer's invitation is retired,
+    BLD-E049)."""
     email = email_html.compose(_load(REPO, name), _sample(name), BASE)
     assert "Your number" not in email.html and "Your number" not in email.text
 
