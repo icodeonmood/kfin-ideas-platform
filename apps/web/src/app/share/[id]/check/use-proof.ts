@@ -35,6 +35,12 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
   const [pollTick, setPollTick] = useState(0);
   /** Each upload still on its way, so a removal that must know the outcome can wait for it (S-06B's Cancel). */
   const pending = useRef(new Map<string, Promise<Call<FileItem>>>());
+  /** Removals of files that were still uploading: each resolves to true once nothing of it is left on the server. */
+  const early = useRef(new Map<string, Promise<boolean>>());
+  const [earlyCount, setEarlyCount] = useState(0);
+  /** The server's words (or the drawn line) for a file removed while uploading that could not be deleted when its
+   * upload answered: it has no row left to show them under, so the page shows them by the files (S-06B). */
+  const [leftover, setLeftover] = useState<string | null>(null);
 
   /** The rows as the server last sent them (on load, or after a save). */
   const load = useCallback(
@@ -49,9 +55,9 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     const r = await posted;
     pending.current.delete(key);
     if (removedEarly.current.has(key)) {
-      // Removed during the upload: what reached the server goes too, so nothing is left behind.
+      // Removed during the upload: what reached the server goes too (`early`, which reports how it went).
       removedEarly.current.delete(key);
-      if (r.ok && r.body?.id) void track(api.removeFile(r.body.id));
+      if (!early.current.has(key) && r.ok && r.body?.id) void track(api.removeFile(r.body.id));
       return;
     }
     if (r.ok) {
@@ -170,10 +176,32 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
         return true;
       }
       removedEarly.current.add(key);
+      if (posted) {
+        // The row goes now; what the upload put on the server is deleted when it answers, and how that went is kept
+        // (`settleEarly`), so nothing is left behind unsaid.
+        const gone = posted
+          .then(async (r) => {
+            if (!(r.ok && r.body?.id)) return true;
+            const d = await track(api.removeFile(r.body.id));
+            if (d.ok || d.status === 404) return true;
+            setLeftover((!d.ok && d.error?.message) || CHECK_COPY.failed);
+            return false;
+          })
+          .finally(() => {
+            early.current.delete(key);
+            setEarlyCount((n) => n - 1);
+          });
+        early.current.set(key, gone);
+        setEarlyCount((n) => n + 1);
+      }
     }
     setProof((list) => list.filter((x) => x.key !== key));
     return true;
   };
+
+  /** Waits for every file removed while it was uploading: true when none of them is left on the server. */
+  const settleEarly = async (): Promise<boolean> =>
+    (await Promise.all(Array.from(early.current.values()))).every(Boolean);
 
   // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A
   // failed ask (the network, a 4xx while a switch is off) waits longer and asks again; after five in a row the row
@@ -209,5 +237,18 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     [],
   );
 
-  return { proof, load, addFiles, addLinks, retryFile, hideFile, removeFile, noteFile };
+  return {
+    proof,
+    load,
+    addFiles,
+    addLinks,
+    retryFile,
+    hideFile,
+    removeFile,
+    noteFile,
+    /** A file removed while uploading is still being deleted. */
+    removing: earlyCount > 0,
+    settleEarly,
+    leftover,
+  };
 }

@@ -983,6 +983,132 @@ describe("S-06B follow-up: Cancel never leaves a file behind unsaid (BLD-C161, C
   });
 });
 
+describe("S-06B second follow-up: nothing leaves while a file is still going (BLD-C161, C163)", () => {
+  const LINK2 = { ...LINK, id: "ATT-2026-000502", name: "intranet.kfintech.example/calls" };
+
+  /** An upload that answers only when the test says so. */
+  function slowUpload() {
+    const held: { land: (v: unknown) => void } = { land: () => undefined };
+    vi.spyOn(api, "upload").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          held.land = resolve as (v: unknown) => void;
+        }) as never,
+    );
+    return held;
+  }
+
+  async function pick(name: string) {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(["x"], name, { type: "image/png" });
+    await act(async () => {
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+  }
+
+  const asks = () => {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+
+  it("BLD-C163: a click while the files are being taken away does not leave, and the tab still asks", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    const held = slowUpload();
+    await mount([
+      (m, u) => (m === "DELETE" && u === `/api/files/${SHOWN.id}` ? { status: 204 } : undefined),
+      ...base(),
+    ]);
+    await pick(SHOWN.name);
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(link("Cancel"))).toBe(false);
+    // The third click, and the side bar, wait too; closing the tab still asks.
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(document.querySelector(".tbar a") ?? undefined)).toBe(false);
+    expect(asks()).toBe(true);
+    expect(pushed).toEqual([]);
+    await act(async () => held.land({ ok: true, status: 201, body: SHOWN }));
+    await settle();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/api/files/${SHOWN.id}`]);
+    expect(pushed).toEqual([`/ideas/${REF}`]);
+  });
+
+  it("BLD-C161: a file removed while uploading is waited for on Cancel; a delete that fails says so by the files, and the page stays", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    const held = slowUpload();
+    await mount([
+      (m, u) =>
+        m === "DELETE" && u === `/api/files/${SHOWN.id}`
+          ? { status: 500, body: { error: { code: "server_error", message: "" } } }
+          : undefined,
+      ...base(),
+    ]);
+    const live = document.querySelector(".ed-files-live");
+    expect(live?.getAttribute("role")).toBe("status");
+    expect(text(live)).toBe("");
+    await pick(SHOWN.name);
+    await click(button(`Remove ${SHOWN.name}`));
+    expect(document.body.textContent).not.toContain(SHOWN.name);
+    // The upload is still on its way, so leaving still confirms, and then waits for it.
+    expect(status()).toBe("Unsaved changes");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(pushed).toEqual([]);
+    await act(async () => held.land({ ok: true, status: 201, body: SHOWN }));
+    await settle();
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+    expect(pushed).toEqual([]);
+    expect(text(document.querySelector(".ed-files-live"))).toBe("Something went wrong. Try again.");
+    expect(document.querySelector(".ed-files-live")).toBe(live);
+    // The person has been told: the next Cancel leaves as it is.
+    expect(await follows(link("Cancel"))).toBe(true);
+  });
+
+  it("BLD-C163: a Remove after the confirm asks again on the next Cancel", async () => {
+    await mount([
+      (m, u) => (m === "DELETE" && u === `/api/files/${SHOWN.id}` ? { status: 204 } : undefined),
+      ...base(() => page({ files: [SHOWN] as unknown as EditPageResponse["files"] })),
+    ]);
+    await retitle("Investors call about a redemption not processed");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    await click(button(`Remove ${SHOWN.name}`));
+    expect(document.querySelector(".ed-confirm")).toBeNull();
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+  });
+
+  it("BLD-C161: a discard that takes one link away but not the other stays, with the confirm as it was and the row's words", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    await mount([
+      (m, u, b) =>
+        m === "POST" && u === "/api/links"
+          ? { body: (b as { url: string }).url.endsWith("/codes") ? LINK : LINK2 }
+          : undefined,
+      (m, u) => (m === "DELETE" && u === `/api/files/${LINK.id}` ? { status: 204 } : undefined),
+      (m, u) =>
+        m === "DELETE" && u === `/api/files/${LINK2.id}`
+          ? { status: 500, body: { error: { code: "server_error", message: "" } } }
+          : undefined,
+      ...base(),
+    ]);
+    await addLink("https://intranet.kfintech.example/codes");
+    await addLink("https://intranet.kfintech.example/calls");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(pushed).toEqual([]);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    expect(document.body.textContent).not.toContain(LINK.name);
+    expect(document.body.textContent).toContain(LINK2.name);
+    expect(all('[role="alert"]').some((a) => text(a) === "Something went wrong. Try again.")).toBe(true);
+  });
+});
+
 describe("S-06B review: leaving with unsaved changes (BLD-C163, item 1)", () => {
   it("S-06B.layout/7: any other link on the page (the side bar, the bar's Back to your idea) confirms first, then leaves", async () => {
     await mount(base());

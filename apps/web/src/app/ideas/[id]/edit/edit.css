@@ -201,9 +201,10 @@
   flex-basis: 100%;
 }
 
-/* The saved line's live region is always on the page (WCAG 4.1.3); while it is empty it takes no room in the foot or
-   the dock. */
-.ed-live:empty {
+/* The saved line's live region, and the files' one for a file removed while uploading that could not be deleted, are
+   always on the page (WCAG 4.1.3); while they are empty they take no room. */
+.ed-live:empty,
+.ed-files-live:empty {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -226,6 +227,10 @@
   min-height: 24px;
   margin-left: auto;
   color: inherit;
+}
+
+.ed-files-live .fmsg {
+  margin-top: 12px;
 }
 
 .ed-closed {

@@ -152,6 +152,9 @@ export function EditIdea({
   const leaving = useRef(false);
   /** Leaving could not take away a file this page added: the person has its row's words, so the next link leaves. */
   const discardFailed = useRef(false);
+  /** The files this page added are being taken away before it leaves: every link waits, and the tab still asks. */
+  const discardingRef = useRef(false);
+  const [discarding, setDiscarding] = useState(false);
   const confirmRef = useRef<HTMLParagraphElement>(null);
   const sortingRef = useRef<HTMLElement>(null);
   const ids = useId();
@@ -298,7 +301,8 @@ export function EditIdea({
 
   const view = page && state ? sortingView(page.sorting, state.sorting) : null;
   const files: FilesDelta = page ? filesDelta(fileBase, proof.proof) : NO_FILES;
-  const dirty = page && state ? isDirty(page, state, files) : false;
+  // A file removed while it was still uploading is still being deleted: leaving now could leave it behind.
+  const dirty = (page && state ? isDirty(page, state, files) : false) || proof.removing;
   const closed = outcome.kind === "closed";
 
   const save = async () => {
@@ -365,44 +369,60 @@ export function EditIdea({
   // --- Leaving with unsaved changes (S-06B.layout/7, BLD-C163) ------------------------------------------------------
 
   /** Leaving without saving takes away again the files and links this page added (they acted at once): a row still
-   * uploading is waited for, then its file deleted. True when every one of them is gone; one that cannot be removed
-   * stays on the page with its row's words under it, as after a Remove that failed. Removed ones stay removed: a
-   * removal cannot be undone (BLD-C161). */
+   * uploading is waited for, then its file deleted, and so is a file removed while it was uploading. True when every
+   * one of them is gone; one that cannot be removed stays on the page with its row's words under it, as after a
+   * Remove that failed (a file with no row left says so by the files). Removed ones stay removed: a removal cannot be
+   * undone (BLD-C161). */
   const discard = async (): Promise<boolean> => {
     const rows = addedRows(fileBase, proof.proof);
-    const gone = await Promise.all(rows.map((r) => proof.removeFile(r.key, { wait: true })));
-    return gone.every(Boolean);
+    const [gone, earlyGone] = await Promise.all([
+      Promise.all(rows.map((r) => proof.removeFile(r.key, { wait: true }))),
+      proof.settleEarly(),
+    ]);
+    return gone.every(Boolean) && earlyGone;
   };
 
   // Any link on the page (Cancel, the bar's close, the side bar, Back) shows the in-place confirm first while there
   // are unsaved changes; the next one leaves without them. Links that open elsewhere, and "Open the conversation"
   // after a refusal (it carries the words on), go as they are.
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !discarding) return;
     const onClick = (e: globalThis.MouseEvent) => {
       if (leaving.current) return;
       const to = leavingTo(e);
       if (!to) return;
+      if (discardingRef.current) {
+        // The files added here are still being taken away: no link goes until that has answered.
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (!confirmCancel) {
         e.preventDefault();
         e.stopPropagation();
         setConfirmCancel(true);
         return;
       }
-      leaving.current = true;
       // Nothing to take away, or the person already has the words of a file that would not go: the link goes as it is.
-      if (discardFailed.current || !addedRows(fileBase, proof.proof).length) return;
+      if (discardFailed.current || (!addedRows(fileBase, proof.proof).length && !proof.removing)) {
+        leaving.current = true;
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
+      discardingRef.current = true;
+      setDiscarding(true);
       void discard().then((gone) => {
+        discardingRef.current = false;
+        setDiscarding(false);
         if (gone) {
+          leaving.current = true;
           router.push(to);
           return;
         }
-        // A file this page added is still on the idea, and the review desk could open it: stay, with the row's own
-        // words under it, brought into view; the next link leaves.
+        // A file this page added is still on the idea, and the review desk could open it: stay, with its words by
+        // the files, brought into view; the next link leaves.
         discardFailed.current = true;
-        leaving.current = false;
         window.setTimeout(
           () => document.querySelector(".ck-proof")?.scrollIntoView?.({ block: "nearest" }),
           0,
@@ -415,15 +435,15 @@ export function EditIdea({
 
   // Closing or reloading the tab with unsaved changes: the browser's own question.
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !discarding) return;
     const onLeave = (e: BeforeUnloadEvent) => {
-      if (leaving.current) return;
+      if (leaving.current && !discardingRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", onLeave);
     return () => window.removeEventListener("beforeunload", onLeave);
-  }, [dirty]);
+  }, [dirty, discarding]);
 
   // The confirm is announced; it is also brought into view when a link far from the foot asked for it.
   useEffect(() => {
@@ -610,6 +630,16 @@ export function EditIdea({
               : { links: E.proof.links, linkInput: E.proof.linkInput, addLink: E.proof.addLink }
           }
         />
+        {/* A file removed while uploading that could not be deleted has no row: its words show here, in a status
+            region that is on the page before them (the drawn line, or the server's words). */}
+        <div className="ed-files-live" role="status">
+          {proof.leftover ? (
+            <p className="fmsg">
+              <span className="fmsg-ic" aria-hidden="true" />
+              <span>{proof.leftover}</span>
+            </p>
+          ) : null}
+        </div>
       </section>
 
       <section className="ed-sec" aria-labelledby={`${ids}-f`}>
