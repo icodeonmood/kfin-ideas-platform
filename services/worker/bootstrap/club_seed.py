@@ -17,7 +17,8 @@ What it gives every screen of the pack something to show:
   request waiting, an accepted one, and a desk merge inside its window;
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
-- one One whose tier rose with the moment not yet shown (J-ONE step 6).
+- an Inbox item for each One made from a credited idea, and one One whose tier rose with the moment not yet shown
+  (J-ONE steps 3 and 6).
 
 It does not write `sla_timers`: the old SLA tick reads a rule for every running timer and would stop on the new
 clock kinds. Clock dates live on the rows themselves (decide_by, due_at, closes_at, return_at, team_by).
@@ -1130,18 +1131,38 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         ("lavanya", "decision_reversed", "manoj", "T9", 2.0, False, None, False, False,
          [{"label": "Read the note", "to": "idea", "style": "line"}]),
     )  # fmt: skip
-    for to, kind, sender, key, days, needs, due, read, archived, actions in items:
-        at = _ago(days, now)
+
+    def put(to: str, kind: str, sender: str | None, key: str, at: dt.datetime, needs: bool, due: float | None,
+            read: bool, archived: bool, actions: list[dict[str, str]], refs: dict[str, Any]) -> None:  # fmt: skip
+        """One item as notify.post shapes it: kind, recipient, sender, idea and refs (IDs, enums, numbers only)."""
         conn.execute(
             "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
             "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
             "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (p[to]["id"], f"inbox/{kind}", f"inbox.{kind}", Jsonb({"idea_id": m[key].ref}),
+            (p[to]["id"], f"inbox/{kind}", f"inbox.{kind}", Jsonb(refs),
              "read" if read else "sent", at, at, at + dt.timedelta(hours=1) if read else None, kind,
              p[sender]["id"] if sender else None, m[key].uuid, needs,
              now + dt.timedelta(days=due) if due is not None else None,
              at + dt.timedelta(days=1) if archived else None, Jsonb(actions)),
         )  # fmt: skip
+
+    for to, kind, sender, key, days, needs, due, read, archived, actions in items:
+        put(to, kind, sender, key, _ago(days, now), needs, due, read, archived, actions, {"idea_id": m[key].ref})  # fmt: skip
+
+    # J-ONE step 3 (L-ONES.rules/1–3): the people credited on a shipped, measured idea become Ones, and it shows in
+    # their Inbox. E-ENUMS.inbox has no induction kind (00-overview/mapping/contracts.md: "ones.inducted: no Inbox
+    # kind"), so it is the nearest kind L-INBOX.kinds draws: the system moving their idea on, to Shipped, with the
+    # number and tier they were given as refs. Nothing waits on them (swapping the number is optional), so it does
+    # not need them. Siddharth's is still unread: he is the new One whose number is open (J-ONE/3b, /4).
+    for who, _wanted, _tier, way_in, idea_key, _brief, days in ONES:
+        if way_in != "accepted_idea" or idea_key is None:
+            continue
+        one = conn.execute("SELECT number, tier FROM ones WHERE user_id = %s", (p[who]["id"],)).fetchone()
+        assert one is not None
+        refs = {"idea_id": m[idea_key].ref, "stage": "shipped", "became_one": True, "number": int(one["number"]),
+                "tier": int(one["tier"])}  # fmt: skip
+        put(who, "stage_moved", None, idea_key, _ago(days, now), False, None, who != "siddharth", False,
+            [{"label": "Open the idea", "to": "idea", "style": "line"}], refs)  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:

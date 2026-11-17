@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import notify
 from bootstrap import club_seed
 from identity.codes import emp_id_hash
 from onepc import enums
@@ -74,6 +75,36 @@ def test_e_entities_seed_fills_every_screen_and_removes_cleanly(db: Any) -> None
         assert _one(conn, f"SELECT count(*) FROM {table}") == 0, table  # noqa: S608 - fixed names
     club_seed.load(conn)  # --reset loads again on the same counters and contributor codes
     assert len(club_seed.seed_user_ids(conn)) == len(club_seed.PEOPLE)
+
+
+def test_l_inbox_j_one_3_each_new_one_is_told_in_their_inbox(db: Any) -> None:
+    """J-ONE step 3 (L-ONES.rules/1–3, L-INBOX.kinds): each One made from a credited idea has one Inbox item from
+    the system, the nearest kind the pack draws (a stage move to Shipped), with the number and tier as refs, in the
+    shape notify.post takes. Siddharth's (SYN-10012, the new One whose number is open) is still unread."""
+    conn = db
+    club_seed.load(conn)
+    rows = conn.execute(
+        "SELECT n.*, u.first_name, o.number, o.tier, o.inducted_at, i.id AS one_idea, i.idea_id AS one_ref "
+        "FROM notifications n JOIN users u ON u.id = n.user_id JOIN ones o ON o.user_id = n.user_id "
+        "JOIN ideas i ON i.idea_id = o.idea_id WHERE (n.payload ->> 'became_one')::boolean"
+    ).fetchall()
+    inducted = {who for who, _n, _t, way_in, *_ in club_seed.ONES if way_in == "accepted_idea"}
+    assert (
+        sorted(r["first_name"].lower() for r in rows) == sorted(inducted) == ["indira", "siddharth", "varun"]
+    )
+    for r in rows:
+        assert r["kind"] == "stage_moved" and r["from_user_id"] is None  # the system, shown with the mark
+        assert r["idea_uuid"] == r["one_idea"] and r["created_at"] == r["inducted_at"]
+        assert not r["needs_you"] and r["archived_at"] is None and r["due_at"] is None
+        assert r["payload"] == {"idea_id": r["one_ref"], "stage": "shipped", "became_one": True,
+                                "number": r["number"], "tier": r["tier"]}  # fmt: skip
+        notify.post(  # raises on an unknown kind, a ref that is not an ID, enum, number or boolean, or a bare action
+            conn, r["kind"], [str(r["user_id"])], idea_id=str(r["idea_uuid"]), needs_you=r["needs_you"],
+            actions=[notify.Action(**a) for a in r["actions"]], refs=r["payload"],
+        )  # fmt: skip
+    siddharth = next(r for r in rows if r["first_name"] == "Siddharth")
+    assert club_seed.EMP["siddharth"] == "SYN-10012"
+    assert siddharth["read_at"] is None and siddharth["number"] == 21 and siddharth["tier"] == 1
 
 
 def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(db: Any) -> None:
