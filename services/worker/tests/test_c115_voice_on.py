@@ -92,8 +92,11 @@ def test_BLD_C115_on_with_the_route_the_approval_and_the_key_is_met() -> None:
     assert "met" not in {r["state"] for r in rows if r["criterion"] == HOSTED_ROW} and why
 
 
-def test_BLD_C115_nothing_is_off_by_design_any_more() -> None:
-    assert OFF_BY_DESIGN == {}
+def test_BLD_C115_voice_is_not_off_by_design_any_more() -> None:
+    # Voice left the off-by-design list with DEC-108. The only feature still off by design is the file black-out
+    # (`files.blackout`, DEC-107 and BLD-C064), which stays off until black-out passes review.
+    assert "capture.voice" not in OFF_BY_DESIGN and "speech.hosted" not in OFF_BY_DESIGN
+    assert set(OFF_BY_DESIGN) == {"files.blackout"}
 
 
 # ---- the key is the worker's alone ----------------------------------------------------------------------------
