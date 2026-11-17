@@ -306,9 +306,8 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             )
             adapters.say(conn, str(r["idea_uuid"]), "committee.reversed", author_user_id=user_id,
                          payload={"window_id": window_id, "to": str(to)}, at=t)  # fmt: skip
-            told = list(
-                dict.fromkeys([*sharers_and_crew(conn, idea), str(desk_user)])
-            )  # sharer, crew, the reviewer
+            # L-INBOX.kinds: a reversal goes to the sharer, the crew and the reviewer, each once
+            told = list(dict.fromkeys([*sharers_and_crew(conn, idea), str(desk_user)]))
             adapters.tell(
                 conn, "decision_reversed", told, idea_uuid=str(r["idea_uuid"]), sender=user_id,
                 actions=[("See the decision", f"/ideas/{r['idea_id']}", "primary")],

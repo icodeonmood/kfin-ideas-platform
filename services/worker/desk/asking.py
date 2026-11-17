@@ -50,6 +50,7 @@ NOTHING_ANSWERED = "Answer at least one question"
 ANSWER_IN_PROGRESS = (
     "Someone else who shared this idea is answering this question. You can answer the others."
 )
+FILE_CANT_BE_ADDED = "That file can’t be added to this answer."
 REMINDER_KIND = "desk.answer_reminder"
 
 
@@ -530,9 +531,6 @@ def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequ
     conn.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer_id, ids))
 
 
-FILE_CANT_BE_ADDED = "That file can’t be added to this answer."
-
-
 def _answer_body(text: Any, file_ids: Any) -> tuple[str | None, tuple[str, ...]]:
     """The body's types, checked before anything else (A-API.conventions/2): text is text, file_ids a list of ids."""
     if text is not None and not isinstance(text, str):
@@ -575,9 +573,8 @@ def save_answer(
         ).fetchone()
         if existing and existing["sent_at"] is not None:
             raise Refused(409, "answer_sent", "This answer is already with the review desk.")
-        if (
-            existing and existing["by_code"] != code
-        ):  # one answer per question: a co-sharer's draft stays theirs
+        # one answer row per question (answers.question_id is unique): a co-sharer's draft stays theirs
+        if existing and existing["by_code"] != code:
             raise Refused(409, "answer_in_progress", ANSWER_IN_PROGRESS)
         errors = questions.check_answer(text, p)
         if errors:
