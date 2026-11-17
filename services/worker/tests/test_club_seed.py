@@ -313,3 +313,50 @@ def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
     # Exactly what lane C's intake posts (draft/channels.py `_kept`): refs the channel, one "Check and send".
     assert kept[0]["payload"] == {"channel": "email"} and not kept[0]["needs_you"]
     assert kept[0]["actions"] == [{"label": "Check and send", "style": "primary", "to": f"/share/{i2.uuid}"}]
+
+
+def test_l_questions_ask_l_review_open_j_review_a1_a3_unopened_idea_with_a_queued_question(
+    seeded: Any,
+) -> None:
+    """J-REVIEW/A1 to A3 (L-QUESTIONS.ask/3, /4; L-REVIEW.open/1): Kiran's K1 is at To review and the desk has never
+    opened it. Lavanya queued one question on its empty "How often" part, in the words "Ask about this" queues (the
+    part's first suggestion), and never sent it: no sent_at, no due date, no Inbox item, nothing in the conversation,
+    no answers. Sending it (A3) is what opens the idea and tells Kiran."""
+    conn = seeded
+    kiran, lavanya = p_id(conn, "kiran"), p_id(conn, "lavanya")
+    spec = club_seed.IDEAS["K1"]
+    ideas = conn.execute(
+        "SELECT i.id, i.idea_id, i.status, i.opened_at, i.opened_by, i.reviewer_id, i.often, i.title FROM ideas i "
+        "JOIN contributor_map m ON m.contributor_code = i.contributor_code WHERE m.user_id = %s",
+        (kiran,),
+    ).fetchall()
+    assert len(ideas) == 1  # Kiran's only idea: nothing another step changes is his
+    idea = ideas[0]
+    assert (idea["title"], idea["status"]) == (spec.title, "with_review_desk") and idea["idea_id"]
+    assert idea["opened_at"] is None and idea["opened_by"] is None and idea["reviewer_id"] is None
+    assert not idea["often"]  # the gap the question asks about
+
+    sets = conn.execute(
+        "SELECT id, by_user_id, state, time_to_answer, sent_at, seen_at, due_at, answered_at, closed_at "
+        "FROM question_sets WHERE idea_uuid = %s",
+        (idea["id"],),
+    ).fetchall()
+    assert len(sets) == 1
+    qs = sets[0]
+    assert qs["by_user_id"] == lavanya and qs["state"] == "queued"
+    assert all(
+        qs[c] is None for c in ("time_to_answer", "sent_at", "seen_at", "due_at", "answered_at", "closed_at")
+    )
+    rows = conn.execute(
+        "SELECT id, seq, part, suggested, text_encrypted FROM questions WHERE set_id = %s", (qs["id"],)
+    ).fetchall()
+    assert [(r["seq"], r["part"], r["suggested"]) for r in rows] == [(1, "often", True)]
+    text = open_text("questions", "text_encrypted", str(rows[0]["id"]), rows[0]["text_encrypted"])
+    assert (
+        text == "How often does this happen: a few times a day, a week or a month?"
+    )  # desk/questions.py _GAP
+
+    assert _one(conn, "SELECT count(*) FROM answers WHERE question_id = %s", rows[0]["id"]) == 0
+    assert _one(conn, "SELECT count(*) FROM notifications WHERE user_id = %s", kiran) == 0
+    unsent = "SELECT count(*) FROM conversation_entries WHERE idea_uuid = %s AND question_set_id IS NOT NULL"
+    assert _one(conn, unsent, idea["id"]) == 0

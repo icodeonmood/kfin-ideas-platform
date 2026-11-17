@@ -17,6 +17,7 @@ What it gives every screen of the pack something to show:
   requests waiting on one lead (each in her Inbox, one per answer J-SIMILAR/6 walks), an accepted one, and a desk
   merge inside its window;
 - two ideas on one reviewer's desk, opened, that list each other as similar, ready for a desk merge (J-REVIEW/M3);
+- an idea the desk has not opened, with a question its reviewer queued and has not sent (J-REVIEW/A1-A3);
 - a draft that arrived by email, its detail hidden, with its "kept your draft" Inbox item (J-RESUME/5, 6);
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
@@ -81,6 +82,7 @@ PEOPLE: list[tuple[str, str, str, str, str, tuple[str, ...], int, bool, str]] = 
     ("SYN-10022", "Hemant Rawat", "Technology", "Jaipur", "LOB-technology", (), 1, True, ""),
     ("SYN-10023", "Indira Natarajan", "Corporate registry", "Chennai", "LOB-corporate-registry", (), 2, True, ""),
     ("SYN-10024", "Jatin Khurana", "Sales", "Jaipur", "LOB-sales", (), 1, True, ""),
+    ("SYN-10025", "Kiran Bhatia", "Investor service", "Chennai", "LOB-mf", (), 1, True, "Sharer the review desk asks first"),
 ]  # fmt: skip
 EMP = {name.split()[0].lower(): emp for emp, name, *_ in PEOPLE}  # "tanvi" -> "SYN-10001"
 
@@ -326,6 +328,15 @@ IDEAS: dict[str, Spec] = {
                often="Every dividend season", affects=["Investors", "KFin teams"], brings=["saves_cost"],
                hidden={"{folio}": ("folio", "4400076512")}, step="tell", saved_days=0.15, channel="email",
                via="email", origin="Fwd: Dividend letter returned again"),
+    # J-REVIEW/A1 to A3 (L-QUESTIONS.ask, L-REVIEW.open/1): at To review, never opened by the desk, "How often" left
+    # empty; Lavanya has one question on it queued, never sent (as P1, not P1). No crew, no answers.
+    "K1": Spec("kiran", "with_review_desk", "problem", "Investors are sent to the wrong branch for their AMC",
+               "Investors often visit a branch that does not service their AMC. They are sent to another branch "
+               "the same day.",
+               "Investor service",
+               ["Investors walk into our branch with forms for an AMC we do not service here. We send them to "
+                "another branch, and some come back the next day upset."],
+               shared_days=2),
 }  # fmt: skip
 # J2 was written after F2 was shared, so it found F2 while drafting (L-SIMILAR.rules/4, 5); F2 got J2 when J2 was
 # shared (L-SIMILAR.rules/6). Nobody asked to merge: the desk can (L-MERGE.desk/1), F2 leading as shared first.
@@ -748,6 +759,11 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
                    ("fix", "Would a scan at the counter be enough?", False, "Yes, one scan and a search box.", True)])  # fmt: skip
     _questions(conn, m["P1"], p["lavanya"]["id"], p["pallavi"]["code"], now, state="queued", sent_days=None,
                due_days=None, qs=[("who", "Which distributor segments re-send most?", True, None, False)])  # fmt: skip
+    # K1 (J-REVIEW/A1-A3): "Ask about this" on How often queued that part's first suggestion, the gap's own words
+    # (desk/questions.py first_for, L-QUESTIONS.ask/3); never sent, so no sent_at, no due date, no Inbox item.
+    _questions(conn, m["K1"], p["lavanya"]["id"], p["kiran"]["code"], now, state="queued", sent_days=None,
+               due_days=None, qs=[("often", "How often does this happen: a few times a day, a week or a month?",
+                                   True, None, False)])  # fmt: skip
     # T7: answered before the pick, set closed with the decision.
     _questions(conn, m["T7"], p["harish"]["id"], tanvi["code"], now, state="closed", sent_days=7.5, due_days=-4.5,
                qs=[("often", "Is the 40 a day across all branches?", False, "Yes, across the six largest branches.", True)])  # fmt: skip
