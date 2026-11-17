@@ -28,6 +28,16 @@ describe("kill switch route map (§7.6)", () => {
       expect(switchesFor("GET", read)).toEqual([]);
   });
 
+  it("an idea's conversation (L-CONVO, BLD-F058): writing and removing a message pause with sharing; reading stays open", () => {
+    const base = "/api/ideas/IDEA-2026-001481/conversation";
+    expect(switchesFor("POST", `${base}/messages`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${base}/messages/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10`)).toEqual([
+      "submissions",
+    ]);
+    expect(switchesFor("GET", base)).toEqual([]);
+    expect(switchesFor("HEAD", base)).toEqual([]);
+  });
+
   it("needs both switches to upload a file", () => {
     expect(switchesFor("POST", "/api/submissions/abc/attachments").sort()).toEqual([
       "attachments.upload",
