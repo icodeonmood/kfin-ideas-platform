@@ -17,13 +17,25 @@ const KEY = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ID
 /** A-API.conventions/3: the key a client sends with a write that creates something. */
 const IDEMPOTENCY = /^[A-Za-z0-9_.:-]{8,200}$/;
 const NOT_FOUND = { error: { code: "not_found", message: "We can’t find that idea." } };
-const FAILED = { error: { code: "send_failed", message: "Couldn’t send. Your draft is safe. Try again." } };
+/** V-FIELDS.checkit/13: Submit's own failure line; every other call here says the general one. */
+export const SEND_FAILED = {
+  error: {
+    code: "send_failed",
+    message: "Couldn’t send. Your draft is safe. Check your connection, then try again.",
+  },
+};
+const FAILED = { error: { code: "unavailable", message: "Something went wrong. Try again." } };
 
 export const MAX_BODY_BYTES = 64 * 1024;
 
 type Method = "GET" | "PATCH" | "POST";
 
-async function relay(path: string, method: Method, body?: unknown): Promise<NextResponse> {
+async function relay(
+  path: string,
+  method: Method,
+  body?: unknown,
+  failed: typeof FAILED = FAILED,
+): Promise<NextResponse> {
   let res: Response;
   try {
     res = await workerFetch(path, {
@@ -33,11 +45,11 @@ async function relay(path: string, method: Method, body?: unknown): Promise<Next
         : { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }),
     });
   } catch {
-    return NextResponse.json(FAILED, { status: 502 });
+    return NextResponse.json(failed, { status: 502 });
   }
   const data = (await res.json().catch(() => null)) as unknown;
-  if (data === null || typeof data !== "object") return NextResponse.json(FAILED, { status: 502 });
-  if (res.status === 401 || res.status === 503) return NextResponse.json(FAILED, { status: 502 });
+  if (data === null || typeof data !== "object") return NextResponse.json(failed, { status: 502 });
+  if (res.status === 401 || res.status >= 500) return NextResponse.json(failed, { status: 502 });
   return NextResponse.json(data, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 
@@ -94,7 +106,12 @@ export function submitDraft(me: CurrentUser, draftId: string, body: unknown, hea
     );
   }
   const extra: Record<string, string> = key ? { idempotency_key: key } : {};
-  return relay(withUser(`/internal/drafts/${encodeURIComponent(draftId)}/submit`, me, extra), "POST", body);
+  return relay(
+    withUser(`/internal/drafts/${encodeURIComponent(draftId)}/submit`, me, extra),
+    "POST",
+    body,
+    SEND_FAILED,
+  );
 }
 
 /** `GET /ideas/:id/edit`: everything the edit page shows (S-06B, L-SUBMIT.edit). */
