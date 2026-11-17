@@ -119,11 +119,19 @@ class GatekeeperWaits(Exception):
     check job tries again. Carries the gateway's code only."""
 
 
+def switched_off_by_person(changed_by: str | None) -> bool:
+    """True only for a person's switch-off. Every automatic actor writes `changed_by` as `process:<name>` (the
+    gateway's own switch-off, the eval runner on a golden-set regression, the watcher), and an unknown actor (NULL)
+    is treated as automatic too: an automatic switch-off is a failure to wait out, never a choice to skip the
+    gatekeeper (non-negotiable 4, DEC-103, BLD-C107)."""
+    return bool(changed_by) and not str(changed_by).startswith("process:")
+
+
 def _off_on_purpose(conn: Conn) -> bool | None:
     """None while `ai.all` and `agent.gatekeeper` are both on; True when a person switched one of them off; False
-    when only the gateway's own automatic switch-off holds it off (that is a failure, not a choice)."""
+    when only an automatic switch-off (the gateway, the eval runner, the watcher, or an unknown actor) holds it off
+    (that is a failure, not a choice)."""
     from core import killswitch
-    from gateway.core import ACTOR as GATEWAY
 
     if all(killswitch.is_on(name, conn) for name in GATEKEEPER_SWITCHES):
         return None
@@ -131,7 +139,7 @@ def _off_on_purpose(conn: Conn) -> bool | None:
         "SELECT changed_by FROM kill_switches WHERE name = ANY(%s) AND state = 'off'",
         (list(GATEKEEPER_SWITCHES),),
     ).fetchall()
-    return any((r["changed_by"] or "") != GATEWAY for r in rows)
+    return any(switched_off_by_person(r["changed_by"]) for r in rows)
 
 
 def _placed(text: str, named: dict[str, str], *, switched_off: bool = False) -> detect.Gate:
