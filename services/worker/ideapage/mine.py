@@ -37,6 +37,15 @@ FILTERS = tuple(
 )  # all, needs_you, drafts, with_review_desk, picked_and_building, …
 LIST_LABEL = {"yours": "Yours", "teamed": "Teamed up"}
 SORT_LABEL = {"latest": "Latest activity", "shared": "Date shared", "stage": "Stage"}
+# The phone's sort cycler names the sort in a sentence ("Sorted by latest activity", PhoneMyIdeas) and its chip row
+# shortens one filter ("With the desk").
+SORTED_BY = {
+    "latest": "Sorted by latest activity",
+    "shared": "Sorted by date shared",
+    "stage": "Sorted by stage",
+}
+SHORT_FILTER_LABEL = {"with_review_desk": "With the desk"}
+SNIPPET_MAX = 96
 STAGE_RANK = {
     "shipped": 9,
     "being_built": 8,
@@ -106,6 +115,15 @@ def _matches(row: dict[str, Any], q: str) -> int:
     if needle in (row["ref"] or "").lower():
         return 1
     return 0
+
+
+def snippet(text: str, limit: int = SNIPPET_MAX) -> str:
+    """The short summary cut at a word for a search result's second line ('… so they…', MyIdeas search)."""
+    t = " ".join(text.split())
+    if len(t) <= limit:
+        return t
+    cut = t[:limit].rsplit(" ", 1)[0].rstrip(",;:.")
+    return f"{cut}…"
 
 
 def _activity(*times: dt.datetime | None) -> dt.datetime:
@@ -184,7 +202,7 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
     qset = read.question_set(conn, uid)
     status = display_status(idea, qset, for_sharer=True)
     dec: Decided | None = (
-        decided(read.decision(conn, uid))
+        decided(read.decision(conn, uid, with_text=True))
         if idea["status"] in ("picked", "not_now", "not_picked", "being_built", "shipped")
         else None
     )
@@ -193,9 +211,12 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
     meta_when = f"Shared {day(idea['shared_at'], now)}" if idea["shared_at"] else ""
     if status == "needs_you" and qset:
         n = len(qset["questions"])
-        sentence = (
-            f"The review desk asked you {count(n, 'question')} on {weekday_or_day(qset['sent_at'], now)}."
-        )
+        when = weekday_or_day(qset["sent_at"], now) if qset.get("sent_at") else None
+        on = f" {when}" if when in ("today", "yesterday") else f" on {when}" if when else ""
+        sentence = f"The review desk asked you {count(n, 'question')}{on}."
+        action = {"label": "Answer the questions", "to": f"/ideas/{key}/answer", "style": "primary"}
+    elif status == "needs_you":  # questions sent, the set not readable yet
+        sentence = "The review desk asked you some questions."
         action = {"label": "Answer the questions", "to": f"/ideas/{key}/answer", "style": "primary"}
     elif status in ("checking", "with_review_desk"):
         if qset and qset["state"] in read.ANSWERED_SET_STATES:
@@ -304,7 +325,7 @@ def _teamed_row(conn: Conn, idea: dict[str, Any], joined_at: dt.datetime, now: d
     uid = str(idea["id"])
     key = str(idea["idea_id"])
     title = idea["title"] or key
-    status = str(idea["status"])
+    status = display_status(idea, None, for_sharer=False)  # a crew member never sees "Needs you"
     sharer = read.person_by_code(conn, idea["contributor_code"])
     whose = f"{sharer['name']}’s idea" if sharer and read.shows_name(sharer) else "A colleague’s idea"
     dec = (
@@ -336,6 +357,9 @@ def _teamed_row(conn: Conn, idea: dict[str, Any], joined_at: dt.datetime, now: d
         )
     elif status == "not_picked":
         sentence = "Not going ahead."
+    elif status == "merged":
+        m = read.live_merge_into(conn, uid)
+        sentence = f"Now part of {m['lead_ref']}." if m and m.get("lead_ref") else "Now part of another idea."
     else:
         sentence = ""
     action = (
@@ -453,6 +477,7 @@ def my_ideas(
             {
                 "filter": f,
                 "label": "All" if f == "all" else MY_IDEAS_FILTER_LABEL[f],
+                "short_label": SHORT_FILTER_LABEL.get(f, "All" if f == "all" else MY_IDEAS_FILTER_LABEL[f]),
                 "count": counts[f],
                 "selected": f == state["filter"],
                 "to": url_of(state, filter=f, row=None),
@@ -468,6 +493,12 @@ def my_ideas(
             }
             for s in SORTS
         ],
+        "sort_cycle": {
+            "label": SORTED_BY[state["sort"]],
+            "next": SORTS[(SORTS.index(state["sort"]) + 1) % len(SORTS)],
+            "to": url_of(state, sort=SORTS[(SORTS.index(state["sort"]) + 1) % len(SORTS)], row=None),
+        },
+        "copy_link": {"label": "Copy link", "url": url_of(state, row=None), "done": "Link copied"},
     }
     if state["q"]:
         mine_n = sum(1 for row, _ in hits if row["list"] == "yours" and in_filter(row, state["filter"]))
@@ -483,6 +514,7 @@ def my_ideas(
         out["search"] = {
             "sentence": sentence,
             "matched_on": ["title", "summary", "reference"],
+            "matched_line": "Matched on titles, short summaries and references.",  # NOT DRAWN: plain-text search
             "closest": {"id": best["id"], "title": best["title"], "href": best["href"]} if best else None,
             "clear": {"label": "Clear", "to": url_of(state, q="", row=None)},
         }
@@ -549,6 +581,8 @@ def _public_row(row: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """The row as the API sends it, its link carrying the way back to this exact view (P-ROUTES.state)."""
     out = {k: v for k, v in row.items() if not k.startswith("_")}
     out["activity_at"] = row["_activity"].isoformat()
+    if state["q"] and row["_summary"]:
+        out["snippet"] = snippet(row["_summary"])
     if row["href"].startswith("/ideas/"):
         back = url_of(state, row=row["id"])
         linked = f"{row['href']}?{urlencode({'from': 'my-ideas', 'back': back})}"
