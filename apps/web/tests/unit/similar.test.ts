@@ -17,7 +17,7 @@ describe("BLD-C090 idea keys", () => {
 
 describe("BLD-C090 BLD-C092 routes in the policy", () => {
   const everyone = effectiveRoles([]);
-  for (const path of ["/api/ideas/IDEA-2026-001412/preview"]) {
+  for (const path of ["/api/ideas/IDEA-2026-001412/preview", "/api/ideas/IDEA-2026-001412/similar"]) {
     it(`${path}: any signed-in person reaches the handler, which decides what they see`, () => {
       expect(decide(everyone, "GET", path).kind).toBe("allow");
       expect(decide(everyone, "POST", path).kind).toBe("unknown");
