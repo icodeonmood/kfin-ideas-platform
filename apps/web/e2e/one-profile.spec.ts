@@ -662,19 +662,12 @@ test.describe("S-H6, Profile and settings", () => {
     await expect(page.getByRole("heading", { level: 1, name: `You're No. ${one.number}` })).toBeVisible();
   });
 
-  test("DEC-108 BLD-E043: How should we refer to you? saves at once on lane C's contract", async ({
+  test("DEC-108 BLD-C111 BLD-E043: How should we refer to you? saves at once and keeps the answer", async ({
     page,
   }, info) => {
-    await signInFresh(page, info);
-    const sent: unknown[] = [];
-    let fail = false;
-    await page.route("**/api/me/refer-as", async (r) => {
-      if (r.request().method() === "GET") return r.fulfill({ json: { refer_as: "unset" } });
-      const body = r.request().postDataJSON() as { refer_as: string };
-      sent.push(body);
-      if (fail) return r.fulfill({ status: 400, json: { error: "refer_as_invalid" } });
-      return r.fulfill({ json: { refer_as: body.refer_as } });
-    });
+    const me = await signInFresh(page, info);
+    putBack = await keepSettings(me.id);
+    await sql("UPDATE person_settings SET refer_as = NULL WHERE user_id = $1", [me.id]);
     await page.goto("/profile");
     const group = page.getByRole("radiogroup", { name: "How should we refer to you?" });
     await expect(page.getByRole("heading", { level: 2, name: "How should we refer to you?" })).toBeVisible();
@@ -687,23 +680,37 @@ test.describe("S-H6, Profile and settings", () => {
     );
     await group.getByRole("radio", { name: "They" }).click();
     await expect(group.getByRole("radio", { name: "They" })).toHaveAttribute("aria-checked", "true");
-    await expect.poll(() => sent).toEqual([{ refer_as: "they" }]);
+    await expect
+      .poll(
+        async () =>
+          (
+            await sql<{ v: string | null }>("SELECT refer_as AS v FROM person_settings WHERE user_id = $1", [
+              me.id,
+            ])
+          )[0]?.v,
+      )
+      .toBe("they");
     await expectNoSeriousAxeIssues(page);
+    await page.reload();
+    await expect(group.getByRole("radio", { name: "They" })).toHaveAttribute("aria-checked", "true");
 
-    fail = true;
+    // A save that does not land goes back to the saved answer, with the message under the choices.
+    await page.route("**/api/me/refer-as", (r) =>
+      r.fulfill({ status: 400, json: { error: "refer_as_invalid" } }),
+    );
     await group.getByRole("radio", { name: "She" }).click();
     await expect(page.getByText("Couldn't save that. Try again.")).toBeVisible();
     await expect(group.getByRole("radio", { name: "They" })).toHaveAttribute("aria-checked", "true");
-  });
-
-  test("BLD-E043: until lane C's route answers, the question stays out of the way", async ({
-    page,
-  }, info) => {
-    await signInFresh(page, info);
-    await page.route("**/api/me/refer-as", (r) => r.fulfill({ status: 404, json: { error: "not_found" } }));
-    await page.goto("/profile");
-    await expect(page.getByRole("heading", { level: 2, name: "How we reach you" })).toBeVisible();
-    await expect(page.getByRole("radiogroup", { name: "How should we refer to you?" })).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          (
+            await sql<{ v: string | null }>("SELECT refer_as AS v FROM person_settings WHERE user_id = $1", [
+              me.id,
+            ])
+          )[0]?.v,
+      )
+      .toBe("they");
   });
 
   test("V-ACC.visual/11 S-H6.rules/5: the keyboard walks Profile in reading order", async ({
@@ -711,7 +718,6 @@ test.describe("S-H6, Profile and settings", () => {
   }, info) => {
     test.skip(isPhone(info), "the reading order is the same; the desktop run checks it");
     await signInFresh(page, info);
-    await page.route("**/api/me/refer-as", (r) => r.fulfill({ status: 404, json: {} }));
     await page.goto("/profile");
     await page.getByRole("link", { name: "How points and tiers work" }).focus();
     const names = await tabNames(page, 4);
