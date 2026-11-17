@@ -129,10 +129,8 @@ describe("kill switch route map (§7.6)", () => {
 });
 
 describe("kill switch coverage", () => {
-  it("C-LISTEN: Listen's switch closes both voices, the desk's script and lane C's audio and chapters (DEC-108)", () => {
+  it("C-LISTEN: Listen's switch closes the desk's script; lane C's audio and chapters carry lane C's own rule (DEC-108, BLD-B245)", () => {
     expect(switchesFor("GET", "/api/desk/ideas/IDEA-2026-001481/listen")).toEqual(["desk.listen"]);
-    expect(switchesFor("GET", "/api/ideas/IDEA-2026-001481/listen")).toEqual(["desk.listen"]);
-    expect(switchesFor("GET", "/api/ideas/IDEA-2026-001481/listen/chapters")).toEqual(["desk.listen"]);
   });
 
   it("gates HEAD exactly like GET (Next.js runs the GET handler for HEAD)", () => {
