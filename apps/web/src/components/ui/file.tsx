@@ -31,7 +31,7 @@ const BADGE: Record<string, string> = {
 
 export function fileKind(name: string): string {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  return ext in BADGE ? ext : "file";
+  return Object.hasOwn(BADGE, ext) ? ext : "file";
 }
 
 export function FileRow({
@@ -63,7 +63,7 @@ export function FileRow({
     <li className={`frow frow-${status}`}>
       <div className="frow-in">
         <span className={`fbadge fb-${kind}`} aria-hidden="true">
-          {BADGE[kind] ?? "File"}
+          {Object.hasOwn(BADGE, kind) ? BADGE[kind] : "File"}
         </span>
         <span className="frow-b">
           <span className="frow-n">{name}</span>

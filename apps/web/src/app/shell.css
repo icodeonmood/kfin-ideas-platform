@@ -1158,15 +1158,23 @@
     gap: 4px;
   }
 
-  /* The task bar on a phone keeps its save status and close; the steps move into the screen */
+  /* The task bar on a phone keeps its save status and close; the steps move into the screen. On a very narrow
+     screen the two wrap rather than push the page sideways (WCAG 1.4.10) */
   .tbar .tsteps,
   .tbar-t {
     display: none;
   }
 
   .tbar-in {
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     min-height: 56px;
+    padding-block: 6px;
+  }
+
+  .saved {
+    min-width: 0;
+    white-space: normal;
   }
 }
 

@@ -56,6 +56,8 @@ export function SearchBar({
   const inputId = useId();
   const wrap = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  // Focus handed back by Escape must not open the panel again
+  const returning = useRef(false);
   const byValue = new Map(filters.map((f) => [f.value, f]));
 
   useEffect(() => {
@@ -69,8 +71,10 @@ export function SearchBar({
 
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape" && open) {
+      e.preventDefault();
       e.stopPropagation();
       setOpen(false);
+      returning.current = true;
       input.current?.focus();
     }
   };
@@ -125,7 +129,10 @@ export function SearchBar({
           placeholder={placeholder}
           value={text}
           onChange={(e) => onText(e.target.value)}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (returning.current) returning.current = false;
+            else setOpen(true);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Backspace" && text === "" && picked.length) onPicked(picked.slice(0, -1));
           }}

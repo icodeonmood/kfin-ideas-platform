@@ -51,6 +51,7 @@ export function Dropdown({
       ref={wrap}
       onKeyDown={(e) => {
         if (e.key === "Escape" && open) {
+          e.preventDefault(); // a native <dialog> around it must not take this Escape as its own close
           e.stopPropagation();
           setOpen(false);
           button.current?.focus();

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SparkMark } from "@/components/spark-mark";
 import type { NavItem } from "@/lib/rbac";
@@ -63,11 +63,38 @@ export function Ambient({ light }: { light: "full" | "quiet" }) {
  * brand row. Signed-in screens get the sidebar on desktop, and on a phone the brand row on root screens and the tab bar
  * everywhere but task screens, which mount their own dock. Ambient light sits behind it all, full or quiet by screen.
  */
+/**
+ * The layout renders the shell's data once; App Router keeps the layout across soft navigation, so the shell asks
+ * again after each one. The Inbox count and the sidebar rows then match the page (C-SIDEBAR.rules/2). A failed ask
+ * keeps what is shown.
+ */
+function useFreshShellData(initial: ShellData | null, signedIn: boolean): ShellData | null {
+  const pathname = usePathname();
+  const [data, setData] = useState(initial);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!signedIn) return;
+    const ask = new AbortController();
+    fetch("/api/me/shell", { signal: ask.signal, cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<ShellData>) : null))
+      .then((next) => {
+        if (next) setData(next);
+      })
+      .catch(() => undefined);
+    return () => ask.abort();
+  }, [pathname, signedIn]);
+  return data;
+}
+
 export function ShellFrame({
   signedIn,
   personId,
   nav,
-  data,
+  data: initial,
   folded,
   banners,
   children,
@@ -81,6 +108,7 @@ export function ShellFrame({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const data = useFreshShellData(initial, signedIn);
   const mode = shellMode(pathname, signedIn && Boolean(data));
   const main = (
     <main id="main" tabIndex={-1}>

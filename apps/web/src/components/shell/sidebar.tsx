@@ -37,12 +37,22 @@ function typingSomewhere(target: EventTarget | null): boolean {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
+/** The dot's meaning in words, so it is never colour alone (F-A11Y.rules/4). */
+const TONE_WORDS: Record<ShellRow["tone"], string> = {
+  draft: "Draft",
+  warn: "Needs you",
+  bad: "Overdue",
+  blue: "",
+  neutral: "",
+};
+
 function SectionRows({ rows }: { rows: ShellRow[] }) {
   return (
     <>
       {rows.map((r) => (
         <Link key={r.href} href={r.href} className={r.meta ? "sb-r sb-dr" : "sb-r"} title={r.title}>
           <i className={`sb-d ${r.tone}`} aria-hidden="true" />
+          {TONE_WORDS[r.tone] ? <span className="vh">{TONE_WORDS[r.tone]}: </span> : null}
           {r.meta ? (
             <span className="sb-dc">
               <span className="sb-dt">{r.title}</span>

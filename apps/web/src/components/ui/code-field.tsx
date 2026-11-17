@@ -32,7 +32,7 @@ export function CodeField({
   const set = (next: string) => {
     const clean = next.replace(/\D/g, "").slice(0, length);
     onChange(clean);
-    if (clean.length === length) onComplete?.(clean);
+    if (clean.length === length && value.length < length) onComplete?.(clean);
     return clean;
   };
 
@@ -44,10 +44,12 @@ export function CodeField({
       boxes.current[Math.min(clean.length, length - 1)]?.focus();
       return;
     }
+    // A digit goes in the first empty box at or before this one, so the code never has a gap
+    const at = Math.min(i, value.length);
     const chars = digits.slice();
-    chars[i] = d;
+    chars[at] = d;
     set(chars.join(""));
-    boxes.current[Math.min(i + 1, length - 1)]?.focus();
+    boxes.current[Math.min(at + 1, length - 1)]?.focus();
   };
 
   const onKey = (i: number, e: KeyboardEvent<HTMLInputElement>) => {

@@ -35,10 +35,11 @@ export type ShellData = {
 const WAIT_MS = 2_500;
 
 function inTime<T>(work: Promise<T>): Promise<T | null> {
-  return Promise.race([
-    work.catch(() => null),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), WAIT_MS)),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), WAIT_MS);
+  });
+  return Promise.race([work.catch(() => null), late]).finally(() => clearTimeout(timer));
 }
 
 /** "KM" from "Kavya Menon"; one name gives its first two letters. */

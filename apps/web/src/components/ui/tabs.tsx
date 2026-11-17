@@ -44,10 +44,20 @@ export function Tabs({
   );
   // The underline travels from the old tab to the new one and stretches to fit (C-TABS/3): one ink line moved by
   // transform, measured after each change. Until it is measured, each selected tab draws its own line.
+  const shape = tabs.map((t) => `${t.label}:${t.count ?? ""}`).join("|");
   useLayoutEffect(() => {
-    const t = refs.current[at];
-    if (t) setInk({ x: t.offsetLeft, w: t.offsetWidth });
-  }, [at, tabs.length]);
+    const measure = () => {
+      const t = refs.current[at];
+      if (t) setInk({ x: t.offsetLeft, w: t.offsetWidth });
+    };
+    measure();
+    // Counts, labels and the web font arriving all change a tab's width: measure again when they do
+    const list = refs.current[at]?.parentElement;
+    if (!list || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    refs.current.forEach((t) => t && ro.observe(t));
+    return () => ro.disconnect();
+  }, [at, shape]);
 
   const go = (i: number) => {
     const t = tabs[i];

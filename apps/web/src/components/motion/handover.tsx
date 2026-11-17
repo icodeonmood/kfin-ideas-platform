@@ -96,11 +96,12 @@ export function Handover() {
       first.current = false;
       return;
     }
+    const html = document.documentElement;
+    // Every navigation clears the last arrival first, so Back (which records nothing) never inherits a direction
+    KINDS.forEach((k) => html.classList.remove(`mo-a-${k}`));
     const rec = pending.current;
     pending.current = null;
     if (!rec || Date.now() - rec.at > 5_000 || reducedMotion()) return;
-    const html = document.documentElement;
-    KINDS.forEach((k) => html.classList.remove(`mo-a-${k}`));
     html.classList.add(`mo-a-${rec.kind}`);
     const clear = window.setTimeout(() => html.classList.remove(`mo-a-${rec.kind}`), 1_600);
 

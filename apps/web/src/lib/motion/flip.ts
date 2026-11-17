@@ -125,30 +125,51 @@ export async function flip(
  * and server render do nothing.
  */
 export function useFlipList(container: { current: HTMLElement | null }, key: unknown) {
-  const last = useRef<Map<string, DOMRect>>(new Map());
+  // Positions in page coordinates, so scrolling between two sorts never reads as movement
+  const last = useRef<Map<string, Box>>(new Map());
   useLayoutEffect(() => {
     const el = container.current;
     if (!el) return;
     const rows = Array.from(el.querySelectorAll<HTMLElement>("[data-flip]")).slice(0, FLIP_LIMIT);
-    const now = new Map<string, DOMRect>();
-    for (const r of rows) now.set(r.dataset.flip!, r.getBoundingClientRect());
+    // A glide still running from a quick earlier sort ends first, so the new one starts from where rows really are
+    rows.forEach((r) => r.getAnimations().forEach((a) => a.finish()));
+    const page = (r: HTMLElement): Box => {
+      const b = r.getBoundingClientRect();
+      return { left: b.left + window.scrollX, top: b.top + window.scrollY, width: b.width, height: b.height };
+    };
+    const now = new Map<string, Box>();
+    for (const r of rows) now.set(r.dataset.flip!, page(r));
     const before = last.current;
     last.current = now;
     if (before.size === 0 || reducedMotion()) return;
+    const running: Animation[] = [];
     for (const r of rows) {
       const was = before.get(r.dataset.flip!);
       const is = now.get(r.dataset.flip!)!;
       if (!was) {
-        r.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "cubic-bezier(.16,1,.3,1)" });
+        running.push(
+          r.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "cubic-bezier(.16,1,.3,1)" }),
+        );
         continue;
       }
       const t = invert(was, is);
       if (isStill(t)) continue;
-      r.animate([{ transform: `translate(${t.dx}px, ${t.dy}px)` }, { transform: "none" }], {
-        duration: 560,
-        easing: "cubic-bezier(.2,0,0,1)",
-      });
+      running.push(
+        r.animate([{ transform: `translate(${t.dx}px, ${t.dy}px)` }, { transform: "none" }], {
+          duration: 560,
+          easing: "cubic-bezier(.2,0,0,1)",
+        }),
+      );
     }
+    if (running.length === 0) return;
+    // Motion never blocks input: a key, a click or the wheel ends the glide (F-MOTION.rules/5)
+    const finishAll = () => running.forEach((a) => a.finish());
+    const events = ["keydown", "pointerdown", "wheel"] as const;
+    events.forEach((ev) => window.addEventListener(ev, finishAll, { capture: true, passive: true }));
+    const done = Promise.allSettled(running.map((a) => a.finished)).then(() =>
+      events.forEach((ev) => window.removeEventListener(ev, finishAll, { capture: true })),
+    );
+    void done;
     // Only a change of `key` should animate; layout moves from scrolling or resizing are not re-sorts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
