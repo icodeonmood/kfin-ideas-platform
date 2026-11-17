@@ -51,6 +51,8 @@ OFF_BY_DESIGN: dict[str, str] = {
     # L-DRAFT.channels (BLD-C077), migration 20261122300210: built and off until IT gives the mailbox and the app.
     "intake.email": "Off until IT gives the 1% Club mailbox (DEC-105): forwarded emails land as drafts once it is on",
     "intake.teams": "Off until IT gives the 1% Club Teams app (DEC-105): Teams messages land as drafts once it is on",
+    # Matches its reason in migration 20261122300100 (lane C, BLD-C064).
+    "files.blackout": "Off until black-out passes review (DEC-107)",
 }
 
 VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
