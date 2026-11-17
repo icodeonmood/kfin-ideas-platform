@@ -18,6 +18,7 @@ from core.db import Conn
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 _counter = iter(range(1, 10**6))
+_made: dict[str, list[str]] = {"users": [], "ideas": []}  # what `clean` deletes after each test
 
 
 def at(d: int, h: int = 10, m: int = 11) -> dt.datetime:
@@ -41,6 +42,7 @@ def person(
         (user_id, f"hash-{user_id}", name, f"{name.split()[0].lower()}.{next(_counter)}@example.test",
          name.split()[0], city, area, role_title),
     )  # fmt: skip
+    _made["users"].append(user_id)
     conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, user_id))
     for role in roles:
         conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (user_id, role))
@@ -68,6 +70,7 @@ def idea(
     sql = f"INSERT INTO ideas ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *"  # noqa: S608
     row = conn.execute(sql, tuple(cols.values())).fetchone()
     assert row is not None
+    _made["ideas"].append(str(row["id"]))
     conn.execute(
         "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'lead', 'shared')",
         (row["id"], sharer["code"]),
@@ -89,6 +92,7 @@ def draft(
         ),
     ).fetchone()
     assert row is not None
+    _made["ideas"].append(str(row["id"]))
     return dict(row)
 
 
@@ -105,6 +109,19 @@ def similar(conn: Conn, a: dict[str, Any], b: dict[str, Any], strength: str = "c
         "VALUES (%s, %s, %s, 'Same R07 SMS', 'previewed')",
         (a["id"], b["id"], strength),
     )
+
+
+def clean(conn: Conn) -> None:
+    """Delete the rows these fixtures made, and only those: their ideas and drafts first (crews, requests, merges,
+    conversation lines, similar-ideas links and question sets go with them), then their people (contributor codes,
+    roles and remembered idempotency keys go with them). `audit_log` keeps its rows: IDs only."""
+    ideas, users = list(_made["ideas"]), list(_made["users"])
+    _made["ideas"].clear()
+    _made["users"].clear()
+    if ideas:
+        conn.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (ideas,))
+    if users:
+        conn.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (users,))
 
 
 def crew_rows(conn: Conn, idea_row: dict[str, Any]) -> list[dict[str, Any]]:
