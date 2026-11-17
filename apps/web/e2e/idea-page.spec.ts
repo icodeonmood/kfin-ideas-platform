@@ -8,7 +8,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { CLUB, clubLoaded, esc, NO_SEED, seededIdea, type IdeaKey } from "./club";
-import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 const isPhone = (name: string) => name.startsWith("phone");
 const soon = expect.configure({ timeout: 15_000 });
@@ -322,7 +322,7 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
 });
 
 test("an idea that does not exist is not found", async ({ page }) => {
-  await signIn(page, CLUB.tanvi);
+  await signIn(page, PERSONAS.contributor);
   const res = await page.goto("/ideas/IDEA-2099-999999");
   expect(res?.status()).toBe(404);
 });
