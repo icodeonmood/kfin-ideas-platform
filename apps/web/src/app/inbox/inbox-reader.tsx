@@ -24,9 +24,12 @@ import {
 } from "react";
 
 import type { InboxTab } from "@/lib/contracts";
+import { COUNTS_EVENT } from "@/lib/inbox-events";
 import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
 import { useRequest } from "./teamup-request";
+
+export { COUNTS_EVENT };
 
 const TAB_LABELS: Record<InboxTab, string> = {
   all: "All",
@@ -37,8 +40,6 @@ const TAB_LABELS: Record<InboxTab, string> = {
 const ORDER: InboxTab[] = ["all", "needs_you", "unread", "archived"];
 const POLL_MS = 30_000;
 const DESKTOP = "(min-width: 760px)";
-/** Sent on every count change, for the shell's Inbox number (L-INBOX.rules/1, V-ACC.track/8). */
-export const COUNTS_EVENT = "inbox:counts";
 
 type Group = "Today" | "This week" | "Earlier";
 
