@@ -2,9 +2,9 @@
 -- L-NOTIFY and L-INBOX (BLD-A180, BLD-A200). `notify.post` keeps one item per person for a dedupe key (reminders,
 -- retries, a request posted twice), and `notify.resolve` finds the open items by that key when the action is done
 -- elsewhere (a team-up request withdrawn, answers sent). One key per person and channel: the in-app item and its
--- email are deduplicated together. Keys are IDs and enums only (non-negotiable 3).
+-- email are deduplicated together. Keys are IDs, enums and times only, never words (non-negotiable 3).
 ALTER TABLE notifications
-  ADD COLUMN dedupe_key text CONSTRAINT notifications_dedupe_key_check CHECK (dedupe_key ~ '^[A-Za-z0-9_.:-]{1,200}$');
+  ADD COLUMN dedupe_key text CONSTRAINT notifications_dedupe_key_check CHECK (dedupe_key ~ '^[A-Za-z0-9_.:+-]{1,200}$');
 CREATE UNIQUE INDEX notifications_dedupe ON notifications (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL;
 CREATE INDEX notifications_open_key ON notifications (dedupe_key) WHERE needs_you AND dedupe_key IS NOT NULL;
 

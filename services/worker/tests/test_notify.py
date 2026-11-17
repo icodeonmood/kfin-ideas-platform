@@ -169,7 +169,10 @@ def test_L_NOTIFY_dedupe_keeps_one_item_and_resolve_takes_it_off_needs_you(cast:
         refs={"set_id": s},
         dedupe_key=f"qs:{s}0",
     )  # another key that only starts the same way
-    assert notify.resolve(db, f"qs:{s}") == 3
+    # Lane B keys each reminder by its threshold with the offset (BLD-A200): the key under "qs:<set>" is taken too.
+    notify.post(db, "answer_reminder", [p["kavya"]["id"]], idea_id=ideas["mine"], needs_you=True,
+                due_at=WORKDAY_NOON, refs={"set_id": s}, dedupe_key=f"qs:{s}:20261119T1020+0530")  # fmt: skip
+    assert notify.resolve(db, f"qs:{s}") == 4
     assert inbox.counts(db, p["kavya"]["id"])["needs_you"] == 1
 
 
