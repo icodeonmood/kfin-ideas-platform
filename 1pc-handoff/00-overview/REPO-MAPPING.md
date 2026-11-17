@@ -81,7 +81,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-WORTH` | reviewer's view and editor built (lane B): `components/review/worth.tsx` (`WorthView`, `WorthEditor` from `WorthResponse`), its sheet `worth.css` imported with it, so S-05 can place `WorthView` | M | P0 | C, B |
 | `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it | M | P0 | B |
 | `C-INBOX-READER` | exists, differs | L | P0 | A |
-| `C-LISTEN` | built (lane B): `components/review/listen-player.tsx`, `lib/desk/listen.ts`; the browser's voice (BLD-B230) until the Sarvam audio | M | P0 | B |
+| `C-LISTEN` | built (lane B): `components/review/listen-player.tsx` with `listen.css`, `lib/desk/listen.ts`; lane C's hosted audio and chapters first (DEC-108, `AudioEngine`), the browser's voice (BLD-B230, `ListenEngine`) on a 404 or 503 (BLD-B245) | M | P0 | B |
 | `C-SHEET-MERGE` | built (lane B): `components/review/merge-sheet.tsx` with `merge-sheet.css`, opened from S-R2's rows and C-PREVIEW's Merge | M | P0 | B |
 | `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
 | `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
