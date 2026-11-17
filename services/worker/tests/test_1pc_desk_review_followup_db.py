@@ -251,6 +251,11 @@ def test_S_R2_panel_the_reviewer_reads_their_own_queued_questions_and_no_one_els
                     f.at(16, 12))  # fmt: skip
     after = reads.reviewer_idea(db, idea["idea_id"], cast["meera"]["id"], f.at(16, 12, 5))["panel"]
     assert after["state"] == "sent" and "queued" not in after
+    # the send took the queued row: none is left behind for the idea
+    left = db.execute(
+        "SELECT count(*) AS n FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],)
+    ).fetchone()
+    assert left == {"n": 0} and sid not in [q["set_id"] for q in [after] if "set_id" in q]
 
 
 # ---- item 4: a Pick never joins the reviewer's own idea ----------------------------------------------------------
