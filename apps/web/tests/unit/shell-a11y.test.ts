@@ -181,3 +181,20 @@ describe("C-ONES-FAN.card: the cheer toggle is never colour alone (F-A11Y.rules/
     expect(cheer.get("min-height")).toBe("44px");
   });
 });
+
+describe("S-H6.rules/3: the account menu is not clipped", () => {
+  it("C-SIDEBAR: in the open bar, which scrolls and so clips, the menu keeps to the account row; its anchor stays", () => {
+    expect(style("shell.css", ".sb-in").get("overflow-y")).toBe("auto");
+    const up = style("shell.css", ".acct-up .acct-menu");
+    expect(up.get("left")).toBe("0");
+    expect(up.get("bottom")).toBe("calc(100% - 4px)");
+    expect(up.get("max-width")).toBe("100%");
+  });
+
+  it("C-SIDEBAR.fold: folded, the bar overflows visibly and the menu takes its full 248px", () => {
+    const folded = (a: string) => a.startsWith("@container sbar");
+    expect(style("shell.css", ".sb-in", folded).get("overflow")).toBe("visible");
+    expect(style("shell.css", ".acct-up .acct-menu", folded).get("max-width")).toBe("none");
+    expect(style("shell.css", ".acct-menu").get("width")).toBe("248px");
+  });
+});
