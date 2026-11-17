@@ -47,7 +47,8 @@ const SECTION_3_1: Record<string, string[]> = {
   see_restored_values: ALL,
   approve_handover: ["sponsor"],
   grant_roles: ["admin"],
-  committee_window: ["committee"], // L-COMMITTEE: the 30-day window, extend, reverse once (lane B)
+  // L-COMMITTEE: the 30-day window, extend, reverse once (lane B); core_committee until Monday (BLD-B238)
+  committee_window: ["core_committee", "committee"],
 };
 
 describe("policy agrees with ARCHITECTURE §3.1", () => {
@@ -112,12 +113,12 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
     expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
   });
-  it("the core committee keeps Delivery in the account menu; Ones Committee is the committee role's (S-R4)", () => {
-    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox"]);
+  it("S-R4: the core committee sees Ones Committee in the sidebar until Monday, and Delivery in the account menu", () => {
+    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
     expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
     expect(labels("contributor", "account")).toEqual(["The Ember"]);
   });
-  it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, the page it may open", () =>
+  it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
     expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
@@ -152,9 +153,11 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(canSeePage(rolesOf("contributor"), "/desk")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    // S-R4: the Ones Committee's window is the committee role's (committee_window); the old committees no longer open it
+    // S-R4: the Ones Committee's window (committee_window) is the committee role's, and the core committee's (with
+    // its chair) until the old roles are dropped on Monday (contracts.md §2.14); LOB committees no longer open it
     expect(canSeePage(rolesOf("committee"), "/committee")).toBe(true);
-    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(false);
+    expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("core_chair"), "/committee")).toBe(true);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
