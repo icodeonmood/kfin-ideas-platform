@@ -172,7 +172,8 @@ export function deskRows(desk: Pick<DeskResponse, "waiting_on_sharers"> | null):
 }
 
 /** C-SIDEBAR.anatomy, the Ones Committee's "Closing soonest" (S-R4.rules/4): the first three in the window, sorted by
- * closing soonest; each opens its row in place on the committee's page. */
+ * closing soonest; each opens its row in place on the committee's page. Title only, as the Committee board draws
+ * them: the countdown stays on S-R4 itself. */
 export function committeeRows(committee: Pick<CommitteeResponse, "items"> | null): ShellRow[] {
   return (committee?.items ?? [])
     .filter((r) => r.window.state === "open" || r.window.state === "extended")
@@ -180,7 +181,6 @@ export function committeeRows(committee: Pick<CommitteeResponse, "items"> | null
     .map((r) => ({
       href: `/committee?open=${encodeURIComponent(r.window_id)}`,
       title: r.idea.title,
-      meta: r.window.left ?? undefined,
       tone: "blue",
     }));
 }
