@@ -599,11 +599,12 @@ export function InboxReader({
                     key={item.id}
                     id={`ibx-row-${item.id}`}
                     type="button"
-                    className={`ibx-row${item.unread ? " un" : ""}${item.id === openId ? " sel" : ""}${fresh.has(item.id) ? " fresh" : ""}`}
-                    aria-pressed={item.id === openId}
-                    aria-label={rowName(item, now)}
+                    className={`ibx-row${item.unread ? " un" : ""}${item.id === open?.id ? " sel" : ""}${fresh.has(item.id) ? " fresh" : ""}`}
+                    aria-pressed={item.id === open?.id}
                     onClick={() => select(item)}
                   >
+                    {/* The name as the board reads it: "{sender} {what}, {title}, {when}, unread" (Inbox.md). */}
+                    <span className="visually-hidden">{rowName(item, now)}</span>
                     <span className="ibx-udot" aria-hidden="true" />
                     <Avatar item={item} size="sm" />
                     <span className="ibx-b" aria-hidden="true">
