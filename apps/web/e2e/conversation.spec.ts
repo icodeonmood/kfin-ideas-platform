@@ -7,7 +7,7 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, settleMotion, signIn } from "./helpers";
 
 const IDEA = "IDEA-2026-001412";
 const TITLE = "Rejection SMS codes confuse investors";
@@ -92,7 +92,9 @@ test("S-08 at 375px: the compact bar, the timeline as a log, the labelled box an
   await expect(page.getByText("The crew and the review desk see this conversation.")).toBeVisible();
   // No attach control for the crew (BLD-F063), and none yet for anyone (BLD-F064).
   await expect(page.getByRole("button", { name: "Attach a file" })).toHaveCount(0);
-  // Touch targets (F-A11Y): Send and the "i" are 44px or more each way.
+  // Touch targets (F-A11Y): Send and the "i" are 44px or more each way, measured once the shell has arrived (its
+  // entrance scales the page a hair: run 44153802713 read Send at 43.87px mid-arrival).
+  await settleMotion(page);
   for (const name of ["Send", "Who is in this conversation"]) {
     const b = (await page.getByRole("button", { name, exact: true }).boundingBox())!;
     expect(b.height, name).toBeGreaterThanOrEqual(44);
@@ -107,7 +109,8 @@ test("S-08.rules/2 at 375px: Send with nothing typed says so under the box, anno
 }) => {
   await open(page);
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  const alert = page.getByRole("alert");
+  // Within the conversation: Next's route announcer is an alert too (run 44153802713).
+  const alert = page.getByRole("region", { name: "Conversation" }).getByRole("alert");
   await expect(alert).toHaveText("Write a message or attach a file first.");
   const box = page.getByRole("textbox", { name: "Message the crew" });
   await expect(box).toBeFocused();
