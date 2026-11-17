@@ -342,3 +342,47 @@ test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a name the checks missed,
   await expect(problem.getByRole("button", { name: "Hide this" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(r);
 });
+
+test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a number mid-text from the keyboard alone (WCAG 2.1.1, 4.1.3)", async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `A missed number on the desk (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(
+    sharer.code,
+    title,
+    "Ring 9876501234 back: investors call the branch because the rejection SMS gives a code.",
+  );
+  hideMade.push(ideaId);
+  const r = reviewer.page;
+  await r.goto(`/desk/ideas/${ideaId}`);
+  const problem = r.getByRole("region", { name: "The problem" });
+  const text = problem.getByRole("group", { name: "The problem, text" });
+  await text.focus();
+
+  // the caret moves with the arrows (the first one starts it at the text's start), then Shift extends from there
+  for (let i = 0; i < "Ring ".length; i += 1) await r.keyboard.press("ArrowRight");
+  for (let i = 0; i < "9876501234".length; i += 1) await r.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => r.evaluate(() => document.getSelection()?.toString())).toBe("9876501234");
+  const hideButton = problem.getByRole("button", { name: "Hide this" });
+  await expect(hideButton).toBeVisible();
+  await expect(r.getByText("Hide this is next. Press Tab.", { exact: true })).toBeAttached();
+
+  // Enter moves to "Hide this"; Enter there hides exactly the selected number
+  await r.keyboard.press("Enter");
+  await expect(hideButton).toBeFocused();
+  const posted = r.waitForRequest((req) => req.method() === "POST" && req.url().endsWith(`/${ideaId}/hide`));
+  await r.keyboard.press("Enter");
+  expect((await posted).postDataJSON()).toMatchObject({
+    start: 5,
+    end: 15,
+    units: "utf16",
+    selected: "9876501234",
+  });
+  await expect(problem).not.toContainText("9876501234");
+  await expect(problem).toContainText("••••34 back: investors call the branch");
+  await expect(r.getByText("Hidden from everyone.", { exact: true })).toBeAttached();
+  await expect(text).toBeFocused();
+  await expectNoSeriousAxeIssues(r);
+});

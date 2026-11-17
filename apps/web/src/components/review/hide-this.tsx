@@ -8,11 +8,12 @@
  *   is a `Hideable`. When the reviewer selects words inside one, "Hide this" shows just under the end of the
  *   selection. It sits in the page right after that text, so Tab reaches it next; Escape closes it and gives focus
  *   back to the text.
- * - Keyboard (WCAG 2.1.1, 4.1.3; BLD-B247): each text is in the Tab order with a name ("The problem, text"); Shift
- *   and an arrow (Home, End) selects in it, Enter or Alt+H moves to "Hide this", and the status region says "Hide
- *   this is next. Press Tab." when it appears. Caret browsing (F7) works as before.
+ * - Keyboard (WCAG 2.1.1, 4.1.3; BLD-B247): each text is in the Tab order with a name ("The problem, text"); an
+ *   arrow, Home or End moves the caret in it, Shift with them selects from the caret, Enter moves to "Hide this",
+ *   and the status region says "Hide this is next. Press Tab." each time it appears (cleared when the selection
+ *   ends). Caret browsing (F7) works as before.
  * - It is offered only while the text on the page is exactly the stored text it stands for (a CRLF the HTML parser
- *   turned into LF would shift every offset after it).
+ *   turned into LF would shift every offset after it); otherwise "Select again." shows under the text.
  * - It posts the selection's UTF-16 offsets and the selected masked words to lane C's route, which masks every copy
  *   and tells the sharer. On 200 the page is read again, so every copy shows masked; a refusal shows in plain words
  *   under the button; `stale` (the text changed under the selection) reads the page again and says so.
@@ -36,13 +37,13 @@ import {
   HIDE_NEXT,
   HIDE_THIS,
   HIDE_WORDS,
-  extendStep,
+  caretStep,
   hideBody,
   hideErrorWords,
   hideUrl,
   opensHide,
   rangeOffsets,
-  type ExtendStep,
+  type CaretStep,
   type HideSource,
   type HideSourceKind,
 } from "@/lib/desk/hide";
@@ -82,9 +83,11 @@ function hostByKey(key: string): HTMLElement | null {
   return null;
 }
 
-/** Shift and an arrow inside a focused text: start a selection at its start (or end) if none is in it, extend it by
- * `step`, and keep it inside the text. */
-function extendIn(host: HTMLElement, step: ExtendStep) {
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+/** An arrow, Home or End inside a focused text: the caret starts at the text's start (or, going back, its end) when
+ * it is not in the text yet, then moves, or with Shift extends the selection, by `step`, and stays inside the text. */
+function stepIn(host: HTMLElement, step: CaretStep) {
   const sel = document.getSelection();
   const first = host.firstChild;
   const last = host.lastChild;
@@ -95,12 +98,14 @@ function extendIn(host: HTMLElement, step: ExtendStep) {
     if (step.direction === "forward") sel.collapse(first, 0);
     else sel.collapse(last, lastLength);
   }
-  sel.modify("extend", step.direction, step.granularity);
-  if (!host.contains(sel.focusNode) && sel.anchorNode) {
-    if (step.direction === "forward")
-      sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, last, lastLength);
-    else sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, first, 0);
-  }
+  sel.modify(step.alter, step.direction, step.granularity);
+  if (host.contains(sel.focusNode)) return;
+  if (step.alter === "move" || !sel.anchorNode) {
+    if (step.direction === "forward") sel.collapse(last, lastLength);
+    else sel.collapse(first, 0);
+  } else if (step.direction === "forward") {
+    sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, last, lastLength);
+  } else sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, first, 0);
 }
 
 /** Offers "Hide this" on the page's texts when `enabled` (the review desk and the Ones Committee, not on their own idea). */
@@ -110,8 +115,16 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
   const [done, setDone] = useState("");
+  /** Says `line` in the status region even when it already holds it: emptied first, then set in a later step, so the
+   * region changes and the screen reader reads it again (WCAG 4.1.3; BLD-B247). */
+  const say = useCallback((line: string) => {
+    setDone("");
+    queueMicrotask(() => setDone(line));
+  }, []);
   const busy = useRef(false);
   const current = useRef<Picked | null>(null);
+  /** The text "Select again." was last said for, so it is said once per text and not on every key. */
+  const lastNotice = useRef<string | null>(null);
   const texts = useRef(new Map<string, string>());
   const register = useCallback((key: string, text: string) => {
     texts.current.set(key, text);
@@ -133,15 +146,27 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       const sel = document.getSelection();
       const range = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null;
       const host = range ? hostOf(range.startContainer) : null;
+      const one = range !== null && host !== null && hostOf(range.endContainer) === host;
       // offered only while the page shows exactly the stored text, so the offsets are the stored text's
       const exact = host !== null && host.textContent === texts.current.get(host.dataset.hideKey ?? "");
-      const at =
-        range && host && exact && hostOf(range.endContainer) === host ? rangeOffsets(host, range) : null;
+      const at = range && host && one && exact ? rangeOffsets(host, range) : null;
       const prev = current.current;
       if (!range || !host || !at) {
         if (prev) {
+          current.current = null;
           setPicked(null);
           setError(null);
+          setDone(""); // the next "Hide this" is said again
+        }
+        if (!range) lastNotice.current = null;
+        if (host && one && !exact) {
+          // the page's text is not the stored text: say so rather than offer nothing (BLD-B247)
+          const k = host.dataset.hideKey ?? "";
+          if (lastNotice.current !== k) {
+            lastNotice.current = k;
+            setNotice({ key: k, text: HIDE_WORDS.select_again });
+            say(HIDE_WORDS.select_again);
+          }
         }
         return;
       }
@@ -155,17 +180,20 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       });
       setError(null);
       setNotice(null);
-      if (!prev || prev.key !== d.hideKey) setDone(HIDE_NEXT); // said once as it appears, not on every key
+      lastNotice.current = null;
+      if (!prev || prev.key !== d.hideKey) say(HIDE_NEXT); // said as it appears, not on every key
     };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
-  }, [enabled]);
+  }, [enabled, say]);
 
   const close = useCallback(() => {
     if (!picked) return;
     const host = hostByKey(picked.key);
+    current.current = null;
     setPicked(null);
     setError(null);
+    setDone("");
     document.getSelection()?.removeAllRanges();
     host?.focus({ preventScroll: true });
   }, [picked]);
@@ -181,10 +209,11 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       busy.current = false;
       if (!res.ok && res.error.code === "stale") {
         // the text changed under the selection: read the page again and ask for a new selection (BLD-B247)
+        current.current = null; // so the selection's end does not empty the line said here
         setPicked(null);
         document.getSelection()?.removeAllRanges();
         setNotice({ key: picked.key, text: HIDE_WORDS.stale });
-        setDone(HIDE_WORDS.stale);
+        say(HIDE_WORDS.stale);
         hostByKey(picked.key)?.focus({ preventScroll: true });
         router.refresh();
         return;
@@ -194,13 +223,14 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
         return;
       }
       const host = hostByKey(picked.key);
+      current.current = null; // so the selection's end does not empty the line said here
       setPicked(null);
       document.getSelection()?.removeAllRanges();
       host?.focus({ preventScroll: true });
-      setDone(HIDDEN_DONE);
+      say(HIDDEN_DONE);
       router.refresh(); // every copy reads masked now (lane C masks them all at once)
     });
-  }, [picked, router]);
+  }, [picked, router, say]);
 
   const value = useMemo<HideState | null>(
     () => (enabled ? { picked, error, notice, hide, close, register } : null),
@@ -255,10 +285,10 @@ export function Hideable({
         tabIndex={0}
         {...(heading ? {} : { role: "group", "aria-label": name })}
         onKeyDown={(e) => {
-          const step = extendStep(e);
+          const step = caretStep(e, MAC);
           if (step) {
             e.preventDefault();
-            extendIn(e.currentTarget, step);
+            stepIn(e.currentTarget, step);
             return;
           }
           if (opensHide(e) && ctx.picked?.key === key) {
