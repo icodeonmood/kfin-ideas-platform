@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
       ...(typeof body.text === "string" ? { text: body.text } : {}),
       ...(typeof body.text_en === "string" ? { text_en: body.text_en } : {}),
       ...(typeof body.via === "string" ? { via: body.via } : {}),
+      ...(Array.isArray(body.files) ? { files: body.files.filter((f) => typeof f === "string") } : {}),
       idempotency_key: request.headers.get(IDEMPOTENCY_HEADER) ?? undefined,
     });
     return NextResponse.json(out, { status, headers: noStore });

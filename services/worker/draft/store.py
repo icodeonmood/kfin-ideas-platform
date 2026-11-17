@@ -36,6 +36,8 @@ DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CODE_RE = re.compile(r"^CTR-[0-9a-f]{6,8}$")
 OFFLINE_DAYS = 30  # a message typed offline keeps its own time only within this window
 CREATE_ROUTE = "POST /drafts"
+FILE_ID_RE = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
+MAX_FILES = 20
 LIST_LIMIT = 20
 
 
@@ -143,6 +145,7 @@ def create(
     via: str = "typed",
     idempotency_key: str | None = None,
     client_id: str | None = None,
+    files: list[str] | None = None,
 ) -> tuple[str, str | None]:
     """A new draft, with the first message when there are words (A-API.drafts `POST /drafts`). Returns the draft id
     and the run started, if any. The same Idempotency-Key returns the first draft (A-API.conventions/3)."""
@@ -175,7 +178,7 @@ def create(
         run_id = None
         if text is not None and text.strip():
             _, run_id = _add(conn, owner, idea_uuid, device, text=text, via=via, text_en=text_en,
-                             client_id=client_id)  # fmt: skip
+                             client_id=client_id, files=files)  # fmt: skip
     log.info("draft.created", idea_uuid=idea_uuid, channel_code=channel)
     return idea_uuid, run_id
 
@@ -213,9 +216,10 @@ def _add(
     client_id: str | None = None,
     at: dt.datetime | None = None,
     defer_run: bool = False,
+    files: list[str] | None = None,
 ) -> tuple[str, str | None]:
-    """Inside a transaction: mask, store the masked copy, seal the person's words, record what was hidden, save,
-    then begin the run. Returns (message id, run id)."""
+    """Inside a transaction: mask, store the masked copy, seal the person's words, record what was hidden, link the
+    files added with it, save, then begin the run. Returns (message id, run id)."""
     text = _check_text(text)
     english = _check_text(text_en, field="text_en") if text_en else None
     if via not in enums.values("message_via"):
@@ -250,6 +254,7 @@ def _add(
     )  # fmt: skip
     _seal_words(conn, idea_uuid, owner, mid, text)
     adapters.record_hidden(conn, idea_uuid, runs.scope(idea_uuid), mid, hidden)
+    _link_files(conn, idea_uuid, mid, files)
     _touch(conn, idea_uuid, device)
     run_id = (
         None
@@ -259,6 +264,17 @@ def _add(
     log.info("draft.message_added", idea_uuid=idea_uuid, message_id=mid, hidden_count=len(hidden.found),
              via_code=via, run_id=run_id)  # fmt: skip
     return mid, run_id
+
+
+def _link_files(conn: Conn, idea_uuid: str, message_id: str, files: list[str] | None) -> None:
+    """Files and links added in the prompt box with this message (`POST /files` with the draft id, A-API.files):
+    only this draft's own, and only ones not already with another message."""
+    ids = [f for f in files or [] if isinstance(f, str) and FILE_ID_RE.match(f)][:MAX_FILES]
+    if ids:
+        conn.execute(
+            "UPDATE attachments SET message_id = %s WHERE idea_uuid = %s AND id = ANY(%s) AND message_id IS NULL",
+            (message_id, idea_uuid, ids),
+        )
 
 
 def add_message(
@@ -273,6 +289,7 @@ def add_message(
     client_id: str | None = None,
     at: dt.datetime | None = None,
     defer_run: bool = False,
+    files: list[str] | None = None,
 ) -> tuple[str, str | None]:
     """`POST /drafts/:id/messages`: one more message (typed, a voice note's words, an email or Teams arrival).
     `text` is the person's own words; `text_en`, for a voice note or another language, an English copy labelled as
@@ -282,7 +299,7 @@ def add_message(
         row = _load(conn, owner, idea_uuid, lock=True)
         _writable(row, device)
         return _add(conn, owner, idea_uuid, device, text=text, via=via, text_en=text_en or None,
-                    client_id=client_id, at=at, defer_run=defer_run)  # fmt: skip
+                    client_id=client_id, at=at, defer_run=defer_run, files=files)  # fmt: skip
 
 
 def edit_message(
@@ -548,7 +565,9 @@ def _sorting(row: dict[str, Any], wire: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _messages(conn: Conn, idea_uuid: str, device: Device, now: dt.datetime) -> list[dict[str, Any]]:
+def _messages(
+    conn: Conn, idea_uuid: str, device: Device, now: dt.datetime, files: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT m.id, m.via, m.device, m.lang, m.text_encrypted, m.text_en_encrypted, m.spans, m.created_at, "
         "m.edited_at, s.text_encrypted AS sealed "
@@ -572,7 +591,7 @@ def _messages(conn: Conn, idea_uuid: str, device: Device, now: dt.datetime) -> l
             "at_label": labels.message_label(r["created_at"], r["device"], False, now),
             "device": r["device"],
             "via": r["via"],
-            "files": [],
+            "files": [f for f in files if f.get("message_id") == mid],
             "spans": r["spans"] if own is not None else [],
         }
         if english:
@@ -637,15 +656,16 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
         (idea_uuid,),
     ).fetchone()
     r = rules()
+    files = _files(conn, idea_uuid, owner)
     out: dict[str, Any] = {
         "id": idea_uuid,
         "owner_id": owner.user_id,
         "channel": row["channel"],
-        "messages": _messages(conn, idea_uuid, device, now),
+        "messages": _messages(conn, idea_uuid, device, now, files),
         "parts": wire,
         "hidden": hidden,
         "sorting": _sorting(row, wire),
-        "files": _files(conn, idea_uuid, owner),
+        "files": files,
         "step": row["step"] or "tell",
         **_saved(row, device, now),
         "ready": runs.ready(conn, idea_uuid),

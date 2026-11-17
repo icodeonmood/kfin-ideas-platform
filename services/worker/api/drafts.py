@@ -56,6 +56,11 @@ def _query_owner(request: Request) -> tuple[Owner, Device]:
     return Owner(q.get("user_id", ""), q.get("code", "")), Device.of(q.get("device_kind"), q.get("device_id"))
 
 
+def _files(data: dict[str, Any]) -> list[str]:
+    value = data.get("files")
+    return [f for f in value if isinstance(f, str)] if isinstance(value, list) else []
+
+
 def _at(value: Any) -> dt.datetime | None:
     if not isinstance(value, str):
         return None
@@ -91,6 +96,7 @@ async def create(request: Request) -> Response:
                 via=str(data.get("via") or "typed"),
                 idempotency_key=data.get("idempotency_key") or None,
                 client_id=data.get("client_id") or None,
+                files=_files(data),
             )
             runs.dispatch(run_id)
             return _json({"draft": store.view(conn, owner, idea_uuid, device), "run_id": run_id}, 201)
@@ -190,6 +196,7 @@ async def add_message(idea_uuid: str, request: Request) -> Response:
                 client_id=data.get("client_id") or None,
                 at=_at(data.get("at")),
                 defer_run=data.get("defer_run") is True,
+                files=_files(data),
             )
             runs.dispatch(run_id)
             draft = store.view(conn, owner, idea_uuid, device)

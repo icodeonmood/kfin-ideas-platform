@@ -343,3 +343,21 @@ def test_l_draft_channels_an_email_lands_as_a_masked_draft_only_while_its_switch
     assert pan not in (
         open_text("idea_messages", "text_encrypted", str(row["id"]), row["text_encrypted"]) or pan
     )
+
+
+def test_l_draft_autosave_2_files_added_with_a_message_resume_with_it(drafting: Any) -> None:
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, _ = store.create(db, owner, LAPTOP, text=W1)
+    db.execute(
+        "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, store_key, kind, file_state) "
+        "VALUES ('ATT-2026-000901', %s, %s, 'sip-pending-screen.jpg', 'image/jpeg', 2048, 'quarantine/syn-901', "
+        "'file', 'checked')",
+        (idea, owner.code),
+    )
+    mid, _ = store.add_message(db, owner, idea, LAPTOP, text=W2, files=["ATT-2026-000901", "ATT-2026-999999"])
+    draft = store.view(db, owner, idea, PHONE)
+    second = next(m for m in draft["messages"] if m["id"] == mid)
+    assert [f["id"] for f in second["files"]] == ["ATT-2026-000901"]
+    assert second["files"][0]["name"] == "sip-pending-screen.jpg" and second["files"][0]["state"] == "checked"
+    assert [f["id"] for f in draft["files"]] == ["ATT-2026-000901"]
