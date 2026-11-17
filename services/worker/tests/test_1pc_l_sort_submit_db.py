@@ -716,8 +716,9 @@ def test_l_submit_keys_never_reach_sql_unless_well_formed() -> None:
 
 
 def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world: dict[str, Any]) -> None:
-    """S-05.fix: "Add my fix" with figures in any Indian form → `Fix` with `ready_count` and `Range.text`; a PAN in
-    the words is hidden like any part, and saving again replaces what was hidden from that answer."""
+    """S-05.fix: "Add my fix" with figures in any Indian form → `Fix` with `ready_count` and `Range.text`, "about"
+    kept before a single figure (BLD-C140, Review.md "about ₹25,000 a month saved"); a PAN in the words is hidden
+    like any part, and saving again replaces what was hidden from that answer."""
     conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
     body = {
         "how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F.",  # a made-up PAN
@@ -728,7 +729,7 @@ def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world
     assert out["how"] == "Send the reason in plain words in the SMS, as for PAN PAN ••••4F."
     assert out["worth"] == {
         "hours_month": {"low": 70.0, "high": 150.0, "text": "70 to 150 hours a month"},
-        "cost_month": {"low": 25000.0, "text": "₹25,000 a month"},
+        "cost_month": {"low": 25000.0, "text": "about ₹25,000 a month"},
     }
     assert out["ready_count"] == 3 and out["included"] is True
     assert out["readiness"] == "3 of 5 ready for the review desk"
@@ -737,8 +738,13 @@ def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world
         "rail": "Added",
         "line": "Included, 3 of 5 ready",
         "fix_line": "Send the reason in plain words in the SMS, as for PAN PAN ••••4F.",
-        "size_line": "70 to 150 hours a month, ₹25,000 a month saved, solved elsewhere: partly",
+        "size_line": "70 to 150 hours a month, about ₹25,000 a month saved, solved elsewhere: partly",
     }
+    flags = conn.execute(
+        "SELECT hours_about, cost_about, revenue_about FROM idea_worth WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (draft,),
+    ).fetchone()
+    assert (flags["hours_about"], flags["cost_about"], flags["revenue_about"]) == (False, True, None)
     hid = conn.execute(
         "SELECT kind, masked FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
     ).fetchall()

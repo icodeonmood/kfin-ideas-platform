@@ -604,6 +604,40 @@ def test_s05_fix_the_size_line_reads_as_the_board() -> None:
     assert fix.size_line(Worth(outside_tools="fully"), None) == "less reliance on outside tools"
 
 
+def test_s05_fix_about_is_kept_before_a_single_figure_bld_c140() -> None:
+    """S-05.fix, Review.md "about ₹25,000 a month saved": the flag written per figure (`idea_worth.<m>_about`) and
+    the text rebuilt from the stored numbers with it, so Check it, Send it and the edit page all keep "about"."""
+    import types
+
+    from desk.worth import parse
+    from submit import fix
+
+    assert fix.about(parse("cost_month", "about 25k")) is True
+    assert fix.about(parse("hours_month", "~70")) is True
+    assert fix.about(parse("cost_month", "25k")) is False
+    assert fix.about(parse("hours_month", "about 70 to 150")) is False  # a range never keeps it
+    assert fix.about(None) is None
+    row: dict[str, Any] = {
+        "hours_low": 70, "hours_high": 150, "hours_about": None,
+        "cost_low": 25000, "cost_high": None, "cost_about": True,
+        "revenue_low": 1200000, "revenue_high": None, "revenue_about": None,  # a row from before the flag
+        "outside_tools": None,
+    }  # fmt: skip
+
+    class Conn:
+        def execute(self, query: str, params: Any = None) -> Any:
+            assert "by_side = 'sharer'" in query
+            return types.SimpleNamespace(fetchone=lambda: row)
+
+    w = fix.sharer_worth(Conn(), str(uuid.uuid4()))  # type: ignore[arg-type]
+    assert w is not None and w.cost_month is not None
+    assert w.cost_month.text == "about ₹25,000 a month"
+    assert fix.size_line(w, "partly") == (
+        "70 to 150 hours a month, about ₹25,000 a month saved, ₹12,00,000 a month in new revenue, "
+        "solved elsewhere: partly"
+    )
+
+
 def test_s05_part6_who_would_help_picks_come_from_the_list(seed_rules: None) -> None:
     """E-ENUMS.sorting `helper`: the configured list, any case, kept in the list's spelling, each once; own words up
     to 140 characters (V-FIELDS.checkit/10). The Send part's row reads "Not said" until something is said."""
