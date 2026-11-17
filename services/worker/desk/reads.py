@@ -13,7 +13,15 @@ from typing import Any
 from core.db import Conn
 from desk import clock, promises, queue, when
 from desk.questions import SetFacts
-from desk.store import code_of, now, person_by_code
+from desk.store import (
+    CUSTOMER_DETAIL,
+    DESK_SEES,
+    FILES_CHECKED,
+    SHOWN_FILE,
+    code_of,
+    now,
+    person_by_code,
+)
 from desk.window import Window
 
 _QUEUE = """
@@ -139,7 +147,7 @@ HIDDEN_KINDS = {"folio": "Folio", "pan": "PAN", "phone": "Phone number", "email"
                 "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
 _BRINGS = {"saves_time": "saves time", "saves_cost": "saves cost", "earns_revenue": "earns revenue",
            "less_outside_tools": "cuts reliance on outside tools", "not_sure": "not sure yet"}  # fmt: skip
-CHECKED = ("checked", "hidden_checked", "ok")
+CHECKED = FILES_CHECKED
 
 
 def _size(n: int) -> str:
@@ -193,16 +201,20 @@ def _hidden_kinds(conn: Conn, idea_uuid: Any) -> list[str]:
     ]
 
 
-def _checked_files(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
-    """Files that passed the checks; a draft answer's files stay the sharer's until the answer is sent."""
+def _checked_files(
+    conn: Conn, idea_uuid: Any, states: tuple[str, ...] = FILES_CHECKED
+) -> list[dict[str, Any]]:
+    """Files in `states` (the checked ones; the desk's view adds those holding a customer detail, DEC-107, each with
+    its `customer_detail` marker). Never one still checking, infected or locked; a draft answer's files stay the
+    sharer's until the answer is sent."""
     return [
-        dict(f)
+        {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL}
         for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at FROM attachments "
-            "WHERE idea_uuid = %s AND kind = 'file' AND (file_state = ANY(%s) OR state = 'clean') "
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state "  # noqa: S608 (SHOWN_FILE is fixed text)
+            f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} "
             "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
-            "AND a.sent_at IS NOT NULL)) ORDER BY created_at",
-            (idea_uuid, list(CHECKED)),
+            "AND a.sent_at IS NOT NULL)) ORDER BY created_at, id",
+            (idea_uuid, list(states)),
         )
     ]
 
@@ -211,7 +223,8 @@ def _questions(
     conn: Conn, idea_uuid: Any, at: dt.datetime, viewer_id: str | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3). "You asked"
-    for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md)."""
+    for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md). An
+    answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker."""
     from desk.store import person_by_code, person_by_user, unseal
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -234,14 +247,16 @@ def _questions(
         if r["answer_id"]:
             by = person_by_code(conn, r["by_code"])
             files = conn.execute(
-                "SELECT id, name, hidden_note FROM attachments WHERE answer_id = %s ORDER BY created_at",
-                (r["answer_id"],),
+                "SELECT id, name, hidden_note, file_state FROM attachments WHERE answer_id = %s AND "  # noqa: S608 (fixed text)
+                f"{SHOWN_FILE} ORDER BY created_at, id",
+                (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
             item["answer"] = {
                 "text": unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"])),
                 "at": r["answered_at"].isoformat(), "by": by.first_name,
                 "line": f"{by.first_name} answered, {when.which_day(r['answered_at'], at)} {when.clock(r['answered_at'])}",
-                "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"]} for f in files],
+                "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"],
+                           "customer_detail": f["file_state"] == CUSTOMER_DETAIL} for f in files],
             }  # fmt: skip
         out.setdefault(str(r["part"]), []).append(item)
     return out
@@ -318,7 +333,9 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea["id"],))
     ]  # fmt: skip
     hidden_kinds = _hidden_kinds(conn, idea["id"])
-    files = _checked_files(conn, idea["id"])
+    files = _checked_files(
+        conn, idea["id"], DESK_SEES
+    )  # the desk opens a file with a customer detail (DEC-107)
     similar_n = conn.execute(
         "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
         (idea["id"],),
@@ -338,7 +355,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         when_line = "Added with the answers." if f["answer_id"] else f"Attached by {by}."
         artefacts.append({"kind": "file", "id": f["id"], "title": f["name"],
                           "line": f"{when_line} {size}." + (f" {f['hidden_note']}" if f["hidden_note"] else ""),
-                          "action": "Open"})  # fmt: skip
+                          "action": "Open", "customer_detail": f["customer_detail"]})  # fmt: skip
     if messages:
         artefacts.append({"kind": "own_words", "title": f"{first}’s own words",
                           "line": " ".join(x for x in (f"As {first} wrote them on {when.DAYS[shared_at.astimezone(when.IST).weekday()]}, before the draft.",
@@ -434,7 +451,7 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
 
     t = at or now()
     idea = load_idea(conn, ref)
-    files = _checked_files(conn, idea["id"])
+    files = _checked_files(conn, idea["id"])  # viewer-independent: never a file holding a customer detail
     fix = conn.execute("SELECT how, included FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
     sharer_worth, reviewer_worth, _rev = revise.current(conn, str(idea["id"]))
     texts = {

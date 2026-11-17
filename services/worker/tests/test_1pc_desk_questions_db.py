@@ -368,32 +368,28 @@ def _file(db: Conn, idea: dict[str, Any], sharer: dict[str, str], n: int, state:
     return fid
 
 
-def test_S_R3_rules_3_files_on_an_answer_are_the_ideas_own_and_free_of_personal_data(
+def test_S_R3_rules_3_DEC_107_files_on_an_answer_are_the_ideas_own_and_a_customer_detail_is_marked(
     db: Conn, cast: dict[str, Any]
 ) -> None:
+    """DEC-107: a file in which the scan found a customer detail can be attached and sent. It is marked, and the desk
+    sees it; a file still checking is the sharer's alone until it passes."""
     sent = _send(db, cast)
     kavya, q3 = cast["kavya"]["id"], _qids(sent)[2]
     clean = _file(db, cast["idea"], cast["kavya"], 901, "hidden_checked")
     found = _file(db, cast["idea"], cast["kavya"], 902, "personal_data_found")
+    checking = _file(db, cast["idea"], cast["kavya"], 904, "checking")
     other = _file(
         db, f.idea(db, cast["kavya"], title="Track couriered redemption forms"), cast["kavya"], 903, "ok"
     )
-    for fid, code in ((found, "file_has_personal_data"), (other, "file_not_found")):
-        with pytest.raises(Refused) as refused:
-            asking.save_answer(db, q3, kavya, "Two screenshots.", [clean, fid])
-        assert (refused.value.code, refused.value.field) == (code, "file_ids")
+    with pytest.raises(Refused) as refused:
+        asking.save_answer(db, q3, kavya, "Two screenshots.", [clean, other])
+    assert (refused.value.code, refused.value.field) == ("file_not_found", "file_ids")
     saved = asking.save_answer(db, q3, kavya, "", [clean])  # a file alone answers "add a screenshot"
     assert [x["id"] for x in saved["files"]] == [clean]
-    # Personal details found after attaching block the send, not the autosave.
-    db.execute("UPDATE attachments SET file_state = 'personal_data_found' WHERE id = %s", (clean,))
-    kept = asking.save_answer(db, q3, kavya, "One screenshot of the SMS.")  # no file_ids: the file stays
-    assert [x["id"] for x in kept["files"]] == [clean]
-    asking.save_answer(db, q3, kavya, "One screenshot of the SMS, folio hidden.", [clean])
-    with pytest.raises(Refused) as refused:
-        asking.send_answers(db, sent["id"], kavya)
-    assert refused.value.code == "file_has_personal_data"
-    db.execute("UPDATE attachments SET file_state = 'hidden_checked' WHERE id = %s", (clean,))
+    saved = asking.save_answer(db, q3, kavya, "Three screenshots of the SMS.", [found, checking])
+    assert [(x["id"], x["customer_detail"]) for x in saved["files"]] == [
+        (clean, False), (found, True), (checking, False)
+    ]  # fmt: skip
     assert asking.send_answers(db, sent["id"], kavya)["sent"] == 1
-    assert [x["id"] for x in asking.answers_by_part(db, cast["idea"]["id"])["evidence"][0]["files"]] == [
-        clean
-    ]
+    shown = asking.answers_by_part(db, cast["idea"]["id"])["evidence"][0]["files"]
+    assert [(x["id"], x["customer_detail"]) for x in shown] == [(clean, False), (found, True)]
