@@ -57,7 +57,17 @@ class MeterConn:
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> Result:
         if sql.startswith("INSERT INTO speech_calls"):
-            keys = ("call", "model", "ref_id", "outcome", "error_code", "seconds", "chars", "latency_ms", "cost")
+            keys = (
+                "call",
+                "model",
+                "ref_id",
+                "outcome",
+                "error_code",
+                "seconds",
+                "chars",
+                "latency_ms",
+                "cost",
+            )
             self.calls.append(dict(zip(keys, params, strict=True)))
             return Result(None)
         if "FROM speech_calls" in sql:
@@ -104,7 +114,10 @@ class FakeSarvamWs:
                                 "request_id": "req-1",
                                 "transcript": self.heard,
                                 "language_code": "hi-IN",
-                                "metrics": {"audio_duration": len(self.audio) / 32000, "processing_latency": 0.1},
+                                "metrics": {
+                                    "audio_duration": len(self.audio) / 32000,
+                                    "processing_latency": 0.1,
+                                },
                             },
                         }
                     )
@@ -121,7 +134,10 @@ class FakeSarvamWs:
                         json.dumps(
                             {
                                 "type": "audio",
-                                "data": {"content_type": "audio/mpeg", "audio": base64.b64encode(frames).decode()},
+                                "data": {
+                                    "content_type": "audio/mpeg",
+                                    "audio": base64.b64encode(frames).decode(),
+                                },
                             }
                         )
                     )

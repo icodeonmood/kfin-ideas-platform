@@ -647,7 +647,7 @@ requires-dist = [
     { name = "python-pptx", specifier = ">=1" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "uvicorn", specifier = ">=0.32" },
-    { name = "websockets", specifier = ">=14" },
+    { name = "websockets", specifier = ">=17.1" },
 ]
 
 [package.metadata.requires-dev]

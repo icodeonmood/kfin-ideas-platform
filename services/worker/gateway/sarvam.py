@@ -28,6 +28,7 @@ the real client point `SARVAM_BASE_URL` at an httpx MockTransport or a local fak
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import re
@@ -276,11 +277,19 @@ def stt_rest(
             },
             timeout=httpx.Timeout(45.0, connect=5.0),
         )
-        text = body.get("transcript")
-        if not isinstance(text, str):
+        said = body.get("transcript")
+        if not isinstance(said, str):
             raise SarvamFailed("hosted_bad_reply")
     except SarvamFailed as exc:
-        meter(conn, "stt_rest", STT_MODEL, ref_id=ref_id, outcome="route_error", error_code=exc.code, started=started)
+        meter(
+            conn,
+            "stt_rest",
+            STT_MODEL,
+            ref_id=ref_id,
+            outcome="route_error",
+            error_code=exc.code,
+            started=started,
+        )
         raise
     seconds = _rest_seconds(body.get("timestamps"))
     meter(
@@ -293,7 +302,7 @@ def stt_rest(
         started=started,
     )
     lang = body.get("language_code")
-    return Transcript(text=text.strip(), language=lang if isinstance(lang, str) else None, seconds=seconds)
+    return Transcript(text=said.strip(), language=lang if isinstance(lang, str) else None, seconds=seconds)
 
 
 def _rest_seconds(stamps: Any) -> float | None:
@@ -445,6 +454,7 @@ def _ws_open(path: str, params: dict[str, str]) -> ClientConnection:
                 close_timeout=2.0,
                 max_size=4 * 1024 * 1024,
                 logger=_ws_log,
+                legacy=True,  # the connection outlives this call: the session holds it across requests
             )
         except InvalidStatus as exc:
             status = exc.response.status_code
@@ -486,7 +496,9 @@ class SttStream(Protocol):
     def failure(self) -> str | None: ...
 
 
-def stt_stream(*, conn: Conn | None = None, ref_id: str | None = None, language: str = "unknown") -> SttStream:
+def stt_stream(
+    *, conn: Conn | None = None, ref_id: str | None = None, language: str = "unknown"
+) -> SttStream:
     """Open one streaming speech-to-text session through the configured route."""
     if _fake():
         return FakeStream()
@@ -519,9 +531,7 @@ class _Counted:
 
     def heard(self) -> Heard:
         with self._lock:
-            return Heard(
-                text=" ".join(self._segments).strip(), language=self._language, seconds=self.seconds
-            )
+            return Heard(text=" ".join(self._segments).strip(), language=self._language, seconds=self.seconds)
 
     def _add(self, text: str, language: str | None) -> None:
         with self._lock:
@@ -605,10 +615,8 @@ class SarvamStream(_Counted):
         """Flush, then wait for the flush's words (or a short while if none come), then close."""
         flushed_at = time.monotonic()
         before = self._data_count
-        try:
+        with contextlib.suppress(WebSocketException, OSError):  # already broken: what was heard still counts
             self._ws.send(json.dumps({"type": "flush"}))
-        except (WebSocketException, OSError):
-            pass
         deadline = flushed_at + STT_FINISH_WAIT_S
         with self._lock:
             while self._reader.is_alive():
@@ -626,10 +634,8 @@ class SarvamStream(_Counted):
 
     def close(self) -> None:
         self._closing.set()
-        try:
+        with contextlib.suppress(Exception):  # already closed or broken: nothing left to release
             self._ws.close()
-        except Exception:  # already closed or broken: nothing left to release
-            pass
 
 
 class FakeStream(_Counted):
@@ -730,10 +736,8 @@ def tts(
                 raise SarvamFailed(code)
             outcome, code = "ok", ""
         finally:
-            try:
+            with contextlib.suppress(Exception):  # already closed: nothing to release
                 ws.close()
-            except Exception:  # already closed: nothing to release
-                pass
     except GeneratorExit:  # the listener went away: not an error, and not counted against Sarvam
         outcome, code = "cancelled", ""
         raise

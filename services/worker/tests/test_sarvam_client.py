@@ -44,7 +44,9 @@ def form_fields(request: httpx.Request) -> str:
 # ---- REST speech to text ------------------------------------------------------------------------------------
 
 
-def test_BLD_C110_rest_stt_sends_saaras_v4_in_codemix_with_the_key_in_a_header(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_BLD_C110_rest_stt_sends_saaras_v4_in_codemix_with_the_key_in_a_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configure(monkeypatch)
     seen = transport(
         monkeypatch,
@@ -54,7 +56,11 @@ def test_BLD_C110_rest_stt_sends_saaras_v4_in_codemix_with_the_key_in_a_header(m
                 "request_id": "r1",
                 "transcript": " SIP form retyped twice ",
                 "language_code": "hi-IN",
-                "timestamps": {"words": ["a", "b"], "start_time_seconds": [0.0, 4.1], "end_time_seconds": [4.0, 9.5]},
+                "timestamps": {
+                    "words": ["a", "b"],
+                    "start_time_seconds": [0.0, 4.1],
+                    "end_time_seconds": [4.0, 9.5],
+                },
             },
         ),
     )
@@ -92,9 +98,13 @@ def test_BLD_C110_retries_429_and_5xx_twice_then_succeeds(monkeypatch: pytest.Mo
 
 
 @pytest.mark.parametrize(("status", "tries"), [(400, 1), (403, 1), (500, 3)])
-def test_BLD_C110_a_failure_carries_a_code_only(monkeypatch: pytest.MonkeyPatch, status: int, tries: int) -> None:
+def test_BLD_C110_a_failure_carries_a_code_only(
+    monkeypatch: pytest.MonkeyPatch, status: int, tries: int
+) -> None:
     configure(monkeypatch)
-    seen = transport(monkeypatch, httpx.Response(status, json={"error": {"message": "Invalid PAN ABCDE1234F"}}))
+    seen = transport(
+        monkeypatch, httpx.Response(status, json={"error": {"message": "Invalid PAN ABCDE1234F"}})
+    )
     conn = MeterConn()
     with pytest.raises(sarvam.SarvamFailed) as exc:
         sarvam.stt_rest(b"OggS", "audio/ogg", conn=conn)  # type: ignore[arg-type]
@@ -128,14 +138,18 @@ def test_BLD_C110_fake_mode_never_runs_outside_dev_and_test(monkeypatch: pytest.
     assert exc.value.code == "fake_not_allowed"
 
 
-def test_BLD_C110_the_base_url_override_is_ignored_outside_dev_and_test(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_BLD_C110_the_base_url_override_is_ignored_outside_dev_and_test(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configure(monkeypatch, APP_ENV="uat", SARVAM_BASE_URL="http://127.0.0.1:9")
     assert sarvam._base() == sarvam.BASE and sarvam._ws_base() == "wss://api.sarvam.ai"
 
 
 def test_BLD_C110_the_voice_note_route_uses_the_new_client(monkeypatch: pytest.MonkeyPatch) -> None:
     configure(monkeypatch)
-    seen = transport(monkeypatch, httpx.Response(200, json={"transcript": "Typed twice", "language_code": "en-IN"}))
+    seen = transport(
+        monkeypatch, httpx.Response(200, json={"transcript": "Typed twice", "language_code": "en-IN"})
+    )
     assert speech.transcribe(b"OggS", "audio/ogg").text == "Typed twice"
     assert 'name="model"\r\n\r\nsaaras:v4\r\n' in form_fields(seen[0])
 
@@ -148,7 +162,10 @@ def test_BLD_C110_translate_uses_mayura_code_mixed_into_english_and_omits_gender
 ) -> None:
     configure(monkeypatch)
     seen = transport(
-        monkeypatch, httpx.Response(200, json={"translated_text": "The form is typed twice.", "source_language_code": "hi-IN"})
+        monkeypatch,
+        httpx.Response(
+            200, json={"translated_text": "The form is typed twice.", "source_language_code": "hi-IN"}
+        ),
     )
     got = sarvam.translate("Form do baar type hota hai.")
     assert got.text == "The form is typed twice." and got.translated and got.source_language == "hi-IN"
@@ -163,7 +180,9 @@ def test_BLD_C110_translate_uses_mayura_code_mixed_into_english_and_omits_gender
     assert "speaker_gender" not in json.loads(seen[2].content)
 
 
-def test_BLD_C110_translate_refuses_unmasked_text_before_anything_is_sent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_BLD_C110_translate_refuses_unmasked_text_before_anything_is_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configure(monkeypatch)
     seen = transport(monkeypatch, httpx.Response(200, json={"translated_text": "x"}))
     with pytest.raises(sarvam.SarvamFailed) as exc:
@@ -177,7 +196,9 @@ def test_BLD_C110_long_text_goes_in_pieces_of_at_most_1000_characters_at_sentenc
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
-    seen = transport(monkeypatch, httpx.Response(200, json={"translated_text": "part", "source_language_code": "hi-IN"}))
+    seen = transport(
+        monkeypatch, httpx.Response(200, json={"translated_text": "part", "source_language_code": "hi-IN"})
+    )
     text = " ".join(f"Vaakya number {i} mein kuch shabd hain." for i in range(60))
     conn = MeterConn()
     got = sarvam.translate(text, conn=conn)  # type: ignore[arg-type]
@@ -227,7 +248,9 @@ def test_BLD_C110_a_sustained_error_rate_switches_hosted_speech_off(monkeypatch:
 # ---- streaming speech to text ---------------------------------------------------------------------------
 
 
-def test_BLD_C110_the_stream_relays_pcm_and_returns_what_sarvam_heard(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_BLD_C110_the_stream_relays_pcm_and_returns_what_sarvam_heard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configure(monkeypatch)
     with ws_server(monkeypatch, FakeSarvamWs(heard="Branch par form do baar type hota hai")) as fake:
         stream = sarvam.stt_stream(ref_id="s1")
@@ -261,7 +284,9 @@ def test_BLD_C110_an_error_from_sarvam_mid_stream_fails_with_a_code(monkeypatch:
 
     def boom(ws: Any, msg: dict[str, Any]) -> None:
         if "audio" in msg:
-            ws.send(json.dumps({"type": "error", "data": {"error": "bad audio for folio 12345678", "code": "x"}}))
+            ws.send(
+                json.dumps({"type": "error", "data": {"error": "bad audio for folio 12345678", "code": "x"}})
+            )
 
     fake.on_stt = boom
     with ws_server(monkeypatch, fake):
@@ -281,7 +306,9 @@ def test_BLD_C110_the_fake_stream_hears_a_synthetic_marker(monkeypatch: pytest.M
 # ---- text to speech -------------------------------------------------------------------------------------
 
 
-def test_BLD_C110_tts_streams_bulbul_v4_flash_a_sentence_a_message_under_500(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_BLD_C110_tts_streams_bulbul_v4_flash_a_sentence_a_message_under_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configure(monkeypatch)
     script = "The problem. Investors call the branch. " + ("Long words here " * 50).strip() + "."
     conn = MeterConn()
@@ -320,10 +347,25 @@ def test_BLD_C110_a_listener_leaving_is_not_an_error(monkeypatch: pytest.MonkeyP
 
 def test_BLD_C110_nothing_in_the_metering_row_is_text(monkeypatch: pytest.MonkeyPatch) -> None:
     configure(monkeypatch)
-    transport(monkeypatch, httpx.Response(200, json={"translated_text": "Secret words", "source_language_code": "hi-IN"}))
+    transport(
+        monkeypatch,
+        httpx.Response(200, json={"translated_text": "Secret words", "source_language_code": "hi-IN"}),
+    )
     conn = MeterConn()
     sarvam.translate("Gupt shabd.", conn=conn, ref_id="stream-1")  # type: ignore[arg-type]
     row = conn.calls[0]
-    assert set(row) == {"call", "model", "ref_id", "outcome", "error_code", "seconds", "chars", "latency_ms", "cost"}
-    assert all(not isinstance(v, str) or v in {"translate", "mayura:v1", "stream-1", "ok"} for v in row.values())
+    assert set(row) == {
+        "call",
+        "model",
+        "ref_id",
+        "outcome",
+        "error_code",
+        "seconds",
+        "chars",
+        "latency_ms",
+        "cost",
+    }
+    assert all(
+        not isinstance(v, str) or v in {"translate", "mayura:v1", "stream-1", "ok"} for v in row.values()
+    )
     assert base64.b64encode(b"Gupt").decode() not in json.dumps(row, default=str)
