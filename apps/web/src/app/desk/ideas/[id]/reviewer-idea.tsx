@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useReducer, useRef, useState, type RefObject } from "react";
 
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
+import { Hideable } from "@/components/review/hide-this";
 import { ListenPlayer } from "@/components/review/listen-player";
 import { MergeSheet } from "@/components/review/merge-sheet";
 import { WorthEditor, WorthView } from "@/components/review/worth";
@@ -37,6 +38,7 @@ import type {
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
+import { partSource } from "@/lib/desk/hide";
 import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
@@ -320,7 +322,13 @@ export function ReviewerIdea({
           <Pill variant={PILL[idea.pill] ?? "blue"}>{idea.status_label}</Pill>
           <span className="meta">{idea.id}</span>
         </p>
-        <h1 className="h1 ri-title">{idea.title}</h1>
+        <Hideable
+          as="h1"
+          className="h1 ri-title"
+          ideaId={idea.id}
+          source={{ kind: "title", id: "title" }}
+          text={idea.title}
+        />
         <p className="meta ri-line">{idea.heading}</p>
       </div>
 
@@ -332,6 +340,7 @@ export function ReviewerIdea({
             artefacts={page.artefacts}
             canCompare={page.similar.length > 0}
             ownWords={page.own_words}
+            ideaId={idea.id}
             onCompare={() => {
               similarTitle.current?.scrollIntoView({ behavior: "smooth", block: "start" });
               similarTitle.current?.focus({ preventScroll: true });
@@ -412,9 +421,26 @@ export function ReviewerIdea({
                         <WorthView kind={kind} area={area} tiles={tiles} />
                       )}
                     </div>
+                  ) : part.text ? (
+                    <Hideable
+                      className="body ri-part-t"
+                      ideaId={idea.id}
+                      source={partSource(part.part)}
+                      text={part.text}
+                    />
                   ) : (
-                    <p className="body ri-part-t">{part.text || <span className="muted">Not given.</span>}</p>
+                    <p className="body ri-part-t">
+                      <span className="muted">Not given.</span>
+                    </p>
                   )}
+                  {/* L-HIDE.rules/6: beside "… hidden from everyone.", what the sharer chose to show and why */}
+                  {part.part === "evidence"
+                    ? page.shown.map((x, i) => (
+                        <p key={`${x.kind}-${x.at}-${i}`} className="meta ri-shown">
+                          {x.line}
+                        </p>
+                      ))
+                    : null}
                   {queued.map((q) => (
                     <div key={q.key} className="note ri-q ri-q-draft">
                       <span className="meta">You’ll ask</span>
@@ -422,7 +448,7 @@ export function ReviewerIdea({
                     </div>
                   ))}
                   {part.questions.map((q) => (
-                    <AskedQuestion key={q.id} q={q} />
+                    <AskedQuestion key={q.id} q={q} ideaId={idea.id} />
                   ))}
                 </section>
               );
@@ -892,18 +918,28 @@ function OwnWords({
   words,
   open,
   id,
+  ideaId,
 }: {
   words: ReviewerIdeaResponse["own_words"];
   open: boolean;
   id: string;
+  ideaId: string;
 }) {
   return open ? (
     <div id={id} className="well ri-words">
-      {words.map((m) => (
-        <p key={m.seq} className="body">
-          {m.text}
-        </p>
-      ))}
+      {words.map((m) =>
+        m.text ? (
+          <Hideable
+            key={m.seq}
+            className="body"
+            ideaId={ideaId}
+            source={{ kind: "message", id: m.id }}
+            text={m.text}
+          />
+        ) : (
+          <p key={m.seq} className="body" />
+        ),
+      )}
     </div>
   ) : null;
 }
@@ -913,10 +949,12 @@ function Artefacts({
   artefacts,
   canCompare,
   ownWords,
+  ideaId,
   onCompare,
 }: {
   artefacts: ReviewerArtefact[];
   ownWords: ReviewerIdeaResponse["own_words"];
+  ideaId: string;
   /** "Compare" scrolls to Similar ideas; with none listed there it is not shown. */
   canCompare: boolean;
   onCompare: () => void;
@@ -961,13 +999,13 @@ function Artefacts({
           ),
         )}
       </ul>
-      <OwnWords words={ownWords} open={wordsOpen} id="ri-own-words" />
+      <OwnWords words={ownWords} open={wordsOpen} id="ri-own-words" ideaId={ideaId} />
     </section>
   );
 }
 
 /** A question the desk asked, under its part: who asked and when, its state, the words, then the answer. */
-function AskedQuestion({ q }: { q: ReviewerQuestion }) {
+function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: string }) {
   return (
     <div className="ri-q">
       <p className="meta">{q.asked_line}</p>
@@ -976,7 +1014,14 @@ function AskedQuestion({ q }: { q: ReviewerQuestion }) {
       {q.answer ? (
         <div className="ri-a">
           <p className="meta">{q.answer.line}</p>
-          <p className="body">{q.answer.text}</p>
+          {q.answer.text ? (
+            <Hideable
+              className="body"
+              ideaId={ideaId}
+              source={{ kind: "answer", id: q.answer.id }}
+              text={q.answer.text}
+            />
+          ) : null}
           {q.answer.files.length ? (
             <ul className="ri-a-files" aria-label="Files with this answer">
               {q.answer.files.map((f) => (
@@ -994,14 +1039,21 @@ function AskedQuestion({ q }: { q: ReviewerQuestion }) {
   );
 }
 
-function ContributionPart({ part }: { part: ReviewerPart }) {
+function ContributionPart({ part, ideaId }: { part: ReviewerPart; ideaId: string }) {
   if (!part.text && !part.questions.length) return null;
   return (
     <div className="ri-part">
       <p className="label">{part.name}</p>
-      {part.text ? <p className="body ri-part-t">{part.text}</p> : null}
+      {part.text ? (
+        <Hideable
+          className="body ri-part-t"
+          ideaId={ideaId}
+          source={partSource(part.part)}
+          text={part.text}
+        />
+      ) : null}
       {part.questions.map((q) => (
-        <AskedQuestion key={q.id} q={q} />
+        <AskedQuestion key={q.id} q={q} ideaId={ideaId} />
       ))}
     </div>
   );
@@ -1025,7 +1077,7 @@ function Contributions({ contributions }: { contributions: ReviewerContribution[
             </h3>
             <p className="meta">{c.title}</p>
             {c.parts.map((p) => (
-              <ContributionPart key={p.part} part={p} />
+              <ContributionPart key={p.part} part={p} ideaId={c.idea_id} />
             ))}
             {c.files.length || c.own_words.length ? (
               <ul className="ri-arts-list">
@@ -1057,7 +1109,7 @@ function Contributions({ contributions }: { contributions: ReviewerContribution[
                 ) : null}
               </ul>
             ) : null}
-            <OwnWords words={c.own_words} open={wordsOpen} id={wordsId} />
+            <OwnWords words={c.own_words} open={wordsOpen} id={wordsId} ideaId={c.idea_id} />
           </section>
         );
       })}
