@@ -236,7 +236,6 @@ function TitleSlot(props: PanelProps) {
     <>
       <div
         className="tslot"
-        tabIndex={hasValue(title) && title.source_quote ? 0 : undefined}
         onFocus={() => props.onFocusQuote?.(title.source_quote ?? null)}
         onBlur={() => props.onFocusQuote?.(null)}
       >
@@ -322,7 +321,6 @@ function FactRow({ fact, ...props }: PanelProps & { fact: { key: FactKey; label:
   return (
     <div
       className="row"
-      tabIndex={filled && p.source_quote && !editing ? 0 : undefined}
       onFocus={() => props.onFocusQuote?.(p.source_quote ?? null)}
       onBlur={() => props.onFocusQuote?.(null)}
     >

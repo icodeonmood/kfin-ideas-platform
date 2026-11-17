@@ -623,7 +623,7 @@ describe("C-PROMPT.voice review fixes (BLD-C127)", () => {
   it("C-PROMPT.voice iOS: recording is set before the resume settles, and a hung resume ends the note after 5 s", async () => {
     let resolveResume: (() => void) | null = null;
     class SlowContext extends FakeContext {
-      resume = vi.fn(() => new Promise<void>((r) => (resolveResume = r)));
+      override resume = vi.fn(() => new Promise<void>((r) => (resolveResume = r)));
     }
     vi.stubGlobal("AudioContext", SlowContext);
     const { capture } = make({ resumeTimeoutMs: 5_000 });

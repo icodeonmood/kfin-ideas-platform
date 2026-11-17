@@ -28,8 +28,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
 | `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
-| `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
-| `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
+| `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128) | built (c/s04) | L | P0 | C |
+| `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126) | built (c/s04) | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
 | `S-06` | `/ideas/:id` (sharer) | `app/ideas/[id]` | exists, differs | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
@@ -72,10 +72,10 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
-| `C-PROMPT` | exists, differs | L | P0 | C |
-| `C-DRAFT-LOADER` | missing | M | P0 | C |
-| `C-DRAFT-PANEL` | missing | L | P0 | C |
-| `C-HIDDEN` | exists, differs | M | P0 | C |
+| `C-PROMPT` | built (c/s04): `components/compose/prompt.tsx`, voice from `lib/use-voice-capture.ts` (BLD-C124, C127) | L | P0 | C |
+| `C-DRAFT-LOADER` | built (c/s04): `components/compose/draft-loader.tsx`, `lib/compose/loader.ts` (BLD-C120) | M | P0 | C |
+| `C-DRAFT-PANEL` | built (c/s04): `components/compose/draft-panel.tsx`, `lib/compose/live.ts` (BLD-C123, C125) | L | P0 | C |
+| `C-HIDDEN` | built (c/s04): `components/compose/hidden.tsx`, `lib/compose/hidden.ts` (BLD-C121; show/hide routes on c/hide) | M | P0 | C |
 | `C-SIMGRID` | exists, differs | M | P0 | C |
 | `C-PREVIEW` | missing | M | P0 | C |
 | `C-WORTH` | exists, differs | M | P0 | C, B |
