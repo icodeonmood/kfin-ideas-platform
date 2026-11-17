@@ -1,7 +1,8 @@
 /**
- * Sessions (§3.1 step 3, AT-B2-05): an HttpOnly, Secure, SameSite=Lax cookie with an 8-hour lifetime, refreshed
- * on activity. The cookie carries a random token; the database keeps only its SHA-256, so a leaked table cannot
- * be replayed. Sign-out revokes the row.
+ * Sessions (§3.1 step 3, AT-B2-05; L-AUTH.rules/5): an HttpOnly, Secure, SameSite=Lax cookie. A session lasts
+ * `session.hours` from rules/promises.md (8, KFintech policy) from sign-in, and activity never extends it past that
+ * (BLD-A178); "KFintech apps sign everyone out after 8 hours" is then true. The cookie carries a random token; the
+ * database keeps only its SHA-256, so a leaked table cannot be replayed. Sign-out revokes the row.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
@@ -9,10 +10,13 @@ import { sql } from "kysely";
 
 import { appBaseUrl, isProductionLike, privacyNoticeVersion, sessionSecret } from "../config";
 import { getDb } from "../db";
+import { log } from "../log";
+import { promises } from "../promises";
 
 export const SESSION_COOKIE = "ideas_session";
+/** KFintech policy, 8 hours: used only when rules/promises.md cannot be read (`sessionTtlSeconds`). */
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
-export const SESSION_ABSOLUTE_HOURS = 12; // sliding refresh never extends a session past a working day
+/** How often activity is recorded (`last_seen_at`); it never moves the end of the session. */
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
 
 /**
@@ -40,22 +44,61 @@ export type SessionInfo = {
   needsRefresh: boolean;
 };
 
-export async function createSession(userId: string): Promise<string> {
+/** After the worker fails to answer, how long before it is asked again (the last length read holds meanwhile). */
+const PROMISES_RETRY_MS = 60_000;
+let promisesFailedAt = 0;
+/** The last `session.hours` read, in seconds: the policy's 8 hours until the first read lands. */
+let ttlRead = SESSION_TTL_SECONDS;
+let reading: Promise<void> | undefined;
+
+function readSessionHours(): void {
+  if (reading) return;
+  reading = (async () => {
+    try {
+      const hours = (await promises()).session.hours;
+      ttlRead = Number.isFinite(hours) && hours > 0 ? Math.round(hours * 3600) : SESSION_TTL_SECONDS;
+    } catch {
+      promisesFailedAt = Date.now();
+      log.warn("auth.promises_unavailable");
+    } finally {
+      reading = undefined;
+    }
+  })();
+}
+
+/**
+ * Session length from P-PRODUCT.promises `session.hours` (rules/promises.md, BLD-A181; L-AUTH.rules/5). Every request
+ * asks (readSession, in the proxy and again in the route), so it never waits on the worker: it answers at once with
+ * the last length read (the policy's 8 hours before the first) and refreshes it in the background from `promises()`'
+ * one-minute cache. Waiting here put a worker round trip between the proxy's kill-switch read and the route's, so
+ * /api/status could still call a feature on after the proxy had refused it (§7.6). If the worker cannot be read,
+ * one warning, and it is not asked again for a minute (BLD-A178).
+ */
+export async function sessionTtlSeconds(): Promise<number> {
+  if (Date.now() - promisesFailedAt >= PROMISES_RETRY_MS) readSessionHours();
+  return ttlRead;
+}
+
+export async function createSession(userId: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   await getDb()
     .insertInto("sessions")
     .values({
       id_hash: hashToken(token),
       user_id: userId,
-      expires_at: new Date(Date.now() + SESSION_TTL_SECONDS * 1000),
+      expires_at: new Date(Date.now() + ttlSeconds * 1000),
     })
     .execute();
   return token;
 }
 
-/** One query: the session, the person, their live role grants and the current privacy notice. */
+/**
+ * One query: the session, the person, their live role grants and the current privacy notice. A session older than
+ * `session.hours` is over, whatever its `expires_at` says (L-AUTH.rules/5).
+ */
 export async function readSession(token: string | undefined): Promise<SessionInfo | null> {
   if (!token || token.length > 128) return null;
+  const ttl = await sessionTtlSeconds();
   const row = await sql<{
     user_id: string;
     active: boolean;
@@ -72,7 +115,7 @@ export async function readSession(token: string | undefined): Promise<SessionInf
                        AND (g.valid_to IS NULL OR g.valid_to > now())), '[]'::json) AS grants
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND s.expires_at > now()
-      AND s.created_at > now() - make_interval(hours => ${SESSION_ABSOLUTE_HOURS})
+      AND s.created_at > now() - make_interval(secs => ${ttl})
   `.execute(getDb());
   const r = row.rows[0];
   if (!r || !r.active) return null;
@@ -85,13 +128,42 @@ export async function readSession(token: string | undefined): Promise<SessionInf
   };
 }
 
-export async function refreshSession(token: string): Promise<void> {
+/**
+ * Records activity. The end stays `session.hours` after sign-in: never later, even for someone working all day
+ * (L-AUTH.rules/5, BLD-A178), and it follows a change to `session.hours`. The cookie's own lifetime may run on past
+ * the end (the proxy renews it with activity): the server refuses it at the end all the same, and a cookie still
+ * held after the end is what lets S-02 show "Session expired mid-draft" (`expiredSession`).
+ */
+export async function refreshSession(token: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<void> {
   await getDb()
     .updateTable("sessions")
-    .set({ last_seen_at: new Date(), expires_at: new Date(Date.now() + SESSION_TTL_SECONDS * 1000) })
+    .set({
+      last_seen_at: new Date(),
+      expires_at: sql<Date>`created_at + make_interval(secs => ${ttlSeconds})`,
+    })
     .where("id_hash", "=", hashToken(token))
     .where("revoked_at", "is", null)
     .execute();
+}
+
+/**
+ * A session that ran out (time, not signing out) within the last day, for S-02's "Session expired mid-draft"
+ * (L-AUTH.states, A-API.auth `GET /auth/session` → `expired`). Only the browser holding the cookie can ask, and a
+ * signed-out session never counts, so a shared laptop shows nothing after "Sign out".
+ */
+export async function expiredSession(
+  token: string | undefined,
+): Promise<{ userId: string; email: string } | null> {
+  if (!token || token.length > 128) return null;
+  const ttl = await sessionTtlSeconds();
+  const r = await sql<{ user_id: string; email: string }>`
+    SELECT s.user_id, u.email FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND u.active
+      AND (s.expires_at <= now() OR s.created_at <= now() - make_interval(secs => ${ttl}))
+      AND LEAST(s.expires_at, s.created_at + make_interval(secs => ${ttl})) > now() - interval '1 day'
+  `.execute(getDb());
+  const row = r.rows[0];
+  return row ? { userId: row.user_id, email: row.email } : null;
 }
 
 export async function revokeSession(token: string | undefined): Promise<void> {
@@ -107,7 +179,30 @@ export async function revokeSession(token: string | undefined): Promise<void> {
 
 export const TX_COOKIE = "ideas_oidc";
 export const TX_TTL_SECONDS = 10 * 60;
-export type SignInTx = { state: string; nonce: string; verifier: string; next: string; iat: number };
+/**
+ * The OIDC transaction. Where the person was going is kept on the server against the attempt (`intents.ts`,
+ * L-AUTH.rules/4); `next` carries the same place for when no row was kept (nowhere in particular, or over the write
+ * limit, BLD-A177). `attempt` is the attempt key's hash: the callback signs in only the browser that holds the same
+ * attempt cookie (login CSRF). `silent` marks a `prompt=none` try, whose "not signed in at the provider" answer is
+ * not a failure (L-AUTH.rules/1).
+ */
+export type SignInTx = {
+  state: string;
+  nonce: string;
+  verifier: string;
+  silent?: boolean;
+  next?: string;
+  attempt?: string;
+  iat: number;
+};
+
+/** Equal strings, compared in constant time (state, attempt hashes). Unequal lengths are simply unequal. */
+export function sameSecret(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
 
 const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
 

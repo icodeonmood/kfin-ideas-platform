@@ -6,6 +6,7 @@ import { currentUser } from "@/server/auth/current";
 import { can } from "@/lib/rbac";
 import { deskOpen, deskRead } from "@/server/desk";
 import { promises } from "@/server/promises";
+import { HideThisProvider } from "@/components/review/hide-this";
 
 import { ReviewerIdea, type ReviewPromises } from "./reviewer-idea";
 import "../../desk.css";
@@ -43,12 +44,15 @@ export default async function ReviewerIdeaPage({ params }: { params: Promise<{ i
     windowDays: p.committee_window.days,
     windowMaxMonths: p.committee_window.max_months,
   };
+  // L-HIDE.rules/7: "Hide this" for the review desk and the Ones Committee, never on their own idea (BLD-B246)
   return (
-    <ReviewerIdea
-      key={`${page.panel.state}:${page.idea.status}`}
-      page={page}
-      suggested={suggested ?? []}
-      numbers={numbers}
-    />
+    <HideThisProvider enabled={can(me.roles, "hide_for_desk") && !page.own}>
+      <ReviewerIdea
+        key={`${page.panel.state}:${page.idea.status}`}
+        page={page}
+        suggested={suggested ?? []}
+        numbers={numbers}
+      />
+    </HideThisProvider>
   );
 }

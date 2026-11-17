@@ -1,0 +1,358 @@
+/**
+ * Sign-in by email code, the other route (L-AUTH.rules/2-3, V-FIELDS.signin, A-API.auth). Built behind the
+ * `auth.email_code` kill switch, off until InfoSec approves it (BLD-E002, DEC-105).
+ *
+ * - Only work addresses: @kfintech.com plus the domains in KFIN_EMAIL_DOMAINS.
+ * - A code of `code_digits` digits, valid `code_valid_minutes`, `code_tries` tries, a new one after
+ *   `resend_after_seconds` (rules/promises.md `sign_in`, BLD-A181). A new code supersedes the old one.
+ * - Only keyed hashes are stored: of the address and of the code (HMAC with the session secret, so a copy of the
+ *   table cannot be turned back into codes by trying all million of them).
+ * - Every guess spends a try before it is compared, so parallel guesses cannot exceed the tries.
+ * - Out of tries or expired: a fresh code goes out automatically, once per spent code (`L-AUTH.states`), within
+ *   the send limit and never sooner than `resend_after_seconds` after the last one (the countdown says when).
+ * - Rows are bounded: issuing a code deletes codes that ran out more than a day ago (BLD-A177).
+ * - An address with no account gets the same answers as one with an account, and no email (no list of who works
+ *   here). A leaver's address is told it cannot sign in (`L-AUTH.errors`).
+ *
+ * Storage sits behind `CodeStore`: `sign_in_codes` from lane E's cut-over, and an in-memory twin for the unit tests.
+ */
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+
+import { getDb } from "../db";
+
+/** Sends allowed per address in the window; "Too many tries. Wait 10 minutes, or use single sign-on." */
+export const SENDS_PER_WINDOW = 5;
+export const SEND_WINDOW_MINUTES = 10;
+/** Codes that ran out longer ago than this are deleted when a new one is issued. */
+export const CODE_KEEP_HOURS = 24;
+
+export type CodeRules = {
+  code_digits: number;
+  code_valid_minutes: number;
+  code_tries: number;
+  resend_after_seconds: number;
+};
+
+export type CodeRow = {
+  id: string;
+  emailHash: string;
+  codeHash: string;
+  expiresAt: Date;
+  triesLeft: number;
+  sentAt: Date;
+  supersededAt: Date | null;
+};
+
+export interface CodeStore {
+  /** The newest code for the address that has not been superseded or used. */
+  current(emailHash: string): Promise<CodeRow | null>;
+  /**
+   * Stores a new code and supersedes every earlier one for the address, in one step; deletes codes of any address
+   * that ran out before `pruneBefore`.
+   */
+  issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date): Promise<void>;
+  /** When the last code went to the address, used or not. */
+  lastSentAt(emailHash: string): Promise<Date | null>;
+  /** Spends one try if the code is still live; the tries left after it, or null if none could be spent. */
+  spendTry(id: string, now: Date): Promise<number | null>;
+  /** Marks the code used (superseded) so it never works twice; false if it was already used. */
+  use(id: string, now: Date): Promise<boolean>;
+  /** How many codes went to the address since then (the send limit). */
+  sentSince(emailHash: string, since: Date): Promise<number>;
+}
+
+export type SendResult =
+  | { ok: true; sentTo: string; validMinutes: number; resendInSeconds: number }
+  | { ok: false; error: "not_work_email" | "rate_limited" | "account_disabled" }
+  | { ok: false; error: "too_soon"; resendInSeconds: number };
+
+export type VerifyResult =
+  | { ok: true; userId: string }
+  | { ok: false; error: "wrong_code"; triesLeft: number }
+  | { ok: false; error: "code_expired"; resent: true; resendInSeconds: number }
+  | { ok: false; error: "code_expired"; resent: false; resendInSeconds: number }
+  | { ok: false; error: "not_work_email" | "rate_limited" | "account_disabled" };
+
+export type CodeDeps = {
+  store: CodeStore;
+  rules: CodeRules;
+  secret: string;
+  /** Allowed domains, lower case, without "@". */
+  domains: readonly string[];
+  now: () => Date;
+  findUser: (email: string) => Promise<{ id: string; active: boolean } | null>;
+  /** Emails the code to the person (the worker's comms path); never logged. */
+  mail: (userId: string, code: string, validMinutes: number) => Promise<void>;
+  randomCode?: (digits: number) => string;
+};
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Work addresses only (V-FIELDS.signin/1): @kfintech.com and the configured domains. */
+export function isWorkEmail(email: string, domains: readonly string[]): boolean {
+  const e = email.trim().toLowerCase();
+  if (e.length > 254 || !EMAIL.test(e)) return false;
+  return domains.includes(e.split("@").pop() ?? "");
+}
+
+export function allowedDomains(): string[] {
+  const extra = (process.env.KFIN_EMAIL_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+    .filter(Boolean);
+  return [...new Set(["kfintech.com", ...extra])];
+}
+
+const hmac = (secret: string, value: string) => createHmac("sha256", secret).update(value).digest("hex");
+export const emailHash = (secret: string, email: string) =>
+  hmac(secret, `email:${email.trim().toLowerCase()}`);
+const codeHash = (secret: string, eHash: string, code: string) => hmac(secret, `code:${eHash}:${code}`);
+
+const sameHash = (a: string, b: string) => {
+  const x = Buffer.from(a, "hex");
+  const y = Buffer.from(b, "hex");
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+
+export const randomDigits = (digits: number) =>
+  Array.from({ length: digits }, () => randomInt(0, 10).toString()).join("");
+
+async function issueAndMail(
+  deps: CodeDeps,
+  email: string,
+  eHash: string,
+  user: { id: string; active: boolean } | null,
+) {
+  const now = deps.now();
+  const sent = await deps.store.sentSince(eHash, new Date(now.getTime() - SEND_WINDOW_MINUTES * 60_000));
+  if (sent >= SENDS_PER_WINDOW) return false;
+  const code = (deps.randomCode ?? randomDigits)(deps.rules.code_digits);
+  await deps.store.issue(
+    {
+      emailHash: eHash,
+      codeHash: codeHash(deps.secret, eHash, code),
+      expiresAt: new Date(now.getTime() + deps.rules.code_valid_minutes * 60_000),
+      triesLeft: deps.rules.code_tries,
+      sentAt: now,
+    },
+    new Date(now.getTime() - CODE_KEEP_HOURS * 3_600_000),
+  );
+  if (user?.active) await deps.mail(user.id, code, deps.rules.code_valid_minutes);
+  return true;
+}
+
+/** POST /auth/code/send. */
+export async function sendCode(deps: CodeDeps, rawEmail: string): Promise<SendResult> {
+  const email = rawEmail.trim().toLowerCase();
+  if (!isWorkEmail(email, deps.domains)) return { ok: false, error: "not_work_email" };
+  const user = await deps.findUser(email);
+  if (user && !user.active) return { ok: false, error: "account_disabled" };
+  const eHash = emailHash(deps.secret, email);
+  const now = deps.now();
+  const last = await deps.store.current(eHash);
+  if (last) {
+    const waited = (now.getTime() - last.sentAt.getTime()) / 1000;
+    if (waited < deps.rules.resend_after_seconds) {
+      return {
+        ok: false,
+        error: "too_soon",
+        resendInSeconds: Math.ceil(deps.rules.resend_after_seconds - waited),
+      };
+    }
+  }
+  if (!(await issueAndMail(deps, email, eHash, user))) return { ok: false, error: "rate_limited" };
+  return {
+    ok: true,
+    sentTo: email,
+    validMinutes: deps.rules.code_valid_minutes,
+    resendInSeconds: deps.rules.resend_after_seconds,
+  };
+}
+
+/** POST /auth/code/verify. */
+export async function verifyCode(deps: CodeDeps, rawEmail: string, rawCode: string): Promise<VerifyResult> {
+  const email = rawEmail.trim().toLowerCase();
+  if (!isWorkEmail(email, deps.domains)) return { ok: false, error: "not_work_email" };
+  const code = rawCode.trim();
+  const eHash = emailHash(deps.secret, email);
+  const now = deps.now();
+
+  const resendAfter = deps.rules.resend_after_seconds;
+  const runOut = async (): Promise<VerifyResult> => {
+    const user = await deps.findUser(email);
+    if (user && !user.active) return { ok: false, error: "account_disabled" };
+    // Not sooner than a resend would be allowed: the person waits out the countdown, then asks or tries again.
+    const last = await deps.store.lastSentAt(eHash);
+    const waited = last ? (now.getTime() - last.getTime()) / 1000 : Infinity;
+    if (waited < resendAfter) {
+      return {
+        ok: false,
+        error: "code_expired",
+        resent: false,
+        resendInSeconds: Math.ceil(resendAfter - waited),
+      };
+    }
+    return (await issueAndMail(deps, email, eHash, user))
+      ? { ok: false, error: "code_expired", resent: true, resendInSeconds: resendAfter }
+      : { ok: false, error: "rate_limited" };
+  };
+
+  const row = await deps.store.current(eHash);
+  if (!row || row.expiresAt <= now || row.triesLeft <= 0) return runOut();
+  const left = await deps.store.spendTry(row.id, now);
+  if (left === null) return runOut();
+
+  const shaped = new RegExp(`^\\d{${deps.rules.code_digits}}$`).test(code);
+  if (shaped && sameHash(row.codeHash, codeHash(deps.secret, eHash, code))) {
+    if (!(await deps.store.use(row.id, now))) return runOut();
+    const user = await deps.findUser(email);
+    if (!user || !user.active) return { ok: false, error: "account_disabled" };
+    return { ok: true, userId: user.id };
+  }
+  if (left > 0) return { ok: false, error: "wrong_code", triesLeft: left };
+  return runOut();
+}
+
+// ---- stores ---------------------------------------------------------------------------------------------------
+
+export class MemoryCodeStore implements CodeStore {
+  rows: CodeRow[] = [];
+  private seq = 0;
+
+  async current(eHash: string) {
+    const live = this.rows.filter((r) => r.emailHash === eHash && !r.supersededAt);
+    return live.length ? { ...live[live.length - 1]! } : null;
+  }
+
+  async issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date) {
+    this.rows = this.rows.filter((r) => r.expiresAt >= pruneBefore);
+    for (const r of this.rows)
+      if (r.emailHash === row.emailHash && !r.supersededAt) r.supersededAt = row.sentAt;
+    this.rows.push({ ...row, id: String(++this.seq), supersededAt: null });
+  }
+
+  async lastSentAt(eHash: string) {
+    const sent = this.rows.filter((r) => r.emailHash === eHash).map((r) => r.sentAt.getTime());
+    return sent.length ? new Date(Math.max(...sent)) : null;
+  }
+
+  async spendTry(id: string, now: Date) {
+    const r = this.rows.find((x) => x.id === id);
+    if (!r || r.supersededAt || r.expiresAt <= now || r.triesLeft <= 0) return null;
+    r.triesLeft -= 1;
+    return r.triesLeft;
+  }
+
+  async use(id: string, now: Date) {
+    const r = this.rows.find((x) => x.id === id);
+    if (!r || r.supersededAt) return false;
+    r.supersededAt = now;
+    return true;
+  }
+
+  async sentSince(eHash: string, since: Date) {
+    return this.rows.filter((r) => r.emailHash === eHash && r.sentAt >= since).length;
+  }
+}
+
+/**
+ * `sign_in_codes` (lane E's cut-over, 20261121500100): id, email_hash, code_hash, expires_at, tries_left, sent_at,
+ * superseded_at.
+ */
+export class PgCodeStore implements CodeStore {
+  async current(eHash: string) {
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select(["id", "code_hash", "expires_at", "tries_left", "sent_at"])
+      .where("email_hash", "=", eHash)
+      .where("superseded_at", "is", null)
+      .orderBy("sent_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row
+      ? {
+          id: String(row.id),
+          emailHash: eHash,
+          codeHash: row.code_hash,
+          expiresAt: new Date(row.expires_at),
+          triesLeft: row.tries_left,
+          sentAt: new Date(row.sent_at),
+          supersededAt: null,
+        }
+      : null;
+  }
+
+  async issue(row: Omit<CodeRow, "id" | "supersededAt">, pruneBefore: Date) {
+    await getDb()
+      .transaction()
+      .execute(async (trx) => {
+        await trx.deleteFrom("sign_in_codes").where("expires_at", "<", pruneBefore).execute();
+        await trx
+          .updateTable("sign_in_codes")
+          .set({ superseded_at: row.sentAt })
+          .where("email_hash", "=", row.emailHash)
+          .where("superseded_at", "is", null)
+          .execute();
+        await trx
+          .insertInto("sign_in_codes")
+          .values({
+            email_hash: row.emailHash,
+            code_hash: row.codeHash,
+            expires_at: row.expiresAt,
+            tries_left: row.triesLeft,
+            sent_at: row.sentAt,
+          })
+          .execute();
+      });
+  }
+
+  async spendTry(id: string, now: Date) {
+    const row = await getDb()
+      .updateTable("sign_in_codes")
+      .set((eb) => ({ tries_left: eb("tries_left", "-", 1) }))
+      .where("id", "=", id)
+      .where("superseded_at", "is", null)
+      .where("expires_at", ">", now)
+      .where("tries_left", ">", 0)
+      .returning("tries_left")
+      .executeTakeFirst();
+    return row ? row.tries_left : null;
+  }
+
+  async use(id: string, now: Date) {
+    const row = await getDb()
+      .updateTable("sign_in_codes")
+      .set({ superseded_at: now })
+      .where("id", "=", id)
+      .where("superseded_at", "is", null)
+      .returning("id")
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
+  async lastSentAt(eHash: string) {
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select((eb) => eb.fn.max("sent_at").as("last"))
+      .where("email_hash", "=", eHash)
+      .executeTakeFirst();
+    return row?.last ? new Date(row.last as string | Date) : null;
+  }
+
+  async sentSince(eHash: string, since: Date) {
+    const row = await getDb()
+      .selectFrom("sign_in_codes")
+      .select((eb) => eb.fn.countAll<string>().as("n"))
+      .where("email_hash", "=", eHash)
+      .where("sent_at", ">=", since)
+      .executeTakeFirst();
+    return Number(row?.n ?? 0);
+  }
+}
+
+let store: CodeStore | undefined;
+
+export function codeStore(): CodeStore {
+  store ??= new PgCodeStore();
+  return store;
+}

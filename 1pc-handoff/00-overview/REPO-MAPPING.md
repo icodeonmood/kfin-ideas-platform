@@ -25,8 +25,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | Pack route | Closest today | State | Effort | Phase | Lane |
 |---|---|---|---|---|---|---|
-| `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
-| `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
+| `S-01` | `/` signed out | `app/landing.tsx`, `landing-motion.tsx`, `landing.css`, served by `app/page.tsx` when signed out (BLD-A172); the Ones from `publicOnes()` in `server/ones.ts`; sign-out lands here (BLD-A179); e2e `landing.spec.ts` | built (branch `a/auth-landing`) | M | P0 | A |
+| `S-02` | `/sign-in` | `app/sign-in/{page,email-code,sso-form}.tsx`, `sign-in.css` (both boards: `si-desk` / `si-phone`, BLD-A179); `server/auth/{session,intents,drafts,codes}.ts`; e2e `sign-in.spec.ts` | built (branch `a/auth-landing`); email steps behind `auth.email_code`, off (BLD-E002); `/signed-out` retired (BLD-A179) | L | P0 (single sign-on), P2 (email code) | A |
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
@@ -39,7 +39,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-WALL` | `/wall` | `app/wall/page.tsx` (first view on the server, `app/wall/load.ts`), `wall-screen.tsx` (kind chips, sorts, Show more in place; state in the URL, `state.ts`), `wall.css`; data `GET /api/wall/*` (`server/wall.ts`). Tests `e2e/wall.spec.ts` | built | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/one` (`page.tsx`, `one-screen.tsx`, `glow-up.tsx`, `showcase-sheet.tsx`, `rules.ts`); data `GET /api/one` and its writes (`server/wall.ts`, worker `wall/ones.py`); `/ones/leaderboard` and `/my-ideas/showcase` retired, `/ones/write/:id` and `/ones/showcase/:id` (admin-only) kept (BLD-E042) | built (17 Nov, BLD-E040 to BLD-E042) | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/desk` (`page.tsx`, `desk-view.tsx`, `desk.css`), `server/desk.ts` `deskRead`, worker `desk/reads.py`; `/review` redirects here (old page, actions and `review.spec.ts` retired) | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
-| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files}.ts`; `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
+| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files,hide}.ts`, `components/review/hide-this.tsx` ("Hide this", L-HIDE.rules/7, and "Shown, because …", L-HIDE.rules/6, BLD-B246); `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-R3` | `/ideas/:id/answer` | `app/ideas/[id]/answer` (`page.tsx`, `answer-view.tsx`, `answer.css`); files on an answer and the voice are seams | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
 | `S-R4` | `/committee` | `app/committee` (`page.tsx`, `committee-view.tsx`, `committee.css`; the scoring-round page replaced), worker `desk/committee.py`; page rule `committee_window` | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
@@ -92,7 +92,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | ID | Owner today | State | Phase | Lane |
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
-| `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
+| `L-AUTH` | `server/auth/{intents,sso,reference,codes,email-code,drafts,session}.ts`; `app/auth/{sso/start,login,callback,code/send,code/verify,session,sign-out,logout}`; worker `comms/sign_in_code.py` (BLD-A173 to A176) | built (branch `a/auth-landing`) on the cut-over's `sign_in_intents` and `sign_in_codes` | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |

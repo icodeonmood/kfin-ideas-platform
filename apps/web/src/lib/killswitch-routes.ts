@@ -25,7 +25,8 @@ export type SwitchName =
   | "capture.voice"
   | "speech.hosted"
   | "files.blackout"
-  | "desk.listen";
+  | "desk.listen"
+  | "auth.email_code";
 
 interface Rule {
   methods: readonly string[];
@@ -133,6 +134,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   // Lane C's hosted audio for the same player (DEC-108), GET /api/ideas/:id/listen and its /chapters, has its rule
   // in lane C's c/sarvam (desk.listen and speech.hosted), so there is one rule for those paths (BLD-B245).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
+  // Sign-in by email code (L-AUTH.rules/2-3) waits for InfoSec: off until then (BLD-E002). Single sign-on needs none.
+  { methods: ["POST"], pattern: /^\/auth\/code\/(?:send|verify)\/?$/, switches: ["auth.email_code"] },
   // Team up, a draft's merge request and crews (lane F; L-TEAMUP, L-MERGE.request, BLD-F019) pause with sharing:
   // each one writes a note or a reason, changes who is on a crew, or merges an idea. Reads stay open, so a
   // request already sent still reads "Waiting for Ravi".
@@ -177,6 +180,8 @@ export const BANNERS: Record<SwitchName, string> = {
     "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
   // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
   "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
+  // The sign-in screen hides the email route while it is off, so people normally never meet this (BLD-E002).
+  "auth.email_code": "Signing in with a code by email is coming soon. Use single sign-on.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
