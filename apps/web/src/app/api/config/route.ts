@@ -13,5 +13,8 @@ export async function GET() {
   const me = await signedIn();
   if (me instanceof NextResponse) return me;
   const [values, flags] = await Promise.all([promises(), flagsFor(me.id)]);
-  return NextResponse.json({ promises: values, flags }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json(
+    { promises: values, flags },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }
