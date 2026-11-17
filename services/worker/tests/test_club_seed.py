@@ -247,14 +247,82 @@ def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_i
             conn, "SELECT user_id FROM contributor_map WHERE contributor_code = %s", draft["contributor_code"]
         )
         assert item["from_user_id"] == sender and str(item["idea_uuid"]) == m["R1"].uuid and item["needs_you"]
-        # Exactly what lane F's tell_lead posts (teamup/requests.py): refs, and answers_for(brings=True) as actions.
+        # Exactly what lane F's tell_lead posts (teamup/requests.py): refs, and answers_for(brings=True) as bare ops.
         assert item["payload"] == {"request_id": str(req["id"]), "request": "merge", "brought": 1}
-        assert item["actions"] == [
-            {"label": "Decline", "style": "text", "op": "teamup.answer.decline"},
-            {"label": "Team up only", "style": "line", "op": "teamup.answer.team_only"},
-            {"label": "Merge it", "style": "primary", "op": "teamup.answer.merge"},
-        ]
+        assert item["actions"] == BRINGS
     assert len(owners) == 3  # one sharer per request (L-TEAMUP.rules/4)
+
+
+# The lead's answers as lane F's tell_lead posts them (teamup/rules.py answers_for), each a bare op lane A's Inbox
+# hands to teamup/inbox_ops.py: with something brought, and with nothing brought.
+BRINGS = [
+    {"label": "Decline", "style": "text", "op": "decline"},
+    {"label": "Team up only", "style": "line", "op": "team_only"},
+    {"label": "Merge it", "style": "primary", "op": "merge"},
+]
+BRINGS_NOTHING = [
+    {"label": "Decline", "style": "text", "op": "decline"},
+    {"label": "Approve", "style": "primary", "op": "team_only"},
+]
+
+
+def test_l_inbox_kinds_l_teamup_l_merge_request_each_teamup_request_item_is_a_waiting_request_row(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """L-INBOX.kinds, L-TEAMUP.rules/5-6, L-MERGE.request/4 (J-SIMILAR/5-6c): every seeded `teamup_request` item is
+    one waiting request, exactly as lane F's tell_lead posts it: to the idea's lead, from the requester, refs
+    {request_id, request, brought} where request_id is the real teamup_requests or merge_requests row, and the
+    answers as bare ops (decline, team_only, merge), so lane F's inbox_ops handler finds the row it answers."""
+    conn, m = db, made
+    waiting = {
+        str(r["id"]): ("teamup", r)
+        for r in conn.execute(
+            "SELECT r.id, r.idea_uuid, r.from_code, (SELECT count(*) FROM teamup_brought b WHERE b.request_id = r.id) "
+            "AS brought FROM teamup_requests r WHERE r.state = 'sent'"
+        ).fetchall()
+    } | {
+        str(r["id"]): ("merge", r)
+        for r in conn.execute(
+            "SELECT id, other_idea_uuid AS idea_uuid, from_code, 1 AS brought FROM merge_requests "
+            "WHERE state = 'waiting'"
+        ).fetchall()
+    }
+    items = conn.execute(
+        "SELECT user_id, from_user_id, idea_uuid, needs_you, payload, actions FROM notifications "
+        "WHERE kind = 'teamup_request'"
+    ).fetchall()
+    assert len(waiting) == 5 and sorted(i["payload"]["request_id"] for i in items) == sorted(waiting)
+
+    user_of = "SELECT user_id FROM contributor_map WHERE contributor_code = %s"
+    lead_of = "SELECT contributor_code FROM crew_members WHERE idea_uuid = %s AND role = 'lead'"
+    for item in items:
+        request, row = waiting[item["payload"]["request_id"]]
+        assert item["payload"] == {
+            "request_id": str(row["id"]),
+            "request": request,
+            "brought": row["brought"],
+        }
+        assert item["actions"] == (BRINGS if row["brought"] else BRINGS_NOTHING)
+        assert item["needs_you"] and item["idea_uuid"] == row["idea_uuid"]
+        assert item["user_id"] == _one(conn, user_of, _one(conn, lead_of, row["idea_uuid"]))
+        assert item["from_user_id"] == _one(conn, user_of, row["from_code"])
+
+    def item_for(lead: str, key: str, requester: str) -> Any:
+        found = [
+            i
+            for i in items
+            if str(i["idea_uuid"]) == m[key].uuid and i["from_user_id"] == p_id(conn, requester)
+        ]
+        assert len(found) == 1 and found[0]["user_id"] == p_id(conn, lead), (key, requester)
+        return found[0]
+
+    esha = item_for("tanvi", "T5", "esha")  # E1 brought along
+    brought = "SELECT idea_uuid FROM teamup_brought WHERE request_id = %s"
+    assert str(_one(conn, brought, esha["payload"]["request_id"])) == m["E1"].uuid
+    assert (esha["payload"]["request"], esha["payload"]["brought"], esha["actions"]) == ("teamup", 1, BRINGS)
+    bhavesh = item_for("rekha", "R1", "bhavesh")  # nothing brought: Decline and Approve
+    assert (bhavesh["payload"]["request"], bhavesh["payload"]["brought"]) == ("teamup", 0)
+    assert bhavesh["actions"] == BRINGS_NOTHING
 
 
 def p_id(conn: Any, first: str) -> Any:
