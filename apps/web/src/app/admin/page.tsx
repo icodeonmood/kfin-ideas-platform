@@ -11,6 +11,7 @@ import { Flags } from "./flags";
 import { KillSwitches, type Switch } from "./kill-switches";
 import { Programme, type ProgrammeView } from "./programme";
 import { Roles, type Grant } from "./roles";
+import "./admin.css";
 
 export const metadata: Metadata = { title: "Admin" };
 export const dynamic = "force-dynamic";

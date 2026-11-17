@@ -93,7 +93,7 @@ function FlagForm({ flag, onDone }: { flag: Flag; onDone: (m: string) => Promise
       </p>
       <form onSubmit={submit} noValidate className="stack-form" aria-label={`Change ${name}`}>
         <FieldError id={`${id}-err-form`} problem={problem} field="form" />
-        <fieldset>
+        <fieldset className="admin-group">
           <legend>State</legend>
           {(["on", "off"] as const).map((v) => (
             <label key={v} className="choice">

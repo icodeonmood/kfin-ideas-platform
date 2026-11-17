@@ -529,7 +529,7 @@ function Impact({
             <option value="day_90">90 days after shipping</option>
           </select>
           <FieldError id={`${id}-err-mark`} problem={problem} field="mark" />
-          <fieldset>
+          <fieldset className="admin-group">
             <legend>Time saved</legend>
             {field("time.amount", "Hours saved a month", form.hours, set("hours"))}
             {field(
@@ -540,7 +540,7 @@ function Impact({
               "For example: Fewer bounced-debit cases",
             )}
           </fieldset>
-          <fieldset>
+          <fieldset className="admin-group">
             <legend>Money</legend>
             {field(
               "money.amount",
@@ -550,7 +550,7 @@ function Impact({
               "Shows only after someone else confirms it for Finance.",
             )}
           </fieldset>
-          <fieldset>
+          <fieldset className="admin-group">
             <legend>Effort</legend>
             {field("effort.amount", "Steps removed", form.steps, set("steps"))}
             {field(
@@ -561,7 +561,7 @@ function Impact({
               "For example: Per new mandate",
             )}
           </fieldset>
-          <fieldset>
+          <fieldset className="admin-group">
             <legend>Scale</legend>
             {field("scale.amount", "How many use it or are reached by it", form.reach, set("reach"))}
             <label htmlFor={`${id}-noun`}>Who they are</label>
