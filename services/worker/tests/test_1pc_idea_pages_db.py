@@ -762,3 +762,90 @@ def test_j_browse_6_a_shared_link_shows_only_what_that_person_may_see(club: dict
     tanvis = {i["id"] for i in mine(club, "tanvi", filter="closed")["items"]}
     rekhas = {i["id"] for i in mine(club, "rekha", filter="closed")["items"]}
     assert tanvis and not tanvis & rekhas
+
+
+# --- DEC-104: a lead who hid their name, or has left, is never named outside the crew, desk and committee ---------
+
+
+def leave(club: dict[str, Any], who: str) -> None:
+    """The person has left KFintech (`users.active = false`). The seed's people are removed after each test, so the
+    flag goes with them."""
+    club["conn"].execute("UPDATE users SET active = false WHERE id = %s", (club["p"][who],))
+
+
+GONE = {"hid_their_name": hide_name, "has_left": leave}
+
+
+@pytest.mark.parametrize("how", sorted(GONE))
+def test_dec_104_s07_a_draft_waiting_on_a_lead_who_hid_their_name_or_left_says_the_lead(
+    club: dict[str, Any], how: str
+) -> None:
+    """DEC-104, S-07 Drafts, J-SIMILAR/4, J-BROWSE/4 (BLD-E048): T2 is Tanvi's draft with a merge request waiting
+    on Rekha, R1's lead. Tanvi is not on R1's crew, so Rekha is named only while she shows her name on the Wall
+    and is still here."""
+    r1, t2 = ref(club, "R1"), club["m"]["T2"].uuid
+    before = {i["id"]: i for i in mine(club, "tanvi", filter="drafts")["items"]}[t2]
+    assert (
+        before["next_step"]["sentence"]
+        == f"Waiting for Rekha to answer about joining {r1}. Your words are kept."
+    )
+    GONE[how](club, "rekha")
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    assert row["next_step"]["sentence"] == (
+        f"Waiting for the lead to answer about joining {r1}. Your words are kept."
+    )
+    assert "Rekha" not in json.dumps(drafts, ensure_ascii=False, default=str)
+    all_rows = {i["id"]: i for i in mine(club, "tanvi")["items"]}
+    assert all_rows[t2]["next_step"]["sentence"].startswith("Waiting for the lead to answer")
+
+
+def test_dec_104_s09_a_sharer_who_has_left_is_never_named_to_a_colleague(club: dict[str, Any]) -> None:
+    """DEC-104, S-09.layout/2 and /6 (BLD-E048): once Rekha has left, a colleague reads R1 as the Wall shows it, with
+    no name in the shared line, the note, the crew, the faces or the Team up card; one who asked to join waits for
+    "the lead"."""
+    r1 = ref(club, "R1")
+    leave(club, "rekha")
+    v = view(club, r1, "pallavi")
+    page = v["page"]
+    assert v["idea"]["sharer"] is None and v["idea"]["crew"]["lead"] is None
+    assert "Rekha" not in page["shared_line"] and page["shared_line"].startswith("Shared ")
+    assert "The sharer’s own words stay with them" in page["summary_note"]
+    assert page["team_up"]["count_line"].startswith("2 colleagues on it. The person who shared it leads it")
+    assert "Send the lead a note about what you bring." in page["team_up"]["line"]
+    assert [f["first_name"] for f in page["team_up"]["faces"]] == ["Zoya"]
+    assert "Rekha" not in json.dumps(v, ensure_ascii=False, default=str)
+    sent = view(club, r1, "bhavesh")
+    assert sent["page"]["team_up"]["heading"] == "Waiting for the lead"
+    assert (
+        sent["page"]["team_up"]["line"] == "The lead reads your note and decides. You’ll hear in your Inbox."
+    )
+    assert "Rekha" not in json.dumps(sent, ensure_ascii=False, default=str)
+
+
+def test_dec_104_s06_similar_tiles_and_the_merged_line_never_name_a_lead_who_has_left(
+    club: dict[str, Any],
+) -> None:
+    """DEC-104, S-06 'Colleagues on something similar' (C-SIMGRID) and S-06.rules/4 (BLD-E048): Tanvi's T5 lists
+    Pallavi's P1 as similar, and T11 was merged into R2 by Rekha as its lead. Once Pallavi has left, P1's tile has no
+    lead and no face for her; once Rekha has left, the merged line says "by its lead"."""
+    conn, t5, t11, p1 = club["conn"], ref(club, "T5"), ref(club, "T11"), ref(club, "P1")
+    conn.execute(
+        "UPDATE merges SET via = 'lead_accepted', by_code = %s, by_user_id = NULL WHERE merged_idea_uuid = %s",
+        (code_of(club, "rekha"), club["m"]["T11"].uuid),
+    )
+
+    def tile() -> dict[str, Any]:
+        tiles = view(club, t5, "tanvi")["page"]["similar"]["tiles"]
+        return dict(next(t for t in tiles if t["idea"]["id"] == p1))
+
+    assert tile()["idea"]["lead"]["first_name"] == "Pallavi"
+    leave(club, "pallavi")
+    t = tile()
+    assert t["idea"]["lead"] is None and t["idea"]["crew_faces"] == [] and t["idea"]["crew_count"] == 1
+    assert "Pallavi" not in json.dumps(t, ensure_ascii=False, default=str)
+    assert view(club, t11, "tanvi")["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by Rekha"
+    leave(club, "rekha")
+    merged = view(club, t11, "tanvi")["page"]["merged"]
+    assert merged["line"] == f"Merged into {ref(club, 'R2')} by its lead"
+    assert "Rekha" not in json.dumps(merged, ensure_ascii=False)
