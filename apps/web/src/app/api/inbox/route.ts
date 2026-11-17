@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const me = await signedIn();
   if (me instanceof NextResponse) return me;
   const tab = request.nextUrl.searchParams.get("tab") ?? "all";
-  if (!isTab(tab)) return NextResponse.json({ error: { code: "bad_tab", message: "No such tab." } }, { status: 400 });
+  if (!isTab(tab))
+    return NextResponse.json({ error: { code: "bad_tab", message: "No such tab." } }, { status: 400 });
   return NextResponse.json(await inboxFor(me, tab), { headers: { "Cache-Control": "no-store" } });
 }
