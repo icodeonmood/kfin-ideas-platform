@@ -43,6 +43,7 @@ from desk.store import (
     unseal,
     user_of,
 )
+from hide import HideError
 
 OPEN: tuple[str, ...] = ("sent", "seen", "partly_answered")  # a set the sharer can still answer
 CLOSED = "The review desk has decided, so these questions are closed."
@@ -331,7 +332,7 @@ def send_set(
         )
         for seq, q in enumerate(asked, start=1):
             qid = str(uuid.uuid4())
-            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip())
+            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
             conn.execute(
                 "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -603,8 +604,19 @@ def save_answer(
         errors = questions.check_answer(text, p)
         if errors:
             raise _refused(errors[0])
-        masked, hidden = adapters.hide(conn, str(idea["id"]), text) if text and text.strip() else ("", 0)
         aid = str(existing["id"]) if existing else str(uuid.uuid4())
+        # the sharer's answer: its details keep their ids across autosaves and their own words are sealed for them
+        # (L-HIDE.rules/4); the words under this answer id belong to whoever typed them first
+        try:
+            masked, hidden = (
+                adapters.hide(conn, str(idea["id"]), text, by=user_id, source="answer", source_id=aid)
+                if text and text.strip()
+                else ("", 0)
+            )
+        except HideError as exc:
+            if exc.code != "conflict":
+                raise
+            raise Refused(409, "answer_in_progress", ANSWER_IN_PROGRESS) from None
         sealed = seal(masked, "answers", "text_encrypted", aid) if masked.strip() else None
         if existing:
             conn.execute(

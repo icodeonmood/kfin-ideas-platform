@@ -171,7 +171,7 @@ def merge_locked(
             raise Refused(422, e.code, e.message, e.field)
     leader, joiner = (this, other) if lead == "this" else (other, this)
     credited = own_codes(conn, leader) | own_codes(conn, joiner)
-    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip())
+    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip(), by=user_id)
     merge_id = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO merges (id, lead_idea_uuid, merged_idea_uuid, via, by_user_id, team_up, note_encrypted, "
