@@ -41,6 +41,14 @@ function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** The part of the Wall under a heading: the region it names, or else the innermost section that holds it. */
+function wallPart(page: Page, heading: RegExp): Locator {
+  return page
+    .getByRole("region", { name: heading })
+    .or(page.locator("section").filter({ has: page.getByRole("heading", { name: heading }) }).last())
+    .first();
+}
+
 /** The text of `loc` once it matches `re`: its first group, or the whole match when `re` has no group. */
 async function capture(loc: Locator, re: RegExp): Promise<string> {
   await expect(loc).toHaveText(re);
@@ -406,13 +414,28 @@ step(
     await expect(page.getByRole("heading", { level: 1, name: v1.title })).toBeVisible();
     await expect(page.locator('[aria-current="step"]')).toHaveText(/Shipped/);
 
+    // S-WALL.impact: the live-fixes table, with the measured sentence and when it was measured.
     await page.goto("/wall");
-    const row = page.getByRole("row", { name: new RegExp(esc(v1.title)) });
-    await expect(row).toContainText("620 hours a month saved; bounced payouts down by a third");
+    const impact = wallPart(
+      page,
+      /^(?:The Ones leaderboard|What shipped ideas (?:have )?changed(?: so far)?\.?)$/,
+    );
+    const row = impact.getByRole("row", { name: new RegExp(esc(v1.title)) });
+    await expect(
+      row.getByText("620 hours a month saved; bounced payouts down by a third", { exact: true }),
+    ).toBeVisible();
     await expect(row).toContainText("30 days");
-    const one = page.getByRole("article").filter({ hasText: "Varun Chopra" });
-    await expect(one).toContainText("11");
-    await expect(one).toContainText("Stopped wrong bank details before a payout goes out.");
+
+    // S-WALL.ones: Varun's card, his number beside his name ("No. 11", or the big 11 over it), and his brief.
+    const ones = wallPart(page, /^The Ones$/);
+    await expect(ones.getByText("Varun Chopra", { exact: true })).toBeVisible();
+    await expect(ones).toContainText(
+      /(?:^|\s|No\.\s?)11\s+Varun Chopra\b|\bVarun Chopra\b\W{0,3}No\.\s?11\b/,
+      { useInnerText: true },
+    );
+    await expect(
+      ones.getByText("Stopped wrong bank details before a payout goes out.", { exact: true }),
+    ).toBeVisible();
   },
 );
 

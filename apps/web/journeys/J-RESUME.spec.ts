@@ -3,7 +3,7 @@
  * screen is in V-ACC.resume.
  * Copy: reference/copy/PhoneCompose.md (S-04 on the phone), Home.md (sidebar Drafts), ComposeResume.md (S-04B),
  * Compose.md (S-04 "Existing draft prompt", "Forwarded from email"), Ways.md (S-H3), Inbox.md, SignIn.md (S-02
- * "Session expired mid-draft").
+ * "Session expired mid-draft", single sign-on parts only: email-code sign-in is off, BLD-E002).
  * Cast: Kavya is a new synthetic employee per run (SYN-18000 to SYN-19999), so the draft she starts on the phone is
  * the only one she has and carries from row to row; nothing seeded changes. Row 1 types instead of speaking (the
  * voice variation is left to V-ACC; DEC-108). Rows 5 and 6 need email and Teams intake (L-DRAFT.channels, off until
@@ -17,6 +17,8 @@ import { signInAs, step } from "./lib";
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`; // "8:42 pm"
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
 const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
+/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
+const SESSION_COOKIE = "ideas_session";
 
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -183,8 +185,8 @@ step(
     await signInMe(page);
     await page.goto(draft);
     await expect(page.getByText(WORDS).first()).toBeVisible();
-    // The session ends (L-AUTH.rules/5): every cookie goes, as after 8 hours.
-    await page.context().clearCookies();
+    // The session ends (L-AUTH.rules/5), as after 8 hours: only its cookie goes, so S-02 still knows whose draft it is.
+    await page.context().clearCookies({ name: SESSION_COOKIE });
     await page.reload();
     await page.waitForURL(/\/sign-in/);
     await expect(page.getByText("Sign in again to carry on", { exact: true })).toBeVisible();
@@ -195,7 +197,8 @@ step(
     ).toBeVisible();
     await expect(page.getByText(new RegExp(`^Draft, saved ${TIME} on your phone$`))).toBeVisible();
 
-    await page.getByRole("button", { name: "Use single sign-on instead" }).click();
+    // Single sign-on only (BLD-E002): no "Send a code to …", so the button has nothing to be "instead" of.
+    await page.getByRole("button", { name: "Use single sign-on", exact: true }).click();
     await page.waitForURL((url) => url.href.startsWith(OIDC_AUTHORIZE));
     await page.locator('input[name="username"]').fill(ME.emp);
     await page.locator('textarea[name="claims"]').fill(JSON.stringify({ email: ME.email, name: ME.name }));

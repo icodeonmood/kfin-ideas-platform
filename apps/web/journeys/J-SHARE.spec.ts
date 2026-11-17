@@ -5,9 +5,13 @@
  * (S-05), Status.md (S-06 "Just shared"), Home.md (S-03 prompt). Teams is off (DEC-105): a line that names Teams or
  * email is checked up to the sentence before.
  * Cast: Kavya (sharer) is a new synthetic employee per run (SYN-18000 to SYN-19999, outside the seed), so nothing
- * seeded changes. The main path is one person whose draft and idea carry from row to row; each variation has its
- * own person, so an earlier draft never turns S-04 into "You have a draft from…". Voice is on at launch (DEC-108);
- * the "By voice" variation is still left out, as are the S1 and S2 experiments and the phone layouts (V-ACC).
+ * seeded changes. Rows 1 to 3 are one person, who signs in and types; S-04 saves those words as they are typed, so
+ * the same person back on S-04 would get "You have a draft from…" and "Continue that draft", which opens S-04B
+ * (J-RESUME/4). Row 4 is therefore a second new person with an empty box, who types the same words and sends the
+ * first message; their draft and idea carry from row 4 to row 12. Each variation has its own person too.
+ * Sign-in is single sign-on only (BLD-E002): the email route is row 2b alone, waiting on `L-AUTH.email-code`.
+ * Voice is on at launch (DEC-108); the "By voice" variation is still left out, as are the S1 and S2 experiments and
+ * the phone layouts (V-ACC).
  */
 import { expect, type Page } from "@playwright/test";
 
@@ -41,6 +45,8 @@ function fresh(offset: number, last: string): Fresh {
 }
 
 const SHARER = fresh(0, "Sharer");
+/** Row 4 on: S-04 with nothing saved yet, so "Start my draft" sends the first message (not J-RESUME's prompt). */
+const SENDER = fresh(200, "Sender");
 const FROM_HOME = fresh(700, "Homeprompt");
 const SIGNED_IN = fresh(1400, "Signedin");
 
@@ -96,7 +102,7 @@ function need<K extends keyof typeof carried>(key: K, from: string): string {
 
 /** Opens a part of Check it by its step button ("2 Sorting Suggested, not confirmed yet" on the board). */
 async function openPart(page: Page, part: string): Promise<void> {
-  await signInAsFresh(page, SHARER);
+  await signInAsFresh(page, SENDER);
   await page.goto(`${need("draft", "J-SHARE/4")}/check`);
   await page.getByRole("button", { name: new RegExp(`^(?:\\d )?${part}\\b`) }).click();
 }
@@ -115,10 +121,9 @@ step(
       await expect(composeBox(page)).toBeFocused();
       return;
     }
+    // Single sign-on only (BLD-E002): the work email box and "Send code" are the email route (row 2b).
     await expect(page.getByRole("heading", { level: 1, name: "Sign in to 1% Club" })).toBeVisible();
-    await expect(page.getByText("Use your official KFintech email ID to sign in.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Send code" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Use single sign-on" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Use single sign-on", exact: true })).toBeEnabled();
   },
 );
 
@@ -192,13 +197,15 @@ step(
   "Sends the first message: the screen becomes the conversation, the words are the first message, details hidden",
   { needs: ["S-04", "S-04B", "C-DRAFT-LOADER", "C-DRAFT-PANEL", "L-DRAFT", "L-HIDE"] },
   async ({ page }) => {
-    await signInAsFresh(page, SHARER);
+    // A person with nothing saved: the empty box of row 3, with the words row 3 typed (see the Cast note above).
+    await signInAsFresh(page, SENDER);
     await page.goto("/share");
-    // J-SHARE/3's words were saved as they were typed: S-04 offers them back, or the box is empty again.
-    const carryOn = page.getByRole("button", { name: "Continue that draft" });
-    await expect(carryOn.or(composeBox(page))).toBeVisible();
-    if (await carryOn.isVisible()) await carryOn.click();
-    if ((await composeBox(page).inputValue()).trim() !== WORDS) await composeBox(page).fill(WORDS);
+    // An ID an earlier run used may hold a draft; "Start a new one" gives the empty box (J-RESUME/4).
+    const startNew = page.getByRole("button", { name: "Start a new one" });
+    await expect(startNew.or(composeBox(page)).first()).toBeVisible();
+    if (await startNew.isVisible()) await startNew.click();
+    await expect(composeBox(page)).toHaveValue("");
+    await composeBox(page).fill(WORDS);
     await page.getByRole("button", { name: "Start my draft" }).click();
 
     await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
@@ -225,7 +232,7 @@ step(
   "Adds a detail: it goes into the conversation and the draft updates",
   { needs: ["S-04B", "C-DRAFT-PANEL", "L-DRAFT"] },
   async ({ page }) => {
-    await signInAsFresh(page, SHARER);
+    await signInAsFresh(page, SENDER);
     await page.goto(need("draft", "J-SHARE/4"));
     await page
       .getByRole("textbox", { name: "Add a detail, like how often it happens or what you tried" })
@@ -244,7 +251,7 @@ step(
   "Move to Review once the six parts are in: it slides on to Check it, part 1",
   { needs: ["S-04B", "S-05", "C-DRAFT-PANEL", "L-DRAFT"] },
   async ({ page }) => {
-    await signInAsFresh(page, SHARER);
+    await signInAsFresh(page, SENDER);
     const draft = need("draft", "J-SHARE/4");
     await page.goto(draft);
     await expect(page.getByText("Looks right? Check the sorting and send it.").first()).toBeVisible();
@@ -382,7 +389,7 @@ step(
   "Just shared: the reference, the title, when the desk looks, and the edit window",
   { needs: ["S-06", "C-TRACK", "L-SUBMIT"] },
   async ({ page }) => {
-    await signInAsFresh(page, SHARER);
+    await signInAsFresh(page, SENDER);
     const idea = need("idea", "J-SHARE/11");
     await page.goto(idea);
     await expect(page.getByRole("heading", { level: 1, name: need("title", "J-SHARE/7") })).toBeVisible();

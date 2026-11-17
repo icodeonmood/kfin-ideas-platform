@@ -5,12 +5,14 @@
  * Copy: reference/copy/SignIn.md, Compose.md ("Mic blocked", "Offline"), Review.md ("evidence=…", "submit=…", merge
  * states), Status.md ("Withdrawn"); C-DRAFT-LOADER.failure and C-HIDDEN for the lines the boards do not draw.
  * Failures are made in the browser: an identity provider that answers with an error, a microphone the browser refuses,
- * the network switched off, and a failing upload or send answered by `page.route`.
+ * the network switched off, and a failing upload or send answered by `page.route` on its A-API path.
+ * Switched off at launch, so not walked here: email-code sign-in (BLD-E002; only row 2 is the email route, and it
+ * waits on `L-AUTH.email-code`) and the "couldn't open this link" state, because links are never fetched (BLD-E001).
  * Cast: a new synthetic employee per run for the draft that goes wrong and is sent in the end (rows 5 and 7 to 15), and
  * another for the empty composer (row 4); nothing seeded changes. Tanvi's T1 (failed part, J-RESUME's) and T2 (merge
  * request waiting on Rekha, J-SIMILAR's) are read only.
  */
-import { expect, type Page } from "@playwright/test";
+import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
 import { CLUB, draftUrl, seeded, signInAs, step } from "./lib";
@@ -20,6 +22,8 @@ const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
 const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
+/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
+const SESSION_COOKIE = "ideas_session";
 
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -100,15 +104,41 @@ function pdfWith(text: string): Buffer {
   return Buffer.from(out, "latin1");
 }
 
-const UPLOAD = /\/api\/(?:drafts|submissions)\/[^/]+\/(?:attachments|files)(?:\?|$)/;
-const SUBMIT = /\/api\/(?:drafts|submissions)\/[^/]+\/submit(?:\?|$)/;
+/** A-API.files `POST /files` (multipart, with `draft_id`): every upload, a draft's or an answer's (lane C). */
+const UPLOAD = (url: URL): boolean => url.pathname === "/api/files";
+/** A-API.drafts `POST /drafts/:id/submit`. */
+const SUBMIT = (url: URL): boolean => /^\/api\/drafts\/[^/]+\/submit$/.test(url.pathname);
+
+type Upload = Parameters<FileChooser["setFiles"]>[0];
+
+/**
+ * Attaches a file the way a person does: "Attach files" (C-FILE.uploader), then the file picker. The control opens
+ * the picker itself, or a drop area whose "browse" opens it (C-FILE.uploader/1, /5).
+ */
+async function attach(page: Page, file: Upload): Promise<void> {
+  const picker = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Attach files" }).click();
+  const browse = page
+    .getByRole("button", { name: /\bbrowse\b/i })
+    .or(page.getByText(/^browse$/i))
+    .first();
+  const opened = await Promise.race([
+    picker,
+    browse.waitFor({ timeout: 10_000 }).then(
+      () => null,
+      () => null,
+    ),
+  ]);
+  if (!opened) await browse.click();
+  await (opened ?? (await picker)).setFiles(file);
+}
 
 // --- J-RECOVER rows ----------------------------------------------------------------------------------------------------
 
 step(
   "J-RECOVER/1",
   "S-02",
-  "Sign-in fails: plain words, nothing lost, a reference for the IT desk, Try again or a code by email",
+  "Sign-in fails: plain words, nothing lost, a reference for the IT desk, and Try again (single sign-on only, BLD-E002)",
   { needs: ["S-01", "S-02", "L-AUTH"] },
   async ({ page }) => {
     // The identity provider answers with an error (OIDC error response), as when it times out.
@@ -137,8 +167,9 @@ step(
       ),
     ).toBeVisible();
     await expect(page.getByText(new RegExp(`SSO-[0-9A-F]{4}, ${TIME}`))).toBeVisible();
+    // The intent is kept (L-AUTH.rules/4); the board's "Or get a code by email instead." waits on BLD-E002.
+    await expect(page.getByText(/^You will still go straight to Share a problem\./)).toBeVisible();
     await expect(page.getByRole("link", { name: "Try again" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "get a code by email instead" })).toBeVisible();
   },
 );
 
@@ -171,7 +202,8 @@ step(
     const t1 = await seeded("T1");
     await signInAs(page, "tanvi");
     await page.goto(draftUrl(t1));
-    await page.context().clearCookies();
+    // The session ends (L-AUTH.rules/5): only its cookie goes, so S-02 still knows whose draft it was.
+    await page.context().clearCookies({ name: SESSION_COOKIE });
     await page.reload();
     await page.waitForURL(/\/sign-in/);
     await expect(page.getByText("Sign in again to carry on", { exact: true })).toBeVisible();
@@ -181,7 +213,8 @@ step(
       ),
     ).toBeVisible();
     await expect(page.getByText(t1.title, { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Use single sign-on instead" }).click();
+    // Single sign-on only (BLD-E002): no "Send a code to …", so the button has nothing to be "instead" of.
+    await page.getByRole("button", { name: "Use single sign-on", exact: true }).click();
     await ssoForm(page, CLUB.tanvi);
     await expect(page).toHaveURL(new RegExp(`${esc(draftUrl(t1))}$`));
   },
@@ -257,17 +290,10 @@ step(
   async ({ page }) => {
     await checkPart(page, "Proof");
     await page.route(UPLOAD, (route) =>
-      route.request().method() === "POST" ? route.abort("failed") : route.continue(),
+      route.request().method() === "POST" ? route.abort("failed") : route.fallback(),
     );
     const name = "courier-register-photo.png";
-    await page
-      .locator('input[type="file"]')
-      .first()
-      .setInputFiles({
-        name,
-        mimeType: "image/png",
-        buffer: Buffer.from("89504e470d0a1a0a", "hex"),
-      });
+    await attach(page, { name, mimeType: "image/png", buffer: Buffer.from("89504e470d0a1a0a", "hex") });
     await expect(page.getByText("Didn’t upload. Your other files are fine.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
     await page.unroute(UPLOAD);
@@ -284,14 +310,11 @@ step(
   async ({ page }) => {
     await checkPart(page, "Proof");
     const name = "courier-call-log.pdf";
-    await page
-      .locator('input[type="file"]')
-      .first()
-      .setInputFiles({
-        name,
-        mimeType: "application/pdf",
-        buffer: pdfWith("Investor called back on 9800000012 about the courier."),
-      });
+    await attach(page, {
+      name,
+      mimeType: "application/pdf",
+      buffer: pdfWith("Investor called back on 9800000012 about the courier."),
+    });
     await expect(
       page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
     ).toBeVisible({ timeout: 30_000 });
@@ -304,20 +327,33 @@ step(
 step(
   "J-RECOVER/9",
   "S-05",
-  "A link cannot be opened: the review desk can still try it; Keep it or Remove",
+  "A link is kept as typed and never opened (BLD-E001)",
   { needs: ["S-05", "C-FILE"] },
   async ({ page }) => {
+    const host = "intranet.kfintech.example";
+    const opened: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).host === host) opened.push(request.url());
+    });
     await checkPart(page, "Proof");
     await page
       .getByRole("textbox", { name: "Paste a link, or attach files. Add several links at once with commas." })
-      .fill("https://intranet.kfintech.example/courier-returns");
+      .fill(`https://${host}/courier-returns`);
     await page.getByRole("button", { name: "Add a link" }).click();
-    await expect(
-      page.getByText("We couldn’t open this link. It may need a sign-in; the review desk can still try it."),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Remove / }).first()).toBeVisible();
-    await page.getByRole("button", { name: "Keep it" }).click();
+
+    // C-FILE.row: the address or its domain, with Remove. Nothing tried to open it, so nothing says it failed.
+    const row = page.getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
+    await expect(row).toBeVisible();
+    await expect(page.getByText(new RegExp(esc(host))).first()).toBeVisible();
+    await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Keep it" })).toHaveCount(0);
+
+    // Kept with the draft: still there when the part is opened again.
+    await page.reload();
+    await page.getByRole("button", { name: /^(?:\d )?Proof\b/ }).click();
+    await expect(row).toBeVisible();
+    await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
+    expect(opened).toEqual([]);
   },
 );
 
@@ -349,14 +385,17 @@ step(
     await checkPart(page, "Your words");
     await expect(page.getByText(FOLIO_MASKED).first()).toBeVisible();
     await page.getByRole("button", { name: "Show it" }).first().click();
-    await expect(page.getByText("Only show it if it isn't about a real customer. What is it?")).toBeVisible();
+    // C-HIDDEN/1–3 write straight apostrophes; a lane may set them curly. Either is the same words.
+    await expect(
+      page.getByText(/^Only show it if it isn[’']t about a real customer\. What is it\?$/),
+    ).toBeVisible();
     await expect(page.getByText("We note your reason with the idea.")).toBeVisible();
-    for (const reason of ["it's a scheme or product code", "it's an internal reference"]) {
+    for (const reason of [/^it[’']s a scheme or product code$/, /^it[’']s an internal reference$/]) {
       await expect(page.getByRole("radio", { name: reason })).toBeVisible();
     }
-    await page.getByRole("radio", { name: "it's made up for the example" }).click();
+    await page.getByRole("radio", { name: /^it[’']s made up for the example$/ }).click();
     await page.getByRole("button", { name: "Show it" }).last().click();
-    await expect(page.getByText(/^Shown, because it[’']s made up for the example$/).first()).toBeVisible();
+    await expect(page.getByText(/^Shown, because it[’']s made up for the example\.?$/).first()).toBeVisible();
   },
 );
 
@@ -383,7 +422,15 @@ step(
     await checkPart(page, "Sorting");
     await page.getByRole("button", { name: "Confirm sorting" }).click();
     await page.getByRole("button", { name: /^(?:\d )?Send it\b/ }).click();
-    await page.route(SUBMIT, (route) => route.fulfill({ status: 503, body: "{}" }));
+    await page.route(SUBMIT, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: { code: "unavailable", message: "Service unavailable" } }),
+          })
+        : route.fallback(),
+    );
     await page.getByRole("button", { name: "Submit" }).click();
     await expect(
       page.getByText("Couldn’t send. Your draft is safe. Check your connection, then try again."),
