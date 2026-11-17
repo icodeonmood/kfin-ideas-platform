@@ -538,6 +538,9 @@ def sharer_view(
 
     if came_from == "share":
         crumb = {"label": "Home", "to": "/home"}  # S-06.rules/6: after first sharing, Back goes Home
+    elif came_from == "wall":
+        # From the Wall, Back returns to the Wall's own view (J-BROWSE/5, P-ROUTES.state)
+        crumb = {"label": "Wall", "to": safe_back(back, ("/wall",)) or "/wall"}
     else:
         to = safe_back(back, ("/my-ideas",)) or "/my-ideas"
         crumb = {"label": my_ideas_label(to), "to": to}

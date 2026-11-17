@@ -78,6 +78,26 @@ def test_s06_states_just_shared_shows_the_decide_by_date(club: dict[str, Any]) -
     assert v["idea"]["has_open_questions"] is False and "card_from" not in page
 
 
+def test_s06_layout_breadcrumb_names_where_the_sharer_came_from(club: dict[str, Any]) -> None:
+    """S-06.layout/1, S-06.rules/6, J-BROWSE/5: the breadcrumb returns to My ideas' filtered view, to the Wall's
+    own view when the sharer opened it from the Wall, and Home after first sharing; an off-site back is dropped."""
+    t5 = ref(club, "T5")
+    crumb = lambda **kw: view(club, t5, "tanvi", **kw)["page"]["breadcrumb"]  # noqa: E731
+    assert crumb(came_from="my-ideas", back="/my-ideas?filter=needs_you&row=X") == {
+        "label": "My ideas, Needs you",
+        "to": "/my-ideas?filter=needs_you&row=X",
+        "current": t5,
+    }
+    assert crumb(came_from="wall", back="/wall?sort=popular&at=X&dy=120") == {
+        "label": "Wall",
+        "to": "/wall?sort=popular&at=X&dy=120",
+        "current": t5,
+    }
+    assert crumb(came_from="wall", back="https://example.com/wall")["to"] == "/wall"
+    assert crumb(came_from="wall", back="/my-ideas")["to"] == "/wall"
+    assert crumb(came_from="share")["label"] == "Home"
+
+
 def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "T6"), "tanvi")
     page = v["page"]
