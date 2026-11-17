@@ -1,4 +1,8 @@
-# New wording on team-up and merge requests, for HR's sign-off (lane F)
+# New wording in lane F, for HR's sign-off
+
+Written 17 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Two parts: team-up and merge requests, then the conversation.
+
+## Team-up and merge requests (L-TEAMUP, L-MERGE.request, C-SHEET-TEAMUP)
 
 Written 17 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Everything else in team-up is the design pack's own copy (`1pc-handoff/reference/copy/CrewRequest.md`, `Review.md`, and `C-SHEET-TEAMUP`), used as it stands. These are the lines lane F had to change or add, with the module each belongs to. "Kavya" stands for the person asking and "Ravi" for the idea's lead: at run time each is the real person's first name. The code is `services/worker/teamup/rules.py` (words) and `requests.py`, `drafts.py`, `crew.py` (messages under a field).
 
@@ -70,3 +74,59 @@ The sheet's own words are the pack's (`C-SHEET-TEAMUP` and `reference/copy/Crew.
 | `C-SHEET-TEAMUP`, opened while a request still waits but the request did not come back (BLD-F074) | In place of the note, with only "Done" | Waiting for Ravi (the opener's own line, `C-SHEET-TEAMUP.after`) |
 
 Not the sheet's: `Crew.md` view=Request sent also adds "Ravi Nair, Investor service", "Waiting for Ravi" and the link "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea." These are a row in S-H2's "Your crews" list behind the sheet (they replace "Ideas you team up on show here."), so they belong to the crew page, which lane F builds next, and are used there word for word (BLD-F074).
+
+## Conversation (L-CONVO, S-08)
+
+Everything else on S-08 is the design pack's own copy (`1pc-handoff/reference/copy/Messages.md`), used as it stands: "You shared it.", "Checked and matched. 1 folio number hidden, 2 similar ideas found.", "Meera from the review desk opened it.", "Meera from the review desk picked it.", "Ravi Nair approved your team-up request.", the four placeholders, the visibility lines the board draws, "No messages yet", the line above the box while questions are open, "Your answers to Meera’s 3 questions", "Write a message or attach a file first." and "Message removed" (`L-CONVO/10`). "Meera", "Ravi", "Kavya" and "Sanjay" stand for real people: at run time each is the person's name, and "You" for the reader. The code is `services/worker/convo/render.py` (event lines), `reads.py` (header, side panel, box) and `messages.py` (messages under the box).
+
+### 1. Lines changed so they never guess a person's gender (BLD-E008)
+
+The conversation board draws no "he" or "she". The one line lane F wrote about a person who is not the reader, where the name would repeat, uses "them".
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `L-MERGE.effects`, a draft merged into the lead's idea (J-SIMILAR/6a) | Not drawn | Kavya Menon’s idea is now part of it, with credit to them. (for Kavya: Your idea is now part of it, with credit to you.) |
+
+### 2. Event lines the pack does not draw
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `L-CONVO/3`, the desk decides | Meera from the review desk picked it. | Meera from the review desk chose Not now. / Meera from the review desk didn’t pick it. |
+| `L-WORTH`, the desk revises what it is worth | Not drawn | Meera from the review desk revised what it’s worth. |
+| `L-REVIEW`, the date to decide moves | Not drawn | Meera from the review desk moved the date to decide. |
+| `L-DECIDE`, a Not now idea comes back | Not drawn | It’s back with the review desk. |
+| `L-MERGE.effects/6`, the desk merges (on the idea that joins) | "a closing line with a link" | Meera from the review desk joined it with IDEA-2026-001412. The conversation carries on there. (the reference is the link) |
+| `L-MERGE.desk`, the desk merges (on the lead idea) | Not drawn | Meera from the review desk joined it with IDEA-2026-001481. |
+| `L-COMMITTEE`, a decision reversed | Not drawn | Rohan Mehta from the Ones Committee reversed the decision. It’s now Not now. |
+| `L-COMMITTEE`, a desk merge undone | Not drawn | Rohan Mehta from the Ones Committee undid the merge. Each idea is on its own again. |
+| `L-TEAMUP.rules/7`, as the lead and others read it | Ravi Nair approved your team-up request. | You approved Kavya Menon’s team-up request. / Ravi Nair approved Kavya Menon’s team-up request. |
+| `L-TEAMUP.rules/8`, someone joins the crew | Not drawn | Kavya Menon joined the crew. / You joined the crew. |
+| `L-TEAMUP.rules/11`, leaving and removal | "announced in the conversation" | Kavya Menon left the crew. / Ravi Nair took Kavya Menon off the crew. / You took Kavya Menon off the crew. |
+| `L-MERGE.effects/6`, the lead accepted a merge (on the idea that joins) | "a closing line with a link" | It’s now part of IDEA-2026-001412. The conversation carries on there. |
+| `L-MERGE.effects`, the lead accepted a merge (on the lead idea) | Not drawn | IDEA-2026-001481 is now part of it, with credit to Kavya Menon. |
+| `L-CONVO/3`, Checked and matched with nothing hidden or found | Checked and matched. 1 folio number hidden, 2 similar ideas found. | Checked and matched. Nothing to hide, no similar ideas found. (and "2 folio numbers and 1 PAN hidden" for more than one kind) |
+| A line whose person or idea is no longer there | Not drawn | A colleague (for a person erased from the records) / It’s now part of another idea. / Another idea is now part of it. / Meera from the review desk joined it with another idea. |
+
+### 3. The header, the side panel and the box
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `S-08.layout/1`, a build team's idea read by someone other than the sharer | Your idea, being built by Arjun Rao’s team | Kavya Menon’s idea, being built by Arjun Rao’s team |
+| `L-CONVO/8`, what each person is doing | Reviewing it / Shared the idea / On the crew / Joined today / Leads the build team / Picked it / Mentioned | Chose Not now / Didn’t pick it / On the build team / From the review desk / From the Ones Committee / In the conversation |
+| `S-08.layout/3`, the visibility line as others read it | Only you and the review desk see this conversation. | Only Kavya and the review desk see this conversation. |
+| `S-08.layout/3`, a build team's idea with a crew, or read by others | You, the build team and the review desk see this conversation. | The crew, the build team and the review desk see this conversation. / Kavya, the build team and the review desk see this conversation. |
+| `S-08.layout/3`, a mentioned person on an idea with no crew | The crew, the review desk and anyone they mention see this conversation. | Kavya, the review desk and anyone they mention see this conversation. |
+| `L-MERGE.effects/6`, the box on a merged idea | Not drawn | This idea is now part of another one. Write in IDEA-2026-001412’s conversation. |
+| `L-CONVO/4`, the answers message as the reviewer reads it | Your answers to Meera’s 3 questions | Kavya’s answers to your 3 questions |
+
+### 4. Messages under the box (A-API errors)
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `L-CONVO/5`, a message over 4,000 characters (BLD-F055) | Not drawn | Keep a message under 4,000 characters. |
+| `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
+| `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
+| `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |
+| `L-CONVO/10`, removing someone else's message | Not drawn | You can remove only your own messages. |
+| `L-CONVO/10`, removing after 5 minutes | Not drawn | A message can be removed only in the first 5 minutes after sending. |
+| `A-API.conventions/3`, the same request sent again with other words | Not drawn | This request was already sent with different words. Refresh and try again. |
