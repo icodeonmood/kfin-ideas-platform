@@ -1,0 +1,69 @@
+{
+ "script": {
+  "parts": [
+   {
+    "part": "summary",
+    "title": "The problem",
+    "text": "Investors call the branch to ask why a redemption was rejected. Folio hidden was one of them. Kavya answered: All of them.",
+    "seconds": 9.0
+   },
+   {
+    "part": "often",
+    "title": "How often",
+    "text": "About 40 calls a day at the Hyderabad branch.",
+    "seconds": 3.7
+   },
+   {
+    "part": "who",
+    "title": "Who it affects",
+    "text": "Investors, and the branch team.",
+    "seconds": 3.1
+   },
+   {
+    "part": "cost",
+    "title": "What it’s worth",
+    "text": "No figures given.",
+    "seconds": 2.3
+   },
+   {
+    "part": "evidence",
+    "title": "Attached",
+    "text": "Nothing attached.",
+    "seconds": 1.8
+   },
+   {
+    "part": "fix",
+    "title": "Fix",
+    "text": "No fix suggested. It was optional.",
+    "seconds": 2.6
+   }
+  ]
+ },
+ "chapters": [
+  {
+   "part": "summary",
+   "at": 0.0
+  },
+  {
+   "part": "often",
+   "at": 9.5
+  },
+  {
+   "part": "who",
+   "at": 13.7
+  },
+  {
+   "part": "cost",
+   "at": 17.4
+  },
+  {
+   "part": "evidence",
+   "at": 20.1
+  },
+  {
+   "part": "fix",
+   "at": 22.4
+  }
+ ],
+ "total_seconds": 25.0
+}
