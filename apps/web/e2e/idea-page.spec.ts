@@ -75,17 +75,44 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     }
     await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/^The review desk will look at it by \w+day \d+ \w+\.$/)).toBeVisible();
-    await expect(page.getByText("We’ll tell you on Teams and by email when anything changes.")).toBeVisible();
+    if (isPhone(info.project.name)) {
+      // PhoneStatus.md: the shorter lines, the reference line under the title and Copy reference
+      await expect(page.getByText("We’ll tell you on Teams and by email.", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText(new RegExp(`^Reference ${esc(t5.ref)}, shared \\w+day \\d+ \\w+, `)),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: `Copy reference ${t5.ref}` })).toBeVisible();
+      await expect(
+        page.getByText(
+          /^Open to changes until \w+day \d+ \w+\. Edit or withdraw it before the review desk opens it\.$/,
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByText(
+          "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+          {
+            exact: true,
+          },
+        ),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByText("We’ll tell you on Teams and by email when anything changes."),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: `Copy reference ${t5.ref}` })).toBeHidden();
+    }
     await expect(page.getByRole("link", { name: "Edit it" })).toHaveAttribute(
       "href",
       `/ideas/${t5.ref}/edit`,
     );
     await expect(page.getByRole("button", { name: "Withdraw" })).toBeVisible();
-    await expect(
-      page.getByText(
-        /^Open to changes until \w+day \d+ \w+\. Edit or withdraw it any time before the review desk/,
-      ),
-    ).toBeVisible();
+    if (!isPhone(info.project.name)) {
+      await expect(
+        page.getByText(
+          /^Open to changes until \w+day \d+ \w+\. Edit or withdraw it any time before the review desk/,
+        ),
+      ).toBeVisible();
+    }
     await expect(page.getByText(/^\d+ days? left$/)).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "What you shared" })).toBeVisible();
     await expect(
@@ -199,7 +226,9 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
   }) => {
     const t11 = await openIdea(page, "T11");
     const r2 = await seededIdea("R2");
-    await expect(page.getByText(`Merged into ${r2.ref} by the review desk`)).toBeVisible();
+    await expect(page.getByText(`Merged into ${r2.ref} by the review desk.`)).toBeVisible();
+    // Said once, in the card's sentence; the block under it has the note and the link
+    await expect(page.getByText(new RegExp(`Merged into ${esc(r2.ref)}`))).toHaveCount(1);
     await expect(page.getByText(/^“.+”$/).first()).toBeVisible();
     await page.getByRole("link", { name: `Open ${r2.ref}` }).click();
     await page.waitForURL(new RegExp(`/ideas/${esc(r2.ref)}$`));
@@ -271,6 +300,70 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
       ? page.getByRole("link", { name: "Back to the Wall", exact: true })
       : page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Wall", exact: true });
     await expect(link).toHaveAttribute("href", "/wall?sort=popular&at=X&dy=120");
+  });
+
+  test("BLD-E021, P-ROUTES.state: the way back holds across a reload; a copied link and from=share do not carry it", async ({
+    page,
+    context,
+  }, info) => {
+    const phone = isPhone(info.project.name);
+    const wayBack = (label: string) =>
+      phone
+        ? page.getByRole("link", {
+            name: label === "Wall" ? "Back to the Wall" : `Back to ${label}`,
+            exact: true,
+          })
+        : page
+            .getByRole("navigation", { name: "Breadcrumb" })
+            .getByRole("link", { name: label, exact: true });
+    const t5 = await openIdea(page, "T5", `?from=wall&back=${encodeURIComponent("/wall?sort=popular")}`);
+    await expect(wayBack("Wall")).toHaveAttribute("href", "/wall?sort=popular");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeVisible();
+    await expect(wayBack("Wall")).toHaveAttribute("href", "/wall?sort=popular");
+    expect(here(page)).toBe(`/ideas/${t5.ref}`);
+
+    // The copied link, opened in another tab, is the idea's own: the sharer's default way back
+    const other = await context.newPage();
+    await other.goto(`/ideas/${t5.ref}`);
+    const otherWay = phone
+      ? other.getByRole("link", { name: "Back to My ideas", exact: true })
+      : other
+          .getByRole("navigation", { name: "Breadcrumb" })
+          .getByRole("link", { name: "My ideas", exact: true });
+    await expect(otherWay).toHaveAttribute("href", "/my-ideas");
+    await other.close();
+
+    // The first arrival after sharing goes Home, once: a reload is not a first arrival
+    await page.goto(`/ideas/${t5.ref}?from=share`);
+    await soon.poll(() => here(page)).toBe(`/ideas/${t5.ref}`);
+    await expect(wayBack("Home")).toHaveAttribute("href", "/home");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeVisible();
+    await expect(wayBack("My ideas")).toHaveAttribute("href", "/my-ideas");
+  });
+
+  test("S-06.rules/2, BLD-E021: after Withdraw, focus is on the idea's title, the status says so, and the way back holds", async ({
+    page,
+  }, info) => {
+    // The seed is read, never changed: the withdraw call answers as the server would, and the page refreshes
+    const t5 = await seededIdea("T5");
+    await page.route(`**/api/ideas/${t5.ref}/withdraw`, (route) =>
+      route.request().method() === "POST" ? route.fulfill({ json: {} }) : route.fallback(),
+    );
+    await openIdea(page, "T5", `?from=wall&back=${encodeURIComponent("/wall?sort=crew")}`);
+    await page.getByRole("button", { name: "Withdraw" }).click();
+    const form = page.getByRole("form", { name: "Withdraw this idea?" });
+    await form.getByRole("button", { name: "Withdraw it" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeFocused();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Withdrawn. It’s back in your drafts." }),
+    ).toBeAttached();
+    const way = isPhone(info.project.name)
+      ? page.getByRole("link", { name: "Back to the Wall", exact: true })
+      : page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Wall", exact: true });
+    await expect(way).toHaveAttribute("href", "/wall?sort=crew");
+    expect(here(page)).toBe(`/ideas/${t5.ref}`);
   });
 
   test("V-ACC.visual/11: Read the full fix opens in a dialog; Escape closes it and focus returns", async ({

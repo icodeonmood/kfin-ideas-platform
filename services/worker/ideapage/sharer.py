@@ -212,6 +212,10 @@ def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.dateti
                 f"Open to changes until {day(closes, now)}. Edit or withdraw it any time before the review desk "
                 "opens it. We tell you on Teams and by email when anything moves."
             ),
+            # PhoneStatus.md says it shorter
+            "phone_line": (
+                f"Open to changes until {day(closes, now)}. Edit or withdraw it before the review desk opens it."
+            ),
             "countdown": countdown(closes, now),
         }
     if opened is not None:
@@ -247,6 +251,7 @@ def _card(
             if by
             else "The review desk will look at it soon.",
             "rest": "We’ll tell you on Teams and by email when anything changes.",
+            "phone_rest": "We’ll tell you on Teams and by email.",  # PhoneStatus.md
         }
     if state == "answers_sent":
         asker = read.person_by_user(conn, qset["by_user_id"]) if qset else None
@@ -286,10 +291,12 @@ def _card(
             "rest": f"We measure what changed {join_words([str(d) for d in checks])} days after it shipped.",
         }
     if state == "merged":
-        m = read.live_merge_into(conn, str(idea["id"]))
-        if m and m.get("lead_ref"):
+        # The card says where it went and by whom, once (S-06.rules/4); the merged block under it carries the note
+        # and the link, not the line again.
+        m = _merged(conn, idea, now)
+        if m:
             return {
-                "lead": f"Merged into {m['lead_ref']}.",
+                "lead": f"{m['line']}.",
                 "rest": "Your words carry on there, with credit to you, and you get its updates.",
             }
         return {"lead": "Merged.", "rest": ""}
@@ -561,6 +568,9 @@ def sharer_view(
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
                 "tell you on Teams."
             )
+            conversation["phone_empty_line"] = (  # PhoneStatus.md
+                "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
+            )
         if state == "reversed":
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
@@ -633,6 +643,19 @@ def sharer_view(
             "pill": pill(base["status"]),
             "breadcrumb": {**crumb, "current": key},
             "shared_label": f"Shared {short_date(idea['shared_at'])}" if idea["shared_at"] else None,
+            # The phone's line under the title (PhoneStatus.md): "Reference IDEA-…, shared Saturday 14 November,
+            # Investor service"
+            **(
+                {
+                    "reference_line": ", ".join(
+                        x
+                        for x in (f"Reference {key}", f"shared {day(idea['shared_at'], now)}", idea["area"])
+                        if x
+                    )
+                }
+                if idea["shared_at"] and idea["idea_id"]
+                else {}
+            ),
             **(
                 {"share_seconds_label": f"Done in {idea['share_seconds']} seconds"}
                 if idea.get("share_seconds") is not None and first_arrival

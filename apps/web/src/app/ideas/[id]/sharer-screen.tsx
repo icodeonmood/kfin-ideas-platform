@@ -22,14 +22,16 @@ import type {
 import type { FileItem } from "@/lib/contracts/entities";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
-import { BackLink } from "./colleague-screen";
 import { capital, decisionSentence, type Decided } from "./decision";
+import { BackLink, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
 type OpenSet = NonNullable<SharerQuestionSetResponse>;
 
 const TRY_AGAIN = "We can't do that just now. Please try again in a minute.";
-const PART_FAILED = "We can't load the decision just now. Please try again in a minute.";
+// The decision's or the questions' part could not be read: Status.md draws no error line, so one neutral line
+// fits both (BLD-E012)
+const PART_FAILED = "We can't load this just now. Please try again in a minute.";
 type SheetName = "hidden" | "fix";
 
 /** A native dialog: focus moves in on open, Escape closes it, focus returns to the opener (V-ACC.visual/11). */
@@ -397,6 +399,16 @@ export function SharerScreen({
   const router = useRouter();
   const { idea, page } = view;
   const [said, setSaid] = useState("");
+  const [copied, setCopied] = useState(false);
+  const title = useRef<HTMLHeadingElement>(null);
+  // After Withdraw or Restore the button that was pressed is gone: focus goes to the idea's title once the page in
+  // its new state has rendered, and the status line says what happened
+  const focusTitle = useRef(false);
+  useEffect(() => {
+    if (!focusTitle.current) return;
+    focusTitle.current = false;
+    title.current?.focus();
+  }, [view]);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [sheet, setSheet] = useState<{ name: SheetName; from: HTMLElement } | null>(null);
@@ -413,16 +425,29 @@ export function SharerScreen({
   const reversed = page.state === "reversed" && d?.lines?.reversal ? d : null;
   const qset = page.card_from === "question_set" || idea.has_open_questions ? questions : null;
 
-  const card =
+  const card: { lead: string; rest: string; phone_rest?: string } | null =
     page.card ??
     (page.card_from === "decision" && d ? decisionSentence(d, reviewer, stages) : null) ??
     (idea.next_step && !qset && !reversed ? { lead: idea.next_step.sentence, rest: "" } : null);
   const committee = d?.lines?.committee_line ?? null;
-  const windowLine = page.window ?? (committee ? { open: false, line: committee } : null);
+  const windowLine: SharerView["page"]["window"] =
+    page.window ?? (committee ? { open: false, line: committee } : null);
 
   const done = (line: string) => {
     setSaid(line);
+    focusTitle.current = true;
     router.refresh();
+  };
+
+  const copyRef = () => {
+    void navigator.clipboard
+      ?.writeText(ref)
+      .then(() => {
+        setCopied(true);
+        setSaid("Reference copied");
+        window.setTimeout(() => setCopied(false), 2_500);
+      })
+      .catch(() => undefined);
   };
 
   const restore = async (a: PostAction) => {
@@ -439,7 +464,9 @@ export function SharerScreen({
     }
   };
 
-  const crumb = page.breadcrumb;
+  // The way back this visit was given, kept across a reload and the refresh after Withdraw (BLD-E021)
+  const way = useWay({ label: page.breadcrumb.label, to: page.breadcrumb.to });
+  const crumb = { ...page.breadcrumb, ...way };
   const backLabel = crumb.label === "Wall" ? "Back to the Wall" : `Back to ${crumb.label}`;
   const h = page.shared.hidden;
   const f = page.shared.fix;
@@ -455,8 +482,12 @@ export function SharerScreen({
           <li aria-current="page">{crumb.current}</li>
         </ol>
       </nav>
-      <div className="ip-phone">
+      <div className="ip-phone ip-ptop">
         <BackLink label={backLabel} to={crumb.to} />
+        {/* PhoneStatus.md: the reference sits by the way back and copies itself */}
+        <button type="button" className="ip-copyref" aria-label={`Copy reference ${ref}`} onClick={copyRef}>
+          {copied ? "Reference copied" : ref}
+        </button>
       </div>
 
       <article className="ip-card" data-state={page.state} aria-labelledby="ip-title">
@@ -483,22 +514,31 @@ export function SharerScreen({
             {page.actions.withdraw ? <Withdraw action={page.actions.withdraw} onDone={done} /> : null}
           </div>
         </div>
-        <h1 id="ip-title" className="ip-card-title">
+        <h1 id="ip-title" ref={title} tabIndex={-1} className="ip-card-title">
           {idea.title}
         </h1>
-        <p className="ip-card-ref">{ref}</p>
+        <p className="ip-card-ref ip-desk">{ref}</p>
+        <p className="ip-card-ref ip-phone">{page.reference_line ?? ref}</p>
         <div className="ip-card-body">
           {qset ? <QuestionsCard set={qset} answerTo={`/ideas/${encodeURIComponent(ref)}/answer`} /> : null}
           {reversed ? <ReversalCard d={reversed} /> : null}
           {card && !qset && !reversed ? (
             <p className="ip-card-s">
-              <span className="ip-lead">{card.lead}</span> {card.rest}
+              <span className="ip-lead">{card.lead}</span>{" "}
+              {card.phone_rest ? (
+                <>
+                  <span className="ip-desk">{card.rest}</span>
+                  <span className="ip-phone">{card.phone_rest}</span>
+                </>
+              ) : (
+                card.rest
+              )}
             </p>
           ) : null}
           {partFailed && !card && !qset ? <Status kind="error" title={PART_FAILED} /> : null}
           {page.merged ? (
+            // The card's sentence already says where it went and by whom (S-06.rules/4): the note and the link
             <div className="ip-merged">
-              <p className="ip-merged-l">{page.merged.line}</p>
               {page.merged.note ? <p className="ip-merged-n">“{page.merged.note}”</p> : null}
               <ButtonLink href={page.merged.link.to} variant="soft">
                 {page.merged.link.label}
@@ -541,7 +581,14 @@ export function SharerScreen({
 
       {windowLine ? (
         <div className={windowLine.open ? "ip-window is-open" : "ip-window"}>
-          <p>{windowLine.line}</p>
+          {windowLine.phone_line ? (
+            <p>
+              <span className="ip-desk">{windowLine.line}</span>
+              <span className="ip-phone">{windowLine.phone_line}</span>
+            </p>
+          ) : (
+            <p>{windowLine.line}</p>
+          )}
           {"countdown" in windowLine && windowLine.countdown ? (
             <Pill variant={windowLine.countdown.variant}>{windowLine.countdown.label}</Pill>
           ) : null}
@@ -669,7 +716,16 @@ export function SharerScreen({
               </h2>
               {page.conversation.sub_line ? <p className="ip-side-l">{page.conversation.sub_line}</p> : null}
               {page.conversation.empty_line ? (
-                <p className="ip-side-l">{page.conversation.empty_line}</p>
+                <p className="ip-side-l">
+                  {page.conversation.phone_empty_line ? (
+                    <>
+                      <span className="ip-desk">{page.conversation.empty_line}</span>
+                      <span className="ip-phone">{page.conversation.phone_empty_line}</span>
+                    </>
+                  ) : (
+                    page.conversation.empty_line
+                  )}
+                </p>
               ) : null}
               {/* TODO(lane F): the conversation's latest entries (S-06.layout/8, L-CONVO): no entries field on
                   SharerView yet; the card carries the count, its lines and the link. */}
