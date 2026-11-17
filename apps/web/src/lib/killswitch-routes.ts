@@ -22,7 +22,8 @@ export type SwitchName =
   | "appeals.filing"
   | "capture.mic_hint"
   | "capture.voice"
-  | "speech.hosted";
+  | "speech.hosted"
+  | "desk.listen";
 
 interface Rule {
   methods: readonly string[];
@@ -56,7 +57,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     switches: ["attachments.open"],
   },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
-  { methods: ["GET"], pattern: /^\/api\/ones(?:\/constellation)?\/?$/, switches: ["ones.public"] },
+  // The office screen's Ones (S-OFFICE) rest with the rest of the public Ones.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/(?:ones(?:\/constellation)?|display\/office)\/?$/,
+    switches: ["ones.public"],
+  },
   { methods: ["GET"], pattern: /^\/api\/submissions\/[^/]+\/scan-events\/?$/, switches: ["scan.live"] },
   // The Ember names Ones: sending waits while it is paused or while the Ones are off the wall (BLD-128).
   { methods: ["POST"], pattern: /^\/api\/ember\/[^/]+\/send\/?$/, switches: ["ember.send", "ones.public"] },
@@ -76,6 +82,17 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // The Ones Committee's window (L-COMMITTEE): extending and reversing pause with the committee's flow.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/committee\/windows\/[^/]+\/(?:extend|reverse)\/?$/,
+    switches: ["committee.flow"],
+  },
+  // The sharer answering the review desk (S-R3) is editing their idea: read-only mode (§7.6) pauses it too.
+  { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
+  { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
+  // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
+  { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
 ];
 
 /**
@@ -106,6 +123,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096).
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
+  "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
@@ -124,6 +143,7 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
   /^\/api\/inbox\/[^/]+\/read\/?$/, // marking a message read changes nothing about ideas; works in read-only mode
   /^\/api\/me\/comms-prefs\/?$/, // a person's own preferences (name on the wall) change nothing about ideas
+  /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
   // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
   // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
@@ -137,6 +157,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
+  // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
+  // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
+  /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
+  // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
+  /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

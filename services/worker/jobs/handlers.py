@@ -289,3 +289,11 @@ def voice_sweep(conn: Conn, payload: dict[str, Any]) -> None:
     from voice import service
 
     service.sweep(conn)
+
+
+@handler("desk.clocks")
+def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 5 minutes: lane B's clock sweep; idempotent under its own advisory lock."""
+    from desk.clocks import run_due
+
+    run_due(conn)

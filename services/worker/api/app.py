@@ -557,6 +557,14 @@ def ones_public() -> JSONResponse:
     return _ones_call(public)
 
 
+@app.get("/internal/display/office", dependencies=[Depends(require_token)])
+def display_office() -> JSONResponse:
+    """The office screen's Ones (S-OFFICE): names follow the person's own Wall setting (DEC-104)."""
+    from display.office import office
+
+    return _ones_call(office)
+
+
 @app.get("/internal/ones/constellation", dependencies=[Depends(require_token)])
 def ones_constellation() -> JSONResponse:
     from ones.views import constellation
@@ -1131,3 +1139,9 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
 from submit.routes import build as _sort_submit_routes  # noqa: E402
 
 app.include_router(_sort_submit_routes(require_token))
+
+# The review side (lane B): the desk, questions and answers, the Ones Committee (A-API.desk, .questions,
+# .committee). Its routes live with the code in desk/routes.py.
+from desk.routes import build as _desk_routes  # noqa: E402
+
+app.include_router(_desk_routes(require_token))
