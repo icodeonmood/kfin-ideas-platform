@@ -87,3 +87,24 @@ def test_worth_round_trips_as_json() -> None:
     w = Worth(cost_month=worth.parse("cost_month", "about 25k"), outside_tools="fully")
     assert Worth.from_json(w.as_json()) == w
     assert Worth.from_json(None) == Worth()
+
+
+def test_L_WORTH_figures_that_are_not_text_or_past_the_columns_are_invalid() -> None:
+    """A number, list or object where the typed words belong, and figures past numeric(12,2) or numeric(14,2),
+    are `worth_invalid`, never an exception the route turns into a 500."""
+    from desk.worth import WorthInvalid, parse, read_revision
+
+    for raw in (70, ["70"], {"low": 70}, True):
+        with pytest.raises(WorthInvalid):
+            parse("hours_month", raw)
+    with pytest.raises(WorthInvalid) as big:
+        parse("hours_month", "99,99,99,99,999")
+    assert big.value.error.message == "That figure is too large. Check it and write it again."
+    with pytest.raises(WorthInvalid):
+        parse("cost_month", "50,00,000 crore")
+    under = parse("cost_month", "1,000 crore")  # under the limit: read as written
+    assert under is not None and under.low == 1e10
+    tools: object
+    for tools in ([], {}, 1):
+        _, errors = read_revision({"outside_tools": tools}, None, 500)
+        assert [e.code for e in errors] == ["outside_tools_invalid"]
