@@ -4,6 +4,7 @@ V-ACC.similar/3–8, L-TEAMUP.rules/1, /4, /6, /11, states, L-MERGE.request/2–
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -15,6 +16,15 @@ from teamup.store import Refused
 from tests import f_teamup_fixtures as f
 
 NOTE = "I take these calls at our Hyderabad branch every day, about 40 a day, and most are about R07."
+
+
+@pytest.fixture
+def db(db: Conn) -> Iterator[Conn]:
+    """The shared `db` fixture, plus clean-up: every person, idea, request and crew these tests made is removed
+    when the test ends, so no user is left behind in the shared test database for a later test (the seed's HR
+    import refuses while active users are there)."""
+    yield db
+    f.clean(db)
 
 
 @pytest.fixture
@@ -654,3 +664,12 @@ def test_L_TEAMUP_states_a_draft_merge_request_ends_when_the_idea_closes(
     sent = _refused(drafts.ask, db, str(draft["id"]), cast["kavya"]["id"],
                     {"other_idea_id": f.idea(db, cast["asha"])["idea_id"], "note": NOTE})  # fmt: skip
     assert sent.code == "draft_closed"
+
+
+def test_the_fixtures_leave_no_people_or_ideas_behind(
+    db: Conn, cast: dict[str, Any], held: dict[str, Any]
+) -> None:
+    requests.answer(db, held["asked"]["id"], cast["ravi"]["id"], {"answer": "merge"})
+    f.clean(db)
+    for table in ("users", "contributor_map", "ideas", "crew_members", "merge_requests", "merges"):
+        assert db.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0, table  # noqa: S608
