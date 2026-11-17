@@ -6,6 +6,12 @@ the board does not draw on this page (being built, shipped, merged) follow the s
 NOT DRAWN in the words. Copy is the board's (reference/copy/Status.md), with a first name where the board has a
 pronoun for a real person (BLD-E008).
 
+Lane B owns the review side of this page (J-TRACK, J-COMMITTEE): the questions card (`GET /ideas/:id/question-set`,
+`QuestionsCard`), and the decision with its reason word for word, the committee's window and any reversal
+(`GET /ideas/:id/decision`). This page does not build those: it says which of the two a state's card sentence is
+composed from (`page.card_from`) and whether a question set is open (`has_open_questions`). Answers under their
+parts come from lane B's `desk.asking.answers_by_part` through `ideapage.adapters`.
+
 The sharer's own words: the page returns the masked copy of each message. The unmasked copy is in the worker-only
 `idea_words_sealed` (DEC-103); its reader belongs to lane C (L-HIDE), and `SEALED_WORDS_HOOK` is where it plugs in.
 """
@@ -17,21 +23,16 @@ from collections.abc import Callable
 from typing import Any
 
 from core.db import Conn
-from ideapage import read
-from ideapage.shape import my_ideas_label, public_idea, safe_back, similar_tiles
+from ideapage import adapters, read
+from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, similar_tiles
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
 from ideapage.words import (
-    DECISION_LABEL,
-    MONTHS,
-    PART_LABEL,
     brings_words,
     count,
     countdown,
     day,
-    day_time,
     hours_range,
     join_words,
-    local,
     money_range,
     pill,
     short_date,
@@ -150,10 +151,21 @@ def _file(f: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# A state whose card sentence names the decision or the questions is composed by the screen from lane B's
+# endpoint: the decision (`GET /ideas/:id/decision`) or the open set (`GET /ideas/:id/question-set`).
+CARD_FROM = {
+    "questions": "question_set",
+    "picked": "decision",
+    "not_now": "decision",
+    "not_picked": "decision",
+    "reversed": "decision",
+}
+
+
 def _state(idea: dict[str, Any], qset: dict[str, Any] | None, dec: Decided | None) -> str:
     status = str(idea["status"])
-    if status in ("checking", "with_review_desk"):
-        if qset and qset["state"] in read.OPEN_SET_STATES:
+    if at_desk(idea):
+        if status == "needs_you" or read.has_open_questions(qset):
             return "questions"
         if qset and qset["state"] in read.ANSWERED_SET_STATES:
             return "answers_sent"
@@ -166,13 +178,13 @@ def _state(idea: dict[str, Any], qset: dict[str, Any] | None, dec: Decided | Non
 
 
 def edit_window(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
-    """L-SUBMIT.edit/1: until the desk opens it, at the latest `edit_closes_at` (3 days after sharing); an open
-    question set closes it too (L-SUBMIT.edit/5 via J-TRACK step 3). None once it is past review."""
-    if idea["status"] not in ("checking", "with_review_desk"):
+    """L-SUBMIT.edit/1: until the desk opens it, at the latest `edit_closes_at` (3 days after sharing); a question
+    set sent closes it too (L-SUBMIT.edit/5, J-TRACK step 3). None once it is past review."""
+    if not at_desk(idea):
         return None
     closes = idea.get("edit_closes_at")
     opened = idea.get("opened_at")
-    asked = bool(qset and qset["state"] != "queued")
+    asked = idea["status"] == "needs_you" or bool(qset and qset["state"] != "queued")
     is_open = opened is None and not asked and closes is not None and now < closes
     out: dict[str, Any] = {"open": is_open}
     if closes is not None:
@@ -188,6 +200,7 @@ def may_withdraw(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.date
 
 
 def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
+    """The window line under the track (S-06.layout/4), with its countdown while it is open."""
     if w is None:
         return None
     closes = idea.get("edit_closes_at")
@@ -206,166 +219,27 @@ def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.dateti
             f"The review desk opened it on {day(opened, now)}, so the idea itself can’t be changed now. "
             "Write to them in the conversation."
         )
-    else:  # NOT DRAWN: the three days ran out before the desk opened it
+    else:  # NOT DRAWN: the three days ran out, or questions came, before the desk opened it
         line = (
-            f"The time for changes ended on {day(closes, now) if closes else 'its third day'}, so the idea itself "
-            "can’t be changed now. Write to the review desk in the conversation."
+            "The idea itself can’t be changed now. Write to the review desk in the conversation."
+            if closes is None or now < closes
+            else f"The time for changes ended on {day(closes, now)}, so the idea itself can’t be changed now. "
+            "Write to the review desk in the conversation."
         )
     return {"open": False, "line": line}
-
-
-def _committee(dec: Decided, now: dt.datetime) -> dict[str, str] | None:
-    """The committee line under a decision (L-DECIDE.rules/5, L-COMMITTEE.rules/2, /6)."""
-    if dec.reversed:
-        return None
-    if dec.window_state in ("open", "extended") and dec.closes_at is not None:
-        return {
-            "head": f"The Ones Committee can review this decision until {day(dec.closes_at, now)}.",
-            "line": "If they change it, their note comes to your Inbox. After that, it stands.",
-            "closes_at": dec.closes_at.isoformat(),
-        }
-    if dec.window_state == "expired" and dec.closes_at is not None:  # NOT DRAWN on the Status board
-        return {
-            "head": f"The Ones Committee’s window closed on {day(dec.closes_at, now)}.",
-            "line": "The decision stands.",
-        }
-    return None
-
-
-def _decision_json(conn: Conn, dec: Decided, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
-    """E-ENTITIES `Decision`, with the reason exactly as the reviewer wrote it (L-DECIDE.rules/3)."""
-    d = dec.raw
-    reviewer = read.person_by_user(conn, d["by_user_id"], "from the review desk")
-    first = reviewer["first_name"] if reviewer else "The review desk"
-    out: dict[str, Any] = {
-        "id": str(d["id"]),
-        "idea_id": read.key_of(idea),
-        "choice": dec.desk_choice,
-        "label": DECISION_LABEL[dec.desk_choice],
-        "reason": dec.reason or "",
-        "by": read.public_person(reviewer),
-        "by_line": f"{first} from the review desk",
-        "at": dec.desk_at.isoformat(),
-        "reason_from_line": f"{first} from the review desk, {day_time(dec.desk_at, now)}",
-        **({"return_at": d["return_at"].isoformat()} if d.get("return_at") else {}),
-        **({"team_by": d["team_by"].isoformat()} if d.get("team_by") else {}),
-        **({"joined_with": dec.joined_with} if dec.joined_with else {}),
-        "window": {
-            "state": d.get("window_state") or "open",
-            "opens_at": d["opens_at"].isoformat() if d.get("opens_at") else dec.desk_at.isoformat(),
-            "closes_at": d["closes_at"].isoformat() if d.get("closes_at") else None,
-            "max_closes_at": d["max_closes_at"].isoformat() if d.get("max_closes_at") else None,
-            "extended_times": int(d.get("extended_times") or 0),
-        },
-    }
-    committee = _committee(dec, now)
-    if committee:
-        out["committee"] = committee
-    if dec.reversed and dec.reversed_at is not None:
-        member = read.person_by_user(conn, dec.reversed_by, "from the Ones Committee")
-        name = member["name"] if member else "A member"
-        lower = DECISION_LABEL[dec.choice].lower()
-        if dec.choice == "not_now" and dec.return_at:
-            final = (
-                f"This is final. It comes back to the review desk on {day(dec.return_at, now)}, "
-                "with your answers and crew."
-            )
-        elif dec.choice == "pick" and dec.team_by:
-            final = f"This is final. The build team is chosen by {day(dec.team_by, now)}."  # NOT DRAWN
-        else:
-            final = "This is final. The idea closes here."  # NOT DRAWN
-        out["reversal"] = {
-            "to": dec.choice,
-            "note": dec.note or "",
-            "by": read.public_person(member),
-            "at": dec.reversed_at.isoformat(),
-            **({"return_at": dec.return_at.isoformat()} if dec.return_at else {}),
-            "from_line": f"{name} from the Ones Committee, {day_time(dec.reversed_at, now)}",
-            "headline": f"The Ones Committee changed the decision to {lower}",
-            "note_label": "The committee’s note to you",
-            "was": f"Was: {DECISION_LABEL[dec.desk_choice]}",
-            "was_by": f"by {first} from the review desk, {day(dec.desk_at, now)}",
-            "final": final,
-        }
-    return out
-
-
-def _questions(
-    conn: Conn, idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.datetime
-) -> dict[str, Any]:
-    """The questions card (C-QCARD) as the sharer sees it: none, waiting (with the countdown), partly answered,
-    answered. No answer box here: answers are given only on S-R3 (L-QUESTIONS.answer/1, V-ACC.track/3)."""
-    key = read.key_of(idea)
-    if qset is None or qset["state"] == "queued":
-        return {
-            "state": "none",
-            "empty_line": (
-                "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
-                "tell you on Teams."
-            ),
-        }
-    reviewer = read.person_by_user(conn, qset["by_user_id"], "from the review desk")
-    first = reviewer["first_name"] if reviewer else "The review desk"
-    qs = qset["questions"]
-    answered = sum(1 for q in qs if q["answered"])
-    state = {
-        "sent": "waiting",
-        "seen": "waiting",
-        "partly_answered": "partly_answered",
-        "answered": "answered",
-        "closed": "closed",
-    }[str(qset["state"])]
-    if state == "waiting" and answered:
-        state = "partly_answered"
-    out: dict[str, Any] = {
-        "state": state,
-        "set_id": str(qset["id"]),
-        "from": read.public_person(reviewer),
-        "from_line": f"{first} from the review desk, {day_time(qset['sent_at'], now)}"
-        if qset.get("sent_at")
-        else None,
-        "heading": f"{first} has {count(len(qs), 'question')} for you",
-        "items": [
-            {
-                "n": q["n"],
-                "text": q["text"],
-                "part": q["part"],
-                "part_label": PART_LABEL[q["part"]],
-                "answered": q["answered"],
-            }
-            for q in qs
-        ],
-        "progress": f"{answered} of {len(qs)} answered",
-    }
-    if qset.get("due_at") and state in ("waiting", "partly_answered"):
-        out.update(
-            {
-                "due_at": qset["due_at"].isoformat(),
-                "deadline_line": f"Answer by {day_time(qset['due_at'], now)}. One at a time, typed or spoken.",
-                "countdown": countdown(qset["due_at"], now),
-                "overdue": qset["due_at"] <= now,
-                "action": {
-                    "label": "Answer the questions",
-                    "to": f"/ideas/{key}/answer",
-                    "accessible_name": f"Answer the questions: {idea['title'] or key}",
-                },
-            }
-        )
-    return out
 
 
 def _card(
     conn: Conn,
     state: str,
     idea: dict[str, Any],
-    dec: Decided | None,
     qset: dict[str, Any] | None,
     now: dt.datetime,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     """The sentence that says where it stands and what happens next: its first clause in white, the rest dimmer
-    (S-06.layout/2), as each state's panel heading and body on the board."""
-    reviewer = read.person_by_user(conn, dec.by_user_id) if dec else None
-    first = reviewer["first_name"] if reviewer else "The review desk"
+    (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint."""
+    if state in CARD_FROM:
+        return None
     if state == "just_shared":
         by = day(idea["decide_by"], now) if idea.get("decide_by") else None
         return {
@@ -374,14 +248,8 @@ def _card(
             else "The review desk will look at it soon.",
             "rest": "We’ll tell you on Teams and by email when anything changes.",
         }
-    if state == "questions" and qset:
-        asker = read.person_by_user(conn, qset["by_user_id"])
-        name = asker["first_name"] if asker else "The review desk"
-        n = len(qset["questions"])
-        due = f"Answer by {day_time(qset['due_at'], now)}." if qset.get("due_at") else ""
-        return {"lead": f"{name} from the review desk has {count(n, 'question')} for you.", "rest": due}
-    if state == "answers_sent" and qset:
-        asker = read.person_by_user(conn, qset["by_user_id"])
+    if state == "answers_sent":
+        asker = read.person_by_user(conn, qset["by_user_id"]) if qset else None
         name = asker["first_name"] if asker else "The review desk"
         by = (
             f"The review desk decides by {day(idea['decide_by'], now)}, and you"
@@ -394,51 +262,6 @@ def _card(
                 f"Each answer was added to its part of your idea, under What you shared. {by} hear in your "
                 "Inbox, on Teams and by email."
             ),
-        }
-    if state == "picked" and dec:
-        joined = ""
-        if dec.joined_with:
-            other = conn.execute(
-                "SELECT idea_id, city FROM ideas WHERE id = %s", (dec.joined_with,)
-            ).fetchone()
-            if other and other["idea_id"]:
-                where = f" from {other['city']}" if other["city"] else ""
-                joined = f" and joined it with {other['idea_id']}{where}, so one team builds one fix"
-        team = f" The build team is chosen by {day(dec.team_by, now)}." if dec.team_by else ""
-        return {
-            "lead": "Picked. A team is being chosen to build it.",
-            "rest": f"{first} from the review desk picked it on {day(dec.at, now)}{joined}.{team}",
-        }
-    if state == "not_now" and dec:
-        back = day(dec.return_at, now) if dec.return_at else None
-        month = MONTHS[local(dec.return_at).month - 1] if dec.return_at else None
-        return {
-            "lead": f"Not now. The review desk looks at it again on {back}." if back else "Not now.",
-            "rest": (
-                "Right problem, wrong time. Your idea stays open, with your answers and anyone who teams up, and "
-                f"comes back to the review desk first thing in {month}. {first}’s full reason is below."
-                if month
-                else f"Your idea stays open, with your answers and anyone who teams up. {first}’s full reason is below."
-            ),
-        }
-    if state == "not_picked" and dec:
-        carried = read.live_merge_into(conn, str(idea["id"]))
-        if carried and carried.get("lead_ref"):
-            return {
-                "lead": f"Not picked on its own. Your words carry on in {carried['lead_ref']}.",
-                "rest": (
-                    "It’s the same problem as an idea the review desk is taking forward. Your words were added to "
-                    f"it, with credit to you, and you’ll get its updates. {first}’s full reason is below."
-                ),
-            }
-        return {
-            "lead": "Not picked.",
-            "rest": f"It won’t go ahead. {first}’s full reason is below.",
-        }  # NOT DRAWN
-    if state == "reversed" and dec:
-        return {
-            "lead": f"The Ones Committee changed the decision to {DECISION_LABEL[dec.choice].lower()}.",
-            "rest": "",
         }
     if state == "withdrawn":
         reason = open_text(
@@ -470,7 +293,28 @@ def _card(
                 "rest": "Your words carry on there, with credit to you, and you get its updates.",
             }
         return {"lead": "Merged.", "rest": ""}
-    return {"lead": "", "rest": ""}
+    return None
+
+
+def _answers_under(raw: dict[str, list[dict[str, Any]]], part: str, now: dt.datetime) -> list[dict[str, Any]]:
+    """Sent answers under their part (L-QUESTIONS.answer/5), from lane B's reader: the answer and the line
+    "From your answer to Meera, Monday 16 November". Questions not answered are the questions card's, not here."""
+    out = []
+    for a in raw.get(part, []):
+        if not a.get("answer"):
+            continue
+        at = dt.datetime.fromisoformat(str(a["answered_at"])) if a.get("answered_at") else None
+        who = a.get("asked_by") or "the review desk"
+        out.append(
+            {
+                "id": str(a.get("question_id") or ""),
+                "text": str(a["answer"]),
+                **({"at": at.isoformat()} if at else {}),
+                "line": f"From your answer to {who}, {day(at, now)}" if at else f"From your answer to {who}",
+                "files": list(a.get("files") or []),
+            }
+        )
+    return out
 
 
 def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any] | None:
@@ -501,25 +345,10 @@ def _shared_rows(
     """'What you shared' (S-06.layout/5–7): the short summary and sorting as everyone sees them, the hidden chips,
     the answers under their parts, files, and the fix."""
     uid = str(idea["id"])
-    answers = read.answers_by_part(conn, uid)
-    asker_names: dict[str, str] = {}
+    answers = adapters.answers_by_part(conn, uid)
 
     def under(part: str) -> list[dict[str, Any]]:
-        out = []
-        for a in answers.get(part, []):
-            uid_ = str(a["asked_by"])
-            if uid_ not in asker_names:
-                p = read.person_by_user(conn, uid_)
-                asker_names[uid_] = p["first_name"] if p else "the review desk"
-            out.append(
-                {
-                    "id": a["id"],
-                    "text": a["text"],
-                    "at": a["at"].isoformat(),
-                    "line": f"From your answer to {asker_names[uid_]}, {day(a['at'], now)}",
-                }
-            )
-        return out
+        return _answers_under(answers, part, now)
 
     worth = read.worth(conn, uid)
     figures: dict[str, Any] = {}
@@ -647,7 +476,8 @@ def sharer_view(
     came_from: str | None = None,
     back: str | None = None,
 ) -> dict[str, Any]:
-    """Everything S-06 shows, for the sharer only (the caller has checked `me.is_sharer(idea)`)."""
+    """Everything S-06 shows that lane B's endpoints do not, for the sharer only (the caller has checked
+    `me.is_sharer(idea)`)."""
     uid = str(idea["id"])
     key = read.key_of(idea)
     qset = read.question_set(conn, uid)
@@ -668,8 +498,8 @@ def sharer_view(
     w = edit_window(idea, qset, now)
     words, unmasked = own_words(conn, uid, me.user_id)
     desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk")
-    decision_json = _decision_json(conn, dec, idea, now) if dec else None
-    card = _card(conn, state, idea, dec, qset, now)
+    card = _card(conn, state, idea, qset, now)
+    open_questions = state == "questions"
 
     actions: dict[str, Any] = {
         "conversation": {"label": "Open the conversation", "to": f"/ideas/{key}/conversation"},
@@ -700,16 +530,6 @@ def sharer_view(
             "path": f"/api/ideas/{key}/restore",
             "done": "Restored. It’s shared again, as it was.",
         }
-    if state == "questions":
-        actions["answer"] = {"label": "Answer the questions", "to": f"/ideas/{key}/answer"}
-    if idea["status"] == "picked":
-        # A-API.ideas `POST /ideas/:id/join-build`; the write is not built yet (no table holds the ask).
-        actions["join_build"] = {
-            "label": "Ask to join the build team",
-            "op": "join_build",
-            "method": "POST",
-            "path": f"/api/ideas/{key}/join-build",
-        }
     if carried and carried.get("lead_ref"):
         actions["open_other"] = {
             "label": f"Open {carried['lead_ref']}",
@@ -724,13 +544,19 @@ def sharer_view(
 
     conversation: dict[str, Any] | None = None
     if state != "withdrawn":
-        # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO); this card
-        # carries the count, the line under the heading and the link.
+        # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO) and the questions
+        # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link.
+        n_entries = read.entry_count(conn, uid)
         conversation = {
             "heading": "You and the review desk",
-            "count": read.entry_count(conn, uid),
+            "count": n_entries,
             "link": actions["conversation"],
         }
+        if n_entries == 0 and qset is None:
+            conversation["empty_line"] = (
+                "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
+                "tell you on Teams."
+            )
         if state == "reversed":
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
@@ -757,12 +583,6 @@ def sharer_view(
             for h in read.hidden(conn, uid)
         ],
         "files": [_file(f) for f in read.files(conn, uid)],
-        "answers_by_part": {
-            part: [
-                {"id": a["id"], "text": a["text"], "at": a["at"].isoformat(), "added_to": part} for a in items
-            ]
-            for part, items in read.answers_by_part(conn, uid).items()
-        },
         **({"edit_window": w} if w else {}),
         **(
             {
@@ -775,16 +595,22 @@ def sharer_view(
             if idea.get("decide_by")
             else {}
         ),
-        **({"decision": decision_json} if decision_json else {}),
+        "has_open_questions": open_questions,
         "kept_separate": bool(idea.get("kept_separate")),
-        "next_step": {
-            "sentence": card["lead"],
-            **(
-                {"action": {"label": a["label"], "to": a.get("to") or a.get("path")}}
-                if (a := actions.get("answer") or actions.get("restore") or actions.get("open_other"))
-                else {}
-            ),
-        },
+        **(
+            {
+                "next_step": {
+                    "sentence": card["lead"],
+                    **(
+                        {"action": {"label": a["label"], "to": a.get("to") or a.get("path")}}
+                        if (a := actions.get("restore") or actions.get("open_other"))
+                        else {}
+                    ),
+                }
+            }
+            if card
+            else {}
+        ),
     }
     versions = conn.execute("SELECT count(*) AS n FROM idea_versions WHERE idea_uuid = %s", (uid,)).fetchone()
     if versions and versions["n"]:
@@ -805,14 +631,18 @@ def sharer_view(
             "shared_label": f"Shared {short_date(idea['shared_at'])}" if idea["shared_at"] else None,
             **(
                 {"share_seconds_label": f"Done in {idea['share_seconds']} seconds"}
-                if idea.get("share_seconds") is not None and state == "just_shared"
+                if idea.get("share_seconds") is not None and first_arrival
                 else {}
             ),
             "first_arrival": first_arrival,
             "card": card,
+            **({"card_from": CARD_FROM[state]} if state in CARD_FROM else {}),
             "window": _window_words(idea, w, now),
             "actions": actions,
-            "questions": _questions(conn, idea, qset, now),
+            "lane_b": {
+                "question_set": f"/api/ideas/{key}/question-set",
+                "decision": f"/api/ideas/{key}/decision",
+            },
             "shared": _shared_rows(conn, idea, w, now),
             "conversation": conversation,
             "similar": {
