@@ -1125,6 +1125,7 @@ export interface Outbox {
 }
 
 export interface PersonSettings {
+  home_seen_at: Timestamp | null;
   refer_as: string | null;
   shortcut_p: Generated<boolean>;
   show_name_on_wall: Generated<boolean>;
