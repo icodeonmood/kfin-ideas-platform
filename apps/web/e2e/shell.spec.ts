@@ -209,29 +209,32 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
 });
 
 // S-R4, A9: the pack's committee persona (manoj in the journeys' seed). `make seed` has no such grant, so the role is
-// given to this persona for the test and taken back after it (grants are read on every request). Desktop only: on a
-// phone the role items live in the account menu.
-test("S-R4: the committee role sees Ones Committee in the sidebar, and its page passes axe (C-SIDEBAR.anatomy)", async ({
+// given to this persona for the test and taken back after it (grants are read on every request). The 1pc seed
+// (club_seed.py) already gives SYN-10004 `committee` for J-COMMITTEE, so only a grant this test inserted is taken back:
+// the insert returns its id, and `finally` deletes that one row, never the seed's. Desktop only: on a phone the role
+// items live in the account menu.
+test("S-R4, J-COMMITTEE/1: the committee role sees Ones Committee in the sidebar, and its page passes axe (C-SIDEBAR.anatomy)", async ({
   page,
 }, info) => {
   test.skip(isPhone(info), "the sidebar is desktop's");
   const DATABASE_URL =
     process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
-  const grant = async (sql: string, email: string) => {
+  const run = async (sql: string, params: unknown[]): Promise<Array<{ id: string }>> => {
     const c = new Client({ connectionString: DATABASE_URL });
     await c.connect();
     try {
-      await c.query(sql, [email]);
+      return (await c.query<{ id: string }>(sql, params)).rows;
     } finally {
       await c.end();
     }
   };
   await signIn(page, "SYN-10004");
   const me = (await (await page.request.get("/api/me")).json()) as { email: string };
-  await grant(
+  const added = await run(
     "INSERT INTO role_grants (user_id, role) SELECT u.id, 'committee' FROM users u WHERE u.email = $1 AND NOT " +
-      "EXISTS (SELECT 1 FROM role_grants g WHERE g.user_id = u.id AND g.role = 'committee')",
-    me.email,
+      "EXISTS (SELECT 1 FROM role_grants g WHERE g.user_id = u.id AND g.role = 'committee' AND g.valid_to IS NULL) " +
+      "RETURNING id::text AS id",
+    [me.email],
   );
   try {
     await page.goto("/committee");
@@ -239,10 +242,7 @@ test("S-R4: the committee role sees Ones Committee in the sidebar, and its page 
     expect(await navLabels(page)).toEqual([...BASE, "Ones Committee"]);
     await expectNoSeriousAxeIssues(page);
   } finally {
-    await grant(
-      "DELETE FROM role_grants WHERE role = 'committee' AND user_id = (SELECT id FROM users WHERE email = $1)",
-      me.email,
-    );
+    if (added.length > 0) await run("DELETE FROM role_grants WHERE id = $1::bigint", [added[0].id]);
   }
 });
 
