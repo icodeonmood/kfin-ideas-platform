@@ -4,7 +4,12 @@
  * shared contracts land (A-API.me, A-API.inbox-count, A-API.my-drafts, A-API.my-ideas). The shell never stops a page
  * from rendering: each part that cannot be read in time is simply left out.
  */
+import { headers } from "next/headers";
+
+import type { DraftListItem } from "@/lib/contracts";
+
 import type { CurrentUser } from "./auth/current";
+import { drafts as draftApi, type DeviceInfo } from "./drafts";
 import { myIdeas, type MyIdea } from "./ideas";
 import { messagesFor } from "./inbox";
 import { myOne } from "./ones";
@@ -86,22 +91,56 @@ function titleOf(idea: MyIdea): string {
   return idea.one_line?.trim() || (idea.draft ? "Untitled draft" : "Your idea");
 }
 
+const PHONE_UA = /Mobi|Android|iPhone|iPod|Windows Phone/i;
+const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** The device asking, from the request (as `deviceOf` in server/drafts.ts), so a draft reads "on your phone" or
+ * "on this laptop". Outside a request (tests) it is a laptop with no id. */
+async function askingDevice(): Promise<DeviceInfo> {
+  try {
+    const h = await headers();
+    const said = h.get("x-device");
+    const kind =
+      said === "phone" || said === "laptop"
+        ? said
+        : PHONE_UA.test(h.get("user-agent") ?? "")
+          ? "phone"
+          : "laptop";
+    const id = h.get("x-device-id");
+    return { kind, id: id && DEVICE_ID.test(id) ? id : null };
+  } catch {
+    return { kind: "laptop", id: null };
+  }
+}
+
+/** C-SIDEBAR "Drafts": up to two of the person's drafts (L-DRAFT, `GET /api/drafts`), newest first, each with when
+ * and where it was saved ("Friday, on your phone"), opening S-04B on that draft (P-ROUTES.nav/5, BLD-C147). */
+export function draftRows(items: DraftListItem[] | null | undefined): ShellRow[] {
+  return (items ?? [])
+    .filter((d) => !d.archived)
+    .slice(0, 2)
+    .map<ShellRow>((d) => ({
+      href: `/share/${d.id}`,
+      title: d.title?.trim() || "Untitled draft",
+      meta: d.saved_labels?.sidebar ?? whenSaved(d.saved_at),
+      tone: "draft",
+    }));
+}
+
 export async function shellData(me: CurrentUser): Promise<ShellData> {
-  const [mine, messages, one] = await Promise.all([
+  const device = await askingDevice();
+  const [mine, messages, one, saved] = await Promise.all([
     inTime(myIdeas(me)),
     inTime(messagesFor(me)),
     inTime(myOne(me)),
+    me.contributorCode
+      ? inTime(
+          draftApi.list(me, device, false).then((r) => (r.body as { items?: DraftListItem[] }).items ?? []),
+        )
+      : Promise.resolve(null),
   ]);
   const ideas = mine?.ideas ?? [];
-  const drafts = ideas
-    .filter((i) => i.draft)
-    .slice(0, 2)
-    .map<ShellRow>((i) => ({
-      href: `/share/${i.id}`,
-      title: titleOf(i),
-      meta: whenSaved(i.shared_on),
-      tone: "draft",
-    }));
+  const drafts = draftRows(saved);
   const shared = ideas
     .filter((i) => !i.draft && i.idea_id)
     .slice(0, 3)
