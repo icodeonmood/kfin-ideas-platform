@@ -571,11 +571,12 @@ def _console(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int]) 
     tid = _proposal(conn, kind="tier_up", one_id=farhan, subject_user_id=p["DEMO-00015"]["id"], tier_to=2,
                     proposed_by=member, reason="The SIP status page is live for all IRIS distributors")  # fmt: skip
     _message(conn, tid, member, "committee", "Distributors noticed within a week. Well done, Farhan.")
+    # An invitation already made: DEMO-00001 can still write at /ones/write/:id (inviting and its email are
+    # retired, BLD-E049).
     conn.execute(
         "INSERT INTO one_message_invites (proposal_id, user_id, invited_by) VALUES (%s, %s, %s)",
         (tid, p["DEMO-00001"]["id"], member),
     )
-    emit(conn, "ones.message_invited", {"current_owner_ids": [p["DEMO-00001"]["id"]], "proposal_id": tid})
     # Approved at a meeting, waiting for the admin member: No. 20's removal after a lapse.
     _proposal(conn, kind="remove", one_id=one_ids["DEMO-00019"], subject_user_id=p["DEMO-00019"]["id"],
               proposed_by=member, state="approved", approval="majority", meeting_on=yesterday, decided_by=chair,

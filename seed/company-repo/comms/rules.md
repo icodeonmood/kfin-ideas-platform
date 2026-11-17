@@ -265,17 +265,6 @@ events:
     urgency: immediate
     approval: null
     signer: club_team
-  ones.message_invited:
-    day_one: true
-    audiences:
-    - current_owner
-    template: one-message-invited
-    channels:
-    - in_app
-    - email
-    urgency: routine
-    approval: null
-    signer: club_team
   ones.announced:
     day_one: true
     audiences:

@@ -16,7 +16,6 @@ Day-one templates. Week 3–8 templates (cluster approved, invitations, decision
 - [one-inducted.md](one-inducted.md) — You're No. {{one.number}}.
 - [one-removed.md](one-removed.md) — Thank you, {{recipient.first_name}}
 - [one-tier-changed.md](one-tier-changed.md) — Your spark is hotter: {{tier.to_name}}
-- [one-message-invited.md](one-message-invited.md) — A few words for {{one.display}}
 - [ones-announced.md](ones-announced.md) — New Ones
 - [ember.md](ember.md) — The Ember, {{ember.month_label}}
 - [cluster-approved.md](cluster-approved.md) — Your idea is now in a group (with its name, when it has one) (draft for HR sign-off)
