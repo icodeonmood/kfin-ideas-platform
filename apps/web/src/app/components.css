@@ -611,13 +611,16 @@ textarea:is(.fld, .textarea) {
   }
 }
 
+/* Every count sits in a 22px pill (board Desk .mtab .n): grey on other tabs, ink on the selected one */
 .tab-n {
-  min-width: 20px;
-  padding: 2px 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
   box-sizing: border-box;
   border-radius: var(--r-pill);
-  color: var(--mute);
-  font: 500 13px/1.2 var(--ft);
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--mute2);
+  font: 600 12px/22px var(--ft);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
