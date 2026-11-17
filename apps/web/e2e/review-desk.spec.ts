@@ -11,6 +11,9 @@ import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } fr
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
 const REASON = "A clear problem, a real number and a simple fix for the branch team.";
+/** Core committee personas no other spec signs in as, one per project since both run at once: each holds the
+ * committee role for this spec only. */
+const COMMITTEE_MEMBER: Record<string, string> = { desktop: "SYN-00010", "phone-360": "SYN-00009" };
 const NOTE = "The SMS vendor changes in March; this goes with that work, not before.";
 
 async function db<T>(fn: (c: Client) => Promise<T>): Promise<T> {
@@ -78,12 +81,12 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
   // S-R1: the idea is on the desk under To review
   await r.goto("/desk?tab=to_review");
   await expect(r.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
-  await expect(r.getByRole("link", { name: title })).toBeVisible();
+  await expect(r.getByRole("link", { name: title, exact: true })).toBeVisible();
   await expectNoSeriousAxeIssues(r);
   await expectNoSidewaysScroll(r);
 
   // S-R2, V-ACC.review/1: the panel opens on Review this idea with one button; Ask is folded away
-  await r.getByRole("link", { name: title }).click();
+  await r.getByRole("link", { name: title, exact: true }).click();
   await r.waitForURL(new RegExp(`/desk/ideas/${ideaId}$`));
   await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
   await expect(r.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
@@ -92,7 +95,12 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
 
   // V-ACC.review/6: Ask about this queues that part's suggestion and changes the bar
   const howOften = r.getByRole("region", { name: "How often" });
-  await howOften.getByRole("button", { name: "Ask about this" }).click();
+  await howOften.getByRole("button", { name: "Ask about How often" }).click();
+  await expect(howOften.getByRole("button", { name: "Ask about How often" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toContainText("1 question ready");
   await expect(r.getByRole("button", { name: /Send 1 question to / })).toBeVisible();
   await expect(r.getByRole("button", { name: "Decide without asking" })).toBeVisible();
 
@@ -106,19 +114,30 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
   await r.getByRole("button", { name: /Send decision to / }).click();
   await expect(r.getByText(/a reason of at least a line, 30 characters or more/)).toBeVisible();
 
+  // L-DECIDE.rules/4 (BLD-B236): a word the product never says warns once, with a plainer way; nothing is sent
+  const reason = r.getByRole("textbox", { name: "Why are you picking it?" });
+  await reason.fill(`${REASON} It is a duplicate of nothing else we run.`);
+  await r.getByRole("button", { name: /Send decision to / }).click();
+  await expect(r.getByText(/The product never says “duplicate”/)).toBeVisible();
+  await expect(r.getByRole("button", { name: "Send anyway" })).toBeVisible();
+
   // V-ACC.review/4: Pick with a reason; the sharer has it at once; a 30-day window is open
-  await r.getByRole("textbox", { name: "Why are you picking it?" }).fill(REASON);
+  await reason.fill(REASON);
+  await expect(r.getByRole("button", { name: "Send anyway" })).toHaveCount(0);
   await r.getByRole("button", { name: /Send decision to / }).click();
   await expect(r.getByRole("heading", { name: /Decision sent to / })).toBeVisible();
+  await expect(r.getByText(/^Today, .*has it now\.$/)).toBeVisible();
   await expect(r.getByText("Open, 30 days left")).toBeVisible();
+  await expect(r.getByText(/^Open until .* When the window closes, the decision stands\.$/)).toBeVisible();
   await expectNoSeriousAxeIssues(r);
   const sharerSees = (await (await sharer.page.request.get(`/api/ideas/${ideaId}/decision`)).json()) as {
     decision: { label: string; reason: string };
   };
   expect(sharerSees.decision).toMatchObject({ label: "Picked", reason: REASON });
 
-  // S-R4, V-ACC.committee/1, /2, /4: listed with the reason; extend; reverse, final
-  const member = await person(browser, PERSONAS.core);
+  // S-R4, V-ACC.committee/1, /2, /4: listed with the reason; extend; reverse, final. The committee role is granted for
+  // this spec and taken back after it (grants are read on every request).
+  const member = await person(browser, COMMITTEE_MEMBER[testInfo.project.name] ?? "SYN-00010");
   await db((c) =>
     c.query(
       "INSERT INTO role_grants (user_id, role) SELECT $1, 'committee' WHERE NOT EXISTS (" +
@@ -126,25 +145,42 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
       [member.id],
     ),
   );
-  const m = member.page;
-  await m.goto("/committee");
-  await expect(m.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
-  const row = m.getByRole("rowgroup").filter({ hasText: title });
-  await expect(row.getByText(REASON)).toBeVisible();
-  await expect(row.getByText("30 days left")).toBeVisible();
-  await expectNoSeriousAxeIssues(m);
-  await row.getByRole("button", { name: `Review: ${title}` }).click();
-  await row.getByRole("button", { name: /^Extend to / }).click();
-  await expect(row.getByText(/Extended once/)).toBeVisible();
-  await row.getByRole("button", { name: "Reverse the decision" }).click();
-  await row.getByRole("radio", { name: /^Not picked/ }).check();
-  await row.getByRole("textbox", { name: /Your note to / }).fill(NOTE);
-  await row.getByRole("button", { name: /Reverse and tell / }).click();
-  await expect(m.getByRole("tab", { name: /Reversed/ })).toBeVisible();
-  const after = (await (await sharer.page.request.get(`/api/ideas/${ideaId}/decision`)).json()) as {
-    reversal: { to: string; note: string };
-  };
-  expect(after.reversal).toMatchObject({ to: "not_picked", note: NOTE });
+  try {
+    const m = member.page;
+    await m.goto("/committee");
+    await expect(m.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
+    const row = m.getByRole("rowgroup").filter({ hasText: title });
+    await expect(row.getByText(REASON)).toBeVisible();
+    await expect(row.getByText("30 days left")).toBeVisible();
+    await expectNoSeriousAxeIssues(m);
+    await row.getByRole("button", { name: `Review the decision on ${title}` }).click();
+    await row.getByRole("button", { name: /^Extend to / }).click();
+    await expect(row.getByText(/Extended once/)).toBeVisible();
+    await row.getByRole("button", { name: "Reverse the decision" }).click();
+    const form = m.getByRole("dialog", { name: "Reverse the decision" });
+    await expect(form).toBeVisible();
+    await expectNoSeriousAxeIssues(m);
+    await form.getByRole("radio", { name: /^Not picked/ }).check();
+    await form
+      .getByRole("textbox", {
+        name: /^Your note to .*: why the committee is changing it, in words .* will understand$/,
+      })
+      .fill(NOTE);
+    await form.getByRole("button", { name: /Reverse and tell / }).click();
+    await m.getByRole("tab", { name: /Reversed/ }).click();
+    const reversed = m.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+    await expect(reversed).toContainText(/Now: Not picked by .+, \w+day \d{1,2} \w+/);
+    await expect(reversed).toContainText(/Reversed \w+day \d{1,2} \w+\. Final\. .+ has the note\./);
+    await expect(reversed.getByRole("button", { name: `See it, the decision on ${title}` })).toBeVisible();
+    const after = (await (await sharer.page.request.get(`/api/ideas/${ideaId}/decision`)).json()) as {
+      reversal: { to: string; note: string };
+    };
+    expect(after.reversal).toMatchObject({ to: "not_picked", note: NOTE });
+  } finally {
+    await db((c) =>
+      c.query("DELETE FROM role_grants WHERE user_id = $1 AND role = 'committee'", [member.id]),
+    );
+  }
 });
 
 test("S-R3: the sharer answers the desk's questions one at a time and sends (V-ACC.review/7–8)", async ({
@@ -176,15 +212,21 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   const s = sharer.page;
   await s.goto(`/ideas/${ideaId}/answer`);
   await expect(s.getByRole("heading", { name: "Answer the review desk" })).toBeVisible();
+  await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
+  await expectNoSidewaysScroll(s);
   await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("Our Hyderabad branch alone.");
   await s.getByRole("button", { name: "Next" }).click();
+  await expect(s.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
   await s.getByRole("button", { name: "Skip for now" }).click();
   await expect(s.getByRole("heading", { name: "Check your answers" })).toBeVisible();
   await expect(s.getByText("Not answered. It stays open until the deadline.")).toBeVisible();
   await s.getByRole("button", { name: /Send 1 answer to / }).click();
-  await expect(s.getByRole("heading", { name: "Sent" })).toBeVisible();
+  await expect(s.getByRole("heading", { name: "Your answers are with the review desk" })).toBeVisible();
+  await expect(s.getByText(/^Sent to .+, \d{1,2}(?::\d{2})? (?:am|pm)$/)).toBeVisible();
+  await expect(s.getByRole("link", { name: "See your idea" })).toHaveAttribute("href", `/ideas/${ideaId}`);
   await expectNoSeriousAxeIssues(s);
+  await expectNoSidewaysScroll(s);
 
   // V-ACC.review/8: the answer is under its part on the reviewer's page
   await reviewer.page.goto(`/desk/ideas/${ideaId}`);
@@ -198,5 +240,5 @@ test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", asyn
   await reviewer.page.goto(`/desk/ideas/${ideaId}`);
   await expect(reviewer.page.getByRole("heading", { name: "Your own idea" })).toBeVisible();
   await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
-  await expect(reviewer.page.getByRole("button", { name: "Ask about this" })).toHaveCount(0);
+  await expect(reviewer.page.getByRole("button", { name: /^Ask about / })).toHaveCount(0);
 });
