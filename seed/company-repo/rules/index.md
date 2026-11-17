@@ -11,6 +11,7 @@ Machine-read settings. Each file has a short explanation and one `yaml` block th
 - [routing.md](routing.md) — routing, shortlist and nomination thresholds, presentations, veto and appeals
 - [reason-codes.md](reason-codes.md) — outcome reason codes and the plain words submitters see
 - [points.md](points.md) — recognition points
+- [tiers.md](tiers.md) — how measured, confirmed impact sets a One's tier (L-ONES.rules/3)
 - [compliance-tier.md](compliance-tier.md) — Garage standard and express tiers (draft until inherited)
 - [calendar.md](calendar.md) — time zone, weekends, holidays
 - [redirects.md](redirects.md) — where non-ideas go
