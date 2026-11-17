@@ -92,8 +92,10 @@ def test_V_ACC_committee_4_a_reversal_is_final_and_the_idea_takes_the_new_decisi
         db, cast["window"], cast["rohan"]["id"], {"to": "not_now", "note": NOTE, "return_in": "3m"}, t
     )
     assert row["reversal"]["to"] == "not_now" and row["reversal"]["note"] == NOTE
-    assert row["reversal"]["now_line"] == "Now: Not now by Rohan Mehta, Friday 20 November"
-    assert row["reversal"]["final_line"] == "Reversed Friday 20 November. Final. Kavya has the note."
+    assert [row["reversal"][k] for k in ("now_line", "now_by_line", "reversed_line", "final_line")] == [
+        "Now: Not now", "by Rohan Mehta, Friday 20 November", "Reversed Friday 20 November",
+        "Final. Kavya has the note.",
+    ]  # fmt: skip
     assert row["can_extend"] is False and row["can_reverse"] is False and row["action"] == "See it"
     status = db.execute("SELECT status FROM ideas WHERE id = %s", (cast["idea"]["id"],)).fetchone()
     assert status == {"status": "not_now"}
