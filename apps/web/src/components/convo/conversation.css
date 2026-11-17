@@ -1,0 +1,570 @@
+/*
+ * S-08, an idea's conversation (lane F). Values from the pack's reference/css/boards/Messages.css on the OFFER
+ * tokens; every class is the screen's own (cv-), so nothing here restyles a shared component.
+ */
+.cv {
+  min-width: 0;
+}
+
+/* ---------- Header (S-08.layout/1) ---------- */
+.cv-head {
+  margin: 0;
+}
+.cv-back {
+  margin: 0 0 var(--space-2);
+}
+.cv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+.cv-line {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+.cv-title {
+  margin: 12px 0 0;
+  max-width: 26ch;
+  overflow-wrap: anywhere;
+}
+.cv-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.cv-title a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.cv-cols {
+  margin-top: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 48px;
+  align-items: start;
+}
+.cv-main {
+  min-width: 0;
+  max-width: 780px;
+}
+.cv-l {
+  margin: 0 0 18px;
+  font: 500 13px/1.3 var(--ft);
+  color: var(--mute);
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Timeline (L-CONVO/3) ---------- */
+.cv-conv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.cv-ev {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+.cv-ev p {
+  margin: 0;
+}
+.cv-ev a {
+  color: var(--ink);
+  font-weight: 500;
+}
+.cv-evd {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: none;
+}
+.cv-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 600px;
+  scroll-margin: 96px 0 160px;
+}
+.cv-msg.me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.cv-msg.wide {
+  max-width: none;
+  width: 100%;
+}
+.cv-msg.me.wide {
+  align-items: stretch;
+}
+.cv-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+.cv-who b {
+  font-weight: 500;
+  color: var(--ink);
+  font-size: 14.5px;
+}
+.cv-msg.me .cv-who {
+  justify-content: flex-end;
+}
+.cv-bub {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 20px;
+  border-top-left-radius: 6px;
+  font-size: 16px;
+  line-height: 1.55;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.07),
+    0 10px 24px -18px rgba(17, 17, 17, 0.3);
+  color: var(--ink);
+  text-wrap: pretty;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cv-msg.me .cv-bub {
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: none;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 6px;
+}
+.cv-msg.mentions-you .cv-bub {
+  box-shadow:
+    0 0 0 1.5px var(--blue),
+    0 10px 24px -18px rgba(17, 17, 17, 0.3);
+}
+.cv-bub.removed,
+.cv-msg.me .cv-bub.removed {
+  background: transparent;
+  color: var(--mute);
+  font-style: italic;
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.1);
+}
+.cv-ment {
+  font-weight: 600;
+  color: var(--blueT);
+}
+.cv-msg.me .cv-ment {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cv-msg .flist {
+  width: min(100%, 460px);
+}
+
+/* The review desk's questions, in plain words until C-QCARD is on main (BLD-F065) */
+.cv-ask {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 20px 22px;
+  border-radius: 20px;
+  border-top-left-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(181, 71, 8, 0.22),
+    0 12px 28px -18px rgba(17, 17, 17, 0.14);
+}
+.cv-ask.done {
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.08),
+    0 12px 28px -20px rgba(17, 17, 17, 0.2);
+}
+.cv-askt {
+  margin: 0;
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.014em;
+  color: var(--ink);
+}
+.cv-askd {
+  margin: 10px 0 0;
+  max-width: 52ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+.cv-aska {
+  margin: 16px 0 0;
+}
+
+/* The answers, posted back */
+.cv-ans {
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border-top-right-radius: 8px;
+  background: var(--ink);
+  color: #ffffff;
+}
+.cv-anst {
+  margin: 0;
+  font: 500 17px/1.3 var(--fd);
+  letter-spacing: -0.01em;
+}
+.cv-ansq {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.cv-ansq > li {
+  padding: 13px 16px;
+}
+.cv-ansq > li + li {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.cv-qa {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: #ffffff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cv-qp {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: #afc0ff;
+}
+.cv-qp b {
+  font-weight: 600;
+}
+.cv-afiles {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cv-afiles li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+}
+.cv-afiles a {
+  color: #ffffff;
+}
+.cv-foot {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+.cv-empty {
+  margin-top: 20px;
+  padding: 28px 24px;
+  border-radius: 20px;
+  border: 1px dashed #bdbdb7;
+}
+
+/* ---------- The box (S-08.layout/3) ---------- */
+.cv-box {
+  position: sticky;
+  bottom: 20px;
+  z-index: 5;
+  margin-top: 32px;
+  padding: 14px 14px 10px 18px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 0 0 1px rgba(17, 17, 17, 0.08),
+    0 22px 44px -26px rgba(17, 17, 17, 0.34);
+  transition: box-shadow 0.15s ease;
+}
+.cv-box:focus-within {
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 0 0 1.5px var(--blue),
+    0 22px 44px -26px rgba(17, 17, 17, 0.34);
+}
+.cv-field {
+  position: relative;
+}
+.cv-in {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
+  margin: 0;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  resize: vertical;
+  font: 400 17px/1.5 var(--ft);
+  color: var(--ink);
+}
+.cv-in::placeholder {
+  color: #6e6e74;
+}
+.cv-in:focus-visible {
+  outline: none;
+}
+.cv-hint {
+  margin: 0 0 12px -4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--warnW);
+  color: var(--warnT);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.cv-hint a {
+  color: inherit;
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+.cv-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.cv-sees {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+.cv-send {
+  flex: none;
+  min-width: 96px;
+}
+.cv-box .fmsg {
+  margin: 6px 0 0;
+}
+.cv-closed {
+  margin: 32px 0 0;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--sunk);
+  font-size: 15px;
+  color: var(--ink2);
+}
+
+/* The @mention picker: a list under the box's words, picked by arrows and Enter */
+.cv-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 10;
+  width: min(360px, 100%);
+  max-height: 280px;
+  overflow: auto;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.1),
+    0 18px 40px -20px rgba(17, 17, 17, 0.4);
+}
+.cv-menu li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.cv-menu li.on,
+.cv-menu li:hover {
+  background: var(--sunk);
+}
+.cv-menu li.on {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.cv-menu .av {
+  grid-row: span 2;
+}
+.cv-menu-n {
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--ink);
+}
+.cv-menu-d {
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+/* ---------- In this conversation (S-08.layout/4) ---------- */
+.cv-side {
+  position: sticky;
+  top: 28px;
+}
+.cv-sidec {
+  padding: 20px 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.07),
+    0 12px 28px -20px rgba(17, 17, 17, 0.2);
+}
+.cv-side-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cv-side-h {
+  margin: 0;
+  font: 500 17px/1.3 var(--fd);
+  color: var(--ink);
+}
+.cv-side-x {
+  display: none;
+}
+.cv-ppl {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cv-ppl li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.cv-ppl b {
+  display: block;
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.cv-doing {
+  display: block;
+  font-size: 13px;
+  color: var(--mute);
+}
+.cv-sidenote {
+  margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(17, 17, 17, 0.07);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+.cv-info {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink2);
+  cursor: pointer;
+}
+.cv-info:hover {
+  background: rgba(17, 17, 17, 0.05);
+}
+
+@media (max-width: 1100px) {
+  .cv-cols {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 32px;
+  }
+}
+
+/* ---------- Phone (S-08.rules/4) ---------- */
+@media (max-width: 640px) {
+  .cv-back {
+    display: none;
+  }
+  .cv-title {
+    font-size: 26px;
+    line-height: 1.15;
+  }
+  .cv-cols {
+    margin-top: 24px;
+    display: block;
+  }
+  .cv-msg {
+    max-width: 92%;
+  }
+  .cv-box {
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px)); /* above the tab bar */
+    margin-top: 24px;
+    padding: 12px 12px 8px 14px;
+    border-radius: 22px;
+  }
+  .cv-bar {
+    flex-wrap: wrap;
+  }
+  .cv-sees {
+    flex-basis: 100%;
+    order: 2;
+  }
+  .cv-send {
+    margin-left: auto;
+    min-height: 44px;
+  }
+  .cv-side {
+    display: none;
+  }
+  .cv-side.open {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    z-index: calc(var(--z-sidebar, 30) + 2); /* over the tab bar */
+    max-height: 80vh;
+    overflow: auto;
+  }
+  .cv-side.open .cv-sidec {
+    border-radius: 24px 24px 0 0;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -18px 40px -16px rgba(17, 17, 17, 0.35);
+    background: #ffffff;
+  }
+  .cv-side-x {
+    display: inline-flex;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-box {
+    transition: none;
+  }
+}

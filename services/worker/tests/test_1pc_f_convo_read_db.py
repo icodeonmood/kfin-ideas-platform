@@ -344,6 +344,19 @@ def test_l_convo_4_questions_by_reference_with_the_line_above_the_box_then_answe
     [q] = [e for e in view["entries"] if e["type"] == "questions"]
     assert (q["set_id"], q["state"], q["count"], q["answered"]) == (set_id, "sent", 3, 0)
     assert q["by_label"] == "Meera from the review desk" and q["at_label"] == "Monday 16 November, 11:20 am"
+    # BLD-F065: the card's plain words, for S-08 until lane B's C-QCARD is on main; the deadline as lane B words it.
+    assert q["title"] == "Meera has 3 questions about your idea"
+    assert q["deadline"] == (
+        "Answer by Thursday 19 November, 11:20 am. One at a time, typed or spoken, and each answer is added to its "
+        "part of your idea."
+    )
+    assert q["answer_url"] == f"/ideas/{idea['idea_id']}/answer"
+    [dq] = [
+        e
+        for e in conversation(db, idea["idea_id"], meera["id"], at=NOW)["entries"]
+        if e["type"] == "questions"
+    ]
+    assert dq["title"] == "You asked 3 questions." and "deadline" not in dq and "answer_url" not in dq
     assert view["composer"]["questions_line"] == (
         "Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. "
         "Write here for anything else."
@@ -357,6 +370,9 @@ def test_l_convo_4_questions_by_reference_with_the_line_above_the_box_then_answe
     view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
     [a] = [e for e in view["entries"] if e["type"] == "answers"]
     assert a["title"] == "Your answers to Meera’s 3 questions"
+    [q] = [e for e in view["entries"] if e["type"] == "questions"]
+    if q["state"] == "answered":
+        assert q["title"] == "Meera’s 3 questions, answered" and "answer_url" not in q
     assert [(x["text"], x["added_to_label"]) for x in a["answers"]] == [
         ("Synthetic answer 1.", "The problem"),
         ("Synthetic answer 2.", "How often"),
