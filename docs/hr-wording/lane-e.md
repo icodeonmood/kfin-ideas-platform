@@ -8,11 +8,9 @@ The boards draw no error state for these three screens. Each shows one line with
 
 | Module | Where it shows | File and line | Wording |
 |---|---|---|---|
-| `S-WALL` | The Wall, when it cannot be read | `wall/wall-screen.tsx:47` | We can't load the wall just now. Please try again in a minute. |
+| `S-WALL` | The Wall, when it cannot be read | `wall/wall-screen.tsx:47` | We can't load the Wall just now. Please try again in a minute. |
 | `S-07` | My ideas, when the list cannot be read | `my-ideas/my-ideas-screen.tsx:49` | We can't load your ideas just now. Please try again in a minute. |
 | `S-06`, `S-09` | An idea's page (your own, or a colleague's), when it cannot be read | `ideas/[id]/page.tsx:26` | We can't load this idea just now. Please try again in a minute. |
-
-The Wall's line says "the wall" in lower case, as written. Every other screen calls it "the Wall". HR may want the capital.
 
 ## 2. Your One dashboard (S-ONE, BLD-E041 and BLD-E042)
 
