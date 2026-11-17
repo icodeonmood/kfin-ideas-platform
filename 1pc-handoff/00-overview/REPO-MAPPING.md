@@ -37,7 +37,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]/colleague-screen.tsx` (Back link from `parts.tsx`), `idea-page.css`. Tests `e2e/idea-page.spec.ts` | built (Team up waits on lane F's C-SHEET-TEAMUP) | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall/page.tsx` (first view on the server, `app/wall/load.ts`), `wall-screen.tsx` (kind chips, sorts, Show more in place; state in the URL, `state.ts`), `wall.css`; data `GET /api/wall/*` (`server/wall.ts`). Tests `e2e/wall.spec.ts` | built | M to L | P0 | E |
-| `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
+| `S-ONE` | `/one` | `app/one` (`page.tsx`, `one-screen.tsx`, `glow-up.tsx`, `showcase-sheet.tsx`, `rules.ts`); data `GET /api/one` and its writes (`server/wall.ts`, worker `wall/ones.py`); the old pages under `/ones/*` and `/my-ideas/showcase` retired (BLD-E042) | built (17 Nov, BLD-E040 to BLD-E042) | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
 | `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
 | `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
@@ -47,7 +47,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
 | `S-H4` | `/how-it-works` | `app/how-it-works`, `lib/how-it-works.ts` (old `app/journey` stays until lane E retires it) | built (16 Nov, BLD-A194) | S | P0 | A |
 | `S-H5` | `/inbox`, `/inbox/:itemId` (also S-H2B's route) | `app/inbox` (`page.tsx`, `[item]/page.tsx`, `inbox-reader.tsx`, `teamup-request.tsx`, `inbox.css`), `server/inbox.ts`, `server/inbox-route.ts`, `/api/inbox/*` | built (17 Nov, BLD-A200 to A209); e2e `e2e/inbox.spec.ts` | L | P0 | A |
-| `S-H6` | `/profile` | none; pieces on `/my-ideas` (`points.tsx`, `name-on-wall.tsx`) | exists, differs | M | P0 | E |
+| `S-H6` | `/profile` | `app/profile` (`page.tsx`, `profile-screen.tsx`, `refer-as.tsx`, `rules.ts`); data `GET /api/me/profile`, `PATCH /api/me/settings` (worker `wall/profile.py`), lane C's `/api/me/refer-as` | built (17 Nov, BLD-E043) | M | P0 | E |
 | `S-OFFICE` | `/display/office` | `app/display/office`, `lib/display.ts`, `server/display.ts`, worker `display/office.py`, `GET /api/display/office` (old `app/constellation` stays until lane E retires it) | built (16 Nov, BLD-A190, BLD-A191) | M | P0 | A |
 | `S-LAUNCH` | `/display/launch` | `app/display/launch` (`stage.tsx`, `sound.ts`); old `app/launch` stays until lane E retires it | built (16 Nov, BLD-A190, BLD-A193) | S | P0 | A |
 
