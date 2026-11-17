@@ -50,15 +50,18 @@ async function person(browser: Browser, persona: string): Promise<{ page: Page; 
 }
 
 /** A shared idea on the desk for `code`, with its sharer as crew lead. */
-async function sharedIdea(code: string, title: string): Promise<string> {
+async function sharedIdea(
+  code: string,
+  title: string,
+  summary = "Investors call the branch because the rejection SMS gives a code, not a reason.",
+): Promise<string> {
   return db(async (c) => {
     const r = await c.query<{ idea_id: string; id: string }>(
       "INSERT INTO ideas (idea_id, contributor_code, status, title, summary, often, affects, area, city, kind, " +
-        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, " +
-        "'Investors call the branch because the rejection SMS gives a code, not a reason.', " +
+        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, $3, " +
         "'About 40 calls a day at one branch.', ARRAY['Investors'], 'Investor service', 'Hyderabad', 'problem', " +
         "now(), now() + interval '5 days', now() + interval '3 days') RETURNING idea_id, id",
-      [code, title],
+      [code, title, summary],
     );
     await c.query(
       "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES ($1, $2, 'lead', 'shared')",
@@ -272,4 +275,51 @@ test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", asyn
   await expect(reviewer.page.getByRole("heading", { name: "Your own idea" })).toBeVisible();
   await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
   await expect(reviewer.page.getByRole("button", { name: /^Ask about / })).toHaveCount(0);
+});
+
+/** Select `words` inside the one text of a part that offers "Hide this", as a reviewer's drag would. */
+async function selectIn(p: Page, part: string, words: string) {
+  await p
+    .getByRole("region", { name: part })
+    .locator("[data-hide-key]")
+    .first()
+    .evaluate((el, w) => {
+      const node = el.firstChild as Text;
+      const at = node.data.indexOf(w);
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + w.length);
+      const sel = document.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, words);
+}
+
+test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a name the checks missed, and every copy reads masked", async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `A missed name on the desk (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(
+    sharer.code,
+    title,
+    "Investors call the branch because the rejection SMS gives a code. Lakshmi Narayanan called four times.",
+  );
+  const r = reviewer.page;
+  await r.goto(`/desk/ideas/${ideaId}`);
+  const problem = r.getByRole("region", { name: "The problem" });
+
+  // too little selected: refused in plain words, nothing changes
+  await selectIn(r, "The problem", "a ");
+  await problem.getByRole("button", { name: "Hide this" }).click();
+  await expect(problem.getByRole("alert")).toHaveText("Select at least 3 letters or numbers.");
+
+  // the name: masked at once, the page read again
+  await selectIn(r, "The problem", "Lakshmi Narayanan");
+  await problem.getByRole("button", { name: "Hide this" }).click();
+  await expect(problem).toContainText("••••an called four times.");
+  await expect(problem).not.toContainText("Lakshmi Narayanan");
+  await expect(problem.getByRole("button", { name: "Hide this" })).toHaveCount(0);
+  await expectNoSeriousAxeIssues(r);
 });
