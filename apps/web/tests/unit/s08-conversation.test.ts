@@ -763,6 +763,69 @@ describe("S-08 removing a message (L-CONVO/10)", () => {
   });
 });
 
+/** sessionStorage that cannot be used (blocked site data): reading it throws. Returns the way back. */
+function blockStorage(): () => void {
+  const real = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+  Object.defineProperty(window, "sessionStorage", {
+    configurable: true,
+    get() {
+      throw new Error("blocked");
+    },
+  });
+  return () => {
+    if (real) Object.defineProperty(window, "sessionStorage", real);
+    else delete (window as unknown as Record<string, unknown>).sessionStorage;
+  };
+}
+
+describe("S-08 words carried over from the edit page (S-06B.rules/2, BLD-C165)", () => {
+  const KEY = "1pc.conversation.prefill.IDEA-2026-001481";
+  const WORDS = "How often: About 50 calls a day at one branch";
+
+  afterEach(() => window.sessionStorage.clear());
+
+  it("S-06B.rules/2: the kept words wait in the box, unsent, and the key is gone once read", async () => {
+    window.sessionStorage.setItem(KEY, WORDS);
+    const log = vi.spyOn(console, "log");
+    const info = vi.spyOn(console, "info");
+    await show(yourIdea());
+    expect(textbox().value).toBe(WORDS);
+    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0);
+    expect(window.sessionStorage.getItem(KEY)).toBeNull();
+    expect([...log.mock.calls, ...info.mock.calls].flat().join(" ")).not.toContain("50 calls");
+    expect(window.location.search).toBe("");
+    log.mockRestore();
+    info.mockRestore();
+  });
+
+  it("S-06B.rules/2: read once: a second visit starts with an empty box", async () => {
+    window.sessionStorage.setItem(KEY, WORDS);
+    await show(yourIdea());
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await show(yourIdea());
+    expect(textbox().value).toBe("");
+  });
+
+  it("S-06B.rules/2: another idea's words stay where they are, and storage that cannot be used gives an empty box", async () => {
+    window.sessionStorage.setItem("1pc.conversation.prefill.IDEA-2026-001412", WORDS);
+    await show(yourIdea());
+    expect(textbox().value).toBe("");
+    expect(window.sessionStorage.getItem("1pc.conversation.prefill.IDEA-2026-001412")).toBe(WORDS);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    window.sessionStorage.setItem(KEY, WORDS);
+    const restore = blockStorage();
+    try {
+      await show(yourIdea());
+      expect(textbox().value).toBe("");
+    } finally {
+      restore();
+    }
+    expect(window.sessionStorage.getItem(KEY)).toBe(WORDS);
+  });
+});
+
 describe("S-08 helpers", () => {
   it("S-08 mentionAt: an @ at the start or after a space, up to the caret, on one line", () => {
     expect(mentionAt("@", 1)).toEqual({ start: 0, query: "" });

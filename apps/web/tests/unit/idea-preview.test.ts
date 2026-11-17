@@ -505,3 +505,40 @@ describe("C-PREVIEW words (BLD-E008)", () => {
     expect(dialog()!.textContent).not.toMatch(pronoun);
   });
 });
+
+describe("C-PREVIEW band pill and axe (BLD-D012, V-ACC)", () => {
+  it("C-PILL.variants BLD-D012: the band's status is lane D's <Pill variant='band'>, and no preview rule sets a pill's fill", async () => {
+    await render({ onPrimary: () => undefined });
+    const pill = dialog()!.querySelector(".pvband .pill")!;
+    expect(pill.classList.contains("band")).toBe(true);
+    expect(pill.querySelector("i")?.getAttribute("aria-hidden")).toBe("true");
+    // The stand-in `.pvband .pill { background: rgba(255,255,255,.2) }` had the same specificity as `.pill.band` and
+    // brought back the fill that fails AA on the band: nothing in the preview's CSS may style `.pill` again.
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const css = readFileSync(resolve(__dirname, "../../src/components/preview/idea-preview.css"), "utf8");
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "").split("}");
+    expect(rules.filter((r) => /\.pill\b[^{]*\{/.test(r))).toEqual([]);
+  });
+
+  it("V-ACC C-PREVIEW: axe finds nothing serious in either view (contrast is checked in the browser and by BLD-D012's test)", async () => {
+    const axe = (await import("axe-core")).default;
+    const check = async () => {
+      const result = await axe.run(dialog()!, {
+        rules: { "color-contrast": { enabled: false } },
+        resultTypes: ["violations"],
+      });
+      return result.violations
+        .filter((v) => v.impact === "serious" || v.impact === "critical")
+        .map((v) => v.id);
+    };
+    await render({
+      matchReason: "Close match: the same R07 SMS and the same calls",
+      onPrimary: () => undefined,
+    });
+    expect(await check()).toEqual([]);
+    await act(async () => root.render(createElement("div")));
+    await render({ view: "reviewer", preview: RAVI_FOR_DESK, onPrimary: () => undefined });
+    expect(await check()).toEqual([]);
+  });
+});

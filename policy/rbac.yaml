@@ -125,7 +125,6 @@ endpoints:
   - GET /api/ideas/{id}/conversation                  signed_in
   - POST /api/ideas/{id}/conversation/messages        signed_in
   - DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in  # the sender’s own, within 5 minutes
-  - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
   - PUT /api/submissions/{id}                         submit
@@ -170,6 +169,18 @@ endpoints:
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
+  # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.
+  - GET /api/config                                   signed_in       # A-API.config: the promises the copy names and the sorting lists
+  - GET /api/drafts/{id}/sorting                      submit          # L-SORT: suggested, confirmed or changed (owner only)
+  - PATCH /api/drafts/{id}/sorting                    submit          # L-SORT.rules/2–3: change a field, or confirm the rest
+  - PUT /api/drafts/{id}/fix                          submit          # S-05.fix: the fix sheet's answers (owner only)
+  - DELETE /api/drafts/{id}/fix                       submit          # S-05 part 5: Remove
+  - PUT /api/drafts/{id}/helpers                      submit          # S-05 part 6: Who would help
+  - GET /api/drafts/{id}/send                         submit          # L-SUBMIT.pre: the Send part's last look
+  - POST /api/drafts/{id}/submit                      submit          # L-SUBMIT.send, with an Idempotency-Key
+  - GET /api/ideas/{id}/edit                          submit          # S-06B: the edit page (the sharer, in the edit window)
+  - PATCH /api/ideas/{id}/edit                        submit          # A-API PATCH /ideas/:id: Save changes, a version each time
+  - GET /api/ideas/{id}/versions                      signed_in       # Draft history: the sharer, the desk, the committee (the worker checks)
   # Team-up, draft merge requests and crews (lane F; A-API.team-up, L-TEAMUP, L-MERGE.request). Any employee may
   # ask; the worker checks the rest: only the requester withdraws, only the idea's lead answers or removes.
   - GET /api/ideas/{id}/team-up                       signed_in
@@ -195,6 +206,17 @@ endpoints:
   - POST /api/desk/ideas/{id}/hide                    hide_for_desk
   - POST /api/drafts/{id}/hidden/{hid}/show           submit
   - POST /api/drafts/{id}/hidden/{hid}/hide           submit
+  # Files and links (lane C; A-API.files, L-HIDE.files, BLD-C105 to C109). The worker decides who may add, see,
+  # open, retry or remove each one (DEC-107): a file with a customer detail opens only for the person who added it,
+  # the review desk and the Ones Committee.
+  - GET /api/config/uploads                           signed_in       # the one limit, type list and help line
+  - POST /api/files                                   submit          # multipart; one of draft_id, idea_id, answer_id
+  - POST /api/links                                   submit          # never fetched (BLD-E001)
+  - GET /api/files/{id}                               open_attachments
+  - GET /api/files/{id}/view                          open_attachments  # the checked copy only
+  - POST /api/files/{id}/retry                        submit
+  - DELETE /api/files/{id}                            submit
+  - POST /api/files/{id}/hide                         submit          # not_available while files.blackout is off
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles

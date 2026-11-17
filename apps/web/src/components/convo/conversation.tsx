@@ -12,6 +12,8 @@
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
  * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
  *   sheet; the box stays at the bottom.
+ * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
+ *   never sent by themselves (BLD-C165).
  */
 import Link from "next/link";
 import {
@@ -48,6 +50,7 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
+import { takePrefill } from "./prefill";
 import "./conversation.css";
 
 type Entry = ConversationEntryView;
@@ -188,6 +191,21 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const openQuestions = view.entries.find(
     (e): e is QuestionsEntry => e.type === "questions" && Boolean(e.answer_url),
   );
+
+  // S-06B.rules/2: the words the person was editing when the review desk opened their idea wait in the box, unsent.
+  // Read once after mounting (an effect that was undone, as in development's double mount, reads nothing), then gone
+  // from storage; anything already typed is never replaced.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve().then(() => {
+      if (!live) return;
+      const carried = takePrefill([ideaId, initial.idea.id]);
+      if (carried) setText((t) => t || carried);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ideaId, initial.idea.id]);
 
   // Put the caret after a picked name once the words are on screen.
   useEffect(() => {

@@ -534,8 +534,14 @@ def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_face
 
 
 def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_reference(
-    club: dict[str, Any],
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Lane E's own path: no restore hook. Importing the worker app plugs lane C's `submit.adapters.on_restored` in
+    # (it leaves the idea `checking` and queues `submit.check`, tested in test_1pc_l_sort_submit_db.py), so pin it
+    # here rather than depend on which test imported the app first, and leave no job for a later `run_one`.
+    from ideapage import withdraw as withdraw_module
+
+    monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)
     conn, t5 = club["conn"], ref(club, "T5")
     out = withdraw(conn, t5, club["p"]["tanvi"], "Folio 1234567890 is already being fixed", now=NOW)
     assert out["page"]["state"] == "withdrawn"

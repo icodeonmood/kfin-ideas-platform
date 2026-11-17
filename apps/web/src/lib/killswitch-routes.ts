@@ -66,6 +66,14 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // Sorting, the fix, who would help, Submit and the edit page's Save (lane C; L-SORT, L-SUBMIT, S-05) stop with
+  // sharing.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/drafts\/[^/]+\/(?:sorting|fix|helpers|submit)\/?$/,
+    switches: ["submissions"],
+  },
+  { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/edit\/?$/, switches: ["submissions"] },
   // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
   { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
   // An idea's conversation (lane F; L-CONVO, BLD-F058): writing or removing a message pauses with sharing, like
@@ -80,6 +88,18 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
     switches: ["attachments.open"],
   },
+  // Files and links on the 1% Club (A-API.files, lane C): adding a file, or trying one again, stops with uploads
+  // and with sharing; a link stops with sharing only (attachments.upload's notice says links still work). Opening
+  // a file stops with attachments.open. "Hide it for me" checks files.blackout in its handler, to answer
+  // `not_available` in the pack's shape; removing a file is never paused (UNGUARDED_WRITES).
+  { methods: ["POST"], pattern: /^\/api\/files\/?$/, switches: ["attachments.upload", "submissions"] },
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/files\/[^/]+\/retry\/?$/,
+    switches: ["attachments.upload", "submissions"],
+  },
+  { methods: ["POST"], pattern: /^\/api\/links\/?$/, switches: ["submissions"] },
+  { methods: ["GET"], pattern: /^\/api\/files\/[^/]+\/view\/?$/, switches: ["attachments.open"] },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   // The office screen's Ones (S-OFFICE) rest with the rest of the public Ones.
   {
@@ -228,6 +248,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // whatever is paused.
   /^\/api\/desk\/ideas\/[^/]+\/hide\/?$/,
   /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/hide\/?$/,
+  // Files (A-API.files, lane C): removing a file only ever protects someone, and DEC-107 lets the review desk ask
+  // for it, so it works whatever is paused. "Hide it for me" checks files.blackout itself and answers
+  // `not_available` while it is off.
+  /^\/api\/files\/[^/]+\/?$/,
+  /^\/api\/files\/[^/]+\/hide\/?$/,
   // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
   // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,

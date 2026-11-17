@@ -2,7 +2,8 @@
  * Research attachments, web side (§4.2 "Attachments", AT-B3-06/07). Files go straight to the worker, which
  * stores them in quarantine and checks them; the web app decides who may upload, see and open them.
  * Day one: a clean file opens for its owner and for the review desk, core committee and admins once the idea
- * is submitted (BLD-059). Anything not clean returns 403 to everyone.
+ * is submitted (BLD-059). Anything not clean returns 403 to everyone. The 1% Club's files and answer files
+ * (`file_state` or `answer_id` set) are not found here: they open only through `/api/files/:id/view`.
  */
 import { can } from "@/lib/rbac";
 
@@ -91,12 +92,17 @@ export async function accessible(me: CurrentUser, attId: string) {
       "a.state",
       "a.rejection",
       "a.mime",
+      "a.file_state",
+      "a.answer_id",
       "i.contributor_code",
       "i.stage",
     ])
     .where("a.id", "=", attId)
     .executeTakeFirst();
   if (!row) return null;
+  // A 1% Club file or link, or any file on an answer, belongs to the files pipeline (A-API.files): it opens only
+  // through /api/files/:id/view under DEC-107's rule, never through this older route, whatever its state.
+  if (row.file_state !== null || row.answer_id !== null) return null;
   const owner = row.contributor_code === me.contributorCode;
   const reviewer = can(me.roles, "view_review_queue") && row.stage !== "draft";
   return owner || reviewer ? row : null;

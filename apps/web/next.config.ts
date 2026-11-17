@@ -34,9 +34,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ["pg"],
   experimental: {
-    // The proxy buffers request bodies and silently truncates past this size (default 10 MB). Research files
-    // are up to 20 MB (rules/thresholds.md); uploads larger than that are refused by Content-Length first.
-    proxyClientMaxBodySize: "21mb",
+    // The proxy buffers request bodies and silently truncates past this size (default 10 MB). Files on the 1% Club
+    // are up to 25 MB (rules/thresholds.md `files`, BLD-E007; the schema caps it there, BLD-C108), research files up
+    // to 20 MB; uploads larger than the limit are refused by Content-Length first.
+    proxyClientMaxBodySize: "26mb",
   },
   async headers() {
     return headerRules(); // the microphone only on /share (DEC-096)
