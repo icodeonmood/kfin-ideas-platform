@@ -8,6 +8,7 @@ Machine-read settings. Each file has a short explanation and one `yaml` block th
 - [thresholds.md](thresholds.md) — gatekeeper, matching, clustering, canvas strength, attachments, scans, kill-switch triggers
 - [sla.md](sla.md) — time limits and escalations
 - [promises.md](promises.md) — the times, windows and minimum lengths the product promises people (P-PRODUCT.promises)
+- [drafting.md](drafting.md) — building the draft from a person's words: when parts form, the who-it-affects and area lists, the loader's starting times (L-DRAFT)
 - [routing.md](routing.md) — routing, shortlist and nomination thresholds, presentations, veto and appeals
 - [reason-codes.md](reason-codes.md) — outcome reason codes and the plain words submitters see
 - [points.md](points.md) — recognition points
