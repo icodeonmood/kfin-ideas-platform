@@ -94,8 +94,8 @@
   }
 
   main#main > .cine:not(.arrive),
-  .cine.arrive > :not(.mo-skip),
-  .cine .arrive > :not(.mo-skip) {
+  .cine.arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop),
+  .cine .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop) {
     animation-name: moInDeep;
   }
 
@@ -109,21 +109,30 @@
   }
 
   .mo-a-peer
-    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    :is(
+      main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb, .tbar, .dock, .pnav, .ptop),
+      .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop)
+    ) {
     animation-name: moThrough;
     animation-duration: var(--mo-move);
     --mo-gap: 30ms;
   }
 
   .mo-a-fwd
-    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    :is(
+      main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb, .tbar, .dock, .pnav, .ptop),
+      .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop)
+    ) {
     animation-name: moAxisIn;
     animation-duration: var(--mo-move);
     --mo-gap: 36ms;
   }
 
   .mo-a-back
-    :is(main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb), .arrive > :not(.mo-skip)) {
+    :is(
+      main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb, .tbar, .dock, .pnav, .ptop),
+      .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop)
+    ) {
     animation-name: moAxisBack;
     animation-duration: var(--mo-move);
     --mo-gap: 36ms;
