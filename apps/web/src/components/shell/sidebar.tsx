@@ -5,13 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { SparkMark } from "@/components/spark-mark";
-import { COUNTS_EVENT } from "@/lib/inbox-events";
 import type { NavItem } from "@/lib/rbac";
 import type { ShellData, ShellRow } from "@/server/shell";
 
 import { AccountMenu, shortcutIsOn } from "./account-menu";
 import { FOLD_COOKIE, foldValue } from "./fold";
 import { IconFold, IconSearch, NavIcon } from "./icons";
+import { useInboxUnread } from "./use-inbox-unread";
 
 /** The current page, for aria-current: Home only on its own path; every other item on its path and below it. */
 export function isCurrent(pathname: string, href: string): boolean {
@@ -93,15 +93,7 @@ export function Sidebar({
   const folded = choice ?? isTablet;
   const [shortcutOn, setShortcutOn] = useState(true);
   const barId = useId();
-  // The Inbox's unread number (L-INBOX.rules/1): the server's `inboxCounts` when the page loads, then every count
-  // the Inbox sends (`inbox:counts`, V-ACC.track/8) until the server's number changes again.
-  const [served, setServed] = useState(data.inboxUnread);
-  const [live, setLive] = useState<number | null>(null);
-  if (served !== data.inboxUnread) {
-    setServed(data.inboxUnread);
-    setLive(null);
-  }
-  const inboxUnread = live ?? data.inboxUnread;
+  const inboxUnread = useInboxUnread(data.inboxUnread); // L-INBOX.rules/1, V-ACC.track/8
 
   const share = nav.find((n) => n.place === "new");
   const home = nav.find((n) => n.key === "home");
@@ -117,15 +109,6 @@ export function Sidebar({
   useEffect(() => {
     const t = window.setTimeout(() => setShortcutOn(shortcutIsOn()), 0);
     return () => window.clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    const onCounts = (e: Event) => {
-      const unread = (e as CustomEvent<{ unread?: unknown } | null>).detail?.unread;
-      if (typeof unread === "number") setLive(unread);
-    };
-    window.addEventListener(COUNTS_EVENT, onCounts);
-    return () => window.removeEventListener(COUNTS_EVENT, onCounts);
   }, []);
 
   const toggleFold = () => {
