@@ -104,6 +104,9 @@ export type PromptProps = {
   children?: ReactNode;
   className?: string;
   sending?: boolean;
+  /** Home (S-03): with words in the box the round button is a link on to Tell it, named by `sendLabel`
+   * ("Continue to Share a problem", Home.md); a click sends (`onSend`) instead of following it. */
+  sendHref?: string;
 };
 
 function Mirror({
@@ -153,6 +156,7 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
     children,
     className,
     sending,
+    sendHref,
   } = props;
   const id = useId();
   const v = voice?.state ?? null;
@@ -252,6 +256,19 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
             >
               <IconWave className="wave" />
             </button>
+          ) : sendHref && canSend ? (
+            <a
+              href={sendHref}
+              className="send on"
+              aria-label={sendLabel}
+              title={sendLabel}
+              onClick={(e) => {
+                e.preventDefault(); // the words go with it, so never an empty Tell it in a new tab (P-ROUTES.graph)
+                onSend();
+              }}
+            >
+              <IconArrowUp className="arrow" />
+            </a>
           ) : (
             <button
               type="button"
