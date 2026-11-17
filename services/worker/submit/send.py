@@ -30,10 +30,13 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
+from core.logging import get_logger
 from jobs.runner import enqueue
-from submit import adapters, clock, config, own, ready, sorting
+from submit import adapters, check, clock, config, own, ready, sorting
 from submit.errors import Refused
 from submit.words import countdown, day, pill, short_date, stage_nodes, when_shared
+
+log = get_logger("submit.send")
 
 ROUTE = "POST /drafts/:id/submit"
 SHARED = ("checking", "with_review_desk", "needs_you")
@@ -77,14 +80,17 @@ def _keep(conn: Conn, user_id: str, idem: str | None, status: int, result: dict[
         )
 
 
-def checked_line(n_hidden: int, n_similar: int) -> str:
-    """'Personal details hidden, 2 similar ideas found' (the sharer's track, Status.md)."""
+def checked_line(n_hidden: int, n_similar: int | None) -> str:
+    """'Personal details hidden, 2 similar ideas found' (the sharer's track, Status.md). `n_similar` None is
+    "couldn't check", never "no similar ideas found": the pack's own sentence follows (L-SIMILAR.failure)."""
     if n_hidden > 1:
         first = "Personal details hidden"
     elif n_hidden == 1:
         first = "1 personal detail hidden"
     else:
         first = "No personal details found"
+    if n_similar is None:
+        return f"{first}. {check.COULDNT_CHECK}"
     similar = (
         f"{n_similar} similar idea{'s' * (n_similar != 1)} found" if n_similar else "no similar ideas found"
     )
@@ -112,9 +118,11 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         sim = conn.execute(
             "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s", (idea["id"],)
         ).fetchone()
+        n_sim = int(sim["n"]) if sim else 0
+        found = None if not n_sim and check.couldnt_check(conn, idea) else n_sim
         nodes = [
             shared,
-            ("done", checked_line(int(hid["n"]) if hid else 0, int(sim["n"]) if sim else 0), None),
+            ("done", checked_line(int(hid["n"]) if hid else 0, found), None),
             ("now", f"By {by}" if by else None, None),
             *later,
         ]
@@ -260,7 +268,11 @@ def submit(
                 "sorting": {f: (sources.get(f) or {}).get("source") for f in sorting.FIELDS},
             },
         )
-        adapters.prefetch_listen(conn, uid)  # Listen's audio, made before the desk asks (c/sarvam)
+        try:  # Listen's audio, made before the desk asks (c/sarvam); its failure never fails a send
+            with conn.transaction():
+                adapters.prefetch_listen(conn, uid)
+        except Exception:  # any failure of an extra; the savepoint undid its writes
+            log.warning("submit.listen_prefetch_failed", idea_uuid=uid)
         result = handover(conn, shared, now)
         _keep(conn, user_id, idempotency_key, 201, result)
         return 201, result

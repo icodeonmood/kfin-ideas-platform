@@ -17,7 +17,9 @@ a stated fallback until then (BLD-C038, BLD-C087).
   back as None, "couldn't check", never as zero matches (`L-SIMILAR.failure`).
 - Listen (`L-LISTEN`, branch c/sarvam): `prefetch_listen` calls `speech.listen.enqueue_prefetch(conn, idea_uuid)`
   after a send, a deduped `listen.prefetch` job inside the send's transaction. Until then nothing is queued.
-- Amounts in any Indian form (`L-WORTH/1`, lane B's `desk.worth.parse`) for the fix's worth on the edit page.
+
+Amounts in any Indian form (`L-WORTH/1`) are not an adapter: lane B's `desk.worth` is on main, and `submit.fix`
+imports its one quantity reader directly.
 
 Nothing here logs or returns a hidden value: only kinds, counts, spans and IDs.
 """
@@ -196,7 +198,20 @@ def mask_text(conn: Conn, idea_uuid: str, text: str, *, by: str, source_id: str 
         masked, count = mod.hide_text(conn, idea_uuid, text, by=by, source="edit")
         return Masked(str(masked), [], int(count))
     out, found = pattern_mask(text)
+    if source_id is not None:
+        # The same words saved again (a draft's fix or helpers keep one source id per field) replace what was hidden
+        # from them before, as hide's own re-run does; an edit's ids are new on every save, so nothing goes there.
+        conn.execute(
+            "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'edit' AND source_id = %s",
+            (idea_uuid, source_id),
+        )
     if not found:
+        # Nothing hidden now: the masked copy is the words, so no sealed copy is kept.
+        if source_id is not None:
+            conn.execute(
+                "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'edit' AND source_id = %s",
+                (idea_uuid, source_id),
+            )
         return Masked(out, [], 0)
     sid = source_id or str(uuid.uuid4())
     scope = f"DRAFT-{uuid.UUID(idea_uuid)}"
@@ -220,6 +235,21 @@ def mask_text(conn: Conn, idea_uuid: str, text: str, *, by: str, source_id: str 
              seal_text("idea_words_sealed", "text_encrypted", f"edit:{source_id}", text, vault=True)),
         )  # fmt: skip
     return Masked(out, spans, len(found))
+
+
+def forget_words(conn: Conn, idea_uuid: str, source_ids: list[str]) -> None:
+    """A draft's fix removed, or one of its answers emptied: what was hidden from those words, and the words as typed,
+    go with them (the vault keeps its values under the idea's scope, which nothing reads without a detail row)."""
+    if not source_ids:
+        return
+    conn.execute(
+        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'edit' AND source_id = ANY(%s)",
+        (idea_uuid, source_ids),
+    )
+    conn.execute(
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'edit' AND source_id = ANY(%s)",
+        (idea_uuid, source_ids),
+    )
 
 
 # --- Similar ideas: lane C's similar ---------------------------------------------------------------------------
@@ -248,50 +278,3 @@ def prefetch_listen(conn: Conn, idea_uuid: str) -> bool:
         return False
     mod.enqueue_prefetch(conn, idea_uuid)
     return True
-
-
-# --- Amounts: lane B's worth -----------------------------------------------------------------------------------
-
-_NUMBER = re.compile(r"(\d+(?:\.\d+)?)\s*(lakhs?|lacs?|l|crores?|cr|k|thousand)?", re.IGNORECASE)
-_SCALE = {
-    "lakh": 1e5,
-    "lakhs": 1e5,
-    "lac": 1e5,
-    "lacs": 1e5,
-    "l": 1e5,
-    "crore": 1e7,
-    "crores": 1e7,
-    "cr": 1e7,
-}
-_SCALE.update({"k": 1e3, "thousand": 1e3})
-
-
-def parse_range(measure: str, raw: object) -> tuple[float, float | None] | None:
-    """'70 to 150', '2 lakh', '2L', '2,00,000' -> (low, high or None). Lane B's parser when it is on main."""
-    if raw is None or raw == "":
-        return None
-    if isinstance(raw, int | float) and not isinstance(raw, bool):
-        return (float(raw), None) if raw >= 0 else None
-    if isinstance(raw, dict):
-        low, high = raw.get("low"), raw.get("high")
-        if not isinstance(low, int | float) or low < 0:
-            return None
-        if high is not None and (not isinstance(high, int | float) or high < low):
-            return None
-        return float(low), float(high) if high is not None else None
-    if not isinstance(raw, str) or len(raw) > 80:
-        return None
-    mod = _module("desk.worth")
-    if mod is not None and hasattr(mod, "parse"):
-        r = mod.parse(measure, raw)
-        return (float(r.low), float(r.high) if r.high is not None else None) if r is not None else None
-    found = [
-        float(n) * _SCALE.get((unit or "").lower(), 1.0) for n, unit in _NUMBER.findall(raw.replace(",", ""))
-    ]
-    if not found or len(found) > 2:
-        return None
-    low = found[0]
-    high = found[1] if len(found) == 2 else None
-    if high is not None and high < low:
-        return None
-    return low, high

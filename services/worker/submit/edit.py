@@ -23,18 +23,13 @@ from typing import Any
 
 from core.crypto import CryptoError, decrypt_json, encrypt_json
 from core.db import Conn
-from onepc import enums
 from onepc.context import sealed_context
 from similar.preview import DESK_ROLES
-from submit import adapters, config, own, ready, sorting
+from submit import adapters, config, fix, helpers, own, ready, sorting
 from submit.errors import NotFound, Refused
 from submit.words import clock, countdown, day, join
 
 TEXT_LIMITS = {"title": 70, "summary": 2000, "often": 200}
-FIX_TEXT = {"how": 2000, "needs": 2000, "solved_note": 600, "risks": 2000}
-FIX_HOW_MIN = 20  # V-FIELDS.checkit/8
-HELPER_TEXT_MAX = 140  # V-FIELDS.checkit/10
-WORTH_MEASURES = {"hours_month": "hours", "cost_month": "cost", "revenue_month": "revenue"}
 OPEN_SET_STATES = ("sent", "seen", "partly_answered", "answered", "closed")
 SAVED = "Saved. The review desk will see the latest version."
 FIELD_WORDS = {
@@ -105,35 +100,8 @@ def _closed(idea: dict[str, Any], w: dict[str, Any]) -> Refused:
 
 
 def _fix(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
-    row = conn.execute("SELECT * FROM idea_fix WHERE idea_uuid = %s", (idea_uuid,)).fetchone()
-    if row is None or not row["included"] or not (row["how"] or "").strip():
-        return None
-    worth = conn.execute(
-        "SELECT * FROM idea_worth WHERE idea_uuid = %s AND by_side = 'sharer' ORDER BY at DESC, id DESC LIMIT 1",
-        (idea_uuid,),
-    ).fetchone()
-    out: dict[str, Any] = {
-        k: row[k]
-        for k in ("how", "needs", "solved_already", "solved_note", "basis", "risks")
-        if row[k] is not None
-    }
-    filled = sum(1 for k in ("how", "needs", "solved_already", "basis") if row[k]) + int(worth is not None)
-    out.update(included=True, ready_count=filled)
-    if worth is not None:
-        w: dict[str, Any] = {}
-        for measure, prefix in (
-            ("hours_month", "hours"),
-            ("cost_month", "cost"),
-            ("revenue_month", "revenue"),
-        ):
-            if worth[f"{prefix}_low"] is not None:
-                low = float(worth[f"{prefix}_low"])
-                high = float(worth[f"{prefix}_high"]) if worth[f"{prefix}_high"] is not None else None
-                w[measure] = {"low": low, **({"high": high} if high is not None else {})}
-        if worth["outside_tools"]:
-            w["outside_tools"] = worth["outside_tools"]
-        out["worth"] = w
-    return out
+    """The included fix as E-ENTITIES `Fix` (`submit.fix.view`), or None."""
+    return fix.view(conn, idea_uuid)
 
 
 def _files(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
@@ -225,7 +193,7 @@ def page(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[str, A
         ],
         "sorting": sorting.view(conn, idea, phase="edit"),
         "fix": fix,
-        "helpers": {"picks": list(idea.get("helper_picks") or []), "text": idea.get("helper_text")},
+        "helpers": helpers.view(idea),
         "files": files,
         "prompts": {
             **(
@@ -323,19 +291,8 @@ def _save_texts(s: _Save, body: dict[str, Any]) -> None:
 def _save_helpers(s: _Save, body: dict[str, Any], li: config.Lists) -> None:
     if "helpers" not in body:
         return
-    raw = body["helpers"] if isinstance(body["helpers"], dict) else {}
-    picks_raw = raw.get("picks") or []
-    if not isinstance(picks_raw, list):
-        picks_raw = []
-    picks: list[str] = []
-    for p in picks_raw:
-        label = next((h for h in li.helpers if isinstance(p, str) and h.casefold() == p.casefold()), None)
-        if label and label not in picks:
-            picks.append(label)
-    text = _text(raw.get("text"), 10_000) or None
-    if text and len(text) > HELPER_TEXT_MAX:
-        raise Refused(422, "field_needed", f"Keep it to {HELPER_TEXT_MAX} characters.", "helpers")
-    text = s.mask("helpers", text) if text else None
+    picks, words = helpers.read(body["helpers"], li, at="helpers.")
+    text = s.mask("helpers", words) if words else None
     before = {"picks": list(s.idea.get("helper_picks") or []), "text": s.idea.get("helper_text")}
     after = {"picks": picks, "text": text}
     if before != after:
@@ -346,78 +303,20 @@ def _save_helpers(s: _Save, body: dict[str, Any], li: config.Lists) -> None:
 
 
 def _save_fix(s: _Save, body: dict[str, Any], code: str) -> None:
+    """The fix sheet's answers (`submit.fix`), or `fix: null` for "Remove". Figures that changed are a new
+    `idea_worth` row; the earlier ones stay (L-WORTH/7)."""
     if "fix" not in body:
         return
-    before = _fix(s.conn, s.uid)
+    before = fix.entity(_fix(s.conn, s.uid))
     raw = body["fix"]
     if raw is None:  # "Remove"
         if before is not None:
             s.conn.execute("UPDATE idea_fix SET included = false WHERE idea_uuid = %s", (s.uid,))
             s.changed("fix", before, None)
         return
-    if not isinstance(raw, dict):
-        raise Refused(
-            422, "fix_how_needed", "Say how you’d solve it, or close this to send without a fix.", "fix.how"
-        )
-    values: dict[str, Any] = {}
-    for k, limit in FIX_TEXT.items():
-        text = _text(raw.get(k), 10_000) if raw.get(k) is not None else None
-        if text and len(text) > limit:
-            raise Refused(422, "field_needed", f"Keep it to {limit} characters.", f"fix.{k}")
-        values[k] = s.mask(f"fix.{k}", text) if text else None
-    if not values["how"] or len(values["how"]) < FIX_HOW_MIN:
-        raise Refused(
-            422, "fix_how_needed", "Say how you’d solve it, or close this to send without a fix.", "fix.how"
-        )
-    for k, enum in (("solved_already", "solved_already"), ("basis", "basis")):
-        v = raw.get(k)
-        values[k] = v if v in enums.values(enum) else None
-    s.conn.execute(
-        "INSERT INTO idea_fix (idea_uuid, how, needs, solved_already, solved_note, basis, risks, included) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, true) ON CONFLICT (idea_uuid) DO UPDATE SET how = EXCLUDED.how, "
-        "needs = EXCLUDED.needs, solved_already = EXCLUDED.solved_already, solved_note = EXCLUDED.solved_note, "
-        "basis = EXCLUDED.basis, risks = EXCLUDED.risks, included = true",
-        (s.uid, values["how"], values["needs"], values["solved_already"], values["solved_note"], values["basis"],
-         values["risks"]),
-    )  # fmt: skip
-    worth = raw.get("worth")
-    if isinstance(worth, dict):
-        ranges: dict[str, tuple[float, float | None] | None] = {}
-        for measure, kind in WORTH_MEASURES.items():
-            if worth.get(measure) in (None, ""):
-                ranges[measure] = None
-                continue
-            r = adapters.parse_range(kind, worth.get(measure))
-            if r is None:
-                raise Refused(
-                    422,
-                    "worth_unclear",
-                    "Write a rough figure or a range, like 70 to 150.",
-                    f"fix.worth.{measure}",
-                )
-            ranges[measure] = r
-        tools = (
-            worth.get("outside_tools")
-            if worth.get("outside_tools") in enums.values("outside_tools")
-            else None
-        )
-        if any(ranges.values()) or tools:
-
-            def lo(m: str) -> float | None:
-                r = ranges[m]
-                return r[0] if r else None
-
-            def hi(m: str) -> float | None:
-                r = ranges[m]
-                return r[1] if r else None
-
-            s.conn.execute(
-                "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, cost_high, "
-                "revenue_low, revenue_high, outside_tools) VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s, %s, %s)",
-                (s.uid, code, lo("hours_month"), hi("hours_month"), lo("cost_month"), hi("cost_month"),
-                 lo("revenue_month"), hi("revenue_month"), tools),
-            )  # fmt: skip
-    after = _fix(s.conn, s.uid)
+    answers = fix.read_answers(raw, need_how=True, at="fix.")
+    fix.store(s.conn, s.uid, s.user_id, code, answers, included=True, stem=str(s.n), replace_worth=False)
+    after = fix.entity(_fix(s.conn, s.uid))
     if after != before:
         s.changed("fix", before, after)
 
@@ -494,7 +393,11 @@ def save(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> 
         conn.execute("UPDATE ideas SET saved_at = %s WHERE id = %s", (now, idea["id"]))
         own.audit(conn, user_id, "idea.edit", idea, {"version": n + 1, "fields": changed})
         if "summary" in s.after:
-            adapters.find_similar(conn, str(idea["id"]), found_while="later")
+            found = adapters.find_similar(conn, str(idea["id"]), found_while="later")
+            conn.execute(
+                "UPDATE ideas SET similar_check = %s WHERE id = %s",
+                ("failed" if found is None else "done", idea["id"]),
+            )
         return {
             "version": {"n": n + 1, "changed_fields": changed, "at": now.isoformat()},
             "changed_fields": changed,

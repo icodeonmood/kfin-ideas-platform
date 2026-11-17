@@ -300,6 +300,15 @@ def test_l_submit_send_checked_line() -> None:
     assert checked_line(0, 1) == "No personal details found, 1 similar idea found"
 
 
+def test_l_similar_failure_the_track_says_couldnt_check_not_none_found_bld_c087() -> None:
+    from submit.send import checked_line
+
+    assert checked_line(1, None) == (
+        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
+    )
+    assert "no similar ideas" not in checked_line(0, None)
+
+
 # --- Adapters (SHIP_PLAN §5a) ------------------------------------------------------------------------------------
 
 
@@ -328,8 +337,19 @@ def test_l_hide_an_edit_is_masked_by_the_patterns_until_hide_lands(monkeypatch: 
     masked, found = adapters.pattern_mask(text)
     assert masked == "Investor with PAN PAN ••••4F called twice"
     assert found == [adapters.Found("pan", 18, 28, "PAN ••••4F")]
-    clean = adapters.mask_text(None, str(uuid.uuid4()), "Nothing personal here", by="u", source_id="x")  # type: ignore[arg-type]
+    sql: list[str] = []
+
+    class Conn:
+        def execute(self, query: str, *a: Any) -> None:
+            sql.append(query)
+
+    clean = adapters.mask_text(Conn(), str(uuid.uuid4()), "Nothing personal here", by="u", source_id="x")  # type: ignore[arg-type]
     assert clean == adapters.Masked("Nothing personal here", [], 0)
+    # Saved again under the same source id (a draft's fix answer): what was hidden from the old words goes first.
+    assert sql == [
+        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'edit' AND source_id = %s",
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'edit' AND source_id = %s",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -429,27 +449,141 @@ def test_l_submit_send_queues_listen_once_c_sarvam_is_here(monkeypatch: pytest.M
     assert seen == [(None, "u-1")]
 
 
+# --- S-05.fix, A-API.drafts fix and helpers ----------------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("measure", "raw", "low", "high", "text"),
     [
-        ("70 to 150", (70.0, 150.0)),
-        ("2 lakh", (200000.0, None)),
-        ("2L", (200000.0, None)),
-        ("2,00,000", (200000.0, None)),
-        (25000, (25000.0, None)),
-        ({"low": 70, "high": 150}, (70.0, 150.0)),
-        ("150 to 70", None),
-        ("a lot", None),
-        (-5, None),
+        ("hours_month", "70 to 150", 70.0, 150.0, "70 to 150 hours a month"),
+        ("cost_month", "2 lakh", 200000.0, None, "₹2,00,000 a month"),
+        ("cost_month", "2L", 200000.0, None, "₹2,00,000 a month"),
+        ("cost_month", "2,00,000", 200000.0, None, "₹2,00,000 a month"),
+        ("cost_month", "about 25k", 25000.0, None, "about ₹25,000 a month"),
+        ("revenue_month", "1.2 crore", 12000000.0, None, "₹1,20,00,000 a month"),
+        ("cost_month", 25000, 25000.0, None, "₹25,000 a month"),
+        ("hours_month", {"low": 70, "high": 150}, 70.0, 150.0, "70 to 150 hours a month"),
+        ("hours_month", {"low": 0, "text": "150 to 70"}, 70.0, 150.0, "70 to 150 hours a month"),
     ],
 )
-def test_l_worth_1_amounts_in_any_indian_form(
-    monkeypatch: pytest.MonkeyPatch, raw: Any, expected: Any
+def test_l_worth_1_s05_fix_amounts_in_any_indian_form_through_lane_bs_reader(
+    measure: str, raw: Any, low: float, high: float | None, text: str
 ) -> None:
-    from submit import adapters
+    """A-API `PUT /drafts/:id/fix`: amounts parsed from any Indian form by `desk.worth` (one reader on the platform)
+    and returned normalised in `Range.text`."""
+    from desk.worth import Range
+    from submit import fix
 
-    monkeypatch.setattr(adapters, "_module", lambda name: None)
-    assert adapters.parse_range("cost", raw) == expected
+    assert not hasattr(__import__("submit.adapters").adapters, "parse_range")  # no second parser
+    assert fix._figure(measure, raw, f"worth.{measure}") == Range(low, high, text)
+
+
+@pytest.mark.parametrize("raw", ["a lot", -5, True, "9" * 81, {"low": "x"}, ["70"]])
+def test_v_fields_checkit_9_an_unclear_amount_is_refused_with_its_message(raw: Any) -> None:
+    from submit import fix
+    from submit.errors import Refused
+
+    with pytest.raises(Refused) as err:
+        fix._figure("cost_month", raw, "worth.cost_month")
+    assert err.value.body() == {
+        "error": {
+            "code": "worth_unclear",
+            "message": "Write a rough figure or a range, like 70 to 150.",
+            "field": "worth.cost_month",
+        }
+    }
+
+
+def test_v_fields_checkit_8_how_is_needed_to_add_a_fix_not_to_keep_one() -> None:
+    from submit import fix
+    from submit.errors import Refused
+
+    for body in ({}, {"how": "Print it."}, {"how": "   "}):
+        with pytest.raises(Refused) as err:
+            fix.read_answers(body, need_how=True)
+        assert (err.value.code, err.value.field, err.value.message) == (
+            "fix_how_needed",
+            "how",
+            "Say how you’d solve it, or close this to send without a fix.",
+        )
+    kept = fix.read_answers(
+        {"needs": "Two people for a week", "worth": {"hours_month": "70"}}, need_how=False
+    )
+    assert kept.words["how"] is None and kept.words["needs"] == "Two people for a week"
+    with pytest.raises(Refused) as err:
+        fix.read_answers({"fix": {}}, need_how=True, at="fix.")
+    assert err.value.field == "fix.how"
+    odd = fix.read_answers(
+        {"how": "Send the reason in plain words in the SMS.", "solved_already": "maybe", "basis": "gut",
+         "worth": {"outside_tools": "lots"}},
+        need_how=True,
+    )  # fmt: skip
+    assert (odd.solved_already, odd.basis, odd.worth.outside_tools) == (None, None, None)
+
+
+def test_s05_fix_readiness_counts_five_and_names_the_most_useful_next() -> None:
+    """S-05.fix: "2 of 5 ready for the review desk" with how and solved already given names a rough size; the risks
+    never count."""
+    from desk.worth import Range, Worth
+    from submit import fix
+
+    row: dict[str, Any] = {
+        "how": "Send the reason in plain words.",
+        "solved_already": "partly",
+        "risks": "None",
+    }
+    assert fix.ready_count(row, None) == 2
+    assert fix.next_up(row, None) == {
+        "key": "worth",
+        "line": "Most useful next: a rough size. A range is fine.",
+    }
+    hours = Worth(hours_month=Range(70, 150, "70 to 150 hours a month"))
+    assert fix.ready_count(row, hours) == 3 and fix.next_up(row, hours) == {
+        "key": "basis",
+        "line": "Most useful next: what that is based on.",
+    }
+    full = {**row, "needs": "A template change", "basis": "conversation"}
+    assert fix.ready_count(full, hours) == 5 and fix.next_up(full, hours) is None
+    assert fix.ready_count(None, None) == 0 and (fix.next_up(None, None) or {}).get("key") == "how"
+
+
+def test_s05_fix_the_size_line_reads_as_the_board() -> None:
+    from desk.worth import Range, Worth
+    from submit import fix
+
+    w = Worth(
+        hours_month=Range(70, 150, "70 to 150 hours a month"),
+        cost_month=Range(25000, None, "about ₹25,000 a month"),
+    )
+    assert fix.size_line(w, "partly") == (
+        "70 to 150 hours a month, about ₹25,000 a month saved, solved elsewhere: partly"
+    )
+    assert fix.size_line(None, "dont_know") == ""
+    assert fix.size_line(Worth(outside_tools="fully"), None) == "less reliance on outside tools"
+
+
+def test_s05_part6_who_would_help_picks_come_from_the_list(seed_rules: None) -> None:
+    """E-ENUMS.sorting `helper`: the configured list, any case, kept in the list's spelling, each once; own words up
+    to 140 characters (V-FIELDS.checkit/10). The Send part's row reads "Not said" until something is said."""
+    from submit import config, helpers
+    from submit.errors import Refused
+
+    li = config.lists()
+    picks, words = helpers.read(
+        {"picks": ["someone from tech", "Data or reports", "Someone from tech"], "text": "  a  branch head "},
+        li,
+    )
+    assert picks == ["Someone from tech", "Data or reports"] and words == "a branch head"
+    assert helpers.read({"picks": []}, li) == ([], None)
+    for bad in ({"picks": ["The canteen"]}, {"picks": "Someone from tech"}, {"picks": [], "text": 7}):
+        with pytest.raises(Refused) as err:
+            helpers.read(bad, li)
+        assert err.value.code == "field_needed"
+    with pytest.raises(Refused) as err:
+        helpers.read({"picks": [], "text": "x" * 141}, li)
+    assert (err.value.field, err.value.message) == ("text", "Keep it to 140 characters.")
+    assert helpers.line([], None) == "Not said"
+    assert helpers.line(["Someone at a branch"], "a branch head") == "Someone at a branch and a branch head"
 
 
 def test_a_api_errors_have_the_conventions_shape() -> None:

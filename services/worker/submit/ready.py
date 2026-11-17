@@ -17,7 +17,7 @@ import datetime as dt
 from typing import Any
 
 from core.db import Conn
-from submit import config, own, sorting
+from submit import check, config, helpers, own, sorting
 from submit.errors import Refused
 from submit.words import join
 
@@ -157,15 +157,15 @@ def send_view(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[s
     files, links = _proof(conn, uid)
     blocked = waiting_files(conn, uid)
     fix = fix_line(conn, uid)
-    picks = list(idea.get("helper_picks") or [])
-    helper_text = " ".join(str(idea.get("helper_text") or "").split())
-    helpers = join([*picks, helper_text] if helper_text else picks)
+    helpers_value = helpers.line(list(idea.get("helper_picks") or []), idea.get("helper_text"))
     if lead:
         similar_value = f"Waiting on {lead} to merge"
     elif n_similar:
         similar_value = _count(n_similar, "similar idea") + " found"
         if idea.get("kept_separate"):
             similar_value += ", kept yours separate"
+    elif check.couldnt_check(conn, idea):
+        similar_value = check.COULDNT_CHECK  # never "nobody has raised this" (L-SIMILAR.failure)
     else:
         similar_value = "Nobody has raised this yet"
     proof_bits = [_count(files, "file") if files else "", _count(links, "link") if links else ""]
@@ -196,7 +196,7 @@ def send_view(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[s
         {
             "key": "helpers",
             "label": "Who would help",
-            "value": helpers or "Not said",
+            "value": helpers_value,
             "ok": True,
             "step": "check:6",
         },

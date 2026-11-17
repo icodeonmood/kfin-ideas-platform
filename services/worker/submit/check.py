@@ -1,7 +1,8 @@
 """L-SUBMIT.send/3: "Checked and matched", in the background after Submit (and after a restore).
 
-The final hidden-detail pass runs on what others will read (title, summary, how often, the fix), and similar ideas
-are matched. Then the idea moves `checking → with_review_desk` (E-ENUMS.idea-machine: an automatic move on the
+The final hidden-detail pass runs on what others will read (title, summary, how often), and similar ideas are
+matched; whether they could be is kept in `ideas.similar_check` ('failed' reads "Couldn't check for similar ideas.
+The review desk will.", never "none found", L-SIMILAR.failure). Then the idea moves `checking → with_review_desk` (E-ENUMS.idea-machine: an automatic move on the
 completion of a check, not an agent's verdict, non-negotiable 5) and the sharer is told it reached the review desk
 (`L-INBOX.kinds` "Sent to the review desk", through lane A's `notify.post`, inside this transaction).
 
@@ -20,6 +21,29 @@ from submit import adapters
 log = get_logger("submit.check")
 
 PUBLIC_TEXT = ("title", "summary", "often")
+COULDNT_CHECK = (
+    "Couldn’t check for similar ideas. The review desk will."  # L-SIMILAR.failure, C-DRAFT-LOADER/2
+)
+
+
+def couldnt_check(conn: Conn, idea: dict[str, Any]) -> bool:
+    """True when similar ideas could not be checked for this draft or idea (L-SIMILAR.failure): c/similar's latest
+    run when its `similar_runs` is here (its retries after sharing write only there), else what the check recorded
+    (`ideas.similar_check`), else, for a draft, its similar part having failed (C-DRAFT-LOADER/2)."""
+    uid = str(idea["id"])
+    here = conn.execute("SELECT to_regclass('public.similar_runs') IS NOT NULL AS here").fetchone()
+    if here is not None and here["here"]:
+        run = conn.execute("SELECT state FROM similar_runs WHERE idea_uuid = %s", (uid,)).fetchone()
+        if run is not None:
+            return bool(run["state"] == "failed")
+    if idea.get("similar_check") is not None:
+        return bool(idea["similar_check"] == "failed")
+    if idea.get("status") == "draft":
+        part = conn.execute(
+            "SELECT state FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'", (uid,)
+        ).fetchone()
+        return part is not None and part["state"] == "failed"
+    return False
 
 
 def _final_pass(conn: Conn, idea: dict[str, Any], by: str) -> int:
@@ -50,10 +74,17 @@ def run(conn: Conn, idea_uuid: str, *, gave_up: bool = False) -> None:
         sharer = conn.execute(
             "SELECT user_id FROM contributor_map WHERE contributor_code = %s", (idea["contributor_code"],)
         ).fetchone()
-        hidden = _final_pass(conn, idea, str(sharer["user_id"]) if sharer else "process:submit.check")
+        if sharer is not None:
+            hidden = _final_pass(conn, idea, str(sharer["user_id"]))
+        else:
+            # Hide's `by` is the users.id of whoever typed the words, the one person who may read the values; with
+            # no mapping there is nobody to give, so the pass is skipped (the words were masked when written).
+            hidden = 0
+            log.warning("submit.check_no_sharer", idea_uuid=idea_uuid)
         similar = None if gave_up else adapters.find_similar(conn, idea_uuid, found_while="checking")
         conn.execute(
-            "UPDATE ideas SET status = 'with_review_desk' WHERE id = %s AND status = 'checking'", (idea_uuid,)
+            "UPDATE ideas SET status = 'with_review_desk', similar_check = %s WHERE id = %s AND status = 'checking'",
+            ("failed" if similar is None else "done", idea_uuid),
         )
         if sharer is not None:
             ref = str(idea["idea_id"])

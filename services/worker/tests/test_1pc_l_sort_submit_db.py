@@ -16,7 +16,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from core.config import get_settings
-from submit import check, edit, ready, routing, send, sorting
+from submit import check, edit, fix, helpers, ready, routing, send, sorting
 from submit.config import DECLARATION_VERSION
 from submit.errors import NotFound, Refused
 
@@ -472,7 +472,11 @@ def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: di
     assert [(s["stage"], s["state"]) for s in again["stages"]][:3] == [
         ("shared", "done"), ("checked_matched", "done"), ("reviewed", "now"),
     ]  # fmt: skip
-    assert again["stages"][1]["detail"] == "1 personal detail hidden, no similar ideas found"
+    # Matching is not on main here, so it could not be checked: never "no similar ideas found" (BLD-C087)
+    assert idea["similar_check"] == "failed"
+    assert again["stages"][1]["detail"] == (
+        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
+    )
     assert again["stages"][2]["detail"] == "By Friday 20 November"
     check.run(conn, world["draft"])  # a second run changes nothing
     assert _idea(world)["status"] == "with_review_desk"
@@ -706,3 +710,247 @@ def test_l_submit_keys_never_reach_sql_unless_well_formed() -> None:
 
     assert find(None, "x' OR 1=1 --") is None  # type: ignore[arg-type]
     assert find(None, str(uuid.uuid4()).upper()) is None  # type: ignore[arg-type]
+
+
+# --- S-05.fix, A-API.drafts `PUT|DELETE /drafts/:id/fix` and `PUT /drafts/:id/helpers` -----------------------------
+
+
+def test_a_api_drafts_fix_put_reads_amounts_hides_details_and_counts_ready(world: dict[str, Any]) -> None:
+    """S-05.fix: "Add my fix" with figures in any Indian form → `Fix` with `ready_count` and `Range.text`; a PAN in
+    the words is hidden like any part, and saving again replaces what was hidden from that answer."""
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    body = {
+        "how": "Send the reason in plain words in the SMS, as for PAN ABCPE1234F.",  # a made-up PAN
+        "solved_already": "partly",
+        "worth": {"hours_month": "70 to 150", "cost_month": "about 25k"},
+    }
+    out = fix.put_draft(conn, draft, asha, body, now=NOW)
+    assert out["how"] == "Send the reason in plain words in the SMS, as for PAN PAN ••••4F."
+    assert out["worth"] == {
+        "hours_month": {"low": 70.0, "high": 150.0, "text": "70 to 150 hours a month"},
+        "cost_month": {"low": 25000.0, "high": None, "text": "₹25,000 a month"},
+    }
+    assert out["ready_count"] == 3 and out["included"] is True
+    assert out["readiness"] == "3 of 5 ready for the review desk"
+    assert out["next"] == {"key": "basis", "line": "Most useful next: what that is based on."}
+    assert out["part"] == {
+        "rail": "Added",
+        "line": "Included, 3 of 5 ready",
+        "fix_line": "Send the reason in plain words in the SMS, as for PAN PAN ••••4F.",
+        "size_line": "70 to 150 hours a month, ₹25,000 a month saved, solved elsewhere: partly",
+    }
+    hid = conn.execute(
+        "SELECT kind, masked FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
+    ).fetchall()
+    assert [(h["kind"], h["masked"]) for h in hid] == [("pan", "PAN ••••4F")]
+    view = ready.send_view(conn, draft, asha, now=NOW)
+    assert view["button"] == "Submit with my fix"
+    assert {r["key"]: r["value"] for r in view["rows"]}["fix"] == out["part"]["fix_line"]
+    again = fix.put_draft(
+        conn,
+        draft,
+        asha,
+        {**body, "how": "Send the reason in plain words in the SMS.", "basis": "report"},
+        now=NOW,
+    )
+    assert again["ready_count"] == 4
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
+        ).fetchone()["n"]
+        == 0
+    )  # the PAN left the words, so its hidden detail went too
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s AND by_side = 'sharer'", (draft,)
+        ).fetchone()["n"]
+        == 1
+    )  # a draft's figures are replaced: nobody else has seen them
+    audit = conn.execute(
+        "SELECT after FROM audit_log WHERE action = 'idea.fix' AND actor = %s ORDER BY id DESC",
+        (f"user:{asha}",),
+    ).fetchone()
+    assert audit["after"] == {"included": True, "ready_count": 4}  # counts only, never the words
+
+
+def test_v_fields_checkit_8_9_the_fix_sheets_messages(world: dict[str, Any]) -> None:
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    with pytest.raises(Refused) as err:
+        fix.put_draft(conn, draft, asha, {"needs": "A template change"}, now=NOW)
+    assert err.value.body()["error"] == {
+        "code": "fix_how_needed",
+        "message": "Say how you’d solve it, or close this to send without a fix.",
+        "field": "how",
+    }
+    with pytest.raises(Refused) as err:
+        fix.put_draft(
+            conn,
+            draft,
+            asha,
+            {"how": "Send the reason in plain words.", "worth": {"cost_month": "a lot"}},
+            now=NOW,
+        )
+    assert (err.value.code, err.value.field) == ("worth_unclear", "worth.cost_month")
+    assert conn.execute("SELECT 1 FROM idea_fix WHERE idea_uuid = %s", (draft,)).fetchone() is None
+
+
+def test_s05_fix_close_and_keep_then_remove(world: dict[str, Any]) -> None:
+    """ "Close, and keep what you wrote" keeps a started fix that is not included and holds nothing; "Remove" takes the
+    fix, its figures and what was hidden from its words away."""
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    started = fix.put_draft(
+        conn, draft, asha, {"included": False, "needs": "Folio 1234567890 shows it", "worth": {"hours_month": "70"}},
+        now=NOW,
+    )  # fmt: skip
+    assert started["included"] is False and started["ready_count"] == 2
+    assert started["part"] == {
+        "rail": "Optional",
+        "line": "You started a fix. It isn’t included yet.",
+        "action": "Carry on with your fix",
+    }
+    _confirm(world)
+    view = ready.send_view(conn, draft, asha, now=NOW)
+    assert view["button"] == "Submit" and view["ready"] is True  # a fix never holds Submit (L-SUBMIT.pre/6)
+    assert fix.delete_draft(conn, draft, asha, now=NOW) == {"fix": None, "part": {"rail": "Optional"}}
+    gone = conn.execute(
+        "SELECT (SELECT count(*) FROM idea_fix WHERE idea_uuid = %s) + (SELECT count(*) FROM idea_worth WHERE "
+        "idea_uuid = %s) AS n",
+        (draft, draft),
+    ).fetchone()
+    assert gone["n"] == 0
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
+        ).fetchone()["n"]
+        == 0
+    )
+    assert fix.delete_draft(conn, draft, asha, now=NOW)["fix"] is None  # removing twice is fine
+
+
+def test_a_api_drafts_fix_and_helpers_are_the_owners_and_only_on_a_draft(world: dict[str, Any]) -> None:
+    conn, draft = world["conn"], world["draft"]
+    with pytest.raises(NotFound):
+        fix.put_draft(conn, draft, world["p"]["neha"], {"how": "Send the reason in plain words."}, now=NOW)
+    with pytest.raises(NotFound):
+        helpers.put_draft(conn, draft, world["p"]["neha"], {"picks": []}, now=NOW)
+    ref = _shared(world)
+    asha = world["p"]["asha"]
+    with pytest.raises(Refused) as err:
+        fix.put_draft(conn, ref, asha, {"how": "Send the reason in plain words."}, now=NOW)
+    assert err.value.code == "not_a_draft"  # a shared idea changes from its edit page
+    with pytest.raises(Refused) as err:
+        fix.delete_draft(conn, ref, asha, now=NOW)
+    assert err.value.code == "not_a_draft"
+    with pytest.raises(Refused) as err:
+        helpers.put_draft(conn, ref, asha, {"picks": []}, now=NOW)
+    assert err.value.code == "not_a_draft"
+
+
+def test_a_api_drafts_helpers_put_picks_and_hidden_own_words(world: dict[str, Any]) -> None:
+    """S-05 part 6: picks from the list and the person's own words, masked like any part; the Send part's row."""
+    conn, asha, draft = world["conn"], world["p"]["asha"], world["draft"]
+    out = helpers.put_draft(
+        conn, draft, asha, {"picks": ["someone at a branch", "Data or reports"], "text": "whoever has 9876543210"},
+        now=NOW,
+    )  # fmt: skip
+    assert out["picks"] == ["Someone at a branch", "Data or reports"]
+    assert out["text"] == "whoever has Phone ••••10"
+    assert out["line"] == "Someone at a branch, Data or reports and whoever has Phone ••••10"
+    assert out["part"] == {"rail": "Added"}
+    idea = _idea(world)
+    assert idea["helper_picks"] == ["Someone at a branch", "Data or reports"]
+    assert idea["helper_text"] == "whoever has Phone ••••10"
+    rows = {r["key"]: r["value"] for r in ready.send_view(conn, draft, asha, now=NOW)["rows"]}
+    assert rows["helpers"] == out["line"]
+    cleared = helpers.put_draft(conn, draft, asha, {"picks": []}, now=NOW)
+    assert cleared["line"] == "Not said" and cleared["part"] == {"rail": "Optional"}
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (draft,)
+        ).fetchone()["n"]
+        == 0
+    )
+
+
+def test_l_submit_edit_fix_and_helpers_save_as_a_version_with_range_text(world: dict[str, Any]) -> None:
+    """J-RECOVER/15, A-API `PATCH /ideas/:id`: the fix and who would help are saved from the edit page; figures read
+    back normalised; the same answers again make no new version."""
+    conn, asha = world["conn"], world["p"]["asha"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=1)
+    body = {
+        "declaration_version": DECLARATION_VERSION,
+        "fix": {"how": "Send the reason in plain words in the SMS.", "worth": {"cost_month": "2L"}},
+        "helpers": {"picks": ["Someone from tech"]},
+    }
+    out = edit.save(conn, ref, asha, body, now=later)
+    assert out["changed_fields"] == ["fix", "helpers"] and out["version"]["n"] == 2
+    page = edit.page(conn, ref, asha, now=later)
+    assert page["fix"]["worth"] == {
+        "cost_month": {"low": 200000.0, "high": None, "text": "₹2,00,000 a month"}
+    }
+    assert page["fix"]["part"]["size_line"] == "₹2,00,000 a month saved"
+    assert page["helpers"]["line"] == "Someone from tech"
+    assert edit.save(conn, ref, asha, body, now=later)["version"] is None  # nothing changed, no version
+    with pytest.raises(Refused) as err:
+        edit.save(
+            conn, ref, asha, {**body, "fix": {"how": "Send it.", "worth": {"cost_month": "lots"}}}, now=later
+        )
+    assert err.value.field == "fix.how"
+
+
+# --- BLD-C087 verification fixes ------------------------------------------------------------------------------------
+
+
+def test_l_similar_failure_the_send_part_says_couldnt_check(world: dict[str, Any]) -> None:
+    """A draft whose similar part failed reads "Couldn't check …", not "Nobody has raised this yet"."""
+    conn, draft = world["conn"], world["draft"]
+    conn.execute(
+        "INSERT INTO idea_parts (idea_uuid, key, state, value) VALUES (%s, 'similar', 'failed', NULL)",
+        (draft,),
+    )
+    rows = {r["key"]: r for r in ready.send_view(conn, draft, world["p"]["asha"], now=NOW)["rows"]}
+    assert rows["similar"]["value"] == "Couldn’t check for similar ideas. The review desk will."
+    assert rows["similar"]["ok"] is True  # it never holds the send (L-SIMILAR.failure)
+
+
+def test_l_similar_failure_a_check_that_matched_reads_its_count(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from submit import adapters
+
+    monkeypatch.setattr(adapters, "find_similar", lambda conn, idea_uuid, *, found_while: 0)
+    _confirm(world)
+    _submit(world)
+    check.run(world["conn"], world["draft"])
+    idea = _idea(world)
+    assert idea["similar_check"] == "done"
+    detail = send.handover(world["conn"], idea, NOW + dt.timedelta(minutes=5))["stages"][1]["detail"]
+    assert detail == "No personal details found, no similar ideas found"
+
+
+def test_l_submit_send_a_listen_prefetch_failure_never_fails_a_send(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import types
+
+    from submit import adapters
+
+    real = adapters._module
+
+    def boom(conn: Any, idea_uuid: str) -> None:
+        conn.execute("INSERT INTO jobs (type, payload) VALUES ('listen.prefetch', '{\"probe\": true}')")
+        raise RuntimeError("speech service down")
+
+    fake = types.SimpleNamespace(enqueue_prefetch=boom)
+    monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "speech.listen" else real(name))
+    _confirm(world)
+    status, out = _submit(world)
+    assert status == 201 and REF.match(out["ref"])
+    assert _idea(world)["status"] == "checking"
+    assert (
+        world["conn"]
+        .execute("SELECT count(*) AS n FROM jobs WHERE kind = 'listen.prefetch' AND payload = '{}'::jsonb")
+        .fetchone()["n"]
+        == 0
+    )  # the savepoint undid what the failed prefetch wrote

@@ -1,5 +1,5 @@
-"""Lane C's `/internal/*` routes for sorting and sending (A-API.drafts sorting and submit, A-API.ideas edit and
-versions, A-API.config), on their own router so `api/app.py` takes one include line.
+"""Lane C's `/internal/*` routes for sorting and sending (A-API.drafts sorting, fix, helpers and submit, A-API.ideas
+edit and versions, A-API.config), on their own router so `api/app.py` takes one include line.
 
 The web app has checked the session and the capability (policy/rbac.yaml) and the kill switches, and passes the
 signed-in person as `user_id`; the services decide what that person may do with this draft or idea. Errors follow
@@ -65,6 +65,24 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         from submit.sorting import update_draft
 
         return _call(update_draft, key, user_id, body, now=_now())
+
+    @r.put("/drafts/{key}/fix")
+    def draft_fix(key: str, user_id: str, body: Any = Body(default=None)) -> JSONResponse:  # noqa: B008
+        from submit.fix import put_draft
+
+        return _call(put_draft, key, user_id, body, now=_now())
+
+    @r.delete("/drafts/{key}/fix")
+    def draft_fix_remove(key: str, user_id: str) -> JSONResponse:
+        from submit.fix import delete_draft
+
+        return _call(delete_draft, key, user_id, now=_now())
+
+    @r.put("/drafts/{key}/helpers")
+    def draft_helpers(key: str, user_id: str, body: Any = Body(default=None)) -> JSONResponse:  # noqa: B008
+        from submit.helpers import put_draft
+
+        return _call(put_draft, key, user_id, body, now=_now())
 
     @r.get("/drafts/{key}/send")
     def draft_send(key: str, user_id: str) -> JSONResponse:
