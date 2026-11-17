@@ -333,6 +333,6 @@ test("J-TEAMUP/1–2 at 375px: Team up sends, Keep looking moves on, Your crews 
     name: "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea.",
   });
   await expect(row).toHaveAttribute("href", `/ideas/${C1.id}`);
-  await expect(row).toContainText("Ravi Nair, Investor service");
+  await expect(page.getByRole("listitem").filter({ has: row })).toContainText("Ravi Nair, Investor service");
   await expectNoSeriousAxeIssues(page);
 });
