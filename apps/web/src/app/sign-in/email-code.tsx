@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { BANNERS } from "@/lib/killswitch-routes";
+
 import { SsoForm } from "./sso-form";
 
 /**
@@ -23,11 +25,20 @@ const isWork = (email: string, domains: string[]) => {
   return EMAIL.test(e) && domains.includes(e.split("@").pop() ?? "");
 };
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+/** The server's countdown in whole seconds; none given, none shown ("Send a new code" at once). */
+const seconds = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 0;
+};
 
 const MESSAGES = {
   not_work_email: "Use your KFintech email, like name@kfintech.com.",
   rate_limited: "Too many tries. Wait 10 minutes, or use single sign-on.",
   code_expired: "That code has run out. We've sent a new one.",
+  // Not drawn: a code that ran out inside the countdown, so no new one went out yet (wording for HR, BLD-A175).
+  code_expired_wait: "That code has run out. Ask for a new one when the countdown ends.",
+  // A 503 while `auth.email_code` is off: the switch's own notice, from the one source (BLD-157).
+  paused: BANNERS["auth.email_code"],
   unavailable: "Something went wrong on our side. Please try again in a minute.",
 } as const;
 
@@ -107,7 +118,7 @@ export function EmailCode({
         if (status === 200) {
           setSentTo(String(data.sent_to ?? address));
           setValidMinutes(Number(data.valid_minutes ?? 10));
-          setLeft(Number(data.resend_in_seconds ?? 45));
+          setLeft(seconds(data.resend_in_seconds));
           setCode("");
           setWrong(null);
           setDir("fwd");
@@ -115,7 +126,7 @@ export function EmailCode({
           return;
         }
         if (data.error === "too_soon") {
-          setLeft(Number(data.resend_in_seconds ?? 45));
+          setLeft(seconds(data.resend_in_seconds));
           setSentTo(address);
           setDir("fwd");
           setStep("code");
@@ -148,9 +159,12 @@ export function EmailCode({
           return;
         }
         if (data.error === "code_expired") {
+          // The server says whether a new code went out, and how long until another can be asked for.
           setCode("");
           setWrong(null);
-          setLeft(45);
+          setLeft(seconds(data.resend_in_seconds));
+          setNotice(data.resent === true ? MESSAGES.code_expired : MESSAGES.code_expired_wait);
+          return;
         }
         setNotice(message(data.error));
       } catch {
