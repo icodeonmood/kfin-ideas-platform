@@ -371,13 +371,23 @@ def give_more_time(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None
     """`POST /question-sets/:id/extend`: "Give 2 more days", once per click (L-QUESTIONS.clock/3)."""
     t = at or now()
     p = promises.get()
-    tz = clock.office_calendar().tz
+    cal = clock.office_calendar()
+    tz = cal.tz
     sid = _uuid(set_id)
     with audited(conn), conn.transaction():
         idea, s = _reviewer_set(conn, sid, user_id, "give_more_time")
-        due = clock.give_more_time(s["due_at"], p, t)  # from now when it is overdue
+        due = clock.give_more_time(s["due_at"], p, t, cal)  # from now when it is overdue
         n = int(s["extended_times"]) + 1
         conn.execute("UPDATE question_sets SET due_at = %s, extended_times = %s WHERE id = %s", (due, n, sid))
+        # V-ACC.track/3: the sharer's Needs you item moves to the new deadline, so Home, Inbox, the idea page and the
+        # conversation count down to the same time. Posted again under the set's key, which keeps one item.
+        count = conn.execute("SELECT count(*) AS n FROM questions WHERE set_id = %s", (sid,)).fetchone()
+        adapters.tell(
+            conn, "questions", _sharers(conn, idea), idea_uuid=str(idea["id"]), sender=user_id, needs_you=True,
+            due_at=due, actions=[_answer_action(idea)],
+            refs={"set_id": sid, "count": int(count["n"]) if count else 0, "more_time": True},
+            dedupe_key=adapters.questions_key(sid),
+        )  # fmt: skip
         _schedule_reminders(conn, sid, t, due, p)  # 1 day and 2 hours before the new deadline
         audit(conn, actor(user_id), "desk.give_more_time", f"idea:{idea['idea_id']}",
               before={"set_id": sid, "due_at": _iso(s["due_at"])},

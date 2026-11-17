@@ -72,6 +72,7 @@ export type TeamUpAnswer = EnumValue<"teamup_answer">;
 export type MergeLead = EnumValue<"merge_lead">;
 export type MyIdeasList = EnumValue<"my_ideas_list">;
 export type MyIdeasSort = EnumValue<"my_ideas_sort">;
+export type MyIdeasFilter = EnumValue<"my_ideas_filter">;
 export type InboxTab = EnumValue<"inbox_tab">;
 export type DeskSort = EnumValue<"desk_sort">;
 export type CommitteeTab = EnumValue<"committee_tab">;

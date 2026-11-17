@@ -92,8 +92,13 @@ def test_A_API_desk_from_the_queue_to_the_committee(client: TestClient, cast: di
 def test_unknown_ideas_and_windows_are_not_found(client: TestClient, cast: dict[str, Any]) -> None:
     meera = cast["meera"]["id"]
     assert client.get("/internal/desk/ideas/IDEA-2026-999999", params={"user_id": meera}).status_code == 404
+    rohan = cast["rohan"]["id"]
     assert (
-        client.post("/internal/committee/windows/nope/extend", params={"user_id": meera}).status_code == 404
+        client.post("/internal/committee/windows/nope/extend", params={"user_id": rohan}).status_code == 404
+    )
+    # the role is checked first: a reviewer learns nothing about the committee's windows (L-COMMITTEE)
+    assert (
+        client.post("/internal/committee/windows/nope/extend", params={"user_id": meera}).status_code == 403
     )
 
 

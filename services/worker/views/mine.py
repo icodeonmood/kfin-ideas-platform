@@ -14,6 +14,7 @@ from core.db import Conn
 from pii import vault
 from pii.restore import restore
 from views.common import PUBLIC_WORDS, first_area, is_public, public_summary, taxonomy_names
+from wall import kindling
 
 # (stage in plain words, next step). The owner sees their own idea's stage more precisely than everyone else, but
 # a stage everyone can see reads the same for its owner: the word comes from the shared table (review A5).
@@ -183,19 +184,29 @@ def my_ideas(conn: Conn, user_id: str) -> dict[str, Any]:
             }
         )
     pref = conn.execute(
-        "SELECT public_name_consent FROM comms_prefs WHERE user_id = %s", (user_id,)
+        "SELECT show_name_on_wall FROM person_settings WHERE user_id = %s", (user_id,)
     ).fetchone()
-    return {"ideas": ideas, "joined": joined, "name_on_wall": bool(pref and pref["public_name_consent"])}
+    shown = pref is None or bool(pref["show_name_on_wall"])  # shown unless hidden (DEC-104)
+    return {"ideas": ideas, "joined": joined, "name_on_wall": shown}
 
 
 def set_name_on_wall(conn: Conn, user_id: str, on: bool) -> dict[str, Any]:
-    conn.execute(
-        "INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, %s) "
-        "ON CONFLICT (user_id) DO UPDATE SET public_name_consent = EXCLUDED.public_name_consent",
-        (user_id, on),
-    )
-    conn.execute(
-        "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'prefs.name_on_wall', %s, %s)",
-        (f"user:{user_id}", f"user:{user_id}", Jsonb({"on": on})),
-    )
+    """The old /my-ideas toggle writes the rule, `person_settings.show_name_on_wall`, and copies it to the old
+    `comms_prefs.public_name_consent` until Monday's cleanup, as Profile does (DEC-104, wall/profile.py)."""
+    with conn.transaction():
+        conn.execute(
+            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = EXCLUDED.show_name_on_wall",
+            (user_id, on),
+        )
+        conn.execute(
+            "INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET public_name_consent = EXCLUDED.public_name_consent",
+            (user_id, on),  # old pages read this until Monday
+        )
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'prefs.name_on_wall', %s, %s)",
+            (f"user:{user_id}", f"user:{user_id}", Jsonb({"on": on})),
+        )
+    kindling.clear_cache()  # the Wall shows the new choice at once, as after Profile
     return {"name_on_wall": on}

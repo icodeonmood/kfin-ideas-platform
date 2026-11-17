@@ -60,7 +60,14 @@ def test_L_DECIDE_rules_5_the_sharer_reads_the_committee_line_while_the_window_i
     db: Conn, cast: dict[str, Any]
 ) -> None:
     got = _sharer(db, cast, f.at(17, 9))
-    assert got["lines"] == {"committee_line": OPEN_LINE.format(day="Wednesday 16 December"), "reversal": None}
+    assert (
+        got["lines"]
+        == {
+            "joined_line": None,  # a Pick that joined nothing (L-MERGE.desk/5 is in test_1pc_desk_review_followup_db)
+            "committee_line": OPEN_LINE.format(day="Wednesday 16 December"),
+            "reversal": None,
+        }
+    )
     assert got["decision"]["reason"] == REASON  # word for word
     assert _sharer(db, cast, f.at(17, 9), who="farhan")["lines"]["committee_line"]  # the crew reads it too
     # the desk and the committee read the committee's words, not the sharer's
