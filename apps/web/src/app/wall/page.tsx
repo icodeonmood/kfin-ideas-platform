@@ -8,7 +8,7 @@ import { day } from "@/lib/dates";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { currentUser } from "@/server/auth/current";
 import { wall, type PublicCard } from "@/server/ideas";
-import { publicOnes, type PublicOne } from "@/server/ones";
+import { wallOnes, type PublicOne } from "@/server/ones";
 
 export const metadata: Metadata = { title: "Wall" };
 export const dynamic = "force-dynamic";
@@ -70,7 +70,7 @@ function OnesSection({ ones }: { ones: PublicOne[] }) {
 export default async function Page() {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
-  const [w, ones] = await Promise.all([wall().catch(() => null), publicOnes().catch(() => null)]);
+  const [w, ones] = await Promise.all([wall().catch(() => null), wallOnes().catch(() => null)]);
   return (
     <>
       <div className="band stage wall-top" data-theme="zed" data-glow="1">
