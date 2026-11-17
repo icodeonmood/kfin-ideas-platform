@@ -174,9 +174,15 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
         name: /^Your note to .*: why the committee is changing it, in words .* will understand$/,
       })
       .fill(NOTE);
+    const sent = m.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reverse"));
     await form.getByRole("button", { name: /Reverse and tell / }).click();
+    const reply = await sent;
+    expect(reply.status(), `reverse: ${await reply.text()}`).toBe(200);
     // the reversal is sent and the window tab reloaded without the row before moving to Reversed (S-R4.rules/3)
     await expect(form).toBeHidden();
+    const listed = await m.request.get("/api/committee?tab=reversed&sort=closing");
+    expect(listed.status(), "the committee's Reversed list").toBe(200);
+    expect(JSON.stringify(await listed.json()), "the server lists it under Reversed").toContain(title);
     await expect(m.getByRole("rowgroup").filter({ hasText: title })).toHaveCount(0);
     await m.getByRole("tab", { name: /Reversed/ }).click();
     const reversed = m.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
