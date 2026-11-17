@@ -43,6 +43,16 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-R3` | `/ideas/:id/answer` | `app/ideas/[id]/answer` (`page.tsx`, `answer-view.tsx`, `answer.css`); files on an answer and the voice are seams | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
 | `S-R4` | `/committee` | `app/committee` (`page.tsx`, `committee-view.tsx`, `committee.css`; the scoring-round page replaced), worker `desk/committee.py`; page rule `committee_window` | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
+| `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
+| `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
+| `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
+| `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
+| `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
+| `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
+| `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
+| `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
+| `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P0 | B |
+| `S-H2` | `/crew` | `app/crew/` (`page.tsx`, `crew-screen.tsx`: the deck on lane D's `Deck` with `onPastEnd`, the cards, the filter panel and chips, "Your crews", the end and empty states, C-PREVIEW and C-SHEET-TEAMUP wired; `crew.css`); dev-only `/kit/crew` for `e2e/find-your-crew.spec.ts` (BLD-F036, BLD-F037). The sidebar row is lane D's to add | built (18 Nov, lane F) | L | P0 | F |
 | `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
 | `S-H4` | `/how-it-works` | `app/how-it-works`, `lib/how-it-works.ts` (old `app/journey` stays until lane E retires it) | built (16 Nov, BLD-A194) | S | P0 | A |
@@ -84,7 +94,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-LISTEN` | built (lane B): `components/review/listen-player.tsx` with `listen.css`, `lib/desk/listen.ts`; lane C's hosted audio and chapters first (DEC-108, `AudioEngine`), the browser's voice (BLD-B230, `ListenEngine`) on a 404 or 503 (BLD-B245) | M | P0 | B |
 | `C-SHEET-MERGE` | built (lane B): `components/review/merge-sheet.tsx` with `merge-sheet.css`, opened from S-R2's rows and C-PREVIEW's Merge | M | P0 | B |
 | `C-SHEET-TEAMUP` | built (lane F, BLD-F070 to BLD-F073): `components/teamup/teamup-sheet.tsx` (`TeamUpSheet`: compose with the drafted note and "Bring your ideas along", or on Check it (`draftId`) "Ask {lead} to merge mine in" / "Keep mine separate"; sending; sent in place with "Withdraw request"; every API error; `useTeamUpSheet()` gives hosts `open(ideaId)` and `sheet`, `teamUpOpener(ideaId)` marks what stands where "Team up" was); tests `tests/unit/teamup-sheet.test.ts`, `e2e/teamup-sheet.spec.ts` on the dev-only `/kit/team-up` (BLD-F074) | M | P0 | F |
-| `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
+| `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's (`app/crew/crew-screen.tsx`, data from `services/worker/crew/deck.py`; the optional `onPastEnd`, BLD-F036) | L | P0 | D (motion), F (data) |
 | `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |
 
 ## `P-REPO.logic`

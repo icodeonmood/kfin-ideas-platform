@@ -112,7 +112,13 @@ export const CREW_COPY = {
 // The API (A-API.team-up `GET /crew` and the passes, through lane F's web handlers)
 // ---------------------------------------------------------------------------------------------------------------
 export type Filters = Partial<Record<CrewFilterKey, string[]>>;
-export const FILTER_ORDER: readonly CrewFilterKey[] = ["location", "category", "status", "team_size", "looking_for"];
+export const FILTER_ORDER: readonly CrewFilterKey[] = [
+  "location",
+  "category",
+  "status",
+  "team_size",
+  "looking_for",
+];
 
 /** `/api/crew?location=Hyderabad&location=Pune…`, keys in the panel's order, values as given. */
 export function crewUrl(filters: Filters): string {
@@ -309,13 +315,7 @@ function FilterPanel({
   const groups: CrewFilterGroup[] = view?.filters ?? [];
   const total = view?.total ?? 0;
   return (
-    <div
-      ref={box}
-      className="crew-fpanel"
-      role="dialog"
-      aria-labelledby={titleId}
-      onKeyDown={onKeyDown}
-    >
+    <div ref={box} className="crew-fpanel" role="dialog" aria-labelledby={titleId} onKeyDown={onKeyDown}>
       <div className="crew-fph">
         <h2 className="crew-fpt" id={titleId}>
           {CREW_COPY.filterTitle}
@@ -421,7 +421,9 @@ export function CrewScreen(): JSX.Element {
   /** After the deck moves, focus goes to what is now in front (or the end of the deck), never into a hidden card. */
   const focusFront = useCallback(() => {
     requestAnimationFrame(() => {
-      (frontTitle.current?.isConnected ? frontTitle.current : endHeading.current)?.focus({ preventScroll: true });
+      (frontTitle.current?.isConnected ? frontTitle.current : endHeading.current)?.focus({
+        preventScroll: true,
+      });
     });
   }, []);
 
@@ -577,7 +579,10 @@ export function CrewScreen(): JSX.Element {
   };
 
   // --- Rendering --------------------------------------------------------------------------------------------------
-  const crews = [...added, ...(data?.your_crews?.items ?? []).filter((r) => !added.some((a) => a.id === r.id))];
+  const crews = [
+    ...added,
+    ...(data?.your_crews?.items ?? []).filter((r) => !added.some((a) => a.id === r.id)),
+  ];
   const inUse = filterCount(applied);
 
   let centre: JSX.Element;
@@ -761,8 +766,20 @@ export function CrewScreen(): JSX.Element {
                     onClick={() => removeFilter(a.key, a.value)}
                   >
                     {a.label}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M6 6l12 12M18 6 6 18"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      />
                     </svg>
                   </button>
                 ))}
@@ -792,7 +809,11 @@ export function CrewScreen(): JSX.Element {
           <ul className="crew-rows">
             {crews.map((r) => (
               <li key={r.id}>
-                <Link className="crew-row" href={`/ideas/${encodeURIComponent(r.id)}`} aria-label={CREW_COPY.crewRow(r.title, r)}>
+                <Link
+                  className="crew-row"
+                  href={`/ideas/${encodeURIComponent(r.id)}`}
+                  aria-label={CREW_COPY.crewRow(r.title, r)}
+                >
                   <span className="crew-row-t">{r.title}</span>
                   <span className="crew-row-m">{CREW_COPY.leadLine(r.lead.name, r.lead.area)}</span>
                   <span className={r.state === "waiting" ? "crew-row-s" : "crew-row-s ok"}>
@@ -829,7 +850,9 @@ export function CrewScreen(): JSX.Element {
           onClose={() => setPreview(null)}
           onPrimary={teamUp.open}
           primaryDone={
-            previewSent ? (previewSent.after?.line ?? CREW_COPY.waiting(previewCard.lead.first_name)) : undefined
+            previewSent
+              ? (previewSent.after?.line ?? CREW_COPY.waiting(previewCard.lead.first_name))
+              : undefined
           }
         />
       ) : null}
