@@ -10,6 +10,7 @@ import pytest
 
 import notify
 from notify import Action, NotifyError, post, resolve
+from onepc.enums import INBOX_KIND
 
 
 class _NoConn:
@@ -34,16 +35,27 @@ def test_every_inbox_kind_from_the_contract_is_accepted() -> None:
     assert {
         "questions", "teamup_request", "teamup_answer", "decision", "decision_reversed", "desk_merge",
         "worth_revised", "stage_moved", "build_ask", "mention", "crew_joined", "comment", "draft_kept",
-        "sent_to_desk", "answer_reminder",
+        "sent_to_desk", "answer_reminder", "detail_hidden_by_desk",
     } == notify.INBOX_KINDS  # fmt: skip
-    for kind in notify.INBOX_KINDS:  # the sender is never a recipient, so nobody is left and nothing is written
+    # Every E-ENUMS.inbox kind is one; L-HIDE/7's kind may arrive in contracts/1pc/enums.json with lane C's c/hide
+    # (BLD-A205). No induction kind: a new One gets no Inbox item at launch (BLD-A186).
+    assert set(INBOX_KIND) <= notify.INBOX_KINDS
+    assert notify.INBOX_KINDS - set(INBOX_KIND) <= {"detail_hidden_by_desk"}
+    assert not any("induct" in k or k.startswith("one") for k in notify.INBOX_KINDS)
+    for (
+        kind
+    ) in notify.INBOX_KINDS:  # the sender is never a recipient, so nobody is left and nothing is written
         assert post(_NoConn(), kind, [U1], sender=U1).ids == []  # type: ignore[arg-type]
 
 
 def test_resolve_takes_a_dedupe_key_and_optional_recipients() -> None:
+    """BLD-A180: lane B resolves "qs:<set_id>" when the answers are sent; lane F its request keys."""
     params = inspect.signature(resolve).parameters
     assert list(params) == ["conn", "dedupe_key", "recipients"]
-    assert params["recipients"].kind is params["recipients"].KEYWORD_ONLY and params["recipients"].default is None
+    assert (
+        params["recipients"].kind is params["recipients"].KEYWORD_ONLY
+        and params["recipients"].default is None
+    )
     assert resolve(_NoConn(), "teamup_request:abc", recipients=[]) == 0  # type: ignore[arg-type]
     with pytest.raises(NotifyError):
         resolve(_NoConn(), "free text with spaces")  # type: ignore[arg-type]
@@ -60,6 +72,7 @@ def test_resolve_takes_a_dedupe_key_and_optional_recipients() -> None:
         lambda: post(_NoConn(), "teamup_answer", [U1], refs={"answer": "declined because it overlaps"}),  # type: ignore[arg-type]
         lambda: post(_NoConn(), "decision", [U1], actions=[Action("Open")]),  # type: ignore[arg-type]
         lambda: post(_NoConn(), "decision", [U1], dedupe_key="no spaces allowed"),  # type: ignore[arg-type]
+        lambda: post(_NoConn(), "detail_hidden_by_desk", [U1], refs={"count": 1}),  # type: ignore[arg-type]
     ],
 )
 def test_bad_calls_are_refused(call: Any) -> None:

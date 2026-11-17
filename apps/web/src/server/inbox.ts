@@ -1,27 +1,34 @@
 /**
  * L-INBOX (S-H5, A-API.inbox): the person's Inbox from the worker, which renders every item for them from IDs and
  * the HR-signed templates. The tab counts, the unread total and Home's "Needs you" come from the same rows, so the
- * sidebar, the tab bar, Home and the Inbox always agree (L-INBOX.rules/1, V-ACC.track/8).
+ * sidebar, the tab bar, Home and the Inbox always agree (L-INBOX.rules/1, V-ACC.track/8). Only the E-ENUMS.inbox
+ * kinds are Inbox items; messages the old routes still write go by email (BLD-A186, BLD-A202).
  */
 import type { Action, InboxItem, InboxTab, PersonRef } from "@/lib/contracts";
 
 import type { CurrentUser } from "./auth/current";
 import { workerFetch } from "./worker";
 
-/** An item from a flow with no Inbox kind of its own (you are a One, a tier change, The Ember): a note from 1% Club
- * (BLD-A202). */
+/** L-HIDE/7's kind, agreed with lane C (BLD-A205); it joins `InboxKind` when lane C's c/hide adds it to the enums. */
+export type InboxEntryKind = InboxItem["kind"] | "detail_hidden_by_desk";
+
 export type InboxEntry = Omit<InboxItem, "kind" | "body"> & {
-  kind: InboxItem["kind"] | "notice";
+  kind: InboxEntryKind;
   body: {
+    /** The reader's kind line: "Questions from the review desk", "Merge request". */
     heading: string;
+    /** The reader's short note: "Answer by Thursday 19 November, 6 pm." */
     note: string;
-    /** The sender as the row shows them: "Meera from the review desk", "1% Club". */
+    /** The sender as the row shows them: "Meera from the review desk", "1% Club", "The review desk". */
     sender: string;
-    paragraphs?: string[];
     count?: number;
     set_id?: string;
     decision_id?: string;
     request_id?: string;
+    merge_id?: string;
+    window_id?: string;
+    entry_id?: string;
+    worth_id?: string;
   };
 };
 
@@ -48,6 +55,7 @@ export async function inboxFor(me: CurrentUser, tab: InboxTab = "all"): Promise<
   return (await res.json()) as InboxList;
 }
 
+/** Every tab's count: `unread` is the sidebar and tab-bar number, `needs_you` Home's total (L-INBOX.rules/1). */
 export async function inboxCounts(me: CurrentUser): Promise<InboxCounts> {
   const res = await workerFetch(`${base(me)}/counts`);
   if (!res.ok) throw new Error(`inbox counts ${res.status}`);
@@ -64,4 +72,19 @@ export async function needsYou(me: CurrentUser): Promise<{ total: number; top: I
 export async function inboxWrite(me: CurrentUser, id: string | null, verb: string): Promise<Response> {
   const path = id === null ? `${base(me)}/${verb}` : `${base(me)}/${id}/${verb}`;
   return workerFetch(path, { method: "POST" });
+}
+
+/** The shell's old reading of the Inbox (lane D's `shellData` counts `!read`): the unread items, so its number is
+ * the Inbox's own. New code reads `inboxCounts(me).unread`. */
+export type Message = { id: number; subject: string; body: string; at: string; read: boolean };
+
+export async function messagesFor(me: CurrentUser): Promise<Message[]> {
+  const list = await inboxFor(me, "unread");
+  return list.items.map((i) => ({
+    id: Number(i.id),
+    subject: [i.body.sender, i.line].filter(Boolean).join(" "),
+    body: i.body.note,
+    at: i.at,
+    read: !i.unread,
+  }));
 }
