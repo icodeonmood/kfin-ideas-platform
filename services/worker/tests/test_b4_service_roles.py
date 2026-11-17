@@ -27,6 +27,7 @@ HIDDEN_FROM_WEB = {
 # them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags).
 APPEND_ONLY_FOR_WEB = {
     "idea_decisions", "decision_reversals", "idea_versions", "flag_exposures", "idea_opens", "idea_status_history",
+    "flag_events",  # the experiments' deciding events, codes only (P-DECISIONS.experiments, BLD-C174)
 }  # fmt: skip
 
 
