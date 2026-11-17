@@ -20,6 +20,8 @@ from tests import wall_fixtures
 from wall import impact as wall_impact
 from wall import kindling
 
+pytestmark = pytest.mark.stack
+
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 NOW = dt.datetime(2026, 11, 18, 11, 0, tzinfo=IST)
 _n = iter(range(1, 10**6))
@@ -33,7 +35,7 @@ def posted(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
     calls: list[dict[str, Any]] = []
 
-    def fake(conn: Conn, kind: str, recipients: Any, **kw: Any) -> None:
+    def fake(conn: Conn, kind: Any, recipients: Any, **kw: Any) -> None:
         notify.post(conn, kind, recipients, **kw)  # the validating stub: E-ENUMS.inbox kinds, IDs-only refs
         calls.append({"kind": kind, "to": sorted(recipients), **kw})
 
@@ -65,6 +67,7 @@ def an_idea(
         "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
         (ref, sharer["code"], status, title, f"Short summary: {title.lower()}.", NOW - dt.timedelta(days=40)),
     ).fetchone()
+    assert row is not None
     return dict(row)
 
 
@@ -85,7 +88,9 @@ def cast(db: Conn) -> Any:
         "member": person(db, "Nandini Iyer"),
         "nobody": person(db, "Rhea Kulkarni"),
     }
-    wall_fixtures.leave_clean(db)  # people, ideas and all that hangs off them (Ones, measurements, audit stays)
+    wall_fixtures.leave_clean(
+        db
+    )  # people, ideas and all that hangs off them (Ones, measurements, audit stays)
     db.execute("DELETE FROM flag_assignments")
     db.execute("UPDATE flags SET state = 'on', alternative_percent = 0")  # as the cut-over seeds them
     kindling.clear_cache()
@@ -124,8 +129,9 @@ def test_j_one_1_l_decide_after_team_chosen_moves_a_picked_idea_to_being_built(
     assert row["status"] == "being_built"
     team = db.execute(
         "SELECT name, lead_user_id, chosen_by FROM build_teams WHERE idea_uuid = %s", (idea["id"],)
-    )
-    assert dict(team.fetchone()) == {"name": "Mandates crew", "lead_user_id": uuid.UUID(cast["lead"]["id"]),
+    ).fetchone()
+    assert team is not None
+    assert dict(team) == {"name": "Mandates crew", "lead_user_id": uuid.UUID(cast["lead"]["id"]),
                                      "chosen_by": uuid.UUID(cast["admin"]["id"])}  # fmt: skip
     grants = db.execute(
         "SELECT user_id FROM role_grants WHERE role = 'build_team' AND scope_id = %s", (idea["idea_id"],)
@@ -143,7 +149,9 @@ def test_j_one_1_l_decide_after_team_chosen_moves_a_picked_idea_to_being_built(
     assert again.value.code == "not_picked"
 
 
-def test_j_one_1_l_decide_after_only_admins_and_only_the_right_states(db: Conn, cast: Any, posted: Any) -> None:
+def test_j_one_1_l_decide_after_only_admins_and_only_the_right_states(
+    db: Conn, cast: Any, posted: Any
+) -> None:
     idea = an_idea(db, cast["sharer"])
     with pytest.raises(Refused) as no:
         build.choose_team(db, cast["reviewer"]["id"], idea["idea_id"],
@@ -199,7 +207,9 @@ def test_j_one_2_3_l_impact_2_a_measurement_without_money_counts_and_lane_e_indu
         one["status"] == "active" and one["way_in"] == "accepted_idea" and one["idea_id"] == idea["idea_id"]
     )
     assert one["number"] == out["inducted"][0]["number"] and 1 <= one["number"] <= 999
-    assert one["tier"] == 2 and out["inducted"][0]["tier"] == 2  # 120 hours a month: Tier 2, Glow (rules/tiers.md)
+    assert (
+        one["tier"] == 2 and out["inducted"][0]["tier"] == 2
+    )  # 120 hours a month: Tier 2, Glow (rules/tiers.md)
     assert one["swap_until"] - one["inducted_at"] == dt.timedelta(
         days=30
     )  # promises: ones.number_change_days
@@ -212,7 +222,10 @@ def test_j_one_2_3_l_impact_2_a_measurement_without_money_counts_and_lane_e_indu
     # No Inbox item for the measurement or the new One at launch (BLD-A211, BLD-A186): only J-ONE step 1's two.
     assert [c["refs"] for c in posted] == [{"to": "being_built"}, {"to": "shipped"}]
     # No moment for a new One's first tier: the glow-up is for a rise they can see (S-ONE, L-ONES.rules/3).
-    assert db.execute("SELECT count(*) AS n FROM one_glow_ups WHERE one_id = %s", (one["id"],)).fetchone()["n"] == 0
+    assert (
+        db.execute("SELECT count(*) AS n FROM one_glow_ups WHERE one_id = %s", (one["id"],)).fetchone()["n"]
+        == 0
+    )
     # Idempotent: entering again inducts no one twice.
     again = impact.enter(db, cast["admin"]["id"], idea["idea_id"], "day_30", HOURS_ONLY, now=NOW)
     assert again["inducted"] == []
@@ -297,7 +310,9 @@ def test_j_one_3_l_ones_rules_1_merged_sharers_are_credited_and_removed_ones_sta
     assert db.execute("SELECT status FROM ones WHERE id = %s", (oid,)).fetchone()["status"] == "retired"
 
 
-def test_j_one_6_l_ones_rules_3_at_90_days_a_tier_rises_with_a_glow_up(db: Conn, cast: Any, posted: Any) -> None:
+def test_j_one_6_l_ones_rules_3_at_90_days_a_tier_rises_with_a_glow_up(
+    db: Conn, cast: Any, posted: Any
+) -> None:
     idea = shipped_idea(db, cast, posted)
     impact.enter(db, cast["admin"]["id"], idea["idea_id"], "day_30", HOURS_ONLY, now=NOW)
     one = db.execute("SELECT id, tier FROM ones WHERE user_id = %s", (cast["sharer"]["id"],)).fetchone()
@@ -379,6 +394,8 @@ def test_j_one_2_l_impact_1_the_due_list_is_the_clock(db: Conn, cast: Any, poste
     assert (live["measured"], live["due"]) == ("pending", due[0]["due_at"])
     impact.enter(db, cast["admin"]["id"], idea["idea_id"], "day_30", HOURS_ONLY, now=NOW)
     assert [d["mark"] for d in impact.due(db, NOW)] == ["day_90"]
+
+
 # --- Take off the Wall (DEC-106) ----------------------------------------------------------------------------------
 
 
@@ -465,7 +482,9 @@ def test_dec_106_take_off_the_wall_filters_the_old_wall_view(
 # --- The admin page's data ----------------------------------------------------------------------------------------
 
 
-def test_l_audit_permissions_admin_view_shows_the_desk_only_take_off_the_wall(db: Conn, cast: Any, posted: Any) -> None:
+def test_l_audit_permissions_admin_view_shows_the_desk_only_take_off_the_wall(
+    db: Conn, cast: Any, posted: Any
+) -> None:
     shipped_idea(db, cast, posted)
     an_idea(db, cast["nobody"])
     desk = view.admin_view(db, cast["reviewer"]["id"], NOW)
