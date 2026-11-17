@@ -1,7 +1,8 @@
 /**
- * Sessions (§3.1 step 3, AT-B2-05): an HttpOnly, Secure, SameSite=Lax cookie with an 8-hour lifetime, refreshed
- * on activity. The cookie carries a random token; the database keeps only its SHA-256, so a leaked table cannot
- * be replayed. Sign-out revokes the row.
+ * Sessions (§3.1 step 3, AT-B2-05; L-AUTH.rules/5): an HttpOnly, Secure, SameSite=Lax cookie. A session lasts
+ * `session.hours` from rules/promises.md (8, KFintech policy) from sign-in, and activity never extends it past that
+ * (BLD-A178); "KFintech apps sign everyone out after 8 hours" is then true. The cookie carries a random token; the
+ * database keeps only its SHA-256, so a leaked table cannot be replayed. Sign-out revokes the row.
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
@@ -15,7 +16,7 @@ import { promises } from "../promises";
 export const SESSION_COOKIE = "ideas_session";
 /** KFintech policy, 8 hours: used only when rules/promises.md cannot be read (`sessionTtlSeconds`). */
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
-export const SESSION_ABSOLUTE_HOURS = 12; // sliding refresh never extends a session past a working day
+/** How often activity is recorded (`last_seen_at`); it never moves the end of the session. */
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
 
 /**
@@ -75,9 +76,13 @@ export async function createSession(userId: string, ttlSeconds = SESSION_TTL_SEC
   return token;
 }
 
-/** One query: the session, the person, their live role grants and the current privacy notice. */
+/**
+ * One query: the session, the person, their live role grants and the current privacy notice. A session older than
+ * `session.hours` is over, whatever its `expires_at` says (L-AUTH.rules/5).
+ */
 export async function readSession(token: string | undefined): Promise<SessionInfo | null> {
   if (!token || token.length > 128) return null;
+  const ttl = await sessionTtlSeconds();
   const row = await sql<{
     user_id: string;
     active: boolean;
@@ -94,7 +99,7 @@ export async function readSession(token: string | undefined): Promise<SessionInf
                        AND (g.valid_to IS NULL OR g.valid_to > now())), '[]'::json) AS grants
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND s.expires_at > now()
-      AND s.created_at > now() - make_interval(hours => ${SESSION_ABSOLUTE_HOURS})
+      AND s.created_at > now() - make_interval(secs => ${ttl})
   `.execute(getDb());
   const r = row.rows[0];
   if (!r || !r.active) return null;
@@ -107,10 +112,17 @@ export async function readSession(token: string | undefined): Promise<SessionInf
   };
 }
 
+/**
+ * Records activity. The end stays `session.hours` after sign-in: never later, even for someone working all day
+ * (L-AUTH.rules/5, BLD-A178), and it follows a change to `session.hours`.
+ */
 export async function refreshSession(token: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<void> {
   await getDb()
     .updateTable("sessions")
-    .set({ last_seen_at: new Date(), expires_at: new Date(Date.now() + ttlSeconds * 1000) })
+    .set({
+      last_seen_at: new Date(),
+      expires_at: sql<Date>`created_at + make_interval(secs => ${ttlSeconds})`,
+    })
     .where("id_hash", "=", hashToken(token))
     .where("revoked_at", "is", null)
     .execute();
@@ -125,11 +137,12 @@ export async function expiredSession(
   token: string | undefined,
 ): Promise<{ userId: string; email: string } | null> {
   if (!token || token.length > 128) return null;
+  const ttl = await sessionTtlSeconds();
   const r = await sql<{ user_id: string; email: string }>`
     SELECT s.user_id, u.email FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ${hashToken(token)} AND s.revoked_at IS NULL AND u.active
-      AND (s.expires_at <= now() OR s.created_at <= now() - make_interval(hours => ${SESSION_ABSOLUTE_HOURS}))
-      AND s.expires_at > now() - interval '1 day'
+      AND (s.expires_at <= now() OR s.created_at <= now() - make_interval(secs => ${ttl}))
+      AND LEAST(s.expires_at, s.created_at + make_interval(secs => ${ttl})) > now() - interval '1 day'
   `.execute(getDb());
   const row = r.rows[0];
   return row ? { userId: row.user_id, email: row.email } : null;
