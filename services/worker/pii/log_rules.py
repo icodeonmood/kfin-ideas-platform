@@ -56,7 +56,7 @@ def _safe_value() -> re.Pattern[str]:
 
 def value_patterns(value: str) -> list[str]:
     """Pattern IDs found in a value, ignoring business identifiers marked `log_ok` and safe values (hashes, IDs)."""
-    if _safe_value().match(value):
+    if _safe_value().fullmatch(value):
         return []
     rules = _compiled()[3]
     ok = {p.id for p in rules.patterns if p.log_ok}

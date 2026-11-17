@@ -65,7 +65,7 @@ step(
   "J-BROWSE/2",
   "S-06",
   "Opening a row lands on the idea, whose breadcrumb names the list it came from",
-  { needs: ["S-07", "S-06", "P-ROUTES"] },
+  { needs: ["S-07", "S-06", "P-ROUTES"], after: ["J-BROWSE/1"] },
   async ({ page }) => {
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
@@ -81,7 +81,7 @@ step(
   "J-BROWSE/3",
   "S-07",
   "Back returns to the same tab, sort and search; the row opened has focus; Back where you were: Yours.",
-  { needs: ["S-07", "S-06", "P-ROUTES"] },
+  { needs: ["S-07", "S-06", "P-ROUTES"], after: ["J-BROWSE/1"] },
   async ({ page }) => {
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
@@ -177,7 +177,7 @@ step(
   "J-BROWSE/6",
   "S-07",
   "A shared link to a filtered list reproduces the view, for what each person may see",
-  { needs: ["S-07", "P-ROUTES"] },
+  { needs: ["S-07", "P-ROUTES"], after: ["J-BROWSE/1"] },
   async ({ page, browser }, info) => {
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
