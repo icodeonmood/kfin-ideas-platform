@@ -20,5 +20,19 @@ CREATE INDEX listen_cache_created ON listen_cache (created_at);
 -- The worker makes and serves the audio; the web app reads nothing here directly.
 REVOKE INSERT, UPDATE, DELETE ON listen_cache FROM ideas_web_svc;
 
+-- A prefetch that failed for a script and voice is remembered, so the 15-minute prefetch waits 6 hours before trying
+-- again instead of paying for the parts that worked every time (BLD-C117). A code only, never text.
+CREATE TABLE listen_failures (
+  idea_uuid   uuid          NOT NULL REFERENCES ideas (id) ON DELETE CASCADE,
+  version     text          NOT NULL CHECK (version ~ '^[A-Za-z0-9_-]{8,64}$'),
+  voice       text          NOT NULL CHECK (voice ~ '^[a-z0-9_]{1,60}$'),
+  error_code  text          NOT NULL CHECK (error_code ~ '^[a-z0-9_.]{1,60}$'),
+  attempts    integer       NOT NULL DEFAULT 1 CHECK (attempts > 0),
+  failed_at   timestamptz   NOT NULL DEFAULT now(),
+  PRIMARY KEY (idea_uuid, version, voice)
+);
+REVOKE INSERT, UPDATE, DELETE ON listen_failures FROM ideas_web_svc;
+
 -- migrate:down
+DROP TABLE IF EXISTS listen_failures;
 DROP TABLE IF EXISTS listen_cache;

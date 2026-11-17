@@ -8,7 +8,8 @@ CREATE TABLE speech_calls (
   call           text          NOT NULL CHECK (call IN ('stt_rest', 'stt_stream', 'translate', 'tts')),
   model          text          NOT NULL CHECK (model ~ '^[a-z0-9:._-]{1,40}$'),
   ref_id         text          CHECK (ref_id ~ '^[A-Za-z0-9:_-]{1,80}$'),   -- a stream, voice note or idea id
-  outcome        text          NOT NULL CHECK (outcome IN ('ok', 'ok_after_retry', 'route_error', 'cancelled')),
+  -- bad_input: refused for what we sent (400, 413, 422: bad or too short audio), never counted toward the switch-off
+  outcome        text          NOT NULL CHECK (outcome IN ('ok', 'ok_after_retry', 'route_error', 'bad_input', 'cancelled')),
   error_code     text          CHECK (error_code ~ '^[a-z0-9_.]{1,60}$'),
   speech_seconds numeric(8,2)  CHECK (speech_seconds >= 0),
   char_count     integer       CHECK (char_count >= 0),

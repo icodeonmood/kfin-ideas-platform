@@ -415,3 +415,23 @@ def test_BLD_C112_the_store_against_postgres(monkeypatch: pytest.MonkeyPatch) ->
         assert msg is not None and PAN not in msg.text_masked
         held = db.execute("SELECT own_words_sealed FROM voice_streams WHERE id = %s", (sid,)).fetchone()
         assert held["own_words_sealed"] is None
+
+
+def test_BLD_C117_a_distributors_arn_is_masked_for_the_translation_not_refused(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[str] = []
+
+    def translate(text: str, **k: Any) -> sarvam.Translation:
+        sarvam.check_masked(text)  # the gateway's leak check, as the real call runs it
+        sent.append(text)
+        return sarvam.Translation(text=text, source_language="hi-IN", translated=True)
+
+    monkeypatch.setattr(sarvam, "translate", translate)
+    conn = env["conn"]
+    sid = started(conn)
+    drafts.chunk(conn, sid, idea_uuid=IDEA, by_code=ME, seq=0, data=say("ARN-123456 wale distributor"))
+    drafts._live[sid].stream._language = "hi-IN"
+    done = drafts.end(conn, sid, idea_uuid=IDEA, by_code=ME)
+    assert sent == ["ARN ••••56 wale distributor"] and done["text_en"] == "ARN ••••56 wale distributor"
+    assert done["text"] == "ARN-123456 wale distributor"  # the person's own words keep it

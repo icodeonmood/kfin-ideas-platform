@@ -31,7 +31,15 @@ from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
 from gateway import sarvam
-from speech.adapters import Script, ScriptRefused, ScriptUnavailable, listen_script, spoken
+from gateway.speech import SpeechUnavailable
+from speech.adapters import (
+    Script,
+    ScriptRefused,
+    ScriptUnavailable,
+    listen_script,
+    mask_for_service,
+    spoken,
+)
 
 log = get_logger("listen")
 
@@ -39,7 +47,12 @@ PARTS = ("summary", "often", "who", "cost", "evidence", "fix")  # E-ENUMS.part, 
 LANG = "en-IN"
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 REF = re.compile(r"^IDEA-[0-9]{4}-[0-9]{6}$")
-DESK_STATUSES = ("with_review_desk", "needs_you", "checking")
+# Prefetched only once the checks are done and the sharer can no longer edit (BLD-C117).
+DESK_STATUSES = ("with_review_desk", "needs_you")
+# Nobody listens to these: a draft or one still being checked is the sharer's; a withdrawn idea is not found for anyone
+# else (BLD-E011); a merged one is read as the idea it joined.
+NOT_LISTENABLE = frozenset({"draft", "checking", "withdrawn", "merged"})
+PREFETCH_BACKOFF = "6 hours"  # after a failed prefetch, the same script and voice wait this long (BLD-C117)
 
 
 class ListenRefused(Exception):
@@ -164,7 +177,7 @@ def _idea_uuid(conn: Conn, ref: str) -> str:
         row = conn.execute("SELECT id, status FROM ideas WHERE idea_id = %s", (ref,)).fetchone()
     else:
         row = None
-    if row is None or row["status"] == "draft":  # a draft is nobody's to listen to
+    if row is None or row["status"] in NOT_LISTENABLE:
         raise ListenRefused(404, "not_found")
     return str(row["id"])
 
@@ -209,6 +222,15 @@ def _ordered(script: Script) -> list[Any]:
     return sorted(script.parts, key=lambda p: rank.get(p.part, len(PARTS)))
 
 
+def outgoing(masked_script: Script) -> list[tuple[str, str]]:
+    """Each part's text as it will go to Sarvam, in order, every one checked before anything is sent: a refusal at
+    part 6 must not have paid for parts 1 to 5 (BLD-C117). Raises SarvamFailed `unmasked_text`."""
+    texts = [(part.part, mask_for_service(spoken(part.title, part.text))) for part in _ordered(masked_script)]
+    for _part, text in texts:
+        sarvam.check_masked(text)
+    return texts
+
+
 def speak(
     conn: Conn, idea_uuid: str, masked_script: Script, *, lang: str = LANG, voice: str | None = None
 ) -> Iterator[bytes]:
@@ -219,17 +241,33 @@ def speak(
     if hit is not None:
         yield store.get(get_settings().s3_bucket_clean, hit.store_key)
         return
+    texts = outgoing(masked_script)
+    # One synthesis per (idea, version, voice): a first listen and a prefetch, or two first listens, wait for each
+    # other and the second is served from the cache (BLD-C117).
+    key = f"listen:{idea_uuid}:{masked_script.version}:{v}"
+    conn.execute("SELECT pg_advisory_lock(hashtext(%s))", (key,))
+    try:
+        hit = cached(conn, idea_uuid, masked_script.version, v)
+        if hit is not None:
+            yield store.get(get_settings().s3_bucket_clean, hit.store_key)
+            return
+        yield from _synthesise(conn, idea_uuid, masked_script.version, texts, lang, v)
+    finally:
+        conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (key,))
+
+
+def _synthesise(
+    conn: Conn, idea_uuid: str, version: str, texts: list[tuple[str, str]], lang: str, v: str
+) -> Iterator[bytes]:
     audio = bytearray()
     chapters: list[dict[str, Any]] = []
     at = 0.0
-    for part in _ordered(masked_script):
+    for part_name, text in texts:
         made = bytearray()
         head: bytearray | None = (
             bytearray()
         )  # the part's first bytes, until its leading tag and header are gone
-        for chunk in sarvam.tts(
-            spoken(part.title, part.text), lang=lang, speaker=v, conn=conn, ref_id=f"idea:{idea_uuid}"
-        ):
+        for chunk in sarvam.tts(text, lang=lang, speaker=v, conn=conn, ref_id=f"idea:{idea_uuid}"):
             if head is not None:
                 head += chunk
                 clean = strip_leading(bytes(head))
@@ -243,10 +281,10 @@ def speak(
             made += tail
             yield tail
         seconds = mp3_seconds(bytes(made))
-        chapters.append({"part": part.part, "start_s": round(at, 2)})
+        chapters.append({"part": part_name, "start_s": round(at, 2)})
         at += seconds
         audio += made
-    _store(conn, idea_uuid, masked_script.version, v, lang, bytes(audio), chapters, round(at, 2))
+    _store(conn, idea_uuid, version, v, lang, bytes(audio), chapters, round(at, 2))
 
 
 def _store(
@@ -306,18 +344,42 @@ def enqueue_prefetch(conn: Conn, idea_uuid: str) -> None:
 
 
 def prefetch(conn: Conn, idea_uuid: str) -> bool:
-    """Job `listen.prefetch`: make and cache the audio unless it is cached, paused or not possible yet."""
+    """Job `listen.prefetch`: make and cache the audio unless it is cached, paused, not possible yet, or failed for
+    this script and voice in the last 6 hours (a failure is remembered, so nothing is billed again every 15
+    minutes)."""
     if not killswitch.is_on("desk.listen", conn) or not killswitch.is_on("speech.hosted", conn):
         return False
     try:
+        if get_settings().speech_mode == "sarvam":
+            sarvam.allowed(conn)  # the approval, speech.hosted read fresh, and the key
         plan = prepare(conn, idea_uuid)
-    except ListenRefused:
+    except (ListenRefused, SpeechUnavailable):
         return False
-    if plan.cached is not None:
+    if plan.cached is not None or _failed_recently(conn, plan):
         return False
-    for _ in speak(conn, plan.idea_uuid, plan.script, voice=plan.voice):
-        pass
+    try:
+        for _ in speak(conn, plan.idea_uuid, plan.script, voice=plan.voice):
+            pass
+    except (SpeechUnavailable, ValueError) as exc:
+        code = exc.code if isinstance(exc, SpeechUnavailable) else "audio_unreadable"
+        conn.execute(
+            "INSERT INTO listen_failures (idea_uuid, version, voice, error_code) VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (idea_uuid, version, voice) DO UPDATE SET error_code = EXCLUDED.error_code, "
+            "failed_at = now(), attempts = listen_failures.attempts + 1",
+            (plan.idea_uuid, plan.script.version, plan.voice, code[:60]),
+        )
+        log.info("listen.prefetch_failed", idea_uuid=plan.idea_uuid, reason_code=code)
+        return False
     return True
+
+
+def _failed_recently(conn: Conn, plan: Plan) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM listen_failures WHERE idea_uuid = %s AND version = %s AND voice = %s "
+        "AND failed_at > now() - %s::interval",
+        (plan.idea_uuid, plan.script.version, plan.voice, PREFETCH_BACKOFF),
+    ).fetchone()
+    return row is not None
 
 
 def prefetch_due(conn: Conn, limit: int = 20) -> int:
@@ -326,6 +388,8 @@ def prefetch_due(conn: Conn, limit: int = 20) -> int:
         "SELECT i.id FROM ideas i WHERE i.status = ANY(%s) "
         "AND coalesce(i.status_changed_at, i.updated_at) > now() - interval '7 days' "
         "AND NOT EXISTS (SELECT 1 FROM listen_cache c WHERE c.idea_uuid = i.id) "
+        "AND NOT EXISTS (SELECT 1 FROM listen_failures f WHERE f.idea_uuid = i.id "
+        "AND f.failed_at > now() - interval '6 hours') "
         "ORDER BY coalesce(i.status_changed_at, i.updated_at) DESC LIMIT %s",
         (list(DESK_STATUSES), limit),
     ).fetchall()

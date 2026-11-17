@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   VOICE_EN_LABEL,
+  VOICE_IDLE_SECONDS,
   VOICE_MAX_CHUNK_BYTES,
   VOICE_MAX_SECONDS,
   VOICE_NOTICE,
@@ -26,5 +27,6 @@ export async function GET() {
     chunk_seconds: 1,
     max_chunk_bytes: VOICE_MAX_CHUNK_BYTES,
     max_seconds: VOICE_MAX_SECONDS,
+    idle_seconds: VOICE_IDLE_SECONDS,
   });
 }

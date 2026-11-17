@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { switchesFor } from "@/lib/killswitch-routes";
 import policy from "@/lib/rbac.json";
-import { isUuid, parseSeq, VOICE_MAX_CHUNK_BYTES, VOICE_NOTICE, VOICE_SAMPLE_RATE } from "@/lib/voice-stream";
+import {
+  isUuid,
+  parseSeq,
+  VOICE_IDLE_SECONDS,
+  VOICE_MAX_CHUNK_BYTES,
+  VOICE_NOTICE,
+  VOICE_SAMPLE_RATE,
+} from "@/lib/voice-stream";
 
 const id = "11111111-2222-4333-8444-555555555555";
 
@@ -46,5 +53,6 @@ describe("BLD-C112 drafts by voice (DEC-108, L-DRAFT.voice)", () => {
     expect(VOICE_NOTICE.toLowerCase()).not.toContain("sarvam");
     expect(VOICE_SAMPLE_RATE).toBe(16_000);
     expect(VOICE_MAX_CHUNK_BYTES).toBe(2 * 16_000 * 2);
+    expect(VOICE_IDLE_SECONDS).toBe(20); // BLD-C117: the config says when an idle note ends
   });
 });

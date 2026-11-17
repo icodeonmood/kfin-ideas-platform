@@ -110,7 +110,8 @@ def test_BLD_C110_a_failure_carries_a_code_only(
         sarvam.stt_rest(b"OggS", "audio/ogg", conn=conn)  # type: ignore[arg-type]
     assert exc.value.code == f"hosted_{status}" and str(exc.value) == f"hosted_{status}"
     assert len(seen) == tries
-    assert conn.calls[-1]["outcome"] == "route_error" and conn.calls[-1]["error_code"] == f"hosted_{status}"
+    assert conn.calls[-1]["outcome"] == sarvam.failed_outcome(f"hosted_{status}")
+    assert conn.calls[-1]["error_code"] == f"hosted_{status}"
 
 
 @pytest.mark.parametrize(
@@ -232,7 +233,7 @@ def test_BLD_C110_a_sustained_error_rate_switches_hosted_speech_off(monkeypatch:
     flips: list[tuple[str, str]] = []
     monkeypatch.setattr(core, "_maybe_switch_off", lambda conn, name, reason: flips.append((name, reason)))
     monkeypatch.setattr(core, "_thresholds", lambda: {})
-    transport(monkeypatch, httpx.Response(400, json={}))
+    transport(monkeypatch, httpx.Response(503, json={}))
     with pytest.raises(sarvam.SarvamFailed):
         sarvam.stt_rest(b"OggS", "audio/ogg", conn=MeterConn(totals=(10, 2)))  # type: ignore[arg-type]
     assert flips == []  # 20% is not above 20%
@@ -243,6 +244,60 @@ def test_BLD_C110_a_sustained_error_rate_switches_hosted_speech_off(monkeypatch:
     with pytest.raises(sarvam.SarvamFailed):
         sarvam.stt_rest(b"OggS", "audio/ogg", conn=MeterConn(totals=(9, 9)))  # type: ignore[arg-type]
     assert flips == []  # fewer than 10 calls: too few to judge
+
+
+@pytest.mark.parametrize("status", [400, 413, 422])
+def test_BLD_C117_bad_or_short_audio_is_not_counted_against_sarvam(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    configure(monkeypatch)
+    import gateway.core as core
+
+    flips: list[str] = []
+    monkeypatch.setattr(core, "_maybe_switch_off", lambda conn, name, reason: flips.append(name))
+    transport(monkeypatch, httpx.Response(status, json={}))
+    conn = MeterConn(totals=(10, 10))
+    with pytest.raises(sarvam.SarvamFailed):
+        sarvam.stt_rest(b"OggS", "audio/ogg", conn=conn)  # type: ignore[arg-type]
+    assert conn.calls[-1]["outcome"] == "bad_input" and flips == []
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 503])
+def test_BLD_C117_service_side_failures_count(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    configure(monkeypatch)
+    transport(monkeypatch, httpx.Response(status, json={}))
+    conn = MeterConn()
+    with pytest.raises(sarvam.SarvamFailed):
+        sarvam.stt_rest(b"OggS", "audio/ogg", conn=conn)  # type: ignore[arg-type]
+    assert conn.calls[-1]["outcome"] == "route_error"
+
+
+def test_BLD_C117_the_leak_check_is_the_gateways_any_pattern_any_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    seen = transport(monkeypatch, httpx.Response(200, json={"translated_text": "x"}))
+    for text in ("Distributor ARN-123456 asked", "Mail priya@kfintech.com about it"):  # synthetic
+        with pytest.raises(sarvam.SarvamFailed) as exc:
+            sarvam.translate(text)
+        assert exc.value.code == "unmasked_text"
+    assert seen == []
+
+
+def test_BLD_C117_rest_speech_to_text_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure(monkeypatch)
+    seen: list[httpx.Timeout] = []
+    real = httpx.Client
+
+    class Spy(real):  # type: ignore[misc, valid-type]
+        def __init__(self, *a: Any, **k: Any) -> None:
+            seen.append(k["timeout"])
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(httpx, "Client", Spy)
+    transport(monkeypatch, httpx.Response(200, json={"transcript": "ok"}))
+    sarvam.stt_rest(b"OggS", "audio/ogg")
+    assert seen[0].read == 20.0 and seen[0].connect == 5.0
 
 
 # ---- streaming speech to text ---------------------------------------------------------------------------
@@ -270,6 +325,28 @@ def test_BLD_C110_the_stream_relays_pcm_and_returns_what_sarvam_heard(
     audio = [m for m in fake.received if "audio" in m]
     assert audio[0]["audio"]["sample_rate"] == "16000" and audio[0]["audio"]["encoding"] == "audio/wav"
     assert fake.received[-1] == {"type": "flush"}
+
+
+def test_BLD_C117_a_stream_that_cannot_open_is_metered_as_a_route_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+
+    configure(monkeypatch)
+    with socket.socket() as sock:  # a port nobody listens on
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setenv("SARVAM_BASE_URL", f"http://127.0.0.1:{port}")
+    get_settings.cache_clear()
+    conn = MeterConn()
+    with pytest.raises(sarvam.SarvamFailed) as exc:
+        sarvam.stt_stream(conn=conn, ref_id="s1")  # type: ignore[arg-type]
+    assert exc.value.code == "hosted_unreachable"
+    assert conn.calls == [
+        {"call": "stt_stream", "model": "saaras:v4", "ref_id": "s1", "outcome": "route_error",
+         "error_code": "hosted_unreachable", "seconds": None, "chars": None,
+         "latency_ms": conn.calls[0]["latency_ms"], "cost": 0.0},
+    ]  # fmt: skip
 
 
 def test_BLD_C110_the_stream_needs_the_gate_too(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,6 +403,42 @@ def test_BLD_C110_tts_streams_bulbul_v4_flash_a_sentence_a_message_under_500(
     assert flush == {"type": "flush"}
     assert conn.calls[-1]["call"] == "tts" and conn.calls[-1]["outcome"] == "ok"
     assert conn.calls[-1]["chars"] == sum(len(t["data"]["text"]) for t in texts)
+
+
+def test_BLD_C117_audio_that_is_not_base64_is_a_bad_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure(monkeypatch)
+    fake = FakeSarvamWs()
+
+    def broken(ws: Any) -> None:
+        for raw in ws:
+            if json.loads(raw).get("type") == "flush":
+                ws.send(json.dumps({"type": "audio", "data": {"audio": "not base64 at all!"}}))
+
+    fake._tts = broken  # type: ignore[method-assign]
+    conn = MeterConn()
+    with ws_server(monkeypatch, fake), pytest.raises(sarvam.SarvamFailed) as exc:
+        list(sarvam.tts("One sentence.", conn=conn))  # type: ignore[arg-type]
+    assert exc.value.code == "hosted_bad_reply" and conn.calls[-1]["outcome"] == "route_error"
+
+
+def test_BLD_C117_tts_has_a_deadline_for_the_whole_part(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure(monkeypatch)
+    monkeypatch.setattr(sarvam, "TTS_DEADLINE_S", 0.5)
+    fake = FakeSarvamWs()
+
+    def trickle(ws: Any) -> None:
+        import time as t
+
+        for raw in ws:
+            if json.loads(raw).get("type") == "flush":
+                for _ in range(20):  # audio keeps coming, never "final"
+                    ws.send(json.dumps({"type": "audio", "data": {"audio": base64.b64encode(b"x").decode()}}))
+                    t.sleep(0.1)
+
+    fake._tts = trickle  # type: ignore[method-assign]
+    with ws_server(monkeypatch, fake), pytest.raises(sarvam.SarvamFailed) as exc:
+        list(sarvam.tts("One sentence."))
+    assert exc.value.code == "hosted_timeout"
 
 
 def test_BLD_C110_tts_reads_masked_text_only(monkeypatch: pytest.MonkeyPatch) -> None:

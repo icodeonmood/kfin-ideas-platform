@@ -9,6 +9,7 @@
 export const VOICE_SAMPLE_RATE = 16_000;
 export const VOICE_MAX_CHUNK_BYTES = 64_000; // two seconds: room for a late timeslice; the worker refuses more
 export const VOICE_MAX_SECONDS = 180; // L-DRAFT.voice/1
+export const VOICE_IDLE_SECONDS = 20; // no chunk this long: the worker ends the note and keeps what was heard
 
 /** Shown before the person records (DEC-108 (5)): no vendor name (DEC-096). HR signs off the wording. */
 export const VOICE_NOTICE =

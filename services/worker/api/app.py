@@ -230,25 +230,24 @@ def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")
     from fastapi.responses import StreamingResponse
 
     from attachments import store
+    from gateway import sarvam
+    from gateway.speech import SpeechUnavailable
     from speech import listen
 
     try:
         with connect(autocommit=True) as conn:
             plan = listen.prepare(conn, ref)
             if plan.cached is None:
-                from gateway import sarvam
-
-                sarvam.allowed(
-                    conn
-                )  # speech.hosted read fresh, the approval and the key, before anything streams
+                # Like drafts._hosted_check: the fake route needs no key (BLD-C117). On the Sarvam route,
+                # speech.hosted is read fresh with the approval and the key before anything streams.
+                if get_settings().speech_mode == "sarvam":
+                    sarvam.allowed(conn)
+                listen.outgoing(plan.script)  # every part passes the leak check before the first byte
     except listen.ListenRefused as exc:
         return JSONResponse({"error": exc.code}, status_code=exc.status)
-    except Exception as exc:
-        from gateway.speech import SpeechUnavailable
-
-        if isinstance(exc, SpeechUnavailable):
-            return JSONResponse({"error": "paused"}, status_code=503)
-        raise
+    except SpeechUnavailable as exc:  # the player falls back to the on-device voice
+        code = "listen_unavailable" if exc.code == "unmasked_text" else "paused"
+        return JSONResponse({"error": code}, status_code=503)
     headers = {"Cache-Control": "private, no-store", "Accept-Ranges": "bytes"}
     if plan.cached is not None:
         data = store.get(get_settings().s3_bucket_clean, plan.cached.store_key)

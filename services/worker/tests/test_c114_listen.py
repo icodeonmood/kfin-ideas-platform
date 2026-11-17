@@ -35,6 +35,9 @@ class Conn(MeterConn):
         super().__init__()
         self.cache: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.jobs: list[tuple[Any, ...]] = []
+        self.failures: dict[tuple[str, str, str], str] = {}
+        self.locks: list[str] = []
+        self.status = "with_review_desk"
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> Any:
         from tests.sarvam_fakes import Result
@@ -56,7 +59,18 @@ class Conn(MeterConn):
             self.jobs.append(params)
             return Result(None)
         if sql.startswith("SELECT id, status FROM ideas"):
-            return Result({"id": IDEA, "status": "with_review_desk"})
+            return Result({"id": IDEA, "status": self.status})
+        if sql.startswith("SELECT pg_advisory_lock"):
+            self.locks.append(f"lock {params[0]}")
+            return Result(None)
+        if sql.startswith("SELECT pg_advisory_unlock"):
+            self.locks.append(f"unlock {params[0]}")
+            return Result(None)
+        if sql.startswith("SELECT 1 FROM listen_failures"):
+            return Result({"x": 1} if tuple(params[:3]) in self.failures else None)
+        if sql.startswith("INSERT INTO listen_failures"):
+            self.failures[tuple(params[:3])] = params[3]
+            return Result(None)
         return super().execute(sql, params)
 
 
@@ -165,26 +179,37 @@ def test_BLD_C114_desk_listen_off_or_no_script_refuses(
     assert listen.prefetch(env["conn"], IDEA) is False
 
 
-def test_BLD_C114_a_bad_reference_or_a_draft_is_not_found(env: dict[str, Any]) -> None:
-    class Draft(Conn):
-        def execute(self, sql: str, params: tuple[Any, ...] = ()) -> Any:
-            from tests.sarvam_fakes import Result
-
-            if sql.startswith("SELECT id, status FROM ideas"):
-                return Result({"id": IDEA, "status": "draft"})
-            return super().execute(sql, params)
-
-    for ref, conn in (("../etc", env["conn"]), (IDEA, Draft())):
-        with pytest.raises(listen.ListenRefused) as exc:
-            listen.prepare(conn, ref)  # type: ignore[arg-type]
-        assert (exc.value.status, exc.value.code) == (404, "not_found")
+def test_BLD_C114_a_bad_reference_is_not_found(env: dict[str, Any]) -> None:
+    with pytest.raises(listen.ListenRefused) as exc:
+        listen.prepare(env["conn"], "../etc")
+    assert (exc.value.status, exc.value.code) == (404, "not_found")
 
 
-def test_BLD_C114_only_masked_text_is_read(env: dict[str, Any]) -> None:
+@pytest.mark.parametrize("status", ["draft", "checking", "withdrawn", "merged"])
+def test_BLD_C117_nobody_listens_to_a_draft_one_being_checked_withdrawn_or_merged(
+    env: dict[str, Any], status: str
+) -> None:
+    env["conn"].status = status
+    with pytest.raises(listen.ListenRefused) as exc:
+        listen.prepare(env["conn"], IDEA)
+    assert (exc.value.status, exc.value.code) == (404, "not_found")
+    assert "checking" not in listen.DESK_STATUSES and set(listen.DESK_STATUSES) == {
+        "with_review_desk",
+        "needs_you",
+    }
+
+
+def test_BLD_C114_only_masked_text_is_read(env: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[str] = []
+
+    def record(text: str, **k: Any) -> Iterator[bytes]:
+        sent.append(text)
+        yield sarvam.fake_frames(1)
+
+    monkeypatch.setattr(sarvam, "tts", record)
     env["current"]["script"] = script(summary="Call the investor on 9876543210.")  # synthetic, unmasked
-    with pytest.raises(sarvam.SarvamFailed) as exc:
-        b"".join(listen.speak(env["conn"], IDEA, env["current"]["script"]))
-    assert exc.value.code == "unmasked_text" and env["objects"] == {}
+    b"".join(listen.speak(env["conn"], IDEA, env["current"]["script"]))
+    assert not any("9876543210" in t for t in sent) and any("Phone ••••10" in t for t in sent)
 
 
 def test_BLD_C114_through_sarvam_each_part_is_its_own_stream(
@@ -215,10 +240,20 @@ def test_BLD_C114_cached_audio_serves_byte_ranges(
     assert listen.byte_range(header, size) == span
 
 
-def test_BLD_C114_the_adapter_mirrors_lane_bs_names() -> None:
+def test_BLD_C114_the_adapter_mirrors_lane_bs_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    real = importlib.import_module
+
+    def missing(name: str, *a: Any) -> Any:
+        if name.startswith("desk."):  # as if lane B's module were not in the build, whether or not it is
+            raise ImportError(name)
+        return real(name, *a)
+
+    monkeypatch.setattr(adapters.importlib, "import_module", missing)
     assert adapters.spoken("The problem", "Text.") == "The problem. Text."
     with pytest.raises(adapters.ScriptUnavailable):
-        adapters.listen_script(object(), IDEA)  # type: ignore[arg-type]  # lane B's module is not in this build
+        adapters.listen_script(object(), IDEA)  # type: ignore[arg-type]
 
 
 def test_BLD_C113_hide_text_masks_kind_dots_last_two_and_keeps_spans() -> None:
@@ -250,3 +285,84 @@ def test_BLD_C114_the_cache_against_postgres(monkeypatch: pytest.MonkeyPatch) ->
         assert listen.prefetch(db, idea_uuid) is True
         got = listen.chapters(db, idea_uuid)
         assert got is not None and got["parts"][0] == {"part": "summary", "start_s": 0.0}
+
+
+def test_BLD_C117_one_synthesis_per_script_and_voice_under_a_lock(env: dict[str, Any]) -> None:
+    conn = env["conn"]
+    s = env["current"]["script"]
+    b"".join(listen.speak(conn, IDEA, s))
+    key = f"listen:{IDEA}:{s.version}:simran_en_customer"
+    assert conn.locks == [f"lock {key}", f"unlock {key}"]
+    b"".join(listen.speak(conn, IDEA, s))  # cached: no lock, no synthesis
+    assert len(conn.locks) == 2
+
+
+def test_BLD_C117_every_part_is_checked_before_any_is_sent(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[str] = []
+
+    def record(text: str, **k: Any) -> Iterator[bytes]:
+        sent.append(text)
+        yield sarvam.fake_frames(1)
+
+    monkeypatch.setattr(sarvam, "tts", record)
+    monkeypatch.setattr(listen, "mask_for_service", lambda text: text)  # as if masking missed one
+    env["current"]["script"] = script(
+        fix="Call 9876543210 after the fix."
+    )  # synthetic, the last part, unmasked
+    with pytest.raises(sarvam.SarvamFailed):
+        b"".join(listen.speak(env["conn"], IDEA, env["current"]["script"]))
+    assert sent == []  # nothing billed for parts 1 to 5
+
+
+def test_BLD_C117_a_distributors_arn_is_masked_on_the_way_out_not_refused(env: dict[str, Any]) -> None:
+    env["current"]["script"] = script(who="Distributors such as ARN-123456 call daily.")  # synthetic
+    texts = dict(listen.outgoing(env["current"]["script"]))
+    assert "ARN-123456" not in texts["who"] and "ARN ••••56" in texts["who"]
+
+
+def test_BLD_C117_a_failed_prefetch_is_remembered_and_not_paid_for_again(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def failing(text: str, **k: Any) -> Any:
+        calls.append(text)
+        raise sarvam.SarvamFailed("hosted_503")
+
+    monkeypatch.setattr(sarvam, "tts", failing)
+    conn = env["conn"]
+    assert listen.prefetch(conn, IDEA) is False
+    assert list(conn.failures.values()) == ["hosted_503"] and len(calls) == 1
+    assert listen.prefetch(conn, IDEA) is False and len(calls) == 1  # backed off: nothing sent again
+
+
+def test_BLD_C117_prefetch_asks_the_gate_on_the_sarvam_route(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configure(monkeypatch, SPEECH_MODE="sarvam", SARVAM_API_KEY="")
+    assert listen.prefetch(env["conn"], IDEA) is False and env["conn"].cache == {}
+
+
+def test_BLD_C117_listen_in_fake_mode_needs_no_key(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The uncached path asks the Sarvam gate only on the Sarvam route, like drafts (dev has no key)."""
+    from contextlib import contextmanager
+
+    from fastapi.testclient import TestClient
+
+    import api.app as app_module
+
+    configure(monkeypatch, SPEECH_MODE="fake", SARVAM_API_KEY="", INTERNAL_API_TOKEN="t" * 32)
+
+    @contextmanager
+    def fake_connect(**k: Any) -> Iterator[Any]:
+        yield env["conn"]
+
+    monkeypatch.setattr(app_module, "connect", fake_connect)
+    client = TestClient(app_module.app)
+    r = client.get(f"/internal/listen/{IDEA}", headers={"X-Internal-Token": "t" * 32})
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/mpeg"
+    assert listen.mp3_seconds(r.content) > 0

@@ -46,7 +46,7 @@ from core.logging import get_logger
 from gateway import sarvam
 from gateway.speech import SpeechUnavailable
 from speech import prefs
-from speech.adapters import hide_text
+from speech.adapters import hide_text, mask_for_service
 from voice.numbers import normalise
 
 log = get_logger("voice_stream")
@@ -473,7 +473,9 @@ def _english(
     gender = prefs.speaker_gender(prefs.refer_as(conn, user_id))
     try:
         got = sarvam.translate(
-            masked,
+            mask_for_service(
+                masked
+            ),  # the gateway's leak check passes only a copy with no pattern hit at all
             gender=gender,
             conn=conn,
             ref_id=f"stream:{stream_id}",

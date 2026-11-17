@@ -75,6 +75,28 @@ def hide_text(text: str) -> Hidden:
     return Hidden(text=out, spans=spans, count=len(kept))
 
 
+_SHOWN_OTHER = {"ifsc": "IFSC", "arn": "ARN", "euin": "EUIN"}
+
+
+def mask_for_service(masked: str) -> str:
+    """The copy that may leave KFin for Sarvam (BLD-C117): the masked text with every other pattern hit masked too
+    (a distributor's ARN or EUIN, an IFSC, a KFin address), in the same form, so `gateway.sarvam.check_masked`, which
+    is the gateway's leak check, finds nothing. Not part of DEC-103: those are not customers' details, so the copy
+    people read keeps them."""
+    matches = sorted(scan(masked, kfin_domains=[]), key=lambda m: (m.start, -m.end))
+    kept: list[Any] = []
+    for m in matches:
+        if kept and m.start < kept[-1].end:
+            continue
+        kept.append(m)
+    out = masked
+    for m in reversed(kept):
+        kind = _KIND.get(m.pattern_id)
+        shown = _SHOWN[kind] if kind else _SHOWN_OTHER.get(m.pattern_id, "Detail")
+        out = out[: m.start] + f"{shown} {DOTS}{masked[m.start : m.end][-2:]}" + out[m.end :]
+    return out
+
+
 # ---- lane B's Listen script ---------------------------------------------------------------------------------
 
 

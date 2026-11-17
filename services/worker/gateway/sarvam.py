@@ -75,6 +75,10 @@ STT_FINISH_WAIT_S = 10.0  # the most we wait for the last words after a flush
 STT_FIRST_WORDS_S = 4.0  # if nothing at all arrives this long after a flush, nothing was pending
 STT_QUIET_S = 0.6  # after the flush's words arrive, this much quiet ends the wait
 ERROR_RATE_DEFAULT = 0.2
+# Refused because of what we sent (bad or too short audio, a malformed field): recorded as `bad_input`, never counted
+# toward the error rate that switches hosted speech off. Everything else that fails is the service's (BLD-C117).
+BAD_INPUT_CODES = frozenset({"hosted_400", "hosted_413", "hosted_422"})
+TTS_DEADLINE_S = 60.0  # one part's whole synthesis; a brownout must not hold the job runner for minutes
 # Planning figures in rupees, to be replaced by the order form's (DEC-096 put hosted speech at about ₹1.5 a minute).
 INR_PER_STT_MINUTE = 1.5
 INR_PER_10K_TRANSLATE_CHARS = 20.0
@@ -140,9 +144,10 @@ def _fake() -> bool:
 
 
 def check_masked(text: str) -> None:
-    """Text for mayura or bulbul must be masked already (DEC-103). Any customer detail the patterns still find
-    aborts the call before anything is sent."""
-    if any(m.action == "block" for m in scan(text, kfin_domains=get_settings().kfin_domains)):
+    """Text for mayura or bulbul gets the gateway's own leak check (`gateway.core.leak_hits`): any pattern hit, with
+    no domain allowed, aborts the call before anything is sent (BLD-C117). Non-negotiable 2's DEC-108 exception
+    covers audio only; text going out is masked first (`speech.adapters.mask_for_service`)."""
+    if scan(text, kfin_domains=[]):
         raise SarvamFailed("unmasked_text")
 
 
@@ -155,6 +160,11 @@ def _cost(call: str, seconds: float | None, chars: int | None) -> float:
     if call == "translate":
         return round((chars or 0) / 10_000 * INR_PER_10K_TRANSLATE_CHARS, 4)
     return round((chars or 0) / 10_000 * INR_PER_10K_TTS_CHARS, 4)
+
+
+def failed_outcome(code: str) -> str:
+    """`bad_input` for a refusal of what we sent, else `route_error` (counted toward the switch-off)."""
+    return "bad_input" if code in BAD_INPUT_CODES else "route_error"
 
 
 def meter(
@@ -275,7 +285,7 @@ def stt_rest(
                 "language_code": language,
                 "with_timestamps": "true",  # for the seconds metered; chunk level only
             },
-            timeout=httpx.Timeout(45.0, connect=5.0),
+            timeout=httpx.Timeout(20.0, connect=5.0),  # a clip under 30 s; a brownout fails fast (BLD-C117)
         )
         said = body.get("transcript")
         if not isinstance(said, str):
@@ -286,7 +296,7 @@ def stt_rest(
             "stt_rest",
             STT_MODEL,
             ref_id=ref_id,
-            outcome="route_error",
+            outcome=failed_outcome(exc.code),
             error_code=exc.code,
             started=started,
         )
@@ -416,7 +426,7 @@ def translate(
                 "translate",
                 TRANSLATE_MODEL,
                 ref_id=ref_id,
-                outcome="route_error",
+                outcome=failed_outcome(exc.code),
                 error_code=exc.code,
                 chars=len(piece),
                 started=started,
@@ -506,7 +516,20 @@ def stt_stream(
     if s.speech_mode != "sarvam":
         raise SarvamFailed("stream_route_unavailable")  # the on-server engine does not stream (DEC-108)
     allowed(conn)
-    return SarvamStream(ref_id=ref_id, language=language)
+    started = time.monotonic()
+    try:
+        return SarvamStream(ref_id=ref_id, language=language)
+    except SarvamFailed as exc:  # an outage on the streaming path counts toward the switch-off too (BLD-C117)
+        meter(
+            conn,
+            "stt_stream",
+            STT_MODEL,
+            ref_id=ref_id,
+            outcome=failed_outcome(exc.code),
+            error_code=exc.code,
+            started=started,
+        )
+        raise
 
 
 class _Counted:
@@ -713,9 +736,14 @@ def tts(
                 ws.send(json.dumps({"type": "text", "data": {"text": m}}))
             ws.send(json.dumps({"type": "flush"}))
             got_audio = False
+            deadline = started + TTS_DEADLINE_S
             while True:
+                left = deadline - time.monotonic()
+                if left <= 0:  # the whole part, not just each wait (BLD-C117)
+                    code = "hosted_timeout"
+                    raise SarvamFailed(code)
                 try:
-                    raw = ws.recv(timeout=TTS_RECV_TIMEOUT_S)
+                    raw = ws.recv(timeout=min(TTS_RECV_TIMEOUT_S, left))
                 except TimeoutError:
                     code = "hosted_timeout"
                     raise SarvamFailed(code) from None
@@ -726,8 +754,13 @@ def tts(
                 kind = msg.get("type") if isinstance(msg, dict) else None
                 data = msg.get("data") if isinstance(msg, dict) else None
                 if kind == "audio" and isinstance(data, dict) and isinstance(data.get("audio"), str):
+                    try:
+                        audio = base64.b64decode(data["audio"], validate=True)
+                    except ValueError:
+                        code = "hosted_bad_reply"
+                        raise SarvamFailed(code) from None
                     got_audio = True
-                    yield base64.b64decode(data["audio"])
+                    yield audio
                 elif kind == "event" and isinstance(data, dict) and data.get("event_type") == "final":
                     break
                 elif kind == "error":
@@ -755,7 +788,7 @@ def tts(
             "tts",
             TTS_MODEL,
             ref_id=ref_id,
-            outcome=outcome,
+            outcome=failed_outcome(code) if outcome == "route_error" else outcome,
             error_code=code or None,
             chars=chars,
             started=started,
