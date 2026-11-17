@@ -403,6 +403,119 @@ def test_l_wall_justin_4_a_colleague_opening_counts_once_a_day(club: dict[str, A
     )
 
 
+def code_of(club: dict[str, Any], who: str) -> str:
+    row = (
+        club["conn"]
+        .execute("SELECT contributor_code FROM contributor_map WHERE user_id = %s", (club["p"][who],))
+        .fetchone()
+    )
+    return str(row["contributor_code"])
+
+
+def hide_name(club: dict[str, Any], who: str) -> None:
+    """The person hides their name from the Wall (DEC-104). The seed's people are removed with all that is theirs
+    after each test, so the setting goes with them."""
+    club["conn"].execute(
+        "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false) "
+        "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = false",
+        (club["p"][who],),
+    )
+
+
+def test_p_product_privacy_s09_a_colleague_sees_the_stage_not_the_committee_reversal(
+    club: dict[str, Any],
+) -> None:
+    """C-TRACK, P-PRODUCT.privacy, DEC-104: T9 was moved by the Ones Committee. Its sharer, its crew and the
+    committee read "then moved to picked by the Ones Committee"; a colleague reads the stage and its date only."""
+    conn, t9 = club["conn"], ref(club, "T9")
+    reversed_at = conn.execute(
+        "SELECT r.at FROM decision_reversals r JOIN decision_windows w ON w.id = r.window_id "
+        "JOIN idea_decisions d ON d.id = w.decision_id JOIN ideas i ON i.id = d.idea_uuid WHERE i.idea_id = %s",
+        (t9,),
+    ).fetchone()["at"]
+    moved = "Not picked, then moved to picked by the Ones Committee"
+    assert nodes(view(club, t9, "tanvi"))[2][2] == moved
+    colleague = view(club, t9, "rekha")
+    assert colleague["view"] == "colleague"
+    assert nodes(colleague)[2] == ("reviewed", "done", f"Picked, {day(reversed_at, NOW)}")
+    dump = json.dumps(colleague, ensure_ascii=False, default=str)
+    assert "Ones Committee" not in dump and "then moved" not in dump and "Not picked" not in dump
+    conn.execute(
+        "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, joined_at) "
+        "VALUES (%s, %s, 'crew', 'teamup', %s)",
+        (club["m"]["T9"].uuid, code_of(club, "zoya"), NOW - dt.timedelta(days=1)),
+    )
+    assert nodes(view(club, t9, "zoya"))[2][2] == moved  # crew
+    assert nodes(view(club, t9, "manoj"))[2][2] == moved  # the Ones Committee
+
+
+def test_s06_rules_4_dec_104_a_merge_by_a_lead_who_hides_their_name_says_by_its_lead(
+    club: dict[str, Any],
+) -> None:
+    """S-06.rules/4, L-MERGE.effects/1, DEC-104: the merged line names the lead who accepted the merge, unless they
+    hide their name from the Wall."""
+    conn, t11 = club["conn"], ref(club, "T11")
+    conn.execute(
+        "UPDATE merges SET via = 'lead_accepted', by_code = %s, by_user_id = NULL WHERE merged_idea_uuid = %s",
+        (code_of(club, "rekha"), club["m"]["T11"].uuid),
+    )
+    assert view(club, t11, "tanvi")["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by Rekha"
+    hide_name(club, "rekha")
+    v = view(club, t11, "tanvi")
+    assert v["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by its lead"
+    assert "Rekha" not in json.dumps(v["page"]["merged"], ensure_ascii=False)
+
+
+def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: dict[str, Any]) -> None:
+    """C-TRACK, L-HIDE: a detail the sharer brought back with "Show it" is not counted as hidden."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    uid = club["m"]["T6"].uuid
+    similar = nodes(view(club, t6, "tanvi"))[1][2]
+    assert str(similar).startswith("1 PAN hidden, ")
+    rest = str(similar).removeprefix("1 PAN hidden")
+    folio = conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) "
+        "VALUES (%s, 'message', 'synthetic-p3', 'folio', 'Folio ••••89') RETURNING id",
+        (uid,),
+    ).fetchone()["id"]
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "Personal details hidden" + rest
+    conn.execute(
+        "UPDATE hidden_details SET state = 'shown', reason = 'made_up_example', shown_at = %s WHERE id = %s",
+        (NOW, folio),
+    )
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "1 PAN hidden" + rest
+    conn.execute(
+        "UPDATE hidden_details SET state = 'shown', reason = 'made_up_example', shown_at = %s "
+        "WHERE idea_uuid = %s",
+        (NOW, uid),
+    )
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "No personal details found" + rest
+    conn.execute("DELETE FROM hidden_details WHERE id = %s", (folio,))
+
+
+def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_faces(
+    club: dict[str, Any],
+) -> None:
+    """DEC-104, S-09.layout/6: a crew member and a lead who hide their names from the Wall are counted but never
+    named, in the idea's crew or in the Team up card's faces."""
+    r1 = ref(club, "R1")
+    before = view(club, r1, "pallavi")
+    assert [m["first_name"] for m in before["idea"]["crew"]["members"]] == ["Zoya"]
+    hide_name(club, "zoya")
+    v = view(club, r1, "pallavi")
+    assert v["idea"]["crew"]["members"] == [] and v["idea"]["crew"]["count"] == 2
+    assert [f["first_name"] for f in v["page"]["team_up"]["faces"]] == ["Rekha"]
+    assert "Zoya" not in json.dumps(v, ensure_ascii=False, default=str)
+    hide_name(club, "rekha")
+    v = view(club, r1, "pallavi")
+    assert v["idea"]["crew"]["lead"] is None and v["idea"]["sharer"] is None
+    assert v["page"]["team_up"]["faces"] == [] and v["page"]["team_up"]["count"] == 2
+    dump = json.dumps(v, ensure_ascii=False, default=str)
+    assert "Zoya" not in dump and "Rekha" not in dump
+    # The sharer still sees their whole crew (crew_of's names_for_all).
+    assert [m["first_name"] for m in view(club, r1, "rekha")["idea"]["crew"]["members"]] == ["Zoya"]
+
+
 # --- L-SUBMIT.withdraw ----------------------------------------------------------------------------------------------
 
 
