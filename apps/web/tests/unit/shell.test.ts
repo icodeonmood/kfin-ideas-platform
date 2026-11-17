@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 
 import { foldedFrom, foldValue } from "@/components/shell/fold";
 import { lightFor, shellMode } from "@/components/shell/frame";
+import { IconAdmin, NavIcon } from "@/components/shell/icons";
 import { isCurrent } from "@/components/shell/sidebar";
 import { saveWords, savedTime } from "@/components/shell/taskbar";
+import rbac from "@/lib/rbac.json";
 import { initialsOf, toneFor, whenSaved } from "@/server/shell";
 
 const DRAFT = "3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b";
@@ -122,5 +124,13 @@ describe("C-AVATAR.crew", () => {
     expect(crewLine(four.slice(0, 1), 1, "Rahul Verma")).toBe("Rahul Verma is on it");
     expect(crewLine(four)).toBe("4 colleagues on it");
     expect(crewLine([], 0)).toBe("Nobody on it yet");
+  });
+});
+
+describe("C-SIDEBAR.anatomy: every navigation row has its own icon", () => {
+  // rbac.json's navigation keys, plus lane E's account rows (S-H6 Profile, S-ONE dashboard) as they land.
+  const keys = [...rbac.navigation.map((n) => n.key), "profile", "one"].filter((k) => k !== "admin");
+  it.each(keys)("%s is not drawn with the default (Admin) icon", (navKey) => {
+    expect(NavIcon({ navKey }).type).not.toBe(IconAdmin);
   });
 });
