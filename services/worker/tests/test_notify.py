@@ -30,7 +30,10 @@ WORKDAY_NOON = dt.datetime(2026, 11, 18, 12, 0, tzinfo=IST)  # a Wednesday
 @pytest.fixture
 def cast(db: Any) -> dict[str, Any]:
     db.execute("DELETE FROM jobs")
-    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")  # as shipped (DEC-105)
+    db.execute(  # as shipped (DEC-105), even if a test before this one removed the switch
+        "INSERT INTO kill_switches (name, state) VALUES ('comms.teams', 'off') "
+        "ON CONFLICT (name) DO UPDATE SET state = 'off'"
+    )
     killswitch.clear_cache()
     tag = secrets.token_hex(3)
     people: dict[str, Any] = {}
