@@ -190,11 +190,13 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   expect(await navLabels(page)).toEqual(isPhone(test.info()) ? PHONE_TABS : BASE);
 });
 
-// S-R4, A9: the pack's committee persona (manoj in the journeys' seed). `make seed` has no such grant, so the role is
-// given to this persona for the test and taken back after it (grants are read on every request). The 1pc seed
-// (club_seed.py) already gives SYN-10004 `committee` for J-COMMITTEE, so only a grant this test inserted is taken back:
-// the insert returns its id, and `finally` deletes that one row, never the seed's. Desktop only: on a phone the role
-// items live in the account menu.
+// S-R4, A9: the pack's committee persona (manoj in the journeys' seed). `make seed`, all CI loads, has no SYN-10004 at
+// all, and the mock IdP sends no email without claims, so a bare sign-in was refused (no_email) and the page sent the
+// test to sign in. The claims are the 1pc seed's own for Manoj (club_seed.py), so the same person signs in either
+// way: the seed's row, found by employee ID, or one made on this first sign-in. The role is given for the test and
+// taken back after it (grants are read on every request). The 1pc seed already gives SYN-10004 `committee` for
+// J-COMMITTEE, so only a grant this test inserted is taken back: the insert returns its id, and `finally` deletes that
+// one row, never the seed's. Desktop only: on a phone the role items live in the account menu.
 test("S-R4, J-COMMITTEE/1: the committee role sees Ones Committee in the sidebar, and its page passes axe (C-SIDEBAR.anatomy)", async ({
   page,
 }, info) => {
@@ -210,8 +212,14 @@ test("S-R4, J-COMMITTEE/1: the committee role sees Ones Committee in the sidebar
       await c.end();
     }
   };
-  await signIn(page, "SYN-10004");
-  const me = (await (await page.request.get("/api/me")).json()) as { email: string };
+  await signIn(page, "SYN-10004", {
+    employeeId: "SYN-10004",
+    email: "manoj.agarwal.1pc@kfintech.example",
+    name: "Manoj Agarwal",
+  });
+  const meRes = await page.request.get("/api/me");
+  expect(meRes.ok(), "SYN-10004 is signed in").toBe(true);
+  const me = (await meRes.json()) as { email: string };
   const added = await run(
     "INSERT INTO role_grants (user_id, role) SELECT u.id, 'committee' FROM users u WHERE u.email = $1 AND NOT " +
       "EXISTS (SELECT 1 FROM role_grants g WHERE g.user_id = u.id AND g.role = 'committee' AND g.valid_to IS NULL) " +
