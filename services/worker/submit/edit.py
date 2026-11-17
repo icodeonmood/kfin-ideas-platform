@@ -24,7 +24,7 @@ from typing import Any
 from core.crypto import CryptoError, decrypt_json, encrypt_json
 from core.db import Conn
 from onepc import enums
-from onepc.context import seal_text, sealed_context
+from onepc.context import sealed_context
 from submit import adapters, config, own, ready, sorting
 from submit.errors import NotFound, Refused
 from submit.words import clock, countdown, day, join
@@ -275,28 +275,10 @@ class _Save:
         self.after: dict[str, Any] = {}
 
     def mask(self, field: str, text: str) -> str:
+        """The masked copy of the person's new words for one field. Hide stores each value, its `hidden_details` row
+        and the words as typed, sealed for the sharer alone (DEC-103, L-HIDE.rules/4); nothing more is written here."""
         source_id = f"{self.uid}:{self.n}:{field}"
-        m = adapters.mask_text(self.conn, self.uid, text, source="edit", source_id=source_id)
-        if m.found:
-            for f in m.found:
-                self.conn.execute(
-                    "INSERT INTO hidden_details (idea_uuid, source, source_id, span_start, span_end, kind, masked) "
-                    "VALUES (%s, 'edit', %s, %s, %s, %s, %s)",
-                    (self.uid, source_id, f["start"], f["end"], f["kind"], f["masked"]),
-                )
-            # The words as typed stay readable by the sharer alone (DEC-103, L-HIDE.rules/4).
-            self.conn.execute(
-                "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
-                "VALUES (%s, 'edit', %s, %s, %s) ON CONFLICT (source, source_id) DO UPDATE SET "
-                "text_encrypted = EXCLUDED.text_encrypted",
-                (
-                    self.uid,
-                    source_id,
-                    self.user_id,
-                    seal_text("idea_words_sealed", "text_encrypted", source_id, text, vault=True),
-                ),
-            )
-        return m.text
+        return adapters.mask_text(self.conn, self.uid, text, by=self.user_id, source_id=source_id).text
 
     def changed(self, field: str, before: Any, after: Any) -> None:
         self.before[field] = before

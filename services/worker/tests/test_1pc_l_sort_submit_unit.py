@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import shutil
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -302,47 +303,130 @@ def test_l_submit_send_checked_line() -> None:
 # --- Adapters (SHIP_PLAN §5a) ------------------------------------------------------------------------------------
 
 
-def test_l_submit_withdraw_is_lane_es_and_waits_for_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Withdraw and restore have one implementation, lane E's ideapage.withdraw; until it is here the adapter says
-    so instead of doing anything itself."""
-    from submit import adapters
-
-    monkeypatch.setattr(adapters, "_module", lambda name: None)
-    with pytest.raises(adapters.NotYetAvailable):
-        adapters.withdraw(None, "IDEA-2026-000001", "u")  # type: ignore[arg-type]
-    with pytest.raises(adapters.NotYetAvailable):
-        adapters.restore(None, "IDEA-2026-000001", "u")  # type: ignore[arg-type]
-    assert adapters.install_hooks() is False
-
-
 def test_l_submit_withdraw_3_the_restore_hook_plugs_into_lane_e(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Withdraw and restore are lane E's alone (BLD-C087 removed lane C's unused wrappers); lane C plugs its part of a
+    restore into lane E's ON_RESTORED_HOOK when that module is here, and does nothing when it is not."""
     import types
 
     from submit import adapters
 
-    fake = types.SimpleNamespace(
-        ON_RESTORED_HOOK=None,
-        withdraw=lambda conn, key, user, reason=None: {"called": ("withdraw", key, user, reason)},
-        restore=lambda conn, key, user: {"called": ("restore", key, user)},
-    )
+    assert not hasattr(adapters, "withdraw") and not hasattr(adapters, "restore")
+    monkeypatch.setattr(adapters, "_module", lambda name: None)
+    assert adapters.install_hooks() is False
+    fake = types.SimpleNamespace(ON_RESTORED_HOOK=None)
     monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "ideapage.withdraw" else None)
     assert adapters.install_hooks() is True
     assert fake.ON_RESTORED_HOOK is adapters.on_restored
-    assert adapters.withdraw(None, "IDEA-2026-000001", "u", "x")["called"][0] == "withdraw"  # type: ignore[arg-type]
-    assert adapters.restore(None, "IDEA-2026-000001", "u")["called"][0] == "restore"  # type: ignore[arg-type]
 
 
-def test_l_hide_an_edit_is_masked_before_it_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l_hide_an_edit_is_masked_by_the_patterns_until_hide_lands(monkeypatch: pytest.MonkeyPatch) -> None:
     """DEC-103: kind + •••• + the last two characters, with positions in the person's own text and no value."""
     from submit import adapters
 
     monkeypatch.setattr(adapters, "_module", lambda name: None)
     text = "Investor with PAN ABCPE1234F called twice"  # a made-up PAN
-    m = adapters.mask_text(None, "idea", text, source="edit", source_id="x")  # type: ignore[arg-type]
-    assert m.text == "Investor with PAN PAN ••••4F called twice"
-    assert m.found == [{"kind": "pan", "masked": "PAN ••••4F", "start": 18, "end": 28}]
-    clean = adapters.mask_text(None, "idea", "Nothing personal here", source="edit", source_id="x")  # type: ignore[arg-type]
-    assert clean.text == "Nothing personal here" and clean.found == []
+    masked, found = adapters.pattern_mask(text)
+    assert masked == "Investor with PAN PAN ••••4F called twice"
+    assert found == [adapters.Found("pan", 18, 28, "PAN ••••4F")]
+    clean = adapters.mask_text(None, str(uuid.uuid4()), "Nothing personal here", by="u", source_id="x")  # type: ignore[arg-type]
+    assert clean == adapters.Masked("Nothing personal here", [], 0)
+
+
+@pytest.mark.parametrize(
+    ("text", "masked", "kind"),
+    [
+        ("folio 9876543210", "folio Folio ••••10", "folio"),  # also a phone shape: the rule with context wins
+        ("a/c 4111111111111111", "a/c Account ••••11", "account"),  # also a card number: one detail, once
+    ],
+)
+def test_l_hide_overlapping_matches_mask_once_bld_c087(
+    monkeypatch: pytest.MonkeyPatch, text: str, masked: str, kind: str
+) -> None:
+    """Two rules on one span keep one match (the longer, then the one with context), substituted from the end."""
+    from submit import adapters
+
+    out, found = adapters.pattern_mask(text)
+    assert out == masked
+    assert [(f.kind, text[f.start : f.end]) for f in found] == [(kind, text.split()[-1])]
+    both, found = adapters.pattern_mask(f"PAN ABCPE1234F and {text} again")
+    assert both == f"PAN PAN ••••4F and {masked} again" and len(found) == 2
+
+
+def test_l_hide_an_edit_goes_through_c_hide_once_it_is_here(monkeypatch: pytest.MonkeyPatch) -> None:
+    """c/hide's entry points by their exact names: an edit's words through `hide_message` (source "edit", the
+    gatekeeper on), the check's final pass through `hide_text`. Hide stores and seals; the adapter returns the
+    masked copy and S-06B's Save writes nothing of its own (no second hidden_details or sealed row)."""
+    import types
+
+    from submit import adapters, edit
+
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def hide_message(*args: Any, **kw: Any) -> Any:
+        calls.append(("hide_message", args, kw))
+        return types.SimpleNamespace(
+            masked="PAN ••••4F", spans=[{"start": 0, "end": 10, "kind": "pan"}], hidden_count=1
+        )
+
+    def hide_text(*args: Any, **kw: Any) -> tuple[str, int]:
+        calls.append(("hide_text", args, kw))
+        return "Phone ••••10", 1
+
+    fake = types.SimpleNamespace(hide_message=hide_message, hide_text=hide_text)
+    monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "hide" else None)
+
+    class NoWrites:
+        def execute(self, *a: Any, **k: Any) -> Any:
+            raise AssertionError("the edit wrote a row of its own")
+
+    uid, user = str(uuid.uuid4()), str(uuid.uuid4())
+    save = edit._Save(NoWrites(), {"id": uid}, user, 2)  # type: ignore[arg-type]
+    assert save.mask("summary", "ABCPE1234F") == "PAN ••••4F"
+    m = adapters.mask_text(None, uid, "9876543210", by=user, source_id=None)  # type: ignore[arg-type]
+    assert m == adapters.Masked("Phone ••••10", [], 1)
+    assert calls == [
+        ("hide_message", (save.conn, uid, "ABCPE1234F"),
+         {"by": user, "source": "edit", "source_id": f"{uid}:2:summary", "gatekeeper": True}),
+        ("hide_text", (None, uid, "9876543210"), {"by": user, "source": "edit"}),
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize(("returned", "expected"), [(3, 3), (0, 0), (-1, None)])
+def test_l_similar_failure_minus_one_is_couldnt_check_not_zero(
+    monkeypatch: pytest.MonkeyPatch, returned: int, expected: int | None
+) -> None:
+    """c/similar's `match_shared(conn, idea_uuid, *, found_while) -> int`: -1 is "couldn't check" (None here)."""
+    import types
+
+    from submit import adapters
+
+    seen: list[tuple[Any, ...]] = []
+
+    def match_shared(conn: Any, idea_uuid: str, *, found_while: str) -> int:
+        seen.append((conn, idea_uuid, found_while))
+        return returned
+
+    fake = types.SimpleNamespace(match_shared=match_shared)
+    monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "similar" else None)
+    assert adapters.find_similar(None, "u-1", found_while="checking") == expected  # type: ignore[arg-type]
+    assert seen == [(None, "u-1", "checking")]
+    monkeypatch.setattr(adapters, "_module", lambda name: None)
+    assert adapters.find_similar(None, "u-1", found_while="later") is None  # type: ignore[arg-type]
+
+
+def test_l_submit_send_queues_listen_once_c_sarvam_is_here(monkeypatch: pytest.MonkeyPatch) -> None:
+    """c/sarvam's `speech.listen.enqueue_prefetch(conn, idea_uuid) -> None`, after a send; nothing until it lands."""
+    import types
+
+    from submit import adapters
+
+    monkeypatch.setattr(adapters, "_module", lambda name: None)
+    assert adapters.prefetch_listen(None, "u-1") is False  # type: ignore[arg-type]
+    seen: list[tuple[Any, str]] = []
+    fake = types.SimpleNamespace(enqueue_prefetch=lambda conn, idea_uuid: seen.append((conn, idea_uuid)))
+    monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "speech.listen" else None)
+    assert adapters.prefetch_listen(None, "u-1") is True  # type: ignore[arg-type]
+    assert seen == [(None, "u-1")]
 
 
 @pytest.mark.parametrize(

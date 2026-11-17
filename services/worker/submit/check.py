@@ -22,8 +22,9 @@ log = get_logger("submit.check")
 PUBLIC_TEXT = ("title", "summary", "often")
 
 
-def _final_pass(conn: Conn, idea: dict[str, Any]) -> int:
-    """Mask anything a customer detail pattern still finds in the shared text; the count of details hidden now."""
+def _final_pass(conn: Conn, idea: dict[str, Any], by: str) -> int:
+    """Mask anything a customer detail check still finds in the shared text; the count of details hidden now. Hide
+    (or the adapter's fallback) stores each value and its `hidden_details` row; this keeps the masked copy only."""
     uid = str(idea["id"])
     changes: dict[str, str] = {}
     hidden = 0
@@ -31,16 +32,10 @@ def _final_pass(conn: Conn, idea: dict[str, Any]) -> int:
         text = idea.get(column)
         if not text:
             continue
-        m = adapters.mask_text(conn, uid, str(text), source="edit", source_id=f"{uid}:check:{column}")
-        if m.found:
+        m = adapters.mask_text(conn, uid, str(text), by=by, source_id=None)
+        hidden += m.hidden_count
+        if m.text != text:
             changes[column] = m.text
-            hidden += len(m.found)
-            for f in m.found:
-                conn.execute(
-                    "INSERT INTO hidden_details (idea_uuid, source, source_id, span_start, span_end, kind, masked) "
-                    "VALUES (%s, 'edit', %s, %s, %s, %s, %s)",
-                    (uid, f"{uid}:check:{column}", f["start"], f["end"], f["kind"], f["masked"]),
-                )
     for column, text in changes.items():
         conn.execute(f"UPDATE ideas SET {column} = %s WHERE id = %s", (text, uid))  # noqa: S608 - fixed names
     return hidden
@@ -52,14 +47,14 @@ def run(conn: Conn, idea_uuid: str, *, gave_up: bool = False) -> None:
         if row is None or row["status"] != "checking":
             return  # withdrawn meanwhile, or already with the desk
         idea = dict(row)
-        hidden = _final_pass(conn, idea)
+        sharer = conn.execute(
+            "SELECT user_id FROM contributor_map WHERE contributor_code = %s", (idea["contributor_code"],)
+        ).fetchone()
+        hidden = _final_pass(conn, idea, str(sharer["user_id"]) if sharer else "process:submit.check")
         similar = None if gave_up else adapters.find_similar(conn, idea_uuid, found_while="checking")
         conn.execute(
             "UPDATE ideas SET status = 'with_review_desk' WHERE id = %s AND status = 'checking'", (idea_uuid,)
         )
-        sharer = conn.execute(
-            "SELECT user_id FROM contributor_map WHERE contributor_code = %s", (idea["contributor_code"],)
-        ).fetchone()
         if sharer is not None:
             ref = str(idea["idea_id"])
             notify.post(
@@ -75,6 +70,6 @@ def run(conn: Conn, idea_uuid: str, *, gave_up: bool = False) -> None:
             "submit.checked",
             idea_uuid=idea_uuid,
             hidden=hidden,
-            similar=similar if similar is not None else -1,
+            similar=similar if similar is not None else -1,  # -1: couldn't check, never "none found"
             gave_up=gave_up,
         )
