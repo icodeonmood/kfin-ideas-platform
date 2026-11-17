@@ -591,6 +591,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
     action: {
       label: string;
       to?: string;
@@ -611,7 +612,9 @@ export interface MyIdeasEmpty {
   kind: "first_time" | "filtered" | "no_results" | "list";
   title: string;
   line: string;
-  actions: { label: string; to: string; style?: "primary" | "line" }[];
+  phone_line?: string; // the phone board's wording where it differs ("…their impact is measured.")
+  // desk_only: the desktop board's action only ("See 1 in Teamed up"); the phone offers "Show all ideas" alone
+  actions: { label: string; to: string; style?: "primary" | "line"; desk_only?: boolean }[];
   hint?: string; // "or press P anywhere"
 }
 export interface MyIdeasResponse {
