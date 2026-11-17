@@ -101,6 +101,15 @@ endpoints:
   - GET /api/ideas/{id}                               see_org_ideas
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
+  # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.
+  - GET /api/config                                   signed_in       # A-API.config: the promises the copy names and the sorting lists
+  - GET /api/drafts/{id}/sorting                      submit          # L-SORT: suggested, confirmed or changed (owner only)
+  - PATCH /api/drafts/{id}/sorting                    submit          # L-SORT.rules/2–3: change a field, or confirm the rest
+  - GET /api/drafts/{id}/send                         submit          # L-SUBMIT.pre: the Send part's last look
+  - POST /api/drafts/{id}/submit                      submit          # L-SUBMIT.send, with an Idempotency-Key
+  - GET /api/ideas/{id}/edit                          submit          # S-06B: the edit page (the sharer, in the edit window)
+  - PATCH /api/ideas/{id}/edit                        submit          # A-API PATCH /ideas/:id: Save changes, a version each time
+  - GET /api/ideas/{id}/versions                      signed_in       # Draft history: the sharer, the desk, the committee (the worker checks)
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
   - GET /api/review/items                             view_review_queue

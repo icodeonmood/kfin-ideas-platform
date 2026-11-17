@@ -104,6 +104,22 @@ def scan_run_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
         pipeline.go_async(conn, idea_uuid, "scan_job_dead")
 
 
+@handler("submit.check")
+def submit_check(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-SUBMIT.send/3: "Checked and matched" after Submit or a restore, then the idea goes to the review desk."""
+    from submit import check
+
+    check.run(conn, str(payload["idea_uuid"]))
+
+
+@on_dead("submit.check")
+def submit_check_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """A check that keeps failing never holds an idea back: it goes to the desk without the matching."""
+    from submit import check
+
+    check.run(conn, str(payload["idea_uuid"]), gave_up=True)
+
+
 @handler("vault.purge_scope")
 def vault_purge_scope(conn: Conn, payload: dict[str, Any]) -> None:
     """An idea went back to edit after a block: drop the values held for it (re-tagged on the next submit)."""

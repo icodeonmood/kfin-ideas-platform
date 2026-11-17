@@ -18,6 +18,8 @@ kfin:
 Timers start when an item enters a stage and stop when it leaves. Working days are counted in IST using `rules/calendar.md`.
 Reminders go to the current owner at 50% and 80% of the limit. A breach notifies the escalation target and is visible on the dashboard.
 
+`decide_by` is the 1% Club's review clock (L-SUBMIT.send/4): it starts when an idea is shared or restored. Its due date comes from `rules/promises.md` (`review.decide_by_working_days`, at the deadline hour on the last working day); the entry here registers the kind with the timer engine. It has no reminders or escalation: an idea past its date reaches the review desk lead in the daily digest, and nothing is decided automatically.
+
 ```yaml
 version: '1.0'
 review:
@@ -66,4 +68,6 @@ measure_30:
   limit_days: 30
 measure_90:
   limit_days: 90
+decide_by:
+  limit_wd: 5
 ```
