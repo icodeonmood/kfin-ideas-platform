@@ -193,7 +193,9 @@ def test_l_draft_pins_a_pinned_part_is_never_overwritten_and_unpinning_suggests_
     assert _parts(db, idea)["often"]["state"] == "filled"
 
 
-def test_l_draft_parts_4_a_dropped_answer_keeps_the_filled_part_until_its_words_go_bld_c033(drafting: Any) -> None:
+def test_l_draft_parts_4_a_dropped_answer_keeps_the_filled_part_until_its_words_go_bld_c033(
+    drafting: Any,
+) -> None:
     """The planted "a lot of money" makes the fake quote a figure nobody gave, on both asks: the gateway drops it
     (`ungrounded_dropped`) and the part keeps what it showed, while its own quote still stands in the words."""
     db, owner = drafting
@@ -272,6 +274,32 @@ def test_l_draft_autosave_5_opening_on_another_device_takes_over(drafting: Any) 
     store.add_message(db, owner, idea, LAPTOP, text=W2)
 
 
+def test_l_draft_autosave_7_an_offline_replay_is_kept_while_another_device_edits_bld_c036(
+    drafting: Any,
+) -> None:
+    """L-DRAFT.autosave/7 over /5: nothing typed is discarded. The phone typed offline while the laptop carried on;
+    on reconnect its messages are kept in time order, it does not take over, and a retry is kept once."""
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, _ = store.create(db, owner, PHONE, text=W1)
+    db.execute(
+        "UPDATE idea_messages SET created_at = now() - interval '10 minutes' WHERE idea_uuid = %s", (idea,)
+    )
+    store.view(db, owner, idea, LAPTOP, open_=True)  # the laptop is the editor now
+    typed = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=2)  # on the phone, offline, after its first words
+    mid, _ = store.add_message(db, owner, idea, PHONE, text=W2, client_id="offline-phone-0001", at=typed)
+    again, run = store.add_message(db, owner, idea, PHONE, text=W2, client_id="offline-phone-0001", at=typed)
+    assert again == mid and run is None
+    online_retry, _ = store.add_message(db, owner, idea, PHONE, text=W2, client_id="offline-phone-0001")
+    assert online_retry == mid  # a retry of what was already kept, whoever edits now
+    draft = store.view(db, owner, idea, LAPTOP)
+    assert [m["text"] for m in draft["messages"]] == [W1, W2]
+    assert draft["editor"] == {"device": "laptop", "this_device": True}
+    with pytest.raises(DraftError) as err:  # a new live message from the phone still needs "Carry on here?"
+        store.add_message(db, owner, idea, PHONE, text="One more thing.", client_id="live-phone-0002")
+    assert err.value.code == "open_elsewhere"
+
+
 def test_l_draft_autosave_8_untouched_drafts_are_archived_never_deleted(drafting: Any) -> None:
     db, owner = drafting
     old, _ = store.create(db, owner, LAPTOP, text=W1)
@@ -288,8 +316,10 @@ def test_l_draft_autosave_8_untouched_drafts_are_archived_never_deleted(drafting
     with pytest.raises(DraftError) as err:
         store.add_message(db, owner, idea_uuid=old, device=LAPTOP, text=W2)
     assert err.value.code == "archived"
-    store.restore_draft(db, owner, old, LAPTOP)
-    assert store.view(db, owner, old, LAPTOP)["archived"] is False
+    store.restore_draft(db, owner, old, PHONE)
+    restored = store.view(db, owner, old, PHONE)
+    assert restored["archived"] is False
+    assert restored["editor"] == {"device": "phone", "this_device": True}  # BLD-C036: the restoring tab edits
     store.archive(db, owner, fresh)  # DELETE /drafts/:id archives too
     assert db.execute("SELECT archived_at IS NOT NULL AS a FROM ideas WHERE id = %s", (fresh,)).fetchone()[
         "a"
@@ -312,8 +342,66 @@ def test_l_draft_stream_live_view_and_a_stale_run_is_settled(drafting: Any) -> N
     )
     db.execute("UPDATE idea_parts SET state = 'updating', run_id = (SELECT id FROM draft_runs WHERE state = "
                "'running') WHERE idea_uuid = %s AND key = 'often'", (idea,))  # fmt: skip
+    stranger = Owner(owner.user_id, "CTR-0d0d0d")
+    with pytest.raises(DraftError) as err:  # ownership first: someone else's read changes nothing
+        store.view(db, stranger, idea, LAPTOP)
+    assert err.value.status == 404
+    with pytest.raises(DraftError) as err:
+        store.live(db, stranger, idea)
+    assert err.value.status == 404
+    assert db.execute("SELECT count(*) AS n FROM draft_runs WHERE state = 'running'").fetchone()["n"] == 1
     assert store.view(db, owner, idea, LAPTOP)["parts"]["often"]["state"] == "failed"
     assert db.execute("SELECT count(*) AS n FROM draft_runs WHERE state = 'running'").fetchone()["n"] == 0
+
+
+def test_l_draft_hide_what_an_edit_or_a_shorter_list_takes_out_leaves_the_vault_bld_c038(
+    drafting: Any,
+) -> None:
+    import generators
+
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    rng = generators.default_rng(7)
+    pan, phone = generators.pan(rng), generators.mobile(rng)
+    idea, _ = store.create(db, owner, LAPTOP, text=f"{W1} The caller read out his PAN, {pan}.")
+    store.add_message(db, owner, idea, LAPTOP, text=f"He called again with the same PAN, {pan}.")
+
+    def vault_types() -> list[str]:
+        rows = db.execute(
+            "SELECT type FROM pseudonym_vault WHERE scope_id = %s ORDER BY type", (f"DRAFT-{idea}",)
+        )
+        return [r["type"] for r in rows.fetchall()]
+
+    def edit_rows() -> list[str]:
+        rows = db.execute(
+            "SELECT source_id FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'edit' ORDER BY source_id",
+            (idea,),
+        )
+        return [r["source_id"].rsplit(":", 1)[1] for r in rows.fetchall()]
+
+    assert vault_types() == ["PAN"]  # one value, one tag, held by two hidden details
+    first = db.execute(
+        "SELECT id FROM idea_messages WHERE idea_uuid = %s ORDER BY seq LIMIT 1", (idea,)
+    ).fetchone()["id"]
+    store.edit_message(db, owner, idea, str(first), LAPTOP, text=W1)
+    assert vault_types() == ["PAN"]  # the other message still holds it
+    second = db.execute(
+        "SELECT id FROM idea_messages WHERE idea_uuid = %s ORDER BY seq DESC LIMIT 1", (idea,)
+    ).fetchone()["id"]
+    store.edit_message(db, owner, idea, str(second), LAPTOP, text="He called again about the same code.")
+    assert vault_types() == []  # nothing holds it now: the value leaves the vault
+
+    who = ["Investors", f"Caller on {phone}", "Branch staff"]
+    store.set_part(db, owner, idea, "who", LAPTOP, {"value": who})
+    assert edit_rows() == ["0", "1", "2"] and vault_types() == ["PHONE"]
+    store.set_part(db, owner, idea, "who", LAPTOP, {"value": ["Investors"]})
+    assert edit_rows() == ["0"] and vault_types() == []
+    assert (
+        db.execute(
+            "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source = 'edit'", (idea,)
+        ).fetchone()["n"]
+        == 0
+    )
 
 
 def test_l_draft_recent_lists_titles_and_where_they_were_saved(drafting: Any) -> None:

@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -95,7 +95,10 @@ def test_l_draft_parts_4_a_drop_or_an_empty_answer_keeps_a_filled_part_bld_c033(
     # "Unchanged parts keep their value": a drop, or an empty answer, while the part's own quote still stands.
     assert parts.landing("often", None, often, q, texts, dropped=True) == "keep"
     assert parts.landing("often", None, often, q, texts, dropped=False) == "keep"
-    assert parts.landing("value", ["not_sure"], ["saves_time"], "5 to 10 minutes", texts, dropped=False) == "keep"
+    assert (
+        parts.landing("value", ["not_sure"], ["saves_time"], "5 to 10 minutes", texts, dropped=False)
+        == "keep"
+    )
     title = {"title": "Rejection codes confuse investors", "summary": "S.", "pinned": []}
     assert parts.landing("title", None, title, "the SMS to the investor", texts, dropped=False) == "keep"
     # An edit took the quoted words out: the part is emptied, never left showing words that are gone.
@@ -339,7 +342,9 @@ def test_l_draft_parts_a_summary_sentence_does_not_end_at_rs_or_eg_bld_c033() ->
     )
     assert checks.draft_part(ex["input"], {**ex["output"], "summary": summary}, None) == []
     four = summary + " They call again."
-    assert any("3 sentences" in p for p in checks.draft_part(ex["input"], {**ex["output"], "summary": four}, None))
+    assert any(
+        "3 sentences" in p for p in checks.draft_part(ex["input"], {**ex["output"], "summary": four}, None)
+    )
 
 
 def test_l_draft_parts_the_fake_keeps_the_summary_and_who_limits_bld_c033() -> None:
@@ -373,6 +378,43 @@ def test_l_draft_pins_a_pinned_title_survives_a_new_answer() -> None:
     value, why, quote, _ = result_of("title", data, [{"n": 1, "text": W1}], prior)
     assert value == {"title": "My own title", "summary": "New summary.", "pinned": ["title"]}
     assert why == "From your first sentence." and quote == "the SMS to the investor"
+
+
+def test_l_draft_adapters_call_c_hide_and_c_similar_by_their_names_once_they_land_bld_c038(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    import types
+
+    import similar
+
+    assert adapters.landed("hide", "hide_message") is None  # not on main yet: the patterns alone
+    assert adapters.similar_for(cast(Any, None), "u", "T", "S") is None  # not on main yet: "couldn't check"
+    seen: dict[str, Any] = {}
+
+    def hide_message(
+        conn: Any, idea_uuid: str, text: str, *, by: str, source: str, source_id: str | None = None,
+        gatekeeper: bool = True,
+    ) -> Any:  # fmt: skip
+        seen["hide"] = (idea_uuid, text, by, source, source_id, gatekeeper)
+        return adapters.Hidden("PAN ••••4F")
+
+    hide = types.ModuleType("hide")
+    hide.hide_message = hide_message
+    monkeypatch.setitem(sys.modules, "hide", hide)
+    got = adapters.hide_message(
+        cast(Any, None), "idea-1", "own words", by="user-1", source="edit", source_id="s-1"
+    )
+    assert got.masked == "PAN ••••4F"
+    assert seen["hide"] == ("idea-1", "own words", "user-1", "edit", "s-1", True)  # the gatekeeper runs too
+
+    def similar_for(conn: Any, idea_uuid: str, title: str, summary: str) -> list[dict[str, Any]] | None:
+        seen["similar"] = (idea_uuid, title, summary)
+        return []
+
+    monkeypatch.setattr(similar, "similar_for", similar_for, raising=False)
+    assert adapters.similar_for(cast(Any, None), "idea-1", "T", "S") == []  # none found, not "couldn't check"
+    assert seen["similar"] == ("idea-1", "T", "S")
 
 
 def test_l_draft_channels_origin_labels_are_the_boards() -> None:

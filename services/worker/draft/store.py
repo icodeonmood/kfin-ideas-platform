@@ -232,11 +232,9 @@ def _add(
     if client_id is not None and not 8 <= len(client_id) <= 200:
         raise DraftError(400, "idempotency_key_invalid")
     if client_id:
-        same = conn.execute(
-            "SELECT id FROM idea_messages WHERE idea_uuid = %s AND client_id = %s", (idea_uuid, client_id)
-        ).fetchone()
+        same = _by_client_id(conn, idea_uuid, client_id)
         if same:
-            return str(same["id"]), None
+            return same, None
     stats = conn.execute(
         "SELECT count(*) AS n, coalesce(max(seq), 0) AS last FROM idea_messages WHERE idea_uuid = %s",
         (idea_uuid,),
@@ -268,6 +266,14 @@ def _add(
     log.info("draft.message_added", idea_uuid=idea_uuid, message_id=mid, hidden_count=hidden.hidden_count,
              via_code=via, run_id=run_id)  # fmt: skip
     return mid, run_id
+
+
+def _by_client_id(conn: Conn, idea_uuid: str, client_id: str) -> str | None:
+    """The message a device already sent with this id, if any."""
+    same = conn.execute(
+        "SELECT id FROM idea_messages WHERE idea_uuid = %s AND client_id = %s", (idea_uuid, client_id)
+    ).fetchone()
+    return str(same["id"]) if same else None
 
 
 def _link_files(conn: Conn, idea_uuid: str, message_id: str, files: list[str] | None) -> None:
@@ -304,7 +310,16 @@ def add_message(
     L-DRAFT.parts/10)."""
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
-        _writable(row, device)
+        known = _by_client_id(conn, idea_uuid, client_id) if client_id else None
+        if known:
+            return known, None  # sent before (a retry, or a replay): kept once, whoever edits now
+        if client_id and at is not None:
+            # An offline replay (L-DRAFT.autosave/7): what was typed on the device is never discarded, so it is
+            # kept, in time order, even when another device has carried on since. It does not take over (BLD-C036).
+            if row["archived_at"] is not None:
+                raise DraftError(409, "archived")
+        else:
+            _writable(row, device)
         if via == "voice" and stream_id:
             note = adapters.voice_message(conn, stream_id, idea_uuid=idea_uuid, by_code=owner.code)
             if (
@@ -365,18 +380,41 @@ def edit_message(
 
 
 def _mask_value(conn: Conn, owner: Owner, idea_uuid: str, wire_key: str, value: Any) -> Any:
-    """The person's own text in a part is masked like any message (DEC-103); what was hidden is recorded."""
+    """The person's own text in a part is masked like any message (DEC-103); what was hidden is recorded. A list
+    cut shorter takes the hidden details and sealed words of the items it lost with it (BLD-C038)."""
+    prefix = f"{idea_uuid}:part:{wire_key}:"
 
     def one(text: str, n: int) -> str:
-        sid = f"{idea_uuid}:part:{wire_key}:{n}"
-        masked, _ = adapters.hide_text(conn, idea_uuid, text, by=owner.user_id, source="edit", source_id=sid)
+        masked, _ = adapters.hide_text(
+            conn, idea_uuid, text, by=owner.user_id, source="edit", source_id=f"{prefix}{n}"
+        )
         return masked
 
     if isinstance(value, str):
-        return one(value, 0)
-    if isinstance(value, list) and wire_key != "value":
-        return [one(v, i) for i, v in enumerate(value)]
-    return value
+        out: Any = one(value, 0)
+        kept = 1
+    elif isinstance(value, list) and wire_key != "value":
+        out, kept = [one(v, i) for i, v in enumerate(value)], len(value)
+    else:
+        return value
+    gone = [
+        str(r["source_id"])
+        for r in conn.execute(
+            "SELECT source_id FROM idea_words_sealed WHERE idea_uuid = %(idea)s AND source = 'edit' "
+            "AND starts_with(source_id, %(prefix)s) UNION SELECT source_id FROM hidden_details "
+            "WHERE idea_uuid = %(idea)s AND source = 'edit' AND starts_with(source_id, %(prefix)s)",
+            {"idea": idea_uuid, "prefix": prefix},
+        ).fetchall()
+        if not _item_below(str(r["source_id"]), prefix, kept)
+    ]
+    adapters.forget(conn, idea_uuid, "edit", gone)
+    return out
+
+
+def _item_below(source_id: str, prefix: str, kept: int) -> bool:
+    """Whether "<idea>:part:<key>:<n>" is one of the first `kept` items."""
+    n = source_id[len(prefix) :]
+    return n.isdigit() and int(n) < kept
 
 
 def set_part(
@@ -482,10 +520,12 @@ def archive(conn: Conn, owner: Owner, idea_uuid: str) -> None:
 
 
 def restore_draft(conn: Conn, owner: Owner, idea_uuid: str, device: Device) -> None:
-    """From My ideas → Drafts: back to the person's drafts, saved now."""
+    """From My ideas → Drafts: back to the person's drafts, saved now, and the device that restored it is the one
+    editor (L-DRAFT.autosave/5), as if it had opened it (BLD-C036)."""
     with conn.transaction():
         _load(conn, owner, idea_uuid, lock=True)
         conn.execute("UPDATE ideas SET archived_at = NULL WHERE id = %s", (idea_uuid,))
+        take_over(conn, owner, idea_uuid, device)
         _touch(conn, idea_uuid, device)
     log.info("draft.restored", idea_uuid=idea_uuid)
 
@@ -495,6 +535,10 @@ def take_over(conn: Conn, owner: Owner, idea_uuid: str, device: Device) -> None:
     if not device.id:
         return
     _load(conn, owner, idea_uuid)
+    _take_over(conn, idea_uuid, device)
+
+
+def _take_over(conn: Conn, idea_uuid: str, device: Device) -> None:
     conn.execute(
         "UPDATE ideas SET editor_device_id = %s, editor_device = coalesce(%s, editor_device), editor_at = now() "
         "WHERE id = %s",
@@ -635,11 +679,11 @@ def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
 
 def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: bool = False) -> dict[str, Any]:
     """`GET /drafts/:id` (owner only): everything to pick up exactly where the person left off, on any device."""
-    if UUID_RE.match(idea_uuid):
-        runs.settle_stale(conn, idea_uuid)
-    if open_:
-        take_over(conn, owner, idea_uuid, device)
-    row = _load(conn, owner, idea_uuid)
+    row = _load(conn, owner, idea_uuid)  # the owner's, before anything is settled or taken over
+    runs.settle_stale(conn, idea_uuid)
+    if open_ and device.id:
+        _take_over(conn, idea_uuid, device)
+        row = _load(conn, owner, idea_uuid)
     now = _now(conn)
     means = runs.means(conn)
     part_rows = conn.execute(
@@ -755,9 +799,8 @@ def recent(conn: Conn, owner: Owner, device: Device, *, archived: bool = False) 
 def live(conn: Conn, owner: Owner, idea_uuid: str, run_id: str | None = None) -> dict[str, Any]:
     """What the draft stream needs for one run (A-API.draft-stream): the run, the loader's means, what was hidden in
     its message, and the parts as they stand. `run_id` None means the newest run."""
-    if UUID_RE.match(idea_uuid):
-        runs.settle_stale(conn, idea_uuid)
-    _load(conn, owner, idea_uuid)
+    _load(conn, owner, idea_uuid)  # the owner's, before anything is settled
+    runs.settle_stale(conn, idea_uuid)
     latest = conn.execute(
         "SELECT id, state FROM draft_runs WHERE idea_uuid = %s ORDER BY started_at DESC LIMIT 1", (idea_uuid,)
     ).fetchone()

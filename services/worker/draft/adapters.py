@@ -1,22 +1,26 @@
 """Thin adapters to the other lane C modules L-DRAFT depends on, so a change touches one file (SHIP_PLAN §5a).
 
-- L-HIDE (branch c/hide): `hide_message`, `hide_text` and `preview` have the signatures of c/hide's `hide` package
-  (its entry points, BLD-C060). Until c/hide is on main they mask the customer details of DEC-103 with the level-1
-  patterns alone; L-HIDE adds the gatekeeper's pass and names next to a detail, and keeps each detail's id across
-  edits. TODO(c/hide): replace the three with `from hide import hide_message, hide_text, preview` once c/hide lands.
+- L-HIDE (branch c/hide): `hide_message` calls c/hide's `hide.hide_message(conn, idea_uuid, text, *, by, source,
+  source_id=None, gatekeeper=True) -> Hidden` (.masked, .spans, .details, .hidden_count, .kinds_line, .receipt) as
+  soon as the `hide` package is on main (a guarded import, BLD-C038). Until then it masks the customer details of
+  DEC-103 with the level-1 patterns alone; L-HIDE adds the gatekeeper's pass and names next to a detail, and keeps
+  each detail's id across edits. `hide_text` and `preview` go through the same masking.
 - Voice (DEC-108, branch c/sarvam): `voice_message` has the signature of `speech.drafts.voice_to_message`: a
   finished voice note handed to the draft as one message, the person's words plus an English copy. Until c/sarvam is
   on main it returns None, and the words the client sends are kept as they are.
   TODO(c/sarvam): replace with `from speech.drafts import voice_to_message` once c/sarvam lands.
-- L-SIMILAR (branch c/similar): `similar_for`. Until it is on main similar ideas are not looked for here and the
-  part says so ("Couldn't check for similar ideas. The review desk will.", `L-SIMILAR.failure`), never "none found".
-  TODO(c/similar): switch to `from similar import …` once c/similar lands.
+- L-SIMILAR (branch c/similar): `similar_for` calls c/similar's `similar.similar_for(conn, idea_uuid, title,
+  summary) -> list[dict] | None` (None: couldn't check) as soon as it is on main (a guarded import, BLD-C038). Until
+  then similar ideas are not looked for here and the part says so ("Couldn't check for similar ideas. The review
+  desk will.", `L-SIMILAR.failure`), never "none found".
 
 Nothing here logs a value: only kinds, counts and IDs.
 """
 
 from __future__ import annotations
 
+import importlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,6 +78,19 @@ class Hidden:
         return sum(self.counts.values())
 
 
+def landed(module: str, name: str) -> Callable[..., Any] | None:
+    """Another lane's entry point once its package is on main, else None. A package that is there but breaks on
+    import is an error, never a quiet fall-back."""
+    try:
+        mod = importlib.import_module(module)
+    except ModuleNotFoundError as exc:
+        if exc.name != module:
+            raise
+        return None
+    fn = getattr(mod, name, None)
+    return fn if callable(fn) else None
+
+
 def masked_form(kind: str, value: str) -> str:
     """Kind + •••• + the last two characters (DEC-103): "PAN ••••4F"."""
     tail = "".join(ch for ch in value if ch.isalnum())[-2:]
@@ -129,13 +146,23 @@ def hide_message(
     the same source finds every detail afresh. Inside the caller's transaction."""
     if source not in SEALED_SOURCES:
         raise ValueError("hide_message takes a message, answer, conversation or edit")
+    hide = landed("hide", "hide_message")
+    if hide is not None:  # c/hide: patterns, then the gatekeeper (non-negotiable 4)
+        hidden: Hidden = hide(
+            conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=True
+        )
+        return hidden
     found = find(text)
     scope = f"DRAFT-{idea_uuid}"
     with conn.transaction():
-        conn.execute(
-            "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = %s",
-            (idea_uuid, source, source_id),
-        )
+        before = [
+            r["vault_tag"]
+            for r in conn.execute(
+                "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = %s "
+                "RETURNING vault_tag",
+                (idea_uuid, source, source_id),
+            ).fetchall()
+        ]
         spans, details = [], []
         for f in found:
             tag = vault.assign(conn, scope, VAULT_TYPE[f.kind], f.value, subject_user_id=None)
@@ -155,7 +182,41 @@ def hide_message(
             (idea_uuid, source, source_id, by,
              seal_text("idea_words_sealed", "text_encrypted", f"{source}:{source_id}", text, vault=True)),
         )  # fmt: skip
+        _drop_unreferenced(conn, idea_uuid, before)  # a value the edit took out leaves the vault with it
     return Hidden(_masked(text, found), spans, details, _counts(found))
+
+
+def forget(conn: Conn, idea_uuid: str, source: str, source_ids: list[str]) -> None:
+    """Texts that are gone (a list part cut shorter): their hidden details and sealed words, and the vault tags no
+    other hidden detail of the draft references (BLD-C038). Inside the caller's transaction."""
+    if not source_ids:
+        return
+    tags = [
+        r["vault_tag"]
+        for r in conn.execute(
+            "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = ANY(%s) "
+            "RETURNING vault_tag",
+            (idea_uuid, source, source_ids),
+        ).fetchall()
+    ]
+    conn.execute(
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = %s AND source_id = ANY(%s)",
+        (idea_uuid, source, source_ids),
+    )
+    _drop_unreferenced(conn, idea_uuid, tags)
+
+
+def _drop_unreferenced(conn: Conn, idea_uuid: str, tags: list[Any]) -> None:
+    """Only tags these hidden details held (customer values the gateway never sees, so never one of its own tags),
+    and only when no hidden detail of the draft still holds them. The vault's counters stay: a tag number is never
+    given out again."""
+    held = sorted({str(t) for t in tags if t})
+    if held:
+        conn.execute(
+            "DELETE FROM pseudonym_vault v WHERE v.scope_id = %s AND v.tag = ANY(%s) AND NOT EXISTS "
+            "(SELECT 1 FROM hidden_details h WHERE h.idea_uuid = %s AND h.vault_tag = v.tag)",
+            (f"DRAFT-{idea_uuid}", held, idea_uuid),
+        )
 
 
 def hide_text(
@@ -171,8 +232,12 @@ def hide_text(
 
 def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[dict[str, Any]] | None:
     """Up to 8 similar ideas (`SimilarMatch[]`), or None when they could not be looked for (the part then fails and
-    the review desk checks instead). L-SIMILAR owns the matching; until it lands this is None."""
-    return None
+    the review desk checks instead). L-SIMILAR owns the matching; until c/similar lands this is None."""
+    look = landed("similar", "similar_for")
+    if look is None:
+        return None
+    found: list[dict[str, Any]] | None = look(conn, idea_uuid, title, summary)
+    return found
 
 
 def voice_message(
