@@ -1371,6 +1371,11 @@ from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
 
+# The programme team's admin path (lane A; J-ONE steps 1, 2, 3 and 6; L-DECIDE.after, L-IMPACT, L-ONES admin,
+# "Take off the Wall"). Routes live with the code in programme/routes.py.
+from programme.routes import build as _admin_routes  # noqa: E402
+
+app.include_router(_admin_routes(require_token))
 # Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
 from teamup.routes import build as _teamup_routes  # noqa: E402
 
