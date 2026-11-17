@@ -6,7 +6,10 @@ import { readJson } from "@/server/http";
 
 /** POST /api/drafts/{id}/hidden/{hid}/show — C-HIDDEN "Show it" (L-HIDE.rules/6). Body `{ reason }`, one of the
  * three. The person whose words they are, only; audited and shown to the desk as "Shown, because …". */
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string; hid: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; hid: string }> },
+) {
   const me = await authorize("submit");
   if (me instanceof NextResponse) return me;
   const { id, hid } = await params;

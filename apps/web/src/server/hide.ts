@@ -17,12 +17,7 @@ import { getDb } from "./db";
 import { workerFetch } from "./worker";
 
 export type HideErrorCode =
-  | "forbidden"
-  | "not_found"
-  | "range_invalid"
-  | "already_hidden"
-  | "reason_required"
-  | "hide_failed";
+  "forbidden" | "not_found" | "range_invalid" | "already_hidden" | "reason_required" | "hide_failed";
 
 export const HIDE_MESSAGES: Record<HideErrorCode, string> = {
   forbidden: "Only the review desk and the Ones Committee can hide text.",
@@ -129,7 +124,10 @@ export async function showHidden(me: CurrentUser, draftId: string, hid: string, 
     throw new HideError("reason_required");
   const idea = await ownIdea(me, draftId);
   if (!UUID.test(hid)) throw new HideError("not_found");
-  return callWorker(`/internal/hide/${encodeURIComponent(idea.id)}/details/${hid}/show`, { reason, by: me.id });
+  return callWorker(`/internal/hide/${encodeURIComponent(idea.id)}/details/${hid}/show`, {
+    reason,
+    by: me.id,
+  });
 }
 
 export async function hideAgain(me: CurrentUser, draftId: string, hid: string) {

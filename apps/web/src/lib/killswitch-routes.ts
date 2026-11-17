@@ -112,7 +112,8 @@ export const BANNERS: Record<SwitchName, string> = {
   // Employees never see a vendor's name (DEC-096).
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
   // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
-  "files.blackout": "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
+  "files.blackout":
+    "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
