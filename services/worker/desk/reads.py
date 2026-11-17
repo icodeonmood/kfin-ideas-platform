@@ -145,6 +145,10 @@ PILLS = {"needs_you": "warn", "not_now": "warn", "shipped": "ok", "not_picked": 
          "merged": "neutral"}  # fmt: skip
 HIDDEN_KINDS = {"folio": "Folio", "pan": "PAN", "phone": "Phone number", "email": "Email", "account": "Account number",
                 "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
+# L-HIDE.detect's "Label shown" for each kind, as the desk's "Shown, because …" lines name them
+DETECT_LABELS = {"folio": "Folio", "pan": "PAN", "phone": "Phone", "email": "Email", "account": "Account",
+                 "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
+
 _BRINGS = {"saves_time": "saves time", "saves_cost": "saves cost", "earns_revenue": "earns revenue",
            "less_outside_tools": "cuts reliance on outside tools", "not_sure": "not sure yet"}  # fmt: skip
 CHECKED = FILES_CHECKED
@@ -216,12 +220,15 @@ def _evidence_text(files: list[dict[str, Any]], hidden: Hidden) -> str:
 
 def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
     """The details hidden from everyone, one per value: a desk "Hide this" adds a row for each copy it masks, so the
-    rows are grouped by vault tag (L-HIDE.rules/7). Shown details are not here (`_shown`)."""
+    rows are grouped by vault tag (L-HIDE.rules/7). Shown details are not here (`_shown`). Only what the sharer has
+    given the desk: never the desk's own words (a question, a reason) nor an answer still in draft, which stays the
+    sharer's until sent (non-negotiable 7; BLD-B247). `_shown` reads under the same filter."""
     return [
         (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
             "SELECT kind, masked FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, masked, created_at "
-            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' "
+            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' AND NOT (source = "
+            "'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id AND a.sent_at IS NOT NULL)) "
             "ORDER BY coalesce(vault_tag, id::text), created_at) d ORDER BY created_at",
             (idea_uuid,),
         )
@@ -243,14 +250,16 @@ def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
 
     rows = conn.execute(
         "SELECT kind, reason, shown_by, shown_at FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, "
-        "reason, shown_by, shown_at FROM hidden_details WHERE idea_uuid = %s AND state = 'shown' "
+        "reason, shown_by, shown_at FROM hidden_details WHERE idea_uuid = %s AND state = 'shown' AND source <> 'desk' "
+        "AND NOT (source = 'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id "
+        "AND a.sent_at IS NOT NULL)) "
         "ORDER BY coalesce(vault_tag, id::text), shown_at DESC) d ORDER BY shown_at, kind",
         (idea_uuid,),
     ).fetchall()
     out: list[dict[str, Any]] = []
     for r in rows:
         kind, reason = str(r["kind"]), str(r["reason"])
-        label = HIDDEN_KINDS.get(kind, kind)
+        label = DETECT_LABELS.get(kind, kind)
         out.append({
             "kind": kind, "kind_label": label, "reason": reason, "because": SHOWN_BECAUSE.get(reason, ""),
             "by": person_by_user(conn, str(r["shown_by"]) if r["shown_by"] else None).first_name,
