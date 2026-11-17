@@ -13,9 +13,21 @@ const { accessible } = await import("@/server/attachments");
 
 import type { CurrentUser } from "@/server/auth/current";
 
-const owner = { id: "u-1", contributorCode: "CTR-0a1b2c", roles: new Set(["contributor"]) } as unknown as CurrentUser;
-const desk = { id: "u-2", contributorCode: "CTR-0d0e0f", roles: new Set(["reviewer"]) } as unknown as CurrentUser;
-const admin = { id: "u-3", contributorCode: "CTR-0a0a0a", roles: new Set(["admin"]) } as unknown as CurrentUser;
+const owner = {
+  id: "u-1",
+  contributorCode: "CTR-0a1b2c",
+  roles: new Set(["contributor"]),
+} as unknown as CurrentUser;
+const desk = {
+  id: "u-2",
+  contributorCode: "CTR-0d0e0f",
+  roles: new Set(["reviewer"]),
+} as unknown as CurrentUser;
+const admin = {
+  id: "u-3",
+  contributorCode: "CTR-0a0a0a",
+  roles: new Set(["admin"]),
+} as unknown as CurrentUser;
 const base = {
   id: "ATT-2026-000123",
   name: "branch-notes.pdf",
@@ -51,7 +63,11 @@ describe("A-API.files: the old /api/attachments route and the files pipeline", (
   it("refuses a checked file on an unsent answer, to the desk and admin as well as the sharer", async () => {
     row.mockReturnValue({ ...base, answer_id: "7d3f0c2a-1b2c-4d5e-8f90-123456789abc" });
     for (const who of [owner, desk, admin]) expect(await accessible(who, base.id)).toBeNull();
-    row.mockReturnValue({ ...base, file_state: "checked", answer_id: "7d3f0c2a-1b2c-4d5e-8f90-123456789abc" });
+    row.mockReturnValue({
+      ...base,
+      file_state: "checked",
+      answer_id: "7d3f0c2a-1b2c-4d5e-8f90-123456789abc",
+    });
     for (const who of [owner, desk, admin]) expect(await accessible(who, base.id)).toBeNull();
   });
 
