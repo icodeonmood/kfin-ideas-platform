@@ -45,7 +45,12 @@ function esc(s: string): string {
 function wallPart(page: Page, heading: RegExp): Locator {
   return page
     .getByRole("region", { name: heading })
-    .or(page.locator("section").filter({ has: page.getByRole("heading", { name: heading }) }).last())
+    .or(
+      page
+        .locator("section")
+        .filter({ has: page.getByRole("heading", { name: heading }) })
+        .last(),
+    )
     .first();
 }
 
