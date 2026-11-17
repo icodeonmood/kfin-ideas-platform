@@ -22,6 +22,7 @@ def wall_db(db: Conn) -> Iterator[Conn]:
     killswitch.clear_cache()
     kindling.clear_cache()
     yield db
+    f.leave_clean(db)
     kindling.clear_cache()
 
 

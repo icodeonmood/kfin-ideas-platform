@@ -23,6 +23,7 @@ pytestmark = pytest.mark.stack
 def impact_db(db: Conn) -> Iterator[Conn]:
     killswitch.clear_cache()
     yield db
+    f.leave_clean(db)
 
 
 def test_L_IMPACT_reads_both_stored_forms_of_a_figure() -> None:
