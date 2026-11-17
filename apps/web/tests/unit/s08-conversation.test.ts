@@ -763,6 +763,21 @@ describe("S-08 removing a message (L-CONVO/10)", () => {
   });
 });
 
+/** sessionStorage that cannot be used (blocked site data): reading it throws. Returns the way back. */
+function blockStorage(): () => void {
+  const real = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+  Object.defineProperty(window, "sessionStorage", {
+    configurable: true,
+    get() {
+      throw new Error("blocked");
+    },
+  });
+  return () => {
+    if (real) Object.defineProperty(window, "sessionStorage", real);
+    else delete (window as unknown as Record<string, unknown>).sessionStorage;
+  };
+}
+
 describe("S-08 words carried over from the edit page (S-06B.rules/2, BLD-C165)", () => {
   const KEY = "1pc.conversation.prefill.IDEA-2026-001481";
   const WORDS = "How often: About 50 calls a day at one branch";
@@ -799,12 +814,15 @@ describe("S-08 words carried over from the edit page (S-06B.rules/2, BLD-C165)",
     expect(window.sessionStorage.getItem("1pc.conversation.prefill.IDEA-2026-001412")).toBe(WORDS);
     await act(async () => root.unmount());
     root = createRoot(host);
-    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    await show(yourIdea());
-    expect(textbox().value).toBe("");
-    get.mockRestore();
+    window.sessionStorage.setItem(KEY, WORDS);
+    const restore = blockStorage();
+    try {
+      await show(yourIdea());
+      expect(textbox().value).toBe("");
+    } finally {
+      restore();
+    }
+    expect(window.sessionStorage.getItem(KEY)).toBe(WORDS);
   });
 });
 

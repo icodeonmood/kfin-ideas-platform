@@ -6,7 +6,7 @@
 import type { Brings, EditPageResponse, FixRequest, IdeaPatch, Kind, SortingResponse } from "@/lib/contracts";
 
 import type { FixPart } from "@/app/share/[id]/check/fix";
-import { fixRequest, type FixForm } from "@/app/share/[id]/check/model";
+import { fixRequest, type FixForm, type ProofItem } from "@/app/share/[id]/check/model";
 
 /** The sorting fields as the person changes them, held until Save. */
 export interface SortingPending {
@@ -16,7 +16,8 @@ export interface SortingPending {
   brings?: Brings[];
 }
 
-/** Everything on the page that waits for Save (L-SUBMIT.edit/2). Files, links and "Show it" act at once. */
+/** Everything on the page that waits for Save (L-SUBMIT.edit/2). Files, links and "Show it" act at once; the
+ * files and links added or removed are counted from the rows (`filesDelta`), so Cancel and Save know them too. */
 export interface EditState {
   title: string;
   summary: string;
@@ -108,8 +109,51 @@ export function fixPatch(hadFix: boolean, fix: EditState["fix"]): FixRequest | n
   return hadFix ? null : undefined;
 }
 
+/**
+ * The files and links added or removed on this page since it was loaded or last saved (BLD-C161, as amended in
+ * review): `base` is the IDs the page started from. They went in, or out, at once; they count as unsaved changes
+ * (Cancel confirms and takes the added ones away again), and Save records them in the version.
+ */
+export interface FilesDelta {
+  added: string[];
+  removed: string[];
+  /** A file still on its way up: it lands on the idea, so leaving now is leaving a change. */
+  moving: boolean;
+}
+
+export const NO_FILES: FilesDelta = { added: [], removed: [], moving: false };
+
+const fileId = (r: ProofItem) => r.item?.id ?? null;
+
+export function filesDelta(base: readonly string[], rows: readonly ProofItem[]): FilesDelta {
+  const had = new Set(base);
+  const now = rows.map(fileId).filter((id): id is string => Boolean(id));
+  const has = new Set(now);
+  return {
+    added: now.filter((id) => !had.has(id)),
+    removed: base.filter((id) => !has.has(id)),
+    moving: rows.some((r) => !fileId(r) && r.localState === "uploading"),
+  };
+}
+
+/** The rows this page added (on the server or still only here): what Cancel takes away again. */
+export function addedRows(base: readonly string[], rows: readonly ProofItem[]): ProofItem[] {
+  const had = new Set(base);
+  return rows.filter((r) => {
+    const id = fileId(r);
+    return id ? !had.has(id) : true;
+  });
+}
+
+/** After a save: the IDs the page now starts from, from what that save sent. */
+export function baseAfter(base: readonly string[], sent: FilesDelta): string[] {
+  const out = base.filter((id) => !sent.removed.includes(id));
+  for (const id of sent.added) if (!out.includes(id)) out.push(id);
+  return out;
+}
+
 /** Save's body: only what changed (A-API `PATCH /ideas/:id`). The server compares again and words the outcome. */
-export function editPatch(page: EditPageResponse, state: EditState): IdeaPatch {
+export function editPatch(page: EditPageResponse, state: EditState, files: FilesDelta = NO_FILES): IdeaPatch {
   const out: IdeaPatch = {};
   if (state.title.trim() !== page.fields.title.trim()) out.title = state.title.trim();
   if (state.summary.trim() !== page.fields.summary.trim()) out.summary = state.summary.trim();
@@ -119,12 +163,52 @@ export function editPatch(page: EditPageResponse, state: EditState): IdeaPatch {
   if (Object.keys(sorting).length) out.sorting = sorting;
   const fix = fixPatch(page.fix !== null, state.fix);
   if (fix !== undefined) out.fix = fix;
+  if (files.added.length || files.removed.length) out.files = { added: files.added, removed: files.removed };
   return out;
 }
 
-/** "Unsaved changes" (C-TASKBAR.save): anything Save would send. */
-export function isDirty(page: EditPageResponse, state: EditState): boolean {
-  return Object.keys(editPatch(page, state)).length > 0;
+/** "Unsaved changes" (C-TASKBAR.save): anything Save would send, or a file still on its way up. */
+export function isDirty(page: EditPageResponse, state: EditState, files: FilesDelta = NO_FILES): boolean {
+  return Object.keys(editPatch(page, state, files)).length > 0 || files.moving;
+}
+
+/**
+ * After a save, the page as the server now has it, keeping anything changed while the save was on its way: a field
+ * that differs from what was sent stays as the person left it; the rest take the server's values (the masked copy).
+ */
+export function rebase(sent: EditState, current: EditState, fresh: EditState): EditState {
+  const keep = <K extends keyof EditState>(k: K): EditState[K] =>
+    Object.is(current[k], sent[k]) ? fresh[k] : current[k];
+  return {
+    title: keep("title"),
+    summary: keep("summary"),
+    often: keep("often"),
+    sorting: keep("sorting"),
+    fix: keep("fix"),
+  };
+}
+
+/** The drawn labels the carried-over words go under (Edit.md, PhoneEdit.md, the fix sheet). */
+export interface PrefillLabels {
+  title: string;
+  summary: string;
+  often: string;
+  how: string;
+}
+
+/**
+ * S-06B.rules/2: the person's own changed words, as plain text for the conversation's message box ("Your changes
+ * are kept below. Send them as a message instead."). Only words: the sorting and files are not carried. Empty when
+ * no words changed.
+ */
+export function prefillText(page: EditPageResponse, state: EditState, labels: PrefillLabels): string {
+  const patch = editPatch(page, state);
+  const lines: string[] = [];
+  if (patch.title) lines.push(`${labels.title}: ${patch.title}`);
+  if (patch.summary) lines.push(`${labels.summary}: ${patch.summary}`);
+  if (typeof patch.often === "string" && patch.often) lines.push(`${labels.often}: ${patch.often}`);
+  if (patch.fix?.how?.trim()) lines.push(`${labels.how} ${patch.fix.how.trim()}`);
+  return lines.join("\n\n");
 }
 
 /** Where a refusal's words go: under the part it is about, else under Save. */

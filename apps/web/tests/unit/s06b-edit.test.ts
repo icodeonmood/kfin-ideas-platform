@@ -12,8 +12,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConfigResponse, EditPageResponse, SortingResponse } from "@/lib/contracts";
 
+const nav = vi.hoisted(() => ({ push: (() => undefined) as (to: string) => void }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({
+    replace: () => undefined,
+    push: (to: string) => nav.push(to),
+    refresh: () => undefined,
+  }),
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
@@ -295,6 +300,9 @@ afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  window.sessionStorage.clear();
+  nav.push = () => undefined;
 });
 
 // --- Rules -------------------------------------------------------------------------------------------------------
@@ -748,7 +756,12 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
     expect(button("Change title")).toBeTruthy();
     expect(button("Change what happens")).toBeTruthy();
     expect(button("Not personal? Show it")).toBeTruthy();
-    expect(button(/^Add a photo or file/)).toBeTruthy();
+    // The picker's name has a space between its two lines (minor of the c/s06b review).
+    expect(
+      button(
+        "Add a photo or file A screenshot of the SMS, a call log, or a report with the time or money it costs",
+      ),
+    ).toBeTruthy();
     expect(document.querySelector<HTMLInputElement>('input[type="url"]')?.placeholder).toBe(
       "Or paste a link",
     );
@@ -762,6 +775,381 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
       "Editing closes when the review desk opens it. After that, you can add a note for them.",
     );
     expect(document.body.textContent).not.toContain("By Friday 20 November");
+  });
+});
+
+// --- Review round on c/s06b (BLD-C161, C163, C165) ------------------------------------------------------------------
+
+const LINK = {
+  id: "ATT-2026-000501",
+  kind: "link",
+  name: "intranet.kfintech.example/codes",
+  type: "link",
+  state: "checked",
+  link_scope: "internal",
+};
+const SHOWN = {
+  id: "ATT-2026-000400",
+  kind: "file",
+  name: "rejection-sms-screenshot.png",
+  type: "image/png",
+  size: 84_000,
+  state: "checked",
+};
+const CONFIRM = "Unsaved changes. Nothing changes for anyone else until you save.";
+
+/** sessionStorage that cannot be used (blocked site data): reading it throws. Returns the way back. */
+function blockStorage(): () => void {
+  const real = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+  Object.defineProperty(window, "sessionStorage", {
+    configurable: true,
+    get() {
+      throw new Error("blocked");
+    },
+  });
+  return () => {
+    if (real) Object.defineProperty(window, "sessionStorage", real);
+    else delete (window as unknown as Record<string, unknown>).sessionStorage;
+  };
+}
+
+function phoneScreen() {
+  vi.stubGlobal("matchMedia", (q: string) => ({
+    matches: q.includes("max-width"),
+    media: q,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+}
+
+async function addLink(url: string) {
+  await type(document.querySelector('input[type="url"]'), url);
+  await click(button("Add link"));
+}
+
+describe("S-06B review: files count as changes (BLD-C161 as amended)", () => {
+  it("BLD-C161: the rows added or removed since loading are the files delta; Cancel takes the added ones away", () => {
+    const row = (id: string | null, extra: object = {}) =>
+      ({ key: id ?? "local-1", item: id ? { id } : null, name: "x", ...extra }) as never;
+    const d = model.filesDelta(
+      ["ATT-2026-000400", "ATT-2026-000401"],
+      [row("ATT-2026-000401"), row("ATT-2026-000501")],
+    );
+    expect(d).toEqual({ added: ["ATT-2026-000501"], removed: ["ATT-2026-000400"], moving: false });
+    const p = page();
+    const s = model.initialState(p, EMPTY_FIX, EMPTY_FIX);
+    expect(model.isDirty(p, s, d)).toBe(true);
+    expect(model.editPatch(p, s, d)).toEqual({
+      files: { added: ["ATT-2026-000501"], removed: ["ATT-2026-000400"] },
+    });
+    const up = model.filesDelta([], [row(null, { localState: "uploading" })]);
+    expect(up.moving).toBe(true);
+    expect(model.editPatch(p, s, up)).toEqual({});
+    expect(model.isDirty(p, s, up)).toBe(true);
+    expect(model.isDirty(p, s, model.filesDelta([], [row(null, { localState: "upload_failed" })]))).toBe(
+      false,
+    );
+    expect(
+      model
+        .addedRows(["ATT-2026-000401"], [row("ATT-2026-000401"), row("ATT-2026-000501"), row(null)])
+        .map((r) => (r as { key: string }).key),
+    ).toEqual(["ATT-2026-000501", "local-1"]);
+    expect(model.baseAfter(["ATT-2026-000400", "ATT-2026-000401"], d)).toEqual([
+      "ATT-2026-000401",
+      "ATT-2026-000501",
+    ]);
+  });
+
+  it("BLD-C161 S-06B.layout/7: a link added here is an unsaved change; Cancel confirms, takes it away again, then leaves", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    await mount([
+      (m, u) => (m === "POST" && u === "/api/links" ? { body: LINK } : undefined),
+      (m, u) => (m === "DELETE" && u === `/api/files/${LINK.id}` ? { status: 204 } : undefined),
+      ...base(),
+    ]);
+    await addLink("https://intranet.kfintech.example/codes");
+    expect(document.body.textContent).toContain(LINK.name);
+    expect(status()).toBe("Unsaved changes");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    // The second Cancel takes the link away first, then goes back to the idea.
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/api/files/${LINK.id}`]);
+    expect(pushed).toEqual([`/ideas/${REF}`]);
+    expect(saves()).toEqual([]);
+  });
+
+  it("BLD-C161 L-SUBMIT.edit/4: Save records the files added and removed here, so a file-only save is a version", async () => {
+    await mount([
+      (m, u) => (m === "POST" && u === "/api/links" ? { body: LINK } : undefined),
+      (m, u) => (m === "DELETE" && u === `/api/files/${SHOWN.id}` ? { status: 204 } : undefined),
+      (m, u) =>
+        m === "PATCH" && u === URL_EDIT
+          ? {
+              body: {
+                version: { n: 2, changed_fields: ["files"], at: "2026-11-15T08:09:00Z" },
+                changed_fields: ["files"],
+                message: SAVED,
+                next: { to: `/ideas/${REF}`, replace: true },
+              },
+            }
+          : undefined,
+      ...base(() => page({ files: [SHOWN] as unknown as EditPageResponse["files"] })),
+    ]);
+    expect(status()).toBe("Saved");
+    await click(button(`Remove ${SHOWN.name}`));
+    expect(status()).toBe("Unsaved changes");
+    await addLink("https://intranet.kfintech.example/codes");
+    await click(button("Save changes"));
+    expect(saves()[0]!.body).toEqual({
+      files: { added: [LINK.id], removed: [SHOWN.id] },
+      declaration_version: "1pc-2026-11",
+    });
+    expect(all('[role="status"]').some((s) => text(s) === SAVED)).toBe(true);
+    expect(status()).toBe("Saved at 1:39 pm");
+    expect(link("Cancel")).toBeUndefined();
+  });
+});
+
+describe("S-06B review: leaving with unsaved changes (BLD-C163, item 1)", () => {
+  it("S-06B.layout/7: any other link on the page (the side bar, the bar's Back to your idea) confirms first, then leaves", async () => {
+    await mount(base());
+    const side = document.createElement("a");
+    side.href = "/home";
+    side.textContent = "Home";
+    document.body.prepend(side);
+    expect(await follows(side)).toBe(true);
+    await retitle("Investors call about a redemption not processed");
+    expect(await follows(side)).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    expect(document.querySelector(".ed-confirm")?.getAttribute("role")).toBe("alert");
+    expect(await follows(document.querySelector(".tbar a") ?? undefined)).toBe(true);
+  });
+
+  it("S-06B.layout/7: a change made after the confirm asks again; the bar's close is guarded too", async () => {
+    await mount(base());
+    await retitle("Investors call about a redemption not processed");
+    expect(await follows(document.querySelector(".tbar a") ?? undefined)).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    await retitle("Investors call about a redemption not yet processed");
+    expect(document.querySelector(".ed-confirm")).toBeNull();
+    expect(await follows(link("Cancel"))).toBe(false);
+  });
+
+  it("S-06B: closing or reloading the tab with unsaved changes asks the browser's question; with none it does not", async () => {
+    await mount(base());
+    const leave = () => {
+      const e = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+    await retitle("Investors call about a redemption not processed");
+    expect(leave()).toBe(true);
+  });
+});
+
+describe("S-06B review: the words go on to the conversation (S-06B.rules/2, BLD-C165)", () => {
+  it("S-06B.rules/2: Open the conversation keeps the changed words for the message box in sessionStorage, never in the URL", async () => {
+    await mount([
+      (m, u) =>
+        m === "PATCH" && u === URL_EDIT
+          ? {
+              status: 409,
+              body: {
+                error: { code: "edit_window_closed", message: CLOSED, to: `/ideas/${REF}/conversation` },
+              },
+            }
+          : undefined,
+      ...base(),
+    ]);
+    await retitle("Investors call about a redemption not processed");
+    await click(button("Change how often"));
+    const often = document.querySelector<HTMLInputElement>('input[aria-label="How often"]');
+    await type(often, "About 50 calls a day at one branch");
+    await act(async () => {
+      often!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await settle();
+    await click(button("Save changes"));
+    const open = link("Open the conversation")!;
+    expect(open.getAttribute("href")).toBe(`/ideas/${REF}/conversation`);
+    expect(window.sessionStorage.getItem(`1pc.conversation.prefill.${REF}`)).toBeNull();
+    // It goes as it is: no confirm, and the words wait for the conversation's box.
+    expect(await follows(open)).toBe(true);
+    expect(document.querySelector(".ed-confirm")).toBeNull();
+    expect(window.sessionStorage.getItem(`1pc.conversation.prefill.${REF}`)).toBe(
+      "Title: Investors call about a redemption not processed\n\nHow often: About 50 calls a day at one branch",
+    );
+  });
+
+  it("S-06B.rules/2: words only: a sorting change carries nothing, and storage that cannot be used never stops the way on", async () => {
+    const p = page();
+    const s = model.initialState(p, EMPTY_FIX, EMPTY_FIX);
+    const labels = {
+      title: "Title",
+      summary: "What happens",
+      often: "How often",
+      how: "How would you solve it?",
+    };
+    expect(model.prefillText(p, { ...s, sorting: { area: "Operations" } }, labels)).toBe("");
+    const form = { ...EMPTY_FIX, how: "Send the reason in plain words with the code." };
+    const withFix = {
+      ...s,
+      fix: { part: { kind: "added" as const, line: "", fixLine: "" }, form, touched: true },
+    };
+    expect(model.prefillText(p, withFix, labels)).toBe(
+      "How would you solve it? Send the reason in plain words with the code.",
+    );
+    const { putPrefill } = await import("@/components/convo/prefill");
+    const restore = blockStorage();
+    try {
+      expect(putPrefill(REF, "Title: x")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("S-06B review: the closed page, the phone and the saved line (items 4, 5, minors)", () => {
+  it("L-SUBMIT.edit/5: a closed window without a line shows no empty status", async () => {
+    await mount(base(() => page({ window: { open: false } })));
+    expect(document.querySelector('.ed-closed [role="status"]')).toBeNull();
+    expect(link("Open the conversation")).toBeTruthy();
+  });
+
+  it("PhoneEdit S-06B item 5: the phone's bar reads Cancel before saving and Back to your idea once saved, once", async () => {
+    phoneScreen();
+    await mount([
+      (m, u) =>
+        m === "PATCH" && u === URL_EDIT
+          ? {
+              body: {
+                version: { n: 2, changed_fields: ["title"], at: "2026-11-15T08:09:00Z" },
+                changed_fields: ["title"],
+                message: SAVED,
+                next: { to: `/ideas/${REF}`, replace: true },
+              },
+            }
+          : undefined,
+      ...base(),
+    ]);
+    expect(text(document.querySelector(".tbar a"))).toBe("Cancel");
+    await click(button("Change title"));
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Title"]');
+    await type(input, "Investors call about a redemption not processed");
+    await act(async () => {
+      input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await settle();
+    // The bar's Cancel goes through the same confirm as the dock's.
+    expect(await follows(document.querySelector(".tbar a") ?? undefined)).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    await click(button("Save changes"));
+    expect(text(document.querySelector(".tbar a"))).toBe("Back to your idea");
+    expect(all("a").filter((a) => text(a) === "Back to your idea")).toHaveLength(1);
+  });
+
+  it("PhoneEdit declaration_changed: the dock shows the server's new declaration, and the next Save sends its version", async () => {
+    phoneScreen();
+    const NEW =
+      "By saving, you confirm there’s no customer personal data in it or its files, and that it’s your own work.";
+    let first = true;
+    await mount([
+      (m, u) => {
+        if (m !== "PATCH" || u !== URL_EDIT) return undefined;
+        if (first) {
+          first = false;
+          return {
+            status: 409,
+            body: {
+              error: {
+                code: "declaration_changed",
+                message: "The declaration beside Save has changed. Read it again, then save.",
+                field: "declaration",
+                version: "1pc-2026-12",
+                text: NEW,
+              },
+            },
+          };
+        }
+        return { body: { version: null, changed_fields: [], message: "Nothing has changed." } };
+      },
+      ...base(),
+    ]);
+    await click(button("Save changes"));
+    const dock = document.querySelector(".dock");
+    expect(text(dock)).toContain(NEW);
+    expect(text(dock)).not.toContain("Saving confirms there’s no customer personal data");
+    await click(button("Save changes"));
+    expect(saves()[1]!.body).toEqual({ declaration_version: "1pc-2026-12" });
+  });
+
+  it("WCAG 4.1.3: the saved line's status region is on the page, empty, before Save puts its words in it", async () => {
+    await mount([
+      (m, u) =>
+        m === "PATCH" && u === URL_EDIT
+          ? { body: { version: null, changed_fields: [], message: "Nothing has changed." } }
+          : undefined,
+      ...base(),
+    ]);
+    const live = document.querySelector(".ed-live");
+    expect(live?.getAttribute("role")).toBe("status");
+    expect(text(live)).toBe("");
+    await click(button("Save changes"));
+    expect(document.querySelector(".ed-live")).toBe(live);
+    expect(text(live)).toBe("Nothing has changed.");
+  });
+
+  it("S-06B: a change made while Save is on its way is kept, not overwritten by the page read after it", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    vi.spyOn(api, "saveEdit").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve as (v: unknown) => void;
+        }) as never,
+    );
+    let reads = 0;
+    await mount([
+      (m, u) =>
+        m === "GET" && u === URL_EDIT
+          ? {
+              body:
+                reads++ === 0
+                  ? page()
+                  : page({
+                      fields: { ...page().fields, title: "Investors call about a redemption not processed" },
+                    }),
+            }
+          : undefined,
+      ...base(),
+    ]);
+    await retitle("Investors call about a redemption not processed");
+    await click(button("Save changes"));
+    await click(button("Change how often"));
+    const often = document.querySelector<HTMLInputElement>('input[aria-label="How often"]');
+    await type(often, "About 50 calls a day at one branch");
+    await act(async () => {
+      often!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await settle();
+    await act(async () =>
+      answer({
+        ok: true,
+        status: 200,
+        body: {
+          version: { n: 2, changed_fields: ["title"], at: "2026-11-15T08:09:00Z" },
+          changed_fields: ["title"],
+          message: SAVED,
+        },
+      }),
+    );
+    await settle();
+    expect(text(document.querySelector("h3"))).toBe("Investors call about a redemption not processed");
+    expect(document.body.textContent).toContain("About 50 calls a day at one branch");
+    expect(status()).toBe("Unsaved changes");
   });
 });
 

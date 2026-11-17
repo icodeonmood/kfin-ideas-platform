@@ -6,24 +6,33 @@
  * anything that shows it, and your fix; the declaration beside "Save changes"; and the side panel "What happens when
  * you save". Nothing reaches anyone else until Save (L-SUBMIT.edit/2): the words, the sorting and the fix wait on
  * this page and go in one `PATCH`, which makes a new version only when something changed. Files and links are
- * checked as they are added, and "Show it" acts at once, as on Check it (BLD-C161).
+ * checked as they are added, and "Show it" acts at once, as on Check it (BLD-C161). Files and links added or removed
+ * here still count as unsaved changes: Cancel confirms and takes the added ones away again, and Save records them in
+ * the version (`files`).
  *
  * After Save the page reads "Saved. The review desk will see the latest version." with "Back to your idea" to S-06
  * (BLD-C160). If the review desk opens the idea meanwhile, Save is refused (`edit_window_closed`): the changes stay on
- * the page with "Open the conversation" (S-06B.rules/2). Desktop: the task bar, one column and the side panel. Phone:
- * the same sections in one column, and "Save changes" in the dock (S-06B.rules/5).
+ * the page with "Open the conversation", which carries the changed words into the message box (S-06B.rules/2,
+ * BLD-C165). Desktop: the task bar, one column and the side panel. Phone: the same sections in one column, the bar's
+ * "Cancel" ("Back to your idea" once saved), and "Save changes" in the dock (S-06B.rules/5).
+ *
+ * Leaving with unsaved changes (BLD-C163): Cancel, the bar's close and any other link on the page (the side bar, Back)
+ * first show the in-place confirm; the next one leaves without them. Closing or reloading the tab asks the browser's
+ * own question.
  *
  * The parts are S-05's (share/[id]/check): WordsBody, HiddenTile, SortingBody, ProofBody, FixPartBody and FixSheet,
  * with the edit context's props. No words are logged (non-negotiable 3).
  */
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { IconTick } from "@/components/shell/icons";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import { Loading, SkeletonRows } from "@/components/ui/skeleton";
+import { putPrefill } from "@/components/convo/prefill";
 import type {
   ApiError,
   ConfigResponse,
@@ -47,14 +56,21 @@ import { useProof } from "@/app/share/[id]/check/use-proof";
 import { EDIT_COPY } from "./copy";
 import {
   HOW_MIN,
+  NO_FILES,
+  addedRows,
   afterSave,
+  baseAfter,
   editPatch,
+  filesDelta,
   initialState,
   isDirty,
   placeOf,
+  prefillText,
+  rebase,
   sortingView,
   type EditState,
   type ErrorPlace,
+  type FilesDelta,
   type SortingPending,
 } from "./model";
 
@@ -79,11 +95,26 @@ type Outcome =
   | { kind: "closed"; message: string; to: string }
   | { kind: "failed"; message: string };
 
-/** Files never count as the page's unsaved changes: they are checked and kept as they are added. */
+/** A file's own calls are not the page's save status: they act at once. The rows count as changes (`filesDelta`). */
 const passThrough = <T,>(p: Promise<Call<T>>) => p;
 
 function stateFrom(page: EditPageResponse): EditState {
   return initialState(page, EMPTY_FIX, fixFormFrom(page.fix));
+}
+
+const fileIds = (p: EditPageResponse) => p.files.map((f) => f.id);
+
+/** Where a click on a link takes the person, or null when it is not a page change this page guards (a new tab, a
+ * download, a modified click, another site, the same page, or a link marked to go on as it is). */
+function leavingTo(e: globalThis.MouseEvent): string | null {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+  const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+  if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download") || "edGo" in a.dataset)
+    return null;
+  const to = new URL(a.href, window.location.href);
+  if (to.origin !== window.location.origin) return null;
+  if (to.pathname === window.location.pathname && to.search === window.location.search) return null;
+  return `${to.pathname}${to.search}${to.hash}`;
 }
 
 export function EditIdea({
@@ -98,6 +129,7 @@ export function EditIdea({
 }) {
   const online = useOnline();
   const phone = usePhone();
+  const router = useRouter();
 
   const [page, setPage] = useState<EditPageResponse | null>(null);
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
@@ -111,6 +143,14 @@ export function EditIdea({
   const [outcome, setOutcome] = useState<Outcome>({ kind: "none" });
   const [errors, setErrors] = useState<Partial<Record<ErrorPlace, string>>>({});
   const [confirmCancel, setConfirmCancel] = useState(false);
+  /** The file and link IDs the page started from (load, or the last save): what it added or removed is counted
+   * against them. */
+  const [fileBase, setFileBase] = useState<string[]>([]);
+  /** The declaration changed while the page was open: the phone shows the server's words, not its own short line. */
+  const [declChanged, setDeclChanged] = useState(false);
+  /** Set once the person has chosen to leave, so neither the link guard nor the browser asks again. */
+  const leaving = useRef(false);
+  const confirmRef = useRef<HTMLParagraphElement>(null);
   const sortingRef = useRef<HTMLElement>(null);
   const ids = useId();
 
@@ -122,13 +162,19 @@ export function EditIdea({
   // --- Loading ------------------------------------------------------------------------------------------------------
 
   /** The page as the server sent it. After a save the file rows stay as they are: files never wait for Save, and a
-   * row that is still uploading, or failed in this browser, must not vanish. */
+   * row that is still uploading, or failed in this browser, must not vanish. A save passes what it sent, so anything
+   * changed while it was on its way stays as the person left it (`rebase`). */
   const take = useCallback(
-    (p: EditPageResponse, opts: { files?: boolean } = {}) => {
+    (p: EditPageResponse, opts: { files?: boolean; sent?: EditState } = {}) => {
       setPage(p);
-      setState(stateFrom(p));
+      const fresh = stateFrom(p);
+      const sent = opts.sent;
+      setState((cur) => (sent && cur ? rebase(sent, cur, fresh) : fresh));
       setHidden(p.hidden);
-      if (opts.files !== false) loadProof(p.files as Parameters<typeof loadProof>[0]);
+      if (opts.files !== false) {
+        loadProof(p.files as Parameters<typeof loadProof>[0]);
+        setFileBase(fileIds(p));
+      }
     },
     [loadProof],
   );
@@ -243,7 +289,8 @@ export function EditIdea({
   // --- Save --------------------------------------------------------------------------------------------------------
 
   const view = page && state ? sortingView(page.sorting, state.sorting) : null;
-  const dirty = page && state ? isDirty(page, state) : false;
+  const files: FilesDelta = page ? filesDelta(fileBase, proof.proof) : NO_FILES;
+  const dirty = page && state ? isDirty(page, state, files) : false;
   const closed = outcome.kind === "closed";
 
   const save = async () => {
@@ -255,12 +302,14 @@ export function EditIdea({
       return;
     }
     setSaving(true);
+    const sent = state;
+    const sentFiles = files;
     const r = await api.saveEdit(page.ref, {
-      ...editPatch(page, state),
+      ...editPatch(page, sent, sentFiles),
       declaration_version: page.declaration.version,
     });
     if (r.ok) {
-      await saved(r.body);
+      await saved(r.body, sent, sentFiles);
       setSaving(false);
       return;
     }
@@ -268,16 +317,18 @@ export function EditIdea({
     refused(r.status, r.error as Refusal | null);
   };
 
-  const saved = async (body: EditSaveResponse) => {
+  const saved = async (body: EditSaveResponse, sent: EditState, sentFiles: FilesDelta) => {
     if (body.version) setSavedAt(body.version.at);
+    // The files and links that save carried are now where the page starts from.
+    setFileBase((b) => baseAfter(b, sentFiles));
     // Read the page again: the server keeps the masked copy of new words, and may have hidden a detail in them.
     const again = await api.editPage(ideaId);
-    if (again.ok && again.body) take(again.body, { files: false });
-    else if (page && state) {
+    if (again.ok && again.body) take(again.body, { files: false, sent });
+    else if (page) {
       // The page could not be read again: what was sent is now what the page compares against.
-      const next = afterSave(page, state);
+      const next = afterSave(page, sent);
       setPage(next.page);
-      setState(next.state);
+      setState((cur) => (cur ? rebase(sent, cur, next.state) : next.state));
     }
     setConfirmCancel(false);
     setOutcome({ kind: "saved", message: body.message || E.saved });
@@ -295,6 +346,7 @@ export function EditIdea({
     }
     if (err?.code === "declaration_changed" && page && err.version && err.text) {
       setPage({ ...page, declaration: { version: err.version, text: err.text } });
+      setDeclChanged(true);
     }
     const message = (status !== 0 && status < 500 && err?.message) || C.failed;
     const place = placeOf(err?.field);
@@ -302,12 +354,71 @@ export function EditIdea({
     else setErrors({ [place]: message });
   };
 
-  const onCancel = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (dirty && !confirmCancel) {
-      // S-06B.layout/7: unsaved changes confirm in place; pressing Cancel again leaves without them.
+  // --- Leaving with unsaved changes (S-06B.layout/7, BLD-C163) ------------------------------------------------------
+
+  /** Leaving without saving takes away again the files and links this page added (they acted at once); one that
+   * cannot be removed now stays on the idea, as it would after a Remove that failed. Removed ones stay removed: a
+   * removal cannot be undone (BLD-C161). */
+  const discard = async () => {
+    const rows = addedRows(fileBase, proof.proof);
+    await Promise.all(rows.map((r) => proof.removeFile(r.key)));
+  };
+
+  // Any link on the page (Cancel, the bar's close, the side bar, Back) shows the in-place confirm first while there
+  // are unsaved changes; the next one leaves without them. Links that open elsewhere, and "Open the conversation"
+  // after a refusal (it carries the words on), go as they are.
+  useEffect(() => {
+    if (!dirty) return;
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (leaving.current) return;
+      const to = leavingTo(e);
+      if (!to) return;
+      if (!confirmCancel) {
+        e.preventDefault();
+        e.stopPropagation();
+        setConfirmCancel(true);
+        return;
+      }
+      leaving.current = true;
+      if (!addedRows(fileBase, proof.proof).length) return; // nothing to take away: the link goes as it is
       e.preventDefault();
-      setConfirmCancel(true);
-    }
+      e.stopPropagation();
+      void discard().then(() => router.push(to));
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  });
+
+  // Closing or reloading the tab with unsaved changes: the browser's own question.
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (leaving.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [dirty]);
+
+  // The confirm is announced; it is also brought into view when a link far from the foot asked for it.
+  useEffect(() => {
+    if (confirmCancel) confirmRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [confirmCancel]);
+
+  /** S-06B.rules/2: "Open the conversation" carries the changed words into the message box (BLD-C165). */
+  const carryWords = () => {
+    if (!page || !state) return;
+    putPrefill(
+      page.ref,
+      prefillText(page, state, {
+        title: C.words.title,
+        summary: C.words.summary,
+        often: C.words.often,
+        how: C.sheet.how,
+      }),
+    );
+    leaving.current = true;
   };
 
   // --- What the page shows ---------------------------------------------------------------------------------------
@@ -341,6 +452,9 @@ export function EditIdea({
   const back = page.bar.back;
   const conversation = `/ideas/${encodeURIComponent(page.ref)}/conversation`;
   const taskSave: SaveState = saving ? "saving" : dirty ? (online ? "changed" : "offline") : "saved";
+  const isSaved = outcome.kind === "saved" && !dirty;
+  // PhoneEdit.md: the phone's bar closes with "Cancel" until the page is saved, then "Back to your idea".
+  const closeLabel = phone && !isSaved ? E.cancel : back.label || E.back;
 
   const taskbar = (
     <Taskbar
@@ -350,7 +464,7 @@ export function EditIdea({
       save={taskSave}
       savedAt={savedAt}
       closeHref={back.to}
-      closeLabel={back.label || E.back}
+      closeLabel={closeLabel}
       extra={<p className="editline">{page.bar.line}</p>}
     />
   );
@@ -362,9 +476,11 @@ export function EditIdea({
         {taskbar}
         <div className="ed-closed">
           <h1 className="h1">{E.heading}</h1>
-          <p className="bmsg info" role="status">
-            {page.window.line}
-          </p>
+          {page.window.line ? (
+            <p className="bmsg info" role="status">
+              {page.window.line}
+            </p>
+          ) : null}
           <div className="ed-closed-acts">
             <ButtonLink variant="primary" href={conversation}>
               {E.conversation}
@@ -498,21 +614,23 @@ export function EditIdea({
     </section>
   );
 
-  const message =
-    outcome.kind === "saved" ? (
-      <p className="bmsg ok" role="status">
-        <IconTick size={14} />
-        <span>{outcome.message}</span>
-        {phone ? (
-          <Link href={back.to} className="tb blue">
-            {back.label || E.back}
-          </Link>
-        ) : null}
-      </p>
-    ) : outcome.kind === "closed" ? (
+  // The saved line's live region is on the page before its words, so they are announced (WCAG 4.1.3).
+  const live = (
+    <div className="ed-live" role="status">
+      {outcome.kind === "saved" ? (
+        <p className="bmsg ok">
+          <IconTick size={14} />
+          <span>{outcome.message}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const alert =
+    outcome.kind === "closed" ? (
       <div className="bmsg bad" role="alert">
         <span>{outcome.message}</span>
-        <Link href={outcome.to} className="tb">
+        <Link href={outcome.to} className="tb" data-ed-go="" onClick={carryWords}>
           {E.conversation}
         </Link>
       </div>
@@ -522,22 +640,22 @@ export function EditIdea({
       </p>
     ) : null;
 
-  const cancel =
-    outcome.kind === "saved" && !dirty ? null : (
-      <Link href={back.to} className={buttonClass("text")} onClick={onCancel}>
-        {E.cancel}
-      </Link>
-    );
+  const cancel = isSaved ? null : (
+    <Link href={back.to} className={buttonClass("text")}>
+      {E.cancel}
+    </Link>
+  );
 
   const foot = (
     <div className={phone ? "dock ed-dock" : "ed-foot"}>
       {confirmCancel ? (
-        <p className="bmsg warn ed-confirm" role="alert">
+        <p className="bmsg warn ed-confirm" role="alert" ref={confirmRef}>
           <strong>{E.cancelConfirm.lead}.</strong> {E.cancelConfirm.line}
         </p>
       ) : null}
-      {message}
-      <p className="decl">{phone ? E.phone.declaration : page.declaration.text}</p>
+      {live}
+      {alert}
+      <p className="decl">{phone && !declChanged ? E.phone.declaration : page.declaration.text}</p>
       <div className="ed-acts">
         {cancel}
         <Button busy={saving} busyLabel={E.saving} disabled={closed} onClick={() => void save()}>

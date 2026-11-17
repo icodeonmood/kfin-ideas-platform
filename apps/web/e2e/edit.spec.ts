@@ -168,7 +168,12 @@ test("S-06B V-ACC: the edit page, its files, the fix sheet, Cancel's confirm and
       .getByRole("alert")
       .filter({ hasText: "Found a phone number on page 2. Nobody can open it until it’s hidden." }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Hide it for me" })).toBeVisible();
+  // "Hide it for me" waits for `files.blackout`, off at launch (DEC-107, BLD-C064): shown only while it is on.
+  const status = (await (await page.request.get("/api/status")).json()) as {
+    paused: Array<{ switch: string }>;
+  };
+  const blackoutOn = !status.paused.some((p) => p.switch === "files.blackout");
+  await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(blackoutOn ? 1 : 0);
   await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
 
@@ -247,7 +252,12 @@ test("S-06B.rules/5 V-ACC: on a phone the edit page is one column with Save chan
   }
   await expect(page.getByRole("button", { name: "Not personal? Show it" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Change title" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Add a photo or file/ })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Add a photo or file A screenshot of the SMS, a call log, or a report with the time or money it costs",
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
   await expectNoSeriousAxeIssues(page);
 });

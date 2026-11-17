@@ -118,7 +118,7 @@ export function ProofBody({
   // The edit page: a phone gets one button that opens the picker; a desk the drop area, always open.
   const picker = edit?.pick ? (
     <button type="button" className="ck-pick tile" onClick={() => input.current?.click()}>
-      <span className="ck-pick-t">{edit.pick.label}</span>
+      <span className="ck-pick-t">{edit.pick.label}</span>{" "}
       <span className="ck-pick-l meta">{edit.pick.line}</span>
     </button>
   ) : (
