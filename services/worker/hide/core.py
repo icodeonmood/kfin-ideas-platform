@@ -52,12 +52,17 @@ VAULT_TYPE = {
 
 
 class HideError(Exception):
-    """A refusal the API turns into `{error: {code, message}}`. The code is safe to log."""
+    """A refusal the API turns into `{error: {code, message}}`. The code is safe to log. `audit` (by, action,
+    idea_uuid, after; IDs and codes only) is written by `hide/api.py` after the rollback, so a refused attempt that
+    must leave a trace keeps it."""
 
-    def __init__(self, status: int, code: str) -> None:
+    def __init__(
+        self, status: int, code: str, *, audit: tuple[str, str, str, dict[str, Any]] | None = None
+    ) -> None:
         super().__init__(code)
         self.status = status
         self.code = code
+        self.audit = audit
 
 
 class GatekeeperUnavailable(Exception):
@@ -272,6 +277,66 @@ def own_words(conn: Conn, source: str, source_id: str, *, idea_uuid: str) -> str
     return open_text(
         "idea_words_sealed", "text_encrypted", f"{source}:{key}", row["text_encrypted"], vault=True
     )
+
+
+def forget(conn: Conn, idea_uuid: str, *, source: str, source_id: str) -> int:
+    """Drop what hide kept for one text that is removed (lane F's L-CONVO/10: a conversation message removed within
+    five minutes; lane C's own removals): its `hidden_details` rows, the person's sealed words, and each vault value
+    of those rows that no other `hidden_details` row of the idea still holds. A value also hidden in another text of
+    the idea stays. Returns how many `hidden_details` rows were removed (0 when nothing was kept).
+
+    Takes the idea's advisory lock first (`lock`), so call it before any row lock of your own and in the same
+    transaction as the removal of the text: the lock is held until that transaction ends. Logged and audited with
+    IDs and counts only."""
+    if source not in (*DETAIL_SOURCES, *SWEPT_SOURCES):
+        raise ValueError("unknown hide source")
+    if not is_uuid(idea_uuid):
+        return 0
+    sid = str(source_id)
+    with conn.transaction():
+        lock(conn, idea_uuid)
+        tags = [
+            str(r["vault_tag"])
+            for r in conn.execute(
+                "SELECT DISTINCT vault_tag FROM hidden_details WHERE idea_uuid = %s AND source = %s "
+                "AND source_id = %s AND vault_tag IS NOT NULL",
+                (idea_uuid, source, sid),
+            ).fetchall()
+        ]
+        removed = conn.execute(
+            "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = %s",
+            (idea_uuid, source, sid),
+        ).rowcount
+        sealed = 0
+        if source in SEALED_SOURCES:
+            sealed = conn.execute(
+                "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = %s AND source_id = %s",
+                (idea_uuid, source, sealed_key(idea_uuid, sid)),
+            ).rowcount
+        values = 0
+        if tags:
+            values = conn.execute(
+                "DELETE FROM pseudonym_vault v WHERE v.scope_id = %s AND v.tag = ANY(%s::text[]) AND NOT EXISTS "
+                "(SELECT 1 FROM hidden_details d WHERE d.idea_uuid = %s AND d.vault_tag = v.tag)",
+                (scope_for(idea_uuid), tags, idea_uuid),
+            ).rowcount
+        if removed or sealed or values:
+            audit(
+                conn,
+                "system",
+                "hide.forgotten",
+                idea_uuid,
+                {"source": source, "source_id": sid, "hidden": removed, "sealed": sealed, "vault": values},
+            )
+    log.info(
+        "hide.forgotten",
+        idea_id=idea_uuid,
+        source_code=source,
+        hidden_count=removed,
+        sealed_count=sealed,
+        vault_count=values,
+    )
+    return removed
 
 
 def hide_into(

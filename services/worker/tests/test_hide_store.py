@@ -16,7 +16,7 @@ import psycopg
 import pytest
 
 from core.crypto import decrypt_json, encrypt_json
-from hide import HideError, desk_hide, hide_again, hide_message, hide_text, show
+from hide import HideError, desk_hide, forget, hide_again, hide_message, hide_text, show
 from hide import recheck as hide_recheck
 from hide.core import own_words, scope_for, sealed_key
 from hide.detect import mask, to_utf16
@@ -709,3 +709,72 @@ def test_l_hide_rules_1_a_failure_inside_leaves_the_callers_transaction_usable(
             "n"
         ]
         assert left == 0  # nothing of the failed hide stayed
+
+
+def count(conn: Any, sql: str, *args: Any) -> int:
+    return int(conn.execute(sql, args).fetchone()["n"])
+
+
+def test_l_hide_rules_4_l_convo_10_forget_drops_a_removed_entry_and_keeps_a_value_another_text_holds(
+    hdb: Any,
+) -> None:
+    """J (lane F's L-CONVO/10, BLD-C066): `forget` drops a removed conversation message's details, its sealed words
+    and the vault values only it held. A value also hidden in another message stays, with that message's detail and
+    words. An edit's version id is found under the idea's uuid. Audited with IDs and counts only."""
+    db = hdb
+    FOLIO, PAN, _, _ = made_up()
+    crew, _ = person(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    gone, said = conversation(db, iid, crew, f"Folio {FOLIO} came back. PAN {PAN} was on the form")
+    kept, _ = conversation(db, iid, crew, f"PAN {PAN} again")
+    assert said.counts == {"folio": 1, "pan": 1}
+    scope = scope_for(iid)
+    tag_of = {v: t for t, (_, v) in vault.mapping(db, scope).items()}
+    assert {FOLIO, PAN} <= set(tag_of)
+    entity = f"idea:{iid}"
+    audits = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.forgotten' AND entity = %s"
+    before = count(db, audits, entity)
+    vault_before = count(db, "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s", scope)
+
+    with db.transaction():  # the removal and the forgetting, together; hide's lock first
+        removed = forget(db, iid, source="conversation", source_id=gone)
+        db.execute("DELETE FROM conversation_entries WHERE id = %s", (gone,))
+    assert removed == 2
+    assert (
+        count(
+            db, "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", iid, gone
+        )
+        == 0
+    )
+    assert own_words(db, "conversation", gone, idea_uuid=iid) is None
+    assert count(db, "SELECT count(*) AS n FROM idea_words_sealed WHERE source_id = %s", gone) == 0
+    values = {v for _, (_, v) in vault.mapping(db, scope).items()}
+    assert FOLIO not in values and PAN in values
+    assert (
+        count(db, "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s", scope) == vault_before - 1
+    )
+    still = db.execute(
+        "SELECT kind, vault_tag FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", (iid, kept)
+    ).fetchall()
+    assert [(r["kind"], r["vault_tag"]) for r in still] == [("pan", tag_of[PAN])]
+    assert own_words(db, "conversation", kept, idea_uuid=iid) == f"PAN {PAN} again"
+    assert count(db, audits, entity) == before + 1
+    row = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.forgotten' AND entity = %s ORDER BY id DESC LIMIT 1",
+        (entity,),
+    ).fetchone()
+    assert row["actor"] == "system"
+    assert row["after"] == {"source": "conversation", "source_id": gone, "hidden": 2, "sealed": 1, "vault": 1}
+    assert FOLIO not in str(row["after"]) and PAN not in str(row["after"])
+
+    with db.transaction():
+        hide_message(db, iid, f"Folio {FOLIO} fixed", by=uid, source="edit", source_id="2", gatekeeper=False)
+    with db.transaction():
+        assert forget(db, iid, source="edit", source_id="2") == 1
+    assert own_words(db, "edit", "2", idea_uuid=iid) is None
+    assert FOLIO not in {v for _, (_, v) in vault.mapping(db, scope).items()}
+    assert forget(db, iid, source="edit", source_id="2") == 0  # nothing left: nothing audited
+    assert count(db, audits, entity) == before + 2
+    with pytest.raises(ValueError):
+        forget(db, iid, source="nowhere", source_id=kept)
