@@ -6,7 +6,7 @@
  * decided. "Decide without asking" keeps queued questions (they are dropped by the server once the decision is
  * sent); "Back" from deciding returns where the reviewer came from.
  */
-import type { DecisionChoice, IdeaPart, ReturnIn, TimeToAnswer } from "@/lib/contracts";
+import type { DecisionChoice, IdeaPart, ReturnIn, ReviewerQueuedSet, TimeToAnswer } from "@/lib/contracts";
 
 export type PanelState = "reviewing" | "sent" | "answered" | "deciding" | "decided";
 
@@ -53,8 +53,37 @@ export type PanelEvent =
   | { type: "join_with"; ideaId: string | null }
   | { type: "decision_sent" };
 
-export function initialPanel(state: PanelState = "reviewing", defaultTime: TimeToAnswer = "3d"): Panel {
-  return {
+/** The questions this reviewer queued and has not sent, as stored (J-REVIEW/A1). */
+export type StoredQueue = {
+  questions: { part: IdeaPart; text: string; suggested: boolean }[];
+  timeToAnswer: TimeToAnswer | null;
+};
+
+const IDEA_PARTS: readonly IdeaPart[] = ["summary", "often", "who", "cost", "evidence", "fix"];
+const TIMES: readonly TimeToAnswer[] = ["1d", "3d", "1w"];
+
+/** `panel.queued` from the reviewer's page data, kept to the questions the panel can send. */
+export function storedQueue(set: ReviewerQueuedSet | null | undefined): StoredQueue | null {
+  const questions = (set?.questions ?? []).flatMap((q) => {
+    const part = IDEA_PARTS.find((p) => p === q.part);
+    const text = q.text?.trim();
+    return part && text ? [{ part, text, suggested: q.suggested }] : [];
+  });
+  if (!questions.length) return null;
+  return { questions, timeToAnswer: TIMES.find((t) => t === set?.time_to_answer) ?? null };
+}
+
+/**
+ * The panel as the page opens. A stored queue (S-R2 "Asking Kavya") opens the Ask section with its questions ready
+ * to send, as reviewing; on an answered set it is a follow-up the reviewer started, so Back returns to Answered.
+ * Questions added in the browser are not stored until sent, so a reload keeps only the stored queue (BLD-B244).
+ */
+export function initialPanel(
+  state: PanelState = "reviewing",
+  defaultTime: TimeToAnswer = "3d",
+  stored: StoredQueue | null = null,
+): Panel {
+  const base: Panel = {
     state,
     cameFrom: state === "answered" ? "answered" : "reviewing",
     askOpen: false,
@@ -66,6 +95,16 @@ export function initialPanel(state: PanelState = "reviewing", defaultTime: TimeT
     returnIn: "3m",
     joinWith: null,
     nextKey: 1,
+  };
+  if (!stored || (state !== "reviewing" && state !== "answered")) return base;
+  const queued = stored.questions.map((q, i) => ({ key: i + 1, ...q }));
+  return {
+    ...base,
+    state: "reviewing",
+    askOpen: true,
+    queued,
+    timeToAnswer: stored.timeToAnswer ?? defaultTime,
+    nextKey: queued.length + 1,
   };
 }
 
