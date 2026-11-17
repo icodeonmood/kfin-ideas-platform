@@ -78,7 +78,7 @@ def sign_in_with_mock(
 ) -> tuple[Browser, httpx.Response]:
     """The real authorisation-code flow: /auth/login → mock IdP form → /auth/callback. Returns the callback response."""
     b = Browser()
-    start = b.get(f"/auth/login?next={next_path}")
+    start = b.get(f"/auth/login?next={next_path}")  # the place to go is kept on the server (L-AUTH.rules/4)
     assert start.status_code in (302, 307), start.status_code
     authorize = start.headers["location"]
     assert authorize.startswith(f"{OIDC_ISSUER}/authorize?")

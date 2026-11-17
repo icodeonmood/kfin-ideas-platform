@@ -54,3 +54,12 @@ export function oidcConfig() {
     redirectUri: new URL("/auth/callback", appBaseUrl()).toString(),
   };
 }
+
+/**
+ * The IT service desk's extension for S-02's help lines ("[EXTENSION]" on the boards). IT gives the number
+ * (P-DECISIONS.signoff/5); until then the lines leave it out rather than show a placeholder.
+ */
+export function itServiceDeskExtension(): string | null {
+  const value = process.env.IT_SERVICE_DESK_EXTENSION?.trim();
+  return value ? value : null;
+}

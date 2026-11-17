@@ -202,10 +202,24 @@
     "desk.listen": [
       "admin",
       "infosec"
+    ],
+    "auth.email_code": [
+      "infosec"
     ]
   },
   "public": [
     "GET /api/health"
+  ],
+  "auth_exempt": [
+    "GET /auth/session",
+    "GET /auth/sso/start",
+    "POST /auth/sso/start",
+    "GET /auth/callback",
+    "GET /auth/login",
+    "POST /auth/code/send",
+    "POST /auth/code/verify",
+    "POST /auth/sign-out",
+    "POST /auth/logout"
   ],
   "before_privacy_notice": [
     "GET /api/me",
