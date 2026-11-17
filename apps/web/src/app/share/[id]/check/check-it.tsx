@@ -159,6 +159,8 @@ export function CheckIt({
   const queued = useRef(false);
   const writes = useRef(0);
   const helperTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The latest picks and words, so a save that waits for typing to pause never sends picks from before a click. */
+  const helpersNow = useRef<{ picks: string[]; text: string }>({ picks: [], text: "" });
 
   /** A write the task bar's save status follows: "Saving…", then "Saved at 1:38 pm" (C-TASKBAR.save). */
   const track = useCallback(async <T,>(p: Promise<Call<T>>): Promise<Call<T>> => {
@@ -213,7 +215,9 @@ export function CheckIt({
         setFixPart({ kind: "added", line: C.fix.included(fix.ready_count), fixLine: oneLine(fix.how) });
       } else if (fix) setFixPart({ kind: "started" });
       setFixForm(fixFormFrom(fix));
-      setHelpers({ picks: body.helpers?.picks ?? [], text: body.helpers?.text ?? "" });
+      const saved = { picks: body.helpers?.picks ?? [], text: body.helpers?.text ?? "" };
+      helpersNow.current = saved;
+      setHelpers(saved);
       void loadSimilar();
     },
     [loadSimilar],
@@ -500,16 +504,19 @@ export function CheckIt({
   );
 
   const pickHelpers = (picks: string[]) => {
-    const next = { ...helpers, picks };
+    const next = { ...helpersNow.current, picks };
+    helpersNow.current = next;
     setHelpers(next);
+    if (helperTimer.current) clearTimeout(helperTimer.current);
     void putHelpers(next);
   };
 
   const typeHelpers = (text: string) => {
-    const next = { ...helpers, text };
+    const next = { ...helpersNow.current, text };
+    helpersNow.current = next;
     setHelpers(next);
     if (helperTimer.current) clearTimeout(helperTimer.current);
-    helperTimer.current = setTimeout(() => void putHelpers(next), 700);
+    helperTimer.current = setTimeout(() => void putHelpers(helpersNow.current), 700);
   };
 
   // --- Part 7: send ------------------------------------------------------------------------------------------------

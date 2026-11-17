@@ -969,6 +969,32 @@ describe("S-05 screen: the fix and who would help (BLD-C134, S-05.fix)", () => {
   });
 });
 
+describe("S-05 screen: who would help, saved in order (BLD-C135)", () => {
+  it("S-05.parts/6 V-FIELDS.checkit/10: own words wait for a pause, and a pick in the meantime is never undone by them", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount([
+      (m, u) =>
+        m === "PUT" && u.endsWith("/helpers")
+          ? { body: { picks: [], text: null, line: "", part: { rail: "Added" } } }
+          : undefined,
+      ...base(),
+    ]);
+    await railTo("Who would help");
+    const input = document.querySelector<HTMLInputElement>(".ck-helpers input.fld")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "someone who takes these calls");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(text(document.querySelector(".ck-helpers .help"))).toBe("29 of 140");
+    await click(button("Someone at a branch"));
+    await act(async () => vi.advanceTimersByTime(800));
+    await settle();
+    const puts = calls.filter((c) => c.url.endsWith("/helpers")).map((c) => c.body);
+    expect(puts).toEqual([{ picks: ["Someone at a branch"], text: "someone who takes these calls" }]);
+  });
+});
+
 describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
   it("J-RECOVER/12 V-FIELDS.checkit/3–4: Submit before confirming: the message with Go to the sorting, nothing sent; the sorting card says what to do", async () => {
     await mount(base());

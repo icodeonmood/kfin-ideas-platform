@@ -199,7 +199,8 @@ async function part(page: Page, label: string) {
 
 test("S-05 V-ACC: each part of Check it, the preview, the fix sheet and the Send messages pass axe (BLD-C136)", async ({
   page,
-}) => {
+}, info) => {
+  test.skip(info.project.name === "phone-360", "a phone shows Check it as one page: the next test");
   await openCheckIt(page);
   await expect(page.getByText("Check it, part 1 of 6")).toBeVisible();
   await expect(page.getByText("Folio ••••89").first()).toBeVisible();
@@ -249,8 +250,8 @@ test("S-05 V-ACC: each part of Check it, the preview, the fix sheet and the Send
 
 test("S-05.phone V-ACC: on a phone Check it is one page with the same parts, and passes axe (BLD-C136)", async ({
   page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+}, info) => {
+  if (info.project.name === "desktop") await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, PERSONAS.contributor);
   await serveDraft(page);
   await page.goto(`/share/${DRAFT}/check`);

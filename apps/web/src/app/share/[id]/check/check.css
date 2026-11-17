@@ -57,7 +57,7 @@
 .ck-grid {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 24px 40px;
+  padding: 0 0 40px;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -980,10 +980,18 @@
   }
 }
 
+/* The page column (main) already keeps the gutter; every part shrinks to it, so nothing pushes the page sideways
+   at 320 px (WCAG 1.4.10). */
 .ck-ph {
-  padding: 16px 16px 120px;
+  padding: 4px 0 120px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+}
+
+.ck-phone .ck-part,
+.ck-phone .ck-body {
+  min-width: 0;
 }
 
 .ck-ph > .h1 {
@@ -1026,12 +1034,31 @@
     border-radius: 0;
   }
 
+  /* Long chip words and a file row's two actions wrap on a narrow phone instead of widening the page. */
+  .ck-phone .chip {
+    white-space: normal;
+    text-align: start;
+  }
+
+  .ck-phone .frow-in {
+    flex-wrap: wrap;
+  }
+
+  .ck-phone .frow-a {
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  .ck-phone .ck-sort {
+    padding: 16px 14px 14px;
+  }
+
   .ck-phone .ck-send {
     position: sticky;
     bottom: 0;
     z-index: 15;
-    margin: 0 -16px;
-    padding: 12px 16px 16px;
+    margin: 0 calc(-1 * var(--gutter, 20px));
+    padding: 12px var(--gutter, 20px) 16px;
     background: rgba(243, 243, 241, 0.96);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
