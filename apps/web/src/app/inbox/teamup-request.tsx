@@ -23,7 +23,18 @@ type Brought = {
   byline?: string;
 };
 
-type Request = { id: string; note: string; brought: Brought[]; state: string };
+/** Lane F's own words for the lead's reader (`GET /team-up/:id` `reader`, BLD-F015); ours when it sends none. */
+type Words = { note_heading?: string; brought_heading?: string; open_label?: string; explain?: string };
+
+type Request = {
+  id: string;
+  note: string;
+  brought: Brought[];
+  state: string;
+  words: Words;
+  /** An answered request shows its result in place (S-H2B.states). */
+  answered: Result | null;
+};
 
 type Result = { text: string; sayHello?: { label: string; to: string } };
 
@@ -68,6 +79,17 @@ function readBrought(raw: unknown): Brought[] {
   );
 }
 
+function readResult(result: unknown, hello: unknown): Result | null {
+  const text = (result as { text?: unknown } | null)?.text;
+  if (typeof text !== "string" || !text) return null;
+  const h = hello as { label?: unknown; to?: unknown } | null;
+  return {
+    text,
+    sayHello:
+      typeof h?.label === "string" && typeof h.to === "string" ? { label: h.label, to: h.to } : undefined,
+  };
+}
+
 /** The request view for the open item, or null when the item is not a request the lead can answer here. */
 export function useRequest(
   item: InboxEntry | null,
@@ -90,12 +112,18 @@ export function useRequest(
       .then(async (res) => {
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as Record<string, unknown>;
-        const r = (data.request ?? data) as Record<string, unknown>;
+        const r = (typeof data.request === "object" && data.request ? data.request : data) as Record<
+          string,
+          unknown
+        >;
+        const words = (typeof r.reader === "object" && r.reader ? r.reader : {}) as Words;
         return {
           id: String(r.id ?? requestId),
           note: typeof r.note === "string" ? r.note : "",
           brought: readBrought(r.brought),
           state: typeof r.state === "string" ? r.state : "sent",
+          words,
+          answered: readResult(r.result, r.say_hello),
         };
       })
       .then((r) => live && setReq(r))
@@ -127,11 +155,7 @@ export function useRequest(
         setError(data?.error?.message ?? "We couldn't send that just now. Please try again in a minute.");
         return;
       }
-      const hello = data?.say_hello;
-      setResult({
-        text: data?.result?.text ?? "",
-        sayHello: hello?.label && hello.to ? { label: hello.label, to: hello.to } : undefined,
-      });
+      setResult(readResult(data?.result, data?.say_hello) ?? { text: "" });
       setDeclining(false);
       await onAnswered(item);
     },
@@ -141,7 +165,10 @@ export function useRequest(
   if (!item || !requestId) return null;
   const first = firstName(item);
   const loaded = req && req !== "failed" ? req : null;
-  const waiting = loaded?.state === "sent" && !result;
+  const shown = result ?? loaded?.answered ?? null;
+  const waiting = loaded?.state === "sent" && !shown;
+  const w = loaded?.words ?? {};
+  const many = (loaded?.brought.length ?? 0) > 1;
   const ops = item.actions.filter((a) => answerOf(a.op));
 
   const body = (
@@ -151,13 +178,13 @@ export function useRequest(
       ) : null}
       {loaded ? (
         <>
-          <h3 className="ibx-sh">{first ? `${first}’s note` : "The note"}</h3>
+          <h3 className="ibx-sh">{w.note_heading ?? (first ? `${first}’s note` : "The note")}</h3>
           <p className="ibx-note">{loaded.note}</p>
           {loaded.brought.length ? (
             <>
               <h3 className="ibx-sh">
-                {loaded.brought.length > 1 ? "The ideas" : "The idea"} {first || "they"} asks you to merge
-                into yours
+                {w.brought_heading ??
+                  `${many ? "The ideas" : "The idea"} ${first || "they"} asks you to merge into yours`}
               </h3>
               {loaded.brought.map((b) => (
                 <div key={b.id} className="ibx-card">
@@ -168,7 +195,7 @@ export function useRequest(
                   {b.byline ? <p className="ibx-cm">{b.byline}</p> : null}
                   {b.summary ? <p className="ibx-cs">{b.summary}</p> : null}
                   <Link className="ibx-cl" href={`/ideas/${b.id}`}>
-                    {first ? `Open ${first}’s idea` : "Open the idea"}
+                    {w.open_label ?? (first ? `Open ${first}’s idea` : "Open the idea")}
                   </Link>
                 </div>
               ))}
@@ -176,9 +203,10 @@ export function useRequest(
           ) : null}
           {waiting ? (
             <p className="ibx-foot">
-              {loaded.brought.length
-                ? `Merge it, and their idea joins yours: ${first} is on your crew and credited on it. Team up only puts ${first} on your crew and keeps their idea separate. Decline, and ${first} sends theirs on its own, with your reason if you give one.`
-                : `Approve, and ${first} is on your crew. Decline, and ${first} hears your reason if you give one.`}
+              {w.explain ??
+                (loaded.brought.length
+                  ? `Merge it, and their idea joins yours: ${first} is on your crew and credited on it. Team up only puts ${first} on your crew and keeps their idea separate. Decline, and ${first} sends theirs on its own, with your reason if you give one.`
+                  : `Approve, and ${first} is on your crew. Decline, and ${first} hears your reason if you give one.`)}
             </p>
           ) : null}
           {declining ? (
@@ -189,9 +217,9 @@ export function useRequest(
           ) : null}
         </>
       ) : null}
-      {result?.text ? (
+      {shown?.text ? (
         <p className="ibx-result" role="status">
-          {result.text}
+          {shown.text}
         </p>
       ) : null}
       {error ? (
@@ -203,12 +231,12 @@ export function useRequest(
   );
 
   let bar: ReactNode = null;
-  if (result) {
+  if (shown) {
     bar = (
       <Bar>
-        {result.sayHello ? (
-          <Link className="btn btn-primary" href={result.sayHello.to}>
-            {result.sayHello.label}
+        {shown.sayHello ? (
+          <Link className="btn btn-primary" href={shown.sayHello.to}>
+            {shown.sayHello.label}
           </Link>
         ) : (
           <button type="button" className="btn btn-primary" onClick={onNext}>
