@@ -38,9 +38,10 @@ async function forward(workerPath: string, init: RequestInit = {}): Promise<Next
   return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 
-async function segments(ctx: Params): Promise<string[]> {
+/** The route's `[id]` and `[member]` segments, escaped for the worker's path. */
+async function segments(ctx: Params): Promise<[string, string]> {
   const p = await ctx.params;
-  return [p.id ?? "", p.member ?? ""].map((s) => encodeURIComponent(s));
+  return [encodeURIComponent(p.id ?? ""), encodeURIComponent(p.member ?? "")];
 }
 
 /** A read: the session, then the worker path built from the route's segments. */
@@ -67,7 +68,8 @@ export function teamupWrite(
     const key = request.headers.get(IDEMPOTENCY_HEADER);
     if (key) headers[IDEMPOTENCY_HEADER] = key;
     const init: RequestInit = { method, headers };
-    if (method === "POST") init.body = JSON.stringify(pick(bodyKeys.length ? await readJson(request) : {}, bodyKeys));
+    if (method === "POST")
+      init.body = JSON.stringify(pick(bodyKeys.length ? await readJson(request) : {}, bodyKeys));
     return forward(path(workerPath(id, member), me), init);
   };
 }
