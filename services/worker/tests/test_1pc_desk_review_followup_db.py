@@ -336,10 +336,11 @@ def test_V_ACC_committee_4_a_reversed_row_sits_under_reversed_and_is_final(
     listed = committee.listing(db, rohan, tab="reversed", at=f.at(24, 18))
     assert window in [r["window_id"] for r in listed["items"]]
     assert window not in [r["window_id"] for r in committee.listing(db, rohan, at=f.at(24, 18))["items"]]
-    for again in (
+    agains: tuple[Callable[[], Any], ...] = (
         lambda: committee.reverse_window(db, window, rohan, {"to": "not_picked", "note": NOTE}, f.at(25, 9)),
         lambda: committee.extend_window(db, window, rohan, f.at(25, 9)),
-    ):
+    )
+    for again in agains:
         with pytest.raises(Refused) as refused:
             again()
         assert (refused.value.status, refused.value.code) == (409, "already_reversed")
