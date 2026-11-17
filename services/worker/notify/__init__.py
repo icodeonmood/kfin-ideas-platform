@@ -63,7 +63,9 @@ Ref = str | int | bool | None
 
 # A ref that is text must read like an ID or an enum: no spaces, so no sentence of anyone's words fits (L-NOTIFY/3).
 _REF_TEXT = re.compile(r"^[A-Za-z0-9_.:@-]{1,120}$")
-_KEY = re.compile(r"^[A-Za-z0-9_.:-]{1,200}$")
+# A key is IDs, enums and times joined by ":"; a time may carry its offset ("20261119T1020+0530", lane B's reminder
+# thresholds). No spaces, so no sentence fits.
+_KEY = re.compile(r"^[A-Za-z0-9_.:+-]{1,200}$")
 # Keys that name words a person wrote. Their value may only say whether there is one (a boolean), never carry it.
 _WORDS_KEYS = re.compile(r"reason|note|text|words|body|message|summary|title|answer_text|question_text")
 
