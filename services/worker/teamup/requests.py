@@ -252,7 +252,9 @@ def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
 
 
 def _actions(brings: bool) -> list[tuple[str, str, str | None, str | None]]:
-    return [(a["label"], a["style"], None, f"teamup.answer.{a['answer']}") for a in rules.answers_for(brings)]
+    """The answers as Inbox buttons, each a bare op (`decline`, `team_only`, `merge`) that lane A's Inbox hands to
+    `teamup.inbox_ops` (BLD-F028)."""
+    return [(a["label"], a["style"], None, a["answer"]) for a in rules.answers_for(brings)]
 
 
 def tell_lead(conn: Conn, req_id: str, kind: Kind, idea: dict[str, Any], brought: int, sender: str) -> None:

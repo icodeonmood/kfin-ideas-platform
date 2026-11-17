@@ -111,7 +111,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-CONVO` | none | missing | P0 | F |
 | `L-WORTH` | impact estimates (qualify) | exists, differs | P0 | B |
 | `L-MERGE` | `.request` and `.effects` for lead-accepted merges: `services/worker/teamup/drafts.py`, `teamup/merging.py` (`apply_lead_merge`); `/api/drafts/[id]/merge-request`; the lead answers through `/api/team-up/[id]/answer` (BLD-F010, BLD-F012). `.desk`: lane B's `desk/merging.py` | request built 17 Nov (branch `f/teamup`); desk with lane B | P0 | B (desk), F (request) |
-| `L-TEAMUP` | `services/worker/teamup/` (`requests.py`, `crew.py`, `rules.py`, `routes.py`); `apps/web/src/server/teamup.ts`; `/api/ideas/[id]/team-up` (+ `/draft-note`), `/api/team-up/[id]` (+ `/answer`), `/api/ideas/[id]/crew/leave`, `/api/ideas/[id]/crew/[member]` | built 17 Nov (branch `f/teamup`); screens wire to it in lane F's front end | P0 | F |
+| `L-TEAMUP` | `services/worker/teamup/` (`requests.py`, `crew.py`, `rules.py`, `routes.py`, `inbox_ops.py`: the lead's answers as Inbox ops `decline`, `team_only`, `merge` in lane A's `notify.ops`, BLD-F028); `apps/web/src/server/teamup.ts`; `/api/ideas/[id]/team-up` (+ `/draft-note`), `/api/team-up/[id]` (+ `/answer`), `/api/ideas/[id]/crew/leave`, `/api/ideas/[id]/crew/[member]` | built 17 Nov (branch `f/teamup`); screens wire to it in lane F's front end | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
 | `L-LISTEN` | none | missing | P0 | B |
