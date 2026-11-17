@@ -131,7 +131,10 @@ def desk_merge(
     note = str(body.get("note") or "")
     team_up = body.get("team_up", True) is not False
     with audited(conn), conn.transaction():
-        this, other = lock_pair(conn, ref, str(body.get("other_idea_id") or ""))
+        other_ref = str(body.get("other_idea_id") or "")
+        # both of lane C's locks, in uuid order, before lock_pair: the note is hidden on the lead (BLD-B247)
+        adapters.lock_refs(conn, ref, other_ref)
+        this, other = lock_pair(conn, ref, other_ref)
         return merge_locked(conn, this, other, user_id, body.get("lead"), team_up, note, t, p)
 
 

@@ -98,6 +98,8 @@ def revise_worth(
     note = body.get("note")
     kind, area = body.get("kind"), body.get("area")
     with audited(conn), conn.transaction():
+        # lane C's lock before any row lock: the note is hidden below (BLD-B247)
+        adapters.lock_refs(conn, ref)
         idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "revise_worth")
         ensure_on_desk(idea)

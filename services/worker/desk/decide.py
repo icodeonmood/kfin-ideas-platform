@@ -191,6 +191,9 @@ def send(
     return_in = body.get("return_in") if choice == "not_now" else None
     joined_ref = str(body.get("joined_with") or "").strip() if choice == "pick" else ""
     with audited(conn), conn.transaction():
+        # lane C's lock on each idea first, in uuid order, before any row lock: the reason (and a joining Pick's note)
+        # is hidden below, and a reviewer's "Hide this" takes the same lock first (BLD-B247)
+        adapters.lock_refs(conn, ref, joined_ref)
         other: dict[str, Any] | None = None
         if joined_ref:  # both locked in the merge's order (L-MERGE.desk/5)
             from desk import merging
