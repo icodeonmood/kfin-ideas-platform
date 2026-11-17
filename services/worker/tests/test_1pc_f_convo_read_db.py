@@ -547,3 +547,24 @@ def test_l_convo_4_s_08_answers_sent_tell_the_sharer_when_the_desk_decides(
         e for e in conversation(db, idea["idea_id"], meera["id"], at=NOW)["entries"] if e["type"] == "answers"
     ]
     assert "footer" not in seen
+
+
+def test_bld_f065_s_08_a_closed_question_set_is_not_worded_answered(db: Any, cast: dict[str, Any]) -> None:
+    """The desk decided before every answer came (the J-TRACK/3 path): the set is closed, not answered (review of
+    f/convo-7, item 2)."""
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya, status="needs_you")
+    set_id = fx.question_set(db, idea, meera, ("summary", "often"), fx.at(16, 11, 20))
+    post(db, str(idea["id"]), "desk.asked", author_user_id=meera["id"], payload={"set_id": set_id, "count": 2},
+         question_set_id=set_id, entry_type="questions", at=fx.at(16, 11, 20))  # fmt: skip
+
+    def sharers_card() -> dict[str, Any]:
+        view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+        [q] = [e for e in view["entries"] if e["type"] == "questions"]
+        return q
+
+    db.execute("UPDATE question_sets SET state = 'closed' WHERE id = %s", (set_id,))
+    q = sharers_card()
+    assert q["title"] == "Meera’s 2 questions, now closed" and "deadline" not in q and "answer_url" not in q
+    db.execute("UPDATE question_sets SET state = 'answered' WHERE id = %s", (set_id,))
+    assert sharers_card()["title"] == "Meera’s 2 questions, answered"

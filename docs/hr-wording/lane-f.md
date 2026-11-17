@@ -58,7 +58,8 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-CONVO/5`, a message over 4,000 characters (BLD-F055) | Not drawn | Keep a message under 4,000 characters. |
 | `L-CONVO/7`, a sixth file on one message (BLD-F055) | Not drawn | Attach up to 5 files to a message. |
 | `L-CONVO/6`, an eleventh person mentioned in one message (BLD-F055) | Not drawn | Mention up to 10 people in a message. |
-| `L-CONVO/7`, a file sent by someone other than the sharer, the review desk or the Ones Committee (BLD-F063; S-08 shows them no attach control) | Not drawn | Only the person who shared this idea, the review desk and the Ones Committee can add files here. |
+| `L-CONVO/7`, a file sent by someone who cannot add files (BLD-F063; S-08 shows them no attach control) | Not drawn | You can’t add files here. The person who shared this idea or the review desk can add them. |
+| `L-CONVO/7`, the check for customers’ details could not run (BLD-F054) | Not drawn | We couldn’t check this message for customers’ details just now. Try again in a minute. |
 | `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
 | `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
 | `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |
@@ -80,3 +81,4 @@ Everything else on S-08 is the pack's copy (Messages.md) or comes from the conve
 | `S-08.rules/4`, the phone's "i" button and the sheet's button | an "i" button | Who is in this conversation / Close |
 | `S-08`, a file's button and the file lists, as read out | View | View plain-rejection-reasons.xlsx / Files in your message / Files in Ravi Nair’s message / Files with this answer |
 | `S-08`, the questions for a reader who did not ask them (BLD-F065) | Meera has 3 questions about your idea | Meera from the review desk asked 3 questions. / You asked 3 questions. / See them on the idea |
+| `S-08`, the sharer's questions once closed before every answer came (BLD-F065) | Meera’s 3 questions, answered | Meera’s 3 questions, now closed |

@@ -1324,7 +1324,7 @@ export interface ConversationMessageResponse {
   hidden: number;
 }
 /** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `files_not_allowed`,
- * `file_unavailable`, `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`,
+ * `hide_unavailable`, `file_unavailable`, `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`,
  * `not_yours`, `too_late`, `not_found`. */
 export type ConversationErrorCode =
   | "empty_message"
@@ -1332,6 +1332,7 @@ export type ConversationErrorCode =
   | "too_many_files"
   | "too_many_mentions"
   | "files_not_allowed"
+  | "hide_unavailable"
   | "file_unavailable"
   | "file_not_checked"
   | "file_has_detail"

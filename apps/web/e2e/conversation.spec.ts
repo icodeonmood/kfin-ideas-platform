@@ -19,31 +19,31 @@ const KAVYA = {
   initials: "KM",
 };
 const HELLO = "Thanks @Aditi Sharma for the call list.";
+const MINE = "6c1f6a0e-0000-4000-8000-000000000009";
+
+/** Kavya's message as read back: as sent, or once removed (L-CONVO/10). */
+function hello(removed: boolean) {
+  return {
+    type: "message",
+    id: MINE,
+    from: KAVYA,
+    from_label: "You",
+    you: true,
+    text: removed ? "Message removed" : HELLO,
+    files: [],
+    at: "2026-11-17T10:12:00+05:30",
+    at_label: "Today, 10:12 am",
+    mentions: removed ? [] : [{ id: ADITI, name: "Aditi Sharma", first_name: "Aditi", initials: "AS" }],
+    mentions_you: false,
+    removed,
+    ...(removed ? {} : { can_remove_until: "2999-11-17T10:17:00+05:30" }),
+  };
+}
 
 /** The conversation as read again after Kavya's message: the kit's view plus that message. */
-function afterHello(base: Record<string, unknown>) {
+function afterHello(base: Record<string, unknown>, removed = false) {
   const entries = (base.entries as unknown[]) ?? [];
-  return {
-    ...base,
-    entries: [
-      ...entries,
-      {
-        type: "message",
-        id: "6c1f6a0e-0000-4000-8000-000000000009",
-        from: KAVYA,
-        from_label: "You",
-        you: true,
-        text: HELLO,
-        files: [],
-        at: "2026-11-17T10:12:00+05:30",
-        at_label: "Today, 10:12 am",
-        mentions: [{ id: ADITI, name: "Aditi Sharma", first_name: "Aditi", initials: "AS" }],
-        mentions_you: false,
-        removed: false,
-        can_remove_until: "2999-11-17T10:17:00+05:30",
-      },
-    ],
-  };
+  return { ...base, entries: [...entries, hello(removed)] };
 }
 
 /** The screen's calls for IDEA (A-API.inbox), answered here. Returns what was posted. */
@@ -60,10 +60,15 @@ async function answerConversation(page: Page, base: Record<string, unknown>) {
         },
       });
     }
-    return route.fulfill({ status: 201, json: { entry: null, hidden: 0 } });
+    return route.fulfill({ status: 201, json: { entry: hello(false), hidden: 0 } });
+  });
+  let removed = false;
+  await page.route(`**/api/ideas/${IDEA}/conversation/messages/*`, (route) => {
+    removed = true;
+    return route.fulfill({ json: { entry: hello(true) } });
   });
   await page.route(`**/api/ideas/${IDEA}/conversation`, (route) =>
-    route.fulfill({ json: posted.length ? afterHello(base) : base }),
+    route.fulfill({ json: posted.length ? afterHello(base, removed) : base }),
   );
   return posted;
 }
@@ -145,6 +150,13 @@ test("S-08 L-CONVO/6 at 375px: the @mention list by keyboard, the id sent, and t
   expect(posted).toEqual([{ text: HELLO, mentions: [ADITI] }]);
   await expect(box).toHaveValue("");
   await expectNoSeriousAxeIssues(page);
+
+  // L-CONVO/10: Remove goes with the message, so focus lands on its line, now "Message removed" (WCAG 2.4.3).
+  await page.getByRole("button", { name: "Remove your message from Today, 10:12 am" }).click();
+  const line = page.locator(`[id="entry-${MINE}"]`);
+  await expect(line).toContainText("Message removed");
+  await expect(line).toBeFocused();
+  await expect(page.getByRole("button", { name: /^Remove your message/ })).toHaveCount(0);
 });
 
 test("S-08.rules/4 at 375px: the 'i' opens In this conversation as a sheet; Escape closes it and focus goes back; axe", async ({

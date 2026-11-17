@@ -6,7 +6,8 @@ transaction, so the line exists exactly when the change that caused it does. The
 
 What goes in is a code and IDs: `event` is a dotted code (`desk.opened`, `crew.joined`), `payload` holds JSON scalars
 only: IDs, enums, times, numbers and booleans, each string at most 64 characters (non-negotiable 3). A payload never
-refuses for its shape alone, so a caller's decision is not rolled back over a timestamp or a float. Lane F turns the code into the words of
+refuses for its shape alone, so a caller's decision is not rolled back over a timestamp or a float (NaN or infinity
+is stored as None). Lane F turns the code into the words of
 `1pc-handoff/reference/copy/Messages.md` when the conversation is read (`convo.render`), with names resolved then, so
 a renamed or erased person reads right everywhere. A new code needs a line in `convo.render`: send it to lane F.
 
@@ -70,7 +71,7 @@ def post(
     - `author_user_id` (staff, a `users.id`) or `author_code` (a contributor code, `CTR-…`): who did it; both
       optional for a system line.
     - `payload`: JSON scalars only (str, int, float, bool, None): IDs, enums, ISO times, numbers and booleans.
-      A string over 64 characters (free text), a nested value or a float that JSON cannot hold is refused.
+      A string over 64 characters (free text) or a nested value is refused; NaN or infinity is stored as None.
     - `question_set_id`, `entry_type`: a question set (`"questions"`) or its answers (`"answers"`) appear by
       reference to the set.
     - `at`: when it happened; now by default. A line that would tie with or come before the idea's last line is
@@ -87,7 +88,7 @@ def post(
         if value is not None and not isinstance(value, str | int | float | bool):
             raise ConvoError(f"payload {key!r} must be a JSON scalar")
         if isinstance(value, float) and not math.isfinite(value):
-            raise ConvoError(f"payload {key!r} must be a finite number")
+            body[key] = None  # JSON cannot hold it; never a reason to roll the caller's decision back
         if isinstance(value, str) and len(value) > REF_MAX:
             raise ConvoError(f"payload {key!r} must be an ID, enum or time, not text")
     # A savepoint inside the caller's transaction; its own transaction on an autocommit connection, so the lock

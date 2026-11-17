@@ -563,6 +563,26 @@ describe("S-08 the box", () => {
     expect(alerts()).toEqual([]);
   });
 
+  it("S-08 sent, then the read fails: the message POST returned shows at once, the box clears, nothing is sent twice", async () => {
+    const hello = "Hello, crew.";
+    const mine = message("m-new", KAVYA, "You", hello, {
+      you: true,
+      can_remove_until: "2026-11-17T10:35:00+05:30",
+    });
+    answers.push(
+      () => respond(201, { entry: mine, hidden: 0 }),
+      () => new Error("offline"),
+    );
+    await show(afterTeamingUp());
+    await type(hello);
+    await submit();
+    expect($("#entry-m-new .cv-bub")?.textContent).toBe(hello);
+    expect(textbox().value).toBe("");
+    expect(alerts()).toEqual([]);
+    await submit(); // an empty box: refused here, not sent again
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+  });
+
   it("S-08 a refused message keeps the words and shows the server's reason, announced; a retry of the same words reuses the key", async () => {
     answers.push(
       () => respond(422, { error: { code: "too_long", message: "Keep a message under 4,000 characters.", field: "text" } }),
@@ -640,6 +660,19 @@ describe("S-08 the box", () => {
     expect(calls[0]!.body).toEqual({ text: "Thanks @Aditi Sharma for the list.", mentions: [ADITI.id] });
   });
 
+  it("S-08 the @mention picker: Tab leaves the box and closes the list without picking", async () => {
+    await show(afterTeamingUp());
+    await type("Hi @Ra");
+    expect(host.querySelector('[role="listbox"]')).not.toBeNull();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => {
+      textbox().dispatchEvent(tab);
+    });
+    expect(tab.defaultPrevented).toBe(false); // the browser moves focus on as usual
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    expect(textbox().value).toBe("Hi @Ra");
+  });
+
   it("S-08 the @mention picker: Escape closes the list and keeps the words; a deleted mention is not sent", async () => {
     answers.push(
       () => respond(201, { entry: null, hidden: 0 }),
@@ -691,6 +724,22 @@ describe("S-08 removing a message (L-CONVO/10)", () => {
     expect($("#entry-m-mine .cv-bub")?.textContent).toBe("Message removed");
     expect($("#entry-m-mine .cv-bub")?.classList.contains("removed")).toBe(true);
     expect(host.querySelectorAll("#entry-m-mine button")).toHaveLength(0);
+    // WCAG 2.4.3: the button went with the message, so focus is on that line, never dropped to the page.
+    expect(document.activeElement).toBe($("#entry-m-mine"));
+    expect($("#entry-m-mine")?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("S-08 removed, then the read fails: the DELETE's answer already shows the line as removed, focus on it", async () => {
+    const gone = message("m-mine", KAVYA, "You", "Message removed", { you: true, removed: true });
+    answers.push(
+      () => respond(200, { entry: gone }),
+      () => respond(500),
+    );
+    await show(withMine("2026-11-17T10:35:00+05:30"));
+    await act(async () => button("Remove your message from Today, 10:07 am").click());
+    expect($("#entry-m-mine .cv-bub")?.textContent).toBe("Message removed");
+    expect(document.activeElement).toBe($("#entry-m-mine"));
+    expect(alerts()).toEqual([]);
   });
 
   it("S-08 too late: no Remove after 5 minutes; a refusal from the server is said under the message", async () => {
