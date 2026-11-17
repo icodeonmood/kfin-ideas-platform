@@ -116,3 +116,18 @@ def test_L_INBOX_kinds_the_request_template_carries_no_note() -> None:
     tpl = templates._load(SEED, "inbox/teamup_request")
     assert tpl.inbox["note"] == ""
     assert not any("bringing" in words for words in (tpl.subject, tpl.body, *tpl.inbox.values()))
+
+
+def test_L_INBOX_kinds_every_inbox_line_uses_the_typographic_apostrophe() -> None:
+    """J-TEAMUP/5 "You’re on Rekha’s crew now." and every other line a person reads: ’, never a straight one
+    (BLD-A195). The HTML comments for builders are not read by anyone and keep theirs."""
+    folder = SEED / "comms" / "templates" / "inbox"
+    for path in sorted(folder.glob("*.md")):
+        if path.name == "index.md":
+            continue
+        tpl = templates._load(SEED, f"inbox/{path.stem}")
+        for where, words in (("subject", tpl.subject), ("body", tpl.body), *tpl.inbox.items()):
+            assert "'" not in words, f"{path.name} {where}"
+    assert render._possessive("Meera") == "Meera’s"
+    assert render._possessive("Dhanus") == "Dhanus’"
+    assert render._possessive(None) == "a colleague’s"

@@ -5,7 +5,7 @@ One per Inbox item kind (E-ENUMS.inbox, L-INBOX.kinds): the reader's kind line (
 - [questions.md](questions.md) — Questions from the review desk: "{sender} asked you {{count_words}}"
 - [teamup_request.md](teamup_request.md) — Team-up or merge request: "{sender} {{#request.merge}}asks to team up and merge their {{#brought.many}}ideas{{/brought.many}}{{#brought.single}}idea{{/brought.single}} into yours{{/request.merge}}{{#request.team_only}}asks to team up{{/request.team_only}}"
 - [teamup_answer.md](teamup_answer.md) — Request answered: "{sender} {{#answer.approved}}approved your team-up request{{/answer.approved}}{{#answer.declined}}declined your team-up request, with a reason{{/answer.declined}}"
-- [decision.md](decision.md) — Decision: "{sender} {{#choice.pick}}picked your idea{{/choice.pick}}{{#choice.not_picked}}didn't pick your idea, with a reason{{/choice.not_picked}}{{#choice.not_now}}said Not now to your idea, with a date it comes back{{/choice.not_now}}"
+- [decision.md](decision.md) — Decision: "{sender} {{#choice.pick}}picked your idea{{/choice.pick}}{{#choice.not_picked}}didn’t pick your idea, with a reason{{/choice.not_picked}}{{#choice.not_now}}said Not now to your idea, with a date it comes back{{/choice.not_now}}"
 - [decision_reversed.md](decision_reversed.md) — Decision reversed: "{sender} {{#viewer.sharer}}reversed a decision on your idea{{/viewer.sharer}}{{#viewer.decided}}reversed your decision on this idea{{/viewer.decided}}"
 - [desk_merge.md](desk_merge.md) — Ideas merged by the desk: "{sender} merged your idea with {{other.possessive}}"
 - [worth_revised.md](worth_revised.md) — Worth revised: "{sender} revised what your idea is worth"
