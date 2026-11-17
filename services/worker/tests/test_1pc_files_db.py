@@ -760,41 +760,31 @@ def test_L_HIDE_files_1_DEC_103_the_gateway_failing_keeps_the_file_checking_then
     ).fetchone()
 
 
-def test_L_HIDE_files_1_DEC_103_only_a_person_switching_the_gatekeeper_off_gives_patterns_only(
+def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switched_it_off(
     db: Conn, cast: dict[str, Any]
 ) -> None:
-    """Review blocker 2b: with `ai.all` switched off by a person, a file goes on with the patterns and names, as
-    typed text does (`checked`, no model call); held off only by the gateway's own automatic switch-off, it waits."""
+    """Non-negotiable 4 (lane E's check, 18 Nov): with `ai.all` switched off by a person, or the gatekeeper held off
+    by the gateway's own switch-off, a file waits in `checking` (the job retries); it is never `checked` on the
+    patterns alone, so the crew never opens it without the gatekeeper."""
     from core import killswitch
     from gateway.core import ACTOR as GATEWAY
 
     idea, kavya = cast["idea"], cast["kavya"]
-    scope = scope_for(str(idea["id"]))
 
-    def calls() -> int:
-        return int(
-            db.execute("SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s", (scope,)).fetchone()["n"]
-        )
-
-    clean = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
-    pan = _pan()
-    found = _add(db, kavya, make.pdf([f"PAN {pan} called twice."]), idea_id=idea["idea_id"])["id"]
-    before = calls()
+    by_person = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
     killswitch.set_switch(
         db, "ai.all", "off", reason="Testing files with the assistant off", actor="REV-0001"
     )
     killswitch.clear_cache()
     try:
-        assert F.check(db, clean) == "checked"
-        assert F.check(db, found) == "personal_data_found"  # the patterns still run
+        with pytest.raises(F.CheckWaits):
+            F.check(db, by_person)
     finally:
         killswitch.set_switch(db, "ai.all", "on", reason="Testing files: assistant back on", actor="REV-0001")
         killswitch.clear_cache()
-    assert calls() == before
-    assert _row(db, clean)["checks"]["gatekeeper"] == "off" and _row(db, found)["checks"]["found"] == [
-        {"kind": "pan", "page": 1}
-    ]
-    assert F.get_item(db, clean, cast["arjun"]["id"])["view_url"]  # checked: the crew opens it
+    assert _row(db, by_person)["file_state"] == "checking"
+    with pytest.raises(F.FileRefused):  # unchecked: the crew can neither see nor open it
+        F.get_item(db, by_person, cast["arjun"]["id"])
 
     waits = _add(db, kavya, make.pdf(["Calls double on Mondays."]), idea_id=idea["idea_id"])["id"]
     killswitch.set_switch(db, "agent.gatekeeper", "off", reason="Error rate over the limit", actor=GATEWAY)

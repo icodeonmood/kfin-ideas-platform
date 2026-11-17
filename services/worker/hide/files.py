@@ -9,8 +9,9 @@ The gatekeeper reads every file, however long (non-negotiable 4, DEC-103): `gate
 piece at a time (about 8,000 characters, overlapping so a name cut by a boundary is whole in the next piece), each
 piece through the gateway (`run_agent`, which tags the patterns' finds before sending), and every value it names is
 then hidden wherever it appears in the file. When it cannot run, the file waits (`GatekeeperWaits`): the check job
-tries again, and the file is never `checked` on the patterns alone. Only a person switching `ai.all` or
-`agent.gatekeeper` off sends a file on with the patterns and names, as typed text goes on (BLD-C107).
+tries again, and the file is never `checked` on the patterns alone. That holds whoever switched `ai.all` or
+`agent.gatekeeper` off, a person or a process: a file never skips the gatekeeper, so it is never opened by the crew
+without it (BLD-C107, lane E's check of non-negotiable 4, 18 Nov).
 
 What comes back is kinds and page numbers only, for the file row's lines (`reference/copy/Edit.md`,
 `reference/copy/DeskIdea.md`):
@@ -156,18 +157,15 @@ def gate_for(conn: Conn, idea_uuid: str, text: str) -> detect.Gate:
     """The gatekeeper's finds in a file's text, asked piece by piece (`chunks`), each value it names placed wherever
     it appears in the whole text. Call it before taking any lock: each piece is a model call.
 
-    Raises `GatekeeperWaits` when a piece could not be read and the gatekeeper was not switched off on purpose. When
-    a person has switched it off, the rest of the file goes on with the patterns, names and the idea's hidden
-    values, as typed text does (`switched_off` is set on what comes back)."""
+    Raises `GatekeeperWaits` whenever the gatekeeper cannot read a piece: the gateway failed, or `ai.all` or
+    `agent.gatekeeper` is switched off, whoever switched it (a person or a process). A file never skips the
+    gatekeeper (non-negotiable 4): it waits in `checking` and the check job tries again."""
 
-    def held() -> bool:
-        off = _off_on_purpose(conn)
-        if off is False:
+    def held() -> None:
+        if _off_on_purpose(conn) is not None:  # switched off, by a person or a process: wait, never skip
             raise GatekeeperWaits("switched_off")
-        return off is True
 
-    if held():
-        return detect.Gate([], "switched_off", True)
+    held()
     scope = scope_for(idea_uuid)
     named: dict[str, str] = {}
     for _offset, piece in chunks(text):
@@ -175,8 +173,7 @@ def gate_for(conn: Conn, idea_uuid: str, text: str) -> detect.Gate:
             gate = detect.gatekeeper_finds(conn, piece, scope)
         for f in gate.finds:
             named.setdefault(f.value, f.kind)
-        if held():  # a person switched it off while the file was read
-            return _placed(text, named, switched_off=True)
+        held()  # switched off while the file was read
         if gate.skipped:
             raise GatekeeperWaits(gate.skipped)
     return _placed(text, named)
