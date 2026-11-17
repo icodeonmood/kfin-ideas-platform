@@ -329,7 +329,7 @@ def test_a_tier_change_needs_the_committees_message_and_plays_a_glow_up_once(one
     mine = views.my_one(db, subject, now=NOW)
     assert mine["tier"] == 3 and mine["tier_name"] == "Flame"
     glow = mine["glow_up"]
-    assert glow["from"]["tier"] == 1 and glow["to"]["tier_colour"] == "#FF2E6B" and glow["up"]
+    assert glow["from"]["tier"] == 1 and glow["to"]["tier_colour"] == "#F34770" and glow["up"]
     assert [m["from"] for m in glow["messages"]] == ["committee", "ceo", "peer"]
     assert (
         glow["messages"][0]["name"] == "The 1% Club core committee"

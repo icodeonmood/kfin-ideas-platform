@@ -218,7 +218,7 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expectNoSeriousAxeIssues(someone);
     await someone.goto("/constellation");
     await expect(someone.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
-    await expect(someone.locator(".site-header")).toHaveAttribute("inert", "");
+    await expect(someone.getByRole("navigation", { name: "Main" })).toHaveCount(0); // a wall display has no chrome
     await expectNoSeriousAxeIssues(someone);
   });
 });
