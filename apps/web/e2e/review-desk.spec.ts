@@ -225,9 +225,24 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   await expect(deskRow.getByText(/0 of 2 answered|Not seen yet/)).toBeVisible();
   await expect(deskRow.getByText(/to answer$/)).toBeVisible();
 
-  // S-R3: one question at a time, skip, check and send
+  // J-TRACK/3 C-QCARD.places S-H5: the questions reach the sharer's Inbox as the card, under the reader's own
+  // header, and the button in the reader's foot opens the Answer screen
   const s = sharer.page;
-  await s.goto(`/ideas/${ideaId}/answer`);
+  await s.goto("/inbox?tab=needs_you");
+  await s.getByRole("button", { name: `asked you 2 questions, ${title}` }).click();
+  const reader = s.locator(".ibx-read");
+  await expect(reader.locator(".qcard-inbox")).toBeVisible();
+  await expect(reader.getByText("Is it 40 calls a day at one branch, or across Hyderabad?")).toBeVisible();
+  await expect(reader.getByText(/^Answer by .+\.$/)).toHaveCount(1);
+  await expect(reader.getByRole("link", { name: "Open the conversation" })).toHaveAttribute(
+    "href",
+    `/ideas/${ideaId}/conversation`,
+  );
+  await expectNoSeriousAxeIssues(s);
+  await reader.getByRole("link", { name: "Answer the questions" }).click();
+
+  // S-R3: one question at a time, skip, check and send
+  await expect(s).toHaveURL(new RegExp(`/ideas/${ideaId}/answer$`));
   await expect(s.getByRole("heading", { name: "Answer the review desk" })).toBeVisible();
   await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
