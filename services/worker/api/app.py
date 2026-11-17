@@ -8,7 +8,7 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from psycopg.types.json import Jsonb
 
@@ -146,6 +146,78 @@ def delete_voice(voice_id: str, idea_uuid: str, by: str = "") -> Response:
     with connect(autocommit=True) as conn:
         voice.remove_for(conn, voice_id, idea_uuid, by or None)
     return Response(status_code=204)
+
+
+# ---- drafts "By voice" through Sarvam (DEC-108, BLD-C112): the web app checked the person owns the draft ----
+
+
+def _stream_call(fn: Any, *args: Any, **kwargs: Any) -> JSONResponse:
+    from speech import drafts
+
+    try:
+        with connect(autocommit=True) as conn:
+            return JSONResponse(fn(conn, *args, **kwargs))
+    except drafts.VoiceRefused as exc:
+        return JSONResponse({"error": exc.code, **exc.body}, status_code=exc.status)
+
+
+@app.post("/internal/voice-streams", dependencies=[Depends(require_token)])
+def voice_stream_start(body: dict[str, Any]) -> JSONResponse:
+    """Open a stream for the person's draft: `{idea_uuid, by_code, user_id}`."""
+    from speech import drafts
+
+    resp = _stream_call(
+        drafts.start,
+        idea_uuid=str(body.get("idea_uuid", "")),
+        by_code=str(body.get("by_code", "")),
+        user_id=str(body["user_id"]) if body.get("user_id") else None,
+    )
+    if resp.status_code == 200:
+        resp.status_code = 201
+    return resp
+
+
+@app.post("/internal/voice-streams/{stream_id}/chunk", dependencies=[Depends(require_token)])
+async def voice_stream_chunk(
+    stream_id: str, idea_uuid: str, by: str, seq: int, request: Request
+) -> JSONResponse:
+    """About a second of 16 kHz mono 16-bit PCM, relayed to Sarvam as it arrives and never kept."""
+    from starlette.concurrency import run_in_threadpool
+
+    from speech import drafts
+
+    data = b""
+    async for part in request.stream():
+        data += part
+        if len(data) > drafts.MAX_CHUNK_BYTES:
+            return JSONResponse({"error": "chunk_too_large"}, status_code=413)
+    return await run_in_threadpool(
+        _stream_call, drafts.chunk, stream_id, idea_uuid=idea_uuid, by_code=by, seq=seq, data=data
+    )
+
+
+@app.post("/internal/voice-streams/{stream_id}/end", dependencies=[Depends(require_token)])
+def voice_stream_end(stream_id: str, body: dict[str, Any]) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(
+        drafts.end, stream_id, idea_uuid=str(body.get("idea_uuid", "")), by_code=str(body.get("by_code", ""))
+    )
+
+
+@app.get("/internal/voice-streams/{stream_id}", dependencies=[Depends(require_token)])
+def voice_stream_status(stream_id: str, idea_uuid: str, by: str) -> JSONResponse:
+    from speech import drafts
+
+    return _stream_call(drafts.status, stream_id, idea_uuid=idea_uuid, by_code=by)
+
+
+@app.get("/internal/voice-config", dependencies=[Depends(require_token)])
+def voice_config() -> JSONResponse:
+    """What the screen shows before recording, and what the browser sends (BLD-C116)."""
+    from speech import drafts
+
+    return JSONResponse({"notice": drafts.NOTICE, **drafts.chunk_contract()})
 
 
 @app.get("/internal/scans/{idea_uuid}/view", dependencies=[Depends(require_token)])
