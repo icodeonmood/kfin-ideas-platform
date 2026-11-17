@@ -67,7 +67,7 @@ export default class BoardReporter implements Reporter {
     const lines = [
       `## Journey board · ${sha} · ${when} IST · ${result.status}`,
       "",
-      "✅ pass · ❌ fail · ⏸ fixme (module not on main, or GAP-SEED) · ⏭ skipped",
+      "✅ pass · ❌ fail · ⏸ fixme (module not on main, GAP-SEED, or waits for an earlier step) · ⏭ skipped",
       "",
       "| Journey | Pass | Fail | Fixme | Steps |",
       "|---|---:|---:|---:|---|",
