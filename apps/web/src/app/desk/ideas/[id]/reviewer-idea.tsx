@@ -154,7 +154,7 @@ export function ReviewerIdea({
   const defaultTime = TIMES[numbers.answerDays.indexOf(numbers.answerDefaultDays)] ?? "3d";
   const serverState: "reviewing" | "sent" | "answered" | "decided" =
     page.panel.state === "merged" ? "reviewing" : page.panel.state;
-  // J-REVIEW/A1: the reviewer's own queued set, stored, opens the Ask section ready to send
+  // J-REVIEW/A1: the reviewer’s own stored set is the starting queue, ready to send (BLD-B244)
   const stored =
     page.can_act && (page.panel.state === "reviewing" || page.panel.state === "answered")
       ? storedQueue(page.panel.queued)
