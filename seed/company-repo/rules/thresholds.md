@@ -18,7 +18,7 @@ kfin:
 All tunable numbers live here so they can change without code. Changes go through a pull request approved by an admin.
 The canvas strength meter is computed by code from `canvas_strength`, identically in the browser, the server and the review console.
 A suggested answer counts towards strength only after the person accepts it.
-`files` is the 1% Club's one file limit and type list (BLD-E007, L-HIDE.files/5): each file can be up to `limit_mb`, of a type in `types`, and the help line under every drop area is written from them. A link is an internal link when its domain is one of `internal_link_domains`, KFintech's own domains or the 1% Club's; it is never opened (BLD-E001).
+`files` is the 1% Club's one file limit and type list (BLD-E007, L-HIDE.files/5): each file can be up to `limit_mb` (at most 25: a larger limit needs a release, BLD-C108), of a type in `types`, and the help line under every drop area is written from them. A link is an internal link when its domain is one of `internal_link_domains`, KFintech's own domains or the 1% Club's; it is never opened (BLD-E001).
 `assumptions` is the fixed list of basic assumptions the assistant may use to turn a person's own figures into the canvas's units (DEC-097). Each one it uses is shown to the person and the review desk under "Assumptions we made", in the words of `says`. Add one only with the product lead's agreement.
 
 ```yaml
