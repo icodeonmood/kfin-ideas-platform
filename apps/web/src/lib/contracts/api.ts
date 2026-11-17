@@ -521,6 +521,19 @@ export interface ReviewerSimilar {
   merged: boolean;
   meta: string; // "IDEA-2026-001412, Ravi Nair, Investor service, Hyderabad. 4 on its crew"
 }
+/** L-MERGE.effects/3: an idea merged into this one (through the whole `merged_into` chain), under its sharer's
+ * first name: its parts with the answers its sharer sent, its words and its files, gated as the lead's are. */
+export interface ReviewerContribution {
+  idea_id: string;
+  title: string;
+  into: string; // the idea it joined: this one, or one merged into it
+  merged_at: IsoDate | null;
+  sharer: DeskPerson;
+  label: string; // "Ravi’s idea, IDEA-2026-001412"
+  parts: ReviewerPart[];
+  files: ReviewerArtefact[]; // kind "file" only
+  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+}
 export type ReviewerPanel =
   | { state: "reviewing"; decision: CommitteeRow | null }
   | { state: "decided"; decision: CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null } }
@@ -558,6 +571,7 @@ export interface ReviewerIdeaResponse {
   parts: ReviewerPart[];
   worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
   similar: ReviewerSimilar[];
+  contributions: ReviewerContribution[];
   panel: ReviewerPanel;
 }
 export interface WorthRequest {
@@ -610,6 +624,8 @@ export interface DecisionResponse {
   return_at: IsoDate | null;
   team_by: IsoDate | null;
   window: { state: "open"; opens_at: IsoDate; closes_at: IsoDate; max_closes_at: IsoDate; extended_times: 0 };
+  joined_with: string | null; // a Pick that joined a similar idea (L-MERGE.desk/5): that idea's reference
+  merge: DeskMergeResponse | null; // the desk merge it ran, the picked idea leading (BLD-B235)
 }
 export interface MergeSheetResponse {
   idea_id: string;

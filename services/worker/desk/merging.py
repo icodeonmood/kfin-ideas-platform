@@ -98,6 +98,26 @@ def _window_json(w: Any, state: str = "open") -> dict[str, Any]:
             "max_closes_at": w.max_closes_at.isoformat(), "extended_times": w.extended_times}  # fmt: skip
 
 
+def lock_pair(
+    conn: Conn, ref: str, other_ref: str, field: str | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Both ideas, locked in one stable order inside the caller's transaction, so two reviewers merging the same pair
+    (or a merge and a Pick that joins them) cannot deadlock. An `other_ref` that is not an idea is 404, or, when the
+    body names it under `field`, 409 other_not_open under that field."""
+    first = load_idea(conn, ref)
+    try:
+        second = load_idea(conn, other_ref)
+    except Refused:
+        if field is None:
+            raise
+        raise Refused(409, "other_not_open", _REFUSALS["other_not_open"], field) from None
+    locked = {
+        str(i["id"]): load_idea(conn, str(i["id"]), lock=True)
+        for i in sorted((first, second), key=lambda i: str(i["id"]))
+    }
+    return locked[str(first["id"])], locked[str(second["id"])]
+
+
 def desk_merge(
     conn: Conn, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
 ) -> dict[str, Any]:
@@ -111,86 +131,102 @@ def desk_merge(
     note = str(body.get("note") or "")
     team_up = body.get("team_up", True) is not False
     with audited(conn), conn.transaction():
-        first, second = load_idea(conn, ref), load_idea(conn, str(body.get("other_idea_id") or ""))
-        # both locked in one stable order, so two reviewers merging the same pair cannot deadlock
-        locked = {
-            str(i["id"]): load_idea(conn, str(i["id"]), lock=True)
-            for i in sorted((first, second), key=lambda i: str(i["id"]))
-        }
-        this, other = locked[str(first["id"])], locked[str(second["id"])]
-        refuse_own(conn, user_id, this, "merge")
-        refuse_own(conn, user_id, other, "merge")
-        this_side, other_side = _side(conn, this), _side(conn, other)
-        lead = body.get("lead") or merge.default_lead(this_side, other_side)
-        if lead not in LEADS:
-            raise Refused(422, "lead_invalid", "Choose which idea leads.", "lead")
-        code = merge.refusal(this_side, other_side, lead)
-        if code:
-            raise Refused(409, code, _REFUSALS.get(code))
+        this, other = lock_pair(conn, ref, str(body.get("other_idea_id") or ""))
+        return merge_locked(conn, this, other, user_id, body.get("lead"), team_up, note, t, p)
+
+
+def merge_locked(
+    conn: Conn,
+    this: dict[str, Any],
+    other: dict[str, Any],
+    user_id: str,
+    lead: Any,
+    team_up: bool,
+    note: str,
+    t: dt.datetime,
+    p: promises.Promises,
+    *,
+    note_is_reason: bool = False,
+    field: str | None = None,
+) -> dict[str, Any]:
+    """The desk merge's checks and effects (L-MERGE.desk/2–4, L-MERGE.effects/1, /4–6), inside the caller's
+    transaction with both ideas locked (`lock_pair`). `desk_merge` calls it with the sheet's body; `decide.send` with
+    a Pick's `joined_with` (L-MERGE.desk/5, BLD-B235), where the reason, already checked as a reason, is the note to
+    both and a refusal belongs under `field`."""
+    refuse_own(conn, user_id, this, "merge")
+    refuse_own(conn, user_id, other, "merge")
+    this_side, other_side = _side(conn, this), _side(conn, other)
+    lead = lead or merge.default_lead(this_side, other_side)
+    if lead not in LEADS:
+        raise Refused(422, "lead_invalid", "Choose which idea leads.", "lead")
+    code = merge.refusal(this_side, other_side, lead)
+    if code:
+        raise Refused(409, code, _REFUSALS.get(code), field)
+    if not note_is_reason:
         errors = merge.check_note(note, p)
         if errors:
             e = errors[0]
             raise Refused(422, e.code, e.message, e.field)
-        leader, joiner = (this, other) if lead == "this" else (other, this)
-        credited = own_codes(conn, leader) | own_codes(conn, joiner)
-        masked, _ = adapters.hide(conn, str(leader["id"]), note.strip())
-        merge_id = str(uuid.uuid4())
-        conn.execute(
-            "INSERT INTO merges (id, lead_idea_uuid, merged_idea_uuid, via, by_user_id, team_up, note_encrypted, "
-            "prior_status, at) VALUES (%s, %s, %s, 'review_desk', %s, %s, %s, %s, %s)",
-            (merge_id, leader["id"], joiner["id"], user_id, team_up,
-             seal(masked, "merges", "note_encrypted", merge_id), joiner["status"], t),
-        )  # fmt: skip
-        # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped
-        conn.execute(
-            "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
-        )
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
-        closed = conn.execute(
-            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
-            "RETURNING id",
-            (t, joiner["id"]),
-        ).fetchall()
-        # L-INBOX.rules/3: the joining idea's questions leave Needs you with their reminders
-        for done in closed:
-            adapters.resolve(conn, adapters.questions_key(str(done["id"])))
-        # L-MERGE.effects/4: the joining sharer and their live crew join the lead's crew, never as a second lead
-        added: list[str] = []
-        if team_up:
-            on_lead = set(_crew_codes(conn, leader["id"]))
-            for c in dict.fromkeys([str(joiner["contributor_code"]), *_crew_codes(conn, joiner["id"])]):
-                if c in on_lead:
-                    continue
-                conn.execute(
-                    "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, merge_id, joined_at) "
-                    "VALUES (%s, %s, 'crew', 'desk_merge', %s, %s)",
-                    (leader["id"], c, merge_id, t),
-                )
-                added.append(c)
-        w = open_window(t, p)
-        conn.execute(
-            "INSERT INTO decision_windows (merge_id, opens_at, closes_at, max_closes_at) VALUES (%s, %s, %s, %s)",
-            (merge_id, w.opens_at, w.closes_at, w.max_closes_at),
-        )
-        for idea in (leader, joiner):  # L-MERGE.effects/6: both conversations stay, each gets a line
-            adapters.say(conn, str(idea["id"]), "desk.merged", author_user_id=user_id,
-                         payload={"merge_id": merge_id}, at=t)  # fmt: skip
-        adapters.tell(
-            conn, "desk_merge", sorted({u for c in credited if (u := user_of(conn, c))}),
-            idea_uuid=str(leader["id"]), sender=user_id,
-            actions=[("Open the idea", f"/ideas/{leader['idea_id']}", "primary")], refs={"merge_id": merge_id},
-        )  # fmt: skip
-        adapters.schedule(conn, "committee.window_close", f"merge:{merge_id}", w.closes_at)
-        audit(conn, actor(user_id), "desk.merge", f"idea:{joiner['idea_id']}",
-              before={"status": joiner["status"]},
-              after={"merge_id": merge_id, "lead_idea_id": leader["idea_id"], "team_up": team_up,
-                     "crew_added": len(added)})  # fmt: skip
-        return {
-            "id": merge_id, "lead_idea_id": leader["idea_id"], "merged_idea_id": joiner["idea_id"],
-            "by": person_by_user(conn, user_id).as_json(), "via": "review_desk", "team_up": team_up,
-            "note": masked, "at": t.isoformat(), "window": _window_json(w),
-            "banner": merge.banner(this_side, other_side, lead, team_up),
-        }  # fmt: skip
+    leader, joiner = (this, other) if lead == "this" else (other, this)
+    credited = own_codes(conn, leader) | own_codes(conn, joiner)
+    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip())
+    merge_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO merges (id, lead_idea_uuid, merged_idea_uuid, via, by_user_id, team_up, note_encrypted, "
+        "prior_status, at) VALUES (%s, %s, %s, 'review_desk', %s, %s, %s, %s, %s)",
+        (merge_id, leader["id"], joiner["id"], user_id, team_up,
+         seal(masked, "merges", "note_encrypted", merge_id), joiner["status"], t),
+    )  # fmt: skip
+    # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped
+    conn.execute(
+        "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
+    )
+    conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
+    closed = conn.execute(
+        "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
+        "RETURNING id",
+        (t, joiner["id"]),
+    ).fetchall()
+    # L-INBOX.rules/3: the joining idea's questions leave Needs you with their reminders
+    for done in closed:
+        adapters.resolve(conn, adapters.questions_key(str(done["id"])))
+    # L-MERGE.effects/4: the joining sharer and their live crew join the lead's crew, never as a second lead
+    added: list[str] = []
+    if team_up:
+        on_lead = set(_crew_codes(conn, leader["id"]))
+        for c in dict.fromkeys([str(joiner["contributor_code"]), *_crew_codes(conn, joiner["id"])]):
+            if c in on_lead:
+                continue
+            conn.execute(
+                "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, merge_id, joined_at) "
+                "VALUES (%s, %s, 'crew', 'desk_merge', %s, %s)",
+                (leader["id"], c, merge_id, t),
+            )
+            added.append(c)
+    w = open_window(t, p)
+    conn.execute(
+        "INSERT INTO decision_windows (merge_id, opens_at, closes_at, max_closes_at) VALUES (%s, %s, %s, %s)",
+        (merge_id, w.opens_at, w.closes_at, w.max_closes_at),
+    )
+    for idea in (leader, joiner):  # L-MERGE.effects/6: both conversations stay, each gets a line
+        adapters.say(conn, str(idea["id"]), "desk.merged", author_user_id=user_id,
+                     payload={"merge_id": merge_id}, at=t)  # fmt: skip
+    adapters.tell(
+        conn, "desk_merge", sorted({u for c in credited if (u := user_of(conn, c))}),
+        idea_uuid=str(leader["id"]), sender=user_id,
+        actions=[("Open the idea", f"/ideas/{leader['idea_id']}", "primary")], refs={"merge_id": merge_id},
+    )  # fmt: skip
+    adapters.schedule(conn, "committee.window_close", f"merge:{merge_id}", w.closes_at)
+    audit(conn, actor(user_id), "desk.merge", f"idea:{joiner['idea_id']}",
+          before={"status": joiner["status"]},
+          after={"merge_id": merge_id, "lead_idea_id": leader["idea_id"], "team_up": team_up,
+                 "crew_added": len(added)})  # fmt: skip
+    return {
+        "id": merge_id, "lead_idea_id": leader["idea_id"], "merged_idea_id": joiner["idea_id"],
+        "by": person_by_user(conn, user_id).as_json(), "via": "review_desk", "team_up": team_up,
+        "note": masked, "at": t.isoformat(), "window": _window_json(w),
+        "banner": merge.banner(this_side, other_side, lead, team_up),
+    }  # fmt: skip
 
 
 def reverse_merge(conn: Conn, merge_id: str, user_id: str, note_masked: str, at: dt.datetime) -> None:
