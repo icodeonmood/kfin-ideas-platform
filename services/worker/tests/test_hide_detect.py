@@ -311,3 +311,21 @@ def test_l_hide_rules_7_a_refused_own_idea_is_audited_after_the_rollback(
     assert refused.status_code == 403
     assert json.loads(bytes(refused.body)) == {"error": {"code": "forbidden", "message": ""}}
     assert written == [("u1", "hide.own_idea_refused", "i1", {"action": "desk_hide"})]
+
+
+def test_l_hide_detect_a_word_ends_after_its_marks_in_devanagari_and_latin() -> None:
+    """A (BLD-C066): combining marks continue a word, so a made-up name hidden as "किरण सुधाकलन" is not masked inside
+    "किरण सुधाकलनों" (which would leave "ों" after the mask); it is masked before a space, a danda or a comma. The
+    same holds for an accent typed as a mark in Latin, and the old Latin cases stay."""
+    name = "किरण सुधाकलन"
+    text = f"{name}ों से बात हुई। फिर {name} ने कहा, {name}। {name},"
+    places = detect.value_places(text, name)
+    assert [text[s:e] for s, e in places] == [name] * 3
+    assert all(not text[e:].startswith("ों") for _, e in places)
+    masked, n = detect.mask_in(text, name, detect.mask("name", name))
+    assert n == 3 and masked.startswith(f"{name}ों से") and masked.count("Name ••••") == 3
+    assert detect.value_places("किरणों", "किरण") == [] and detect.value_places("किरण ने", "किरण") == [(0, 4)]
+    assert detect.same_value(name, name) and not detect.same_value("किरण", "किरणों")
+    assert detect.value_places("José and Jose went", "Jose") == [(10, 14)]
+    assert detect.value_places("Ask kiran  rao, not Kiran Raona", "Kiran Rao") == [(4, 14)]
+    assert detect.value_places("Folio 1234567/89, again 1234567/89.", "1234567/89") == [(6, 16), (24, 34)]

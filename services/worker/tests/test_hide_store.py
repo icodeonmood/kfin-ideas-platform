@@ -864,3 +864,91 @@ def test_l_hide_rules_7_a_reviewer_never_hides_on_their_own_or_a_merged_in_idea(
     assert db.execute("SELECT title FROM ideas WHERE id = %s", (lead,)).fetchone()["title"].startswith(NAME)
     d = desk_hide(db, lead, source_kind="title", source_id="title", start=0, end=len(NAME), by=other)
     assert d["kind"] == "name"
+
+
+def test_l_hide_detect_a_recheck_waits_while_the_assistant_is_off_and_is_audited_when_it_gives_up(
+    hdb: Any,
+) -> None:
+    """B (BLD-C067): a re-check queued while the assistant was on, run while `ai.all` is off, fails with
+    `GatekeeperUnavailable("ai_off")` and calls no model, so the runner tries again instead of finishing with nothing
+    found. Its last attempt goes dead and is audited (`hide.recheck_gave_up`) with IDs and the code only."""
+    import jobs.handlers  # noqa: F401 (registers hide.recheck and its on_dead)
+    from core import killswitch
+    from gateway.routes import FAKE_SCRIPT, RouteError
+    from hide.core import GatekeeperUnavailable
+    from jobs.runner import run_one
+
+    db = hdb
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    FAKE_SCRIPT.append(RouteError("connection"))
+    mid, out = message(db, iid, uid, f"Forms come back from {ADDRESS} every week", gatekeeper=True)
+    job = db.execute(
+        "SELECT id, payload, max_attempts FROM jobs WHERE type = 'hide.recheck' AND payload->>'idea_uuid' = %s",
+        (iid,),
+    ).fetchone()
+    calls = "SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s"
+    calls_before = count(db, calls, scope_for(iid))
+    gave = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s"
+    gave_before = count(db, gave, f"idea:{iid}")
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    try:
+        with pytest.raises(GatekeeperUnavailable) as off:
+            hide_recheck.run(db, job["payload"])
+        assert str(off.value) == "ai_off"
+        assert masked_message(db, mid) == out.masked  # nothing lost while it waits
+        db.execute(
+            "UPDATE jobs SET attempts = max_attempts - 1, run_at = '1999-01-01' WHERE id = %s", (job["id"],)
+        )  # the runner's last attempt, first in its queue
+        assert run_one(db, "test-hide-recheck")
+    finally:
+        db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
+        killswitch.clear_cache()
+    done = db.execute("SELECT state, last_error FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    assert (done["state"], done["last_error"]) == ("dead", "GatekeeperUnavailable")
+    assert count(db, gave, f"idea:{iid}") == gave_before + 1
+    row = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s ORDER BY id DESC",
+        (f"idea:{iid}",),
+    ).fetchone()
+    assert row["actor"] == "system"
+    assert row["after"] == {
+        "source": "message", "source_id": mid, "code": "ai_off", "recheck_job": job["id"],
+        "attempts": job["max_attempts"],
+    }  # fmt: skip
+    assert count(db, calls, scope_for(iid)) == calls_before  # no model call while the assistant is off
+
+
+def test_l_hide_rules_7_two_desk_hides_on_an_unmapped_authors_message_leave_a_correct_copy(hdb: Any) -> None:
+    """C (BLD-C066): a conversation message whose author is no longer mapped has no own words and no owner, so each
+    desk hide masks its copy in place and its details keep no span; a second hide never garbles the copy."""
+    db = hdb
+    NAME, OTHER = made_up_name(), made_up_name()
+    reviewer, _ = person(db)
+    _, code = person(db)
+    iid = idea(db, code, shared=True)
+    eid, unmapped = str(uuid.uuid4()), f"CTR-{secrets.token_hex(3)}"  # a code no longer in contributor_map
+    text = f"Ask {NAME} and then {OTHER} at the branch. {NAME} knows"
+    db.execute(
+        "INSERT INTO conversation_entries (id, idea_uuid, type, author_code, text_encrypted) "
+        "VALUES (%s, %s, 'message', %s, %s)",
+        (eid, iid, unmapped, seal_text("conversation_entries", "text_encrypted", eid, text)),
+    )
+    for value in (NAME, OTHER):
+        seen = masked_in(db, "conversation_entries", eid)
+        at = seen.index(value)
+        d = desk_hide(
+            db, iid, source_kind="conversation", source_id=eid, start=at, end=at + len(value), by=reviewer,
+            selected=value,
+        )  # fmt: skip
+        assert d["kind"] == "name"
+    assert masked_in(db, "conversation_entries", eid) == (
+        f"Ask {mask('name', NAME)} and then {mask('name', OTHER)} at the branch. {mask('name', NAME)} knows"
+    )
+    rows = db.execute(
+        "SELECT span_start, found_by FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", (iid, eid)
+    ).fetchall()
+    assert len(rows) == 2 and all(r["span_start"] is None and r["found_by"] == "reviewer" for r in rows)
+    assert count(db, "SELECT count(*) AS n FROM idea_words_sealed WHERE source_id = %s", eid) == 0
+    assert helpers.tables_containing(db, NAME) == [] and helpers.tables_containing(db, OTHER) == []

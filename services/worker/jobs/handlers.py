@@ -316,3 +316,11 @@ def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     from hide import recheck
 
     recheck.run(conn, payload)
+
+
+@on_dead("hide.recheck")
+def hide_recheck_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """The re-check's last attempt failed: audited with IDs and the code only (BLD-C067)."""
+    from hide import recheck
+
+    recheck.gave_up(conn, payload)
