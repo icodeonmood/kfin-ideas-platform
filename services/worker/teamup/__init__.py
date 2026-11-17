@@ -7,6 +7,8 @@ L-MERGE.effects for `lead_accepted`, A-API.team-up).
   `desk_merge`, so the two can converge after launch).
 - `crew`: leaving a crew and the lead removing a member (L-TEAMUP/11, NOT DRAWN default).
 - `routes`: the `/internal/*` router, mounted at the end of `api/app.py`.
+- `inbox_ops`: the lead's Decline, Team up only and Merge it as Inbox buttons, registered in lane A's Inbox registry
+  (`notify.ops`) when this package loads, if that registry is there (BLD-F028).
 
 Other lanes call `close_requests_for(conn, idea_uuid)` when an idea closes (withdrawn, not picked, not now, merged
 away), so its waiting requests close with it (L-TEAMUP.states); reads also settle them lazily.
@@ -15,6 +17,8 @@ away), so its waiting requests close with it (L-TEAMUP.states); reads also settl
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+from teamup import inbox_ops
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -27,3 +31,6 @@ def close_requests_for(conn: Conn, idea_uuid: Any, at: dt.datetime | None = None
     from teamup.requests import close_requests_for as _close
 
     return _close(conn, idea_uuid, at)
+
+
+inbox_ops.register()
