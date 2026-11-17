@@ -10,7 +10,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Draft, HiddenDetail } from "@/lib/contracts";
+import type { Draft, HiddenDetail, IdeaPreview, SimilarMatch } from "@/lib/contracts";
 import type { VoiceCaptureState } from "@/lib/voice-capture";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -439,20 +439,20 @@ describe("S-04B similar strip: Team up opens lane F's own sheet with the draft (
     idea: {
       id: "IDEA-2026-001412",
       title: "Rejection SMS codes confuse investors",
-      summary: "Investors get a code, not a reason, and then they call the branch.",
+      status: "with_review_desk",
       area: "Investor service",
-      stage: "with_desk",
-      stage_label: "With the review desk",
+      city: "Hyderabad",
+      shared_at: "2026-11-02T10:30:00+05:30",
       lead: RAVI,
       crew_faces: [RAVI],
       crew_count: 4,
       in_their_words: "Investors get a code, not a reason, and then they call us.",
       looking_for: "Someone who takes these calls at a branch every day.",
       hue: 1,
-    },
+    } as IdeaPreview,
     strength: "close",
     reason: "Close match: the same R07 SMS and the same calls",
-  };
+  } as SimilarMatch;
 
   it("C-SHEET-TEAMUP from the strip's Preview: the real sheet loads for that idea with 'Your draft', and the row is its opener", async () => {
     route = (s) => {
@@ -484,7 +484,7 @@ describe("S-04B similar strip: Team up opens lane F's own sheet with the draft (
       return {
         status: 200,
         body: draft({
-          parts: { ...draft().parts, similar: { state: "filled", value: [MATCH] } } as Draft["parts"],
+          parts: { ...draft().parts, similar: { state: "filled", value: [MATCH] } },
         }),
       };
     };
