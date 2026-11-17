@@ -227,7 +227,7 @@ export type SettingsError = ApiError<"bad_setting" | "teams_off" | "try_again" |
 export interface ShellResponse {
   inbox_unread: number;
   drafts: { id: string; title: string; saved_label: string }[];
-  ideas: { id: string; title: string; status_dot: string }[];
+  ideas: { id: string; title: string; status_dot: string; status_label: string }[];
   desk?: { waiting: { id: string; title: string; label: string }[] };
   committee?: { closing: { id: string; title: string; label: string }[] };
 }

@@ -624,22 +624,14 @@ def _public_row(row: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-# --- C-SIDEBAR's Drafts and Your ideas (A-API.me): read on every navigation, so two bounded queries ---------------
+# --- C-SIDEBAR's Your ideas (A-API.me `ideas`): read on every navigation, so one bounded query ----------------------
+# The sidebar's drafts are lane C's L-DRAFT read (`saved_labels.sidebar`), so each list has one source.
 
-SHELL_DRAFTS = 2  # C-SIDEBAR.anatomy/4: "up to 2 drafts"
-SHELL_IDEAS = 3  # "up to 3, with View all"
+SHELL_IDEAS = 3  # C-SIDEBAR.anatomy/4: "up to 3, with View all"
 # C-SIDEBAR.anatomy/4: warn for needs you, blue for active, grey otherwise. The names are the status colours'
 # (F-COLOR.status, C-PILL): the grey dot is `neutral` (`--faint`). Keyed by S-07's own filter groups.
 SHELL_DOT = {"needs_you": "warn", "with_review_desk": "blue", "picked_and_building": "blue"}
 
-# The person's own drafts, not archived (archived ones are only under My ideas → Drafts), as S-07 orders them.
-_SHELL_DRAFTS_SQL = (
-    "SELECT i.id, i.title, i.saved_at, i.created_at, i.saved_device, i.saved_device_id FROM ideas i "
-    "WHERE i.contributor_code = (SELECT m.contributor_code FROM contributor_map m JOIN users u ON u.id = m.user_id "
-    "WHERE m.user_id = %(user)s AND u.active) "
-    "AND i.status = 'draft' AND i.archived_at IS NULL "
-    "ORDER BY coalesce(i.saved_at, i.created_at) DESC, i.id LIMIT %(n)s"
-)
 # The person's own shared ideas (S-07's Yours list without its drafts), in S-07's "Latest activity" order: the latest
 # of the status change, the save, the share, the question set's sent and answered times (`read.question_set`) and the
 # decision's time, or the committee's when it reversed it (`read.decision`, `track.decided`). Ties keep S-07's
@@ -669,31 +661,16 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
-def shell_lists(
-    conn: Conn, user_id: str, device_id: str | None = None, *, now: dt.datetime | None = None
-) -> dict[str, list[dict[str, str]]]:
-    """C-SIDEBAR.anatomy/4 (A-API.me `drafts` and `ideas`): up to two drafts with where they were saved, and up to
-    three of the person's own shared ideas with a status dot. The same rows, order, titles and links as S-07 lists
-    first (`my_ideas`, list Yours, sort Latest activity): a draft's id is its row id (`/share/{id}`), an idea's its
-    reference (`/ideas/{ref}`). Teamed-up ideas are not the person's own and are not listed. An unknown or inactive
-    person gets empty lists. The person's own titles only; nothing here is logged (non-negotiable 3)."""
-    out: dict[str, list[dict[str, str]]] = {"drafts": [], "ideas": []}
+def shell_lists(conn: Conn, user_id: str) -> dict[str, list[dict[str, str]]]:
+    """C-SIDEBAR.anatomy/4 (A-API.me `ideas`): up to three of the person's own shared ideas, each with a status dot
+    and S-07's pill words for it (`status_label`, so the dot is never colour alone, F-A11Y.rules/4). The same rows,
+    order, titles and links as S-07 lists first (`my_ideas`, list Yours, sort Latest activity); an idea's id is its
+    reference (`/ideas/{ref}`). Teamed-up ideas are not the person's own and are not listed. Ideas only: the
+    sidebar's drafts are lane C's L-DRAFT read. An unknown or inactive person gets an empty list. The person's own
+    titles only; nothing here is logged (non-negotiable 3)."""
+    out: dict[str, list[dict[str, str]]] = {"ideas": []}
     if not _is_uuid(user_id):
         return out
-    t = now or read.now()
-    for r in conn.execute(_SHELL_DRAFTS_SQL, {"user": user_id, "n": SHELL_DRAFTS}).fetchall():
-        draft = dict(r)
-        # The board's words, "Friday, on your phone" (C-SIDEBAR.anatomy/4, J-RESUME/2): S-07's save day
-        # (`saved_when`, same days) without its clock time, then S-07's device wording.
-        saved = weekday_or_day(draft["saved_at"] or draft["created_at"], t)
-        label = f"{saved}, {_where(_saved_on(draft, device_id))}"
-        out["drafts"].append(
-            {
-                "id": str(draft["id"]),
-                "title": draft["title"] or "Your draft",
-                "saved_label": label[:1].upper() + label[1:],
-            }
-        )
     params = {"user": user_id, "n": SHELL_IDEAS, "decided": list(DECIDED_STATUSES)}
     for r in conn.execute(_SHELL_IDEAS_SQL, params).fetchall():
         idea = dict(r)
@@ -705,6 +682,7 @@ def shell_lists(
                 "id": key,
                 "title": idea["title"] or key,
                 "status_dot": SHELL_DOT.get(group_of(status), "neutral"),
+                "status_label": pill(status)["label"],  # S-07's pill words (C-PILL, E-ENUMS.idea-status)
             }
         )
     return out
