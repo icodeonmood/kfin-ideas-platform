@@ -3,6 +3,7 @@
  * is what the screen reports. Framework-free, so the failure paths are tested without a browser.
  */
 import { replyError } from "@/lib/desk/reply";
+import { COUNTS_EVENT } from "@/lib/inbox-events";
 
 /** V-FIELDS.answer/1: up to 2,000 characters, with a counter once the answer is near the limit. */
 export const MAX_ANSWER = 2000;
@@ -39,4 +40,20 @@ export async function putAnswer(questionId: string, text: string): Promise<SaveR
     message: worker || res.status === 503 ? (e?.message ?? SAVE_FAILED) : SAVE_FAILED,
     retry: !worker,
   };
+}
+
+/** After the answers send: they leave "Needs you" (L-INBOX.rules/3), so every Inbox count is read again and the
+ * shell hears it on the reader's COUNTS_EVENT, as it does when the reader opens or answers an item (V-ACC.track/8).
+ * Never throws; a count that cannot be read waits for the next page. */
+export async function tellInboxCounts(): Promise<void> {
+  try {
+    const res = await fetch("/api/inbox/counts", { cache: "no-store" });
+    if (!res.ok) return;
+    const counts: unknown = await res.json();
+    if (!counts || typeof counts !== "object" || typeof (counts as { unread?: unknown }).unread !== "number")
+      return;
+    window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: counts }));
+  } catch {
+    return;
+  }
 }
