@@ -16,7 +16,7 @@ from core import killswitch
 from similar import index, match_shared, similar_for
 from similar import matching as m
 from similar.preview import Viewer
-from similar.views import matches_for
+from similar.views import keep_separate, matches_for
 
 
 def _user(conn: Any, first: str) -> str:
@@ -240,3 +240,18 @@ def test_bld_c092_my_request_and_merged_ideas(db: Any, seeded: dict[str, Any]) -
     assert request["note"].startswith("My factsheet idea")
     assert [b["id"] for b in request["brought"]] == [e1.ref]
     assert t11.ref not in out and out[r2.ref]["strength"] == "close"  # merged into Rekha's R2
+
+
+def test_bld_c095_keep_mine_separate_is_recorded_for_the_reviewer(db: Any, seeded: dict[str, Any]) -> None:
+    t2, t1 = seeded["T2"], seeded["T1"]  # T2 asked Rekha to merge (kept as it is); T1 found R1 while writing
+    tanvi, pallavi = Viewer.of(db, _user(db, "Tanvi")), Viewer.of(db, _user(db, "Pallavi"))
+    assert keep_separate(db, t1.uuid, pallavi) is None  # not hers
+    assert keep_separate(db, seeded["T5"].uuid, tanvi) is None  # already sent
+    out = keep_separate(db, t1.uuid, tanvi)
+    assert out == {"kept_separate": True, "found_while_drafting": 1}
+    assert db.execute("SELECT kept_separate FROM ideas WHERE id = %s", (t1.uuid,)).fetchone()["kept_separate"]
+    assert {x["outcome"] for x in _links(db, t1.uuid).values()} == {"kept_separate"}
+    keep_separate(db, t2.uuid, tanvi)
+    assert _links(db, t2.uuid)[seeded["R1"].ref]["outcome"] == "merge_asked"
+    assert keep_separate(db, t1.uuid, tanvi, on=False) == {"kept_separate": False, "found_while_drafting": 1}
+    assert {x["outcome"] for x in _links(db, t1.uuid).values()} == {None}

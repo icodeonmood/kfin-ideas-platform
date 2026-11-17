@@ -42,6 +42,12 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  // "Keep mine separate" is part of sending a draft (BLD-C095).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/similar\/keep-separate\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,

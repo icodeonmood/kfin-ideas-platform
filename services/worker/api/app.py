@@ -373,6 +373,22 @@ def similar_view(idea_key: str, user_id: str) -> JSONResponse:
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
+@app.post("/internal/ideas/{idea_key}/similar/keep-separate", dependencies=[Depends(require_token)])
+def similar_keep_separate(idea_key: str, body: dict[str, Any]) -> JSONResponse:
+    """ "Keep mine separate" or "Show them again" on the sharer's draft (L-SIMILAR.rules/8, BLD-C095)."""
+    from similar.preview import Viewer
+    from similar.views import keep_separate
+
+    on = body.get("on", True)
+    if not isinstance(on, bool):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        out = keep_separate(conn, idea_key, Viewer.of(conn, str(body.get("user_id") or "")), on=on)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out)
+
+
 @app.post("/internal/ideas/{idea_uuid}/similar/run", dependencies=[Depends(require_token)])
 def similar_run(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     """Match a draft or idea now (L-SIMILAR.rules/4, /5; BLD-C092). `found_while`: drafting, checking or later;

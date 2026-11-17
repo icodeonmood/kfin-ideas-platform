@@ -130,3 +130,30 @@ def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | 
             match["my_request"] = request
         out.append(match)
     return out
+
+
+def keep_separate(conn: Conn, key: str, viewer: Viewer, *, on: bool = True) -> dict[str, Any] | None:
+    """ "Keep mine separate" on Check it (L-SIMILAR.rules/8, C-SIMGRID.grid/4): recorded on the draft and on each
+    similar idea found so far, for the reviewer ("2 found while she wrote. She kept hers separate."). `on=False` is
+    "Show them again". The sharer's own unsent draft only, else None (answer 404). A merge request stays as it is."""
+    idea = find_idea(conn, key)
+    if idea is None or idea["contributor_code"] not in viewer.codes or idea["status"] != "draft":
+        return None
+    with conn.transaction():
+        conn.execute("UPDATE ideas SET kept_separate = %s WHERE id = %s", (on, idea["id"]))
+        if on:
+            conn.execute(
+                "UPDATE similar_links SET outcome = 'kept_separate' WHERE idea_uuid = %s "
+                "AND (outcome IS NULL OR outcome = 'previewed')",
+                (idea["id"],),
+            )
+        else:
+            conn.execute(
+                "UPDATE similar_links SET outcome = NULL WHERE idea_uuid = %s AND outcome = 'kept_separate'",
+                (idea["id"],),
+            )
+        found = conn.execute(
+            "SELECT count(*) AS n FROM similar_links WHERE idea_uuid = %s AND found_while = 'drafting'",
+            (idea["id"],),
+        ).fetchone()
+    return {"kept_separate": on, "found_while_drafting": int(found["n"]) if found else 0}

@@ -101,6 +101,7 @@ endpoints:
   - GET /api/ideas/{id}                               see_org_ideas
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
   - GET /api/ideas/{id}/similar                       see_org_ideas   # SimilarMatch[]; the sharer, or the desk and committee (BLD-C092)
+  - POST /api/ideas/{id}/similar/keep-separate       submit          # Keep mine separate on the sharer's draft (BLD-C095; behind submissions)
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
   - GET /api/attachments/{id}                         open_attachments
