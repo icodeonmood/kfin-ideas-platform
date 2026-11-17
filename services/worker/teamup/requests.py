@@ -158,7 +158,8 @@ def end_sent_drafts(conn: Conn, idea_uuid: Any, at: dt.datetime | None = None) -
 
 def settle(conn: Conn, idea: dict[str, Any]) -> None:
     """Close what is still waiting on an idea that has closed, and end draft merge requests whose draft was sent or
-    archived since, so every read agrees (lazy, idempotent)."""
+    archived since, so every read agrees (lazy, idempotent). Callers call it only once `ended(req)` has found a
+    request to settle, so a read writes only when something it shows has changed (BLD-F024)."""
     with conn.transaction():
         if is_closed(str(idea["status"])):
             close_requests_for(conn, idea["id"])
@@ -175,7 +176,9 @@ def ended(req: Req) -> bool:
     been sent or archived since (BLD-F024). `settle` puts it in its closed state."""
     if not req.waiting:
         return False
-    return is_closed(str(req.idea["status"])) or (req.kind == "merge" and not _draft_open(req.brought[0]))
+    if is_closed(str(req.idea["status"])):
+        return True
+    return req.kind == "merge" and bool(req.brought) and not _draft_open(req.brought[0])
 
 
 # --- shapes ----------------------------------------------------------------------------------------------------
@@ -324,6 +327,36 @@ def _latest_mine(conn: Conn, idea: dict[str, Any], code: str) -> Req | None:
     return load_request(conn, str(row["id"])) if row else None
 
 
+def _settled_mine(conn: Conn, idea: dict[str, Any], code: str | None) -> Req | None:
+    """The person's latest request on this idea, settled first when it has ended (BLD-F024). At most one of theirs
+    waits on an idea at a time (L-TEAMUP.rules/4), and it is the latest, so this is the only one a read must
+    settle; a read that finds nothing ended writes nothing."""
+    mine = _latest_mine(conn, idea, code) if code else None
+    if mine is not None and ended(mine):
+        settle(conn, mine.idea)
+        mine = load_request(conn, mine.id)
+    return mine
+
+
+def _as_uuid(value: Any) -> str | None:
+    try:
+        return str(uuid.UUID(value)) if isinstance(value, str) else None
+    except ValueError:
+        return None
+
+
+def _named_ideas(conn: Conn, raw: Any) -> list[Any]:
+    """The row ids of the ideas a list of references names, unchecked: only so they can be locked in order first."""
+    out: list[Any] = []
+    for ref in raw if isinstance(raw, list) else []:
+        if isinstance(ref, str):
+            try:
+                out.append(load_idea(conn, ref)["id"])
+            except Refused:
+                continue
+    return out
+
+
 def waiting_from(conn: Conn, idea_uuid: Any, code: str) -> bool:
     """L-TEAMUP.rules/4: one open request per person per idea, counting a draft merge request to it."""
     row = conn.execute(
@@ -352,10 +385,9 @@ def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
     that shows the idea agrees: "Waiting for {lead}" with Withdraw (V-ACC.teamup/4), on the crew, or Team up."""
     code = code_of(conn, user_id)
     idea = load_idea_for(conn, ref, code)
-    settle(conn, idea)
+    mine = _settled_mine(conn, idea, code)
     role = crew_role(conn, idea["id"], code) if code else None
     lead = person_by_code(conn, lead_code(conn, idea))
-    mine = _latest_mine(conn, idea, code) if code else None
     if role is not None:
         why: str | None = "already_on_crew"
     elif is_closed(str(idea["status"])):
@@ -408,10 +440,17 @@ def send(
     if made is not None:
         req = load_request(conn, made)
         return {**request_json(conn, req), "after": after_for(conn, req, None)}
-    idea = load_idea_for(conn, ref, code_of(conn, user_id))
-    settle(conn, idea)
+    me = code_of(conn, user_id)
+    idea = load_idea_for(conn, ref, me)
+    _settled_mine(conn, idea, me)  # an ended request of theirs no longer counts as waiting
+    raw_draft = body.get("draft_id")
+    draft_id = raw_draft if isinstance(raw_draft, str) and raw_draft else None
     with audited(conn), conn.transaction():
         code = require_code(conn, user_id)
+        # BLD-F027: every idea this send touches, in id order, before anything else: the idea, the ideas brought
+        # (the foreign keys on `teamup_brought` share-lock them) and the draft kept separate (marked below).
+        lock_ideas(conn, idea["id"], *_named_ideas(conn, body.get("brought_idea_ids")),
+                   *([d] if (d := _as_uuid(draft_id)) else []))  # fmt: skip
         idea = load_idea_for(conn, ref, code, lock=True)
         # the same key sent twice at once: the second waited for the lock, and returns the first
         made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
@@ -443,8 +482,7 @@ def send(
             raise Refused(409, "already_requested", f"Waiting for {lead.first_name}") from None
         for b in brought:
             conn.execute("INSERT INTO teamup_brought (request_id, idea_uuid) VALUES (%s, %s)", (rid, b["id"]))
-        draft_id = body.get("draft_id")
-        if isinstance(draft_id, str) and draft_id:
+        if draft_id:
             # "Keep mine separate" from Check it (L-SIMILAR.rules/8, V-ACC.similar/7): the draft is marked, which
             # Check it's summary and the reviewer's page read ("kept it separate"), and the link's outcome is kept
             # for L-AUDIT.metrics.
