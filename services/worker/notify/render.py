@@ -242,6 +242,25 @@ def _left(row: dict[str, Any], now: dt.datetime) -> str:
     return "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
 
 
+def teamup_request_vars(refs: dict[str, Any], offered: list[str]) -> dict[str, Any]:
+    """Which request the lead reads (S-H2B.reader/1, L-INBOX.kinds): a "Merge request" when it brings an idea, so a
+    draft merge request (`request` "merge") and a sheet request with any idea brought (lane F's `tell_lead` posts
+    `request` "teamup" with `brought`, the number of ideas brought); a "Team-up request" when nothing comes along.
+    An item that names neither (the seed, BLD-A206) is a merge when it offers one. Lane F's reader words agree
+    (`teamup.rules.reader_words`): "idea" for one, "ideas" for more (BLD-A195)."""
+    raw = refs.get("brought")
+    brought = int(raw) if isinstance(raw, int) else 0  # True counts as one
+    merge = (
+        refs.get("request") == "merge"
+        or brought > 0
+        or ("request" not in refs and any(op.rsplit(".", 1)[-1] == "merge" for op in offered))
+    )
+    return {
+        "request": {"merge": merge, "team_only": not merge},
+        "brought": {"any": brought > 0, "count": brought, "many": brought > 1, "single": brought <= 1},
+    }
+
+
 def _kind_vars(
     conn: Conn,
     kind: str,
@@ -321,14 +340,8 @@ def _kind_vars(
                 other = _first_name_for_code(conn, code)
         out["other"] = {"possessive": _possessive(other)}
     elif kind == "teamup_request":
-        # Lane F says which in `request` ("teamup" or "merge"); an item that does not is a merge when it offers one.
         offered = [str(a.get("op") or "") for a in (row.get("actions") or []) if isinstance(a, dict)]
-        merge = refs.get("request") == "merge" or (
-            "request" not in refs and any(op.rsplit(".", 1)[-1] == "merge" for op in offered)
-        )
-        brought = refs.get("brought")
-        out["request"] = {"merge": merge, "team_only": not merge}
-        out["brought"] = {"any": bool(brought), "count": brought if isinstance(brought, int) else 0}
+        out.update(teamup_request_vars(refs, offered))
     elif kind == "teamup_answer":
         answer = refs.get("answer")
         out["answer"] = {"declined": answer == "decline", "approved": answer != "decline"}
