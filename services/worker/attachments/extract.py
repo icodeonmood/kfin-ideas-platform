@@ -331,7 +331,6 @@ def html_text(data: bytes) -> Extracted:
     return out
 
 
-
 def _inner(kind: str, data: bytes) -> Extracted:
     """One file inside a ZIP, read the way it would be read on its own (images and scanned pages by OCR)."""
     if kind in ("png", "jpg"):

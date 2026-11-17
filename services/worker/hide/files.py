@@ -82,7 +82,9 @@ def _join(pieces: list[tuple[str, str]]) -> tuple[str, list[int], list[str]]:
     return _SEP.join(parts), starts, where
 
 
-def hide_file(conn: Conn, idea_uuid: str, pieces: list[tuple[str, str]], *, by: str, att_id: str) -> FileFinds:
+def hide_file(
+    conn: Conn, idea_uuid: str, pieces: list[tuple[str, str]], *, by: str, att_id: str
+) -> FileFinds:
     """Detect and store the details in a file's text, in the caller's transaction. Re-running it on the same file
     (a retry) keeps the same rows. `by` is the users.id of whoever added the file: the one person who may read the
     values. Returns kinds and pages only."""
@@ -103,7 +105,14 @@ def hide_name(conn: Conn, idea_uuid: str, name: str, *, by: str, att_id: str) ->
     (patterns, names and the idea's hidden values; no model call, so adding a file never waits on one). Returns the
     masked copy, which is what is stored and shown."""
     done = hide_into(
-        conn, idea_uuid, name, by=by, source="file", source_id=f"{att_id}{NAME_SUFFIX}", gatekeeper=False, seal=False
+        conn,
+        idea_uuid,
+        name,
+        by=by,
+        source="file",
+        source_id=f"{att_id}{NAME_SUFFIX}",
+        gatekeeper=False,
+        seal=False,
     )
     return done.masked
 

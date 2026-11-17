@@ -6,6 +6,7 @@ never carry a file name, a link or anything read from a file (non-negotiable 3).
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -75,10 +76,11 @@ def file_content(att_id: str, user_id: str = "") -> Response:
     """The stored copy for `GET /files/:id/view`, once `rights` allows this person to open it."""
     try:
         with connect(autocommit=True) as conn:
-            data, mime, _name = files.content(conn, att_id, user_id)
+            data, mime, name = files.content(conn, att_id, user_id)
     except files.FileRefused as exc:
         return JSONResponse(exc.body(), status_code=exc.status, headers=NO_STORE)
-    return Response(content=data, media_type=mime, headers=NO_STORE)
+    # The shown (masked) name, percent-encoded, so the web app can name the download without a second read.
+    return Response(content=data, media_type=mime, headers={**NO_STORE, "X-File-Name": quote(name, safe="")})
 
 
 @router.post("/internal/files/{att_id}/retry")

@@ -52,7 +52,9 @@ def _looks_like_csv(data: bytes) -> bool:
 
 # ---- the 1% Club's files (BLD-E007's wider list; L-HIDE.files/5) ---------------------------------------------
 
-CFB = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # an OLE container: old Office files, and password-protected new ones
+CFB = (
+    b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # an OLE container: old Office files, and password-protected new ones
+)
 _ENCRYPTED_PACKAGE = "EncryptedPackage".encode("utf-16-le")
 _HTML = re.compile(rb"^\s*(?:<!--.*?-->\s*)*<(?:!doctype\s+html|html|head|body)[\s>]", re.I | re.S)
 MARKDOWN = (".md", ".markdown")

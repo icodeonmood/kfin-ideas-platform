@@ -138,7 +138,9 @@ def uploads() -> Uploads:
     s = get_settings()
     try:
         f = load_rule(Path(s.company_repo_path), "thresholds").data.get("files") or {}
-    except Exception:  # an unreadable rules file must not stop uploads; the defaults are the configured values
+    except (
+        Exception
+    ):  # an unreadable rules file must not stop uploads; the defaults are the configured values
         f = {}
     host = (urlsplit(s.app_base_url).hostname or "").lower()
     domains = [*(f.get("internal_link_domains") or ()), *s.kfin_domains, *([host] if host else [])]
@@ -307,7 +309,9 @@ def get_item(conn: Conn, att_id: str, user_id: str) -> dict[str, Any]:
     return item_json(conn, row, uploader=v.uploader, opens=opens)
 
 
-def items_for(conn: Conn, idea_uuid: str, user_id: str, *, answer_id: str | None = None) -> list[dict[str, Any]]:
+def items_for(
+    conn: Conn, idea_uuid: str, user_id: str, *, answer_id: str | None = None
+) -> list[dict[str, Any]]:
     """The files and links on an idea (or one answer) that this person may see, oldest first: for the draft and
     the edit page (S-05, S-06B), which list them in `Draft.files` and `Idea.files`."""
     sql = _ROW.replace("WHERE a.id = %s", "WHERE a.idea_uuid = %s AND a.kind IN ('file', 'link')")
@@ -378,7 +382,9 @@ def _owner(
         if row is None:
             raise _not_found()
         idea = dict(row)
-        mine = code == idea["contributor_code"] if idea["status"] == "draft" else code in own_codes(conn, idea)
+        mine = (
+            code == idea["contributor_code"] if idea["status"] == "draft" else code in own_codes(conn, idea)
+        )
         if not mine:
             raise _not_found()
         if idea["status"] in ("withdrawn", "merged"):
@@ -422,7 +428,9 @@ def _next_id(conn: Conn) -> str:
 
 
 def _key(att_id: str) -> str:
-    return f"att/{att_id}"
+    """The object's key: the id and a random part, so a key never names an object an earlier database left in a
+    shared store (dev and test stacks share one), and nothing can be guessed from it."""
+    return f"att/{att_id}/{uuid.uuid4().hex}"
 
 
 def _audit(conn: Conn, user_id: str, action: str, idea_uuid: str, after: dict[str, Any]) -> None:
@@ -466,9 +474,10 @@ def accept(
     with conn.transaction():
         owner = _owner(conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id)
         att_id = _next_id(conn)
+        key = _key(att_id)
         shown = hide_files.hide_name(conn, owner.idea_uuid, _clean_name(name), by=user_id, att_id=att_id)
         try:
-            store.put(s.s3_bucket_quarantine, _key(att_id), data)
+            store.put(s.s3_bucket_quarantine, key, data)
         except Exception:
             log.error("files.store_failed", attachment_id=att_id)
             raise FileRefused(502, "upload_failed", UPLOAD_FAILED) from None
@@ -477,7 +486,7 @@ def accept(
             "store_key, state, kind, file_state, answer_id, checks) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s)",
             (att_id, owner.idea_uuid, owner.code, user_id, shown[:200], MIME[kind], len(data),
-             hashlib.sha256(data).hexdigest(), _key(att_id), CHECKING, owner.answer_id, Jsonb({"type": kind})),
+             hashlib.sha256(data).hexdigest(), key, CHECKING, owner.answer_id, Jsonb({"type": kind})),
         )  # fmt: skip
         conn.execute(
             "INSERT INTO jobs (type, payload, dedupe_key) VALUES (%s, %s, %s)",
@@ -492,7 +501,9 @@ def accept(
 
 # ---- links (BLD-E001) ---------------------------------------------------------------------------------------------
 
-_HOST = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
+_HOST = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+)
 URL_MAX = 2000
 
 
@@ -509,7 +520,12 @@ def parse_link(text: str) -> tuple[str, str]:
         parts.port  # noqa: B018 (a bad port raises here)
     except ValueError:
         raise FileRefused(422, "not_a_link", NOT_A_LINK, field="url") from None
-    if parts.scheme.lower() not in ("http", "https") or not _HOST.match(host) or parts.username or parts.password:
+    if (
+        parts.scheme.lower() not in ("http", "https")
+        or not _HOST.match(host)
+        or parts.username
+        or parts.password
+    ):
         raise FileRefused(422, "not_a_link", NOT_A_LINK, field="url")
     return url, host
 
