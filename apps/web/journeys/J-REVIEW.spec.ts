@@ -4,11 +4,17 @@
  * Copy: reference/copy/Desk.md (S-R1), DeskIdea.md (S-R2, C-LISTEN, C-WORTH, C-PREVIEW, C-SHEET-MERGE), Status.md and
  * Inbox.md (what the sharer reads). BLD-E008: the boards' she/her for the sharer reads as the sharer's first name.
  * Cast: Kavya (sharer) is the record's sharer, Meera (reviewer) the record's reviewer, Ravi the other idea's sharer.
- * Seed: R1 (Rekha's, with Lavanya, opened 5 days ago, nothing asked, the oldest in To review) walks the main path and
- * is picked; P1 (Pallavi's, not opened, a question queued by Lavanya) walks the ask path and is opened there; Z1
- * (Zoya's, with Harish, questions overdue) is the clock; B1 (Bhavesh's, with Lavanya, both answered) has its answers
- * read. The merge previews Z1 from T6's page (T6 is
- * J-TRACK's and lists Z1 as similar; read only here). No two J-REVIEW ideas list each other as similar: GAP-SEED.
+ * Seed: J-REVIEW changes only its own records (lib SEED); R1 is J-SIMILAR's and J-TEAMUP's and is never touched here.
+ * P1 (Pallavi's, with the desk, never opened, one question Lavanya queued and never sent) walks the main path and is
+ * picked. It fits "decide without asking" as L-REVIEW defines it: a queued question is the reviewer's alone, so P1 is
+ * in To review with "No questions asked"; its panel is Asking, whose way on is "Decide without asking"
+ * (asking → deciding), and the queued question is dropped when the decision is sent.
+ * The ask path (A1 to A3) needs a record of its own at the same stage, and none is left: Z1's questions are sent and
+ * B1's answered, and the boards take "Ask about this" and "Ask … first" away in both states (DeskIdea.md "Sent,
+ * waiting", "Answered"). So A1 to A3 are GAP-SEED until lane E seeds P1's twin; their bodies are written for P1's
+ * queued set and move to that record. Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1 (Bhavesh's,
+ * with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is J-TRACK's and
+ * lists Z1 as similar; read only here). No two J-REVIEW ideas list each other as similar: GAP-SEED (M3).
  */
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
@@ -22,10 +28,11 @@ const TIME = String.raw`\d{1,2}(?::\d{2})? (?:am|pm)`; // "11:20 am", "6 pm"
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 const COUNTDOWN = String.raw`(?:\d+ days?|\d{2}:\d{2})`; // "3 days", "07:38"
 
-/** The reason Lavanya gives when she picks R1 (J-REVIEW/6); Rekha reads it word for word (J-REVIEW/7). */
+/** The reason Lavanya gives when she picks P1 (J-REVIEW/6); Pallavi reads it word for word (J-REVIEW/6, /7). */
 const REASON =
-  "Every branch looks these up by hand. The reason is already in the bank file, so the fix is small.";
-const WORTH_NOTE = "Every branch takes these calls daily, so I counted the hours across all of them.";
+  "Distributors re-send these papers because the check list is kept in two places. One list fixes it.";
+const WORTH_NOTE =
+  "Every distributor desk re-checks these papers, so I counted the hours across all of them.";
 const WORTH_HOURS = "40 to 60";
 
 function esc(s: string): string {
@@ -88,40 +95,46 @@ async function asOther(
   }
 }
 
-// --- J-REVIEW.main: decide without asking (R1, Lavanya; Rekha shared it) ------------------------------------------------
+// --- J-REVIEW.main: decide without asking (P1, Lavanya; Pallavi shared it) ---------------------------------------------
+
+/** The panel's way into Deciding: "Decide on this idea", or "Decide without asking" while P1's question is queued. */
+function decideButton(page: Page): Locator {
+  return page.getByRole("button", { name: /^(?:Decide on this idea|Decide without asking)$/ }).first();
+}
 
 step(
   "J-REVIEW/1",
   "S-R1",
   "To review lists the idea with its clock; Open lands on the idea and the sharer's edit window is closed",
-  { needs: ["S-R1", "S-R2", "L-REVIEW", "C-TABS", "C-SORTS", "S-06", "L-SUBMIT"] },
+  { needs: ["S-R1", "S-R2", "L-REVIEW", "C-TABS", "C-SORTS", "S-06", "L-SUBMIT"], changes: ["P1"] },
   async ({ page, browser }, info) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await openDesk(page, "lavanya", /^To review/);
     await expect(page.getByRole("button", { name: "Time left" })).toHaveAttribute("aria-pressed", "true");
-    const row = rowFor(page, r1.title);
-    await expect(row).toContainText("Rekha Saxena, Investor service, Hyderabad");
+    const row = rowFor(page, p1.title);
+    await expect(row).toContainText("Pallavi Joshi, Distributor services, Mumbai");
+    // Lavanya's queued question is hers alone until sent, so nothing has been asked (L-REVIEW.queue, L-QUESTIONS).
     await expect(row).toContainText("No questions asked");
     await expect(row).toContainText(new RegExp(`${COUNTDOWN} to decide|Overdue by`));
     await expect(row).toContainText(new RegExp(DAY));
 
-    await action(row, `Open: ${r1.title}`).click();
-    await page.waitForURL(new RegExp(`${esc(deskUrl(r1))}$`));
-    await expect(page.getByRole("heading", { level: 1, name: r1.title })).toBeVisible();
-    // The row's sharer line carries into the heading block (S-R2.layout/2).
+    await action(row, `Open: ${p1.title}`).click();
+    await page.waitForURL(new RegExp(`${esc(deskUrl(p1))}$`));
+    await expect(page.getByRole("heading", { level: 1, name: p1.title })).toBeVisible();
+    // The row's sharer line carries into the heading block (S-R2.layout/2); BLD-E008 for the board's "by her".
     await expect(
       page
         .getByText(
           new RegExp(
-            `^Shared ${DAY} by Rekha Saxena, Investor service, Hyderabad\\. Sorting confirmed by Rekha: a problem to fix, Investor service, saves time\\.$`,
+            `^Shared ${DAY} by Pallavi Joshi, Distributor services, Mumbai\\. Sorting confirmed by (?:Pallavi|them): a problem to fix, Distributor services, saves time\\.$`,
           ),
         )
         .first(),
     ).toBeVisible();
 
-    // L-REVIEW.open/1: once opened, the sharer's page is closed to edits and points to the conversation.
-    await asOther(browser, info, "rekha", { ref: "J-REVIEW/1", screen: "S-06" }, async (sharer) => {
-      await sharer.goto(ideaUrl(r1));
+    // L-REVIEW.open/1: P1 was never opened; now it is, the sharer's page is closed to edits and points to the conversation.
+    await asOther(browser, info, "pallavi", { ref: "J-REVIEW/1", screen: "S-06" }, async (sharer) => {
+      await sharer.goto(ideaUrl(p1));
       await expect(
         sharer
           .getByText(
@@ -142,32 +155,36 @@ step(
   "Reads the idea: listen, the sharer's own words, each part as shared",
   { needs: ["S-R2", "C-LISTEN", "L-LISTEN", "L-REVIEW"] },
   async ({ page }) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(r1));
+    await page.goto(deskUrl(p1));
     await expect(page.getByText("Listen to the whole idea").first()).toBeVisible();
     await expect(page.getByRole("button", { name: /^Play the whole idea, / })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Attachments and artefacts" })).toBeVisible();
     await expect(page.getByText("Everything that came with the idea").first()).toBeVisible();
 
     // "Her own words" (BLD-E008): the sharer's words as written, before the draft.
-    await expect(page.getByText("Rekha’s own words", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^(?:Pallavi’s|Their) own words$/)).toBeVisible();
     await expect(
-      page.getByText(/^As Rekha wrote them on [A-Z][a-z]+, before the draft\./).first(),
+      page.getByText(/^As (?:Pallavi|they) wrote them on [A-Z][a-z]+, before the draft\./).first(),
     ).toBeVisible();
     await action(page, "Read").click();
     await expect(
-      page.getByText(
-        "When a SIP debit fails the investor gets no reason. We look it up by hand for every call.",
-      ),
+      page.getByText("Distributors send the same empanelment papers two or three times."),
     ).toBeVisible();
 
     // The parts carry what the sharer gave; the way on is the panel.
     for (const part of ["The problem", "How often", "Who it affects", "What it’s worth", "Attached", "Fix"]) {
       await expect(page.getByRole("heading", { name: part, exact: true })).toBeVisible();
     }
-    await expect(page.getByText("Daily at every branch").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+    await expect(
+      page
+        .getByText(
+          "Distributors are asked for empanelment papers they already sent, because the check list is kept in two places.",
+        )
+        .first(),
+    ).toBeVisible();
+    await expect(decideButton(page)).toBeVisible();
   },
 );
 
@@ -177,37 +194,38 @@ step(
   "Revise what it's worth: the reviewer's figures and note reach the sharer's Inbox and page",
   {
     needs: ["S-R2", "C-WORTH", "L-WORTH", "S-H5", "C-INBOX-READER", "L-INBOX", "S-06"],
-    changes: ["R1"],
+    changes: ["P1"],
   },
   async ({ page, browser }, info) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(r1));
+    await page.goto(deskUrl(p1));
     await page.getByRole("button", { name: /^(Revise|Change) what it’s worth$/ }).click();
-    await expect(page.getByText("Rekha sees what you changed, with your note.")).toBeVisible();
+    await expect(page.getByText("Pallavi sees what you changed, with your note.")).toBeVisible();
     await page.getByRole("textbox", { name: /hours a month/i }).fill(WORTH_HOURS);
     await page.getByRole("textbox", { name: /^Note/ }).fill(WORTH_NOTE);
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
+    // The board's "She sees your figures next to hers." (BLD-E008): "theirs", or the name where a lane kept it.
     await expect(
       page.getByText(
-        "You’ve revised what it’s worth. Rekha sees your figures next to theirs when you decide.",
+        /^You’ve revised what it’s worth\. Pallavi sees your figures next to (?:theirs|Pallavi’s) when you decide\.$/,
       ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Change what it’s worth" })).toBeVisible();
     await expect(page.getByText(`${WORTH_HOURS} hours a month`).first()).toBeVisible();
 
     // L-WORTH/3–4: the sharer is told at once, and sees both figures with the note.
-    await asOther(browser, info, "rekha", { ref: "J-REVIEW/3", screen: "S-H5" }, async (sharer) => {
+    await asOther(browser, info, "pallavi", { ref: "J-REVIEW/3", screen: "S-H5" }, async (sharer) => {
       await sharer.goto("/inbox");
       await sharer
         .getByRole("button", {
           name: new RegExp(
-            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(r1.title)}`,
+            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(p1.title)}`,
           ),
         })
         .click();
-      await sharer.goto(ideaUrl(r1));
+      await sharer.goto(ideaUrl(p1));
       await expect(sharer.getByText(`${WORTH_HOURS} hours a month`).first()).toBeVisible();
       await expect(sharer.getByText(WORTH_NOTE).first()).toBeVisible();
     });
@@ -245,33 +263,40 @@ step(
   },
 );
 
+/** The board's "She sees your figures next to hers." after BLD-E008: "theirs", or the name where a lane kept it. */
+const NEXT_TO_THEIRS = String.raw`Pallavi sees your figures next to (?:theirs|Pallavi’s)`;
+
 step(
   "J-REVIEW/5",
   "S-R2",
-  "Decide on this idea turns the panel to Deciding: three choices, the committee's window, Send",
+  "Decide turns the panel to Deciding: three choices, the committee's window, Send; Back returns",
   { needs: ["S-R2", "L-REVIEW", "L-DECIDE"] },
   async ({ page }) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(r1));
+    await page.goto(deskUrl(p1));
     await expect(page.getByRole("heading", { name: "Review this idea" })).toBeVisible();
     // After J-REVIEW/3 the line says what was revised; the board's line otherwise.
     await expect(
       page
         .getByText(
-          /^(Clear enough\? Decide now\. If it’s worth more than Rekha could put into numbers, revise what it’s worth first\. Rekha sees your figures next to theirs\.|You’ve revised what it’s worth\. Rekha sees your figures next to theirs when you decide\.)$/,
+          new RegExp(
+            `^(?:Clear enough\\? Decide now\\. If it’s worth more than Pallavi could put into numbers, revise what it’s worth first\\. ${NEXT_TO_THEIRS}\\.|You’ve revised what it’s worth\\. ${NEXT_TO_THEIRS} when you decide\\.)$`,
+          ),
         )
         .first(),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Ask Rekha first/ })).toHaveAttribute(
+    // S-R2.panel.ask: collapsed by default, even with Lavanya's question queued.
+    await expect(page.getByRole("button", { name: /^Ask Pallavi first/ })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
 
-    await page.getByRole("button", { name: "Decide on this idea" }).click();
+    // With a question queued the panel is Asking, so the way on reads "Decide without asking" (L-REVIEW.panel).
+    await decideButton(page).click();
     await expect(page.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
     await expect(
-      page.getByText("Rekha reads your decision and your reason as soon as you send it."),
+      page.getByText("Pallavi reads your decision and your reason as soon as you send it."),
     ).toBeVisible();
     await expect(
       page.getByRole("radio", { name: /^Pick\s*Take it forward\. A build team is chosen next\.$/ }),
@@ -283,48 +308,49 @@ step(
     ).toBeVisible();
     await expect(
       page.getByRole("radio", {
-        name: /^Not picked\s*It won’t go ahead\. Say what happens to Rekha’s words\.$/,
+        name: /^Not picked\s*It won’t go ahead\. Say what happens to Pallavi’s words\.$/,
       }),
     ).toBeVisible();
     await expect(
       page
         .getByText(
           new RegExp(
-            `^The Ones Committee can review it for 30 days\\. Until ${DAY_Y} they can reverse it, with a note that goes to Rekha\\. After that, it stands\\.$`,
+            `^The Ones Committee can review it for 30 days\\. Until ${DAY_Y} they can reverse it, with a note that goes to Pallavi\\. After that, it stands\\.$`,
           ),
         )
         .first(),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Send decision to Rekha" })).toBeVisible();
-    // Back with nothing asked returns to Reviewing (L-REVIEW.panel).
+    await expect(page.getByRole("button", { name: "Send decision to Pallavi" })).toBeVisible();
+    // Back with nothing sent returns to where Lavanya came from (L-REVIEW.panel), the queued question kept.
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+    await expect(decideButton(page)).toBeVisible();
   },
 );
 
 step(
   "J-REVIEW/6",
   "S-R2",
-  "Pick with a reason and Send decision to Rekha: Rekha reads it at once, with the committee's date",
-  { needs: ["S-R2", "L-DECIDE", "L-COMMITTEE", "S-06"], changes: ["R1"] },
+  "Pick with a reason and Send decision to Pallavi: Pallavi reads it at once, with the committee's date",
+  { needs: ["S-R2", "L-DECIDE", "L-COMMITTEE", "S-06"], changes: ["P1"] },
   async ({ page, browser }, info) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(r1));
-    await page.getByRole("button", { name: "Decide on this idea" }).click();
+    await page.goto(deskUrl(p1));
+    await decideButton(page).click();
     await page.getByRole("radio", { name: /^Pick/ }).click();
     await page.getByRole("textbox", { name: "Why are you picking it?" }).fill(REASON);
-    await expect(page.getByText("Rekha reads this word for word.")).toBeVisible();
+    await expect(page.getByText("Pallavi reads this word for word.")).toBeVisible();
     const until = await capture(
       page.getByText(/^The Ones Committee can review it for 30 days\./).first(),
       new RegExp(`Until (${DAY_Y}) they can reverse it`),
     );
-    await page.getByRole("button", { name: "Send decision to Rekha" }).click();
-    await expect(page.getByRole("heading", { name: "Decision sent to Rekha" })).toBeVisible();
+    await page.getByRole("button", { name: "Send decision to Pallavi" }).click();
+    await expect(page.getByRole("heading", { name: "Decision sent to Pallavi" })).toBeVisible();
 
     // L-DECIDE.rules/3, /5: the reason word for word, at once, in the app; the window's date as the reviewer saw it.
-    await asOther(browser, info, "rekha", { ref: "J-REVIEW/6", screen: "S-06" }, async (sharer) => {
-      await sharer.goto(ideaUrl(r1));
+    await asOther(browser, info, "pallavi", { ref: "J-REVIEW/6", screen: "S-06" }, async (sharer) => {
+      await sharer.goto(ideaUrl(p1));
       await expect(sharer.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
       await expect(
         sharer.getByText(new RegExp(`^Lavanya from the review desk picked it on ${DAY}\\b.*\\.$`)).first(),
@@ -345,40 +371,47 @@ step(
 step(
   "J-REVIEW/7",
   "S-R2",
-  "Decision sent to Rekha with the committee's window; the idea is under Decided this week with the same date",
+  "Decision sent to Pallavi with the committee's window; the idea is under Decided this week with the same date",
   { needs: ["S-R2", "S-R1", "L-DECIDE", "L-COMMITTEE", "L-REVIEW"] },
   async ({ page }) => {
-    const r1 = await seeded("R1");
+    const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(r1));
-    await expect(page.getByRole("heading", { name: "Decision sent to Rekha" })).toBeVisible();
-    await expect(page.getByText(new RegExp(`^Today, ${TIME}\\. Rekha has it now\\.$`)).first()).toBeVisible();
-    await expect(page.getByText("Your reason, as Rekha reads it").first()).toBeVisible();
+    await page.goto(deskUrl(p1));
+    await expect(page.getByRole("heading", { name: "Decision sent to Pallavi" })).toBeVisible();
+    await expect(
+      page.getByText(new RegExp(`^Today, ${TIME}\\. Pallavi has it now\\.$`)).first(),
+    ).toBeVisible();
+    await expect(page.getByText("Your reason, as Pallavi reads it").first()).toBeVisible();
     await expect(page.getByText(REASON).first()).toBeVisible();
     await expect(page.getByText("Open, 30 days left").first()).toBeVisible();
     const until = await capture(
       page.getByText(/^Open until /).first(),
       new RegExp(
-        `^Open until (${DAY_Y})\\. The committee can extend it, up to 3 months in all, to ${DAY_Y}\\. If they reverse it, Rekha gets their note and you see it here\\. When the window closes, the decision stands\\.$`,
+        `^Open until (${DAY_Y})\\. The committee can extend it, up to 3 months in all, to ${DAY_Y}\\. If they reverse it, Pallavi gets their note and you see it here\\. When the window closes, the decision stands\\.$`,
       ),
     );
 
     // L-REVIEW.queue: the decided idea and its window, on the desk.
     await page.goto("/desk");
     await page.getByRole("tab", { name: /^Decided this week/ }).click();
-    const row = rowFor(page, r1.title);
+    const row = rowFor(page, p1.title);
     await expect(row).toContainText(/Picked, \d{1,2} [A-Z][a-z]+/);
     await expect(row).toContainText(`Ones Committee can review it until ${until}`);
   },
 );
 
-// --- J-REVIEW.ask: ask first (P1, Pallavi's, opened here by Lavanya; Z1 for the clock; B1 for answers) --------------
+// --- J-REVIEW.ask: ask first (A1–A3 wait for a record of their own; Z1 for the clock; B1 for answers) ---------------
+
+/** P1 walks the main path, so the ask path's first three rows wait for one like it (see the header). */
+const ASK_GAP =
+  "an idea of J-REVIEW's own at To review with nothing sent, like P1 (unopened, a question Lavanya queued): P1 walks " +
+  "the main path now that R1 is J-SIMILAR's and J-TEAMUP's, Z1's questions are sent and B1's answered";
 
 step(
   "J-REVIEW/A1",
   "S-R2",
   "Ask about this on a part opens Ask Pallavi first with that part's suggestion queued",
-  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"], changes: ["P1"] },
+  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"], changes: ["P1"], gapSeed: ASK_GAP },
   async ({ page }) => {
     const p1 = await seeded("P1");
     await signInAs(page, "lavanya");
@@ -393,12 +426,14 @@ step(
         "Only if something is unclear. Ask in your own words; each question is pinned to its part of the idea, so Pallavi answers it right there.",
       ),
     ).toBeVisible();
-    // The question Lavanya queued before (seed) is still there, and How often's suggestion joined it (S-R2.rules/2).
+    // The question Lavanya queued before (seed) is still there, and How often's suggestion joined it (S-R2.rules/2):
+    // at least those two, whatever else a lane queues with them; the header counts what is listed.
     await expect(
       page.getByRole("button", { name: "Remove: Which distributor segments re-send most?" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Remove: / })).toHaveCount(2);
-    await expect(askFirst).toContainText("2 questions ready");
+    const removes = page.getByRole("button", { name: /^Remove: / });
+    await expect.poll(() => removes.count()).toBeGreaterThanOrEqual(2);
+    await expect(askFirst).toContainText(`${await removes.count()} questions ready`);
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Send \d+ questions? to Pallavi$/ })).toBeVisible();
   },
@@ -428,7 +463,7 @@ step(
   "J-REVIEW/A2",
   "S-R2",
   "Questions in the reviewer's own words, a suggestion added, the time to answer and its deadline before sending",
-  { needs: ["S-R2", "L-QUESTIONS"], changes: ["P1"] },
+  { needs: ["S-R2", "L-QUESTIONS"], changes: ["P1"], gapSeed: ASK_GAP },
   async ({ page }) => {
     const p1 = await seeded("P1");
     const typed = "Which teams keep a second copy of the papers today?";
@@ -465,6 +500,7 @@ step(
   {
     needs: ["S-R2", "S-R1", "L-QUESTIONS", "S-H5", "C-INBOX-READER", "C-QCARD", "L-INBOX"],
     changes: ["P1"],
+    gapSeed: ASK_GAP,
   },
   async ({ page, browser }, info) => {
     const p1 = await seeded("P1");
@@ -639,8 +675,8 @@ step(
     needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06"],
     changes: ["B1"],
     gapSeed:
-      "two J-REVIEW ideas on the desk that list each other as similar (a similar_links row from B1 to P1 would do), " +
-      "so a desk merge changes only J-REVIEW records; today T6 lists Z1, and T6 is J-TRACK's",
+      "two J-REVIEW ideas on the desk that list each other as similar (a similar_links row from B1 to Z1 would do; " +
+      "P1 is picked by then), so a desk merge changes only J-REVIEW records; today T6 lists Z1, and T6 is J-TRACK's",
   },
   async ({ page, browser }, info) => {
     const b1 = await seeded("B1");

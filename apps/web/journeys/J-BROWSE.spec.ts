@@ -155,9 +155,7 @@ step(
     // Scroll on purpose, so the card sits near the top of the window and the page is well down from the top; the
     // click then needs no scrolling of its own, and the position to come back to is this one.
     const link = page.getByRole("link", { name: a1.title, exact: true }).first();
-    await link.evaluate((el) =>
-      window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 120),
-    );
+    await link.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 120));
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
     const y = await page.evaluate(() => window.scrollY);
     await link.click();

@@ -209,9 +209,7 @@ step(
     await expect(page.getByText("Merge request", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(NOTE_MERGE, { exact: true })).toBeVisible();
     await expect(page.getByText(t2.title, { exact: true }).first()).toBeVisible();
-    await expect(
-      page.getByText(/^Merge it, and (?:their|Tanvi’s) idea joins yours: /).first(),
-    ).toBeVisible();
+    await expect(page.getByText(/^Merge it, and (?:their|Tanvi’s) idea joins yours: /).first()).toBeVisible();
     for (const answer of ["Decline", "Team up only", "Merge it"]) {
       await expect(page.getByRole("button", { name: answer, exact: true })).toBeEnabled();
     }
