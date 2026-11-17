@@ -7,6 +7,10 @@
   directly until `convo` is importable.
 - `hide`: L-HIDE (lane C, `hide.hide_text`): free text masked before it is stored or shown to anyone else, each value
   kept sealed in the vault under the idea with a `hidden_details` row. `by` is the users.id of whoever typed it.
+  `hide_answer`, `answer_words` and `forget_answer`: a sharer's answer (lane C's `hide_message`, `own_words`).
+- `lock_idea`, `lock_refs`: lane C's per-idea lock (`hide.core.lock`), taken FIRST in every transaction that hides,
+  before any idea, set, answer or window row lock, so a reviewer's "Hide this" (which takes it first too) and a desk
+  action on the same idea always queue in one order and never deadlock (BLD-B247).
 - `schedule`: lane A's timers. A no-op until lane A publishes its interface; every screen works it out on read.
 """
 
@@ -21,7 +25,9 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from core.logging import get_logger
-from hide import hide_text
+from hide import Hidden, hide_message, hide_text, sealed_key
+from hide.core import lock as hide_lock
+from hide.core import own_words
 
 log = get_logger("desk")
 
@@ -127,6 +133,56 @@ def hide(
     sharer's answer is `source="answer"` with its row id, so its details keep their ids across autosaves and the
     sharer's own words are sealed for them alone (BLD-B246)."""
     return hide_text(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
+
+
+def lock_idea(conn: Conn, idea_uuid: str) -> None:
+    """Lane C's lock on one idea, held until the caller's transaction ends (re-entrant in one session). Take it as the
+    first statement of any transaction that hides text on the idea, before any row lock (BLD-B247)."""
+    hide_lock(conn, str(idea_uuid))
+
+
+def lock_refs(conn: Conn, *refs: str) -> None:
+    """`lock_idea` for ideas named by IDEA- reference or uuid, in uuid order (the order `merging.lock_pair` locks their
+    rows in). Each uuid is read with no row lock; a reference that is no idea is left to the caller's own 404."""
+    found: set[str] = set()
+    for ref in refs:
+        if not ref:
+            continue
+        column = "idea_id" if ref.startswith("IDEA-") else "id::text"
+        row = conn.execute(f"SELECT id FROM ideas WHERE {column} = %s", (ref,)).fetchone()  # noqa: S608 (fixed)
+        if row is not None:
+            found.add(str(row["id"]))
+    for idea_uuid in sorted(found):
+        lock_idea(conn, idea_uuid)
+
+
+def hide_answer(
+    conn: Conn, idea_uuid: str, text: str, *, by: str, answer_id: str, gatekeeper: bool
+) -> Hidden:
+    """A sharer's answer, through lane C's `hide_message` with `source="answer"` and the answer's id: its details keep
+    their ids across saves and the sharer's own words are sealed for them alone. Autosave runs the patterns only
+    (`gatekeeper=False`, no model call per keystroke); sending runs the gatekeeper once (L-HIDE.rules/1; BLD-B247)."""
+    return hide_message(
+        conn, idea_uuid, text, by=by, source="answer", source_id=answer_id, gatekeeper=gatekeeper
+    )
+
+
+def answer_words(conn: Conn, idea_uuid: str, answer_id: str) -> str | None:
+    """The sharer's own words for an answer, as they typed them (worker only; never returned to anyone else)."""
+    return own_words(conn, "answer", answer_id, idea_uuid=str(idea_uuid))
+
+
+def forget_answer(conn: Conn, idea_uuid: str, answer_id: str) -> None:
+    """An answer emptied again holds no words: its details and its sealed words go, so a co-sharer who takes the empty
+    draft over seals their own words under the same answer id (L-HIDE.rules/4, L-QUESTIONS.answer/4; BLD-B247)."""
+    conn.execute(
+        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'answer' AND source_id = %s",
+        (idea_uuid, answer_id),
+    )
+    conn.execute(
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'answer' AND source_id = %s",
+        (idea_uuid, sealed_key(str(idea_uuid), answer_id)),
+    )
 
 
 def schedule(
