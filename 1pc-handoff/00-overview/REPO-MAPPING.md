@@ -96,7 +96,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
-| `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
+| `L-SIMILAR` | `services/worker/similar/` (`index.py` chunks from rows, `matching.py`, `views.py`; entry points `similar_for`, `match_shared`), `agents/judge` 0.3.0, `GET /api/ideas/:id/similar`, `POST /api/ideas/:id/similar/keep-separate`, tables `similar_links`, `similar_runs` (BLD-C091 to C095) | built | P0 | C |
 | `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
 | `L-REVIEW` | `review/service.py`, `review_items` | exists, differs | P0 | B |
 | `L-DECIDE` | `review/service.py` (tags and groups today) | exists, differs | P0 | B |
