@@ -41,6 +41,8 @@ import {
   mergeView,
   oneLine,
   partFromStep,
+  POLL,
+  pollDelay,
   rowView,
   settling,
   similarRail,
@@ -61,7 +63,7 @@ import {
   WordsBody,
   type SendState,
 } from "./parts";
-import { ProofBody } from "./proof";
+import { ProofBody, type LinkResult } from "./proof";
 import { SimilarGrid } from "./similar";
 
 import "./check.css";
@@ -114,9 +116,12 @@ function usePhone(): boolean {
 export function CheckIt({
   draftId,
   config: initialConfig,
+  blackout = false,
 }: {
   draftId: string;
   config: ConfigResponse | null;
+  /** `files.blackout` (DEC-107, BLD-C064): "Hide it for me" on a file is offered only while it is on. */
+  blackout?: boolean;
 }) {
   const router = useRouter();
   const online = useOnline();
@@ -398,9 +403,21 @@ export function CheckIt({
   const replace = (key: string, next: Partial<ProofItem>) =>
     setProof((list) => list.map((p) => (p.key === key ? { ...p, ...next } : p)));
 
+  /** Rows removed while their upload was still on its way: the file is deleted when the POST answers. */
+  const removedEarly = useRef(new Set<string>());
+  /** Failed asks in a row for each moving file (C-FILE.row polling, BLD-C139). */
+  const pollFails = useRef(new Map<string, number>());
+  const [pollTick, setPollTick] = useState(0);
+
   const upload = async (key: string, file: File) => {
-    replace(key, { localState: "uploading", refusal: undefined });
+    replace(key, { localState: "uploading", refusal: undefined, note: undefined });
     const r = await track(api.upload(draftId, file));
+    if (removedEarly.current.has(key)) {
+      // Removed during the upload: what reached the server goes too, so nothing is left behind.
+      removedEarly.current.delete(key);
+      if (r.ok && r.body?.id) void track(api.removeFile(r.body.id));
+      return;
+    }
     if (r.ok) {
       replace(key, {
         item: r.body,
@@ -432,19 +449,41 @@ export function CheckIt({
     for (const f of fresh) if (f.localState === "uploading") void upload(f.key, f.local);
   };
 
-  const addLinks = async (links: string[]): Promise<"ok" | "not_a_link" | "failed"> => {
+  /** Links one by one (C-FILE.uploader/3): each added link is a row; the ones that failed are handed back to stay in
+   * the box, and a link already on the page is never added twice, so trying again never duplicates one. */
+  const addLinks = async (links: string[]): Promise<LinkResult> => {
+    const have = new Set(proof.map((p) => p.item?.url ?? p.item?.name ?? p.name));
+    const left: string[] = [];
+    let problem: LinkResult["problem"] = null;
     for (const url of links) {
+      if (have.has(url)) continue;
       const r = await track(api.link(draftId, url));
-      if (!r.ok) return r.error?.code === "not_a_link" ? "not_a_link" : "failed";
+      if (!r.ok) {
+        left.push(url);
+        if (r.error?.code === "not_a_link") problem = "not_a_link";
+        else problem ??= "failed";
+        continue;
+      }
       const item = r.body;
-      setProof((list) => [...list, { key: item.id, item, name: item.name || url }]);
+      have.add(url);
+      setProof((list) =>
+        list.some((x) => x.key === item.id)
+          ? list
+          : [...list, { key: item.id, item, name: item.name || url }],
+      );
     }
-    return "ok";
+    return { left, problem };
   };
 
   const retryFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
     if (!p) return;
+    if (p.stalled) {
+      // Asking for its state had stopped: ask again, from the start.
+      pollFails.current.delete(key);
+      replace(key, { stalled: false, note: undefined });
+      return;
+    }
     if (p.item?.id && !p.localState) {
       replace(key, { item: { ...p.item, state: "uploading" } });
       const r = await track(api.retryFile(p.item.id));
@@ -455,33 +494,56 @@ export function CheckIt({
   const hideFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
     if (!p?.item?.id) return;
+    replace(key, { note: undefined });
     const r = await track(api.hideFile(p.item.id));
+    // `files.blackout` off answers 503 `not_available`: the server's words under the row (C-FIELD-MSG).
     if (r.ok && r.body) replace(key, { item: r.body });
+    else replace(key, { note: (!r.ok && r.error?.message) || C.failed });
   };
 
+  /** Remove takes the row away once the server agrees; if it does not, the row stays where it is and says so. */
   const removeFile = async (key: string) => {
     const p = proof.find((x) => x.key === key);
-    setProof((list) => list.filter((x) => x.key !== key));
-    if (p?.item?.id) {
-      const r = await track(api.removeFile(p.item.id));
-      if (!r.ok && r.status !== 404)
-        setProof((list) => (list.some((x) => x.key === key) ? list : [...list, p]));
+    if (!p) return;
+    if (!p.item?.id) {
+      if (p.localState === "uploading") removedEarly.current.add(key);
+      setProof((list) => list.filter((x) => x.key !== key));
+      return;
     }
+    replace(key, { note: undefined });
+    const r = await track(api.removeFile(p.item.id));
+    if (r.ok || r.status === 404) {
+      pollFails.current.delete(key);
+      setProof((list) => list.filter((x) => x.key !== key));
+    } else replace(key, { note: r.error?.message || C.failed });
   };
 
-  // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row).
+  // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A
+  // failed ask (the network, a 4xx while a switch is off) waits longer and asks again; after five in a row the row
+  // offers "Try again" rather than freezing (BLD-C139).
   useEffect(() => {
     const moving = proof.filter(settling);
     if (!moving.length) return;
+    const worst = Math.max(0, ...moving.map((p) => pollFails.current.get(p.key) ?? 0));
     const t = setTimeout(async () => {
+      let again = false;
       for (const p of moving) {
         if (!p.item?.id) continue;
         const r = await api.file(p.item.id);
-        if (r.ok && r.body) replace(p.key, { item: r.body });
+        if (r.ok && r.body) {
+          pollFails.current.delete(p.key);
+          replace(p.key, { item: r.body });
+          continue;
+        }
+        const fails = (pollFails.current.get(p.key) ?? 0) + 1;
+        pollFails.current.set(p.key, fails);
+        if (fails >= POLL.tries) replace(p.key, { stalled: true });
+        else again = true;
       }
-    }, 2000);
+      if (again) setPollTick((n) => n + 1);
+    }, pollDelay(worst));
     return () => clearTimeout(t);
-  }, [proof]);
+  }, [proof, pollTick]);
 
   // --- Part 5: the fix ---------------------------------------------------------------------------------------------
 
@@ -817,6 +879,7 @@ export function CheckIt({
           onHide={(k) => void hideFile(k)}
           onRemove={(k) => void removeFile(k)}
           showHelps={!phone}
+          canHide={blackout}
         />
       ),
       foot: (

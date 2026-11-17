@@ -300,9 +300,13 @@ function base(
   ];
 }
 
-async function mount(routes: Route[], config: ConfigResponse | null = CONFIG) {
+async function mount(
+  routes: Route[],
+  config: ConfigResponse | null = CONFIG,
+  props: { blackout?: boolean } = {},
+) {
   serve(routes);
-  await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config })));
+  await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config, ...props })));
   await settle();
 }
 
@@ -492,9 +496,42 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
     expect(JSON.stringify(link)).not.toMatch(/couldn/);
   });
 
+  it("C-FILE.row BLD-C139: infected and locked rows say the server's words when sent, else the drawn line, with Remove only", () => {
+    const item = (state: FileItem["state"], problem?: string) => ({
+      key: "k",
+      name: "scan.pdf",
+      item: {
+        id: "f",
+        kind: "file" as const,
+        name: "scan.pdf",
+        type: "application/pdf",
+        size: 1,
+        state,
+        added_by: KAVYA,
+        added_at: "",
+        problem,
+      },
+    });
+    expect(model.rowView(item("infected"), 25).message?.text).toBe(
+      "Didn’t upload. Your other files are fine.",
+    );
+    expect(model.rowView(item("locked", "This file has a password."), 25).message?.text).toBe(
+      "This file has a password.",
+    );
+    expect(model.rowView(item("locked"), 25).actions).toEqual(["remove"]);
+    expect(model.rowView({ ...item("checking"), stalled: true }, 25).actions).toEqual(["retry", "remove"]);
+    expect(
+      model.rowView({ ...item("checked"), note: "Something went wrong. Try again." }, 25).message,
+    ).toEqual({
+      kind: "error",
+      text: "Something went wrong. Try again.",
+    });
+  });
+
   it("C-FILE.uploader/3: links one at a time or with commas; anything else is not a link", () => {
     expect(model.splitLinks("intranet.kfintech.example/page, https://teams.example/x")).toEqual({
       links: ["https://intranet.kfintech.example/page", "https://teams.example/x"],
+      typed: ["intranet.kfintech.example/page", "https://teams.example/x"],
       bad: false,
     });
     expect(model.splitLinks("the codes list").bad).toBe(true);
@@ -898,7 +935,7 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(document.body.textContent).not.toContain("courier-register-photo.png");
   });
 
-  it("J-RECOVER/8 L-HIDE.files: a file with personal data: the found line, Hide it for me and Remove; checking until it settles", async () => {
+  it("J-RECOVER/8 L-HIDE.files: a file with personal data: the found line, Hide it for me (files.blackout on) and Remove; checking until it settles", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const uploaded: FileItem = {
       id: "f9",
@@ -910,24 +947,28 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
       added_by: KAVYA,
       added_at: "",
     };
-    await mount([
-      (m, u) => (m === "POST" && u === "/api/files" ? { status: 201, body: uploaded } : undefined),
-      (m, u) =>
-        m === "GET" && u === "/api/files/f9"
-          ? {
-              body: {
-                ...uploaded,
-                state: "personal_data_found",
-                problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
-              },
-            }
-          : undefined,
-      (m, u) =>
-        m === "POST" && u === "/api/files/f9/hide"
-          ? { body: { ...uploaded, state: "hidden_checked", hidden_note: "Phone hidden" } }
-          : undefined,
-      ...base(),
-    ]);
+    await mount(
+      [
+        (m, u) => (m === "POST" && u === "/api/files" ? { status: 201, body: uploaded } : undefined),
+        (m, u) =>
+          m === "GET" && u === "/api/files/f9"
+            ? {
+                body: {
+                  ...uploaded,
+                  state: "personal_data_found",
+                  problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+                },
+              }
+            : undefined,
+        (m, u) =>
+          m === "POST" && u === "/api/files/f9/hide"
+            ? { body: { ...uploaded, state: "hidden_checked", hidden_note: "Phone hidden" } }
+            : undefined,
+        ...base(),
+      ],
+      CONFIG,
+      { blackout: true },
+    );
     await railTo("Proof");
     await click(button("Attach files"));
     await chooseFile("courier-call-log.pdf", "application/pdf");
@@ -1044,6 +1085,214 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(button("Remove https://intranet.kfintech.example/courier-returns")).toBeTruthy();
     expect(document.body.textContent).toContain("Internal link");
     expect(document.body.textContent).not.toMatch(/couldn.t open this link/);
+  });
+
+  const checking = (id: string, name: string, state: FileItem["state"] = "checking"): FileItem => ({
+    id,
+    kind: "file",
+    name,
+    type: "application/pdf",
+    size: 2048,
+    state,
+    added_by: KAVYA,
+    added_at: "",
+  });
+
+  it("DEC-107 BLD-C064: while files.blackout is off, a file with a detail found offers Remove but not Hide it for me", async () => {
+    const found = {
+      ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
+      problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+    };
+    await mount(base({ draft: draft({ files: [found] }) }));
+    await railTo("Proof");
+    expect(document.body.textContent).toContain("Found a phone number on page 1.");
+    expect(button("Hide it for me")).toBeUndefined();
+    expect(button("Remove branch-call-log.pdf")).toBeTruthy();
+  });
+
+  it("L-HIDE.files/3 S-05.rules/5: a Hide it for me that fails says the server's words under its row", async () => {
+    const found = {
+      ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
+      problem: "Found a phone number.",
+    };
+    const paused =
+      "Hiding details inside a file is coming soon. The review desk will look at the file with you.";
+    await mount(
+      [
+        (m, u) =>
+          m === "POST" && u === "/api/files/f4/hide"
+            ? { status: 503, body: { error: { code: "not_available", message: paused } } }
+            : undefined,
+        ...base({ draft: draft({ files: [found] }) }),
+      ],
+      CONFIG,
+      { blackout: true },
+    );
+    await railTo("Proof");
+    await click(button("Hide it for me"));
+    const row = document.querySelector(".frow")!;
+    expect(text(row)).toContain(paused);
+    expect(text(row)).toContain("branch-call-log.pdf");
+  });
+
+  it("C-FILE.row S-05.rules/5: a Remove that fails keeps the row where it was and says so under it", async () => {
+    const a = checking("f1", "first-screenshot.pdf", "checked");
+    const b = checking("f2", "second-report.pdf", "checked");
+    await mount([
+      (m, u) => (m === "DELETE" && u === "/api/files/f1" ? { status: 502, body: {} } : undefined),
+      (m, u) => (m === "DELETE" && u === "/api/files/f2" ? { status: 204 } : undefined),
+      ...base({ draft: draft({ files: [a, b] }) }),
+    ]);
+    await railTo("Proof");
+    await click(button("Remove first-screenshot.pdf"));
+    const rows = Array.from(document.querySelectorAll(".frow"));
+    expect(rows.map((r) => text(r.querySelector(".frow-n")))).toEqual([
+      "first-screenshot.pdf",
+      "second-report.pdf",
+    ]);
+    expect(text(rows[0])).toContain("Something went wrong. Try again.");
+    await click(button("Remove second-report.pdf"));
+    expect(
+      Array.from(document.querySelectorAll(".frow")).map((r) => text(r.querySelector(".frow-n"))),
+    ).toEqual(["first-screenshot.pdf"]);
+  });
+
+  it("A-API.files: Remove while the upload is on its way deletes the file once the upload answers, and never brings the row back", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const answered = new Promise((r) => (answer = r));
+    await mount([
+      (m, u) =>
+        m === "POST" && u === "/api/files"
+          ? { status: 201, body: checking("f7", "courier-log.pdf") }
+          : undefined,
+      (m, u) => (m === "DELETE" && u === "/api/files/f7" ? { status: 204 } : undefined),
+      ...base(),
+    ]);
+    const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i?: RequestInit) => {
+        if (u === "/api/files" && i?.method === "POST") await answered;
+        return real(u, i);
+      }),
+    );
+    await railTo("Proof");
+    await click(button("Attach files"));
+    await chooseFile("courier-log.pdf", "application/pdf");
+    await click(button("Remove courier-log.pdf"));
+    expect(document.body.textContent).not.toContain("courier-log.pdf");
+    await act(async () => answer(null));
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/files/f7")).toBe(true);
+    expect(document.body.textContent).not.toContain("courier-log.pdf");
+  });
+
+  it("C-FILE.row BLD-C139: a failed ask for a file's state waits longer and asks again; it settles when an ask answers", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let asks = 0;
+    await mount([
+      (m, u) => {
+        if (m !== "GET" || u !== "/api/files/f9") return undefined;
+        asks += 1;
+        return asks <= 2 ? { fail: true } : { body: checking("f9", "courier-call-log.pdf", "checked") };
+      },
+      ...base({ draft: draft({ files: [checking("f9", "courier-call-log.pdf")] }) }),
+    ]);
+    await railTo("Proof");
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(asks).toBe(1);
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(asks).toBe(1); // after one failure the next ask waits 4 s
+    await act(async () => vi.advanceTimersByTime(2000));
+    await settle();
+    expect(asks).toBe(2);
+    await act(async () => vi.advanceTimersByTime(8100));
+    await settle();
+    expect(asks).toBe(3);
+    expect(text(document.querySelector(".frow"))).toContain("Checked");
+  });
+
+  it("C-FILE.row BLD-C139: after five failed asks in a row (a 4xx while a switch is off) the row offers Try again, which asks again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let refuse = true;
+    await mount([
+      (m, u) =>
+        m === "GET" && u === "/api/files/f9"
+          ? refuse
+            ? { status: 403, body: { error: { code: "forbidden", message: "" } } }
+            : { body: checking("f9", "courier-call-log.pdf", "checked") }
+          : undefined,
+      ...base({ draft: draft({ files: [checking("f9", "courier-call-log.pdf")] }) }),
+    ]);
+    await railTo("Proof");
+    expect(button("Try again")).toBeUndefined();
+    for (const wait of [2000, 4000, 8000, 16000, 30000]) {
+      await act(async () => vi.advanceTimersByTime(wait + 50));
+      await settle();
+    }
+    expect(calls.filter((c) => c.url === "/api/files/f9")).toHaveLength(5);
+    expect(text(document.querySelector(".frow"))).toContain("Checking for personal details");
+    expect(button("Try again")).toBeTruthy();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    await settle();
+    expect(calls.filter((c) => c.url === "/api/files/f9")).toHaveLength(5);
+    refuse = false;
+    await click(button("Try again"));
+    await act(async () => vi.advanceTimersByTime(2100));
+    await settle();
+    expect(text(document.querySelector(".frow"))).toContain("Checked");
+    expect(button("Try again")).toBeUndefined();
+  });
+
+  it("C-FILE.uploader/3: several links go in one by one; one that fails stays in the box, and trying again never adds one twice", async () => {
+    let failB = true;
+    await mount([
+      (m, u, b) => {
+        if (m !== "POST" || u !== "/api/links") return undefined;
+        const url = (b as { url: string }).url;
+        if (url.endsWith("/b") && failB) {
+          failB = false;
+          return { status: 502, body: {} };
+        }
+        return {
+          status: 201,
+          body: {
+            id: url.endsWith("/a") ? "la" : "lb",
+            kind: "link",
+            name: url,
+            url,
+            type: "link",
+            state: "ok",
+            link_scope: "internal",
+            added_by: KAVYA,
+            added_at: "",
+          },
+        };
+      },
+      ...base(),
+    ]);
+    await railTo("Proof");
+    const input = document.querySelector<HTMLInputElement>('input[inputmode="url"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "intranet.kfintech.example/a, intranet.kfintech.example/b");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Add a link"));
+    expect(button("Remove https://intranet.kfintech.example/a")).toBeTruthy();
+    expect(input.value).toBe("intranet.kfintech.example/b");
+    expect(document.body.textContent).toContain("Something went wrong. Try again.");
+    await click(button("Add a link"));
+    expect(input.value).toBe("");
+    const posted = calls.filter((c) => c.url === "/api/links").map((c) => (c.body as { url: string }).url);
+    expect(posted).toEqual([
+      "https://intranet.kfintech.example/a",
+      "https://intranet.kfintech.example/b",
+      "https://intranet.kfintech.example/b",
+    ]);
+    expect(document.querySelectorAll(".frow")).toHaveLength(2);
   });
 });
 

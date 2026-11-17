@@ -131,6 +131,10 @@ export interface ProofItem {
   localState?: "uploading" | "upload_failed" | "too_big" | "refused";
   /** The server's words for a refused upload (`too_big`, `type_not_allowed`, `locked`, …), shown under the row. */
   refusal?: string;
+  /** What went wrong with this row since: a failed "Hide it for me" or Remove, or Submit's `file_blocked`. */
+  note?: string;
+  /** Asking for its state kept failing: the row stops asking and offers "Try again" (C-FILE.row). */
+  stalled?: boolean;
 }
 
 export interface RowView {
@@ -157,7 +161,17 @@ function hostOf(url: string | undefined): string | undefined {
   }
 }
 
+/** A row as C-FILE.row draws it, with this page's own note under it and "Try again" once asking has stalled. */
 export function rowView(p: ProofItem, limitMb: number): RowView {
+  const view = rowBase(p, limitMb);
+  if (p.note) view.message = { kind: "error", text: p.note };
+  if (p.stalled && !view.actions.includes("retry")) {
+    view.actions = [...view.actions.filter((a) => a !== "remove"), "retry", "remove"];
+  }
+  return view;
+}
+
+function rowBase(p: ProofItem, limitMb: number): RowView {
   const item = p.item;
   const ext = p.name.toLowerCase().split(".").pop() ?? "";
   const kind = item?.kind === "link" ? "link" : item?.kind === "folder" ? "folder" : ext;
@@ -225,10 +239,12 @@ export function rowView(p: ProofItem, limitMb: number): RowView {
     case "infected":
     case "locked":
     default:
+      // C-FILE draws no line of its own for `infected` or `locked`: the server's words when it sends them, else the
+      // drawn "Didn't upload. Your other files are fine." (BLD-C139).
       return {
         status: "failed",
         statusText: "",
-        message: { kind: "error", text: C.proof.failed },
+        message: { kind: "error", text: (state !== "upload_failed" && item?.problem) || C.proof.failed },
         actions: state === "upload_failed" ? ["retry", "remove"] : ["remove"],
         size,
         kind,
@@ -236,13 +252,21 @@ export function rowView(p: ProofItem, limitMb: number): RowView {
   }
 }
 
-/** Still moving: the page asks again until the file settles. */
+/** Still moving: the page asks again until the file settles, or until asking has stalled. */
 export function settling(p: ProofItem): boolean {
-  return !p.localState && (p.item?.state === "uploading" || p.item?.state === "checking");
+  return !p.localState && !p.stalled && (p.item?.state === "uploading" || p.item?.state === "checking");
+}
+
+/** Asking for a moving file's state: every 2 s; after a failed ask, twice as long each time up to 30 s; after five
+ * failed asks in a row the row offers "Try again" (C-FILE.row, BLD-C139). */
+export const POLL = { everyMs: 2000, maxMs: 30_000, tries: 5 } as const;
+
+export function pollDelay(fails: number): number {
+  return Math.min(POLL.everyMs * 2 ** Math.max(0, fails), POLL.maxMs);
 }
 
 /** "Paste a link… Add several links at once with commas." Each piece must look like a link (C-FILE.uploader/3). */
-export function splitLinks(text: string): { links: string[]; bad: boolean } {
+export function splitLinks(text: string): { links: string[]; typed: string[]; bad: boolean } {
   const parts = text
     .split(/[,\s]+/)
     .map((s) => s.trim())
@@ -250,7 +274,7 @@ export function splitLinks(text: string): { links: string[]; bad: boolean } {
   const looks = (s: string) =>
     /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/\S*)?$/i.test(s) && !/@/.test(s.split("/")[0] ?? "");
   const links = parts.filter(looks).map((s) => (/^https?:\/\//i.test(s) ? s : `https://${s}`));
-  return { links, bad: parts.length === 0 || links.length !== parts.length };
+  return { links, typed: parts, bad: parts.length === 0 || links.length !== parts.length };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
