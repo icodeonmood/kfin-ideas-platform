@@ -44,21 +44,24 @@ export type SessionInfo = {
   needsRefresh: boolean;
 };
 
-let promisesWarnedAt = 0;
+/** After the worker fails to answer, how long every request uses the policy's 8 hours before asking again. */
+const PROMISES_RETRY_MS = 60_000;
+let promisesFailedAt = 0;
 
 /**
- * Session length from P-PRODUCT.promises `session.hours` (rules/promises.md, BLD-A181; L-AUTH.rules/5). If the
- * worker cannot be read, the policy's 8 hours, with a warning at most once a minute.
+ * Session length from P-PRODUCT.promises `session.hours` (rules/promises.md, BLD-A181; L-AUTH.rules/5). Every request
+ * asks (readSession), so `promises()` answers from its one-minute cache. If the worker cannot be read, the policy's
+ * 8 hours, with one warning, and the worker is not asked again for a minute: a worker that hangs must not hold up
+ * every page by its timeout (BLD-A178).
  */
 export async function sessionTtlSeconds(): Promise<number> {
+  if (Date.now() - promisesFailedAt < PROMISES_RETRY_MS) return SESSION_TTL_SECONDS;
   try {
     const hours = (await promises()).session.hours;
     if (Number.isFinite(hours) && hours > 0) return Math.round(hours * 3600);
   } catch {
-    if (Date.now() - promisesWarnedAt > 60_000) {
-      promisesWarnedAt = Date.now();
-      log.warn("auth.promises_unavailable");
-    }
+    promisesFailedAt = Date.now();
+    log.warn("auth.promises_unavailable");
   }
   return SESSION_TTL_SECONDS;
 }
@@ -114,7 +117,9 @@ export async function readSession(token: string | undefined): Promise<SessionInf
 
 /**
  * Records activity. The end stays `session.hours` after sign-in: never later, even for someone working all day
- * (L-AUTH.rules/5, BLD-A178), and it follows a change to `session.hours`.
+ * (L-AUTH.rules/5, BLD-A178), and it follows a change to `session.hours`. The cookie's own lifetime may run on past
+ * the end (the proxy renews it with activity): the server refuses it at the end all the same, and a cookie still
+ * held after the end is what lets S-02 show "Session expired mid-draft" (`expiredSession`).
  */
 export async function refreshSession(token: string, ttlSeconds = SESSION_TTL_SECONDS): Promise<void> {
   await getDb()
