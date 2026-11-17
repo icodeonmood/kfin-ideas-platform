@@ -93,10 +93,11 @@ def test_BLD_C115_on_with_the_route_the_approval_and_the_key_is_met() -> None:
 
 
 def test_BLD_C115_voice_is_not_off_by_design_any_more() -> None:
-    # Voice left the off-by-design list with DEC-108. The only feature still off by design is the file black-out
-    # (`files.blackout`, DEC-107 and BLD-C064), which stays off until black-out passes review.
+    # Voice left the off-by-design list with DEC-108. Two features stay off by design: the file black-out
+    # (`files.blackout`, DEC-107 and BLD-C064) until black-out passes review, and sign-in by email code
+    # (`auth.email_code`, BLD-E002 and DEC-105) until InfoSec approves it.
     assert "capture.voice" not in OFF_BY_DESIGN and "speech.hosted" not in OFF_BY_DESIGN
-    assert set(OFF_BY_DESIGN) == {"files.blackout"}
+    assert set(OFF_BY_DESIGN) == {"files.blackout", "auth.email_code"}
 
 
 # ---- the key is the worker's alone ----------------------------------------------------------------------------
