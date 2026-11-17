@@ -21,7 +21,7 @@ import { appBaseUrl } from "@/server/config";
 import { isOn, switchStates } from "@/server/killswitch";
 import { log } from "@/server/log";
 
-const PUBLIC_PAGES = new Set(["/sign-in", "/signed-out"]);
+const PUBLIC_PAGES = new Set(["/sign-in"]);
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
