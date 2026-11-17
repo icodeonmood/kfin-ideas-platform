@@ -254,12 +254,13 @@ pages:
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
-  - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
 # Navigation (AT-B2-06): items without `roles` are everyone's; the rest by role. `when_on` / `when_off` may name a
 # kill switch: the item shows only while that switch is on (or off). An unknown switch counts as off (§7.6).
+# `member` names a membership group (`membership_scoped` above): the item shows only to its members, an active One
+# for `ones` (S-ONE.rules/1). No role grants membership; the signed-in person's own record decides (BLD-E040).
 navigation:
   # The signed-in shell (C-SIDEBAR, C-PHONE-TABS; lane D, BLD-D011). The only place the shell reads its links.
   # place: new = the "Share a problem" button; main = a sidebar item; folded = only while the sidebar is folded;
@@ -272,6 +273,8 @@ navigation:
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
   - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
   - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: profile,   label: Your profile and settings, href: /profile, place: account }
+  - { key: one,       label: Your One dashboard, href: /one,    place: account, member: ones }
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }

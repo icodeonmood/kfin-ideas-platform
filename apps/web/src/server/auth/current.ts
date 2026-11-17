@@ -35,6 +35,20 @@ export async function currentUser(): Promise<CurrentUser | null> {
       "users.role_family",
       "contributor_code",
     ])
+    // An active One (S-ONE.rules/1, as the worker's own check reads it): the menu then lists their One dashboard
+    // (policy/rbac.yaml `member: ones`, BLD-E040). One indexed lookup inside the same query.
+    .select((eb) =>
+      eb
+        .exists(
+          eb
+            .selectFrom("ones")
+            .select("ones.id")
+            .whereRef("ones.user_id", "=", "users.id")
+            .where("ones.status", "=", "active")
+            .where("ones.number", "is not", null),
+        )
+        .as("is_one"),
+    )
     .where("users.id", "=", session.userId)
     .executeTakeFirst();
   if (!user) return null;
@@ -52,7 +66,7 @@ export async function currentUser(): Promise<CurrentUser | null> {
     contributorCode: user.contributor_code,
     grants: session.grants,
     roles,
-    nav: navFor(roles, switchesOn),
+    nav: navFor(roles, switchesOn, new Set(user.is_one ? ["ones"] : [])),
     privacyAccepted: session.privacyAccepted,
   };
 }
