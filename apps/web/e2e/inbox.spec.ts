@@ -1,14 +1,18 @@
 /**
  * S-H5 Inbox with C-INBOX-READER (L-INBOX): the tabs and their counts, the first item open on desktop, opening an
  * item marks it read and every count drops at once, arrow keys move through the list, an open ask cannot be
- * archived, a done one can, Mark all read; on a phone the list is the screen and an item is its own screen. axe and
- * the 320 px reflow check on every state (V-ACC.visual/4, BLD-A163).
+ * archived, a done one can, Mark all read; on a phone the list is the screen and an item is its own screen, with its
+ * own h1. axe and the 320 px reflow check on every state (V-ACC.visual/4, BLD-A163).
  *
- * Each test signs in a fresh synthetic person (SYN-16000 to SYN-16999, outside the seed's range) and writes four
- * synthetic Inbox items for them straight into the dev database, as `notify.post` would, then deletes them. Items
- * carry IDs and enums only; the worker renders their words from the HR templates.
+ * Each test signs in a fresh synthetic person (SYN-16<worker><4 random digits>, outside the seed's range, so the
+ * desktop and phone workers never share one) and writes four synthetic Inbox items for them straight into the dev
+ * database, as `notify.post` would. The `inbox` fixture removes the person and everything that hangs off them
+ * (items, sessions, the privacy acceptance, the contributor code) before it signs them in and again when the test
+ * ends, pass or fail. Items carry IDs and enums only; the worker renders their words from the HR templates.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { randomInt } from "node:crypto";
+
+import { test as base, expect, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, signIn } from "./helpers";
@@ -16,32 +20,64 @@ import { expectNoSeriousAxeIssues, signIn } from "./helpers";
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
 
-type Fixture = { userId: string; cleanup: () => Promise<void> };
+type Person = { syn: string; email: string; name: string };
 
-function hash(s: string): number {
-  let h = 0;
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 1000;
-  return h;
+/** A synthetic person no other worker can draw: the worker's own two digits, then four random ones. */
+function synPerson(worker: number): Person {
+  const n = `16${String(worker % 100).padStart(2, "0")}${String(randomInt(10_000)).padStart(4, "0")}`;
+  return { syn: `SYN-${n}`, email: `inbox.${n}.e2e@kfintech.example`, name: `Inbox Tester ${n}` };
 }
 
-/** A fresh person with four items: the desk's questions (needs you, unread, newest), a mention (read), a stage move
- * from 1% Club (unread) and a decision (read, two weeks ago). */
-async function freshInbox(page: Page, tag: string): Promise<Fixture> {
-  const n = 16000 + (((Date.now() / 1000 + hash(tag)) % 1000) | 0);
-  const email = `inbox.${n}.e2e@kfintech.example`;
-  await signIn(page, `SYN-${n}`, { email, name: `Inbox Tester ${n}` });
+async function withDb<T>(run: (db: Client) => Promise<T>): Promise<T> {
   const db = new Client({ connectionString: DATABASE_URL });
   await db.connect();
   try {
-    const me = await db.query("SELECT id FROM users WHERE lower(email) = $1", [email]);
+    return await run(db);
+  } finally {
+    await db.end();
+  }
+}
+
+/** Deletes the person and their rows. Their items, sessions, privacy acceptance, contributor code and preferences
+ * go with them (each references users ON DELETE CASCADE); they are named here too, so a test never leaves one. */
+async function removePerson(email: string): Promise<void> {
+  await withDb(async (db) => {
+    await db.query("BEGIN");
+    try {
+      const { rows } = await db.query("SELECT id FROM users WHERE lower(email) = $1", [email]);
+      const ids = rows.map((r: { id: string }) => String(r.id));
+      if (ids.length) {
+        for (const table of [
+          "notifications",
+          "sessions",
+          "privacy_acceptances",
+          "comms_prefs",
+          "contributor_map",
+        ])
+          await db.query(`DELETE FROM ${table} WHERE user_id = ANY($1::uuid[])`, [ids]);
+        await db.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [ids]);
+      }
+      await db.query("COMMIT");
+    } catch (err) {
+      await db.query("ROLLBACK");
+      throw err;
+    }
+  });
+}
+
+/** Signs the person in and writes their four items: the desk's questions (needs you, unread, newest), a mention
+ * (read), a stage move from 1% Club (unread) and a decision (read, two weeks ago). Returns their users.id. */
+async function freshInbox(page: Page, person: Person): Promise<string> {
+  await signIn(page, person.syn, { email: person.email, name: person.name });
+  return withDb(async (db) => {
+    const me = await db.query("SELECT id FROM users WHERE lower(email) = $1", [person.email]);
     const userId = String(me.rows[0]?.id ?? "");
-    if (!userId) throw new Error(`no user for ${email}`);
+    if (!userId) throw new Error(`no user for ${person.syn}`);
     const other = await db.query(
       "SELECT id FROM users WHERE id <> $1 AND active AND name IS NOT NULL ORDER BY id LIMIT 1",
       [userId],
     );
     const sender = String(other.rows[0].id);
-    await db.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
     const rows: [string, string | null, boolean, boolean, string, string | null, object, object[]][] = [
       // kind, from, needs you, read, created, due, refs, actions
       [
@@ -107,39 +143,36 @@ async function freshInbox(page: Page, tag: string): Promise<Fixture> {
         ],
       );
     }
-    return {
-      userId,
-      cleanup: async () => {
-        const c = new Client({ connectionString: DATABASE_URL });
-        await c.connect();
-        try {
-          await c.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
-        } finally {
-          await c.end();
-        }
-      },
-    };
-  } finally {
-    await db.end();
-  }
+    return userId;
+  });
 }
+
+/** `inbox()` signs in a fresh person with four items and returns their users.id. The person is removed before the
+ * first insert (a run that was killed may have left one) and after the test, whether it passed or failed. */
+const test = base.extend<{ inbox: () => Promise<string> }>({
+  // `provide` is Playwright's `use`, named so the React hooks lint does not read it as React's `use`.
+  inbox: async ({ page }, provide, testInfo) => {
+    const person = synPerson(testInfo.parallelIndex);
+    await removePerson(person.email);
+    try {
+      await provide(() => freshInbox(page, person));
+    } finally {
+      await removePerson(person.email);
+    }
+  },
+});
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
 const tab = (page: Page, name: RegExp) => page.getByRole("tab", { name });
 const row = (page: Page, what: RegExp) => page.getByRole("button", { name: what });
 
 test.describe("S-H5 Inbox", () => {
-  let fixture: Fixture | null = null;
-  test.afterEach(async () => {
-    await fixture?.cleanup();
-    fixture = null;
-  });
-
   test("S-H5.layout V-ACC.track/8 V-ACC.visual/4: tabs and counts, the first item open, opening it drops every count at once", async ({
     page,
+    inbox,
   }) => {
     test.skip(isPhone(page), "desktop layout; the phone has its own test");
-    fixture = await freshInbox(page, "desktop-counts");
+    await inbox();
     await page.goto("/inbox");
     await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
     for (const name of [/^All 4$/, /^Needs you 1$/, /^Archived 0$/])
@@ -187,9 +220,10 @@ test.describe("S-H5 Inbox", () => {
 
   test("S-H5.rules/2 L-INBOX.rules/5: arrow keys move, Enter opens; an open ask stays, a done item archives", async ({
     page,
+    inbox,
   }) => {
     test.skip(isPhone(page), "desktop layout; the phone has its own test");
-    fixture = await freshInbox(page, "desktop-archive");
+    await inbox();
     await page.goto("/inbox");
     const questions = row(page, /asked you 3 questions/);
     await expect(questions).toHaveAttribute("aria-pressed", "true");
@@ -231,9 +265,10 @@ test.describe("S-H5 Inbox", () => {
 
   test("S-H5.rules/6 V-ACC.visual/4: on a phone the list is the screen and an item opens as its own screen", async ({
     page,
+    inbox,
   }) => {
     test.skip(!isPhone(page), "phone layout");
-    fixture = await freshInbox(page, "phone");
+    await inbox();
     await page.goto("/inbox");
     await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
     await expect(page.getByText("2 unread", { exact: true })).toBeVisible();
@@ -244,6 +279,8 @@ test.describe("S-H5 Inbox", () => {
     await row(page, /asked you 3 questions/).click();
     await expect(page.getByText("Questions from the review desk", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeHidden();
+    // The item is its own screen, so its title is the screen's h1 (WCAG 2.1 AA).
+    await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toBeVisible();
     await expectNoSeriousAxeIssues(page);
 
@@ -252,13 +289,11 @@ test.describe("S-H5 Inbox", () => {
     await expect(tab(page, /^Unread 1$/)).toBeVisible();
   });
 
-  test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page }) => {
-    fixture = await freshInbox(page, "linked");
-    const db = new Client({ connectionString: DATABASE_URL });
-    await db.connect();
-    const { rows } = await db
-      .query("SELECT id FROM notifications WHERE user_id = $1 AND kind = 'mention'", [fixture.userId])
-      .finally(() => db.end());
+  test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page, inbox }) => {
+    const userId = await inbox();
+    const { rows } = await withDb((db) =>
+      db.query("SELECT id FROM notifications WHERE user_id = $1 AND kind = 'mention'", [userId]),
+    );
     await page.goto(`/inbox/${rows[0].id}`);
     await expect(row(page, /mentioned you, /)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("link", { name: "Open the conversation" })).toBeVisible();
