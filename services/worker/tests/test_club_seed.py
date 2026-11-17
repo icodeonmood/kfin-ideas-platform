@@ -4,7 +4,10 @@ words everywhere but the sharer's sealed copy (DEC-103), and it removes cleanly 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
+
+import pytest
 
 from bootstrap import club_seed
 from identity.codes import emp_id_hash
@@ -24,6 +27,14 @@ def _one(conn: Any, sql: str, *args: Any) -> Any:
 
 def _set(conn: Any, sql: str) -> set[Any]:
     return {next(iter(r.values())) for r in conn.execute(sql).fetchall()}
+
+
+@pytest.fixture
+def seeded(db: Any) -> Iterator[dict[str, club_seed.Made]]:
+    """The seed, loaded for one test and removed after it, so nothing it made is left for the next test."""
+    made = club_seed.load(db)
+    yield made
+    club_seed.remove(db)
 
 
 def test_e_entities_seed_fills_every_screen_and_removes_cleanly(db: Any) -> None:
@@ -126,12 +137,13 @@ def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(db: Any) -> Non
     assert again is not None and again["glow_up"] is None
 
 
-def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_other(db: Any) -> None:
+def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_other(
+    db: Any, seeded: dict[str, club_seed.Made]
+) -> None:
     """J-REVIEW/M3 (L-MERGE.desk/1, 2, 5; L-REVIEW.open/1; L-SIMILAR.rules/6): two ideas from different sharers,
     both with the review desk, opened by the same reviewer (so both edit windows are closed), nothing decided or
     asked, and each lists the other under similar ideas. The one shared first leads by default."""
-    conn = db
-    m = club_seed.load(conn)
+    conn, m = db, seeded
     first, later, _reason = club_seed.DESK_PAIR
     rows = {
         str(r["id"]): r
@@ -169,13 +181,14 @@ def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_
     assert _one(conn, matched, m[later].uuid) == "1"
 
 
-def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_items(db: Any) -> None:
+def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_items(
+    db: Any, seeded: dict[str, club_seed.Made]
+) -> None:
     """J-SIMILAR/5, /6b and /6c (L-MERGE.request/1-4, L-TEAMUP.rules/5): besides T2, two more unsent drafts from
     other sharers each have a merge request waiting on Rekha's R1, so Team up only and Decline each have a request
     of their own to answer. Each waiting request is in Rekha's Inbox under Needs you with the three answers; refs
     carry IDs and small values only."""
-    conn = db
-    m = club_seed.load(conn)
+    conn, m = db, seeded
     rekha = p_id(conn, "rekha")
     lead_code = _one(
         conn, "SELECT contributor_code FROM crew_members WHERE idea_uuid = %s AND role = 'lead'", m["R1"].uuid
@@ -228,15 +241,16 @@ def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
 
 
-def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(db: Any) -> None:
+def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
+    db: Any, seeded: dict[str, club_seed.Made]
+) -> None:
     """J-RESUME/5 and /6 (L-DRAFT.channels, L-HIDE.rules/4): a forwarded email landed as an unsent draft on the email
     channel, with its origin (subject, when it came) sealed on the draft, no device, its words in via email with the
     customer detail hidden from everyone but the owner, and a "kept your draft" Inbox item for its owner that opens
     the draft. The channel is off at launch (DEC-105); the record only has to exist."""
     import json
 
-    conn = db
-    m = club_seed.load(conn)
+    conn, m = db, seeded
     i2 = m["I2"]
     idea = conn.execute(
         "SELECT status, channel, step, saved_device, saved_device_id, archived_at, shared_at, origin_encrypted "
