@@ -36,7 +36,7 @@ import type {
   WorthTile,
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
-import { CUSTOMER_DETAIL, openFileName } from "@/lib/desk/files";
+import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
 import { bottomBar, initialPanel, panelReducer, readyLine } from "@/lib/desk/panel";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
@@ -830,10 +830,12 @@ function matchLine(s: ReviewerSimilar): string {
   return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
 }
 
-/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open". Seam: lane C's
- * "Hide this" (a blacked-out copy, C-HIDDEN) joins "Open" here once it is served for the desk. */
+/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open" where a route can open
+ * it (`fileHref`, BLD-B243). Seam: lane C's "Hide this" (a blacked-out copy, C-HIDDEN) joins "Open" here once it is
+ * served for the desk. */
 function FileArtefact({ a }: { a: ReviewerArtefact }) {
   const ext = (a.title.split(".").pop() ?? "").toUpperCase().slice(0, 4);
+  const href = fileHref(a);
   return (
     <li className="tile ri-art">
       <span className="fbadge ri-art-ic ri-art-file" aria-hidden="true">
@@ -848,13 +850,8 @@ function FileArtefact({ a }: { a: ReviewerArtefact }) {
           </span>
         ) : null}
       </span>
-      {a.id ? (
-        // Opened through the attachments route (clean files, logged); DEC-107 lets the desk open a marked one
-        <a
-          className="tb blue"
-          href={`/api/attachments/${encodeURIComponent(a.id)}`}
-          aria-label={openFileName(a.title, Boolean(a.customer_detail))}
-        >
+      {href ? (
+        <a className="tb blue" href={href} aria-label={openFileName(a.title, Boolean(a.customer_detail))}>
           {a.action}
         </a>
       ) : null}
