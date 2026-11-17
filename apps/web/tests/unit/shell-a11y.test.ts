@@ -239,3 +239,24 @@ describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
     );
   });
 });
+
+describe("S-08.rules/4: the conversation is a task screen on a phone only", () => {
+  it('F-SPACE.shell: every rule keyed on data-mode="task" sits in the phone query, so desktop looks the same', () => {
+    const sheets = [
+      "foundation.css",
+      "globals.css",
+      "offer.css",
+      "shell.css",
+      "components.css",
+      "motion.css",
+      "ds-app.css",
+    ];
+    const task = sheets.flatMap((sheet) =>
+      rules(read(sheet))
+        .filter((r) => r.selectors.some((s) => s.includes('data-mode="task"')))
+        .map((r) => `${sheet}: ${r.at}`),
+    );
+    expect(task.length).toBeGreaterThan(0);
+    expect(task.every((t) => t.endsWith("@media (max-width: 640px)"))).toBe(true);
+  });
+});
