@@ -83,7 +83,11 @@ test("7: the review desk", async ({ browser }) => {
   const desk = await as(browser, DEMO.desk);
   await desk.goto("/desk"); // S-R1 (the old /review redirects here)
   await expect(desk.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(desk.locator("table tbody tr, .crew-cards li").first()).toBeVisible();
+  // The demo seeds no question sets, so the default tab, Waiting on the sharer, can be empty (A10): a row on it, or
+  // the tab's own empty line, then a row on To review or the same empty line there
+  await expect(desk.locator("table tbody tr, .crew-cards li, .emp").first()).toBeVisible();
+  await desk.getByRole("tab", { name: /^To review/ }).click();
+  await expect(desk.locator("table tbody tr, .crew-cards li, .emp").first()).toBeVisible();
   await expectNoSeriousAxeIssues(desk);
 });
 
