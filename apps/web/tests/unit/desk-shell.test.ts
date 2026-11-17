@@ -54,7 +54,7 @@ describe("S-R1.rules/5: Waiting on sharers", () => {
 });
 
 describe("S-R4.rules/4: Closing soonest", () => {
-  it("takes the first three open windows, each opening its row in place", () => {
+  it("C-SIDEBAR.anatomy: takes the first three open windows, title only, each opening its row in place", () => {
     const rows = committeeRows({
       items: [
         windowRow("1", "open", "3 days left"),
@@ -65,9 +65,9 @@ describe("S-R4.rules/4: Closing soonest", () => {
       ],
     });
     expect(rows.map((r) => [r.href, r.title, r.meta, r.tone])).toEqual([
-      ["/committee?open=1", "Idea 1", "3 days left", "blue"],
-      ["/committee?open=3", "Idea 3", "17 days left", "blue"],
-      ["/committee?open=4", "Idea 4", "22 days left", "blue"],
+      ["/committee?open=1", "Idea 1", undefined, "blue"],
+      ["/committee?open=3", "Idea 3", undefined, "blue"],
+      ["/committee?open=4", "Idea 4", undefined, "blue"],
     ]);
     expect(committeeRows(null)).toEqual([]);
   });
