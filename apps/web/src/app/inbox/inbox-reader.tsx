@@ -242,10 +242,12 @@ function useDesktop(): boolean {
 }
 
 /** The open item: its words from the route that owns them, its request if it is one, and its actions at the foot.
- * Keyed by the item, so nothing from the last item carries over. */
+ * Keyed by the item, so nothing from the last item carries over. On a phone the item is its own screen and the
+ * list's h1 is hidden with the list, so the item's title is the screen's h1 (WCAG 2.1 AA, S-H5.rules/6). */
 function OpenItem({
   item,
   now,
+  phone,
   notice,
   busy,
   titleRef,
@@ -255,6 +257,7 @@ function OpenItem({
 }: {
   item: InboxEntry;
   now: Date;
+  phone: boolean;
   notice: string;
   busy: boolean;
   titleRef: RefObject<HTMLHeadingElement | null>;
@@ -273,6 +276,7 @@ function OpenItem({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const request = useRequest(item, onAnswered, onNext);
+  const Title = phone ? "h1" : "h2";
   return (
     <>
       <article className="ibx-body" aria-labelledby="ibx-title">
@@ -281,9 +285,9 @@ function OpenItem({
             {notice}
           </p>
           <p className="ibx-kind">{item.body.heading}</p>
-          <h2 id="ibx-title" className="ibx-mtitle" ref={titleRef} tabIndex={-1}>
+          <Title id="ibx-title" className="ibx-mtitle" ref={titleRef} tabIndex={-1}>
             {titleOf(item) || item.line}
-          </h2>
+          </Title>
           <div className="ibx-from">
             <Avatar item={item} size="md" />
             <span className="ibx-fw">
@@ -372,6 +376,8 @@ export function InboxReader({
     data.items.forEach((i) => known.current.add(i.id));
     setItems(data.items);
     setCounts(data.counts);
+    // The 30 s refresh and a tab change bring every count; the shell's Inbox number moves with them.
+    window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: data.counts }));
     setNow(new Date());
     if (quiet && arrived.length) setFresh(new Set(arrived)); // one soft wash on what arrived (S-H5.rules/5)
     if (!quiet) setNotice("");
@@ -679,6 +685,7 @@ export function InboxReader({
               key={open.id}
               item={open}
               now={now}
+              phone={!desktop}
               notice={notice}
               busy={busy}
               titleRef={titleRef}
