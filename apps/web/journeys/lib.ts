@@ -187,7 +187,6 @@ export function draftUrl(idea: { uuid: string }, sub = ""): string {
 export const FORCE_FIXME: Readonly<Record<string, string>> = {
   "L-DRAFT.channels": "email and Teams intake off until IT (DEC-105)",
   "L-AUTH.email-code": "email-code sign-in off until InfoSec (BLD-E002)",
-  "L-DRAFT.voice": "streamed voice off until IT, InfoSec and the DPO (DEC-105)",
 };
 
 const WEB = path.resolve(__dirname, "..");
