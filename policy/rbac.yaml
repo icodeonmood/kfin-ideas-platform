@@ -117,6 +117,19 @@ endpoints:
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
+  # Team-up, draft merge requests and crews (lane F; A-API.team-up, L-TEAMUP, L-MERGE.request). Any employee may
+  # ask; the worker checks the rest: only the requester withdraws, only the idea's lead answers or removes.
+  - GET /api/ideas/{id}/team-up                       signed_in
+  - POST /api/ideas/{id}/team-up                      signed_in
+  - GET /api/ideas/{id}/team-up/draft-note            signed_in
+  - GET /api/team-up/{id}                             signed_in       # the requester or the lead only
+  - DELETE /api/team-up/{id}                          signed_in       # the requester only
+  - POST /api/team-up/{id}/answer                     signed_in       # the idea's lead only
+  - GET /api/drafts/{id}/merge-request                signed_in       # the draft's owner only
+  - POST /api/drafts/{id}/merge-request               signed_in       # the draft's owner only
+  - DELETE /api/drafts/{id}/merge-request             signed_in       # the draft's owner only
+  - POST /api/ideas/{id}/crew/leave                   signed_in       # a crew member, never the lead
+  - DELETE /api/ideas/{id}/crew/{member}              signed_in       # the idea's lead only
   - GET /api/attachments/{id}                         open_attachments
   - GET /api/attachments/{id}/status                  open_attachments
   - GET /api/review/items                             view_review_queue
