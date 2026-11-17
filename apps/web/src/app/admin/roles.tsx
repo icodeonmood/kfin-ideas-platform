@@ -30,7 +30,10 @@ const RETIRED: Record<string, string> = {
   ceo: "CEO (retired role)",
   build_team: "Build team",
 };
-const LABEL: Record<string, string> = { ...RETIRED, ...Object.fromEntries(ROLES.map((r) => [r.value, r.label])) };
+const LABEL: Record<string, string> = {
+  ...RETIRED,
+  ...Object.fromEntries(ROLES.map((r) => [r.value, r.label])),
+};
 const ERRORS: Record<string, string> = {
   no_such_person: "No active person has that email address.",
   already_granted: "That person already has this role.",

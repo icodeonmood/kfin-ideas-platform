@@ -51,8 +51,9 @@ export function WallRemovals({
     <section aria-labelledby={`${id}-title`} id="wall">
       <h2 id={`${id}-title`}>Take an idea off the Wall</h2>
       <p className="muted">
-        Use this when an idea&apos;s summary should not be on the Wall, for example if it is spam or sensitive.
-        The idea, its decision and its people stay as they are. Every change needs a reason and is recorded.
+        Use this when an idea&apos;s summary should not be on the Wall, for example if it is spam or
+        sensitive. The idea, its decision and its people stay as they are. Every change needs a reason and is
+        recorded.
       </p>
       <form onSubmit={submit} noValidate className="stack-form" aria-labelledby={`${id}-form`}>
         <h3 id={`${id}-form`}>Take off the Wall</h3>
