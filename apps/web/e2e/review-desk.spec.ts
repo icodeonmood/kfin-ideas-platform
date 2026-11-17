@@ -95,8 +95,8 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
 
   // V-ACC.review/6: Ask about this queues that part's suggestion and changes the bar
   const howOften = r.getByRole("region", { name: "How often" });
-  await howOften.getByRole("button", { name: "Ask about How often" }).click();
-  await expect(howOften.getByRole("button", { name: "Ask about How often" })).toHaveAttribute(
+  await howOften.getByRole("button", { name: "Ask about this, How often" }).click();
+  await expect(howOften.getByRole("button", { name: "Asking, How often" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

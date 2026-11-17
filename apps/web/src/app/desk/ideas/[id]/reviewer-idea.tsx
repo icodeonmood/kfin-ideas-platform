@@ -64,8 +64,6 @@ const PARTS: { value: IdeaPart; label: string }[] = [
   { value: "fix", label: "Fix" },
 ];
 const PART_NAME = Object.fromEntries(PARTS.map((p) => [p.value, p.label])) as Record<IdeaPart, string>;
-/** "Ask about The problem", and "Ask about what it’s worth" in the board's own case. */
-const ASK_NAME: Record<IdeaPart, string> = { ...PART_NAME, cost: "what it’s worth" };
 const TIMES: TimeToAnswer[] = ["1d", "3d", "1w"];
 const RETURNS: ReturnIn[] = ["1m", "3m", "6m"];
 const PILL: Record<string, PillVariant> = { blue: "blue", warn: "warn", ok: "ok", neutral: "neutral" };
@@ -362,7 +360,7 @@ export function ReviewerIdea({
                         variant="line"
                         size="sm"
                         className={queued.length ? "ri-asking" : undefined}
-                        aria-label={`Ask about ${ASK_NAME[part.part]}`}
+                        aria-label={`${queued.length ? "Asking" : "Ask about this"}, ${PART_NAME[part.part]}`}
                         aria-pressed={queued.length > 0}
                         onClick={() =>
                           dispatch({
