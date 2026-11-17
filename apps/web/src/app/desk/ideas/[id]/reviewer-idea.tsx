@@ -37,7 +37,7 @@ import type {
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
-import { bottomBar, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
+import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
@@ -185,6 +185,8 @@ export function ReviewerIdea({
   const firstRender = useRef(true);
   const worthRef = useRef<HTMLDivElement>(null);
   const similarTitle = useRef<HTMLHeadingElement>(null);
+  // Each similar idea's Merge, so the merge sheet can give focus back to it on close (V-ACC.visual/11)
+  const mergeButtons = useRef(new Map<string, HTMLButtonElement>());
   const sendButton = useRef<HTMLButtonElement>(null);
   const choices = useRef<HTMLFieldSetElement>(null);
   const reasonBox = useRef<HTMLTextAreaElement>(null);
@@ -469,6 +471,10 @@ export function ReviewerIdea({
                       <Pill variant="neutral">Merged</Pill>
                     ) : page.can_act ? (
                       <Button
+                        ref={(el) => {
+                          if (el) mergeButtons.current.set(s.idea_id, el);
+                          else mergeButtons.current.delete(s.idea_id);
+                        }}
                         variant="line"
                         size="sm"
                         aria-label={`Merge with ${s.title}`}
@@ -828,6 +834,9 @@ export function ReviewerIdea({
           ideaId={idea.id}
           otherId={merging}
           onClose={() => setMerging(null)}
+          // Opened from the row or from the preview's Merge (gone with the preview), focus comes back to the row's
+          // Merge for that idea; once merged that is a "Merged" pill, so it comes to the Similar ideas heading
+          returnFocus={() => focusBackTo(mergeButtons.current.get(merging), similarTitle.current)}
           onMerged={(m) => {
             setBanner(m.banner);
             setMergedIds((s) => new Set(s).add(merging));
