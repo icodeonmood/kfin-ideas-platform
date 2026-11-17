@@ -1,16 +1,4 @@
-import { NextResponse } from "next/server";
+import { getMyIdeas } from "@/server/idea-page";
 
-import { signedIn } from "@/server/auth/authorize";
-import { asResponse } from "@/server/http";
-import { myIdeas } from "@/server/ideas";
-
-/** GET /api/me/ideas — my ideas with stage, next step and date, and the ideas I joined (AT-B7-02). */
-export async function GET() {
-  const me = await signedIn();
-  if (me instanceof NextResponse) return me;
-  try {
-    return NextResponse.json(await myIdeas(me), { headers: { "Cache-Control": "no-store" } });
-  } catch (err) {
-    return asResponse(err);
-  }
-}
+/** GET /api/me/ideas — My ideas in the list state the query names (S-07, A-API.my-ideas, lane E). */
+export const GET = getMyIdeas;

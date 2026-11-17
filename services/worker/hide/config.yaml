@@ -1,0 +1,74 @@
+# L-HIDE.detect as configuration (lane C, BLD-C060): what is hidden from everyone but the person who typed it, and
+# how it is shown. The patterns themselves stay in pii/patterns.yaml (the one source for TypeScript and Python);
+# this file only says which of them hide, under which kind (E-ENUMS.hidden), plus patterns only hiding uses.
+version: "0.1"
+
+# Pattern id (pii/patterns.yaml) -> hidden kind. Only matches the pattern rules mark `block` hide, so a KfinTech
+# work address (warn) stays visible, and an IFSC hides only next to an account number (its `block_if_also`).
+# Not listed, so never hidden on their own: dob, arn, euin (L-HIDE.detect names seven kinds; BLD-C061).
+from_patterns:
+  pan: pan
+  aadhaar: aadhaar
+  mobile: phone
+  email: email
+  bank_account: account
+  card: account
+  folio: folio
+  demat_in: account
+  demat_16: account
+  pran: account
+  ifsc: account
+
+# Patterns only hiding uses ("Bank account, IFSC with account, UPI id"). Same regex rules as patterns.yaml.
+extra:
+  - id: upi
+    kind: account
+    # name@handle with no dot after the handle (that would be an email address)
+    regex: '(?<![A-Za-z0-9._%+-])[A-Za-z0-9][A-Za-z0-9._-]{1,63}@[A-Za-z][A-Za-z0-9]{1,31}(?![A-Za-z0-9.@-])'
+
+# "Folio ••••89": the label, a space, four dots, the last two characters (L-HIDE.rules/3, C-HIDDEN.where).
+labels:
+  folio: Folio
+  pan: PAN
+  phone: Phone
+  email: Email
+  account: Account
+  aadhaar: Aadhaar
+  name: Name
+
+# For lists and file lines: "Folio number, PAN and phone number"; "Found a phone number on page 2."
+nouns:
+  folio: folio number
+  pan: PAN
+  phone: phone number
+  email: email address
+  account: account number
+  aadhaar: Aadhaar number
+  name: name
+articles:
+  folio: a
+  pan: a
+  phone: a
+  email: an
+  account: an
+  aadhaar: an
+  name: a
+
+# A customer's name hides only in the same sentence as another hidden detail (L-HIDE.detect default). Colleagues'
+# names (the people directory) are never hidden.
+names: same_sentence
+
+# The gatekeeper's personal-data types -> hidden kind. Its other kinds of detail about a person (an address, a
+# sensitive detail) hide under "Name" until E-ENUMS.hidden has a kind for them (BLD-C061); null never hides.
+gatekeeper_kinds:
+  investor_or_customer_name: name
+  tagged_person_as_investor: name
+  individual_distributor_details: name
+  address: name
+  sensitive_detail: name
+  other: name
+  account_or_folio_number: account
+  government_id: pan
+  phone: phone
+  personal_email: email
+  date_of_birth: null

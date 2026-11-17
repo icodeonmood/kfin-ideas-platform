@@ -1,6 +1,7 @@
 /**
  * One idea or cluster as everyone may see it (§4.2 step 7, §4.13): the neutral summary, area, stage and the
- * number of colleagues on it. Names only on the wall, and only for people who said yes (`public_name_consent`).
+ * number of colleagues on it. Names only on the wall, and only for people who have not hidden theirs
+ * (`person_settings.show_name_on_wall`, DEC-104, BLD-E013).
  */
 import Link from "next/link";
 

@@ -13,7 +13,7 @@ import { playSignature } from "../display/launch/sound";
 
 const STEP_AT_MS = [0, 4000, 8000, 14000, 16500, 30000];
 const FINAL = STEP_AT_MS.length - 1;
-const SPARK = "#FF5B14";
+const SPARK = "#F46835";
 
 type Props = { url: string; shownUrl: string; qr: { size: number; d: string } };
 

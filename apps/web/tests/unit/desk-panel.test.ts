@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   bottomBar,
+  focusBackTo,
   initialPanel,
   panelReducer,
   readyLine,
+  storedQueue,
   type Panel,
   type PanelEvent,
 } from "@/lib/desk/panel";
@@ -115,5 +117,90 @@ describe("S-R2 panel (L-REVIEW.panel)", () => {
       { type: "decide" },
     ]);
     expect(p.state).toBe("decided");
+  });
+});
+
+describe("S-R2 Asking: the reviewer's stored queue (J-REVIEW/A1–A3, BLD-B244)", () => {
+  const set = {
+    set_id: "QS-1",
+    questions: [
+      {
+        id: "Q-1",
+        part: "often",
+        part_name: "How often",
+        text: "Is it 40 calls a day at one branch?",
+        suggested: true,
+      },
+      { id: "Q-2", part: "evidence", part_name: "Attached", text: "Can you add the SMS?", suggested: false },
+      { id: "Q-3", part: "fix", part_name: "Fix", text: null, suggested: false },
+      { id: "Q-4", part: "nowhere", part_name: "?", text: "Dropped: no such part", suggested: false },
+    ],
+    time_to_answer: "1w",
+    ready_line: "2 questions ready",
+    send_label: "Send 2 questions to Kavya",
+  };
+
+  it("keeps the questions the panel can send, with their time to answer", () => {
+    expect(storedQueue(set)).toEqual({
+      questions: [
+        { part: "often", text: "Is it 40 calls a day at one branch?", suggested: true },
+        { part: "evidence", text: "Can you add the SMS?", suggested: false },
+      ],
+      timeToAnswer: "1w",
+    });
+    expect(storedQueue(null)).toBeNull();
+    expect(storedQueue({ ...set, questions: [set.questions[2]!] })).toBeNull();
+    expect(storedQueue({ ...set, time_to_answer: null })?.timeToAnswer).toBeNull();
+  });
+
+  it("starts with 2 questions ready and Send 2 questions to Kavya, Ask still folded (S-R2.panel/2)", () => {
+    const p = initialPanel("reviewing", "3d", storedQueue(set));
+    expect(p.state).toBe("reviewing");
+    expect(p.askOpen).toBe(false);
+    expect(p.timeToAnswer).toBe("1w");
+    expect(p.queued.map((q) => q.text)).toEqual([
+      "Is it 40 calls a day at one branch?",
+      "Can you add the SMS?",
+    ]);
+    expect(readyLine(p)).toBe("2 questions ready");
+    expect(bottomBar(p, "Kavya")).toEqual({
+      primary: "Send 2 questions to Kavya",
+      secondary: "Decide without asking",
+    });
+    // a question added here follows the stored ones
+    const added = run([{ type: "add_suggestion", part: "who", text: "Who calls most?" }], p);
+    expect(added.queued.map((q) => q.key)).toEqual([1, 2, 3]);
+  });
+
+  it("a follow-up stored on an answered set opens as asking, as Ask a follow-up does, and Back keeps it", () => {
+    const p = initialPanel("answered", "3d", storedQueue(set));
+    expect(p.state).toBe("reviewing");
+    expect(p.queued).toHaveLength(2);
+    const back = run([{ type: "decide" }, { type: "back" }], p);
+    expect(back.state).toBe("reviewing");
+    expect(back.queued).toHaveLength(2);
+  });
+
+  it("a stored queue never reopens a sent or decided panel", () => {
+    expect(initialPanel("sent", "3d", storedQueue(set)).queued).toEqual([]);
+    expect(initialPanel("decided", "3d", storedQueue(set)).state).toBe("decided");
+  });
+});
+
+describe("C-SHEET-MERGE focus on close (V-ACC.visual/11, J-REVIEW/M2–M3)", () => {
+  const el = (name: string, isConnected = true) => ({ name, isConnected });
+  it("goes back to the row's Merge for that idea, also when the sheet was opened from the preview's Merge", () => {
+    const rowMerge = el("row merge");
+    expect(focusBackTo(rowMerge, el("Similar ideas"), el("preview merge", false))).toBe(rowMerge);
+  });
+  it("comes to the Similar ideas heading when the row's Merge is gone (merged) or was never there", () => {
+    const heading = el("Similar ideas");
+    expect(focusBackTo(el("row merge", false), heading, el("preview merge", false))).toBe(heading);
+    expect(focusBackTo(undefined, heading)).toBe(heading);
+  });
+  it("falls back to whatever had focus on open, and to nothing when all of them are gone", () => {
+    const opener = el("opener");
+    expect(focusBackTo(null, null, opener)).toBe(opener);
+    expect(focusBackTo(el("a", false), null, el("b", false))).toBeNull();
   });
 });

@@ -150,8 +150,7 @@ def build(require_token: Callable[..., None]) -> APIRouter:
     def committee_reversing(window_id: str, user_id: str) -> JSONResponse:
         from desk import committee
 
-        _ = user_id
-        return _call(committee.reversing_words, window_id)
+        return _call(committee.reversing_words, window_id, user_id)
 
     @r.post("/committee/windows/{window_id}/extend")
     def committee_extend(window_id: str, user_id: str) -> JSONResponse:

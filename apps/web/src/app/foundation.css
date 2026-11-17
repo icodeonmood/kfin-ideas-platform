@@ -1,0 +1,368 @@
+/*
+ * 1% Club foundation (lane D; F-COLOR, F-TYPE, F-SPACE, F-MOTION, F-A11Y; DEC-102, BLD-D010).
+ *
+ * `tokens.css` is the design pack's own file, imported unchanged, so a TOKEN delta changes one value and every call
+ * site follows. This sheet adds what that file leaves out (space, layers, layout, targets, elevation, glass, rings),
+ * the base the pack's kit sets on the app root, the type scale and the ambient light. It loads straight after
+ * tokens.css; offer.css then maps the older OFFER names onto these.
+ */
+
+/* ---------- Faces (F-TYPE.faces) ----------
+ * Deviation from F-TYPE.faces/1, recorded in BLD-D010: the fonts are self-hosted from npm (BLD-D008), whose families
+ * are "Inter Variable" and "Inter Tight Variable", so the pack's names lead with them. No page asks Google. */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  size-adjust: 107%;
+  ascent-override: 90%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
+}
+
+:root {
+  --fd: "Inter Tight Variable", "Inter Tight", "Inter Fallback", system-ui, sans-serif;
+  --ft: "Inter Variable", Inter, "Inter Fallback", system-ui, sans-serif;
+
+  /* ---------- Space (F-SPACE.scale), named by pixels; the older --space-N keep their values ---------- */
+  --sp-4: 4px;
+  --sp-8: 8px;
+  --sp-12: 12px;
+  --sp-16: 16px;
+  --sp-20: 20px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+  --sp-40: 40px;
+  --sp-48: 48px;
+  --sp-56: 56px;
+  --sp-72: 72px;
+  --sp-104: 104px;
+
+  /* ---------- Layout (F-SPACE.shell) ---------- */
+  --content-max: 1280px;
+  --page-gutter: 48px;
+  --sbw-open: 256px;
+  --sbw-folded: 76px;
+  --taskbar-h: 64px;
+
+  /* ---------- Targets and controls (F-SPACE.targets) ---------- */
+  --target: 44px;
+  --ctl: 48px;
+  --ctl-sm: 44px;
+  --ctl-full: 56px;
+
+  /* ---------- Layers (F-SPACE.z) ---------- */
+  --z-amb: -1;
+  --z-sticky: 20;
+  --z-sidebar: 30;
+  --z-scrim: 40;
+  --z-sheet: 41;
+  --z-menu: 70;
+  --z-popup: 80;
+  --z-skip: 90;
+  --z-fx: 2147483000;
+
+  /* ---------- Elevation (F-SPACE.shadow): light, not weight ---------- */
+  --sh-glass: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 40px -30px rgba(17, 17, 17, 0.28);
+  --sh-nav-current: 0 0 0 1px rgba(17, 17, 17, 0.07), 0 6px 16px -10px rgba(17, 17, 17, 0.3);
+  --sh-primary-hover: 0 14px 30px -14px rgba(17, 17, 17, 0.6);
+  --sh-line-hover: inset 0 0 0 1px var(--ink), 0 10px 22px -16px rgba(17, 17, 17, 0.45);
+  --sh-new: 0 10px 22px -14px rgba(17, 17, 17, 0.7);
+  --sh-sheet: 0 30px 80px -30px rgba(17, 17, 17, 0.45), 0 0 0 1px rgba(17, 17, 17, 0.06);
+  --sh-popup:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 50px 100px -40px rgba(17, 17, 17, 0.5);
+  --sh-prompt:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96), inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 1px rgba(17, 17, 17, 0.08), 0 2px 6px rgba(17, 17, 17, 0.05),
+    0 44px 100px -28px rgba(57, 93, 237, 0.4), 0 18px 40px -18px rgba(17, 17, 17, 0.18);
+  --sh-tooltip: 0 8px 20px -10px rgba(17, 17, 17, 0.6);
+
+  /* ---------- Glass (F-COLOR.glass): fills and blurs for each surface ---------- */
+  --glass-ring: rgba(17, 17, 17, 0.07);
+  --glass-blur: blur(18px) saturate(1.4);
+  --glass-panel: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52));
+  --glass-panel-blur: blur(26px) saturate(1.45);
+  --glass-sidebar: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.45));
+  --glass-sidebar-blur: blur(22px) saturate(1.4);
+  --glass-taskbar: rgba(246, 246, 244, 0.55);
+  --glass-taskbar-blur: blur(10px);
+  --glass-prompt: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(250, 250, 253, 0.7));
+  --glass-prompt-blur: blur(30px) saturate(1.5);
+  --glass-popup: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.84));
+  --glass-popup-blur: blur(26px) saturate(1.5);
+  --glass-tabs: rgba(255, 255, 255, 0.94);
+  --glass-tabs-blur: saturate(1.6) blur(16px);
+  --glass-dock: rgba(243, 243, 241, 0.96);
+  --scrim-sheet: rgba(17, 17, 17, 0.32);
+  --scrim-popup: rgba(232, 232, 238, 0.42);
+
+  /* ---------- Rings and glows (F-COLOR.status, C-FIELD, C-FIELD-MSG) ---------- */
+  --focus-glow: rgba(57, 93, 237, 0.16);
+  --bad-glow: rgba(180, 35, 24, 0.12);
+  --bad-ring: rgba(180, 35, 24, 0.14);
+  --warn-ring: rgba(181, 71, 8, 0.16);
+  --hover-fill: rgba(17, 17, 17, 0.05);
+  --hover-fill-strong: rgba(17, 17, 17, 0.06);
+
+  /* ---------- Gradients (F-COLOR.gradients): light only, never a wash on a flat control ---------- */
+  --band-1: linear-gradient(165deg, #3455ec 0%, #6957ee 55%, #f58256 130%);
+  --band-2: linear-gradient(165deg, #7958ee 0%, #4261ec 60%, #1e2e99 120%);
+  --sheen: linear-gradient(115deg, transparent 0 38%, rgba(255, 255, 255, 0.2) 50%, transparent 62% 100%);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --page-gutter: 20px;
+  }
+}
+
+/* ---------- Base (F-TYPE.faces/2–4, F-SPACE.scroll) ---------- */
+html {
+  background: var(--paper);
+  scrollbar-gutter: stable;
+}
+
+body {
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--ft);
+  font-feature-settings: "cv11" 1;
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.006em;
+}
+
+p,
+li,
+dd,
+dt,
+summary,
+figcaption {
+  text-wrap: pretty;
+}
+
+h1,
+h2,
+h3,
+legend {
+  text-wrap: balance;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sticky bars never cover what has focus (F-SPACE.scroll/1, WCAG 2.4.11) */
+* {
+  scroll-margin-block: 96px 140px;
+}
+
+/* Links inside running text reach the 44px target without changing the line spacing (F-SPACE.targets/3) */
+p a {
+  padding-block: 10px;
+  margin-block: -10px;
+}
+
+/* Focus (F-MOTION.focus/4, F-A11Y.rules/2): 2px blue, 3px off the edge */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+/* ---------- Type (F-TYPE.scale) ---------- */
+.d1,
+.d2,
+.h1,
+.h2,
+.h3,
+.fig {
+  margin: 0;
+  font-family: var(--fd);
+  font-weight: 500;
+}
+
+.d1 {
+  font-size: clamp(44px, 4.6vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.d2 {
+  font-size: clamp(35px, 4vw, 58px);
+  line-height: 1.06;
+  letter-spacing: -0.028em;
+}
+
+.h1 {
+  font-size: 40px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.h2 {
+  font-size: 28px;
+  line-height: 1.12;
+  letter-spacing: -0.024em;
+}
+
+.h3 {
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: -0.014em;
+}
+
+.body {
+  margin: 0;
+  max-width: 65ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--mute2);
+}
+
+.label {
+  font: 500 15px/1.4 var(--ft);
+  color: var(--ink);
+}
+
+.meta {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  letter-spacing: 0.004em;
+  color: var(--mute);
+}
+
+.micro {
+  font-size: 12.5px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+/* Big figures: impact tiles, a One's number, counts */
+.fig {
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 15px;
+  }
+
+  .d1 {
+    font-size: 32px;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+  }
+
+  .h1 {
+    font-size: 28px;
+    line-height: 1.12;
+    letter-spacing: -0.026em;
+  }
+
+  .h2 {
+    font-size: 21px;
+    line-height: 1.2;
+    letter-spacing: -0.018em;
+  }
+
+  .h3 {
+    font-size: 17px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  .meta {
+    font-size: 13px;
+  }
+}
+
+/* ---------- Ambient light (F-COLOR.glass): behind every signed-in screen, never interactive ----------
+ * Full light: all six layers. Quiet light (data-light="quiet"): only the cool a1 and a4 at half strength, because on
+ * working screens warm colour is kept for "needs you". */
+.amb {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-amb);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.amb i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+}
+
+.amb .a1 {
+  width: 820px;
+  height: 600px;
+  left: 40px;
+  top: -140px;
+  background: radial-gradient(closest-side, rgba(57, 93, 237, 0.34), rgba(57, 93, 237, 0));
+}
+
+.amb .a2 {
+  width: 740px;
+  height: 560px;
+  right: -180px;
+  top: 160px;
+  background: radial-gradient(closest-side, rgba(244, 104, 53, 0.24), rgba(244, 104, 53, 0));
+}
+
+.amb .a3 {
+  width: 960px;
+  height: 600px;
+  left: 30%;
+  top: 620px;
+  background: radial-gradient(closest-side, rgba(146, 128, 255, 0.3), rgba(146, 128, 255, 0));
+}
+
+.amb .a4 {
+  width: 780px;
+  height: 560px;
+  right: -120px;
+  top: 1480px;
+  background: radial-gradient(closest-side, rgba(57, 93, 237, 0.28), rgba(57, 93, 237, 0));
+}
+
+.amb .a5 {
+  width: 720px;
+  height: 520px;
+  left: 140px;
+  top: 2180px;
+  background: radial-gradient(closest-side, rgba(244, 104, 53, 0.22), rgba(244, 104, 53, 0));
+}
+
+.amb .a6 {
+  width: 920px;
+  height: 560px;
+  right: 12%;
+  top: 2920px;
+  background: radial-gradient(closest-side, rgba(146, 128, 255, 0.26), rgba(146, 128, 255, 0));
+}
+
+.amb[data-light="quiet"] :is(.a2, .a3, .a5, .a6) {
+  display: none;
+}
+
+.amb[data-light="quiet"] :is(.a1, .a4) {
+  opacity: 0.5;
+}
+
+/* ---------- Reduced motion (F-MOTION.reduced): nothing travels, nothing loops, every screen simply appears ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
