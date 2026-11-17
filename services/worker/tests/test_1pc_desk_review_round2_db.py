@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from core.db import Conn
-from desk import asking, merging, revise
+from desk import adapters, asking, committee, decide, merging, revise
 from desk.store import Refused
 from tests import desk_fixtures as f
 
@@ -157,3 +157,38 @@ def test_L_QUESTIONS_answer_4_a_draft_answer_stays_with_the_sharer_who_wrote_it(
     assert (first["text"], first["sent"]) == ("One branch, about 40 a day.", False)  # still Kavya's to send
     assert second["sent"] is True and second["by"]["first_name"] == "Ravi"
     assert asking.send_answers(db, sent["id"], kavya, SENT)["state"] == "answered"
+
+
+# ---- finding 5: the crew is told of a decision and of a reversal (L-INBOX.kinds) --------------------------------
+def _told(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, list[str]]]:
+    calls: list[tuple[str, list[str]]] = []
+
+    def tell(conn: Conn, kind: str, recipients: list[str], **_: Any) -> None:
+        calls.append((kind, list(recipients)))
+
+    monkeypatch.setattr(adapters, "tell", tell)
+    return calls
+
+
+def test_L_INBOX_kinds_a_decision_goes_to_the_sharer_and_crew_a_reversal_to_the_reviewer_too(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    farhan, sneha = f.person(db, "Farhan Shaikh"), f.person(db, "Sneha Kulkarni")
+    f.crew(db, cast["idea"], farhan)
+    f.crew(db, cast["idea"], sneha)
+    db.execute(
+        "UPDATE crew_members SET left_at = %s, left_how = 'left' WHERE contributor_code = %s",
+        (f.at(15, 9), sneha["code"]),
+    )
+    told = _told(monkeypatch)
+    kavya, meera = cast["kavya"]["id"], cast["meera"]["id"]
+    decide.send(db, cast["idea"]["idea_id"], meera, {"choice": "pick", "reason": REASON}, f.at(16, 10))
+    assert told == [
+        ("decision", [kavya, farhan["id"]])
+    ]  # Kavya leads the crew too: told once; Sneha has left
+    window = db.execute("SELECT id FROM decision_windows").fetchone()
+    assert window is not None
+    committee.reverse_window(db, str(window["id"]), cast["rohan"]["id"],
+                             {"to": "not_picked", "note": "The SMS vendor is changing; this goes with the new one."},
+                             f.at(17, 10))  # fmt: skip
+    assert told[-1] == ("decision_reversed", [kavya, farhan["id"], meera])
