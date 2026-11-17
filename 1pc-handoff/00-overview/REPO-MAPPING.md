@@ -46,7 +46,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
 | `S-H4` | `/how-it-works` | `app/how-it-works`, `lib/how-it-works.ts` (old `app/journey` stays until lane E retires it) | built (16 Nov, BLD-A194) | S | P0 | A |
-| `S-H5` | `/inbox` | `app/inbox` | exists, differs | L | P0 | A |
+| `S-H5` | `/inbox`, `/inbox/:itemId` (also S-H2B's route) | `app/inbox` (`page.tsx`, `[item]/page.tsx`, `inbox-reader.tsx`, `teamup-request.tsx`, `inbox.css`), `server/inbox.ts`, `server/inbox-route.ts`, `/api/inbox/*` | built (17 Nov, BLD-A200 to A209); e2e `e2e/inbox.spec.ts` | L | P0 | A |
 | `S-H6` | `/profile` | none; pieces on `/my-ideas` (`points.tsx`, `name-on-wall.tsx`) | exists, differs | M | P0 | E |
 | `S-OFFICE` | `/display/office` | `app/display/office`, `lib/display.ts`, `server/display.ts`, worker `display/office.py`, `GET /api/display/office` (old `app/constellation` stays until lane E retires it) | built (16 Nov, BLD-A190, BLD-A191) | M | P0 | A |
 | `S-LAUNCH` | `/display/launch` | `app/display/launch` (`stage.tsx`, `sound.ts`); old `app/launch` stays until lane E retires it | built (16 Nov, BLD-A190, BLD-A193) | S | P0 | A |
@@ -80,7 +80,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-PREVIEW` | built: `components/preview/idea-preview.tsx` (`IdeaPreviewDialog`), the band's status is lane D's `<Pill variant="band">` (BLD-D012); used on `S-05` | M | P0 | C |
 | `C-WORTH` | exists, differs | M | P0 | C, B |
 | `C-QCARD` | missing | M | P0 | B |
-| `C-INBOX-READER` | exists, differs | L | P0 | A |
+| `C-INBOX-READER` | built (17 Nov, BLD-A201, A204): `app/inbox/inbox-reader.tsx`; S-H2B's request body and answers in `app/inbox/teamup-request.tsx` over lane F's `/api/team-up/:id` | L | P0 | A |
 | `C-LISTEN` | missing | M | P0 | B |
 | `C-SHEET-MERGE` | missing | M | P0 | B |
 | `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
@@ -100,8 +100,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-SUBMIT` | `services/worker/submit/{ready,send,check,clock,edit,fix,helpers,adapters}.py`, `server/share.ts`; `GET /api/drafts/:id/send`, `PUT`/`DELETE /api/drafts/:id/fix` and `PUT /api/drafts/:id/helpers` (S-05.fix and part 6; figures through lane B's `desk/worth.py`), `POST /api/drafts/:id/submit`, `GET`/`PATCH /api/ideas/:id/edit` (A-API `PATCH /ideas/:id`), `GET /api/ideas/:id/versions`; timer kind `decide_by`; withdraw and restore are lane E's `ideapage/withdraw.py` through `submit/adapters.py`. Old `server/submissions.ts` and `scan/save.py` stay for the old `/share` pages until S-05 replaces them (BLD-C081, BLD-C083 to BLD-C086) | built (API) | P0 | C |
 | `L-REVIEW` | `services/worker/desk/review.py`, `queue.py`, `reads.py`, `clock.py`, `clocks.py`; web forwarders in `server/desk.ts` | landed at 82668c1 (17 Nov, back end; follow-up on `b/1pc-review-fu`) | P0 | B |
 | `L-DECIDE` | `services/worker/desk/decide.py`, `promises.py`, `when.py`; `idea_decisions` | landed at 82668c1 (17 Nov, back end) | P0 | B |
-| `L-INBOX` | `notifications`, `comms/inbox.py` | exists, differs | P0 | A |
-| `L-NOTIFY` | `comms/*` | exists, differs | P0 (email, in-app), P2 (Teams) | A |
+| `L-INBOX` | worker `notify/inbox.py`, `notify/render.py`, `notify/ops.py` over `notifications` (kind NOT NULL); `/internal/inbox/*`; templates `comms/templates/inbox/` | built (17 Nov, BLD-A200 to A206); old `comms/inbox.py` stays until lane E retires it | P0 | A |
+| `L-NOTIFY` | worker `notify/__init__.py` (`post`, `resolve`, BLD-A180), `comms/send.py`, `notify/digest.py` (decide-by digest, `comms.digest` job), migration `20261122100300_notify_dedupe.sql` | built (17 Nov, BLD-A180, A200, A203); Teams built and switched off (`comms.teams`, DEC-105) | P0 (email, in-app), P2 (Teams) | A |
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
 | `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |

@@ -608,7 +608,7 @@ step(
   "J-RECOVER/15",
   "S-06",
   "Change of mind after sending: Edit and Withdraw until the desk opens it; withdrawn, then restored",
-  { needs: ["S-06", "L-SUBMIT"] },
+  { needs: ["S-06", "L-SUBMIT"], after: ["J-RECOVER/14"] },
   async ({ page }) => {
     await signInFreshAs(page, WRITER);
     const idea = carried.idea;

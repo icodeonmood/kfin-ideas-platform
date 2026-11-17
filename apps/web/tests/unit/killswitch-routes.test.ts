@@ -52,7 +52,9 @@ describe("kill switch route map (§7.6)", () => {
 
   it("speaks the screens' own words: no switch, no in-app inbox, never Garage (BLD-157)", () => {
     for (const text of Object.values(BANNERS)) {
-      expect(text).not.toMatch(/\bswitch(ed|es)?\b|in-app|inbox|garage/i);
+      expect(text).not.toMatch(/\bswitch(ed|es)?\b|in-app|garage/i);
+      // "Inbox" is the pack's own word for the screen (S-H5, F-COPY.vocabulary); "inbox" as jargon is not.
+      expect(text).not.toMatch(/\binbox\b/);
       expect(text.trim().length).toBeGreaterThan(0);
     }
   });

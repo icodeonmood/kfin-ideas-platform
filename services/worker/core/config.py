@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     clamav_port: int = 3310
     smtp_url: str = "smtp://localhost:1025"
     app_base_url: str = "http://localhost:3000"
+    # The daily decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203). Built but off at launch: lane B's
+    # BLD-B241 mails nothing about overdue ideas. DECIDE_BY_DIGEST=true and a worker restart switch it on.
+    decide_by_digest: bool = False
 
     # Dev and test only: where host-side tools and tests reach the local stack. A second stack in a worktree
     # sets these in its own `.env` (BLD-200); the defaults are the first stack's ports.

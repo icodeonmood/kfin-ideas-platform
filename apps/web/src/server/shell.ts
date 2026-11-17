@@ -6,7 +6,7 @@
  */
 import type { CurrentUser } from "./auth/current";
 import { myIdeas, type MyIdea } from "./ideas";
-import { messagesFor } from "./inbox";
+import { inboxCounts } from "./inbox";
 import { myOne } from "./ones";
 
 /** A row in a sidebar section. `tone` is the status dot (C-SIDEBAR.anatomy/4): warn for "needs you", blue for
@@ -87,9 +87,9 @@ function titleOf(idea: MyIdea): string {
 }
 
 export async function shellData(me: CurrentUser): Promise<ShellData> {
-  const [mine, messages, one] = await Promise.all([
+  const [mine, counts, one] = await Promise.all([
     inTime(myIdeas(me)),
-    inTime(messagesFor(me)),
+    inTime(inboxCounts(me)),
     inTime(myOne(me)),
   ]);
   const ideas = mine?.ideas ?? [];
@@ -112,7 +112,7 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
     initials: initialsOf(me.name),
     tier: active?.tier ?? null,
     tierName: active?.tier_name ?? null,
-    inboxUnread: messages?.filter((m) => !m.read).length ?? 0,
+    inboxUnread: counts?.unread ?? 0, // L-INBOX.rules/1: the Inbox's own unread count
     drafts,
     ideas: shared,
   };
