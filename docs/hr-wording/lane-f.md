@@ -75,6 +75,27 @@ The sheet's own words are the pack's (`C-SHEET-TEAMUP` and `reference/copy/Crew.
 
 Not the sheet's: `Crew.md` view=Request sent also adds "Ravi Nair, Investor service", "Waiting for Ravi" and the link "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea." These are a row in S-H2's "Your crews" list behind the sheet (they replace "Ideas you team up on show here."), so they belong to the crew page, which lane F builds next, and are used there word for word (BLD-F074).
 
+## 5. A lead who is not named (BLD-F029, added 18 Nov)
+
+DEC-104: a lead who hid their name from the Wall in Profile, or has left, is not named to a person asking to join until that person is on the crew (the review desk and the Ones Committee always see the name). Each line below is the pack's line with the lead's name replaced by "the lead" ("The lead" at the start of a sentence); nothing else changes. The code is `services/worker/teamup/rules.py` (`lead_word`) and `apps/web/src/components/teamup/teamup-sheet.tsx` (`leadWord`).
+
+| Module | Where it shows | Pack line (lead named) | Our line (lead not named) |
+|---|---|---|---|
+| `C-SHEET-TEAMUP.compose/2` | The sheet's title | Team up with Ravi | Team up with the lead |
+| `C-SHEET-TEAMUP.compose/2` | The line under the title | Ravi leads “Rejection SMS codes confuse investors” and decides who joins. Tell Ravi what you bring. | The lead of “Rejection SMS codes confuse investors” decides who joins. Tell them what you bring. |
+| `C-SHEET-TEAMUP.compose/3` | The note's label | Your note to Ravi | Your note to the lead |
+| `C-SHEET-TEAMUP.compose/5` | The privacy line | Ravi sees your name, your note. (…and the idea you bring. / …and the ideas you bring.) | The lead sees your name, your note. (…and the idea you bring. / …and the ideas you bring.) |
+| `C-SHEET-TEAMUP.compose/6` | The button | Send to Ravi | Send to the lead |
+| `C-SHEET-TEAMUP.compose`, Check it | The choice to merge | Ask Ravi to merge mine in / Ravi decides. If Ravi accepts, yours joins that idea with credit to you. If not, you send yours on its own. | Ask the lead to merge mine in / The lead decides. If the lead accepts, yours joins that idea with credit to you. If not, you send yours on its own. |
+| `C-SHEET-TEAMUP.sent` | The sent step | Sent to Ravi / Ravi reads your note, then approves or declines. You’ll hear in your Inbox. | Sent to the lead / The lead reads your note, then approves or declines. You’ll hear in your Inbox. |
+| `C-SHEET-TEAMUP.after`, waiting; the 409 `already_requested` | The opener (Find your crew, the idea page, Status) and the sheet | Waiting for Ravi | Waiting for the lead |
+| `C-SHEET-TEAMUP.after`, declined (section 2's line) | The opener | Ravi declined: “The crew is full for now”. Send yours on its own. / Ravi declined. | The lead declined: “The crew is full for now”. Send yours on its own. / The lead declined. |
+| `L-MERGE.request/4` (Review.md, merge=Waiting for Ravi); the 409 `already_requested` on a draft | Check it's Similar ideas part and the bar under the steps | Waiting on Ravi to merge / Waiting for Ravi to accept the merge. If Ravi declines, you can send yours on its own. | Waiting on the lead to merge / Waiting for the lead to accept the merge. If the lead declines, you can send yours on its own. |
+| `L-MERGE.request/7` | Check it after a decline | Ravi kept it separate / Ravi kept that idea separate: “Better as two”. Send yours on its own. | The lead kept it separate / The lead kept that idea separate: “Better as two”. Send yours on its own. |
+| `L-MERGE.request/5`, accepted, only when the person has left the crew since | Check it | Ravi accepted. Yours is now part of IDEA-2026-001412, with credit to you. Nothing else to send. | The lead accepted. Yours is now part of IDEA-2026-001412, with credit to you. Nothing else to send. |
+
+The person asking is still named to the lead they ask, even if they hid their name from the Wall (BLD-F075): the sheet tells them so before they send ("Ravi sees your name, your note." / "The lead sees your name, your note."), so the lead's Inbox reader keeps the lines in sections 1 and 2.
+
 ## Conversation (L-CONVO, S-08)
 
 Everything else on S-08 is the design pack's own copy (`1pc-handoff/reference/copy/Messages.md`), used as it stands: "You shared it.", "Checked and matched. 1 folio number hidden, 2 similar ideas found.", "Meera from the review desk opened it.", "Meera from the review desk picked it.", "Arjun Rao’s team started building it.", "Ravi Nair approved your team-up request.", the four placeholders, the visibility lines the board draws, "No messages yet", the line above the box while questions are open, "Your answers to Meera’s 3 questions", "Each answer was added to its part of your idea. Meera decides by Friday 20 November.", "Write a message or attach a file first." and "Message removed" (`L-CONVO/10`). "Meera", "Ravi", "Kavya" and "Sanjay" stand for real people: at run time each is the person's name, and "You" for the reader. The code is `services/worker/convo/render.py` (event lines), `reads.py` (header, side panel, box) and `messages.py` (messages under the box).
