@@ -30,13 +30,36 @@ function body(raw: Record<string, unknown>, keys: readonly string[]): string {
   return JSON.stringify(out);
 }
 
-async function forward(workerPath: string, init: RequestInit = {}): Promise<NextResponse> {
-  const res = await workerFetch(workerPath, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
-  const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
+/** What the browser gets when the worker cannot be reached or answers with something that is not JSON: the pack's
+ * error shape (A-API.conventions/2) and F-COPY's failure line, never the worker's own text. */
+export const WORKER_FAILED = {
+  error: { code: "desk_unavailable", message: "That didn’t go through. Try again in a moment." },
+} as const;
+
+function failed(): NextResponse {
+  return NextResponse.json(WORKER_FAILED, { status: 502, headers: { "Cache-Control": "no-store" } });
+}
+
+export async function forward(workerPath: string, init: RequestInit = {}): Promise<NextResponse> {
+  let res: Response;
+  let text: string;
+  try {
+    res = await workerFetch(workerPath, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+    text = await res.text();
+  } catch {
+    return failed();
+  }
+  let json: unknown = null;
+  if (text) {
+    try {
+      json = JSON.parse(text) as unknown;
+    } catch {
+      return failed();
+    }
+  }
   return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 

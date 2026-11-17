@@ -502,25 +502,40 @@ def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequ
     for fid in ids:
         r = rows.get(fid)
         if r is None or r["idea_uuid"] != idea["id"] or (r["answer_id"] and str(r["answer_id"]) != answer_id):
-            raise Refused(422, "file_not_found", "That file can’t be added to this answer.", "file_ids")
+            raise Refused(422, "file_not_found", FILE_CANT_BE_ADDED, "file_ids")
         if r["file_state"] == "personal_data_found" and fid not in linked:
             raise Refused(422, "file_has_personal_data", FILE_HAS_PERSONAL_DATA, "file_ids")
     conn.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer_id, ids))
+
+
+FILE_CANT_BE_ADDED = "That file can’t be added to this answer."
+
+
+def _answer_body(text: Any, file_ids: Any) -> tuple[str | None, tuple[str, ...]]:
+    """The body's types, checked before anything else (A-API.conventions/2): text is text, file_ids a list of ids."""
+    if text is not None and not isinstance(text, str):
+        raise Refused(422, "answer_invalid", "Write your answer as text.", "text")
+    if file_ids is None:
+        return text, ()
+    if not isinstance(file_ids, list | tuple) or not all(isinstance(i, str) for i in file_ids):
+        raise Refused(422, "file_not_found", FILE_CANT_BE_ADDED, "file_ids")
+    return text, tuple(file_ids)
 
 
 def save_answer(
     conn: Conn,
     question_id: str,
     user_id: str,
-    text: str | None,
-    file_ids: Sequence[str] = (),
+    text: Any,
+    file_ids: Any = (),
     at: dt.datetime | None = None,
 ) -> dict[str, Any]:
     """`PUT /questions/:id/answer`: autosave a draft answer, masked (L-QUESTIONS.answer/4, /6), and attach any
-    `file_ids` (files already on the answer stay)."""
+    `file_ids` (files already on the answer stay). `text` and `file_ids` arrive as the body has them."""
     t = at or now()
     p = promises.get()
     qid = _uuid(question_id)
+    text, file_ids = _answer_body(text, file_ids)
     with conn.transaction():
         q = conn.execute(
             "SELECT q.id, q.part, q.set_id, s.idea_uuid, s.state FROM questions q "

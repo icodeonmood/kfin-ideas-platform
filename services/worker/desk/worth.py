@@ -32,6 +32,9 @@ TILE_LABELS: dict[str, str] = {
 KIND_LABELS: dict[str, str] = {"problem": "A problem to fix", "business_idea": "A new business idea"}
 NOT_GIVEN = "Not given"
 INVALID = "Write a figure or a range."
+TOO_BIG = "That figure is too large. Check it and write it again."
+# Below the columns' limits (idea_worth: hours numeric(12,2), rupees numeric(14,2)), with room for the rounding.
+LIMITS: dict[str, float] = {"hours_month": 1e9, "cost_month": 1e11, "revenue_month": 1e11}
 _ABOUT = re.compile(r"\b(?:about|around|approx(?:imately)?|roughly|nearly|almost)\b|~", re.I)
 
 
@@ -83,23 +86,27 @@ def _text(measure: Measure, low: float, high: float | None, about: bool) -> str:
     return f"about {words}" if about and high is None else words
 
 
-def parse(measure: Measure, raw: str | None) -> Range | None:
-    """One measure from what was typed. Blank is None (all measures are optional); anything that is not one
-    figure or a range of two raises `WorthInvalid`."""
+def parse(measure: Measure, raw: Any) -> Range | None:
+    """One measure from what was typed. Blank is None (all measures are optional); anything that is not text, not
+    one figure or a range of two, or past the measure's limit raises `WorthInvalid`."""
+    if raw is not None and not isinstance(raw, str):
+        raise WorthInvalid(measure)  # a number, list or object where the typed words belong
     text = (raw or "").strip()
     if not text:
         return None
     found = [q.value for q in quantities(text)]
     if not found or len(found) > 2 or any(v < 0 for v in found):
         raise WorthInvalid(measure)
+    if any(not v <= LIMITS[measure] for v in found):  # `not <=` also catches nan
+        raise WorthInvalid(measure, TOO_BIG)
     low, high = (found[0], None) if len(found) == 1 or found[0] == found[1] else sorted(found)
     return Range(low, high, _text(measure, low, high, bool(_ABOUT.search(text))))
 
 
 class WorthInvalid(ValueError):
-    def __init__(self, measure: str) -> None:
+    def __init__(self, measure: str, message: str = INVALID) -> None:
         super().__init__(measure)
-        self.error = FieldError("worth_invalid", measure, INVALID)
+        self.error = FieldError("worth_invalid", measure, message)
 
 
 @dataclass(frozen=True)
@@ -137,10 +144,10 @@ def read_revision(fields: dict[str, Any], note: str | None, note_max: int) -> tu
             ranges[m] = parse(m, fields.get(m))
         except WorthInvalid as exc:
             errors.append(exc.error)
-    tools = fields.get("outside_tools")
-    if tools is not None and tools not in OUTSIDE_TOOLS:
+    raw_tools = fields.get("outside_tools")
+    tools: Any = raw_tools if isinstance(raw_tools, str) and raw_tools in OUTSIDE_TOOLS else None
+    if raw_tools is not None and tools is None:  # a list or object is unhashable: checked as text first
         errors.append(FieldError("outside_tools_invalid", "outside_tools", "Choose None, Partly or Fully."))
-        tools = None
     if note is not None and len(note.strip()) > note_max:
         errors.append(FieldError("note_too_long", "note", f"Keep the note under {note_max} characters."))
     return Worth(**ranges, outside_tools=tools), errors
