@@ -15,6 +15,13 @@
   display: block;
   margin-top: 6px;
 }
+/* The reversal's lines, one under another (S-R4.states, Reversed) */
+.cm-line {
+  display: block;
+}
+.cm-line .cm-line {
+  margin-top: 2px;
+}
 .cm-reason {
   margin: 8px 0 0;
   max-width: 46ch;
