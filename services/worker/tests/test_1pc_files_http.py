@@ -115,13 +115,8 @@ def test_A_API_files_http_upload_check_and_view_through_the_web(world: dict[str,
     )
     assert opened is not None and opened["n"] >= 3  # one more if the early view came after the check
 
-    big = sharer.post(
-        "/api/files", data={"idea_id": world["ref"]},
-        files={"file": ("big.pdf", b"%PDF-1.4\n" + b"0" * (25 * 1024 * 1024 + 70_000), "application/pdf")},
-    )  # fmt: skip
-    assert big.status_code == 413 and big.json()["error"] == {
-        "limit_mb": 25, "code": "too_big", "message": "Too big. Files can be up to 25 MB.",
-    }  # fmt: skip
+    # `too_big` is refused from the Content-Length (web unit test) and by the worker (test_1pc_files_db), without
+    # sending 25 MB through the stack here.
     wrong = sharer.post(
         "/api/files", data={"idea_id": world["ref"]}, files={"file": ("x.exe", b"MZ" + b"\0" * 64)}
     )
