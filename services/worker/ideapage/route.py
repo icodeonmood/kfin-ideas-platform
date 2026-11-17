@@ -7,7 +7,7 @@
 A draft and a never-shared idea exist only for their owner: everyone else gets "not found", the same answer as
 for an idea that does not exist, so nothing is confirmed (L-DRAFT.autosave/3). A withdrawn idea is the same, except
 for someone who was on its crew or asked to join it: they were told, and get S-09's one line (S-09.rules/2,
-L-SUBMIT.withdraw/2 and /4, BLD-E010). A merged idea shows its S-06 or S-09 state with the link to where it went.
+L-SUBMIT.withdraw/2 and /4, BLD-E011). A merged idea shows its S-06 or S-09 state with the link to where it went.
 Others reach an idea only by its reference, never by its row id.
 """
 
@@ -20,13 +20,15 @@ from core.db import Conn
 from ideapage import read
 from ideapage.colleague import colleague_view, withdrawn_view
 from ideapage.sharer import sharer_view
+from ideapage.words import IST
 
 
-def record_open(conn: Conn, idea: dict[str, Any], me: read.Viewer) -> None:
-    """A colleague opened the page: one row per person per day, counts only (L-WALL.justin/4, 'Opened this week')."""
+def record_open(conn: Conn, idea: dict[str, Any], me: read.Viewer, at: dt.datetime) -> None:
+    """A colleague opened the page: one row per person per day in India time, counts only (L-WALL.justin/4,
+    'Opened this week'). The day is the view's own clock, so a page shown for a given moment counts on that day."""
     conn.execute(
-        "INSERT INTO idea_opens (idea_uuid, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (idea["id"], me.user_id),
+        "INSERT INTO idea_opens (idea_uuid, user_id, day) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+        (idea["id"], me.user_id, at.astimezone(IST).date()),
     )
 
 
@@ -62,5 +64,5 @@ def idea_view(
     if me.on_desk:
         return {"view": "desk", "to": f"/desk/ideas/{idea['idea_id']}"}
     out = colleague_view(conn, idea, me, t, came_from=came_from, back=back)
-    record_open(conn, idea, me)
+    record_open(conn, idea, me, t)
     return out
