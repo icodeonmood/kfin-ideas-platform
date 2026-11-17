@@ -4,12 +4,32 @@ import { useEffect, useId, useRef, type CSSProperties } from "react";
 
 import type { TierMoment } from "@/lib/contracts/api";
 
+import { rememberUnsentSeen, takeUnsentSeen } from "./rules";
+
+/** This browser's storage, or null where it is blocked. */
+export function deviceStore(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Marks the moment seen; true once the worker has it (S-ONE.rules/3). */
+export async function markSeen(id: TierMoment["id"]): Promise<boolean> {
+  const res = await fetch(`/api/one/glow-up/${encodeURIComponent(String(id))}/seen`, {
+    method: "POST",
+  }).catch(() => null);
+  return Boolean(res?.ok);
+}
+
 /**
  * S-ONE.states `showGlowUp`, L-ONES.rules/3: the full-screen moment over the dashboard when a tier has just risen.
  * "No. 17, your spark is hotter", "From Tier 1, Spark to Tier 2, Glow", "Your story so far", "Messages for you" and
  * "Back to my dashboard". A modal dialog: focus moves to its title on open, Escape closes it, the page behind is
- * inert. It plays once: it is marked seen as soon as it shows (S-ONE.rules/3). Under reduced motion it appears
- * already settled (one.css).
+ * inert. It plays once: it is marked seen as soon as it shows (S-ONE.rules/3). A "seen" that does not land is
+ * remembered on this device, and the next load sends it once more and leaves the dialog closed instead of playing
+ * the moment again. Under reduced motion it appears already settled (one.css).
  */
 export function GlowUp({
   moment,
@@ -24,17 +44,27 @@ export function GlowUp({
   const title = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const marked = useRef(false);
+  /** Decided once per moment on arrival: it already played here and only its "seen" is owed. */
+  const owed = useRef<boolean | null>(null);
 
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
+    owed.current ??= takeUnsentSeen(deviceStore(), moment.id);
+    if (owed.current) {
+      if (!marked.current) {
+        marked.current = true;
+        void markSeen(moment.id); // once: a second miss lets the moment play on the load after
+      }
+      return;
+    }
     if (!d.open) d.showModal();
     title.current?.focus();
     if (!marked.current) {
       marked.current = true;
-      void fetch(`/api/one/glow-up/${encodeURIComponent(String(moment.id))}/seen`, { method: "POST" }).catch(
-        () => undefined,
-      );
+      void markSeen(moment.id).then((ok) => {
+        if (!ok) rememberUnsentSeen(deviceStore(), moment.id);
+      });
     }
     return () => {
       if (d.open) d.close();

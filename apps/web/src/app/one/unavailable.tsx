@@ -1,6 +1,6 @@
 import { Empty } from "@/components/ui/empty";
 
-import { LOAD_FAILED } from "./rules";
+import { LOAD_FAILED, TRY_AGAIN } from "./rules";
 
 /**
  * S-ONE's error state (BLD-E041): the dashboard could not be read. Says so in its place, with one way on: "Try
@@ -28,7 +28,7 @@ export function OneUnavailable() {
           title={LOAD_FAILED}
           action={
             <a href="/one" className="btn btn-secondary">
-              Try again
+              {TRY_AGAIN}
             </a>
           }
         />
