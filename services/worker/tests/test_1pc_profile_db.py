@@ -19,6 +19,9 @@ pytestmark = pytest.mark.stack
 
 @pytest.fixture
 def profile_db(db: Conn) -> Iterator[Conn]:
+    # Teams as shipped (DEC-105): `comms.teams` exists (lane A's notify migration) and is off; the `db` fixture turns
+    # every switch on, so it is put back. Where the switch does not exist it counts as off (§7.6) all the same.
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
     killswitch.clear_cache()
     kindling.clear_cache()
     yield db
@@ -42,11 +45,11 @@ def test_S_H6_layout_profile_carries_points_tier_line_and_defaults(profile_db: C
     assert out["available"] == {"teams": False} and "one" not in p
 
 
-def test_S_H6_refer_as_reads_unset_until_lane_Cs_route_lands(profile_db: Conn) -> None:
-    """DEC-108, BLD-E010: Profile asks "How should we refer to you?" and saves through lane C's `/api/me/refer-as`.
-    Until that route is on main the profile carries lane C's default, "unset" (neutral wording, BLD-E008)."""
+def test_S_H6_BLD_E043_the_profile_carries_no_refer_as(profile_db: Conn) -> None:
+    """DEC-108, BLD-C111, BLD-E043: "How should we refer to you?" is read and saved only through lane C's
+    `/api/me/refer-as`; `GET /me/profile` no longer carries a stand-in for it."""
     who = f.person(profile_db, "Ritika Sood")
-    assert profile.profile(profile_db, who["id"])["refer_as"] == "unset"
+    assert "refer_as" not in profile.profile(profile_db, who["id"])
 
 
 def test_S_H6_rules_4_a_One_sees_their_One_tier_and_the_link_to_their_dashboard(profile_db: Conn) -> None:
@@ -121,7 +124,8 @@ def test_DEC_105_Teams_stays_off_until_its_switch_is_on(profile_db: Conn) -> Non
         assert profile.profile(db, who["id"])["available"] == {"teams": True}
         assert profile.save_settings(db, who["id"], {"teams": False})["settings"]["teams"] is False
     finally:
-        db.execute("DELETE FROM kill_switches WHERE name = 'comms.teams'")
+        # As shipped: switched off again, not removed (later tests in the run use the switch).
+        db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
         killswitch.clear_cache()
 
 

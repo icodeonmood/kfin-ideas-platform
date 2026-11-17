@@ -42,6 +42,10 @@
     "veto_desk_decision": {
       "core_committee": "yes"
     },
+    "hide_for_desk": {
+      "reviewer": "yes",
+      "core_committee": "yes"
+    },
     "open_attachments": {
       "contributor": "as_idea"
     },
@@ -106,7 +110,8 @@
       "display": "yes"
     },
     "committee_window": {
-      "committee": "yes"
+      "committee": "yes",
+      "core_committee": "yes"
     },
     "run_programme": {
       "admin": "yes"
@@ -141,6 +146,9 @@
       "admin"
     ],
     "comms.email": [
+      "admin"
+    ],
+    "comms.teams": [
       "admin"
     ],
     "wall.public": [
@@ -187,6 +195,10 @@
     "speech.hosted": [
       "infosec"
     ],
+    "files.blackout": [
+      "admin",
+      "infosec"
+    ],
     "desk.listen": [
       "admin",
       "infosec"
@@ -213,7 +225,16 @@
     "PUT /api/me/refer-as                              signed_in",
     "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
+    "GET /api/inbox/counts                             signed_in",
+    "GET /api/inbox/needs-you                          signed_in",
+    "POST /api/inbox/read-all                          signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
+    "POST /api/inbox/{id}/unread                       signed_in",
+    "POST /api/inbox/{id}/archive                      signed_in",
+    "POST /api/inbox/{id}/actions/{op}                 signed_in",
+    "GET /api/ideas/{id}/conversation                  signed_in",
+    "POST /api/ideas/{id}/conversation/messages        signed_in",
+    "DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in",
     "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
@@ -229,6 +250,13 @@
     "POST /api/submissions/{id}/voice                  submit",
     "GET /api/submissions/{id}/voice/{voice}           submit",
     "DELETE /api/submissions/{id}/voice/{voice}        submit",
+    "POST /api/drafts/{id}/voice/start                 submit",
+    "POST /api/drafts/{id}/voice/chunk                 submit",
+    "POST /api/drafts/{id}/voice/end                   submit",
+    "GET /api/drafts/{id}/voice/{stream}               submit",
+    "GET /api/voice/config                             signed_in",
+    "GET /api/ideas/{id}/listen                        view_review_queue",
+    "GET /api/ideas/{id}/listen/chapters               view_review_queue",
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
@@ -236,6 +264,17 @@
     "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
+    "GET /api/ideas/{id}/team-up                       signed_in",
+    "POST /api/ideas/{id}/team-up                      signed_in",
+    "GET /api/ideas/{id}/team-up/draft-note            signed_in",
+    "GET /api/team-up/{id}                             signed_in",
+    "DELETE /api/team-up/{id}                          signed_in",
+    "POST /api/team-up/{id}/answer                     signed_in",
+    "GET /api/drafts/{id}/merge-request                signed_in",
+    "POST /api/drafts/{id}/merge-request               signed_in",
+    "DELETE /api/drafts/{id}/merge-request             signed_in",
+    "POST /api/ideas/{id}/crew/leave                   signed_in",
+    "DELETE /api/ideas/{id}/crew/{member}              signed_in",
     "GET /api/attachments/{id}                         open_attachments",
     "GET /api/attachments/{id}/status                  open_attachments",
     "GET /api/review/items                             view_review_queue",
@@ -243,6 +282,9 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
+    "POST /api/desk/ideas/{id}/hide                    hide_for_desk",
+    "POST /api/drafts/{id}/hidden/{hid}/show           submit",
+    "POST /api/drafts/{id}/hidden/{hid}/hide           submit",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",
@@ -364,7 +406,8 @@
   },
   "pages": [
     "/review                    view_review_queue",
-    "/committee                 veto_desk_decision",
+    "/desk                      view_review_queue",
+    "/committee                 committee_window",
     "/admin                     manage_kill_switches grant_roles run_programme take_off_wall manage_flags",
     "/launch                    grant_roles",
     "/display                   open_display",
@@ -411,7 +454,7 @@
     {
       "key": "desk",
       "label": "Review desk",
-      "href": "/review",
+      "href": "/desk",
       "place": "main",
       "roles": [
         "reviewer"
@@ -426,6 +469,19 @@
         "committee",
         "core_committee"
       ]
+    },
+    {
+      "key": "profile",
+      "label": "Your profile and settings",
+      "href": "/profile",
+      "place": "account"
+    },
+    {
+      "key": "one",
+      "label": "Your One dashboard",
+      "href": "/one",
+      "place": "account",
+      "member": "ones"
     },
     {
       "key": "ember",

@@ -80,7 +80,7 @@ def test_an_unknown_mode_refuses(settings: Any) -> None:
 def test_a_hosted_route_refuses_without_both_its_approval_and_its_switch(
     settings: Any, monkeypatch: pytest.MonkeyPatch, approval: str, switch_on: bool, code: str
 ) -> None:
-    settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL=approval, SPEECH_HOSTED_KEY="synthetic-test-key")
+    settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL=approval, SARVAM_API_KEY="synthetic-test-key")
     switches(monkeypatch, speech_hosted=switch_on)
     called: list[bool] = []
     monkeypatch.setattr(speech, "_sarvam", lambda data, mime: called.append(True))
@@ -93,15 +93,19 @@ def test_a_hosted_route_refuses_without_both_its_approval_and_its_switch(
 def test_with_both_the_hosted_route_is_called(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     settings(SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL="INFOSEC-2026-017 / DPO-2026-004")
     switches(monkeypatch, speech_hosted=True)
-    monkeypatch.setattr(speech, "_sarvam", lambda data, mime: speech.Transcript("ok", "hi-IN", None))
+    monkeypatch.setattr(
+        speech, "_sarvam", lambda data, mime, conn=None: speech.Transcript("ok", "hi-IN", None)
+    )
     assert speech.transcribe(WEBM, "audio/webm").text == "ok"
 
 
 def test_the_hosted_client_lives_in_the_gateway_and_uses_no_vendor_sdk() -> None:
     import inspect
 
-    source = inspect.getsource(speech)
-    assert "import httpx" in source
+    from gateway import sarvam
+
+    source = inspect.getsource(speech) + inspect.getsource(sarvam)
+    assert "import httpx" in source  # plain HTTP and WebSocket clients (DEC-108, BLD-C110)
     assert "sarvamai" not in source
 
 

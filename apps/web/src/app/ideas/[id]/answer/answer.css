@@ -1,0 +1,99 @@
+/* S-R3 Answer the review desk (boards Answer, PhoneAnswer). Tokens only. */
+.ans {
+  display: grid;
+  gap: 24px;
+  max-width: 760px;
+}
+.ans-bar {
+  display: grid;
+  gap: 10px;
+}
+.ans-bar h1,
+.ans-sheet h2,
+.ans-sent h1 {
+  margin: 0;
+}
+.ans-bar h1:focus,
+.ans-sheet h2:focus,
+.ans-sent h1:focus,
+.ans-sent h2:focus {
+  outline: none;
+}
+.ans-bar p {
+  margin: 0;
+}
+.ans-due {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ans-steps ol {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ans-steps button {
+  border: 1px solid var(--rule);
+  background: none;
+  border-radius: var(--r-pill);
+  padding: 8px 14px;
+  font: inherit;
+  color: var(--ink2);
+  cursor: pointer;
+}
+.ans-steps button[aria-current="step"] {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.ans-steps button.done {
+  color: var(--ink);
+}
+.ans-sheet,
+.ans-sent {
+  display: grid;
+  gap: 14px;
+  padding: 28px;
+}
+.ans-sheet p,
+.ans-sent p {
+  margin: 0;
+}
+.ans-sent-h {
+  display: grid;
+  gap: 8px;
+}
+.ans-steps button[aria-disabled="true"] {
+  cursor: default;
+}
+.ans-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 16px;
+}
+.ans-list li {
+  display: grid;
+  gap: 4px;
+}
+.ans-links {
+  display: flex;
+  gap: 20px;
+}
+@media (max-width: 640px) {
+  .ans-back {
+    display: none;
+  }
+  .ans-sheet,
+  .ans-sent {
+    padding: 20px;
+  }
+}
+
+/* The help line and, near the limit, the counter, each on its own line (V-FIELDS.answer/1) */
+.ans .help-l {
+  display: block;
+}

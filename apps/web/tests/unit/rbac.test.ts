@@ -47,7 +47,8 @@ const SECTION_3_1: Record<string, string[]> = {
   see_restored_values: ALL,
   approve_handover: ["sponsor"],
   grant_roles: ["admin"],
-  committee_window: ["committee"], // L-COMMITTEE: the 30-day window, extend, reverse once (lane B)
+  // L-COMMITTEE: the 30-day window, extend, reverse once (lane B); core_committee until Monday (BLD-B238)
+  committee_window: ["core_committee", "committee"],
 };
 
 describe("policy agrees with ARCHITECTURE §3.1", () => {
@@ -89,6 +90,18 @@ describe("every day-one endpoint × every role column (generated from rbac.yaml)
     expect(decide(rolesOf("contributor"), "GET", "/api/health").kind).toBe("public");
   });
 
+  it("lets everyone signed in reach an idea's conversation; the worker decides per idea and answers others 404 (L-CONVO/2)", () => {
+    const base = "/api/ideas/IDEA-2026-001481/conversation";
+    for (const role of ["contributor", "reviewer", "core_committee"]) {
+      expect(decide(rolesOf(role), "GET", base).kind).toBe("allow");
+      expect(decide(rolesOf(role), "POST", `${base}/messages`).kind).toBe("allow");
+      expect(
+        decide(rolesOf(role), "DELETE", `${base}/messages/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10`).kind,
+      ).toBe("allow");
+    }
+    expect(decide(rolesOf("contributor"), "PUT", `${base}/messages`).kind).toBe("unknown");
+  });
+
   it("matches the §8 review rules people care about most", () => {
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/action").kind).toBe("allow");
     expect(decide(rolesOf("reviewer"), "POST", "/api/review/items/7/veto").kind).toBe("deny");
@@ -106,16 +119,22 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
   const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and The Ember in the account menu", () =>
-    expect(labels("contributor")).toEqual([...base, "The Ember"]));
-  it("the review desk adds Review desk to the sidebar", () =>
-    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]));
-  it("the core committee adds Ones Committee to the sidebar and Delivery to the account menu", () => {
-    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
-    expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
-    expect(labels("contributor", "account")).toEqual(["The Ember"]);
+  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
+    expect(labels("contributor")).toEqual([...base, "Your profile and settings", "The Ember"]));
+  it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
+    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
+    expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
   });
-  it("the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
+  it("S-R4: the core committee sees Ones Committee in the sidebar until Monday, and Delivery in the account menu", () => {
+    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
+    expect(labels("core_committee", "account")).toEqual([
+      "Your profile and settings",
+      "The Ember",
+      "Delivery",
+    ]);
+    expect(labels("contributor", "account")).toEqual(["Your profile and settings", "The Ember"]);
+  });
+  it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
     expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
@@ -135,22 +154,50 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(nav.filter((n) => n.place === "new").map((n) => n.href)).toEqual(["/share"]);
     expect(nav.find((n) => n.key === "my-ideas")?.place).toBe("folded");
   });
+  it("S-ONE.rules/1: only an active One gets Your One dashboard, in the account menu; no role grants it (BLD-E040)", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "committee", "admin"]) {
+      expect(navFor(rolesOf(role)).map((n) => n.href)).not.toContain("/one");
+      expect(navFor(rolesOf(role), new Set(), new Set(["ones"])).find((n) => n.href === "/one")).toEqual({
+        key: "one",
+        label: "Your One dashboard",
+        href: "/one",
+        place: "account",
+      });
+    }
+  });
+  it("S-H6: Profile is in everyone's account menu", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "admin"])
+      expect(navFor(rolesOf(role)).find((n) => n.href === "/profile")?.place).toBe("account");
+  });
   it("retired features have no navigation (DEC-106)", () => {
     const hrefs = (policyJson.navigation as Array<{ href: string }>).map((n) => n.href);
     for (const gone of ["/lenses", "/desk-decisions", "/ones/console", "/appeals"])
       expect(hrefs).not.toContain(gone);
   });
   it("pages follow the same rules", () => {
+    // /review redirects to /desk (S-R1); its rule keeps everyone else out of the old path
     expect(canSeePage(rolesOf("contributor"), "/review")).toBe(false);
     expect(canSeePage(rolesOf("reviewer"), "/review")).toBe(true);
+    // S-R1, S-R2: the review desk and the reviewer's page
+    expect(canSeePage(rolesOf("reviewer"), "/desk")).toBe(true);
+    expect(canSeePage(rolesOf("reviewer"), "/desk/ideas/IDEA-2026-001481")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/desk")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/admin")).toBe(false);
     expect(canSeePage(rolesOf("infosec"), "/admin")).toBe(true);
-    // The committee page is for the core committee (scoring retired, DEC-106); LOB committees no longer open it.
+    // S-R4: the Ones Committee's window (committee_window) is the committee role's, and the core committee's (with
+    // its chair) until the old roles are dropped on Monday (contracts.md §2.14); LOB committees no longer open it
+    expect(canSeePage(rolesOf("committee"), "/committee")).toBe(true);
     expect(canSeePage(rolesOf("core_committee"), "/committee")).toBe(true);
+    expect(canSeePage(rolesOf("core_chair"), "/committee")).toBe(true);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
+  });
+  it("S-ONE (mapping/screens.md:111-112): the printable Showcase brief is for the committee, CEO and admin only; the glow-up message page opens for anyone signed in and checks the invitation itself", () => {
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
-    expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
+    expect(canSeePage(rolesOf("reviewer"), "/ones/showcase/3")).toBe(false);
+    for (const role of ["core_committee", "admin", "ceo"])
+      expect(canSeePage(rolesOf(role), "/ones/showcase/3")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/ones/write/12")).toBe(true);
   });
 
   it("never lists a page below a page that already covers it (the first matching rule wins)", () => {

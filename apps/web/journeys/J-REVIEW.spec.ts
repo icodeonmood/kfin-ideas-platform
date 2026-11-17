@@ -5,16 +5,15 @@
  * Inbox.md (what the sharer reads). BLD-E008: the boards' she/her for the sharer reads as the sharer's first name.
  * Cast: Kavya (sharer) is the record's sharer, Meera (reviewer) the record's reviewer, Ravi the other idea's sharer.
  * Seed: J-REVIEW changes only its own records (lib SEED); R1 is J-SIMILAR's and J-TEAMUP's and is never touched here.
- * P1 (Pallavi's, with the desk, never opened, one question Lavanya queued and never sent) walks the main path and is
- * picked. It fits "decide without asking" as L-REVIEW defines it: a queued question is the reviewer's alone, so P1 is
- * in To review with "No questions asked"; its panel is Asking, whose way on is "Decide without asking"
- * (asking → deciding), and the queued question is dropped when the decision is sent.
- * The ask path (A1 to A3) needs a record of its own at the same stage, and none is left: Z1's questions are sent and
- * B1's answered, and the boards take "Ask about this" and "Ask … first" away in both states (DeskIdea.md "Sent,
- * waiting", "Answered"). So A1 to A3 are GAP-SEED until lane E seeds P1's twin; their bodies are written for P1's
- * queued set and move to that record. Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1 (Bhavesh's,
- * with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is J-TRACK's and
- * lists Z1 as similar; read only here). No two J-REVIEW ideas list each other as similar: GAP-SEED (M3).
+ * P1 (Pallavi's, with the desk, never opened, nothing asked) walks the main path and is picked: row 1 is its first
+ * open, which closes Pallavi's edit window (L-REVIEW.open/1), and "Decide on this idea" takes the panel to Deciding.
+ * The ask path (A1 to A3) has a record of its own, K1 (Kiran's, at To review, never opened, no question set; lane E):
+ * A1 is K1's first open, and "Ask about this" on How often queues that part's suggestion. A question set can't be
+ * queued before the first open (L-REVIEW.open/1, L-QUESTIONS.ask/4), so the seed has none.
+ * Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
+ * (Bhavesh's, with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is
+ * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
+ * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
  */
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
@@ -95,11 +94,11 @@ async function asOther(
   }
 }
 
-// --- J-REVIEW.main: decide without asking (P1, Lavanya; Pallavi shared it) ---------------------------------------------
+// --- J-REVIEW.main: open, read, decide (P1, Lavanya; Pallavi shared it) ----------------------------------------------
 
-/** The panel's way into Deciding: "Decide on this idea", or "Decide without asking" while P1's question is queued. */
+/** The panel's way into Deciding with nothing asked (J-REVIEW/5). */
 function decideButton(page: Page): Locator {
-  return page.getByRole("button", { name: /^(?:Decide on this idea|Decide without asking)$/ }).first();
+  return page.getByRole("button", { name: "Decide on this idea", exact: true }).first();
 }
 
 step(
@@ -113,7 +112,7 @@ step(
     await expect(page.getByRole("button", { name: "Time left" })).toHaveAttribute("aria-pressed", "true");
     const row = rowFor(page, p1.title);
     await expect(row).toContainText("Pallavi Joshi, Distributor services, Mumbai");
-    // Lavanya's queued question is hers alone until sent, so nothing has been asked (L-REVIEW.queue, L-QUESTIONS).
+    // Nothing has been asked yet (L-QUESTIONS).
     await expect(row).toContainText("No questions asked");
     await expect(row).toContainText(new RegExp(`${COUNTDOWN} to decide|Overdue by`));
     await expect(row).toContainText(new RegExp(DAY));
@@ -286,13 +285,13 @@ step(
         )
         .first(),
     ).toBeVisible();
-    // S-R2.panel.ask: collapsed by default, even with Lavanya's question queued.
+    // S-R2.panel.ask: collapsed by default.
     await expect(page.getByRole("button", { name: /^Ask Pallavi first/ })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
 
-    // With a question queued the panel is Asking, so the way on reads "Decide without asking" (L-REVIEW.panel).
+    // Nothing asked, so the way on is "Decide on this idea" (L-REVIEW.panel, J-REVIEW/5).
     await decideButton(page).click();
     await expect(page.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
     await expect(
@@ -321,7 +320,7 @@ step(
         .first(),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Send decision to Pallavi" })).toBeVisible();
-    // Back with nothing sent returns to where Lavanya came from (L-REVIEW.panel), the queued question kept.
+    // Back with nothing sent returns to where Lavanya came from (L-REVIEW.panel).
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Review this idea" })).toBeVisible();
     await expect(decideButton(page)).toBeVisible();
@@ -400,47 +399,43 @@ step(
   },
 );
 
-// --- J-REVIEW.ask: ask first (A1–A3 wait for a record of their own; Z1 for the clock; B1 for answers) ---------------
-
-/** P1 walks the main path, so the ask path's first three rows wait for one like it (see the header). */
-const ASK_GAP =
-  "an idea of J-REVIEW's own at To review with nothing sent, like P1 (unopened, a question Lavanya queued): P1 walks " +
-  "the main path now that R1 is J-SIMILAR's and J-TEAMUP's, Z1's questions are sent and B1's answered";
+// --- J-REVIEW.ask: ask first (K1 for A1–A3; Z1 for the clock; B1 for answers) ---------------
 
 step(
   "J-REVIEW/A1",
   "S-R2",
-  "Ask about this on a part opens Ask Pallavi first with that part's suggestion queued",
-  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"], changes: ["P1"], gapSeed: ASK_GAP },
+  "Ask about this on How often opens Ask Kiran first with that part's suggestion queued",
+  { needs: ["S-R2", "L-QUESTIONS", "L-REVIEW"], changes: ["K1"] },
   async ({ page }) => {
-    const p1 = await seeded("P1");
+    // K1's first open: Lavanya is its reviewer from now on and Kiran's edit window closes (L-REVIEW.open/1).
+    const k1 = await seeded("K1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(p1));
-    await expect(page.getByRole("heading", { level: 1, name: p1.title })).toBeVisible();
-    const askFirst = page.getByRole("button", { name: /^Ask Pallavi first/ });
+    await page.goto(deskUrl(k1));
+    await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
+    const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
     await askAbout(page, "How often").click();
     await expect(askFirst).toHaveAttribute("aria-expanded", "true");
     await expect(askAbout(page, "How often")).toHaveAttribute("aria-pressed", "true");
     await expect(
       page.getByText(
-        "Only if something is unclear. Ask in your own words; each question is pinned to its part of the idea, so Pallavi answers it right there.",
+        "Only if something is unclear. Ask in your own words; each question is pinned to its part of the idea, so Kiran answers it right there.",
       ),
     ).toBeVisible();
-    // The question Lavanya queued before (seed) is still there, and How often's suggestion joined it (S-R2.rules/2):
-    // at least those two, whatever else a lane queues with them; the header counts what is listed.
+    // How often's first suggestion is queued (L-QUESTIONS.ask/3); the header counts what is listed.
     await expect(
-      page.getByRole("button", { name: "Remove: Which distributor segments re-send most?" }),
+      page.getByRole("button", {
+        name: "Remove: How often does this happen: a few times a day, a week or a month?",
+      }),
     ).toBeVisible();
-    const removes = page.getByRole("button", { name: /^Remove: / });
-    await expect.poll(() => removes.count()).toBeGreaterThanOrEqual(2);
-    await expect(askFirst).toContainText(`${await removes.count()} questions ready`);
+    const n = await page.getByRole("button", { name: /^Remove: / }).count();
+    await expect(askFirst).toContainText(new RegExp(`${n} questions? ready`));
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Send \d+ questions? to Pallavi$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ })).toBeVisible();
   },
 );
 
 async function openAsk(page: Page): Promise<Locator> {
-  const askFirst = page.getByRole("button", { name: /^Ask Pallavi first/ });
+  const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
   if ((await askFirst.getAttribute("aria-expanded")) !== "true") await askFirst.click();
   await expect(askFirst).toHaveAttribute("aria-expanded", "true");
   return askFirst;
@@ -448,7 +443,7 @@ async function openAsk(page: Page): Promise<Locator> {
 
 function questionBox(page: Page): Locator {
   return page.getByRole("textbox", {
-    name: /^(What would you like to ask Pallavi\?|Your question for Pallavi)$/,
+    name: /^(What would you like to ask Kiran\?|Your question for Kiran)$/,
   });
 }
 
@@ -463,12 +458,12 @@ step(
   "J-REVIEW/A2",
   "S-R2",
   "Questions in the reviewer's own words, a suggestion added, the time to answer and its deadline before sending",
-  { needs: ["S-R2", "L-QUESTIONS"], changes: ["P1"], gapSeed: ASK_GAP },
+  { needs: ["S-R2", "L-QUESTIONS"], changes: ["K1"] },
   async ({ page }) => {
-    const p1 = await seeded("P1");
-    const typed = "Which teams keep a second copy of the papers today?";
+    const k1 = await seeded("K1");
+    const typed = "Which AMCs do investors most often bring to the wrong branch?";
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(p1));
+    await page.goto(deskUrl(k1));
     const askFirst = await openAsk(page);
     await addQuestion(page, typed);
     const removes = page.getByRole("button", { name: /^Remove: / });
@@ -483,58 +478,57 @@ step(
 
     // L-QUESTIONS.ask/4: 3 days by default; the deadline follows the choice and shows before sending.
     await expect(page.getByRole("radio", { name: "3 days" })).toBeChecked();
-    const deadline = page.getByText(/^Pallavi has until /).first();
-    const threeDays = await capture(deadline, new RegExp(`^Pallavi has until (${DAY}, ${TIME})\\.`));
+    const deadline = page.getByText(/^Kiran has until /).first();
+    const threeDays = await capture(deadline, new RegExp(`^Kiran has until (${DAY}, ${TIME})\\.`));
     await page.getByRole("radio", { name: "1 week" }).click();
     await expect(deadline).not.toContainText(threeDays);
     await page.getByRole("radio", { name: "3 days" }).click();
     await expect(deadline).toContainText(threeDays);
-    await expect(page.getByRole("button", { name: `Send ${n} questions to Pallavi` })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Send ${n} questions to Kiran` })).toBeVisible();
   },
 );
 
 step(
   "J-REVIEW/A3",
   "S-R2",
-  "Send the questions: Waiting on Pallavi, the desk row moves, and Pallavi's Inbox has the same deadline",
+  "Send the questions: Waiting on Kiran, the desk row moves, and Kiran's Inbox has the same deadline",
   {
     needs: ["S-R2", "S-R1", "L-QUESTIONS", "S-H5", "C-INBOX-READER", "C-QCARD", "L-INBOX"],
-    changes: ["P1"],
-    gapSeed: ASK_GAP,
+    changes: ["K1"],
   },
   async ({ page, browser }, info) => {
-    const p1 = await seeded("P1");
+    const k1 = await seeded("K1");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(p1));
+    await page.goto(deskUrl(k1));
     await openAsk(page);
-    await addQuestion(page, "Roughly how many papers come in twice each month?");
+    await addQuestion(page, "Roughly how many investors are sent on to another branch each week?");
     await page.getByRole("radio", { name: "3 days" }).click();
     const deadline = await capture(
-      page.getByText(/^Pallavi has until /).first(),
-      new RegExp(`^Pallavi has until (${DAY}, ${TIME})\\.`),
+      page.getByText(/^Kiran has until /).first(),
+      new RegExp(`^Kiran has until (${DAY}, ${TIME})\\.`),
     );
-    const send = page.getByRole("button", { name: /^Send \d+ questions? to Pallavi$/ });
+    const send = page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ });
     const n = Number((await send.innerText()).match(/\d+/)?.[0]);
     await send.click();
 
-    await expect(page.getByRole("heading", { name: "Waiting on Pallavi" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Waiting on Kiran" })).toBeVisible();
     await expect(page.getByText(new RegExp(`^${COUNTDOWN} to answer$`)).first()).toBeVisible();
     await expect(page.getByText(new RegExp(`^Sent today, ${TIME}\\.`)).first()).toBeVisible();
 
     await page.goto("/desk");
     await page.getByRole("tab", { name: /^Waiting on the sharer/ }).click();
-    const row = rowFor(page, p1.title);
-    await expect(row).toContainText("Pallavi Joshi, Distributor services, Mumbai");
+    const row = rowFor(page, k1.title);
+    await expect(row).toContainText("Kiran Bhatia, Investor service, Chennai");
     await expect(row).toContainText(new RegExp(`Not seen yet|0 of ${n} answered`));
     await expect(row).toContainText(new RegExp(`${COUNTDOWN} to answer`));
 
     // L-QUESTIONS.ask/5: the sharer is told; the deadline is the one the reviewer saw before sending.
-    await asOther(browser, info, "pallavi", { ref: "J-REVIEW/A3", screen: "S-H5" }, async (sharer) => {
+    await asOther(browser, info, "kiran", { ref: "J-REVIEW/A3", screen: "S-H5" }, async (sharer) => {
       await sharer.goto("/inbox");
       await sharer.getByRole("tab", { name: /^Needs you/ }).click();
       await sharer
         .getByRole("button", {
-          name: new RegExp(`^Lavanya from the review desk asked you ${n} questions?, ${esc(p1.title)}`),
+          name: new RegExp(`^Lavanya from the review desk asked you ${n} questions?, ${esc(k1.title)}`),
         })
         .click();
       await expect(sharer.getByText(`Answer by ${deadline}.`).first()).toBeVisible();
@@ -671,17 +665,15 @@ step(
   "J-REVIEW/M3",
   "S-R2",
   "Merge and tell both: one idea survives, the banner says so, and the merged sharer's page points to it",
-  {
-    needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06"],
-    changes: ["B1"],
-    gapSeed:
-      "two J-REVIEW ideas on the desk that list each other as similar (a similar_links row from B1 to Z1 would do; " +
-      "P1 is picked by then), so a desk merge changes only J-REVIEW records; today T6 lists Z1, and T6 is J-TRACK's",
-  },
+  { needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06"], changes: ["F2", "J2"] },
   async ({ page, browser }, info) => {
-    const b1 = await seeded("B1");
+    // From J2's page; the lead is F2 by default (shared first), and Team them up is on: Jatin joins Faisal's crew.
+    const f2 = await seeded("F2");
+    const j2 = await seeded("J2");
+    const f2Ref = esc(f2.ref ?? "");
     await signInAs(page, "lavanya");
-    await page.goto(deskUrl(b1));
+    await page.goto(deskUrl(j2));
+    await expect(page.getByRole("heading", { level: 1, name: j2.title })).toBeVisible();
     await page
       .getByRole("button", { name: /^Merge with / })
       .first()
@@ -689,22 +681,22 @@ step(
     const sheet = page.getByRole("dialog", { name: new RegExp(`^Merge with ${REF}\\?$`) });
     await sheet
       .getByRole("textbox")
-      .fill("You both see papers handled twice at the counter. One team, one fix.");
+      .fill("You both see bank changes held up by a cheque in the post. One team, one fix.");
     await sheet.getByRole("button", { name: "Merge and tell both" }).click();
     await expect(
       page
         .getByText(
           new RegExp(
-            `^Merged: [A-Z][a-z]+’s idea is now part of ${REF}, and both are credited\\. [A-Z][a-z]+ is on [A-Z][a-z]+’s crew\\. Both were told in their Inbox\\. The Ones Committee can reverse it within 30 days\\.$`,
+            `^Merged: Jatin’s idea is now part of ${f2Ref}, and both are credited\\. Jatin is on Faisal’s crew\\. Both were told in their Inbox\\. The Ones Committee can reverse it within 30 days\\.$`,
           ),
         )
         .first(),
     ).toBeVisible();
     await expect(page.getByText("Merged", { exact: true }).first()).toBeVisible();
-    await asOther(browser, info, "bhavesh", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
-      await sharer.goto(ideaUrl(b1));
+    await asOther(browser, info, "jatin", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
+      await sharer.goto(ideaUrl(j2));
       await expect(
-        sharer.getByText(/^Merged into IDEA-\d{4}-\d{6} by the review desk/).first(),
+        sharer.getByText(new RegExp(`^Merged into ${f2Ref} by the review desk`)).first(),
       ).toBeVisible();
     });
   },

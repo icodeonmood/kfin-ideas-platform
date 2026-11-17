@@ -156,6 +156,10 @@ def colleague_view(
     uid = str(idea["id"])
     dec = decided(read.decision(conn, uid))
     carried = read.live_merge_into(conn, uid) if idea["status"] == "not_picked" else None
+    crew = crew_of(conn, idea, names_for_all=False)
+    # The crew and the Ones Committee may read that the committee moved the decision; a colleague sees the stage
+    # only (P-PRODUCT.privacy). The desk never gets here (route.py sends it to S-R2).
+    insider = (me.code is not None and me.code in crew["_codes"]) or me.on_desk or me.on_committee
     base = public_idea(
         conn,
         idea,
@@ -164,10 +168,10 @@ def colleague_view(
         dec=dec,
         qset=None,
         carried_into=carried["lead_ref"] if carried else None,
+        sees_reversal=insider,
     )
     sharer = read.person_by_code(conn, idea["contributor_code"])
     named = sharer if read.shows_name(sharer) else None
-    crew = crew_of(conn, idea, names_for_all=False)
     shared_on = day(idea["shared_at"], now) if idea["shared_at"] else None
     place = ", ".join(x for x in (idea["area"], idea["city"]) if x)
     if named:

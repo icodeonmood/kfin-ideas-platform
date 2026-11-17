@@ -1,129 +1,52 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-
-import { Status } from "@/components/status";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { NextRequest } from "next/server";
 
-import { day } from "@/lib/dates";
+import type { MyIdeasResponse } from "@/lib/contracts/api";
 import { currentUser } from "@/server/auth/current";
-import { myIdeas } from "@/server/ideas";
-import { myOne } from "@/server/ones";
-import { myPoints } from "@/server/points";
+import { getMyIdeas } from "@/server/idea-page";
 
-import { NameOnWall } from "./name-on-wall";
-import { OneDashboard } from "./one-dashboard";
-import { PointsPanel } from "./points";
+import { MyIdeasScreen } from "./my-ideas-screen";
+
+import "./my-ideas.css";
 
 export const metadata: Metadata = { title: "My ideas" };
-
-/** Shared, but the person still has a step to take on the scan page (choose, or take something out). */
-const WAITING_ON_YOU = new Set(["scanning", "blocked"]);
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
+const KEYS = ["list", "filter", "sort", "q", "row"] as const;
+
+/**
+ * S-07, My ideas (copy: reference/copy/MyIdeas.md, PhoneMyIdeas.md; data A-API.my-ideas). The list state lives in
+ * the URL (P-ROUTES.state): tab, filter, sort and search are read here and the server returns that exact view, so a
+ * shared link reproduces it for whoever opens it, with their own ideas (J-BROWSE/6). Every change on the screen
+ * replaces the URL and this page renders the new view.
+ */
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const me = await currentUser();
-  if (!me) redirect("/sign-in");
-  const [mine, one, points] = await Promise.all([
-    myIdeas(me).catch(() => null),
-    myOne(me).catch(() => null),
-    myPoints(me).catch(() => null),
-  ]);
-  return (
-    <>
-      <h1 className="t-display page-display">My ideas</h1>
-      <p className="lead page-lead">
-        Every idea you share is listed here with where it is now and what happens next.
-      </p>
-      {one ? <OneDashboard one={one} /> : null}
-      <PointsPanel points={points} />
-      <p className="chip-links">
-        <Link href="/journey">How an idea becomes a One</Link>
-      </p>
-      {mine === null ? (
-        <Status
-          kind="error"
-          role={null}
-          title={<>We can&apos;t load your ideas just now. Please try again in a minute.</>}
-        />
-      ) : (
-        <>
-          {mine.ideas.length ? (
-            <ul className="idea-list" aria-label="Your ideas">
-              {mine.ideas.map((i) => (
-                <li key={i.id} className="idea" data-lit="">
-                  <h2 className="idea-title">
-                    {i.draft ? (
-                      <Link href={`/share/${i.id}`}>Your draft from {day(i.shared_on)}</Link>
-                    ) : WAITING_ON_YOU.has(i.stage_key) ? (
-                      <Link href={`/share/${i.id}/done`}>{i.one_line ?? `Your idea ${i.idea_id ?? ""}`}</Link>
-                    ) : i.idea_id ? (
-                      <Link href={`/ideas/${i.idea_id}`}>{i.one_line ?? `Your idea ${i.idea_id}`}</Link>
-                    ) : (
-                      (i.one_line ?? "Your idea")
-                    )}
-                  </h2>
-                  <dl className="facts">
-                    {i.idea_id ? (
-                      <div>
-                        <dt>Idea</dt>
-                        <dd>{i.idea_id}</dd>
-                      </div>
-                    ) : null}
-                    <div>
-                      <dt>Where it is</dt>
-                      <dd>{i.stage}</dd>
-                    </div>
-                    <div>
-                      <dt>Next step</dt>
-                      <dd>
-                        {i.next_step}
-                        {i.due ? ` ${day(i.due)}` : ""}
-                      </dd>
-                    </div>
-                  </dl>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="glass empty-note">
-              You haven&apos;t shared an idea yet. <Link href="/share">Share an idea</Link>
-            </p>
-          )}
-          {mine.joined.length ? (
-            <section className="my-section" aria-labelledby="mi-joined">
-              <h2 id="mi-joined" className="t-h2">
-                Ideas you teamed up on
-              </h2>
-              <ul className="idea-list">
-                {mine.joined.map((j, n) => (
-                  <li key={j.idea_id ?? `joined-${n}`} className="idea" data-lit="">
-                    <h3 className="idea-title">
-                      {j.with_desk ? (
-                        "A related idea is with the review desk"
-                      ) : j.idea_id ? (
-                        <Link href={`/ideas/${j.idea_id}`}>{j.summary ?? "A colleague's idea"}</Link>
-                      ) : (
-                        (j.summary ?? "A colleague's idea")
-                      )}
-                    </h3>
-                    <dl className="facts">
-                      <div>
-                        <dt>How</dt>
-                        <dd>{j.how}</dd>
-                      </div>
-                      <div>
-                        <dt>Where it is</dt>
-                        <dd>{j.stage}</dd>
-                      </div>
-                    </dl>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          <NameOnWall initial={mine.name_on_wall} />
-        </>
-      )}
-    </>
-  );
+  if (!me) redirect("/sign-in?next=%2Fmy-ideas");
+  const sp = await searchParams;
+  const q = new URLSearchParams();
+  for (const k of KEYS) {
+    const v = sp[k];
+    const one = Array.isArray(v) ? v[0] : v;
+    if (one) q.set(k, one.slice(0, 200));
+  }
+  let data: MyIdeasResponse | null = null;
+  try {
+    // The real request's headers, so the server render knows this device as the API does ("on this laptop")
+    const res = await getMyIdeas(
+      new NextRequest(new URL(`/api/me/ideas?${q.toString()}`, "http://web.local"), {
+        headers: await headers(),
+      }),
+    );
+    if (res.ok) data = (await res.json()) as MyIdeasResponse;
+  } catch {
+    data = null;
+  }
+  return <MyIdeasScreen data={data} />;
 }

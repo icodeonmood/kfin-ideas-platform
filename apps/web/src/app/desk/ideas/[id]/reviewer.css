@@ -1,0 +1,379 @@
+/* S-R2 The idea, for the reviewer (board DeskIdea), with C-LISTEN, C-WORTH and C-SHEET-MERGE. Tokens only. */
+.ri {
+  display: grid;
+  gap: 24px;
+  max-width: 1080px;
+}
+.ri-head {
+  display: grid;
+  gap: 10px;
+  max-width: 600px;
+}
+.ri-ref {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.ri-title {
+  max-width: 24ch;
+  margin: 0;
+}
+.ri-line {
+  color: var(--mute);
+  margin: 0;
+}
+.ri-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  gap: 32px;
+  align-items: start;
+}
+.ri-left {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.ri-card-h {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+.ri-arts-list,
+.ri-sim-list,
+.ri-sent-qs,
+.ri-queued ul,
+.ri-sugg ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.ri-art {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.ri-art-b strong,
+.ri-sim-t,
+.ri-a-files span {
+  overflow-wrap: anywhere;
+}
+.ri-art-b,
+.ri-sim-b {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ri-art-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  font: 600 10px/1 var(--ft);
+  background: var(--sunk);
+  color: var(--ink2);
+}
+.ri-words {
+  margin-top: 12px;
+}
+.ri-parts {
+  display: grid;
+}
+.ri-part {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  gap: 12px;
+}
+.ri-part:first-child {
+  padding-top: 0;
+}
+.ri-part:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.ri-part-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.ri-part-h h2 {
+  margin-right: auto;
+}
+.ri-asking {
+  color: var(--ink);
+  border-color: var(--tier-3);
+}
+.ri-q {
+  display: grid;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+.ri-q-draft {
+  border-left-color: var(--tier-3);
+}
+.ri-q p {
+  margin: 0;
+}
+.ri-a {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+.ri-sim-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid var(--rule);
+}
+/* C-SHEET-MERGE.after: the green banner in the Similar ideas card */
+.ri-banner {
+  margin: 12px 0 0;
+  background: var(--okW);
+  color: var(--okT);
+}
+.ri-sim-t {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 500 16px/1.35 var(--ft);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.ri-sim-t:hover,
+.ri-sim-t:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ri-sim h2:focus {
+  outline: none;
+}
+.ri-q-state {
+  color: var(--ink2);
+}
+.ri-a-files {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.ri-a-files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* L-MERGE.effects/3: what each merged-in idea brought */
+.ri-contribs {
+  display: grid;
+  gap: 16px;
+}
+.ri-contribs h2,
+.ri-contrib h3,
+.ri-contrib .label {
+  margin: 0;
+}
+.ri-contrib {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+/* The two-step wording check under the reason (L-DECIDE.rules/4) */
+.ri-wording {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.ri-wording-l {
+  margin: 0;
+  padding-left: 18px;
+}
+.ri-clock {
+  margin: 0;
+}
+.ri-ready {
+  margin-left: 6px;
+  color: var(--warnT);
+}
+.qx {
+  margin-left: auto;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: none;
+  color: var(--ink2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.qx:hover {
+  background: var(--sunk);
+}
+.qsug {
+  border: 0;
+  background: none;
+  padding: 6px 0;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.qsug:hover {
+  color: var(--blue);
+}
+
+/* The panel: sticky, its own scroll, its bottom bar pinned (S-R2.panel). */
+.ri-panel {
+  position: sticky;
+  top: 96px;
+  max-height: min(calc(100vh - 120px), 820px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.ri-panel-in {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.ri-panel-in h2:focus {
+  outline: none;
+}
+.ri-panel-in h2:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+}
+.ri-bar {
+  border-top: 1px solid var(--rule);
+  padding: 16px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ri-bar-foot {
+  padding: 0 24px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.ri-revise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+}
+.ri-ask {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+.ri-ask-h {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ri-ask-b {
+  padding: 0 16px 16px;
+  display: grid;
+  gap: 14px;
+}
+.ri-queued li,
+.ri-sugg li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ri-choices {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.ri-shield {
+  margin: 0;
+}
+.ri-reason {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ri-decided {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.ri-progress {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--sunk);
+  overflow: hidden;
+}
+.ri-progress i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+.ri-sent-qs li {
+  display: grid;
+  gap: 2px;
+}
+.ri-sent-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .ri-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* S-R2.rules/7 default: on narrow screens the panel follows the idea, its main button always visible. */
+  .ri-panel {
+    position: sticky;
+    bottom: 0;
+    top: auto;
+    max-height: 70vh;
+  }
+}
+@media (max-width: 640px) {
+  .ri-panel-in,
+  .ri-bar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .ri-bar .btn {
+    flex: 1 1 auto;
+  }
+  .ri-sim-row {
+    grid-template-columns: 1fr;
+  }
+}

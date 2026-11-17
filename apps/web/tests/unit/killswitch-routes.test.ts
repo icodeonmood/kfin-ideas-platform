@@ -11,6 +11,33 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("POST", "/api/ideas/IDEA-2026-000001/answer")).toEqual(["submissions"]);
   });
 
+  it("pauses team-up, a draft's merge request and crew changes with sharing; their reads stay open (BLD-F019)", () => {
+    const idea = "/api/ideas/IDEA-2026-000001";
+    const req = "/api/team-up/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10";
+    const draft = "/api/drafts/5c2e1a70-6a4b-4f0e-9d1c-7e3b2a1f0c99";
+    expect(switchesFor("POST", `${idea}/team-up`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${req}/answer`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", req)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${draft}/merge-request`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${draft}/merge-request`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${idea}/crew/leave`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${idea}/crew/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a11`)).toEqual([
+      "submissions",
+    ]);
+    for (const read of [`${idea}/team-up`, `${idea}/team-up/draft-note`, req, `${draft}/merge-request`])
+      expect(switchesFor("GET", read)).toEqual([]);
+  });
+
+  it("an idea's conversation (L-CONVO, BLD-F058): writing and removing a message pause with sharing; reading stays open", () => {
+    const base = "/api/ideas/IDEA-2026-001481/conversation";
+    expect(switchesFor("POST", `${base}/messages`)).toEqual(["submissions"]);
+    expect(switchesFor("DELETE", `${base}/messages/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10`)).toEqual([
+      "submissions",
+    ]);
+    expect(switchesFor("GET", base)).toEqual([]);
+    expect(switchesFor("HEAD", base)).toEqual([]);
+  });
+
   it("needs both switches to upload a file", () => {
     expect(switchesFor("POST", "/api/submissions/abc/attachments").sort()).toEqual([
       "attachments.upload",
@@ -52,7 +79,9 @@ describe("kill switch route map (§7.6)", () => {
 
   it("speaks the screens' own words: no switch, no in-app inbox, never Garage (BLD-157)", () => {
     for (const text of Object.values(BANNERS)) {
-      expect(text).not.toMatch(/\bswitch(ed|es)?\b|in-app|inbox|garage/i);
+      expect(text).not.toMatch(/\bswitch(ed|es)?\b|in-app|garage/i);
+      // "Inbox" is the pack's own word for the screen (S-H5, F-COPY.vocabulary); "inbox" as jargon is not.
+      expect(text).not.toMatch(/\binbox\b/);
       expect(text.trim().length).toBeGreaterThan(0);
     }
   });
@@ -110,6 +139,10 @@ describe("kill switch route map (§7.6)", () => {
 });
 
 describe("kill switch coverage", () => {
+  it("C-LISTEN: Listen's switch closes the desk's script; lane C's audio and chapters carry lane C's own rule (DEC-108, BLD-B245)", () => {
+    expect(switchesFor("GET", "/api/desk/ideas/IDEA-2026-001481/listen")).toEqual(["desk.listen"]);
+  });
+
   it("gates HEAD exactly like GET (Next.js runs the GET handler for HEAD)", () => {
     expect(switchesFor("HEAD", "/api/attachments/ATT-2026-000001")).toEqual(["attachments.open"]);
     expect(switchesFor("head", "/api/wall")).toEqual(["wall.public"]);

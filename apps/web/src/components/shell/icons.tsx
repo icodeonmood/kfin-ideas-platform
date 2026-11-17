@@ -160,6 +160,22 @@ export const IconDelivery = (p: Props) => (
   </Svg>
 );
 
+export const IconProfile = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 21a7 7 0 0 1 14 0" />
+  </Svg>
+);
+
+/** A One's dashboard (S-ONE): a gauge, the needle on the number. */
+export const IconOne = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 17a8 8 0 1 1 16 0" />
+    <path d="m12 17 3.5-5" />
+    <circle cx="12" cy="17" r="1" />
+  </Svg>
+);
+
 /** The sidebar and tab icon for a navigation key (policy/rbac.yaml `navigation:`). */
 export function NavIcon({ navKey, ...p }: Props & { navKey: string }) {
   switch (navKey) {
@@ -183,6 +199,10 @@ export function NavIcon({ navKey, ...p }: Props & { navKey: string }) {
       return <IconEmber {...p} />;
     case "delivery":
       return <IconDelivery {...p} />;
+    case "profile":
+      return <IconProfile {...p} />;
+    case "one":
+      return <IconOne {...p} />;
     default:
       return <IconAdmin {...p} />;
   }
