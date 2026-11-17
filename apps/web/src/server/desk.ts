@@ -63,12 +63,17 @@ export async function forward(workerPath: string, init: RequestInit = {}): Promi
   return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** The route's `[id]`, or "" for a route without one: Next passes no `params` there (GET /api/desk, /api/committee). */
+export async function paramId(ctx?: { params?: Promise<{ id?: string }> }): Promise<string> {
+  return (await ctx?.params)?.id ?? "";
+}
+
 /** GET handler: the gate, the worker path built from the route's params and the request's query. */
 export function getRoute(gate: Gate, workerPath: (id: string) => string, queryKeys: readonly string[] = []) {
-  return async (request: NextRequest, ctx: { params: Promise<{ id?: string }> }) => {
+  return async (request: NextRequest, ctx?: { params?: Promise<{ id?: string }> }) => {
     const me = await who(gate);
     if (me instanceof NextResponse) return me;
-    const id = (await ctx.params).id ?? "";
+    const id = await paramId(ctx);
     const q = Object.fromEntries(queryKeys.map((k) => [k, request.nextUrl.searchParams.get(k)]));
     return forward(path(workerPath(encodeURIComponent(id)), me, q));
   };
@@ -81,10 +86,10 @@ export function writeRoute(
   workerPath: (id: string) => string,
   bodyKeys: readonly string[] = [],
 ) {
-  return async (request: NextRequest, ctx: { params: Promise<{ id?: string }> }) => {
+  return async (request: NextRequest, ctx?: { params?: Promise<{ id?: string }> }) => {
     const me = await who(gate);
     if (me instanceof NextResponse) return me;
-    const id = (await ctx.params).id ?? "";
+    const id = await paramId(ctx);
     const raw = bodyKeys.length ? await readJson(request) : {};
     return forward(path(workerPath(encodeURIComponent(id)), me), {
       method,
