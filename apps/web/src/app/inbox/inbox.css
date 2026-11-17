@@ -1,0 +1,810 @@
+/*
+ * S-H5 Inbox, C-INBOX-READER (and S-H2B, a request open in it). Values from reference/css/boards/Inbox.css and
+ * PhoneInbox.css, on the OFFER tokens (offer.css). Desktop: a full-height mail reader in two panes, the list on the
+ * left and the open item on the right with its actions pinned to the foot. Phone: the list is the screen and an
+ * item opens as its own screen with a compact bar and its action in the dock (S-H5.rules/6).
+ */
+
+.ibx {
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  height: calc(100dvh - 180px);
+  min-height: 560px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 18px 40px -30px rgba(17, 17, 17, 0.28);
+  overflow: hidden;
+}
+
+/* ---------- The list ---------- */
+.ibx-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--paper);
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.ibx-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 16px 0 20px;
+}
+
+.ibx-h1 {
+  margin: 0;
+  font: 500 26px/1.1 var(--font-display);
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.ibx-count {
+  margin-right: auto;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--blue-wash);
+  color: var(--blue);
+  font: 500 12.5px/1.2 var(--font-sans);
+  white-space: nowrap;
+}
+
+.ibx-icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  height: 44px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ibx-icon:hover {
+  background: var(--sunken);
+}
+
+.ibx-icon:disabled,
+.ibx-icon[aria-disabled="true"] {
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: default;
+  opacity: 0.6;
+}
+
+.ibx-icon:focus-visible,
+.ibx-tab:focus-visible,
+.ibx-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.ibx-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  margin: 16px 16px 0;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-muted);
+}
+
+.ibx-search:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--blue),
+    0 0 0 4px var(--field-glow);
+}
+
+.ibx-search svg {
+  flex: none;
+}
+
+.ibx-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font: 400 15px/1 var(--font-sans);
+  color: var(--ink);
+  outline: none;
+}
+
+.ibx-search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.ibx-tabs {
+  display: flex;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ibx-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 500 14px/1 var(--font-sans);
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ibx-tab:hover,
+.ibx-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.ibx-cn {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  background: var(--sunken);
+  font: 600 11.5px/20px var(--font-sans);
+  text-align: center;
+  color: var(--ink);
+}
+
+.ibx-tab[aria-selected="true"] .ibx-cn {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.ibx-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.ibx-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 10px 24px;
+}
+
+.ibx-empty {
+  margin: 0;
+  padding: 32px 14px;
+  font-size: 14.5px;
+  color: var(--ink-muted);
+}
+
+.ibx-grp {
+  margin: 18px 14px 6px;
+  font: 500 12.5px/1.3 var(--font-sans);
+  color: var(--ink-muted);
+}
+
+.ibx-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 12px 14px 12px 16px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ibx-row + .ibx-row {
+  margin-top: 2px;
+}
+
+.ibx-row:hover {
+  background: var(--sunken);
+}
+
+.ibx-row.sel {
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 10px 24px -16px rgba(17, 17, 17, 0.35);
+}
+
+.ibx-row.sel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue);
+}
+
+.ibx-udot {
+  position: absolute;
+  left: 5px;
+  top: 26px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  visibility: hidden;
+}
+
+.ibx-row.un .ibx-udot {
+  visibility: visible;
+}
+
+.ibx-av {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 600 12px/1 var(--font-sans);
+}
+
+.ibx-av-sm {
+  width: 36px;
+  height: 36px;
+}
+
+.ibx-av-md {
+  width: 44px;
+  height: 44px;
+  font-size: 13px;
+}
+
+.ibx-av.sys {
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 11.5px;
+}
+
+.ibx-b {
+  display: block;
+  min-width: 0;
+}
+
+.ibx-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.ibx-who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 14.5px/1.35 var(--font-sans);
+  color: var(--ink);
+}
+
+.ibx-row.un .ibx-who {
+  font-weight: 600;
+}
+
+.ibx-when {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.ibx-title,
+.ibx-what {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ibx-title {
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.ibx-row.un .ibx-title {
+  font-weight: 500;
+}
+
+.ibx-what {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-muted);
+}
+
+.ibx-due {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: var(--radius-pill);
+  background: var(--sunken);
+  color: var(--ink);
+  font: 500 13px/1 var(--font-sans);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ibx-due.xs {
+  min-height: 22px;
+  margin-top: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.ibx-due.soon {
+  background: var(--error-wash);
+  color: var(--error);
+}
+
+.ibx-due.over {
+  background: var(--error);
+  color: #ffffff;
+}
+
+/* New items arrive with one soft wash (S-H5.rules/5). */
+.ibx-row.fresh {
+  animation: ibx-wash 1.6s ease-out 1;
+}
+
+@keyframes ibx-wash {
+  from {
+    background: var(--blue-wash);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ibx-row.fresh {
+    animation: none;
+  }
+}
+
+/* ---------- The reader ---------- */
+.ibx-read {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+}
+
+.ibx-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ibx-tg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ibx-pos {
+  margin-right: 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.ibx-back {
+  display: none;
+  gap: 4px;
+  padding: 0 10px 0 4px;
+  font: 500 15px/1 var(--font-sans);
+}
+
+.ibx-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 36px 40px 32px;
+}
+
+.ibx-msg {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.ibx-notice:empty {
+  display: none;
+}
+
+.ibx-notice {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 14.5px;
+}
+
+.ibx-kind {
+  margin: 0;
+  font: 500 13px/1.3 var(--font-sans);
+  color: var(--ink-muted);
+}
+
+.ibx-mtitle {
+  margin: 12px 0 0;
+  font: 500 32px/1.12 var(--font-display);
+  letter-spacing: -0.028em;
+  color: var(--ink);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.ibx-mtitle:focus {
+  outline: none;
+}
+
+.ibx-from {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 22px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.ibx-fw {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ibx-fl {
+  font-size: 15.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ibx-fl b {
+  font-weight: 600;
+}
+
+.ibx-meta {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.ibx-qs {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.ibx-qs li {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 16px 18px;
+}
+
+.ibx-qs li + li {
+  border-top: 1px solid var(--line);
+}
+
+.ibx-qn {
+  font: 500 12.5px/1.3 var(--font-sans);
+  color: var(--warn-ink);
+}
+
+.ibx-qt {
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ibx-quote {
+  margin: 24px 0 0;
+  padding: 18px 22px;
+  border-radius: 16px;
+  background: var(--blue-wash);
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ibx-foot {
+  margin: 18px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+/* S-H2B: the request, the idea brought and the optional reason. */
+.ibx-req {
+  margin-top: 8px;
+}
+
+.ibx-sh {
+  margin: 22px 0 8px;
+  font: 500 13px/1.3 var(--font-sans);
+  color: var(--ink-muted);
+}
+
+.ibx-note {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.ibx-card {
+  margin-top: 8px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.ibx-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--blue-wash);
+  color: var(--blue);
+  font: 500 12.5px/1 var(--font-sans);
+}
+
+.ibx-ct {
+  margin: 10px 0 0;
+  font: 500 17px/1.3 var(--font-sans);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ibx-cm,
+.ibx-cs {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.ibx-cs {
+  color: var(--ink);
+}
+
+.ibx-cl {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 4px;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ibx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ibx-field label {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ibx-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  font: 400 15px/1.5 var(--font-sans);
+  color: var(--ink);
+  background: var(--card);
+  resize: vertical;
+}
+
+.ibx-field textarea:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--blue),
+    0 0 0 4px var(--field-glow);
+}
+
+.ibx-result {
+  margin: 22px 0 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--ok-wash);
+  color: var(--ok);
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+
+.ibx-error {
+  margin: 16px 0 0;
+  color: var(--error);
+  font-size: 14.5px;
+}
+
+/* The foot: the item's actions at the right, the forward one last (S-H5.rules/3, V-ACC.visual/12). */
+.ibx-bar {
+  padding: 14px 40px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+
+.ibx-bar-in {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.ibx-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  grid-row: 1 / -1;
+  padding: 24px;
+  text-align: center;
+}
+
+.ibx-none p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-muted);
+}
+
+.ibx-down h1 {
+  margin: 0 0 12px;
+}
+
+/* ---------- Phone: the list is the screen; an item is its own screen ---------- */
+@media (max-width: 759px) {
+  .ibx {
+    display: block;
+    height: auto;
+    min-height: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .ibx-list {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ibx-head,
+  .ibx-tabs {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .ibx-search {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .ibx-scroll {
+    padding: 4px 0 16px;
+    overflow: visible;
+  }
+
+  .ibx-read {
+    display: none;
+  }
+
+  .ibx-reading .ibx-list {
+    display: none;
+  }
+
+  .ibx-reading .ibx-read {
+    display: block;
+    border-radius: 16px;
+  }
+
+  .ibx-tool {
+    min-height: 52px;
+    padding: 0 4px;
+  }
+
+  .ibx-back {
+    display: inline-flex;
+  }
+
+  .ibx-pos {
+    display: none;
+  }
+
+  .ibx-body {
+    padding: 20px 16px 24px;
+    overflow: visible;
+  }
+
+  .ibx-mtitle {
+    font-size: 24px;
+  }
+
+  .ibx-from {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .ibx-from .ibx-due {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .ibx-qs li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  /* The item's action in the dock. */
+  .ibx-bar {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px 16px;
+  }
+
+  .ibx-bar-in .btn {
+    flex: 1 1 auto;
+  }
+}
