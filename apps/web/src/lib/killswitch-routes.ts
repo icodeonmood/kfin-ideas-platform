@@ -90,6 +90,12 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
+  // Lane C's hosted audio for the same player (DEC-108): Listen's switch hides it too, whichever voice reads.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/ideas\/[^/]+\/listen(?:\/chapters)?\/?$/,
+    switches: ["desk.listen"],
+  },
 ];
 
 /**
