@@ -108,7 +108,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
 | `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P0 | B |
 | `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P0 | B |
-| `L-CONVO` | none | missing | P0 | F |
+| `L-CONVO` | `services/worker/convo/` (`post` the cross-lane entry point, SHIP_PLAN §5a; `reads.py`, `render.py`, `messages.py`, `access.py`, `routes.py`); `apps/web/src/server/convo.ts`; `/api/ideas/[id]/conversation` (+ `/messages`, `/messages/[entryId]`) (BLD-F050 to BLD-F059) | built 17 Nov (branch `f/convo-2`); S-08 wires to it | P0 | F |
 | `L-WORTH` | impact estimates (qualify) | exists, differs | P0 | B |
 | `L-MERGE` | `idea_links` | exists, differs | P0 | B (desk), F (request) |
 | `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
