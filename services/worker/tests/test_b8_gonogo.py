@@ -23,7 +23,11 @@ def _write(folder: Path, name: str, body: Any) -> None:
 
 @pytest.fixture
 def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namespace:
-    monkeypatch.setattr(g, "get_settings", lambda: Settings(privacy_notice_version="1.0"))
+    monkeypatch.setattr(
+        g,
+        "get_settings",
+        lambda: Settings(privacy_notice_version="1.0", speech_mode="fake", speech_hosted_approval=""),
+    )  # voice rows pinned (BLD-A185)
     real = {"route": "anthropic", "version": "0.2.0"}
     _write(tmp_path / "eval", "gatekeeper-0.2.0-1.json",
            real | {"metrics": {"personal_data_recall": 1.0, "false_block_rate": 0.02}})  # fmt: skip
@@ -44,7 +48,11 @@ def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namesp
 def test_mode_a_needs_every_criterion(evidence: argparse.Namespace) -> None:
     out = g.collect(evidence)
     assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # the CI row is always a person's
-    assert [r["state"] for r in out["rows"] if r["state"] != "met"] == ["confirm"]
+    # the CI row is always a person's; voice is seeded off, which DEC-108 makes a row to confirm
+    assert [(r["criterion"], r["state"]) for r in out["rows"] if r["state"] != "met"] == [
+        ("Every B1–B7 acceptance test passes in UAT", "confirm"),
+        (g.VOICE, "confirm"),
+    ]
 
 
 def test_a_load_rehearsal_or_a_failed_drill_rules_out_mode_a(evidence: argparse.Namespace) -> None:
