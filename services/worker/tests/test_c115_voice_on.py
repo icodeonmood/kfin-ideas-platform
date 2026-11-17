@@ -93,7 +93,9 @@ def test_BLD_C115_on_with_the_route_the_approval_and_the_key_is_met() -> None:
 
 
 def test_BLD_C115_nothing_is_off_by_design_any_more() -> None:
-    assert OFF_BY_DESIGN == {}
+    # Voice is no longer off by design (DEC-108); only L-DRAFT.channels' intake waits on IT (DEC-105, c/draft).
+    assert "capture.voice" not in OFF_BY_DESIGN and "speech.hosted" not in OFF_BY_DESIGN
+    assert set(OFF_BY_DESIGN) <= {"intake.email", "intake.teams"}
 
 
 # ---- the key is the worker's alone ----------------------------------------------------------------------------
