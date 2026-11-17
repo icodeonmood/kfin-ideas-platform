@@ -36,8 +36,23 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await currentUser().catch(() => null);
   const signedIn = Boolean(me?.privacyAccepted);
-  const data = signedIn && me ? await shellData(me) : null;
-  const folded = foldedFrom((await cookies()).get(FOLD_COOKIE)?.value, me?.id);
+  if (!me) {
+    // Signed out (S-01 Landing, S-02 Sign in, signed out): no shell. Each of these pages draws its own top row,
+    // its own <main id="main"> and its own footer, as its board does. The wall displays send a signed-out viewer to
+    // sign in, so ShellFrame's public frame is only for a signed-in person who has not yet accepted the notice.
+    return (
+      <html lang="en-IN" data-theme="white">
+        <body className="stage">
+          <a className="skip-link" href="#main">
+            Skip to main content
+          </a>
+          {children}
+        </body>
+      </html>
+    );
+  }
+  const data = signedIn ? await shellData(me) : null;
+  const folded = foldedFrom((await cookies()).get(FOLD_COOKIE)?.value, me.id);
   return (
     <html lang="en-IN" data-theme="white" data-fold={folded === null ? "auto" : folded ? "folded" : "open"}>
       <body className="stage">

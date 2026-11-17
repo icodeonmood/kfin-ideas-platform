@@ -1,0 +1,773 @@
+/*
+ * S-01 Landing, page-only styles (values from reference/css/boards/Landing.css and PhoneLanding.css).
+ * Everything is under .ld so nothing leaks; lane D's tokens and components replace the literals here.
+ * Phone layout at 640 px and below (F-SPACE.breakpoints). Reduced motion: still (F-MOTION.reduced).
+ */
+.ld {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  background: #f3f3f1;
+  color: #111111;
+  font-family: var(--font-sans);
+  letter-spacing: -0.006em;
+  interpolate-size: allow-keywords;
+}
+
+.ld a {
+  color: #111111;
+}
+
+.ld a:focus-visible,
+.ld summary:focus-visible {
+  outline: 2px solid #395ded;
+  outline-offset: 3px;
+}
+
+.ld-amb {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ld-amb i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+}
+
+.ld-amb .a1 {
+  width: 820px;
+  height: 600px;
+  left: 40px;
+  top: -140px;
+  background: radial-gradient(closest-side, rgba(57, 93, 237, 0.34), rgba(57, 93, 237, 0));
+}
+
+.ld-amb .a2 {
+  width: 740px;
+  height: 560px;
+  right: -180px;
+  top: 160px;
+  background: radial-gradient(closest-side, rgba(244, 104, 53, 0.24), rgba(244, 104, 53, 0));
+}
+
+.ld-amb .a3 {
+  width: 960px;
+  height: 600px;
+  left: 30%;
+  top: 620px;
+  background: radial-gradient(closest-side, rgba(146, 128, 255, 0.3), rgba(146, 128, 255, 0));
+}
+
+.ld-amb .a4 {
+  width: 780px;
+  height: 560px;
+  right: -120px;
+  top: 1480px;
+  background: radial-gradient(closest-side, rgba(57, 93, 237, 0.28), rgba(57, 93, 237, 0));
+}
+
+.ld-amb .a5 {
+  width: 720px;
+  height: 520px;
+  left: 140px;
+  top: 2180px;
+  background: radial-gradient(closest-side, rgba(244, 104, 53, 0.22), rgba(244, 104, 53, 0));
+}
+
+.ld-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 48px;
+  box-sizing: border-box;
+}
+
+main.ld-main {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- top row ---------- */
+.ld-top {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  column-gap: 48px;
+  align-items: center;
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+
+.ld-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  text-decoration: none;
+  font: 600 20px/1 var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+.ld-tnav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+}
+
+.ld-tnav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.ld-tnav a:hover {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+
+/* ---------- hero ---------- */
+.ld-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 48px;
+  align-items: center;
+  padding-top: 72px;
+  padding-bottom: 96px;
+}
+
+.ld-h1 {
+  margin: 22px 0 0;
+  font: 500 clamp(52px, 6.4vw, 96px) / 0.98 var(--font-display);
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.ld-wb {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: 0.1em;
+  margin-bottom: -0.1em;
+}
+
+.ld-w {
+  display: inline-block;
+  animation: ld-word 1.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms + 90ms);
+}
+
+@keyframes ld-word {
+  from {
+    transform: translateY(115%) rotate(2.5deg);
+  }
+}
+
+.ld-lead {
+  margin: 28px 0 0;
+  max-width: 600px;
+  font-size: 20px;
+  line-height: 1.55;
+  color: #4a4a50;
+  text-wrap: pretty;
+}
+
+.ld-go {
+  margin-top: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.ld .ld-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: 12px;
+  background: #111111;
+  color: #ffffff;
+  font: 500 17px/1 var(--font-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition:
+    transform 0.12s cubic-bezier(0.2, 0, 0, 1),
+    background-color 0.15s ease;
+  touch-action: manipulation;
+}
+
+.ld .ld-btn:hover {
+  background: #2a2a2e;
+  color: #ffffff;
+}
+
+.ld .ld-btn:active {
+  transform: scale(0.97);
+}
+
+.ld-note {
+  margin: 0;
+  font-size: 15px;
+  color: #5f5f64;
+}
+
+/* ---------- the mark, annotated ---------- */
+.ld-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+}
+
+.ld-mark {
+  display: block;
+  width: min(300px, 70%);
+  height: auto;
+  overflow: visible;
+  color: #111111;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ld-sp {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  animation: ld-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+.ld-sd {
+  animation: ld-fade 0.5s ease 1.5s both;
+}
+
+@keyframes ld-rise {
+  0% {
+    transform: scale(0.06);
+    opacity: 0;
+  }
+}
+
+@keyframes ld-fade {
+  0% {
+    opacity: 0;
+  }
+}
+
+.ld-key {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.ld-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.3;
+  color: #3f3f45;
+}
+
+/* ---------- sections ---------- */
+.ld-sec {
+  padding-top: 112px;
+}
+
+.ld-h2 {
+  margin: 0;
+  font: 500 clamp(34px, 3.6vw, 52px) / 1.04 var(--font-display);
+  letter-spacing: -0.032em;
+  text-wrap: balance;
+}
+
+.ld-trk {
+  position: relative;
+  list-style: none;
+  margin: 48px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 32px;
+}
+
+.ld-trk::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 14px;
+  height: 2px;
+  background: #dadad6;
+}
+
+.ld-trk li {
+  position: relative;
+}
+
+.ld-nd {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: #f3f3f1;
+  box-shadow: inset 0 0 0 2px #111111;
+  font: 500 13px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-trk li:first-child .ld-nd {
+  background: #111111;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.ld-tn {
+  margin: 22px 0 0;
+  font: 500 24px/1.15 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.ld-tw {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #5f5f64;
+}
+
+.ld-td {
+  margin: 12px 0 0;
+  max-width: 280px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: #4a4a50;
+}
+
+/* ---------- questions: details/summary, plus turning to a cross ---------- */
+.ld-qa {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.ld-qs {
+  border-top: 1px solid #111111;
+}
+
+.ld-qs details {
+  border-bottom: 1px solid #dadad6;
+}
+
+.ld-qs summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 0;
+  list-style: none;
+  cursor: pointer;
+  font: 500 20px/1.3 var(--font-display);
+  letter-spacing: -0.012em;
+}
+
+.ld-qs summary::-webkit-details-marker {
+  display: none;
+}
+
+.ld-pm {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px #c9c9c3;
+  transition: transform 0.2s;
+}
+
+.ld-qs details[open] .ld-pm {
+  transform: rotate(45deg);
+}
+
+.ld-qs details::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition:
+    block-size 0.3s cubic-bezier(0.2, 0, 0, 1),
+    content-visibility 0.3s allow-discrete;
+}
+
+.ld-qs details[open]::details-content {
+  block-size: auto;
+}
+
+.ld-qs details p {
+  margin: 0;
+  max-width: 640px;
+  padding: 0 56px 24px 0;
+  font-size: 17px;
+  line-height: 1.6;
+  color: #4a4a50;
+}
+
+/* ---------- the Ones ---------- */
+.ld-slab {
+  margin-top: 112px;
+  padding: 64px;
+  border-radius: 28px;
+  background: #111111;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+
+.ld-slab .ld-h2 {
+  color: #ffffff;
+}
+
+.ld-slab-lead {
+  margin: 14px 0 0;
+  max-width: 560px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: #c4c4c7;
+}
+
+.ld-ones {
+  list-style: none;
+  margin: 44px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ld-one {
+  padding: 24px 24px 26px;
+  border-radius: 20px;
+  background: #1b1b1f;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.ld-dash {
+  display: block;
+  width: 24px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.ld-no {
+  margin: 22px 0 0;
+  font: 500 64px/1 var(--font-display);
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-name {
+  margin: 16px 0 0;
+  font: 500 19px/1.2 var(--font-display);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.ld-idea {
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 15px;
+  line-height: 1.5;
+  color: #e4e4e0;
+}
+
+/* ---------- closing and footer ---------- */
+.ld-end {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  padding-top: 120px;
+  padding-bottom: 120px;
+}
+
+.ld-big {
+  margin: 0;
+  max-width: 900px;
+  font: 500 clamp(48px, 6vw, 88px) / 0.98 var(--font-display);
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.ld-foot {
+  background: #e9e9e6;
+  border-top: 1px solid #dadad6;
+}
+
+.ld-foot-in {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding-top: 28px;
+  padding-bottom: 32px;
+  font-size: 14px;
+  color: #5f5f64;
+}
+
+.ld-foot-in p {
+  margin: 0;
+}
+
+.ld-foot-own {
+  color: #111111;
+  font-weight: 500;
+}
+
+/* ---------- reveal on scroll (only below the fold, only with scripts, never with reduced motion) ---------- */
+.ld [data-reveal="pending"] {
+  opacity: 0;
+  transform: translateY(48px) scale(0.96);
+  filter: blur(14px);
+}
+
+.ld [data-reveal="in"] {
+  transition:
+    opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---------- widths ---------- */
+.ld-phone {
+  display: none;
+}
+
+@media (max-width: 1000px) {
+  .ld-hero,
+  .ld-qa {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ld-trk {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 36px 32px;
+  }
+
+  .ld-trk::before {
+    display: none;
+  }
+
+  .ld-ones {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  /* Beats any display a desktop-only element sets for itself (the closing button, the anchors). */
+  .ld .ld-desk {
+    display: none !important;
+  }
+
+  .ld-phone {
+    display: revert;
+  }
+
+  .ld-wrap {
+    padding: 0 20px;
+  }
+
+  .ld-top {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 12px;
+    padding-bottom: 0;
+  }
+
+  .ld-hero {
+    gap: 32px;
+    padding-top: 8px;
+    padding-bottom: 0;
+  }
+
+  .ld-h1 {
+    margin-top: 12px;
+    font-size: 36px;
+    line-height: 1.04;
+  }
+
+  .ld-lead {
+    margin-top: 12px;
+    font-size: 17px;
+    color: #4a4a50;
+  }
+
+  .ld-fig {
+    padding: 28px 20px;
+    border-radius: 20px;
+    background: #e9e9e5;
+    gap: 24px;
+  }
+
+  .ld-mark {
+    width: 150px;
+  }
+
+  .ld-sec {
+    padding-top: 48px;
+  }
+
+  .ld-h2 {
+    font-size: 26px;
+  }
+
+  .ld-how {
+    position: relative;
+    list-style: none;
+    margin: 20px 0 0;
+    padding: 0 0 0 28px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .ld-how::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: #dadad6;
+  }
+
+  .ld-how li {
+    position: relative;
+  }
+
+  .ld-how li::before {
+    content: "";
+    position: absolute;
+    left: -28px;
+    top: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    background: #f3f3f1;
+    box-shadow: inset 0 0 0 2px #111111;
+  }
+
+  .ld-how li:first-child::before {
+    background: #111111;
+  }
+
+  .ld-how .ld-tn {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .ld-how .ld-tw {
+    margin-top: 2px;
+  }
+
+  .ld-qs summary {
+    padding: 18px 0;
+    font-size: 17px;
+  }
+
+  .ld-qs details p {
+    padding-right: 0;
+    font-size: 15px;
+  }
+
+  .ld-slab {
+    margin-top: 48px;
+    padding: 36px 20px;
+    border-radius: 20px;
+  }
+
+  .ld-slab-lead {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .ld-ones {
+    margin-top: 24px;
+  }
+
+  .ld-no {
+    margin-top: 14px;
+    font-size: 44px;
+  }
+
+  .ld-name {
+    margin-top: 10px;
+    font-size: 16px;
+  }
+
+  .ld-idea {
+    font-size: 13.5px;
+  }
+
+  .ld-end {
+    padding-top: 48px;
+    padding-bottom: 32px;
+  }
+
+  .ld-big {
+    font-size: 30px;
+  }
+
+  .ld-foot-in {
+    display: block;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .ld-foot-in p + p {
+    margin-top: 4px;
+  }
+
+  .ld-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: grid;
+    gap: 8px;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    background: rgba(243, 243, 241, 0.92);
+    border-top: 1px solid #dadad6;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .ld-dock .ld-note {
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .ld .ld-full {
+    width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ld *,
+  .ld *::details-content {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .ld-mark {
+    transform: none !important;
+  }
+}

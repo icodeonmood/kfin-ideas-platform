@@ -1,19 +1,27 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { BANNERS, switchesFor } from "@/lib/killswitch-routes";
-import { allowedBeforePrivacyNotice, canSeePage, decide, effectiveRoles, isPublic } from "@/lib/rbac";
+import {
+  allowedBeforePrivacyNotice,
+  canSeePage,
+  decide,
+  effectiveRoles,
+  isAuthExempt,
+  isPublic,
+} from "@/lib/rbac";
 import {
   cookieOptions,
   readSession,
   refreshSession,
   SESSION_COOKIE,
+  sessionTtlSeconds,
   type SessionInfo,
 } from "@/server/auth/session";
 import { appBaseUrl } from "@/server/config";
 import { isOn, switchStates } from "@/server/killswitch";
 import { log } from "@/server/log";
 
-const PUBLIC_PAGES = new Set(["/sign-in", "/signed-out"]);
+const PUBLIC_PAGES = new Set(["/sign-in"]);
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
@@ -22,8 +30,10 @@ const redirect = (path: string) => NextResponse.redirect(new URL(path, appBaseUr
 
 /**
  * Runs before every request except static files (Next.js proxy, Node.js runtime). In order:
- * cross-origin writes refused → session (401 / sign-in) → privacy notice (403 / notice page) → RBAC from
- * policy/rbac.yaml (unknown 404, denied 403) → kill switches (503 with a banner, §7.6) → sliding session refresh.
+ * cross-origin writes refused → sign-in routes (listed ones only, then their kill switches) → session (401 / sign-in; `/` is
+ * Landing when signed out) → privacy notice (403 / notice page) → RBAC from
+ * policy/rbac.yaml (unknown 404, denied 403) → kill switches (503 with a banner, §7.6) → activity recorded (the
+ * session still ends `session.hours` after sign-in, L-AUTH.rules/5, BLD-A178).
  */
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -36,7 +46,13 @@ export async function proxy(request: NextRequest) {
   if (!SAFE_METHODS.has(method) && origin && origin !== appBaseUrl().origin) {
     return json(403, { error: "cross_origin" });
   }
-  if (pathname.startsWith("/auth/") || PUBLIC_PAGES.has(pathname) || (isApi && isPublic(method, pathname))) {
+  // Sign-in routes run without a session, but only those policy/rbac.yaml lists in `auth_exempt` (BLD-A177);
+  // the email-code ones still meet their switch (BLD-E002, §7.6).
+  if (pathname.startsWith("/auth/")) {
+    if (!isAuthExempt(method, pathname)) return json(404, { error: "not_found" });
+    return (await killSwitchCheck(method, pathname)) ?? NextResponse.next();
+  }
+  if (PUBLIC_PAGES.has(pathname) || (isApi && isPublic(method, pathname))) {
     return NextResponse.next();
   }
 
@@ -52,6 +68,8 @@ export async function proxy(request: NextRequest) {
     });
   }
   if (!session) {
+    // S-01: `/` is Landing for anyone signed out; signed in, it is Home (S-03) as before (BLD-A172).
+    if (!isApi && pathname === "/" && SAFE_METHODS.has(method)) return NextResponse.next();
     return isApi
       ? json(401, { error: "sign_in_required" })
       : redirect(`/sign-in?next=${encodeURIComponent(pathname + search)}`);
@@ -78,8 +96,9 @@ export async function proxy(request: NextRequest) {
 
   response ??= NextResponse.next();
   if (session.needsRefresh && token) {
-    await refreshSession(token);
-    response.cookies.set(SESSION_COOKIE, token, cookieOptions());
+    const ttl = await sessionTtlSeconds(); // L-AUTH.rules/5, from rules/promises.md
+    await refreshSession(token, ttl);
+    response.cookies.set(SESSION_COOKIE, token, cookieOptions(ttl));
   }
   return response;
 }

@@ -1,10 +1,12 @@
 """AT-B2-05: any /api/* call without a session returns 401; the session cookie is HttpOnly, Secure (on HTTPS,
-BLD-153) and SameSite=Lax with an 8-hour lifetime. Plus: sign-out revokes, expiry is enforced, cross-site
-writes refused."""
+BLD-153) and SameSite=Lax with an 8-hour lifetime. Plus: sign-out revokes, expiry is enforced (8 hours from sign-in
+however busy the person is, L-AUTH.rules/5), cross-site writes refused."""
 
+import datetime as dt
 import re
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -60,7 +62,8 @@ def test_sign_out_revokes_the_session() -> None:
     token = browser.cookies["ideas_session"]
     assert browser.get("/api/me").status_code == 200
     out = browser.post("/auth/logout")
-    assert out.status_code == 303 and out.headers["location"].endswith("/signed-out")
+    # S-01: signed out, the person is back at the front door (the separate signed-out page is retired, BLD-A179).
+    assert out.status_code == 303 and urlsplit(out.headers["location"]).path == "/"
     replay = httpx.get(WEB + "/api/me", headers={"Cookie": f"ideas_session={token}"}, timeout=10)
     assert replay.status_code == 401, "a revoked token must not work even if someone kept a copy"
 
@@ -75,6 +78,35 @@ def test_expired_session_is_refused(dev_db: Any) -> None:
             (person.user_id,),
         )
         assert person.browser().get("/api/me").status_code == 401
+
+
+def test_activity_never_extends_a_session_past_8_hours(dev_db: Any) -> None:
+    """L-AUTH.rules/5, BLD-A178: `session.hours` (8) from sign-in, however busy the person is."""
+    with people(dev_db) as make:
+        person = make()
+        browser = person.browser()
+        # Signed in 7 h 58 min ago, last seen 10 minutes ago: the next request records activity.
+        dev_db.execute(
+            "UPDATE sessions SET created_at = now() - interval '7 hours 58 minutes', "
+            "last_seen_at = now() - interval '10 minutes', expires_at = now() + interval '2 minutes' "
+            "WHERE user_id = %s",
+            (person.user_id,),
+        )
+        assert browser.get("/api/me").status_code == 200
+        row = dev_db.execute(
+            "SELECT expires_at - created_at AS span, last_seen_at > now() - interval '1 minute' AS seen "
+            "FROM sessions WHERE user_id = %s",
+            (person.user_id,),
+        ).fetchone()
+        assert row["seen"], "the request should have recorded activity"
+        assert row["span"] <= dt.timedelta(hours=8), "activity moved the end past 8 hours from sign-in"
+        # Past 8 hours from sign-in the session is over, whatever expires_at says.
+        dev_db.execute(
+            "UPDATE sessions SET created_at = now() - interval '8 hours 1 minute', "
+            "expires_at = now() + interval '4 hours' WHERE user_id = %s",
+            (person.user_id,),
+        )
+        assert browser.get("/api/me").status_code == 401
 
 
 def test_cross_site_writes_are_refused(dev_db: Any) -> None:

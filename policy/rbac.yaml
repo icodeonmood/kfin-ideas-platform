@@ -20,7 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
+  hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -73,10 +73,25 @@ kill_switch_flippers:
   intake.teams: [admin]                              # L-DRAFT.channels: off until IT gives the Teams app (DEC-105)
   files.blackout: [admin, infosec]                    # DEC-107: "Hide it for me" for PDFs and images, after review
   desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
+  auth.email_code: [infosec]                          # BLD-E002: sign-in by email code; InfoSec only, off until it approves
 
 # No session needed.
 public:
   - GET /api/health
+
+# Sign-in routes (L-AUTH, A-API.auth): no session needed, because they start or end one. Each is listed with its
+# reason. The proxy refuses (404) any /auth path not listed here, and a unit test fails when a route file under
+# app/auth has no line (BLD-A177). The email-code routes still meet their kill switch (BLD-E002, §7.6).
+auth_exempt:
+  - GET /auth/session                                 # "am I signed in, and where was I going" (A-API.auth); 401 without one
+  - GET /auth/sso/start                               # "Share a problem" continues here to silent single sign-on (L-AUTH.rules/1)
+  - POST /auth/sso/start                              # S-02's single sign-on buttons, as a form or JSON
+  - GET /auth/callback                                # the identity provider sends the person back here
+  - GET /auth/login                                   # the older sign-in link, kept for links already sent (BLD-A173)
+  - POST /auth/code/send                              # sign-in by email code (L-AUTH.rules/2), behind auth.email_code
+  - POST /auth/code/verify                            # sign-in by email code (L-AUTH.rules/3), behind auth.email_code
+  - POST /auth/sign-out                               # ends whatever session the cookie names (A-API.auth); 204
+  - POST /auth/logout                                 # the shell's sign-out form; ends the session and goes to Landing
 
 # Allowed before the privacy notice is accepted (everything else waits for it).
 before_privacy_notice:
