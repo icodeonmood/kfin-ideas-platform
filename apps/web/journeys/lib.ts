@@ -108,8 +108,9 @@ function hash(s: string): number {
 // --- Seeded ideas, and which journey may change each one ------------------------------------------------------------
 
 /**
- * Every seeded idea by its seed key, with the one journey allowed to change it (`null`: read only for everyone).
- * Steps that change state create their own data through the UI, or use a record given to their journey here.
+ * Every seeded idea by its seed key, with the journey allowed to change it (`null`: read only for everyone). A record
+ * is shared only by journeys whose changes add to it and never undo each other (R1: crew joins from a merge and a
+ * team-up). Steps that change state create their own data through the UI, or use a record given to their journey.
  */
 export const SEED = {
   T1: { title: "Walk-in KYC updates queue twice at the branch", changedBy: "J-RESUME" }, // draft, check:3, voice, on the phone
@@ -123,7 +124,7 @@ export const SEED = {
   T9: { title: "Dividend bank mandate reminders go out too late", changedBy: null }, // not picked, reversed to picked (final)
   T10: { title: "Token slips at the branch run out by noon", changedBy: "J-TRACK" }, // withdrawn
   T11: { title: "Investors call twice about failed SIP debits", changedBy: null }, // merged by the desk into R2
-  R1: { title: "Investors get no reason when a SIP debit fails", changedBy: "J-REVIEW" }, // with the desk (Lavanya)
+  R1: { title: "Investors get no reason when a SIP debit fails", changedBy: ["J-SIMILAR", "J-TEAMUP"] }, // with the desk (Lavanya); crew grows, never decided
   R2: { title: "One clear message after a failed SIP debit", changedBy: null }, // with the desk; desk-merge lead
   V1: { title: "Flag likely-wrong bank details before a payout", changedBy: null }, // shipped 40 days ago (Varun, One)
   S1: { title: "Auto-fill pin code details on the online form", changedBy: "J-ONE" }, // shipped 100 days ago
@@ -140,7 +141,7 @@ export const SEED = {
   G1: { title: "Investors cannot download old account statements", changedBy: null }, // not now 2 days ago
   J1: { title: "Co-branded investor webinars with distributors", changedBy: null }, // picked 38 days ago
   N1: { title: "Rejection codes confuse investors at the counter", changedBy: null }, // draft merged into T7
-} as const satisfies Record<string, { title: string; changedBy: JourneyId | null }>;
+} as const satisfies Record<string, { title: string; changedBy: JourneyId | readonly JourneyId[] | null }>;
 export type SeedKey = keyof typeof SEED;
 
 const DATABASE_URL =
@@ -214,9 +215,11 @@ function testCorpus(): string {
   return corpus;
 }
 
-/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). */
+/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). `P-` modules
+ * are product rules, not code (P-ROUTES.state is kept by the screens that use it), so they never hold a step back. */
 export function onMain(id: string): boolean {
   if (id in FORCE_FIXME) return false;
+  if (id.startsWith("P-")) return true;
   const base = id.split(".")[0]!;
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
@@ -246,9 +249,10 @@ export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) =
 export function step(ref: StepRef, screen: string, title: string, opts: StepOptions, body: StepBody): void {
   const journey = ref.split("/")[0] as JourneyId;
   for (const key of opts.changes ?? []) {
-    if (SEED[key].changedBy !== journey) {
+    const owners: readonly JourneyId[] = [SEED[key].changedBy ?? []].flat();
+    if (!owners.includes(journey)) {
       throw new Error(
-        `${ref} changes seed record ${key}, which SEED gives to ${SEED[key].changedBy ?? "nobody"}`,
+        `${ref} changes seed record ${key}, which SEED gives to ${owners.join(", ") || "nobody"}`,
       );
     }
   }
