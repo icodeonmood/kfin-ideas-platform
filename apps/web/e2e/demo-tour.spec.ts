@@ -72,11 +72,8 @@ test("7: the review desk, each tab showing what its count says (S-R1)", async ({
 
 // The Ones console (step 9) is retired (DEC-106, R21).
 // The manager view (step 11) is retired (DEC-106, R12).
-test("10, 12: leaderboard and the office screen", async ({ browser }) => {
-  const ananya = await as(browser, DEMO.one);
-  await ananya.goto("/ones/leaderboard");
-  await expect(ananya.getByRole("cell", { name: "Rohit Menon" })).toBeVisible();
-  await expectNoSeriousAxeIssues(ananya);
+// The leaderboard page (step 10) is retired: the Ones leaderboard is on the Wall (S-WALL, S-ONE).
+test("12: the office screen", async ({ browser }) => {
   const rahul = await as(browser, DEMO.manager);
   await rahul.goto("/constellation");
   await expect(rahul.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
