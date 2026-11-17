@@ -418,6 +418,18 @@ class Made:
     messages: list[str]
 
 
+@dataclass(frozen=True)
+class Ask:
+    """A team-up request or a draft's merge request, by its row: what the lead's Inbox item refers to."""
+
+    request_id: str  # teamup_requests.id or merge_requests.id
+    request: str  # "teamup" | "merge"
+    brought: int  # ideas brought along; a draft merge request brings its draft
+    waiting: bool
+    sender: str  # the requester's users.id
+    at: dt.datetime
+
+
 def _mask(kind: str, value: str) -> str:
     return f"{MASK_LABEL[kind]} ••••{value[-2:]}"
 
@@ -723,10 +735,10 @@ def load(conn: Conn, now: dt.datetime | None = None) -> dict[str, Made]:
         p = _people(conn)
         m = {key: _idea(conn, key, spec, p, now) for key, spec in IDEAS.items()}
         _review(conn, p, m, now)
-        _crews(conn, p, m, now)
+        asks = _crews(conn, p, m, now)
         _builds_and_impact(conn, p, m, now)
         _ones(conn, p, m, now)
-        _inbox(conn, p, m, now)
+        _inbox(conn, p, m, now, asks)
         _wall_and_flags(conn, p, m, now)
     return m
 
@@ -842,8 +854,13 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
     _event(conn, m["T11"].uuid, "desk_merged", merged_at, {"merge_id": mid})
 
 
-def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
+def _crews(
+    conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime
+) -> dict[tuple[str, str], Ask]:
+    """Similar ideas, merge requests, team-up requests and crews. Returns every request by (the lead's idea key,
+    the requester's contributor code), so the lead's Inbox items refer to the real rows."""
     tanvi = p["tanvi"]
+    asks: dict[tuple[str, str], Ask] = {}
     # Similar ideas (L-SIMILAR): found while drafting, kept separate, asked to merge.
     for a, b, strength, reason, outcome in (
         ("T1", "R1", "related", "Related: the calls branches take", None),
@@ -873,7 +890,7 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
     )
 
     # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
-    # (L-TEAMUP.rules/5, J-SIMILAR/5). N1's was accepted into T7.
+    # (L-TEAMUP.rules/5, J-SIMILAR/5; posted in `_inbox`). N1's was accepted into T7.
     for key, other, state, note, days in (
         ("T2", "R1", "waiting", "Mine is the same failed SIP SMS. Happy for it to be part of yours.", 0.3),
         (
@@ -899,18 +916,19 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         ),
     ):
         rid = str(uuid.uuid4())
+        sharer = p[m[key].spec.owner]
         conn.execute(
             "INSERT INTO merge_requests (id, draft_uuid, other_idea_uuid, from_code, note_encrypted, state, "
             "answered_by_code, sent_at, answered_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (rid, m[key].uuid, m[other].uuid, p[m[key].spec.owner]["code"],
+            (rid, m[key].uuid, m[other].uuid, sharer["code"],
              seal_text("merge_requests", "note_encrypted", rid, note), state,
              tanvi["code"] if state == "accepted" else None, _ago(days, now),
              _ago(days - 0.4, now) if state == "accepted" else None),
         )  # fmt: skip
-        if state == "waiting":  # as lane F's tell_lead posts it (teamup/requests.py): the draft comes along
-            _inbox_item(conn, p[m[other].spec.owner]["id"], "teamup_request", p[m[key].spec.owner]["id"],
-                        m[other].uuid, {"request_id": rid, "request": "merge", "brought": 1}, _ago(days, now),
-                        needs=True, actions=LEAD_ANSWERS)  # fmt: skip
+        # The draft comes along, so it brings one (lane F's drafts.py: tell_lead(..., "merge", other, 1, ...)).
+        asks[(other, sharer["code"])] = Ask(
+            rid, "merge", 1, state == "waiting", sharer["id"], _ago(days, now)
+        )
         if state == "accepted":
             merge_id = str(uuid.uuid4())
             conn.execute(
@@ -993,6 +1011,9 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
             conn.execute(
                 "INSERT INTO teamup_brought (request_id, idea_uuid) VALUES (%s, %s)", (rid, m[b].uuid)
             )
+        asks[(key, p[who]["code"])] = Ask(
+            rid, "teamup", len(brought), state == "sent", p[who]["id"], _ago(days, now)
+        )
         if state.startswith("approved"):
             conn.execute(
                 "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, teamup_request_id, joined_at) "
@@ -1028,6 +1049,7 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
              code=p["naveen"]["code"], mentions=[tanvi["id"]])  # fmt: skip
     _message(conn, m["R1"].uuid, _ago(1.0, now), "Is the failed debit reason in the bank file, or only in the exchange report?",
              user=p["lavanya"]["id"])  # fmt: skip
+    return asks
 
 
 def _builds_and_impact(
@@ -1192,13 +1214,21 @@ def _glow_up(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int], 
     )
 
 
-# A draft's merge request: the lead's three answers (L-TEAMUP.rules/5, S-H2B.reader/5), as lane F's `tell_lead` posts
-# them (teamup/rules.py answers_for, op `teamup.answer.<answer>`).
-LEAD_ANSWERS = [
-    {"label": "Decline", "style": "text", "op": "teamup.answer.decline"},
-    {"label": "Team up only", "style": "line", "op": "teamup.answer.team_only"},
-    {"label": "Merge it", "style": "primary", "op": "teamup.answer.merge"},
-]
+def _lead_answers(brings: bool) -> list[dict[str, str]]:
+    """The lead's answers to a request as Inbox buttons, as lane F's `tell_lead` posts them (teamup/requests.py
+    `_actions`, teamup/rules.py `answers_for`; L-TEAMUP.rules/5-6, S-H2B.reader/5): each a bare op that lane A's
+    Inbox hands to teamup/inbox_ops.py. Something brought: Decline, Team up only, Merge it. Nothing brought: Decline
+    and Approve (= team up only)."""
+    if not brings:
+        return [
+            {"label": "Decline", "style": "text", "op": "decline"},
+            {"label": "Approve", "style": "primary", "op": "team_only"},
+        ]
+    return [
+        {"label": "Decline", "style": "text", "op": "decline"},
+        {"label": "Team up only", "style": "line", "op": "team_only"},
+        {"label": "Merge it", "style": "primary", "op": "merge"},
+    ]
 
 
 def _inbox_item(
@@ -1207,6 +1237,7 @@ def _inbox_item(
     archived: bool = False,
 ) -> None:  # fmt: skip
     """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088)."""
+    # TODO(lane A inbox): dedupe_key teamup_request:<id> / draft_kept:<uuid>
     conn.execute(
         "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
         "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
@@ -1217,7 +1248,13 @@ def _inbox_item(
     )  # fmt: skip
 
 
-def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
+def _inbox(
+    conn: Conn,
+    p: dict[str, dict[str, str]],
+    m: dict[str, Made],
+    now: dt.datetime,
+    asks: dict[tuple[str, str], Ask],
+) -> None:
     """Every Inbox kind (E-ENUMS.inbox) at least once. Text is rendered from templates at read time (BLD-088)."""
     items = (
         # (to, kind, from, idea, days ago, needs you, due in days, read, archived, actions)
@@ -1225,9 +1262,6 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
         ("tanvi", "answer_reminder", None, "T6", 0.1, True, 2.0, False, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
-        ("tanvi", "teamup_request", "esha", "T5", 0.5, True, None, False, False,
-         [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Team up only", "op": "team_only", "style": "line"},
-          {"label": "Merge it", "op": "merge", "style": "primary"}]),
         ("tanvi", "decision", "harish", "T7", 5.0, False, None, True, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("tanvi", "decision_reversed", "manoj", "T9", 2.0, False, None, False, False,
@@ -1250,8 +1284,6 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Open the idea", "to": "idea", "style": "line"}]),
         ("tanvi", "comment", "harish", "T7", 4.5, False, None, True, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "line"}]),
-        ("rekha", "teamup_request", "bhavesh", "R1", 1.2, True, None, False, False,
-         [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Approve", "op": "team_only", "style": "primary"}]),
         ("aparna", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
         ("hemant", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,
@@ -1269,6 +1301,15 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
                     {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
                     due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
+    # Needs you: every request still waiting on a lead (Esha's on Tanvi's T5 with E1 brought, Bhavesh's on Rekha's R1
+    # with nothing brought, and T2's, N2's and G2's drafts on R1), exactly as lane F's `tell_lead` posts it
+    # (teamup/requests.py): refs the real request row, which kind it is and how many ideas it brings, and the lead's
+    # answers as bare ops (L-INBOX.kinds, L-TEAMUP.rules/5-6, L-MERGE.request/4; J-SIMILAR/5-6c).
+    for (key, _from_code), ask in asks.items():
+        if ask.waiting:
+            _inbox_item(conn, p[m[key].spec.owner]["id"], "teamup_request", ask.sender, m[key].uuid,
+                        {"request_id": ask.request_id, "request": ask.request, "brought": ask.brought}, ask.at,
+                        actions=_lead_answers(ask.brought > 0), needs=True)  # fmt: skip
     # J-RESUME/5: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as the
     # draft (draft/channels.py `_kept`, L-DRAFT.channels): from the system, refs the channel only, "Check and send".
     email = m["I2"]
