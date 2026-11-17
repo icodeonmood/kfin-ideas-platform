@@ -59,7 +59,6 @@ import type {
   WallStage,
   Conversation,
   ConversationEntry,
-  Message,
   SavedLabels,
 } from "./entities";
 
