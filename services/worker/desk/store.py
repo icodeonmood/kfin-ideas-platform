@@ -167,6 +167,19 @@ def own_codes(conn: Conn, idea: dict[str, Any]) -> set[str]:
     return codes
 
 
+def sharers_and_crew(conn: Conn, idea: dict[str, Any]) -> list[str]:
+    """L-INBOX.kinds: who hears of a decision on the idea, as user ids, each once: every credited sharer
+    (`own_codes`) and every live crew member (not left). Codes erased from contributor_map are skipped."""
+    codes = sorted(own_codes(conn, idea)) + [
+        str(r["contributor_code"])
+        for r in conn.execute(
+            "SELECT contributor_code FROM crew_members WHERE idea_uuid = %s AND left_at IS NULL ORDER BY joined_at, id",
+            (idea["id"],),
+        ).fetchall()
+    ]
+    return list(dict.fromkeys(u for c in dict.fromkeys(codes) if (u := user_of(conn, c))))
+
+
 def is_own(conn: Conn, user_id: str, idea: dict[str, Any]) -> bool:
     code = code_of(conn, user_id)
     return code is not None and code in own_codes(conn, idea)

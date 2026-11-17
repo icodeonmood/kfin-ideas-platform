@@ -21,12 +21,11 @@ from desk.store import (
     has_role,
     is_own,
     now,
-    own_codes,
     person_by_code,
     person_by_user,
     seal,
+    sharers_and_crew,
     unseal,
-    user_of,
 )
 from desk.window import Window, WindowRefused, extend, reverse, words
 
@@ -307,9 +306,11 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             )
             adapters.say(conn, str(r["idea_uuid"]), "committee.reversed", author_user_id=user_id,
                          payload={"window_id": window_id, "to": str(to)}, at=t)  # fmt: skip
-            sharers = [u for c in sorted(own_codes(conn, idea)) if (u := user_of(conn, c))]
+            told = list(
+                dict.fromkeys([*sharers_and_crew(conn, idea), str(desk_user)])
+            )  # sharer, crew, the reviewer
             adapters.tell(
-                conn, "decision_reversed", [*sharers, str(desk_user)], idea_uuid=str(r["idea_uuid"]), sender=user_id,
+                conn, "decision_reversed", told, idea_uuid=str(r["idea_uuid"]), sender=user_id,
                 actions=[("See the decision", f"/ideas/{r['idea_id']}", "primary")],
                 refs={"window_id": window_id, "to": str(to)},
             )  # fmt: skip
