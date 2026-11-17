@@ -235,8 +235,38 @@ def crew_role(conn: Conn, idea_uuid: Any, code: str) -> str | None:
 
 
 @dataclass(frozen=True)
+class SeenLead:
+    """The idea's lead as one viewer may see them (BLD-F029, DEC-104). `ref` is an E-ENTITIES PersonRef, or lane C's
+    hidden person ("A colleague", no initials, an opaque id, never a users.id); `first` is the first name to put in a
+    sentence, or None when the lead is not named to this viewer, so the words say "the lead"."""
+
+    ref: dict[str, Any]
+    first: str | None
+
+
+def lead_seen_by(conn: Conn, idea: dict[str, Any], user_id: str | None, code: str | None) -> SeenLead:
+    """BLD-F029: team-up names the idea's lead by DEC-104, through lane C's helpers (`similar.preview`), as the
+    crew cards do (BLD-F042). A lead who hid their name from the Wall in Profile (`person_settings
+    .show_name_on_wall`), or is no longer active, is not named to someone asking to join, and their users.id never
+    leaves the server. The idea's live crew (the lead included) and the review desk and the Ones Committee always
+    see the name; so once a request is approved the requester, now on the crew, does too."""
+    from similar.preview import Viewer, hidden_person, person_refs
+
+    lc = lead_code(conn, idea)
+    hidden_id = hidden_person(lc)["id"]
+    ref = person_refs(conn, [lc], names_always=False)[lc]
+    if ref["id"] == hidden_id:
+        on_crew = code is not None and crew_role(conn, idea["id"], code) is not None
+        if on_crew or Viewer.of(conn, user_id).desk:
+            ref = person_refs(conn, [lc], names_always=True)[lc]
+    named = ref["id"] != hidden_id
+    return SeenLead(ref, str(ref["first_name"]) if named else None)
+
+
+@dataclass(frozen=True)
 class Person:
-    """E-ENTITIES PersonRef. Names show in team-up (P-PRODUCT.privacy; DEC-104 hides them from the Wall only)."""
+    """E-ENTITIES PersonRef from the users row, with no Wall check. Team-up uses it only for the requester as the lead
+    reads them and for the person's own details (BLD-F075); the lead goes through `lead_seen_by` (BLD-F029)."""
 
     id: str | None
     name: str

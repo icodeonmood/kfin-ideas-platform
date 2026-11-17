@@ -32,6 +32,7 @@ from teamup.store import (
     entity_of,
     is_closed,
     lead_code,
+    lead_seen_by,
     load_draft,
     load_idea,
     load_idea_for,
@@ -299,20 +300,21 @@ def _closest(conn: Conn, target: Any, own: list[dict[str, Any]]) -> dict[str, An
 
 def draft_note(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
     """`GET /ideas/:id/team-up/draft-note`: the pre-filled note (L-TEAMUP.rules/2, BLD-F011) and the person's own
-    shared ideas that can be brought (none is selected, C-SHEET-TEAMUP.compose/4)."""
+    shared ideas that can be brought (none is selected, C-SHEET-TEAMUP.compose/4). The lead as this person may see
+    them (BLD-F029): a lead who hid their name is lane C's hidden person, and the sheet says "the lead"."""
     idea = load_idea_for(conn, ref, code_of(conn, user_id))
     code = require_code(conn, user_id)
     me = person_by_code(conn, code)
     own = own_open_ideas(conn, code, exclude=idea["id"])
     closest = _closest(conn, idea["id"], own)
-    lead = person_by_code(conn, lead_code(conn, idea))
+    lead = lead_seen_by(conn, idea, user_id, code)
     return {
         "note": rules.draft_note(
             area=me.area, role=me.role_title, closest_title=closest["title"] if closest else None
         ),
         "own_ideas": [idea_ref(conn, o) for o in own],
         "idea": {"id": idea["idea_id"], "title": idea["title"] or ""},
-        "lead": lead.as_json(),
+        "lead": lead.ref,
         "min_chars": adapters.note_min(),
         "max_chars": rules.NOTE_MAX,
     }
@@ -369,27 +371,29 @@ def waiting_from(conn: Conn, idea_uuid: Any, code: str) -> bool:
     return row is not None
 
 
-def after_for(conn: Conn, req: Req, role: str | None) -> dict[str, object] | None:
-    """What the screen that opened the sheet shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4–8)."""
-    lead = person_by_code(conn, lead_code(conn, req.idea))
+def after_for(conn: Conn, req: Req, role: str | None, user_id: str | None) -> dict[str, object] | None:
+    """What the screen that opened the sheet shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4–8), for the
+    requester (`user_id`). A lead they may not see named is "the lead" (BLD-F029): "Waiting for the lead"."""
+    lead = lead_seen_by(conn, req.idea, user_id, str(req.row["from_code"]))
     reason = unseal(req.row["lead_reason_encrypted"], req.table, "lead_reason_encrypted", req.id)
     ref = str(req.idea.get("idea_id") or "")
     if req.kind == "merge":
-        return rules.draft_after(req.state, lead_first=lead.first_name, lead_ref=ref, reason=reason)
+        return rules.draft_after(req.state, lead_first=lead.first, lead_ref=ref, reason=reason)
     if req.state.startswith("approved_") and role is None:
         return None  # they have left the crew since: back to "Team up"
-    return rules.requester_after(req.state, lead_first=lead.first_name, lead_ref=ref, reason=reason,
+    return rules.requester_after(req.state, lead_first=lead.first, lead_ref=ref, reason=reason,
                                  brought=len(req.brought))  # fmt: skip
 
 
 def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
     """`GET /ideas/:id/team-up` (BLD-F015): this idea's team-up state for the signed-in person, so every screen
-    that shows the idea agrees: "Waiting for {lead}" with Withdraw (V-ACC.teamup/4), on the crew, or Team up."""
+    that shows the idea agrees: "Waiting for {lead}" with Withdraw (V-ACC.teamup/4), on the crew, or Team up.
+    The lead is named only as DEC-104 allows this person (BLD-F029); otherwise "Waiting for the lead"."""
     code = code_of(conn, user_id)
     idea = load_idea_for(conn, ref, code)
     mine = _settled_mine(conn, idea, code)
     role = crew_role(conn, idea["id"], code) if code else None
-    lead = person_by_code(conn, lead_code(conn, idea))
+    lead = lead_seen_by(conn, idea, user_id, code)
     if role is not None:
         why: str | None = "already_on_crew"
     elif is_closed(str(idea["status"])):
@@ -400,13 +404,13 @@ def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
         why = None
     return {
         "idea_id": idea["idea_id"],
-        "lead": lead.as_json(),
+        "lead": lead.ref,
         "me": role,
         "crew_count": len(crew_codes(conn, idea["id"])),
         "can_request": why is None and code is not None,
         "why_not": why,
         "request": request_json(conn, mine) if mine else None,
-        "after": after_for(conn, mine, role) if mine else None,
+        "after": after_for(conn, mine, role, user_id) if mine else None,
     }
 
 
@@ -441,7 +445,7 @@ def send(
     made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
     if made is not None:
         req = load_request(conn, made)
-        return {**request_json(conn, req), "after": after_for(conn, req, None)}
+        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
     me = code_of(conn, user_id)
     idea = load_idea_for(conn, ref, me)
     _settled_mine(conn, idea, me)  # an ended request of theirs no longer counts as waiting
@@ -458,14 +462,16 @@ def send(
         made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
         if made is not None:
             req = load_request(conn, made)
-            return {**request_json(conn, req), "after": after_for(conn, req, None)}
-        lead = person_by_code(conn, lead_code(conn, idea))
+            return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+        lead = lead_seen_by(
+            conn, idea, user_id, code
+        )  # BLD-F029: "Waiting for the lead" when not named to them
         if is_closed(str(idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
         if crew_role(conn, idea["id"], code) is not None:
             raise Refused(409, "already_on_crew", "You’re on the crew.")
         if waiting_from(conn, idea["id"], code):
-            raise Refused(409, "already_requested", f"Waiting for {lead.first_name}")
+            raise Refused(409, "already_requested", rules.waiting_for(lead.first))
         problem = rules.check_note(note, adapters.note_min())
         if problem:
             raise Refused(problem.status, problem.code, problem.message, problem.field)
@@ -481,7 +487,7 @@ def send(
                     (rid, idea["id"], code, seal(masked, "teamup_requests", "note_encrypted", rid), t),
                 )
         except psycopg.errors.UniqueViolation:
-            raise Refused(409, "already_requested", f"Waiting for {lead.first_name}") from None
+            raise Refused(409, "already_requested", rules.waiting_for(lead.first)) from None
         for b in brought:
             conn.execute("INSERT INTO teamup_brought (request_id, idea_uuid) VALUES (%s, %s)", (rid, b["id"]))
         if draft_id:
@@ -500,7 +506,7 @@ def send(
               after={"request_id": rid, "brought": len(brought), "from_draft": bool(draft_id)})  # fmt: skip
         remember(conn, user_id, idempotency_key, ROUTE_SEND, asked, rid)
         req = load_request(conn, rid)
-        return {**request_json(conn, req), "after": after_for(conn, req, None)}
+        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
 
 
 def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
@@ -523,7 +529,7 @@ def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
         out["answers"] = rules.answers_for(bool(req.brought)) if req.waiting else []
         out.update(_answered(req, who, out.get("lead_reason")))
     if is_from:
-        out["after"] = after_for(conn, req, crew_role(conn, req.idea["id"], code) if code else None)
+        out["after"] = after_for(conn, req, crew_role(conn, req.idea["id"], code) if code else None, user_id)
     return out
 
 
@@ -561,7 +567,7 @@ def withdraw(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
                   entity_of(req.brought[0] if req.kind == "merge" else req.idea),
                   after={"request_id": req.id})  # fmt: skip
         req = load_request(conn, request_id)
-        return {**request_json(conn, req), "after": after_for(conn, req, None)}
+        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
 
 
 def _not_waiting(req: Req, who: Person) -> Refused:
