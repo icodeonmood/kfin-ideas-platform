@@ -192,6 +192,13 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
   });
+  it("S-ONE (mapping/screens.md:111-112): the printable Showcase brief is for the committee, CEO and admin only; the glow-up message page opens for anyone signed in and checks the invitation itself", () => {
+    expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
+    expect(canSeePage(rolesOf("reviewer"), "/ones/showcase/3")).toBe(false);
+    for (const role of ["core_committee", "admin", "ceo"])
+      expect(canSeePage(rolesOf(role), "/ones/showcase/3")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/ones/write/12")).toBe(true);
+  });
 
   it("never lists a page below a page that already covers it (the first matching rule wins)", () => {
     const paths = (policyJson.pages as string[]).map((line) => line.trim().split(/\s+/)[0]!);
