@@ -173,3 +173,15 @@ The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `
 | `S-H2`, while the deck loads | Read by a screen reader only | Loading ideas close to yours |
 | `S-H2`, when the deck does not load | In place of the deck, with "Try again" | These ideas did not load / Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
 | `S-H2`, when a pass, an undo or "See them again" does not go through | Under the deck | That did not go through. Check your connection, then try again. |
+
+## 6. Search on your own list (`L-SEARCH`, added 18 Nov)
+
+The first sentence over a result set is lane E's My ideas line, used as it stands ("Found 3 ideas about “SMS”: 2 of yours and 1 you teamed up on. Closest: “…”." and "Nothing found for “SMS”."). The code is `services/worker/search/rules.py`. These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `L-SEARCH/3`, the second sentence (BLD-F041) | Under the first, naming only what matched | Matched on titles, short summaries and your own words. (any of: titles, references, short summaries, your own words, the review desk’s reasons) |
+| `L-SEARCH/7`, filters that match nothing, with no words typed | In place of the list | No ideas match these filters. / Try fewer filters. |
+| `L-SEARCH/7`, words that match nothing | In place of the list, with "Show all ideas" | Nothing found for “SMS”. / Try other words, or clear the search. (lane E's lines) |
+| `L-SEARCH/5`, the filter names | The filter panel | List (Yours, Teamed up) / Status (lane E's filter names) / Category |
+
