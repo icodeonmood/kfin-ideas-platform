@@ -59,10 +59,20 @@ export function QuestionsCard({
   ideaId,
   set,
   variant = "status",
+  title,
+  deadline,
+  byline = true,
 }: {
   ideaId: string;
   set: Set;
   variant?: QuestionsCardVariant;
+  /** `status` only: the host's own words for the title and the deadline line, where its board words them
+   * differently (S-08, Messages.md: "Meera has 3 questions about your idea", worked out by the conversation's read). */
+  title?: string;
+  deadline?: string;
+  /** `status` only: false where the host already shows who asked and when above the card (S-08's message line); the
+   * countdown then sits beside the title. */
+  byline?: boolean;
 }) {
   const now = useMinute();
   const who = set.by.first_name;
@@ -137,20 +147,33 @@ export function QuestionsCard({
   }
 
   const sent = set.sent_at ? `${dayLabel(set.sent_at, now)}, ${clockLabel(set.sent_at)}` : "";
+  const heading = (
+    <h3 id={titleId} className="h3">
+      {title ??
+        (answered
+          ? `${who}’s ${plural(n, "question")}, answered`
+          : `${who} has ${plural(n, "question")} for you`)}
+    </h3>
+  );
   return (
     <article className="card qcard" aria-labelledby={titleId}>
-      <header className="qcard-h">
-        <Avatar initials={set.by.initials} size={32} name={set.by.name} />
-        <span className="meta">
-          {who} from the review desk, {sent}
-        </span>
-        {pill}
-      </header>
-      <h3 id={titleId} className="h3">
-        {answered
-          ? `${who}’s ${plural(n, "question")}, answered`
-          : `${who} has ${plural(n, "question")} for you`}
-      </h3>
+      {byline ? (
+        <>
+          <header className="qcard-h">
+            <Avatar initials={set.by.initials} size={32} name={set.by.name} />
+            <span className="meta">
+              {who} from the review desk, {sent}
+            </span>
+            {pill}
+          </header>
+          {heading}
+        </>
+      ) : (
+        <header className="qcard-h">
+          {heading}
+          {pill}
+        </header>
+      )}
       {answered && set.answered_at ? (
         <p className="meta">
           Answered on {dayLabel(set.answered_at, now)}, {clockLabel(set.answered_at)}. Your answers are below,
@@ -194,7 +217,7 @@ export function QuestionsCard({
       </ol>
       {answered ? null : (
         <footer className="qcard-f">
-          <p className="meta">{set.deadline}. One at a time, typed or spoken.</p>
+          <p className="meta">{deadline ?? `${set.deadline}. One at a time, typed or spoken.`}</p>
           {button}
         </footer>
       )}
