@@ -158,25 +158,6 @@ def crew_users(conn: Conn, idea_uuid: Any) -> list[str]:
     return sorted(str(r["user_id"]) for r in rows)
 
 
-def build_team_users(conn: Conn, idea_ref: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT DISTINCT g.user_id FROM role_grants g JOIN users u ON u.id = g.user_id AND u.active "
-        "WHERE g.role = 'build_team' AND g.scope_id = %s AND g.valid_from <= now() "
-        "AND (g.valid_to IS NULL OR g.valid_to > now())",
-        (idea_ref,),
-    ).fetchall()
-    return sorted(str(r["user_id"]) for r in rows)
-
-
-def admin_users(conn: Conn) -> list[str]:
-    rows = conn.execute(
-        "SELECT DISTINCT g.user_id FROM role_grants g JOIN users u ON u.id = g.user_id AND u.active "
-        "WHERE g.role = 'admin' AND g.scope_id IS NULL AND g.valid_from <= now() "
-        "AND (g.valid_to IS NULL OR g.valid_to > now())"
-    ).fetchall()
-    return sorted(str(r["user_id"]) for r in rows)
-
-
 def promise(section: str, key: str, default: Any) -> Any:
     """A number the product promises, from the company repo's rules/promises.md (BLD-A181); the pack's value if the
     file cannot be read (logged by name only)."""
