@@ -13,7 +13,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
-from desk import asking, clocks, committee, merging, reads, revise
+from desk import adapters, asking, clocks, committee, merging, reads, revise
 from desk.store import READERS, REVIEWERS, Refused, require_role
 from tests import desk_fixtures as f
 from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
@@ -157,3 +157,33 @@ def test_L_WORTH_a_note_that_is_not_text_is_refused(db: Conn, cast: dict[str, An
     assert db.execute(
         "SELECT count(*) AS n FROM idea_worth WHERE idea_uuid = %s", (cast["idea"]["id"],)
     ).fetchone() == {"n": 0}
+
+
+# ---- L-CONVO: lines written in one transaction read back in the order they were written (BLD-F013) ------------
+def test_L_CONVO_lines_said_in_one_transaction_read_back_in_order(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    monkeypatch.setitem(
+        sys.modules, "convo", None
+    )  # the direct insert, as while lane F's convo.post is missing
+    idea_uuid = str(cast["idea"]["id"])
+    said = [
+        "desk.opened",
+        "desk.asked",
+        "sharer.answered",
+        "desk.decided",
+        "desk.merged",
+        "committee.reversed",
+    ]
+    with db.transaction():  # one now() for every line, random ids
+        for event in said:
+            adapters.say(db, idea_uuid, event)
+    assert f.events(db, cast["idea"]["id"]) == said
+    # a line given an earlier time than the last one still goes after it
+    t = f.at(16, 12)
+    with db.transaction():
+        adapters.say(db, idea_uuid, "desk.worth_revised", at=t)
+        adapters.say(db, idea_uuid, "desk.decide_by_moved", at=t)
+    assert f.events(db, cast["idea"]["id"])[-2:] == ["desk.worth_revised", "desk.decide_by_moved"]
