@@ -12,6 +12,7 @@ import pytest
 
 import gonogo.__main__ as g
 from core.config import Settings
+from pii.vault import EVAL_SCOPE_PREFIX
 
 pytestmark = pytest.mark.stack  # reads leak aborts and switches from the dev database
 
@@ -76,12 +77,13 @@ def test_an_unreadable_report_is_a_row_to_confirm(evidence: argparse.Namespace) 
 
 
 def test_canvas_assist_dropped_and_refused_shares_are_printed(evidence: argparse.Namespace) -> None:
-    """DEC-095, BLD-C029: counts only, live calls apart from golden-set runs (DRAFT- scopes)."""
+    """DEC-095, BLD-C029: counts only, live calls apart from golden-set runs (the eval marker, BLD-C034)."""
     from core.db import connect
 
     rows = [("IDEA-2100-000001", "ok", None), ("IDEA-2100-000002", "ok_after_retry", "ungrounded_dropped"),
             ("IDEA-2100-000003", "agent_failed", "invalid_output"), ("IDEA-2100-000004", "ok", None),
-            ("DRAFT-gonogo-test", "ok_after_retry", "ungrounded_dropped")]  # fmt: skip
+            ("DRAFT-abcdefab-cdef-4abc-8def-abcdefabcdef", "ok", None),  # a live draft is a live call
+            (f"{EVAL_SCOPE_PREFIX}abcd-4abc-8abc-abcdefabcdef", "ok_after_retry", "ungrounded_dropped")]  # fmt: skip
     with connect(autocommit=True) as conn:
         for ref, outcome, code in rows:
             conn.execute(
@@ -92,11 +94,11 @@ def test_canvas_assist_dropped_and_refused_shares_are_printed(evidence: argparse
         try:
             out = g.collect(evidence)
             since_launch = next(w for w in out["canvas_assist"] if w["window"].startswith("since launch"))
-            assert (since_launch["asked"], since_launch["dropped"], since_launch["invalid"]) == (4, 1, 1)
+            assert (since_launch["asked"], since_launch["dropped"], since_launch["invalid"]) == (5, 1, 1)
             golden = next(w for w in out["canvas_assist"] if w["window"].startswith("golden-set"))
             assert (golden["asked"], golden["dropped"]) == (1, 1)
             text = g.render(out)
-            assert "| since launch (2100-01-01) | 4 | 1 of 4 (25%) | 1 of 4 (25%) |" in text
+            assert "| since launch (2100-01-01) | 5 | 1 of 5 (20%) | 1 of 5 (20%) |" in text
             assert "last 24 hours" in text
             assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # a watch, not a criterion
         finally:

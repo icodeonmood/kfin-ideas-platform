@@ -29,6 +29,7 @@ from draft import adapters, labels, parts, runs
 from draft.config import rules
 from onepc import enums
 from onepc.context import open_text, seal_text
+from pii import vault
 
 log = get_logger("draft.store")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -134,6 +135,15 @@ def _touch(conn: Conn, idea_uuid: str, device: Device) -> None:
 # ---- create -------------------------------------------------------------------------------------------------------
 
 
+def _new_id() -> str:
+    """A draft's id. Never one its vault scope would share with the eval runner's marker, whose calls the gateway's
+    switch-offs leave out (BLD-C034): a live draft always counts."""
+    while True:
+        idea_uuid = str(uuid.uuid4())
+        if not runs.scope(idea_uuid).startswith(vault.EVAL_SCOPE_PREFIX):
+            return idea_uuid
+
+
 def create(
     conn: Conn,
     owner: Owner,
@@ -153,7 +163,7 @@ def create(
         raise DraftError(400, "channel_invalid", field="channel")
     if idempotency_key is not None and not 8 <= len(idempotency_key) <= 200:
         raise DraftError(400, "idempotency_key_invalid")
-    idea_uuid = str(uuid.uuid4())
+    idea_uuid = _new_id()
     with conn.transaction():
         if idempotency_key:
             got = conn.execute(
