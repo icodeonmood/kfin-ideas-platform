@@ -440,7 +440,7 @@ export interface ListenStorage {
 const OFFLINE_PREFIX = "listen:";
 const DAY_MS = 86_400_000;
 
-type OfflineEntry = { savedAt: number; script: ListenScript };
+type OfflineEntry = { savedAt: number; script: ListenScript; version: string | null };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -470,7 +470,8 @@ function readEntry(raw: string): OfflineEntry | null {
   if (!isRecord(value) || typeof value.savedAt !== "number" || !isRecord(value.script)) return null;
   const parts: unknown = value.script.parts;
   if (!Array.isArray(parts) || !parts.every(isPart)) return null;
-  return { savedAt: value.savedAt, script: cleanScript(parts) };
+  const version = typeof value.version === "string" ? value.version : null;
+  return { savedAt: value.savedAt, script: cleanScript(parts), version };
 }
 
 /** True when the script was stored; false when the browser refused (private window, full, blocked). */
@@ -479,8 +480,9 @@ export function saveOffline(
   script: ListenScript,
   storage: ListenStorage,
   now: number = Date.now(),
+  version: string | null = null,
 ): boolean {
-  const entry: OfflineEntry = { savedAt: now, script: cleanScript(script.parts) };
+  const entry: OfflineEntry = { savedAt: now, script: cleanScript(script.parts), version };
   try {
     storage.setItem(OFFLINE_PREFIX + ideaId, JSON.stringify(entry));
     return true;
@@ -533,4 +535,245 @@ export function pruneOffline(
     return;
   }
   for (const id of ids) loadOffline(id, storage, now);
+}
+
+/** The version a saved script was saved at; null when nothing is saved (or it ran out, or has no version). */
+export function offlineVersion(
+  ideaId: string,
+  storage: ListenStorage,
+  now: number = Date.now(),
+): string | null {
+  if (!loadOffline(ideaId, storage, now)) return null;
+  try {
+    const raw = storage.getItem(OFFLINE_PREFIX + ideaId);
+    return raw ? (readEntry(raw)?.version ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The script just read from the server, against the copy saved on this device (C-LISTEN.behaviour/4): a saved copy
+ * whose version differs is replaced, so offline never plays an idea as it was. Returns whether a copy is saved.
+ */
+export function refreshOffline(
+  ideaId: string,
+  script: ListenScript,
+  version: string,
+  storage: ListenStorage,
+  now: number = Date.now(),
+): boolean {
+  if (loadOffline(ideaId, storage, now) === null) return false;
+  if (offlineVersion(ideaId, storage, now) === version) return true;
+  return saveOffline(ideaId, script, storage, now, version);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The hosted voice (DEC-108): lane C's audio for the idea, played in an <audio> element, with its chapters.
+// `GET /api/ideas/:id/listen/chapters` → `{ parts: [{ part, start_s }], duration_s }` (or 202 while it is made);
+// `GET /api/ideas/:id/listen` streams the audio. 404 or 503 there means the browser's voice reads it instead.
+
+/** The six parts' names, as the reviewer's page shows them (questions.py PART_NAMES). */
+export const PART_TITLES: Record<ListenPartId, string> = {
+  summary: "The problem",
+  often: "How often",
+  who: "Who it affects",
+  cost: "What it’s worth",
+  evidence: "Attached",
+  fix: "Fix",
+};
+
+export type HostedChapters = { parts: { part: ListenPartId; start_s: number }[]; duration_s: number };
+
+/** A chapters body as lane C sends it, checked; null when it is not one (the browser's voice is used). */
+export function readChapters(body: unknown): HostedChapters | null {
+  if (!isRecord(body) || typeof body.duration_s !== "number" || !Number.isFinite(body.duration_s))
+    return null;
+  if (body.duration_s <= 0 || !Array.isArray(body.parts)) return null;
+  const parts: HostedChapters["parts"] = [];
+  for (const p of body.parts as unknown[]) {
+    if (!isRecord(p) || typeof p.start_s !== "number" || !Number.isFinite(p.start_s)) return null;
+    const part = PART_IDS.find((id) => id === p.part);
+    if (!part) return null;
+    parts.push({ part, start_s: Math.max(0, Math.min(p.start_s, body.duration_s)) });
+  }
+  if (!parts.length) return null;
+  parts.sort((a, b) => a.start_s - b.start_s);
+  return { parts, duration_s: body.duration_s };
+}
+
+/** The 1× timeline from the chapters: each part runs to the next one's start, the last to the end. */
+export function chaptersTimeline(chapters: HostedChapters): ListenTimeline {
+  const parts = chapters.parts.map((p, i) => {
+    const next = chapters.parts[i + 1]?.start_s ?? chapters.duration_s;
+    return {
+      part: p.part,
+      title: PART_TITLES[p.part],
+      start: p.start_s,
+      length: Math.max(0, next - p.start_s),
+    };
+  });
+  return { parts, total: chapters.duration_s };
+}
+
+/** What the engine needs from an <audio> element; `HTMLAudioElement` fits it as it is. */
+export interface ListenAudio {
+  currentTime: number;
+  playbackRate: number;
+  play(): Promise<void> | void;
+  pause(): void;
+  addEventListener(type: "timeupdate" | "ended" | "error" | "pause" | "playing", listener: () => void): void;
+  removeEventListener(
+    type: "timeupdate" | "ended" | "error" | "pause" | "playing",
+    listener: () => void,
+  ): void;
+}
+
+/** The player's controls, whichever voice reads: the browser's (`ListenEngine`) or the hosted audio (`AudioEngine`). */
+export interface ListenControls {
+  readonly timeline: ListenTimeline;
+  subscribe(listener: ListenListener): () => void;
+  toggle(): void;
+  seek(seconds: number): void;
+  jumpTo(part: ListenPartId): void;
+  cycleSpeed(): void;
+  dispose(): void;
+}
+
+/** The hosted audio behind the same controls, chapters, clock and words as the browser's voice. */
+export class AudioEngine implements ListenControls {
+  readonly timeline: ListenTimeline;
+  private readonly audio: ListenAudio;
+  private readonly listeners = new Set<ListenListener>();
+  private readonly handlers: [Parameters<ListenAudio["addEventListener"]>[0], () => void][];
+  private playing = false;
+  private error = false;
+  private disposed = false;
+  private rate: ListenRate = 1;
+  private position = 0;
+  private snapshot: ListenState;
+
+  constructor(options: { audio: ListenAudio; chapters: HostedChapters }) {
+    this.audio = options.audio;
+    this.timeline = chaptersTimeline(options.chapters);
+    this.handlers = [
+      ["timeupdate", () => this.moved()],
+      ["playing", () => this.set(true)],
+      ["pause", () => this.set(false)],
+      ["ended", () => this.finish()],
+      ["error", () => this.failed()],
+    ];
+    for (const [type, fn] of this.handlers) this.audio.addEventListener(type, fn);
+    this.snapshot = this.makeState();
+  }
+
+  state(): ListenState {
+    return this.snapshot;
+  }
+
+  subscribe(listener: ListenListener): () => void {
+    this.listeners.add(listener);
+    listener(this.snapshot);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  toggle(): void {
+    if (this.disposed) return;
+    if (this.playing) {
+      this.audio.pause();
+      this.set(false);
+      return;
+    }
+    this.error = false;
+    this.audio.playbackRate = this.rate;
+    this.set(true);
+    try {
+      const started = this.audio.play();
+      if (started && typeof started.catch === "function") started.catch(() => this.failed());
+    } catch {
+      this.failed();
+    }
+  }
+
+  seek(seconds: number): void {
+    if (this.disposed) return;
+    const total = this.timeline.total;
+    const target = Math.max(0, Math.min(Number.isFinite(seconds) ? seconds : 0, total));
+    if (target > 0 && target >= total - EPSILON) {
+      this.finish();
+      return;
+    }
+    this.position = target;
+    this.audio.currentTime = target;
+    this.emit();
+  }
+
+  jumpTo(part: ListenPartId): void {
+    const mark = this.timeline.parts.find((p) => p.part === part);
+    if (mark) this.seek(mark.start);
+  }
+
+  cycleSpeed(): void {
+    if (this.disposed) return;
+    const at = SPEEDS.indexOf(this.rate);
+    this.rate = SPEEDS[(at + 1) % SPEEDS.length] ?? 1;
+    this.audio.playbackRate = this.rate;
+    this.emit();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.playing) this.audio.pause();
+    for (const [type, fn] of this.handlers) this.audio.removeEventListener(type, fn);
+    this.listeners.clear();
+  }
+
+  private moved(): void {
+    const t = this.audio.currentTime;
+    this.position = Number.isFinite(t) ? Math.max(0, Math.min(t, this.timeline.total)) : this.position;
+    this.emit();
+  }
+
+  private set(playing: boolean): void {
+    if (this.playing === playing) return;
+    this.playing = playing;
+    this.emit();
+  }
+
+  /** C-LISTEN.behaviour/5: at the end, stop and go back to 0:00. */
+  private finish(): void {
+    if (this.playing) this.audio.pause();
+    this.playing = false;
+    this.position = 0;
+    this.audio.currentTime = 0;
+    this.emit();
+  }
+
+  private failed(): void {
+    this.playing = false;
+    this.error = true;
+    this.emit();
+  }
+
+  private makeState(): ListenState {
+    let current: ListenPartId | null = null;
+    for (const p of this.timeline.parts) if (p.start <= this.position + EPSILON) current = p.part;
+    return {
+      playing: this.playing,
+      position: this.position,
+      total: this.timeline.total,
+      currentPart: current ?? this.timeline.parts[0]?.part ?? null,
+      rate: this.rate,
+      error: this.error,
+    };
+  }
+
+  private emit(): void {
+    if (this.disposed) return;
+    this.snapshot = this.makeState();
+    for (const listener of this.listeners) listener(this.snapshot);
+  }
 }
