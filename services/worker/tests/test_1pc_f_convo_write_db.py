@@ -5,6 +5,7 @@ logs with IDs only. Synthetic people only.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -16,6 +17,13 @@ from convo.store import Refused, unseal
 from tests import convo_fixtures as fx
 
 NOW = fx.at(17, 10, 30)
+
+
+@pytest.fixture
+def db(db: Any) -> Iterator[Any]:
+    """The shared `db` fixture, plus clean-up: the people and ideas these tests made are deleted when each test ends."""
+    yield db
+    fx.clean(db)
 
 
 @pytest.fixture
@@ -51,9 +59,12 @@ def messages(view: dict[str, Any]) -> list[dict[str, Any]]:
     return [e for e in view["entries"] if e["type"] == "message"]
 
 
-def test_l_convo_5_nothing_typed_or_attached_is_refused_with_the_boards_words(db: Any, cast: dict) -> None:
+def test_l_convo_5_nothing_typed_or_attached_is_refused_with_the_boards_words(
+    db: Any, cast: dict[str, Any]
+) -> None:
     idea = fx.idea(db, cast["kavya"])
-    for body in ({}, {"text": ""}, {"text": "   \n"}, {"text": None, "file_ids": []}):
+    bodies: list[dict[str, Any]] = [{}, {"text": ""}, {"text": "   \n"}, {"text": None, "file_ids": []}]
+    for body in bodies:
         err = refused(send, db, idea["idea_id"], cast["kavya"]["id"], body)
         assert (err.status, err.code, err.message, err.field) == (
             422, "empty_message", "Write a message or attach a file first.", "text",
@@ -62,7 +73,7 @@ def test_l_convo_5_nothing_typed_or_attached_is_refused_with_the_boards_words(db
 
 
 def test_l_convo_7_a_message_is_masked_then_sealed_before_anyone_else_sees_it(
-    db: Any, cast: dict, told: list, captured_logs: Any
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]], captured_logs: Any
 ) -> None:
     kavya, meera = cast["kavya"], cast["meera"]
     idea = fx.idea(db, kavya)
@@ -70,18 +81,22 @@ def test_l_convo_7_a_message_is_masked_then_sealed_before_anyone_else_sees_it(
     out = send(db, idea["idea_id"], meera["id"], {"text": typed}, at=fx.at(17, 10))
     assert out["hidden"] == 1
     [row] = fx.entries(db, idea["id"])
-    assert row["type"] == "message" and str(row["author_user_id"]) == meera["id"] and row["author_code"] is None
+    assert (
+        row["type"] == "message" and str(row["author_user_id"]) == meera["id"] and row["author_code"] is None
+    )
     blob = bytes(row["text_encrypted"])
     assert b"1234567890" not in blob and b"Folio" not in blob  # sealed, not plain
     assert unseal(blob, str(row["id"])) == "Folio ••••90 was rejected twice, Kavya Menon says R07 again."
     [m] = messages(conversation(db, idea["idea_id"], kavya["id"], at=NOW))
     assert m["text"] == "Folio ••••90 was rejected twice, Kavya Menon says R07 again."
-    assert m["from_label"] == "Meera from the review desk" and m["from"]["role_label"] == "from the review desk"
+    assert (
+        m["from_label"] == "Meera from the review desk" and m["from"]["role_label"] == "from the review desk"
+    )
     assert "1234567890" not in captured_logs.getvalue() and "rejected twice" not in captured_logs.getvalue()
 
 
 def test_l_convo_9_l_inbox_comment_the_sharer_writes_to_the_desk_after_it_opened_and_hears_of_replies(
-    db: Any, cast: dict, told: list
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
     kavya, meera = cast["kavya"], cast["meera"]
     idea = fx.idea(db, kavya, opened_by=meera["id"], reviewer_id=meera["id"], opened_at=fx.at(16, 9, 50))
@@ -94,14 +109,20 @@ def test_l_convo_9_l_inbox_comment_the_sharer_writes_to_the_desk_after_it_opened
     send(db, idea["idea_id"], meera["id"], {"text": "One more thing on R03."}, at=fx.at(17, 9, 6))
     assert [c["kind"] for c in told] == ["comment", "comment"]
     first = told[0]
-    assert first["to"] == [kavya["id"]] and first["sender"] == meera["id"] and first["idea_id"] == str(idea["id"])
+    assert (
+        first["to"] == [kavya["id"]]
+        and first["sender"] == meera["id"]
+        and first["idea_id"] == str(idea["id"])
+    )
     assert first["refs"] == {"entry_id": reply["entry"]["id"]}
-    assert told[0]["dedupe_key"] == told[1]["dedupe_key"] == f"convo.comment:{idea['id']}:2026111709"  # a burst
+    assert (
+        told[0]["dedupe_key"] == told[1]["dedupe_key"] == f"convo.comment:{idea['id']}:2026111709"
+    )  # a burst
     assert [a.to for a in first["actions"]] == [f"/ideas/{idea['idea_id']}/conversation"]
 
 
 def test_l_convo_6_a_mention_tells_the_person_and_opens_that_message_only(
-    db: Any, cast: dict, told: list
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
     sanjay, meghna, kavya, meera = cast["sanjay"], cast["meghna"], cast["kavya"], cast["meera"]
     idea = fx.idea(db, sanjay, title="No script for calls about rejections", status="picked")
@@ -110,28 +131,37 @@ def test_l_convo_6_a_mention_tells_the_person_and_opens_that_message_only(
          at=fx.at(12, 11, 30))  # fmt: skip
     send(db, idea["idea_id"], meghna["id"], {"text": "The first draft of the script covers R03 and R12."},
          at=fx.at(12, 15, 2))  # fmt: skip
-    assert pytest.raises(Refused, conversation, db, idea["idea_id"], kavya["id"]).value.status == 404
+    assert refused(conversation, db, idea["idea_id"], kavya["id"]).status == 404  # not in it yet
     told.clear()
     sent = send(db, idea["idea_id"], sanjay["id"],
                 {"text": "@Kavya Menon your R07 call examples would help us write the script.",
                  "mentions": [kavya["id"], "not-a-uuid", sanjay["id"]]}, at=fx.at(12, 15, 15))  # fmt: skip
     mention = next(c for c in told if c["kind"] == "mention")
-    assert mention["to"] == [kavya["id"]] and mention["refs"] == {"entry_id": sent["entry"]["id"], "outside": True}
+    assert mention["to"] == [kavya["id"]] and mention["refs"] == {"entry_id": sent["entry"]["id"]}  # IDs only
+    assert mention["dedupe_key"] == f"convo.mention:{sent['entry']['id']}"
     assert mention["actions"][0].to == f"/ideas/{idea['idea_id']}/conversation#entry-{sent['entry']['id']}"
     assert not any(c["kind"] == "comment" for c in told)  # the sharer wrote it
-    assert db.execute(
-        "SELECT count(*) AS n FROM audit_log WHERE action = 'convo.mention_access' AND after->>'user_id' = %s",
-        (kavya["id"],),
-    ).fetchone()["n"] == 1
+    assert (
+        db.execute(
+            "SELECT count(*) AS n FROM audit_log WHERE action = 'convo.mention_access' AND after->>'user_id' = %s",
+            (kavya["id"],),
+        ).fetchone()["n"]
+        == 1
+    )
 
     view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
     assert [m["id"] for m in view["entries"]] == [sent["entry"]["id"]]  # that message, nothing else
     assert view["entries"][0]["mentions_you"] and view["entries"][0]["mentions"][0]["name"] == "Kavya Menon"
     assert view["composer"]["placeholder"] == "Reply to Sanjay"
-    assert view["composer"]["visibility"] == "The crew, the review desk and anyone they mention see this conversation."
+    assert (
+        view["composer"]["visibility"]
+        == "The crew, the review desk and anyone they mention see this conversation."
+    )
     assert ("You", "Mentioned") in [(p["label"], p["doing"]) for p in view["participants"]]
 
-    reply = send(db, idea["idea_id"], kavya["id"], {"text": "Two calls from last week, coming up."}, at=fx.at(13, 9))
+    reply = send(
+        db, idea["idea_id"], kavya["id"], {"text": "Two calls from last week, coming up."}, at=fx.at(13, 9)
+    )
     send(db, idea["idea_id"], meghna["id"], {"text": "Crew only: draft two is ready."}, at=fx.at(13, 10))
     seen = [m["id"] for m in conversation(db, idea["idea_id"], kavya["id"], at=NOW)["entries"]]
     assert seen == [sent["entry"]["id"], reply["entry"]["id"]]  # own replies too, nothing else
@@ -140,16 +170,27 @@ def test_l_convo_6_a_mention_tells_the_person_and_opens_that_message_only(
 
 
 def test_l_convo_6_mentioning_someone_already_in_the_conversation_adds_no_access(
-    db: Any, cast: dict, told: list
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
     idea = fx.idea(db, cast["kavya"])
-    send(db, idea["idea_id"], cast["kavya"]["id"], {"text": "Over to the desk.", "mentions": [cast["meera"]["id"]]})
+    sent = send(
+        db,
+        idea["idea_id"],
+        cast["kavya"]["id"],
+        {"text": "Over to the desk.", "mentions": [cast["meera"]["id"]]},
+    )
     [m] = [c for c in told if c["kind"] == "mention"]
-    assert m["refs"]["outside"] is False
-    assert db.execute("SELECT count(*) AS n FROM audit_log WHERE action = 'convo.mention_access'").fetchone()["n"] == 0
+    assert m["to"] == [cast["meera"]["id"]] and m["refs"] == {"entry_id": sent["entry"]["id"]}
+    granted = db.execute(
+        "SELECT count(*) AS n FROM audit_log WHERE action = 'convo.mention_access' AND entity = %s",
+        (f"idea:{idea['idea_id']}",),
+    ).fetchone()["n"]
+    assert granted == 0  # Meera reads it already: the mention adds no access
 
 
-def test_l_convo_7_files_only_by_id_and_only_once_checked(db: Any, cast: dict, told: list) -> None:
+def test_l_convo_7_files_only_by_id_and_only_once_checked(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
     kavya, colleague = cast["kavya"], cast["colleague"]
     idea = fx.idea(db, kavya)
     ok = fx.attachment(db, idea, kavya)
@@ -157,35 +198,58 @@ def test_l_convo_7_files_only_by_id_and_only_once_checked(db: Any, cast: dict, t
     detail = fx.attachment(db, idea, kavya, file_state="personal_data_found")
     other_idea = fx.idea(db, colleague)
     theirs = fx.attachment(db, other_idea, colleague)
-    for fid, code in ((checking, "file_not_checked"), (detail, "file_has_detail"), (theirs, "file_unavailable")):
+    for fid, code in (
+        (checking, "file_not_checked"),
+        (detail, "file_has_detail"),
+        (theirs, "file_unavailable"),
+    ):
         err = refused(send, db, idea["idea_id"], kavya["id"], {"file_ids": [fid]})
         assert (err.status, err.code, err.field) == (422, code, "file_ids")
     out = send(db, idea["idea_id"], kavya["id"], {"file_ids": [ok]})  # a file alone is a message
     [f] = out["entry"]["files"]
-    assert (f["id"], f["name"], f["type"], f["state"]) == (ok, "plain-rejection-reasons.xlsx", "XLSX", "checked")
+    assert (f["id"], f["name"], f["type"], f["state"]) == (
+        ok,
+        "plain-rejection-reasons.xlsx",
+        "XLSX",
+        "checked",
+    )
     assert f["view_url"] == f"/api/attachments/{ok}" and f["added_by"]["name"] == "Kavya Menon"
-    assert db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (ok,)).fetchone()[
-        "conversation_entry_id"
-    ] is not None
-    assert refused(send, db, idea["idea_id"], kavya["id"], {"file_ids": [ok]}).code == "file_unavailable"  # used
+    assert (
+        db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (ok,)).fetchone()[
+            "conversation_entry_id"
+        ]
+        is not None
+    )
+    assert (
+        refused(send, db, idea["idea_id"], kavya["id"], {"file_ids": [ok]}).code == "file_unavailable"
+    )  # used
 
 
-def test_l_convo_10_the_sender_removes_their_own_message_within_5_minutes(db: Any, cast: dict, told: list) -> None:
+def test_l_convo_10_the_sender_removes_their_own_message_within_5_minutes(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
     kavya, meera, colleague = cast["kavya"], cast["meera"], cast["colleague"]
     idea = fx.idea(db, kavya)
     att = fx.attachment(db, idea, kavya)
-    sent = send(db, idea["idea_id"], kavya["id"], {"text": "Wrong idea, sorry.", "file_ids": [att]}, at=fx.at(17, 10))
+    sent = send(
+        db, idea["idea_id"], kavya["id"], {"text": "Wrong idea, sorry.", "file_ids": [att]}, at=fx.at(17, 10)
+    )
     eid = sent["entry"]["id"]
     assert sent["entry"]["can_remove_until"] == fx.at(17, 10, 5)
     assert refused(remove, db, idea["idea_id"], meera["id"], eid).code == "not_yours"
     assert refused(remove, db, idea["idea_id"], colleague["id"], eid).status == 404
     out = remove(db, idea["idea_id"], kavya["id"], eid, at=fx.at(17, 10, 4))
-    assert out["entry"]["removed"] and out["entry"]["text"] == "Message removed" and out["entry"]["files"] == []
+    assert (
+        out["entry"]["removed"] and out["entry"]["text"] == "Message removed" and out["entry"]["files"] == []
+    )
     row = fx.entries(db, idea["id"])[0]
     assert row["deleted_at"] is not None and row["text_encrypted"] is None  # the words are gone, not hidden
-    assert db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (att,)).fetchone()[
-        "conversation_entry_id"
-    ] is None
+    assert (
+        db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (att,)).fetchone()[
+            "conversation_entry_id"
+        ]
+        is None
+    )
     [m] = messages(conversation(db, idea["idea_id"], meera["id"], at=NOW))
     assert (m["text"], m["removed"], m["files"]) == ("Message removed", True, [])
     assert remove(db, idea["idea_id"], kavya["id"], eid, at=fx.at(17, 11))["entry"]["removed"]  # idempotent
@@ -193,18 +257,23 @@ def test_l_convo_10_the_sender_removes_their_own_message_within_5_minutes(db: An
     err = refused(remove, db, idea["idea_id"], kavya["id"], late["entry"]["id"], at=fx.at(17, 10, 6))
     assert (err.status, err.code) == (409, "too_late")
     assert "can_remove_until" not in messages(conversation(db, idea["idea_id"], kavya["id"], at=NOW))[-1]
-    actions = [r["action"] for r in db.execute("SELECT action FROM audit_log WHERE entity = %s", (f"idea:{idea['idea_id']}",))]
+    actions = [
+        r["action"]
+        for r in db.execute("SELECT action FROM audit_log WHERE entity = %s", (f"idea:{idea['idea_id']}",))
+    ]
     assert actions == ["convo.message_removed"]
 
 
-def test_l_convo_9_a_merged_ideas_conversation_takes_no_new_messages(db: Any, cast: dict, told: list) -> None:
+def test_l_convo_9_a_merged_ideas_conversation_takes_no_new_messages(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
     idea = fx.idea(db, cast["kavya"], status="merged")
     err = refused(send, db, idea["idea_id"], cast["kavya"]["id"], {"text": "Hello?"})
     assert (err.status, err.code) == (409, "conversation_closed")
 
 
 def test_a_api_conventions_3_a_repeated_idempotency_key_returns_the_first_message(
-    db: Any, cast: dict, told: list
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
     idea = fx.idea(db, cast["kavya"])
     body = {"text": "Say hello once."}
@@ -214,22 +283,38 @@ def test_a_api_conventions_3_a_repeated_idempotency_key_returns_the_first_messag
     err = refused(send, db, idea["idea_id"], cast["kavya"]["id"], {"text": "Different."},
                   idempotency_key="key-say-hello-0001")  # fmt: skip
     assert (err.status, err.code) == (409, "idempotency_key_reused")
-    stored = db.execute("SELECT response_json FROM idempotency_keys WHERE key = 'key-say-hello-0001'").fetchone()
+    stored = db.execute(
+        "SELECT response_json FROM idempotency_keys WHERE key = 'key-say-hello-0001'"
+    ).fetchone()
     assert stored["response_json"] == {"entry_id": first["entry"]["id"]}  # IDs only
 
 
-def test_l_convo_2_an_outsider_can_neither_write_nor_remove(db: Any, cast: dict, told: list) -> None:
+def test_l_convo_2_an_outsider_can_neither_write_nor_remove(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
+) -> None:
     idea = fx.idea(db, cast["kavya"])
     assert refused(send, db, idea["idea_id"], cast["colleague"]["id"], {"text": "Hi"}).status == 404
     assert fx.entries(db, idea["id"]) == []
 
 
-def test_l_convo_routes_are_mounted_on_the_worker() -> None:
-    from api.app import app
+def test_l_convo_routes_are_mounted_on_the_worker_behind_the_internal_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each route answers, and refuses a caller without the token (401, not 404: it is mounted). FastAPI keeps an
+    included router as one entry in `app.routes`, so the routes are called rather than listed."""
+    from fastapi.testclient import TestClient
 
-    paths = {getattr(r, "path", "") for r in app.routes}
-    assert {
-        "/internal/ideas/{ref}/conversation",
-        "/internal/ideas/{ref}/conversation/messages",
-        "/internal/ideas/{ref}/conversation/messages/{entry_id}",
-    } <= paths
+    from core.config import get_settings
+
+    monkeypatch.setenv("INTERNAL_API_TOKEN", "t" * 40)
+    get_settings.cache_clear()
+    try:
+        from api.app import app
+
+        with TestClient(app, raise_server_exceptions=False) as c:
+            base = "/internal/ideas/IDEA-2026-003401/conversation"
+            for method, path in (("GET", base), ("POST", f"{base}/messages"),
+                                 ("DELETE", f"{base}/messages/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10")):  # fmt: skip
+                assert c.request(method, path, params={"user_id": "x"}).status_code == 401, (method, path)
+    finally:
+        get_settings.cache_clear()

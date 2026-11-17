@@ -34,6 +34,13 @@ MAX_MENTIONS = 10
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _ATT = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
 _ROUTE = "POST /ideas/:id/conversation/messages"
+# As `convo.post` (BLD-F057): placed one microsecond after the idea's last line when its time would not be later.
+_INSERT = (
+    "INSERT INTO conversation_entries (id, idea_uuid, type, author_code, author_user_id, text_encrypted, mentions, at) "
+    "VALUES (%(id)s, %(idea)s, 'message', %(code)s, %(user)s, %(text)s, %(mentions)s::uuid[], "
+    "greatest(%(at)s, (SELECT max(e.at) FROM conversation_entries e WHERE e.idea_uuid = %(idea)s) "
+    "+ interval '1 microsecond')) RETURNING at"
+)
 
 EMPTY = "Write a message or attach a file first."  # L-CONVO/5 (Messages.md)
 TOO_LONG = "Keep a message under 4,000 characters."
@@ -90,12 +97,13 @@ def send(
 
         entry_id = str(uuid.uuid4())
         as_code = r.code if (r.sharer or r.crew) else None
-        conn.execute(
-            "INSERT INTO conversation_entries (id, idea_uuid, type, author_code, author_user_id, text_encrypted, "
-            "mentions, at) VALUES (%s, %s, 'message', %s, %s, %s, %s::uuid[], %s)",
-            (entry_id, idea["id"], as_code, None if as_code else user_id, seal(masked, entry_id) if masked else None,
-             mentioned, t),
-        )  # fmt: skip
+        placed = conn.execute(
+            _INSERT,
+            {"id": entry_id, "idea": idea["id"], "code": as_code, "user": None if as_code else user_id,
+             "text": seal(masked, entry_id) if masked else None, "mentions": mentioned, "at": t},
+        ).fetchone()  # fmt: skip
+        assert placed is not None
+        t = placed["at"]  # after the idea's last line when the clock would tie with it (BLD-F057)
         if file_ids:
             conn.execute(
                 "UPDATE attachments SET conversation_entry_id = %s WHERE id = ANY(%s)", (entry_id, file_ids)
@@ -192,7 +200,7 @@ def _notify(
         if outside:  # L-CONVO/6: this message only; the grant is the mention itself (BLD-F052)
             audit(conn, sender, "convo.mention_access", f"idea:{ref}", {"entry_id": entry_id, "user_id": u})
         adapters.tell(conn, "mention", [u], idea_uuid=idea_uuid, sender=sender, actions=at_message,
-                      refs={"entry_id": entry_id, "outside": outside}, dedupe_key=f"convo.mention:{entry_id}")  # fmt: skip
+                      refs={"entry_id": entry_id}, dedupe_key=f"convo.mention:{entry_id}")  # fmt: skip
     sharer = user_of(conn, idea["contributor_code"])
     if sharer and sharer != sender and sharer not in mentioned:
         hour = t.astimezone(IST).strftime("%Y%m%d%H")
