@@ -119,9 +119,8 @@ def ask(
         lead_of_other = lead_code(conn, other)
         if lead_of_other == code:
             raise Refused(409, "already_on_crew", "You lead this idea.")
-        lead = lead_seen_by(
-            conn, other, user_id, code
-        )  # BLD-F029: "Waiting on the lead to merge" when not named
+        # BLD-F029: "Waiting on the lead to merge" when the lead is not named to them
+        lead = lead_seen_by(conn, other, user_id, code)
         # a request from a draft sent since does not count as open (BLD-F024)
         end_sent_drafts(conn, other["id"])
         if waiting_merge_request(conn, draft["id"]) or waiting_from(conn, other["id"], code):
