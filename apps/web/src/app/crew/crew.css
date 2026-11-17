@@ -3,10 +3,10 @@
 
 .crew-page {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 440px) minmax(220px, 272px);
+  grid-template-columns: minmax(0, 280px) minmax(0, 440px) minmax(0, 272px);
   justify-content: center;
   align-items: start;
-  gap: 40px;
+  gap: 32px;
   padding: 24px 24px 48px;
 }
 
@@ -253,15 +253,13 @@
 .crew-top.hue1 {
   background:
     radial-gradient(120% 150% at 0% 0%, rgba(57, 93, 237, 0.2), rgba(57, 93, 237, 0) 60%),
-    radial-gradient(120% 150% at 100% 0%, rgba(244, 104, 53, 0.16), rgba(244, 104, 53, 0) 60%),
-    #ffffff;
+    radial-gradient(120% 150% at 100% 0%, rgba(244, 104, 53, 0.16), rgba(244, 104, 53, 0) 60%), #ffffff;
 }
 
 .crew-top.hue2 {
   background:
     radial-gradient(120% 150% at 0% 0%, rgba(146, 128, 255, 0.24), rgba(146, 128, 255, 0) 60%),
-    radial-gradient(120% 150% at 100% 0%, rgba(57, 93, 237, 0.14), rgba(57, 93, 237, 0) 60%),
-    #ffffff;
+    radial-gradient(120% 150% at 100% 0%, rgba(57, 93, 237, 0.14), rgba(57, 93, 237, 0) 60%), #ffffff;
 }
 
 .crew-t {
@@ -506,7 +504,7 @@
 }
 
 /* ---- Narrower screens: one column; the card is the screen on a phone (S-H2.phone) ---- */
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .crew-page {
     grid-template-columns: minmax(0, 440px);
     gap: 24px;
