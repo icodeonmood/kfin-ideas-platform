@@ -135,25 +135,34 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         )
 
     def voice_notes() -> tuple[bool, str]:
-        """DEC-096: voice notes are off, or on with the engine on KFin's own server; never the fake route outside
-        dev and test. The quarantine bucket is never versioned (a version would outlive a delete)."""
+        """DEC-108: voice is off, or on through Sarvam with `speech.hosted` on and its approval reference, or on
+        with the engine behind the isolated speech service (BLD-C012); never the fake route outside dev and test.
+        The quarantine bucket is never versioned (a version would outlive a delete)."""
         from attachments.store import versioning
 
         with connect(autocommit=True) as conn:
-            row = conn.execute("SELECT state FROM kill_switches WHERE name = 'capture.voice'").fetchone()
-        on = row is not None and row["state"] == "on"
-        # On outside dev and test: only the engine on KFin's own server, through the isolated speech service
-        # (BLD-C012); hosted routes need InfoSec and the DPO.
-        mode_ok = (
-            not on or not s.is_production_like or (s.speech_mode == "local" and bool(s.speech_engine_url))
+            states = {
+                r["name"]: r["state"]
+                for r in conn.execute(
+                    "SELECT name, state FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
+                ).fetchall()
+            }
+        on = states.get("capture.voice") == "on"
+        sarvam_ok = (
+            s.speech_mode == "sarvam"
+            and states.get("speech.hosted") == "on"
+            and bool(s.speech_hosted_approval.strip())
         )
+        local_ok = s.speech_mode == "local" and bool(s.speech_engine_url)
+        mode_ok = not on or not s.is_production_like or sarvam_ok or local_ok
         try:
             versioned = versioning(s.s3_bucket_quarantine)
         except Exception:  # a store with no versioning at all (the dev gateway) cannot keep old versions
             versioned = "unsupported"
         return (
             mode_ok and versioned != "Enabled",
-            f"capture.voice {'on' if on else 'off'}; SPEECH_MODE {s.speech_mode}; "
+            f"capture.voice {'on' if on else 'off'}; speech.hosted {states.get('speech.hosted', 'missing')}; "
+            f"SPEECH_MODE {s.speech_mode}; "
             f"isolated service {'set' if s.speech_engine_url else 'unset'}; quarantine versioning {versioned}",
         )
 
