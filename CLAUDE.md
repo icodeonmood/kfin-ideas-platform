@@ -53,6 +53,7 @@ Stop and ask the user before changing any of these.
 
 1. **Every model call goes through the gateway** (`run_agent` in `services/worker/gateway/`). No model SDK import anywhere else; CI enforces it.
 2. **Tag before sending.** Personal and sensitive values become typed tags (`[[KFIN_EMPLOYEE_1]]`, `[[CLIENT_AMC_1]]`…) before any model call. The leak check re-runs the patterns on the tagged payload and aborts on any hit. Real values are restored only for viewers allowed to see them (§3.2).
+   - Exception (DEC-108): voice audio goes to Sarvam untagged; all text is masked first, and every transcript is masked as it returns. The product lead confirmed it on 17 Nov 2026 with the DPO's approval.
 3. **No idea text, attachment text or personal data in logs, traces, error messages, analytics or `llm_calls`.** Logs carry IDs only. A log-scrubber test must pass.
 4. **Customers' personal details are hidden from everyone but the person who typed them** (DEC-103, `L-HIDE`). Patterns, then `gatekeeper`, run on every message, transcript, edit and file before any other service sees the text. Every other person, service, model, index and log receives only the masked copy. The unmasked value is stored encrypted in a worker-only table, readable by the sharer alone. "Show it" needs one of the three reasons and is logged. A file with a detail found cannot be opened by anyone else until it is hidden or removed.
 5. **Agents propose; people decide.** Agents never write to the company repo or change a stage on their own on day one. Autonomy (§5.6) is off at launch.
