@@ -1,15 +1,18 @@
 """What a shipped idea changed (L-IMPACT; J-ONE steps 2 and 6). The write side; lane E's Wall and S-ONE read it.
 
 - Shipping schedules two measurements (`schedule`, called by `build.mark_shipped`): 30 and 90 days after, from
-  rules/promises.md `impact.check_days` (L-IMPACT/1).
+  rules/promises.md `impact.check_days` (L-IMPACT/1). These two due dates are the clocks: the Wall's live-fixes table
+  shows "Due 18 Nov" from them, and the admin page lists what is due, late ones marked (BLD-A213).
 - An admin enters a measurement for the team that runs the fix (`enter`; L-IMPACT/2, /3, /8 default). Values per
-  measure, in the shape lane E's reader documents: `{"amount", "unit", "line"}`, plus an optional plain sentence.
-  The 30-day one comes before the 90-day one. A change to the money figure clears Finance's confirmation.
+  measure, in the shape lane E's reader documents (`wall/impact.py`): `{"amount", "unit", "line"}`, plus an optional
+  plain sentence. The 30-day one comes before the 90-day one. A change to the money figure clears Finance's
+  confirmation.
 - Money shows only once a second person confirms it for Finance (`finance_confirm`; L-IMPACT/3): an admin who did
   not enter the figures (BLD-A213; as BLD-126 did for deliveries).
-- Every entry and confirmation runs the Ones' rules (`programme.ones.on_measurement`): induction and tier rises.
-- The admin page lists what is due (`due`) and what waits for Finance (`waiting_for_finance`); an hourly sweep
-  (`sweep`, job `impact.sweep`) posts a "Needs you" item through `notify.post` when a measurement falls due, once.
+- Every entry and confirmation runs the Ones' rules (`programme.ones.on_measurement`): lane E's induction, then the
+  tiers (J-ONE steps 3 and 6).
+- No Inbox item is posted when a measurement lands (BLD-A211): E-ENUMS.inbox has no kind for it. The sharer sees the
+  figures on their idea's Shipped stage (L-IMPACT/5).
 """
 
 from __future__ import annotations
@@ -21,23 +24,8 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
-from notify import Action, post
 from programme import ones
-from programme.common import (
-    IST,
-    Refused,
-    admin_users,
-    audit,
-    build_team_users,
-    credited_users,
-    crew_users,
-    day_label,
-    idea,
-    need,
-    now_utc,
-    promise,
-    text,
-)
+from programme.common import Refused, audit, day_label, idea, need, now_utc, promise, text
 
 MARKS = ("day_30", "day_90")
 MARK_LABEL = {"day_30": "30 days", "day_90": "90 days"}
@@ -130,14 +118,6 @@ def _measurement(conn: Conn, row: dict[str, Any], mark: Any) -> dict[str, Any]:
     return dict(m)
 
 
-def _tell(conn: Conn, row: dict[str, Any], m: dict[str, Any], actor: str) -> None:
-    """The sharer and crew are told when a measurement lands (L-IMPACT/5)."""
-    people = sorted(set(credited_users(conn, row["id"])) | set(crew_users(conn, row["id"])))
-    post(conn, "stage_moved", people, idea_id=str(row["id"]), sender=actor,
-         refs={"event": "measured", "mark": m["mark"], "idea_ref": row["idea_id"]},
-         dedupe_key=f"measured:{m['id']}")  # fmt: skip
-
-
 def enter(
     conn: Conn, actor: str, ref: Any, mark: Any, body: dict[str, Any], now: dt.datetime | None = None
 ) -> dict[str, Any]:
@@ -166,7 +146,6 @@ def enter(
               {"measurement_id": m["id"], "mark": mark, "measures": sorted(k for k in results if k != "sentence"),
                "waits_for_finance": "money" in results and not keep_finance},
               before={"entered": m["filled_at"] is not None})  # fmt: skip
-        _tell(conn, row, m, actor)
         changed = ones.on_measurement(conn, row, int(m["id"]), actor, now)
     return {"idea": row["idea_id"], "mark": mark, "waits_for_finance": "money" in results and not keep_finance,
             **changed}  # fmt: skip
@@ -199,7 +178,7 @@ def finance_confirm(
     return {"idea": row["idea_id"], "mark": mark, "finance_confirmed": True, **changed}
 
 
-# --- What the admin page lists, and the sweep -------------------------------------------------------------------
+# --- What the admin page lists ---------------------------------------------------------------------------------
 
 
 def due(conn: Conn, now: dt.datetime) -> list[dict[str, Any]]:
@@ -232,39 +211,3 @@ def entered(conn: Conn) -> list[dict[str, Any]]:
              "has_money": "money" in results, "finance_confirmed": r["finance_confirmed_at"] is not None}
         )  # fmt: skip
     return out
-
-
-def sweep(conn: Conn, now: dt.datetime | None = None) -> int:
-    """Hourly (job `impact.sweep`): each measurement that has fallen due and is not entered gets one "Needs you"
-    item, for the build team (who run the fix and send the figures) and for the admins (who enter them). A sweep
-    over the table, not an sla timer (lane A brief). Returns how many measurements it posted for."""
-    now = now or now_utc()
-    rows = conn.execute(
-        "SELECT m.id, m.mark, m.due_at, i.id AS idea_uuid, i.idea_id FROM delivery_measurements m "
-        "JOIN ideas i ON i.id = m.idea_uuid WHERE m.filled_at IS NULL AND m.reminded_on IS NULL "
-        "AND m.due_at <= %s AND i.status = 'shipped' ORDER BY m.due_at",
-        (now,),
-    ).fetchall()
-    posted = 0
-    for r in rows:
-        with conn.transaction():
-            claimed = conn.execute(
-                "UPDATE delivery_measurements SET reminded_on = %s WHERE id = %s AND reminded_on IS NULL "
-                "RETURNING id",
-                (now.astimezone(IST).date(), r["id"]),
-            ).fetchone()
-            if claimed is None:
-                continue  # another worker took it
-            refs = {"ask": "impact_measurement", "mark": r["mark"], "idea_ref": r["idea_id"]}
-            team = build_team_users(conn, r["idea_id"])
-            if team:
-                post(conn, "build_ask", team, idea_id=str(r["idea_uuid"]), needs_you=True, due_at=r["due_at"],
-                     actions=(Action("Open the idea", style="primary", to=f"/ideas/{r['idea_id']}"),),
-                     refs=refs, dedupe_key=f"impact_due:{r['id']}")  # fmt: skip
-            admins = [a for a in admin_users(conn) if a not in team]
-            if admins:
-                post(conn, "build_ask", admins, idea_id=str(r["idea_uuid"]), needs_you=True, due_at=r["due_at"],
-                     actions=(Action("Enter the figures", style="primary", to="/admin#impact"),),
-                     refs=refs, dedupe_key=f"impact_due:{r['id']}")  # fmt: skip
-            posted += 1
-    return posted

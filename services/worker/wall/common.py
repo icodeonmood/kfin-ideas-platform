@@ -55,11 +55,12 @@ class Refused(Exception):
 def on_wall_sql(alias: str = "i") -> str:
     """THE filter for "is this idea on the Wall at all". Every Wall query (Kindling, Just in, live fixes, the Ones'
     idea lines) goes through it, so lane A's audit-logged "Take off the Wall" (DEC-106, SHIP_PLAN §6.3) changes
-    this one function and nothing else: add its column here, e.g. `AND {alias}.off_wall_at IS NULL`.
+    this one function and nothing else.
 
-    Today it keeps out anything old code marked other than `org` (committee-only visibility is retired, DEC-106;
-    keeping such rows off is the safe reading) and anything merged into another idea (it shows as the survivor)."""
-    return f"({alias}.visibility = 'org' AND {alias}.merged_into IS NULL)"
+    It keeps out anything old code marked other than `org` (committee-only visibility is retired, DEC-106; keeping
+    such rows off is the safe reading), anything merged into another idea (it shows as the survivor), and anything
+    the review desk or an admin took off the Wall (`idea_off_wall`, 20261122100400; lane A, BLD-A212)."""
+    return f"({alias}.visibility = 'org' AND {alias}.merged_into IS NULL AND NOT idea_off_wall({alias}.id))"
 
 
 # --- Names (DEC-104) -------------------------------------------------------------------------------------------------

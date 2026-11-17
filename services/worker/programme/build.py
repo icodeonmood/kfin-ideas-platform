@@ -3,9 +3,13 @@ and later marks it shipped.
 
 - **Team chosen**: the idea moves to `being_built`. The team is a `build_teams` row (name, lead) and one
   `build_team` grant per member, scoped to the idea's IDEA- reference, so the conversation opens to them. The
-  sharer's track shows "Being built" (S-06) and the credited people and the team are told.
+  sharer's track shows "Being built" (S-06).
 - **Shipped**: the idea moves to `shipped`, the sharer's track reaches "Shipped" and the Wall's Shipped column shows
   it; the 30- and 90-day measurements are scheduled (L-IMPACT/1).
+
+Both moves tell the sharer and the crew through the existing `stage_moved` kind ("moved your idea to Being built",
+"... to Shipped"; L-INBOX.kinds), with the stage in `refs.to`. The build team gets no Inbox item: no kind says "you
+are on a build team", and "moved your idea" would not be true for them (BLD-A211). The admin tells them.
 
 Status changes go through `ideas.status`; the cut-over's trigger stamps the time and keeps the history.
 """
@@ -21,7 +25,6 @@ from programme import impact
 from programme.common import (
     Refused,
     audit,
-    build_team_users,
     credited_users,
     crew_users,
     idea,
@@ -45,6 +48,15 @@ def _grant(conn: Conn, user_id: str, ref: str, actor: str) -> None:
             "INSERT INTO role_grants (user_id, role, scope_id, granted_by) VALUES (%s, 'build_team', %s, %s)",
             (user_id, ref, actor),
         )
+
+
+def _tell(conn: Conn, row: dict[str, Any], stage: str) -> None:
+    """J-ONE step 1's hand-off to the sharer's Inbox: "1% Club moved your idea to <stage>" (L-INBOX.kinds, the
+    system as sender). The sharer (everyone credited, after a merge) and the crew; refs are the stage only."""
+    people = sorted(set(credited_users(conn, row["id"])) | set(crew_users(conn, row["id"])))
+    if people:
+        post(conn, "stage_moved", people, idea_id=str(row["id"]), refs={"to": stage},
+             dedupe_key=f"stage_moved:{row['id']}:{stage}")  # fmt: skip
 
 
 def choose_team(conn: Conn, actor: str, ref: Any, body: dict[str, Any]) -> dict[str, Any]:
@@ -77,13 +89,7 @@ def choose_team(conn: Conn, actor: str, ref: Any, body: dict[str, Any]) -> dict[
         audit(conn, actor, "idea.build_team_chosen", f"idea:{row['idea_id']}",
               {"build_team_id": str(team["id"]), "lead_user_id": lead, "members": len(members),
                "status": "being_built"}, before={"status": "picked"})  # fmt: skip
-        sharers = credited_users(conn, row["id"])
-        post(conn, "stage_moved", sharers, idea_id=str(row["id"]), sender=actor,
-             refs={"event": "being_built", "idea_ref": row["idea_id"]},
-             dedupe_key=f"being_built:{row['id']}")  # fmt: skip
-        post(conn, "stage_moved", [m for m in members if m not in sharers], idea_id=str(row["id"]), sender=actor,
-             refs={"event": "on_build_team", "idea_ref": row["idea_id"], "lead_user_id": lead},
-             dedupe_key=f"on_build_team:{row['id']}")  # fmt: skip
+        _tell(conn, row, "being_built")
     return {"idea": row["idea_id"], "status": "being_built", "build_team_id": str(team["id"]),
             "members": len(members)}  # fmt: skip
 
@@ -100,11 +106,5 @@ def mark_shipped(conn: Conn, actor: str, ref: Any, now: dt.datetime | None = Non
         impact.schedule(conn, str(row["id"]), now)
         audit(conn, actor, "idea.shipped", f"idea:{row['idea_id']}", {"status": "shipped"},
               before={"status": "being_built"})  # fmt: skip
-        people = sorted(
-            set(credited_users(conn, row["id"]))
-            | set(crew_users(conn, row["id"]))
-            | set(build_team_users(conn, row["idea_id"]))
-        )
-        post(conn, "stage_moved", people, idea_id=str(row["id"]), sender=actor,
-             refs={"event": "shipped", "idea_ref": row["idea_id"]}, dedupe_key=f"shipped:{row['id']}")  # fmt: skip
+        _tell(conn, row, "shipped")
     return {"idea": row["idea_id"], "status": "shipped", "measurements": impact.MARKS}
