@@ -2,7 +2,8 @@
 
 - **Cards** (`one_cards`): number, the person (or None when they hid their name from the Wall, DEC-104), tier,
   flag and the approved brief. The Wall, Home's fan (inside each post) and the office screen read this one shape.
-- **Posts** (`posts`, `like`): what Ones post about what shipped, with likes and the idea's comment count.
+- **Posts** (`posts`, `like`): what Ones post about what shipped, with likes and the idea's comment count. A
+  rupee headline figure shows only once Finance has confirmed the idea's money (L-IMPACT/3); the words stay.
 - **The One's own dashboard** (`dashboard`, `set_number`, `propose_brief`, `glow_up_seen`): theirs alone.
 - **Becoming a One** (`induct_for_idea`): automatic once a shipped idea's impact is measured and confirmed
   (L-ONES.rules/1, DEC-102). Lane A's admin path calls it after a measurement is entered or Finance confirms one.
@@ -144,7 +145,7 @@ def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> l
     the viewer liked it), the idea's comment count and where its thread is."""
     rows = conn.execute(
         f"SELECT {_ONE_COLS}, p.id AS post_id, p.text_encrypted, p.figure_value, p.figure_line, p.shipped, "  # noqa: S608
-        "p.adopted_by, p.posted_at, i.idea_id AS idea_ref, "
+        "p.adopted_by, p.posted_at, p.idea_uuid AS post_idea, i.idea_id AS idea_ref, "
         "(SELECT count(*) FROM one_post_likes l WHERE l.post_id = p.id) AS likes, "
         "EXISTS (SELECT 1 FROM one_post_likes l WHERE l.post_id = p.id AND l.user_id = %(viewer)s) AS liked, "
         "(SELECT count(*) FROM conversation_entries e WHERE e.idea_uuid = p.idea_uuid AND e.type = 'message' "
@@ -155,6 +156,7 @@ def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> l
         "ORDER BY p.posted_at DESC, p.id LIMIT %(limit)s",
         {"viewer": viewer_id, "limit": limit},
     ).fetchall()
+    confirmed = _money_confirmed(conn, [r["post_idea"] for r in rows if r["post_idea"] is not None])
     out = []
     for r in rows:
         row = dict(r)
@@ -163,16 +165,19 @@ def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> l
         )
         if text is None:
             continue
+        figure = {
+            "value": public_text(row["figure_value"]) or "",
+            "line": public_text(row["figure_line"]) or "",
+        }
+        if _is_money(figure) and str(row["post_idea"]) not in confirmed:
+            figure = {"value": "", "line": ""}  # L-IMPACT/3: unconfirmed money is never shown publicly
         post: dict[str, Any] = {
             "id": str(row["post_id"]),
             "one": card(row, self_view=str(row["user_id"]) == viewer_id),
             "text": text,
             "ago": short_ago(row["posted_at"], now),
             "shipped": bool(row["shipped"]),
-            "figure": {
-                "value": public_text(row["figure_value"]) or "",
-                "line": public_text(row["figure_line"]) or "",
-            },
+            "figure": figure,
             "likes": int(row["likes"]),
             "liked": bool(row["liked"]),
             "comments": int(row["comments"]),
@@ -182,6 +187,19 @@ def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> l
             post["adopted_by"] = int(row["adopted_by"])
         out.append(post)
     return out
+
+
+_MONEY = re.compile(r"₹|\b(?:rs\.?|inr|rupees?|lakhs?|lacs?|crores?)\b", re.IGNORECASE)
+
+
+def _is_money(figure: dict[str, str]) -> bool:
+    return bool(_MONEY.search(f"{figure['value']} {figure['line']}"))
+
+
+def _money_confirmed(conn: Conn, idea_uuids: list[Any]) -> set[str]:
+    """The ideas whose money Finance has confirmed (L-IMPACT/3): only their posts may headline a rupee figure."""
+    rows = measurement_rows(conn, idea_uuids)
+    return {u for u, mine in rows.items() if "money" in latest_figures(mine)}
 
 
 def like(conn: Conn, viewer_id: str, post_id: str, liked: Any) -> dict[str, Any]:
