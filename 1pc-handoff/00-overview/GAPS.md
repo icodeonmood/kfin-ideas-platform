@@ -92,3 +92,11 @@ Failure cases, busy states, limits and widths the build needs. Each line is the 
 | `L-ONES` | Each One has an **impact brief**: one sentence shown on the Wall and the office screen. They can "Propose a new brief"; it goes live after the programme team approves it ( default). |
 | `L-REVIEW` | An idea past decide-by is flagged to the review desk lead.  default: a daily digest to the lead; no automatic decision. |
 | `L-TEAMUP` | Leaving a crew:  default: a member can leave from the idea's page; the lead can remove a member; both are logged and announced in the conversation. |
+
+## `P-GAPS.build` Drawn, and waiting in the build
+
+Not a pack gap: what the pack draws but the build has not wired yet, and when it will be. Each line names its build decision.
+
+| Module | Line |
+|---|---|
+| `C-PROMPT` | Attach in the prompt box (`C-PROMPT.anatomy/2`, `C-PROMPT.attach`) waits for `POST /api/files` with `draft_id` (c/files-2). Until it is on main, the prompt's tool row has the mic and send only; `Prompt` takes an `attach` slot, first in the row, where `C-FILE.uploader` mounts in a later small round (BLD-C124). |
