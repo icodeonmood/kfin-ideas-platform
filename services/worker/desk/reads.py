@@ -167,15 +167,38 @@ def _brings(values: list[str]) -> str:
     return _and([_BRINGS.get(v, v) for v in values]) if values else ""
 
 
-def _hidden_line(kinds: list[str]) -> str:
-    if not kinds:
-        return ""
+Hidden = list[
+    tuple[str, str | None]
+]  # each hidden detail's kind and its masked hint ("Folio ••••89"), if stored
+
+
+def _kind_names(kinds: list[str]) -> list[str]:
+    """'Folio', then 'phone number': the first capitalised, the rest as they sit in a sentence."""
     names = [HIDDEN_KINDS.get(k, k) for k in dict.fromkeys(kinds)]
     first, *rest = names
-    return _and([first, *[n.lower() if n not in ("PAN", "Aadhaar") else n for n in rest]]) + " hidden."
+    return [first, *[n.lower() if n not in ("PAN", "Aadhaar") else n for n in rest]]
 
 
-def _evidence_text(files: list[dict[str, Any]], hidden_kinds: list[str]) -> str:
+def _hidden_line(hidden: Hidden) -> str:
+    """The own words' line: "Folio hidden." (DeskIdea board)."""
+    return _and(_kind_names([k for k, _ in hidden])) + " hidden." if hidden else ""
+
+
+def _hidden_from_everyone(hidden: Hidden) -> str:
+    """The Attached part's last sentence (DeskIdea board): "Folio ••••89 is hidden from everyone." with the masked
+    hint when the one detail stores one; "Folio is hidden from everyone." without; "Folio and phone number are hidden
+    from everyone." for two kinds."""
+    if not hidden:
+        return ""
+    kind, masked = hidden[0]
+    if len(hidden) == 1 and masked and "•" in masked:  # a hint shows the kept characters: "Folio ••••89"
+        name = HIDDEN_KINDS.get(kind, kind)
+        return f"{masked if not masked.startswith('•') else f'{name} {masked}'} is hidden from everyone."
+    names = _kind_names([k for k, _ in hidden])
+    return f"{_and(names)} {'is' if len(names) == 1 else 'are'} hidden from everyone."
+
+
+def _evidence_text(files: list[dict[str, Any]], hidden: Hidden) -> str:
     """The Attached part in words (board DeskIdea): "One file: branch-call-log-nov.pdf. Folio ••••89 is hidden from
     everyone." File names stand in for what each file is until the assistant describes them."""
     from desk.listen import _NUMBERS
@@ -186,19 +209,26 @@ def _evidence_text(files: list[dict[str, Any]], hidden_kinds: list[str]) -> str:
         n = len(sent)
         names = "; ".join(str(f["name"]) for f in sent)
         bits.append(f"{_NUMBERS[n] if n < len(_NUMBERS) else n} file{'s' * (n != 1)}: {names}.")
-    if hidden_kinds:
-        bits.append(_hidden_line(hidden_kinds).replace(" hidden.", " hidden from everyone."))
+    if hidden:
+        bits.append(_hidden_from_everyone(hidden))
     return " ".join(bits)
 
 
-def _hidden_kinds(conn: Conn, idea_uuid: Any) -> list[str]:
+def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
     return [
-        str(r["kind"])
+        (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
-            "SELECT kind FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at",
+            "SELECT kind, masked FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at",
             (idea_uuid,),
         )
     ]
+
+
+def _said_at(t: dt.datetime, at: dt.datetime) -> str:
+    """When something was said on the desk: "today 11:20 am" (DeskIdea board), else the day and the time with a
+    comma between them: "Monday 16 November, 11:20 am", "yesterday, 6:10 pm"."""
+    d = when.which_day(t, at)
+    return f"{d} {when.clock(t)}" if d == "today" else f"{d}, {when.clock(t)}"
 
 
 def _checked_files(
@@ -210,7 +240,9 @@ def _checked_files(
     return [
         {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL}
         for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state "  # noqa: S608 (SHOWN_FILE is fixed text)
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE is fixed text)
+            "(SELECT a.sent_at FROM answers a WHERE a.id = attachments.answer_id) AS answer_sent_at, "
+            "(SELECT a.by_code FROM answers a WHERE a.id = attachments.answer_id) AS answer_by "
             f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} "
             "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
             "AND a.sent_at IS NOT NULL)) ORDER BY created_at, id",
@@ -240,8 +272,7 @@ def _questions(
         item: dict[str, Any] = {
             "id": str(r["id"]), "text": unseal(r["text_encrypted"], "questions", "text_encrypted", str(r["id"])),
             "asked_at": r["sent_at"].isoformat(), "asked_by": asked_by.first_name,
-            "asked_line": f"{'You' if mine else asked_by.first_name} asked, {when.which_day(r['sent_at'], at)} "
-                          f"{when.clock(r['sent_at'])}",
+            "asked_line": f"{'You' if mine else asked_by.first_name} asked, {_said_at(r['sent_at'], at)}",
             "state": "Answered" if r["answer_id"] else "Not answered yet", "answer": None,
         }  # fmt: skip
         if r["answer_id"]:
@@ -254,7 +285,7 @@ def _questions(
             item["answer"] = {
                 "text": unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"])),
                 "at": r["answered_at"].isoformat(), "by": by.first_name,
-                "line": f"{by.first_name} answered, {when.which_day(r['answered_at'], at)} {when.clock(r['answered_at'])}",
+                "line": f"{by.first_name} answered, {_said_at(r['answered_at'], at)}",
                 "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"],
                            "customer_detail": f["file_state"] == CUSTOMER_DETAIL} for f in files],
             }  # fmt: skip
@@ -262,29 +293,41 @@ def _questions(
     return out
 
 
-def _file_artefacts(conn: Conn, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The Attachments card's file rows (S-R2.left/2), each marked when it holds a customer detail (DEC-107)."""
+def _file_artefacts(conn: Conn, files: list[dict[str, Any]], at: dt.datetime) -> list[dict[str, Any]]:
+    """The Attachments card's file rows (S-R2.left/2, DeskIdea board), each marked when it holds a customer detail
+    (DEC-107): "Attached by Kavya. 140 KB, 3 pages. A phone number on page 2 is hidden." and, for a file sent with
+    the answers, "Added with Kavya’s answers today." with its hidden line."""
     out: list[dict[str, Any]] = []
     for f in files:
-        by = person_by_code(conn, f["uploaded_by_code"]).first_name
-        size = _size(int(f["bytes"])) + (
-            f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
-        )
-        when_line = "Added with the answers." if f["answer_id"] else f"Attached by {by}."
-        out.append({"kind": "file", "id": f["id"], "title": f["name"],
-                    "line": f"{when_line} {size}." + (f" {f['hidden_note']}" if f["hidden_note"] else ""),
-                    "action": "Open", "customer_detail": f["customer_detail"]})  # fmt: skip
+        hidden = f" {f['hidden_note']}" if f["hidden_note"] else ""
+        if f["answer_id"]:
+            who = person_by_code(conn, f["answer_by"] or f["uploaded_by_code"]).first_name
+            d = when.which_day(f["answer_sent_at"], at) if f["answer_sent_at"] else ""
+            day = f" {d}" if d in ("today", "yesterday") else f" on {d}" if d else ""
+            line = f"Added with {who}’s answers{day}.{hidden}"
+        else:
+            by = person_by_code(conn, f["uploaded_by_code"]).first_name
+            pages = f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
+            line = f"Attached by {by}. {_size(int(f['bytes']))}{pages}.{hidden}"
+        out.append({"kind": "file", "id": f["id"], "title": f["name"], "line": line, "action": "Open",
+                    "customer_detail": f["customer_detail"]})  # fmt: skip
     return out
 
 
+def _who(affects: list[str] | None) -> str:
+    """Who it affects, as the DeskIdea board reads it: "Investors, KFin teams." """
+    text = ", ".join(a for a in (affects or []) if a)
+    return text if not text or text.endswith(".") else f"{text}."
+
+
 def _part_texts(
-    conn: Conn, idea: dict[str, Any], files: list[dict[str, Any]], hidden_kinds: list[str]
+    conn: Conn, idea: dict[str, Any], files: list[dict[str, Any]], hidden: Hidden
 ) -> dict[str, str]:
     """Each part's words as the idea holds them (S-R2.left/3); the worth part is shown as tiles."""
     fix = conn.execute("SELECT how, included FROM idea_fix WHERE idea_uuid = %s", (idea["id"],)).fetchone()
     return {
-        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": ", ".join(idea["affects"] or []),
-        "cost": "", "evidence": _evidence_text(files, hidden_kinds),
+        "summary": idea["summary"] or "", "often": idea["often"] or "", "who": _who(idea["affects"]),
+        "cost": "", "evidence": _evidence_text(files, hidden),
         "fix": (fix["how"] or "") if fix and fix["included"] else "",
     }  # fmt: skip
 
@@ -328,13 +371,13 @@ def _contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime, viewer_id:
     for c in conn.execute(_MERGED_IN, (idea["id"],)).fetchall():
         sharer = person_by_code(conn, c["contributor_code"])
         files = _checked_files(conn, c["id"], DESK_SEES)
-        texts = _part_texts(conn, c, files, _hidden_kinds(conn, c["id"]))
+        texts = _part_texts(conn, c, files, _hidden(conn, c["id"]))
         out.append({
             "idea_id": c["idea_id"], "title": c["title"] or "", "into": c["into_idea_id"],
             "merged_at": c["merged_at"].isoformat() if c["merged_at"] else None,
             "sharer": sharer.as_json(), "label": f"{sharer.first_name}’s idea, {c['idea_id']}",
             "parts": _parts(texts, _questions(conn, c["id"], at, viewer_id)),
-            "files": _file_artefacts(conn, files), "own_words": _own_words(conn, c["id"]),
+            "files": _file_artefacts(conn, files, at), "own_words": _own_words(conn, c["id"]),
         })  # fmt: skip
     return out
 
@@ -346,7 +389,9 @@ def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> d
     if idea["status"] == "merged":  # first: a Not now that came back and was then merged shows the merge
         return {"state": "merged"}
     decision = committee.for_idea(conn, str(idea["id"]), user_id, at, lines="reviewer")
-    lines = decision.pop("lines") if decision is not None else None  # the reviewer's words (DeskIdea, Decided)
+    lines = (
+        decision.pop("lines") if decision is not None else None
+    )  # the reviewer's words (DeskIdea, Decided)
     if decision is not None and idea["status"] not in ON_DESK_STATUSES:
         return {"state": "decided", "decision": decision, "lines": lines}
     s = conn.execute(
@@ -405,7 +450,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     if idea["sorting_confirmed_at"] and sorting_line:
         heading += f" Sorting confirmed by {sharer.first_name}: {sorting_line[0].lower() + sorting_line[1:]}."
     messages = _own_words(conn, idea["id"])
-    hidden_kinds = _hidden_kinds(conn, idea["id"])
+    hidden = _hidden(conn, idea["id"])
     # the desk opens a file holding a customer detail, marked (DEC-107)
     files = _checked_files(conn, idea["id"], DESK_SEES)
     similar_n = conn.execute(
@@ -418,11 +463,12 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         (idea["id"],),
     ).fetchone()
     first = sharer.first_name
-    artefacts = _file_artefacts(conn, files)
-    if messages:
+    artefacts = _file_artefacts(conn, files, t)
+    if messages:  # the day of the first message, which is when they wrote them (DeskIdea board)
+        wrote = dt.datetime.fromisoformat(messages[0]["at"]).astimezone(when.IST)
         artefacts.append({"kind": "own_words", "title": f"{first}’s own words",
-                          "line": " ".join(x for x in (f"As {first} wrote them on {when.DAYS[shared_at.astimezone(when.IST).weekday()]}, before the draft.",
-                                                       _hidden_line(hidden_kinds)) if x),
+                          "line": " ".join(x for x in (f"As {first} wrote them on {when.DAYS[wrote.weekday()]}, before the draft.",
+                                                       _hidden_line(hidden)) if x),
                           "action": "Read"})  # fmt: skip
     if similar_n and similar_n["n"]:
         n = int(similar_n["n"])
@@ -439,7 +485,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             )
         artefacts.append({"kind": "versions", "title": "Draft history", "line": " ".join(bits), "action": "See changes"})  # fmt: skip
     sharer_worth, reviewer_worth, revision = revise.current(conn, str(idea["id"]))
-    parts = _parts(_part_texts(conn, idea, files, hidden_kinds), _questions(conn, idea["id"], t, user_id))
+    parts = _parts(_part_texts(conn, idea, files, hidden), _questions(conn, idea["id"], t, user_id))
     similar = [
         {"idea_id": s["idea_id"], "title": s["title"], "status": s["status"], "strength": s["strength"],
          "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
@@ -506,7 +552,7 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
     idea = load_idea(conn, ref)
     files = _checked_files(conn, idea["id"])  # viewer-independent: never a file holding a customer detail
     sharer_worth, reviewer_worth, _rev = revise.current(conn, str(idea["id"]))
-    texts = _part_texts(conn, idea, files, _hidden_kinds(conn, idea["id"]))
+    texts = _part_texts(conn, idea, files, _hidden(conn, idea["id"]))
     answers = {
         part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
         for part, qs in _questions(conn, idea["id"], t).items()
