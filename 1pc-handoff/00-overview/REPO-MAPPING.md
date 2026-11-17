@@ -39,7 +39,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/desk` (`page.tsx`, `desk-view.tsx`, `desk.css`), `server/desk.ts` `deskRead`, worker `desk/reads.py`; `/review` redirects here (old page, actions and `review.spec.ts` retired) | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
-| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files}.ts`; `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
+| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files,hide}.ts`, `components/review/hide-this.tsx` ("Hide this", L-HIDE.rules/7, and "Shown, because …", L-HIDE.rules/6, BLD-B246); `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-R3` | `/ideas/:id/answer` | `app/ideas/[id]/answer` (`page.tsx`, `answer-view.tsx`, `answer.css`); files on an answer and the voice are seams | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
 | `S-R4` | `/committee` | `app/committee` (`page.tsx`, `committee-view.tsx`, `committee.css`; the scoring-round page replaced), worker `desk/committee.py`; page rule `committee_window` | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
