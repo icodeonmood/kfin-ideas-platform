@@ -147,7 +147,9 @@ describe("S-H2B in the Inbox reader, against lane F's GET /api/team-up/:id", () 
   it("A-API.team-up BLD-F025 (b): a 404 shows lane F's message and no retry; anything else asks to try again", () => {
     const notFound = loadFailure(404, { error: { code: "not_found", message: "We couldn’t find that." } });
     expect(notFound).toBe("We couldn’t find that.");
-    expect(loadFailure(404, null)).toBe("We couldn’t find that.");
+    expect(loadFailure(404, { error: { code: "not_found" } })).toBe("We couldn’t find that.");
+    // A 404 with no error of lane F's is the route not being there yet: try again later (BLD-A208).
+    expect(loadFailure(404, null)).toBe("We can't show this request just now. Please try again in a minute.");
     const html = body(null, { failure: notFound });
     expect(html).toContain("We couldn’t find that.");
     expect(html).not.toMatch(/try again/i);

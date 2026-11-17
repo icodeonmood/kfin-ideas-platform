@@ -137,9 +137,11 @@ export function readRequest(data: unknown, requestId: string): Request {
   };
 }
 
-/** A request that could not be read: a 404 says lane F's "We couldn’t find that." and offers no retry. */
+/** A request that could not be read. Lane F's 404 (`not_found`) says "We couldn’t find that." and offers no retry; a
+ * 404 without lane F's error is the route not being there yet (BLD-A208), which may be tried again later. */
 export function loadFailure(status: number, body: unknown): string {
-  return status === 404 ? (errorOf(body).message ?? NOT_FOUND) : CANT_SHOW;
+  const { code, message } = errorOf(body);
+  return status === 404 && (code || message) ? (message ?? NOT_FOUND) : CANT_SHOW;
 }
 
 function quoted(reason: string): string {
