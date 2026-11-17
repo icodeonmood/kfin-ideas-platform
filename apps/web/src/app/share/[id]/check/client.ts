@@ -24,6 +24,7 @@ import type {
   SortingPatch,
   SortingResponse,
   SubmitResponse,
+  UploadConfig,
 } from "@/lib/contracts";
 import { IDEMPOTENCY_HEADER } from "@/lib/contracts/api";
 
@@ -72,6 +73,7 @@ export const urls = {
   fileHide: (fileId: string) => `/api/files/${enc(fileId)}/hide`,
   fileRetry: (fileId: string) => `/api/files/${enc(fileId)}/retry`,
   config: "/api/config",
+  uploads: "/api/config/uploads",
 } as const;
 
 function errorOf(body: unknown): ApiError["error"] | null {
@@ -117,6 +119,7 @@ export const api = {
     call<HiddenDetail>(urls.show(id, hid), { method: "POST", body: { reason } }),
   hideAgain: (id: string, hid: string) => call<HiddenDetail>(urls.hide(id, hid), { method: "POST" }),
   config: () => call<ConfigResponse>(urls.config),
+  uploads: () => call<UploadConfig>(urls.uploads),
   sorting: (id: string) => call<SortingResponse>(urls.sorting(id)),
   patchSorting: (id: string, patch: SortingPatch) =>
     call<SortingResponse>(urls.sorting(id), { method: "PATCH", body: patch }),

@@ -147,6 +147,9 @@ export const CHECK_COPY = {
     /** C-FILE.row "Personal data found", when the server sends no line of its own. */
     found: "Nobody can open it until it’s hidden.",
     hideForMe: "Hide it for me",
+    /** C-FILE.row: "View" on a checked file (it opens in a new tab until C-FILE.view's pop-up is drawn). */
+    view: "View",
+    viewOf: (name: string) => `View ${name}`,
     remove: "Remove",
     removeOf: (name: string) => `Remove ${name}`,
     notALink: "That doesn’t look like a link. A link looks like intranet.kfintech.com/page.",

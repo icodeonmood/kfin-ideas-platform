@@ -178,6 +178,17 @@ export function ProofBody({
                 statusText={v.statusText}
                 message={v.message}
               >
+                {v.actions.includes("view") && p.item?.view_url ? (
+                  <a
+                    className="tb blue"
+                    href={p.item.view_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={C.viewOf(p.item.name)}
+                  >
+                    {C.view}
+                  </a>
+                ) : null}
                 {v.actions.includes("retry") ? (
                   <Button variant="text-blue" onClick={() => onRetry(p.key)}>
                     {CHECK_COPY.retry}

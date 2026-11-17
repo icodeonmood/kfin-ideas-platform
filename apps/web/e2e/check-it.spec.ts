@@ -41,6 +41,7 @@ const DRAFT_BODY = {
       type: "image/png",
       size: 86016,
       state: "checked",
+      view_url: "/api/files/f1/view",
       added_by: ME,
       added_at: "2026-11-17T08:00:00Z",
     },

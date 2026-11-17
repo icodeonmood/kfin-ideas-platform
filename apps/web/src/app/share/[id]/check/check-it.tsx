@@ -26,6 +26,7 @@ import type {
   SendViewResponse,
   ShowReason,
   SortingResponse,
+  UploadConfig,
 } from "@/lib/contracts";
 
 import { api, sendKey, type Call, type CheckDraft, type MergeState } from "./client";
@@ -122,6 +123,7 @@ export function CheckIt({
   const [draft, setDraft] = useState<CheckDraft | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [config, setConfig] = useState<ConfigResponse | null>(initialConfig);
+  const [uploads, setUploads] = useState<UploadConfig | null>(null);
   const [part, setPart] = useState<PartNo>(1);
   const [dir, setDir] = useState<1 | -1>(1);
   const [done, setDone] = useState<ReadonlySet<PartNo>>(new Set());
@@ -190,12 +192,13 @@ export function CheckIt({
         api.draft(draftId),
         api.sorting(draftId),
         initialConfig ? Promise.resolve(null) : api.config(),
+        api.uploads(),
       ]),
     [draftId, initialConfig],
   );
 
   const apply = useCallback(
-    ([d, s, cfg]: Awaited<ReturnType<typeof fetchAll>>) => {
+    ([d, s, cfg, up]: Awaited<ReturnType<typeof fetchAll>>) => {
       if (!d.ok || !d.body) {
         setLoadFailed(true);
         return;
@@ -207,6 +210,7 @@ export function CheckIt({
       setPart(partFromStep(body.step));
       if (s.ok) setSorting(s.body);
       if (cfg && cfg.ok) setConfig(cfg.body);
+      if (up.ok && up.body && typeof up.body.limit_mb === "number") setUploads(up.body);
       setKept(Boolean(body.kept_separate));
       setProof((body.files ?? []).map((f) => ({ key: f.id, item: f, name: f.name })));
       const asked = body.merge_request;
@@ -371,16 +375,31 @@ export function CheckIt({
 
   // --- Part 4: proof ----------------------------------------------------------------------------------------------
 
-  const limitMb = config?.uploads?.limit_mb ?? DEFAULT_LIMIT_MB;
+  const limits = uploads ?? config?.uploads ?? null;
+  const limitMb = limits?.limit_mb ?? DEFAULT_LIMIT_MB;
   const replace = (key: string, next: Partial<ProofItem>) =>
     setProof((list) => list.map((p) => (p.key === key ? { ...p, ...next } : p)));
 
   const upload = async (key: string, file: File) => {
-    replace(key, { localState: "uploading" });
+    replace(key, { localState: "uploading", refusal: undefined });
     const r = await track(api.upload(draftId, file));
-    if (r.ok) replace(key, { item: r.body, localState: undefined, name: r.body?.name || file.name });
-    else if (r.status === 413 || r.error?.code === "too_big") replace(key, { localState: "too_big" });
-    else replace(key, { localState: "upload_failed" });
+    if (r.ok) {
+      replace(key, {
+        item: r.body,
+        localState: undefined,
+        refusal: undefined,
+        name: r.body?.name || file.name,
+      });
+      return;
+    }
+    // A-API.files: `too_big` (with `limit_mb`), `type_not_allowed`, `locked`, `forbidden`, `not_found` are refusals
+    // in the server's words; anything else (the network, the server) is "Didn't upload…" with Try again.
+    const code = r.error?.code;
+    const words = r.error?.message || undefined;
+    if (r.status === 413 || code === "too_big") replace(key, { localState: "too_big", refusal: words });
+    else if (code && ["type_not_allowed", "locked", "forbidden", "not_found"].includes(code)) {
+      replace(key, { localState: "refused", refusal: words });
+    } else replace(key, { localState: "upload_failed" });
   };
 
   const addFiles = (files: File[]) => {
@@ -764,8 +783,8 @@ export function CheckIt({
         <ProofBody
           items={proof}
           limitMb={limitMb}
-          help={config?.uploads?.help_text || C.proof.dropHelp}
-          accept={config?.uploads?.types?.length ? config.uploads.types.join(",") : undefined}
+          help={limits?.help_text || C.proof.dropHelp}
+          accept={limits?.types?.length ? limits.types.join(",") : undefined}
           onFiles={addFiles}
           onLinks={addLinks}
           onRetry={(k) => void retryFile(k)}

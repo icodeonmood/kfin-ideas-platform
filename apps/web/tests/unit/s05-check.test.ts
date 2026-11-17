@@ -831,6 +831,64 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(document.body.textContent).toContain("Phone hidden");
   });
 
+  it("A-API.files C-FILE.uploader/1: the configured limit and help line; a refusal says the server's words with Remove only", async () => {
+    await mount([
+      (m, u) =>
+        m === "GET" && u === "/api/config/uploads"
+          ? {
+              body: {
+                limit_mb: 15,
+                types: [".pdf", ".png"],
+                help_text: "PDFs or screenshots, up to 15 MB each.",
+              },
+            }
+          : undefined,
+      (m, u) =>
+        m === "POST" && u === "/api/files"
+          ? {
+              status: 415,
+              body: { error: { code: "type_not_allowed", message: "This kind of file can’t be added." } },
+            }
+          : undefined,
+      ...base(),
+    ]);
+    await railTo("Proof");
+    await click(button("Attach files"));
+    expect(document.body.textContent).toContain("PDFs or screenshots, up to 15 MB each.");
+    expect(document.querySelector<HTMLInputElement>('input[type="file"]')!.accept).toBe(".pdf,.png");
+    await chooseFile("branch-notes.exe", "application/octet-stream");
+    await settle();
+    expect(document.body.textContent).toContain("This kind of file can’t be added.");
+    expect(button("Try again")).toBeUndefined();
+    expect(button("Remove branch-notes.exe")).toBeTruthy();
+    await chooseFile("huge-scan.pdf", "application/pdf", 16 * 1024 * 1024);
+    await settle();
+    expect(document.body.textContent).toContain("Too big. Files can be up to 15 MB.");
+    expect(calls.filter((c) => c.method === "POST" && c.url === "/api/files")).toHaveLength(1);
+  });
+
+  it("C-FILE.row: a checked file the person may open has View, to GET /api/files/:id/view", async () => {
+    const f: FileItem = {
+      id: "f3",
+      kind: "file",
+      name: "rejection-sms-screenshot.png",
+      type: "image/png",
+      size: 86016,
+      state: "checked",
+      added_by: KAVYA,
+      added_at: "",
+      view_url: "/api/files/f3/view",
+    };
+    await mount(base({ draft: draft({ files: [f] }) }));
+    await railTo("Proof");
+    const view = Array.from(document.querySelectorAll("a")).find(
+      (a) => a.getAttribute("aria-label") === "View rejection-sms-screenshot.png",
+    )!;
+    expect(view.getAttribute("href")).toBe("/api/files/f3/view");
+    expect(text(view)).toBe("View");
+    expect(button(/Proof 1 file$/)).toBeTruthy();
+  });
+
   it("J-RECOVER/9 BLD-E001: a link is kept as typed, never opened, with Remove; not a link says what a link looks like", async () => {
     await mount([
       (m, u, b) =>

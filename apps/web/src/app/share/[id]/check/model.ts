@@ -122,14 +122,16 @@ export interface ProofItem {
   local?: File;
   name: string;
   /** Set by this page when the POST itself failed or was refused. */
-  localState?: "uploading" | "upload_failed" | "too_big";
+  localState?: "uploading" | "upload_failed" | "too_big" | "refused";
+  /** The server's words for a refused upload (`too_big`, `type_not_allowed`, `locked`, …), shown under the row. */
+  refusal?: string;
 }
 
 export interface RowView {
   status: FileStatus;
   statusText: string;
   message?: { kind: "error" | "warn"; text: string };
-  actions: Array<"retry" | "hide" | "remove">;
+  actions: Array<"view" | "retry" | "hide" | "remove">;
   size?: string;
   kind: string;
 }
@@ -158,18 +160,20 @@ export function rowView(p: ProofItem, limitMb: number): RowView {
       ? hostOf(item.url ?? item.name)
       : sizeLabel(item?.size ?? (p.local ? p.local.size : undefined));
   const state = p.localState ?? item?.state;
+  // A checked file, or one found with a detail (DEC-107), opens for the person who added it (A-API.files `view`).
+  const view: RowView["actions"] = item?.view_url ? ["view"] : [];
   switch (state) {
     case "uploading":
       return { status: "uploading", statusText: "", actions: ["remove"], size, kind };
     case "checking":
       return { status: "checking", statusText: C.proof.checking, actions: ["remove"], size, kind };
     case "checked":
-      return { status: "checked", statusText: C.proof.checked, actions: ["remove"], size, kind };
+      return { status: "checked", statusText: C.proof.checked, actions: [...view, "remove"], size, kind };
     case "hidden_checked":
       return {
         status: "hidden",
         statusText: item?.hidden_note || C.proof.checked,
-        actions: ["remove"],
+        actions: [...view, "remove"],
         size,
         kind,
       };
@@ -178,7 +182,7 @@ export function rowView(p: ProofItem, limitMb: number): RowView {
         status: "found",
         statusText: "",
         message: { kind: "warn", text: item?.problem || C.proof.found },
-        actions: ["hide", "remove"],
+        actions: [...view, "hide", "remove"],
         size,
         kind,
       };
@@ -186,7 +190,17 @@ export function rowView(p: ProofItem, limitMb: number): RowView {
       return {
         status: "too-big",
         statusText: "",
-        message: { kind: "error", text: C.proof.tooBig(limitMb) },
+        message: { kind: "error", text: p.refusal || C.proof.tooBig(limitMb) },
+        actions: ["remove"],
+        size,
+        kind,
+      };
+    case "refused":
+      // `type_not_allowed`, `locked`, `forbidden`, `not_found`: the server's words; trying again would not help.
+      return {
+        status: "failed",
+        statusText: "",
+        message: { kind: "error", text: p.refusal || C.proof.failed },
         actions: ["remove"],
         size,
         kind,
