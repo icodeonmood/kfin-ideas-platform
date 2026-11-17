@@ -445,8 +445,11 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
 
 
 def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
-    """`GET /desk/ideas/:id/listen` (the route checks the desk role): the script as JSON."""
-    _ = user_id
+    """`GET /desk/ideas/:id/listen`: the script as JSON, for the review desk and the Ones Committee only (the route
+    checks too). `script_for` stays viewer-independent: lane C calls it behind its own gate."""
+    from desk.store import READERS, require_role
+
+    require_role(conn, user_id, READERS)
     return dict(script_for(conn, ref).as_json())
 
 
