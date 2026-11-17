@@ -142,8 +142,7 @@ def spoken(title: str, text: str) -> str:
 
 def listen_script(conn: Conn, ref: str, at: Any = None) -> Script:
     """The masked script for one idea (`ref` is an IDEA- reference or the idea's uuid)."""
-    # TODO(b/1pc-review-3): lane B's `from desk.reads import script_for` once it lands on main; until then this
-    # raises ScriptUnavailable and Listen answers 503 (the player uses the on-device voice).
+    # Lane B's `desk.reads.script_for`; ScriptUnavailable only if a build ships without it (503, on-device voice).
     try:
         reads = importlib.import_module("desk.reads")
     except ImportError:

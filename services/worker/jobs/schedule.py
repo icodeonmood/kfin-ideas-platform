@@ -41,6 +41,7 @@ EVERY: dict[str, int] = {
     "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
     "voice.sweep": 15,  # voice notes held past 24 hours or for an idea already shared (DEC-096)
     "listen.prefetch_due": 15,  # Listen audio for ideas with the desk, made before anyone asks (DEC-108, BLD-C114)
+    "desk.clocks": 5,  # lane B's one sweep: answers due, windows closing, answer reminders (desk.clocks.run_due)
 }
 
 

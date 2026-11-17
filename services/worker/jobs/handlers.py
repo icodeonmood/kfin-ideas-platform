@@ -293,3 +293,11 @@ def listen_prefetch_due(conn: Conn, payload: dict[str, Any]) -> None:
 
     listen.prefetch_due(conn)
     listen.sweep(conn)
+
+
+@handler("desk.clocks")
+def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 5 minutes: lane B's clock sweep; idempotent under its own advisory lock."""
+    from desk.clocks import run_due
+
+    run_due(conn)
