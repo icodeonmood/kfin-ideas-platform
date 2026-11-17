@@ -48,6 +48,7 @@ import type {
   OnePost,
   Person,
   PersonSettings,
+  Range,
   SimilarMatch,
   StageState,
   TeamUpRequest,
@@ -250,11 +251,48 @@ export interface ShowHiddenRequest {
   reason: ShowReason;
 }
 export type HiddenResponse = HiddenDetail;
-export type FixRequest = Omit<Fix, "ready_count">;
-export type FixResponse = Fix;
+/** One figure as typed ("2 lakh", "70 to 150", "25k"), a number, or a `Range` sent back; the worker reads it with
+ * lane B's one quantity reader (L-WORTH/1) and returns it normalised in `Range.text`. */
+export type WorthInput = string | number | Pick<Range, "text"> | Pick<Range, "low" | "high">;
+/** `PUT /drafts/:id/fix` and the edit page's `fix`: the sheet's answers. `included: false` keeps a started fix
+ * ("Close, and keep what you wrote"); otherwise `how` is needed, at least 20 characters (V-FIELDS.checkit/8). */
+export type FixRequest = Omit<Fix, "ready_count" | "included" | "worth" | "how"> & {
+  how?: string;
+  included?: boolean;
+  worth?: {
+    hours_month?: WorthInput;
+    cost_month?: WorthInput;
+    revenue_month?: WorthInput;
+    outside_tools?: OutsideTools;
+  };
+};
+/** `Fix` with the words S-05 shows: "2 of 5 ready for the review desk", the most useful next answer, and on the
+ * part "Included, 5 of 5 ready", the one-line fix and its size line, or the started-fix line. */
+export type FixResponse = Omit<Fix, "how"> & {
+  how?: string;
+  ready_of: 5;
+  readiness: string;
+  next: { key: "how" | "needs" | "solved_already" | "worth" | "basis"; line: string } | null;
+  part:
+    | { rail: "Added"; line: string; fix_line: string; size_line?: string }
+    | { rail: "Optional"; line: string; action: string };
+};
+/** `DELETE /drafts/:id/fix`. */
+export interface FixRemoved {
+  fix: null;
+  part: { rail: "Optional" };
+}
 export interface HelpersRequest {
   picks: string[];
   text?: string;
+}
+/** `PUT /drafts/:id/helpers`: the picks in the list's spelling, the masked own words and the Send part's row. */
+export interface HelpersResponse {
+  picks: string[];
+  text: string | null;
+  /** "Not said", or "Someone at a branch and a branch head". */
+  line: string;
+  part: { rail: "Added" | "Optional" };
 }
 export interface DraftStepPatch {
   step: DraftStep;
@@ -389,8 +427,8 @@ export interface EditPageResponse {
   fields: { title: string; summary: string; often: string | null };
   hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
   sorting: SortingResponse;
-  fix: (Partial<Fix> & { included: true; ready_count: number }) | null;
-  helpers: { picks: string[]; text: string | null };
+  fix: (FixResponse & { included: true }) | null;
+  helpers: HelpersResponse;
   files: Pick<FileItem, "id" | "kind" | "name" | "state" | "hidden_note" | "link_scope">[];
   prompts: { fix?: string; files?: string };
   side: { when: string; line: string }[];

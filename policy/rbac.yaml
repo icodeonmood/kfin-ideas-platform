@@ -114,6 +114,9 @@ endpoints:
   - GET /api/config                                   signed_in       # A-API.config: the promises the copy names and the sorting lists
   - GET /api/drafts/{id}/sorting                      submit          # L-SORT: suggested, confirmed or changed (owner only)
   - PATCH /api/drafts/{id}/sorting                    submit          # L-SORT.rules/2–3: change a field, or confirm the rest
+  - PUT /api/drafts/{id}/fix                          submit          # S-05.fix: the fix sheet's answers (owner only)
+  - DELETE /api/drafts/{id}/fix                       submit          # S-05 part 5: Remove
+  - PUT /api/drafts/{id}/helpers                      submit          # S-05 part 6: Who would help
   - GET /api/drafts/{id}/send                         submit          # L-SUBMIT.pre: the Send part's last look
   - POST /api/drafts/{id}/submit                      submit          # L-SUBMIT.send, with an Idempotency-Key
   - GET /api/ideas/{id}/edit                          submit          # S-06B: the edit page (the sharer, in the edit window)

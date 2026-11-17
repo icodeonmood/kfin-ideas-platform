@@ -48,8 +48,13 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
-  // Sorting, Submit and the edit page's Save (lane C; L-SORT, L-SUBMIT) stop with sharing.
-  { methods: WRITE, pattern: /^\/api\/drafts\/[^/]+\/(?:sorting|submit)\/?$/, switches: ["submissions"] },
+  // Sorting, the fix, who would help, Submit and the edit page's Save (lane C; L-SORT, L-SUBMIT, S-05) stop with
+  // sharing.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/drafts\/[^/]+\/(?:sorting|fix|helpers|submit)\/?$/,
+    switches: ["submissions"],
+  },
   { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/edit\/?$/, switches: ["submissions"] },
   {
     methods: ["GET"],

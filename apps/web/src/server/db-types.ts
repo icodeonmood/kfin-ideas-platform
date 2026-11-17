@@ -736,6 +736,7 @@ export interface Ideas {
   scope: string | null;
   share_seconds: number | null;
   shared_at: Timestamp | null;
+  similar_check: string | null;
   sorting_confirmed_at: Timestamp | null;
   sorting_sources: Generated<Json>;
   stage: Generated<string>;

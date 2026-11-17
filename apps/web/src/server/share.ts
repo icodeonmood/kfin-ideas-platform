@@ -28,7 +28,7 @@ const FAILED = { error: { code: "unavailable", message: "Something went wrong. T
 
 export const MAX_BODY_BYTES = 64 * 1024;
 
-type Method = "GET" | "PATCH" | "POST";
+type Method = "GET" | "PATCH" | "POST" | "PUT" | "DELETE";
 
 async function relay(
   path: string,
@@ -85,6 +85,27 @@ export function readSorting(me: CurrentUser, draftId: string) {
 export function patchSorting(me: CurrentUser, draftId: string, body: unknown) {
   if (!isKey(draftId)) return Promise.resolve(badKey());
   return relay(withUser(`/internal/drafts/${encodeURIComponent(draftId)}/sorting`, me), "PATCH", body);
+}
+
+/**
+ * `PUT /drafts/:id/fix` with the `Fix` fields (S-05.fix): "Add my fix", or `included: false` for "Close, and keep
+ * what you wrote". Returns `Fix` with `ready_count`; amounts come back normalised in `Range.text` (L-WORTH/1).
+ */
+export function putFix(me: CurrentUser, draftId: string, body: unknown) {
+  if (!isKey(draftId)) return Promise.resolve(badKey());
+  return relay(withUser(`/internal/drafts/${encodeURIComponent(draftId)}/fix`, me), "PUT", body);
+}
+
+/** `DELETE /drafts/:id/fix`: "Remove" (S-05 part 5). */
+export function removeFix(me: CurrentUser, draftId: string) {
+  if (!isKey(draftId)) return Promise.resolve(badKey());
+  return relay(withUser(`/internal/drafts/${encodeURIComponent(draftId)}/fix`, me), "DELETE");
+}
+
+/** `PUT /drafts/:id/helpers` `{ picks, text? }`: "Who would help" (S-05 part 6). */
+export function putHelpers(me: CurrentUser, draftId: string, body: unknown) {
+  if (!isKey(draftId)) return Promise.resolve(badKey());
+  return relay(withUser(`/internal/drafts/${encodeURIComponent(draftId)}/helpers`, me), "PUT", body);
 }
 
 /** `GET /drafts/:id/send`: the Send part's last look, the declaration and what would stop Submit (L-SUBMIT.pre). */

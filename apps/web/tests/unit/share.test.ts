@@ -15,8 +15,19 @@ vi.mock("@/server/worker", () => ({
 }));
 vi.mock("@/server/promises", () => ({ promises: async () => ({}) }));
 
-const { isKey, patchSorting, readSorting, saveEdit, sendView, submitDraft, versions, SEND_FAILED } =
-  await import("@/server/share");
+const {
+  isKey,
+  patchSorting,
+  putFix,
+  putHelpers,
+  readSorting,
+  removeFix,
+  saveEdit,
+  sendView,
+  submitDraft,
+  versions,
+  SEND_FAILED,
+} = await import("@/server/share");
 const { switchesFor } = await import("@/lib/killswitch-routes");
 
 const me = { id: "6f1c2b0e-1d2e-4c3b-9a8f-0123456789ab" } as never;
@@ -44,6 +55,9 @@ describe("L-SUBMIT web routes", () => {
       submitDraft(me, "nope", {}, new Headers()),
       saveEdit(me, "nope", {}),
       versions(me, "nope"),
+      putFix(me, "nope", {}),
+      removeFix(me, "nope"),
+      putHelpers(me, "nope", {}),
     ])) {
       expect(res.status).toBe(404);
       expect((await res.json()).error.code).toBe("not_found");
@@ -101,7 +115,41 @@ describe("L-SUBMIT web routes", () => {
     expect(await res.json()).toEqual(refusal);
   });
 
+  it("S-05.fix, A-API.drafts: the fix and who would help reach the worker with the person and the body", async () => {
+    const fix = { how: "Send the reason in plain words in the SMS.", worth: { cost_month: "2 lakh" } };
+    await putFix(me, DRAFT, fix);
+    await removeFix(me, DRAFT);
+    await putHelpers(me, DRAFT, { picks: ["Someone from tech"] });
+    expect(calls.map((c) => [c.init.method, new URL(c.path, "http://worker").pathname])).toEqual([
+      ["PUT", `/internal/drafts/${DRAFT}/fix`],
+      ["DELETE", `/internal/drafts/${DRAFT}/fix`],
+      ["PUT", `/internal/drafts/${DRAFT}/helpers`],
+    ]);
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual(fix);
+    expect(calls[1]!.init.body).toBeUndefined();
+    for (const c of calls) {
+      expect(new URL(c.path, "http://worker").searchParams.get("user_id")).toBe((me as { id: string }).id);
+    }
+  });
+
+  it("V-FIELDS.checkit/9: an unclear amount comes back under its field", async () => {
+    const refusal = {
+      error: {
+        code: "worth_unclear",
+        message: "Write a rough figure or a range, like 70 to 150.",
+        field: "worth.cost_month",
+      },
+    };
+    answer = async () => Response.json(refusal, { status: 422 });
+    const res = await putFix(me, DRAFT, { how: "x", worth: { cost_month: "a lot" } });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual(refusal);
+  });
+
   it("L-SORT and L-SUBMIT writes stop with the submissions switch; reads do not", () => {
+    expect(switchesFor("PUT", `/api/drafts/${DRAFT}/fix`)).toContain("submissions");
+    expect(switchesFor("DELETE", `/api/drafts/${DRAFT}/fix`)).toContain("submissions");
+    expect(switchesFor("PUT", `/api/drafts/${DRAFT}/helpers`)).toContain("submissions");
     expect(switchesFor("PATCH", `/api/drafts/${DRAFT}/sorting`)).toContain("submissions");
     expect(switchesFor("POST", `/api/drafts/${DRAFT}/submit`)).toContain("submissions");
     expect(switchesFor("PATCH", "/api/ideas/IDEA-2026-001481/edit")).toContain("submissions");
