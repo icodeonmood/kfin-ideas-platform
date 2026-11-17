@@ -24,7 +24,8 @@ import {
 export type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const DEVICE_ID_KEY = "1pc.device-id";
-const OUTBOX_KEY = (draftId: string) => `1pc.outbox.${draftId}`;
+const OUTBOX_PREFIX = "1pc.outbox.";
+const OUTBOX_KEY = (draftId: string) => `${OUTBOX_PREFIX}${draftId}`;
 const RETRY_DELAYS_MS = [400, 1200, 3000] as const;
 const TIMEOUT_MS = 15_000;
 
@@ -53,6 +54,56 @@ export type Outgoing = {
   /** Set when it was queued offline (L-DRAFT.autosave/7); a first try does not send it. */
   at?: string;
 };
+
+/** A finished voice note waiting in the box after what was typed (BLD-C150). `prefix` is the box as it was when the
+ * note joined it; null once the note is already the draft's first message (S-04, an empty box). */
+export type HeldNote = { streamId: string; text: string; textEn: string | null; prefix: string | null };
+
+/** Where the note's words start in the box: after the typed words as they were, or, if those were changed, where
+ * the note's own words end the box; -1 when neither holds. */
+export function noteStart(box: string, note: HeldNote): number {
+  if (note.prefix === null) return -1;
+  if (box.startsWith(note.prefix)) return note.prefix.length;
+  const end = box.trimEnd();
+  return end.endsWith(note.text) ? end.length - note.text.length : -1;
+}
+
+/**
+ * BLD-C150: what is typed is sent first as its own typed message, then the voice note as its own message (via
+ * `voice` with its `stream_id`, so the server keeps its English copy, DEC-108), each with its own client_id. A box
+ * that cannot be split (both parts changed) goes as one message with the note's stream: the server keeps the
+ * person's changed words without the English copy (L-DRAFT.voice).
+ */
+export function messagesFor(box: string, note: HeldNote | null): Outgoing[] {
+  const text = box.trim();
+  if (!text) return [];
+  if (!note || note.prefix === null) return [{ clientId: newClientId(), text, via: "typed" }];
+  const at = noteStart(box, note);
+  if (at < 0) return [{ clientId: newClientId(), text, via: "voice", streamId: note.streamId }];
+  const typed = box.slice(0, at).trim();
+  const spoken = box.slice(at).trim();
+  const out: Outgoing[] = [];
+  if (typed) out.push({ clientId: newClientId(), text: typed, via: "typed" });
+  if (spoken) out.push({ clientId: newClientId(), text: spoken, via: "voice", streamId: note.streamId });
+  return out;
+}
+
+/** Sign-out: no one's waiting words stay on a shared device (the outbox holds raw text; S-04.rules/4 keeps the
+ * draft on the server, not here). */
+export function clearOutboxes(store: Store | null = defaultStore()): void {
+  try {
+    if (!store || !("length" in store) || !("key" in store)) return;
+    const s = store as unknown as Storage;
+    const keys: string[] = [];
+    for (let i = 0; i < s.length; i += 1) {
+      const k = s.key(i);
+      if (k && k.startsWith(OUTBOX_PREFIX)) keys.push(k);
+    }
+    for (const k of keys) s.removeItem(k);
+  } catch {
+    // storage blocked: nothing was kept there
+  }
+}
 
 export function newClientId(): string {
   const c = globalThis.crypto;

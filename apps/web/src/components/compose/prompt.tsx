@@ -39,7 +39,6 @@ export const PROMPT_COPY = {
   stopAndUse: "Stop, and use what you said",
   typeOrSpeak: "Type or speak first",
   micBlocked: "Microphone blocked",
-  typeInstead: "Type instead",
   startersLabel: "Or start from one of these",
 } as const;
 
@@ -100,6 +99,9 @@ export type PromptProps = {
   micFirst?: boolean;
   /** The English copy of a voice note in another language, under the box (L-DRAFT.voice/4). */
   english?: string | null;
+  /** C-PROMPT.anatomy/2: the attach button (C-FILE.uploader), first in the tool row. Mounted by a later round once
+   * POST /api/files lands (c/files-2, BLD-C124); until then the row has the mic and send only. */
+  attach?: ReactNode;
   /** Lines under the box (help, starters), in the screen's words. */
   children?: ReactNode;
   className?: string;
@@ -150,6 +152,7 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
     device,
     micFirst,
     english,
+    attach,
     children,
     className,
     sending,
@@ -234,6 +237,7 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
         <span className="vh" role="status">
           {status === "recording" ? VOICE_LISTENING : ""}
         </span>
+        {attach}
         {mic}
         <span className="sendw">
           {roundIsMic ? (
