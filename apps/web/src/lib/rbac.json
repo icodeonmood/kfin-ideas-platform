@@ -270,7 +270,11 @@
     "POST /api/ember/drafts                            send_ember",
     "PUT /api/ember/{id}/note                          write_ember_note",
     "POST /api/ember/{id}/ready                        write_ember_note",
-    "POST /api/ember/{id}/send                         send_ember"
+    "POST /api/ember/{id}/send                         send_ember",
+    "GET /api/crew                                     signed_in",
+    "POST /api/crew/pass                               signed_in",
+    "POST /api/crew/pass/undo                          signed_in",
+    "POST /api/crew/pass/reset                         signed_in"
   ],
   "membership_scoped": {
     "ones": [

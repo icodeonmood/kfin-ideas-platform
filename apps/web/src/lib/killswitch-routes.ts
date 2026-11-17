@@ -134,6 +134,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
+  // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
+  // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
+  /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

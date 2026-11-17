@@ -1111,3 +1111,9 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     body["quarter"] = quarter or reports.current_quarter()
     body["quarters"] = reports.recent_quarters()
     return _json(body)
+
+
+# Lane F: Find your crew (A-API.team-up `GET /crew`, the passes). Its routes live with the code in crew/routes.py.
+from crew.routes import build as _crew_routes  # noqa: E402
+
+app.include_router(_crew_routes(require_token))
