@@ -112,6 +112,7 @@ export type ErrorCode =
   | "send_failed"
   | "unavailable"
   | "not_found"
+  | "body_required"
   // A-API.files
   | "too_big"
   | "type_not_allowed"
