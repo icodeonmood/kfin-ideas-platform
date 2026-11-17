@@ -275,15 +275,16 @@ def test_L_QUESTIONS_clock_3_more_time_on_an_overdue_set_is_never_still_overdue(
     sent = _send(db, cast, time_to_answer="1d")  # due Tuesday 17 November, 11:20 am
     late = f.at(18, 10)  # overdue by nearly a day
     got = asking.give_more_time(db, sent["id"], cast["meera"]["id"], late)
-    assert dt.datetime.fromisoformat(got["due_at"]) == f.at(20, 10)
+    # two days on, at 6 pm office time on that working day (L-QUESTIONS.clock/5)
+    assert dt.datetime.fromisoformat(got["due_at"]) == f.at(20, 18)
     assert got["countdown"] == {"label": "2 days to answer", "variant": "normal"}
     assert (
         reads.reviewer_idea(db, cast["idea"]["idea_id"], cast["meera"]["id"], late)["panel"]["variant"]
         == "normal"
     )
-    assert clocks.run_due(db, f.at(19, 9))["reminded"] == 0
-    assert clocks.run_due(db, f.at(19, 10, 5))["reminded"] == 1  # a day before the new deadline
-    assert clocks.run_due(db, f.at(20, 8, 5))["reminded"] == 1  # and two hours before
+    assert clocks.run_due(db, f.at(19, 17))["reminded"] == 0
+    assert clocks.run_due(db, f.at(19, 18, 5))["reminded"] == 1  # a day before the new deadline
+    assert clocks.run_due(db, f.at(20, 16, 5))["reminded"] == 1  # and two hours before
 
 
 # ---- finding 12: one failing item never undoes the rest of the sweep, and the lock is let go --------------------
