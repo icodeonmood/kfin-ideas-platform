@@ -86,6 +86,27 @@ def test_S_R2_left_2_artefacts(db: Conn, page: dict[str, Any]) -> None:
     assert arts["own_words"]["title"] == "Kavya’s own words"
     assert arts["own_words"]["line"] == "As Kavya wrote them on Saturday, before the draft. Folio hidden."
     assert arts["similar_found"]["line"] == "1 found while Kavya wrote. Kavya kept it separate."
+    assert "versions" not in arts  # never changed since it was shared: no Draft history
+
+
+def test_S_R2_left_3_E_ENTITIES_draft_history_counts_the_shared_version_as_one(
+    db: Conn, page: dict[str, Any]
+) -> None:
+    idea = page["idea"]
+    db.execute(  # lane C's row for the version as shared, with nothing changed, then two edits
+        "INSERT INTO idea_versions (idea_uuid, n, changed_fields) VALUES (%s, 1, '{}'), (%s, 2, '{title}'), "
+        "(%s, 3, '{sorting}')",
+        (idea["id"], idea["id"], idea["id"]),
+    )
+    arts = {
+        a["kind"]: a for a in reads.reviewer_idea(db, idea["idea_id"], page["meera"]["id"], NOW)["artefacts"]
+    }
+    assert arts["versions"]["line"] == "3 versions. Title changed once, sorting confirmed."
+    db.execute("DELETE FROM idea_versions WHERE idea_uuid = %s AND n = 1", (idea["id"],))  # no row for it
+    again = reads.reviewer_idea(db, idea["idea_id"], page["meera"]["id"], NOW)["artefacts"]
+    assert next(a for a in again if a["kind"] == "versions")["line"] == (
+        "3 versions. Title changed once, sorting confirmed."
+    )
 
 
 def test_L_REVIEW_open_3_reviewers_read_the_masked_words(db: Conn, page: dict[str, Any]) -> None:
