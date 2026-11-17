@@ -407,3 +407,9 @@
   margin: 0;
   color: var(--mute);
 }
+/* "The page changed. Select again." under a text once its "Hide this" has gone (BLD-B247) */
+.ri-hide-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+}

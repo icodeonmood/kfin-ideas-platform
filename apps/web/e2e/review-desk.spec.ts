@@ -277,6 +277,24 @@ test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", asyn
   await expect(reviewer.page.getByRole("button", { name: /^Ask about / })).toHaveCount(0);
 });
 
+/** Ideas the "Hide this" test made. Removed after it with what a hide leaves behind: the sharer's Inbox item, the
+ * values sealed in the vault under the idea's hide scope (DRAFT-<uuid>), then the idea, whose rows go with it
+ * (BLD-B247). */
+const hideMade: string[] = [];
+test.afterEach(async () => {
+  if (!hideMade.length) return;
+  const refs = hideMade.splice(0);
+  await db(async (c) => {
+    const ids = (
+      await c.query<{ id: string }>("SELECT id::text AS id FROM ideas WHERE idea_id = ANY($1)", [refs])
+    ).rows.map((r) => r.id);
+    if (!ids.length) return;
+    await c.query("DELETE FROM notifications WHERE idea_uuid = ANY($1::uuid[])", [ids]);
+    await c.query("DELETE FROM pseudonym_vault WHERE scope_id = ANY($1)", [ids.map((id) => `DRAFT-${id}`)]);
+    await c.query("DELETE FROM ideas WHERE id = ANY($1::uuid[])", [ids]);
+  });
+});
+
 /** Select `words` inside the one text of a part that offers "Hide this", as a reviewer's drag would. */
 async function selectIn(p: Page, part: string, words: string) {
   await p
@@ -306,6 +324,7 @@ test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a name the checks missed,
     title,
     "Investors call the branch because the rejection SMS gives a code. Lakshmi Narayanan called four times.",
   );
+  hideMade.push(ideaId);
   const r = reviewer.page;
   await r.goto(`/desk/ideas/${ideaId}`);
   const problem = r.getByRole("region", { name: "The problem" });

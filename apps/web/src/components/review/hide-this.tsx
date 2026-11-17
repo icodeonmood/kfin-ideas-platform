@@ -6,10 +6,16 @@
  *
  * - Each text that is one stored source (the title, a part kept as one text, an answer, one of the sharer's messages)
  *   is a `Hideable`. When the reviewer selects words inside one, "Hide this" shows just under the end of the
- *   selection. It sits in the page right after that text, so from a keyboard selection (caret browsing: F7, then
- *   Shift and the arrow keys) Tab reaches it next; Escape closes it and gives focus back to the text.
- * - It posts the selection's UTF-16 offsets to lane C's route, which masks every copy and tells the sharer. On 200
- *   the page is read again, so every copy shows masked; a refusal shows in plain words under the button.
+ *   selection. It sits in the page right after that text, so Tab reaches it next; Escape closes it and gives focus
+ *   back to the text.
+ * - Keyboard (WCAG 2.1.1, 4.1.3; BLD-B247): each text is in the Tab order with a name ("The problem, text"); Shift
+ *   and an arrow (Home, End) selects in it, Enter or Alt+H moves to "Hide this", and the status region says "Hide
+ *   this is next. Press Tab." when it appears. Caret browsing (F7) works as before.
+ * - It is offered only while the text on the page is exactly the stored text it stands for (a CRLF the HTML parser
+ *   turned into LF would shift every offset after it).
+ * - It posts the selection's UTF-16 offsets and the selected masked words to lane C's route, which masks every copy
+ *   and tells the sharer. On 200 the page is read again, so every copy shows masked; a refusal shows in plain words
+ *   under the button; `stale` (the text changed under the selection) reads the page again and says so.
  */
 import { useRouter } from "next/navigation";
 import {
@@ -27,11 +33,16 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   HIDDEN_DONE,
+  HIDE_NEXT,
   HIDE_THIS,
+  HIDE_WORDS,
+  extendStep,
   hideBody,
   hideErrorWords,
   hideUrl,
+  opensHide,
   rangeOffsets,
+  type ExtendStep,
   type HideSource,
   type HideSourceKind,
 } from "@/lib/desk/hide";
@@ -43,13 +54,18 @@ interface Picked {
   source: HideSource;
   start: number;
   end: number;
+  selected: string;
 }
 
 interface HideState {
   picked: Picked | null;
   error: string | null;
+  /** A line left under a text once its button has gone ("The page changed. Select again."). */
+  notice: { key: string; text: string } | null;
   hide: () => void;
   close: () => void;
+  /** Tells the provider the stored text a host stands for; returns the undo. */
+  register: (key: string, text: string) => () => void;
 }
 
 const HideContext = createContext<HideState | null>(null);
@@ -66,14 +82,43 @@ function hostByKey(key: string): HTMLElement | null {
   return null;
 }
 
+/** Shift and an arrow inside a focused text: start a selection at its start (or end) if none is in it, extend it by
+ * `step`, and keep it inside the text. */
+function extendIn(host: HTMLElement, step: ExtendStep) {
+  const sel = document.getSelection();
+  const first = host.firstChild;
+  const last = host.lastChild;
+  if (!sel || !first || !last) return;
+  const lastLength = last.textContent?.length ?? 0;
+  const inside = sel.rangeCount > 0 && host.contains(sel.anchorNode) && host.contains(sel.focusNode);
+  if (!inside) {
+    if (step.direction === "forward") sel.collapse(first, 0);
+    else sel.collapse(last, lastLength);
+  }
+  sel.modify("extend", step.direction, step.granularity);
+  if (!host.contains(sel.focusNode) && sel.anchorNode) {
+    if (step.direction === "forward")
+      sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, last, lastLength);
+    else sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, first, 0);
+  }
+}
+
 /** Offers "Hide this" on the page's texts when `enabled` (the review desk and the Ones Committee, not on their own idea). */
 export function HideThisProvider({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   const router = useRouter();
   const [picked, setPicked] = useState<Picked | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
   const [done, setDone] = useState("");
   const busy = useRef(false);
   const current = useRef<Picked | null>(null);
+  const texts = useRef(new Map<string, string>());
+  const register = useCallback((key: string, text: string) => {
+    texts.current.set(key, text);
+    return () => {
+      if (texts.current.get(key) === text) texts.current.delete(key);
+    };
+  }, []);
   useEffect(() => {
     current.current = picked;
   }, [picked]);
@@ -88,7 +133,10 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       const sel = document.getSelection();
       const range = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null;
       const host = range ? hostOf(range.startContainer) : null;
-      const at = range && host && hostOf(range.endContainer) === host ? rangeOffsets(host, range) : null;
+      // offered only while the page shows exactly the stored text, so the offsets are the stored text's
+      const exact = host !== null && host.textContent === texts.current.get(host.dataset.hideKey ?? "");
+      const at =
+        range && host && exact && hostOf(range.endContainer) === host ? rangeOffsets(host, range) : null;
       const prev = current.current;
       if (!range || !host || !at) {
         if (prev) {
@@ -106,7 +154,8 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
         ...at,
       });
       setError(null);
-      setDone("");
+      setNotice(null);
+      if (!prev || prev.key !== d.hideKey) setDone(HIDE_NEXT); // said once as it appears, not on every key
     };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
@@ -130,6 +179,16 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       body: hideBody(picked.source, picked),
     }).then((res) => {
       busy.current = false;
+      if (!res.ok && res.error.code === "stale") {
+        // the text changed under the selection: read the page again and ask for a new selection (BLD-B247)
+        setPicked(null);
+        document.getSelection()?.removeAllRanges();
+        setNotice({ key: picked.key, text: HIDE_WORDS.stale });
+        setDone(HIDE_WORDS.stale);
+        hostByKey(picked.key)?.focus({ preventScroll: true });
+        router.refresh();
+        return;
+      }
       if (!res.ok) {
         setError(hideErrorWords(res.error.code));
         return;
@@ -144,8 +203,8 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
   }, [picked, router]);
 
   const value = useMemo<HideState | null>(
-    () => (enabled ? { picked, error, hide, close } : null),
-    [enabled, picked, error, hide, close],
+    () => (enabled ? { picked, error, notice, hide, close, register } : null),
+    [enabled, picked, error, notice, hide, close, register],
   );
   return (
     <HideContext.Provider value={value}>
@@ -159,23 +218,32 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
 
 type TextTag = "p" | "h1" | "span";
 
-/** One text the reviewer may hide words in: `text` must be exactly the stored text of `source` on idea `ideaId`. */
+/**
+ * One text the reviewer may hide words in: `text` must be exactly the stored text of `source` on idea `ideaId`.
+ * `name` is what a screen reader says when it takes focus ("The problem, text", `hideableName`); a heading keeps its
+ * own words as its name.
+ */
 export function Hideable({
   as: Tag = "p",
   className,
   ideaId,
+  name,
   source,
   text,
 }: {
   as?: TextTag;
   className?: string;
   ideaId: string;
+  name: string;
   source: HideSource | null;
   text: string;
 }) {
   const ctx = useContext(HideContext);
+  const key = source ? `${ideaId}|${source.kind}|${source.id}` : "";
+  const register = ctx?.register;
+  useEffect(() => (register && key ? register(key, text) : undefined), [register, key, text]);
   if (!ctx || !source) return <Tag className={className}>{text}</Tag>;
-  const key = `${ideaId}|${source.kind}|${source.id}`;
+  const heading = Tag === "h1";
   return (
     <>
       <Tag
@@ -184,11 +252,28 @@ export function Hideable({
         data-hide-idea={ideaId}
         data-hide-kind={source.kind}
         data-hide-id={source.id}
-        tabIndex={-1}
+        tabIndex={0}
+        {...(heading ? {} : { role: "group", "aria-label": name })}
+        onKeyDown={(e) => {
+          const step = extendStep(e);
+          if (step) {
+            e.preventDefault();
+            extendIn(e.currentTarget, step);
+            return;
+          }
+          if (opensHide(e) && ctx.picked?.key === key) {
+            e.preventDefault();
+            e.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button")?.focus();
+          }
+        }}
       >
         {text}
       </Tag>
-      {ctx.picked?.key === key ? <HideButton state={ctx} /> : null}
+      {ctx.picked?.key === key ? (
+        <HideButton state={ctx} />
+      ) : ctx.notice?.key === key ? (
+        <span className="meta ri-hide-note">{ctx.notice.text}</span>
+      ) : null}
     </>
   );
 }
