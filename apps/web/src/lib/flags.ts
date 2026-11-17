@@ -2,10 +2,9 @@
  * The S1 to S3 experiments (P-DECISIONS.experiments; BLD-C170 to C179), the part both sides share: the flags' names
  * and screens, the events a screen may log (codes only), the S1 interview's place, and the browser's two calls. The
  * server decides every variant (`server/flags.ts`) and hands it to the screen as a prop; the browser only says what it
- * rendered and what the person did, and never sends a word they typed or said.
+ * rendered and what the person did, and never sends a word they typed or said. No React here: the server reads this
+ * file too; the browser's calls are in `flags-client.ts`.
  */
-import { useEffect, useRef } from "react";
-
 export type FlagKey = "s1" | "s2" | "s3";
 export type Variant = "default" | "alternative";
 
@@ -84,43 +83,4 @@ export function placeFrom(rows: readonly { event: string; outcome: string }[]): 
     }
   }
   return place;
-}
-
-// ── the browser's calls: fire and forget, never in the way of the screen ────────────────────────────────────────
-
-function post(path: string, body: Record<string, unknown>): void {
-  try {
-    void fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      keepalive: true,
-      cache: "no-store",
-    }).catch(() => undefined);
-  } catch {
-    // logging never fails a screen
-  }
-}
-
-/** One deciding event, as codes. */
-export function flagEvent(
-  flag: FlagKey,
-  event: string,
-  outcome: string,
-  screen: string,
-  draftId?: string | null,
-): void {
-  post("/api/flags/events", { flag, event, outcome, screen, ...(draftId ? { draft_id: draftId } : {}) });
-}
-
-/** One exposure per page load, once `when` is true: the screen that differs for this flag was rendered. */
-export function useFlagExposure(flag: FlagKey, screen: string, when: boolean): void {
-  const sent = useRef<string | null>(null);
-  useEffect(() => {
-    if (!when) return;
-    const key = `${flag}:${screen}`;
-    if (sent.current === key) return;
-    sent.current = key;
-    post("/api/flags/exposure", { flag, screen });
-  }, [flag, screen, when]);
 }

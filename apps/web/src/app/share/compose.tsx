@@ -73,14 +73,13 @@ import {
   type Live,
 } from "@/lib/compose/live";
 import {
-  flagEvent,
   NO_INTERVIEW,
   nextQuestion,
-  useFlagExposure,
   type ComposeFlags,
   type InterviewPlace,
   type InterviewQuestion,
 } from "@/lib/flags";
+import { flagEvent, useFlagExposure } from "@/lib/flags-client";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
