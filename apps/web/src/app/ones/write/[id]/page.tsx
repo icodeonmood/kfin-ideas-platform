@@ -7,7 +7,22 @@ import { inviteView } from "@/server/ones";
 
 import { WriteForm } from "./write-form";
 
-export const metadata: Metadata = { title: "A few words for a One" };
+// No board draws this page (BLD-E042 keeps it; S-ONE's "Messages for you" reads what it saves)
+// NOT DRAWN (BLD-E044): HR sign-off
+const TITLE = "A few words for a One";
+// NOT DRAWN (BLD-E044): HR sign-off
+const NOT_OPEN = "This invitation isn't open, or isn't for you.";
+// NOT DRAWN (BLD-E044): HR sign-off
+const BACK_HOME = "Back to home";
+// NOT DRAWN (BLD-E044): HR sign-off
+const titleFor = (one: string) => `A few words for ${one}`;
+// NOT DRAWN (BLD-E044): HR sign-off
+const movingTo = (tier: string) =>
+  `They are moving to ${tier}. They'll read your message, with your name, when they see their new tier.`;
+// NOT DRAWN (BLD-E044): HR sign-off
+const SAVED = "Thank you. Your message is saved.";
+
+export const metadata: Metadata = { title: TITLE };
 export const dynamic = "force-dynamic";
 
 /** Where an invited colleague, the CEO or the committee writes a message for a One's tier change (DEC-084). */
@@ -19,22 +34,19 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!view) {
     return (
       <>
-        <h1>A few words for a One</h1>
+        <h1>{TITLE}</h1>
         <p className="notice">
-          This invitation isn&apos;t open, or isn&apos;t for you. <Link href="/">Back to home</Link>
+          {NOT_OPEN} <Link href="/">{BACK_HOME}</Link>
         </p>
       </>
     );
   }
   return (
     <>
-      <h1>A few words for {view.one_display}</h1>
-      <p className="lead">
-        They are moving to {view.tier_to_name}. They&apos;ll read your message, with your name, when they see
-        their new tier.
-      </p>
+      <h1>{titleFor(view.one_display)}</h1>
+      <p className="lead">{movingTo(view.tier_to_name)}</p>
       {view.written ? (
-        <p className="notice">Thank you. Your message is saved.</p>
+        <p className="notice">{SAVED}</p>
       ) : (
         <WriteForm proposalId={id} as={view.as ?? "peer"} />
       )}

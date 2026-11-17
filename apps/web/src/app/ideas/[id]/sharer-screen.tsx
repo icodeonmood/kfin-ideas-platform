@@ -23,7 +23,7 @@ import type { FileItem } from "@/lib/contracts/entities";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import { capital, decisionSentence, type Decided } from "./decision";
-import { BackLink, useWay } from "./parts";
+import { BackLink, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
 type OpenSet = NonNullable<SharerQuestionSetResponse>;
@@ -31,6 +31,7 @@ type OpenSet = NonNullable<SharerQuestionSetResponse>;
 const TRY_AGAIN = "We can't do that just now. Please try again in a minute.";
 // The decision's or the questions' part could not be read: Status.md draws no error line, so one neutral line
 // fits both (BLD-E012)
+// NOT DRAWN (BLD-E044): HR sign-off
 const PART_FAILED = "We can't load this just now. Please try again in a minute.";
 type SheetName = "hidden" | "fix";
 
@@ -399,7 +400,6 @@ export function SharerScreen({
   const router = useRouter();
   const { idea, page } = view;
   const [said, setSaid] = useState("");
-  const [copied, setCopied] = useState(false);
   const title = useRef<HTMLHeadingElement>(null);
   // After Withdraw or Restore the button that was pressed is gone: focus goes to the idea's title once the page in
   // its new state has rendered, and the status line says what happened
@@ -439,17 +439,6 @@ export function SharerScreen({
     router.refresh();
   };
 
-  const copyRef = () => {
-    void navigator.clipboard
-      ?.writeText(ref)
-      .then(() => {
-        setCopied(true);
-        setSaid("Reference copied");
-        window.setTimeout(() => setCopied(false), 2_500);
-      })
-      .catch(() => undefined);
-  };
-
   const restore = async (a: PostAction) => {
     setBusy(true);
     setFailed(false);
@@ -485,9 +474,7 @@ export function SharerScreen({
       <div className="ip-phone ip-ptop">
         <BackLink label={backLabel} to={crumb.to} />
         {/* PhoneStatus.md: the reference sits by the way back and copies itself */}
-        <button type="button" className="ip-copyref" aria-label={`Copy reference ${ref}`} onClick={copyRef}>
-          {copied ? "Reference copied" : ref}
-        </button>
+        <CopyRef value={ref} say={setSaid} />
       </div>
 
       <article className="ip-card" data-state={page.state} aria-labelledby="ip-title">
