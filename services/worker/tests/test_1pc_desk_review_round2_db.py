@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from core.db import Conn
-from desk import adapters, asking, committee, decide, merging, revise
+from desk import adapters, asking, clocks, committee, decide, merging, reads, revise
 from desk.store import Refused
 from tests import desk_fixtures as f
 
@@ -192,3 +192,32 @@ def test_L_INBOX_kinds_a_decision_goes_to_the_sharer_and_crew_a_reversal_to_the_
                              {"to": "not_picked", "note": "The SMS vendor is changing; this goes with the new one."},
                              f.at(17, 10))  # fmt: skip
     assert told[-1] == ("decision_reversed", [kavya, farhan["id"], meera])
+
+
+# ---- finding 7: a Not now that came back and was then merged shows the merge, not the old decision --------------
+def test_L_REVIEW_panel_merged_is_checked_before_an_old_decision(db: Conn, cast: dict[str, Any]) -> None:
+    ref, meera = cast["idea"]["idea_id"], cast["meera"]["id"]
+    decide.send(db, ref, meera, {"choice": "not_now", "reason": REASON, "return_in": "1m"}, f.at(16, 10))
+    back = f.at(17, 9, m=12)
+    assert clocks.return_due(db, back) == 1
+    theirs = f.idea(
+        db, cast["ravi"], title="Rejection SMS codes confuse investors", shared_at=f.at(14, 9, m=12)
+    )
+    merging.desk_merge(db, ref, meera, {"other_idea_id": theirs["idea_id"], "lead": "other", "team_up": True,
+                                        "note": MERGE_NOTE}, f.at(17, 10, m=12))  # fmt: skip
+    assert reads.reviewer_idea(db, ref, meera, f.at(17, 11, m=12))["panel"] == {"state": "merged"}
+
+
+# ---- finding 9: "You asked" only for the viewer's own questions ---------------------------------------------------
+def test_S_R2_left_3_another_reviewers_question_reads_with_their_first_name(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    _send(db, cast, by="anil")
+    ref = cast["idea"]["idea_id"]
+
+    def lines(viewer: str) -> list[str]:
+        page = reads.reviewer_idea(db, ref, cast[viewer]["id"], SENT)
+        return [q["asked_line"] for p in page["parts"] for q in p["questions"]]
+
+    assert lines("meera") == ["Anil asked, today 11:20 am"] * 2
+    assert lines("anil") == ["You asked, today 11:20 am"] * 2
