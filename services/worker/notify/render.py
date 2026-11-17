@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,6 +27,25 @@ COMMITTEE_KINDS = frozenset({"decision_reversed"})
 COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; the rest read "By Thu, 19 Nov"
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}
 SYSTEM = {"display": "1% Club", "name": "1% Club", "first_name": "1% Club", "initials": "1%", "system": True}
+# L-HIDE/7 (BLD-A205): a detail hidden by a reviewer comes from the review desk as a whole, shown with the mark. The
+# reviewer's name is never shown or sent, whoever the caller passed as the sender.
+AS_THE_DESK = frozenset({"detail_hidden_by_desk"})
+REVIEW_DESK = {
+    **SYSTEM,
+    "display": "The review desk",
+    "name": "The review desk",
+    "first_name": "The review desk",
+}
+# Kinds whose one action is the whole of it: no "Open the conversation" is added (L-HIDE/7: "Open your idea" only).
+ONE_ACTION_KINDS = frozenset({"detail_hidden_by_desk"})
+# A decision read from the idea when the item names none (`choice`, `decision_id`): its status says which.
+STATUS_CHOICE = {
+    "picked": "pick",
+    "being_built": "pick",
+    "shipped": "pick",
+    "not_now": "not_now",
+    "not_picked": "not_picked",
+}
 
 # The kind's own buttons when the caller gives none (L-INBOX.kinds "Reader action"). `to` keys are resolved for the
 # item's idea by `route`.
@@ -47,10 +65,9 @@ DEFAULT_ACTIONS: dict[str, list[dict[str, str]]] = {
     "comment": [{"label": "Open the conversation", "to": "conversation", "style": "primary"}],
     "draft_kept": [{"label": "Carry on", "to": "draft", "style": "primary"}],
     "sent_to_desk": [{"label": "Open the idea", "to": "idea", "style": "primary"}],
+    "detail_hidden_by_desk": [{"label": "Open your idea", "to": "idea", "style": "primary"}],
 }
 _STYLE_ORDER = {"text": 0, "line": 1, "primary": 2}
-_LINK_ONLY = re.compile(r"^\[([^\]\n]+)\]\(([^)\s]+)\)$")
-_LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
 
 
 def initials(name: str) -> str:
@@ -73,6 +90,8 @@ def person(conn: Conn, user_id: Any) -> dict[str, Any] | None:
 
 
 def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
+    if kind in AS_THE_DESK:
+        return dict(REVIEW_DESK)
     if who is None:
         return dict(SYSTEM)
     if kind in DESK_KINDS:
@@ -191,21 +210,48 @@ def _first_name_for_code(conn: Conn, code: str | None) -> str | None:
     return str(row["first_name"] or str(row["name"]).split()[0])
 
 
+def _left(row: dict[str, Any], now: dt.datetime) -> str:
+    """How long is left on a reminder, as it is read: "2 days", "5 hours". Once the time has passed, what was left
+    when it was sent."""
+    at = row.get("due_at")
+    if at is not None and at > now:
+        label = countdown(at, now)
+        return label[: -len(" left")] if label.endswith(" left") else label
+    hours = 24.0
+    if at is not None and row.get("created_at"):
+        hours = (at - row["created_at"]).total_seconds() / 3600
+    return "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
+
+
 def _kind_vars(
-    conn: Conn, kind: str, refs: dict[str, Any], row: dict[str, Any], viewer: str, idea: dict[str, Any] | None
+    conn: Conn,
+    kind: str,
+    refs: dict[str, Any],
+    row: dict[str, Any],
+    viewer: str,
+    idea: dict[str, Any] | None,
+    now: dt.datetime,
 ) -> dict[str, Any]:
     """The kind's facts, from the rows its IDs point to. Booleans drive the template's sections."""
     out: dict[str, Any] = {}
     if kind in ("questions", "answer_reminder"):
-        n, asker = 0, None
+        n, asker, qs = 0, None, None
+        count_sql = (
+            "SELECT s.id, s.by_user_id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
+        )
         if refs.get("set_id"):
             qs = conn.execute(
-                "SELECT s.by_user_id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
-                "FROM question_sets s WHERE s.id::text = %s",
-                (str(refs["set_id"]),),
+                count_sql + "FROM question_sets s WHERE s.id::text = %s", (str(refs["set_id"]),)
             ).fetchone()
-            if qs is not None:
-                n, asker = int(qs["n"]), person(conn, qs["by_user_id"])
+        elif idea is not None:  # an item that names no set: the idea's latest one sent
+            qs = conn.execute(
+                count_sql + "FROM question_sets s WHERE s.idea_uuid = %s AND s.sent_at IS NOT NULL "
+                "ORDER BY s.sent_at DESC LIMIT 1",
+                (idea["uuid"],),
+            ).fetchone()
+        if qs is not None:
+            n, asker = int(qs["n"]), person(conn, qs["by_user_id"])
+            out["set_id"] = str(qs["id"])
         if not n and isinstance(refs.get("count"), int):
             n = int(refs["count"])
         out["count"] = n
@@ -216,10 +262,7 @@ def _kind_vars(
             "possessive": _possessive(first) if first else "the review desk's",
         }
         if kind == "answer_reminder":
-            hours = 24.0
-            if row.get("due_at") and row.get("created_at"):
-                hours = (row["due_at"] - row["created_at"]).total_seconds() / 3600
-            out["left"] = "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
+            out["left"] = _left(row, now)
     elif kind == "decision":
         choice = refs.get("choice")
         if not choice and refs.get("decision_id"):
@@ -227,6 +270,12 @@ def _kind_vars(
                 "SELECT choice FROM idea_decisions WHERE id::text = %s", (str(refs["decision_id"]),)
             ).fetchone()
             choice = d["choice"] if d else None
+        if not choice and idea is not None:  # the idea's latest decision, else what its status says
+            d = conn.execute(
+                "SELECT choice FROM idea_decisions WHERE idea_uuid = %s ORDER BY at DESC LIMIT 1",
+                (idea["uuid"],),
+            ).fetchone()
+            choice = d["choice"] if d else STATUS_CHOICE.get(idea["status"])
         out["choice"] = {c: choice == c for c in ("pick", "not_now", "not_picked")}
     elif kind == "decision_reversed":
         decided = False
@@ -253,7 +302,11 @@ def _kind_vars(
                 other = _first_name_for_code(conn, code)
         out["other"] = {"possessive": _possessive(other)}
     elif kind == "teamup_request":
-        merge = refs.get("request") == "merge"
+        # Lane F says which in `request` ("teamup" or "merge"); an item that does not is a merge when it offers one.
+        offered = [str(a.get("op") or "") for a in (row.get("actions") or []) if isinstance(a, dict)]
+        merge = refs.get("request") == "merge" or (
+            "request" not in refs and any(op.rsplit(".", 1)[-1] == "merge" for op in offered)
+        )
         brought = refs.get("brought")
         out["request"] = {"merge": merge, "team_only": not merge}
         out["brought"] = {"any": bool(brought), "count": brought if isinstance(brought, int) else 0}
@@ -298,7 +351,7 @@ def variables(
             "idea": link(route("idea", idea, None)),
             "inbox": link("/inbox"),
         },
-        **_kind_vars(conn, kind, refs, row, viewer, idea),
+        **_kind_vars(conn, kind, refs, row, viewer, idea, now),
     }
     data["line"] = render_text(tpl.inbox.get("line", ""), data).strip()
     return tpl, data
@@ -322,7 +375,11 @@ def resolved_actions(row: dict[str, Any], idea: dict[str, Any] | None) -> list[d
     if out and not any(a["style"] == "primary" for a in out):
         out[-1]["style"] = "primary"
     ref = idea.get("ref") if idea is not None and idea["status"] != "draft" else None
-    if ref and not any(a.get("to", "").endswith("/conversation") for a in out):
+    if (
+        ref
+        and kind not in ONE_ACTION_KINDS
+        and not any(a.get("to", "").endswith("/conversation") for a in out)
+    ):
         out.append({"label": "Open the conversation", "to": f"/ideas/{ref}/conversation", "style": "line"})
     return sorted(out, key=lambda a: _STYLE_ORDER.get(str(a["style"]), 1))
 
@@ -343,6 +400,8 @@ def item(conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime) -> dict
     for key in ("set_id", "decision_id", "request_id", "merge_id", "window_id", "entry_id", "worth_id"):
         if refs.get(key):
             body[key] = str(refs[key])
+    if data.get("set_id") and "set_id" not in body:
+        body["set_id"] = data["set_id"]
     if "count" in data:
         body["count"] = data["count"]
     out: dict[str, Any] = {
@@ -373,39 +432,6 @@ def item(conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime) -> dict
     if d.get("any") and (needs or kind == "build_ask"):
         out["due"] = {"at": d["at"], "label": d["label"]}
     return out
-
-
-def notice(row: dict[str, Any], subject: str, text: str) -> dict[str, Any]:
-    """A message from the flows that have no Inbox kind of their own (you are a One, a tier change, The Ember):
-    shown as a note from 1% Club, its first link as the button (BLD-A202)."""
-    base = get_settings().app_base_url.rstrip("/")
-    paras = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
-    actions: list[dict[str, Any]] = []
-    kept: list[str] = []
-    for p in paras:
-        m = _LINK_ONLY.match(p)
-        if m and not actions:
-            href = m.group(2)
-            if href.startswith(base):
-                href = href[len(base) :] or "/"
-            if href.startswith("/"):
-                actions.append({"label": m.group(1), "to": href, "style": "primary"})
-                continue
-        if p.startswith("Hi ") and p.endswith(","):
-            continue
-        kept.append(_LINK.sub(lambda x: x.group(1), p).replace("**", ""))
-    return {
-        "id": str(row["id"]),
-        "kind": "notice",
-        "from": "system",
-        "line": subject,
-        "at": row["created_at"].isoformat(),
-        "unread": row.get("read_at") is None,
-        "needs_you": False,
-        "archived": row.get("archived_at") is not None,
-        "body": {"heading": "From 1% Club", "note": "", "sender": "1% Club", "paragraphs": kept},
-        "actions": actions,
-    }
 
 
 def email(conn: Conn, row: dict[str, Any], now: dt.datetime | None = None) -> email_html.Email:
