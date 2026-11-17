@@ -721,3 +721,54 @@ def test_a_api_errors_have_the_conventions_shape() -> None:
         }
     }
     assert NotFound().status == 404
+
+
+class _NoQuestions:
+    """A connection whose only answer is "no question set": `edit.window` asks for one and nothing else."""
+
+    def execute(self, *_args: Any) -> Any:
+        class _Rows:
+            def fetchone(self) -> None:
+                return None
+
+        return _Rows()
+
+
+@pytest.mark.parametrize("status", ["picked", "not_now", "not_picked", "withdrawn", "merged", "shipped"])
+def test_s06b_a_closed_window_always_has_a_line(status: str) -> None:
+    """S-06B, L-SUBMIT.edit/5 (review of c/s06b): an idea that has moved on without the desk opening it, reached by
+    its edit address, still gets the NOT DRAWN closed line, so the page never shows an empty status."""
+    from submit import edit
+
+    shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
+    idea = {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "status": status,
+        "opened_at": None,
+        "edit_closes_at": shared + dt.timedelta(days=3),
+    }
+    w = edit.window(_NoQuestions(), idea, shared + dt.timedelta(hours=1))  # type: ignore[arg-type]
+    assert w["open"] is False
+    assert w["line"] == (
+        "The time for changes has ended, so the idea itself can’t be changed now. Write to the review desk in the "
+        "conversation."
+    )
+    open_idea = {**idea, "status": "with_review_desk"}
+    assert "line" not in edit.window(_NoQuestions(), open_idea, shared + dt.timedelta(hours=1))  # type: ignore[arg-type]
+
+
+def test_s06b_files_are_named_by_their_ids_only() -> None:
+    """BLD-C161: Save's `files` takes attachment IDs only; anything else is refused before the database is asked."""
+    from submit import edit
+    from submit.errors import Refused
+
+    assert edit._file_ids({"added": ["ATT-2026-000123", "ATT-2026-000123"]}, "added") == ["ATT-2026-000123"]
+    assert edit._file_ids({}, "removed") == []
+    for bad in (
+        {"added": "ATT-2026-000123"},
+        {"added": ["x"]},
+        {"added": [1]},
+        {"added": ["ATT-2026-1"] * 101},
+    ):
+        with pytest.raises(Refused):
+            edit._file_ids(bad, "added")

@@ -141,7 +141,8 @@ export function editPage(me: CurrentUser, ideaId: string) {
   return relay(withUser(`/internal/ideas/${encodeURIComponent(ideaId)}/edit`, me), "GET");
 }
 
-/** The edit page's Save: any of title, summary, often, sorting, fix, helpers (A-API `PATCH /ideas/:id`). */
+/** The edit page's Save: any of title, summary, often, sorting, fix, helpers, and the files it added or removed
+ * (A-API `PATCH /ideas/:id`; `files`, BLD-C161). */
 export function saveEdit(me: CurrentUser, ideaId: string, body: unknown) {
   if (!isKey(ideaId)) return Promise.resolve(badKey());
   return relay(withUser(`/internal/ideas/${encodeURIComponent(ideaId)}/edit`, me), "PATCH", body);

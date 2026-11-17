@@ -769,6 +769,9 @@ export interface IdeaPatch {
   sorting?: SortingPatch;
   fix?: FixRequest | null;
   helpers?: HelpersRequest;
+  /** S-06B (BLD-C161): the files and links the edit page added or removed since it was loaded or last saved. They
+   * acted at once; Save records them in the version (`changed_fields` gets `files`). Attachment IDs only. */
+  files?: { added: string[]; removed: string[] };
 }
 export interface IdeaVersion {
   n: number;

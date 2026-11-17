@@ -4,7 +4,7 @@
    first; a question set already sent closes it too (the desk has started on it). Save is refused once it closes:
    "The review desk has just opened it, so it can’t be changed now. …" with when it was opened (`/5`, V-FIELDS/15).
 2. One page, nothing changes for anyone until Save (`/2`): `GET` gives the page, `PATCH` saves any of title,
-   summary, how often, sorting, fix and who would help. After Save: "Saved. The review desk will see the latest
+   summary, how often, sorting, fix and who would help, and records the files the page added or removed. After Save: "Saved. The review desk will see the latest
    version."
 3. Each save re-runs hidden-detail detection on the new text before it is stored (DEC-103: the masked copy is what
    is kept; the words as typed are sealed for the sharer alone), and similar-idea matching when the summary changed
@@ -12,6 +12,8 @@
    writes no hidden-detail or sealed rows (BLD-C141).
 4. Each save is a version (`/4`): `idea_versions` holds the changed fields and, sealed, each one's value before and
    after, so the review desk can see what changed. The idea as shared is version 1; the first save is version 2.
+   Files and links go in, or out, at once (each is checked as it lands), and the page tells Save which it added or
+   removed since it was loaded, so the version records them as `files` (BLD-C161).
 5. Empty optional parts carry a prompt with the closing date (`/6`).
 
 A save is the sharer's action on their idea: `audit_log` gets it with the version and the field names only.
@@ -20,6 +22,7 @@ A save is the sharer's action on their idea: `audit_log` gets it with the versio
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Any
 
 from core.crypto import CryptoError, decrypt_json, encrypt_json
@@ -40,7 +43,10 @@ FIELD_WORDS = {
     "sorting": "Sorting",
     "fix": "Your fix",
     "helpers": "Who would help",
+    "files": "Files",
 }
+ATT_ID = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
+FILES_MAX = 100
 # The review desk and the Ones Committee, as `similar.preview` and lane B's desk read them (DEC-104): E-ENUMS.roles
 # `reviewer` and `committee`, and the committee's older `core_committee` and `core_chair` until lane E retires them.
 STAFF_ROLES = DESK_ROLES
@@ -73,8 +79,11 @@ def window(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]
             f"The review desk opened it on {day(opened, now)}, so the idea itself can’t be changed now. "
             "Write to them in the conversation."
         )
-    elif idea["status"] in ("checking", "with_review_desk"):
-        out["line"] = (  # NOT DRAWN: the window ran out, or questions came, before the desk opened it
+    elif not is_open:
+        # NOT DRAWN: the window ran out, or questions came, before the desk opened it; or the idea has moved on
+        # without the desk opening it (decided, withdrawn, merged, shipped) and was reached by its address. A closed
+        # window always has a line, so the page never shows an empty status.
+        out["line"] = (
             "The time for changes has ended, so the idea itself can’t be changed now. Write to the review desk in "
             "the conversation."
         )
@@ -326,6 +335,57 @@ def _save_fix(s: _Save, body: dict[str, Any], code: str) -> None:
         s.changed("fix", before, after)
 
 
+def _file_ids(raw: dict[str, Any], key: str) -> list[str]:
+    value = raw.get(key, [])
+    if (
+        not isinstance(value, list)
+        or len(value) > FILES_MAX
+        or not all(isinstance(x, str) and ATT_ID.match(x) for x in value)
+    ):
+        raise Refused(400, "body_required", "Something went wrong. Try again.", "files")
+    return list(dict.fromkeys(value))
+
+
+def _save_files(s: _Save, body: dict[str, Any]) -> None:
+    """`files: {added, removed}`: the files and links the edit page added or removed since it was loaded or last
+    saved. They acted at once (BLD-C161); this save records them in the version, so the review desk's history shows
+    them and a save that changed only files is not "Nothing has changed.". Only IDs that hold up count: an added one
+    is on this idea now, a removed one is gone and its removal from this idea is in `audit_log` (`file.removed`).
+    The version keeps IDs only, never a name."""
+    raw = body.get("files")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        raise Refused(400, "body_required", "Something went wrong. Try again.", "files")
+    asked_added, asked_removed = _file_ids(raw, "added"), _file_ids(raw, "removed")
+    added: list[str] = []
+    if asked_added:
+        rows = s.conn.execute(
+            "SELECT id FROM attachments WHERE idea_uuid = %s AND id = ANY(%s) AND parent_id IS NULL "
+            "AND answer_id IS NULL AND conversation_entry_id IS NULL AND state <> 'rejected'",
+            (s.uid, asked_added),
+        ).fetchall()
+        here = {str(r["id"]) for r in rows}
+        added = [x for x in asked_added if x in here]
+    removed: list[str] = []
+    if asked_removed:
+        rows = s.conn.execute(
+            "SELECT DISTINCT after->>'file_id' AS id FROM audit_log WHERE entity = %s AND action = 'file.removed' "
+            "AND after->>'file_id' = ANY(%s)",
+            (f"idea:{s.uid}", asked_removed),
+        ).fetchall()
+        gone = {str(r["id"]) for r in rows}
+        still = {
+            str(r["id"])
+            for r in s.conn.execute(
+                "SELECT id FROM attachments WHERE id = ANY(%s)", (asked_removed,)
+            ).fetchall()
+        }
+        removed = [x for x in asked_removed if x in gone and x not in still]
+    if added or removed:
+        s.changed("files", {"removed": removed}, {"added": added})
+
+
 def save(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> dict[str, Any]:
     """`PATCH /ideas/:id` (the edit page's Save) → the new version and the words S-06B shows after Save."""
     if not isinstance(body, dict):
@@ -355,6 +415,7 @@ def save(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> 
         _save_texts(s, body)
         _save_helpers(s, body, li)
         _save_fix(s, body, code)
+        _save_files(s, body)
         if isinstance(body.get("sorting"), dict):
             before = sorting.current(conn, idea, li)
             sorting.apply(conn, idea, dict(body["sorting"]), phase="edit", now=now, li=li)

@@ -612,6 +612,53 @@ def test_l_submit_edit_4_each_save_is_a_version(world: dict[str, Any]) -> None:
     assert audit["after"] == {"version": 2, "fields": ["title", "sorting", "fix"]}
 
 
+def test_l_submit_edit_4_files_the_edit_page_added_or_removed_are_a_version(world: dict[str, Any]) -> None:
+    """S-06B, BLD-C161 (review of c/s06b): files and links act at once; Save records the ones the page added or
+    removed, so a save that changed only files makes a version and never reads "Nothing has changed.". IDs that do
+    not hold up (not on this idea, or still there) count for nothing, and the version keeps IDs only."""
+    from attachments import files as F
+
+    conn, asha = world["conn"], world["p"]["asha"]
+    ref = _shared(world)
+    later = NOW + dt.timedelta(hours=2)
+    kept = F.accept_link(conn, user_id=asha, url="https://intranet.kfintech.example/codes", idea_id=ref)
+    gone = F.accept_link(conn, user_id=asha, url="https://intranet.kfintech.example/calls", idea_id=ref)
+    F.remove(conn, gone["id"], asha)
+    out = edit.save(
+        conn,
+        ref,
+        asha,
+        {
+            "declaration_version": DECLARATION_VERSION,
+            "files": {"added": [kept["id"], "ATT-2026-999999"], "removed": [gone["id"], "ATT-2026-999998"]},
+        },
+        now=later,
+    )
+    assert out["message"] == "Saved. The review desk will see the latest version."
+    assert out["version"]["n"] == 2 and out["changed_fields"] == ["files"]
+    history = edit.versions(conn, ref, world["p"]["ravi"], now=later)
+    assert history["items"][1]["label"] == "Changed: files"
+    assert history["items"][1]["after"] == {"files": {"added": [kept["id"]]}}
+    assert history["items"][1]["before"] == {"files": {"removed": [gone["id"]]}}
+    again = edit.save(
+        conn,
+        ref,
+        asha,
+        {"declaration_version": DECLARATION_VERSION, "files": {"added": [], "removed": [kept["id"]]}},
+        now=later,
+    )
+    assert again["version"] is None and again["message"] == "Nothing has changed."
+    with pytest.raises(Refused) as err:
+        edit.save(
+            conn,
+            ref,
+            asha,
+            {"declaration_version": DECLARATION_VERSION, "files": {"added": ["x"]}},
+            now=later,
+        )
+    assert err.value.field == "files"
+
+
 def test_l_submit_edit_4_only_a_live_grant_reads_the_history(world: dict[str, Any]) -> None:
     """BLD-C087: a grant that has ended, or not started, reads nothing; the Ones Committee's does."""
     conn, p = world["conn"], world["p"]
