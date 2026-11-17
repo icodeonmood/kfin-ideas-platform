@@ -566,12 +566,27 @@ export interface WorthRequest {
   area?: string;
   note?: string;
 }
+/** One measure as the worker writes it (`desk.worth.Range.as_json`): `high` is null for a single figure. */
+export interface WorthFigure {
+  low: number;
+  high: number | null;
+  text: string; // "70 to 150 hours a month"
+}
+/** `desk.worth.Worth.as_json`: only the measures given, and outside tools when chosen. */
+export interface WorthFigures {
+  hours_month?: WorthFigure;
+  cost_month?: WorthFigure;
+  revenue_month?: WorthFigure;
+  outside_tools?: OutsideTools;
+}
+/** PUT /desk/ideas/:id/worth (`revise.revise_worth`): the sharer's figures and the revision that now counts, with
+ * its note (masked), who revised it and when. Pinned against services/worker/desk/worth_response_sample.json. */
 export interface WorthResponse {
   idea_id: string;
   worth_id: number;
   tiles: WorthTile[];
-  sharer: DeskPerson;
-  reviewer: DeskPerson & { note: string | null; by: DeskPerson; at: IsoDate };
+  sharer: WorthFigures;
+  reviewer: WorthFigures & { note: string | null; by: DeskPerson; at: IsoDate };
   kind: Kind;
   area: string | null;
 }
