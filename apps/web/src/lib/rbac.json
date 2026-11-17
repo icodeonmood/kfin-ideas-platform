@@ -42,6 +42,10 @@
     "veto_desk_decision": {
       "core_committee": "yes"
     },
+    "hide_for_desk": {
+      "reviewer": "yes",
+      "core_committee": "yes"
+    },
     "open_attachments": {
       "contributor": "as_idea"
     },
@@ -180,6 +184,10 @@
     "speech.hosted": [
       "infosec"
     ],
+    "files.blackout": [
+      "admin",
+      "infosec"
+    ],
     "desk.listen": [
       "admin",
       "infosec"
@@ -202,6 +210,8 @@
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
+    "GET /api/me/refer-as                              signed_in",
+    "PUT /api/me/refer-as                              signed_in",
     "POST /api/me/app-news                             signed_in",
     "GET /api/inbox                                    signed_in",
     "GET /api/inbox/counts                             signed_in",
@@ -240,6 +250,9 @@
     "POST /api/review/items/{id}/action                work_review_queue veto_desk_decision",
     "GET /api/review/desk-decisions                    view_review_queue",
     "POST /api/review/items/{id}/veto                  veto_desk_decision",
+    "POST /api/desk/ideas/{id}/hide                    hide_for_desk",
+    "POST /api/drafts/{id}/hidden/{hid}/show           submit",
+    "POST /api/drafts/{id}/hidden/{hid}/hide           submit",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",

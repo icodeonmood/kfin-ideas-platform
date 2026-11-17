@@ -68,12 +68,15 @@ test("C-BUTTON.states/4–5: disabled stays focusable; busy says so and keeps it
   await disabled.focus();
   await expect(disabled).toBeFocused();
 
+  // Layout width, not boundingBox: the press scales the button to 0.97 and eases back (F-MOTION.inside), and a
+  // bounding box read mid-ease is up to 1.2 px narrow on a phone though the button's own width never changed.
+  const layoutWidth = (el: Element) => parseFloat(getComputedStyle(el).width);
   const send = page.getByRole("button", { name: "Send it" });
-  const before = (await send.boundingBox())!.width;
+  const before = await send.evaluate(layoutWidth);
   await send.click();
   const busy = page.getByRole("button", { name: "Sending…" });
   await expect(busy).toHaveAttribute("aria-busy", "true");
-  expect(Math.abs((await busy.boundingBox())!.width - before)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await busy.evaluate(layoutWidth)) - before)).toBeLessThanOrEqual(1);
 });
 
 test("C-FIELD.rules/2–4 and C-FIELD-MSG: the message shows under the field on blur and goes when fixed", async ({

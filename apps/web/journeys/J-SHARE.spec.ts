@@ -230,7 +230,7 @@ step(
   "J-SHARE/5",
   "S-04B",
   "Adds a detail: it goes into the conversation and the draft updates",
-  { needs: ["S-04B", "C-DRAFT-PANEL", "L-DRAFT"] },
+  { needs: ["S-04B", "C-DRAFT-PANEL", "L-DRAFT"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await signInAsFresh(page, SENDER);
     await page.goto(need("draft", "J-SHARE/4"));
@@ -249,7 +249,7 @@ step(
   "J-SHARE/6",
   "S-04B",
   "Move to Review once the six parts are in: it slides on to Check it, part 1",
-  { needs: ["S-04B", "S-05", "C-DRAFT-PANEL", "L-DRAFT"] },
+  { needs: ["S-04B", "S-05", "C-DRAFT-PANEL", "L-DRAFT"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await signInAsFresh(page, SENDER);
     const draft = need("draft", "J-SHARE/4");
@@ -269,7 +269,7 @@ step(
   "J-SHARE/7",
   "S-05",
   "Part 1, Is this how you'd put it?: the title and parts from their words, the hidden detail, Looks right",
-  { needs: ["S-05", "C-HIDDEN", "L-DRAFT", "L-HIDE"] },
+  { needs: ["S-05", "C-HIDDEN", "L-DRAFT", "L-HIDE"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await openPart(page, "Your words");
     await expect(page.getByRole("heading", { level: 1, name: "Is this how you’d put it?" })).toBeVisible();
@@ -296,7 +296,7 @@ step(
   "J-SHARE/8",
   "S-05",
   "Part 2, Is it sorted right?: suggestions until confirmed; Confirm sorting records it",
-  { needs: ["S-05", "L-SORT"] },
+  { needs: ["S-05", "L-SORT"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await openPart(page, "Sorting");
     await expect(page.getByRole("heading", { level: 1, name: "Is it sorted right?" })).toBeVisible();
@@ -320,7 +320,7 @@ step(
   "J-SHARE/9",
   "S-05",
   "Part 3, Has someone raised this already?: similar ideas or none, and Next keeps theirs separate",
-  { needs: ["S-05", "C-SIMGRID", "L-SIMILAR"] },
+  { needs: ["S-05", "C-SIMGRID", "L-SIMILAR"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await openPart(page, "Similar ideas");
     await expect(
@@ -341,7 +341,7 @@ step(
   "J-SHARE/10",
   "S-05",
   "Parts 4 to 6 are optional: Skip for now through proof, fix and who would help, to Send it",
-  { needs: ["S-05", "L-HIDE"] },
+  { needs: ["S-05", "L-HIDE"], after: ["J-SHARE/4"] },
   async ({ page }) => {
     await openPart(page, "Proof");
     await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
@@ -361,7 +361,7 @@ step(
   "J-SHARE/11",
   "S-05",
   "Part 7, Ready to send?: the title from part 1, the declaration, Submit creates the idea",
-  { needs: ["S-05", "L-SUBMIT", "S-06"] },
+  { needs: ["S-05", "L-SUBMIT", "S-06"], after: ["J-SHARE/4", "J-SHARE/7"] },
   async ({ page }) => {
     await openPart(page, "Send it");
     await expect(page.getByRole("heading", { level: 1, name: "Ready to send?" })).toBeVisible();
@@ -387,7 +387,7 @@ step(
   "J-SHARE/12",
   "S-06",
   "Just shared: the reference, the title, when the desk looks, and the edit window",
-  { needs: ["S-06", "C-TRACK", "L-SUBMIT"] },
+  { needs: ["S-06", "C-TRACK", "L-SUBMIT"], after: ["J-SHARE/7", "J-SHARE/11"] },
   async ({ page }) => {
     await signInAsFresh(page, SENDER);
     const idea = need("idea", "J-SHARE/11");
