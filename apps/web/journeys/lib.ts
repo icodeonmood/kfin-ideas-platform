@@ -75,6 +75,7 @@ export const CLUB = {
   hemant: "SYN-10022",
   indira: "SYN-10023",
   jatin: "SYN-10024",
+  kiran: "SYN-10025", // K1's sharer; the review desk asks first (lane E, 34249f1)
 } as const;
 export type Person = keyof typeof CLUB;
 
@@ -141,6 +142,13 @@ export const SEED = {
   G1: { title: "Investors cannot download old account statements", changedBy: null }, // not now 2 days ago
   J1: { title: "Co-branded investor webinars with distributors", changedBy: null }, // picked 38 days ago
   N1: { title: "Rejection codes confuse investors at the counter", changedBy: null }, // draft merged into T7
+  // Lane E's e/seed-more-4 (34249f1): records of their own for steps that were GAP-SEED.
+  K1: { title: "Investors are sent to the wrong branch for their AMC", changedBy: "J-REVIEW" }, // to review, never opened; Lavanya's How often question queued, not sent
+  F2: { title: "Change of bank waits for a cancelled cheque by post", changedBy: "J-REVIEW" }, // with Lavanya, opened; lists J2 as similar; leads a desk merge (shared first)
+  J2: { title: "Clients wait a week for a bank change to go through", changedBy: "J-REVIEW" }, // with Lavanya, opened; lists F2 as similar
+  N2: { title: "Branch staff see no reason when a SIP debit bounces", changedBy: "J-SIMILAR" }, // draft, check:6, merge request waiting on Rekha
+  G2: { title: "Failed SIP debit notes show only a bank code", changedBy: "J-SIMILAR" }, // draft, check:6, merge request waiting on Rekha
+  I2: { title: "Returned dividend letters go back to old addresses", changedBy: null }, // draft from a forwarded email, not opened; Inbox "kept your draft"
 } as const satisfies Record<string, { title: string; changedBy: JourneyId | readonly JourneyId[] | null }>;
 export type SeedKey = keyof typeof SEED;
 
@@ -192,15 +200,14 @@ export const FORCE_FIXME: Readonly<Record<string, string>> = {
 
 const WEB = path.resolve(__dirname, "..");
 const REPO = path.resolve(WEB, "..", "..");
-const TEST_DIRS = [
-  path.join(WEB, "e2e"),
-  path.join(WEB, "tests"),
-  path.join(REPO, "services", "worker", "tests"),
-];
+const E2E_DIRS = [path.join(WEB, "e2e")];
+const TEST_DIRS = [...E2E_DIRS, path.join(WEB, "tests"), path.join(REPO, "services", "worker", "tests")];
 
-let corpus: string | undefined;
-function testCorpus(): string {
-  if (corpus !== undefined) return corpus;
+const corpora = new Map<string, string>();
+function corpusOf(dirs: readonly string[]): string {
+  const key = dirs.join("|");
+  const cached = corpora.get(key);
+  if (cached !== undefined) return cached;
   const parts: string[] = [];
   const walk = (dir: string) => {
     if (!fs.existsSync(dir)) return;
@@ -210,20 +217,26 @@ function testCorpus(): string {
       else if (/\.(ts|tsx|py)$/.test(entry.name)) parts.push(fs.readFileSync(p, "utf8"));
     }
   };
-  TEST_DIRS.forEach(walk);
-  corpus = parts.join("\n");
+  dirs.forEach(walk);
+  const corpus = parts.join("\n");
+  corpora.set(key, corpus);
   return corpus;
 }
 
-/** A module is on main once a test outside this suite names it ("S-05", "L-SORT", "S-R2.panel/3"…). `P-` modules
- * are product rules, not code (P-ROUTES.state is kept by the screens that use it), so they never hold a step back. */
+/**
+ * A module is on main once a test outside this suite names it ("L-SORT", "S-R2.panel/3"…). A screen (`S-`) counts
+ * only when an end-to-end test in apps/web/e2e names it: back-end and unit tests name the screens their data serves
+ * before the screen is drawn (BLD-G003). `P-` modules are product rules, not code (P-ROUTES.state is kept by the
+ * screens that use it), so they never hold a step back.
+ */
 export function onMain(id: string): boolean {
   if (id in FORCE_FIXME) return false;
   if (id.startsWith("P-")) return true;
   const base = id.split(".")[0]!;
+  const corpus = corpusOf(id.startsWith("S-") ? E2E_DIRS : TEST_DIRS);
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
-  return base === id ? exact.test(testCorpus()) : exact.test(testCorpus()) || onMain(base);
+  return base === id ? exact.test(corpus) : exact.test(corpus) || onMain(base);
 }
 
 // --- Steps -------------------------------------------------------------------------------------------------------------
@@ -237,7 +250,12 @@ export type StepOptions = {
   changes?: readonly SeedKey[];
   /** The seed has no record at the stage this step needs: fixme "GAP-SEED", and lane G tells lane E. */
   gapSeed?: string;
+  /** Earlier steps of the same journey this one takes data from (a draft, a URL): fixme while any of them is. */
+  after?: readonly StepRef[];
 };
+
+/** Steps collected as fixme so far, for `after`. Specs collect in file order, so an earlier step is already here. */
+const FIXME_REFS = new Set<StepRef>();
 
 export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) => Promise<void>;
 
@@ -257,16 +275,18 @@ export function step(ref: StepRef, screen: string, title: string, opts: StepOpti
     }
   }
   const name = `${ref} ${screen} · ${title}`;
-  if (opts.gapSeed) {
-    test.fixme(name, { annotation: { type: "fixme", description: `GAP-SEED: ${opts.gapSeed}` } }, () => {});
-    return;
-  }
+  const fixme = (description: string) => {
+    FIXME_REFS.add(ref);
+    test.fixme(name, { annotation: { type: "fixme", description } }, () => {});
+  };
+  if (opts.gapSeed) return fixme(`GAP-SEED: ${opts.gapSeed}`);
   const missing = opts.needs.filter((m) => !onMain(m));
   if (missing.length) {
     const why = missing.map((m) => (m in FORCE_FIXME ? `${m} (${FORCE_FIXME[m]})` : m)).join(", ");
-    test.fixme(name, { annotation: { type: "fixme", description: `not on main: ${why}` } }, () => {});
-    return;
+    return fixme(`not on main: ${why}`);
   }
+  const waiting = (opts.after ?? []).filter((r) => FIXME_REFS.has(r));
+  if (waiting.length) return fixme(`waits for ${waiting.join(", ")}`);
   test(
     name,
     { annotation: { type: "needs", description: opts.needs.join(", ") } },
