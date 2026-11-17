@@ -347,6 +347,19 @@ def idea_page_view(idea_id: str, view: str, mode: str, user_id: str) -> JSONResp
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
+@app.get("/internal/ideas/{idea_key}/preview", dependencies=[Depends(require_token)])
+def idea_preview_view(idea_key: str, user_id: str, compare_with: str | None = None) -> JSONResponse:
+    """IdeaPreview (A-API.idea-preview, BLD-C090). The web app vouches for who is asking; the worker reads their
+    contributor codes and desk or committee grants itself."""
+    from similar.preview import Viewer, idea_preview
+
+    with connect(autocommit=True) as conn:
+        out = idea_preview(conn, idea_key, viewer=Viewer.of(conn, user_id), compare_with=compare_with or None)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
 # --- The Ones (DEC-034 to DEC-087). The web app checks the capability and passes who is acting; the worker checks
 # the person's grants again. Refusals answer with a code; text is never echoed or logged.
 
