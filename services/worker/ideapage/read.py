@@ -168,9 +168,11 @@ def shows_name(p: dict[str, Any] | None) -> bool:
 # --- Lane B's tables, read only: the decision, its window and reversal; questions and answers ----------------------
 
 
-def decision(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
-    """The latest decision on an idea with its committee window and any reversal (L-DECIDE, L-COMMITTEE). The
-    reason and the note are the words the sharer reads word for word (L-DECIDE.rules/3)."""
+def decision(conn: Conn, idea_uuid: str, *, with_text: bool = False) -> dict[str, Any] | None:
+    """The latest decision on an idea with its committee window and any reversal (L-DECIDE, L-COMMITTEE), for the
+    track's dates and the list's rows. The decision itself, its reason and the window are lane B's to show on the
+    idea page (`GET /ideas/:id/decision`); the reason and the committee's note are opened only with `with_text`,
+    which only My ideas asks for (S-07.rows: "the reason in one line", the sharer's own idea)."""
     r = conn.execute(
         "SELECT d.*, w.id AS window_id, w.state AS window_state, w.opens_at, w.closes_at, w.max_closes_at, "
         "w.extended_times, v.id AS reversal_id, v.to_choice, v.note_encrypted, v.by_user_id AS reversed_by, "
@@ -183,17 +185,21 @@ def decision(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
     if r is None:
         return None
     d = dict(r)
-    d["reason"] = open_text("idea_decisions", "reason_encrypted", str(d["id"]), d.pop("reason_encrypted"))
+    reason = d.pop("reason_encrypted")
     note = d.pop("note_encrypted")
+    d["reason"] = open_text("idea_decisions", "reason_encrypted", str(d["id"]), reason) if with_text else None
     d["note"] = (
-        open_text("decision_reversals", "note_encrypted", str(d["reversal_id"]), note) if note else None
+        open_text("decision_reversals", "note_encrypted", str(d["reversal_id"]), note)
+        if with_text and note
+        else None
     )
     return d
 
 
 def question_set(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
-    """The latest set the desk sent (never a queued one, which only the reviewer sees), with its questions and
-    how many have a sent answer. Read only: opening S-06 does not mark it seen (that is S-R3's read)."""
+    """The latest set the desk sent (never a queued one, which only the reviewer sees): its state, who asked, when,
+    how many questions and which have a sent answer. Counts and dates only: the questions card and the answers are
+    lane B's (`GET /ideas/:id/question-set`, C-QCARD). Reading it does not mark it seen (that is S-R3's read)."""
     row = conn.execute(
         "SELECT * FROM question_sets WHERE idea_uuid = %s AND state <> 'queued' "
         "ORDER BY sent_at DESC NULLS LAST, created_at DESC LIMIT 1",
@@ -202,42 +208,24 @@ def question_set(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
     if row is None:
         return None
     s = dict(row)
-    qs = []
-    for q in conn.execute(
-        "SELECT q.id, q.seq, q.part, q.text_encrypted, a.sent_at AS answered_at FROM questions q "
-        "LEFT JOIN answers a ON a.question_id = q.id WHERE q.set_id = %s ORDER BY q.seq",
-        (s["id"],),
-    ).fetchall():
-        qs.append(
-            {
-                "id": str(q["id"]),
-                "n": int(q["seq"]),
-                "part": str(q["part"]),
-                "text": open_text("questions", "text_encrypted", str(q["id"]), q["text_encrypted"]) or "",
-                "answered": q["answered_at"] is not None,
-            }
-        )
-    s["questions"] = qs
+    s["questions"] = [
+        {
+            "id": str(q["id"]),
+            "n": int(q["seq"]),
+            "part": str(q["part"]),
+            "answered": q["answered_at"] is not None,
+        }
+        for q in conn.execute(
+            "SELECT q.id, q.seq, q.part, a.sent_at AS answered_at FROM questions q "
+            "LEFT JOIN answers a ON a.question_id = q.id WHERE q.set_id = %s ORDER BY q.seq",
+            (s["id"],),
+        ).fetchall()
+    ]
     return s
 
 
-def answers_by_part(conn: Conn, idea_uuid: str) -> dict[str, list[dict[str, Any]]]:
-    """Answers the sharer sent, under the part each was added to (L-QUESTIONS.answer/5). Masked copies."""
-    out: dict[str, list[dict[str, Any]]] = {}
-    for a in conn.execute(
-        "SELECT a.id, a.text_encrypted, a.added_to, a.sent_at, q.part, s.by_user_id FROM answers a "
-        "JOIN questions q ON q.id = a.question_id JOIN question_sets s ON s.id = q.set_id "
-        "WHERE s.idea_uuid = %s AND a.sent_at IS NOT NULL ORDER BY a.sent_at, q.seq",
-        (idea_uuid,),
-    ).fetchall():
-        text = open_text("answers", "text_encrypted", str(a["id"]), a["text_encrypted"])
-        if not text:
-            continue
-        part = str(a["added_to"] or a["part"])
-        out.setdefault(part, []).append(
-            {"id": str(a["id"]), "text": text, "at": a["sent_at"], "asked_by": a["by_user_id"]}
-        )
-    return out
+def has_open_questions(qset: dict[str, Any] | None) -> bool:
+    return bool(qset and qset["state"] in OPEN_SET_STATES)
 
 
 # --- Lane F's tables, read only: the crew and team-up requests ------------------------------------------------------
@@ -265,6 +253,19 @@ def my_teamup(conn: Conn, idea_uuid: str, code: str | None) -> dict[str, Any] | 
         (idea_uuid, code),
     ).fetchone()
     return dict(row) if row else None
+
+
+def was_involved(conn: Conn, idea_uuid: str, code: str | None) -> bool:
+    """Whether this person was ever on the idea's crew or asked to join it: the people a withdrawal is told to
+    (L-SUBMIT.withdraw/4), who may still follow an old link to it (BLD-E010)."""
+    if not code:
+        return False
+    row = conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM crew_members WHERE idea_uuid = %s AND contributor_code = %s) "
+        "OR EXISTS (SELECT 1 FROM teamup_requests WHERE idea_uuid = %s AND from_code = %s) AS yes",
+        (idea_uuid, code, idea_uuid, code),
+    ).fetchone()
+    return bool(row and row["yes"])
 
 
 def live_merge_into(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:

@@ -31,11 +31,11 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
-| `S-06` | `/ideas/:id` (sharer) | `app/ideas/[id]` | exists, differs | L | P0 | E |
+| `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
-| `S-07` | `/my-ideas` | `app/my-ideas` | exists, differs | M | P0 | E |
+| `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
-| `S-09` | `/ideas/:id` (others) | `app/ideas/[id]` | exists, differs | M | P0 | E |
+| `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |

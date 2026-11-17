@@ -26,12 +26,21 @@ REF = re.compile(r"^IDEA-[0-9]{4}-[0-9]{6}$")
 
 
 def display_status(idea: dict[str, Any], qset: dict[str, Any] | None, *, for_sharer: bool) -> str:
-    """`needs_you` is the sharer's view of `with_review_desk` while a question set is open (E-ENUMS.idea-status);
-    everyone else sees 'With the review desk'."""
+    """`needs_you` is the sharer's view of `with_review_desk` while a question set is open (E-ENUMS.idea-status).
+    Lane B stores it on the idea when it sends questions (and puts `with_review_desk` back once all are answered);
+    an older row may still say `with_review_desk` with a set open, so both read the same. Everyone else sees
+    'With the review desk'."""
     status = str(idea["status"])
-    if for_sharer and status == "with_review_desk" and qset and qset["state"] in read.OPEN_SET_STATES:
+    if status == "needs_you":
+        return "needs_you" if for_sharer else "with_review_desk"
+    if for_sharer and status == "with_review_desk" and read.has_open_questions(qset):
         return "needs_you"
     return status
+
+
+def at_desk(idea: dict[str, Any]) -> bool:
+    """Shared and waiting on the review desk, with or without questions open (E-ENUMS.idea-machine)."""
+    return str(idea["status"]) in ("checking", "with_review_desk", "needs_you")
 
 
 def crew_of(conn: Conn, idea: dict[str, Any], *, names_for_all: bool) -> dict[str, Any]:
@@ -127,7 +136,11 @@ def public_idea(
         "sharer": read.public_person(sharer) if sharer and (for_sharer or read.shows_name(sharer)) else None,
         "credited": [c for c in credited if c],
         "shared_at": idea["shared_at"].isoformat() if idea["shared_at"] else None,
-        **({"share_seconds": idea["share_seconds"]} if idea.get("share_seconds") is not None else {}),
+        **(
+            {"share_seconds": idea["share_seconds"]}
+            if for_sharer and idea.get("share_seconds") is not None
+            else {}
+        ),
         "stages": nodes_json(nodes) if nodes else [],
         "crew": {k: v for k, v in crew.items() if not k.startswith("_")},
         "linked_similar_count": read.similar_count(conn, uid),
