@@ -27,39 +27,49 @@ REF = re.compile(r"^IDEA-2026-[0-9]{6}$")
 
 @pytest.fixture
 def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
-    """A sharer with a ready draft whose parts suggest the sorting, a reviewer, and a colleague."""
+    """A sharer with a ready draft whose parts suggest the sorting, a reviewer, and a colleague: people, codes and
+    ideas of this test's own (crunch rule 14, BLD-C087), so it reads and removes only what it made."""
     monkeypatch.setenv("COMPANY_REPO_PATH", str(SEED))
     get_settings.cache_clear()
     # Submit queues jobs (submit.check, voice.purge); the conftest does not empty `jobs`, so this test takes its own
     # away again, or a later test's `run_one` would claim them first.
     last_job = int(db.execute("SELECT coalesce(max(id), 0) AS n FROM jobs").fetchone()["n"])
+    run = uuid.uuid4().hex[:8]
     people: dict[str, str] = {}
-    for key, name, code in (
-        ("asha", "Asha Verma", "CTR-a1b2c3"),
-        ("ravi", "Ravi Desai", "CTR-b2c3d4"),
-        ("neha", "Neha Kulkarni", "CTR-c3d4e5"),
-    ):
+    codes: dict[str, str] = {}
+    for key, name in (("asha", "Asha Verma"), ("ravi", "Ravi Desai"), ("neha", "Neha Kulkarni")):
+        code = f"CTR-{uuid.uuid4().hex[:6]}"
         row = db.execute(
             "INSERT INTO users (emp_id_hash, name, email, location, first_name) VALUES (%s, %s, %s, 'Hyderabad', %s) "
             "RETURNING id",
-            (f"test-{key}", name, f"{key}@kfintech.example", name.split()[0]),
+            (f"test-{key}-{run}", name, f"{key}.{run}@kfintech.example", name.split()[0]),
         ).fetchone()
         people[key] = str(row["id"])
+        codes[key] = code
         db.execute(
             "INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, row["id"])
         )
     db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (people["ravi"],))
-    draft = _draft(db, "CTR-a1b2c3")
-    yield {"conn": db, "p": people, "draft": draft}
-    # Clean up what this test made, so the session database is as it was found (crunch rule 14).
-    codes = ["CTR-a1b2c3", "CTR-b2c3d4", "CTR-c3d4e5"]
+    draft = _draft(db, codes["asha"])
+    yield {"conn": db, "p": people, "c": codes, "draft": draft}
+    # Clean up everything this test made except audit_log, whose trigger refuses DELETE (crunch rule 14): its jobs
+    # and timers, the vault's values and counters under its ideas' hide scopes, its ideas (their parts, files,
+    # hidden details, sealed words, versions, crew and history go with them) and its people (their grants, codes
+    # and idempotency keys go with them).
+    ideas = [
+        str(r["id"])
+        for r in db.execute("SELECT id FROM ideas WHERE contributor_code = ANY(%s)", (list(codes.values()),))
+    ]
+    scopes = [f"DRAFT-{u}" for u in ideas]
     db.execute("DELETE FROM jobs WHERE id > %s", (last_job,))
     db.execute(
         "DELETE FROM sla_timers WHERE entity_type = 'idea' AND (entity_id = 'IDEA-2026-999999' OR entity_id IN "
-        "(SELECT idea_id FROM ideas WHERE contributor_code = ANY(%s) AND idea_id IS NOT NULL))",
-        (codes,),
+        "(SELECT idea_id FROM ideas WHERE id = ANY(%s::uuid[]) AND idea_id IS NOT NULL))",
+        (ideas,),
     )
-    db.execute("DELETE FROM ideas WHERE contributor_code = ANY(%s)", (codes,))
+    db.execute("DELETE FROM pseudonym_vault WHERE scope_id = ANY(%s)", (scopes,))
+    db.execute("DELETE FROM vault_counters WHERE scope_id = ANY(%s)", (scopes,))
+    db.execute("DELETE FROM ideas WHERE id = ANY(%s::uuid[])", (ideas,))
     db.execute("DELETE FROM users WHERE id = ANY(%s::uuid[])", (list(people.values()),))
     get_settings.cache_clear()
 
@@ -242,8 +252,8 @@ def _file(world: dict[str, Any], n: int, file_state: str) -> str:
     att = f"ATT-2026-{n:06d}"
     world["conn"].execute(
         "INSERT INTO attachments (id, idea_uuid, name, store_key, mime, bytes, sha256, uploaded_by_code, kind, "
-        "file_state) VALUES (%s, %s, 'screenshot.png', %s, 'image/png', 1000, %s, 'CTR-a1b2c3', 'file', %s)",
-        (att, world["draft"], f"quarantine/{att}", "0" * 64, file_state),
+        "file_state) VALUES (%s, %s, 'screenshot.png', %s, 'image/png', 1000, %s, %s, 'file', %s)",
+        (att, world["draft"], f"quarantine/{att}", "0" * 64, world["c"]["asha"], file_state),
     )
     return att
 
@@ -262,15 +272,14 @@ def test_l_submit_pre_3_a_file_still_being_checked_holds_submit(world: dict[str,
 def test_l_submit_pre_4_a_waiting_merge_request_holds_submit(world: dict[str, Any]) -> None:
     conn = world["conn"]
     _confirm(world)
-    other = _draft(conn, "CTR-c3d4e5")
+    other = _draft(conn, world["c"]["neha"])
     conn.execute(
         "UPDATE ideas SET status = 'with_review_desk', idea_id = next_idea_ref(%s) WHERE id = %s",
         (NOW, other),
     )
     conn.execute(
-        "INSERT INTO merge_requests (draft_uuid, other_idea_uuid, from_code, note_encrypted) VALUES (%s, %s, "
-        "'CTR-a1b2c3', %s)",
-        (world["draft"], other, b"\x00"),
+        "INSERT INTO merge_requests (draft_uuid, other_idea_uuid, from_code, note_encrypted) VALUES (%s, %s, %s, %s)",
+        (world["draft"], other, world["c"]["asha"], b"\x00"),
     )
     with pytest.raises(Refused) as err:
         _submit(world)
@@ -312,15 +321,16 @@ def test_l_submit_send_1_the_idea_gets_its_reference_and_the_clock_starts(world:
     lead = conn.execute(
         "SELECT contributor_code, role, via FROM crew_members WHERE idea_uuid = %s", (idea["id"],)
     ).fetchone()
-    assert dict(lead) == {"contributor_code": "CTR-a1b2c3", "role": "lead", "via": "shared"}
+    assert dict(lead) == {"contributor_code": world["c"]["asha"], "role": "lead", "via": "shared"}
     jobs = {
         r["type"]
         for r in conn.execute("SELECT type FROM jobs WHERE payload->>'idea_uuid' = %s", (str(idea["id"]),))
     }
     assert {"submit.check", "voice.purge"} <= jobs
-    audit = conn.execute(
-        "SELECT actor, after FROM audit_log WHERE action = 'idea.submit' AND entity = %s",
-        (f"idea:{h['ref']}",),
+    audit = conn.execute(  # this test's own row: audit_log keeps every earlier run's
+        "SELECT actor, after FROM audit_log WHERE action = 'idea.submit' AND entity = %s AND actor = %s "
+        "ORDER BY id DESC LIMIT 1",
+        (f"idea:{h['ref']}", f"user:{world['p']['asha']}"),
     ).fetchone()
     assert audit["actor"] == f"user:{world['p']['asha']}" and audit["after"]["sorting"]["area"] == "confirmed"
     history = [r["to_status"] for r in conn.execute(
@@ -336,10 +346,103 @@ def test_l_submit_send_a_retry_never_creates_two_ideas(world: dict[str, Any]) ->
     assert first == again  # A-API.conventions/3: the first result
     no_key = _submit(world)
     assert no_key[0] == 200 and no_key[1]["ref"] == first[1]["ref"]
-    assert conn.execute("SELECT count(*) AS n FROM ideas WHERE idea_id IS NOT NULL").fetchone()["n"] == 1
+    shared = conn.execute(
+        "SELECT count(*) AS n FROM ideas WHERE idea_id IS NOT NULL AND contributor_code = %s",
+        (world["c"]["asha"],),
+    )
+    assert shared.fetchone()["n"] == 1
     with pytest.raises(Refused) as err:  # the same key for another draft
-        _submit(world, _draft(conn, "CTR-a1b2c3"), idempotency_key="key-0001-abcdef")
+        _submit(world, _draft(conn, world["c"]["asha"]), idempotency_key="key-0001-abcdef")
     assert err.value.code == "idempotency_key_reused"
+
+
+def test_l_submit_send_a_repeat_on_a_sent_draft_keeps_its_answer_for_the_key(world: dict[str, Any]) -> None:
+    """A-API.conventions/3 on the already-shared path too (BLD-C087): the hand-over is stored for the key."""
+    conn, asha = world["conn"], world["p"]["asha"]
+    _confirm(world)
+    first = _submit(world)
+    again = _submit(world, idempotency_key="key-0002-abcdef")
+    assert again[0] == 200 and again[1]["ref"] == first[1]["ref"]
+    kept = conn.execute(
+        "SELECT status, response_json FROM idempotency_keys WHERE user_id = %s AND key = 'key-0002-abcdef'",
+        (asha,),
+    ).fetchone()
+    assert kept["status"] == 200 and kept["response_json"]["ref"] == first[1]["ref"]
+    assert kept["response_json"]["_status"] == 200
+    assert _submit(world, idempotency_key="key-0002-abcdef") == again
+
+
+def test_l_submit_send_queues_listen_with_the_send(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """c/sarvam's `speech.listen.enqueue_prefetch(conn, idea_uuid)` once, inside the send (BLD-C087)."""
+    import types
+
+    from submit import adapters
+
+    real = adapters._module
+    seen: list[str] = []
+    fake = types.SimpleNamespace(enqueue_prefetch=lambda conn, idea_uuid: seen.append(idea_uuid))
+    monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "speech.listen" else real(name))
+    _confirm(world)
+    assert _submit(world)[0] == 201 and seen == [world["draft"]]
+    assert _submit(world)[0] == 200 and seen == [world["draft"]]  # a repeat sends nothing again
+
+
+def test_l_submit_send_the_hide_scope_outlives_the_send(world: dict[str, Any]) -> None:
+    """BLD-C087: a PAN hidden in the draft keeps its vault scope `DRAFT-<idea uuid>` through Submit, Checked and
+    matched and an edit. Submit never purges or re-keys it, so the sent idea's hidden detail still resolves to its
+    value for the sharer, and the same PAN typed again gets the same tag."""
+    from onepc.context import open_text
+    from pii import vault
+
+    conn, asha, uid = world["conn"], world["p"]["asha"], world["draft"]
+    pan = "ABCPE1234F"  # a made-up PAN
+    scope = f"DRAFT-{uid}"
+    tag = vault.assign(conn, scope, "PAN", pan)  # as Tell it hides it in the draft's message (L-HIDE)
+    conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, span_start, span_end, kind, masked, vault_tag) "
+        "VALUES (%s, 'message', 'msg-1', 18, 28, 'pan', 'PAN ••••4F', %s)",
+        (uid, tag),
+    )
+    _confirm(world)
+    _, h = _submit(world)
+    conn.execute("UPDATE ideas SET often = %s WHERE id = %s", (f"Each time PAN {pan} calls", uid))
+    check.run(conn, uid)  # the final pass hides it in the shared text, in the same scope
+    later = NOW + dt.timedelta(hours=1)
+    edit.save(
+        conn, h["ref"], asha, {"declaration_version": DECLARATION_VERSION, "summary": f"PAN {pan} gets only R07."},
+        now=later,
+    )  # fmt: skip
+    idea = _idea(world)
+    assert idea["idea_id"] == h["ref"] and idea["status"] == "with_review_desk"
+    assert pan not in idea["summary"] and pan not in (idea["often"] or "")
+    assert vault.mapping(conn, scope) == {tag: ("PAN", pan)}  # still there, under the same tag
+    moved = conn.execute("SELECT 1 FROM pseudonym_vault WHERE scope_id = %s", (h["ref"],)).fetchone()
+    assert moved is None  # not re-keyed to a scope of the reference
+    tags = {
+        r["vault_tag"]
+        for r in conn.execute(
+            "SELECT vault_tag FROM hidden_details WHERE idea_uuid = %s AND kind = 'pan'", (uid,)
+        )
+    }
+    assert tags == {tag}
+    page = edit.page(conn, h["ref"], asha, now=later)  # the sharer's view of the sent idea
+    assert "PAN ••••4F" in [d["masked"] for d in page["hidden"]]
+    sealed = conn.execute(
+        "SELECT source_id, owner_user_id, text_encrypted FROM idea_words_sealed WHERE idea_uuid = %s AND "
+        "source = 'edit' AND source_id = %s",
+        (uid, f"{uid}:1:summary"),
+    ).fetchone()
+    assert str(sealed["owner_user_id"]) == asha
+    words = open_text(
+        "idea_words_sealed",
+        "text_encrypted",
+        f"edit:{sealed['source_id']}",
+        sealed["text_encrypted"],
+        vault=True,
+    )
+    assert words == f"PAN {pan} gets only R07."
 
 
 def test_l_submit_pre_5_the_declaration_must_be_the_current_one(world: dict[str, Any]) -> None:
@@ -377,7 +480,7 @@ def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: di
 
 def test_l_submit_send_4_decide_by_fires_on_lane_as_engine(world: dict[str, Any]) -> None:
     """BLD-A182 skips, quietly, a timer kind with no rule. decide_by has its rule, so the engine runs it: at its date
-    it stops (a window, no breach; the desk lead's digest covers overdue ideas). The unknown kind beside it is the
+    it stops (a window, no breach; lane B's desk flags it overdue from ideas.decide_by, and no digest is sent). The unknown kind beside it is the
     control: the engine skips that one."""
     from sla import engine
 
@@ -498,10 +601,44 @@ def test_l_submit_edit_4_each_save_is_a_version(world: dict[str, Any]) -> None:
     assert history["items"][1]["after"]["sorting"]["area"] == "Operations"
     with pytest.raises(NotFound):
         edit.versions(conn, ref, world["p"]["neha"], now=later)  # a colleague does not
-    audit = conn.execute(
-        "SELECT after FROM audit_log WHERE action = 'idea.edit' AND entity = %s", (f"idea:{ref}",)
+    audit = conn.execute(  # this test's own row, the newest: audit_log keeps every earlier run's
+        "SELECT after FROM audit_log WHERE action = 'idea.edit' AND entity = %s AND actor = %s ORDER BY id DESC",
+        (f"idea:{ref}", f"user:{asha}"),
     ).fetchone()
     assert audit["after"] == {"version": 2, "fields": ["title", "sorting", "fix"]}
+
+
+def test_l_submit_edit_4_only_a_live_grant_reads_the_history(world: dict[str, Any]) -> None:
+    """BLD-C087: a grant that has ended, or not started, reads nothing; the Ones Committee's does."""
+    conn, p = world["conn"], world["p"]
+    ref = _shared(world)
+    conn.execute(
+        "INSERT INTO role_grants (user_id, role, valid_from, valid_to) VALUES "
+        "(%s, 'reviewer', now() - interval '2 days', now() - interval '1 day'), "
+        "(%s, 'committee', now() + interval '1 day', NULL)",
+        (p["neha"], p["neha"]),
+    )
+    with pytest.raises(NotFound):
+        edit.versions(conn, ref, p["neha"], now=NOW)
+    conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'core_committee')", (p["neha"],))
+    assert edit.versions(conn, ref, p["neha"], now=NOW)["count"] == 1
+
+
+def test_l_submit_withdraw_2_a_withdrawn_ideas_history_is_its_sharers_alone(world: dict[str, Any]) -> None:
+    """L-SUBMIT.withdraw/2 and BLD-E011: once withdrawn, the review desk and the Ones Committee no longer find its
+    draft history; the sharer still does."""
+    conn, p = world["conn"], world["p"]
+    ref = _shared(world)
+    conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'committee')", (p["neha"],))
+    check.run(conn, world["draft"])
+    assert edit.versions(conn, ref, p["ravi"], now=NOW)["count"] == 1
+    assert edit.versions(conn, ref, p["neha"], now=NOW)["count"] == 1
+    conn.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (world["draft"],))
+    for viewer in ("ravi", "neha"):
+        with pytest.raises(NotFound):
+            edit.versions(conn, ref, p[viewer], now=NOW)
+    history = edit.versions(conn, ref, p["asha"], now=NOW)
+    assert history["count"] == 1 and history["items"][0]["label"] == "As shared"
 
 
 def test_l_submit_edit_3_a_customer_detail_in_an_edit_is_hidden(world: dict[str, Any]) -> None:
