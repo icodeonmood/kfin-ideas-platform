@@ -4,6 +4,11 @@
 - `capture.voice`: outside dev and test, voice notes are on while `SPEECH_MODE` is `fake` (DEC-096, BLD-C007): a
   sample sentence would stand in for people's words; or while `local` has no isolated speech service
   (`SPEECH_ENGINE_URL`, BLD-C012). Also checked once when the worker starts.
+- `capture.voice` and `speech.hosted`: outside dev and test, `SPEECH_MODE` is `sarvam` (DEC-108, non-negotiable 2's
+  voice exception) and `SARVAM_API_KEY` is missing from the worker's env: both go off with the reason "Sarvam key
+  missing (automatic)", which the go/no-go report repeats word for word (BLD-C115). This guard FLIPS the switches:
+  an audited automatic switch-off. Nothing turns them back on when the key arrives; a person puts the key in the
+  worker's env, restarts the worker and switches both on from the Admin page with a reason.
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.
@@ -26,6 +31,7 @@ from core.logging import get_logger
 
 log = get_logger("watch")
 ACTOR = "process:watch"
+SARVAM_KEY_MISSING = "Sarvam key missing (automatic)"  # the go/no-go row says "off: " + this (BLD-C115)
 SCANNER_DOWN_S = 300.0
 BOUNCE_SHARE = 0.05
 BOUNCE_MIN_SENT = 20
@@ -93,11 +99,16 @@ class Watch:
 
     @staticmethod
     def speech_route(conn: Conn) -> bool:
-        """Voice notes off outside dev and test when the route is fake (BLD-C007) or the engine would run inside the
-        worker instead of the isolated speech service (BLD-C012)."""
+        """Voice notes off outside dev and test when the route is fake (BLD-C007), the engine would run inside the
+        worker instead of the isolated speech service (BLD-C012), or the Sarvam route has no key (BLD-C115: then
+        hosted speech goes off too)."""
         s = get_settings()
         if not s.is_production_like:
             return False
+        if s.speech_mode == "sarvam" and not s.sarvam_api_key.strip():
+            voice = switch_off(conn, "capture.voice", SARVAM_KEY_MISSING)
+            hosted = switch_off(conn, "speech.hosted", SARVAM_KEY_MISSING)
+            return voice or hosted
         if s.speech_mode == "fake":
             reason = "SPEECH_MODE is fake outside dev and test (automatic, DEC-096)"
         elif s.speech_mode == "local" and not s.speech_engine_url:

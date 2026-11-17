@@ -20,13 +20,22 @@ IST = ZoneInfo("Asia/Kolkata")
 # learning.run (R13), cluster.batch (R6), lenses.build (R12) and qualify.backfill (R7). Their handlers stay in
 # jobs/handlers.py until the cleanup after launch, so a row already queued still runs to an end.
 RETIRED: frozenset[str] = frozenset(
-    {"comms.nudges", "learning.run", "cluster.batch", "lenses.build", "qualify.backfill", "qualify.start"}
+    {
+        "comms.nudges",
+        "learning.run",
+        "cluster.batch",
+        "lenses.build",
+        "qualify.backfill",
+        "qualify.start",
+        "drafts.purge",
+    }
 )
 
-# job type -> time of day (IST). §3.5 times where given; drafts.purge is ours.
+# job type -> time of day (IST). §3.5 times where given. Drafts are archived, never deleted (L-DRAFT.autosave/8,
+# R28): drafts.archive replaces drafts.purge (BLD-C074).
 DAILY: dict[str, clock] = {
     "reconcile": clock(2, 0),  # §3.5
-    "drafts.purge": clock(3, 30),
+    "drafts.archive": clock(3, 30),
     "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)
     "delivery.tick": clock(9, 30),  # §4.9 to §4.11: reminders and escalations
 }
@@ -40,6 +49,7 @@ EVERY: dict[str, int] = {
     "attachments.recheck": 15,  # files held for OCR or the gatekeeper (week 3, `attachments.deep_check`)
     "points.sync": 60,  # private points, each award once (DEC-078, BLD-130)
     "voice.sweep": 15,  # voice notes held past 24 hours or for an idea already shared (DEC-096)
+    "listen.prefetch_due": 15,  # Listen audio for ideas with the desk, made before anyone asks (DEC-108, BLD-C114)
     "desk.clocks": 5,  # lane B's one sweep: answers due, windows closing, answer reminders (desk.clocks.run_due)
 }
 

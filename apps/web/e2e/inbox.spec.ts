@@ -4,20 +4,16 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { shareQuickly, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 test("the submitted message lands in Messages and opens by keyboard", async ({ page }) => {
   test.setTimeout(60_000);
   await signIn(page, PERSONAS.contributor);
-  await page.goto("/share");
-  await page.getByRole("button", { name: "Start a quick capture" }).click();
-  await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
-  await page
-    .getByLabel(QUESTIONS.quick_noticed.label)
-    .fill("Mandate scans are re-uploaded twice because the first upload times out on slow branch links.");
-  await confirmQuickCapture(page);
-  await page.getByRole("button", { name: "Share your idea" }).click();
+  const shared = await shareQuickly(
+    page,
+    "Mandate scans are re-uploaded twice because the first upload times out on slow branch links.",
+  );
+  await page.goto(`/share/${shared}/done`);
   await page.waitForURL(/\/done$/);
   const ideaId = /IDEA-\d{4}-\d{6}/.exec(await page.getByRole("heading", { level: 1 }).innerText())![0];
   await expect(page.getByRole("heading", { level: 3, name: "Your summary is ready" })).toBeVisible({

@@ -6,16 +6,10 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { shareQuickly, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 async function shareQuickIdea(page: Page, words: string): Promise<string> {
-  await page.goto("/share");
-  await page.getByRole("button", { name: "Start a quick capture" }).click();
-  await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
-  await page.getByLabel(QUESTIONS.quick_noticed.label).fill(words);
-  await confirmQuickCapture(page);
-  await page.getByRole("button", { name: "Share your idea" }).click();
+  await page.goto(`/share/${await shareQuickly(page, words)}/done`);
   await page.waitForURL(/\/done$/);
   const ideaId = /IDEA-\d{4}-\d{6}/.exec(await page.getByRole("heading", { level: 1 }).innerText())![0];
   await expect(page.getByRole("heading", { level: 3, name: "Your summary is ready" })).toBeVisible({

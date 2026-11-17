@@ -21,6 +21,8 @@ from typing import Any
 from core.config import REPO_ROOT, get_settings
 from core.db import connect
 from core.speech_route import hosted_problem, key_set, voice_problem
+from core.watch import SARVAM_KEY_MISSING
+from pii.vault import EVAL_SCOPE_LIKE
 
 ROOT = REPO_ROOT or Path.cwd()  # in the worker container there is no repo root: /app
 
@@ -45,7 +47,11 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
 # Switches that start off on purpose: the report shows them as expected, not as a problem, so nobody "fixes" them
 # on. Voice left this list with DEC-108 (on at launch through Sarvam). The channels built and switched off until
 # IT or InfoSec approve them (DEC-105: Teams, email intake, email-code sign-in) join it as their switches land.
-OFF_BY_DESIGN: dict[str, str] = {}
+OFF_BY_DESIGN: dict[str, str] = {
+    # L-DRAFT.channels (BLD-C077), migration 20261122300210: built and off until IT gives the mailbox and the app.
+    "intake.email": "Off until IT gives the 1% Club mailbox (DEC-105): forwarded emails land as drafts once it is on",
+    "intake.teams": "Off until IT gives the 1% Club Teams app (DEC-105): Teams messages land as drafts once it is on",
+}
 
 VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
 HOSTED = "Hosted speech (Sarvam): switch, approval reference and key match the route (DEC-108)"
@@ -56,7 +62,15 @@ def _row(name: str, state: str, evidence: str) -> dict[str, str]:
 
 
 def voice_rows(
-    voice_on: bool, hosted_on: bool, speech_mode: str, engine_url: str, approval: str, key: bool
+    voice_on: bool,
+    hosted_on: bool,
+    speech_mode: str,
+    engine_url: str,
+    approval: str,
+    key: bool,
+    *,
+    voice_reason: str | None = None,
+    hosted_reason: str | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
     """DEC-108: voice is on at launch through Sarvam (speech to text and Listen; India-hosted, no retention). The
     on-server engine behind the isolated speech service (BLD-C012) stays an allowed fallback; the fake route never
@@ -65,7 +79,10 @@ def voice_rows(
     rows: list[dict[str, str]] = []
     reasons: list[str] = []
     problem = voice_problem(voice_on, hosted_on, speech_mode, engine_url, approval, key)
-    if not voice_on:
+    if not voice_on and voice_reason == SARVAM_KEY_MISSING:  # the watch's key guard flipped it (BLD-C115)
+        rows.append(_row(VOICE, "not met", f"off: {SARVAM_KEY_MISSING}"))
+        reasons.append("voice switched off by the watch: the Sarvam key is missing")
+    elif not voice_on:
         evidence = (
             "off: DEC-108 plans voice on at launch; switch it on, or launch without it (typing still works)"
         )
@@ -82,7 +99,10 @@ def voice_rows(
             _row(VOICE, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
         )
     hosted = hosted_problem(hosted_on, approval, key)
-    if hosted:
+    if not hosted_on and hosted_reason == SARVAM_KEY_MISSING:
+        rows.append(_row(HOSTED, "not met", f"off: {SARVAM_KEY_MISSING}"))
+        reasons.append("hosted speech switched off by the watch: the Sarvam key is missing")
+    elif hosted:
         rows.append(_row(HOSTED, "not met", hosted))
         reasons.append("hosted speech on without its approval reference or key")
     elif hosted_on:
@@ -145,8 +165,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         with connect(autocommit=True) as conn:
             leaks = conn.execute(
                 "SELECT count(*) AS n FROM llm_calls WHERE outcome = 'leak_abort' AND created_at >= %s "
-                "AND ref_id NOT LIKE 'DRAFT-%%'",  # golden-set runs use DRAFT- scopes, as the gateway's own count
-                (args.since,),
+                "AND coalesce(ref_id, '') NOT LIKE %s",  # live drafts count; golden-set runs carry the eval marker
+                (args.since, EVAL_SCOPE_LIKE),
             ).fetchone()
             switches_off.extend(
                 r["name"]
@@ -225,12 +245,11 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         """DEC-108: voice on at launch through Sarvam; see voice_rows."""
         s = get_settings()
         with connect(autocommit=True) as conn:
-            states = {
-                r["name"]: r["state"]
-                for r in conn.execute(
-                    "SELECT name, state FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
-                ).fetchall()
-            }
+            found = conn.execute(
+                "SELECT name, state, reason FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
+            ).fetchall()
+        states = {r["name"]: r["state"] for r in found}
+        reasons = {r["name"]: r["reason"] for r in found}
         got, why = voice_rows(
             states.get("capture.voice") == "on",
             states.get("speech.hosted") == "on",
@@ -238,6 +257,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
             s.speech_engine_url,
             s.speech_hosted_approval,
             key_set(s),
+            voice_reason=reasons.get("capture.voice"),
+            hosted_reason=reasons.get("speech.hosted"),
         )
         rows.extend(got)
         reasons_b.extend(why)
@@ -276,7 +297,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
 def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
     """How often the gateway dropped canvas-assist suggestions the person's words did not back
     (`ungrounded_dropped`) and refused its answer outright (`invalid_output`), over the last 24 hours, since launch
-    (live calls) and in golden-set runs since --since (DRAFT- scopes, as the gateway's own counts tell them apart).
+    (live calls, live drafts included) and in golden-set runs since --since (the eval runner's `DRAFT-eeeeeeee-`
+    scopes, as the gateway's own counts tell them apart, BLD-C034).
     A high invalid share would trip the automatic switch-off (20% of calls over 15 minutes, BLD-072). Counts only."""
     windows = [
         ("last 24 hours", "now() - interval '24 hours'", False),
@@ -284,6 +306,7 @@ def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
         (f"golden-set runs since {args.since}", "%(since)s::date", True),
     ]
     out = []
+    params = {"launch": args.launch, "since": args.since, "eval_like": EVAL_SCOPE_LIKE}
     with connect(autocommit=True) as conn:
         for label, start, eval_runs in windows:
             row = conn.execute(
@@ -291,8 +314,8 @@ def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "count(*) FILTER (WHERE error_code = 'ungrounded_dropped') AS dropped, "
                 "count(*) FILTER (WHERE error_code = 'invalid_output') AS invalid "
                 f"FROM llm_calls WHERE agent = 'canvas-assist' AND created_at >= {start} "
-                "AND (coalesce(ref_id, '') LIKE 'DRAFT-%%') = %(eval_runs)s",
-                {"launch": args.launch, "since": args.since, "eval_runs": eval_runs},
+                "AND (coalesce(ref_id, '') LIKE %(eval_like)s) = %(eval_runs)s",
+                {**params, "eval_runs": eval_runs},
             ).fetchone()
             assert row is not None  # an aggregate always returns a row
             out.append(

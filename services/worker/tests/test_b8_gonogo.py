@@ -12,6 +12,7 @@ import pytest
 
 import gonogo.__main__ as g
 from core.config import Settings
+from pii.vault import EVAL_SCOPE_PREFIX
 
 pytestmark = pytest.mark.stack  # reads leak aborts and switches from the dev database
 
@@ -23,11 +24,15 @@ def _write(folder: Path, name: str, body: Any) -> None:
 
 @pytest.fixture
 def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namespace:
-    monkeypatch.setattr(
-        g,
-        "get_settings",
-        lambda: Settings(privacy_notice_version="1.0", speech_mode="fake", speech_hosted_approval=""),
-    )  # voice rows pinned (BLD-A185)
+    # Voice is on at launch through Sarvam (DEC-108): the evidence of a ready launch includes the route, the approval
+    # and a key (a synthetic one here; the report says present or absent, never the value).
+    ready = Settings(
+        privacy_notice_version="1.0",
+        speech_mode="sarvam",
+        speech_hosted_approval="DEC-108",
+        sarvam_api_key="synthetic-test-key",
+    )
+    monkeypatch.setattr(g, "get_settings", lambda: ready)
     real = {"route": "anthropic", "version": "0.2.0"}
     _write(tmp_path / "eval", "gatekeeper-0.2.0-1.json",
            real | {"metrics": {"personal_data_recall": 1.0, "false_block_rate": 0.02}})  # fmt: skip
@@ -48,11 +53,12 @@ def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> argparse.Namesp
 def test_mode_a_needs_every_criterion(evidence: argparse.Namespace) -> None:
     out = g.collect(evidence)
     assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # the CI row is always a person's
-    # the CI row is always a person's; voice is seeded off, which DEC-108 makes a row to confirm
+    # the CI row is always a person's; voice is on from migration 20261122300530 (BLD-C115) and the evidence above
+    # carries the Sarvam route, the approval and a key, so both voice rows are met
     assert [(r["criterion"], r["state"]) for r in out["rows"] if r["state"] != "met"] == [
         ("Every B1–B7 acceptance test passes in UAT", "confirm"),
-        (g.VOICE, "confirm"),
     ]
+    assert {r["criterion"]: r["state"] for r in out["rows"]}[g.VOICE] == "met"
 
 
 def test_a_load_rehearsal_or_a_failed_drill_rules_out_mode_a(evidence: argparse.Namespace) -> None:
@@ -76,12 +82,13 @@ def test_an_unreadable_report_is_a_row_to_confirm(evidence: argparse.Namespace) 
 
 
 def test_canvas_assist_dropped_and_refused_shares_are_printed(evidence: argparse.Namespace) -> None:
-    """DEC-095, BLD-C029: counts only, live calls apart from golden-set runs (DRAFT- scopes)."""
+    """DEC-095, BLD-C029: counts only, live calls apart from golden-set runs (the eval marker, BLD-C034)."""
     from core.db import connect
 
     rows = [("IDEA-2100-000001", "ok", None), ("IDEA-2100-000002", "ok_after_retry", "ungrounded_dropped"),
             ("IDEA-2100-000003", "agent_failed", "invalid_output"), ("IDEA-2100-000004", "ok", None),
-            ("DRAFT-gonogo-test", "ok_after_retry", "ungrounded_dropped")]  # fmt: skip
+            ("DRAFT-abcdefab-cdef-4abc-8def-abcdefabcdef", "ok", None),  # a live draft is a live call
+            (f"{EVAL_SCOPE_PREFIX}abcd-4abc-8abc-abcdefabcdef", "ok_after_retry", "ungrounded_dropped")]  # fmt: skip
     with connect(autocommit=True) as conn:
         for ref, outcome, code in rows:
             conn.execute(
@@ -92,11 +99,11 @@ def test_canvas_assist_dropped_and_refused_shares_are_printed(evidence: argparse
         try:
             out = g.collect(evidence)
             since_launch = next(w for w in out["canvas_assist"] if w["window"].startswith("since launch"))
-            assert (since_launch["asked"], since_launch["dropped"], since_launch["invalid"]) == (4, 1, 1)
+            assert (since_launch["asked"], since_launch["dropped"], since_launch["invalid"]) == (5, 1, 1)
             golden = next(w for w in out["canvas_assist"] if w["window"].startswith("golden-set"))
             assert (golden["asked"], golden["dropped"]) == (1, 1)
             text = g.render(out)
-            assert "| since launch (2100-01-01) | 4 | 1 of 4 (25%) | 1 of 4 (25%) |" in text
+            assert "| since launch (2100-01-01) | 5 | 1 of 5 (20%) | 1 of 5 (20%) |" in text
             assert "last 24 hours" in text
             assert out["mode"] == "A. Full, once every 'confirm' row is confirmed"  # a watch, not a criterion
         finally:

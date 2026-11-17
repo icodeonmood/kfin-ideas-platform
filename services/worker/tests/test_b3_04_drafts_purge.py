@@ -42,14 +42,15 @@ def test_schedule_enqueues_once_a_day(db: Any) -> None:
         return [j for j in enqueue_due(db, at) if j not in EVERY]
 
     assert daily(datetime(2026, 11, 20, 1, 59, tzinfo=ist)) == []  # before 02:00 (reconcile)
-    assert daily(datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.purge at 03:30
-    assert daily(datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.purge"]
+    assert daily(datetime(2026, 11, 20, 2, 0, tzinfo=ist)) == ["reconcile"]  # drafts.archive at 03:30
+    # Drafts are archived, never deleted (L-DRAFT.autosave/8, BLD-C074): drafts.purge is no longer scheduled.
+    assert daily(datetime(2026, 11, 20, 3, 31, tzinfo=ist)) == ["drafts.archive"]
     assert daily(datetime(2026, 11, 20, 9, 0, tzinfo=ist)) == []  # learning.run is retired (DEC-106, R13)
     assert daily(datetime(2026, 11, 20, 9, 31, tzinfo=ist)) == ["delivery.tick"]  # 09:30
     assert daily(datetime(2026, 11, 20, 23, 0, tzinfo=ist)) == [
         "comms.digest"
     ]  # comms.nudges is retired (R16)
-    assert daily(datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.purge"]
+    assert daily(datetime(2026, 11, 21, 3, 31, tzinfo=ist)) == ["reconcile", "drafts.archive"]
 
 
 def test_weekly_and_every_few_minutes(db: Any) -> None:

@@ -28,8 +28,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
 | `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
 | `S-03` | `/home` | `app/page.tsx` (signed-in home) | exists, differs | L | P0 | C |
-| `S-04` | `/share` | `app/share/page.tsx`, `share/start.tsx` | exists, differs | L | P0 | C |
-| `S-04B` | `/share/:draftId` | `app/share/[id]/canvas-form.tsx` | exists, differs | L | P0 | C |
+| `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128) | built (c/s04) | L | P0 | C |
+| `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126) | built (c/s04) | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
@@ -72,10 +72,10 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
-| `C-PROMPT` | exists, differs | L | P0 | C |
-| `C-DRAFT-LOADER` | missing | M | P0 | C |
-| `C-DRAFT-PANEL` | missing | L | P0 | C |
-| `C-HIDDEN` | exists, differs | M | P0 | C |
+| `C-PROMPT` | built (c/s04): `components/compose/prompt.tsx`, voice from `lib/use-voice-capture.ts` (BLD-C124, C127) | L | P0 | C |
+| `C-DRAFT-LOADER` | built (c/s04): `components/compose/draft-loader.tsx`, `lib/compose/loader.ts` (BLD-C120) | M | P0 | C |
+| `C-DRAFT-PANEL` | built (c/s04): `components/compose/draft-panel.tsx`, `lib/compose/live.ts` (BLD-C123, C125) | L | P0 | C |
+| `C-HIDDEN` | built (c/s04): `components/compose/hidden.tsx`, `lib/compose/hidden.ts` (BLD-C121; show/hide routes on c/hide) | M | P0 | C |
 | `C-SIMGRID` | exists, differs | M | P0 | C |
 | `C-PREVIEW` | missing | M | P0 | C |
 | `C-WORTH` | exists, differs | M | P0 | C, B |
@@ -93,7 +93,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
-| `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
+| `L-DRAFT` | `services/worker/draft/` (store, runs, parts, labels, adapters, archive), `services/worker/api/drafts.py`, `agents/draft-part`, `apps/web/src/app/api/drafts/*`, `apps/web/src/server/drafts.ts`, `apps/web/src/lib/draft-stream.ts`, `rules/drafting.md` (BLD-C070 to C079; review fixes BLD-C033 to C039); `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | built (c/draft): parts, runs, pins, receipts, autosave, one editor, offline, archive; email and Teams intake built and off (DEC-105); calls c/hide's `hide_message`, c/similar's `similar_for` and c/sarvam's `voice_to_message` (voice notes into the draft) once they land | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
@@ -114,6 +114,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
+| `L-LISTEN` | `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | back end built; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
 | `L-LISTEN` | `services/worker/desk/listen.py`, `reads.script_for`; `GET /api/desk/ideas/:id/listen` (BLD-B237) | landed at 82668c1 (17 Nov, back end) | P0 | B |
 
 ## `P-REPO.contracts`

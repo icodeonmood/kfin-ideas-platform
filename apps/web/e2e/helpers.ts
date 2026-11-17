@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
+import { emptyCanvas } from "../src/lib/canvas/model";
+
 /** Personas from `make seed` (BLD-039). */
 export const PERSONAS = {
   contributor: "SYN-00017",
@@ -91,12 +93,26 @@ export async function expectNoSidewaysScroll(page: Page) {
 }
 
 /**
- * Quick capture's one confirmation (DEC-094): a single tick covers the three declarations. The category is
- * optional and saved as "Not sure yet", and nothing else is required, so this is all a quick share needs after the
- * box is filled.
+ * Shares a problem through the submissions API the old quick capture used, as the signed-in person in `page`, and
+ * returns its id; the caller opens `/share/<id>/done`. The quick-capture screens it stood in for are replaced by
+ * Tell it (S-04, S-04B; BLD-C128) and the send screen is S-05's, so the specs whose subject is what happens after
+ * sharing (the scan, the crew, the desk, the Inbox) start from the API until S-05 lands. One box, the three
+ * declarations ticked: all a quick share needs (DEC-094).
  */
-export async function confirmQuickCapture(page: Page) {
-  await page.getByRole("checkbox", { name: /in this idea or its files, it is my own work/ }).check();
+export async function shareQuickly(page: Page, noticed: string): Promise<string> {
+  const made = await page.request.post("/api/submissions", { data: { mode: "quick" } });
+  expect(made.status(), "start a share").toBeLessThan(300);
+  const { id } = (await made.json()) as { id: string };
+  const canvas = {
+    ...emptyCanvas("quick"),
+    details: noticed,
+    declarations: { no_personal_data: true, own_work_or_credited: true, ip_terms: true },
+  };
+  const saved = await page.request.put(`/api/submissions/${id}`, { data: { canvas } });
+  expect(saved.status(), "save the share").toBeLessThan(300);
+  const sent = await page.request.post(`/api/submissions/${id}/submit`, { data: { canvas } });
+  expect(sent.status(), "send the share").toBe(202);
+  return id;
 }
 
 export type SwitchState = "on" | "off";

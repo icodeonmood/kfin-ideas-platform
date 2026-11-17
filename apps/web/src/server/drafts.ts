@@ -1,0 +1,195 @@
+/**
+ * A-API.drafts, web side (L-DRAFT, BLD-C071). The route handlers check the session and the capability; this file
+ * names the owner (user id and contributor code) and the device to the worker, which checks the draft is theirs,
+ * masks every message before anything else sees it (DEC-103) and keeps the person's own words sealed. The web app
+ * never reads those words from the database: they come back from the worker, to their owner only.
+ *
+ * Errors follow A-API.conventions/2: `{ error: { code, message, field? } }`, the message ready to show.
+ */
+import { NextResponse, type NextRequest } from "next/server";
+
+import { BANNERS } from "@/lib/killswitch-routes";
+
+import type { CurrentUser } from "./auth/current";
+import { workerFetch } from "./worker";
+
+export type DeviceKind = "phone" | "laptop";
+export type DeviceInfo = { kind: DeviceKind; id: string | null };
+
+const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const PHONE_UA = /Mobi|Android|iPhone|iPod|Windows Phone/i;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Plain words for each refusal (A-API.conventions/2). The pack's own lines where it has one. */
+export const DRAFT_MESSAGES: Record<string, string> = {
+  not_found: "We couldn't find that draft.",
+  archived: "This draft is archived. Restore it from My ideas to carry on.",
+  empty_message: "Type a few words first.",
+  too_long: "That's too long. Please make it shorter.",
+  too_many_messages: "This draft can't take more messages. Check it and send it, or start a new one.",
+  value_required: "Add something here first.",
+  value_invalid: "Choose from the list, or type your own.",
+  not_editable: "This part can't be changed here.",
+  assistant_off: BANNERS["ai.all"],
+  save_failed: "Couldn't save. Trying again.",
+  /** A voice note sent while voice is not in this build (BLD-C038): the voice panel's own words for a pause. */
+  voice_unavailable: "Voice notes are paused just now. Please type it instead.",
+};
+const FALLBACK = "Something went wrong. Please try again.";
+
+/** "This draft is open on your phone. Carry on here?" (L-DRAFT.autosave/5, NOT DRAWN default). */
+export function openElsewhere(device: unknown): string {
+  return `This draft is open on your ${device === "phone" ? "phone" : "laptop"}. Carry on here?`;
+}
+
+export class DraftApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    public extra: Record<string, unknown> = {},
+  ) {
+    super(code);
+  }
+}
+
+/** The device asking: the client says which (`X-Device`) and its own opaque id (`X-Device-Id`) for "this device";
+ * without the header the user agent decides phone or laptop. */
+export function deviceOf(request: NextRequest): DeviceInfo {
+  const said = request.headers.get("x-device");
+  const kind: DeviceKind =
+    said === "phone" || said === "laptop"
+      ? said
+      : PHONE_UA.test(request.headers.get("user-agent") ?? "")
+        ? "phone"
+        : "laptop";
+  const id = request.headers.get("x-device-id");
+  return { kind, id: id && DEVICE_ID.test(id) ? id : null };
+}
+
+function owner(me: CurrentUser) {
+  if (!me.contributorCode) throw new DraftApiError(403, "forbidden");
+  return { user_id: me.id, code: me.contributorCode };
+}
+
+function query(me: CurrentUser, device: DeviceInfo, extra: Record<string, string> = {}): string {
+  const q = new URLSearchParams({
+    user_id: me.id,
+    code: me.contributorCode ?? "",
+    device_kind: device.kind,
+    ...(device.id ? { device_id: device.id } : {}),
+    ...extra,
+  });
+  return q.toString();
+}
+
+async function call<T>(path: string, init: RequestInit): Promise<{ status: number; body: T }> {
+  let res: Response;
+  try {
+    // 15 s for a write; a caller's own signal (the stream's 5 s read) wins (BLD-C039).
+    res = await workerFetch(path, { ...init, signal: init.signal ?? AbortSignal.timeout(15_000) });
+  } catch {
+    throw new DraftApiError(503, "save_failed");
+  }
+  if (res.status === 204) return { status: 204, body: undefined as T };
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    const { error, ...extra } = body;
+    throw new DraftApiError(
+      res.status >= 500 ? 503 : res.status,
+      typeof error === "string" ? error : "save_failed",
+      extra,
+    );
+  }
+  return { status: res.status, body: body as T };
+}
+
+const json = (body: Record<string, unknown>) => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const drafts = {
+  list: (me: CurrentUser, device: DeviceInfo, archived: boolean) =>
+    call(`/internal/drafts?${query(me, device, archived ? { archived: "1" } : {})}`, {}),
+  get: (me: CurrentUser, device: DeviceInfo, id: string, open: boolean) =>
+    call(`/internal/drafts/${encodeURIComponent(id)}?${query(me, device, open ? { open: "1" } : {})}`, {}),
+  live: (me: CurrentUser, device: DeviceInfo, id: string, runId?: string | null) =>
+    call<LiveState>(
+      `/internal/drafts/${encodeURIComponent(id)}/live?${query(me, device, runId ? { run_id: runId } : {})}`,
+      { signal: AbortSignal.timeout(5_000) },
+    ),
+  create: (me: CurrentUser, device: DeviceInfo, body: Record<string, unknown>) =>
+    call("/internal/drafts", json({ ...body, owner: owner(me), device })),
+  write: (
+    me: CurrentUser,
+    device: DeviceInfo,
+    method: "POST" | "PATCH",
+    path: string,
+    body: Record<string, unknown> = {},
+  ) =>
+    call(`/internal/drafts/${path}`, {
+      ...json({ ...body, owner: owner(me), device }),
+      method,
+    }),
+};
+
+/** Known refusals become A-API errors; anything else is rethrown. */
+export function draftError(err: unknown): NextResponse {
+  if (err instanceof DraftApiError) {
+    const { field, device, ...rest } = err.extra;
+    const message =
+      err.code === "open_elsewhere" ? openElsewhere(device) : (DRAFT_MESSAGES[err.code] ?? FALLBACK);
+    return NextResponse.json(
+      {
+        error: {
+          code: err.code,
+          message,
+          ...(typeof field === "string" ? { field } : {}),
+          ...(device ? { device } : {}),
+          ...rest,
+        },
+      },
+      { status: err.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  throw err;
+}
+
+export const noStore = { "Cache-Control": "no-store" };
+
+/** A JSON body, or {} when it is not one. */
+export async function bodyOf(request: Request): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json().catch(() => ({}));
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The live view the stream reads (`/internal/drafts/:id/live`)
+// ---------------------------------------------------------------------------------------------------------------
+export interface LivePart {
+  state: "waiting" | "updating" | "filled" | "pinned" | "failed";
+  value: unknown;
+  why: string | null;
+  source_quote: string | null;
+  took_ms: number | null;
+  run_id: string | null;
+}
+export interface LiveRun {
+  id: string;
+  state: "running" | "done" | "failed";
+  parts: { key: string; mean_ms: number }[];
+  part_ms: Record<string, number>;
+  receipt: string[];
+  suggestions: string[];
+  ready: boolean;
+  hidden: {
+    spans: { start: number; end: number; kind: string }[];
+    details: { id: string; kind: string; masked: string; state: string }[];
+  };
+}
+export interface LiveState {
+  latest: { id: string; state: string } | null;
+  run: LiveRun | null;
+  parts?: Record<string, LivePart>;
+}
