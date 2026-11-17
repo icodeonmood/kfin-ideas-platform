@@ -38,6 +38,7 @@ import type {
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
 import { bottomBar, initialPanel, panelReducer, readyLine } from "@/lib/desk/panel";
+import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
 
@@ -90,31 +91,9 @@ function whenSaid(at: string | Date, now: Date) {
   return `${today ? "Today" : dayLabel(at, now)}, ${clockLabel(at)}`;
 }
 
-type ApiError = {
-  code: string;
-  message: string;
-  field?: string;
-  words?: string[];
-  suggestions?: { word: string; suggestion: string }[];
-};
-
-async function send<T>(url: string, method: "POST" | "PUT", body?: unknown) {
-  const failed: ApiError = { code: "failed", message: "That didn’t go through. Try again." };
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
-    return { ok: false as const, error: failed };
-  }
-  const json = (await res.json().catch(() => ({}))) as T | { error?: ApiError };
-  if (!res.ok || (json && typeof json === "object" && "error" in json && json.error)) {
-    return { ok: false as const, error: (json as { error?: ApiError }).error ?? failed };
-  }
-  return { ok: true as const, body: json as T };
+/** A desk action; a paused feature or a bare refusal shows its banner or the failure line (non-negotiable 9). */
+function send<T>(url: string, method: "POST" | "PUT", body?: unknown) {
+  return call<T>(url, { method, body });
 }
 
 /** The time now, refreshed on each whole minute: every countdown label can only change then. */
@@ -569,9 +548,14 @@ export function ReviewerIdea({
                   label={panel.choice ? reasonLabels[panel.choice] : "Your reason"}
                   multiline
                   help={
-                    reasonLength < numbers.reasonMin
-                      ? `${reasonLength} of at least ${numbers.reasonMin} characters`
-                      : `${first} reads this word for word.`
+                    <>
+                      <span className="help-l">{first} reads this word for word.</span>
+                      {reasonLength < numbers.reasonMin ? (
+                        <span className="help-l">
+                          {reasonLength} of at least {numbers.reasonMin} characters
+                        </span>
+                      ) : null}
+                    </>
                   }
                   error={errors.reason}
                   warning={wording?.message}
