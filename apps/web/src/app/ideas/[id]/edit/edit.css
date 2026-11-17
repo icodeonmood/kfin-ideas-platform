@@ -1,0 +1,294 @@
+/*
+ * S-06B "Edit after sharing" (Edit and PhoneEdit boards; reference/css/boards/Edit.css and PhoneEdit.css for the
+ * values). The parts come styled from S-05 (share/[id]/check/check.css); lane D's shell, primitives and tokens do the
+ * rest. This file only lays out the one page: the column and the side panel, the section heads, your problem's card
+ * with how often beside the hidden details, the side panel's dots, and the pinned foot (the dock on a phone).
+ */
+
+.ed .editline {
+  margin: 0 0 0 20px;
+  max-width: 60ch;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--mute2);
+}
+
+.ed-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 48px 48px 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 760px) 344px;
+  gap: 56px;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.ed-main {
+  min-width: 0;
+}
+
+.ed-h {
+  margin: 0;
+}
+
+.ed-aside {
+  position: sticky;
+  top: 104px;
+}
+
+/* --- Sections ------------------------------------------------------------------------------------------------- */
+.ed-sec {
+  margin-top: 52px;
+  outline: none;
+}
+
+.ed-sec:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 6px;
+  border-radius: var(--r-sm);
+}
+
+.ed-sech {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+
+.ed-sec > .h2,
+.ed-sech .h2 {
+  margin: 0;
+}
+
+.ed-sech .meta {
+  flex: none;
+  margin: 0;
+}
+
+.ed-sec .h2 .opt {
+  margin-left: 4px;
+  font: 400 16px/1 var(--ft);
+  letter-spacing: 0;
+  color: var(--mute);
+}
+
+.ed-sec > .ck-sort,
+.ed-sec > .ck-proof,
+.ed-sec > .ck-fix,
+.ed-words {
+  margin-top: 18px;
+}
+
+/* Your problem: the title, what happens, then how often beside the hidden details (Edit board) */
+.ed-words .ck-words {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px 14px;
+}
+
+.ed-words .ck-w-title,
+.ed-words .ck-w:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.ed-words .ck-w-title {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rule2);
+}
+
+.ed-words .ck-w:nth-child(3) {
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.05);
+}
+
+.ed-words .ck-hid {
+  margin: 0;
+}
+
+/* --- The side panel: what happens when you save --------------------------------------------------------------- */
+.ed-next .h3 {
+  margin: 0;
+}
+
+.ed-nl {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+
+.ed-nl li {
+  position: relative;
+  padding: 0 0 18px 28px;
+}
+
+.ed-nl li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  box-shadow: inset 0 0 0 1.5px #6c6c70;
+  background: var(--card);
+}
+
+.ed-nl li::after {
+  content: "";
+  position: absolute;
+  left: 8.5px;
+  top: 18px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--rule);
+}
+
+.ed-nl li:last-child::after {
+  display: none;
+}
+
+.ed-nl li:last-child {
+  padding-bottom: 4px;
+}
+
+.ed-nl li.on::before {
+  background: var(--blue);
+  box-shadow: none;
+}
+
+.ed-nt {
+  margin: 0;
+  font: 500 14.5px/1.4 var(--ft);
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-nd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+/* --- The foot: the declaration beside Cancel and Save changes ------------------------------------------------- */
+.ed-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  margin: 56px -24px 0;
+  padding: 16px 24px 20px;
+  background: var(--glass-dock);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.ed-foot .decl {
+  flex: 1 1 300px;
+  max-width: 58ch;
+}
+
+.ed-foot .bmsg {
+  flex-basis: 100%;
+}
+
+.ed-acts {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-left: auto;
+}
+
+.ck .bmsg.ok {
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.ed .bmsg .tb {
+  min-height: 24px;
+  margin-left: auto;
+  color: inherit;
+}
+
+.ed-closed {
+  max-width: 760px;
+  margin: 48px auto;
+  padding: 0 24px;
+  display: grid;
+  gap: 18px;
+  justify-items: start;
+}
+
+.ed-closed-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+/* --- Narrower windows and the phone (S-06B.rules/5: one column, "Save changes" in the dock) ------------------- */
+@media (max-width: 1100px) {
+  .ed-page {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 32px 24px 0;
+    gap: 32px;
+  }
+
+  .ed-aside {
+    position: static;
+  }
+}
+
+.ed-phone .ed-page {
+  padding: 20px var(--page-gutter, 16px) 0;
+}
+
+.ed-phone .ed-sec {
+  margin-top: 36px;
+}
+
+.ed-phone .ed-words .ck-words {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ed-phone .ed-next {
+  margin-top: 36px;
+}
+
+.ed-dock .decl {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute2);
+}
+
+.ed-dock .ed-acts {
+  margin: 0;
+  justify-content: space-between;
+}
+
+@media (max-width: 640px) {
+  /* The dock is fixed at the foot: the page keeps room for it. */
+  .ed-phone {
+    padding-bottom: 200px;
+  }
+
+  /* The dock reads top to bottom here: the declaration, then Cancel and Save changes (PhoneEdit). */
+  .ed-dock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ed-dock .ed-acts > .btn:last-child {
+    flex: 1;
+    min-height: var(--ctl-full);
+  }
+}

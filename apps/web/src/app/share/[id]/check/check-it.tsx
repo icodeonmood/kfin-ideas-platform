@@ -96,7 +96,7 @@ function subscribePhone(cb: () => void) {
   return () => m.removeEventListener("change", cb);
 }
 
-function usePhone(): boolean {
+export function usePhone(): boolean {
   return useSyncExternalStore(
     subscribePhone,
     () => typeof window.matchMedia === "function" && window.matchMedia(PHONE).matches,
