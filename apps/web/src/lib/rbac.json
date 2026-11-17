@@ -222,7 +222,6 @@
     "POST /api/inbox/{id}/unread                       signed_in",
     "POST /api/inbox/{id}/archive                      signed_in",
     "POST /api/inbox/{id}/actions/{op}                 signed_in",
-    "GET /api/canvas/config                            submit",
     "GET /api/submissions/{id}                         submit",
     "POST /api/submissions                             submit",
     "PUT /api/submissions/{id}                         submit",
