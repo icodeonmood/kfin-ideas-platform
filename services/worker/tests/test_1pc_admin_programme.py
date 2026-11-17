@@ -72,12 +72,18 @@ def an_idea(
 
 
 _AUDIT_FROM = [0]  # audit_log is append-only and outlives each test; read only this test's rows
+# The One-number and induction counters live in id_counters, which no truncate touches: put them back as found, so a
+# later test's "next free number" is what it expects (crunch rule 14).
+_COUNTERS = ["ONE-NO", "ONE"]
 
 
 @pytest.fixture
 def cast(db: Conn) -> Any:
     kindling.clear_cache()
     _AUDIT_FROM[0] = int(db.execute("SELECT coalesce(max(id), 0) AS n FROM audit_log").fetchone()["n"])
+    counters = db.execute(
+        "SELECT kind, period, last_value FROM id_counters WHERE kind = ANY(%s)", (_COUNTERS,)
+    ).fetchall()
     yield {
         "admin": person(db, "Ishaan Varma", "admin"),
         "finance": person(db, "Meher Saxena", "admin"),
@@ -88,9 +94,14 @@ def cast(db: Conn) -> Any:
         "member": person(db, "Nandini Iyer"),
         "nobody": person(db, "Rhea Kulkarni"),
     }
-    wall_fixtures.leave_clean(
-        db
-    )  # people, ideas and all that hangs off them (Ones, measurements, audit stays)
+    # People, ideas and all that hangs off them (Ones, measurements); audit_log stays, as it must.
+    wall_fixtures.leave_clean(db)
+    db.execute("DELETE FROM id_counters WHERE kind = ANY(%s)", (_COUNTERS,))
+    for c in counters:
+        db.execute(
+            "INSERT INTO id_counters (kind, period, last_value) VALUES (%s, %s, %s)",
+            (c["kind"], c["period"], c["last_value"]),
+        )
     db.execute("DELETE FROM flag_assignments")
     db.execute("UPDATE flags SET state = 'on', alternative_percent = 0")  # as the cut-over seeds them
     kindling.clear_cache()
