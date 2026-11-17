@@ -27,7 +27,7 @@ RETIRED: frozenset[str] = frozenset(
 DAILY: dict[str, clock] = {
     "reconcile": clock(2, 0),  # §3.5
     "drafts.purge": clock(3, 30),
-    "comms.digest": clock(10, 30),  # the weekly digest goes out on Mondays (the handler checks the day)
+    "comms.digest": clock(10, 30),  # the decide-by digest to the review desk (BLD-A203), working days
     "delivery.tick": clock(9, 30),  # §4.9 to §4.11: reminders and escalations
 }
 
