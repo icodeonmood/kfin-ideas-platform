@@ -7,12 +7,13 @@
  * Cast: Kavya is a new synthetic employee per run (SYN-18000 to SYN-19999), so the draft she starts on the phone is
  * the only one she has and carries from row to row; nothing seeded changes. Row 1 types instead of speaking (the
  * voice variation is left to V-ACC; DEC-108). Rows 5 and 6 need email and Teams intake (L-DRAFT.channels, off until
- * IT, DEC-105); they read Tanvi's Inbox and Share another way, where a draft that came in by email will show.
+ * IT, DEC-105); they read Indira's Inbox and Share another way, where I2, a forwarded email that landed as a
+ * draft, shows (lane E, 34249f1). I2 is read only.
  */
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { signInAs, step } from "./lib";
+import { seeded, signInAs, step } from "./lib";
 
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`; // "8:42 pm"
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
@@ -143,17 +144,16 @@ step(
   "Sent in by email or Teams: it lands as a draft, and the Inbox says it was kept",
   { needs: ["S-H5", "L-INBOX", "L-DRAFT", "L-DRAFT.channels"] },
   async ({ page }) => {
-    await signInAs(page, "tanvi");
+    // Seed (lane E, 34249f1): Indira forwarded an email; it landed as I2, a draft Indira has not opened.
+    const i2 = await seeded("I2");
+    await signInAs(page, "indira");
     await page.goto("/inbox");
     const item = page
       .getByRole("button", { name: /^1% Club kept your draft from (?:email|Teams), / })
       .first();
     await expect(item).toBeVisible();
     await item.click();
-    await expect(page.getByRole("link", { name: "Carry on" })).toHaveAttribute(
-      "href",
-      /\/share\/[0-9a-f-]{36}$/,
-    );
+    await expect(page.getByRole("link", { name: "Carry on" })).toHaveAttribute("href", `/share/${i2.uuid}`);
   },
 );
 
@@ -163,11 +163,13 @@ step(
   "Check and send on Share another way opens that draft with a banner saying where it came from",
   { needs: ["S-H3", "S-04B", "L-DRAFT", "L-DRAFT.channels"] },
   async ({ page }) => {
-    await signInAs(page, "tanvi");
+    const i2 = await seeded("I2");
+    await signInAs(page, "indira");
     await page.goto("/share/other-ways");
     await expect(page.getByText("Arrived from elsewhere", { exact: true })).toBeVisible();
     await page.getByRole("link", { name: "Check and send" }).first().click();
-    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    await page.waitForURL(new RegExp(`/share/${i2.uuid}$`));
+    await expect(page.getByText(i2.title).first()).toBeVisible();
     await expect(page.getByText(/^From your (?:email|Teams), /).first()).toBeVisible();
     await expect(
       page.getByText("We turned it into this draft. Nothing has been sent.").first(),
