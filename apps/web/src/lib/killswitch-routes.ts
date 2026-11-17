@@ -23,7 +23,8 @@ export type SwitchName =
   | "capture.mic_hint"
   | "capture.voice"
   | "speech.hosted"
-  | "files.blackout";
+  | "files.blackout"
+  | "desk.listen";
 
 interface Rule {
   methods: readonly string[];
@@ -81,6 +82,17 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // The Ones Committee's window (L-COMMITTEE): extending and reversing pause with the committee's flow.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/committee\/windows\/[^/]+\/(?:extend|reverse)\/?$/,
+    switches: ["committee.flow"],
+  },
+  // The sharer answering the review desk (S-R3) is editing their idea: read-only mode (§7.6) pauses it too.
+  { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
+  { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
+  // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
+  { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
 ];
 
 /**
@@ -114,6 +126,8 @@ export const BANNERS: Record<SwitchName, string> = {
   // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
   "files.blackout":
     "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
+  // The review desk's player (C-LISTEN, BLD-B230). Wording to be confirmed by HR.
+  "desk.listen": "Listening to an idea is paused for now. You can still read it on the page.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
@@ -150,6 +164,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // whatever is paused.
   /^\/api\/desk\/ideas\/[^/]+\/hide\/?$/,
   /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/hide\/?$/,
+  // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
+  // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
+  /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
+  // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
+  /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {
