@@ -354,8 +354,10 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
                     {a.label}
                   </Button>
                 ))}
-              {/* TODO(lane F): C-SHEET-TEAMUP. The tile's "Team up" (op team_up) opens lane F's sheet; it is left out
-                  until the sheet lands. */}
+              {/* TODO(lane F): C-SHEET-TEAMUP (f/sheet-teamup-2, 37acc2e; not on main yet). Once it lands:
+                  const teamUp = useTeamUpSheet({ onSent: refresh }) from "@/components/teamup/teamup-sheet",
+                  render {teamUp.sheet}, the tile's "Team up" onClick={() => teamUp.open(t.idea.id)}, and
+                  C-PREVIEW's onPrimary={teamUp.open}. */}
             </div>
           </li>
         ))}
