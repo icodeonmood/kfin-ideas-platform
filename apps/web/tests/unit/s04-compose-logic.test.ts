@@ -8,9 +8,24 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Draft, DraftStreamEvent } from "@/lib/contracts";
-import { DraftClient, DraftError, type Outgoing } from "@/lib/compose/client";
+import {
+  clearOutboxes,
+  DraftClient,
+  DraftError,
+  messagesFor,
+  type HeldNote,
+  type Outgoing,
+} from "@/lib/compose/client";
 import { kindsLine, quoteRange, segments, SHOW_REASONS, shownLine } from "@/lib/compose/hidden";
-import { applyEvent, fromDraft, hasValue, withDraft } from "@/lib/compose/live";
+import {
+  applyEvent,
+  fromDraft,
+  giveUp,
+  hasValue,
+  loseStream,
+  withDraft,
+  withDraftAfterLoss,
+} from "@/lib/compose/live";
 import {
   barValue,
   LOADER_ALL_IN,
@@ -434,5 +449,149 @@ describe("the draft as the stream builds it (C-DRAFT-PANEL, A-API.draft-stream; 
     expect(hasValue({ state: "pinned", value: ["a"] })).toBe(true);
     expect(hasValue({ state: "filled", value: [] })).toBe(false);
     expect(hasValue({ state: "updating", value: "x" })).toBe(false);
+  });
+});
+
+describe("S-04B review fixes: the stream's failure path and replays (BLD-C123)", () => {
+  const RUN = {
+    event: "run" as const,
+    data: {
+      run_id: "r-9",
+      parts: [
+        { key: "title" as const, mean_ms: 1800 },
+        { key: "value" as const, mean_ms: 1500 },
+        { key: "area" as const, mean_ms: 700 },
+      ],
+    },
+  };
+
+  it("C-DRAFT-LOADER.maths/4 the browser's reconnect replays the run: the clock, the answers and filled parts stay", () => {
+    let live = applyEvent(fromDraft(draft()), RUN, 1000);
+    live = applyEvent(
+      live,
+      { event: "part", data: { key: "area", state: "filled", value: "Operations", took_ms: 600 } },
+      1600,
+    );
+    const replayed = applyEvent(live, RUN, 9000); // the native reconnect, `?run=` from its start
+    expect(replayed).toBe(live);
+    expect(replayed.loader!.startedAt).toBe(1000);
+    expect(replayed.parts.area).toMatchObject({ state: "filled", value: "Operations" });
+    const again = applyEvent(
+      replayed,
+      { event: "part", data: { key: "area", state: "filled", value: "Operations", took_ms: 600 } },
+      9100,
+    );
+    expect(again.loader!.answered.area).toBe(1600); // the first answer's time is kept
+    // A page that loaded mid-run knows the run's id but has no loader yet: its first `run` still starts the bar.
+    const loaded = fromDraft(draft({ run: { id: "r-9", state: "running" } }));
+    expect(applyEvent(loaded, RUN, 5000).loader!.startedAt).toBe(5000);
+  });
+
+  it("C-DRAFT-LOADER.failure/1 a part past 10 x its mean fails, counts as answered, and the rest keep building", () => {
+    let live = applyEvent(fromDraft(draft()), RUN, 0);
+    live = giveUp(live, 7_001); // area's mean is 700 ms
+    expect(live.parts.area.state).toBe("failed");
+    expect(live.updating).toEqual(["title", "value"]);
+    expect(live.loader!.answered.area).toBe(7_001);
+    expect(live.running).toBe(true);
+    live = giveUp(live, 18_001); // title and value too
+    expect(live.parts.title.state).toBe("failed");
+    expect(live.parts.summary.state).toBe("failed");
+    expect(live.running).toBe(false); // nothing left to wait for: no skeleton, no "Still working"
+    const late = applyEvent(
+      live,
+      { event: "part", data: { key: "value", state: "filled", value: ["saves_time"], took_ms: 19_000 } },
+      19_000,
+    );
+    expect(late.parts.value).toMatchObject({ state: "filled", value: ["saves_time"] }); // a late part still lands
+  });
+
+  it("L-DRAFT.errors a lost stream fails every part still out; a fresh read keeps them failed while the server builds", () => {
+    let live = applyEvent(fromDraft(draft()), RUN, 0);
+    live = applyEvent(
+      live,
+      { event: "part", data: { key: "area", state: "filled", value: "Operations", took_ms: 600 } },
+      600,
+    );
+    live = loseStream(live, 2_000);
+    expect(live.running).toBe(false);
+    expect(live.updating).toEqual([]);
+    expect([live.parts.title.state, live.parts.value.state]).toEqual(["failed", "failed"]);
+    const still = draft({
+      run: { id: "r-9", state: "running" },
+      parts: {
+        ...draft().parts,
+        title: { state: "updating", value: "" },
+        summary: { state: "updating", value: "" },
+        value: { state: "filled", value: ["saves_cost"] },
+        area: { state: "filled", value: "Operations" },
+      },
+    });
+    const read = withDraftAfterLoss(live, still);
+    expect(read.running).toBe(false);
+    expect(read.updating).toEqual([]);
+    expect(read.parts.title.state).toBe("failed"); // not back to a skeleton no stream will fill
+    expect(read.parts.value).toMatchObject({ state: "filled", value: ["saves_cost"] }); // what landed shows
+    const done = withDraftAfterLoss(read, draft({ run: { id: "r-9", state: "done" } }));
+    expect(done.parts.title.state).toBe("filled"); // the finished run wins
+  });
+});
+
+describe("BLD-C150 a voice note after typed words goes as its own message", () => {
+  const note = (prefix: string | null): HeldNote => ({
+    streamId: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    text: "Branch mein roz das log aate hain",
+    textEn: "Ten people come to the branch every day",
+    prefix,
+  });
+
+  it("C-PROMPT.voice typed first (typed), then the note (voice, with its stream), each with its own client_id", () => {
+    const typed = "The mandate screen asks for the IFSC twice.";
+    const out = messagesFor(`${typed} ${note(typed).text}`, note(typed));
+    expect(out.map((m) => [m.via, m.text, m.streamId])).toEqual([
+      ["typed", typed, undefined],
+      ["voice", note(typed).text, note(typed).streamId],
+    ]);
+    expect(new Set(out.map((m) => m.clientId)).size).toBe(2);
+  });
+
+  it("C-PROMPT.voice the note edited in the box still goes as the voice message; typed words edited still split", () => {
+    const typed = "The mandate screen asks twice.";
+    const n = note(typed);
+    const edited = messagesFor(`${typed} Branch mein roz bees log aate hain`, n);
+    expect(edited.map((m) => m.via)).toEqual(["typed", "voice"]);
+    expect(edited[1]!.text).toBe("Branch mein roz bees log aate hain");
+    const retyped = messagesFor(`The mandate screen asks for it twice. ${n.text}`, n);
+    expect(retyped.map((m) => [m.via, m.text])).toEqual([
+      ["typed", "The mandate screen asks for it twice."],
+      ["voice", n.text],
+    ]);
+  });
+
+  it("C-PROMPT.voice a note into an empty box is one voice message; no note is one typed message", () => {
+    expect(messagesFor(note("").text, note("")).map((m) => m.via)).toEqual(["voice"]);
+    expect(messagesFor("Only typed words here.", null).map((m) => m.via)).toEqual(["typed"]);
+    expect(messagesFor("   ", note("x"))).toEqual([]);
+  });
+});
+
+describe("S-04.rules/4 sign-out leaves no waiting words on the device", () => {
+  it("L-DRAFT.autosave/7 every draft's outbox is cleared; other keys stay", () => {
+    const m = new Map<string, string>([
+      ["1pc.outbox.d-1", "[]"],
+      ["1pc.outbox.d-2", "[]"],
+      ["1pc.device-id", "abcdef123456"],
+    ]);
+    const store = {
+      get length() {
+        return m.size;
+      },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+    };
+    clearOutboxes(store as unknown as Storage);
+    expect([...m.keys()]).toEqual(["1pc.device-id"]);
   });
 });
