@@ -130,13 +130,8 @@ function PutBack({ removal, onDone }: { removal: Removal; onDone: (m: string) =>
   const [problem, setProblem] = useState<Problem | null>(null);
   if (!open)
     return (
-      <button
-        type="button"
-        className="button button-secondary"
-        onClick={() => setOpen(true)}
-        aria-label={`Put ${removal.idea_ref} back on the Wall`}
-      >
-        Put back…
+      <button type="button" className="button button-secondary" onClick={() => setOpen(true)}>
+        Put back<span className="visually-hidden">: {removal.idea_ref}</span>
       </button>
     );
   return (
