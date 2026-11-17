@@ -7,7 +7,8 @@
  * V-ACC.track/8). Mocked routes, synthetic people.
  */
 import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COUNTS_EVENT, InboxReader, questionActions } from "@/app/inbox/inbox-reader";
@@ -29,6 +30,9 @@ vi.mock("next/link", async () => {
 const IDEA = "IDEA-2026-000912";
 const TITLE = "Investors call to ask why a redemption was rejected";
 const SET_ID = "8d2f4b6a-1c3e-4a5b-9d7f-2e6c8a0b4d13";
+/** The reader names the item's own set, so the worker marks nothing seen for another (BLD-B248). */
+const SET_URL = `/api/ideas/${IDEA}/question-set?set_id=${SET_ID}`;
+const readsSet = (calls: string[]) => calls.some((c) => c.includes("/question-set"));
 const DUE = new Date(Date.now() + 3 * 86_400_000).toISOString();
 const MEERA = {
   id: "u-meera",
@@ -130,6 +134,8 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
+const realMatchMedia = window.matchMedia;
+
 function stubWidth(desktop: boolean) {
   window.matchMedia = ((q: string) => ({
     matches: desktop,
@@ -150,7 +156,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? "GET"} ${url}`);
-      if (url === `/api/ideas/${IDEA}/question-set`) return json(200, served);
+      if (url.startsWith(`/api/ideas/${IDEA}/question-set`)) return json(200, served);
       if (url === "/api/inbox/counts") return json(200, COUNTS);
       return json(404, { error: { code: "not_found", message: "We couldn’t find that." } });
     }),
@@ -161,6 +167,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  window.matchMedia = realMatchMedia;
 });
 
 async function settle() {
@@ -185,7 +192,7 @@ const footLinks = () =>
 describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => {
   it("J-TRACK/3 Inbox.md: the card is the body, under the reader's own header, with one Answer the questions in the foot", async () => {
     await open();
-    expect(calls).toContain(`GET /api/ideas/${IDEA}/question-set`);
+    expect(calls.filter((c) => c.includes("/question-set"))).toEqual([`GET ${SET_URL}`]);
     // The reader's header stays: what it is, the idea as the item's title, who asked, when and the countdown
     expect(host.querySelector(".ibx-kind")?.textContent).toBe("Questions from the review desk");
     expect(host.querySelector("#ibx-title")?.textContent).toBe(TITLE);
@@ -234,7 +241,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
     expect(host.querySelector(".qcard-inbox h1, .qcard-inbox h2, .qcard-inbox h3")).toBeNull();
   });
 
-  it("L-INBOX.kinds: an answer reminder shows the same set; another set, a refused read or a done item keeps the item's note", async () => {
+  it("L-INBOX.kinds: an answer reminder shows the same set; another set, a refused read, an item naming no set or a done item keeps the item's note", async () => {
     await open({
       ...ITEM,
       id: "78",
@@ -247,6 +254,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
     for (const [name, item, set] of [
       ["another set", ITEM, { ...questionSet(), id: "1f0e2d3c-4b5a-4968-8776-655443322110" }],
       ["a refused read", ITEM, null],
+      ["no set named", { ...ITEM, body: { ...ITEM.body, set_id: undefined } }, questionSet()],
       ["done", { ...ITEM, needs_you: false }, questionSet()],
     ] as const) {
       root = createRoot(host);
@@ -269,11 +277,37 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
         footLinks().map(([l]) => l),
         name,
       ).toEqual(["Open the conversation", "Answer the questions"]);
-      // A done item never reads the set again: the first read marks it seen for the desk (L-QUESTIONS.clock/1)
-      if (name === "done") expect(calls).not.toContain(`GET /api/ideas/${IDEA}/question-set`);
+      // A done item, or one that names no set, never reads one: the first read marks it seen for the desk
+      // (L-QUESTIONS.clock/1)
+      if (name === "done" || name === "no set named") expect(readsSet(calls), name).toBe(false);
+      else expect(calls, name).toEqual([`GET ${SET_URL}`]);
       act(() => root.unmount());
     }
     root = createRoot(host);
+  });
+
+  it("L-QUESTIONS.clock/1 S-H5.rules/6: on a phone, hydrating the server's desktop render reads no set until the item is opened", async () => {
+    stubWidth(false);
+    const initial: InboxList = { items: [ITEM], total: 1, counts: COUNTS, unread: 2 };
+    const el = createElement(InboxReader, { initial, initialTab: "all", initialItem: null });
+    const server = document.createElement("div");
+    server.innerHTML = renderToString(el); // the server's layout: a desktop with the first item open
+    document.body.append(server);
+    let hydrated: Root | undefined;
+    await act(async () => {
+      hydrated = hydrateRoot(server, el);
+    });
+    await settle();
+    expect(readsSet(calls)).toBe(false);
+    expect(server.querySelector(".qcard-inbox")).toBeNull();
+    // Opening it is what reads the set, and only then is it seen
+    const row = server.querySelector<HTMLButtonElement>(`#ibx-row-${ITEM.id}`);
+    await act(async () => row!.click());
+    await settle();
+    expect(calls.filter((c) => c.includes("/question-set"))).toEqual([`GET ${SET_URL}`]);
+    expect(server.querySelector(".qcard-inbox")).not.toBeNull();
+    act(() => hydrated!.unmount());
+    server.remove();
   });
 
   it("C-QCARD.states answered: the forward action to the Answer screen goes; Open the conversation stays", () => {
