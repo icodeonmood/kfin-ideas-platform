@@ -99,6 +99,12 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
     heading.current?.focus();
   }, [step, sent]);
 
+  // Saves and retries still waiting stop when the screen goes
+  useEffect(() => {
+    const pending = timers.current;
+    return () => Object.values(pending).forEach(clearTimeout);
+  }, []);
+
   if (!set) {
     // The same for anyone but the sharer, so it never says whether the idea exists (L-QUESTIONS.answer).
     return (
