@@ -202,7 +202,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         return;
       }
       setSent(r.body);
-      void tellInboxCounts(); // the sidebar's Inbox count moves with the item (L-INBOX.rules/1)
+      void tellInboxCounts(); // the item left Needs you: every Inbox count is sent again (L-INBOX.rules/1, /3)
     } finally {
       setBusy(false);
     }
