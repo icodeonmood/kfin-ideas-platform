@@ -498,22 +498,27 @@ def test_L_INBOX_actions_go_to_the_lane_that_owns_the_op(cast: Any) -> None:
                          needs_you=True, refs={"request_id": str(uuid.uuid4()), "request": "team_only"},
                          actions=[Action("Decline", "text", op="decline")])  # fmt: skip
     item = posted.ids[0]
-    with pytest.raises(inbox.InboxRefused) as refused:
-        inbox.action(db, p["kavya"]["id"], item, "decline")
-    assert refused.value.code == "not_available"  # until lane F registers it
+    # Lane F's team-up handlers register when the teamup package is imported (BLD-F028); this test checks the
+    # Inbox's own routing with a stand-in, so it sets them aside and puts them back afterwards.
+    saved = dict(ops._OPS)
+    ops._OPS.clear()
     seen: list[str] = []
-
-    @ops.register("teamup_request", "decline")
-    def _decline(conn: Any, user_id: str, row: dict[str, Any]) -> dict[str, Any]:
-        seen.append(user_id)
-        return {"ok": True}
-
     try:
+        with pytest.raises(inbox.InboxRefused) as refused:
+            inbox.action(db, p["kavya"]["id"], item, "decline")
+        assert refused.value.code == "not_available"  # no lane has registered this op
+
+        @ops.register("teamup_request", "decline")
+        def _decline(conn: Any, user_id: str, row: dict[str, Any]) -> dict[str, Any]:
+            seen.append(user_id)
+            return {"ok": True}
+
         assert inbox.action(db, p["kavya"]["id"], item, "decline")["result"] == {"ok": True}
         with pytest.raises(inbox.InboxRefused):
             inbox.action(db, p["kavya"]["id"], item, "merge")  # not offered on this item
     finally:
         ops._OPS.clear()
+        ops._OPS.update(saved)
     assert seen == [p["kavya"]["id"]]
 
 

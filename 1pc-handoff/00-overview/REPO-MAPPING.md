@@ -34,14 +34,14 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | built: `app/ideas/[id]/edit/` (`edit-idea.tsx` the one page, phone in one column with the dock; `model.ts` what changed and the Save body; `copy.ts` the words), reusing S-05's parts from `app/share/[id]/check/` with edit props and `use-proof.ts`; data `GET`/`PATCH /api/ideas/:id/edit` (`server/share.ts`, worker `submit/edit.py`) | built (lane C, BLD-C160 to C164); files and links need c/files on main | M | P0 | C |
 | `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
-| `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
+| `S-08` | `/ideas/:id/conversation` | `app/ideas/[id]/conversation/page.tsx` over `server/convo.ts` (`readConversation`); the screen `components/convo/conversation.tsx` (+ `compose.ts`, `conversation.css`); dev-only `app/kit/conversation` for e2e. Questions as a plain entry until `C-QCARD` lands (BLD-F065); no attach control until a conversation upload route exists (BLD-F064) | built (18 Nov, `f/convo-7`) | L | P0 | F |
 | `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
-| `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
-| `S-R2` | `/desk/ideas/:id` | `app/review/[id]` | exists, differs | L | P0 | B |
-| `S-R3` | `/ideas/:id/answer` | none | missing | M to L | P0 | B |
-| `S-R4` | `/committee` | `app/committee` (scoring rounds); closest behaviour is `app/desk-decisions` (veto) | exists, differs | L | P0 | B |
+| `S-R1` | `/desk` | `app/desk` (`page.tsx`, `desk-view.tsx`, `desk.css`), `server/desk.ts` `deskRead`, worker `desk/reads.py`; `/review` redirects here (old page, actions and `review.spec.ts` retired) | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
+| `S-R2` | `/desk/ideas/:id` | `app/desk/ideas/[id]` (`page.tsx`, `reviewer-idea.tsx`, `reviewer.css`), `lib/desk/{panel,when,countdown,files}.ts`; `/review/:id` redirects here. "See changes" on Draft history waits for A-API's versions route | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
+| `S-R3` | `/ideas/:id/answer` | `app/ideas/[id]/answer` (`page.tsx`, `answer-view.tsx`, `answer.css`); files on an answer and the voice are seams | built (17 Nov, lane B, b/1pc-screens-1) | M to L | P0 | B |
+| `S-R4` | `/committee` | `app/committee` (`page.tsx`, `committee-view.tsx`, `committee.css`; the scoring-round page replaced), worker `desk/committee.py`; page rule `committee_window` | built (17 Nov, lane B, b/1pc-screens-1) | L | P0 | B |
 | `S-H2` | `/crew` | none (`crew.tsx` fragments) | missing | L | P0 | F |
 | `S-H2B` | `/inbox/:itemId` | none | missing | M to L | P0 | F |
 | `S-H3` | `/share/other-ways` | `app/share/other-ways` (page, `ways.tsx`), `server/ways.ts`, `POST /api/me/app-news` over `app_news_requests` | built (16 Nov, BLD-A192); email and Teams intake switched off (`intake.email`, `intake.teams`), arrivals read `ideas.channel` after the cut-over | M | P0 (page), P2 (arrivals) | A |
@@ -55,7 +55,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | State | Effort | Phase | Lane |
 |---|---|---|---|---|
-| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. Lanes B fill `desk` and `committee` rows | M to L | P0 | D |
+| `C-SIDEBAR` | built (BLD-D011): `components/shell/sidebar.tsx`, `account-menu.tsx`, `frame.tsx`, `app/shell.css`; links from `policy/rbac.yaml` `navigation:`; data `server/shell.ts`. The `desk` and `committee` rows are lane B's (`deskRows`, `committeeRows`, 17 Nov) | M to L | P0 | D |
 | `C-PHONE-TABS` | built (BLD-D011): `components/shell/phone.tsx` (`PhoneTabs`, `PhoneTop`, `PhoneBar` for child screens, `Dock` for task screens) | M | P0 | D |
 | `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
 | `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
@@ -71,19 +71,19 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); wired on `S-05` part 4 in `app/share/[id]/check/proof.tsx` against A-API.files (BLD-C133); the old canvas's `share/[id]/attachments.tsx` retires with it; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
-| `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
+| `C-DROPDOWN` | built: `components/ui/dropdown.tsx`; named "{label}: {summary}", with `optional` and `empty` (lane F, BLD-F070) | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
 | `C-HIDDEN` | exists, differs | M | P0 | C |
-| `C-SIMGRID` | grid built on `S-05`: `app/share/[id]/check/similar.tsx` (yours first, tiles, waiting and on the crew, fold after "Keep mine separate"); team-up through lane F's sheet behind `teamup-shim.tsx` until team-up is on main | M | P0 | C |
+| `C-SIMGRID` | grid built on `S-05`: `app/share/[id]/check/similar.tsx` (yours first, tiles, waiting and on the crew, fold after "Keep mine separate" in the sheet, BLD-C131); team-up through lane F's `components/teamup/teamup-sheet.tsx` (`useTeamUpSheet` with `returnFocus`, `teamUpOpener` on Team up and Withdraw) | M | P0 | C |
 | `C-PREVIEW` | built: `components/preview/idea-preview.tsx` (`IdeaPreviewDialog`), the band's status is lane D's `<Pill variant="band">` (BLD-D012); used on `S-05` | M | P0 | C |
-| `C-WORTH` | exists, differs | M | P0 | C, B |
-| `C-QCARD` | missing | M | P0 | B |
+| `C-WORTH` | reviewer's view and editor built (lane B): `components/review/worth.tsx` (`WorthView`, `WorthEditor` from `WorthResponse`), its sheet `worth.css` imported with it, so S-05 can place `WorthView` | M | P0 | C, B |
+| `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it | M | P0 | B |
 | `C-INBOX-READER` | built (17 Nov, BLD-A201, A204): `app/inbox/inbox-reader.tsx`; S-H2B's request body and answers in `app/inbox/teamup-request.tsx` over lane F's `/api/team-up/:id` | L | P0 | A |
-| `C-LISTEN` | missing | M | P0 | B |
-| `C-SHEET-MERGE` | missing | M | P0 | B |
-| `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
+| `C-LISTEN` | built (lane B): `components/review/listen-player.tsx` with `listen.css`, `lib/desk/listen.ts`; lane C's hosted audio and chapters first (DEC-108, `AudioEngine`), the browser's voice (BLD-B230, `ListenEngine`) on a 404 or 503 (BLD-B245) | M | P0 | B |
+| `C-SHEET-MERGE` | built (lane B): `components/review/merge-sheet.tsx` with `merge-sheet.css`, opened from S-R2's rows and C-PREVIEW's Merge | M | P0 | B |
+| `C-SHEET-TEAMUP` | built (lane F, BLD-F070 to BLD-F073): `components/teamup/teamup-sheet.tsx` (`TeamUpSheet`: compose with the drafted note and "Bring your ideas along", or on Check it (`draftId`) "Ask {lead} to merge mine in" / "Keep mine separate"; sending; sent in place with "Withdraw request"; every API error; `useTeamUpSheet()` gives hosts `open(ideaId)` and `sheet`, `teamUpOpener(ideaId)` marks what stands where "Team up" was); tests `tests/unit/teamup-sheet.test.ts`, `e2e/teamup-sheet.spec.ts` on the dev-only `/kit/team-up` (BLD-F074) | M | P0 | F |
 | `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
 | `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |
 
@@ -93,7 +93,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 |---|---|---|---|---|
 | `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
-| `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
+| `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
 | `L-SORT` | `services/worker/submit/{sorting,routing,config}.py`, `rules/sorting.md` (lists, review routing), `sorting_trust` view; `GET`/`PATCH /api/drafts/:id/sorting` (BLD-C080, BLD-C082) | built (API) | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
@@ -108,13 +108,13 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
 | `L-QUESTIONS` | `services/worker/desk/asking.py`, `questions.py`, `clock.py`; `question_sets`, `questions`, `answers` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-COMMITTEE` | `services/worker/desk/committee.py`, `window.py`; `decision_windows`, `decision_reversals` | landed at 82668c1 (17 Nov, back end) | P0 | B |
-| `L-CONVO` | none | missing | P0 | F |
+| `L-CONVO` | `services/worker/convo/` (`post` the cross-lane entry point, SHIP_PLAN §5a; `reads.py`, `render.py`, `messages.py`, `access.py`, `routes.py`); `apps/web/src/server/convo.ts`; `/api/ideas/[id]/conversation` (+ `/messages`, `/messages/[entryId]`) (BLD-F050 to BLD-F059) | built 17 Nov (branch `f/convo-2`); S-08 wires to it | P0 | F |
 | `L-WORTH` | `services/worker/desk/worth.py`, `revise.py` | landed at 82668c1 (17 Nov, back end) | P0 | B |
-| `L-MERGE` | desk: `services/worker/desk/merge.py`, `merging.py`, `merges` (landed at 82668c1, 17 Nov, back end); request: `idea_links` (exists, differs) | desk landed, request exists, differs | P0 | B (desk), F (request) |
-| `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
+| `L-MERGE` | desk: `services/worker/desk/merge.py`, `merging.py`, `merges` (landed at 82668c1, 17 Nov, back end). `.request` and `.effects` for lead-accepted merges: `services/worker/teamup/drafts.py`, `teamup/merging.py` (`apply_lead_merge`); `/api/drafts/[id]/merge-request`; the lead answers through `/api/team-up/[id]/answer` (BLD-F010, BLD-F012). `.desk`: lane B's `desk/merging.py` | desk landed; request built 17 Nov (lane F) | P0 | B (desk), F (request) |
+| `L-TEAMUP` | `services/worker/teamup/` (`requests.py`, `crew.py`, `rules.py`, `routes.py`, `inbox_ops.py`: the lead's answers as Inbox ops `decline`, `team_only`, `merge` in lane A's `notify.ops`, BLD-F028); `apps/web/src/server/teamup.ts`; `/api/ideas/[id]/team-up` (+ `/draft-note`), `/api/team-up/[id]` (+ `/answer`), `/api/ideas/[id]/crew/leave`, `/api/ideas/[id]/crew/[member]` | built 17 Nov (branch `f/teamup`); screens wire to it in lane F's front end | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
-| `L-LISTEN` | `services/worker/desk/listen.py`, `reads.script_for`; `GET /api/desk/ideas/:id/listen` (BLD-B237) | landed at 82668c1 (17 Nov, back end) | P0 | B |
+| `L-LISTEN` | lane B: `services/worker/desk/listen.py`, `reads.script_for`, `GET /api/desk/ideas/:id/listen` (BLD-B237); lane C: `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | lane B's back end landed at 82668c1 (17 Nov); lane C's hosted voice on c/sarvam; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
 
 ## `P-REPO.contracts`
 

@@ -74,7 +74,7 @@ def test_the_shared_rules_the_smoke_check_uses() -> None:
 
 
 def test_the_key_is_read_as_set_or_missing_only() -> None:
-    # lane C renames the setting to sarvam_api_key; the rule reads whichever this Settings has
-    field = "sarvam_api_key" if "sarvam_api_key" in Settings.model_fields else "speech_hosted_key"
-    assert key_set(Settings().model_copy(update={field: ""})) is False
-    assert key_set(Settings().model_copy(update={field: "synthetic-test-key"})) is True
+    # the one setting lane C's client reads (BLD-C110); the old speech_hosted_key is gone (BLD-C117)
+    assert "speech_hosted_key" not in Settings.model_fields
+    assert key_set(Settings().model_copy(update={"sarvam_api_key": ""})) is False
+    assert key_set(Settings().model_copy(update={"sarvam_api_key": "synthetic-test-key"})) is True

@@ -68,7 +68,15 @@ def limits() -> Limits:
 
 # Codes worth retrying (the job runner backs off); every other failure is final and the person types instead.
 RETRY = frozenset(
-    {"hosted_unreachable", "hosted_429", "hosted_500", "hosted_502", "hosted_503", "hosted_504"}
+    {
+        "hosted_unreachable",
+        "hosted_timeout",
+        "hosted_429",
+        "hosted_500",
+        "hosted_502",
+        "hosted_503",
+        "hosted_504",
+    }
     | {
         "engine_unreachable",
         "engine_not_ready",

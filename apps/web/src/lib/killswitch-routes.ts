@@ -43,6 +43,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   },
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
+  // Drafts by voice through Sarvam (DEC-108, BLD-C112): starting, sending and ending a note need voice notes, the
+  // hosted speech route and sharing. Reading a finished note's words carries on.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/drafts\/[^/]+\/voice\/(?:start|chunk|end)\/?$/,
+    switches: ["capture.voice", "speech.hosted", "submissions"],
+  },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
   // An Inbox item's op (a team-up request's Decline, Team up only or Merge it) changes ideas and crews: it pauses
   // with sharing (S-H5, notify.ops).
@@ -65,6 +72,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/edit\/?$/, switches: ["submissions"] },
   // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
   { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
+  // An idea's conversation (lane F; L-CONVO, BLD-F058): writing or removing a message pauses with sharing, like
+  // answering the desk above. Reading it stays open, so the conversation still reads in read-only mode.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/ideas\/[^/]+\/conversation\/messages(?:\/[^/]+)?\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["GET"],
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
@@ -108,6 +122,12 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/delivery\/[^/]+\/writeup\/approve\/?$/,
     switches: ["solutions.publish"],
   },
+  // Listen's audio and chapters through Sarvam (DEC-108, BLD-C114): lane B's player switch and hosted speech.
+  {
+    methods: ["GET"],
+    pattern: /^\/api\/ideas\/[^/]+\/listen(?:\/chapters)?\/?$/,
+    switches: ["desk.listen", "speech.hosted"],
+  },
   // The Ones Committee's window (L-COMMITTEE): extending and reversing pause with the committee's flow.
   {
     methods: ["POST"],
@@ -118,7 +138,16 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
+  // Lane C's hosted audio for the same player (DEC-108), GET /api/ideas/:id/listen and its /chapters, has its rule
+  // in lane C's c/sarvam (desk.listen and speech.hosted), so there is one rule for those paths (BLD-B245).
   { methods: ["GET"], pattern: /^\/api\/desk\/ideas\/[^/]+\/listen\/?$/, switches: ["desk.listen"] },
+  // Team up, a draft's merge request and crews (lane F; L-TEAMUP, L-MERGE.request, BLD-F019) pause with sharing:
+  // each one writes a note or a reason, changes who is on a crew, or merges an idea. Reads stay open, so a
+  // request already sent still reads "Waiting for Ravi".
+  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/team-up\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/team-up\/[^/]+(?:\/answer)?\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/drafts\/[^/]+\/merge-request\/?$/, switches: ["submissions"] },
+  { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/crew\/[^/]+\/?$/, switches: ["submissions"] },
 ];
 
 /**
@@ -149,8 +178,8 @@ export const BANNERS: Record<SwitchName, string> = {
   // DEC-096: off only hides the hint under the quick capture box; nothing else changes, so no banner shows it.
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
   "capture.voice": "Voice notes are coming soon.",
-  // Employees never see a vendor's name (DEC-096).
-  "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
+  "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
   // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
   "files.blackout":
     "Hiding details inside a file is coming soon. The review desk will look at the file with you.",

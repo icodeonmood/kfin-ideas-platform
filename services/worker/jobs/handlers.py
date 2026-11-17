@@ -291,10 +291,30 @@ def voice_purge(conn: Conn, payload: dict[str, Any]) -> None:
 
 @handler("voice.sweep")
 def voice_sweep(conn: Conn, payload: dict[str, Any]) -> None:
-    """Every 15 minutes: anything held past 24 hours, or for an idea no longer a draft (DEC-096)."""
+    """Every 15 minutes: anything held past 24 hours, or for an idea no longer a draft (DEC-096); and what a
+    streamed voice note heard, held past 24 hours without the draft taking it (DEC-108, BLD-C112)."""
+    from speech import drafts
     from voice import service
 
     service.sweep(conn)
+    drafts.sweep(conn)
+
+
+@handler("listen.prefetch")
+def listen_prefetch(conn: Conn, payload: dict[str, Any]) -> None:
+    """An idea was sent, or its chapters were asked for: make and cache its Listen audio (DEC-108, BLD-C114)."""
+    from speech import listen
+
+    listen.prefetch(conn, str(payload["idea_uuid"]))
+
+
+@handler("listen.prefetch_due")
+def listen_prefetch_due(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every 15 minutes: ideas with the desk that have no Listen audio yet; and audio past 30 days goes."""
+    from speech import listen
+
+    listen.prefetch_due(conn)
+    listen.sweep(conn)
 
 
 @handler("desk.clocks")

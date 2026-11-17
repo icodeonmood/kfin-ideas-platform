@@ -63,12 +63,17 @@ export async function forward(workerPath: string, init: RequestInit = {}): Promi
   return NextResponse.json(json, { status: res.status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** The route's `[id]`, or "" for a route without one: Next passes no `params` there (GET /api/desk, /api/committee). */
+export async function paramId(ctx?: { params?: Promise<{ id?: string }> }): Promise<string> {
+  return (await ctx?.params)?.id ?? "";
+}
+
 /** GET handler: the gate, the worker path built from the route's params and the request's query. */
 export function getRoute(gate: Gate, workerPath: (id: string) => string, queryKeys: readonly string[] = []) {
-  return async (request: NextRequest, ctx: { params: Promise<{ id?: string }> }) => {
+  return async (request: NextRequest, ctx?: { params?: Promise<{ id?: string }> }) => {
     const me = await who(gate);
     if (me instanceof NextResponse) return me;
-    const id = (await ctx.params).id ?? "";
+    const id = await paramId(ctx);
     const q = Object.fromEntries(queryKeys.map((k) => [k, request.nextUrl.searchParams.get(k)]));
     return forward(path(workerPath(encodeURIComponent(id)), me, q));
   };
@@ -81,14 +86,44 @@ export function writeRoute(
   workerPath: (id: string) => string,
   bodyKeys: readonly string[] = [],
 ) {
-  return async (request: NextRequest, ctx: { params: Promise<{ id?: string }> }) => {
+  return async (request: NextRequest, ctx?: { params?: Promise<{ id?: string }> }) => {
     const me = await who(gate);
     if (me instanceof NextResponse) return me;
-    const id = (await ctx.params).id ?? "";
+    const id = await paramId(ctx);
     const raw = bodyKeys.length ? await readJson(request) : {};
     return forward(path(workerPath(encodeURIComponent(id)), me), {
       method,
       body: body(raw, bodyKeys),
     });
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Server-side reads for the review side's pages (the page renders with data; the client then talks to /api).
+// ---------------------------------------------------------------------------------------------------------------
+
+/** One read from the worker for a server component; null when the worker says it does not exist, or that this
+ * person may not read it (403: an admin holds the web's desk capabilities, and the worker refuses them, BLD-B232),
+ * so the page sends them home or shows not found rather than failing. */
+export async function deskRead<T>(
+  me: CurrentUser,
+  workerPath: string,
+  query: Record<string, string | null | undefined> = {},
+): Promise<T | null> {
+  const res = await workerFetch(path(workerPath, me, query));
+  if (res.status === 404 || res.status === 403) return null;
+  if (!res.ok) throw new Error(`worker answered ${res.status}`);
+  return (await res.json()) as T;
+}
+
+/** L-REVIEW.open/1, from the reviewer's page before its read: the first open by a reviewer closes the sharer's edit
+ * window. The worker refuses anyone who is not on the desk; a failure here never stops the page from rendering. */
+export async function deskOpen(me: CurrentUser, ideaId: string): Promise<void> {
+  try {
+    await workerFetch(path(`/internal/desk/ideas/${encodeURIComponent(ideaId)}/open`, me), {
+      method: "POST",
+    });
+  } catch {
+    // the read that follows shows the idea as it is
+  }
 }
