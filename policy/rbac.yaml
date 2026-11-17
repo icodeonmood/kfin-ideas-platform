@@ -275,7 +275,7 @@ membership_scoped:
 
 # Pages (the proxy redirects people who may not see a page to the home page).
 pages:
-  - /review                    view_review_queue                    # actions show only to those who may act (BLD-092)
+  - /review                    view_review_queue                    # moved: redirects to /desk (S-R1, S-R2)
   - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
   - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
@@ -298,8 +298,8 @@ navigation:
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
-  - { key: desk,      label: Review desk,     href: /review,    place: main,   roles: [reviewer] }
-  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }
+  - { key: desk,      label: Review desk,     href: /desk,      place: main,   roles: [reviewer] }
+  - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee] }   # committee_window
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }
