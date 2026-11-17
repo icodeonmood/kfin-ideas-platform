@@ -368,7 +368,7 @@
     {
       "key": "desk",
       "label": "Review desk",
-      "href": "/review",
+      "href": "/desk",
       "place": "main",
       "roles": [
         "reviewer"
@@ -380,8 +380,7 @@
       "href": "/committee",
       "place": "main",
       "roles": [
-        "committee",
-        "core_committee"
+        "committee"
       ]
     },
     {
