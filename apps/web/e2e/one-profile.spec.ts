@@ -142,21 +142,30 @@ async function dropOne(one: One | undefined) {
   if (one) await sql("DELETE FROM ones WHERE id = $1", [one.oneId]);
 }
 
-/** The person's settings rows as they are, to put back after a test that flips switches. */
+/** The person's settings rows as they are, to put back after a test that flips switches: a row that was there gets
+ * its values back, a row the test made goes. */
 async function keepSettings(userId: string): Promise<() => Promise<void>> {
-  const ps = await sql("SELECT row_to_json(p) AS r FROM person_settings p WHERE user_id = $1", [userId]);
-  const cp = await sql("SELECT row_to_json(c) AS r FROM comms_prefs c WHERE user_id = $1", [userId]);
+  const before = new Map<string, Record<string, unknown> | undefined>();
+  for (const table of ["person_settings", "comms_prefs"]) {
+    const [r] = await sql<{ r: Record<string, unknown> }>(
+      `SELECT row_to_json(t) AS r FROM ${table} t WHERE user_id = $1`,
+      [userId],
+    );
+    before.set(table, r?.r);
+  }
   return async () => {
-    await sql("DELETE FROM person_settings WHERE user_id = $1", [userId]);
-    await sql("DELETE FROM comms_prefs WHERE user_id = $1", [userId]);
-    if (ps[0])
-      await sql("INSERT INTO person_settings SELECT * FROM json_populate_record(null::person_settings, $1)", [
-        ps[0].r,
-      ]);
-    if (cp[0])
-      await sql("INSERT INTO comms_prefs SELECT * FROM json_populate_record(null::comms_prefs, $1)", [
-        cp[0].r,
-      ]);
+    for (const [table, row] of before) {
+      if (!row) {
+        await sql(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+        continue;
+      }
+      const cols = Object.keys(row).filter((c) => c !== "user_id");
+      await sql(
+        `INSERT INTO ${table} SELECT * FROM json_populate_record(null::${table}, $1)
+         ON CONFLICT (user_id) DO UPDATE SET ${cols.map((c) => `${c} = EXCLUDED.${c}`).join(", ")}`,
+        [row],
+      );
+    }
   };
 }
 
@@ -311,7 +320,7 @@ test.describe("S-ONE, a One's dashboard", () => {
     const field = page.getByRole("textbox", { name: "Number you'd like" });
     const save = page.getByRole("button", { name: "Save my number" });
 
-    await field.fill("1000");
+    await field.fill("0");
     await save.click();
     await expect(page.getByText("Pick a number from 1 to 999.")).toBeVisible();
     await expect(field).toBeFocused();
@@ -567,7 +576,8 @@ test.describe("S-H6, Profile and settings", () => {
       await expect(teams).toHaveAttribute("aria-disabled", "true");
       await expect(teams).toHaveAttribute("aria-checked", "false");
       await expect(page.getByText("Coming soon")).toBeVisible();
-      await teams.click();
+      await teams.focus();
+      await page.keyboard.press("Space");
       await expect(teams).toHaveAttribute("aria-checked", "false");
     }
     await expectNoSeriousAxeIssues(page);
@@ -606,6 +616,18 @@ test.describe("S-H6, Profile and settings", () => {
     await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0); // no Save button (S-H6.rules/1)
     await wall.click();
     await expect(wall).toHaveAttribute("aria-checked", "true");
+    // The save has landed before the settings are put back
+    await expect
+      .poll(
+        async () =>
+          (
+            await sql<{ v: boolean }>(
+              "SELECT show_name_on_wall AS v FROM person_settings WHERE user_id = $1",
+              [me.id],
+            )
+          )[0]?.v,
+      )
+      .toBe(true);
   });
 
   test("S-H6.rules/1 V-FIELDS.one/5: a failed save flips the switch back with the message under it", async ({

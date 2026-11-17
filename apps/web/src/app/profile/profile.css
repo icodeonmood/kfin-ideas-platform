@@ -101,6 +101,11 @@
   min-width: 0;
 }
 
+/* The older sheet spaces every section after a section; the column's gap does it here */
+.pf-set > section {
+  margin-top: 0;
+}
+
 /* ---------- A setting: title, line, switch; its message under it ---------- */
 .pf-row {
   padding: 16px 0;

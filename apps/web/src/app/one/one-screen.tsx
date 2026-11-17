@@ -165,15 +165,21 @@ function BriefCard({ brief, onProposed }: { brief: OneDashboardResponse["brief"]
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // The field takes focus when the person opens it (V-ACC.visual/11)
+  // The field takes focus when the person opens it, and the button takes it back when the field closes
+  // (V-ACC.visual/11). After the render, so the element is there to take it.
+  const refocus = useRef(false);
   useEffect(() => {
     if (open) box.current?.focus();
+    else if (refocus.current) {
+      refocus.current = false;
+      opener.current?.focus();
+    }
   }, [open]);
 
   const close = () => {
+    refocus.current = true;
     setOpen(false);
     setError(null);
-    window.setTimeout(() => opener.current?.focus(), 0);
   };
 
   const send = async (e: FormEvent) => {

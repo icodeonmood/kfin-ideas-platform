@@ -199,10 +199,21 @@
   padding: 28px 30px 30px;
 }
 
-.on-t4 {
+/* The older sheet sizes every card heading and spaces every section after a section; this screen sets its own */
+.on .on-t4 {
   margin: 0;
   font: 500 24px/1.15 var(--fd);
   letter-spacing: -0.02em;
+}
+
+.on-g2 > section {
+  margin-top: 0;
+}
+
+/* The board's display sizes (reference/css/boards/OneDashboard.css): d2 tops out at 42px here */
+.on .d2 {
+  font-size: clamp(30px, 3vw, 42px);
+  line-height: 1.08;
 }
 
 .on-hint {
