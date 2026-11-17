@@ -694,7 +694,7 @@
   }
 }
 
-/* ---------- C-AVATAR ---------- */
+/* ---------- C-AVATAR: initials are never under 12px (F-TYPE.rules/5) ---------- */
 .av {
   display: inline-grid;
   place-items: center;
@@ -719,13 +719,13 @@
 .av-32 {
   width: 32px;
   height: 32px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .av-28 {
   width: 28px;
   height: 28px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .av-ring {
@@ -1272,7 +1272,7 @@
   border-radius: 50%;
   box-shadow: 0 0 0 2px #ffffff;
   color: var(--ink);
-  font: 600 11.5px/1 var(--ft);
+  font: 600 12px/1 var(--ft);
   cursor: default;
 }
 
