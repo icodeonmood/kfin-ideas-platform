@@ -11,6 +11,7 @@ Asking in your own words (`C-SEARCH` ask, `L-SEARCH`) is lane F's and arrives on
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from typing import Any
 from urllib.parse import urlencode
 
@@ -60,6 +61,8 @@ STAGE_RANK = {
     "draft": 0,
 }
 Q_MAX = 200
+# The statuses whose own row reads the decision (its date counts as activity, S-07's "Latest activity").
+DECIDED_STATUSES = ("picked", "not_now", "not_picked", "being_built", "shipped")
 
 
 def group_of(status: str) -> str:
@@ -130,12 +133,26 @@ def _activity(*times: dt.datetime | None) -> dt.datetime:
     return max(t for t in (*times, dt.datetime.min.replace(tzinfo=dt.UTC)) if t is not None)
 
 
+def _saved_on(idea: dict[str, Any], device: str | None) -> dict[str, Any]:
+    """Where a draft was last saved (L-DRAFT.autosave/4): the device class, and whether it is the device asking. A
+    draft that arrived by email or Teams has no device and reads as the laptop."""
+    return {
+        "device": idea["saved_device"] or "laptop",
+        "this_device": bool(device and device == idea.get("saved_device_id")),
+    }
+
+
+def _where(saved_on: dict[str, Any]) -> str:
+    """'on this laptop', 'on your phone' (S-07.rows, C-SIDEBAR.anatomy/4)."""
+    return f"on {'this' if saved_on['this_device'] else 'your'} {saved_on['device']}"
+
+
 def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str | None) -> dict[str, Any]:
     uid = str(idea["id"])
     title = idea["title"] or "Your draft"
     saved = idea["saved_at"] or idea["created_at"]
-    on = idea["saved_device"] or "laptop"
-    where = f"on this {on}" if device and device == idea.get("saved_device_id") else f"on your {on}"
+    saved_on = _saved_on(idea, device)
+    where = _where(saved_on)
     archived = idea.get("archived_at") is not None
     waiting = conn.execute(
         "SELECT i.idea_id, i.contributor_code FROM merge_requests r JOIN ideas i ON i.id = r.other_idea_uuid "
@@ -187,7 +204,7 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
             "action": {**action, "accessible_name": f"{action['label']}: {title}"},
         },
         "archived": archived,
-        "saved_on": {"device": on, "this_device": bool(device and device == idea.get("saved_device_id"))},
+        "saved_on": saved_on,
         "group": "drafts",
         "_activity": saved,
         "_shared": saved,
@@ -202,9 +219,7 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
     qset = read.question_set(conn, uid)
     status = display_status(idea, qset, for_sharer=True)
     dec: Decided | None = (
-        decided(read.decision(conn, uid, with_text=True))
-        if idea["status"] in ("picked", "not_now", "not_picked", "being_built", "shipped")
-        else None
+        decided(read.decision(conn, uid, with_text=True)) if idea["status"] in DECIDED_STATUSES else None
     )
     phone_sentence: str | None = None
     see = {"label": "See where it is", "to": f"/ideas/{key}", "style": "line"}
@@ -606,4 +621,90 @@ def _public_row(row: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
             action["to"] = linked
         out["href"] = linked
         out["next_step"] = {**out["next_step"], "action": action}
+    return out
+
+
+# --- C-SIDEBAR's Drafts and Your ideas (A-API.me): read on every navigation, so two bounded queries ---------------
+
+SHELL_DRAFTS = 2  # C-SIDEBAR.anatomy/4: "up to 2 drafts"
+SHELL_IDEAS = 3  # "up to 3, with View all"
+# C-SIDEBAR.anatomy/4: warn for needs you, blue for active, grey otherwise. The names are the status colours'
+# (F-COLOR.status, C-PILL): the grey dot is `neutral` (`--faint`). Keyed by S-07's own filter groups.
+SHELL_DOT = {"needs_you": "warn", "with_review_desk": "blue", "picked_and_building": "blue"}
+
+# The person's own drafts, not archived (archived ones are only under My ideas → Drafts), as S-07 orders them.
+_SHELL_DRAFTS_SQL = (
+    "SELECT i.id, i.title, i.saved_at, i.created_at, i.saved_device, i.saved_device_id FROM ideas i "
+    "WHERE i.contributor_code = (SELECT m.contributor_code FROM contributor_map m JOIN users u ON u.id = m.user_id "
+    "WHERE m.user_id = %(user)s AND u.active) "
+    "AND i.status = 'draft' AND i.archived_at IS NULL "
+    "ORDER BY coalesce(i.saved_at, i.created_at) DESC, i.id LIMIT %(n)s"
+)
+# The person's own shared ideas (S-07's Yours list without its drafts), in S-07's "Latest activity" order: the latest
+# of the status change, the save, the share, the question set's sent and answered times (`read.question_set`) and the
+# decision's time, or the committee's when it reversed it (`read.decision`, `track.decided`). Ties keep S-07's
+# reading order. The question set's state is all the status dot needs.
+_SHELL_IDEAS_SQL = (
+    "SELECT i.id, i.idea_id, i.title, i.status, q.state AS qset_state FROM ideas i "
+    "LEFT JOIN LATERAL (SELECT s.state, s.sent_at, s.answered_at FROM question_sets s "
+    "WHERE s.idea_uuid = i.id AND s.state <> 'queued' ORDER BY s.sent_at DESC NULLS LAST, s.created_at DESC "
+    "LIMIT 1) q ON true "
+    "LEFT JOIN LATERAL (SELECT CASE WHEN v.id IS NOT NULL AND v.to_choice IS NOT NULL THEN v.at ELSE d.at END "
+    "AS at FROM idea_decisions d LEFT JOIN decision_windows w ON w.decision_id = d.id "
+    "LEFT JOIN decision_reversals v ON v.window_id = w.id WHERE d.idea_uuid = i.id ORDER BY d.at DESC "
+    "LIMIT 1) d ON i.status = ANY(%(decided)s) "
+    "WHERE i.contributor_code = (SELECT m.contributor_code FROM contributor_map m JOIN users u ON u.id = m.user_id "
+    "WHERE m.user_id = %(user)s AND u.active) "
+    "AND i.status <> 'draft' AND (i.idea_id IS NOT NULL OR i.status = 'merged') "
+    "ORDER BY greatest(i.status_changed_at, i.saved_at, i.shared_at, q.sent_at, q.answered_at, d.at) DESC NULLS LAST, "
+    "coalesce(i.shared_at, i.saved_at, i.created_at) DESC, i.id LIMIT %(n)s"
+)
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def shell_lists(
+    conn: Conn, user_id: str, device_id: str | None = None, *, now: dt.datetime | None = None
+) -> dict[str, list[dict[str, str]]]:
+    """C-SIDEBAR.anatomy/4 (A-API.me `drafts` and `ideas`): up to two drafts with where they were saved, and up to
+    three of the person's own shared ideas with a status dot. The same rows, order, titles and links as S-07 lists
+    first (`my_ideas`, list Yours, sort Latest activity): a draft's id is its row id (`/share/{id}`), an idea's its
+    reference (`/ideas/{ref}`). Teamed-up ideas are not the person's own and are not listed. An unknown or inactive
+    person gets empty lists. The person's own titles only; nothing here is logged (non-negotiable 3)."""
+    out: dict[str, list[dict[str, str]]] = {"drafts": [], "ideas": []}
+    if not _is_uuid(user_id):
+        return out
+    t = now or read.now()
+    for r in conn.execute(_SHELL_DRAFTS_SQL, {"user": user_id, "n": SHELL_DRAFTS}).fetchall():
+        draft = dict(r)
+        # The board's words, "Friday, on your phone" (C-SIDEBAR.anatomy/4, J-RESUME/2): S-07's save day
+        # (`saved_when`, same days) without its clock time, then S-07's device wording.
+        saved = weekday_or_day(draft["saved_at"] or draft["created_at"], t)
+        label = f"{saved}, {_where(_saved_on(draft, device_id))}"
+        out["drafts"].append(
+            {
+                "id": str(draft["id"]),
+                "title": draft["title"] or "Your draft",
+                "saved_label": label[:1].upper() + label[1:],
+            }
+        )
+    params = {"user": user_id, "n": SHELL_IDEAS, "decided": list(DECIDED_STATUSES)}
+    for r in conn.execute(_SHELL_IDEAS_SQL, params).fetchall():
+        idea = dict(r)
+        qset = {"state": idea["qset_state"]} if idea["qset_state"] else None
+        status = display_status(idea, qset, for_sharer=True)  # S-07's needs-you reading
+        key = read.key_of(idea)
+        out["ideas"].append(
+            {
+                "id": key,
+                "title": idea["title"] or key,
+                "status_dot": SHELL_DOT.get(group_of(status), "neutral"),
+            }
+        )
     return out
