@@ -1117,13 +1117,15 @@
     transform: scale(0.94);
   }
 
-  /* Child screens: one compact bar, Back on the left, a short centred title */
+  /* Child screens: one compact bar, Back on the left, a short centred title. Each side keeps 110px, room for Back
+     with the conversation's label ("The idea", "Your idea") in full; the title gives way first, a longer label ends
+     in an ellipsis, and the two never touch (C-PHONE-TABS.nav) */
   .pnav {
     position: sticky;
     top: 0;
     z-index: var(--z-sticky);
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
     align-items: center;
     gap: 8px;
     min-height: 44px;
@@ -1144,11 +1146,16 @@
     font: 500 16px/1 var(--ft);
     text-decoration: none;
     white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   .pback svg {
     flex: none;
+  }
+
+  .pback span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .pnav-t {
