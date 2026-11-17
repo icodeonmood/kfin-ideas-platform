@@ -390,3 +390,144 @@ def test_l_convo_3_times_today_this_week_and_older(db: Any) -> None:
     assert when(fx.at(2, 9), now) == "Monday 2 November"
     assert when(fx.at(16, 12, 0), now) == "Monday 16 November, 12:00 pm"
     assert when(dt.datetime(2025, 11, 3, 9, tzinfo=fx.IST), now) == "Monday 3 November 2025"
+
+
+def test_j_track_9_s_08_layout_1_l_convo_5_bld_f060_a_build_teams_idea_with_a_crew_reads_as_the_board_draws_it(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """J-TRACK/9 (seed A1): the sharer opens a picked idea being built by a team that has its own name, with a crew
+    member on it. The header names the team by its lead, and the sharer reads the board's visibility line."""
+    from convo.messages import send
+
+    kavya, ravi = cast["kavya"], cast["ravi"]
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, title="Plain words for transaction rejections", status="being_built")
+    fx.join_crew(db, idea, ravi, fx.at(2, 10))
+    fx.build_team(db, idea, arjun)
+    db.execute("UPDATE build_teams SET name = 'Plain words team' WHERE idea_uuid = %s", (idea["id"],))
+    asked = "The first rewritten reasons are ready to try. Please check them before Thursday."
+    send(db, idea["idea_id"], arjun["id"], {"text": asked}, at=fx.at(16, 18, 40))
+
+    mine = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    assert mine["header"] == {"whose": "Your idea", "line": "Your idea, being built by Arjun Rao’s team"}
+    assert mine["composer"]["visibility"] == "You, the build team and the review desk see this conversation."
+    assert mine["composer"]["placeholder"] == "Message the build team"
+    [said] = [e for e in mine["entries"] if e["type"] == "message"]
+    assert (said["from_label"], said["text"]) == ("Arjun Rao", asked)
+
+    crew = conversation(db, idea["idea_id"], ravi["id"], at=NOW)
+    assert crew["header"]["line"] == "Kavya Menon’s idea, being built by Arjun Rao’s team"
+    assert (
+        crew["composer"]["visibility"]
+        == "The crew, the build team and the review desk see this conversation."
+    )
+    assert crew["composer"]["placeholder"] == "Message the build team"
+
+
+def _seed_line(db: Any, idea: dict[str, Any], code: str, at: dt.datetime, payload: dict[str, Any]) -> None:
+    """A line as lane E's seed writes it (bootstrap/club_seed.py `_event`): its own code, an ID, no author."""
+    from psycopg.types.json import Jsonb
+
+    db.execute(
+        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
+        (idea["id"], code, Jsonb(payload), at),
+    )
+
+
+def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
+    db: Any, cast: dict[str, Any], captured_logs: Any
+) -> None:
+    kavya, meera, rohan, ravi = cast["kavya"], cast["meera"], cast["rohan"], cast["ravi"]
+    logged_before = len(captured_logs.getvalue())  # the buffer is shared with earlier tests
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, status="being_built")
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 8)),
+    )
+    decision = db.execute(
+        "INSERT INTO idea_decisions (idea_uuid, choice, reason_encrypted, by_user_id, at) "
+        "VALUES (%s, 'pick', '\\x00', %s, %s) RETURNING id",
+        (idea["id"], meera["id"], fx.at(16, 15)),
+    ).fetchone()["id"]
+    fx.build_team(db, idea, arjun)
+    request = db.execute(
+        "INSERT INTO teamup_requests (idea_uuid, from_code, note_encrypted, state, answered_by_code, answered_at) "
+        "VALUES (%s, %s, '\\x00', 'approved_team_only', %s, %s) RETURNING id",
+        (idea["id"], ravi["code"], kavya["code"], fx.at(17, 9, 30)),
+    ).fetchone()["id"]
+    _seed_line(db, idea, "shared", fx.at(14, 10, 5), {})
+    _seed_line(db, idea, "checked_matched", fx.at(14, 10, 8), {"hidden": 0, "similar": 0})
+    _seed_line(db, idea, "opened_by_desk", fx.at(16, 9, 50), {"reviewer_id": meera["id"]})
+    _seed_line(db, idea, "decided", fx.at(16, 15), {"decision_id": str(decision)})
+    _seed_line(db, idea, "team_chosen", fx.at(17, 9), {"team": "Plain words team"})
+    _seed_line(db, idea, "crew_joined", fx.at(17, 9, 30), {"request_id": str(request)})
+    _seed_line(db, idea, "shipped", fx.at(17, 10), {})
+
+    assert texts(conversation(db, idea["idea_id"], kavya["id"], at=NOW)) == [
+        "You shared it. Saturday 14 November, 10:05 am",
+        "Checked and matched. Nothing to hide, no similar ideas found. 10:08 am",
+        "Meera from the review desk opened it. Monday 16 November, 9:50 am",
+        "Meera from the review desk picked it. 3:00 pm",
+        "Arjun Rao’s team started building it. Today, 9:00 am",
+        "Ravi Nair joined the crew. 9:30 am",
+    ]
+    assert "Your team started building it. Today, 9:00 am" in texts(
+        conversation(db, idea["idea_id"], arjun["id"], at=NOW)
+    )
+
+    # A reversal by the committee, and a desk merge, as the seed writes them (T9; R2 and T11).
+    turned = fx.idea(db, kavya)
+    no = db.execute(
+        "INSERT INTO idea_decisions (idea_uuid, choice, reason_encrypted, by_user_id, at) "
+        "VALUES (%s, 'not_picked', '\\x00', %s, %s) RETURNING id",
+        (turned["id"], meera["id"], fx.at(15, 11)),
+    ).fetchone()["id"]
+    window = db.execute(
+        "INSERT INTO decision_windows (decision_id, state, opens_at, closes_at, max_closes_at) "
+        "VALUES (%s, 'reversed', %s, %s, %s) RETURNING id",
+        (no, fx.at(15, 11), fx.at(15, 11) + dt.timedelta(days=30), fx.at(15, 11) + dt.timedelta(days=91)),
+    ).fetchone()["id"]
+    reversal = db.execute(
+        "INSERT INTO decision_reversals (window_id, to_choice, note_encrypted, by_user_id, at) "
+        "VALUES (%s, 'pick', '\\x00', %s, %s) RETURNING id",
+        (window, rohan["id"], fx.at(17, 9)),
+    ).fetchone()["id"]
+    _seed_line(db, turned, "decision_reversed", fx.at(17, 9), {"reversal_id": str(reversal)})
+    lead = fx.idea(db, ravi)
+    merge = db.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s) "
+        "RETURNING id",
+        (lead["id"], turned["id"], meera["id"]),
+    ).fetchone()["id"]
+    _seed_line(db, lead, "desk_merged", fx.at(17, 9, 15), {"merge_id": str(merge)})
+    assert texts(conversation(db, turned["idea_id"], kavya["id"], at=NOW))[-1] == (
+        "Rohan Mehta from the Ones Committee reversed the decision. It’s now Picked. Today, 9:00 am"
+    )
+    assert texts(conversation(db, lead["idea_id"], ravi["id"], at=NOW))[-1] == (
+        f"Meera from the review desk joined it with {turned['idea_id']}. Today, 9:15 am"
+    )
+    assert "convo.render.unknown_code" not in captured_logs.getvalue()[logged_before:]
+
+
+def test_l_convo_4_s_08_answers_sent_tell_the_sharer_when_the_desk_decides(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya, decide_by=fx.at(20, 18))
+    set_id = fx.question_set(db, idea, meera, ("summary", "often"), fx.at(16, 11, 20))
+    fx.answer_all(db, set_id, kavya, fx.at(16, 16, 32))
+    post(db, str(idea["id"]), "sharer.answered", author_code=kavya["code"], payload={"set_id": set_id, "count": 2},
+         question_set_id=set_id, entry_type="answers", at=fx.at(16, 16, 32))  # fmt: skip
+    [a] = [
+        e for e in conversation(db, idea["idea_id"], kavya["id"], at=NOW)["entries"] if e["type"] == "answers"
+    ]
+    assert a["at_label"] == "Monday 16 November, 4:32 pm"
+    assert (
+        a["footer"] == "Each answer was added to its part of your idea. Meera decides by Friday 20 November."
+    )
+    [seen] = [
+        e for e in conversation(db, idea["idea_id"], meera["id"], at=NOW)["entries"] if e["type"] == "answers"
+    ]
+    assert "footer" not in seen
