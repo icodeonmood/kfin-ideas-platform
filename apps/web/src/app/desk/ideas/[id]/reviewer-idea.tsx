@@ -739,7 +739,7 @@ export function ReviewerIdea({
                                       <button
                                         type="button"
                                         className="qsug"
-                                        aria-label={`Add: ${s.text}`}
+                                        aria-label={`Add: ${s.text} ${PART_NAME[s.part]}`}
                                         onClick={() =>
                                           dispatch({ type: "add_suggestion", part: s.part, text: s.text })
                                         }
