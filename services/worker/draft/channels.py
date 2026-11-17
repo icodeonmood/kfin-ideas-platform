@@ -91,10 +91,10 @@ def intake(conn: Conn, arrival: Arrival) -> dict[str, Any]:
 
     origin: dict[str, Any] = {"received_at": arrival.received_at.isoformat()}
     if arrival.subject:
-        origin["subject"] = adapters.hide_message(arrival.subject[:SUBJECT_MAX]).masked
+        origin["subject"] = adapters.preview(conn, arrival.subject[:SUBJECT_MAX]).masked
         origin["note"] = origin["subject"]
     if arrival.thread:
-        origin["thread"] = adapters.hide_message(arrival.thread[:THREAD_MAX]).masked
+        origin["thread"] = adapters.preview(conn, arrival.thread[:THREAD_MAX]).masked
     device = Device(None, None)
     with conn.transaction():  # one draft, its origin, its first message and the Inbox item, or nothing
         idea_uuid, _ = store.create(conn, owner, device, channel=arrival.channel)

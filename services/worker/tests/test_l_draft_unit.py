@@ -209,16 +209,18 @@ def test_dec_103_customer_details_are_masked_with_spans_in_the_persons_text() ->
     rng = generators.default_rng(7)
     folio, pan, phone = generators.folio(rng), generators.pan(rng), generators.mobile(rng)
     text = f"One investor, folio {folio}, called three times from {phone} and read out his PAN, {pan}."
-    hidden = adapters.hide_message(text)
-    assert [f.kind for f in hidden.found] == ["folio", "phone", "pan"]
-    for f in hidden.found:
+    found = adapters.find(text)
+    assert [f.kind for f in found] == ["folio", "phone", "pan"]
+    for f in found:
         assert text[f.start : f.end] == f.value  # positions in the person's own text
-        assert f.value not in hidden.masked
         assert f.masked.endswith("••••" + "".join(c for c in f.value if c.isalnum())[-2:])
+    hidden = adapters.preview(None, text)
+    assert all(f.value not in hidden.masked for f in found)
     assert hidden.masked.startswith("One investor, folio Folio ••••")
-    assert hidden.spans[0] == {"start": hidden.found[0].start, "end": hidden.found[0].end, "kind": "folio"}
-    plain = adapters.hide_message("Nothing to hide here, ARN-12345 is a distributor code.")
-    assert plain.found == () and plain.masked == "Nothing to hide here, ARN-12345 is a distributor code."
+    assert hidden.spans[0] == {"start": found[0].start, "end": found[0].end, "kind": "folio"}
+    assert hidden.counts == {"folio": 1, "phone": 1, "pan": 1} and hidden.hidden_count == 3
+    plain = adapters.preview(None, "Nothing to hide here, ARN-12345 is a distributor code.")
+    assert plain.spans == [] and plain.masked == "Nothing to hide here, ARN-12345 is a distributor code."
 
 
 # ---- L-DRAFT.parts/1-2: the draft-part agent's check, drop and fake (DEC-095, DEC-108) -----------------------------

@@ -194,14 +194,9 @@ def _check_text(text: Any, *, field: str = "text") -> str:
     return text.strip()
 
 
-def _seal_words(conn: Conn, idea_uuid: str, owner: Owner, mid: str, text: str) -> None:
-    conn.execute(
-        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
-        "VALUES (%s, 'message', %s, %s, %s) "
-        "ON CONFLICT (source, source_id) DO UPDATE SET text_encrypted = EXCLUDED.text_encrypted",
-        (idea_uuid, mid, owner.user_id,
-         seal_text("idea_words_sealed", "text_encrypted", f"message:{mid}", text, vault=True)),
-    )  # fmt: skip
+def _spans(hidden: adapters.Hidden) -> list[dict[str, Any]]:
+    """`idea_messages.spans` keeps start, end and kind (positions in the person's own text)."""
+    return [{"start": x["start"], "end": x["end"], "kind": x["kind"]} for x in hidden.spans]
 
 
 def _add(
@@ -239,21 +234,20 @@ def _add(
     assert stats is not None
     if int(stats["n"]) >= rules().max_messages:
         raise DraftError(409, "too_many_messages", limit=rules().max_messages)
-    hidden = adapters.hide_message(text)  # DEC-103: before anything else sees the words
-    masked_en = adapters.hide_message(english).masked if english else None
     mid = str(uuid.uuid4())
+    # DEC-103: masked before anything else sees the words; the person's own words sealed for them alone.
+    hidden = adapters.hide_message(conn, idea_uuid, text, by=owner.user_id, source="message", source_id=mid)
+    masked_en = adapters.preview(conn, english, idea_uuid=idea_uuid).masked if english else None
     now = _now(conn)
     when = at if at is not None and now - dt.timedelta(days=OFFLINE_DAYS) <= at <= now else now
     conn.execute(
         "INSERT INTO idea_messages (id, idea_uuid, seq, via, device, lang, text_encrypted, spans, char_count, "
         "created_at, client_id, text_en_encrypted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (mid, idea_uuid, int(stats["last"]) + 1, via, device.kind, _lang(text),
-         seal_text("idea_messages", "text_encrypted", mid, hidden.masked), Jsonb(hidden.spans), len(text), when,
+         seal_text("idea_messages", "text_encrypted", mid, hidden.masked), Jsonb(_spans(hidden)), len(text), when,
          client_id,
          seal_text("idea_messages", "text_en_encrypted", mid, masked_en) if masked_en else None),
     )  # fmt: skip
-    _seal_words(conn, idea_uuid, owner, mid, text)
-    adapters.record_hidden(conn, idea_uuid, runs.scope(idea_uuid), mid, hidden)
     _link_files(conn, idea_uuid, mid, files)
     _touch(conn, idea_uuid, device)
     run_id = (
@@ -261,7 +255,7 @@ def _add(
         if defer_run
         else runs.begin(conn, idea_uuid, trigger="message", message_id=mid, new_text=hidden.masked)
     )
-    log.info("draft.message_added", idea_uuid=idea_uuid, message_id=mid, hidden_count=len(hidden.found),
+    log.info("draft.message_added", idea_uuid=idea_uuid, message_id=mid, hidden_count=hidden.hidden_count,
              via_code=via, run_id=run_id)  # fmt: skip
     return mid, run_id
 
@@ -326,23 +320,19 @@ def edit_message(
             raise DraftError(404, "not_found")
         words = _check_text(text)
         english = _check_text(text_en, field="text_en") if text_en else None
-        hidden = adapters.hide_message(words)
-        masked_en = adapters.hide_message(english).masked if english else None
+        # Hidden again from scratch: the spans moved. The person's sealed words follow the edit.
+        hidden = adapters.hide_message(
+            conn, idea_uuid, words, by=owner.user_id, source="message", source_id=message_id
+        )
+        masked_en = adapters.preview(conn, english, idea_uuid=idea_uuid).masked if english else None
         conn.execute(
             "UPDATE idea_messages SET text_encrypted = %s, spans = %s, char_count = %s, lang = %s, edited_at = now(), "
             "text_en_encrypted = %s WHERE id = %s",
-            (seal_text("idea_messages", "text_encrypted", message_id, hidden.masked), Jsonb(hidden.spans), len(words),
-             _lang(words),
+            (seal_text("idea_messages", "text_encrypted", message_id, hidden.masked), Jsonb(_spans(hidden)),
+             len(words), _lang(words),
              seal_text("idea_messages", "text_en_encrypted", message_id, masked_en) if masked_en else None,
              message_id),
         )  # fmt: skip
-        _seal_words(conn, idea_uuid, owner, message_id, words)
-        # The spans moved: what was hidden in this message is found again from scratch.
-        conn.execute(
-            "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'message' AND source_id = %s",
-            (idea_uuid, message_id),
-        )
-        adapters.record_hidden(conn, idea_uuid, runs.scope(idea_uuid), message_id, hidden)
         _touch(conn, idea_uuid, device)
         run_id = runs.begin(conn, idea_uuid, trigger="edit", message_id=message_id, new_text=hidden.masked)
     log.info("draft.message_edited", idea_uuid=idea_uuid, message_id=message_id, run_id=run_id)
@@ -352,20 +342,18 @@ def edit_message(
 # ---- parts the person changes (L-DRAFT.pins) ---------------------------------------------------------------------
 
 
-def _mask_value(conn: Conn, idea_uuid: str, wire_key: str, value: Any) -> Any:
+def _mask_value(conn: Conn, owner: Owner, idea_uuid: str, wire_key: str, value: Any) -> Any:
     """The person's own text in a part is masked like any message (DEC-103); what was hidden is recorded."""
 
-    def one(text: str) -> str:
-        hidden = adapters.hide_message(text)
-        if hidden.found:
-            adapters.record_hidden(conn, idea_uuid, runs.scope(idea_uuid), f"part:{wire_key}", hidden,
-                                   source="edit")  # fmt: skip
-        return hidden.masked
+    def one(text: str, n: int) -> str:
+        sid = f"{idea_uuid}:part:{wire_key}:{n}"
+        masked, _ = adapters.hide_text(conn, idea_uuid, text, by=owner.user_id, source="edit", source_id=sid)
+        return masked
 
     if isinstance(value, str):
-        return one(value)
+        return one(value, 0)
     if isinstance(value, list) and wire_key != "value":
-        return [one(v) for v in value]
+        return [one(v, i) for i, v in enumerate(value)]
     return value
 
 
@@ -410,7 +398,7 @@ def set_part(
                 cleaned = parts.clean_value(wire_key, body["value"])
             except parts.PartValueError as exc:
                 raise DraftError(422, exc.code, field="value") from None
-            masked = _mask_value(conn, idea_uuid, wire_key, cleaned)
+            masked = _mask_value(conn, owner, idea_uuid, wire_key, cleaned)
             if row_key == "title":
                 base = old if isinstance(old, dict) else {}
                 pinned = parts.pinned_fields(base) | {wire_key}
