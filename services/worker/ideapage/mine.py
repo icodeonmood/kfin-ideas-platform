@@ -151,8 +151,10 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
     else:
         meta = f"Saved {saved_when(saved, now)}, {where}"
         if waiting:
+            # The draft's owner is not on that idea's crew yet, so its lead is named only when they show their
+            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048).
             lead = read.person_by_code(conn, waiting["contributor_code"])
-            who = lead["first_name"] if lead else "the lead"
+            who = lead["first_name"] if lead and read.shows_name(lead) else "the lead"
             sentence = f"Waiting for {who} to answer about joining {waiting['idea_id']}. Your words are kept."
         elif str(idea.get("step") or "").startswith("check") or idea.get("step") == "send":
             kept = (
