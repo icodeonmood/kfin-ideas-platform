@@ -1,8 +1,10 @@
 /**
  * The Ones, end to end (DEC-034 to DEC-087): a One is inducted through the proposal API (the console page is
  * retired, DEC-106, R21; lane A's admin path replaces the proposals); the new One chooses a number and writes a
- * brief; a tier up plays the glow-up once; the Showcase brief, the leaderboard, the home carousel and the office
- * screen. axe on every page. Synthetic people only: each run picks a synthetic employee who is not a One yet.
+ * brief; the committee writes a few words at /ones/write/:id and a tier up plays the glow-up once on S-ONE with
+ * them; the One's Showcase brief and the committee's printable copy at /ones/showcase/:id (mapping/screens.md:111-112);
+ * the home carousel and the office screen. axe on every page. Synthetic people only: each run picks a synthetic
+ * employee who is not a One yet.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -149,7 +151,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expectNoSeriousAxeIssues(wall);
   });
 
-  test("a tier up plays the glow-up once, with the committee's message", async ({ browser }) => {
+  test("J-ONE/6 S-ONE mapping/screens.md:112: the committee writes a few words at /ones/write/:id, and the tier up plays the glow-up once on S-ONE with them", async ({
+    browser,
+  }) => {
     const core = await as(browser, PERSONAS.core);
     const up = await api(core, "POST", "/api/ones/proposals", {
       kind: "tier_up",
@@ -159,14 +163,24 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     });
     expect(up.status).toBe(201);
     const pid = Number(up.body.id);
-    expect(
-      (
-        await api(core, "POST", `/api/ones/proposals/${pid}/messages`, {
-          from: "committee",
-          text: "Synthetic test: well done on all of it.",
-        })
-      ).status,
-    ).toBe(201);
+
+    // Someone who is neither invited nor on the committee is told so, and gets no form.
+    const someone = await as(browser, PERSONAS.contributor);
+    await someone.goto(`/ones/write/${pid}`);
+    await expect(someone.getByText("This invitation isn't open, or isn't for you.")).toBeVisible();
+    await expect(someone.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+
+    // The committee writes on the page the invitation links to (comms/render.py `links.write`).
+    await core.goto(`/ones/write/${pid}`);
+    await expect(core.getByRole("heading", { level: 1, name: /^A few words for / })).toBeVisible();
+    await expect(core.getByText(/They are moving to Glow\./)).toBeVisible();
+    await expectNoSeriousAxeIssues(core);
+    await core.getByRole("textbox", { name: "Your message" }).fill("Synthetic test: well done on all of it.");
+    await core.getByRole("button", { name: "Send your message" }).click();
+    await expect(core.getByText("Thank you. Your message is saved.")).toBeVisible();
+    await expect(core.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
+    await expectNoSeriousAxeIssues(core);
+
     const chair = await as(browser, CHAIR);
     expect(
       (await api(chair, "POST", `/api/ones/proposals/${pid}/decide`, { verdict: "approve", how: "chair" }))
@@ -175,22 +189,55 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     const admin = await as(browser, PERSONAS.admin);
     expect((await api(admin, "POST", `/api/ones/proposals/${pid}/carry-out`)).status).toBe(200);
 
+    // The words feed S-ONE's "Messages for you", with the writer named (S-ONE.states showGlowUp).
     const one = await as(browser, subject.id);
-    await one.goto("/my-ideas");
-    const dialog = one.getByRole("dialog");
-    await expect(dialog.getByRole("heading", { name: /your spark is hotter/ })).toBeVisible();
+    await one.goto("/one");
+    const dialog = one.getByRole("dialog", { name: /your spark is hotter/ });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Messages for you" })).toBeVisible();
     await expect(dialog.getByText("Synthetic test: well done on all of it.")).toBeVisible({
       timeout: 10_000,
     });
+    await expect(dialog.getByText(/^From the core committee: /)).toBeVisible();
     await expectNoSeriousAxeIssues(one);
-    await dialog.getByRole("button", { name: /to my dashboard/ }).click();
+    await dialog.getByRole("button", { name: "Back to my dashboard" }).click();
     await expect(dialog).toBeHidden();
     await one.reload();
-    await expect(one.getByRole("heading", { level: 2, name: /^You're No\. \d+$/ })).toBeVisible();
+    await expect(one.getByRole("heading", { level: 1, name: /^You're No\. \d+$/ })).toBeVisible();
     await expect(one.getByRole("dialog")).toHaveCount(0);
   });
 
-  // The Showcase brief and the leaderboard moved to S-ONE and the Wall; their old pages are retired (lane E, S-ONE).
+  // The One writes the Showcase brief in S-ONE's sheet; the leaderboard is on the Wall (BLD-E042).
+  test("BLD-E042 mapping/screens.md:111: the committee reads and prints the One's Showcase brief at /ones/showcase/:id; nobody else opens it", async ({
+    browser,
+  }) => {
+    const one = await as(browser, subject.id);
+    await one.goto("/one");
+    await one.getByRole("button", { name: "Your Showcase brief" }).click();
+    const sheet = one.getByRole("dialog", { name: "Your Showcase brief" });
+    await sheet
+      .getByRole("textbox", { name: /^Delivery timelines/ })
+      .fill("Synthetic test: pilot in January, every AMC by March");
+    await sheet.getByRole("button", { name: "Save your brief" }).click();
+    await expect(sheet.getByRole("status")).toHaveText("Saved. The committee sees your latest version.");
+
+    const core = await as(browser, PERSONAS.core);
+    await core.goto(`/ones/showcase/${oneId}`);
+    await expect(core.getByRole("heading", { level: 1, name: /^Showcase brief: No\. \d+, / })).toBeVisible();
+    await expect(core.getByText("Synthetic test: pilot in January, every AMC by March")).toBeVisible();
+    await expect(core.getByRole("heading", { level: 2, name: "Delivery timelines" })).toBeVisible();
+    await expect(core.getByRole("button", { name: "Print" })).toBeVisible();
+    await expectNoSeriousAxeIssues(core);
+
+    // The page rule (policy/rbac.yaml `/ones/showcase view_ones_console`) sends anyone else home, the One
+    // included, and the API agrees.
+    for (const page of [await as(browser, PERSONAS.contributor), one]) {
+      await page.goto(`/ones/showcase/${oneId}`);
+      await expect(page).not.toHaveURL(/\/ones\/showcase\//);
+      expect((await page.request.get(`/api/ones/${oneId}/showcase`)).status()).toBe(403);
+    }
+  });
+
   test("the home carousel and the office screen", async ({ browser }) => {
     const someone = await as(browser, PERSONAS.contributor);
     await someone.goto("/");

@@ -254,6 +254,7 @@ pages:
   - /admin                     manage_kill_switches grant_roles     # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
+  - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
   - /delivery                  work_delivery                        # each person sees only their own deliveries
   - /ember/compose             write_ember_note                     # the chair's note, the admin's draft and send
 
