@@ -221,6 +221,7 @@ def test_L_HIDE_rules_7_BLD_B247_a_desk_hide_and_a_decision_on_one_idea_queue_an
     mid = _message(db, str(idea["id"]), text)
     start = text.index("9876501234")
     other = connect(helpers.db_url(test_database), autocommit=True)
+    other.execute("SET lock_timeout = '20s'")  # a regression fails on the lock, not on the join's timeout
     hid: dict[str, Any] = {}
     errors: list[BaseException] = []
     waited_on: list[str] = []
@@ -232,7 +233,7 @@ def test_L_HIDE_rules_7_BLD_B247_a_desk_hide_and_a_decision_on_one_idea_queue_an
         except BaseException as exc:  # reported below
             errors.append(exc)
 
-    hider = threading.Thread(target=hide_now)
+    hider = threading.Thread(target=hide_now, daemon=True)  # never holds the test run open
     real_refuse_own = decide.refuse_own
 
     def refuse_own_then_let_the_hide_start(conn: Conn, *a: Any, **kw: Any) -> None:
@@ -260,9 +261,15 @@ def test_L_HIDE_rules_7_BLD_B247_a_desk_hide_and_a_decision_on_one_idea_queue_an
             )
         except psycopg.errors.DeadlockDetected:  # pragma: no cover (the failure this test exists for)
             pytest.fail("the decision deadlocked with the desk's hide")
-        hider.join(timeout=30)
     finally:
-        other.close()
+        if hider.ident is not None:
+            hider.join(timeout=30)
+        # `other` is closed only once the thread is done with it; a thread still waiting is cancelled first
+        if hider.is_alive():
+            other.cancel_safe()
+            hider.join(timeout=5)
+        if not hider.is_alive():
+            other.close()
     assert not hider.is_alive()
     assert not errors, [type(e).__name__ for e in errors]
     assert waited_on == ["advisory"]  # the hide queued on lane C's lock, holding no row
@@ -411,3 +418,90 @@ def test_L_HIDE_rules_4_L_QUESTIONS_answer_4_BLD_B247_an_emptied_answer_keeps_no
         "SELECT owner_user_id FROM idea_words_sealed WHERE source = 'answer' AND source_id = %s", (key,)
     ).fetchone()
     assert owner is not None and str(owner["owner_user_id"]) == ravi["id"]
+
+
+def _one_question(db: Conn, cast: dict[str, Any]) -> tuple[str, str]:
+    sent = asking.send_set(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                           {"questions": [{"part": "summary", "text": "Is it mostly R07?"}], "time_to_answer": "3d"},
+                           f.at(16, 11, 20))  # fmt: skip
+    return str(sent["id"]), str(sent["questions"][0]["id"])
+
+
+def test_L_HIDE_S_R3_BLD_B247_any_other_failure_inside_hiding_reads_as_S_R3s_line_never_raw(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not a HideError (a bug, a lost connection inside lane C's hide): the same S-R3 lines, as 500 so the Answer
+    screen tries again, and nothing of the error reaches the reply."""
+    from desk.store import Refused
+
+    kavya = cast["kavya"]
+    set_id, qid = _one_question(db, cast)
+    asking.save_answer(db, qid, kavya["id"], "Mostly R07.", at=f.at(16, 12, 10))
+
+    def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("Kavya's folio 1234567890 broke it")  # synthetic; must never reach the reply
+
+    monkeypatch.setattr(adapters, "hide_message", broken)
+    with pytest.raises(Refused) as saving:
+        asking.save_answer(db, qid, kavya["id"], "Mostly R07, twice.", at=f.at(16, 12, 11))
+    assert (saving.value.status, saving.value.body()) == (
+        500, {"error": {"code": "answer_not_saved", "message": "Couldn’t save that. Try again."}},
+    )  # fmt: skip
+    with pytest.raises(Refused) as sending:
+        asking.send_answers(db, set_id, kavya["id"], f.at(16, 12, 12))
+    assert (sending.value.status, sending.value.body()) == (
+        500, {"error": {"code": "answers_not_sent", "message": "Your answers didn’t send. Try again."}},
+    )  # fmt: skip
+    row = db.execute("SELECT sent_at FROM answers WHERE question_id = %s", (qid,)).fetchone()
+    assert row is not None and row["sent_at"] is None  # nothing went
+
+
+def test_L_HIDE_rules_1_BLD_B247_BLD_C067_gateway_down_at_send_the_answers_go_patterns_masked_and_are_rechecked(
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R6, as lane C's messages do (BLD-C067): the gateway fails, the answer is still sent, masked by the patterns,
+    `hide.gatekeeper_skipped` is audited and a `hide.recheck` job (IDs only) is queued for its sealed words."""
+    import gateway
+    from core import killswitch
+    from desk.store import unseal
+    from gateway import AgentFailed
+
+    idea, kavya = cast["idea"], cast["kavya"]
+    set_id, qid = _one_question(db, cast)
+    words = "Mostly R07. Folio 1234567890 got it twice."
+    saved = asking.save_answer(db, qid, kavya["id"], words, at=f.at(16, 12, 10))
+    aid = saved["id"]
+    calls: list[str] = []
+
+    def down(agent: str, *_: Any, **__: Any) -> Any:
+        calls.append(agent)
+        raise AgentFailed("connection")
+
+    killswitch.clear_cache()
+    monkeypatch.setattr(gateway, "run_agent", down)
+    try:
+        got = asking.send_answers(db, set_id, kavya["id"], f.at(16, 12, 20))
+        assert calls == ["gatekeeper"] and got["sent"] == 1 and got["state"] == "answered"
+        row = db.execute("SELECT sent_at, text_encrypted FROM answers WHERE id = %s", (aid,)).fetchone()
+        assert row is not None and row["sent_at"] is not None
+        stored = unseal(row["text_encrypted"], "answers", "text_encrypted", aid)
+        # the patterns masked it
+        assert stored is not None and "1234567890" not in stored and "••••90" in stored
+        skipped = db.execute(
+            "SELECT after FROM audit_log WHERE action = 'hide.gatekeeper_skipped' AND entity = %s",
+            (f"idea:{idea['id']}",),
+        ).fetchone()
+        assert skipped is not None
+        assert skipped["after"]["code"] == "connection" and skipped["after"]["source"] == "answer"
+        assert "1234567890" not in str(skipped["after"])
+        job = db.execute(
+            "SELECT id, payload FROM jobs WHERE type = 'hide.recheck' AND payload->>'idea_uuid' = %s",
+            (str(idea["id"]),),
+        ).fetchone()
+        assert job is not None and skipped["after"]["recheck_job"] == job["id"]
+        assert job["payload"] == {"idea_uuid": str(idea["id"]), "source": "answer", "source_id": aid,
+                                  "by": kavya["id"]}  # fmt: skip
+    finally:
+        db.execute(
+            "DELETE FROM jobs WHERE type = 'hide.recheck' AND payload->>'idea_uuid' = %s", (str(idea["id"]),)
+        )

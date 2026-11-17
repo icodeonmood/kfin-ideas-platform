@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from core.db import Conn
+from core.logging import get_logger
 from desk import adapters, clock, promises, questions, review, when
 from desk.decide import FieldError
 from desk.questions import PART_NAMES, PARTS, SetFacts
@@ -44,6 +45,8 @@ from desk.store import (
     user_of,
 )
 from hide import HideError
+
+log = get_logger("desk.asking")
 
 OPEN: tuple[str, ...] = ("sent", "seen", "partly_answered")  # a set the sharer can still answer
 CLOSED = "The review desk has decided, so these questions are closed."
@@ -619,7 +622,8 @@ def save_answer(
         aid = str(existing["id"]) if existing else str(uuid.uuid4())
         # the sharer's answer: its details keep their ids across autosaves and their own words are sealed for them
         # (L-HIDE.rules/4). Autosave runs the patterns only; the gatekeeper runs once, on send (BLD-B247). A refusal
-        # from hiding (the sealed words under this id are someone else's) is S-R3's failure line, never a raw error.
+        # from hiding (the sealed words under this id are someone else's) is S-R3's failure line, never a raw error,
+        # and so is any other failure inside it (500, tried again by the screen); the log has its type only.
         masked, hidden = "", 0
         if text and text.strip():
             try:
@@ -628,6 +632,9 @@ def save_answer(
                 )
             except HideError:
                 raise Refused(409, "answer_not_saved", NOT_SAVED) from None
+            except Exception:
+                log.exception("desk.answer_hide_failed", step="save")
+                raise Refused(500, "answer_not_saved", NOT_SAVED) from None
             masked, hidden = done.masked, done.hidden_count
         elif existing:
             # an emptied box hides nothing and keeps no words any more, so a co-sharer may take it over
@@ -710,7 +717,9 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
 def _gatekeep(conn: Conn, idea_uuid: str, ready: Sequence[dict[str, Any]], user_id: str) -> None:
     """Before an answer reaches the desk, one pass with the gatekeeper over the sharer's own words (autosave ran the
     patterns only), and the masked copy written again (non-negotiable 4; L-HIDE.rules/1; BLD-B247). An answer with no
-    sealed words (one saved before they were kept) is checked as stored. Any refusal is S-R3's send failure line."""
+    sealed words (one saved before they were kept) is checked as stored. Any refusal, or any other failure inside
+    hiding, is S-R3's send failure line, never a raw error. When the gateway is down lane C's hide goes on with the
+    patterns, audits `hide.gatekeeper_skipped` and queues a `hide.recheck` (BLD-C067): the answers are sent."""
     for r in ready:
         aid = str(r["answer_id"])
         stored = _answer_text(r)
@@ -723,6 +732,9 @@ def _gatekeep(conn: Conn, idea_uuid: str, ready: Sequence[dict[str, Any]], user_
             )
         except HideError:
             raise Refused(409, "answers_not_sent", NOT_SENT) from None
+        except Exception:
+            log.exception("desk.answer_hide_failed", step="send")
+            raise Refused(500, "answers_not_sent", NOT_SENT) from None
         if done.masked != stored:
             conn.execute(
                 "UPDATE answers SET text_encrypted = %s WHERE id = %s",
