@@ -190,28 +190,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expect(one.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("the Showcase brief, the leaderboard and the office screen", async ({ browser }) => {
-    const one = await as(browser, subject.id);
-    await one.goto("/my-ideas/showcase");
-    await one.getByLabel("Delivery timelines").fill("Synthetic test: pilot in January, every AMC by March");
-    await one.getByRole("button", { name: "Save your brief" }).click();
-    await expect(
-      one.getByRole("status").filter({ hasText: "Saved. The committee sees your latest version." }),
-    ).toHaveText("Saved. The committee sees your latest version.");
-    await expectNoSeriousAxeIssues(one);
-    await one.goto("/ones/leaderboard");
-    await expect(one.getByRole("heading", { level: 2, name: "People" })).toBeVisible();
-    await expectNoSeriousAxeIssues(one);
-
-    const core = await as(browser, PERSONAS.core);
-    await core.goto(`/ones/showcase/${oneId}`);
-    await expect(core.getByText("Synthetic test: pilot in January, every AMC by March")).toBeVisible();
-    await expect(core.getByRole("button", { name: "Print" })).toBeVisible();
-    await expectNoSeriousAxeIssues(core);
-
+  // The Showcase brief and the leaderboard moved to S-ONE and the Wall; their old pages are retired (lane E, S-ONE).
+  test("the home carousel and the office screen", async ({ browser }) => {
     const someone = await as(browser, PERSONAS.contributor);
-    await someone.goto("/ones/leaderboard");
-    await expect(someone.getByText("The leaderboard is for Ones.")).toBeVisible();
     await someone.goto("/");
     await expect(someone.getByRole("heading", { name: "What the Ones are up to" })).toBeVisible();
     await someone.getByRole("button", { name: "Next One" }).click();
