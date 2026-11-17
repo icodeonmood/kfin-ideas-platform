@@ -45,6 +45,9 @@ OPEN: tuple[str, ...] = ("sent", "seen", "partly_answered")  # a set the sharer 
 CLOSED = "The review desk has decided, so these questions are closed."
 NOTHING_ANSWERED = "Answer at least one question"
 FILE_HAS_PERSONAL_DATA = "This file has personal details. Hide them or remove the file before you send."
+ANSWER_IN_PROGRESS = (
+    "Someone else who shared this idea is answering this question. You can answer the others."
+)
 REMINDER_KIND = "desk.answer_reminder"
 
 
@@ -187,11 +190,17 @@ def _has_content(answer: dict[str, Any]) -> bool:
 
 
 def _set_json(
-    conn: Conn, s: dict[str, Any], idea: dict[str, Any], t: dt.datetime, *, drafts: bool
+    conn: Conn, s: dict[str, Any], idea: dict[str, Any], t: dt.datetime, *, viewer_code: str | None
 ) -> dict[str, Any]:
-    """E-ENTITIES.review QuestionSet. `drafts` shows saved, unsent answers too: only to the sharer who wrote them."""
+    """E-ENTITIES.review QuestionSet. Sent answers show to everyone who reads the set; a saved, unsent answer only
+    to the sharer who wrote it (`viewer_code`), never to a co-sharer credited through a merge."""
     rows = _rows(conn, s["id"])
-    shown = {str(r["answer_id"]) for r in rows if r["answer_id"] and (drafts or r["sent_at"] is not None)}
+    shown = {
+        str(r["answer_id"])
+        for r in rows
+        if r["answer_id"]
+        and (r["sent_at"] is not None or (viewer_code is not None and r["by_code"] == viewer_code))
+    }
     files = _files(conn, sorted(shown))
     people: dict[str, Person] = {}
 
@@ -331,7 +340,7 @@ def send_set(
               before={"status": idea["status"]},
               after={"set_id": set_id, "count": len(asked), "parts": [str(q["part"]) for q in asked],
                      "time_to_answer": time_to_answer, "due_at": due.isoformat()})  # fmt: skip
-        out = _set_json(conn, _load_set(conn, set_id), idea, t, drafts=False)
+        out = _set_json(conn, _load_set(conn, set_id), idea, t, viewer_code=None)
         after = decide_by is not None and clock.after_decide_by(due, decide_by)
         out.update({
             "due_label": questions.deadline_line(sharer.first_name, due, t, cal.tz),
@@ -454,7 +463,7 @@ def open_set_for_sharer(
     tz = clock.office_calendar().tz
     with conn.transaction():
         idea = load_idea(conn, ref)
-        _sharer_code(conn, idea, user_id)
+        code = _sharer_code(conn, idea, user_id)
         row = conn.execute(
             "SELECT * FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
             "ORDER BY sent_at DESC NULLS LAST, created_at DESC LIMIT 1 FOR UPDATE",
@@ -470,7 +479,7 @@ def open_set_for_sharer(
                 (t, s["id"]),
             ).fetchone()
             s = dict(seen) if seen else s
-        out = _set_json(conn, s, idea, t, drafts=True)
+        out = _set_json(conn, s, idea, t, viewer_code=code)
         reviewer = person_by_user(conn, str(s["by_user_id"]))
         answers = [q["answer"] for q in out["questions"] if q["answer"] and _has_content(q["answer"])]
         ready = sum(1 for a in answers if not a["sent"])
@@ -548,9 +557,15 @@ def save_answer(
         code = _sharer_code(conn, idea, user_id)
         if q["state"] == "closed":
             raise Refused(409, "set_closed", CLOSED)
-        existing = conn.execute("SELECT id, sent_at FROM answers WHERE question_id = %s", (qid,)).fetchone()
+        existing = conn.execute(
+            "SELECT id, by_code, sent_at FROM answers WHERE question_id = %s FOR UPDATE", (qid,)
+        ).fetchone()
         if existing and existing["sent_at"] is not None:
             raise Refused(409, "answer_sent", "This answer is already with the review desk.")
+        if (
+            existing and existing["by_code"] != code
+        ):  # one answer per question: a co-sharer's draft stays theirs
+            raise Refused(409, "answer_in_progress", ANSWER_IN_PROGRESS)
         errors = questions.check_answer(text, p)
         if errors:
             raise _refused(errors[0])
@@ -592,7 +607,10 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
         if s["state"] == "closed":
             raise Refused(409, "set_closed", CLOSED)
         rows = _rows(conn, sid)
-        unsent = [r for r in rows if r["answer_id"] is not None and r["sent_at"] is None]
+        # only the caller's own drafts go: a co-sharer's unsent answer is theirs to send (L-QUESTIONS.answer/3)
+        unsent = [
+            r for r in rows if r["answer_id"] is not None and r["sent_at"] is None and r["by_code"] == code
+        ]
         files = _files(conn, [str(r["answer_id"]) for r in unsent])
         ready = [r for r in unsent if _answer_text(r).strip() or files.get(str(r["answer_id"]))]
         if not ready:
