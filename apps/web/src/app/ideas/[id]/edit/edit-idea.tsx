@@ -150,6 +150,8 @@ export function EditIdea({
   const [declChanged, setDeclChanged] = useState(false);
   /** Set once the person has chosen to leave, so neither the link guard nor the browser asks again. */
   const leaving = useRef(false);
+  /** Leaving could not take away a file this page added: the person has its row's words, so the next link leaves. */
+  const discardFailed = useRef(false);
   const confirmRef = useRef<HTMLParagraphElement>(null);
   const sortingRef = useRef<HTMLElement>(null);
   const ids = useId();
@@ -215,9 +217,15 @@ export function EditIdea({
 
   // --- Changes that wait for Save --------------------------------------------------------------------------------
 
+  /** A new change after the confirm asks again before leaving (BLD-C163). */
+  const unconfirm = () => {
+    setConfirmCancel(false);
+    discardFailed.current = false;
+  };
+
   const change = (next: (s: EditState) => EditState) => {
     setState((s) => (s ? next(s) : s));
-    setConfirmCancel(false);
+    unconfirm();
     // A new change starts a new round: the last save's words no longer describe the page. A refusal that the
     // desk opened it stays: Save cannot work again here.
     setOutcome((o) => (o.kind === "closed" ? o : { kind: "none" }));
@@ -356,12 +364,14 @@ export function EditIdea({
 
   // --- Leaving with unsaved changes (S-06B.layout/7, BLD-C163) ------------------------------------------------------
 
-  /** Leaving without saving takes away again the files and links this page added (they acted at once); one that
-   * cannot be removed now stays on the idea, as it would after a Remove that failed. Removed ones stay removed: a
+  /** Leaving without saving takes away again the files and links this page added (they acted at once): a row still
+   * uploading is waited for, then its file deleted. True when every one of them is gone; one that cannot be removed
+   * stays on the page with its row's words under it, as after a Remove that failed. Removed ones stay removed: a
    * removal cannot be undone (BLD-C161). */
-  const discard = async () => {
+  const discard = async (): Promise<boolean> => {
     const rows = addedRows(fileBase, proof.proof);
-    await Promise.all(rows.map((r) => proof.removeFile(r.key)));
+    const gone = await Promise.all(rows.map((r) => proof.removeFile(r.key, { wait: true })));
+    return gone.every(Boolean);
   };
 
   // Any link on the page (Cancel, the bar's close, the side bar, Back) shows the in-place confirm first while there
@@ -380,10 +390,24 @@ export function EditIdea({
         return;
       }
       leaving.current = true;
-      if (!addedRows(fileBase, proof.proof).length) return; // nothing to take away: the link goes as it is
+      // Nothing to take away, or the person already has the words of a file that would not go: the link goes as it is.
+      if (discardFailed.current || !addedRows(fileBase, proof.proof).length) return;
       e.preventDefault();
       e.stopPropagation();
-      void discard().then(() => router.push(to));
+      void discard().then((gone) => {
+        if (gone) {
+          router.push(to);
+          return;
+        }
+        // A file this page added is still on the idea, and the review desk could open it: stay, with the row's own
+        // words under it, brought into view; the next link leaves.
+        discardFailed.current = true;
+        leaving.current = false;
+        window.setTimeout(
+          () => document.querySelector(".ck-proof")?.scrollIntoView?.({ block: "nearest" }),
+          0,
+        );
+      });
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
@@ -559,11 +583,20 @@ export function EditIdea({
           limitMb={limitMb}
           help={limits?.help_text || C.proof.dropHelp}
           accept={limits?.types?.length ? limits.types.join(",") : undefined}
-          onFiles={proof.addFiles}
-          onLinks={proof.addLinks}
+          onFiles={(f) => {
+            unconfirm();
+            proof.addFiles(f);
+          }}
+          onLinks={(links) => {
+            unconfirm();
+            return proof.addLinks(links);
+          }}
           onRetry={(k) => void proof.retryFile(k)}
           onHide={(k) => void proof.hideFile(k)}
-          onRemove={(k) => void proof.removeFile(k)}
+          onRemove={(k) => {
+            unconfirm();
+            void proof.removeFile(k);
+          }}
           showHelps={!phone}
           canHide={blackout}
           edit={

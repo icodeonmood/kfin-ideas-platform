@@ -33,6 +33,8 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
   /** Failed asks in a row for each moving file (C-FILE.row polling, BLD-C139). */
   const pollFails = useRef(new Map<string, number>());
   const [pollTick, setPollTick] = useState(0);
+  /** Each upload still on its way, so a removal that must know the outcome can wait for it (S-06B's Cancel). */
+  const pending = useRef(new Map<string, Promise<Call<FileItem>>>());
 
   /** The rows as the server last sent them (on load, or after a save). */
   const load = useCallback(
@@ -42,7 +44,10 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
 
   const upload = async (key: string, file: File) => {
     replace(key, { localState: "uploading", refusal: undefined, note: undefined });
-    const r = await track(api.upload(to, file));
+    const posted = track(api.upload(to, file));
+    pending.current.set(key, posted);
+    const r = await posted;
+    pending.current.delete(key);
     if (removedEarly.current.has(key)) {
       // Removed during the upload: what reached the server goes too, so nothing is left behind.
       removedEarly.current.delete(key);
@@ -132,21 +137,42 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     else replace(key, { note: (!r.ok && r.error?.message) || CHECK_COPY.failed });
   };
 
-  /** Remove takes the row away once the server agrees; if it does not, the row stays where it is and says so. */
-  const removeFile = async (key: string) => {
-    const p = proof.find((x) => x.key === key);
-    if (!p) return;
-    if (!p.item?.id) {
-      if (p.localState === "uploading") removedEarly.current.add(key);
-      setProof((list) => list.filter((x) => x.key !== key));
-      return;
-    }
+  /** Deletes one file the server has: the row goes once the server agrees; if it does not, the row stays where it
+   * is with the server's words (or the drawn line) under it. True when nothing of it is left on the server. */
+  const deleteOne = async (key: string, fileId: string): Promise<boolean> => {
     replace(key, { note: undefined });
-    const r = await track(api.removeFile(p.item.id));
+    const r = await track(api.removeFile(fileId));
     if (r.ok || r.status === 404) {
       pollFails.current.delete(key);
       setProof((list) => list.filter((x) => x.key !== key));
-    } else replace(key, { note: r.error?.message || CHECK_COPY.failed });
+      return true;
+    }
+    replace(key, { note: r.error?.message || CHECK_COPY.failed });
+    return false;
+  };
+
+  /**
+   * Remove takes the row away once the server agrees; if it does not, the row stays where it is and says so. Resolves
+   * to true when nothing of the row is left on the server. A row still uploading goes at once and its file is deleted
+   * when the POST answers; with `wait` (S-06B's Cancel, which must know the outcome before it leaves) the POST is
+   * waited for and its file deleted before this answers.
+   */
+  const removeFile = async (key: string, opts: { wait?: boolean } = {}): Promise<boolean> => {
+    const p = proof.find((x) => x.key === key);
+    if (!p) return true;
+    if (p.item?.id) return deleteOne(key, p.item.id);
+    if (p.localState === "uploading") {
+      const posted = pending.current.get(key);
+      if (posted && opts.wait) {
+        const r = await posted;
+        if (r.ok && r.body?.id) return deleteOne(key, r.body.id);
+        setProof((list) => list.filter((x) => x.key !== key));
+        return true;
+      }
+      removedEarly.current.add(key);
+    }
+    setProof((list) => list.filter((x) => x.key !== key));
+    return true;
   };
 
   // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A

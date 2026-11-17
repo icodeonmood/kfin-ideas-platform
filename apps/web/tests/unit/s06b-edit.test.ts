@@ -913,6 +913,76 @@ describe("S-06B review: files count as changes (BLD-C161 as amended)", () => {
   });
 });
 
+describe("S-06B follow-up: Cancel never leaves a file behind unsaid (BLD-C161, C163)", () => {
+  it("BLD-C161: a DELETE that fails on Cancel keeps the person on the page with the row and its words; the next Cancel leaves", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    await mount([
+      (m, u) => (m === "POST" && u === "/api/links" ? { body: LINK } : undefined),
+      (m, u) =>
+        m === "DELETE" && u === `/api/files/${LINK.id}`
+          ? { status: 500, body: { error: { code: "server_error", message: "" } } }
+          : undefined,
+      ...base(),
+    ]);
+    await addLink("https://intranet.kfintech.example/codes");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+    expect(pushed).toEqual([]);
+    expect(document.body.textContent).toContain(LINK.name);
+    expect(all('[role="alert"]').some((a) => text(a) === "Something went wrong. Try again.")).toBe(true);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    // The person has been told: the next Cancel leaves as it is, without trying again.
+    expect(await follows(link("Cancel"))).toBe(true);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("BLD-C161: a file still uploading on Cancel is waited for, then deleted, before the page leaves", async () => {
+    const pushed: string[] = [];
+    nav.push = (to) => pushed.push(to);
+    let landed: (v: unknown) => void = () => undefined;
+    vi.spyOn(api, "upload").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          landed = resolve as (v: unknown) => void;
+        }) as never,
+    );
+    await mount([
+      (m, u) => (m === "DELETE" && u === `/api/files/${SHOWN.id}` ? { status: 204 } : undefined),
+      ...base(),
+    ]);
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(["x"], SHOWN.name, { type: "image/png" });
+    await act(async () => {
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    expect(status()).toBe("Unsaved changes");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(pushed).toEqual([]);
+    await act(async () => landed({ ok: true, status: 201, body: SHOWN }));
+    await settle();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/api/files/${SHOWN.id}`]);
+    expect(pushed).toEqual([`/ideas/${REF}`]);
+  });
+
+  it("BLD-C163: a link added after the confirm asks again before leaving", async () => {
+    await mount([(m, u) => (m === "POST" && u === "/api/links" ? { body: LINK } : undefined), ...base()]);
+    await retitle("Investors call about a redemption not processed");
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    await addLink("https://intranet.kfintech.example/codes");
+    expect(document.querySelector(".ed-confirm")).toBeNull();
+    expect(await follows(link("Cancel"))).toBe(false);
+    expect(text(document.querySelector(".ed-confirm"))).toBe(CONFIRM);
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+});
+
 describe("S-06B review: leaving with unsaved changes (BLD-C163, item 1)", () => {
   it("S-06B.layout/7: any other link on the page (the side bar, the bar's Back to your idea) confirms first, then leaves", async () => {
     await mount(base());
