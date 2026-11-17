@@ -110,7 +110,8 @@
       "display": "yes"
     },
     "committee_window": {
-      "committee": "yes"
+      "committee": "yes",
+      "core_committee": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -412,7 +413,8 @@
       "href": "/committee",
       "place": "main",
       "roles": [
-        "committee"
+        "committee",
+        "core_committee"
       ]
     },
     {
