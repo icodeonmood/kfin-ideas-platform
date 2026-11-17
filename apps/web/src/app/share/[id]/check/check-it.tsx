@@ -261,7 +261,11 @@ export function CheckIt({
       }
       moved.current = true;
       setPart(n);
-      if (n === 7) void loadSend();
+      if (n === 7) {
+        // A message from an earlier try is about a state that may have changed since; the last look is read again.
+        setSendState((st) => (st.kind === "sending" || st.kind === "queued" ? st : { kind: "idle" }));
+        void loadSend();
+      }
       void api.step(draftId, stepOf(n));
     },
     [draftId, part, loadSend],
@@ -607,9 +611,9 @@ export function CheckIt({
     );
   }
 
-  const title = String(draft.parts.title?.value ?? "");
-  const summary = String(draft.parts.summary?.value ?? "");
-  const often = String(draft.parts.often?.value ?? "");
+  const title = String(draft.parts?.title?.value ?? "");
+  const summary = String(draft.parts?.summary?.value ?? "");
+  const often = String(draft.parts?.often?.value ?? "");
   const attached = (draft.files ?? []).filter((f) => (f as { message_id?: string }).message_id);
   const controls = config?.sorting.controls;
   const helpersOptions = controls?.helpers ?? config?.sorting.helpers ?? [];
