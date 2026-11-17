@@ -185,6 +185,8 @@
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
     "PUT /api/me/comms-prefs                           signed_in",
+    "GET /api/me/refer-as                              signed_in",
+    "PUT /api/me/refer-as                              signed_in",
     "GET /api/inbox                                    signed_in",
     "POST /api/inbox/{id}/read                         signed_in",
     "GET /api/canvas/config                            submit",

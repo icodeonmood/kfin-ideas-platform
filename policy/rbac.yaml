@@ -80,6 +80,8 @@ endpoints:
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
   - PUT /api/me/comms-prefs                           signed_in
+  - GET /api/me/refer-as                              signed_in       # she, he, they or unset (BLD-C111, DEC-108)
+  - PUT /api/me/refer-as                              signed_in       # asked once in Profile (S-H6); the person only
   - GET /api/inbox                                    signed_in
   - POST /api/inbox/{id}/read                         signed_in       # mark one message read (addition to §8)
   - GET /api/canvas/config                            submit
