@@ -696,7 +696,7 @@ def tell_requester(conn: Conn, req: Req, ans: Answer, has_reason: bool, sender: 
     if ans == "merge":
         actions = [("See the merged idea", "primary", f"/ideas/{ref}", None)]
     elif ans == "team_only":
-        actions = [("Say hello", "primary", f"/ideas/{ref}/conversation", None)]
+        actions = [("Say hello", "primary", f"/ideas/{ref}/conversation#say-hello", None)]
     to = user_of(conn, str(req.row["from_code"]))
     adapters.tell(
         conn, "teamup_answer", [to] if to else [], idea_uuid=str(req.idea["id"]), sender=sender, actions=actions,

@@ -197,7 +197,7 @@ def test_V_ACC_teamup_6_merge_it(db: Conn, cast: dict[str, Any], inbox: f.Inbox)
     )
     assert out["say_hello"] == {
         "label": "Say hello to Kavya",
-        "to": f"/ideas/{cast['lead']['idea_id']}/conversation",
+        "to": f"/ideas/{cast['lead']['idea_id']}/conversation#say-hello",  # BLD-F069
     }
     assert out["request"]["state"] == "approved_merged"
     # L-MERGE.effects/1, /4, /5
@@ -259,6 +259,14 @@ def test_V_ACC_teamup_6_team_up_only(db: Conn, cast: dict[str, Any], inbox: f.In
     assert inbox.of("teamup_answer")[0]["refs"]["answer"] == "team_only"
     mine = requests.my_state(db, cast["lead"]["idea_id"], cast["kavya"]["id"])
     assert mine["after"]["line"] == "You’re on the crew. You’ll get its updates."
+    # BLD-F069: every "Say hello" opens the conversation with the cursor in the box (#say-hello, no words): the
+    # lead's, the requester's Inbox action and the sheet's
+    hello = f"/ideas/{cast['lead']['idea_id']}/conversation#say-hello"
+    assert out["say_hello"] == {"label": "Say hello to Kavya", "to": hello}
+    assert [(a.label, a.style, a.to, a.op) for a in inbox.of("teamup_answer")[0]["actions"]] == [
+        ("Say hello", "primary", hello, None)
+    ]
+    assert mine["after"]["action"] == {"label": "Say hello", "to": hello}
 
 
 def test_V_ACC_teamup_6_decline_with_a_masked_reason(db: Conn, cast: dict[str, Any], inbox: f.Inbox) -> None:

@@ -326,11 +326,14 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 56px;
+  max-height: 240px;
   margin: 0;
   padding: 4px 2px;
   border: 0;
   background: none;
-  resize: vertical;
+  /* no grip: the box grows with its words up to max-height, then scrolls (grow() in pin.ts, BLD-F068) */
+  resize: none;
+  overflow-y: auto;
   font: 400 17px/1.5 var(--ft);
   color: var(--ink);
 }
@@ -531,21 +534,63 @@
   .cv-msg {
     max-width: 92%;
   }
+  /* The box is pinned (S-08.rules/4, BLD-F068): fixed at the bottom like the dock (C-PHONE-TABS.dock), above the tab
+   * bar where the shell shows one and above an open keyboard (--cv-at); it takes the safe area only at the very
+   * bottom (--cv-safe). pin.ts measures both, and how much the timeline keeps free under its last line (--cv-room),
+   * so the last line and anything focused in the timeline clear the box (--cv-cover; WCAG 2.4.11). */
+  .cv-main {
+    padding-bottom: var(--cv-room, 0px);
+  }
+  .cv-log *,
+  .cv-msg {
+    scroll-margin-bottom: calc(var(--cv-cover, 160px) + 12px);
+  }
   .cv-box {
-    bottom: calc(88px + env(safe-area-inset-bottom, 0px)); /* above the tab bar */
-    margin-top: 24px;
-    padding: 12px 12px 8px 14px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--cv-at, 0px);
+    z-index: var(--z-sidebar, 30);
+    margin: 0;
+    padding: 10px max(var(--page-gutter), env(safe-area-inset-right, 0px))
+      max(10px, calc(env(safe-area-inset-bottom, 0px) * var(--cv-safe, 1) + 8px))
+      max(var(--page-gutter), env(safe-area-inset-left, 0px));
+    border-radius: 0;
+    background: var(--glass-dock);
+    border-top: 1px solid var(--rule2);
+    box-shadow: none;
+    transition: none;
+  }
+  .cv-box:focus-within {
+    box-shadow: none;
+  }
+  /* On the dock the field carries its own edge and focus ring, as the board's box does */
+  .cv-field {
+    padding: 2px 4px;
     border-radius: 22px;
+    background: #ffffff;
+    box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.12);
+  }
+  .cv-field:focus-within {
+    box-shadow: 0 0 0 2px var(--blue);
+  }
+  .cv-in {
+    min-height: 44px;
+    max-height: 120px;
+    padding: 10px 12px;
+    font-size: 16px;
+  }
+  .cv-hint {
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    font-size: 12.5px;
   }
   .cv-bar {
-    flex-wrap: wrap;
+    margin-top: 8px;
   }
   .cv-sees {
-    flex-basis: 100%;
-    order: 2;
-  }
-  .cv-box .cv-send {
-    margin-left: auto;
+    font-size: 12.5px;
+    line-height: 1.35;
   }
   .cv-side {
     display: none;
