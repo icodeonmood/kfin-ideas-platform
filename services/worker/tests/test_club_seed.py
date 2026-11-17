@@ -30,15 +30,24 @@ def _set(conn: Any, sql: str) -> set[Any]:
 
 
 @pytest.fixture
-def seeded(db: Any) -> Iterator[dict[str, club_seed.Made]]:
-    """The seed, loaded for one test and removed after it, so nothing it made is left for the next test."""
-    made = club_seed.load(db)
-    yield made
+def made(db: Any) -> Iterator[dict[str, club_seed.Made]]:
+    """The seed with each idea's row by key, loaded for one test and removed after it, so no rows outlive the test
+    (rule 14). The base's `seeded` fixture yields the connection, so this one has its own name."""
+    m = club_seed.load(db)
+    yield m
     club_seed.remove(db)
 
 
-def test_e_entities_seed_fills_every_screen_and_removes_cleanly(db: Any) -> None:
-    conn = db
+@pytest.fixture
+def unloaded(db: Any) -> Iterator[Any]:
+    """A test that loads and removes the seed itself: whatever it left loaded (a failed assert, the --reset load
+    at its end) is removed after it, so no rows outlive the test (rule 14)."""
+    yield db
+    club_seed.remove(db)
+
+
+def test_e_entities_seed_fills_every_screen_and_removes_cleanly(unloaded: Any) -> None:
+    conn = unloaded
     club_seed.load(conn)
 
     names = _set(conn, "SELECT name FROM users")
@@ -145,12 +154,12 @@ def test_l_ones_3_s_one_glow_up_one_tier_rise_waits_to_play_once(seeded: Any) ->
 
 
 def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_other(
-    db: Any, seeded: dict[str, club_seed.Made]
+    db: Any, made: dict[str, club_seed.Made]
 ) -> None:
     """J-REVIEW/M3 (L-MERGE.desk/1, 2, 5; L-REVIEW.open/1; L-SIMILAR.rules/6): two ideas from different sharers,
     both with the review desk, opened by the same reviewer (so both edit windows are closed), nothing decided or
     asked, and each lists the other under similar ideas. The one shared first leads by default."""
-    conn, m = db, seeded
+    conn, m = db, made
     first, later, _reason = club_seed.DESK_PAIR
     rows = {
         str(r["id"]): r
@@ -189,13 +198,13 @@ def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_
 
 
 def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_items(
-    db: Any, seeded: dict[str, club_seed.Made]
+    db: Any, made: dict[str, club_seed.Made]
 ) -> None:
     """J-SIMILAR/5, /6b and /6c (L-MERGE.request/1-4, L-TEAMUP.rules/5): besides T2, two more unsent drafts from
     other sharers each have a merge request waiting on Rekha's R1, so Team up only and Decline each have a request
     of their own to answer. Each waiting request is in Rekha's Inbox under Needs you with the three answers; refs
     carry IDs and small values only."""
-    conn, m = db, seeded
+    conn, m = db, made
     rekha = p_id(conn, "rekha")
     lead_code = _one(
         conn, "SELECT contributor_code FROM crew_members WHERE idea_uuid = %s AND role = 'lead'", m["R1"].uuid
@@ -238,9 +247,13 @@ def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_i
             conn, "SELECT user_id FROM contributor_map WHERE contributor_code = %s", draft["contributor_code"]
         )
         assert item["from_user_id"] == sender and str(item["idea_uuid"]) == m["R1"].uuid and item["needs_you"]
-        assert item["payload"] == {"idea_id": m["R1"].ref, "request_id": str(req["id"]), "request": "merge",
-                                   "brought": 1}  # fmt: skip
-        assert [a["label"] for a in item["actions"]] == ["Decline", "Team up only", "Merge it"]
+        # Exactly what lane F's tell_lead posts (teamup/requests.py): refs, and answers_for(brings=True) as actions.
+        assert item["payload"] == {"request_id": str(req["id"]), "request": "merge", "brought": 1}
+        assert item["actions"] == [
+            {"label": "Decline", "style": "text", "op": "teamup.answer.decline"},
+            {"label": "Team up only", "style": "line", "op": "teamup.answer.team_only"},
+            {"label": "Merge it", "style": "primary", "op": "teamup.answer.merge"},
+        ]
     assert len(owners) == 3  # one sharer per request (L-TEAMUP.rules/4)
 
 
@@ -249,7 +262,7 @@ def p_id(conn: Any, first: str) -> Any:
 
 
 def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
-    db: Any, seeded: dict[str, club_seed.Made]
+    db: Any, made: dict[str, club_seed.Made]
 ) -> None:
     """J-RESUME/5 and /6 (L-DRAFT.channels, L-HIDE.rules/4): a forwarded email landed as an unsent draft on the email
     channel, with its origin (subject, when it came) sealed on the draft, no device, its words in via email with the
@@ -257,7 +270,7 @@ def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
     the draft. The channel is off at launch (DEC-105); the record only has to exist."""
     import json
 
-    conn, m = db, seeded
+    conn, m = db, made
     i2 = m["I2"]
     idea = conn.execute(
         "SELECT status, channel, step, saved_device, saved_device_id, archived_at, shared_at, origin_encrypted "
@@ -297,5 +310,6 @@ def test_l_draft_channels_l_hide_j_resume_5_6_email_draft_with_detail_hidden(
     ).fetchall()
     assert len(kept) == 1
     assert kept[0]["user_id"] == p_id(conn, "indira") and kept[0]["from_user_id"] is None
-    assert kept[0]["payload"] == {"idea_id": None, "channel": "email"}
-    assert [a.get("to") for a in kept[0]["actions"]] == ["draft"]
+    # Exactly what lane C's intake posts (draft/channels.py `_kept`): refs the channel, one "Check and send".
+    assert kept[0]["payload"] == {"channel": "email"} and not kept[0]["needs_you"]
+    assert kept[0]["actions"] == [{"label": "Check and send", "style": "primary", "to": f"/share/{i2.uuid}"}]

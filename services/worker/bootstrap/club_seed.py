@@ -891,10 +891,10 @@ def _crews(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
              tanvi["code"] if state == "accepted" else None, _ago(days, now),
              _ago(days - 0.4, now) if state == "accepted" else None),
         )  # fmt: skip
-        if state == "waiting":  # as the request's sender posts it: the draft comes along (brought 1)
+        if state == "waiting":  # as lane F's tell_lead posts it (teamup/requests.py): the draft comes along
             _inbox_item(conn, p[m[other].spec.owner]["id"], "teamup_request", p[m[key].spec.owner]["id"],
-                        m[other].uuid, {"idea_id": m[other].ref, "request_id": rid, "request": "merge", "brought": 1},
-                        _ago(days, now), needs=True, actions=ANSWERS_WITH_MERGE)  # fmt: skip
+                        m[other].uuid, {"request_id": rid, "request": "merge", "brought": 1}, _ago(days, now),
+                        needs=True, actions=LEAD_ANSWERS)  # fmt: skip
         if state == "accepted":
             merge_id = str(uuid.uuid4())
             conn.execute(
@@ -1176,11 +1176,12 @@ def _glow_up(conn: Conn, p: dict[str, dict[str, str]], one_ids: dict[str, int], 
     )
 
 
-# A team-up request with an idea brought along, or a draft's merge request: the lead's three answers (L-TEAMUP.rules/5).
-ANSWERS_WITH_MERGE = [
-    {"label": "Decline", "op": "decline", "style": "text"},
-    {"label": "Team up only", "op": "team_only", "style": "line"},
-    {"label": "Merge it", "op": "merge", "style": "primary"},
+# A draft's merge request: the lead's three answers (L-TEAMUP.rules/5, S-H2B.reader/5), as lane F's `tell_lead` posts
+# them (teamup/rules.py answers_for, op `teamup.answer.<answer>`).
+LEAD_ANSWERS = [
+    {"label": "Decline", "style": "text", "op": "teamup.answer.decline"},
+    {"label": "Team up only", "style": "line", "op": "teamup.answer.team_only"},
+    {"label": "Merge it", "style": "primary", "op": "teamup.answer.merge"},
 ]
 
 
@@ -1208,7 +1209,9 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
         ("tanvi", "answer_reminder", None, "T6", 0.1, True, 2.0, False, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
-        ("tanvi", "teamup_request", "esha", "T5", 0.5, True, None, False, False, ANSWERS_WITH_MERGE),
+        ("tanvi", "teamup_request", "esha", "T5", 0.5, True, None, False, False,
+         [{"label": "Decline", "op": "decline", "style": "text"}, {"label": "Team up only", "op": "team_only", "style": "line"},
+          {"label": "Merge it", "op": "merge", "style": "primary"}]),
         ("tanvi", "decision", "harish", "T7", 5.0, False, None, True, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("tanvi", "decision_reversed", "manoj", "T9", 2.0, False, None, False, False,
@@ -1252,11 +1255,12 @@ def _inbox(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
                     {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
                     due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
-    # J-RESUME/5: the email arrival's "kept your draft", as draft intake posts it (L-DRAFT.channels; refs: channel).
+    # J-RESUME/5: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as the
+    # draft (draft/channels.py `_kept`, L-DRAFT.channels): from the system, refs the channel only, "Check and send".
     email = m["I2"]
-    _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid,
-                {"idea_id": email.ref, "channel": email.spec.channel}, _ago(email.spec.saved_days + 0.05, now),
-                actions=[{"label": "Check and send", "to": "draft", "style": "primary"}])  # fmt: skip
+    _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid, {"channel": email.spec.channel},
+                _ago(email.spec.saved_days + 0.05, now),
+                actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}])  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
