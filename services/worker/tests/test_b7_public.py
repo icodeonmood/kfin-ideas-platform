@@ -1,5 +1,5 @@
-"""Public pages (B7): AT-B7-01 (the wall lists org-visible ideas by `neutral_summary`, names only with
-`public_name_consent`, committee-only items never), AT-B7-02 (My ideas: stage in plain words and the next step
+"""Public pages (B7): AT-B7-01 (the wall lists org-visible ideas by `neutral_summary`, names unless the person hid
+theirs with `person_settings.show_name_on_wall` (DEC-104), committee-only items never), AT-B7-02 (My ideas: stage in plain words and the next step
 with a date), AT-B7-03 (the idea page timeline is the repo file's history; tags restored only in the mode the web
 app chose), AT-B7-04 (the showcase of what already runs lists solutions; `wall.public` off hides the wall)."""
 
@@ -52,7 +52,7 @@ def _ids(cards: list[dict[str, Any]]) -> list[str | None]:
     return [c.get("idea_id") for c in cards]
 
 
-def test_the_wall_shows_reviewed_org_ideas_and_names_only_with_consent(desk: Any) -> None:  # noqa: F811
+def test_the_wall_shows_reviewed_org_ideas_and_names_unless_hidden(desk: Any) -> None:  # noqa: F811
     db = desk["db"]
     killswitch.clear_cache()
     assert desk["idea_id"] not in _ids(_wall(db)["recent"])  # not yet looked at by the desk
@@ -61,13 +61,13 @@ def test_the_wall_shows_reviewed_org_ideas_and_names_only_with_consent(desk: Any
     w = _wall(db)
     card = next(c for c in w["recent"] if c["idea_id"] == desk["idea_id"])
     assert card["summary"] == "An idea to improve a KFintech process."  # the neutral summary, nothing else
-    assert card["stage"] == "Reviewed" and card["colleagues"] == 1 and card["names"] == []
+    name = db.execute("SELECT name FROM users WHERE id = %s", (desk["owner"],)).fetchone()["name"]
+    assert card["stage"] == "Reviewed" and card["colleagues"] == 1 and card["names"] == [name]  # never hid it
     assert TEXT not in json.dumps(w) and desk["code"] not in json.dumps(w)  # never their words or code
 
-    mine.set_name_on_wall(db, desk["owner"], True)
-    name = db.execute("SELECT name FROM users WHERE id = %s", (desk["owner"],)).fetchone()["name"]
+    mine.set_name_on_wall(db, desk["owner"], False)
     card = next(c for c in _wall(db)["recent"] if c["idea_id"] == desk["idea_id"])
-    assert card["names"] == [name]
+    assert card["names"] == []
     assert db.execute("SELECT 1 FROM audit_log WHERE action = 'prefs.name_on_wall'").fetchone()
 
     db.execute("UPDATE ideas SET visibility = 'committee' WHERE idea_id = %s", (desk["idea_id"],))
@@ -99,7 +99,7 @@ def test_my_ideas_show_stage_next_step_and_date(desk: Any) -> None:  # noqa: F81
     assert shared["one_line"]  # their own words, restored for them
     d = next(i for i in out["ideas"] if i["id"] == str(draft))
     assert d["draft"] and dt.datetime.fromisoformat(d["due"]) == expires
-    assert out["name_on_wall"] is False
+    assert out["name_on_wall"] is True  # shown unless hidden (DEC-104)
 
     service.act(
         db, desk["item"], desk["r1"], {"action": "ask", "question": "Which branches see this the most?"}
@@ -203,8 +203,11 @@ def test_only_the_person_who_shared_it_is_named(desk: Any) -> None:  # noqa: F81
         "INSERT INTO idea_links (idea_id, contributor_code, link_type) VALUES (%s, %s, 'joiner')",
         (desk["idea_id"], jcode),
     )
+    joiner = db.execute("SELECT name FROM users WHERE id = %s", (_joiner,)).fetchone()["name"]
+    sharer = db.execute("SELECT name FROM users WHERE id = %s", (desk["owner"],)).fetchone()["name"]
     card = next(c for c in _wall(db)["recent"] if c["idea_id"] == desk["idea_id"])
-    assert card["names"] == [] and card["colleagues"] == 2  # counted, never named
+    assert card["names"] == [sharer] and joiner not in card["names"]  # the joiner is counted, never named
+    assert card["colleagues"] == 2
 
 
 def test_a_committee_only_member_is_never_named_on_a_cluster(desk: Any) -> None:  # noqa: F811

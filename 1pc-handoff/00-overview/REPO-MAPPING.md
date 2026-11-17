@@ -31,11 +31,11 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128) | built (c/s04) | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126) | built (c/s04) | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
-| `S-06` | `/ideas/:id` (sharer) | `app/ideas/[id]` | exists, differs | L | P0 | E |
+| `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set`; withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]` (old) | server built, screen to come | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
-| `S-07` | `/my-ideas` | `app/my-ideas` | exists, differs | M | P0 | E |
+| `S-07` | `/my-ideas` | data: worker `ideapage/mine.py`, `GET /api/me/ideas` (`MyIdeasResponse`, state in the URL). Screen: `app/my-ideas` (old) | server built, screen to come | M | P0 | E |
 | `S-08` | `/ideas/:id/conversation` | none | missing | L | P0 | F |
-| `S-09` | `/ideas/:id` (others) | `app/ideas/[id]` | exists, differs | M | P0 | E |
+| `S-09` | `/ideas/:id` (others) | data: worker `ideapage/colleague.py`, `GET /api/ideas/:id` (`ColleagueView`, cut to public fields in `server/idea-page.ts`). Screen: `app/ideas/[id]` (old) | server built, screen to come | M | P0 | E |
 | `S-WALL` | `/wall` | `app/wall` | exists, differs | M to L | P0 | E |
 | `S-ONE` | `/one` | `app/my-ideas/one-dashboard.tsx`, `glow-up.tsx` | exists, differs | S to M | P0 | E |
 | `S-R1` | `/desk` | `app/review` | exists, differs | M to L | P0 | B |
@@ -98,23 +98,24 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-SORT` | `ideas.area`, taxonomy | exists, differs | P0 | C |
 | `L-SIMILAR` | `router/match.py`, `agents/judge`, embeddings | exists, differs | P0 | C |
 | `L-SUBMIT` | `server/submissions.ts`, `scan/save.py` | exists, differs | P0 | C |
-| `L-REVIEW` | `review/service.py`, `review_items` | exists, differs | P0 | B |
-| `L-DECIDE` | `review/service.py` (tags and groups today) | exists, differs | P0 | B |
+| `L-REVIEW` | `services/worker/desk/review.py`, `queue.py`, `reads.py`, `clock.py`, `clocks.py`; web forwarders in `server/desk.ts` | landed at 82668c1 (17 Nov, back end; follow-up on `b/1pc-review-fu`) | P0 | B |
+| `L-DECIDE` | `services/worker/desk/decide.py`, `promises.py`, `when.py`; `idea_decisions` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-INBOX` | `notifications`, `comms/inbox.py` | exists, differs | P0 | A |
 | `L-NOTIFY` | `comms/*` | exists, differs | P0 (email, in-app), P2 (Teams) | A |
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
 | `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
-| `L-QUESTIONS` | `idea_questions`, SLA `needs_info` | exists, differs | P0 | B |
-| `L-COMMITTEE` | `review/veto.py` (5-day veto) | exists, differs | P0 | B |
+| `L-QUESTIONS` | `services/worker/desk/asking.py`, `questions.py`, `clock.py`; `question_sets`, `questions`, `answers` | landed at 82668c1 (17 Nov, back end) | P0 | B |
+| `L-COMMITTEE` | `services/worker/desk/committee.py`, `window.py`; `decision_windows`, `decision_reversals` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-CONVO` | none | missing | P0 | F |
-| `L-WORTH` | impact estimates (qualify) | exists, differs | P0 | B |
-| `L-MERGE` | `idea_links` | exists, differs | P0 | B (desk), F (request) |
+| `L-WORTH` | `services/worker/desk/worth.py`, `revise.py` | landed at 82668c1 (17 Nov, back end) | P0 | B |
+| `L-MERGE` | desk: `services/worker/desk/merge.py`, `merging.py`, `merges` (landed at 82668c1, 17 Nov, back end); request: `idea_links` (exists, differs) | desk landed, request exists, differs | P0 | B (desk), F (request) |
 | `L-TEAMUP` | `idea_links` (`plus_one`, team-up at scan) | exists, differs | P0 | F |
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
 | `L-LISTEN` | `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | back end built; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
+| `L-LISTEN` | `services/worker/desk/listen.py`, `reads.script_for`; `GET /api/desk/ideas/:id/listen` (BLD-B237) | landed at 82668c1 (17 Nov, back end) | P0 | B |
 
 ## `P-REPO.contracts`
 
