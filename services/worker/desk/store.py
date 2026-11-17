@@ -126,9 +126,13 @@ def user_of(conn: Conn, code: str | None) -> str | None:
 # with the old pages: they read only. Only the review desk acts on an idea from the desk.
 READERS = frozenset({"reviewer", "committee", "core_committee", "core_chair"})
 REVIEWERS = frozenset({"reviewer"})
+# The Ones Committee: `committee`, and the old `core_committee` and `core_chair` until they are dropped
+# (00-overview/mapping/contracts.md §2.14 maps both to committee).
+COMMITTEE = frozenset({"committee", "core_committee", "core_chair"})
 _NOT_YOURS = {
     READERS: "Only the review desk and the Ones Committee can see this.",
     REVIEWERS: "Only the review desk can do this.",
+    COMMITTEE: "Only the Ones Committee can do this.",
 }
 
 
@@ -200,12 +204,21 @@ def is_own(conn: Conn, user_id: str, idea: dict[str, Any]) -> bool:
     return code is not None and code in own_codes(conn, idea)
 
 
-def refuse_own(conn: Conn, user_id: str, idea: dict[str, Any], action: str) -> None:
+def refuse_own(
+    conn: Conn,
+    user_id: str,
+    idea: dict[str, Any],
+    action: str,
+    *,
+    field: str | None = None,
+    message: str = "This is your own idea. Another reviewer takes it.",
+) -> None:
     """A reviewer never reviews their own idea, and a committee member never reverses a decision on theirs
-    (P-PRODUCT.roles/3, L-COMMITTEE.rules/9). The attempt is audited."""
+    (P-PRODUCT.roles/3, L-COMMITTEE.rules/9). The attempt is audited. `field` and `message` place the refusal under
+    the body's field that named the idea, when it is not the one on the page (a Pick's `joined_with`)."""
     if is_own(conn, user_id, idea):
         raise Refused(
-            403, "own_idea", "This is your own idea. Another reviewer takes it.",
+            403, "own_idea", message, field,
             audit=(actor(user_id), "desk.own_idea_refused", f"idea:{idea['idea_id']}", {"action": action}),
         )  # fmt: skip
 
