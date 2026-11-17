@@ -11,6 +11,9 @@ import {
   cleanIntent,
   intentStore,
   newAttemptKey,
+  PLACE_COOKIE,
+  placeCookieOptions,
+  sealPlace,
   worthKeeping,
 } from "@/server/auth/intents";
 import { secureCookies } from "@/server/auth/session";
@@ -61,7 +64,8 @@ export async function POST(request: NextRequest) {
     { headers: { "Cache-Control": "no-store" } },
   );
   // Keep where they were going against the attempt (L-AUTH.rules/4). An explicit `intent.to` is where the person
-  // asked to go now, so it replaces a kept attempt's place; without one, the browser's kept attempt stands.
+  // asked to go now, so it replaces a kept attempt's place; without one, the browser's kept attempt stands. Over the
+  // write limit the place travels in a sealed cookie instead of a row, so it is never dropped (BLD-A177).
   const raw = (body.intent && typeof body.intent === "object" ? body.intent : {}) as Record<string, unknown>;
   const explicit = typeof raw.to === "string" && raw.to !== "";
   const key = request.cookies.get(ATTEMPT_COOKIE)?.value;
@@ -70,13 +74,19 @@ export async function POST(request: NextRequest) {
     !explicit && key && key.length <= 128 ? await intentStore().find(attemptKeyHash(key), now) : null;
   if (!kept) {
     const intent = cleanIntent({ to: raw.to, draftId: raw.draft_id, step: raw.step });
+    const secure = secureCookies();
+    const hadPlace = Boolean(request.cookies.get(PLACE_COOKIE));
     if (worthKeeping(intent) && mayKeepIntent(request, now.getTime())) {
       const fresh = newAttemptKey();
       await intentStore().save(attemptKeyHash(fresh), intent, now);
-      response.cookies.set(ATTEMPT_COOKIE, fresh, attemptCookieOptions(secureCookies()));
-    } else if (explicit) {
-      // Asked for `/` (or over the limit): an older attempt must not send them somewhere else.
-      response.cookies.set(ATTEMPT_COOKIE, "", attemptCookieOptions(secureCookies(), 0));
+      response.cookies.set(ATTEMPT_COOKIE, fresh, attemptCookieOptions(secure));
+      if (hadPlace) response.cookies.set(PLACE_COOKIE, "", placeCookieOptions(secure, 0));
+    } else {
+      // Asked for `/`, or over the limit: an older attempt must not send them somewhere else.
+      if (explicit) response.cookies.set(ATTEMPT_COOKIE, "", attemptCookieOptions(secure, 0));
+      if (worthKeeping(intent))
+        response.cookies.set(PLACE_COOKIE, sealPlace(intent, now), placeCookieOptions(secure));
+      else if (explicit && hadPlace) response.cookies.set(PLACE_COOKIE, "", placeCookieOptions(secure, 0));
     }
   }
   return response;

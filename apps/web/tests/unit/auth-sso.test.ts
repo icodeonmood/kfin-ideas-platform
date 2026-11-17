@@ -24,7 +24,13 @@ import {
 } from "@/server/auth/intents";
 import { openTx, sameSecret, sealTx, TX_COOKIE } from "@/server/auth/session";
 import { startSso } from "@/server/auth/sso";
-import { clientAddress, PER_ADDRESS, WindowLimiter } from "@/server/auth/throttle";
+import {
+  clientAddress,
+  OVERALL,
+  PER_ADDRESS,
+  resetLimitsForTests,
+  WindowLimiter,
+} from "@/server/auth/throttle";
 
 const saved = { ...process.env };
 let store: MemoryIntentStore;
@@ -41,6 +47,7 @@ afterAll(() => {
 beforeEach(() => {
   store = new MemoryIntentStore();
   setIntentStoreForTests(store);
+  resetLimitsForTests();
   address += 1;
 });
 
@@ -77,11 +84,25 @@ describe("L-AUTH.rules/4, BLD-A177: what starting single sign-on writes", () => 
   });
 
   it("over the per-address limit, writes no row and the transaction alone carries the place", async () => {
-    for (let i = 0; i < PER_ADDRESS.limit; i++) await start("/share");
-    expect(store.rows.size).toBe(PER_ADDRESS.limit);
+    resetLimitsForTests({ limit: 3, windowMs: PER_ADDRESS.windowMs });
+    for (let i = 0; i < 3; i++) await start("/share");
+    expect(store.rows.size).toBe(3);
     const { tx } = await start("/share");
-    expect(store.rows.size).toBe(PER_ADDRESS.limit);
+    expect(store.rows.size).toBe(3);
     expect(tx?.next).toBe("/share");
+  });
+
+  it("a whole office behind one address is not starved: 250 starts in a minute all keep their place", async () => {
+    for (let i = 0; i < 250; i++) await start("/share");
+    expect(store.rows.size).toBe(250);
+  });
+
+  it("one address can use at most 40% of the overall 10-minute budget", () => {
+    expect(PER_ADDRESS.windowMs).toBe(10 * 60_000);
+    expect(PER_ADDRESS.limit).toBeGreaterThanOrEqual(1_000);
+    expect(PER_ADDRESS.limit).toBeLessThanOrEqual(
+      0.4 * OVERALL.limit * (PER_ADDRESS.windowMs / OVERALL.windowMs),
+    );
   });
 
   it("is worth a row only somewhere other than `/`, or for a draft", () => {
@@ -150,7 +171,8 @@ describe("L-AUTH.rules/8, BLD-A177: the callback signs in only the browser that 
         cookie: `${TX_COOKIE}=${tx(attemptKeyHash("theirs"))}; ${ATTEMPT_COOKIE}=mine`,
       }),
     );
-    expect(res.headers.get("location")).toMatch(/\/sign-in\?failed=SSO-[0-9A-F]{4}&at=\d+$/);
+    // The transaction's own place goes back to S-02, so "Try again" still goes there (BLD-A177).
+    expect(res.headers.get("location")).toMatch(/\/sign-in\?failed=SSO-[0-9A-F]{4}&at=\d+&to=%2Fshare$/);
     expect(res.cookies.get("ideas_session")).toBeUndefined();
   });
 

@@ -4,9 +4,11 @@
  * Start: keep where the person is going on the server against a new attempt (or reuse the attempt they already
  * have, for "Try again"), then send them to the identity provider; `silent` asks it to show nothing. A row is
  * written only for somewhere other than `/`, and within a per-address and overall limit; the sealed sign-in cookie
- * carries the place too, so nobody lands in the wrong place over the limit (BLD-A177).
+ * carries the place too, so nobody lands in the wrong place over the limit (BLD-A177). With nothing asked and no
+ * row, the place the browser's last sealed transaction carried stands.
  * Callback: a silent try the provider cannot complete without the person is not a failure: they see S-02 with the
- * intent still kept. Any other failure gets a reference ("SSO-7F3A, 9:42 am") that is also in the log line.
+ * intent still kept. Any other failure gets a reference ("SSO-7F3A, 9:42 am") that is also in the log line. Either
+ * way S-02 is given the place as `to`, so "Try again" and the email code still go there without a row.
  */
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -21,13 +23,16 @@ import {
   destination,
   intentStore,
   newAttemptKey,
+  signInHref,
   worthKeeping,
   type Intent,
 } from "./intents";
 import { newFailureRef, referenceLabel } from "./reference";
 import {
   cookieOptions,
+  openTx,
   readSession,
+  sameSecret,
   sealTx,
   secureCookies,
   SESSION_COOKIE,
@@ -55,9 +60,19 @@ export function callbackErrorOutcome(error: string, silent: boolean): "show_sign
 
 const truthy = (v: unknown) => v === true || v === "1" || v === "true";
 
-/** `/sign-in?failed=SSO-7F3A&at=…`: the "Could not sign in" state, or `refused` for an account that can't. */
-export function failurePath(kind: "failed" | "refused", ref: string, at = new Date()): string {
-  return `/sign-in?${kind}=${encodeURIComponent(ref)}&at=${Math.floor(at.getTime() / 1000)}`;
+/**
+ * `/sign-in?failed=SSO-7F3A&at=…`: the "Could not sign in" state, or `refused` for an account that can't. With a
+ * place other than `/`, `&to=` keeps it for "Try again" and the email code (BLD-A177).
+ */
+export function failurePath(
+  kind: "failed" | "refused",
+  ref: string,
+  at = new Date(),
+  place: Intent | null = null,
+): string {
+  const path = `/sign-in?${kind}=${encodeURIComponent(ref)}&at=${Math.floor(at.getTime() / 1000)}`;
+  const to = signInHref(place).split("?")[1];
+  return to ? `${path}&${to}` : path;
 }
 
 /**
@@ -97,10 +112,16 @@ export async function startSso(request: NextRequest, input: StartInput, mode: Mo
   const store = intentStore();
   const given = input.to !== undefined || input.draft_id !== undefined;
   let key = request.cookies.get(ATTEMPT_COOKIE)?.value;
+  const known = key && key.length <= 128 ? key : undefined;
   let intent: Intent | null = null;
-  if (!given && key && key.length <= 128) intent = await store.find(attemptKeyHash(key), now);
+  if (!given && known) intent = await store.find(attemptKeyHash(known), now);
   if (!intent) {
-    intent = cleanIntent({ to: input.to, draftId: input.draft_id, step: input.step });
+    // Nothing asked and no row (the write limit refused one): the place this attempt's sealed transaction carried.
+    const prior = !given && known ? openTx(request.cookies.get(TX_COOKIE)?.value) : null;
+    const carried = prior && sameSecret(prior.attempt, attemptKeyHash(known!)) ? prior.next : undefined;
+    intent = given
+      ? cleanIntent({ to: input.to, draftId: input.draft_id, step: input.step })
+      : cleanIntent({ to: carried });
     key = newAttemptKey();
     if (worthKeeping(intent) && mayKeepIntent(request, now.getTime())) {
       await store.save(attemptKeyHash(key), intent, now);
@@ -138,7 +159,7 @@ export async function startSso(request: NextRequest, input: StartInput, mode: Mo
     const response =
       mode === "json"
         ? NextResponse.json({ error: "sso_unavailable", ref }, { status: 503 })
-        : NextResponse.redirect(new URL(failurePath("failed", ref, now), appBaseUrl()), status);
+        : NextResponse.redirect(new URL(failurePath("failed", ref, now, intent), appBaseUrl()), status);
     response.cookies.set(ATTEMPT_COOKIE, key!, attemptCookieOptions(secureCookies()));
     return response;
   }

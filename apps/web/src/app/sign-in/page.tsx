@@ -16,6 +16,8 @@ import {
   intentStore,
   isCheckStep,
   nextScreen,
+  retryHref,
+  signInHref,
   type Intent,
 } from "@/server/auth/intents";
 import { clockTime, isFailureRef, referenceLabel } from "@/server/auth/reference";
@@ -58,13 +60,21 @@ const NEXT_LINES = {
   },
 } as const;
 
+/**
+ * The place this page keeps (L-AUTH.rules/4): the link's `to` (or the proxy's `next`), else the browser's kept row.
+ * When both name the same place, the row wins: it also knows which part of Check it the draft was at.
+ */
 async function keptIntent(params: Params): Promise<Intent | null> {
-  if (params.to || params.next) return cleanIntent({ to: params.to ?? params.next });
+  const asked = params.to || params.next ? cleanIntent({ to: params.to ?? params.next }) : null;
   const key = (await cookies()).get(ATTEMPT_COOKIE)?.value;
-  if (!key || key.length > 128) return null;
-  return intentStore()
-    .find(attemptKeyHash(key), new Date())
-    .catch(() => null);
+  const row =
+    key && key.length <= 128
+      ? await intentStore()
+          .find(attemptKeyHash(key), new Date())
+          .catch(() => null)
+      : null;
+  if (!asked) return row;
+  return row && destination(row) === destination(asked) ? row : asked;
 }
 
 async function stateFor(params: Params, intent: Intent | null): Promise<State> {
@@ -225,7 +235,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
                   </div>
                 </div>
                 <div className="si-desk">
-                  <a className="si-btn si-btn-primary" href="/auth/sso/start">
+                  <a className="si-btn si-btn-primary" href={retryHref(ssoIntent)}>
                     <LockIcon />
                     Try again
                   </a>
@@ -234,7 +244,8 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
                       {next ? NEXT_LINES[next].retry : null}
                       {emailOn ? (
                         <>
-                          {next ? " " : null}Or <a href="/sign-in">get a code by email instead</a>.
+                          {next ? " " : null}Or{" "}
+                          <a href={signInHref(ssoIntent)}>get a code by email instead</a>.
                         </>
                       ) : null}
                     </p>
@@ -250,13 +261,13 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
                     Still stuck? Call {deskOn()} with reference <strong className="si-ref">{ref}</strong>.
                   </p>
                   <div className="si-dock">
-                    <a className="si-btn si-btn-primary" href="/auth/sso/start">
+                    <a className="si-btn si-btn-primary" href={retryHref(ssoIntent)}>
                       <LockIcon />
                       Try again
                     </a>
                     {emailOn ? (
                       <p className="si-center">
-                        <a href="/sign-in">Get a code by email instead</a>
+                        <a href={signInHref(ssoIntent)}>Get a code by email instead</a>
                       </p>
                     ) : null}
                   </div>

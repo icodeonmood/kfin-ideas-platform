@@ -7,14 +7,17 @@
  * Storage sits behind `IntentStore`: `sign_in_intents` from lane E's cut-over (20261121500100), and an in-memory
  * twin for the unit tests.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 
 import { isEnumValue } from "@/lib/contracts/enums";
 
+import { sessionSecret } from "../config";
 import { getDb } from "../db";
-import { safeNext } from "./session";
+import { safeNext, sameSecret } from "./session";
 
 export const ATTEMPT_COOKIE = "ideas_attempt";
+/** Over the write limit, the email-code route keeps the place in this sealed cookie instead of a row (BLD-A177). */
+export const PLACE_COOKIE = "ideas_place";
 const FOREIGN_KEY_VIOLATION = "23503";
 export const INTENT_TTL_MINUTES = 30;
 /** Rows older than this are deleted when a new one is written (BLD-A177). Used rows go at once. */
@@ -97,6 +100,78 @@ export const attemptCookieOptions = (secure: boolean, maxAge = INTENT_TTL_MINUTE
   path: "/",
   maxAge,
 });
+
+/**
+ * "Try again" on S-02 (L-AUTH.rules/4): starts single sign-on for the place the page was given, the draft's id and
+ * step included. With no place, the attempt the browser already has is reused.
+ */
+export function retryHref(intent: Intent | null): string {
+  if (!intent || !worthKeeping(intent)) return "/auth/sso/start";
+  const q = new URLSearchParams({ to: destination(intent) });
+  if (intent.draftId) q.set("draft_id", intent.draftId);
+  if (intent.step) q.set("step", intent.step);
+  return `/auth/sso/start?${q.toString()}`;
+}
+
+/** S-02 for the same place: "get a code by email instead", and where the callback sends a silent try it can't finish. */
+export function signInHref(intent: Intent | null): string {
+  if (!intent || !worthKeeping(intent)) return "/sign-in";
+  return `/sign-in?to=${encodeURIComponent(destination(intent))}`;
+}
+
+// ---- the sealed place (over the write limit) ------------------------------------------------------------------
+
+const placeMac = (payload: string) =>
+  createHmac("sha256", sessionSecret()).update(`place.${payload}`).digest("base64url");
+
+/**
+ * The place, signed with the session secret so it cannot be edited (BLD-A177). Used only when the write limit
+ * refuses a row; it lives as long as a row would, and is cleaned again when read.
+ */
+export function sealPlace(intent: Intent, now: Date): string {
+  const payload = Buffer.from(
+    JSON.stringify({
+      to: intent.to,
+      d: intent.draftId,
+      s: intent.step,
+      iat: Math.floor(now.getTime() / 1000),
+    }),
+  ).toString("base64url");
+  return `${payload}.${placeMac(payload)}`;
+}
+
+export function openPlace(value: string | undefined, now: Date): Intent | null {
+  if (!value || value.length > 2048) return null;
+  const [payload, mac] = value.split(".");
+  if (!payload || !mac || !sameSecret(mac, placeMac(payload))) return null;
+  try {
+    const p = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+    if (typeof p.iat !== "number" || now.getTime() / 1000 - p.iat > INTENT_TTL_MINUTES * 60) return null;
+    return cleanIntent({ to: p.to, draftId: p.d, step: p.s });
+  } catch {
+    return null;
+  }
+}
+
+export const placeCookieOptions = (secure: boolean, maxAge = INTENT_TTL_MINUTES * 60) => ({
+  httpOnly: true,
+  secure,
+  sameSite: "lax" as const,
+  path: "/auth",
+  maxAge,
+});
+
+type CookieJar = { get(name: string): { value: string } | undefined };
+
+/**
+ * Where an email-code sign-in lands (L-AUTH.rules/4): the attempt's row, used once; else the sealed place kept over
+ * the write limit; else nowhere in particular.
+ */
+export async function takePlace(cookies: CookieJar, now: Date): Promise<Intent | null> {
+  const key = cookies.get(ATTEMPT_COOKIE)?.value;
+  const row = key && key.length <= 128 ? await intentStore().use(attemptKeyHash(key), now) : null;
+  return row ?? openPlace(cookies.get(PLACE_COOKIE)?.value, now);
+}
 
 // ---- stores ---------------------------------------------------------------------------------------------------
 
