@@ -17,7 +17,8 @@ What it gives every screen of the pack something to show:
   requests waiting on one lead (each in her Inbox, one per answer J-SIMILAR/6 walks), an accepted one, and a desk
   merge inside its window;
 - two ideas on one reviewer's desk, opened, that list each other as similar, ready for a desk merge (J-REVIEW/M3);
-- an idea the desk has not opened, with a question its reviewer queued and has not sent (J-REVIEW/A1-A3);
+- ideas the desk has not opened, unassigned and with no question set, whose first open a journey walks
+  (P1 for J-REVIEW/1, K1 for J-REVIEW/A1-A3);
 - a draft that arrived by email, its detail hidden, with its "kept your draft" Inbox item (J-RESUME/5, 6);
 - crews, passes on the crew deck, conversations with events, questions, answers and messages;
 - every Inbox kind; Ones with numbers, tiers 1 to 7, briefs and posts with likes; build teams, measurements;
@@ -328,8 +329,8 @@ IDEAS: dict[str, Spec] = {
                often="Every dividend season", affects=["Investors", "KFin teams"], brings=["saves_cost"],
                hidden={"{folio}": ("folio", "4400076512")}, step="tell", saved_days=0.15, channel="email",
                via="email", origin="Fwd: Dividend letter returned again"),
-    # J-REVIEW/A1 to A3 (L-QUESTIONS.ask, L-REVIEW.open/1): at To review, never opened by the desk, "How often" left
-    # empty; Lavanya has one question on it queued, never sent (as P1, not P1). No crew, no answers.
+    # J-REVIEW/A1 to A3 (L-QUESTIONS.ask, L-REVIEW.open/1): at To review, never opened, no reviewer and no question
+    # set, "How often" left empty (its part waiting). The walk does A1's first open and asks about How often itself.
     "K1": Spec("kiran", "with_review_desk", "problem", "Investors are sent to the wrong branch for their AMC",
                "Investors often visit a branch that does not service their AMC. They are sent to another branch "
                "the same day.",
@@ -761,7 +762,8 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
                    ("evidence", "Is there a report that shows the holds?", True, None, False)])  # fmt: skip
     _message(conn, m["T6"].uuid, _ago(0.9, now), "I'll pull the count from the hold report and answer today.",
              code=tanvi["code"])  # fmt: skip
-    # Z1: overdue. B1: answered, back with the desk. P1: a set the reviewer is still writing.
+    # Z1: overdue. B1: answered, back with the desk. P1 and K1 have no set: the desk has not opened either, and
+    # J-REVIEW/1 and /A1-A3 walk their first open (L-REVIEW.open/1).
     _questions(conn, m["Z1"], p["harish"]["id"], p["zoya"]["code"], now, state="sent", sent_days=4.0, due_days=-1.0,
                qs=[("cost", "What would a distributor pay per report?", True, None, False),
                    ("who", "Which distributors have asked for it?", False, None, False)])  # fmt: skip
@@ -769,13 +771,6 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
                due_days=0.5,
                qs=[("often", "How many couriers come back in a week?", True, "Around 60 a week.", True),
                    ("fix", "Would a scan at the counter be enough?", False, "Yes, one scan and a search box.", True)])  # fmt: skip
-    _questions(conn, m["P1"], p["lavanya"]["id"], p["pallavi"]["code"], now, state="queued", sent_days=None,
-               due_days=None, qs=[("who", "Which distributor segments re-send most?", True, None, False)])  # fmt: skip
-    # K1 (J-REVIEW/A1-A3): "Ask about this" on How often queued that part's first suggestion, the gap's own words
-    # (desk/questions.py first_for, L-QUESTIONS.ask/3); never sent, so no sent_at, no due date, no Inbox item.
-    _questions(conn, m["K1"], p["lavanya"]["id"], p["kiran"]["code"], now, state="queued", sent_days=None,
-               due_days=None, qs=[("often", "How often does this happen: a few times a day, a week or a month?",
-                                   True, None, False)])  # fmt: skip
     # T7: answered before the pick, set closed with the decision.
     _questions(conn, m["T7"], p["harish"]["id"], tanvi["code"], now, state="closed", sent_days=7.5, due_days=-4.5,
                qs=[("often", "Is the 40 a day across all branches?", False, "Yes, across the six largest branches.", True)])  # fmt: skip
