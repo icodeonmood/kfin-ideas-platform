@@ -70,7 +70,7 @@ class Viewer:
 
     @classmethod
     def of(cls, conn: Conn, user_id: str | None) -> Viewer:
-        if not user_id or not _is_uuid(user_id):
+        if not user_id or not is_uuid(user_id):
             return cls(None)
         codes = tuple(
             str(r["contributor_code"])
@@ -89,7 +89,7 @@ class Viewer:
         return cls(user_id, codes, desk)
 
 
-def _is_uuid(value: str) -> bool:
+def is_uuid(value: str) -> bool:
     try:
         uuid.UUID(value)
     except ValueError:
@@ -294,7 +294,7 @@ def find_idea(conn: Conn, key: str) -> dict[str, Any] | None:
     """An idea by its IDEA- reference or its row ID."""
     if IDEA_REF.match(key):
         row = conn.execute(f"SELECT {_IDEA_COLUMNS} FROM ideas WHERE idea_id = %s", (key,)).fetchone()  # noqa: S608
-    elif _is_uuid(key):
+    elif is_uuid(key):
         row = conn.execute(f"SELECT {_IDEA_COLUMNS} FROM ideas WHERE id = %s", (key,)).fetchone()  # noqa: S608
     else:
         return None
@@ -310,7 +310,7 @@ def can_preview(idea: dict[str, Any], viewer: Viewer) -> bool:
     return True
 
 
-def _iso(value: dt.datetime | None) -> str | None:
+def iso(value: dt.datetime | None) -> str | None:
     return value.astimezone(dt.UTC).isoformat().replace("+00:00", "Z") if value else None
 
 
@@ -345,7 +345,7 @@ def idea_preview(
         "status": idea["status"],
         "area": str(idea.get("area") or ""),
         "city": str(idea.get("city") or ""),
-        "shared_at": _iso(idea.get("shared_at")),
+        "shared_at": iso(idea.get("shared_at")),
         "lead": people[lead_code],
         "crew_faces": [people[c] for c in codes[:FACES]],
         "crew_count": len(codes),
