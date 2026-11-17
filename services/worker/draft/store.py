@@ -374,6 +374,7 @@ def set_part(
         if "value" not in body and body.get("pinned") is False:
             if not runs.ai_on(conn):
                 raise DraftError(409, "assistant_off")
+            new: Any
             if row_key == "title":
                 kept = parts.pinned_fields(old) - {wire_key}
                 new = {**(old if isinstance(old, dict) else {}), "pinned": sorted(kept)}
@@ -715,3 +716,76 @@ def recent(conn: Conn, owner: Owner, device: Device, *, archived: bool = False) 
             "char_count": int(r["char_count"]), "channel": r["channel"], "archived": r["archived_at"] is not None,
         })  # fmt: skip
     return {"items": items, "total": int(total["n"]) if total else len(items)}
+
+
+def live(conn: Conn, owner: Owner, idea_uuid: str, run_id: str | None = None) -> dict[str, Any]:
+    """What the draft stream needs for one run (A-API.draft-stream): the run, the loader's means, what was hidden in
+    its message, and the parts as they stand. `run_id` None means the newest run."""
+    if UUID_RE.match(idea_uuid):
+        runs.settle_stale(conn, idea_uuid)
+    _load(conn, owner, idea_uuid)
+    latest = conn.execute(
+        "SELECT id, state FROM draft_runs WHERE idea_uuid = %s ORDER BY started_at DESC LIMIT 1", (idea_uuid,)
+    ).fetchone()
+    want = run_id if run_id and UUID_RE.match(run_id) else (str(latest["id"]) if latest else None)
+    run = (
+        conn.execute(
+            "SELECT id, message_id, state, parts, part_ms, receipt, suggestions, ready FROM draft_runs "
+            "WHERE id = %s AND idea_uuid = %s",
+            (want, idea_uuid),
+        ).fetchone()
+        if want
+        else None
+    )
+    out: dict[str, Any] = {
+        "latest": {"id": str(latest["id"]), "state": latest["state"]} if latest else None,
+        "run": None,
+    }
+    if run is None:
+        return out
+    means = runs.means(conn)
+    hidden_rows = (
+        conn.execute(
+            "SELECT id, kind, masked, state, span_start, span_end FROM hidden_details WHERE idea_uuid = %s "
+            "AND source = 'message' AND source_id = %s ORDER BY span_start",
+            (idea_uuid, str(run["message_id"])),
+        ).fetchall()
+        if run["message_id"]
+        else []
+    )
+    part_rows = conn.execute(
+        "SELECT key, state, value, why, source_quote, took_ms, run_id FROM idea_parts WHERE idea_uuid = %s",
+        (idea_uuid,),
+    ).fetchall()
+    out["run"] = {
+        "id": str(run["id"]),
+        "state": run["state"],
+        "parts": [{"key": k, "mean_ms": means.get(k)} for k in run["parts"]],
+        "part_ms": dict(run["part_ms"] or {}),
+        "receipt": list(run["receipt"] or []),
+        "suggestions": list(run["suggestions"] or []),
+        "ready": bool(run["ready"]),
+        "hidden": {
+            "spans": [
+                {"start": h["span_start"], "end": h["span_end"], "kind": h["kind"]}
+                for h in hidden_rows
+                if h["span_start"] is not None
+            ],
+            "details": [
+                {"id": str(h["id"]), "kind": h["kind"], "masked": h["masked"], "state": h["state"]}
+                for h in hidden_rows
+            ],
+        },
+    }
+    out["parts"] = {
+        str(p["key"]): {
+            "state": p["state"],
+            "value": p["value"],
+            "why": p["why"],
+            "source_quote": p["source_quote"],
+            "took_ms": p["took_ms"],
+            "run_id": str(p["run_id"]) if p["run_id"] else None,
+        }
+        for p in part_rows
+    }
+    return out

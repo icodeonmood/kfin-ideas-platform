@@ -287,7 +287,8 @@ def suggestions(after: dict[str, Any]) -> list[str]:
     if not after.get("who"):
         out.append("Say who feels it most")
     out.append("Add what you already tried")
-    title = after.get("title") if isinstance(after.get("title"), dict) else {}
+    got = after.get("title")
+    title: dict[str, Any] = got if isinstance(got, dict) else {}
     if title.get("title") and "title" not in pinned_fields(title):
         out.append("Change the title")
     return out[:2]

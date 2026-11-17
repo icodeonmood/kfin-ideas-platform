@@ -33,6 +33,16 @@ def require_token(x_internal_token: str = Header(default="")) -> None:
         raise HTTPException(status_code=401, detail="internal token required")
 
 
+def _include_drafts() -> None:
+    """L-DRAFT (BLD-C071): the draft API's worker side, behind the same internal token."""
+    from api import drafts
+
+    app.include_router(drafts.router, dependencies=[Depends(require_token)])
+
+
+_include_drafts()
+
+
 @app.get("/internal/health")
 def health() -> dict[str, Any]:
     try:
