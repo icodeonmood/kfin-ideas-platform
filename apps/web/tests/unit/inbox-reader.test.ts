@@ -3,10 +3,12 @@
  * C-INBOX-READER with S-H2B open, against mocked routes (lane F's f/teamup-4 shapes, synthetic people):
  * BLD-F024 (d) a 409 `not_waiting` on answering ends the request in place as withdrawn, hides the answers, takes the
  * item off "Needs you" and the shell hears the new counts (COUNTS_EVENT); the 30 s refresh also tells the shell
- * (L-INBOX.rules/1, V-ACC.track/8); on a phone the open item's title is the screen's h1 (WCAG 2.1 AA).
+ * (L-INBOX.rules/1, V-ACC.track/8); on a phone the open item's title is the screen's h1 (WCAG 2.1 AA), and nothing
+ * is marked read until the person opens it, though the server renders the desktop layout with the first item open.
  */
 import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COUNTS_EVENT, InboxReader } from "@/app/inbox/inbox-reader";
@@ -178,5 +180,33 @@ describe("C-INBOX-READER with a request open", () => {
     stubWidth(true);
     await open();
     expect(host.querySelector("#ibx-title")?.tagName).toBe("H2");
+  });
+
+  it("S-H5.rules/6: on a phone, hydrating the server's desktop render marks nothing read until an item is opened", async () => {
+    stubWidth(false);
+    const unread: InboxEntry = {
+      ...REQUEST,
+      id: "42",
+      kind: "mention",
+      line: "mentioned you",
+      unread: true,
+      needs_you: false,
+      body: { heading: "", note: "", sender: "Kavya Menon" },
+      actions: [],
+    } as InboxEntry;
+    const initial: InboxList = { items: [unread], total: 1, counts: { ...BEFORE, unread: 1 }, unread: 1 };
+    const el = createElement(InboxReader, { initial, initialTab: "all", initialItem: null });
+    const server = document.createElement("div");
+    server.innerHTML = renderToString(el); // the server's layout: a desktop with the first item open
+    document.body.append(server);
+    let hydrated: Root | undefined;
+    await act(async () => {
+      hydrated = hydrateRoot(server, el);
+    });
+    await settle();
+    expect(calls.filter((c) => c.endsWith("/read"))).toEqual([]);
+    expect(server.querySelector(".ibx-reading")).toBeNull();
+    act(() => hydrated!.unmount());
+    server.remove();
   });
 });

@@ -398,9 +398,11 @@ export function InboxReader({
   }
 
   // Opening an item marks it read and every count comes back with it (L-INBOX.rules/3, S-H5.rules/4); not again
-  // when it is marked unread while open.
+  // when it is marked unread while open. The first item opens by itself on a desktop only: the server renders the
+  // desktop layout, so on a phone the first render may still hold it open, and it is not read until it is opened.
   useEffect(() => {
     if (!open?.unread) return;
+    if (!phoneOpen && !window.matchMedia(DESKTOP).matches) return;
     const id = open.id;
     void fetch(`/api/inbox/${id}/read`, { method: "POST" })
       .then(async (res) => {
