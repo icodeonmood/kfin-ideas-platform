@@ -16,7 +16,7 @@ describe("L-AUTH.rules/4: where the person was going", () => {
     for (const evil of ["https://example.com", "//example.com", "/\\example.com", "/\t/example.com", "x"]) {
       expect(cleanIntent({ to: evil }).to).toBe("/");
     }
-    for (const loop of ["/sign-in", "/sign-in?signing=1", "/auth/callback", "/signed-out"]) {
+    for (const loop of ["/sign-in", "/sign-in?signing=1", "/auth/callback", "/auth/logout"]) {
       expect(cleanIntent({ to: loop }).to).toBe("/");
     }
     expect(cleanIntent({ to: "/share" })).toEqual({ to: "/share", draftId: null, step: null });
