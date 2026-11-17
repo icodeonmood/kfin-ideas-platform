@@ -13,12 +13,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+// Lane F's crew card until Find your crew is on main (BLD-C146).
 import { CrewCardView } from "@/components/home/crew-shim";
-// Lane B's C-QCARD until it is on main; then this one line becomes "@/components/review/qcard" (BLD-C145).
-import { QuestionsCard } from "@/components/home/qcard-shim";
 import { Prompt, PROMPT_COPY, STARTERS } from "@/components/compose/prompt";
-// Lane F's sheet until team-up is on main; then this one line becomes "@/components/teamup/teamup-sheet" (BLD-C129).
-import { useTeamUpSheet } from "@/components/compose/teamup-shim";
+import { QuestionsCard } from "@/components/review/qcard";
+import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { ButtonLink } from "@/components/ui/button";
 import { Deck } from "@/components/ui/deck";
 import { FieldMsg } from "@/components/ui/field";

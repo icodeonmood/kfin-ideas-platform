@@ -27,7 +27,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 |---|---|---|---|---|---|---|
 | `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
 | `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
-| `S-03` | `/home` | `app/home/page.tsx`, `app/home/home.tsx`, `app/home/home.css`, `lib/home/data.ts`, `server/home.ts`; shims `components/home/qcard-shim.tsx` (lane B) and `crew-shim.tsx` (lane F); `/` forwards here (BLD-C143 to C148) | built (c/s03) | L | P0 | C |
+| `S-03` | `/home` | `app/home/page.tsx`, `app/home/home.tsx`, `app/home/home.css`, `lib/home/data.ts`, `server/home.ts`; lane B's `components/review/qcard.tsx` (`variant="home"`), lane F's `components/teamup/teamup-sheet.tsx`, and a shim for lane F's crew card, `components/home/crew-shim.tsx`; `/` forwards here (BLD-C143 to C148) | built (c/s03) | L | P0 | C |
 | `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128) | built (c/s04) | L | P0 | C |
 | `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126) | built (c/s04) | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
