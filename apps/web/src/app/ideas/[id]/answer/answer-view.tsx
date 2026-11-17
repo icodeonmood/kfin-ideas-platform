@@ -19,6 +19,27 @@ import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
 
+/** "Home" back: the compact bar on a phone (S-R3.rules/5), a back link above the review bar on desktop (Answer board). */
+function Back() {
+  return (
+    <>
+      <PhoneBar back={{ href: "/", label: "Home" }} title="Answer" />
+      <Link href="/" className="back ans-back">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <path
+            d="M9 2.5 4.5 7 9 11.5"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            fill="none"
+            strokeLinecap="round"
+          />
+        </svg>
+        Home
+      </Link>
+    </>
+  );
+}
+
 /** A step in the row: "Question 2", named "Question 2, not answered yet" or "Question 1, answered" (Answer board). */
 function StepLabel({ n, done }: { n: number; done: boolean }) {
   return (
@@ -71,7 +92,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
     // The same for anyone but the sharer, so it never says whether the idea exists (L-QUESTIONS.answer).
     return (
       <div className="ans">
-        <PhoneBar back={{ href: "/home", label: "Home" }} title="Answer" />
+        <Back />
         <h1 className="h2">Answer the review desk</h1>
         <Empty
           title="Nothing to answer right now"
@@ -167,7 +188,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
     const all = sent.answered === sent.count;
     return (
       <div className="ans">
-        <PhoneBar back={{ href: "/home", label: "Home" }} title="Answer" />
+        <Back />
         <header className="ans-bar">
           <h1 className="h2">Answer the review desk</h1>
           <p className="body">
@@ -241,7 +262,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
 
   return (
     <div className="ans">
-      <PhoneBar back={{ href: "/home", label: "Home" }} title="Answer" />
+      <Back />
       {bar}
 
       <nav className="ans-steps" aria-label="Questions">
