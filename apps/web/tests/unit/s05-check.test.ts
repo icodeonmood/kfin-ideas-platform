@@ -338,7 +338,23 @@ async function railTo(label: string) {
   await click(button(new RegExp(`^(?:\\d )?${label}\\b`)));
 }
 
+/** This browser's storage, in memory, fresh for each test (Node's own `localStorage` is not a browser's). */
+function memoryStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() {
+      return m.size;
+    },
+    clear: () => m.clear(),
+    getItem: (k: string) => m.get(k) ?? null,
+    key: (i: number) => [...m.keys()][i] ?? null,
+    removeItem: (k: string) => void m.delete(k),
+    setItem: (k: string, v: string) => void m.set(k, String(v)),
+  };
+}
+
 beforeEach(() => {
+  vi.stubGlobal("localStorage", memoryStorage());
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -1693,6 +1709,242 @@ describe("S-05 review fixes: hidden details (C-HIDDEN.list)", () => {
     await act(async () => release(null));
     await settle();
     expect(button("Hide it")!.getAttribute("aria-disabled")).toBeNull();
+  });
+});
+
+describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
+  const submitted = {
+    status: 201,
+    body: { idea_id: "IDEA-2026-001483", ref: "IDEA-2026-001483", next: { to: "/ideas/IDEA-2026-001483" } },
+  };
+  const refuse =
+    (status: number, error: Record<string, string>): Route =>
+    (m, u) =>
+      m === "POST" && u.endsWith("/submit") ? { status, body: { error } } : undefined;
+
+  it("V-FIELDS.checkit/14 J-RECOVER/14: a Submit pressed offline is kept on this device (id and key, no words) and sent on the next visit, then cleared", async () => {
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    await click(button("Submit"));
+    const kept = JSON.parse(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)!);
+    expect(Object.keys(kept).sort()).toEqual(["draftId", "key"]);
+    expect(kept.draftId).toBe(DRAFT_ID);
+    expect(kept.key).toMatch(/^s05:/);
+    expect(calls.some((c) => c.url.endsWith("/submit"))).toBe(false);
+    // The tab closes; later, online again, Check it opens for the same draft.
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    online.mockReturnValue(true);
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await settle();
+    const sent = calls.filter((c) => c.url.endsWith("/submit"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.headers["Idempotency-Key"]).toBe(kept.key);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483");
+    expect(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)).toBeNull();
+    online.mockRestore();
+  });
+
+  it("V-FIELDS.checkit/14: storage that cannot be used never breaks Submit offline", async () => {
+    vi.stubGlobal("localStorage", {
+      ...memoryStorage(),
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    });
+    await mount(base({ sorting: sorting(true) }));
+    await railTo("Send it");
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    await click(button("Submit"));
+    expect(document.body.textContent).toContain(
+      "You’re offline. Your draft is saved on this device. Submit now and it sends when you’re back online.",
+    );
+    online.mockRestore();
+  });
+
+  it("J-RECOVER/13 WCAG 2.4.3: a failed send keeps the one button, now Try again, with focus on it and the message announced", async () => {
+    await mount([refuse(502, { code: "unavailable", message: "" }), ...base({ sorting: sorting(true) })]);
+    await railTo("Send it");
+    const submitButton = button("Submit")!;
+    submitButton.focus();
+    await click(submitButton);
+    expect(submitButton.isConnected).toBe(true);
+    expect(nameOf(submitButton)).toBe("Try again");
+    expect(document.activeElement).toBe(submitButton);
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toBe(
+      "Couldn’t send. Your draft is safe. Check your connection, then try again.",
+    );
+  });
+
+  it("S-05.rules/5 L-SUBMIT.pre: file_blocked shows under that file's row and takes the person to Proof", async () => {
+    const f: FileItem = {
+      id: "f3",
+      kind: "file",
+      name: "branch-call-log.pdf",
+      type: "application/pdf",
+      size: 2048,
+      state: "checking",
+      added_by: KAVYA,
+      added_at: "",
+    };
+    const line = "This file is still being checked. Wait a moment, or remove it.";
+    await mount([
+      refuse(422, { code: "file_blocked", message: line, field: "f3" }),
+      (m, u) => (m === "GET" && u === "/api/files/f3" ? { body: f } : undefined),
+      ...base({ draft: draft({ files: [f] }), sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(h1()).toBe("Anything that shows it?");
+    expect(text(document.querySelector(".frow"))).toContain(line);
+  });
+
+  it("S-05.rules/5 V-FIELDS.checkit/2: not_ready for what happens goes to Your words and says it under that line", async () => {
+    await mount([
+      refuse(422, {
+        code: "not_ready",
+        message: "Say what happens, in a sentence or two.",
+        field: "summary",
+      }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(h1()).toBe("Is this how you’d put it?");
+    const lines = Array.from(document.querySelectorAll(".ck-w"));
+    expect(text(lines[1])).toContain("Say what happens, in a sentence or two.");
+    expect(text(lines[0])).not.toContain("Say what happens");
+  });
+
+  it("A-API not_a_draft: an idea already sent gets its own line and Submit stays unavailable, with no Try again", async () => {
+    await mount([
+      refuse(409, { code: "not_a_draft", message: "This idea has been sent." }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toBe("This idea has been sent.");
+    expect(document.body.textContent).not.toContain("Check your connection");
+    expect(button("Try again")).toBeUndefined();
+    expect(button("Submit")!.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("L-SORT.rules/2: sorting_unconfirmed shows the server's own line (confirmed, but a field left empty)", async () => {
+    const line = "Confirm these, or change any of them, before you send.";
+    await mount([
+      refuse(422, { code: "sorting_unconfirmed", message: line, field: "sorting" }),
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(text(document.querySelector('.ck-send [role="alert"]'))).toContain(line);
+    expect(button("Go to the sorting")).toBeTruthy();
+  });
+
+  it("S-05.parts/6: words typed for Who would help that wait for a pause are saved before Submit sends", async () => {
+    await mount([
+      (m, u) => (m === "POST" && u.endsWith("/submit") ? submitted : undefined),
+      (m, u) =>
+        m === "PUT" && u.endsWith("/helpers")
+          ? { body: { picks: [], text: "x", line: "", part: { rail: "Added" } } }
+          : undefined,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Who would help");
+    const input = document.querySelector<HTMLInputElement>(".ck-helpers input.fld")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "someone who takes these calls");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await railTo("Send it");
+    await click(button("Submit"));
+    const order = calls.map((c) => `${c.method} ${c.url.split("/").pop()}`);
+    const put = order.indexOf("PUT helpers");
+    expect(put).toBeGreaterThan(-1);
+    expect(put).toBeLessThan(order.indexOf("POST submit"));
+    expect(calls.find((c) => c.url.endsWith("/helpers"))?.body).toEqual({
+      picks: [],
+      text: "someone who takes these calls",
+    });
+  });
+});
+
+describe("S-05 review fixes: the fix sheet (S-05.fix)", () => {
+  async function typeHow(value: string) {
+    const how = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(how, value);
+      how.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("S-05.fix V-FIELDS.checkit/9: the cross saves before closing; a figure it cannot read keeps the sheet open with the line under the figure", async () => {
+    let unclear = true;
+    await mount([
+      (m, u) => {
+        if (m !== "PUT" || !u.endsWith("/fix")) return undefined;
+        if (unclear) {
+          unclear = false;
+          return {
+            status: 422,
+            body: {
+              error: {
+                code: "worth_unclear",
+                message: "Write a rough figure or a range, like 70 to 150.",
+                field: "worth",
+              },
+            },
+          };
+        }
+        return { body: { part: { rail: "Optional", line: "", action: "" } } };
+      },
+      ...base(),
+    ]);
+    await railTo("Your fix");
+    await click(button("Add your fix"));
+    await typeHow("Plain words in the SMS.");
+    await click(button("Time saved"));
+    const hours = document.querySelector<HTMLInputElement>('[role="dialog"] input[inputmode="decimal"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(hours, "lots");
+      hours.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Close, and keep what you wrote"));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(text(dialog)).toContain("Write a rough figure or a range, like 70 to 150.");
+    expect(hours.getAttribute("aria-invalid")).toBe("true");
+    await click(button("Close, and keep what you wrote"));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("You started a fix. It isn’t included yet.");
+  });
+
+  it("S-05.fix: Escape is Cancel and never saves; the page behind the open sheet is inert", async () => {
+    await mount(base());
+    await railTo("Your fix");
+    await click(button("Add your fix"));
+    expect(host.hasAttribute("inert")).toBe(true);
+    await typeHow("Plain words in the SMS.");
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await act(async () =>
+      dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/fix"))).toBe(false);
+    expect(host.hasAttribute("inert")).toBe(false);
+    expect(button("Add your fix")).toBeTruthy();
   });
 });
 

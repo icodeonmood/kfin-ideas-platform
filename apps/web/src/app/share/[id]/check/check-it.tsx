@@ -22,6 +22,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import { Loading, SkeletonRows } from "@/components/ui/skeleton";
 import type {
+  ApiError,
   ConfigResponse,
   HiddenDetail,
   SendViewResponse,
@@ -30,9 +31,9 @@ import type {
   UploadConfig,
 } from "@/lib/contracts";
 
-import { api, sendKey, type Call, type CheckDraft, type MergeState } from "./client";
+import { api, sendKey, sendQueue, type Call, type CheckDraft, type MergeState } from "./client";
 import { CHECK_COPY, PARTS, type PartNo } from "./copy";
-import { FixPartBody, FixSheet, typedAnything, type FixPart } from "./fix";
+import { FixPartBody, FixSheet, typedAnything, type FixPart, type FixProblem } from "./fix";
 import { HiddenTile } from "./hidden";
 import {
   EMPTY_FIX,
@@ -158,6 +159,10 @@ export function CheckIt({
   const [sendView, setSendView] = useState<SendViewResponse | null>(null);
   const [sendLoad, setSendLoad] = useState<"idle" | "failed">("idle");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
+  /** Bumped when a send kept on this device is found on load, so it is sent once the page is ready. */
+  const [replay, setReplay] = useState(0);
+  /** Submit's `not_ready` for the title or what happens, shown under that line on part 1. */
+  const [wordErrors, setWordErrors] = useState<Partial<Record<"title" | "summary", string>>>({});
 
   const [save, setSave] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<Date | string | null>(null);
@@ -230,9 +235,16 @@ export function CheckIt({
       const saved = { picks: body.helpers?.picks ?? [], text: body.helpers?.text ?? "" };
       helpersNow.current = saved;
       setHelpers(saved);
+      const waiting = sendQueue.load(draftId);
+      if (waiting) {
+        idemKey.current = waiting;
+        queued.current = true;
+        setSendState({ kind: "queued" });
+        setReplay((n) => n + 1);
+      }
       void loadSimilar();
     },
-    [loadSimilar],
+    [loadSimilar, draftId],
   );
 
   useEffect(() => {
@@ -305,6 +317,7 @@ export function CheckIt({
   const saveWord = async (key: "title" | "summary" | "often", value: string) => {
     const r = await track(api.part(draftId, key, value));
     if (!r.ok) return false;
+    if (key !== "often") setWordErrors((e) => ({ ...e, [key]: undefined }));
     const next = (r.body as { draft?: CheckDraft } | null)?.draft;
     setDraft(
       (d) =>
@@ -570,14 +583,26 @@ export function CheckIt({
     return null;
   };
 
-  const keepFix = async (form: FixForm) => {
-    setSheetOpen(false);
-    // An added fix stays as it was; "Close, and keep what you wrote" keeps a fix that is not added yet.
-    if (fixPart.kind === "added" || !typedAnything(form)) return;
-    setFixForm(form);
+  /** The cross, "Close, and keep what you wrote": saved first, closed after, so nothing is lost on a failed save.
+   * A figure the server cannot read (`worth_unclear`) keeps the sheet open with its line under the figure. */
+  const keepFix = async (form: FixForm): Promise<FixProblem | null> => {
+    // An added fix stays as it was; a sheet with nothing typed just closes.
+    if (fixPart.kind === "added" || !typedAnything(form)) {
+      setSheetOpen(false);
+      return null;
+    }
     const r = await track(api.putFix(draftId, fixRequest(form, false)));
-    if (r.ok) setFixPart({ kind: "started" });
-    else setFixError(C.failed);
+    if (!r.ok) {
+      if (r.error?.code === "worth_unclear") {
+        return { field: "worth", message: r.error.message || C.sheet.worthUnclear };
+      }
+      return { field: null, message: r.error?.message || C.failed };
+    }
+    setFixForm(form);
+    setFixPart({ kind: "started" });
+    setFixError(null);
+    setSheetOpen(false);
+    return null;
   };
 
   const removeFix = async () => {
@@ -616,7 +641,10 @@ export function CheckIt({
     helpersNow.current = next;
     setHelpers(next);
     if (helperTimer.current) clearTimeout(helperTimer.current);
-    helperTimer.current = setTimeout(() => void putHelpers(helpersNow.current), 700);
+    helperTimer.current = setTimeout(() => {
+      helperTimer.current = null;
+      void putHelpers(helpersNow.current);
+    }, 700);
   };
 
   // --- Part 7: send ------------------------------------------------------------------------------------------------
@@ -627,21 +655,36 @@ export function CheckIt({
       : Boolean(sendView?.go_to || sendView?.problems.some((p) => p.code === "sorting_unconfirmed"));
   const canSubmit = !(mv && !mv.canSubmit);
 
-  const submit = useCallback(async () => {
+  /** Offline at Submit: kept on this device and sent when the connection is back (V-FIELDS.checkit/14). */
+  const queue = () => {
+    idemKey.current ??= sendKey(draftId);
+    sendQueue.save(draftId, idemKey.current);
+    queued.current = true;
+    setSendState({ kind: "queued" });
+  };
+
+  const submit = async () => {
     if (!navigator.onLine) {
-      queued.current = true;
-      setSendState({ kind: "queued" });
+      queue();
       return;
     }
     if (sortingUnconfirmed) {
+      sendQueue.clear(draftId);
       setSendState({ kind: "unconfirmed" });
       return;
+    }
+    // Words typed for "Who would help" that are still waiting for a pause go first (S-05 part 6).
+    if (helperTimer.current) {
+      clearTimeout(helperTimer.current);
+      helperTimer.current = null;
+      await putHelpers(helpersNow.current);
     }
     let view = sendView;
     if (!view) {
       const v = await api.send(draftId);
       if (!v.ok) {
-        setSendState({ kind: "failed" });
+        if (v.status === 0 && !navigator.onLine) queue();
+        else setSendState({ kind: "failed" });
         return;
       }
       view = v.body;
@@ -651,38 +694,73 @@ export function CheckIt({
     idemKey.current ??= sendKey(draftId);
     const r = await api.submit(draftId, view.declaration.version, idemKey.current);
     if (r.ok) {
+      sendQueue.clear(draftId);
       const to = r.body.next?.to || `/ideas/${encodeURIComponent(r.body.ref || r.body.idea_id)}`;
       router.replace(to);
       return;
     }
-    if (r.status === 0 && !navigator.onLine) {
-      queued.current = true;
-      setSendState({ kind: "queued" });
+    if (r.status === 0) {
+      if (!navigator.onLine) queue();
+      else setSendState({ kind: "failed" });
       return;
     }
-    const code = r.error?.code;
-    if (code === "sorting_unconfirmed") setSendState({ kind: "unconfirmed" });
-    else if (
-      r.error?.message &&
-      (code === "merge_waiting" ||
-        code === "file_blocked" ||
-        code === "not_ready" ||
-        code === "declaration_changed" ||
-        code === "merged" ||
-        code === "sorting_incomplete")
-    ) {
-      setSendState({ kind: "refused", message: r.error.message });
-      void loadSend();
-    } else setSendState({ kind: "failed" });
-  }, [draftId, sendView, sortingUnconfirmed, router, loadSend]);
+    // The server answered: nothing is left to send from this device.
+    sendQueue.clear(draftId);
+    refused(r.error);
+  };
 
-  // Offline at Submit: it sends when the connection is back (V-FIELDS.checkit/14).
+  /** A refusal goes where it is about (S-05.rules/5, A-API POST /drafts/:id/submit): the file's row, the words, the
+   * sorting, or its own line under Submit; only a failure with no answer is "Couldn't send…" with Try again. */
+  const refused = (error: ApiError["error"] | null) => {
+    const code = error?.code;
+    const message = error?.message || "";
+    const field = error?.field;
+    if (code === "sorting_unconfirmed") {
+      // Not confirmed, or confirmed with a field left empty: the server's own line for which (L-SORT.rules/2).
+      setSendState({ kind: "unconfirmed", message: message || undefined });
+      return;
+    }
+    if (code === "file_blocked" && field && proof.some((p) => p.item?.id === field)) {
+      setProof((list) => list.map((p) => (p.item?.id === field ? { ...p, note: message || C.failed } : p)));
+      setSendState({ kind: "idle" });
+      go(4);
+      return;
+    }
+    if (code === "not_ready" && (field === "title" || field === "summary")) {
+      setWordErrors((e) => ({ ...e, [field]: message || C.failed }));
+      setSendState({ kind: "idle" });
+      go(1);
+      return;
+    }
+    if (code === "not_a_draft") {
+      // Already sent: its own line, and Submit stays unavailable rather than looping on Try again.
+      setSendState({ kind: "refused", message: message || C.failed, final: true });
+      return;
+    }
+    if (
+      message &&
+      code &&
+      ["merge_waiting", "file_blocked", "declaration_changed", "merged"].includes(code)
+    ) {
+      setSendState({ kind: "refused", message });
+      void loadSend();
+      return;
+    }
+    setSendState({ kind: "failed" });
+  };
+
+  // Offline at Submit, or a send kept on this device from an earlier visit: it goes when the connection is back,
+  // with the page as it is then.
+  const latestSubmit = useRef(submit);
+  useEffect(() => {
+    latestSubmit.current = submit;
+  });
   useEffect(() => {
     if (online && queued.current) {
       queued.current = false;
-      void submit();
+      void latestSubmit.current();
     }
-  }, [online, submit]);
+  }, [online, replay]);
 
   const goToSorting = () => {
     setTriedUnconfirmed(true);
@@ -787,6 +865,7 @@ export function CheckIt({
           values={{ title, summary, often }}
           attached={attached}
           onSave={saveWord}
+          errors={wordErrors}
           onAttached={() => go(4)}
           hidden={hiddenTile}
         />
@@ -1008,7 +1087,7 @@ export function CheckIt({
       open={sheetOpen}
       initial={fixForm}
       onCancel={() => setSheetOpen(false)}
-      onKeep={(f) => void keepFix(f)}
+      onKeep={keepFix}
       onAdd={addFix}
     />
   );
