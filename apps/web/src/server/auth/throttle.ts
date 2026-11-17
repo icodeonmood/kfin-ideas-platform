@@ -2,9 +2,10 @@
  * A small in-memory limit on how often the sign-in routes may write a `sign_in_intents` row (BLD-A177). Starting
  * single sign-on needs no session, so without it anyone could fill the table. Per client address, and overall.
  *
- * Over the limit, sign-in still works: the destination travels in the sealed sign-in cookie instead of a row, so the
- * person still lands where they were going. Only the switch to an email code mid-way loses it (L-AUTH.rules/4).
- * One process's memory is enough: the web app runs as one process per node, and the overall cap bounds the table
+ * Over the limit nobody loses their place (L-AUTH.rules/4): single sign-on carries it in the sealed sign-in cookie,
+ * the callback hands it back to S-02 as `to`, and the email code carries it in a sealed place cookie. Only a draft's
+ * exact part of Check it can fall back to the first part. The per-address limit is wide enough for a whole office
+ * behind one address on launch day; the overall cap is what bounds the table. One process's memory is enough: the web app runs as one process per node, and the overall cap bounds the table
  * even if an address is spoofed.
  */
 import type { NextRequest } from "next/server";
@@ -34,12 +35,23 @@ export class WindowLimiter {
   }
 }
 
-/** Per address: 20 kept destinations in 10 minutes. Overall: 300 a minute. */
-export const PER_ADDRESS = { limit: 20, windowMs: 10 * 60_000 };
+/**
+ * Per address: 1,200 kept destinations in 10 minutes, so an office whose people all leave by one address (the whole
+ * building on launch day) is not starved. Overall: 300 a minute, which bounds the table. One address can use at most
+ * 40% of the overall 10-minute budget, so other offices still get rows.
+ */
+export const PER_ADDRESS = { limit: 1_200, windowMs: 10 * 60_000 };
 export const OVERALL = { limit: 300, windowMs: 60_000 };
 
-const perAddress = new WindowLimiter(PER_ADDRESS.limit, PER_ADDRESS.windowMs);
-const overall = new WindowLimiter(OVERALL.limit, OVERALL.windowMs, 1);
+type Limit = { limit: number; windowMs: number };
+let perAddress = new WindowLimiter(PER_ADDRESS.limit, PER_ADDRESS.windowMs);
+let overall = new WindowLimiter(OVERALL.limit, OVERALL.windowMs, 1);
+
+/** Unit tests only: fresh limiters, optionally with other limits (0 puts every write over the limit). */
+export function resetLimitsForTests(per: Limit = PER_ADDRESS, all: Limit = OVERALL) {
+  perAddress = new WindowLimiter(per.limit, per.windowMs);
+  overall = new WindowLimiter(all.limit, all.windowMs, 1);
+}
 
 /**
  * The client's address as the nearest proxy saw it: the last X-Forwarded-For entry (earlier ones are whatever the

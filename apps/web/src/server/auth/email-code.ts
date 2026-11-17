@@ -12,7 +12,14 @@ import { isOn, switchStates } from "../killswitch";
 import { promises } from "../promises";
 import { workerFetch } from "../worker";
 import { allowedDomains, codeStore, type CodeDeps } from "./codes";
-import { ATTEMPT_COOKIE, attemptCookieOptions, attemptKeyHash, destination, intentStore } from "./intents";
+import {
+  ATTEMPT_COOKIE,
+  attemptCookieOptions,
+  destination,
+  PLACE_COOKIE,
+  placeCookieOptions,
+  usePlace,
+} from "./intents";
 import { cookieOptions, createSession, secureCookies, sessionTtlSeconds, SESSION_COOKIE } from "./session";
 
 export const EMAIL_CODE_SWITCH = "auth.email_code";
@@ -56,9 +63,7 @@ export async function liveCodeDeps(): Promise<CodeDeps> {
 export async function signedInResponse(request: NextRequest, userId: string): Promise<NextResponse> {
   const ttl = await sessionTtlSeconds();
   const token = await createSession(userId, ttl);
-  const key = request.cookies.get(ATTEMPT_COOKIE)?.value;
-  const intent = key && key.length <= 128 ? await intentStore().use(attemptKeyHash(key), new Date()) : null;
-  const to = destination(intent);
+  const to = destination(await usePlace(request.cookies, new Date()));
   const accepted = await getDb()
     .selectFrom("privacy_acceptances")
     .select("user_id")
@@ -71,5 +76,8 @@ export async function signedInResponse(request: NextRequest, userId: string): Pr
   );
   response.cookies.set(SESSION_COOKIE, token, cookieOptions(ttl));
   response.cookies.set(ATTEMPT_COOKIE, "", attemptCookieOptions(secureCookies(), 0));
+  if (request.cookies.get(PLACE_COOKIE)) {
+    response.cookies.set(PLACE_COOKIE, "", placeCookieOptions(secureCookies(), 0));
+  }
   return response;
 }

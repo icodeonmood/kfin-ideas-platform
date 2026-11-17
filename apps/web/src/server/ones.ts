@@ -128,11 +128,16 @@ export type ShowcaseBrief = Tiered & {
   parts: { key: string; own: string; from_record: string | null }[];
 };
 
-async function call<T>(path: string, init: RequestInit = {}, fallback = "ones_unavailable"): Promise<T> {
+async function call<T>(
+  path: string,
+  init: RequestInit = {},
+  fallback = "ones_unavailable",
+  timeoutMs = 30_000,
+): Promise<T> {
   const res = await workerFetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const out = (await res.json().catch(() => ({ error: fallback }))) as Record<string, unknown>;
   if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? fallback));
@@ -206,9 +211,10 @@ export const wallOnes = async () => withNamesHidden(await call<OnesList>("/inter
 /**
  * The Ones signed-out people see (S-01 Landing, S-01.rules/3, A-API.ones): only Ones whose brief is public (the
  * committee approved it, and it passed its checks), names as their owners chose. `ones.public` off: none.
+ * Landing passes a short `timeoutMs` so a slow worker never holds the front door (BLD-A172).
  */
-export async function publicOnes(): Promise<OnesList> {
-  const list = await call<OnesList>("/internal/ones/public");
+export async function publicOnes(timeoutMs?: number): Promise<OnesList> {
+  const list = await call<OnesList>("/internal/ones/public", {}, undefined, timeoutMs);
   if (list.paused) return { paused: true, ones: [] };
   return withNamesHidden({ paused: false, ones: list.ones.filter((o) => Boolean(o.brief?.trim())) });
 }

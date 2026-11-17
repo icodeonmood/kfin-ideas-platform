@@ -2,8 +2,7 @@ import Link from "next/link";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 
 import { SparkMark } from "@/components/spark-mark";
-import { promises } from "@/server/promises";
-import { publicOnes, type PublicOne } from "@/server/ones";
+import { landingOnes, reviewDays } from "@/server/landing";
 
 import { LandingMotion, TiltMark } from "./landing-motion";
 import "./landing.css";
@@ -19,6 +18,7 @@ import "./landing.css";
  *   (S-01.rules/2).
  * - The Ones are the three most recent with a public brief; none, or the Ones off the wall, and the slab is
  *   left out (S-01.rules/3).
+ * - Both reads wait at most 1.5 seconds, then the page draws without them (`server/landing.ts`, BLD-A172).
  * - Sections reveal once on scroll; the accordion is details/summary (S-01.rules/4). Reduced motion: still.
  */
 
@@ -26,23 +26,6 @@ import "./landing.css";
 export const SHARE_HREF = "/sign-in?signing=1&to=%2Fshare";
 
 const HEADLINE = "Every fix starts with someone who noticed.";
-
-async function reviewDays(): Promise<number | null> {
-  try {
-    const days = (await promises()).review.decide_by_working_days;
-    return Number.isFinite(days) && days > 0 ? days : null;
-  } catch {
-    return null;
-  }
-}
-
-async function landingOnes(): Promise<PublicOne[]> {
-  try {
-    return (await publicOnes()).ones.slice(0, 3);
-  } catch {
-    return [];
-  }
-}
 
 function Ring() {
   return (
