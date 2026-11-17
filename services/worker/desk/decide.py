@@ -169,6 +169,12 @@ def return_words(t: dt.datetime, sharer_first_name: str, now: dt.datetime, tz: d
 # ---------------------------------------------------------------------------------------------------------------
 
 
+# A Pick's `joined_with` naming the reviewer's own idea: the message sits under that field (A-API.conventions/2).
+OWN_OTHER = (
+    "That idea is your own, so you can’t join it. Choose another, or leave the join to another reviewer."
+)
+
+
 def _refused(e: FieldError, status: int = 422) -> Refused:
     return Refused(status, e.code, e.message, e.field)
 
@@ -194,7 +200,7 @@ def send(
             idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "decide")
         if other is not None:  # a reviewer never joins their own idea in either
-            refuse_own(conn, user_id, other, "decide")
+            refuse_own(conn, user_id, other, "decide", field="joined_with", message=OWN_OTHER)
         ensure_on_desk(idea)
         sharer = person_by_code(conn, idea["contributor_code"])
         errors = check_decision(choice, reason, return_in, sharer.first_name, p)
@@ -219,8 +225,10 @@ def send(
         if other is not None:
             from desk import merging
 
+            # the decision below tells both sharers and both crews (the joining ones are on the lead's crew by now),
+            # so the merge's own Inbox item is not posted as well: one item each (V-ACC.committee/4)
             merged = merging.merge_locked(conn, idea, other, user_id, "this", True, reason, t, p,
-                                          note_is_reason=True, field="joined_with")  # fmt: skip
+                                          note_is_reason=True, field="joined_with", notify=False)  # fmt: skip
         joined = other["id"] if other is not None else None
         dates = dates_for(choice, t, return_in, p, cal)  # type: ignore[arg-type]
         masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip())

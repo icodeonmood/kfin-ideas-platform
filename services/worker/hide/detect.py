@@ -80,9 +80,16 @@ def config(path: Path = CONFIG_FILE) -> Config:
 # ---- masks and words ---------------------------------------------------------------------------------------
 
 
+MASK_TAIL_FROM = (
+    5  # a value shorter than this shows no last characters, so a mask never gives most of it away
+)
+
+
 def mask(kind: str, value: str) -> str:
-    """ "Folio ••••89": the kind's label, four dots and the value's last two characters (L-HIDE.rules/3)."""
-    return f"{config().labels[kind]} ••••{re.sub(r'\s', '', value)[-2:]}"
+    """ "Folio ••••89": the kind's label, four dots and the value's last two characters (L-HIDE.rules/3). A value of
+    fewer than five characters shows the label and the dots only (BLD-C069)."""
+    compact = re.sub(r"\s", "", value)
+    return f"{config().labels[kind]} ••••{compact[-2:] if len(compact) >= MASK_TAIL_FROM else ''}"
 
 
 def mask_tokens(text: str) -> list[tuple[int, int]]:
@@ -148,6 +155,7 @@ def classify(value: str, text: str | None = None, start: int | None = None) -> s
 
 
 def occurrences(text: str, value: str) -> list[tuple[int, int]]:
+    """Exact, case-sensitive places of `value` (mapping a selection back to the words it came from)."""
     out: list[tuple[int, int]] = []
     if not value:
         return out
@@ -158,12 +166,74 @@ def occurrences(text: str, value: str) -> list[tuple[int, int]]:
     return out
 
 
+@lru_cache(maxsize=256)
+def value_pattern(value: str) -> re.Pattern[str] | None:
+    """`value` as whole words, any case, any run of spaces between its words: "kiran  rao" matches "Kiran Rao",
+    and "Rao" does not match inside "Raona" (BLD-C066)."""
+    words = value.split()
+    if not words:
+        return None
+    body = r"\s+".join(re.escape(w) for w in words)
+    return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
+
+
+def value_places(text: str, value: str, *, skip_masks: bool = True) -> list[tuple[int, int]]:
+    """Where `value` appears in `text` as whole words, in any case, outside the masks already there."""
+    rx = value_pattern(value)
+    if rx is None or not text:
+        return []
+    masks = mask_tokens(text) if skip_masks else []
+    return [
+        (m.start(), m.end())
+        for m in rx.finditer(text)
+        if all(m.end() <= a or m.start() >= b for a, b in masks)
+    ]
+
+
+def same_value(a: str, b: str) -> bool:
+    rx = value_pattern(a)
+    return rx is not None and rx.fullmatch(b) is not None
+
+
+def mask_in(text: str, value: str, masked: str | None = None, kind: str = "name") -> tuple[str, int]:
+    """`text` with every whole-word, any-case place of `value` replaced by its mask; and how many were replaced.
+    Each place is masked from its own characters unless `masked` is given."""
+    places = value_places(text, value)
+    out = text
+    for s, e in reversed(places):
+        out = out[:s] + (masked if masked is not None else mask(kind, text[s:e])) + out[e:]
+    return out, len(places)
+
+
 def known_finds(text: str, known: Mapping[str, tuple[str, str]]) -> list[Found]:
-    """Every place a value already hidden on this idea appears again. `known`: value -> (kind, found_by)."""
+    """Every place a value already hidden on this idea appears again, as whole words in any case. `known`: value ->
+    (kind, found_by). Each find carries the characters as written there."""
     out: list[Found] = []
     for value, (kind, found_by) in known.items():
-        out.extend(Found(s, e, kind, value, found_by) for s, e in occurrences(text, value))
+        out.extend(Found(s, e, kind, text[s:e], found_by) for s, e in value_places(text, value))
     return out
+
+
+# ---- offsets: the browser counts UTF-16 code units, Python counts code points ------------------------------
+
+
+def from_utf16(text: str, offset: int) -> int | None:
+    """The code-point offset for a UTF-16 offset in `text`, or None when it is outside or splits a character."""
+    if offset < 0:
+        return None
+    units = 0
+    for i, ch in enumerate(text):
+        if units == offset:
+            return i
+        units += 2 if ord(ch) > 0xFFFF else 1
+        if units > offset:
+            return None
+    return len(text) if units == offset else None
+
+
+def to_utf16(text: str, offset: int) -> int:
+    """The UTF-16 offset for a code-point offset in `text`."""
+    return sum(2 if ord(ch) > 0xFFFF else 1 for ch in text[: max(0, offset)])
 
 
 def non_overlapping(found: Iterable[Found]) -> list[Found]:
@@ -233,14 +303,24 @@ def gatekeeper_kind(data_type: str, value: str) -> str | None:
     return kind
 
 
-def gatekeeper_finds(conn: Conn, text: str, scope: str) -> list[Found]:
+@dataclass(frozen=True)
+class Gate:
+    """The gatekeeper's finds for one text. `skipped` is the gateway's error code when it could not run (the text
+    then goes on with the patterns and names only, and a re-check is queued, BLD-C067)."""
+
+    finds: list[Found]
+    skipped: str | None = None
+    switched_off: bool = False
+
+
+def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:
     """The gatekeeper's finds, mapped back to positions in `text`. Empty when the assistant is off or failed: the
     patterns have already run, and the person's draft must not wait on the model."""
     from core import killswitch
 
     if not text.strip() or not killswitch.is_on("ai.all", conn):
-        return []
-    from gateway import AgentFailed, run_agent
+        return Gate([])
+    from gateway import AgentFailed, AgentSwitchedOff, run_agent
     from pii import vault
     from pii.restore import restore
 
@@ -248,13 +328,13 @@ def gatekeeper_finds(conn: Conn, text: str, scope: str) -> list[Found]:
         out = run_agent("gatekeeper", {"mode": "submission", "submission": {"text": text}}, scope, conn=conn)
     except AgentFailed as exc:
         log.info("hide.gatekeeper_skipped", reason_code=exc.code)
-        return []
+        return Gate([], exc.code, isinstance(exc, AgentSwitchedOff))
     mapping = vault.mapping(conn, scope)
     found: list[Found] = []
     for tag in out.data.get("investor_context_tags") or []:
         if tag in mapping:
             value = mapping[tag][1]
-            found.extend(Found(s, e, "name", value, "gatekeeper") for s, e in occurrences(text, value))
+            found.extend(Found(s, e, "name", text[s:e], "gatekeeper") for s, e in occurrences(text, value))
     floor = _threshold()
     for span in (out.data.get("personal_data") or {}).get("spans") or []:
         if float(span.get("confidence", 0)) < floor:
@@ -266,7 +346,7 @@ def gatekeeper_finds(conn: Conn, text: str, scope: str) -> list[Found]:
         if kind is None:
             continue
         found.extend(Found(s, e, kind, quote, "gatekeeper") for s, e in occurrences(text, quote))
-    return found
+    return Gate(found)
 
 
 def find(
@@ -278,11 +358,13 @@ def find(
     gatekeeper: bool = True,
     names: bool = True,
     directory: Any = None,
+    gate: Iterable[Found] = (),
 ) -> list[Found]:
-    """Everything to hide in `text`, non-overlapping, in text order. Nothing is stored."""
-    found = known_finds(text, known or {}) + pattern_finds(text)
+    """Everything to hide in `text`, non-overlapping, in text order. Nothing is stored. `gate`: gatekeeper finds the
+    caller already has (`hide_into` asks the model before it takes the idea's lock)."""
+    found = known_finds(text, known or {}) + pattern_finds(text) + list(gate)
     if gatekeeper and conn is not None and scope is not None:
-        found += gatekeeper_finds(conn, text, scope)
+        found += gatekeeper_finds(conn, text, scope).finds
     chosen = non_overlapping(found)
     if names and chosen:
         people = [

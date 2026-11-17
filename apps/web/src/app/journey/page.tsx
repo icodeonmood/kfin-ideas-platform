@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "How an idea becomes a One" };
 const WHITE = "#FFFFFF";
 const LEFT = "#9EA3AD";
 const RIGHT = "#5C6270";
-const SPARK = "#FF5B14";
+const SPARK = "#F46835";
 
 /** One isometric block (DEC-065): white top, grey sides. `x`, `y` is the top corner; each block is 60 units tall. */
 function Block({ x, y }: { x: number; y: number }) {

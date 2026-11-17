@@ -59,8 +59,9 @@ test.describe("S-LAUNCH: the launch screen", () => {
       "0:16The tagline",
       "0:30The invitation and QR code stay",
     ]);
-    // The page behind the screen is out of the reading and tab order.
-    await expect(page.locator("header").first()).toHaveAttribute("inert", "");
+    // The page behind the screen is out of the reading and tab order: display paths get no chrome (BLD-D011), and
+    // anything else outside the display is inert (L-DISPLAY).
+    await expect(page.locator("header:not([inert]):not([inert] *)")).toHaveCount(0);
     await expectNoSeriousAxeIssues(page);
   });
 
@@ -188,7 +189,7 @@ test.describe("S-OFFICE: the office screen", () => {
     await expect(page.getByText("1% spark. 99% sweat.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Pause the screen" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Full screen" })).toBeVisible();
-    await expect(page.locator("header").first()).toHaveAttribute("inert", "");
+    await expect(page.locator("header:not([inert]):not([inert] *)")).toHaveCount(0);
     if (!data.paused && data.ones.length) {
       await expect(page.getByText(`1 of ${data.ones.length}`)).toBeVisible();
       await expect(page.getByRole("list", { name: "The Ones" }).getByRole("listitem")).toHaveCount(

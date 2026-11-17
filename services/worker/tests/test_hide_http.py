@@ -37,12 +37,13 @@ def world() -> Iterator[dict[str, Any]]:
         ).fetchone()
         iid, ref = str(row["id"]), str(row["idea_id"])
         mid = str(uuid.uuid4())
-        out = hide_message(conn, iid, WORDS, by=sharer.user_id, source_id=mid, gatekeeper=False)
-        conn.execute(
-            "INSERT INTO idea_messages (id, idea_uuid, seq, via, text_encrypted, char_count) "
-            "VALUES (%s, %s, 1, 'typed', %s, %s)",
-            (mid, iid, seal_text("idea_messages", "text_encrypted", mid, out.masked), len(WORDS)),
-        )
+        with conn.transaction():  # the hide and the write of its masked copy, together (hide/__init__.py)
+            out = hide_message(conn, iid, WORDS, by=sharer.user_id, source_id=mid, gatekeeper=False)
+            conn.execute(
+                "INSERT INTO idea_messages (id, idea_uuid, seq, via, text_encrypted, char_count) "
+                "VALUES (%s, %s, 1, 'typed', %s, %s)",
+                (mid, iid, seal_text("idea_messages", "text_encrypted", mid, out.masked), len(WORDS)),
+            )
         try:
             yield {
                 "conn": conn, "iid": iid, "ref": ref, "mid": mid, "masked": out.masked, "details": out.details,
@@ -73,8 +74,20 @@ def test_l_hide_rules_7_s_r2_hide_this_for_the_desk_and_committee_only(world: di
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "range_invalid"
     missing = world["reviewer"].browser().post("/api/desk/ideas/IDEA-1999-000001/hide", json=body)
     assert missing.status_code == 404 and missing.json()["error"]["code"] == "not_found"
-    for text in (r.text, again.text, bad.text, missing.text):
+    short = world["reviewer"].browser().post(path, json={**body, "end": start + 2})
+    assert short.status_code == 400 and short.json()["error"]["code"] == "range_invalid"
+    for text in (r.text, again.text, bad.text, missing.text, short.text):
         assert "Kiran" not in text and FOLIO not in text
+
+    # The desk's hide wins: the sharer cannot show it (review fix 4), and the worker's error object reaches the
+    # screen as A-API's shape with the web's words.
+    shown = (
+        world["sharer"]
+        .browser()
+        .post(f"/api/drafts/{world['iid']}/hidden/{detail['id']}/show", json={"reason": "made_up_example"})
+    )
+    assert shown.status_code == 403 and shown.json()["error"]["code"] == "forbidden"
+    assert shown.json()["error"]["message"] == "The review desk hid this, so it stays hidden."
 
     audit = (
         world["conn"]

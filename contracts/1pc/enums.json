@@ -178,6 +178,10 @@
     "merge_lead": { "source": "A-API.desk", "values": ["this", "other"] },
     "my_ideas_list": { "source": "A-API.my-ideas", "values": ["yours", "teamed"] },
     "my_ideas_sort": { "source": "A-API.my-ideas", "values": ["latest", "shared", "stage"] },
+    "my_ideas_filter": {
+      "source": "S-07.filters (lane E): the filters of My ideas; closed and picked_and_building are the idea_status groups",
+      "values": ["all", "needs_you", "drafts", "with_review_desk", "picked_and_building", "shipped", "closed"]
+    },
     "inbox_tab": { "source": "A-API.inbox", "values": ["all", "needs_you", "unread", "archived"] },
     "desk_sort": { "source": "A-API.desk", "values": ["time_left", "decide_by", "area"] },
     "committee_tab": { "source": "A-API.committee", "values": ["window", "reversed", "expired"] },

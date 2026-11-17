@@ -64,10 +64,75 @@ def test_l_hide_detect_business_codes_are_not_hidden() -> None:
 
 
 def test_l_hide_detect_a_name_hides_only_in_the_same_sentence_as_another_detail() -> None:
+    """Whatever span edges the name recogniser draws, the name in the folio's sentence hides and the other not."""
     text = f"Ramesh Gupta called again. Customer Suresh Iyer sent folio {FOLIO} by post."
     found = kinds(text)
-    assert ("name", "Suresh Iyer") in found
-    assert all(v != "Ramesh Gupta" for _, v in found)
+    names = [v for k, v in found if k == "name"]
+    assert any("Suresh" in v or "Iyer" in v for v in names)
+    assert all("Ramesh" not in v and "Gupta" not in v for _, v in found)
+    assert ("folio", FOLIO) in found
+
+
+def test_l_hide_detect_values_match_as_whole_words_in_any_case() -> None:
+    """Review fix 3 (BLD-C066): "kiran rao" goes with "Kiran Rao", a longer word stays, a mask is never re-masked."""
+    text = "Ask kiran  rao, then Kiran Rao again, not Kiran Raona"
+    assert detect.value_places(text, "Kiran Rao") == [(4, 14), (21, 30)]
+    masked, n = detect.mask_in(text, "Kiran Rao", "Name ••••ao")
+    assert n == 2 and masked == "Ask Name ••••ao, then Name ••••ao again, not Kiran Raona"
+    assert detect.mask_in("Name ••••ao and Name Lal", "Name")[1] == 1  # the mask's own word is left alone
+    assert detect.same_value("Kiran Rao", "KIRAN RAO") and not detect.same_value("Kiran Rao", "Kiran Raona")
+
+
+def test_l_hide_rules_3_a_short_value_shows_no_tail() -> None:
+    """Review fix 12 (BLD-C069): a mask never shows most of a short value."""
+    assert detect.mask("name", "Om") == "Name ••••"
+    assert detect.mask("name", "Ravi") == "Name ••••"
+    assert detect.mask("name", "Kiran") == "Name ••••an"
+    assert detect.mask_tokens("Ask Name •••• now") == [(4, 13)]
+
+
+def test_l_hide_rules_2_offsets_between_utf16_and_code_points() -> None:
+    """Review fix 8 (BLD-C068): an emoji is one code point and two UTF-16 units."""
+    text = f"Late 😀 for folio {FOLIO}"
+    at = text.index(FOLIO)
+    units = detect.to_utf16(text, at)
+    assert units == at + 1 and detect.from_utf16(text, units) == at
+    assert (
+        detect.from_utf16(text, detect.to_utf16(text, text.index("😀")) + 1) is None
+    )  # inside its two units
+    assert detect.from_utf16(text, detect.to_utf16(text, len(text))) == len(text)
+    assert detect.from_utf16(text, 10_000) is None
+
+
+def test_l_hide_api_errors_have_the_packs_shape_and_no_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review fix 13: a refusal is {error: {code, message}}; anything else is a fixed `hide_failed`, never text."""
+    import json
+
+    from hide import api
+
+    def refuse(conn: Any) -> None:
+        raise HideError(403, "forbidden")
+
+    def crash(conn: Any) -> None:
+        raise RuntimeError(f"folio {FOLIO} broke")
+
+    class FakeConn:
+        def __enter__(self) -> FakeConn:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def transaction(self) -> FakeConn:
+            return self
+
+    monkeypatch.setattr(api, "connect", lambda **_: FakeConn())
+    refused = api._call(refuse)
+    assert refused.status_code == 403
+    assert json.loads(bytes(refused.body)) == {"error": {"code": "forbidden", "message": ""}}
+    failed = api._call(crash)
+    assert failed.status_code == 500 and FOLIO not in bytes(failed.body).decode()
+    assert json.loads(bytes(failed.body)) == {"error": {"code": "hide_failed", "message": ""}}
 
 
 def test_l_hide_detect_a_colleagues_name_is_never_hidden() -> None:

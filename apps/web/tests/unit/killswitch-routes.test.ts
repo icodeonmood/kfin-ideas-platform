@@ -92,7 +92,8 @@ describe("kill switch route map (§7.6)", () => {
         else if (/\.tsx?$/.test(name)) {
           const code = readFileSync(full, "utf8")
             .replace(/\/\*[\s\S]*?\*\//g, "")
-            .replace(/^\s*\/\/.*$/gm, "");
+            .replace(/^\s*\/\/.*$/gm, "")
+            .replace(/\brole=["']switch["']/g, ""); // an ARIA role (the P shortcut's toggle), not a word on screen
           // Words people read: string literals and JSX text.
           const strings = code.match(/(["'`])(?:(?!\1)[^\\\n]|\\.)*\1/g) ?? [];
           const jsxText = code.match(/>[^<>{}\n]+</g) ?? [];
@@ -109,6 +110,10 @@ describe("kill switch route map (§7.6)", () => {
 });
 
 describe("kill switch coverage", () => {
+  it("C-LISTEN: Listen's switch closes the desk's script; lane C's audio and chapters carry lane C's own rule (DEC-108, BLD-B245)", () => {
+    expect(switchesFor("GET", "/api/desk/ideas/IDEA-2026-001481/listen")).toEqual(["desk.listen"]);
+  });
+
   it("gates HEAD exactly like GET (Next.js runs the GET handler for HEAD)", () => {
     expect(switchesFor("HEAD", "/api/attachments/ATT-2026-000001")).toEqual(["attachments.open"]);
     expect(switchesFor("head", "/api/wall")).toEqual(["wall.public"]);

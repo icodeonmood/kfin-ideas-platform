@@ -53,131 +53,6 @@ main:focus {
   outline-color: var(--link-on-zed);
 }
 
-/* ---------- Header ----------
- * Below 760 px the links wrap to a second row that scrolls sideways inside the header (never the page): every nav link
- * stays reachable by keyboard at 360 px, and no "Menu" button needs new wording.
- */
-.hdr-end form {
-  margin: 0;
-}
-
-.hdr-brand,
-.hdr-end {
-  flex: none;
-}
-
-/* The links never push the page sideways: when they run out of room they scroll inside the dock. The padding leaves
- * room for the 3 px focus ring and its offset; the negative margin keeps the dock's height. */
-.hdr-nav {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin: -8px auto;
-  padding: 8px 8px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-}
-
-.hdr-nav::-webkit-scrollbar {
-  display: none;
-}
-
-/* The person's name stays on screen (the system hides it below 940 px). A long one is cut short with an ellipsis; the
- * whole name stays in the page. On a phone it shares the first row with the mark and Sign out, so it gets what is
- * left of that row (about 70 px at 360), and only a dock narrower than 320 px drops it. */
-.hdr-name {
-  max-width: 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@container (max-width: 940px) {
-  .hdr-name {
-    display: block;
-    max-width: 12ch;
-  }
-}
-
-@container (max-width: 480px) {
-  .hdr-dock {
-    column-gap: 12px;
-  }
-
-  .hdr-name {
-    max-width: calc(100cqw - 262px);
-  }
-}
-
-@container (max-width: 320px) {
-  .hdr-name {
-    display: none;
-  }
-}
-
-/* Long menus (reviewers, the core committee, admins) take their own row sooner, below 1240 px. */
-@container (max-width: 1240px) {
-  .hdr-dock:has(.hdr-nav[data-long]) {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .hdr-dock:has(.hdr-nav[data-long]) .hdr-nav {
-    order: 3;
-    flex: 1 0 100%;
-    margin: -2px -8px -4px;
-    padding: 6px 8px 8px;
-  }
-}
-
-@container (max-width: 760px) {
-  .hdr-dock {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .hdr-nav {
-    display: flex;
-    order: 3;
-    flex: 1 0 100%;
-    margin: -2px -8px -4px;
-    padding: 6px 8px 8px;
-  }
-}
-
-/* ---------- Footer ---------- */
-.site-footer {
-  margin-top: var(--space-9);
-  padding: var(--space-6) var(--gutter) var(--space-7);
-  background: var(--sunken);
-  border-top: 1px solid var(--rule);
-  color: var(--ink-muted);
-  font-size: 13px;
-}
-
-.site-footer .inner {
-  max-width: var(--page-max);
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-5);
-}
-
-.site-footer p {
-  margin: 0;
-}
-
-.site-footer p:first-child {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.site-footer a {
-  color: var(--ink);
-  font-weight: 500;
-}
-
 /* ---------- Dark panels ----------
  * Brand moments sit in a contained dark panel inside the page column, as OFFER's "Neutral by design" section does.
  */
@@ -799,7 +674,7 @@ main > .entry {
   font: 400 17px/1.5 var(--font-sans);
   color: var(--ink);
   background: var(--g-well);
-  border: 1px solid var(--line-control);
+  border: 1px solid var(--fieldBorder);
   border-radius: var(--r-well);
   box-shadow: none;
   transition:

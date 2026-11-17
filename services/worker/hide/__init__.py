@@ -7,12 +7,22 @@ anyone else gets. Each value is stored encrypted in the worker-only vault; the p
 
 Entry points other lanes call (fixed; lane C, BLD-C060):
 
+Call every entry point that stores inside ONE transaction with the caller's own write of the masked copy:
+
+    with conn.transaction():
+        hidden = hide_message(conn, idea_uuid, text, by=user_id, source="conversation", source_id=entry_id)
+        conn.execute("UPDATE conversation_entries SET text_encrypted = %s WHERE id = %s", (seal(hidden.masked), …))
+
+The idea's advisory lock is taken inside and held until that transaction ends, so a reviewer's "Hide this" cannot
+land between the hiding and the write. On an autocommit connection with no transaction around the call, the lock
+ends with the call and the guarantee is lost. The gatekeeper's model call runs before the lock is taken. A failure
+inside rolls back only hide's own savepoints, so the caller's transaction stays usable (BLD-C067).
+
 `hide_text(conn, idea_uuid, text, *, by, source="desk", source_id=None) -> (masked_text, hidden_count)`
     Any text written on an idea: a desk question or reason ("desk"), an answer, a conversation message, an edit.
     Stores each value sealed with a `hidden_details` row and returns the masked copy and how many were hidden.
     `by` is the users.id of whoever typed it (the one person who may read the values). With a sealed source
-    ("message", "answer", "conversation", "edit") and its `source_id`, their own words are sealed too. Runs inside
-    the caller's transaction.
+    ("message", "answer", "conversation", "edit") and its `source_id`, their own words are sealed too.
 
 `hide_message(conn, idea_uuid, text, *, by, source="message", source_id, gatekeeper=True) -> Hidden`
     What drafts need (L-DRAFT, through lane C's adapter), for a message or an edit of one:
@@ -23,10 +33,20 @@ Entry points other lanes call (fixed; lane C, BLD-C060):
     - `Hidden.counts`, `Hidden.hidden_count`, `Hidden.kinds_line` ("Folio number, PAN and phone number") and
       `Hidden.receipt` ("Hid 3 personal details from everyone but you: Folio ••••89, PAN ••••4F, Phone ••••10.").
     Re-running it on an edited message keeps each detail's id while its value is still there, and keeps the
-    person's "Show it" for that value. Values a reviewer hid on the idea are hidden in every new text.
+    person's "Show it" for that value. Values a reviewer hid on the idea are hidden in every new text, as whole
+    words in any case. Lane F's conversation: `source="conversation"`, `source_id` = the conversation_entries id,
+    `by` = the author's users.id. The sealed words are keyed by `core.sealed_key`: row ids and ids that start with
+    the idea's uuid as they are, any other id under the idea's uuid (BLD-C066). When the gatekeeper cannot run,
+    the text goes on with the patterns and names, `hide.gatekeeper_skipped` is audited and a re-check is queued
+    (`hide/recheck.py`).
 
 `preview(conn, text, *, idea_uuid=None) -> Hidden`
     Spans while the person types: patterns, names and the idea's hidden values, no model call, nothing stored.
+    It has no HTTP route: A-API names none, and lane C's draft (its message path and channels) is its only caller.
+
+Offsets in `Hidden.spans` count code points (Python's). The browser counts UTF-16 units: the web edge converts spans
+on the way out (`apps/web/src/server/hide-offsets.ts`), and the desk's "Hide this" sends `units: "utf16"`, which
+the worker converts against the text the reviewer read (the web app never holds it).
 
 `desk_hide`, `show`, `hide_again` (`hide/desk.py`) serve `POST /api/desk/ideas/:id/hide` and
 `POST /api/drafts/:id/hidden/:hid/show|hide`. Files are `hide/files.py`.
@@ -37,7 +57,7 @@ from __future__ import annotations
 import uuid
 
 from core.db import Conn
-from hide.core import DETAIL_SOURCES, SEALED_SOURCES, Hidden, HideError, hide_into, preview
+from hide.core import DETAIL_SOURCES, SEALED_SOURCES, Hidden, HideError, hide_into, preview, sealed_key
 from hide.desk import desk_hide, hide_again, show
 from hide.detect import Found, find, kinds_line, mask, receipt
 
@@ -54,6 +74,7 @@ __all__ = [
     "mask",
     "preview",
     "receipt",
+    "sealed_key",
     "show",
 ]
 

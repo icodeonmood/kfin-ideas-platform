@@ -382,8 +382,38 @@ def _contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime, viewer_id:
     return out
 
 
+def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | None:
+    """The question set this reviewer queued and has not sent: the panel's Asking state opens with it (S-R2.panel,
+    J-REVIEW/A1). A queued set is its reviewer's alone, so another reviewer's is never returned; the desk's lists
+    leave queued sets out (L-REVIEW.queue)."""
+    from desk import questions
+    from desk.store import person_by_code, unseal
+
+    s = conn.execute(
+        "SELECT id, time_to_answer FROM question_sets WHERE idea_uuid = %s AND state = 'queued' AND by_user_id = %s "
+        "ORDER BY created_at DESC LIMIT 1",
+        (idea["id"], user_id),
+    ).fetchone()
+    if s is None:
+        return None
+    asked = [
+        {"id": str(q["id"]), "part": q["part"], "part_name": questions.PART_NAMES.get(str(q["part"]), ""),
+         "text": unseal(q["text_encrypted"], "questions", "text_encrypted", str(q["id"])),
+         "suggested": bool(q["suggested"])}
+        for q in conn.execute(
+            "SELECT id, part, text_encrypted, suggested FROM questions WHERE set_id = %s ORDER BY seq", (s["id"],)
+        ).fetchall()
+    ]  # fmt: skip
+    first = person_by_code(conn, idea["contributor_code"]).first_name
+    return {
+        "set_id": str(s["id"]), "questions": asked, "time_to_answer": s["time_to_answer"],
+        "ready_line": questions.ready_line(len(asked)), "send_label": questions.send_label(len(asked), first),
+    }  # fmt: skip
+
+
 def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> dict[str, Any]:
-    """Which working state the panel opens in (L-REVIEW.panel), with what it shows."""
+    """Which working state the panel opens in (L-REVIEW.panel), with what it shows. While the desk can still ask
+    (Reviewing, Answered), `queued` carries the questions this reviewer queued and has not sent."""
     from desk import committee, questions
 
     if idea["status"] == "merged":  # first: a Not now that came back and was then merged shows the merge
@@ -400,7 +430,7 @@ def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> d
         (idea["id"],),
     ).fetchone()
     if s is None:
-        return {"state": "reviewing", "decision": decision}
+        return {"state": "reviewing", "decision": decision, "queued": _queued(conn, idea, user_id)}
     n = conn.execute(
         "SELECT count(*) AS n, count(a.sent_at) AS answered, max(a.sent_at) AS answered_at FROM questions q "
         "LEFT JOIN answers a ON a.question_id = q.id AND a.sent_at IS NOT NULL WHERE q.set_id = %s",
@@ -421,7 +451,8 @@ def _panel(conn: Conn, idea: dict[str, Any], user_id: str, at: dt.datetime) -> d
     if questions.state(facts) == "answered":
         title = {1: "Answered", 2: "Both answered"}.get(facts.count) or f"All {facts.count} answered"
         spare = questions.spare_line(n["answered_at"], s["due_at"]) if n["answered_at"] else None
-        return {"state": "answered", "title": title, "spare_line": spare, **common}
+        return {"state": "answered", "title": title, "spare_line": spare, **common,
+                "queued": _queued(conn, idea, user_id)}  # fmt: skip
     sharer_first = person_by_code(conn, idea["contributor_code"]).first_name
     return {"state": "sent", "title": f"Waiting on {sharer_first}", **common}
 
@@ -554,7 +585,9 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
     idea = load_idea(conn, ref)
     files = _checked_files(conn, idea["id"])  # viewer-independent: never a file holding a customer detail
     sharer_worth, reviewer_worth, _rev = revise.current(conn, str(idea["id"]))
-    texts = _part_texts(conn, idea, files, _hidden(conn, idea["id"]))
+    # the plain kind names ("Folio is hidden from everyone."): the masked hint ("Folio ••••89") is for the page only,
+    # never spoken
+    texts = _part_texts(conn, idea, files, [(kind, None) for kind, _hint in _hidden(conn, idea["id"])])
     answers = {
         part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
         for part, qs in _questions(conn, idea["id"], t).items()

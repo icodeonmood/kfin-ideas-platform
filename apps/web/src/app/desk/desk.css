@@ -1,0 +1,146 @@
+/* S-R1 Review desk (board Desk). Values from reference/computed; colours and radii are tokens only. */
+.rd {
+  display: grid;
+  gap: 28px;
+  max-width: 1080px;
+}
+.rd-head {
+  display: grid;
+  gap: 10px;
+}
+.rd-summary {
+  color: var(--ink2);
+  margin: 0;
+}
+.rd-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule);
+}
+.rd-panel {
+  min-width: 0;
+}
+
+.rd-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.rd-table th {
+  text-align: left;
+  font: 400 13px/1.3 var(--ft);
+  color: var(--mute);
+  padding: 4px 16px 18px 0;
+}
+.rd-table td {
+  padding: 22px 16px 22px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+.rd-table td:last-child,
+.rd-table th:last-child {
+  padding-right: 0;
+}
+.rd-idea {
+  width: 32%;
+}
+.rd-title {
+  display: block;
+  font: 500 18px/1.3 var(--ft);
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 4px;
+}
+.rd-title:hover,
+.rd-title:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rd-q .meta,
+.rd-idea .meta {
+  display: block;
+  color: var(--mute);
+}
+.rd-dots {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.rd-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-round);
+  border: 1.5px solid var(--ink);
+}
+.rd-dots i.on {
+  background: var(--ink);
+}
+.rd-time .pill {
+  gap: 6px;
+  white-space: nowrap;
+}
+.rd-by {
+  white-space: nowrap;
+  color: var(--ink2);
+}
+.rd-act {
+  width: 160px;
+  text-align: right;
+}
+.rd-act .btn {
+  min-width: 160px;
+  justify-content: center;
+}
+.rd-act .fmsg {
+  display: block;
+  margin-top: 6px;
+  text-align: right;
+}
+.rd-decision {
+  color: var(--ink);
+}
+.rd-committee {
+  max-width: 300px;
+}
+
+/* On a phone the table becomes cards with the same facts (S-R1.rules/6). */
+@media (max-width: 640px) {
+  .rd {
+    gap: 20px;
+  }
+  .rd-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .rd-table,
+  .rd-table tbody,
+  .rd-table tr,
+  .rd-table td {
+    display: block;
+    width: auto;
+  }
+  .rd-table tr {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    gap: 10px;
+  }
+  .rd-table td {
+    border: 0;
+    padding: 0;
+    text-align: left;
+  }
+  .rd-act .btn {
+    width: 100%;
+  }
+}
+
+/* A help line and a counter under one field, each on its own line (S-R2 Deciding, S-R4 Reversing) */
+.help-l {
+  display: block;
+}

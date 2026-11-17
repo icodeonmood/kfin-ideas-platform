@@ -190,8 +190,8 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
     email = email_html.compose(_load(REPO, "one-inducted"), data, BASE)
     assert email.html.count('class="em-btn-cell" bgcolor="#111111"') == 1  # one black button (DEC-101)
     assert "No. 17" in email.html and 'Tier 1<span aria-hidden="true"> ·</span> Spark' in email.html
-    assert 'bgcolor="#FF7F14"' in email.html
-    assert "color:#FF7F14" not in email.html  # the tier colour is a fill, never text (DEC-098)
+    assert 'bgcolor="#F5863B"' in email.html
+    assert "color:#F5863B" not in email.html  # the tier colour is a fill, never text (DEC-098)
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
 
