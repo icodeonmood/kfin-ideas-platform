@@ -71,7 +71,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
 | `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
-| `C-DROPDOWN` | built: `components/ui/dropdown.tsx` | S | P0 | D |
+| `C-DROPDOWN` | built: `components/ui/dropdown.tsx`; named "{label}: {summary}", with `optional` and `empty` (lane F, BLD-F070) | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
 | `C-DRAFT-PANEL` | missing | L | P0 | C |
@@ -83,7 +83,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-INBOX-READER` | exists, differs | L | P0 | A |
 | `C-LISTEN` | missing | M | P0 | B |
 | `C-SHEET-MERGE` | missing | M | P0 | B |
-| `C-SHEET-TEAMUP` | exists, differs | M | P0 | F |
+| `C-SHEET-TEAMUP` | built (lane F, BLD-F070 to BLD-F073): `components/teamup/teamup-sheet.tsx` (`TeamUpSheet`: compose with the drafted note and "Bring your ideas along", or on Check it (`draftId`) "Ask {lead} to merge mine in" / "Keep mine separate"; sending; sent in place with "Withdraw request"; every API error; `useTeamUpSheet()` gives hosts `open(ideaId)` and `sheet`); tests `tests/unit/teamup-sheet.test.ts` | M | P0 | F |
 | `C-CREW-DECK` | motion and controls built (lane D): `components/ui/deck.tsx` (`Deck`: one pile, the flight out and back at 620 ms, round buttons, pager dots, "Idea 1 of 5", ← →; only the front card in the reading order); card content, filters and states are lane F's | L | P0 | D (motion), F (data) |
 | `C-ONES-FAN` | built (lane D): `components/ui/ones-fan.tsx` (`OnesFan`: stacked, spread, buttons, ← →, swipe, one wheel step per card handing the scroll back at either end, tilt, "Post 1 of 4", the empty and one-post states; `OnesPost` on the dark slab with the consent rule); `components/ones-carousel.tsx` retires when Home uses it | M to L | P0 | D |
 

@@ -656,9 +656,15 @@ describe("C-SHEET-TEAMUP errors: each with its ready-made message", () => {
     expect(nameOf(dialog()!)).toBe("Team up with Ravi");
     expect(alerts()).toEqual(["We couldn’t find that."]);
     expect(byIds(dialog()!.getAttribute("aria-describedby"))).toBe("We couldn’t find that.");
-    routes[U.note()] = { body: drafted() };
-    await click(button("Try again"));
+    let release!: () => void;
+    routes[U.note()] = { body: drafted(), wait: new Promise<void>((r) => (release = r)) };
+    const retry = button("Try again")!;
+    await act(async () => retry.click());
+    expect(dialog()!.getAttribute("aria-busy")).toBe("true");
+    await act(async () => release());
+    await settle();
     expect(note().value).toBe(DRAFTED);
+    expect(document.activeElement).toBe(note());
   });
 
   it("C-SHEET-TEAMUP: neither read answers: the sheet says so with its own title", async () => {
