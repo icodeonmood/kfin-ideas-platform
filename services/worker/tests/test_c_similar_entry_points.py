@@ -36,19 +36,25 @@ def test_bld_c093_entry_points_keep_their_names_and_signatures() -> None:
 
 
 class _Result:
-    def __init__(self, row: dict[str, Any] | None) -> None:
-        self.row = row
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
 
     def fetchone(self) -> dict[str, Any] | None:
-        return self.row
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self.rows
 
 
 class _Conn:
-    """Records each savepoint and how it ended; `execute` fails, or finds no row."""
+    """Records each savepoint and how it ended, and each statement's first words; `execute` fails, or answers the
+    rows given for a table (none for any other)."""
 
-    def __init__(self, *, fail: bool) -> None:
+    def __init__(self, *, fail: bool, rows: dict[str, list[dict[str, Any]]] | None = None) -> None:
         self.fail = fail
+        self.rows = rows or {}
         self.savepoints: list[str] = []
+        self.statements: list[str] = []
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -59,10 +65,12 @@ class _Conn:
             raise
         self.savepoints.append("released")
 
-    def execute(self, *_: Any, **__: Any) -> _Result:
+    def execute(self, sql: str, *_: Any, **__: Any) -> _Result:
+        self.statements.append(" ".join(sql.split()[:3]))
         if self.fail:
             raise RuntimeError("database error")
-        return _Result(None)
+        table = next((t for t in self.rows if f"FROM {t} " in sql + " "), None)
+        return _Result(self.rows[table] if table else [])
 
 
 def test_bld_c096_match_idea_runs_the_lookup_in_a_savepoint() -> None:
@@ -101,5 +109,48 @@ def test_bld_c096_entry_points_answer_none_and_minus_one_and_never_raise(
     assert reading.savepoints == ["rolled_back"]
     assert match_shared(_Conn(fail=True), "u", found_while="later") == 2  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError):
-        match_shared(_Conn(fail=False), "u", found_while="sent")  # type: ignore[arg-type]
+    assert match_shared(_Conn(fail=False), "u", found_while="sent") == -1  # type: ignore[arg-type]
+
+    def broken(*_: Any, **__: Any) -> m.Run:  # anything else that escapes matching
+        raise RuntimeError("index down")
+
+    monkeypatch.setattr(m, "match_idea", broken)
+    assert similar_for(_Conn(fail=False), "u", "A title", "A summary") is None  # type: ignore[arg-type]
+    assert match_shared(_Conn(fail=False), "u", found_while="checking") == -1  # type: ignore[arg-type]
+
+
+DRAFT = "3f1e0c1e-0000-4000-8000-000000000003"
+
+
+def test_bld_c096_a_decrypt_failure_before_retrieval_is_a_failed_run_in_its_savepoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L-SIMILAR.failure: the person's masked words cannot be opened (a key or decrypt error, before retrieval).
+    The run fails inside its savepoint, the failure is recorded in a savepoint of its own, nothing is retrieved,
+    and `match_shared` answers -1 ("couldn't check") without raising."""
+    idea: dict[str, Any] = {
+        "id": DRAFT, "idea_id": "IDEA-2026-000901", "contributor_code": "C-0901", "status": "checking",
+        "kind": "problem", "title": "SIP failure SMS gives no reason", "summary": "", "area": None, "affects": [],
+        "shared_at": None, "neutral_summary": None,
+    }  # fmt: skip
+
+    def cannot_open(*_: Any, **__: Any) -> str:
+        raise ValueError("decrypt failed")
+
+    def never(*_: Any, **__: Any) -> Any:
+        raise AssertionError("retrieval must not run")
+
+    monkeypatch.setattr(m, "open_text", cannot_open)
+    monkeypatch.setattr(m, "retrieve", never)
+    conn = _Conn(
+        fail=False, rows={"ideas": [idea], "idea_messages": [{"id": 1, "text_encrypted": b"sealed"}]}
+    )
+    assert match_shared(conn, DRAFT, found_while="checking") == -1  # type: ignore[arg-type]
+    assert conn.savepoints == ["rolled_back", "released"]  # the run rolled back; the failure recorded
+    assert conn.statements[-1] == "INSERT INTO similar_runs"
+
+    conn = _Conn(
+        fail=False, rows={"ideas": [idea], "idea_messages": [{"id": 1, "text_encrypted": b"sealed"}]}
+    )
+    assert similar_for(conn, DRAFT, "SIP failure SMS gives no reason", "") is None  # type: ignore[arg-type]
+    assert conn.savepoints == ["rolled_back", "released"]

@@ -34,17 +34,14 @@ def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[di
 
     Never raises and never aborts the caller's transaction (BLD-C096): an unknown draft, a failed run or a failure
     while reading the matches back all answer None, and each step runs in its own savepoint."""
-    from similar.matching import MAX_MATCHES, match_idea
-    from similar.preview import Viewer
-    from similar.views import matches_for
+    try:
+        from similar.matching import MAX_MATCHES, match_idea
+        from similar.preview import Viewer
+        from similar.views import matches_for
 
-    try:
         run = match_idea(conn, idea_uuid, found_while="drafting", title=title, summary=summary)
-    except LookupError:
-        return None
-    if run.state == "failed":
-        return None
-    try:
+        if run.state == "failed":
+            return None
         with conn.transaction():  # a savepoint: a database error here leaves the caller's transaction usable
             owner = conn.execute(
                 "SELECT m.user_id FROM ideas i JOIN contributor_map m ON m.contributor_code = i.contributor_code "
@@ -54,6 +51,8 @@ def similar_for(conn: Conn, idea_uuid: str, title: str, summary: str) -> list[di
             if owner is None:
                 return None
             found = matches_for(conn, idea_uuid, Viewer.of(conn, str(owner["user_id"])))
+    except LookupError:  # no such draft (matching.IdeaNotFound): nothing was written
+        return None
     except Exception as exc:
         log.error("similar.read_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         return None
@@ -64,14 +63,18 @@ def match_shared(conn: Conn, idea_uuid: str, *, found_while: str) -> int:
     """Match a shared idea at send (`checking`, always runs) or after an edit (`later`, runs on a material change)
     and keep the links (L-SIMILAR.rules/5, BLD-C093). Returns how many matches are stored for it, or -1 when
     matching could not be checked: it failed (recorded, retried on the next run; sharing goes on,
-    L-SIMILAR.failure) or the idea was not found. Safe inside the caller's transaction (BLD-C096). Raises only
-    ValueError, for a `found_while` that is not one of the three."""
-    from similar.matching import match_idea
-
+    L-SIMILAR.failure), the idea was not found, or `found_while` is not one of the three. Never raises and never
+    aborts the caller's transaction (BLD-C096)."""
     if found_while not in ("drafting", "checking", "later"):
-        raise ValueError("found_while")
+        log.error("similar.bad_found_while", idea_uuid=idea_uuid)
+        return -1
     try:
+        from similar.matching import match_idea
+
         run = match_idea(conn, idea_uuid, found_while=found_while)  # type: ignore[arg-type]
-    except LookupError:
+    except LookupError:  # no such idea (matching.IdeaNotFound): nothing was written
+        return -1
+    except Exception as exc:
+        log.error("similar.match_shared_failed", idea_uuid=idea_uuid, error_type=type(exc).__name__)
         return -1
     return -1 if run.state == "failed" else run.found
