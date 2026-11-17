@@ -96,15 +96,16 @@ def _row_json(
     if r["reversal_id"] is not None:
         member = person_by_user(conn, r["reversed_by"])
         now_label = decide.LABELS[str(r["to_choice"])] if r["to_choice"] else "Not merged"
-        reversal = {
+        reversed_day = when.day(r["reversed_at"], at, tz)
+        reversal = {  # the Reversed row's four lines (S-R4, Committee board)
             "to": r["to_choice"],
             "note": unseal(r["reversal_note"], "decision_reversals", "note_encrypted", str(r["reversal_id"])),
             "by": member.as_json(),
             "at": r["reversed_at"].isoformat(),
-            "now_line": f"Now: {now_label} by {member.name}, {when.day(r['reversed_at'], at, tz)}",
-            "final_line": (
-                f"Reversed {when.day(r['reversed_at'], at, tz)}. Final. {sharer.first_name} has the note."
-            ),
+            "now_line": f"Now: {now_label}",
+            "now_by_line": f"by {member.name}, {reversed_day}",
+            "reversed_line": f"Reversed {reversed_day}",
+            "final_line": f"Final. {sharer.first_name} has the note.",
         }
     own = _own(conn, user_id, r)
     open_ = ww.state in ("open", "extended")
@@ -365,19 +366,97 @@ def close_window(conn: Conn, window_id: str, at: dt.datetime | None = None) -> b
         return True
 
 
+def _lower(label: str) -> str:
+    """'Not now' as it sits inside a sentence: 'not now'."""
+    return label[:1].lower() + label[1:]
+
+
+def sharer_lines(conn: Conn, r: dict[str, Any], at: dt.datetime, p: promises.Promises) -> dict[str, Any]:
+    """The sharer's words for a decision (reference/copy/Status.md; A-API.conventions/6): the committee line while
+    the window is open (L-DECIDE.rules/5), and the committee's card once it reversed the decision
+    (L-COMMITTEE.rules/5, V-ACC.committee/4)."""
+    tz = when.IST
+    w = _window(r)
+    open_ = w.is_open(at)
+    lines: dict[str, Any] = {
+        "committee_line": (
+            f"The Ones Committee can review this decision until {when.day(w.closes_at, at, tz)}. If they change it, "
+            "their note comes to your Inbox. After that, it stands."
+        ) if open_ else None,
+        "reversal": None,
+    }  # fmt: skip
+    if r["reversal_id"] is not None and r["to_choice"]:
+        member = person_by_user(conn, r["reversed_by"])
+        desk_person = person_by_user(conn, r["decided_by"])
+        was, now_label = decide.LABELS[str(r["choice"])], decide.LABELS[str(r["to_choice"])]
+        final = "This is final."
+        if r["to_choice"] == "not_now" and r["reversed_return_at"]:
+            final += (f" It comes back to the review desk on {when.day(r['reversed_return_at'], at, tz)}, with your "
+                      "answers and crew.")  # fmt: skip
+        lines["reversal"] = {
+            "from_line": f"{member.name} from the Ones Committee, {when.day_time(r['reversed_at'], at, tz)}",
+            "title": f"The Ones Committee changed the decision to {_lower(now_label)}",
+            "note_heading": "The committee’s note to you",
+            "was_line": f"Was: {was}",
+            "was_by_line": f"by {desk_person.first_name} from the review desk, {when.day(r['opens_at'], at, tz)}",
+            "final_line": final,
+            "track_line": f"{was}, then moved to {_lower(now_label)} by the Ones Committee",
+        }  # fmt: skip
+    return lines
+
+
+def reviewer_lines(conn: Conn, r: dict[str, Any], at: dt.datetime, p: promises.Promises) -> dict[str, Any]:
+    """The reviewer's words for their decision (S-R2 Decided, reference/copy/DeskIdea.md): who has it, the reason as
+    the sharer reads it, and the committee's window from the reviewer's side."""
+    tz = when.IST
+    w = _window(r)
+    ww = words(w, at, p, tz)
+    first = person_by_code(conn, r["contributor_code"]).first_name
+    sent_day = when.which_day(r["opens_at"], at, tz)
+    window_state = {
+        "open": f"Open, {ww.left}", "extended": f"{ww.extended}, {ww.left}",
+        "reversed": f"Reversed {when.day(r['reversed_at'], at, tz)}" if r["reversed_at"] else "Reversed",
+        "expired": ww.closed_line,
+    }[ww.state]  # fmt: skip
+    return {
+        "title": f"Decision sent to {first}",
+        "sent_line": f"{sent_day[:1].upper()}{sent_day[1:]}, {when.clock(r['opens_at'], tz)}. {first} has it now.",
+        "reason_heading": f"Your reason, as {first} reads it",
+        "committee_heading": "Ones Committee review",
+        "window_state": window_state,
+        "window_line": (
+            f"Open until {when.day(w.closes_at, at, tz)}. The committee can extend it, up to "
+            f"{p.window_max_months} months in all, to {ww.max_until}. If they reverse it, {first} gets their note "
+            "and you see it here. When the window closes, the decision stands."
+        ) if w.is_open(at) else None,
+    }  # fmt: skip
+
+
 def for_idea(
-    conn: Conn, idea_uuid: str, viewer_id: str, at: dt.datetime | None = None
+    conn: Conn,
+    idea_uuid: str,
+    viewer_id: str,
+    at: dt.datetime | None = None,
+    *,
+    lines: Literal["sharer", "reviewer"] | None = None,
 ) -> dict[str, Any] | None:
     """The latest decision on an idea with its window and any reversal, for the reviewer's page (S-R2 Decided)
-    and the sharer's (S-06). None when the desk has not decided."""
+    and the sharer's (S-06). None when the desk has not decided. `lines` adds that viewer's words under `lines`
+    (`sharer_lines`, `reviewer_lines`); the rest of the row keeps the committee's (S-R4)."""
     t = at or now()
+    p = promises.get()
     r = conn.execute(_ROWS + " WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1", (idea_uuid,)).fetchone()
     if r is None:
         return None
-    out = _row_json(conn, dict(r), viewer_id, t, promises.get())
+    row = dict(r)
+    out = _row_json(conn, row, viewer_id, t, p)
     out["decided_at"] = r["opens_at"].isoformat()
     out["return_at"] = (r["reversed_return_at"] or r["return_at"]).isoformat() if (
         r["reversed_return_at"] or r["return_at"]) else None  # fmt: skip
+    if lines == "sharer":
+        out["lines"] = sharer_lines(conn, row, t, p)
+    elif lines == "reviewer":
+        out["lines"] = reviewer_lines(conn, row, t, p)
     return out
 
 
@@ -388,6 +467,14 @@ def may_read_decision(conn: Conn, viewer_id: str, idea: dict[str, Any]) -> bool:
         return True
     if has_role(conn, viewer_id, READERS):
         return True
+    return _on_crew(conn, viewer_id, idea)
+
+
+def _on_crew(conn: Conn, viewer_id: str, idea: dict[str, Any]) -> bool:
+    try:
+        uuid.UUID(str(viewer_id))
+    except ValueError:
+        return False
     return (
         conn.execute(
             "SELECT 1 FROM crew_members c JOIN contributor_map m ON m.contributor_code = c.contributor_code "
@@ -406,7 +493,10 @@ def decision_for_viewer(
     from desk.store import load_idea
 
     idea = load_idea(conn, ref)
-    full = for_idea(conn, str(idea["id"]), viewer_id, at)
+    sharer_side = is_own(conn, viewer_id, idea) or _on_crew(conn, viewer_id, idea)
+    full = for_idea(conn, str(idea["id"]), viewer_id, at, lines="sharer" if sharer_side else None)
+    if full is not None and not sharer_side:
+        full["lines"] = None  # the desk and the committee read the committee's words (S-R2, S-R4)
     if full is None or may_read_decision(conn, viewer_id, idea):
         return full
     return {

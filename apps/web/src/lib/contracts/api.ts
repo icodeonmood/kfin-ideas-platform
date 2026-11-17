@@ -534,9 +534,22 @@ export interface ReviewerContribution {
   files: ReviewerArtefact[]; // kind "file" only
   own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
 }
+/** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
+export interface ReviewerDecisionLines {
+  title: string; // "Decision sent to Kavya"
+  sent_line: string; // "Today, 4:58 pm. Kavya has it now."
+  reason_heading: string; // "Your reason, as Kavya reads it"
+  committee_heading: string; // "Ones Committee review"
+  window_state: string | null; // "Open, 30 days left", "Extended once, 52 days left", "Reversed Friday 20 November"
+  window_line: string | null; // "Open until Wednesday 16 December. The committee can extend it, up to 3 months in all, to …"; null once closed
+}
 export type ReviewerPanel =
   | { state: "reviewing"; decision: CommitteeRow | null }
-  | { state: "decided"; decision: CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null } }
+  | {
+      state: "decided";
+      decision: CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null };
+      lines: ReviewerDecisionLines;
+    }
   | { state: "merged" }
   | {
       state: "sent" | "answered";
@@ -710,8 +723,10 @@ export interface CommitteeRow {
     note: string | null;
     by: DeskPerson;
     at: IsoDate;
-    now_line: string; // "Now: Picked by Rohan Mehta, Friday 13 November"
-    final_line: string; // "Reversed Friday 13 November. Final. Kavya has the note."
+    now_line: string; // "Now: Picked"
+    now_by_line: string; // "by Rohan Mehta, Friday 13 November"
+    reversed_line: string; // "Reversed Friday 13 November"
+    final_line: string; // "Final. Kavya has the note."
   } | null;
   can_extend: boolean;
   can_reverse: boolean; // false on a member's own idea (L-COMMITTEE.rules/9)
@@ -739,9 +754,25 @@ export interface ReverseRequest {
   note: string;
   return_in?: ReturnIn;
 }
-/** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else. */
+/** The sharer's words for a decision (S-06; reference/copy/Status.md), for the sharer and the crew. */
+export interface SharerDecisionLines {
+  // "The Ones Committee can review this decision until Wednesday 16 December. If they change it, their note comes to
+  // your Inbox. After that, it stands." While the window is open; it follows an extension. null once it closes.
+  committee_line: string | null;
+  reversal: {
+    from_line: string; // "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm"
+    title: string; // "The Ones Committee changed the decision to not now"
+    note_heading: string; // "The committee’s note to you" (the note itself is `reversal.note` on the row)
+    was_line: string; // "Was: Picked"
+    was_by_line: string; // "by Meera from the review desk, Monday 16 November"
+    final_line: string; // "This is final. It comes back to the review desk on Tuesday 16 February 2027, with your answers and crew."
+    track_line: string; // "Picked, then moved to not now by the Ones Committee"
+  } | null;
+}
+/** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else.
+ * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. */
 export type DecisionForViewerResponse =
-  | (CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null })
+  | (CommitteeRow & { decided_at: IsoDate; return_at: IsoDate | null; lines: SharerDecisionLines | null })
   | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
   | null;
 
