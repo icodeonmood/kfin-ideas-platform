@@ -687,7 +687,11 @@ export function HomeScreen({
                   tierName={p.one.tier_name}
                   ago={p.ago}
                   sentence={p.text}
-                  adopted={p.adopted_by ? `Adopted by ${p.adopted_by} teams` : undefined}
+                  adopted={
+                    p.adopted_by
+                      ? `Adopted by ${p.adopted_by} team${p.adopted_by === 1 ? "" : "s"}`
+                      : undefined
+                  }
                   figure={p.figure.value}
                   unit={p.figure.line}
                   cheers={p.likes}

@@ -53,7 +53,7 @@ def test_first_sign_in_of_someone_not_yet_in_hr(dev_db: Any) -> None:
             "SELECT notice_version FROM privacy_acceptances WHERE user_id = %s", (user["id"],)
         ).fetchall()
         assert [r["notice_version"] for r in accepted] == [version]
-        assert browser.get("/").status_code == 200
+        assert browser.get("/home").status_code == 200  # Home is S-03 at /home; / forwards there (BLD-C143)
 
         # A second sign-in does not create a second person.
         sign_in_with_mock(employee_id, {"email": email, "name": name, "employeeId": employee_id})
