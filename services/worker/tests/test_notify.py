@@ -18,7 +18,7 @@ from psycopg.types.json import Jsonb
 import notify
 from comms.send import send_due
 from core import killswitch
-from core.config import get_settings
+from core.config import Settings, get_settings
 from notify import Action, digest, inbox, ops
 from notify import render as nrender
 from tests.helpers import tables_containing
@@ -539,8 +539,8 @@ def test_L_REVIEW_clock_3_the_decide_by_digest_is_off_at_launch(cast: Any, decid
     """BLD-B241: no overdue digest at launch, even with an idea past its decide-by date on a working day."""
     db = cast["db"]
     db.execute("DELETE FROM notifications WHERE event = %s", (digest.EVENT,))
-    decide_by_digest(False)
-    assert get_settings().decide_by_digest is False  # the shipped default, also when the env says nothing
+    assert Settings.model_fields["decide_by_digest"].default is False  # the shipped default, with no env set
+    decide_by_digest(False)  # and an env left over on this machine can't switch it on for this test
     assert digest.overdue(db, WORKDAY_NOON)  # Kavya's idea is two days late
     assert digest.queue(db, now=WORKDAY_NOON) == 0
     assert _digest_rows(db) == 0
