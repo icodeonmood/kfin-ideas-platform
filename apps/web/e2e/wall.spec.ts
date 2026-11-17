@@ -258,13 +258,17 @@ test.describe("S-WALL", () => {
     const back = new URL(href!, "http://x").searchParams.get("back");
     expect(back).toBe("/wall?kind=problem&sort=popular");
 
-    // A reload keeps the sort and the chip (the state is in the URL)
+    // A reload keeps the sort and the chip (the state is in the URL). The first view after it is the real one from
+    // the worker: with problems at the desk the sort shows Popular pressed; with none (CI's stack), Just in says so
+    // and shows no sort, and the address still carries it.
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("button", { name: "Popular", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page).toHaveURL(/\/wall\?kind=problem&sort=popular$/);
     await expect(page.getByRole("radio", { name: "Problems" })).toHaveAttribute("aria-checked", "true");
+    const sortAfter = page.getByRole("button", { name: "Popular", exact: true });
+    await expect(
+      sortAfter.or(page.getByText("Nothing of this kind with the review desk right now.")),
+    ).toBeVisible();
+    if (await sortAfter.count()) await expect(sortAfter).toHaveAttribute("aria-pressed", "true");
   });
 
   test("S-WALL.phone: Just in shows three, Show 3 more, a sort cycler, and each row's line carries its sort's figure", async ({
