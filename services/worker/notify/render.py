@@ -123,9 +123,10 @@ def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _possessive(first_name: str | None) -> str:
+    """ "Meera’s", "Dhanus’", "a colleague’s": the typographic apostrophe of every inbox line (BLD-A195)."""
     if not first_name:
-        return "a colleague's"
-    return f"{first_name}'" if first_name.endswith("s") else f"{first_name}'s"
+        return "a colleague’s"
+    return f"{first_name}’" if first_name.endswith("s") else f"{first_name}’s"
 
 
 def _clock(t: dt.datetime) -> str:
@@ -297,7 +298,7 @@ def _kind_vars(
         first = (asker or {}).get("first_name")
         out["asker"] = {
             "first_name": first or "the review desk",
-            "possessive": _possessive(first) if first else "the review desk's",
+            "possessive": _possessive(first) if first else "the review desk’s",
         }
         if kind == "answer_reminder":
             out["left"] = _left(row, now)
