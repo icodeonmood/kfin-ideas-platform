@@ -41,19 +41,63 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
     return data
 
 
-# Switches that start off on purpose (the first exceptions to DEC-088): the report shows them as expected, not as
-# a problem, so nobody "fixes" them on. The wording matches their reasons in migration 20261121300110.
-OFF_BY_DESIGN = {
-    "capture.voice": (
-        "Off until IT deploys the isolated speech service and the memory, InfoSec agrees to the microphone and "
-        "the model, and the DPO's privacy notice covers voice notes (DEC-096)"
-    ),
-    "speech.hosted": "Off until InfoSec and the DPO approve a hosted route (DEC-096)",
-}
+# Switches that start off on purpose: the report shows them as expected, not as a problem, so nobody "fixes" them
+# on. Voice left this list with DEC-108 (on at launch through Sarvam). The channels built and switched off until
+# IT or InfoSec approve them (DEC-105: Teams, email intake, email-code sign-in) join it as their switches land.
+OFF_BY_DESIGN: dict[str, str] = {}
+
+VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"
+HOSTED = "Hosted speech (Sarvam): on with the DEC-108 approval reference"
 
 
 def _row(name: str, state: str, evidence: str) -> dict[str, str]:
     return {"criterion": name, "state": state, "evidence": evidence}
+
+
+def voice_rows(
+    voice_on: bool, hosted_on: bool, speech_mode: str, engine_url: str, approval: str
+) -> tuple[list[dict[str, str]], list[str]]:
+    """DEC-108: voice is on at launch through Sarvam (speech to text and Listen; India-hosted, no retention). The
+    on-server engine behind the isolated speech service (BLD-C012) stays an allowed fallback; the fake route never
+    is. Off is a row for the product lead to confirm, not "off as expected". Returns the rows and any reasons that
+    rule out Mode A."""
+    rows: list[dict[str, str]] = []
+    reasons: list[str] = []
+    sarvam_ready = hosted_on and bool(approval.strip())
+    if not voice_on:
+        rows.append(_row(VOICE, "confirm", "off: DEC-108 plans voice on at launch; switch capture.voice on, or the "
+                                           "product lead launches without it (typing still works)"))  # fmt: skip
+    elif speech_mode == "sarvam" and sarvam_ready:
+        rows.append(
+            _row(VOICE, "met", "on; SPEECH_MODE sarvam with speech.hosted on and its approval reference")
+        )
+    elif speech_mode == "local" and engine_url:
+        rows.append(
+            _row(VOICE, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
+        )
+    else:
+        if speech_mode == "sarvam":
+            missing = "speech.hosted off" if not hosted_on else "no SPEECH_HOSTED_APPROVAL"
+            evidence = f"on with SPEECH_MODE sarvam but {missing}, so every recording is refused"
+        else:
+            isolation = "isolated service set" if engine_url else "no isolated speech service"
+            evidence = (
+                f"on with SPEECH_MODE {speech_mode}, {isolation}; set the Sarvam route or switch it off"
+            )
+        rows.append(_row(VOICE, "not met", evidence))
+        reasons.append("voice on without a working route")
+    if hosted_on and approval.strip():
+        rows.append(_row(HOSTED, "met", "on with an approval reference (DEC-108)"))
+    elif hosted_on:
+        rows.append(_row(HOSTED, "not met", "on without an approval reference; set SPEECH_HOSTED_APPROVAL"))
+        reasons.append("hosted speech on without its approval reference")
+    elif speech_mode == "sarvam":
+        rows.append(
+            _row(HOSTED, "confirm", "off while SPEECH_MODE is sarvam: switch it on with voice (DEC-108)")
+        )
+    else:
+        rows.append(_row(HOSTED, "met", f"off; SPEECH_MODE {speech_mode} does not use it"))
+    return rows, reasons
 
 
 def collect(args: argparse.Namespace) -> dict[str, Any]:
@@ -182,47 +226,24 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 reasons_c.append("SSO or environments not ready")
 
     def voice_notes() -> None:
-        """DEC-096: voice notes may launch off (paused with their reason); on, only with the engine on KFin's own
-        server behind the isolated speech service (BLD-C012). The watch switches them off by itself otherwise."""
+        """DEC-108: voice on at launch through Sarvam; see voice_rows."""
         s = get_settings()
         with connect(autocommit=True) as conn:
-            row = conn.execute(
-                "SELECT state, reason FROM kill_switches WHERE name = 'capture.voice'"
-            ).fetchone()
-        on = row is not None and row["state"] == "on"
-        name = "Voice notes: off, or on with the engine on KFin's own server (DEC-096)"
-        if not on:
-            rows.append(_row(name, "met", f"off as expected: {OFF_BY_DESIGN['capture.voice']}"))
-        elif s.speech_mode == "local" and s.speech_engine_url:
-            rows.append(
-                _row(name, "met", "on; SPEECH_MODE local through the isolated speech service (BLD-C012)")
-            )
-        else:
-            isolation = "isolated service set" if s.speech_engine_url else "no isolated speech service"
-            rows.append(
-                _row(
-                    name,
-                    "not met",
-                    f"on with SPEECH_MODE {s.speech_mode}, {isolation}; switch it off or fix the route",
-                )
-            )
-            reasons_b.append("voice notes on without the engine on KFin's own server")
-        with connect(autocommit=True) as conn:
-            hosted = conn.execute("SELECT state FROM kill_switches WHERE name = 'speech.hosted'").fetchone()
-        hosted_name = "Hosted speech: off, unless InfoSec and the DPO have approved a hosted route (DEC-096)"
-        if hosted is None or hosted["state"] != "on":
-            rows.append(_row(hosted_name, "met", f"off as expected: {OFF_BY_DESIGN['speech.hosted']}"))
-        elif s.speech_hosted_approval.strip():
-            rows.append(
-                _row(
-                    hosted_name,
-                    "confirm",
-                    "on with an approval reference: check it against InfoSec's and the DPO's",
-                )
-            )
-        else:
-            rows.append(_row(hosted_name, "not met", "on without an approval reference; switch it off"))
-            reasons_b.append("hosted speech on without InfoSec and DPO approval")
+            states = {
+                r["name"]: r["state"]
+                for r in conn.execute(
+                    "SELECT name, state FROM kill_switches WHERE name IN ('capture.voice', 'speech.hosted')"
+                ).fetchall()
+            }
+        got, why = voice_rows(
+            states.get("capture.voice") == "on",
+            states.get("speech.hosted") == "on",
+            s.speech_mode,
+            s.speech_engine_url,
+            s.speech_hosted_approval,
+        )
+        rows.extend(got)
+        reasons_b.extend(why)
 
     switches_off: list[str] = []
     section("Gatekeeper: personal-data recall 100%, false blocks under 5%", gatekeeper)
@@ -232,7 +253,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     section("No open high or critical VAPT findings", vapt)
     section("Restore drill completed inside 4 hours", drill)
     section("Privacy notice live", privacy_and_sso)
-    section("Voice notes: off, or on with the engine on KFin's own server (DEC-096)", voice_notes)
+    section(VOICE, voice_notes)
 
     try:
         assist = canvas_assist_shares(args)
@@ -302,10 +323,8 @@ def render(r: dict[str, Any]) -> str:
     by_design = [n for n in r["switches_off"] if n in OFF_BY_DESIGN]
     other = [n for n in r["switches_off"] if n not in OFF_BY_DESIGN]
     lines.append(f"**Switches off now:** {', '.join(other) or 'none'}.")
-    if (
-        by_design
-    ):  # the first exceptions to DEC-088: off on purpose until their approvals land; do not switch on
-        lines.append(f"**Off as expected (by design, DEC-096):** {', '.join(by_design)}.")
+    if by_design:  # off on purpose until their approvals land; do not switch on
+        lines.append(f"**Off as expected (by design):** {', '.join(by_design)}.")
     lines += [
         "",
         "**canvas-assist answers (DEC-095, DEC-097):** check on the first real-route golden-set run and before launch;",
