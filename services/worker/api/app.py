@@ -1147,6 +1147,12 @@ from submit.routes import build as _sort_submit_routes  # noqa: E402
 
 app.include_router(_sort_submit_routes(require_token))
 
+# L-HIDE (lane C): "Hide this", "Show it", "Hide it" and files, in their own module so lanes don't collide here.
+from hide.api import router as hide_router  # noqa: E402
+
+app.include_router(hide_router, dependencies=[Depends(require_token)])
+
+
 # The review side (lane B): the desk, questions and answers, the Ones Committee (A-API.desk, .questions,
 # .committee). Its routes live with the code in desk/routes.py.
 from desk.routes import build as _desk_routes  # noqa: E402

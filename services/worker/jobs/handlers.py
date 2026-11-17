@@ -297,3 +297,12 @@ def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
     from desk.clocks import run_due
 
     run_due(conn)
+
+
+@handler("hide.recheck")
+def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-HIDE.detect: the gatekeeper was down when a text was hidden; run it again on the person's sealed words
+    (BLD-C067). Fails while the gateway is still down, so the runner's backoff tries again."""
+    from hide import recheck
+
+    recheck.run(conn, payload)
