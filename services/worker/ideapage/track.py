@@ -147,11 +147,11 @@ def stages(
         off = Node("not_going_ahead")
         return [shared, checked, Node("not_going_ahead", "Withdrawn before review"), off, off]
 
-    if status == "with_review_desk":
+    if status in ("with_review_desk", "needs_you"):
         by = f"By {day(idea['decide_by'], now)}" if idea.get("decide_by") else None
         line = by
         if for_sharer and qset is not None:
-            if qset["state"] in read.OPEN_SET_STATES and qset.get("sent_at"):
+            if read.has_open_questions(qset) and qset.get("sent_at"):
                 n = len(qset["questions"])
                 line = f"{count(n, 'question')} for you since {day(qset['sent_at'], now)}"
             elif qset["state"] in read.ANSWERED_SET_STATES and reviewer_first:
