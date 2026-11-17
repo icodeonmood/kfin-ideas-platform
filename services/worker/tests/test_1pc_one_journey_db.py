@@ -15,6 +15,7 @@ import pytest
 from bootstrap import club_seed
 from core import killswitch
 from core.db import Conn
+from tests import wall_fixtures
 from wall import impact, kindling, ones
 
 pytestmark = pytest.mark.stack
@@ -28,6 +29,7 @@ def seeded(db: Conn) -> Iterator[tuple[Conn, dict[str, Any]]]:
     kindling.clear_cache()
     made = club_seed.load(db, now=NOW)
     yield db, made
+    wall_fixtures.leave_clean(db)
     kindling.clear_cache()
 
 
