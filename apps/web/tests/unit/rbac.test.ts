@@ -51,6 +51,8 @@ const SECTION_3_1: Record<string, string[]> = {
   grant_roles: ["admin"],
   // L-COMMITTEE: the 30-day window, extend, reverse once (lane B); core_committee until Monday (BLD-B238)
   committee_window: ["core_committee", "committee"],
+  // L-HIDE.rules/7, S-R2 "Hide this": the review desk and the Ones Committee, old and new roles (BLD-B247)
+  hide_for_desk: ["reviewer", "core_committee", "committee"],
 };
 
 describe("policy agrees with ARCHITECTURE §3.1", () => {

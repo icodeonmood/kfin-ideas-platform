@@ -375,14 +375,17 @@ def content(conn: Conn, att_id: str) -> tuple[bytes, str, str]:
 
 
 def remove(conn: Conn, att_id: str) -> None:
-    s = get_settings()
+    """The draft purge and `DELETE /api/submissions/:id/attachments/:att`. Every stored copy that exists goes (a
+    link has none: its key is NULL), with a 1% Club file's hidden details and queued checks (`files.drop`)."""
+    from attachments import files
+
     with conn.transaction():  # waits for a check that is committing this file, then removes every copy
-        row = conn.execute("SELECT store_key FROM attachments WHERE id = %s FOR UPDATE", (att_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, store_key, masked_store_key FROM attachments WHERE id = %s FOR UPDATE", (att_id,)
+        ).fetchone()
         if row is None:
             return
-        for bucket in (s.s3_bucket_quarantine, s.s3_bucket_clean):
-            store.delete(bucket, row["store_key"])
-        conn.execute("DELETE FROM attachments WHERE id = %s", (att_id,))
+        files.drop(conn, dict(row))
 
 
 def give_up(conn: Conn, att_id: str) -> None:

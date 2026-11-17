@@ -377,3 +377,39 @@
     grid-template-columns: 1fr;
   }
 }
+/* S-R2 "Hide this" (L-HIDE.rules/7, BLD-B246): just under the end of the selected words, out of the flow, so the
+   text never moves; it follows that text in the page, so Tab reaches it next from a keyboard selection */
+.ri-hide {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  max-width: 280px;
+}
+.ri-hide:not([data-placed]) {
+  visibility: hidden;
+}
+.ri-hide .btn {
+  background: var(--paper);
+  box-shadow: var(--shadow-2);
+}
+.ri-hide-err {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+/* L-HIDE.rules/6: "Folio shown, because it’s an internal reference." beside the "… hidden from everyone." line */
+.ri-shown {
+  margin: 0;
+  color: var(--mute);
+}
+/* "The page changed. Select again." under a text once its "Hide this" has gone (BLD-B247) */
+.ri-hide-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+}

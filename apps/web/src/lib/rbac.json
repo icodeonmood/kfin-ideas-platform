@@ -44,6 +44,7 @@
     },
     "hide_for_desk": {
       "reviewer": "yes",
+      "committee": "yes",
       "core_committee": "yes"
     },
     "open_attachments": {
@@ -299,6 +300,14 @@
     "POST /api/desk/ideas/{id}/hide                    hide_for_desk",
     "POST /api/drafts/{id}/hidden/{hid}/show           submit",
     "POST /api/drafts/{id}/hidden/{hid}/hide           submit",
+    "GET /api/config/uploads                           signed_in",
+    "POST /api/files                                   submit",
+    "POST /api/links                                   submit",
+    "GET /api/files/{id}                               open_attachments",
+    "GET /api/files/{id}/view                          open_attachments",
+    "POST /api/files/{id}/retry                        submit",
+    "DELETE /api/files/{id}                            submit",
+    "POST /api/files/{id}/hide                         submit",
     "GET /api/wall                                     see_org_ideas",
     "GET /api/admin/roles                              grant_roles",
     "POST /api/admin/roles                             grant_roles",

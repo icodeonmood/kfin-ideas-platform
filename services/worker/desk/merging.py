@@ -131,7 +131,10 @@ def desk_merge(
     note = str(body.get("note") or "")
     team_up = body.get("team_up", True) is not False
     with audited(conn), conn.transaction():
-        this, other = lock_pair(conn, ref, str(body.get("other_idea_id") or ""))
+        other_ref = str(body.get("other_idea_id") or "")
+        # both of lane C's locks, in uuid order, before lock_pair: the note is hidden on the lead (BLD-B247)
+        adapters.lock_refs(conn, ref, other_ref)
+        this, other = lock_pair(conn, ref, other_ref)
         return merge_locked(conn, this, other, user_id, body.get("lead"), team_up, note, t, p)
 
 
@@ -171,7 +174,7 @@ def merge_locked(
             raise Refused(422, e.code, e.message, e.field)
     leader, joiner = (this, other) if lead == "this" else (other, this)
     credited = own_codes(conn, leader) | own_codes(conn, joiner)
-    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip())
+    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip(), by=user_id)
     merge_id = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO merges (id, lead_idea_uuid, merged_idea_uuid, via, by_user_id, team_up, note_encrypted, "

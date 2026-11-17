@@ -10,6 +10,7 @@ import type {
   DeskSort,
   DraftPartKey,
   DraftStep,
+  HiddenKind,
   IdeaPart,
   IdeaStatus,
   InboxTab,
@@ -842,6 +843,7 @@ export interface ReviewerQuestion {
   asked_line: string; // "You asked, today 11:20 am"; another reviewer's: "Meera asked, today 11:20 am"
   state: "Answered" | "Not answered yet";
   answer: {
+    id: string; // the answer row: S-R2 "Hide this" source { kind: "answer", id } (L-HIDE.rules/7)
     text: string | null;
     at: IsoDate;
     by: string;
@@ -898,7 +900,26 @@ export interface ReviewerContribution {
   label: string; // "Ravi’s idea, IDEA-2026-001412"
   parts: ReviewerPart[];
   files: ReviewerArtefact[]; // kind "file" only
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
+}
+/** One of the sharer's messages, the masked copy; `id` is the "Hide this" source { kind: "message", id }. */
+export interface ReviewerOwnWords {
+  id: string;
+  seq: number;
+  via: string;
+  at: IsoDate;
+  text: string | null;
+}
+/** A detail the sharer chose to show, as the review desk reads it (L-HIDE.rules/6, `desk.reads._shown`): one per
+ * value, never the value itself. */
+export interface ReviewerShown {
+  kind: HiddenKind;
+  kind_label: string; // "Folio"
+  reason: ShowReason;
+  because: string; // "it’s an internal reference"
+  by: string; // the first name of who showed it
+  at: IsoDate;
+  line: string; // "Folio shown, because it’s an internal reference."
 }
 /** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
 export interface ReviewerDecisionLines {
@@ -960,10 +981,11 @@ export interface ReviewerIdeaResponse {
   can_act: boolean;
   decide_by: { at: IsoDate | null; label: string | null; left: string | null };
   artefacts: ReviewerArtefact[];
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
   parts: ReviewerPart[];
   worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
   similar: ReviewerSimilar[];
+  shown: ReviewerShown[]; // L-HIDE.rules/6: the desk and the committee only; empty for anyone else
   contributions: ReviewerContribution[];
   panel: ReviewerPanel;
 }
