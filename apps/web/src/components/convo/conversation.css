@@ -539,7 +539,7 @@
    * bottom (--cv-safe). pin.ts measures both, and how much the timeline keeps free under its last line (--cv-room),
    * so the last line and anything focused in the timeline clear the box (--cv-cover; WCAG 2.4.11). */
   .cv-main {
-    padding-bottom: var(--cv-room, 0px);
+    padding-bottom: var(--cv-room, 140px); /* until pin.ts has measured: about a one-line box */
   }
   .cv-log *,
   .cv-msg {
