@@ -144,7 +144,7 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
         {failed || state?.error ? (
           <p className="fmsg" role="alert">
             {LISTEN_ERROR}{" "}
-            <button type="button" className="btn-text" onClick={() => window.location.reload()}>
+            <button type="button" className="tb" onClick={() => window.location.reload()}>
               Try again
             </button>
           </p>
