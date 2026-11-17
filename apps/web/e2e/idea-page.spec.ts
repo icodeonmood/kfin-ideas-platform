@@ -160,11 +160,18 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
       "href",
       `/ideas/${t6.ref}/answer`,
     );
+    // Status.md: "Open the conversation" beside the card's heading, the desk's line under it, said once (BLD-E045)
+    const conv = page.getByRole("region", { name: "You and the review desk" });
+    await expect(conv.getByRole("link", { name: "Open the conversation" })).toHaveAttribute(
+      "href",
+      `/ideas/${t6.ref}/conversation`,
+    );
     await expect(
-      page.getByText(
+      conv.getByText(
         /^The review desk opened it on \w+day \d+ \w+, so the idea itself can’t be changed now\./,
       ),
     ).toBeVisible();
+    await expect(page.getByText(/^The review desk opened it on /)).toHaveCount(1);
     await expect(page.getByRole("link", { name: "Edit it" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Withdraw" })).toHaveCount(0);
     await expectNoSeriousAxeIssues(page);
@@ -286,11 +293,36 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
       "/my-ideas?list=teamed",
     );
     await expect(page.getByText("You’re on the crew. You’ll get its updates.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Say hello" })).toHaveAttribute(
-      "href",
-      `/ideas/${r2.ref}/conversation`,
-    );
+    // The crew's way into the conversation (S-08), from the card (Idea.md "Say hello")
+    await expect(
+      page.getByRole("region", { name: "Team up on this idea" }).getByRole("link", { name: "Say hello" }),
+    ).toHaveAttribute("href", `/ideas/${r2.ref}/conversation`);
+    await expect(page.getByRole("button", { name: "Team up", exact: true })).toHaveCount(0);
     await expect(page.getByRole("img", { name: "Rekha Saxena" })).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+  });
+
+  test("S-09.states not asked, J-TEAMUP/1-2: a colleague opens the team-up sheet from Team up, and has no way into the conversation", async ({
+    page,
+  }) => {
+    // Naveen is not on A1's crew and has not asked: the card offers Team up (C-SHEET-TEAMUP). Nothing is sent.
+    const a1 = await seededIdea("A1");
+    await signIn(page, CLUB.naveen);
+    await page.goto(`/ideas/${a1.ref}`);
+    await expect(page.getByRole("heading", { level: 1, name: a1.title })).toBeVisible();
+    const card = page.getByRole("region", { name: "Team up on this idea" });
+    // The conversation is for the sharer, crew, desk and committee only (P-PRODUCT.privacy, non-negotiable 7)
+    await expect(card.getByRole("link", { name: "Say hello" })).toHaveCount(0);
+    await expect(page.locator('.ip a[href$="/conversation"]')).toHaveCount(0);
+    const teamUp = card.getByRole("button", { name: "Team up", exact: true });
+    await teamUp.click();
+    const sheet = page.getByRole("dialog", { name: "Team up with Aparna" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Send to Aparna" })).toBeVisible();
+    // Escape closes it without sending, and focus is back on Team up (C-SHEET-TEAMUP.a11y, WCAG 2.4.3)
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(teamUp).toBeFocused();
     await expectNoSeriousAxeIssues(page);
   });
 

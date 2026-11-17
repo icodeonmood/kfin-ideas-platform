@@ -1,5 +1,18 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+
+import { Status } from "@/components/status";
+import {
+  errorFrom,
+  TEAMUP_COPY,
+  teamUpOpener,
+  teamupUrls,
+  useTeamUpSheet,
+} from "@/components/teamup/teamup-sheet";
 import { Avatar } from "@/components/ui/avatar";
-import { ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import { Track } from "@/components/ui/track";
 import type { ColleagueView, PublicIdea } from "@/lib/contracts/api";
@@ -34,7 +47,6 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
   }
   const idea = view.idea as PublicIdea & { stages: StageWords[] };
   const track = toTrack(idea.stages);
-  const t = page.team_up;
   const note = page.summary_note ?? "";
   return (
     <div className="ip ip-col">
@@ -66,44 +78,7 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
 
         {/* Team up comes straight after the summary in the page's order, as both boards read it on a phone and in
             one column (PhoneIdea.md; WCAG 1.3.2); the desktop grid places it beside the summary. */}
-        <section className="ip-sec ip-team card" aria-labelledby="ip-team-h">
-          <h2 id="ip-team-h" className="ip-h2">
-            Team up on this idea
-          </h2>
-          {t.count_line ? <p className="ip-team-count">{t.count_line}</p> : null}
-          {t.faces?.length ? (
-            <ul className="ip-faces" aria-label="The crew">
-              {t.faces.map((p) => (
-                <li key={p.id}>
-                  <Avatar initials={p.initials} size={36} name={p.name} ring="neutral" />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {t.state === "request_sent" && t.heading ? <p className="ip-team-wait">{t.heading}</p> : null}
-          <p className={t.state === "on_crew" ? "ip-team-line ip-ok" : "ip-team-line"} role="status">
-            {t.line}
-          </p>
-          {t.link ? (
-            <ButtonLink href={t.link.to} variant="line" aria-label={t.link.accessible_name}>
-              {t.link.label}
-            </ButtonLink>
-          ) : null}
-          {t.action?.to ? (
-            <div className="ip-dock">
-              <ButtonLink href={t.action.to} variant={t.state === "on_crew" ? "line" : "primary"}>
-                {t.action.label}
-              </ButtonLink>
-            </div>
-          ) : null}
-          {/* TODO(lane F): C-SHEET-TEAMUP, green on f/sheet-teamup-2 (37acc2e) and not on main yet, so not imported.
-              Once it lands (this screen becomes a client component for it):
-                import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
-                const teamUp = useTeamUpSheet({ onSent: refresh }); // optional `me` skips the sheet's GET /api/me
-                render {teamUp.sheet}; the "Team up" button: onClick={() => teamUp.open(ideaId)}.
-              onSent gives the new line, "Waiting for {lead}"; onWithdrawn goes back to "Team up" (S-09.states).
-              The dialog's name is "Team up with {lead first name}" (J-TEAMUP/2-3). */}
-        </section>
+        <TeamUpCard ideaId={idea.id} t={page.team_up} />
 
         {track ? (
           <section className="ip-sec ip-where" aria-labelledby="ip-where-h">
@@ -131,5 +106,133 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+type TeamUpWords = ColleagueView["page"]["team_up"];
+
+/**
+ * S-09's Team up card (S-09.layout/6, S-09.states, S-09.rules/2; J-TEAMUP/1-3; copy: Idea.md, PhoneIdea.md), drawn
+ * from the state the API sends (`page.team_up.state`, worker `ideapage/colleague.py`), never guessed here:
+ * - not asked: "Team up" opens lane F's C-SHEET-TEAMUP, named "Team up with {lead first name}";
+ * - request sent: "Waiting for {lead}" with Withdraw, then "{lead} reads your note and decides. …";
+ * - on the crew: "You're on the crew. …" and "Say hello", the way into the conversation (S-08). The API sends that
+ *   link to the idea's crew alone, and the card shows it only in that state (non-negotiable 7, P-PRODUCT.privacy);
+ * - closed or merged: one line instead of Team up, with a link to the surviving idea when merged (S-09.rules/2).
+ * After a send or a withdraw the page is read again, so the card always says what the API says.
+ */
+export function TeamUpCard({ ideaId, t }: { ideaId: string; t: TeamUpWords }) {
+  const router = useRouter();
+  // "Team up" comes back where Withdraw was: focus goes to it once the page has it again (WCAG 2.4.3)
+  const backToTeamUp = useRef(false);
+  const teamUpButton = useRef<HTMLButtonElement>(null);
+  const teamUp = useTeamUpSheet({
+    onSent: () => router.refresh(),
+    onWithdrawn: () => {
+      backToTeamUp.current = true;
+      router.refresh();
+    },
+  });
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const ask = t.state === "not_asked" && t.can_team_up && t.action?.op === "teamup.open" ? t.action : null;
+  const sent = t.state === "request_sent" ? t : null;
+  const withdrawId = sent && sent.action?.op === "teamup.withdraw" ? sent.action.request_id : undefined;
+  const crewLink = t.state === "on_crew" && t.action?.to ? { label: t.action.label, to: t.action.to } : null;
+
+  useEffect(() => {
+    if (!ask || !backToTeamUp.current) return;
+    backToTeamUp.current = false;
+    teamUpButton.current?.focus();
+  }, [ask]);
+
+  const withdraw = async () => {
+    if (!withdrawId || busy) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      const res = await fetch(teamupUrls.request(withdrawId), {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        const body: unknown = await res.json().catch(() => null);
+        // The API's own message, as the sheet shows it (BLD-F073); nothing is logged (non-negotiable 3)
+        setFailed(errorFrom(res.status, body).message);
+        return;
+      }
+      backToTeamUp.current = true;
+      router.refresh();
+    } catch {
+      setFailed(TEAMUP_COPY.offline);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="ip-sec ip-team card" aria-labelledby="ip-team-h">
+      <h2 id="ip-team-h" className="ip-h2">
+        Team up on this idea
+      </h2>
+      {t.count_line ? <p className="ip-team-count">{t.count_line}</p> : null}
+      {t.faces?.length ? (
+        <ul className="ip-faces" aria-label="The crew">
+          {t.faces.map((p) => (
+            <li key={p.id}>
+              <Avatar initials={p.initials} size={36} name={p.name} ring="neutral" />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {sent && (sent.heading || withdrawId) ? (
+        <div className="ip-team-wait">
+          {sent.heading ? <p>{sent.heading}</p> : null}
+          {withdrawId ? (
+            // Stands where "Team up" was, so the sheet gives focus back to it on close (BLD-F074)
+            <Button
+              variant="text"
+              busy={busy}
+              busyLabel={TEAMUP_COPY.withdrawing}
+              onClick={() => void withdraw()}
+              {...teamUpOpener(ideaId)}
+            >
+              {sent.action?.label}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <p className={t.state === "on_crew" ? "ip-team-line ip-ok" : "ip-team-line"} role="status">
+        {t.line}
+      </p>
+      {failed ? <Status kind="error" title={failed} role="alert" className="ip-team-err" /> : null}
+      {t.link ? (
+        <ButtonLink href={t.link.to} variant="line" aria-label={t.link.accessible_name}>
+          {t.link.label}
+        </ButtonLink>
+      ) : null}
+      {crewLink ? (
+        <div className="ip-dock">
+          <ButtonLink href={crewLink.to} variant="line">
+            {crewLink.label}
+          </ButtonLink>
+        </div>
+      ) : null}
+      {ask ? (
+        <div className="ip-dock">
+          <Button
+            ref={teamUpButton}
+            variant="primary"
+            aria-haspopup="dialog"
+            onClick={() => teamUp.open(ideaId)}
+          >
+            {ask.label}
+          </Button>
+        </div>
+      ) : null}
+      {teamUp.sheet}
+    </section>
   );
 }
