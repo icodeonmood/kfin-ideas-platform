@@ -11,6 +11,8 @@ import type {
   ApiError,
   ConfigResponse,
   Draft,
+  EditPageResponse,
+  EditSaveResponse,
   FileItem,
   FixRemoved,
   FixRequest,
@@ -18,6 +20,7 @@ import type {
   HelpersRequest,
   HelpersResponse,
   HiddenDetail,
+  IdeaPatch,
   SendViewResponse,
   ShowReason,
   SimilarMatch,
@@ -74,7 +77,11 @@ export const urls = {
   fileRetry: (fileId: string) => `/api/files/${enc(fileId)}/retry`,
   config: "/api/config",
   uploads: "/api/config/uploads",
+  edit: (ideaId: string) => `/api/ideas/${enc(ideaId)}/edit`,
 } as const;
+
+/** Where a file or link belongs (A-API.files): a draft on Check it, a shared idea on the edit page (S-06B). */
+export type ProofTarget = { draft_id: string } | { idea_id: string };
 
 function errorOf(body: unknown): ApiError["error"] | null {
   if (!body || typeof body !== "object") return null;
@@ -140,18 +147,26 @@ export const api = {
   merge: (id: string) => call<MergeState>(urls.merge(id)),
   withdrawMerge: (id: string) => call<MergeState>(urls.merge(id), { method: "DELETE" }),
   withdrawTeamUp: (requestId: string) => call<unknown>(urls.teamUp(requestId), { method: "DELETE" }),
-  upload: (draftId: string, file: File) => {
+  upload: (to: string | ProofTarget, file: File) => {
     const form = new FormData();
-    form.append("draft_id", draftId);
+    const [key, id] = Object.entries(typeof to === "string" ? { draft_id: to } : to)[0]!;
+    form.append(key, id);
     form.append("file", file, file.name);
     return call<FileItem>(urls.files, { method: "POST", form });
   },
-  link: (draftId: string, url: string) =>
-    call<FileItem>(urls.links, { method: "POST", body: { url, draft_id: draftId } }),
+  link: (to: string | ProofTarget, url: string) =>
+    call<FileItem>(urls.links, {
+      method: "POST",
+      body: { url, ...(typeof to === "string" ? { draft_id: to } : to) },
+    }),
   file: (fileId: string) => call<FileItem>(urls.file(fileId)),
   hideFile: (fileId: string) => call<FileItem>(urls.fileHide(fileId), { method: "POST" }),
   retryFile: (fileId: string) => call<FileItem>(urls.fileRetry(fileId), { method: "POST" }),
   removeFile: (fileId: string) => call<unknown>(urls.file(fileId), { method: "DELETE" }),
+  /** S-06B: the edit page (`GET /ideas/:id/edit`) and its Save (A-API `PATCH /ideas/:id`, served at `/edit`). */
+  editPage: (ideaId: string) => call<EditPageResponse>(urls.edit(ideaId)),
+  saveEdit: (ideaId: string, patch: IdeaPatch & { declaration_version: string }) =>
+    call<EditSaveResponse>(urls.edit(ideaId), { method: "PATCH", body: patch }),
 };
 
 /** One key per send attempt of this draft on this page, so a retry never creates two ideas (A-API.conventions/3). */

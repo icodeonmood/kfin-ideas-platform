@@ -41,11 +41,9 @@ import {
   oneLine,
   partFromStep,
   rowView,
-  settling,
   similarRail,
   stepOf,
   type FixForm,
-  type ProofItem,
   type SimilarLoad,
   type TileAction,
 } from "./model";
@@ -61,6 +59,7 @@ import {
 } from "./parts";
 import { ProofBody } from "./proof";
 import { SimilarGrid } from "./similar";
+import { useProof } from "./use-proof";
 
 import "./check.css";
 
@@ -137,8 +136,6 @@ export function CheckIt({
   const [kept, setKept] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
-  const [proof, setProof] = useState<ProofItem[]>([]);
-
   const [fixPart, setFixPart] = useState<FixPart>({ kind: "none" });
   const [fixForm, setFixForm] = useState<FixForm>(EMPTY_FIX);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -178,6 +175,19 @@ export function CheckIt({
     return r;
   }, []);
 
+  const limits = uploads ?? config?.uploads ?? null;
+  const limitMb = limits?.limit_mb ?? DEFAULT_LIMIT_MB;
+  // Part 4's rows and what adding, retrying, hiding and removing does (use-proof.ts, shared with the edit page).
+  const {
+    proof,
+    load: loadProof,
+    addFiles,
+    addLinks,
+    retryFile,
+    hideFile,
+    removeFile,
+  } = useProof(draftId, track, limitMb);
+
   // --- Loading ----------------------------------------------------------------------------------------------------
 
   const loadSimilar = useCallback(async () => {
@@ -212,7 +222,7 @@ export function CheckIt({
       if (cfg && cfg.ok) setConfig(cfg.body);
       if (up.ok && up.body && typeof up.body.limit_mb === "number") setUploads(up.body);
       setKept(Boolean(body.kept_separate));
-      setProof((body.files ?? []).map((f) => ({ key: f.id, item: f, name: f.name })));
+      loadProof(body.files ?? []);
       const asked = body.merge_request;
       if (asked && asked.state !== "none") setMerge((m) => m ?? { ...asked, after: null });
       const fix = body.fix;
@@ -225,7 +235,7 @@ export function CheckIt({
       setHelpers(saved);
       void loadSimilar();
     },
-    [loadSimilar],
+    [loadSimilar, loadProof],
   );
 
   useEffect(() => {
@@ -372,98 +382,6 @@ export function CheckIt({
     const r = await track(api.keepSeparate(draftId, false));
     if (r.ok) setKept(false);
   };
-
-  // --- Part 4: proof ----------------------------------------------------------------------------------------------
-
-  const limits = uploads ?? config?.uploads ?? null;
-  const limitMb = limits?.limit_mb ?? DEFAULT_LIMIT_MB;
-  const replace = (key: string, next: Partial<ProofItem>) =>
-    setProof((list) => list.map((p) => (p.key === key ? { ...p, ...next } : p)));
-
-  const upload = async (key: string, file: File) => {
-    replace(key, { localState: "uploading", refusal: undefined });
-    const r = await track(api.upload(draftId, file));
-    if (r.ok) {
-      replace(key, {
-        item: r.body,
-        localState: undefined,
-        refusal: undefined,
-        name: r.body?.name || file.name,
-      });
-      return;
-    }
-    // A-API.files: `too_big` (with `limit_mb`), `type_not_allowed`, `locked`, `forbidden`, `not_found` are refusals
-    // in the server's words; anything else (the network, the server) is "Didn't upload…" with Try again.
-    const code = r.error?.code;
-    const words = r.error?.message || undefined;
-    if (r.status === 413 || code === "too_big") replace(key, { localState: "too_big", refusal: words });
-    else if (code && ["type_not_allowed", "locked", "forbidden", "not_found"].includes(code)) {
-      replace(key, { localState: "refused", refusal: words });
-    } else replace(key, { localState: "upload_failed" });
-  };
-
-  const addFiles = (files: File[]) => {
-    const fresh = files.map((file, i) => ({
-      key: `local-${Date.now()}-${i}-${file.name}`,
-      item: null,
-      local: file,
-      name: file.name,
-      localState: file.size > limitMb * 1024 * 1024 ? ("too_big" as const) : ("uploading" as const),
-    }));
-    setProof((list) => [...list, ...fresh]);
-    for (const f of fresh) if (f.localState === "uploading") void upload(f.key, f.local);
-  };
-
-  const addLinks = async (links: string[]): Promise<"ok" | "not_a_link" | "failed"> => {
-    for (const url of links) {
-      const r = await track(api.link(draftId, url));
-      if (!r.ok) return r.error?.code === "not_a_link" ? "not_a_link" : "failed";
-      const item = r.body;
-      setProof((list) => [...list, { key: item.id, item, name: item.name || url }]);
-    }
-    return "ok";
-  };
-
-  const retryFile = async (key: string) => {
-    const p = proof.find((x) => x.key === key);
-    if (!p) return;
-    if (p.item?.id && !p.localState) {
-      replace(key, { item: { ...p.item, state: "uploading" } });
-      const r = await track(api.retryFile(p.item.id));
-      replace(key, r.ok && r.body ? { item: r.body } : { item: { ...p.item, state: "upload_failed" } });
-    } else if (p.local) await upload(key, p.local);
-  };
-
-  const hideFile = async (key: string) => {
-    const p = proof.find((x) => x.key === key);
-    if (!p?.item?.id) return;
-    const r = await track(api.hideFile(p.item.id));
-    if (r.ok && r.body) replace(key, { item: r.body });
-  };
-
-  const removeFile = async (key: string) => {
-    const p = proof.find((x) => x.key === key);
-    setProof((list) => list.filter((x) => x.key !== key));
-    if (p?.item?.id) {
-      const r = await track(api.removeFile(p.item.id));
-      if (!r.ok && r.status !== 404)
-        setProof((list) => (list.some((x) => x.key === key) ? list : [...list, p]));
-    }
-  };
-
-  // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row).
-  useEffect(() => {
-    const moving = proof.filter(settling);
-    if (!moving.length) return;
-    const t = setTimeout(async () => {
-      for (const p of moving) {
-        if (!p.item?.id) continue;
-        const r = await api.file(p.item.id);
-        if (r.ok && r.body) replace(p.key, { item: r.body });
-      }
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [proof]);
 
   // --- Part 5: the fix ---------------------------------------------------------------------------------------------
 

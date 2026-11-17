@@ -761,12 +761,13 @@ export interface MyIdeasResponse {
 // A-API.ideas, lane C's operations: the edit page's save (S-06B), the preview (C-PREVIEW), versions, similar.
 // ---------------------------------------------------------------------------------------------------------------
 export type IdeaPreviewResponse = IdeaPreview;
+/** The edit page's Save: only what changed. `often: null` empties "How often"; `fix: null` is "Remove". */
 export interface IdeaPatch {
   title?: string;
   summary?: string;
-  often?: string;
+  often?: string | null;
   sorting?: SortingPatch;
-  fix?: FixRequest;
+  fix?: FixRequest | null;
   helpers?: HelpersRequest;
 }
 export interface IdeaVersion {
