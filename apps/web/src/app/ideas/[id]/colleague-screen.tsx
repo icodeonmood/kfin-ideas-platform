@@ -130,8 +130,13 @@ export function ColleagueScreen({ view }: { view: ColleagueView }) {
               </ButtonLink>
             </div>
           ) : null}
-          {/* TODO(lane F): C-SHEET-TEAMUP. "Team up" (op teamup.open) opens lane F's sheet and "Withdraw" on a sent
-              request is lane F's op; both are left out until the sheet and its endpoints land (S-09.states). */}
+          {/* TODO(lane F): C-SHEET-TEAMUP, green on f/sheet-teamup-2 (37acc2e) and not on main yet, so not imported.
+              Once it lands (this screen becomes a client component for it):
+                import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
+                const teamUp = useTeamUpSheet({ onSent: refresh }); // optional `me` skips the sheet's GET /api/me
+                render {teamUp.sheet}; the "Team up" button: onClick={() => teamUp.open(ideaId)}.
+              onSent gives the new line, "Waiting for {lead}"; onWithdrawn goes back to "Team up" (S-09.states).
+              The dialog's name is "Team up with {lead first name}" (J-TEAMUP/2-3). */}
         </section>
       </div>
     </div>
