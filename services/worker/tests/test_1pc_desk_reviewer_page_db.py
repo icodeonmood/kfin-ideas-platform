@@ -13,6 +13,7 @@ from core.db import Conn
 from desk import decide, reads
 from desk.store import seal
 from tests import desk_fixtures as f
+from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 NOW = f.at(16, 13, 20)
 
