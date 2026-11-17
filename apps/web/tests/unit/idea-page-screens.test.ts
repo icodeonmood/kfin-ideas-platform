@@ -2,12 +2,19 @@
  * S-06 and S-09's pure parts: the card's sentence composed from lane B's decision (S-06.states, BLD-E012) and the
  * stages as C-TRACK draws them (S-06.layout/3, S-09.layout/4). Synthetic data only.
  */
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { decisionSentence, type Decided } from "@/app/ideas/[id]/decision";
 import { toTrack } from "@/app/ideas/[id]/track";
 
-const NOW_YEAR = new Date().getFullYear();
+// Fixed full dates and a fixed clock, so the weekdays and the year hold whatever year the tests run in
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-17T06:30:00Z"));
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function decided(
   choice: "pick" | "not_now" | "not_picked",
@@ -24,7 +31,7 @@ function decided(
       reason_heading: "The review desk’s reason, as Tanvi read it",
       ...extra,
     },
-    decided_at: `${NOW_YEAR}-11-12T08:00:00Z`,
+    decided_at: "2026-11-12T08:00:00Z",
     return_at: returnAt,
   } as unknown as Decided;
 }
@@ -48,10 +55,8 @@ describe("S-06.states: the card's sentence for a decision", () => {
   });
 
   it("Not now gives the day it comes back and the month, and points to the full reason", () => {
-    const s = decisionSentence(decided("not_now", {}, `${NOW_YEAR + 1}-02-16T04:00:00Z`), "Meera", []);
-    expect(s?.lead).toBe(
-      `Not now. The review desk looks at it again on Tuesday 16 February ${NOW_YEAR + 1}.`,
-    );
+    const s = decisionSentence(decided("not_now", {}, "2027-02-16T04:00:00Z"), "Meera", []);
+    expect(s?.lead).toBe("Not now. The review desk looks at it again on Tuesday 16 February 2027.");
     expect(s?.rest).toBe(
       "Your idea stays open, with your answers and anyone who teams up, and comes back to the review desk first thing in February. Meera’s full reason is below.",
     );
@@ -87,6 +92,22 @@ describe("C-TRACK from the API's stages", () => {
       built: { state: "off", line: undefined },
       shipped: { state: "next", line: "Then we measure what changed" },
     });
+  });
+
+  it("draws the stages that arrived when one is missing or unknown, the rest still to come", () => {
+    const t = toTrack([
+      { stage: "shared", state: "done", detail: "Sunday 15 November" },
+      { stage: "checked_and_matched", state: "done", detail: "an unknown stage name" },
+      { stage: "reviewed", state: "now", detail: "By Friday 20 November" },
+    ]);
+    expect(t).toEqual({
+      shared: { state: "done", line: "Sunday 15 November" },
+      checked: { state: "next" },
+      reviewed: { state: "now", line: "By Friday 20 November" },
+      built: { state: "next" },
+      shipped: { state: "next" },
+    });
+    expect(toTrack([{ stage: "unknown", state: "done" }])).toBeNull();
   });
 
   it("draws nothing for a merged idea, which has no stages of its own", () => {

@@ -15,7 +15,7 @@ import { getRoute } from "@/server/desk";
 import { getIdeaView } from "@/server/idea-page";
 
 import { ColleagueScreen } from "./colleague-screen";
-import { CleanAddress } from "./parts";
+import { WayBack, type Carried } from "./parts";
 import { SharerScreen } from "./sharer-screen";
 
 import "./idea-page.css";
@@ -73,7 +73,8 @@ async function laneB(view: SharerView): Promise<{
 /**
  * `/ideas/:id` (P-ROUTES.screens): S-06 for the sharer, S-09 for anyone else, as the API decides (A-API.ideas); a
  * reviewer goes on to S-R2 and the owner's draft to where it was left. `from` and `back` say where the person came
- * from, so the page's own way back returns to that exact view (P-ROUTES.state); once read, they leave the address.
+ * from, so the page's own way back returns to that exact view (P-ROUTES.state); once read, they leave the address
+ * and the way back is kept in the history entry (parts.tsx, BLD-E021).
  */
 export default async function Page({
   params,
@@ -107,28 +108,29 @@ export default async function Page({
   if (status === 404) notFound();
   if (view && (view.view === "desk" || view.view === "draft")) redirect(view.to);
 
+  // The address keeps `from` and `back` when the page cannot load, so a reload to try again still knows the way back
   if (!view) {
     return (
       <div className="ip">
-        <CleanAddress />
         <h1 className="h1 ip-fail-h">Idea</h1>
         <Status kind="error" title={LOAD_FAILED} className="ip-fail" />
       </div>
     );
   }
+  const carried: Carried = from === "share" ? "once" : from || back ? "keep" : null;
   if (view.view === "sharer") {
     const b = await laneB(view);
+    const crumb = view.page.breadcrumb;
     return (
-      <>
-        <CleanAddress />
+      <WayBack way={{ label: crumb.label, to: crumb.to }} carried={carried}>
         <SharerScreen view={view} decision={b.decision} questions={b.questions} partFailed={b.failed} />
-      </>
+      </WayBack>
     );
   }
+  const colleague = view as ColleagueView;
   return (
-    <>
-      <CleanAddress />
-      <ColleagueScreen view={view as ColleagueView} />
-    </>
+    <WayBack way={{ label: colleague.page.back.label, to: colleague.page.back.to }} carried={carried}>
+      <ColleagueScreen view={colleague} />
+    </WayBack>
   );
 }
