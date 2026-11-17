@@ -109,10 +109,12 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
   await expect(r.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
   await r.getByRole("button", { name: /Send decision to / }).click();
   await expect(r.getByText("Choose Pick, Not now or Not picked first.")).toBeVisible();
+  await expect(r.getByRole("radio", { name: /^Pick/ })).toBeFocused(); // V-FIELDS/3
   await r.getByRole("radio", { name: /^Pick/ }).check();
   await r.getByRole("textbox", { name: "Why are you picking it?" }).fill("Too short");
   await r.getByRole("button", { name: /Send decision to / }).click();
   await expect(r.getByText(/a reason of at least a line, 30 characters or more/)).toBeVisible();
+  await expect(r.getByRole("textbox", { name: "Why are you picking it?" })).toBeFocused();
 
   // L-DECIDE.rules/4 (BLD-B236): a word the product never says warns once, with a plainer way; nothing is sent
   const reason = r.getByRole("textbox", { name: "Why are you picking it?" });
@@ -130,6 +132,12 @@ test("V-ACC.review/1, /4–6, /9 and V-ACC.committee/1–2, /4: from the desk to
   await expect(r.getByText("Open, 30 days left")).toBeVisible();
   await expect(r.getByText(/^Open until .* When the window closes, the decision stands\.$/)).toBeVisible();
   await expectNoSeriousAxeIssues(r);
+  // S-R1, Desk.md: Decided this week lists it, with "Open: {title}"
+  await r.goto("/desk?tab=decided");
+  await expect(r.getByRole("link", { name: `Open: ${title}` })).toHaveAttribute(
+    "href",
+    `/desk/ideas/${ideaId}`,
+  );
   const sharerSees = (await (await sharer.page.request.get(`/api/ideas/${ideaId}/decision`)).json()) as {
     decision: { label: string; reason: string };
   };
