@@ -66,3 +66,7 @@ The sheet's own words are the pack's (`C-SHEET-TEAMUP` and `reference/copy/Crew.
 | `A-API.conventions/2`, a 401 (the session ended) as well as a 403 | Above "Send to Ravi" | Sign in again to team up. (the existing `forbidden` line) |
 | No answer from the server | Above "Send to Ravi", or where the note would be | Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
 | An answer the sheet cannot read | Above "Send to Ravi" | Something went wrong. Please try again. (the existing `worker_error` line) |
+| `C-SHEET-TEAMUP`, when the note did not load | The button under the reason | Try again (C-PREVIEW's existing button, BLD-C100) |
+| `C-SHEET-TEAMUP`, opened while a request still waits but the request did not come back (BLD-F074) | In place of the note, with only "Done" | Waiting for Ravi (the opener's own line, `C-SHEET-TEAMUP.after`) |
+
+Not the sheet's: `Crew.md` view=Request sent also adds "Ravi Nair, Investor service", "Waiting for Ravi" and the link "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea." These are a row in S-H2's "Your crews" list behind the sheet (they replace "Ideas you team up on show here."), so they belong to the crew page, which lane F builds next, and are used there word for word (BLD-F074).
