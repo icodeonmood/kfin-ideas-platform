@@ -5,7 +5,8 @@ import type { ProfileResponse } from "@/lib/contracts/api";
 import { currentUser } from "@/server/auth/current";
 import { profile } from "@/server/wall";
 
-import { ProfileScreen, ProfileUnavailable } from "./profile-screen";
+import { ProfileScreen } from "./profile-screen";
+import { ProfileUnavailable } from "./unavailable";
 
 import "./profile.css";
 

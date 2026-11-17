@@ -209,8 +209,9 @@
   margin-top: 10px;
 }
 
+/* An empty live region stays in the tree, so its first words are announced; it just takes no room */
 .on-hint:empty {
-  display: none;
+  margin: 0;
 }
 
 .on-fld {
@@ -580,7 +581,7 @@
 }
 
 .on-saved:empty {
-  display: none;
+  margin: 0;
 }
 
 .on-sheet-act {

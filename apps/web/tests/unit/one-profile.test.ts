@@ -2,10 +2,30 @@
  * S-ONE and S-H6, the screens' own rules (lane E): the number and brief fields as V-FIELDS.one has them, the figures'
  * split for Impact so far, the count-up's reading of a figure, and Profile's words and switches (Profile.md, L-NOTIFY).
  */
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { briefProblem, MSG_BRIEF, splitFigure, wholeNumber } from "@/app/one/rules";
-import { isReferAs, pointsText, REACH, REFER_AS_OPTIONS, switchState, WALL_LINE } from "@/app/profile/rules";
+import OneLoading from "@/app/one/loading";
+import {
+  briefProblem,
+  LOAD_FAILED as ONE_FAILED,
+  MSG_BRIEF,
+  splitFigure,
+  wholeNumber,
+} from "@/app/one/rules";
+import { OneUnavailable } from "@/app/one/unavailable";
+import ProfileLoading from "@/app/profile/loading";
+import {
+  isReferAs,
+  LOAD_FAILED as PROFILE_FAILED,
+  pointsText,
+  REACH,
+  REFER_AS_OPTIONS,
+  switchState,
+  WALL_LINE,
+} from "@/app/profile/rules";
+import { ProfileUnavailable } from "@/app/profile/unavailable";
 import { figureParts } from "@/components/count-once";
 
 describe("V-FIELDS.one S-ONE: the number and the brief", () => {
@@ -91,5 +111,37 @@ describe("S-H6: Profile's words and switches", () => {
   it("S-H6.layout/2: points in the Indian grouping", () => {
     expect(pointsText(340)).toBe("340");
     expect(pointsText(125000)).toBe("1,25,000");
+  });
+});
+
+describe("S-ONE and S-H6 loading and error states (C-SKELETON, F-COPY.states)", () => {
+  const html = (c: () => unknown) => renderToStaticMarkup(createElement(c as () => null));
+
+  it("S-ONE.states: loading shows bars and one polite line, never a full-screen loader", () => {
+    const out = html(OneLoading);
+    expect(out).toContain('aria-busy="true"');
+    expect(out).toContain('role="status"');
+    expect(out).toContain("Loading your One dashboard");
+  });
+
+  it("S-ONE.states: a dashboard that cannot be read says so and offers Try again", () => {
+    const out = html(OneUnavailable);
+    expect(ONE_FAILED).toBe("We can't load your One dashboard just now. Please try again in a minute.");
+    expect(out).toContain("We can&#x27;t load your One dashboard just now. Please try again in a minute.");
+    expect(out).toContain('<a href="/one" class="btn btn-secondary">Try again</a>');
+    expect(out).toContain('aria-current="page"');
+  });
+
+  it("S-H6.states: loading shows bars and one polite line", () => {
+    const out = html(ProfileLoading);
+    expect(out).toContain('aria-busy="true"');
+    expect(out).toContain("Loading your profile");
+  });
+
+  it("S-H6.states: a profile that cannot be read says so and offers Try again", () => {
+    const out = html(ProfileUnavailable);
+    expect(PROFILE_FAILED).toBe("We can't load your profile just now. Please try again in a minute.");
+    expect(out).toContain('<h1 class="pf-t">Profile and settings</h1>');
+    expect(out).toContain('<a href="/profile" class="btn btn-secondary">Try again</a>');
   });
 });

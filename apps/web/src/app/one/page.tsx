@@ -5,7 +5,8 @@ import type { OneDashboardResponse } from "@/lib/contracts/api";
 import { currentUser } from "@/server/auth/current";
 import { oneDashboard } from "@/server/wall";
 
-import { OneScreen, OneUnavailable } from "./one-screen";
+import { OneScreen } from "./one-screen";
+import { OneUnavailable } from "./unavailable";
 
 import "./one.css";
 
