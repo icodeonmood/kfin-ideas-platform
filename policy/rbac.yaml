@@ -303,6 +303,7 @@ navigation:
   # A screen that moves or lands (Find your crew /crew, Profile /profile, Home /home) changes or adds its row here.
   - { key: share,     label: Share a problem, href: /share,     place: new,    tab: 3 }
   - { key: home,      label: Home,            href: /,          place: main,   tab: 1 }
+  - { key: crew,      label: Find your crew,  href: /crew,      place: main }
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }

@@ -18,7 +18,7 @@ import {
   signIn,
 } from "./helpers";
 
-const BASE = ["Share a problem", "Home", "Wall", "Inbox"];
+const BASE = ["Share a problem", "Home", "Find your crew", "Wall", "Inbox"];
 const isPhone = (info: TestInfo) => info.project.name === "phone-360";
 
 test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => {

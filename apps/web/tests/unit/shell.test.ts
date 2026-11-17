@@ -130,8 +130,10 @@ describe("C-AVATAR.crew", () => {
 });
 
 describe("C-SIDEBAR.anatomy: every navigation row has its own icon", () => {
-  // rbac.json's navigation keys, plus lane E's account rows (S-H6 Profile, S-ONE dashboard) as they land.
+  // rbac.json's navigation keys (Find your crew, `crew`, among them), plus lane E's account rows (S-H6 Profile, S-ONE
+  // dashboard) as they land.
   const keys = [...rbac.navigation.map((n) => n.key), "profile", "one"].filter((k) => k !== "admin");
+  it("S-H2: the navigation includes Find your crew", () => expect(keys).toContain("crew"));
   it.each(keys)("%s is not drawn with the default (Admin) icon", (navKey) => {
     expect(NavIcon({ navKey }).type).not.toBe(IconAdmin);
   });

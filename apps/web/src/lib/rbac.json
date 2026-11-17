@@ -408,6 +408,12 @@
       "tab": 1
     },
     {
+      "key": "crew",
+      "label": "Find your crew",
+      "href": "/crew",
+      "place": "main"
+    },
+    {
       "key": "my-ideas",
       "label": "My ideas",
       "href": "/my-ideas",
