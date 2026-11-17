@@ -152,10 +152,10 @@ describe("S-R2 Asking: the reviewer's stored queue (J-REVIEW/A1–A3, BLD-B244)"
     expect(storedQueue({ ...set, time_to_answer: null })?.timeToAnswer).toBeNull();
   });
 
-  it("opens Ask with 2 questions ready and Send 2 questions to Kavya", () => {
+  it("starts with 2 questions ready and Send 2 questions to Kavya, Ask still folded (S-R2.panel/2)", () => {
     const p = initialPanel("reviewing", "3d", storedQueue(set));
     expect(p.state).toBe("reviewing");
-    expect(p.askOpen).toBe(true);
+    expect(p.askOpen).toBe(false);
     expect(p.timeToAnswer).toBe("1w");
     expect(p.queued.map((q) => q.text)).toEqual([
       "Is it 40 calls a day at one branch?",
@@ -174,7 +174,7 @@ describe("S-R2 Asking: the reviewer's stored queue (J-REVIEW/A1–A3, BLD-B244)"
   it("a follow-up stored on an answered set opens as asking, as Ask a follow-up does, and Back keeps it", () => {
     const p = initialPanel("answered", "3d", storedQueue(set));
     expect(p.state).toBe("reviewing");
-    expect(p.askOpen).toBe(true);
+    expect(p.queued).toHaveLength(2);
     const back = run([{ type: "decide" }, { type: "back" }], p);
     expect(back.state).toBe("reviewing");
     expect(back.queued).toHaveLength(2);
