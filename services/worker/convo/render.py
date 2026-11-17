@@ -20,8 +20,15 @@ Codes and payloads (IDs, enums and numbers only):
 | `crew.joined`, `crew.left` | F1 | the member (code) | |
 | `crew.removed` | F1 | the lead (code) | `member_code` |
 | `merge.into` (on the merged idea), `merge.from` (on the lead idea) | F1 | the lead (code) | `idea_id` (the other idea), `merge_id` |
+| `build.team_chosen` | whoever chooses the build team (no lane at launch) | the chooser (user) | |
 
 "You shared it" and "Checked and matched" are not posted: they are read from the idea itself (BLD-F051).
+
+Lane E's synthetic seed (`bootstrap/club_seed.py`, BLD-E006) writes its lines under codes of its own, with an ID in
+the payload and no author: `opened_by_desk` {reviewer_id}, `decided` {decision_id}, `decision_reversed`
+{reversal_id}, `desk_merged` {merge_id}, `crew_joined` {request_id}, `team_chosen`. Each reads as the code it stands
+for, with its author (and choice) taken from the row the ID names; `shared`, `checked_matched` and `shipped` read as
+nothing, since the first two come from the idea and the board draws no line for the third (BLD-F061).
 """
 
 from __future__ import annotations
@@ -171,9 +178,55 @@ def _carries_on(ref: str) -> Line:
     }
 
 
+SEED_SILENT = frozenset({"shared", "checked_matched", "shipped"})
+SEED_CODES = frozenset(
+    {"opened_by_desk", "decided", "decision_reversed", "desk_merged", "crew_joined", "team_chosen"}
+)
+
+
+def _seeded(ctx: Ctx, row: dict[str, Any]) -> dict[str, Any]:
+    """A line of lane E's seed as the posted code it stands for, its author and choice read from the row its ID
+    names (BLD-F061)."""
+    code, p = str(row.get("event") or ""), dict(row.get("payload") or {})
+
+    def named(sql: str, key: str) -> dict[str, Any]:
+        found = ctx.conn.execute(sql, (str(p[key]),)).fetchone() if p.get(key) else None
+        return dict(found) if found else {}
+
+    out = dict(row)
+    if code == "opened_by_desk":
+        out.update(event="desk.opened", author_user_id=p.get("reviewer_id"))
+    elif code == "decided":
+        d = named("SELECT choice, by_user_id FROM idea_decisions WHERE id::text = %s", "decision_id")
+        out.update(
+            event="desk.decided", author_user_id=d.get("by_user_id"), payload={**p, "choice": d.get("choice")}
+        )
+    elif code == "decision_reversed":
+        r = named("SELECT to_choice, by_user_id FROM decision_reversals WHERE id::text = %s", "reversal_id")
+        out.update(
+            event="committee.reversed",
+            author_user_id=r.get("by_user_id"),
+            payload={**p, "to": r.get("to_choice")},
+        )
+    elif code == "desk_merged":
+        m = named("SELECT by_user_id FROM merges WHERE id::text = %s", "merge_id")
+        out.update(event="desk.merged", author_user_id=m.get("by_user_id"))
+    elif code == "crew_joined":
+        q = named("SELECT from_code FROM teamup_requests WHERE id::text = %s", "request_id")
+        out.update(event="crew.joined", author_code=q.get("from_code"))
+    elif code == "team_chosen":
+        out.update(event="build.team_chosen")
+    return out
+
+
 def event_line(ctx: Ctx, row: dict[str, Any]) -> Line | None:
     """The sentence for one event entry, or None for a code lane F does not know (logged by code only)."""
     code = str(row.get("event") or "")
+    if code in SEED_SILENT:
+        return None
+    if code in SEED_CODES:
+        row = _seeded(ctx, row)
+        code = str(row["event"])
     p = dict(row.get("payload") or {})
     who = author(ctx, row)
     me = ctx.name(who)
@@ -238,6 +291,14 @@ def event_line(ctx: Ctx, row: dict[str, Any]) -> Line | None:
                 return "Your idea is now part of it, with credit to you.", None
             return f"{sharer.label}’s idea is now part of it, with credit to them.", None
         return f"{came} is now part of it, with credit to {ctx.obj(sharer)}.", None
+    if code == "build.team_chosen":  # "Arjun Rao’s team started building it." (Messages.md)
+        team = ctx.conn.execute(
+            "SELECT lead_user_id FROM build_teams WHERE idea_uuid = %s", (ctx.idea["id"],)
+        ).fetchone()
+        if team is None or not team["lead_user_id"]:
+            return "The build team started building it.", None
+        whose = ctx.owner(ctx.people.by_user(str(team["lead_user_id"])))
+        return f"{whose[:1].upper()}{whose[1:]} team started building it.", None
     log.info("convo.render.unknown_code", code=code, entry_id=str(row.get("id")))
     return None
 
