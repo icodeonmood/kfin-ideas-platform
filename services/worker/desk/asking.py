@@ -486,10 +486,11 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
 
 
 def open_set_for_sharer(
-    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None
+    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None, set_id: str | None = None
 ) -> dict[str, Any] | None:
     """`GET /ideas/:id/question-set`: the latest set sent (not closed), with the sharer's own saved answers and
-    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm"."""
+    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm". With `set_id` (the Inbox reader
+    opening one item), a different open set is not that item's: nothing is returned and nothing is marked seen."""
     t = at or now()
     tz = clock.office_calendar().tz
     with conn.transaction():
@@ -500,7 +501,7 @@ def open_set_for_sharer(
             "ORDER BY sent_at DESC NULLS LAST, created_at DESC LIMIT 1 FOR UPDATE",
             (idea["id"],),
         ).fetchone()
-        if row is None:
+        if row is None or (set_id is not None and str(row["id"]) != set_id):
             return None
         s = dict(row)
         if s["seen_at"] is None:

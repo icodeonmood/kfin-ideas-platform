@@ -122,10 +122,10 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         return _call(asking.remind, set_id, user_id, need=(REVIEWERS, user_id))
 
     @r.get("/ideas/{ref}/question-set")
-    def sharer_set(ref: str, user_id: str) -> JSONResponse:
+    def sharer_set(ref: str, user_id: str, set_id: str | None = None) -> JSONResponse:
         from desk import asking
 
-        return _call(asking.open_set_for_sharer, ref, user_id)
+        return _call(asking.open_set_for_sharer, ref, user_id, set_id=set_id)
 
     @r.put("/questions/{question_id}/answer")
     def sharer_answer(question_id: str, user_id: str, body: dict[str, Any]) -> JSONResponse:
