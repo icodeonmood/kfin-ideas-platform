@@ -202,6 +202,9 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
                   <>
                     <th scope="col">Decision</th>
                     <th scope="col">Ones Committee</th>
+                    <th scope="col">
+                      <span className="vh">Action</span>
+                    </th>
                   </>
                 ) : (
                   <>
@@ -231,6 +234,17 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
                     <>
                       <td className="rd-decision">{row.decision}</td>
                       <td className="meta rd-committee">{row.committee}</td>
+                      <td className="rd-act">
+                        {/* Desk.md, Decided this week: "Open: {title}" on every row */}
+                        <ButtonLink
+                          variant="line"
+                          size="sm"
+                          href={`/desk/ideas/${encodeURIComponent(row.idea_id)}`}
+                          aria-label={`Open: ${row.title}`}
+                        >
+                          Open
+                        </ButtonLink>
+                      </td>
                     </>
                   ) : (
                     <>

@@ -59,6 +59,8 @@ export function SearchBar({
   // Focus handed back by Escape must not open the panel again
   const returning = useRef(false);
   const byValue = new Map(filters.map((f) => [f.value, f]));
+  // A screen with nothing to narrow by and no questions to offer has no panel, and no Filter button (lane B, S-R1)
+  const hasPanel = filters.length > 0 || Boolean(asks?.length);
 
   useEffect(() => {
     if (!open) return;
@@ -133,7 +135,7 @@ export function SearchBar({
           onChange={(e) => onText(e.target.value)}
           onFocus={() => {
             if (returning.current) returning.current = false;
-            else setOpen(true);
+            else setOpen(hasPanel);
           }}
           onKeyDown={(e) => {
             if (e.key === "Backspace" && text === "" && picked.length) onPicked(picked.slice(0, -1));
@@ -152,45 +154,51 @@ export function SearchBar({
             Clear
           </button>
         ) : null}
-        <button
-          type="button"
-          className="qfil"
-          aria-expanded={open}
-          aria-controls={panelId}
-          onClick={() => setOpen((o) => !o)}
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            aria-hidden="true"
+        {filters.length ? (
+          <button
+            type="button"
+            className="qfil"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => setOpen((o) => !o)}
           >
-            <path d="M4 7h16M7 12h10M10 17h4" />
-          </svg>
-          <span>Filter</span>
-        </button>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M7 12h10M10 17h4" />
+            </svg>
+            <span>Filter</span>
+          </button>
+        ) : null}
       </form>
-      {open ? (
+      {open && hasPanel ? (
         <div id={panelId} className="qsug menu" role="group" aria-label="Narrow your search">
-          <p className="qh">Narrow it to</p>
-          <div className="qopts">
-            {filters.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                className={f.count === 0 ? "qopt zero" : "qopt"}
-                aria-pressed={picked.includes(f.value)}
-                onClick={() => toggle(f.value)}
-              >
-                {f.label}
-                {f.count !== undefined ? <span className="n num">{f.count}</span> : null}
-              </button>
-            ))}
-          </div>
+          {filters.length ? (
+            <>
+              <p className="qh">Narrow it to</p>
+              <div className="qopts">
+                {filters.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className={f.count === 0 ? "qopt zero" : "qopt"}
+                    aria-pressed={picked.includes(f.value)}
+                    onClick={() => toggle(f.value)}
+                  >
+                    {f.label}
+                    {f.count !== undefined ? <span className="n num">{f.count}</span> : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
           {asks?.length ? (
             <>
               <p className="qh">Or ask in your own words</p>
