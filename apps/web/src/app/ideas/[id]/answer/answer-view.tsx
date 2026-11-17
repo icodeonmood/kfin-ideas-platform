@@ -42,13 +42,19 @@ function Back() {
   );
 }
 
-/** A step in the row: "Question 2", named "Question 2, not answered yet" or "Question 1, answered" (Answer board). */
+/** A step in the row: "Question 2", named "Question 2, not answered yet" or "Question 1, answered" (Answer board).
+ * The name is the button's aria-label: a hidden span is laid out as a block, so a name built from it reads
+ * "Question 1 , answered", with a stray space before the comma. The label starts with the words on the button
+ * (WCAG 2.5.3). */
+function stepName(n: number, done: boolean): string {
+  return `Question ${n}, ${done ? "answered" : "not answered yet"}`;
+}
+
 function StepLabel({ n, done }: { n: number; done: boolean }) {
   return (
     <>
       {done ? <span aria-hidden="true">✓ </span> : null}
       Question {n}
-      <span className="vh">{done ? ", answered" : ", not answered yet"}</span>
     </>
   );
 }
@@ -238,7 +244,12 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               const done = Boolean((stored[x.id] ?? "").trim() || x.answer?.sent);
               return (
                 <li key={x.id}>
-                  <button type="button" className={done ? "done" : undefined} aria-disabled="true">
+                  <button
+                    type="button"
+                    className={done ? "done" : undefined}
+                    aria-disabled="true"
+                    aria-label={stepName(i + 1, done)}
+                  >
                     <StepLabel n={i + 1} done={done} />
                   </button>
                 </li>
@@ -298,18 +309,22 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
 
       <nav className="ans-steps" aria-label="Questions">
         <ol>
-          {questions.map((x, i) => (
-            <li key={x.id}>
-              <button
-                type="button"
-                aria-current={step === i ? "step" : undefined}
-                className={(texts[x.id] ?? "").trim() ? "done" : undefined}
-                onClick={() => setStep(i)}
-              >
-                <StepLabel n={i + 1} done={Boolean((texts[x.id] ?? "").trim())} />
-              </button>
-            </li>
-          ))}
+          {questions.map((x, i) => {
+            const done = Boolean((texts[x.id] ?? "").trim());
+            return (
+              <li key={x.id}>
+                <button
+                  type="button"
+                  aria-current={step === i ? "step" : undefined}
+                  className={done ? "done" : undefined}
+                  aria-label={stepName(i + 1, done)}
+                  onClick={() => setStep(i)}
+                >
+                  <StepLabel n={i + 1} done={done} />
+                </button>
+              </li>
+            );
+          })}
           <li>
             {/* The board names it "Check your answers and send" and shows "Check and send". */}
             <button type="button" aria-current={checking ? "step" : undefined} onClick={() => setStep(n)}>
