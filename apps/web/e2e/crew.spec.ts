@@ -38,7 +38,7 @@ test("a colleague's idea shows as a card with nothing of theirs on it; teaming u
   const ctxA = await browser.newContext();
   const a = await ctxA.newPage();
   await quickCapture(a, PERSONAS.contributor, theirs);
-  const theirName = (await a.locator(".account-name").innerText()).trim();
+  const theirName = ((await (await a.request.get("/api/me")).json()) as { name: string }).name;
   const theirId = /IDEA-\d{4}-\d{6}/.exec(await a.getByRole("heading", { level: 1 }).innerText())![0];
   await a.getByRole("button", { name: "Looks right" }).click();
   await expect(a.getByRole("heading", { level: 3, name: "Find your crew" })).toBeFocused();
