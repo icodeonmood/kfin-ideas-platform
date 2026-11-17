@@ -22,7 +22,8 @@ export type SwitchName =
   | "appeals.filing"
   | "capture.mic_hint"
   | "capture.voice"
-  | "speech.hosted";
+  | "speech.hosted"
+  | "files.blackout";
 
 interface Rule {
   methods: readonly string[];
@@ -41,6 +42,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   // Voice notes (DEC-096): new recordings stop with capture.voice. Reading and deleting one already made carry on.
   { methods: ["POST"], pattern: /^\/api\/submissions\/[^/]+\/voice\/?$/, switches: ["capture.voice"] },
   { methods: WRITE, pattern: /^\/api\/submissions(?:\/.*)?$/, switches: ["submissions"] },
+  // "Show it" puts a hidden detail back in what others read: it waits while sharing is paused (L-HIDE.rules/6).
+  { methods: ["POST"], pattern: /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/show\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
@@ -103,6 +106,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096).
   "speech.hosted": "Clearer voice notes, in more Indian languages, are coming soon.",
+  // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
+  "files.blackout": "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
 };
 
 /** Why an action waits while a feature is paused, said after that feature's notice (BLD-157). */
@@ -134,6 +139,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Drafting The Ember, writing the chair's note and the chair approving it send nothing; sending is behind
   // ember.send (BLD-128, BLD-134).
   /^\/api\/ember\/(?:drafts|[^/]+\/(?:note|ready))\/?$/,
+  // L-HIDE (BLD-C060): hiding only ever protects someone, so the desk's "Hide this" and the sharer's "Hide it" work
+  // whatever is paused.
+  /^\/api\/desk\/ideas\/[^/]+\/hide\/?$/,
+  /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/hide\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

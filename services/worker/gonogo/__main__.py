@@ -49,6 +49,8 @@ OFF_BY_DESIGN = {
         "the model, and the DPO's privacy notice covers voice notes (DEC-096)"
     ),
     "speech.hosted": "Off until InfoSec and the DPO approve a hosted route (DEC-096)",
+    # Matches its reason in migration 20261122300100 (lane C, BLD-C064).
+    "files.blackout": "Off until black-out passes review (DEC-107)",
 }
 
 

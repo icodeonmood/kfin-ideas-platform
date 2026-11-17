@@ -1111,3 +1111,9 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     body["quarter"] = quarter or reports.current_quarter()
     body["quarters"] = reports.recent_quarters()
     return _json(body)
+
+
+# L-HIDE (lane C): "Hide this", "Show it", "Hide it" and files, in their own module so lanes don't collide here.
+from hide.api import router as hide_router  # noqa: E402
+
+app.include_router(hide_router, dependencies=[Depends(require_token)])
