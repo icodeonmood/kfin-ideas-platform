@@ -154,7 +154,7 @@ describe("BLD-E044: the way back follows the idea on screen, not the address", (
   });
 });
 
-describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the worker's safe_back allows", () => {
+describe("BLD-E044, S-09.layout/1: only a way back to the Wall, My ideas or a lead idea is restored, as the worker allows", () => {
   it.each([
     "/wall",
     "/wall?sort=crew",
@@ -162,6 +162,7 @@ describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the 
     "/my-ideas",
     "/my-ideas?filter=needs_you",
     "/my-ideas/drafts",
+    "/ideas/IDEA-2026-001481",
   ])("accepts %s", (to) => {
     expect(allowedBack(to)).toBe(true);
   });
@@ -178,7 +179,15 @@ describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the 
     "/wallet",
     "/my-ideasx",
     "/home",
-    "/ideas/IDEA-2026-001412",
+    "/ideas/IDEA-2026-00148",
+    "/ideas/IDEA-2026-001481/x",
+    "/ideas/IDEA-2026-001481?from=wall",
+    "/ideas/IDEA-2026-001481#top",
+    "/ideas/IDEA-26-001481",
+    "/ideas/foo",
+    "/ideas",
+    "//ideas/IDEA-2026-001481",
+    "/ideas/IDEA-2026-001481\n",
     "",
   ])("rejects %j", (to) => {
     expect(allowedBack(to)).toBe(false);
