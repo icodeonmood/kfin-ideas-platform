@@ -180,7 +180,12 @@ function People({ flag, onDone }: { flag: Flag; onDone: (m: string) => Promise<v
           </tbody>
         </table>
       ) : null}
-      <form onSubmit={submit} noValidate className="stack-form" aria-label={`Put one person on a version of ${name}`}>
+      <form
+        onSubmit={submit}
+        noValidate
+        className="stack-form"
+        aria-label={`Put one person on a version of ${name}`}
+      >
         <FieldError id={`${id}-err-form`} problem={problem} field="form" />
         <label htmlFor={`${id}-email`}>Work email</label>
         <input

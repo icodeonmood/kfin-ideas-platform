@@ -63,10 +63,10 @@ export default async function Admin() {
         <section aria-labelledby="speech-title">
           <h2 id="speech-title">Voice notes</h2>
           <p>
-            Voice notes are turned into text by Sarvam, through the gateway. They are on at launch, approved by
-            the DPO (DEC-108). <code>capture.voice</code> shows or hides voice notes for everyone.{" "}
-            <code>speech.hosted</code> (InfoSec only) lets the audio go to Sarvam. While it is off, voice notes
-            can&apos;t be turned into text, so turn <code>capture.voice</code> off too.
+            Voice notes are turned into text by Sarvam, through the gateway. They are on at launch, approved
+            by the DPO (DEC-108). <code>capture.voice</code> shows or hides voice notes for everyone.{" "}
+            <code>speech.hosted</code> (InfoSec only) lets the audio go to Sarvam. While it is off, voice
+            notes can&apos;t be turned into text, so turn <code>capture.voice</code> off too.
           </p>
           <p>
             The audio goes to Sarvam as it is. Typed text is masked before it goes out, and each transcript is

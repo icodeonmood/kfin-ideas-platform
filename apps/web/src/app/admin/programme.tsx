@@ -373,7 +373,13 @@ function Impact({
     );
   }
 
-  const field = (key: string, label: string, value: string, onChange: ReturnType<typeof set>, hint?: string) => (
+  const field = (
+    key: string,
+    label: string,
+    value: string,
+    onChange: ReturnType<typeof set>,
+    hint?: string,
+  ) => (
     <>
       <label htmlFor={`${id}-${key}`}>{label}</label>
       {hint ? (
@@ -402,8 +408,8 @@ function Impact({
     <section aria-labelledby={`${id}-title`} id="impact">
       <h2 id={`${id}-title`}>What shipped ideas changed</h2>
       <p className="muted">
-        Each shipped idea is measured 30 and 90 days after it ships. The team that runs the fix sends the figures;
-        enter them here. Money shows only after someone else confirms it for Finance.
+        Each shipped idea is measured 30 and 90 days after it ships. The team that runs the fix sends the
+        figures; enter them here. Money shows only after someone else confirms it for Finance.
       </p>
       <h3>Due</h3>
       {due.length === 0 ? (
@@ -468,7 +474,13 @@ function Impact({
           <fieldset>
             <legend>Time saved</legend>
             {field("time.amount", "Hours saved a month", form.hours, set("hours"))}
-            {field("time.line", "What it means (optional)", form.hoursLine, set("hoursLine"), "For example: Fewer bounced-debit cases")}
+            {field(
+              "time.line",
+              "What it means (optional)",
+              form.hoursLine,
+              set("hoursLine"),
+              "For example: Fewer bounced-debit cases",
+            )}
           </fieldset>
           <fieldset>
             <legend>Money</legend>
@@ -483,7 +495,13 @@ function Impact({
           <fieldset>
             <legend>Effort</legend>
             {field("effort.amount", "Steps removed", form.steps, set("steps"))}
-            {field("effort.line", "Per what (optional)", form.perWhat, set("perWhat"), "For example: Per new mandate")}
+            {field(
+              "effort.line",
+              "Per what (optional)",
+              form.perWhat,
+              set("perWhat"),
+              "For example: Per new mandate",
+            )}
           </fieldset>
           <fieldset>
             <legend>Scale</legend>
@@ -503,7 +521,13 @@ function Impact({
               ))}
             </select>
             <FieldError id={`${id}-err-scale.unit`} problem={problem} field="scale.unit" />
-            {field("scale.line", "How they use it (optional)", form.reachLine, set("reachLine"), "For example: Using it every day")}
+            {field(
+              "scale.line",
+              "How they use it (optional)",
+              form.reachLine,
+              set("reachLine"),
+              "For example: Using it every day",
+            )}
           </fieldset>
           {field(
             "sentence",
@@ -592,7 +616,10 @@ function FinanceCell({ m, onDone }: { m: EnteredRow; onDone: (t: string) => Prom
           );
         }}
       >
-        Confirm for Finance<span className="visually-hidden">: {m.idea_ref}, {m.check}</span>
+        Confirm for Finance
+        <span className="visually-hidden">
+          : {m.idea_ref}, {m.check}
+        </span>
       </button>
       {problem ? (
         <p role="alert" className="field-error">
@@ -623,8 +650,8 @@ function Ones({ ones, onDone }: { ones: OneRow[]; onDone: (m: string) => Promise
     <section aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>The Ones</h2>
       <p className="muted">
-        People become Ones on their own when an idea they are credited on is measured and confirmed. Here you mark
-        Founding Ones and remove a One. Both are recorded with your name and the time.
+        People become Ones on their own when an idea they are credited on is measured and confirmed. Here you
+        mark Founding Ones and remove a One. Both are recorded with your name and the time.
       </p>
       {ones.length === 0 ? (
         <p>There are no Ones yet.</p>
@@ -690,14 +717,17 @@ function RemoveOne({ one, onDone }: { one: OneRow; onDone: (m: string) => Promis
   if (!asking)
     return (
       <button type="button" className="button button-secondary" onClick={() => setAsking(true)}>
-        Remove<span className="visually-hidden">: No. {one.number}, {one.name}</span>
+        Remove
+        <span className="visually-hidden">
+          : No. {one.number}, {one.name}
+        </span>
       </button>
     );
   return (
     <div className="inline-form" role="group" aria-label={`Remove No. ${one.number}, ${one.name}`}>
       <p>
-        Remove No. {one.number}? Their card and posts leave the Wall, Home and the office screen. The number rests
-        for six months.
+        Remove No. {one.number}? Their card and posts leave the Wall, Home and the office screen. The number
+        rests for six months.
       </p>
       {problem ? (
         <p id={errId} role="alert" className="field-error">

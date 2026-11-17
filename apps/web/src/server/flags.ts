@@ -158,7 +158,12 @@ export async function setFlag(input: {
     throw new FlagError("state_required", 422, "Choose on or off.", "state");
   const percent = Number(input.alternativePercent);
   if (!Number.isInteger(percent) || percent < 0 || percent > 100)
-    throw new FlagError("percent_not_valid", 422, "Enter a whole number from 0 to 100.", "alternative_percent");
+    throw new FlagError(
+      "percent_not_valid",
+      422,
+      "Enter a whole number from 0 to 100.",
+      "alternative_percent",
+    );
   await getDb()
     .transaction()
     .execute(async (trx) => {
@@ -204,7 +209,8 @@ export async function assignFlag(input: {
   const key = knownKey(input.key);
   const reason = reasonOf(input.reason);
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
-  if (!email || email.length > 320) throw new FlagError("email_required", 422, "Enter a work email.", "email");
+  if (!email || email.length > 320)
+    throw new FlagError("email_required", 422, "Enter a work email.", "email");
   const variant = input.variant;
   if (variant !== null && variant !== "default" && variant !== "alternative")
     throw new FlagError("variant_required", 422, "Choose which version they see.", "variant");

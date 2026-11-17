@@ -91,7 +91,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | Owner today | State | Phase | Lane |
 |---|---|---|---|---|
-| `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
+| `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts`; the admin page `app/admin/*` (roles: the pack's only, BLD-A215; flags S1 to S3 with `server/flags.ts`, `programme/flags.py`, `GET /api/config`, BLD-A216) | built (17 Nov, BLD-A210, A215, A216) | P0 | A |
 | `L-AUTH` | `server/auth/*`, `app/auth/*`, `identity/*` | exists, differs | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist` | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
@@ -104,7 +104,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-NOTIFY` | `comms/*` | exists, differs | P0 (email, in-app), P2 (Teams) | A |
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
-| `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
+| `L-IMPACT` | write side: `programme/impact.py` and `programme/build.py` (team chosen, shipped, the 30- and 90-day due dates, Finance's confirmation by a second admin) behind `/api/admin/ideas/*`, on `delivery_measurements`; read side lane E's `wall/impact.py`. Inductions call lane E's `wall.ones`; tiers `programme/ones.py` with `rules/tiers.md`. "Take off the Wall": `programme/wall.py`, `wall_removals`, `idea_off_wall()` inside lane E's `on_wall_sql` | built (17 Nov, BLD-A211 to A214, A217) | P0 (admin entry) | A |
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
 | `L-QUESTIONS` | `services/worker/desk/asking.py`, `questions.py`, `clock.py`; `question_sets`, `questions`, `answers` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-COMMITTEE` | `services/worker/desk/committee.py`, `window.py`; `decision_windows`, `decision_reversals` | landed at 82668c1 (17 Nov, back end) | P0 | B |
