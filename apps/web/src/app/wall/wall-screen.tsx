@@ -7,6 +7,7 @@ import { flushSync } from "react-dom";
 
 import { CountUp } from "@/components/browse/count-up";
 import { restoreRow, rowOffset, withBack } from "@/components/browse/return-to";
+import "@/components/browse/browse.css";
 import { Status } from "@/components/status";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips } from "@/components/ui/chips";

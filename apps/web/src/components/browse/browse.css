@@ -1,0 +1,25 @@
+/*
+ * Coming back to a list (J-BROWSE, S-07.return): the row that was opened is washed once. Under reduced motion the
+ * wash simply shows and goes with the next change, nothing fades (F-MOTION.reduced).
+ */
+.is-back {
+  animation: wlBack 2.2s var(--mo-out, ease) 1;
+}
+
+@keyframes wlBack {
+  0%,
+  35% {
+    background-color: var(--wash);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-back {
+    animation: none;
+    background-color: var(--wash);
+  }
+}
+
