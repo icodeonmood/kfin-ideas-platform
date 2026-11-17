@@ -37,3 +37,14 @@ The board says "she" and "her" for the demo requester. With real people that wou
 | `A-API.team-up` errors, shown under the field or on the sheet | Only `note_too_short` is worded ("Add a little more: at least 30 characters.") | `idea_closed`: This idea is no longer open to team up. · `already_on_crew`: You’re on the crew. · `already_requested`: Waiting for Ravi (a draft: Waiting on Ravi to merge) · `brought_invalid`: Choose from your own shared ideas. · `not_lead`: Only the lead of this idea can answer. · `nothing_brought`: Nothing was brought to merge. Approve puts Kavya on your crew. · `brought_not_open`: That idea is no longer open to merge. · `answer_required`: Choose an answer. · `not_waiting`: Kavya withdrew this request. / You’ve answered this request already. / This request has already been answered. · `forbidden`: Sign in again to team up. |
 | `A-API.drafts` merge-request errors | Only `note_too_short` | `draft_closed`: This draft has already been sent. · `idea_closed`: This idea is no longer open to merge. · `already_on_crew`: You lead this idea. |
 | `L-TEAMUP.rules/11`, leaving and removal (NOT DRAWN default) | Not drawn | `not_on_crew`: You’re not on this crew. / That person is not on this crew. · `lead_stays`: You lead this idea, so you stay on its crew. · `not_lead`: Only the lead of this idea can remove someone. |
+
+## 3. Lines added after the 17 Nov review
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `A-API.team-up`, `A-API.drafts`: any 404 `not_found` (BLD-F025) | The sheet, Check it or the Inbox reader, when the idea, draft or request is not there or is not the person's to see | We couldn’t find that. |
+| `A-API.team-up`: `DELETE /team-up/:id` on a request that closed with its idea (BLD-F025) | The requester's "Waiting for Ravi" card, if the idea closed first | This idea is no longer open to team up. (the existing `idea_closed` line, instead of "This request has already been answered.") |
+| `A-API.conventions/3`: 409 `key_reused` (BLD-F026) | Any team-up or merge-request send, when the screen resends a key with other details | Something changed since you last sent this. Refresh the page and try again. |
+| `S-H2B.reader`: answering a draft merge request whose draft was sent or archived while it waited (BLD-F024) | The lead's Inbox reader | Kavya withdrew this request. (the existing `not_waiting` line) |
+| `S-H2B.reader/3`: an idea brought whose short summary fails the checks (BLD-F022, BLD-C090) | The lead's Inbox reader | A short summary is on its way. (lane C's existing placeholder, BLD-C022) |
+
