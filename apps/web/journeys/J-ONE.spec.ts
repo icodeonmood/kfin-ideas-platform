@@ -5,6 +5,7 @@
  * Seed: V1 (Varun, One No. 11, Tier 3) shipped 40 days ago, measured at 30 days, money confirmed by Finance; S1
  * (Siddharth, One No. 21, inducted 10 days ago) measured at 30 and 90 days; D1 measured at 90 days; I1 measured
  * at 30 days with money Finance has not confirmed. Seven Ones in all. Posts by Varun, Dinesh, Siddharth, Indira.
+ * Dinesh (One No. 8) has a tier rise from 4 to 5 waiting to be shown (lane E, e716585).
  */
 import { expect } from "@playwright/test";
 
@@ -94,13 +95,18 @@ step(
 
 step(
   "J-ONE/3b",
-  "S-H5",
-  "The new One's Inbox tells them they are a One, with their number",
-  {
-    needs: ["S-H5", "L-INBOX", "L-ONES"],
-    gapSeed: "no Inbox item for an induction (Varun, Siddharth or Indira)",
+  "S-ONE",
+  "The new One finds their number and tier on their dashboard (no Inbox item at launch, BLD-A186)",
+  { needs: ["S-ONE", "L-ONES"] },
+  async ({ page }) => {
+    // Varun was inducted 8 days ago on V1. The number and tier match the Wall's The Ones (J-ONE/3).
+    await signInAs(page, "varun");
+    await page.goto("/one");
+    await expect(page.getByRole("heading", { level: 1, name: "You're No. 11" })).toBeVisible();
+    await expect(page.getByText(/^Tier 3, Flame\. One since \d{1,2} [A-Z][a-z]{2} \d{4}\.$/)).toBeVisible();
+    await expect(page.getByText("Stopped wrong bank details before a payout goes out.")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Impact so far" })).toBeVisible();
   },
-  async () => {},
 );
 
 step(
@@ -168,6 +174,25 @@ step(
   "J-ONE/6b",
   "S-ONE",
   "A tier rise plays its moment once: your spark is hotter, with your story so far",
-  { needs: ["S-ONE", "L-ONES"], gapSeed: "no One with a tier rise waiting to be shown" },
-  async () => {},
+  { needs: ["S-ONE", "L-ONES"] },
+  async ({ page }) => {
+    // Seed (lane E, e716585): Dinesh, One No. 8, rose from Tier 4 to Tier 5 two days ago; the moment is unseen and
+    // carries a note from the Ones Committee. Copy: OneDashboard.md, state showGlowUp=true.
+    await signInAs(page, "dinesh");
+    await page.goto("/one");
+    const moment = page.getByRole("dialog", { name: "No. 8, your spark is hotter" });
+    await expect(moment).toBeVisible();
+    await expect(moment).toContainText("From Tier 4, Blaze to Tier 5, White heat");
+    await expect(moment).toContainText("Your story so far");
+    await expect(moment).toContainText("Ideas shared");
+    await expect(moment).toContainText("Messages for you");
+    await expect(moment).toContainText(/From the core committee: (Manoj Agarwal|Shalini Bose)/);
+    await moment.getByRole("button", { name: "Back to my dashboard" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "You're No. 8" })).toBeVisible();
+    await expect(page.getByText("Tier 5, White heat").first()).toBeVisible();
+    // It plays once (L-ONES.rules/3): opening the dashboard again shows no moment.
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "You're No. 8" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /your spark is hotter/ })).toHaveCount(0);
+  },
 );
