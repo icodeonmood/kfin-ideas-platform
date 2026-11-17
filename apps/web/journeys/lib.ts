@@ -75,6 +75,7 @@ export const CLUB = {
   hemant: "SYN-10022",
   indira: "SYN-10023",
   jatin: "SYN-10024",
+  kiran: "SYN-10025", // K1's sharer; the review desk asks first (lane E, 34249f1)
 } as const;
 export type Person = keyof typeof CLUB;
 
@@ -141,6 +142,13 @@ export const SEED = {
   G1: { title: "Investors cannot download old account statements", changedBy: null }, // not now 2 days ago
   J1: { title: "Co-branded investor webinars with distributors", changedBy: null }, // picked 38 days ago
   N1: { title: "Rejection codes confuse investors at the counter", changedBy: null }, // draft merged into T7
+  // Lane E's e/seed-more-4 (34249f1): records of their own for steps that were GAP-SEED.
+  K1: { title: "Investors are sent to the wrong branch for their AMC", changedBy: "J-REVIEW" }, // to review, never opened; Lavanya's How often question queued, not sent
+  F2: { title: "Change of bank waits for a cancelled cheque by post", changedBy: "J-REVIEW" }, // with Lavanya, opened; lists J2 as similar; leads a desk merge (shared first)
+  J2: { title: "Clients wait a week for a bank change to go through", changedBy: "J-REVIEW" }, // with Lavanya, opened; lists F2 as similar
+  N2: { title: "Branch staff see no reason when a SIP debit bounces", changedBy: "J-SIMILAR" }, // draft, check:6, merge request waiting on Rekha
+  G2: { title: "Failed SIP debit notes show only a bank code", changedBy: "J-SIMILAR" }, // draft, check:6, merge request waiting on Rekha
+  I2: { title: "Returned dividend letters go back to old addresses", changedBy: null }, // draft from a forwarded email, not opened; Inbox "kept your draft"
 } as const satisfies Record<string, { title: string; changedBy: JourneyId | readonly JourneyId[] | null }>;
 export type SeedKey = keyof typeof SEED;
 
