@@ -426,6 +426,109 @@ def reason_writer(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---- draft-part (L-DRAFT.parts) ------------------------------------------------------------------------------------
+_DRAFT_EMPTY: dict[str, Any] = {
+    "title": None, "summary": None, "often": None, "who": [], "worth": [], "area": None, "reason": None,
+    "evidence": [],
+}  # fmt: skip
+_OFTEN = re.compile(
+    r"(?:(?:about|around|nearly|over|more than)\s+)?\d[\d,]*(?:\s+(?:to|-)\s+\d[\d,]*)?\s+(?:[a-z]+\s+){0,2}?"
+    r"(?:a|per|every|each)\s+(?:day|week|month|year)",
+    re.I,
+)
+_WORTH_CUES = {
+    "saves_time": ("minutes", "minute", "hours", "hour", "by hand", "manually", "re-key", "rekey", "calls"),
+    "saves_cost": ("cost", "costs", "money", "courier", "penalty", "lakh", "crore"),
+    "earns_revenue": ("revenue", "fee", "fees", "sell", "paid", "charge"),
+    "less_outside_tools": ("vendor", "outside tool", "third-party", "third party"),
+}
+
+
+def _neutral(text: str) -> str:
+    """Tags become general words, as the prompt asks of a model."""
+    return TAG_RE.sub(lambda m: "a colleague" if m.group(1) == "KFIN_EMPLOYEE" else "someone", text)
+
+
+def _cue_quote(text: str, cue: str) -> str | None:
+    """The cue with the words around it, word for word from the text, two words at least."""
+    m = re.search(r"(?:\S+\s+){0,2}(?<!\w)" + re.escape(cue) + r"(?!\w)(?:\s+\S+){0,2}", text, re.I)
+    if not m:
+        return None
+    quote = m.group(0).strip(" ,.;:!?\"'")
+    return quote if len(quote.split()) >= 2 and not grounding.trivial(quote) else None
+
+
+def _first_sentence(text: str) -> str:
+    m = re.search(r"[.!?।](?=\s|$)", text)
+    return (text[: m.end()] if m else text).strip()
+
+
+def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
+    """A plain stand-in for each part, built only from the words so it passes the gateway's checks: the first
+    sentence for the title, a frequency phrase, cue words for who, worth and area. Words that plant "a lot of money"
+    make it quote a figure nobody gave, on both asks, so tests reach the drop path (DEC-095)."""
+    part = str(inputs.get("part") or "")
+    words = [w for w in inputs.get("words") or [] if isinstance(w, dict) and isinstance(w.get("text"), str)]
+    texts = [str(w["text"]) for w in words]
+    out: dict[str, Any] = {"part": part, **copy.deepcopy(_DRAFT_EMPTY)}
+    if not texts:
+        return out
+    whole = " ".join(texts)
+    if part == "title":
+        first = _first_sentence(texts[0])
+        title = _neutral(first).rstrip(".!?। ")
+        if len(title) > 70:
+            title = title[:70].rsplit(" ", 1)[0]
+        quote = " ".join(first.rstrip(".!?। ").split()[:12])
+        if not quote or grounding.trivial(quote) or not title:
+            return out
+        summary = " ".join(_neutral(_first_sentence(t)) for t in texts[:3])
+        out.update(title=title[:1].upper() + title[1:], summary=summary, evidence=[quote])
+        return out
+    if part == "often":
+        if _PLANT_FIGURE.search(whole):
+            out.update(often="About 5 lakh rupees a month", evidence=["costs about 5 lakh a month"])
+            return out
+        for text in texts:
+            m = _OFTEN.search(text)
+            if m:
+                phrase = m.group(0)
+                out.update(often=_neutral(phrase[:1].upper() + phrase[1:]), evidence=[phrase])
+                return out
+        return out
+    choices = [c for c in (inputs.get("options") or {}).get("choices") or [] if isinstance(c, dict)]
+    if part in ("who", "area"):
+        picked, quotes, said = [], [], []
+        for c in choices:
+            for cue in [*(c.get("cues") or []), str(c.get("label") or "").lower()]:
+                q = next((q for t in texts if (q := _cue_quote(t, str(cue)))), None)
+                if q:
+                    picked.append(str(c["label"]))
+                    if q not in quotes:
+                        quotes.append(q)
+                    said.append(str(cue))
+                    break
+        if not picked:
+            return out
+        if part == "area":
+            picked, quotes, said = picked[:1], quotes[:1], said[:1]
+        reason = ("you mentioned " if part == "who" else "it's about ") + " and ".join(
+            dict.fromkeys(said[:2])
+        )
+        out.update({part: picked if part == "who" else picked[0], "reason": reason, "evidence": quotes[:3]})
+        return out
+    if part == "value":
+        worth, quotes = [], []
+        for key, cues in _WORTH_CUES.items():
+            q = next((q for cue in cues for t in texts if (q := _cue_quote(t, cue))), None)
+            if q and len(quotes) < 3:
+                worth.append(key)
+                quotes.append(q)
+        out.update(worth=worth or ["not_sure"], evidence=quotes[:3])
+        return out
+    return out
+
+
 BUILDERS = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
@@ -438,6 +541,7 @@ BUILDERS = {
     "pitch-prep": pitch_prep,
     "collation": collation,
     "reason-writer": reason_writer,
+    "draft-part": draft_part,
 }
 
 
