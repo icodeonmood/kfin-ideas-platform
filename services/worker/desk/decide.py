@@ -183,9 +183,18 @@ def send(
     cal = clock.office_calendar()
     choice, reason = body.get("choice"), str(body.get("reason") or "")
     return_in = body.get("return_in") if choice == "not_now" else None
+    joined_ref = str(body.get("joined_with") or "").strip() if choice == "pick" else ""
     with audited(conn), conn.transaction():
-        idea = load_idea(conn, ref, lock=True)
+        other: dict[str, Any] | None = None
+        if joined_ref:  # both locked in the merge's order (L-MERGE.desk/5)
+            from desk import merging
+
+            idea, other = merging.lock_pair(conn, ref, joined_ref, field="joined_with")
+        else:
+            idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "decide")
+        if other is not None:  # a reviewer never joins their own idea in either
+            refuse_own(conn, user_id, other, "decide")
         ensure_on_desk(idea)
         sharer = person_by_code(conn, idea["contributor_code"])
         errors = check_decision(choice, reason, return_in, sharer.first_name, p)
@@ -200,20 +209,15 @@ def send(
                 f"{notes[0].suggestion}. Send it anyway if you mean it.",
                 "reason",
             )  # fmt: skip
-        joined = None
-        if choice == "pick" and body.get("joined_with"):
-            other = conn.execute(
-                "SELECT id, status FROM ideas WHERE idea_id = %s", (str(body["joined_with"]),)
-            ).fetchone()
-            if (
-                other is None
-                or other["id"] == idea["id"]
-                or other["status"] in ("draft", "withdrawn", "merged")
-            ):
-                raise Refused(
-                    422, "joined_with_invalid", "Choose a similar idea that is still open.", "joined_with"
-                )
-            joined = other["id"]
+        # L-MERGE.desk/5: a Pick that joins a similar idea is a desk merge in the same transaction, the picked idea
+        # leading, Team them up on, the reason as the note to both (BLD-B235); any refusal undoes the decision too
+        merged = None
+        if other is not None:
+            from desk import merging
+
+            merged = merging.merge_locked(conn, idea, other, user_id, "this", True, reason, t, p,
+                                          note_is_reason=True, field="joined_with")  # fmt: skip
+        joined = other["id"] if other is not None else None
         dates = dates_for(choice, t, return_in, p, cal)  # type: ignore[arg-type]
         masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip())
         decision_id = str(uuid.uuid4())
@@ -257,13 +261,15 @@ def send(
         audit(conn, actor(user_id), "desk.decide", f"idea:{idea['idea_id']}",
               before={"status": idea["status"]},
               after={"decision_id": decision_id, "choice": str(choice), "return_in": return_in,
-                     "joined_with": str(joined) if joined else None})  # fmt: skip
+                     "joined_with": str(joined) if joined else None,
+                     "merge_id": merged["id"] if merged else None})  # fmt: skip
         return {
             "id": decision_id, "idea_id": idea["idea_id"], "choice": choice, "label": LABELS[str(choice)],
             "reason": masked, "at": t.isoformat(), "return_at": dates.return_at.isoformat() if dates.return_at else None,
             "team_by": dates.team_by.isoformat() if dates.team_by else None,
             "window": {"state": "open", "opens_at": w.opens_at.isoformat(), "closes_at": w.closes_at.isoformat(),
                        "max_closes_at": w.max_closes_at.isoformat(), "extended_times": 0},
+            "joined_with": other["idea_id"] if other is not None else None, "merge": merged,
         }  # fmt: skip
 
 
