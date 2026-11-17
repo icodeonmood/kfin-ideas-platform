@@ -1303,6 +1303,9 @@ export interface ConversationView extends Omit<Conversation, "entries" | "partic
     questions_line?: string;
     /** A merged idea's conversation takes no new messages: why, and where to write. */
     closed?: string;
+    /** Whether the reader may add files: the sharer, the review desk and the core committee (BLD-F063). S-08
+     * shows the attach control only then. */
+    can_attach: boolean;
   };
   /** For the sharer before anyone has written ("No messages yet"). */
   empty?: { title: string; body: string };
@@ -1312,14 +1315,15 @@ export interface ConversationMessageResponse {
   /** How many details were hidden from the words as sent. */
   hidden: number;
 }
-/** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `file_unavailable`,
- * `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`, `not_yours`, `too_late`,
- * `not_found`. */
+/** Error codes: `empty_message`, `too_long`, `too_many_files`, `too_many_mentions`, `files_not_allowed`,
+ * `file_unavailable`, `file_not_checked`, `file_has_detail`, `conversation_closed`, `idempotency_key_reused`,
+ * `not_yours`, `too_late`, `not_found`. */
 export type ConversationErrorCode =
   | "empty_message"
   | "too_long"
   | "too_many_files"
   | "too_many_mentions"
+  | "files_not_allowed"
   | "file_unavailable"
   | "file_not_checked"
   | "file_has_detail"

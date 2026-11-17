@@ -408,6 +408,7 @@ def _composer(
     out: dict[str, Any] = {
         "placeholder": _placeholder(ctx, audience, has_crew, sharer, rows),
         "visibility": _visibility(ctx, audience, has_crew, sharer),
+        "can_attach": r.may_attach,  # S-08 shows the attach control only then (BLD-F063)
     }
     if r.sharer:
         s = ctx.conn.execute(

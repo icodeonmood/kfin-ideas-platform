@@ -52,6 +52,9 @@ TOO_LATE = "A message can be removed only in the first 5 minutes after sending."
 KEY_REUSED = "This request was already sent with different words. Refresh and try again."
 TOO_MANY_FILES = "Attach up to 5 files to a message."  # BLD-F055: refused, never dropped
 TOO_MANY_MENTIONS = "Mention up to 10 people in a message."
+FILES_NOT_YOURS_TO_ADD = (  # BLD-F063
+    "Only the person who shared this idea, the review desk and the Ones Committee can add files here."
+)
 
 
 def _ids(value: Any, pattern: re.Pattern[str]) -> list[str]:
@@ -95,6 +98,8 @@ def send(
             raise Refused(422, "too_many_files", TOO_MANY_FILES, "file_ids")
         if len(mention_ids) > MAX_MENTIONS:
             raise Refused(422, "too_many_mentions", TOO_MANY_MENTIONS, "mentions")
+        if file_ids and not r.may_attach:
+            raise Refused(422, "files_not_allowed", FILES_NOT_YOURS_TO_ADD, "file_ids")
         if idempotency_key:
             first = _idempotent(conn, idea, user_id, idempotency_key, text, file_ids, mention_ids)
             if first is not None:
