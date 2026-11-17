@@ -91,7 +91,8 @@ def say(
 ) -> None:
     """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time.
     Lane F's `convo.post` takes these same arguments (SHIP_PLAN §5a); the direct insert is the fallback until it is
-    importable."""
+    importable. Like `convo.post` (BLD-F013), the direct insert places each line just after the idea's last one, so
+    lines written in one transaction (one `now()`, random ids) read back in the order they were written (L-CONVO)."""
     try:
         convo = importlib.import_module("convo")
     except ModuleNotFoundError:
@@ -104,17 +105,19 @@ def say(
         return
     conn.execute(
         "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, author_code, "
-        "question_set_id, at) VALUES (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
-        (
-            idea_uuid,
-            entry_type,
-            event,
-            Jsonb(dict(payload or {})),
-            author_user_id,
-            author_code,
-            question_set_id,
-            at,
-        ),
+        "question_set_id, at) VALUES (%(idea)s, %(type)s, %(event)s, %(payload)s, %(user)s, %(code)s, %(set)s, "
+        "greatest(coalesce(%(at)s, now()), (SELECT max(e.at) FROM conversation_entries e WHERE e.idea_uuid = "
+        "%(idea)s) + interval '1 microsecond'))",
+        {
+            "idea": idea_uuid,
+            "type": entry_type,
+            "event": event,
+            "payload": Jsonb(dict(payload or {})),
+            "user": author_user_id,
+            "code": author_code,
+            "set": question_set_id,
+            "at": at,
+        },
     )
 
 
