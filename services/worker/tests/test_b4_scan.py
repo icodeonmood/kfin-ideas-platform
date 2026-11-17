@@ -301,9 +301,9 @@ def test_retries_exhausted_go_to_the_desk(db: Any) -> None:
 
 
 @pytest.mark.skipif(
-    (os.cpu_count() or 1) < 4,
-    reason="20 scans at once on fewer than 4 CPUs measures the machine, not the pipeline; the p95 budget is checked "
-    "on the test Mac and by the UAT load test (B8)",
+    (os.cpu_count() or 1) < 4 or os.environ.get("CI") == "true",
+    reason="20 scans at once on fewer than 4 CPUs, or on a shared CI runner, measures the machine, not the pipeline; "
+    "the p95 budget is checked on the test Mac and by the UAT load test (B8)",
 )
 def test_p95_under_15_seconds_with_realistic_latency(db: Any, test_database: str, monkeypatch: Any) -> None:
     monkeypatch.setattr(get_settings(), "llm_fake_latency", "realistic")
