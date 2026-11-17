@@ -85,10 +85,12 @@ export const CREW_COPY = {
   allCrews: "All your crews in My ideas",
   leadLine: (name: string, area?: string | null) => (area ? `${name}, ${area}` : name),
   onCrew: "On the crew",
-  crewRow: (title: string, row: Pick<YourCrew, "state" | "label">) =>
+  /** What a screen reader hears after the title in a "Your crews" row ("…, waiting for Ravi. Open the idea."). */
+  crewRowRest: (row: Pick<YourCrew, "state" | "label">) =>
     row.state === "waiting"
-      ? `${title}, ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}. Open the idea.`
-      : `${title}, you’re on the crew. Open the idea.`,
+      ? `, ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}. Open the idea.`
+      : ", you’re on the crew. Open the idea.",
+  crewRow: (title: string, row: Pick<YourCrew, "state" | "label">) => `${title}${CREW_COPY.crewRowRest(row)}`,
   nothingTitle: "No crews to join yet",
   nothingBody:
     "We look for ideas close to the problems you've shared. Share one and we'll show you people working on the same thing, or browse the Wall for ideas you can help with.",
@@ -808,18 +810,17 @@ export function CrewScreen(): JSX.Element {
         {crews.length ? (
           <ul className="crew-rows">
             {crews.map((r) => (
-              <li key={r.id}>
-                <Link
-                  className="crew-row"
-                  href={`/ideas/${encodeURIComponent(r.id)}`}
-                  aria-label={CREW_COPY.crewRow(r.title, r)}
-                >
-                  <span className="crew-row-t">{r.title}</span>
-                  <span className="crew-row-m">{CREW_COPY.leadLine(r.lead.name, r.lead.area)}</span>
-                  <span className={r.state === "waiting" ? "crew-row-s" : "crew-row-s ok"}>
-                    {r.state === "waiting" ? r.label : CREW_COPY.onCrew}
-                  </span>
+              <li key={r.id} className="crew-row">
+                {/* The title is the link (the whole row takes the click); its name carries the state, as the board
+                    names it, and the visible title comes first in it (WCAG 2.5.3). */}
+                <Link className="crew-row-t" href={`/ideas/${encodeURIComponent(r.id)}`}>
+                  {r.title}
+                  <span className="vh">{CREW_COPY.crewRowRest(r)}</span>
                 </Link>
+                <span className="crew-row-m">{CREW_COPY.leadLine(r.lead.name, r.lead.area)}</span>
+                <span className={r.state === "waiting" ? "crew-row-s" : "crew-row-s ok"}>
+                  {r.state === "waiting" ? r.label : CREW_COPY.onCrew}
+                </span>
               </li>
             ))}
           </ul>
