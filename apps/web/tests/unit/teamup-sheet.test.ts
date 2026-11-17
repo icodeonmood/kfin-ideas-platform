@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/motion/spark", () => ({ sparkBurst: vi.fn() }));
 
 const { sparkBurst } = await import("@/lib/motion/spark");
-const { TEAMUP_COPY, TeamUpSheet, errorFrom, noteHint, quotedList, useTeamUpSheet } =
+const { TEAMUP_COPY, TeamUpSheet, errorFrom, noteHint, quotedList, teamUpOpener, useTeamUpSheet } =
   await import("@/components/teamup/teamup-sheet");
 type Props = import("@/components/teamup/teamup-sheet").TeamUpSheetProps;
 
@@ -41,6 +41,8 @@ const OWN = [
   },
 ];
 const DRAFT = "7f1c2a9e-0b3d-4e5f-8a6b-1c2d3e4f5a6b";
+const ME_KAVYA = { name: KAVYA.name, email: "kavya.iyer@example.test", contributor_code: "SYN-00017" };
+const ME_ARJUN = { name: "Arjun Rao", email: "arjun.rao@example.test", contributor_code: "SYN-00031" };
 const WAITING = {
   state: "waiting",
   line: "Waiting for Ravi",
@@ -130,7 +132,7 @@ beforeEach(() => {
   routes = {
     [U.mine()]: { body: free() },
     [U.note()]: { body: drafted() },
-    [U.me]: { body: { name: KAVYA.name } },
+    [U.me]: { body: ME_KAVYA },
   };
   mockFetch();
   host = document.createElement("div");
@@ -848,5 +850,110 @@ describe("C-SHEET-TEAMUP host helper and words", () => {
     expect(quotedList(["A", "B"])).toBe("“A” and “B”");
     expect(quotedList(["A", "B", "C"])).toBe("“A”, “B” and “C”");
     expect(TEAMUP_COPY.bringing(["A", "B"])).toBe("Bringing “A” and “B”");
+  });
+});
+
+describe("C-SHEET-TEAMUP review fixes (BLD-F074)", () => {
+  it("C-SHEET-TEAMUP.sent: a reply without a request id shows no Withdraw, only the way on", async () => {
+    routes[U.send()] = { status: 201, body: {} };
+    const { onClose } = await render();
+    await click(sendButton());
+    expect(text(dialog())).toContain("Sent to Ravi");
+    expect(button("Withdraw request")).toBeUndefined();
+    await click(button("Done"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("C-SHEET-TEAMUP, L-TEAMUP.rules/4: still waiting but no request came back: Waiting for Ravi, and nothing to send", async () => {
+    routes[U.mine()] = {
+      body: { ...free(), can_request: false, why_not: "already_requested", request: null, after: WAITING },
+    };
+    await render();
+    expect(byIds(dialog()!.getAttribute("aria-describedby"))).toBe("Waiting for Ravi");
+    expect(button("Send to Ravi")).toBeUndefined();
+    routes[U.mine()] = { body: { ...free(), can_request: false, why_not: "already_requested" } };
+    await act(async () => root.render(createElement("div")));
+    await render();
+    expect(byIds(dialog()!.getAttribute("aria-describedby"))).toBe(TEAMUP_COPY.waiting("Ravi"));
+  });
+
+  /** A host that re-draws its "Team up" button as "Waiting for Ravi" with Withdraw once the request is sent. */
+  function Redrawing(props: { mark: boolean; log: string[] }) {
+    const [open, setOpen] = useState(false);
+    const [sent, setSent] = useState(false);
+    return createElement(
+      "main",
+      null,
+      sent
+        ? createElement(
+            "p",
+            null,
+            "Waiting for Ravi ",
+            createElement(
+              "button",
+              { type: "button", id: "withdraw", ...(props.mark ? teamUpOpener(IDEA) : {}) },
+              "Withdraw",
+            ),
+          )
+        : createElement("button", { type: "button", id: "opener", onClick: () => setOpen(true) }, "Team up"),
+      createElement("button", { type: "button", id: "elsewhere" }, "Ideas close to yours"),
+      createElement(TeamUpSheet, {
+        ideaId: IDEA,
+        open,
+        onSent: () => setSent(true),
+        onClose: () => {
+          props.log.push("close");
+          setOpen(false);
+        },
+        returnFocus: props.mark ? undefined : () => document.getElementById("elsewhere"),
+      }),
+    );
+  }
+
+  it("C-SHEET-TEAMUP.a11y, WCAG 2.4.3: the host re-draws the opener; focus returns to what it marks in its place", async () => {
+    routes[U.send()] = { status: 201, body: request(DRAFTED) };
+    const log: string[] = [];
+    await act(async () => root.render(createElement(Redrawing, { mark: true, log })));
+    const opener = document.getElementById("opener") as HTMLButtonElement;
+    opener.focus();
+    await click(opener);
+    await click(sendButton());
+    expect(document.getElementById("opener")).toBeNull(); // the host re-drew it while the sheet was open
+    await click(button("Done"));
+    expect(log).toEqual(["close"]);
+    expect(document.activeElement).toBe(document.getElementById("withdraw"));
+  });
+
+  it("C-SHEET-TEAMUP.a11y, WCAG 2.4.3: with no mark, focus goes where the host's returnFocus says", async () => {
+    routes[U.send()] = { status: 201, body: request(DRAFTED) };
+    await act(async () => root.render(createElement(Redrawing, { mark: false, log: [] })));
+    const opener = document.getElementById("opener") as HTMLButtonElement;
+    opener.focus();
+    await click(opener);
+    await click(sendButton());
+    await press("Escape");
+    await settle();
+    expect(document.activeElement).toBe(document.getElementById("elsewhere"));
+  });
+
+  it("C-SHEET-TEAMUP.a11y: what one person typed is never shown to the next person signed in on the page", async () => {
+    const { opener } = await openFromHarness();
+    await type(NOTE);
+    await press("Escape");
+
+    routes[U.me] = { body: ME_ARJUN };
+    await click(opener);
+    expect(note().value).toBe(DRAFTED);
+    await press("Escape");
+
+    routes[U.me] = { body: ME_KAVYA }; // Kavya again: what Kavya typed went when Arjun signed in
+    await click(opener);
+    expect(note().value).toBe(DRAFTED);
+    await type(NOTE);
+    await press("Escape");
+
+    routes[U.me] = { status: 401, body: { error: "sign_in_required" } }; // not known: nothing is restored
+    await click(opener);
+    expect(note().value).toBe(DRAFTED);
   });
 });
