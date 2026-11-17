@@ -18,6 +18,17 @@ import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
+
+/** A step in the row: "Question 2", named "Question 2, not answered yet" or "Question 1, answered" (Answer board). */
+function StepLabel({ n, done }: { n: number; done: boolean }) {
+  return (
+    <>
+      {done ? <span aria-hidden="true">✓ </span> : null}
+      Question {n}
+      <span className="vh">{done ? ", answered" : ", not answered yet"}</span>
+    </>
+  );
+}
 type Saving = "idle" | "saving" | "saved" | "failed";
 
 function said(at: string | null, now: Date): string {
@@ -57,13 +68,15 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
   }, [step, sent]);
 
   if (!set) {
+    // The same for anyone but the sharer, so it never says whether the idea exists (L-QUESTIONS.answer).
     return (
       <div className="ans">
         <PhoneBar back={{ href: "/home", label: "Home" }} title="Answer" />
+        <h1 className="h2">Answer the review desk</h1>
         <Empty
           title="Nothing to answer right now"
           align="left"
-          level={1}
+          level={2}
           action={
             <ButtonLink variant="line" href={`/ideas/${encodeURIComponent(ideaId)}`}>
               See your idea
@@ -155,27 +168,52 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
     return (
       <div className="ans">
         <PhoneBar back={{ href: "/home", label: "Home" }} title="Answer" />
-        <section className="panel ans-sent" aria-labelledby="ans-sent-t">
+        <header className="ans-bar">
+          <h1 className="h2">Answer the review desk</h1>
           <p className="body">
             {reviewer} from the review desk had {sent.count} question{sent.count === 1 ? "" : "s"} about “
             {set.idea.title}”.{" "}
             {all ? `You answered all ${sent.count}.` : `You answered ${sent.answered} of ${sent.count}.`}
           </p>
-          <p className="meta">{sent.spare}</p>
-          {sent.decides_by ? <p className="meta">{sent.decides_by}</p> : null}
-          <h1 id="ans-sent-t" className="h2" ref={heading} tabIndex={-1}>
-            Sent
-          </h1>
-          <p className="body">{sent.progress}</p>
-          <p className="meta">{sent.sent_line}</p>
-          <h2 className="h3">Your answers are with the review desk</h2>
-          <p className="body">
-            Each answer is added to its part of your idea and posted in your conversation with the review
-            desk.{" "}
-            {sent.decides_by
-              ? `${sent.decides_by}, and the decision comes to your Inbox.`
-              : "The decision comes to your Inbox."}
+          <p className="ans-due">
+            <span className="meta">{sent.spare}</span>
+            {sent.decides_by ? <span className="meta">{sent.decides_by}</span> : null}
           </p>
+        </header>
+        <nav className="ans-steps" aria-label="Questions">
+          <ol>
+            {set.questions.map((x, i) => {
+              const done = Boolean((texts[x.id] ?? "").trim() || x.answer?.sent);
+              return (
+                <li key={x.id}>
+                  <button type="button" className={done ? "done" : undefined} aria-disabled="true">
+                    <StepLabel n={i + 1} done={done} />
+                  </button>
+                </li>
+              );
+            })}
+            <li>
+              <button type="button" aria-current="step" aria-disabled="true">
+                Sent
+              </button>
+            </li>
+          </ol>
+          <p className="meta">{sent.progress}</p>
+        </nav>
+        <section className="panel ans-sent" aria-labelledby="ans-sent-t">
+          <div role="status" className="ans-sent-h">
+            <p className="meta">{sent.sent_line}</p>
+            <h2 id="ans-sent-t" className="h3" ref={heading} tabIndex={-1}>
+              Your answers are with the review desk
+            </h2>
+            <p className="body">
+              Each answer is added to its part of your idea and posted in your conversation with the review
+              desk.{" "}
+              {sent.decides_by
+                ? `${sent.decides_by}, and the decision comes to your Inbox.`
+                : "The decision comes to your Inbox."}
+            </p>
+          </div>
           <ol className="ans-list">
             {set.questions.map((q) => (
               <li key={q.id}>
@@ -216,15 +254,14 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
                 className={(texts[x.id] ?? "").trim() ? "done" : undefined}
                 onClick={() => setStep(i)}
               >
-                {(texts[x.id] ?? "").trim() ? <span aria-hidden="true">✓ </span> : null}
-                Question {i + 1}
-                {(texts[x.id] ?? "").trim() ? <span className="vh"> (answered)</span> : null}
+                <StepLabel n={i + 1} done={Boolean((texts[x.id] ?? "").trim())} />
               </button>
             </li>
           ))}
           <li>
+            {/* The board names it "Check your answers and send" and shows "Check and send". */}
             <button type="button" aria-current={checking ? "step" : undefined} onClick={() => setStep(n)}>
-              Check and send
+              Check <span className="vh">your answers </span>and send
             </button>
           </li>
         </ol>
@@ -284,6 +321,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
             <span className="vh">Question {step + 1}: </span>
             {q.text}
           </h2>
+          {/* Seams, not built yet: files on an answer (C-FILE.row, S-R3.rules/3) and "Say your answer" through
+              lane C's voice route mount beside this box. */}
           <Field
             label={`Your answer to question ${step + 1}`}
             multiline
