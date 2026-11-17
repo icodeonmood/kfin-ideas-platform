@@ -44,14 +44,15 @@ type State =
   | { kind: "refused"; ref: string }
   | { kind: "expired"; email: string; draft: DraftCard | null; intent: Intent };
 
+/** The `cameFrom` tweak's words (reference/prototype SignIn and PhoneSignIn: nextTitle, nextLine, retryNote). */
 const NEXT_LINES = {
   share: {
-    title: "Next: Share a problem",
+    name: "Share a problem",
     line: "You land in the box with the cursor ready. Nothing to find again.",
     retry: "You will still go straight to Share a problem.",
   },
   home: {
-    title: "Next: Your Home",
+    name: "Your Home",
     line: "Your ideas, anything that needs you, and the box to share a problem.",
     retry: "You will still go to your Home.",
   },
@@ -93,6 +94,10 @@ function deskOn(): string {
  * S-02 Sign in (L-AUTH). Shown only when silent single sign-on is not possible, fails, or a session expires; it
  * always says where the person lands next, and that nothing is lost (S-02.purpose). Single sign-on first; the
  * email code route shows only while `auth.email_code` is on (BLD-E002).
+ *
+ * Copy is verbatim from reference/copy/SignIn.md (desktop) and PhoneSignIn.md (phone, 640 px and below), apostrophes
+ * included. Where the two boards' words differ, both are in the page and the width shows one: `si-desk` / `si-phone`
+ * wrappers, and display:none hides the other from screen readers too (BLD-A179).
  */
 export default async function SignIn({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
@@ -108,6 +113,10 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
   const next = nextScreen(state.kind === "expired" ? state.intent : intent);
   const ssoIntent = state.kind === "expired" ? state.intent : params.to || params.next ? intent : null;
   const at = Number(params.at);
+  const ref =
+    state.kind === "failed" || state.kind === "refused"
+      ? referenceLabel(state.ref, Number.isFinite(at) ? at : null)
+      : "";
 
   return (
     <div className="si">
@@ -158,53 +167,100 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
                   <i />
                 </div>
                 {next ? (
-                  <div className="si-next" role="status">
-                    <span className="si-next-icon" aria-hidden="true">
-                      +
-                    </span>
-                    <div>
-                      <p className="si-next-title">{NEXT_LINES[next].title}</p>
-                      <p className="si-next-line">{NEXT_LINES[next].line}</p>
+                  <>
+                    <div className="si-desk">
+                      <div className="si-next" role="status">
+                        <span className="si-next-icon" aria-hidden="true">
+                          +
+                        </span>
+                        <div>
+                          <p className="si-next-title">Next: {NEXT_LINES[next].name}</p>
+                          <p className="si-next-line">{NEXT_LINES[next].line}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                    <div className="si-phone">
+                      <p className="si-next si-next-one" role="status">
+                        <span className="si-next-icon" aria-hidden="true">
+                          +
+                        </span>
+                        <span>
+                          Next: <b>{NEXT_LINES[next].name}</b>. {NEXT_LINES[next].line}
+                        </span>
+                      </p>
+                    </div>
+                  </>
                 ) : null}
-                <p className="si-small">
-                  Usually under a second. Still here? <a href={state.to}>Continue</a>
-                </p>
+                <div className="si-desk">
+                  <p className="si-small">
+                    Usually under a second. Still here? <a href={state.to}>Continue</a>
+                  </p>
+                </div>
+                <div className="si-phone">
+                  <p className="si-center si-dock">
+                    <a href={state.to}>Still here? Continue</a>
+                  </p>
+                </div>
               </div>
             ) : null}
 
             {state.kind === "failed" ? (
               <div className="si-step">
-                <h1 className="si-h1">We couldn&apos;t sign you in</h1>
+                <div className="si-desk">
+                  <h1 className="si-h1">We couldn&apos;t sign you in</h1>
+                </div>
+                <div className="si-phone">
+                  <h1 className="si-h1">We couldn’t sign you in</h1>
+                </div>
                 <div className="si-alert" role="alert">
                   <p className="si-alert-title">Your KFintech account didn&apos;t answer in time.</p>
-                  <p>
-                    This is usually a short network hiccup on the office Wi-Fi or VPN. Nothing you typed is
-                    lost.
+                  <div className="si-desk">
+                    <p>
+                      This is usually a short network hiccup on the office Wi-Fi or VPN. Nothing you typed is
+                      lost.
+                    </p>
+                  </div>
+                  <div className="si-phone">
+                    <p>Usually a short network hiccup. Nothing you typed is lost.</p>
+                  </div>
+                </div>
+                <div className="si-desk">
+                  <a className="si-btn si-btn-primary" href="/auth/sso/start">
+                    <LockIcon />
+                    Try again
+                  </a>
+                  {next || emailOn ? (
+                    <p className="si-small">
+                      {next ? NEXT_LINES[next].retry : null}
+                      {emailOn ? (
+                        <>
+                          {next ? " " : null}Or <a href="/sign-in">get a code by email instead</a>.
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  <hr className="si-rule" />
+                  <p className="si-small">
+                    Still stuck? Call {deskOn()} and give them this reference:{" "}
+                    <strong className="si-ref">{ref}</strong>
                   </p>
                 </div>
-                <a className="si-btn si-btn-primary" href="/auth/sso/start">
-                  <LockIcon />
-                  Try again
-                </a>
-                {next || emailOn ? (
+                <div className="si-phone">
                   <p className="si-small">
-                    {next ? NEXT_LINES[next].retry : null}
-                    {emailOn ? (
-                      <>
-                        {next ? " " : null}Or <a href="/sign-in">get a code by email instead</a>.
-                      </>
-                    ) : null}
+                    Still stuck? Call {deskOn()} with reference <strong className="si-ref">{ref}</strong>.
                   </p>
-                ) : null}
-                <hr className="si-rule" />
-                <p className="si-small">
-                  Still stuck? Call {deskOn()} and give them this reference:{" "}
-                  <strong className="si-ref">
-                    {referenceLabel(state.ref, Number.isFinite(at) ? at : null)}
-                  </strong>
-                </p>
+                  <div className="si-dock">
+                    <a className="si-btn si-btn-primary" href="/auth/sso/start">
+                      <LockIcon />
+                      Try again
+                    </a>
+                    {emailOn ? (
+                      <p className="si-center">
+                        <a href="/sign-in">Get a code by email instead</a>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -214,10 +270,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<P
                 <div className="si-alert" role="alert">
                   <p className="si-alert-title">This account can&apos;t sign in to 1% Club.</p>
                   <p>
-                    Call {deskOn()} and give them this reference:{" "}
-                    <strong className="si-ref">
-                      {referenceLabel(state.ref, Number.isFinite(at) ? at : null)}
-                    </strong>
+                    Call {deskOn()} and give them this reference: <strong className="si-ref">{ref}</strong>
                   </p>
                 </div>
               </div>
@@ -270,9 +323,14 @@ function ExpiredState({
   return (
     <div className="si-step">
       <h1 className="si-h1">Sign in again to carry on</h1>
-      <p className="si-lead">
-        KFintech apps sign everyone out after {hours} hours. Your draft is safe, exactly as you left it.
-      </p>
+      <div className="si-desk">
+        <p className="si-lead">
+          KFintech apps sign everyone out after {hours} hours. Your draft is safe, exactly as you left it.
+        </p>
+      </div>
+      <div className="si-phone">
+        <p className="si-lead">KFintech apps sign everyone out after {hours} hours. Your draft is safe.</p>
+      </div>
       {card ? (
         <div className="si-draft">
           <p className="si-draft-when">
@@ -300,8 +358,10 @@ function ExpiredState({
       ) : (
         <SsoForm intent={state.intent} primary label="Use single sign-on" />
       )}
-      <hr className="si-rule" />
-      <p className="si-small">Trouble signing in? Call {deskOn()}.</p>
+      <div className="si-desk">
+        <hr className="si-rule" />
+        <p className="si-small">Trouble signing in? Call {deskOn()}.</p>
+      </div>
     </div>
   );
 }
