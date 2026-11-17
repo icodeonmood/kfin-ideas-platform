@@ -28,8 +28,8 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `S-01` | `/` signed out | none (`proxy.ts` sends signed-out visitors to `/sign-in`) | missing | M | P0 | A |
 | `S-02` | `/sign-in` | `app/sign-in`, `app/auth/{login,callback,logout}` | exists, differs | L | P0 (single sign-on), P2 (email code) | A |
 | `S-03` | `/home` | `app/home/page.tsx`, `app/home/home.tsx`, `app/home/home.css`, `lib/home/data.ts`, `server/home.ts`; lane B's `components/review/qcard.tsx` (`variant="home"`), lane F's `components/teamup/teamup-sheet.tsx`, and a shim for lane F's crew card, `components/home/crew-shim.tsx`; `/` forwards here (BLD-C143 to C148) | built (c/s03) | L | P0 | C |
-| `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128) | built (c/s04) | L | P0 | C |
-| `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126) | built (c/s04) | L | P0 | C |
+| `S-04` | `/share` | `app/share/page.tsx`, `app/share/compose.tsx`, `app/share/compose.css` (BLD-C124 to C128); flags S1 and S3: `components/compose/interview.tsx`, props from `server/flags.ts` (BLD-C172, C175) | built (c/s04; S1, S3 on c/variants) | L | P0 | C |
+| `S-04B` | `/share/:draftId` | `app/share/[id]/page.tsx`, `app/share/compose.tsx` (one screen with S-04, BLD-C126); S1's questions and their place (`/api/drafts/:id/interview`, BLD-C172) | built (c/s04; S1, S3 on c/variants) | L | P0 | C |
 | `S-05` | `/share/:draftId/check` | `app/share/[id]/done/*` (checks after submit today) | exists, differs | L | P0 | C |
 | `S-06` | `/ideas/:id` (sharer) | data: worker `ideapage/sharer.py`, `GET /api/ideas/:id` (`SharerView`); composes lane B's `/api/ideas/:id/decision` and `/question-set` on the server (`app/ideas/[id]/page.tsx`); withdraw and restore `ideapage/withdraw.py`. Screen: `app/ideas/[id]/sharer-screen.tsx` (card sentence from the decision in `decision.ts`), `idea-page.css`; the address is cleaned of `from`/`back` once read and the way back is kept in the history entry (`parts.tsx`: `WayBack`, `BackLink`, BLD-E021). "You and the review desk" has "Open the conversation" (to S-08) beside its heading and the desk's line under it, as Status.md draws it (BLD-E045); the similar tiles' "Team up" and C-PREVIEW's `onPrimary` open lane F's C-SHEET-TEAMUP (`useTeamUpSheet`). Tests `e2e/idea-page.spec.ts`, `tests/unit/idea-page-screens.test.ts`, `tests/unit/idea-page-teamup.test.ts` | built (team-up sheet wired 18 Nov; conversation entries, join-build and live updates wait on lanes F, B and E) | L | P0 | E |
 | `S-06B` | `/ideas/:id/edit` | none | missing | M | P0 | C |
@@ -115,6 +115,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-CREW` | none | missing | P0 | F |
 | `L-SEARCH` | `chunks`, `tsv`, BGE-M3 | missing | P0 | F |
 | `L-LISTEN` | lane B: `services/worker/desk/listen.py`, `reads.script_for`, `GET /api/desk/ideas/:id/listen` (BLD-B237); lane C: `speech/listen.py` (speak, chapters, cache, prefetch), `gateway/sarvam.py` (bulbul:v4-flash), `GET /api/ideas/:id/listen` and `/listen/chapters` (BLD-C114) | lane B's back end landed at 82668c1 (17 Nov); lane C's hosted voice on c/sarvam; the player (`C-LISTEN`) and the script are lane B's | P0 | B, C |
+| `P-DECISIONS.experiments` | `apps/web/src/server/flags.ts` (`variantFor`, exposures, events, the interview's place), `lib/flags.ts`, `POST /api/flags/exposure`, `POST /api/flags/events`, `POST /api/drafts/:id/interview`; `flag_events` and the views `flag_s1_metrics`, `flag_s3_metrics` (migration 20261122300700); RUNBOOK §2c (BLD-C170 to C175) | built (c/variants): the reader, S1, S3; S2 with S-05 | P0 | C |
 
 ## `P-REPO.contracts`
 
