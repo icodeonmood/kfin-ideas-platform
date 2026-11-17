@@ -32,6 +32,7 @@ const SORT_OPTIONS: { value: DeskSort; label: string }[] = [
   { value: "area", label: "Area" },
 ];
 const PILL: Record<CountdownVariant, PillVariant> = { normal: "neutral", warn: "warn", bad: "bad" };
+const REMINDED = "Reminded, just now";
 // Not drawn on the board (empty tabs): wording for HR's sign-off (docs/hr-wording/lane-b.md).
 const EMPTY: Record<DeskTab, { title: string; line: string }> = {
   to_review: { title: "Nothing new to review", line: "Ideas shared with the review desk show here first." },
@@ -240,14 +241,16 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
                       <td className="rd-act">
                         {row.action_kind === "remind" ? (
                           <>
+                            {/* S-R1.rules/3, NOT DRAWN: "Reminded, just now" for the session; the name follows the
+                                words on the button (WCAG 2.5.3). */}
                             <Button
                               variant="line"
                               size="sm"
                               disabled={reminded.has(row.idea_id)}
-                              aria-label={`${row.action}: ${row.title}`}
+                              aria-label={`${reminded.has(row.idea_id) ? REMINDED : row.action}: ${row.title}`}
                               onClick={() => void remind(row)}
                             >
-                              {reminded.has(row.idea_id) ? "Reminded, just now" : row.action}
+                              {reminded.has(row.idea_id) ? REMINDED : row.action}
                             </Button>
                             {failed === row.idea_id ? (
                               <span className="fmsg" role="alert">
