@@ -1,167 +1,134 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { NextRequest } from "next/server";
 
-import { day, historyTime } from "@/lib/dates";
+import type {
+  ColleagueView,
+  DecisionForViewerResponse,
+  IdeaViewResponse,
+  SharerQuestionSetResponse,
+  SharerView,
+} from "@/lib/contracts/api";
+import { Status } from "@/components/status";
 import { currentUser } from "@/server/auth/current";
-import { ideaPage, type IdeaPage, type TimelineRow } from "@/server/ideas";
-import { SubmissionError } from "@/server/submissions";
+import { getRoute } from "@/server/desk";
+import { getIdeaView } from "@/server/idea-page";
 
-import { FollowUpPanel } from "./follow-up-panel";
+import { ColleagueScreen } from "./colleague-screen";
+import { CleanAddress } from "./parts";
+import { SharerScreen } from "./sharer-screen";
+
+import "./idea-page.css";
 
 export const metadata: Metadata = { title: "Idea" };
 export const dynamic = "force-dynamic";
 
-const CATEGORY: Record<string, string> = {
-  cost_saving: "Cost saving",
-  new_revenue: "New revenue",
-  both: "Cost saving and new revenue",
-  not_sure: "Not sure yet",
-};
+const LOAD_FAILED = "We can't load this idea just now. Please try again in a minute.";
 
-function text(value: unknown): string {
-  if (Array.isArray(value)) return value.map(String).join(", ").replace(/_/g, " ");
-  return typeof value === "string" ? value : "";
+// Lane B's two endpoints S-06 composes (BLD-E012): the decision with its reason and the committee's window, and the
+// open question set
+const decisionRoute = getRoute("signed_in", (id) => `/internal/ideas/${id}/decision`);
+const questionSetRoute = getRoute("signed_in", (id) => `/internal/ideas/${id}/question-set`);
+
+function one(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
 
-function Timeline({ rows, full }: { rows: TimelineRow[]; full: boolean }) {
-  return (
-    <section className="glass idea-pane" aria-labelledby="ip-timeline">
-      <h2 id="ip-timeline" className="t-h2">
-        Timeline
-      </h2>
-      {rows.length ? (
-        <ol className="timeline">
-          {rows.map((r, n) => (
-            <li key={`${r.when}-${n}`}>
-              <strong>{r.what}</strong> <span className="muted">· {historyTime(r.when)}</span>
-              {full && r.by ? <span className="muted"> · {r.by}</span> : null}
-              {full && r.note ? <p className="muted">{r.note}</p> : null}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="muted">The timeline appears here within a few minutes of each step.</p>
-      )}
-    </section>
-  );
-}
-
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  const me = await currentUser();
-  if (!me) redirect("/sign-in");
-  const id = (await params).id;
-  let p: IdeaPage;
+async function readJson<T>(res: Response): Promise<T | null> {
+  if (!res.ok) return null;
   try {
-    p = await ideaPage(me, id);
-  } catch (err) {
-    if (err instanceof SubmissionError && err.status === 404) notFound();
-    throw err;
+    return (await res.json()) as T;
+  } catch {
+    return null;
   }
+}
 
-  if (p.view === "public") {
+/** What lane B adds to the sharer's page: read only when the page says its card is composed from it. */
+async function laneB(view: SharerView): Promise<{
+  decision: DecisionForViewerResponse;
+  questions: SharerQuestionSetResponse;
+  failed: boolean;
+}> {
+  const ctx = { params: Promise.resolve({ id: view.idea.ref ?? view.idea.id }) };
+  const req = (path: string) => new NextRequest(new URL(path, "http://web.local"));
+  const decided = ["picked", "not_now", "not_picked", "reversed", "being_built", "shipped"].includes(
+    view.page.state,
+  );
+  const [d, q] = await Promise.all([
+    decided || view.page.card_from === "decision"
+      ? decisionRoute(req(view.page.lane_b.decision), ctx).catch(() => null)
+      : null,
+    view.page.card_from === "question_set" || view.idea.has_open_questions
+      ? questionSetRoute(req(view.page.lane_b.question_set), ctx).catch(() => null)
+      : null,
+  ]);
+  const decision = d ? await readJson<DecisionForViewerResponse>(d) : null;
+  const questions = q ? await readJson<SharerQuestionSetResponse>(q) : null;
+  const failed =
+    (view.page.card_from === "decision" && !decision) ||
+    (view.page.card_from === "question_set" && !questions);
+  return { decision, questions, failed };
+}
+
+/**
+ * `/ideas/:id` (P-ROUTES.screens): S-06 for the sharer, S-09 for anyone else, as the API decides (A-API.ideas); a
+ * reviewer goes on to S-R2 and the owner's draft to where it was left. `from` and `back` say where the person came
+ * from, so the page's own way back returns to that exact view (P-ROUTES.state); once read, they leave the address.
+ */
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const id = (await params).id;
+  const me = await currentUser();
+  if (!me) redirect(`/sign-in?next=${encodeURIComponent(`/ideas/${id}`)}`);
+  const sp = await searchParams;
+  const q = new URLSearchParams();
+  const from = one(sp.from);
+  const back = one(sp.back);
+  if (from) q.set("from", from.slice(0, 40));
+  if (back) q.set("back", back.slice(0, 600));
+
+  let view: IdeaViewResponse | null = null;
+  let status = 0;
+  try {
+    const res = await getIdeaView(
+      new NextRequest(new URL(`/api/ideas/${encodeURIComponent(id)}?${q.toString()}`, "http://web.local")),
+      { params: Promise.resolve({ id }) },
+    );
+    status = res.status;
+    if (res.ok) view = (await res.json()) as IdeaViewResponse;
+  } catch {
+    view = null;
+  }
+  if (status === 404) notFound();
+  if (view && (view.view === "desk" || view.view === "draft")) redirect(view.to);
+
+  if (!view) {
+    return (
+      <div className="ip">
+        <CleanAddress />
+        <h1 className="h1 ip-fail-h">Idea</h1>
+        <Status kind="error" title={LOAD_FAILED} className="ip-fail" />
+      </div>
+    );
+  }
+  if (view.view === "sharer") {
+    const b = await laneB(view);
     return (
       <>
-        <p className="back-row">
-          <Link className="back" href="/wall">
-            Back to the wall
-          </Link>
-        </p>
-        <h1 className="page-display idea-headline">{p.card.summary}</h1>
-        <dl className="facts idea-facts">
-          {p.card.area ? (
-            <div>
-              <dt>Area</dt>
-              <dd>{p.card.area}</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Where it is</dt>
-            <dd>{p.card.stage}</dd>
-          </div>
-          <div>
-            <dt>Colleagues on it</dt>
-            <dd>{p.card.colleagues}</dd>
-          </div>
-        </dl>
-        <p className="muted idea-note">
-          This is a short summary. The person&apos;s own words stay with them and the review desk.
-        </p>
-        <Timeline rows={p.timeline} full={false} />
+        <CleanAddress />
+        <SharerScreen view={view} decision={b.decision} questions={b.questions} partFailed={b.failed} />
       </>
     );
   }
-
-  const card = p.card as {
-    one_line?: string;
-    details?: string;
-    who?: { segments?: string[] };
-    value?: { category?: string };
-  };
   return (
     <>
-      <p className="back-row">
-        {p.owner ? (
-          <Link className="back" href="/my-ideas">
-            Back to My ideas
-          </Link>
-        ) : (
-          <Link className="back" href="/wall">
-            Back to the wall
-          </Link>
-        )}
-      </p>
-      <h1 className="page-display idea-headline">{card.one_line || p.idea_id}</h1>
-      <p className="lead page-lead">
-        {p.idea_id}
-        {p.area ? ` · ${p.area}` : ""}
-      </p>
-      <section aria-labelledby="ip-status" className="glass idea-pane">
-        <h2 id="ip-status" className="t-h2">
-          Where it is
-        </h2>
-        <p>
-          <strong>{p.status.stage}.</strong>{" "}
-          {p.status.next_step ? (
-            <>
-              Next: {p.status.next_step}
-              {p.status.due ? ` ${day(p.status.due)}` : ""}.
-            </>
-          ) : null}
-        </p>
-        {p.owner && p.uuid ? <FollowUpPanel uuid={p.uuid} question={p.question ?? null} /> : null}
-      </section>
-      <section aria-labelledby="ip-canvas" className="glass idea-pane">
-        <h2 id="ip-canvas" className="t-h2">
-          {p.owner ? "Your canvas" : "The canvas"}
-        </h2>
-        {card.details ? <p className="original">{card.details}</p> : null}
-        <dl className="facts idea-facts">
-          {text(card.who?.segments) ? (
-            <div>
-              <dt>Who it affects</dt>
-              <dd>{text(card.who?.segments)}</dd>
-            </div>
-          ) : null}
-          {card.value?.category ? (
-            <div>
-              <dt>Value</dt>
-              <dd>{CATEGORY[card.value.category] ?? text(card.value.category)}</dd>
-            </div>
-          ) : null}
-          {p.strength !== null ? (
-            <div>
-              <dt>Canvas strength</dt>
-              <dd>{p.strength} of 5</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Who can see it</dt>
-            <dd>{p.visibility === "org" ? "Everyone at KFintech, as a short summary" : "Committees only"}</dd>
-          </div>
-        </dl>
-      </section>
-      <Timeline rows={p.timeline} full />
+      <CleanAddress />
+      <ColleagueScreen view={view as ColleagueView} />
     </>
   );
 }
