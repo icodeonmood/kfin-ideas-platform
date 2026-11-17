@@ -194,7 +194,7 @@ def test_l_draft_autosave_4_saved_labels() -> None:
     assert mine["sidebar"] == "Yesterday, on this laptop"
     assert mine["my_ideas"] == "Saved yesterday, on this laptop"
     assert mine["prompt_line"] == "Saved on this laptop, 10:05 am."
-    assert labels.saved_labels(now, "laptop", True, now)["status"] == "Saved at 1:38 pm"  # type: ignore[index]
+    assert labels.saved_labels(now, "laptop", True, now)["status"] == "Saved at 1:38 pm"
     assert labels.message_label(now - dt.timedelta(seconds=20), "laptop", True, now) == "Just now"
     assert labels.message_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"
     assert labels.day(dt.datetime(2026, 11, 2, 9, 0, tzinfo=IST), now) == "Monday 2 November"
