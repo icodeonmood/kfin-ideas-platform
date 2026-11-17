@@ -323,9 +323,10 @@ def prefetch(conn: Conn, idea_uuid: str) -> bool:
 def prefetch_due(conn: Conn, limit: int = 20) -> int:
     """Every 15 minutes: queue a prefetch for ideas with the desk that have no audio for any version yet."""
     rows = conn.execute(
-        "SELECT i.id FROM ideas i WHERE i.status = ANY(%s) AND i.status_changed_at > now() - interval '7 days' "
+        "SELECT i.id FROM ideas i WHERE i.status = ANY(%s) "
+        "AND coalesce(i.status_changed_at, i.updated_at) > now() - interval '7 days' "
         "AND NOT EXISTS (SELECT 1 FROM listen_cache c WHERE c.idea_uuid = i.id) "
-        "ORDER BY i.status_changed_at DESC LIMIT %s",
+        "ORDER BY coalesce(i.status_changed_at, i.updated_at) DESC LIMIT %s",
         (list(DESK_STATUSES), limit),
     ).fetchall()
     for r in rows:
