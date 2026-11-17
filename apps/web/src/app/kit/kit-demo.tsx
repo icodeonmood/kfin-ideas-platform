@@ -114,6 +114,18 @@ export function KitDemo() {
           <Pill variant="bad">Couldn’t upload</Pill>
           <Pill variant="soon">Coming soon</Pill>
         </div>
+        <div className="btn-row">
+          <Pill countdown>3 days to answer</Pill>
+          <Pill variant="warn" countdown>
+            07:38 to answer
+          </Pill>
+          <Pill variant="bad" countdown>
+            Overdue by 5 hours
+          </Pill>
+          <Pill variant="ok" countdown>
+            Picked, 2 November
+          </Pill>
+        </div>
       </section>
 
       <section className="card" aria-labelledby="k-fields-h" id="k-fields">

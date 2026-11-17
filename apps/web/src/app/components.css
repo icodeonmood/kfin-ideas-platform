@@ -83,6 +83,44 @@
   box-shadow: inset 0 0 0 1px #bdbdb7;
 }
 
+/* A countdown (C-PILL.rules/3, S-R1.layout/4; board Desk .due): a clock in place of the dot. Under a day is "soon",
+ * overdue is solid "over", a closed clock is "done" */
+.due {
+  display: inline-flex;
+  justify-self: start;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 11px 0 9px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: rgba(17, 17, 17, 0.05);
+  color: var(--ink2);
+  font: 500 13px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.due > svg {
+  flex: none;
+}
+
+.due.soon {
+  background: var(--badW);
+  color: var(--badT);
+}
+
+.due.over {
+  background: var(--badT);
+  color: #ffffff;
+}
+
+.due.done {
+  background: var(--okW);
+  color: var(--okT);
+}
+
 /* ---------- C-FIELD ---------- */
 .lbl {
   display: block;
