@@ -62,3 +62,15 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The merge sheet, while it loads or if it fails | Getting the merge ready… / This merge can't be opened right now. |
 | Any send that fails | That didn't go through. Try again. / Your answers didn't send. Try again. / That didn't save. Try again. / That didn't merge. Try again. |
 | The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
+
+## 3. Added on 17 Nov 2026 with the review screens (BLD-B238)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page and the questions card, beside a file the check found a customer detail in | Has a customer detail | DEC-107 lets such a file through, marked; the pack predates it |
+| The same file's Open, for screen readers | Open rejection-sms-1.png, which has a customer detail | The mark is never colour or position alone |
+| The reviewer's page, ideas merged into this one | Merged into this idea | L-MERGE.effects/3 shows what each merged idea brought; not drawn |
+| The reviewer's page, the panel of an idea that joined another | Merged with another idea. The review desk now decides on the idea it joined. | Not drawn |
+| The reviewer's page, the wording check, for each further word found | For "rejected", say it is not going ahead, and why. | The first word's plainer way is in the worker's message; the rest are listed |
+| The reviewer's page, after the wording check | Send anyway | L-DECIDE.rules/4 warns and never blocks (BLD-B236) |
+| The Ones Committee, the reversal note's box | Why the committee is changing it, in words Kavya will understand | The board's own placeholder, kept as the box's name after "Your note to Kavya" |
