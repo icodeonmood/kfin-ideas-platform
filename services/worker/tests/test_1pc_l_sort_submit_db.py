@@ -30,6 +30,9 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     """A sharer with a ready draft whose parts suggest the sorting, a reviewer, and a colleague."""
     monkeypatch.setenv("COMPANY_REPO_PATH", str(SEED))
     get_settings.cache_clear()
+    # Submit queues jobs (submit.check, voice.purge); the conftest does not empty `jobs`, so this test takes its own
+    # away again, or a later test's `run_one` would claim them first.
+    last_job = int(db.execute("SELECT coalesce(max(id), 0) AS n FROM jobs").fetchone()["n"])
     people: dict[str, str] = {}
     for key, name, code in (
         ("asha", "Asha Verma", "CTR-a1b2c3"),
@@ -48,6 +51,7 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'reviewer')", (people["ravi"],))
     draft = _draft(db, "CTR-a1b2c3")
     yield {"conn": db, "p": people, "draft": draft}
+    db.execute("DELETE FROM jobs WHERE id > %s", (last_job,))
     get_settings.cache_clear()
 
 
