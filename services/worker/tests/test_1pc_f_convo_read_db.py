@@ -13,6 +13,7 @@ import pytest
 from convo import post
 from convo.reads import conversation
 from convo.store import Refused
+from ideapage import read as page_read
 from tests import convo_fixtures as fx
 
 NOW = fx.at(17, 10, 30)  # Tuesday 17 November 2026, IST
@@ -443,6 +444,63 @@ def test_s_08_l_convo_8_bld_f088_no_empty_block_once_the_idea_has_left_the_revie
     view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
     assert not any(e["type"] in ("message", "questions", "answers") for e in view["entries"])
     assert "empty" not in view
+
+
+def test_s_08_l_convo_8_l_merge_effects_6_bld_f090_a_merge_line_on_the_lead_at_the_desk_drops_the_empty_block(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """J-SIMILAR/7, J-REVIEW/M3: the lead idea is still with the review desk after Kavya's idea was merged into it.
+    S-06's "You and the review desk" counts the merge line (lane E's BLD-E065), so S-08 does not say "No messages
+    yet" beside it."""
+    ravi, kavya = cast["ravi"], cast["kavya"]
+    lead, merged = fx.idea(db, ravi), fx.idea(db, kavya, status="merged")
+    post(db, str(lead["id"]), "merge.from", author_code=ravi["code"], payload={"idea_id": str(merged["id"])},
+         at=fx.at(17, 10))  # fmt: skip
+    view = conversation(db, lead["idea_id"], ravi["id"], at=NOW)
+    assert {e["type"] for e in view["entries"]} == {"event"}
+    assert "merge.from" in [e["code"] for e in view["entries"]]
+    assert "empty" not in view
+    assert page_read.merge_line_count(db, str(lead["id"])) == 1  # the line S-06 counts
+
+
+def test_s_08_l_convo_8_l_merge_effects_6_bld_f090_the_seeds_desk_merge_line_drops_the_empty_block(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """The seed writes a desk merge as `desk_merged` (BLD-F061); S-08 matches the stored code, as S-06 does."""
+    ravi, kavya, meera = cast["ravi"], cast["kavya"], cast["meera"]
+    lead, merged = fx.idea(db, ravi), fx.idea(db, kavya, status="merged")
+    merge_id = db.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s) "
+        "RETURNING id",
+        (lead["id"], merged["id"], meera["id"]),
+    ).fetchone()["id"]
+    _seed_line(db, lead, "desk_merged", fx.at(17, 9), {"merge_id": str(merge_id)})
+    view = conversation(db, lead["idea_id"], ravi["id"], at=NOW)
+    assert f"The review desk joined it with {merged['idea_id']}. Today, 9:00 am" in texts(view)
+    assert "desk_merged" in [e["code"] for e in view["entries"]]
+    assert "empty" not in view
+    assert page_read.merge_line_count(db, str(lead["id"])) == 1
+
+
+def test_s_08_l_convo_8_bld_f090_any_other_event_line_keeps_the_empty_block(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """Only a merge line counts: the shared and checked lines and a crew line keep "No messages yet" (Messages.md),
+    and S-06 counts none of them."""
+    kavya, tara = cast["kavya"], cast["colleague"]
+    idea = fx.idea(db, kavya)
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 6)),
+    )
+    fx.join_crew(db, idea, tara, fx.at(17, 9))
+    post(db, str(idea["id"]), "crew.joined", author_code=tara["code"], at=fx.at(17, 9))
+    view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    codes = [e["code"] for e in view["entries"]]
+    assert {"idea.shared", "idea.checked", "crew.joined"} <= set(codes)
+    assert view["empty"]["title"] == "No messages yet"
+    assert page_read.merge_line_count(db, str(idea["id"])) == 0
 
 
 def test_l_convo_3_times_today_this_week_and_older(db: Any) -> None:
