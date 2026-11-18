@@ -274,6 +274,19 @@ export function addMonthsIST(t: Date, months: number): Date {
   return new Date(moved - IST_MS);
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Where Extend moves a window's end (desk/window.py next_close, L-COMMITTEE.rules/2, BLD-B263): 30 days on, or the
+ * 3-month limit itself when that step would leave less than 7 days before it; null once the end is at the limit.
+ */
+export function nextCloseIST(opensAt: Date, closesAt: Date): Date | null {
+  const cap = addMonthsIST(opensAt, 3);
+  if (closesAt.getTime() >= cap.getTime()) return null;
+  const step = new Date(closesAt.getTime() + 30 * DAY_MS);
+  return cap.getTime() - step.getTime() < 7 * DAY_MS ? cap : step;
+}
+
 /** desk/when.py day(): "Monday 8 February", with " 2027" only when the year in India is not this one. */
 export function dayIST(t: Date, now: Date = new Date()): string {
   const parts = (d: Date) =>
