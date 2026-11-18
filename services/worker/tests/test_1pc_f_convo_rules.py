@@ -49,8 +49,18 @@ def test_bld_f076_l_convo_10_forget_is_lane_cs_hide_forget_for_the_conversation_
 
 
 def test_bld_f076_forget_does_nothing_without_lane_c(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no lane C at all, messages were masked by the patterns alone: nothing was kept, nothing to drop. With
+    lane C's `hide_message` but no `forget`, values were kept: it raises (no IDs in the message) so the removal
+    rolls back, rather than leave them behind silently."""
+    idea, entry = str(uuid.uuid4()), str(uuid.uuid4())
     monkeypatch.setattr(adapters, "_hide_forget", None)
-    adapters.forget(NO_CONN, str(uuid.uuid4()), str(uuid.uuid4()))  # nothing was kept, nothing to drop
+    monkeypatch.setattr(adapters, "_hide_message", None)
+    adapters.forget(NO_CONN, idea, entry)
+
+    monkeypatch.setattr(adapters, "_hide_message", lambda *a, **k: None)
+    with pytest.raises(RuntimeError) as half:
+        adapters.forget(NO_CONN, idea, entry)
+    assert idea not in str(half.value) and entry not in str(half.value)
 
 
 def test_bld_f054_lane_cs_refusal_becomes_hide_refused_with_its_status(
