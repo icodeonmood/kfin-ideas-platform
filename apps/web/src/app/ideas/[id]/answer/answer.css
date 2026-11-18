@@ -35,6 +35,14 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+/* C-PILL.rules/3: the Answer board's clock is the larger countdown (.clock .due); the phone board keeps the base */
+@media (min-width: 641px) {
+  .ans-due .due {
+    min-height: 34px;
+    padding: 0 14px 0 12px;
+    font-size: 14.5px;
+  }
+}
 .ans-steps ol {
   list-style: none;
   margin: 0 0 8px;

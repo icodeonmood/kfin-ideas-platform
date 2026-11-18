@@ -220,7 +220,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
       </p>
       <p className="ans-due">
         {live ? (
-          <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+          <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
             {countdownLabel(live, "left to answer")}
           </Pill>
         ) : null}
