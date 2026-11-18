@@ -1400,3 +1400,8 @@ app.include_router(_teamup_routes(require_token))
 from convo.routes import build as _convo_routes  # noqa: E402
 
 app.include_router(_convo_routes(require_token))
+
+# Lane F: Find your crew (A-API.team-up `GET /crew`, the passes). Its routes live with the code in crew/routes.py.
+from crew.routes import build as _crew_routes  # noqa: E402
+
+app.include_router(_crew_routes(require_token))

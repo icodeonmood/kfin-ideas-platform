@@ -439,7 +439,11 @@
     "GET /api/committee                                committee_window",
     "GET /api/committee/windows/{id}/reversing         committee_window",
     "POST /api/committee/windows/{id}/extend           committee_window",
-    "POST /api/committee/windows/{id}/reverse          committee_window"
+    "POST /api/committee/windows/{id}/reverse          committee_window",
+    "GET /api/crew                                     signed_in",
+    "POST /api/crew/pass                               signed_in",
+    "POST /api/crew/pass/undo                          signed_in",
+    "POST /api/crew/pass/reset                         signed_in"
   ],
   "membership_scoped": {
     "ones": [
