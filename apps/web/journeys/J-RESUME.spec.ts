@@ -10,10 +10,10 @@
  * IT, DEC-105); they read Indira's Inbox and Share another way, where I2, a forwarded email that landed as a
  * draft, shows (lane E, 34249f1). I2 is read only.
  */
-import { expect, type Page } from "@playwright/test";
+import { devices, expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, endSession, seeded, signInAs, step } from "./lib";
+import { carriedFor, endSession, runSeconds, seeded, signInAs, snap, step } from "./lib";
 
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`; // "8:42 pm"
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
@@ -24,7 +24,7 @@ function esc(s: string): string {
 
 // --- The person, fixed for the run (a different offset from J-SHARE's people) ------------------------------------------
 
-const N = 18000 + ((Math.floor(Date.now() / 1000) + 350) % 2000);
+const N = 18000 + ((runSeconds() + 350) % 2000);
 const ME = { emp: `SYN-${N}`, name: "Journey Resumer", email: `journey.${N}.1pc@kfintech.example` };
 
 async function signInMe(page: Page): Promise<void> {
@@ -56,20 +56,29 @@ step(
   "S-04",
   "Starts on the phone, then leaves: the words are saved on the account within moments of a pause",
   { needs: ["S-04", "L-DRAFT"] },
-  async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await signInMe(page);
-    await page.goto("/share");
-    await expect(page.getByRole("heading", { level: 1, name: "What’s getting in your way?" })).toBeVisible();
-    await expect(
-      page.getByText("Nothing is shared until you send it. Saved as you go, here and on your computer."),
-    ).toBeVisible();
-    await page.getByRole("textbox", { name: /^(Describe the problem|For example: )/ }).fill(WORDS);
-    // L-DRAFT.autosave: saved within 2 seconds of the pause; the time is what the desktop shows next (row 3).
-    const saved = page.getByText(new RegExp(`^Saved at ${TIME}$`)).first();
-    await expect(saved).toBeVisible({ timeout: 5_000 });
-    carried.saved = (await saved.innerText()).replace(/^Saved at /, "").trim();
-    // Leaving is the end of the step: the context closes with nothing sent.
+  async ({ browser }, info) => {
+    // A phone as the server tells one: by its user agent (server/drafts.ts deviceOf), not by the window's width.
+    const context = await browser.newContext({ ...devices["Pixel 7"] });
+    const page = await context.newPage();
+    try {
+      await signInMe(page);
+      await page.goto("/share");
+      await expect(
+        page.getByRole("heading", { level: 1, name: "What’s getting in your way?" }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Nothing is shared until you send it. Saved as you go, here and on your computer."),
+      ).toBeVisible();
+      await page.getByRole("textbox", { name: /^(Describe the problem|For example: )/ }).fill(WORDS);
+      // L-DRAFT.autosave: saved within 2 seconds of the pause; the time is what the desktop shows next (row 3).
+      const saved = page.getByText(new RegExp(`^Saved at ${TIME}$`)).first();
+      await expect(saved).toBeVisible({ timeout: 5_000 });
+      carried.saved = (await saved.innerText()).replace(/^Saved at /, "").trim();
+      // Leaving is the end of the step: the context closes with nothing sent.
+    } finally {
+      await snap(page, info, "J-RESUME/1", "S-04", "phone");
+      await context.close();
+    }
   },
 );
 

@@ -180,6 +180,14 @@ export async function seeded(key: SeedKey): Promise<SeededIdea> {
   }
 }
 
+/**
+ * The run's time base in seconds, the same in every worker (playwright.config.ts sets it once): a journey's synthetic
+ * people are made from it, so they stay the same people after a failed step starts a new worker.
+ */
+export function runSeconds(): number {
+  return Number(process.env.JOURNEYS_RUN_SECONDS) || Math.floor(Date.now() / 1000);
+}
+
 /** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
 const SESSION_COOKIE = "ideas_session";
 
@@ -377,9 +385,10 @@ export async function snap(
   const padded = row.replace(/^\d+/, (d) => d.padStart(2, "0")); // 3 → 03, 4a → 04a, A1 stays
   const file = path.join(SHOTS_DIR, journey!, `${padded}-${screen}${label ? `-${label}` : ""}.png`);
   try {
-    if (page.isClosed()) return;
+    if (page.isClosed() || page.url() === "about:blank") return; // closed, or never used by the step
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    await page.screenshot({ path: file, fullPage: true, timeout: 10_000 });
+    // Animations finished, so a walker reads the screen as it settles, not a frame of a hand-over.
+    await page.screenshot({ path: file, fullPage: true, timeout: 10_000, animations: "disabled" });
     await info.attach(path.basename(file), { path: file, contentType: "image/png" });
   } catch {
     // A crashed page has nothing to show; the failure itself is the report.

@@ -16,7 +16,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, step } from "./lib";
+import { carriedFor, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ function esc(s: string): string {
 type Fresh = { emp: string; first: string; name: string; email: string };
 
 function fresh(offset: number, last: string): Fresh {
-  const n = 18000 + ((Math.floor(Date.now() / 1000) + offset) % 2000);
+  const n = 18000 + ((runSeconds() + offset) % 2000);
   return {
     emp: `SYN-${n}`,
     first: "Journey",

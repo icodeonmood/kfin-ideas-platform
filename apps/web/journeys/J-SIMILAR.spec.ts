@@ -359,7 +359,9 @@ step(
       page
         .getByText(
           new RegExp(
-            `^Declined\\. Geetanjali sees your reason: “${esc(reason)}”\\. (?:They can send theirs|Geetanjali can send (?:theirs|Geetanjali’s|it)) on its own\\.$`,
+            // CrewRequest.md draws “{reason}”. with a full stop after the quote; a reason that ends in its own full stop
+            // is not given a second one.
+            `^Declined\\. Geetanjali sees your reason: “${esc(reason)}”${/[.!?]$/.test(reason) ? "" : "\\."} (?:They can send theirs|Geetanjali can send (?:theirs|Geetanjali’s|it)) on its own\\.$`,
           ),
         )
         .first(),
