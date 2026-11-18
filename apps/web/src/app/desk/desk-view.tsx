@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import { restoreRow, rowOffset } from "@/components/browse/return-to";
+import { Status } from "@/components/status";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Pill, type PillVariant } from "@/components/ui/pill";
@@ -30,6 +31,7 @@ import { Tabs, tabPanelProps } from "@/components/ui/tabs";
 import type { CountdownVariant, DeskResponse, DeskRow, DeskSort, DeskTab } from "@/lib/contracts";
 import { addressBack, deskHref, deskSearchBody, deskUrlState, type DeskList } from "@/lib/desk/address";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
+import { TRY_AGAIN } from "@/lib/desk/reply";
 import { useFlipList } from "@/lib/motion/flip";
 import {
   clampSearch,
@@ -150,6 +152,12 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
   );
   const [landed, setLanded] = useState(false);
   const held = kept !== "" && !landed;
+  // A list read since arrival is on screen, and the arrival frame has read the kept words (until then a tab, sort or
+  // visibility re-read uses the kept words, never the empty box). `unread`: the list with the kept search could not be
+  // read, so the table stays held with the desk's failed line and Try again; a failed read never wipes the kept words
+  const landedNow = useRef(false);
+  const arrived = useRef(false);
+  const [unread, setUnread] = useState(false);
   const [reminded, setReminded] = useState<Set<string>>(() => new Set());
   const [failed, setFailed] = useState<string | null>(null);
   const now = useMinute();
@@ -195,6 +203,8 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
           shown.current = { tab: next.tab, sort: next.sort, q };
           setData(next);
           setLanded(true);
+          landedNow.current = true;
+          setUnread(false);
           return "shown";
         }
       } catch {
@@ -202,12 +212,19 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
       }
       if (loading.current !== ctl || !live.current) return "superseded";
       loading.current = null;
+      // Not read before any list with the kept search was: the rows on screen are the server's unsearched ones, so they
+      // stay held under the failed line, and the kept words stay kept for Try again and a reload (DEC-110)
+      if (!landedNow.current && q) {
+        setUnread(true);
+        return "failed";
+      }
       // Not read: the table keeps what it had, so the tabs, the sort, the search and the address go back to that list
       // rather than name a choice over rows it does not hold (S-R1.rules/4). The words in the search box stay.
       const was = shown.current;
       setView({ tab: was.tab, sort: was.sort });
       setQuery(was.q);
       setLanded(true);
+      landedNow.current = true;
       writeSearch(LIST, was.q);
       const address = addressBack(was, { tab, sort, q });
       if (address) replaceAddress(address);
@@ -232,12 +249,13 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
     const before = loading.current;
     const focused = document.activeElement;
     const frame = requestAnimationFrame(() => {
-      // The person chose a tab, sort or search before this frame: that list is already on its way
-      if (loading.current !== before) return;
       // Read in the same pass as the address, so the row goes back into the list with its search
       const words = readSearch(LIST);
+      arrived.current = true;
       setText(words);
       setQuery(words);
+      // The person chose a tab, sort or search before this frame: that list is already on its way
+      if (loading.current !== before) return;
       if (want.row) {
         const url = new URL(window.location.href);
         url.searchParams.delete("row");
@@ -278,11 +296,13 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
   useEffect(() => {
     const again = () => {
       // a read already on its way is as fresh, and replacing it would drop the row the arrival read restores
+      // Not before arrival: until then the box is empty and the kept words would be lost
+      if (!arrived.current || unread) return;
       if (document.visibilityState === "visible" && !loading.current) void load(view.tab, view.sort, query);
     };
     document.addEventListener("visibilitychange", again);
     return () => document.removeEventListener("visibilitychange", again);
-  }, [load, view.tab, view.sort, query]);
+  }, [load, view.tab, view.sort, query, unread]);
 
   async function remind(row: DeskRow) {
     if (!row.set_id) return;
@@ -293,6 +313,9 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
     if (res.ok) setReminded((s) => new Set(s).add(row.idea_id));
     else setFailed(row.idea_id);
   }
+
+  /** The search a tab, sort or retry reads with: the box's once arrival has read the kept words, the kept words before. */
+  const wordsNow = () => (arrived.current ? query : readSearch(LIST));
 
   const decided = data.tab === "decided";
   const tabs = TABS.map((t) => ({ ...t, count: held ? undefined : data.counts[t.value] }));
@@ -327,17 +350,36 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
           label="Review desk"
           tabs={tabs}
           value={view.tab}
-          onChange={(t) => void load(t as DeskTab, view.sort, query)}
+          onChange={(t) => void load(t as DeskTab, view.sort, wordsNow())}
         />
         <Sorts
           options={SORT_OPTIONS}
           value={view.sort}
-          onChange={(s) => void load(view.tab, s as DeskSort, query)}
+          onChange={(s) => void load(view.tab, s as DeskSort, wordsNow())}
         />
       </div>
 
-      <section {...tabPanelProps("desk", view.tab)} className="rd-panel" aria-busy={held || undefined}>
-        {held ? null : data.items.length === 0 ? (
+      <section
+        {...tabPanelProps("desk", view.tab)}
+        className="rd-panel"
+        aria-busy={(held && !unread) || undefined}
+      >
+        {held ? (
+          unread ? (
+            <Status kind="error" title={TRY_AGAIN} className="rd-unread">
+              <Button
+                variant="line"
+                size="sm"
+                onClick={() => {
+                  setUnread(false);
+                  void load(view.tab, view.sort, wordsNow(), false);
+                }}
+              >
+                Try again
+              </Button>
+            </Status>
+          ) : null
+        ) : data.items.length === 0 ? (
           <Empty title={empty.title} align="left" level={2}>
             {empty.line}
           </Empty>

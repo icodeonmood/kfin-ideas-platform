@@ -168,6 +168,7 @@ describe("DEC-110, S-R1.rules/4, J-BROWSE/4: the desk keeps its search in the ta
     // jsdom draws no layout and runs no animations
     (Element.prototype as unknown as { getAnimations: () => Animation[] }).getAnimations = () => [];
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    Element.prototype.scrollIntoView = vi.fn();
     Element.prototype.getClientRects = (() => [new DOMRect(0, 0, 10, 10)]) as unknown as () => DOMRectList;
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -246,6 +247,65 @@ describe("DEC-110, S-R1.rules/4, J-BROWSE/4: the desk keeps its search in the ta
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     await settle();
     expect(JSON.parse(String(asked.at(-1)!.init.body))).toMatchObject({ q: WORDS });
+  });
+
+  it("S-R1 DEC-110 the arrival read with the kept search fails: the words stay kept, nothing unsearched shows, Try again reads it", async () => {
+    writeSearch("/desk", WORDS);
+    const real = globalThis.fetch;
+    let down = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (down && init.method === "POST") {
+          asked.push({ url: String(url), init });
+          throw new TypeError("fetch failed");
+        }
+        return real(url, init);
+      }),
+    );
+    act(() => root.render(createElement(DeskView, { initial: desk(ALL, "2 waiting on colleagues.") })));
+    await settle();
+    expect(readSearch("/desk")).toBe(WORDS);
+    expect(box().value).toBe(WORDS);
+    expect(titles()).toEqual([]);
+    expect(host.querySelector(".rd-summary")!.textContent).toBe("");
+    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).not.toContain(
+      "Waiting on the sharer2",
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("That didn’t go through. Try again.");
+
+    // Coming back to the tab does not read the list without the words meanwhile
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    await settle();
+    expect(asked.every((a) => a.init.method === "POST")).toBe(true);
+    expect(readSearch("/desk")).toBe(WORDS);
+
+    down = false;
+    const again = [...host.querySelectorAll("button")].find((b) => b.textContent === "Try again")!;
+    act(() => again.click());
+    await settle();
+    expect(titles()).toEqual([`${WORDS} branch form`]);
+    expect(readSearch("/desk")).toBe(WORDS);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("S-R1 DEC-110 a visibility re-read or a tab chosen before the arrival frame keeps the kept words", async () => {
+    writeSearch("/desk", WORDS);
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    act(() => root.render(createElement(DeskView, { initial: desk(ALL, "2 waiting on colleagues.") })));
+    // before the first frame: the box is still empty
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(readSearch("/desk")).toBe(WORDS);
+    const tab = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+      t.textContent?.startsWith("To review"),
+    )!;
+    act(() => tab.click());
+    expect(readSearch("/desk")).toBe(WORDS);
+    expect(JSON.parse(String(asked[0]!.init.body))).toMatchObject({ tab: "to_review", q: WORDS });
+    await settle();
+    expect(box().value).toBe(WORDS);
+    expect(readSearch("/desk")).toBe(WORDS);
   });
 
   it("S-R1 J-BROWSE/6 DEC-110 a fresh visit or a link is read without a search, with GET", async () => {
