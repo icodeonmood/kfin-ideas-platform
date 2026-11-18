@@ -575,25 +575,30 @@ function JustIn({
 // NOT DRAWN (BLD-E044): HR sign-off
 const hiddenOneName = (n: number) => `One No. ${n}`;
 
+/** One card per One (L-WALL.ones): an article in the list, so each card reads as one item with its number, name, tier
+ * and brief (J-ONE/3). */
 function OneCard({ one }: { one: OneCardView }) {
   return (
-    <li className="jersey wl-one" data-tier={String(Math.min(7, Math.max(1, one.tier)))}>
-      <div className="wl-one-top">
-        <span className="jersey-bar" aria-hidden="true" />
-        <span className="wl-one-flag">{one.flag_label}</span>
-      </div>
-      <p className="fig wl-one-no">
-        <span className="vh">Number </span>
-        {one.number}
-      </p>
-      <h3 className="wl-one-name">{one.person?.name ?? hiddenOneName(one.number)}</h3>
-      <p className="wl-one-tier">{one.tier_label}</p>
-      {one.brief ? <p className="wl-one-brief">{one.brief}</p> : null}
+    <li className="wl-one-li">
+      <article className="jersey wl-one" data-tier={String(Math.min(7, Math.max(1, one.tier)))}>
+        <div className="wl-one-top">
+          <span className="jersey-bar" aria-hidden="true" />
+          <span className="wl-one-flag">{one.flag_label}</span>
+        </div>
+        <p className="fig wl-one-no">
+          <span className="vh">Number </span>
+          {one.number}
+        </p>
+        <h3 className="wl-one-name">{one.person?.name ?? hiddenOneName(one.number)}</h3>
+        <p className="wl-one-tier">{one.tier_label}</p>
+        {one.brief ? <p className="wl-one-brief">{one.brief}</p> : null}
+      </article>
     </li>
   );
 }
 
-/** The wall order shows the first five Ones; the leaderboard shows every One by tier, then hours saved (BLD-E020). */
+/** The Wall shows the five newest Ones, newest first, so a new One shows there (J-ONE.3, BLD-E050); the leaderboard
+ * shows every One by tier, then hours saved (BLD-E020). The worker sends the wall order oldest first. */
 const ONES_ON_WALL = 5;
 
 function Ones({
@@ -606,7 +611,11 @@ function Ones({
   onLeaderboard: () => void;
 }) {
   if (!ones.ok && ones.paused !== null) return null;
-  const list = ones.ok ? (order === "leaderboard" ? ones.data : ones.data.slice(0, ONES_ON_WALL)) : [];
+  const list = ones.ok
+    ? order === "leaderboard"
+      ? ones.data
+      : ones.data.slice(-ONES_ON_WALL).reverse()
+    : [];
   return (
     <section id="recognition" className="wl-sec" aria-labelledby="wl-ones-h">
       <div className="slab wl-slab">
@@ -696,33 +705,47 @@ function ImpactSection({
             ))}
           </ul>
           {impact.data.live.length ? (
-            <div className="wl-live wl-desk">
-              <div className="wl-trow wl-thd" aria-hidden="true">
-                <p>Live fix</p>
-                <p>Measured change</p>
-                <p>Measured</p>
-                <p>Team that runs it</p>
+            // The live-fixes table (S-WALL.impact, L-WALL.impact/2): four columns, a row per live fix. ARIA table
+            // roles keep the grid rows the CSS lays out, and the header row names each cell's column.
+            <div className="wl-live wl-desk" role="table" aria-label="Live fixes and their measured change">
+              <div role="rowgroup">
+                <div className="wl-trow wl-thd" role="row">
+                  <p role="columnheader">Live fix</p>
+                  <p role="columnheader">Measured change</p>
+                  <p role="columnheader">Measured</p>
+                  <p role="columnheader">Team that runs it</p>
+                </div>
               </div>
-              <ul aria-label="Live fixes and their measured change">
+              <div role="rowgroup">
                 {impact.data.live.map((l) => {
                   const to = `/ideas/${encodeURIComponent(l.id)}?from=wall`;
                   return (
-                    <li key={l.id} className="wl-trow" data-handover="expand" data-row={rowId("imp", l.id)}>
-                      <p className="wl-lw">
+                    <div
+                      key={l.id}
+                      role="row"
+                      className="wl-trow"
+                      data-handover="expand"
+                      data-row={rowId("imp", l.id)}
+                    >
+                      <p role="cell" className="wl-lw">
                         <Link href={linkTo(to)} onClick={(e) => open(e, to, rowId("imp", l.id))}>
                           {l.what}
                         </Link>
                       </p>
-                      <p className="wl-lc">{l.change}</p>
-                      <p className="wl-lm">
+                      <p role="cell" className="wl-lc">
+                        {l.change}
+                      </p>
+                      <p role="cell" className="wl-lm">
                         <span className={`wl-dot ${DOT[l.measured] ?? "off"}`} aria-hidden="true" />
                         {l.measured_label}
                       </p>
-                      <p className="wl-lm">{l.team}</p>
-                    </li>
+                      <p role="cell" className="wl-lm">
+                        {l.team}
+                      </p>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             </div>
           ) : null}
           <p className="wl-note wl-desk">
