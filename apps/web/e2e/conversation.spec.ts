@@ -464,6 +464,43 @@ test("S-08.rules/4, F-SPACE.shell at 375px on the route's task screen: no tab ba
   await expectNoSidewaysScroll(page);
 });
 
+test("L-MERGE.effects/6 at 375px: closed while open, a merged idea's closing line takes the box's place with no room kept under it (BLD-F068)", async ({
+  page,
+}) => {
+  const closed = "This idea is now part of another one. Write in IDEA-2026-001481’s conversation.";
+  await page.route(`**/api/ideas/${IDEA}/conversation/messages`, (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: { code: "conversation_closed", message: "This conversation takes no new messages." } },
+    }),
+  );
+  await page.route(`**/api/ideas/${IDEA}/conversation`, (route) =>
+    route.fulfill({ json: { ...kitView(), composer: { ...(kitView().composer as object), closed } } }),
+  );
+  await open(page);
+  await expect(page.locator(".cv")).toHaveAttribute("data-box", "open");
+  await page.getByRole("textbox", { name: "Message the crew" }).fill("Thanks for the call list.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText(closed)).toBeVisible();
+  await expect(page.locator("form.cv-box")).toHaveCount(0);
+  await expect(page.locator(".cv")).toHaveAttribute("data-box", "closed");
+  await settleMotion(page);
+  const gap = await page.evaluate(() => {
+    const main = document.querySelector("main")!;
+    const note = document.querySelector(".cv-closed")!.getBoundingClientRect();
+    const end = main.getBoundingClientRect().bottom;
+    return {
+      cvMain: getComputedStyle(document.querySelector(".cv-main")!).paddingBottom,
+      below: end - note.bottom, // the closing line to the end of the page
+      mainPad: Number.parseFloat(getComputedStyle(main).paddingBottom),
+    };
+  });
+  expect(gap.cvMain).toBe("0px");
+  // Under the closing line: only the shell's own padding (and the side panel's place, hidden on a phone)
+  expect(gap.below).toBeLessThanOrEqual(gap.mainPad + 1);
+  await expectNoSeriousAxeIssues(page);
+});
+
 test("S-08 at 375px: the box has no resize grip; it grows with its words to 120px, then scrolls (BLD-F068)", async ({
   page,
 }) => {
