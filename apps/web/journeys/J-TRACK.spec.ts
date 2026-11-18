@@ -272,12 +272,7 @@ step(
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi");
     // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
-    const item = inboxItem(
-      page,
-      "1% Club",
-      String.raw`(?:\d+ days?|\d+ hours?) left to answer Harish[’']s questions`,
-      t6.title,
-    );
+    const item = inboxItem(page, "1% Club", String.raw`${LEFT} to answer Harish[’']s questions`, t6.title);
     await expect(item).toBeVisible();
     await item.click();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
