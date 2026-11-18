@@ -512,7 +512,8 @@ step(
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(k1));
     await openAsk(page);
-    await addQuestion(page, "Roughly how many investors are sent on to another branch each week?");
+    const asked = "Roughly how many investors are sent on to another branch each week?";
+    await addQuestion(page, asked);
     await page.getByRole("radio", { name: "3 days" }).click();
     const deadline = await capture(
       page.getByText(/^Kiran has until /).first(),
@@ -544,6 +545,8 @@ step(
         .click();
       await expect(sharer.getByText(`Answer by ${deadline}.`).first()).toBeVisible();
       await expect(action(sharer, "Answer the questions").first()).toBeVisible();
+      // C-INBOX-READER reads the set after the item opens (a second request): the question as the desk wrote it.
+      await expect(sharer.getByText(asked).first()).toBeVisible();
     });
   },
 );
