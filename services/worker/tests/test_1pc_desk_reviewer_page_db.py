@@ -125,6 +125,23 @@ def test_S_R2_left_3_and_5_parts_and_similar_ideas(db: Conn, page: dict[str, Any
     assert sim["merged"] is False
 
 
+def test_S_R2_left_5_J_SIMILAR_7_a_link_counts_both_ways(db: Conn, page: dict[str, Any]) -> None:
+    """An idea found similar to this one while its sharer wrote, and merged into it, is listed here as Merged; a link
+    both ways is listed once, with this idea's own reason."""
+    tanvi = f.person(db, "Tanvi Deshmukh")
+    later = f.idea(db, tanvi, title="One message after a failed debit", status="merged",
+                   merged_into=page["idea"]["id"])  # fmt: skip
+    db.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'close', "
+        "'One message after a failed debit'), (%s, %s, 'related', 'The other way round')",
+        (later["id"], page["idea"]["id"], page["other"]["id"], page["idea"]["id"]),
+    )
+    got = reads.reviewer_idea(db, page["idea"]["idea_id"], page["meera"]["id"], NOW)["similar"]
+    assert [s["idea_id"] for s in got] == [page["other"]["idea_id"], later["idea_id"]]
+    assert got[0]["reason"] == "Same R07 SMS in Hyderabad" and got[0]["merged"] is False
+    assert got[1]["merged"] is True and got[1]["status"] == "merged"
+
+
 def test_V_ACC_review_14_own_idea_is_read_only(db: Conn, page: dict[str, Any]) -> None:
     got = reads.reviewer_idea(db, page["idea"]["idea_id"], page["kavya"]["id"], NOW)
     assert got["own"] is True and got["can_act"] is False
