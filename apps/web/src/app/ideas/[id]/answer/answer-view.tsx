@@ -30,21 +30,13 @@ import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
 
-/** "Home" back: the compact bar on a phone (S-R3.rules/5), a back link above the review bar on desktop (Answer board). */
+/** "Home" back: the compact bar on a phone (S-R3.rules/5), a back link above the review bar on desktop (Answer board).
+ * Its one chevron and 44px height are the shared `.back` (lane D, BLD-B261). */
 function Back() {
   return (
     <>
       <PhoneBar back={{ href: "/", label: "Home" }} title="Answer" />
       <Link href="/" className="back ans-back">
-        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-          <path
-            d="M9 2.5 4.5 7 9 11.5"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </svg>
         Home
       </Link>
     </>

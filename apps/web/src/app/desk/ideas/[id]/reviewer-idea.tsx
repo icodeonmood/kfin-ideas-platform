@@ -306,7 +306,8 @@ export function ReviewerIdea({
     <div className="ri">
       <div className="ri-head">
         {/* Back to the desk, searched or not, goes back in history when the desk is the entry before, so its tab,
-            sort and search come back as they were (J-BROWSE/3 and /4, DEC-110, BLD-B260); otherwise the plain link */}
+            sort and search come back as they were (J-BROWSE/3 and /4, DEC-110, BLD-B260); otherwise the plain link.
+            Its one chevron and 44px height are the shared `.back` (lane D, BLD-B261) */}
         <Link
           href="/desk"
           className="back"
@@ -315,15 +316,6 @@ export function ReviewerIdea({
             if (backToList("/desk")) e.preventDefault();
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path
-              d="M9 2.5 4.5 7 9 11.5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              fill="none"
-              strokeLinecap="round"
-            />
-          </svg>
           Review desk
         </Link>
         <p className="ri-ref">
