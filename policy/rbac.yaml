@@ -110,6 +110,7 @@ endpoints:
   - GET /api/me                                       signed_in
   - POST /api/me/privacy-notice                       signed_in
   - GET /api/me/ideas                                 signed_in       # S-07, My ideas: the person's own list (lane E)
+  - POST /api/me/ideas                                signed_in       # S-07 with a search: a read, the words in the body, never a URL (DEC-110)
   - GET /api/me/shell                                 signed_in       # the shell's drafts, ideas and Inbox count (C-SIDEBAR.rules/2)
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
@@ -308,6 +309,7 @@ endpoints:
   # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
   # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
   - GET /api/desk                                     view_review_queue
+  - POST /api/desk                                    view_review_queue   # S-R1 with a search: a read, the words in the body, never a URL (DEC-110)
   - GET /api/desk/ideas/{id}                          view_review_queue
   - GET /api/desk/ideas/{id}/listen                   view_review_queue   # behind desk.listen
   - POST /api/desk/ideas/{id}/open                    work_review_queue

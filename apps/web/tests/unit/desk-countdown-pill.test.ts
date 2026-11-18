@@ -148,7 +148,7 @@ describe("S-R1.layout/4, C-PILL.rules/3: the desk's time left is the board's cou
       waiting_on_sharers: [],
       now: new Date().toISOString(),
     };
-    const box = doc(renderToStaticMarkup(createElement(DeskView, { initial: data, initialQuery: "" })));
+    const box = doc(renderToStaticMarkup(createElement(DeskView, { initial: data })));
     const clocks = [...box.querySelectorAll(".rd-time .due")];
     expect(clocks.map((c) => c.className)).toEqual(["due", "due soon", "due over"]);
     expect(clocks[0]?.textContent).toMatch(/days? to answer$/);

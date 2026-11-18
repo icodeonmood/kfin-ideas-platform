@@ -1,8 +1,11 @@
 """S-07, My ideas: everything the person has shared or teamed up on, where each is, and the one next step for each.
 
-All list state lives in the URL (P-ROUTES.state, S-07.return/1): `list` (yours, teamed), `filter`, `sort`, `q` and
-`row` (the row opened last, for "Back where you were"). The server normalises them and returns the canonical
-query, so a link reproduces the view for whoever opens it, with only what that person may see (J-BROWSE/6).
+The list state (P-ROUTES.state, S-07.return/1) is `list` (yours, teamed), `filter`, `sort`, `q` and `row` (the row
+opened last, for "Back where you were"). All but the search live in the URL; the server normalises them and returns
+the canonical query, so a link reproduces the view for whoever opens it, with only what that person may see
+(J-BROWSE/6). The search `q` is never in a URL (DEC-110): it arrives in a POST body, and no link built here (tabs,
+filters, sorts, Copy link, Clear, a row's `back=`) carries it. A link on the screen keeps the search on screen; the
+search's own empty state ("no_results") clears it.
 
 Search here is a plain text match on the title, the short summary and the reference of the person's own list.
 Asking in your own words (`C-SEARCH` ask, `L-SEARCH`) is lane F's and arrives on the same `q`.
@@ -91,11 +94,12 @@ def normalise(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def query_of(state: dict[str, Any], **override: Any) -> str:
-    """The canonical query string for a list state, defaults left out ('' for the plain list)."""
+    """The canonical query string for a list state, defaults left out ('' for the plain list). Never the search
+    (DEC-110): its words go in no URL."""
     s = {**state, **override}
     pairs = [
         (k, s[k])
-        for k, default in (("list", "yours"), ("filter", "all"), ("sort", "latest"), ("q", ""), ("row", None))
+        for k, default in (("list", "yours"), ("filter", "all"), ("sort", "latest"), ("row", None))
         if s.get(k) and s[k] != default
     ]
     return urlencode(pairs)
@@ -545,7 +549,7 @@ def my_ideas(
             "matched_on": ["title", "summary", "reference"],
             "matched_line": "Matched on titles, short summaries and references.",  # NOT DRAWN: plain-text search
             "closest": {"id": best["id"], "title": best["title"], "href": best["href"]} if best else None,
-            "clear": {"label": "Clear", "to": url_of(state, q="", row=None)},
+            "clear": {"label": "Clear", "to": url_of(state, row=None)},
         }
     if not rows:
         out["empty"] = {
@@ -575,7 +579,7 @@ def my_ideas(
                 "kind": "no_results",
                 "title": f"Nothing found for “{state['q']}”.",
                 "line": "Try other words, or clear the search.",  # NOT DRAWN
-                "actions": [{"label": "Clear", "to": url_of(state, q="", row=None)}],
+                "actions": [{"label": "Clear", "to": url_of(state, row=None)}],
             }
         elif state["filter"] != "all":
             title, line = EMPTY[state["filter"]]
