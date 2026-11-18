@@ -407,22 +407,48 @@
   margin: 18px 0 14px;
 }
 
+/* The top block runs edge to edge with its own padding, border and hue; the rest of the card keeps its padding
+   (C-CREW-DECK.card; Home.dc.html:283 and :287, PhoneHome.dc.html:289). The card clips the hue to its corners, as
+   the board's .pcard does with overflow: hidden. */
 .hm-pcard {
   display: flex;
   flex-direction: column;
   gap: 14px;
   height: 100%;
-  padding: 20px 22px;
+  padding: 0 22px 20px;
   box-sizing: border-box;
   border-radius: 28px;
+  overflow: hidden;
+  /* Solid, as the board's .pcard (Home.dc.html:283): --card is glass inside the signed-in shell */
   background: #ffffff;
 }
 
 .hm-pc-top {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+  margin: 0 -22px;
+  padding: 22px 22px 20px;
+  /* Home.dc.html:287 .pc-top: no token for this rule */
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+}
+
+/* The hue the contract sends, 1 or 2 (E-ENTITIES IdeaPreview.hue), with the board's stops: Home.dc.html:288-289,
+   PhoneHome.dc.html:290-291 (.pc-top.hue1, .pc-top.hue2). The tints are --blue, --spark and the board's violet at the
+   board's alphas, which tokens.json does not define; the base is the board's solid #FFFFFF (--card is glass inside the
+   shell). Lane F's .crew-top.hue1/.hue2 (S-H2) carry the same stops. */
+.hm-pcard.hue1 .hm-pc-top {
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(57, 93, 237, 0.2), rgba(57, 93, 237, 0) 60%),
+    radial-gradient(120% 150% at 100% 0%, rgba(244, 104, 53, 0.16), rgba(244, 104, 53, 0) 60%), #ffffff;
+}
+
+.hm-pcard.hue2 .hm-pc-top {
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(146, 128, 255, 0.24), rgba(146, 128, 255, 0) 60%),
+    radial-gradient(120% 150% at 100% 0%, rgba(57, 93, 237, 0.14), rgba(57, 93, 237, 0) 60%), #ffffff;
 }
 
 .hm-pc-top :is(.h3, .meta),
