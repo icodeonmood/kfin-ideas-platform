@@ -9,7 +9,6 @@ title is its masked title (L-HIDE), the one line every message may carry.
 from __future__ import annotations
 
 import datetime as dt
-import math
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -18,6 +17,7 @@ from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
 from notify import AS_THE_DESK
+from onepc import countdown as clock
 from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -172,25 +172,21 @@ def short_date(at: dt.datetime) -> str:
 
 
 def countdown(at: dt.datetime, now: dt.datetime) -> str:
-    """ "3 days left", "5 hours left", "Under an hour left", "Overdue" (A-API.conventions/6: the server says it)."""
-    seconds = (at - now).total_seconds()
-    if seconds <= 0:
-        return "Overdue"
-    hours = seconds / 3600
-    if hours >= 24:
-        days = math.floor(hours / 24)
-        return f"{days} day left" if days == 1 else f"{days} days left"
-    if hours >= 1:
-        h = math.floor(hours)
-        return f"{h} hour left" if h == 1 else f"{h} hours left"
-    return "Under an hour left"
+    """ "2 days left", "07:38 left", "Overdue by 5 hours" (A-API.conventions/6: the server says it). The one rule every
+    place counts by (F-COPY.plurals/3, `onepc.countdown`, BLD-A225), with the Inbox's own word after the count."""
+    return clock.label(at, now, "left")
 
 
 def due(kind: str, at: dt.datetime | None, now: dt.datetime) -> dict[str, Any] | None:
     if at is None:
         return None
-    label = countdown(at, now) if kind in COUNTDOWN_KINDS else f"By {short_date(at)}"
-    return {"at": at.isoformat(), "label": label, "long": long_date(at), "short": short_date(at), "any": True}
+    out: dict[str, Any] = {"at": at.isoformat(), "long": long_date(at), "short": short_date(at), "any": True}
+    if kind in COUNTDOWN_KINDS:
+        c = clock.countdown(at, now)
+        out["label"], out["variant"] = c.label("left"), c.variant  # the pill: warn under a day, bad once late
+    else:
+        out["label"] = f"By {short_date(at)}"
+    return out
 
 
 def _idea(conn: Conn, idea_uuid: Any) -> dict[str, Any] | None:
@@ -255,16 +251,16 @@ def _first_name_for_code(conn: Conn, code: str | None) -> str | None:
 
 
 def _left(row: dict[str, Any], now: dt.datetime) -> str:
-    """How long is left on a reminder, as it is read: "2 days", "5 hours". Once the time has passed, what was left
-    when it was sent."""
+    """How long is left on a reminder, as it is read: "2 days", "07:38" (the countdown's count, F-COPY.plurals/3).
+    Once the time has passed, what was left when it was sent: "1 day" for the day-before reminder, else the whole
+    hours as "02:00" (L-QUESTIONS.clock/2)."""
     at = row.get("due_at")
     if at is not None and at > now:
-        label = countdown(at, now)
-        return label[: -len(" left")] if label.endswith(" left") else label
+        return clock.countdown(at, now).count
     hours = 24.0
     if at is not None and row.get("created_at"):
         hours = (at - row["created_at"]).total_seconds() / 3600
-    return "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
+    return "1 day" if hours >= 20 else f"{max(1, round(hours)):02d}:00"
 
 
 def teamup_request_vars(refs: dict[str, Any], offered: list[str]) -> dict[str, Any]:
@@ -514,6 +510,8 @@ def item(conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime) -> dict
     d = data["due"]
     if d.get("any") and (needs or kind == "build_ask"):
         out["due"] = {"at": d["at"], "label": d["label"]}
+        if "variant" in d:  # a countdown's pill, so the Inbox tones it as the card beside it does (BLD-A225)
+            out["due"]["variant"] = d["variant"]
     return out
 
 

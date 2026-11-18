@@ -498,7 +498,9 @@ export interface InboxItem {
   at: IsoDate;
   unread: boolean;
   needs_you: boolean;
-  due?: { at: IsoDate; label: string };
+  /** A countdown ("2 days left", "07:38 left", "Overdue by 5 hours") carries its pill's `variant` (F-COPY.plurals/3,
+   * BLD-A225); a date ("By Thu, 19 Nov") has none. */
+  due?: { at: IsoDate; label: string; variant?: "normal" | "warn" | "bad" };
   archived: boolean;
   /** By kind. */
   body: Record<string, unknown>;

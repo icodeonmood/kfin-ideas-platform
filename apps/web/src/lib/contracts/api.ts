@@ -489,7 +489,7 @@ export interface LinkWords {
   accessible_name?: string;
 }
 export interface WindowCountdown {
-  label: string; // "3 days left", "07:38 left", "Overdue"
+  label: string; // "3 days left", "07:38 left", "Overdue by 5 hours" (F-COPY.plurals/3)
   variant: "neutral" | "warn" | "bad";
   until: IsoDate;
 }

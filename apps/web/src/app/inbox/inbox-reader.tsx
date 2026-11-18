@@ -101,9 +101,11 @@ export function whenLabel(iso: string, now: Date): string {
   });
 }
 
-function dueTone(label: string): string {
-  if (label === "Overdue") return "over";
-  return /hour/i.test(label) ? "soon" : "";
+/** The countdown's pill, as the worker counts it (F-COPY.plurals/3, BLD-A225): warn under a day ("07:38 left"), bad
+ * once late ("Overdue by 5 hours"). A date ("By Thu, 19 Nov") carries no variant and stays plain. */
+function dueTone(due: NonNullable<InboxEntry["due"]>): string {
+  if (due.variant === "bad") return "over";
+  return due.variant === "warn" ? "soon" : "";
 }
 
 function titleOf(item: InboxEntry): string {
@@ -129,7 +131,7 @@ function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
 
 function Due({ item, small }: { item: InboxEntry; small?: boolean }) {
   if (!item.due) return null;
-  return <span className={`ibx-due ${dueTone(item.due.label)}${small ? " xs" : ""}`}>{item.due.label}</span>;
+  return <span className={`ibx-due ${dueTone(item.due)}${small ? " xs" : ""}`}>{item.due.label}</span>;
 }
 
 function btnClass(style: Action["style"]): string {
