@@ -41,6 +41,8 @@ const MEERA = {
   initials: "MI",
   role_label: "from the review desk",
 };
+/** The review desk as the sharer, the crew and the build team read it: never the person at it (DEC-111). */
+const DESK = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
 const RAVI = { id: "u-ravi", name: "Ravi Nair", first_name: "Ravi", initials: "RN" };
 const ADITI = { id: "u-aditi", name: "Aditi Sharma", first_name: "Aditi", initials: "AS" };
 const PRAKASH = { id: "u-prakash", name: "Prakash Kumar", first_name: "Prakash", initials: "PK" };
@@ -70,7 +72,7 @@ function message(id: string, from: typeof KAVYA, label: string, text: string, ex
   } as Entry;
 }
 
-/** The board's default: Kavya's idea, with the review desk, Meera's 3 questions open. */
+/** The board's default: Kavya's idea, with the review desk, its 3 questions open (as Kavya reads it, DEC-111). */
 function yourIdea(): View {
   return {
     idea: {
@@ -82,7 +84,7 @@ function yourIdea(): View {
     audience: "you_and_desk",
     header: { whose: "Your idea", line: "Your idea, shared Saturday 14 November" },
     participants: [
-      { person: MEERA, label: "Meera from the review desk", doing: "Reviewing it", you: false },
+      { person: DESK, label: "The review desk", doing: "Reviewing it", you: false },
       { person: KAVYA, label: "You", doing: "Shared the idea", you: true },
     ],
     entries: [
@@ -93,18 +95,18 @@ function yourIdea(): View {
         "checked:IDEA-2026-001481",
         "Checked and matched. 1 folio number hidden, 2 similar ideas found. 10:06 am",
       ),
-      event("e-open", "Meera from the review desk opened it. Monday 16 November, 9:50 am"),
+      event("e-open", "The review desk opened it. Monday 16 November, 9:50 am"),
       {
         type: "questions",
         id: "e-asked",
         set_id: "set-1",
         state: "sent",
-        by: MEERA,
-        by_label: "Meera from the review desk",
+        by: DESK,
+        by_label: "The review desk",
         count: 3,
         answered: 0,
         due_at: "2026-11-19T18:00:00+05:30",
-        title: "Meera has 3 questions about your idea",
+        title: "The review desk has 3 questions about your idea",
         deadline:
           "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each answer is added to its part of your idea.",
         answer_url: "/ideas/IDEA-2026-001481/answer",
@@ -116,7 +118,7 @@ function yourIdea(): View {
       placeholder: "Message the review desk",
       visibility: "Only you and the review desk see this conversation.",
       questions_line:
-        "Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
+        "Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
       can_attach: true,
     },
   } as View;
@@ -286,7 +288,7 @@ describe("S-08 states", () => {
     expect($("h2")?.textContent).toBe("Conversation");
     expect(log.querySelectorAll("li.cv-ev")).toHaveLength(3);
     expect(log.textContent).toContain("You shared it. Saturday 14 November, 10:05 am");
-    expect(log.textContent).toContain("Meera has 3 questions about your idea");
+    expect(log.textContent).toContain("The review desk has 3 questions about your idea");
     expect(log.textContent).toContain(
       "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each answer is added to its part of your idea.",
     );
@@ -297,7 +299,7 @@ describe("S-08 states", () => {
       "/ideas/IDEA-2026-001481/answer",
     ]);
     expect(host.textContent).toContain(
-      "Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
+      "Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
     );
 
     const box = textbox();
@@ -309,7 +311,7 @@ describe("S-08 states", () => {
 
     const side = $("aside")!;
     expect(side.querySelector("h2")?.textContent).toBe("In this conversation");
-    expect(side.textContent).toContain("Meera from the review deskReviewing it");
+    expect(side.textContent).toContain("The review deskReviewing it");
     expect(side.textContent).toContain("YouShared the idea");
     expect(side.textContent).toContain(S08_COPY.sideNote);
     // The phone's "i" opens the side panel as a sheet (S-08.rules/4).
@@ -440,7 +442,7 @@ describe("S-08 states", () => {
         id: "e-answers",
         set_id: "set-1",
         from: KAVYA,
-        title: "Your answers to Meera’s 3 questions",
+        title: "Your answers to the review desk’s 3 questions",
         answers: [
           {
             id: "a1",
@@ -472,7 +474,8 @@ describe("S-08 states", () => {
             ],
           },
         ],
-        footer: "Each answer was added to its part of your idea. Meera decides by Friday 20 November.",
+        footer:
+          "Each answer was added to its part of your idea. The review desk decides by Friday 20 November.",
         at: "2026-11-16T16:32:00+05:30",
         at_label: "Monday 16 November, 4:32 pm",
       } as Entry,
@@ -480,12 +483,12 @@ describe("S-08 states", () => {
     delete v.composer.questions_line;
     await show(v);
     const li = $("#entry-e-answers")!;
-    expect(li.textContent).toContain("Your answers to Meera’s 3 questions");
+    expect(li.textContent).toContain("Your answers to the review desk’s 3 questions");
     expect(li.textContent).toContain("Added to The problem");
     expect(li.textContent).toContain("Added to Attached");
     expect(li.querySelector("a")?.getAttribute("href")).toBe("/api/attachments/ATT-2026-000501");
     expect(li.textContent).toContain(
-      "Each answer was added to its part of your idea. Meera decides by Friday 20 November.",
+      "Each answer was added to its part of your idea. The review desk decides by Friday 20 November.",
     );
   });
 
@@ -497,18 +500,18 @@ describe("S-08 states", () => {
         id: "e-asked",
         set_id: "set-1",
         state: "sent",
-        by: MEERA,
-        by_label: "Meera from the review desk",
+        by: DESK,
+        by_label: "The review desk",
         count: 2,
         answered: 0,
         due_at: "2026-11-19T18:00:00+05:30",
-        title: "Meera from the review desk asked 2 questions.",
+        title: "The review desk asked 2 questions.",
         at: "2026-11-16T11:20:00+05:30",
         at_label: "Monday 16 November, 11:20 am",
       } as Entry,
     ];
     await show(v);
-    expect(host.textContent).toContain("Meera from the review desk asked 2 questions.");
+    expect(host.textContent).toContain("The review desk asked 2 questions.");
     expect(links(S08_COPY.answer)).toHaveLength(0);
     expect(links(S08_COPY.seeOnIdea)[0]?.getAttribute("href")).toBe("/ideas/IDEA-2026-001412");
     // BLD-B249: the card is the sharer's; anyone else keeps the plain line and never reads the set
@@ -602,11 +605,11 @@ describe("S-08 C-QCARD.places: the questions as lane B's card for the sharer (BL
     expect(calls).toEqual([]); // the conversation's own calls are untouched
     const entry = $("#entry-e-asked")!;
     // The message line stays: who asked and when; the card is the body, not the plain line
-    expect(entry.querySelector(".cv-who")?.textContent).toContain("Meera from the review desk");
+    expect(entry.querySelector(".cv-who")?.textContent).toContain("The review desk");
     expect(entry.querySelector(".cv-who")?.textContent).toContain("Monday 16 November, 11:20 am");
     expect(entry.querySelector(".cv-ask")).toBeNull();
     const card = entry.querySelector("article.qcard")!;
-    expect(card.querySelector("h3")?.textContent).toBe("Meera has 3 questions about your idea");
+    expect(card.querySelector("h3")?.textContent).toBe("The review desk has 3 questions about your idea");
     expect(card.getAttribute("aria-labelledby")).toBe(card.querySelector("h3")?.id);
     expect(card.querySelector(".qcard-h")?.textContent).toContain("left"); // the countdown beside the title
     expect([...card.querySelectorAll(".qcard-list li")].map((li) => li.textContent)).toEqual([
@@ -653,7 +656,9 @@ describe("S-08 C-QCARD.places: the questions as lane B's card for the sharer (BL
       await settle();
       expect(setReads).toEqual(["/api/ideas/IDEA-2026-001481/question-set?set_id=set-1"]);
       expect($("#entry-e-asked .qcard")).toBeNull();
-      expect($("#entry-e-asked .cv-ask .cv-askt")?.textContent).toBe("Meera has 3 questions about your idea");
+      expect($("#entry-e-asked .cv-ask .cv-askt")?.textContent).toBe(
+        "The review desk has 3 questions about your idea",
+      );
       act(() => root.unmount());
       root = createRoot(host);
     }
@@ -1007,5 +1012,78 @@ describe("S-08 helpers", () => {
     expect(fileSize(2.4 * 1024 * 1024)).toBe("2.4 MB");
     expect(fileSize(3 * 1024 * 1024)).toBe("3 MB");
     expect(fileSize(undefined)).toBeUndefined();
+  });
+});
+
+// --- DEC-111: the sharer never sees the person at the review desk -------------------------------------------------
+describe("S-08 DEC-111 the review desk, never the person at it (BLD-F082, BLD-F083)", () => {
+  /** Kavya's idea with Ravi on the crew; the desk wrote with a file, as Kavya reads it. */
+  function deskWrote(): View {
+    const v = yourIdea();
+    v.participants = [
+      { person: DESK, label: "The review desk", doing: "Reviewing it", you: false },
+      { person: RAVI, label: "Ravi Nair", doing: "On the crew", you: false },
+      { person: KAVYA, label: "You", doing: "Shared the idea", you: true },
+    ];
+    v.entries = [
+      ...v.entries,
+      message("m-desk", DESK, "The review desk", "Can you add last week’s R07 calls?", {
+        files: [
+          {
+            id: "ATT-2026-000601",
+            kind: "file",
+            name: "branch-call-log.xlsx",
+            type: "XLSX",
+            size: 2048,
+            state: "checked",
+            added_by: DESK,
+            added_at: "2026-11-17T10:06:00+05:30",
+            view_url: "/api/attachments/ATT-2026-000601",
+          },
+        ],
+      }),
+    ];
+    return v;
+  }
+
+  it("a desk-authored message, the questions and In this conversation read 'The review desk' with no avatar or initials", async () => {
+    await show(deskWrote());
+    const msg = $("#entry-m-desk")!;
+    expect(msg.querySelector(".cv-who b")?.textContent).toBe("The review desk");
+    expect(msg.querySelector(".av")).toBeNull(); // no face, no initials
+    expect(msg.querySelector('[aria-label="Files in the review desk’s message"]')).not.toBeNull();
+    const asked = $("#entry-e-asked")!;
+    expect(asked.querySelector(".cv-who b")?.textContent).toBe("The review desk");
+    expect(asked.querySelector(".av")).toBeNull();
+    const desk = [...host.querySelectorAll("aside .cv-ppl li")].find((li) =>
+      li.textContent?.startsWith("The review desk"),
+    )!;
+    expect(desk.textContent).toBe("The review deskReviewing it");
+    expect(desk.querySelector(".av")).toBeNull();
+    // The phone's faces under the title skip it too: Ravi's and Kavya's only.
+    expect([...host.querySelectorAll(".cv-faces .av")].map((a) => a.textContent)).toEqual(["RN", "KM"]);
+    // Nobody's name, no stray initials: the desk is the only label for it anywhere on the screen.
+    expect(host.textContent).not.toMatch(/Meera|Iyer/);
+  });
+
+  it("the @mention list never offers the review desk to the sharer (it has no id)", async () => {
+    await show(deskWrote());
+    await type("Thanks @");
+    const options = [...host.querySelectorAll('[role="option"]')];
+    expect(options.map((o) => o.querySelector(".cv-menu-n")?.textContent)).toEqual(["Ravi Nair"]);
+  });
+
+  it("the review desk and the committee still read the person, with their face", async () => {
+    const v = deskWrote();
+    v.entries = [
+      message("m-desk", MEERA, "Meera from the review desk", "Can you add last week’s R07 calls?"),
+    ];
+    v.participants = [
+      { person: MEERA, label: "Meera from the review desk", doing: "Reviewing it", you: false },
+    ];
+    await show(v);
+    const msg = $("#entry-m-desk")!;
+    expect(msg.querySelector(".cv-who b")?.textContent).toBe("Meera from the review desk");
+    expect(msg.querySelector(".av")?.textContent).toBe("MI");
   });
 });
