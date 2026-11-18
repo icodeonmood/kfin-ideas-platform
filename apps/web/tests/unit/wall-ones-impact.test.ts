@@ -98,9 +98,9 @@ describe("S-WALL.ones, L-WALL.ones (J-ONE/3, BLD-E050): the five newest Ones, ne
       "Dinesh Kamath",
       "Rekha Saxena",
     ]);
-    expect(cards[0].textContent).toContain("Number 11");
-    expect(cards[0].textContent).toContain("Tier 3, Flame");
-    expect(cards[0].textContent).toContain("Stopped wrong bank details before a payout goes out.");
+    expect(cards[0]?.textContent).toContain("Number 11");
+    expect(cards[0]?.textContent).toContain("Tier 3, Flame");
+    expect(cards[0]?.textContent).toContain("Stopped wrong bank details before a payout goes out.");
   });
 
   it("the leaderboard keeps every One in the worker's order", () => {
@@ -121,12 +121,12 @@ describe("S-WALL.impact, L-WALL.impact/2 (J-ONE/2): the live fixes are a table",
     ]);
     const rows = [...table.querySelectorAll('[role="rowgroup"] + [role="rowgroup"] > [role="row"]')];
     expect(rows).toHaveLength(1);
-    expect([...rows[0].querySelectorAll('[role="cell"]')].map((c) => c.textContent)).toEqual([
+    expect([...(rows[0]?.querySelectorAll('[role="cell"]') ?? [])].map((c) => c.textContent)).toEqual([
       "Flag likely-wrong bank details before a payout",
       "620 hours a month saved; bounced payouts down by a third",
       "30 days",
       "Payout checks team",
     ]);
-    expect(rows[0].getAttribute("data-row")).toBe("imp-IDEA-2026-000011");
+    expect(rows[0]?.getAttribute("data-row")).toBe("imp-IDEA-2026-000011");
   });
 });
