@@ -414,6 +414,56 @@ test("S-08.rules/4, PhoneMessages at 375px: the bar reads Conversation; the box 
   await expectNoSidewaysScroll(page);
 });
 
+test("S-08.rules/4, F-SPACE.shell at 375px on the route's task screen: no tab bar, so the box sits at the very bottom with the safe area only, and the last line clears it (BLD-F068)", async ({
+  page,
+}) => {
+  await answerConversation(page, longView());
+  await open(page);
+  await page
+    .getByRole("textbox", { name: "Message the crew" })
+    .fill("Thanks @Aditi Sharma for the call list.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".cv-conv > li")).toHaveCount(14);
+  // /ideas/:id/conversation is a task screen on a phone (lane D, F-SPACE.shell): the shell marks it data-mode="task"
+  // and draws no tab bar. The kit is not a task path, so it takes that shape here; the box measures it again.
+  await page.evaluate(() => {
+    document.querySelector(".shell")?.setAttribute("data-mode", "task");
+    const tabs = document.querySelector<HTMLElement>(".ptabs");
+    if (tabs) tabs.style.display = "none";
+    window.dispatchEvent(new Event("resize"));
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.querySelector<HTMLElement>(".cv")?.style.getPropertyValue("--cv-at")),
+    )
+    .toBe("0px");
+  await settleMotion(page);
+  const vars = await page.evaluate(() => {
+    const cv = document.querySelector<HTMLElement>(".cv")!;
+    return {
+      safe: cv.style.getPropertyValue("--cv-safe"),
+      mainPad: getComputedStyle(document.querySelector("main")!).paddingBottom,
+    };
+  });
+  expect(vars.safe).toBe("1"); // the box takes the safe area itself
+  expect(vars.mainPad).toBe("120px"); // lane D's room for a task screen's dock
+  for (const where of ["top", "end"] as const) {
+    await page.evaluate(
+      (w) => window.scrollTo(0, w === "top" ? 0 : document.documentElement.scrollHeight),
+      where,
+    );
+    const l = await layout(page);
+    expect(l.tabs).toBeNull();
+    expect(
+      Math.abs(l.box.bottom - l.viewport),
+      `${where}: the box sits at the very bottom`,
+    ).toBeLessThanOrEqual(1);
+    if (where === "end") expect(l.last.bottom, "the last line clears the box").toBeLessThanOrEqual(l.box.top);
+  }
+  await expectNoSeriousAxeIssues(page);
+  await expectNoSidewaysScroll(page);
+});
+
 test("S-08 at 375px: the box has no resize grip; it grows with its words to 120px, then scrolls (BLD-F068)", async ({
   page,
 }) => {
