@@ -99,7 +99,7 @@ step(
 step(
   "J-BROWSE/4",
   "S-R1",
-  "The same on the review desk (tab and sort) and in the Inbox (tab and the open item)",
+  "The same on the review desk (tab, sort and the opened row) and in the Inbox (tab and the open item)",
   { needs: ["S-R1", "S-R2", "C-TABS", "C-SORTS", "S-H5", "C-INBOX-READER", "S-R3", "P-ROUTES"] },
   async ({ page, browser }, info) => {
     const z1 = await seeded("Z1");
@@ -113,6 +113,8 @@ step(
     await page.goBack();
     await expect(page.getByRole("tab", { name: /^Waiting on the sharer/, selected: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+    // J-BROWSE row 4, "the open item is restored": the row that was opened has focus again (S-R1.rules/4).
+    await expect(page.getByRole("link", { name: z1.title, exact: true }).first()).toBeFocused();
 
     const context = await browser.newContext();
     const sharer = await context.newPage();
