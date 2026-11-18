@@ -2,8 +2,9 @@
 
 /**
  * S-R1 Review desk (L-REVIEW.queue): search, four tabs with counts, a sort, and one table whose rows carry every
- * running clock. Countdowns tick each minute without a reload (S-R1.rules/2); tab, sort and search are kept in the
- * URL, and Back returns to the row that was opened (S-R1.rules/4); "Remind {sharer}" acts in place (S-R1.rules/3).
+ * running clock. Countdowns tick each minute without a reload (S-R1.rules/2); tab and sort are kept in the URL and
+ * the search in the tab, and Back returns to the row that was opened (S-R1.rules/4); "Remind {sharer}" acts in place
+ * (S-R1.rules/3).
  * On a phone the table becomes cards (S-R1.rules/6). The search is never in the URL or a request's URL (DEC-110): it
  * stays in this tab's memory of the history entry (`lib/search-memory`), and a list with a search is read with POST.
  */

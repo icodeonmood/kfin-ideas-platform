@@ -334,9 +334,10 @@ test.describe("S-07 on the 1% Club seed", () => {
 
   test("S-07.states view=Loading: three skeleton rows while the next view comes", async ({ page }) => {
     await open(page);
-    // Hold the next view's server answer for a moment, so the loading state can be seen
-    await page.route("**/my-ideas?**", async (route) => {
-      if (route.request().headers()["rsc"]) await new Promise((r) => setTimeout(r, 1_500));
+    // Hold the next view's server answer for a moment, so the loading state can be seen (a change asks for its view
+    // with POST /api/me/ideas, DEC-110)
+    await page.route("**/api/me/ideas", async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1_500));
       await route.continue();
     });
     await page.getByRole("tab", { name: /^Teamed up/ }).click();
