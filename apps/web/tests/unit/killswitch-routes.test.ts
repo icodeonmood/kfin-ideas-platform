@@ -83,6 +83,17 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
   });
 
+  it("DEC-110, BLD-A219: My ideas' and the desk's searches are reads sent as POST; no switch pauses them", async () => {
+    const { UNGUARDED_WRITES } = await import("@/lib/killswitch-routes");
+    for (const path of ["/api/me/ideas", "/api/desk"]) {
+      expect(switchesFor("POST", path)).toEqual([]);
+      expect(switchesFor("GET", path)).toEqual([]);
+      expect(UNGUARDED_WRITES.some((re) => re.test(path))).toBe(true);
+    }
+    // the desk's own writes keep their rule: only the list itself is listed
+    expect(UNGUARDED_WRITES.some((re) => re.test("/api/desk/ideas/IDEA-2026-000001/notes"))).toBe(false);
+  });
+
   it("has plain-words banner text for every switch it uses", () => {
     for (const rule of ROUTE_RULES) for (const s of rule.switches) expect(BANNERS[s]).toBeTruthy();
     for (const text of Object.values(BANNERS))

@@ -24,7 +24,7 @@ import type {
 import type { FileItem } from "@/lib/contracts/entities";
 
 import { capital, decisionSentence, type Decided } from "./decision";
-import { BackLink, CopyRef, useWay } from "./parts";
+import { BackLink, backToList, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
 const TRY_AGAIN = "We can't do that just now. Please try again in a minute.";
@@ -448,7 +448,9 @@ export function SharerScreen({
       <nav className="ip-crumb ip-desk" aria-label="Breadcrumb">
         <ol>
           <li>
-            <Link href={crumb.to}>{crumb.label}</Link>
+            <Link href={crumb.to} onClick={backToList(crumb.to)}>
+              {crumb.label}
+            </Link>
           </li>
           <li aria-current="page">{crumb.current}</li>
         </ol>

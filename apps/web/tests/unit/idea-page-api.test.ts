@@ -11,7 +11,7 @@ const session = vi.hoisted(() => ({ user: null as CurrentUser | null }));
 vi.mock("@/server/auth/current", () => ({ currentUser: async () => session.user }));
 
 const { GET: getIdea } = await import("@/app/api/ideas/[id]/route");
-const { GET: getMine } = await import("@/app/api/me/ideas/route");
+const { GET: getMine, POST: postMine } = await import("@/app/api/me/ideas/route");
 const { POST: postWithdraw } = await import("@/app/api/ideas/[id]/withdraw/route");
 const { POST: postRestore } = await import("@/app/api/ideas/[id]/restore/route");
 
@@ -136,6 +136,14 @@ describe("A-API.ideas GET /api/ideas/:id (S-06, S-09)", () => {
     expect(url.searchParams.get("back")).toBe("/my-ideas?filter=closed");
     expect(new Headers(first().init.headers).get("X-Internal-Token")).toBe("test-token");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("DEC-110: a search in the way back (an older link) is dropped before it reaches the worker", async () => {
+    worker(200, sharerPage(ME));
+    const back = encodeURIComponent("/my-ideas?sort=shared&q=Zebra7Kestrel&row=IDEA-2026-000123");
+    await getIdea(get(`/api/ideas/${REF}?from=my-ideas&back=${back}`), ctx(REF));
+    expect(first().url.searchParams.get("back")).toBe("/my-ideas?sort=shared&row=IDEA-2026-000123");
+    expect(first().url.href).not.toMatch(/zebra7kestrel/i);
   });
 
   it("an id that is neither a reference nor a row id is not found, without asking the worker", async () => {
@@ -263,16 +271,16 @@ describe("A-API.ideas GET /api/ideas/:id (S-06, S-09)", () => {
 });
 
 describe("A-API.my-ideas GET /api/me/ideas (S-07, P-ROUTES.state)", () => {
-  it("P-ROUTES.state, J-BROWSE/1 and /3: tab, filter, sort, q and row go from the URL to the worker and back", async () => {
-    const state = { list: "teamed", filter: "closed", sort: "stage", q: "sms", row: "IDEA-2026-000001" };
+  it("P-ROUTES.state, J-BROWSE/1 and /3, DEC-110: tab, filter, sort and row go from the URL to the worker; a q never does", async () => {
+    const state = { list: "teamed", filter: "closed", sort: "stage", q: "", row: "IDEA-2026-000001" };
     const body = {
       items: [],
       total: 0,
       counts: {},
       lists: {},
       state,
-      query: "list=teamed&filter=closed&sort=stage&q=sms&row=IDEA-2026-000001",
-      url: "/my-ideas?list=teamed&filter=closed&sort=stage&q=sms&row=IDEA-2026-000001",
+      query: "list=teamed&filter=closed&sort=stage&row=IDEA-2026-000001",
+      url: "/my-ideas?list=teamed&filter=closed&sort=stage&row=IDEA-2026-000001",
       arrival: { line: "Back where you were: Teamed up.", row: "IDEA-2026-000001" },
     };
     worker(200, body);
@@ -291,9 +299,39 @@ describe("A-API.my-ideas GET /api/me/ideas (S-07, P-ROUTES.state)", () => {
       list: "teamed",
       filter: "closed",
       sort: "stage",
-      q: "sms",
       row: "IDEA-2026-000001",
     });
+    expect(url.href).not.toContain("sms");
+  });
+
+  it("DEC-110, BLD-A219: POST carries the search in its body to the worker's POST, never in a URL, cut at 200", async () => {
+    const state = { list: "yours", filter: "all", sort: "shared", q: "Zebra7Kestrel", row: null };
+    worker(200, { items: [], state });
+    const res = await postMine(
+      post("/api/me/ideas?user_id=x", {
+        list: "yours",
+        sort: "shared",
+        q: "Zebra7Kestrel",
+        filter: 7,
+        user_id: "someone-else",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const call = first();
+    expect(call.init.method).toBe("POST");
+    expect(call.url.pathname).toBe(`/internal/me/${ME}/my-ideas`);
+    expect(Object.fromEntries(call.url.searchParams)).toEqual({ user_id: ME });
+    expect(JSON.parse(String(call.init.body))).toEqual({ list: "yours", sort: "shared", q: "Zebra7Kestrel" });
+    expect(call.url.href).not.toMatch(/zebra7kestrel/i);
+
+    calls = [];
+    await postMine(post("/api/me/ideas", { q: "a".repeat(250) }));
+    expect((JSON.parse(String(first().init.body)) as { q: string }).q).toHaveLength(200);
+    session.user = null;
+    calls = [];
+    expect((await postMine(post("/api/me/ideas", { q: "x" }))).status).toBe(401);
+    expect(calls).toHaveLength(0);
   });
 
   it("drops a device id that is not an opaque token, and refuses the signed out", async () => {

@@ -718,15 +718,16 @@ export type WithdrawResponse = SharerView;
 export type RestoreResponse = SharerView;
 
 // ---------------------------------------------------------------------------------------------------------------
-// A-API.my-ideas: lane E owns this section. `GET /me/ideas` (S-07). The whole list state is in the URL
-// (P-ROUTES.state): `list`, `filter`, `sort`, `q` and `row`, the row to come back to. Search here is a plain text
-// match on title, short summary and reference; asking in your own words is lane F's (L-SEARCH) on the same `q`.
+// A-API.my-ideas: lane E owns this section. `GET /me/ideas` (S-07): `list`, `filter`, `sort` and `row`, the row to come
+// back to, in the URL (P-ROUTES.state). `POST /me/ideas` with a `MyIdeasQuery` body is the same read with the search
+// `q`, whose words go in no URL (DEC-110). Search here is a plain text match on title, short summary and reference;
+// asking in your own words is lane F's (L-SEARCH) on the same `q`.
 // ---------------------------------------------------------------------------------------------------------------
 export interface MyIdeasQuery {
   list?: MyIdeasList;
   filter?: MyIdeasFilter;
   sort?: MyIdeasSort;
-  q?: string;
+  q?: string; // POST body only (DEC-110); at most 200 characters
   row?: string;
 }
 export interface MyIdeaRow {
@@ -772,8 +773,8 @@ export interface MyIdeasResponse {
   counts: Record<MyIdeasFilter, number>; // per filter, for the current list
   lists: Record<MyIdeasList, number>; // per list, for the current filter
   state: { list: MyIdeasList; filter: MyIdeasFilter; sort: MyIdeasSort; q: string; row: string | null };
-  query: string; // the canonical query string, defaults left out
-  url: string; // "/my-ideas?list=teamed&sort=stage"
+  query: string; // the canonical query string, defaults left out; never the search (DEC-110)
+  url: string; // "/my-ideas?list=teamed&sort=stage"; no link in this response carries the search
   tabs: { list: MyIdeasList; label: string; count: number; selected: boolean; to: string }[];
   filters: {
     filter: MyIdeasFilter;
@@ -995,12 +996,13 @@ export interface SendAnswersResponse {
   decides_by: string | null; // "Meera decides by Friday 20 November"
 }
 
-// A-API.desk (S-R1)
+// A-API.desk (S-R1): `GET /desk?tab=&sort=`, or `POST /desk` with a `DeskQuery` body when there is a search, whose
+// words go in no URL (DEC-110)
 export type DeskTab = "to_review" | "waiting" | "answered" | "decided";
 export interface DeskQuery {
   tab?: DeskTab;
   sort?: DeskSort;
-  q?: string;
+  q?: string; // POST body only (DEC-110); at most 200 characters
 }
 export interface DeskRow {
   idea_id: string;

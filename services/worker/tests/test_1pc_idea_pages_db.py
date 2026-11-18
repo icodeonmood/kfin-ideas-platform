@@ -910,7 +910,7 @@ def mine(club: dict[str, Any], who: str, **params: Any) -> dict[str, Any]:
     return my_ideas(club["conn"], club["p"][who], params, now=NOW)
 
 
-def test_p_routes_state_j_browse_3_my_ideas_restores_tab_filter_sort_and_q_from_the_url(
+def test_p_routes_state_j_browse_3_dec_110_my_ideas_restores_tab_filter_sort_from_the_url_and_q_from_the_body(
     club: dict[str, Any],
 ) -> None:
     r2 = ref(club, "R2")
@@ -922,15 +922,21 @@ def test_p_routes_state_j_browse_3_my_ideas_restores_tab_filter_sort_and_q_from_
         "q": "debit",
         "row": r2,
     }
-    assert out["query"] == f"list=teamed&filter=with_review_desk&sort=stage&q=debit&row={r2}"
+    # DEC-110: the search is in the state, never in the canonical query or any link built from it
+    assert out["query"] == f"list=teamed&filter=with_review_desk&sort=stage&row={r2}"
     assert out["url"] == f"/my-ideas?{out['query']}"
+    links = (
+        [t["to"] for t in out["tabs"]] + [f["to"] for f in out["filters"]] + [s["to"] for s in out["sorts"]]
+    )
+    links += [out["sort_cycle"]["to"], out["copy_link"]["url"], out["search"]["clear"]["to"]]
+    assert not [link for link in links if "debit" in link or "q=" in link]
     assert [i["id"] for i in out["items"]] == [r2]
     assert out["arrival"] == {"line": "Back where you were: Teamed up.", "row": r2}
     # The row's link carries this exact view back (J-BROWSE/2 and /3), the opened row included.
     href = out["items"][0]["href"]
     assert href.startswith(f"/ideas/{r2}?from=my-ideas&back=")
     back = parse_qs(urlsplit(href).query)["back"][0]
-    assert back == out["url"]
+    assert back == out["url"] and "debit" not in href
     assert [t["selected"] for t in out["tabs"]] == [False, True]
     assert [f["filter"] for f in out["filters"] if f["selected"]] == ["with_review_desk"]
     assert [s["sort"] for s in out["sorts"] if s["selected"]] == ["stage"]

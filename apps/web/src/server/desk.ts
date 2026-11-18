@@ -6,6 +6,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SEARCH_MAX } from "@/lib/search-memory";
 import { authorize, signedIn } from "@/server/auth/authorize";
 import type { CurrentUser } from "@/server/auth/current";
 import { readJson } from "@/server/http";
@@ -76,6 +77,27 @@ export function getRoute(gate: Gate, workerPath: (id: string) => string, queryKe
     const id = await paramId(ctx);
     const q = Object.fromEntries(queryKeys.map((k) => [k, request.nextUrl.searchParams.get(k)]));
     return forward(path(workerPath(encodeURIComponent(id)), me, q));
+  };
+}
+
+/** POST handler for a read whose words must stay out of every URL, a search (DEC-110): the gate, then the body's
+ * string fields passed on in the worker's POST body, each cut at 200 characters (the search box's limit, kept on the
+ * server too). Anything that is not a string is left out. */
+export function searchRoute(gate: Gate, workerPath: (id: string) => string, bodyKeys: readonly string[]) {
+  return async (request: NextRequest, ctx?: { params?: Promise<{ id?: string }> }) => {
+    const me = await who(gate);
+    if (me instanceof NextResponse) return me;
+    const id = await paramId(ctx);
+    const raw = await readJson(request);
+    const out: Record<string, string> = {};
+    for (const k of bodyKeys) {
+      const v = raw[k];
+      if (typeof v === "string") out[k] = v.slice(0, SEARCH_MAX);
+    }
+    return forward(path(workerPath(encodeURIComponent(id)), me), {
+      method: "POST",
+      body: JSON.stringify(out),
+    });
   };
 }
 
