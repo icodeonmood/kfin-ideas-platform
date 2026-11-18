@@ -709,7 +709,7 @@ export function HomeScreen({
         <ul className="hm-ways">
           {/* A way that is off reads as S-H3 draws it (BLD-A192, BLD-C183): its heading with "Coming soon" and its
               line, no link and no address, like the app's tile beside it. */}
-          <li className="card hm-way" data-way="email" data-off={waysOn.email ? undefined : ""}>
+          <li className="card hm-way" data-way="email">
             <span className="hm-way-ic">
               <WayIcon kind="mail" />
             </span>
@@ -727,7 +727,7 @@ export function HomeScreen({
             )}
             <p className="meta">{HOME_COPY.outlookBody}</p>
           </li>
-          <li className="card hm-way" data-way="teams" data-off={waysOn.teams ? undefined : ""}>
+          <li className="card hm-way" data-way="teams">
             <span className="hm-way-ic">
               <WayIcon kind="chat" />
             </span>
