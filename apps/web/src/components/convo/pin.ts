@@ -136,7 +136,9 @@ export function grow(box: HTMLTextAreaElement | null): void {
 /**
  * "Say hello" lands with the cursor in the box (BLD-F069). On arrival with `#say-hello`, focus goes to the box when
  * the person can write here (the box is open and writing is not paused); otherwise focus stays where it is. Either way
- * the hint comes off the address, keeping the router's own history state.
+ * the hint comes off the address, keeping the router's own history state. Words carried over from the edit page
+ * (S-06B.rules/2, BLD-C165) reach the box just after the focus; setting a box's words puts the cursor at their end
+ * (HTML, the value setter), so the person carries on writing after them. Nothing is sent.
  */
 export function useSayHello(box: RefObject<HTMLTextAreaElement | null>, canWrite: boolean): void {
   useEffect(() => {

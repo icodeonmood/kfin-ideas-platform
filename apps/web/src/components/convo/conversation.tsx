@@ -16,7 +16,8 @@
  *   (BLD-F068, `pin.ts`).
  * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
  *   never sent by themselves (BLD-C165).
- * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write (BLD-F069).
+ * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
+ *   carried over (BLD-F069). Neither sends anything.
  */
 import Link from "next/link";
 import {
@@ -224,7 +225,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   // S-08.rules/4: pinned at the bottom on a phone, with room kept under the timeline (BLD-F068).
   usePinnedBox(root, form, !view.composer.closed);
 
-  // "Say hello" (#say-hello): the cursor in the box, if the person can write here (BLD-F069).
+  // "Say hello" (#say-hello): the cursor in the box, if the person can write here; words carried over from the edit
+  // page arrive just after and the cursor ends after them (BLD-F069).
   useSayHello(box, !view.composer.closed && !paused);
 
   // Put the caret after a picked name once the words are on screen.
