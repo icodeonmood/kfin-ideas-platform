@@ -347,7 +347,11 @@ export function useRequest(
       result: resultRef.current,
       pressed: pressedRef.current,
     }[to];
-    if (target?.isConnected) target.focus();
+    if (!target?.isConnected) return;
+    target.focus();
+    // The result is what the lead reads next: in the reader's view even under a tall request, where focus alone left
+    // it below the pane's fold (J-SIMILAR/6a, WCAG 2.4.11, BLD-A228). No layout in tests, hence the optional call.
+    if (to === "result") target.scrollIntoView?.({ block: "nearest" });
   });
 
   // Once per item: the reader keys the open item, so each request starts from nothing.
