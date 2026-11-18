@@ -310,11 +310,15 @@ test.describe("S-H5 Inbox", () => {
     await page.waitForURL(/\/my-ideas/);
     await page.goBack();
     await expect(page).toHaveURL(here);
-    await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
     if (isPhone(page)) {
-      // The item the person had open is its own screen again (S-H5.rules/6).
+      // The item the person had open is its own screen again, the list hidden behind it (S-H5.rules/6); the
+      // screen's own Back returns to the list, on the same tab, and the address lets the item go.
       await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
+      await page.getByRole("button", { name: "Inbox", exact: true }).click();
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+      await expect(page).toHaveURL(/\/inbox\?tab=needs_you$/);
     } else {
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
       await expect(questions).toHaveAttribute("aria-pressed", "true");
     }
 
