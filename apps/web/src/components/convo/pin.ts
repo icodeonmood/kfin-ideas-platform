@@ -8,6 +8,7 @@
  * - Say hello (L-TEAMUP.rules/9, BLD-F069): a "Say hello" link ends in `#say-hello`, a hint that carries no words.
  *   When the person can write here, the cursor lands in the box; the hint then comes off the address, so a reload or
  *   Back does not do it again.
+ * - Open at the newest entry (BLD-F081): a long conversation opens at its end, not at the top.
  */
 import { useEffect, type RefObject } from "react";
 
@@ -123,6 +124,51 @@ export function usePinnedBox(
       apply(root, null);
     };
   }, [rootRef, boxRef, on]);
+}
+
+export interface NewestInput {
+  /** The page's full height (`scrollHeight`). */
+  page: number;
+  /** The window's height. */
+  viewport: number;
+  /** The newest entry's top, from the top of the page. */
+  entryTop: number;
+  /** The entry's own `scroll-margin-top`: room for the phone's sticky bar. */
+  margin: number;
+}
+
+/**
+ * Where a conversation opens (BLD-F081): at its end, so the newest entry sits just above the box; but never past the
+ * newest entry's top, so a tall one (the review desk's questions card) opens at its title. `null` when the page fits
+ * the window and nothing needs to move.
+ */
+export function newestTop({ page, viewport, entryTop, margin }: NewestInput): number | null {
+  const end = Math.floor(page - viewport);
+  if (end <= 0) return null;
+  return Math.min(end, Math.max(0, Math.floor(entryTop - margin)));
+}
+
+/**
+ * Open at the newest entry (BLD-F081), once, when the screen arrives at the top of the page: the page jumps (never a
+ * smooth scroll) and focus stays where it is. A link to one entry (`#entry-…`) goes there instead; a page the browser
+ * has already scrolled (Back, a reload) stays where the person was. `#say-hello` is no exception: its cursor lands in
+ * the box, which sits just under the newest entry anyway (BLD-F069). Later reads of the conversation never move the
+ * page (S-08.rules/3); sending scrolls to the end itself.
+ */
+export function useOpenAtNewest(rootRef: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const { hash } = window.location;
+    if ((hash && hash !== SAY_HELLO) || window.scrollY > 0) return;
+    const last = rootRef.current?.querySelector<HTMLElement>(".cv-conv > li:last-child");
+    if (!last) return;
+    const top = newestTop({
+      page: document.documentElement.scrollHeight,
+      viewport: window.innerHeight,
+      entryTop: last.getBoundingClientRect().top + window.scrollY,
+      margin: Number.parseFloat(getComputedStyle(last).scrollMarginTop) || 0,
+    });
+    if (top) window.scrollTo({ top, left: 0, behavior: "instant" });
+  }, [rootRef]);
 }
 
 /** The box grows with its words up to its CSS `max-height`, then scrolls; it never shows a resize grip. */

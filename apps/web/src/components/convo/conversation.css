@@ -13,6 +13,7 @@
 .cv-back {
   margin: 0 0 var(--space-2);
 }
+/* Messages.jpg: the pill, the reference and the line share one row; it wraps where the row is too narrow (BLD-F079) */
 .cv-meta {
   display: flex;
   flex-wrap: wrap;
@@ -22,15 +23,17 @@
   font-size: 14px;
   color: var(--mute);
 }
-.cv-line {
-  margin: 10px 0 0;
-  font-size: 14px;
-  color: var(--mute);
-}
+/* The title runs to the width of the timeline's column, as the board's does: the header spans the page, the column
+ * is the page less the side panel and the gap (.cv-cols), up to .cv-main's 780px (BLD-F079) */
 .cv-title {
+  --cv-side: 368px; /* 320px panel + 48px gap */
   margin: 12px 0 0;
-  max-width: 26ch;
+  max-width: min(780px, calc(100% - var(--cv-side)));
   overflow-wrap: anywhere;
+}
+/* The faces and who sees it, under the title: a phone's (PhoneMessages); wider, the line is in the box */
+.cv-seen {
+  display: none;
 }
 .cv-title a {
   color: inherit;
@@ -296,27 +299,33 @@
 }
 
 /* ---------- The box (S-08.layout/3) ---------- */
+/* Wider than a phone the box is sticky, 20px above the window's edge. Its fill is solid white: in the shell --card is
+ * 78% glass, and a floating surface stays solid (F-COLOR.glass/3). Its last shadow is an opaque band in the page's
+ * colour (--cv-band: the box's own shape, 24px wider each side and 32px lower), painted under the box and its other
+ * shadows, so nothing scrolling under it shows below it, beside its rounded corners or through it (lane D's QA,
+ * BLD-F080). A shadow goes wherever the box goes and is never hit by a click. */
 .cv-box {
+  --cv-band: 0 32px 0 24px var(--paper);
   position: sticky;
   bottom: 20px;
   z-index: 5;
   margin-top: 32px;
   padding: 14px 14px 10px 18px;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.95);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
+  background: var(--white);
   box-shadow:
     inset 0 1px 0 #ffffff,
     0 0 0 1px rgba(17, 17, 17, 0.08),
-    0 22px 44px -26px rgba(17, 17, 17, 0.34);
+    0 22px 44px -26px rgba(17, 17, 17, 0.34),
+    var(--cv-band);
   transition: box-shadow 0.15s ease;
 }
 .cv-box:focus-within {
   box-shadow:
     inset 0 1px 0 #ffffff,
     0 0 0 1.5px var(--blue),
-    0 22px 44px -26px rgba(17, 17, 17, 0.34);
+    0 22px 44px -26px rgba(17, 17, 17, 0.34),
+    var(--cv-band);
 }
 .cv-field {
   position: relative;
@@ -357,26 +366,39 @@
   font-weight: 600;
   text-underline-offset: 3px;
 }
-.cv-bar {
-  display: flex;
+/* Wider than a phone: the words, any error, then who sees it and Send (Messages.jpg, `.cvbar`) */
+.cv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "field field"
+    "err err"
+    "sees send";
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
+  column-gap: 10px;
+}
+.cv-row > .cv-field {
+  grid-area: field;
+}
+.cv-row > .fmsg {
+  grid-area: err;
+  margin: 6px 0 0;
 }
 .cv-sees {
-  flex: 1;
+  grid-area: sees;
   min-width: 0;
-  margin: 0;
+  margin: 6px 0 0;
   font-size: 13px;
   color: var(--mute);
 }
 .cv-box .cv-send {
-  flex: none;
+  grid-area: send;
+  margin-top: 6px;
   min-width: 96px;
   min-height: 44px; /* a touch target at every width (F-A11Y) */
 }
-.cv-box .fmsg {
-  margin: 6px 0 0;
+.cv-send-ic {
+  display: none;
 }
 .cv-closed {
   margin: 32px 0 0;
@@ -516,6 +538,9 @@
     grid-template-columns: minmax(0, 1fr) 280px;
     gap: 32px;
   }
+  .cv-title {
+    --cv-side: 312px; /* 280px panel + 32px gap */
+  }
 }
 
 /* ---------- Phone (S-08.rules/4) ---------- */
@@ -523,12 +548,43 @@
   .cv-back {
     display: none;
   }
+  /* PhoneMessages (`.cvh`): the pill and reference, the title, then the faces and who sees it, over a hairline. The
+   * bar already says "Conversation", so the timeline's own label is for screen readers only. */
+  .cv-head {
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--rule2);
+  }
   .cv-title {
+    max-width: none;
     font-size: 26px;
     line-height: 1.15;
   }
+  .cv-seen {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--mute);
+  }
+  .cv-faces {
+    display: flex;
+    flex: none;
+  }
+  .cv-faces .av + .av {
+    margin-left: -8px;
+  }
+  .cv-l {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .cv-cols {
-    margin-top: 24px;
+    margin-top: 18px;
     display: block;
   }
   .cv-msg {
@@ -546,6 +602,8 @@
   .cv[data-box="open"] .cv-msg {
     scroll-margin-bottom: calc(var(--cv-cover, 160px) + 12px);
   }
+  /* The board's dock (`dock cvdock`): 12px above the row and at the sides; at the very bottom at least 30px under it,
+   * or the safe area and 12px, so one row is about 90px tall; above a tab bar or the keyboard, 12px (BLD-F078). */
   .cv-box {
     position: fixed;
     left: 0;
@@ -553,9 +611,9 @@
     bottom: var(--cv-at, 0px);
     z-index: var(--z-sidebar, 30);
     margin: 0;
-    padding: 10px max(var(--page-gutter), env(safe-area-inset-right, 0px))
-      max(10px, calc(env(safe-area-inset-bottom, 0px) * var(--cv-safe, 1) + 8px))
-      max(var(--page-gutter), env(safe-area-inset-left, 0px));
+    padding: 12px max(12px, env(safe-area-inset-right, 0px))
+      max(12px, calc(max(30px, env(safe-area-inset-bottom, 0px) + 12px) * var(--cv-safe, 1)))
+      max(12px, env(safe-area-inset-left, 0px));
     border-radius: 0;
     background: var(--glass-dock);
     border-top: 1px solid var(--rule2);
@@ -565,11 +623,28 @@
   .cv-box:focus-within {
     box-shadow: none;
   }
-  /* On the dock the field carries its own edge and focus ring, as the board's box does */
+  /* One row (PhoneMessages, `.cvrow`): the attach slot, kept empty until a conversation takes an upload (BLD-F064),
+   * the pill and the round Send, on the row's bottom edge as the pill grows; an error sits just above the row */
+  .cv-row {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "err err err"
+      ". field send";
+    align-items: end;
+    column-gap: 6px;
+  }
+  .cv-row > .fmsg {
+    margin: 0 0 8px;
+  }
+  /* Who sees it is under the title on a phone (.cv-seen); the box still names it to a screen reader (describedby) */
+  .cv-sees {
+    display: none;
+  }
+  /* The pill carries its own edge and focus ring, as the board's does */
   .cv-field {
-    padding: 2px 4px;
+    padding: 0 4px;
     border-radius: 22px;
-    background: #ffffff;
+    background: var(--white);
     box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.12);
   }
   .cv-field:focus-within {
@@ -578,20 +653,36 @@
   .cv-in {
     min-height: 44px;
     max-height: 120px;
-    padding: 10px 12px;
+    padding: 11px 12px;
     font-size: 16px;
+    line-height: 1.375;
+  }
+  /* Send: a round 44px ink button with an arrow; its name stays "Send" ("Sending" while busy) */
+  .cv-box .cv-send {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .cv-send-ic {
+    display: block;
+  }
+  .cv-send .cv-send-t {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .cv-hint {
     margin: 0 0 8px;
     padding: 8px 10px;
     font-size: 12.5px;
-  }
-  .cv-bar {
-    margin-top: 8px;
-  }
-  .cv-sees {
-    font-size: 12.5px;
-    line-height: 1.35;
   }
   .cv-side {
     display: none;
