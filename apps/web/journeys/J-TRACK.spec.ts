@@ -244,13 +244,13 @@ step(
 step(
   "J-TRACK/5",
   "S-06",
-  "Sent. Harish has your answers: each answer under its part of the idea",
+  "Sent. The review desk has your answers: each answer under its part of the idea (DEC-111)",
   { needs: ["S-06", "L-QUESTIONS", "S-R3"] },
   async ({ page }) => {
     const t6 = await seeded("T6");
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t6));
-    await expect(page.getByText(/^Sent\. Harish has your answers\./).first()).toBeVisible();
+    await expect(page.getByText(/^Sent\. The review desk has your answers\./).first()).toBeVisible();
     await expect(
       page.getByText(/Each answer was added to its part of your idea, under What you shared\./).first(),
     ).toBeVisible();
@@ -258,7 +258,7 @@ step(
     // The answers from J-TRACK/4, word for word, each with where it came from (S-06.layout/5).
     await expect(page.getByText(SAVED_ANSWER, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(TYPED_ANSWER, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`^From your answer to Harish, ${DAY}$`))).toHaveCount(2);
+    await expect(page.getByText(new RegExp(`^From your answer to the review desk, ${DAY}$`))).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Open the conversation" }).first()).toBeVisible();
   },
 );
@@ -305,9 +305,7 @@ step(
     await expect(
       page
         .getByText(
-          new RegExp(
-            `^Harish from the review desk picked it on ${DAY}\\. The build team is chosen by ${DAY}\\.$`,
-          ),
+          new RegExp(`^The review desk picked it on ${DAY}\\. The build team is chosen by ${DAY}\\.$`),
         )
         .first(),
     ).toBeVisible();

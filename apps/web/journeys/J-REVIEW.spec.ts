@@ -348,11 +348,12 @@ step(
     await expect(page.getByRole("heading", { name: "Decision sent to Pallavi" })).toBeVisible();
 
     // L-DECIDE.rules/3, /5: the reason word for word, at once, in the app; the window's date as the reviewer saw it.
+    // DEC-111: Pallavi is on neither the review desk nor the Ones Committee, so S-06 says "The review desk", not Lavanya.
     await asOther(browser, info, "pallavi", { ref: "J-REVIEW/6", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(p1));
       await expect(sharer.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
       await expect(
-        sharer.getByText(new RegExp(`^Lavanya from the review desk picked it on ${DAY}\\b.*\\.$`)).first(),
+        sharer.getByText(new RegExp(`^The review desk picked it on ${DAY}\\b.*\\.$`)).first(),
       ).toBeVisible();
       await expect(sharer.getByText(REASON).first()).toBeVisible();
       await expect(
