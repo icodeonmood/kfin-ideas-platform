@@ -543,6 +543,57 @@ def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: 
     conn.execute("DELETE FROM hidden_details WHERE id = %s", (folio,))
 
 
+def test_c_track_l_similar_failure_the_checked_line_follows_whether_similar_ideas_were_checked(
+    club: dict[str, Any],
+) -> None:
+    """C-TRACK, L-SIMILAR.failure (S-06 at J-SHARE's end and J-TRACK/1, S-09): a check that failed never reads as
+    "none found"; nothing recorded says nothing about similar ideas; a done check keeps the count wording. Linked
+    ideas are counted whatever was recorded (BLD-E052)."""
+    conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
+    conn.execute("DELETE FROM similar_links WHERE idea_uuid = %s", (uid,))
+
+    def lines() -> tuple[str | None, str | None]:
+        return nodes(view(club, t5, "tanvi"))[1][2], nodes(view(club, t5, "rekha"))[1][2]
+
+    def check(value: str | None) -> None:
+        conn.execute("UPDATE ideas SET similar_check = %s WHERE id = %s", (value, uid))
+
+    couldnt = "Couldn’t check for similar ideas. The review desk will."
+    check("failed")
+    sharer, colleague = lines()
+    assert sharer == f"No personal details found. {couldnt}" and colleague == couldnt
+    assert "no similar ideas found" not in str(sharer) and "0 similar" not in str(colleague)
+    check(None)
+    assert lines() == ("No personal details found", None)
+    check("done")
+    assert lines() == ("No personal details found, no similar ideas found", "0 similar ideas linked")
+    for other in ("R1", "P1"):
+        conn.execute(
+            "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'related', %s)",
+            (uid, club["m"][other].uuid, "Related: synthetic"),
+        )
+    two = ("No personal details found, 2 similar ideas found", "2 similar ideas linked")
+    assert lines() == two
+    for value in ("failed", None):
+        check(value)
+        assert lines() == two  # links found after a failed check, or with nothing recorded, are still counted
+
+
+def test_c_track_l_similar_failure_the_couldnt_check_line_is_lane_c_handover_line() -> None:
+    """J-SHARE's end hands over to J-TRACK/1: lane C's handover (`submit.send.checked_line`) and S-06's track say
+    the same when similar ideas could not be checked, with the pack's own sentence (L-SIMILAR.failure)."""
+    from ideapage import track
+    from submit import check as submit_check
+    from submit import send
+
+    assert track.COULDNT_CHECK == submit_check.COULDNT_CHECK
+    for hidden in (0, 2):
+        mine = track.checked_line(hidden, ["pan"] * hidden, 0, "failed", for_sharer=True)
+        assert mine == send.checked_line(hidden, None)
+    assert track.checked_line(2, ["pan", "folio"], 2, "done", for_sharer=True) == send.checked_line(2, 2)
+    assert track.checked_line(0, [], 0, "done", for_sharer=True) == send.checked_line(0, 0)
+
+
 @pytest.fixture
 def similar_runs(club: dict[str, Any]) -> Iterator[Any]:
     """Lane C's `similar_runs` (c/similar, not on main yet): made here with the columns a row needs when it is

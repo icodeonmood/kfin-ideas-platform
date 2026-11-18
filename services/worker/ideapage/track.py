@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.db import Conn
-from ideapage import read
+from ideapage import adapters, read
+from ideapage.adapters import SimilarStatus
 from ideapage.words import DECISION_LABEL, Node, count, day, when_shared
 from sla.calendar import add_working_days
 
@@ -94,18 +95,40 @@ def reviewed_line(dec: Decided, now: dt.datetime, *, sees_reversal: bool) -> str
     return f"{DECISION_LABEL[dec.choice]}, {day(dec.at, now)}"
 
 
-def checked_line(n_hidden: int, kinds: list[str], n_similar: int, *, for_sharer: bool) -> str:
-    """'Personal details hidden, 2 similar ideas found' (sharer); '3 similar ideas linked' (colleague)."""
+# L-SIMILAR.failure's own sentence, as lane C's `submit.check.COULDNT_CHECK` and J-SHARE's handover show it. Drawn
+# for Check it; on the track (Status.md, Idea.md draw only counts) it is NOT DRAWN: HR sign-off (BLD-E052).
+COULDNT_CHECK = "Couldn’t check for similar ideas. The review desk will."
+
+
+def similar_words(n_similar: int, similar: SimilarStatus, *, for_sharer: bool) -> str | None:
+    """The similar-ideas half of the Checked line, by whether they were checked (L-SIMILAR.failure, BLD-E052):
+    linked ideas are counted whenever there are some. With none, "done" keeps the count wording, "failed" is the
+    pack's couldn't-check sentence and never "none found", and "none" (nothing recorded) says nothing (None)."""
+    if n_similar or similar == "done":
+        if not for_sharer:
+            return count(n_similar, "similar idea") + " linked"
+        return count(n_similar, "similar idea") + " found" if n_similar else "no similar ideas found"
+    return COULDNT_CHECK if similar == "failed" else None
+
+
+def checked_line(
+    n_hidden: int, kinds: list[str], n_similar: int, similar: SimilarStatus, *, for_sharer: bool
+) -> str | None:
+    """'Personal details hidden, 2 similar ideas found' (sharer); '3 similar ideas linked' (colleague). A check
+    that failed reads 'Personal details hidden. Couldn’t check for similar ideas. The review desk will.', as lane
+    C's handover composes it (`submit.send.checked_line`), so J-SHARE's end and S-06 say the same."""
+    words = similar_words(n_similar, similar, for_sharer=for_sharer)
     if not for_sharer:
-        return count(n_similar, "similar idea") + " linked"
+        return words
     if n_hidden > 1:
         first = "Personal details hidden"
     elif n_hidden == 1:
         first = f"1 {KIND_WORDS.get(kinds[0], 'detail')} hidden"
     else:
         first = "No personal details found"
-    similar = count(n_similar, "similar idea") + " found" if n_similar else "no similar ideas found"
-    return f"{first}, {similar}"
+    if words is None:
+        return first
+    return f"{first}. {words}" if words == COULDNT_CHECK else f"{first}, {words}"
 
 
 def stages(
@@ -142,7 +165,11 @@ def stages(
     checked = Node(
         "done",
         checked_line(
-            len(hid), [str(h["kind"]) for h in hid], read.similar_count(conn, uid), for_sharer=for_sharer
+            len(hid),
+            [str(h["kind"]) for h in hid],
+            read.similar_count(conn, uid),
+            adapters.similar_status(conn, uid),
+            for_sharer=for_sharer,
         ),
         read.status_at(conn, uid, "with_review_desk"),
     )
