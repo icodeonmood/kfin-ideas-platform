@@ -8,6 +8,8 @@
   `similar.matching.last_run`; before that table is on main, lane C's check records the outcome in
   `ideas.similar_check`. Only the run's state is read here, never its `found`: counts come from the visible
   `similar_links` (`read.similar_count`).
+- An idea's lead (L-TEAMUP.rules/10): lane F's `teamup.store.lead_code`, the live crew-lead row, else the sharer. Until
+  lane F's module is importable the lead is the sharer, which is what an idea nobody handed over reads as anyway.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from core.db import Conn
 AnswersByPart = Callable[[Conn, Any], dict[str, list[dict[str, Any]]]]
 LastRun = Callable[[Conn, str], dict[str, Any] | None]
 SimilarStatus = Literal["none", "done", "failed"]
+LeadCode = Callable[[Conn, dict[str, Any]], str]
 
 
 def _lane_b_answers() -> AnswersByPart | None:
@@ -73,3 +76,19 @@ def similar_status(conn: Conn, idea_uuid: str) -> SimilarStatus:
     if check == "failed":
         return "failed"
     return "none"
+
+
+def _lane_f_lead_code() -> LeadCode | None:
+    try:
+        module = importlib.import_module("teamup.store")
+    except ImportError:
+        return None
+    fn = getattr(module, "lead_code", None)
+    return fn if callable(fn) else None
+
+
+def lead_code(conn: Conn, idea: dict[str, Any]) -> str:
+    """The idea's lead now (`idea` needs `id` and `contributor_code`): its live `lead` crew row, so a lead who was
+    handed over is the one named, else the person who shared it. The sharer until lane F's module is importable."""
+    fn = _lane_f_lead_code()
+    return fn(conn, idea) if fn is not None else str(idea["contributor_code"])

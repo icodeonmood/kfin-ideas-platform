@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from core.db import Conn
-from ideapage import read
+from ideapage import adapters, read
 from ideapage.shape import MY_IDEAS_FILTER_LABEL, display_status
 from ideapage.track import Decided, decided
 from ideapage.words import (
@@ -155,8 +155,8 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
     where = _where(saved_on)
     archived = idea.get("archived_at") is not None
     waiting = conn.execute(
-        "SELECT i.idea_id, i.contributor_code FROM merge_requests r JOIN ideas i ON i.id = r.other_idea_uuid "
-        "WHERE r.draft_uuid = %s AND r.state = 'waiting' LIMIT 1",
+        "SELECT i.id, i.idea_id, i.contributor_code FROM merge_requests r "
+        "JOIN ideas i ON i.id = r.other_idea_uuid WHERE r.draft_uuid = %s AND r.state = 'waiting' LIMIT 1",
         (uid,),
     ).fetchone()
     if archived:
@@ -169,8 +169,9 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
         meta = f"Saved {saved_when(saved, now)}, {where}"
         if waiting:
             # The draft's owner is not on that idea's crew yet, so its lead is named only when they show their
-            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048).
-            lead = read.person_by_code(conn, waiting["contributor_code"])
+            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048). The lead is
+            # the live crew lead, who answers the request, not always the person who shared it (L-TEAMUP.rules/10).
+            lead = read.person_by_code(conn, adapters.lead_code(conn, dict(waiting)))
             who = lead["first_name"] if lead and read.shows_name(lead) else "the lead"
             sentence = f"Waiting for {who} to answer about joining {waiting['idea_id']}. Your words are kept."
         elif str(idea.get("step") or "").startswith("check") or idea.get("step") == "send":

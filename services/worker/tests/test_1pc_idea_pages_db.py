@@ -1116,6 +1116,36 @@ def test_dec_104_s07_a_draft_waiting_on_a_lead_who_hid_their_name_or_left_says_t
     assert all_rows[t2]["next_step"]["sentence"].startswith("Waiting for the lead to answer")
 
 
+def test_s07_drafts_l_teamup_rules_10_a_draft_waits_on_the_live_crew_lead_not_the_sharer(
+    club: dict[str, Any],
+) -> None:
+    """S-07 Drafts, L-TEAMUP.rules/10, DEC-104: Rekha shared R1 and hands its lead to Zoya, already on its crew. Tanvi's
+    T2 draft, whose merge request waits on R1, now waits on Zoya (lane F's `teamup.store.lead_code`), and Rekha is not
+    named. Zoya is named only while she shows her name on the Wall and is still here."""
+    conn, r1, t2 = club["conn"], ref(club, "R1"), club["m"]["T2"].uuid
+    r1_uuid = club["m"]["R1"].uuid
+    conn.execute(
+        "UPDATE crew_members SET role = 'crew' WHERE idea_uuid = %s AND contributor_code = %s AND left_at IS NULL",
+        (r1_uuid, code_of(club, "rekha")),
+    )
+    conn.execute(
+        "UPDATE crew_members SET role = 'lead' WHERE idea_uuid = %s AND contributor_code = %s AND left_at IS NULL",
+        (r1_uuid, code_of(club, "zoya")),
+    )
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    names = f"Waiting for Zoya to answer about joining {r1}. Your words are kept."
+    assert row["next_step"]["sentence"] == names
+    assert "Rekha" not in json.dumps(drafts, ensure_ascii=False, default=str)
+    hide_name(club, "zoya")
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    waits = f"Waiting for the lead to answer about joining {r1}. Your words are kept."
+    assert row["next_step"]["sentence"] == waits
+    dump = json.dumps(drafts, ensure_ascii=False, default=str)
+    assert "Zoya" not in dump and "Rekha" not in dump
+
+
 def test_dec_104_s09_a_sharer_who_has_left_is_never_named_to_a_colleague(club: dict[str, Any]) -> None:
     """DEC-104, S-09.layout/2 and /6 (BLD-E048): once Rekha has left, a colleague reads R1 as the Wall shows it, with
     no name in the shared line, the note, the crew, the faces or the Team up card; one who asked to join waits for
