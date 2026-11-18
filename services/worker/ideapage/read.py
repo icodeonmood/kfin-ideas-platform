@@ -196,7 +196,7 @@ def decision(conn: Conn, idea_uuid: str, *, with_text: bool = False) -> dict[str
     r = conn.execute(
         "SELECT d.*, w.id AS window_id, w.state AS window_state, w.opens_at, w.closes_at, w.max_closes_at, "
         "w.extended_times, v.id AS reversal_id, v.to_choice, v.note_encrypted, v.by_user_id AS reversed_by, "
-        "v.at AS reversed_at, v.return_at AS reversed_return_at "
+        "v.at AS reversed_at, v.return_at AS reversed_return_at, v.team_by AS reversed_team_by "
         "FROM idea_decisions d LEFT JOIN decision_windows w ON w.decision_id = d.id "
         "LEFT JOIN decision_reversals v ON v.window_id = w.id "
         "WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1",
