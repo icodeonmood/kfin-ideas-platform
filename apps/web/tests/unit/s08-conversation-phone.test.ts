@@ -127,6 +127,23 @@ describe("S-08 on a phone", () => {
     expect(el.style.height).toBe("");
   });
 
+  it("BLD-F068: the room and the scroll margin are kept only while there is a box; a merged idea's closing line keeps none", async () => {
+    await arrive(PAGE);
+    expect(host.querySelector(".cv")?.getAttribute("data-box")).toBe("open");
+    const css = readFileSync(
+      path.resolve(__dirname, "../../src/components/convo/conversation.css"),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    // every rule that uses the measured room or cover is scoped to an open box
+    const users = [...css.matchAll(/([^{}]+)\{[^}]*var\(--cv-(?:room|cover)[^}]*\}/g)].map((m) =>
+      m[1]!.trim(),
+    );
+    expect(users.length).toBeGreaterThanOrEqual(2);
+    for (const selectors of users) {
+      for (const sel of selectors.split(",")) expect(sel.trim()).toMatch(/^\.cv\[data-box="open"\] /);
+    }
+  });
+
   it("BLD-F068 pinMetrics: above the tab bar, or the keyboard when open; the timeline keeps room past the shell's padding", () => {
     // The kit and main today: a tab bar of 83px, the shell's 96px under the page
     expect(pinMetrics({ fixed: true, box: 130, tabs: 83, keyboard: 0, mainPad: 96 })).toEqual({
@@ -241,6 +258,7 @@ describe("Say hello lands in the box (L-TEAMUP.rules/9, BLD-F069)", () => {
     };
     await arrive(`${PAGE}${SAY_HELLO}`, v);
     expect(box()).toBeNull();
+    expect(host.querySelector(".cv")?.getAttribute("data-box")).toBe("closed"); // no room kept under it (BLD-F068)
     expect(document.activeElement).toBe(before);
     expect(window.location.hash).toBe("");
   });

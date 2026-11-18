@@ -523,7 +523,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
 
   return (
-    <div className="cv" ref={root}>
+    <div className="cv" ref={root} data-box={composer.closed ? "closed" : "open"}>
       <PhoneBar
         back={{ href: ideaHref, label: view.header.whose }}
         title={C.heading}

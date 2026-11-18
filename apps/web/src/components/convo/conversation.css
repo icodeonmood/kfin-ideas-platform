@@ -537,12 +537,13 @@
   /* The box is pinned (S-08.rules/4, BLD-F068): fixed at the bottom like the dock (C-PHONE-TABS.dock), above the tab
    * bar where the shell shows one and above an open keyboard (--cv-at); it takes the safe area only at the very
    * bottom (--cv-safe). pin.ts measures both, and how much the timeline keeps free under its last line (--cv-room),
-   * so the last line and anything focused in the timeline clear the box (--cv-cover; WCAG 2.4.11). */
-  .cv-main {
+   * so the last line and anything focused in the timeline clear the box (--cv-cover; WCAG 2.4.11). Only while there
+   * is a box (data-box="open", drawn by the server too): a merged idea's closing line keeps no room under it. */
+  .cv[data-box="open"] .cv-main {
     padding-bottom: var(--cv-room, 140px); /* until pin.ts has measured: about a one-line box */
   }
-  .cv-log *,
-  .cv-msg {
+  .cv[data-box="open"] .cv-log *,
+  .cv[data-box="open"] .cv-msg {
     scroll-margin-bottom: calc(var(--cv-cover, 160px) + 12px);
   }
   .cv-box {
