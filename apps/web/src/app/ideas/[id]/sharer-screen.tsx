@@ -720,8 +720,31 @@ export function SharerScreen({
                   )}
                 </p>
               ) : null}
-              {/* TODO(lane F): the conversation's latest entries (S-06.layout/8, L-CONVO): no entries field on
-                  SharerView yet; the card carries the count, its lines and the link. */}
+              {/* The card's messages, in time order: once the desk has decided, its decision, as Status.md draws the
+                  last message (BLD-E058). DEC-111: the review desk itself comes with no initials, so no face, as on
+                  S-08. TODO(lane F): the conversation's other entries (S-06.layout/8, L-CONVO). */}
+              {conv.messages?.length ? (
+                <ol className="ip-msgs">
+                  {conv.messages.map((m) => (
+                    <li
+                      key={m.id}
+                      className={[
+                        "ip-msg",
+                        m.kind === "decision" ? "dec" : "",
+                        m.from.initials ? "" : "no-face",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {m.from.initials ? <Avatar initials={m.from.initials} size={32} /> : null}
+                      <p className="ip-msg-h">
+                        <b>{m.from_label}</b>, {m.at_label}
+                      </p>
+                      <p className="ip-msg-b">{m.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </section>
           ) : null}
           <SimilarCard similar={page.similar} />

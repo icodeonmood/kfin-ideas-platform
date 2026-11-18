@@ -592,6 +592,21 @@ export type SharerPageState =
   | "shipped"
   | "merged";
 /** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
+/**
+ * A message in S-06's "You and the review desk" (S-06.layout/8): the desk's decision, "Picked. <reason>" (BLD-E058).
+ * DEC-111: outside the review desk and the Ones Committee `from` is the desk itself ("The review desk", no id, no
+ * initials, so no face), as lane F's S-08 sends it.
+ */
+export interface SharerCardMessage {
+  id: string;
+  kind: "decision";
+  from: PersonRef;
+  from_label: string; // "The review desk", "Meera from the review desk"
+  at: IsoDate;
+  at_label: string; // "Monday 16 November, 4:58 pm"
+  by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
+  text: string;
+}
 export interface SharerView {
   view: "sharer";
   screen: "S-06";
@@ -671,6 +686,8 @@ export interface SharerView {
       empty_line?: string;
       phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
+      /** The card's messages in time order: once the desk has decided, its decision (BLD-E058). */
+      messages?: SharerCardMessage[];
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
     merged: { to: string; title: string; line: string; note: string; at: IsoDate; link: LinkWords } | null;
