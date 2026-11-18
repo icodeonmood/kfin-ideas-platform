@@ -183,7 +183,10 @@ step(
     // The conversation shows the same card and the same deadline (S-08, Messages.md).
     await page.getByRole("link", { name: "Open the conversation" }).first().click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t6, "/conversation"))}$`));
-    await expect(page.getByText("Harish has 3 questions about your idea", { exact: true })).toBeVisible();
+    // DEC-111: the sharer's conversation names the review desk, not the reviewer (lane F's S-08, bc3fa36b).
+    await expect(
+      page.getByText("The review desk has 3 questions about your idea", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText(
         `Answer by ${deadline}. One at a time, typed or spoken, and each answer is added to its part of your idea.`,
