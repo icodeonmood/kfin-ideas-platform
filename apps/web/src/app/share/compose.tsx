@@ -723,6 +723,13 @@ export function Compose({
 
   // ── what the screen shows ─────────────────────────────────────────────────────────────────────────────────
   const messages: Message[] = draft?.messages ?? [];
+  // S-04B.layout/2: each message keeps its own receipt, as the draft read keeps it (BLD-C184). Between a run's end
+  // on the stream and the read that follows, the last message shows the receipt the stream just gave; so does a
+  // read that keeps only the latest receipt.
+  const perMessage = messages.some((m) => Array.isArray(m.receipt));
+  const streamedOnly = !live.running && draft?.run?.state === "running";
+  const receiptFor = (m: Message, last: boolean): string[] =>
+    last && (streamedOnly || !perMessage) && live.receipt.length ? live.receipt : (m.receipt ?? []);
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
   const minChars = draft?.min_chars ?? MIN_CHARS;
   const sendingDetail = pending.length > 0;
@@ -921,7 +928,7 @@ export function Compose({
                         adopt(out.draft, out.run_id);
                       }}
                       last={i === messages.length - 1 && pending.length === 0}
-                      receipt={live.receipt}
+                      receipt={receiptFor(m, i === messages.length - 1 && pending.length === 0)}
                       suggestions={live.suggestions}
                       running={live.running}
                       onSuggestion={(s) => {
@@ -1152,7 +1159,7 @@ function MessageItem({
           )}
         </div>
       </div>
-      {last && receipt.length && !running ? (
+      {receipt.length && !(last && running) ? (
         <div className="sysg">
           {receipt.map((line) => (
             <div key={line} className="msg sys">
@@ -1160,7 +1167,7 @@ function MessageItem({
               <p>{line}</p>
             </div>
           ))}
-          {suggestions.length ? (
+          {last && suggestions.length ? (
             <div className="nexts">
               {suggestions.slice(0, 2).map((s) => (
                 <button key={s} type="button" className="chip nx" onClick={() => onSuggestion(s)}>

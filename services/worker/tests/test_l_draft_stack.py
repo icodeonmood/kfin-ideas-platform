@@ -176,6 +176,48 @@ def test_l_draft_parts_runs_fill_every_part_from_the_words_through_the_gateway(d
     assert draft["parts"]["summary"]["state"] == "filled"
 
 
+def test_s04b_layout_2_each_message_keeps_its_own_receipt_masked(drafting: Any) -> None:
+    """S-04B.layout/2, Compose.md "Follow-ups queued" (BLD-C184; lane G's walk, J-SHARE/5, J-RECOVER/5): after a
+    second message the first keeps its receipt, with the hidden PAN as its masked tail only, and the draft read keeps
+    both, so a reload draws both. A run with no message of its own (try again) belongs to the newest message."""
+    import generators
+
+    db, owner = drafting
+    rng = generators.default_rng(11)
+    pan = generators.pan(rng)
+    idea, first = store.create(
+        db, owner, LAPTOP, text=f"{W1} One investor read out his PAN, {pan}, on the call."
+    )
+    _run(first)
+    _, second = store.add_message(db, owner, idea, LAPTOP, text=W2)
+    _run(second)
+    draft = store.view(db, owner, idea, LAPTOP)
+    one, two = draft["messages"]
+    tail = f"PAN ••••{pan[-2:]}"
+    assert f"Hid 1 personal detail from everyone but you: {tail}." in one["receipt"]
+    assert any(line.startswith("Noted how often:") for line in two["receipt"])
+    assert not any(line.startswith("Hid ") for line in two["receipt"])
+    runs_by_message = {
+        str(r["message_id"]): list(r["receipt"])
+        for r in db.execute(
+            "SELECT message_id, receipt FROM draft_runs WHERE idea_uuid = %s", (idea,)
+        ).fetchall()
+    }
+    assert one["receipt"] == runs_by_message[one["id"]] and two["receipt"] == runs_by_message[two["id"]]
+    assert draft["receipt"] == two["receipt"]  # the latest, as before
+    assert pan not in str(one["receipt"]) + str(two["receipt"])  # non-negotiables 4 and 7
+    # Try again (no message of its own) belongs to the newest message; the first keeps its own
+    again = store.build(db, owner, idea, LAPTOP)
+    _run(again)
+    later = store.view(db, owner, idea, LAPTOP)
+    assert later["messages"][0]["receipt"] == one["receipt"]
+    latest = db.execute("SELECT receipt FROM draft_runs WHERE id = %s", (again,)).fetchone()["receipt"]
+    if latest:
+        assert later["messages"][1]["receipt"] == list(latest)
+    else:
+        assert later["messages"][1]["receipt"] == two["receipt"]
+
+
 def test_l_draft_pins_a_pinned_part_is_never_overwritten_and_unpinning_suggests_again(drafting: Any) -> None:
     db, owner = drafting
     idea, run_id = store.create(db, owner, LAPTOP, text=f"{W1} {W2}")

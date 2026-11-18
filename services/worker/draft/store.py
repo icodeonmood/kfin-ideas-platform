@@ -709,6 +709,29 @@ def _messages(
     return out
 
 
+def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) -> None:
+    """S-04B.layout/2: each message keeps its own receipt, the one from its latest finished run (BLD-C184). A run
+    with no message of its own (try again, a build) belongs to the newest message sent before it started. Receipts are
+    stored masked ("PAN ••••8Z", L-HIDE), so nothing here is opened or unmasked."""
+    if not messages:
+        return
+    sent = [(dt.datetime.fromisoformat(str(m["at"])), str(m["id"])) for m in messages]
+    ids = {mid for _, mid in sent}
+    own: dict[str, list[str]] = {}
+    for run in conn.execute(
+        "SELECT message_id, started_at, receipt FROM draft_runs WHERE idea_uuid = %s AND state = 'done' "
+        "ORDER BY started_at, id",
+        (idea_uuid,),
+    ).fetchall():
+        mid = str(run["message_id"]) if run["message_id"] else None
+        if mid not in ids:
+            before = [m for at, m in sent if at <= run["started_at"]]
+            mid = before[-1] if before else sent[0][1]
+        own[mid] = [str(line) for line in (run["receipt"] or [])]
+    for m in messages:
+        m["receipt"] = own.get(str(m["id"]), [])
+
+
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, hidden_note, link_scope, "
@@ -770,11 +793,13 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
     ).fetchone()
     r = rules()
     files = _files(conn, idea_uuid, owner)
+    messages = _messages(conn, idea_uuid, device, now, files)
+    _own_receipts(conn, idea_uuid, messages)
     out: dict[str, Any] = {
         "id": idea_uuid,
         "owner_id": owner.user_id,
         "channel": row["channel"],
-        "messages": _messages(conn, idea_uuid, device, now, files),
+        "messages": messages,
         "parts": wire,
         "hidden": hidden,
         "sorting": _sorting(row, wire),

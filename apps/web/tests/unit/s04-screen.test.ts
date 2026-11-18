@@ -462,3 +462,115 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     expect(host.querySelector('[role="alert"]')!.textContent).toBe("We couldn't find that draft.");
   });
 });
+
+describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5; BLD-C184)", () => {
+  // Synthetic PAN: the person's own words carry it; every receipt carries only its masked tail.
+  const PAN = "ABCPK1234Z";
+  const FIRST = `${WORDS} One investor read out his PAN, ${PAN}, at the counter.`;
+  const SECOND = "We raise a ticket for each one and wait two days for an answer.";
+  const R1 = [
+    "Drafted a title: “Bank mandate changes take a week to show”.",
+    "Hid 1 personal detail from everyone but you: PAN ••••4Z.",
+  ];
+  const R2 = ["Noted how often: about 25 times a week.", "Your draft is ready. Add a detail, or check it."];
+  const m1 = (over: Partial<Draft["messages"][number]> = {}) => ({
+    ...draft().messages[0]!,
+    text: FIRST,
+    spans: [{ start: FIRST.indexOf(PAN), end: FIRST.indexOf(PAN) + PAN.length, kind: "pan" as const }],
+    ...over,
+  });
+  const m2 = (over: Partial<Draft["messages"][number]> = {}) => ({
+    ...draft().messages[0]!,
+    id: "m-2",
+    text: SECOND,
+    at_label: "Just now",
+    ...over,
+  });
+  const both = () => draft({ messages: [m1({ receipt: R1 }), m2({ receipt: R2 })], receipt: R2 }) as Draft;
+
+  /** Each message bubble, then the lines drawn after it and before the next one. */
+  function thread() {
+    const out: { words: string; receipt: string[] }[] = [];
+    for (const el of host.querySelectorAll(".tin > .msg.me, .tin > .sysg")) {
+      if (el.classList.contains("sysg"))
+        out[out.length - 1]!.receipt.push(
+          ...[...el.querySelectorAll(".msg.sys p")].map((p) => p.textContent!),
+        );
+      else out.push({ words: el.querySelector(".btx")!.textContent!, receipt: [] });
+    }
+    return out;
+  }
+
+  const rawOnlyInOwnWords = () => {
+    for (const el of host.querySelectorAll(".sysg")) expect(el.textContent).not.toContain(PAN);
+    const copy = host.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll(".msg.me .btx").forEach((b) => b.remove());
+    expect(copy.textContent).not.toContain(PAN);
+  };
+
+  it("S-04B.layout/2: two messages, each with its own receipt under it, the hidden PAN as its masked tail only", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? { status: 200, body: both() }
+        : { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: R2 },
+    ]);
+    rawOnlyInOwnWords();
+    // The suggestions stay under the last message only
+    expect(button("Add what you already tried")).toBeTruthy();
+    expect(host.querySelectorAll(".nexts")).toHaveLength(1);
+  });
+
+  it("J-SHARE/5: after a second message, the first keeps its receipt while the second is being built", async () => {
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-2",
+            message: { id: "m-2", text: SECOND },
+            draft: draft({
+              messages: [m1({ receipt: R1 }), m2({ receipt: [] })],
+              receipt: R1,
+              run: { id: "r-2", state: "running" },
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return { status: 200, body: draft({ messages: [m1({ receipt: R1 })], receipt: R1 }) };
+      return { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    };
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([{ words: FIRST, receipt: R1 }]);
+    type(host.querySelector("textarea") as HTMLTextAreaElement, SECOND);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: [] },
+    ]);
+    expect(text()).toContain("Hid 1 personal detail from everyone but you: PAN ••••4Z.");
+    rawOnlyInOwnWords();
+  });
+
+  it("J-RECOVER/5: a reload keeps both receipts, from what the draft read keeps", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? { status: 200, body: both() }
+        : { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    await mount({ draftId: DRAFT });
+    act(() => root.unmount());
+    host.remove();
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: R2 },
+    ]);
+    rawOnlyInOwnWords();
+  });
+});
