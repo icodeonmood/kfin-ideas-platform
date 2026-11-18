@@ -41,9 +41,11 @@ REASON_MAX = 500
 # "withdrawn by the sharer". Called inside the withdraw's transaction: (conn, idea_uuid, at) -> None.
 ON_WITHDRAWN_HOOK: Callable[[Conn, str, dt.datetime], None] | None = None
 # Lane C (L-SUBMIT.send/3, /4): restart the clocks from the restore and re-run the check. Called inside the restore's
-# transaction after the idea is set to `checking`; it writes `decide_by`, `edit_closes_at` and the review clock, and
-# the check job then moves the idea on: (conn, idea_uuid) -> None.
-ON_RESTORED_HOOK: Callable[[Conn, str], None] | None = None
+# transaction after the idea is set to `checking`, with the restore's own time; it writes `decide_by`,
+# `edit_closes_at` and the review clock from that time, so they and `restored_at` are the same instant (BLD-C154), and
+# the check job then moves the idea on: (conn, idea_uuid, now) -> None. Lane C's `on_restored(conn, idea_uuid,
+# now=None)` fits it.
+ON_RESTORED_HOOK: Callable[[Conn, str, dt.datetime | None], None] | None = None
 
 
 class Refused(Exception):
@@ -153,8 +155,8 @@ def restore(conn: Conn, key: str, user_id: str, *, now: dt.datetime | None = Non
             )
             if ON_RESTORED_HOOK is not None:
                 # Lane C's on_restored writes decide-by, the edit window and the review clock with submit.clock,
-                # and queues the check: restore writes none of them too.
-                ON_RESTORED_HOOK(conn, str(idea["id"]))
+                # from this restore's time `t`, and queues the check: restore writes none of them too.
+                ON_RESTORED_HOOK(conn, str(idea["id"]), t)
             else:
                 p = read.promises()
                 due = clock.decide_by(t, p)
