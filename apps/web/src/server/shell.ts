@@ -1,21 +1,22 @@
 /**
  * What the signed-in shell shows around every screen (C-SIDEBAR.rules/4, C-PHONE-TABS): the person's initials and
- * tier, the unread Inbox count, up to two drafts and up to three of their ideas. Fed from today's loaders until the
- * shared contracts land (A-API.me, A-API.inbox-count, A-API.my-drafts, A-API.my-ideas). The shell never stops a page
- * from rendering: each part that cannot be read in time is simply left out.
+ * tier, the unread Inbox count, up to two drafts and up to three of their ideas. Drafts are lane C's L-DRAFT list
+ * (BLD-C147); ideas are A-API.me's shell lists (lane E's read, BLD-E047), dotted and worded as S-07 lists them, so the
+ * sidebar and My ideas agree. The shell never stops a page from rendering: each part that cannot be read in time is
+ * simply left out.
  */
 import { cookies, headers } from "next/headers";
 
 import { DEVICE_COOKIE } from "@/lib/compose/client";
-import type { CommitteeResponse, DeskResponse, DraftListItem } from "@/lib/contracts";
+import type { CommitteeResponse, DeskResponse, DraftListItem, ShellResponse } from "@/lib/contracts";
 import { TIER_NAME } from "@/lib/contracts/enums";
 
 import type { CurrentUser } from "./auth/current";
 import { getDb } from "./db";
 import { deskRead } from "./desk";
 import { drafts as draftApi, type DeviceInfo } from "./drafts";
-import { myIdeas, type MyIdea } from "./ideas";
 import { inboxCounts } from "./inbox";
+import { workerFetch } from "./worker";
 
 /** A row in a sidebar section. `tone` is the status dot (C-SIDEBAR.anatomy/4): warn for "needs you", blue for
  * active, neutral otherwise; drafts take the hollow dot. `words` says what the dot means in this section, so it is
@@ -62,25 +63,6 @@ export function initialsOf(name: string): string {
   return letters.toUpperCase();
 }
 
-const QUIET = new Set([
-  "shipped",
-  "not_now",
-  "not_picked",
-  "declined",
-  "withdrawn",
-  "merged",
-  "closed",
-  "archived",
-  "redirected",
-]);
-const NEEDS_YOU = new Set(["needs_info", "needs_you", "asked"]);
-
-export function toneFor(stageKey: string): ShellRow["tone"] {
-  if (NEEDS_YOU.has(stageKey)) return "warn";
-  if (QUIET.has(stageKey)) return "neutral";
-  return "blue";
-}
-
 /** When a draft was last saved, in the sidebar's words: "Today", "Yesterday", "Friday", else "12 Nov". India time. */
 export function whenSaved(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return "";
@@ -92,10 +74,6 @@ export function whenSaved(iso: string | null | undefined, now: Date = new Date()
   if (days === 1) return "Yesterday";
   if (days < 7) return then.toLocaleDateString("en-IN", { weekday: "long", timeZone: "Asia/Kolkata" });
   return then.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
-}
-
-function titleOf(idea: MyIdea): string {
-  return idea.one_line?.trim() || (idea.draft ? "Untitled draft" : "Your idea");
 }
 
 const PHONE_UA = /Mobi|Android|iPhone|iPod|Windows Phone/i;
@@ -136,14 +114,29 @@ export function draftRows(items: DraftListItem[] | null | undefined): ShellRow[]
     }));
 }
 
-/** C-SIDEBAR.anatomy, "Your ideas": the dot's words are the idea's own stage, as its page names it. */
-export function ideaRow(idea: MyIdea): ShellRow {
-  return {
-    href: `/ideas/${idea.idea_id}`,
-    title: titleOf(idea),
-    tone: toneFor(idea.stage_key),
-    words: idea.stage.trim() || undefined,
-  };
+/** A-API.me (shell), lane E's `GET /internal/me/{id}/shell-lists` (BLD-E047): up to three of the person's own shared
+ * ideas, in S-07's first order, each with S-07's dot and pill words (`status_label`). Ideas only: drafts are L-DRAFT's. */
+export type ShellLists = { ideas: (ShellResponse["ideas"][number] & { status_label?: string })[] };
+
+export async function shellLists(me: CurrentUser): Promise<ShellLists> {
+  const res = await workerFetch(`/internal/me/${encodeURIComponent(me.id)}/shell-lists`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("shell_lists_unavailable");
+  return (await res.json()) as ShellLists;
+}
+
+const IDEA_DOTS: ReadonlySet<string> = new Set(["warn", "blue", "neutral"]);
+
+/** C-SIDEBAR.anatomy/4, "Your ideas": each links to its idea, with S-07's dot and, when sent, the stage in S-07's
+ * words, so the dot is never colour alone (F-A11Y.rules/4). A dot the sidebar does not draw reads neutral. */
+export function ideaRows(lists: ShellLists | null): ShellRow[] {
+  return (lists?.ideas ?? []).slice(0, 3).map<ShellRow>((i) => ({
+    href: `/ideas/${encodeURIComponent(i.id)}`,
+    title: i.title,
+    tone: IDEA_DOTS.has(i.status_dot) ? (i.status_dot as ShellRow["tone"]) : "neutral",
+    ...(i.status_label?.trim() ? { words: i.status_label.trim() } : {}),
+  }));
 }
 
 /** C-SIDEBAR.anatomy, the review desk's "Waiting on sharers": the three most urgent, as the desk read sorts them
@@ -207,8 +200,8 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
   // Each section only for whoever has its sidebar item (policy/rbac.yaml navigation:), so a read the worker would
   // refuse (BLD-B232) is never made.
   const onNav = (key: string) => me.nav.some((n) => n.key === key);
-  const [mine, counts, tier, saved, desk, committee] = await Promise.all([
-    inTime(myIdeas(me)),
+  const [lists, counts, tier, saved, desk, committee] = await Promise.all([
+    inTime(shellLists(me)),
     inTime(inboxCounts(me)),
     inTime(myTier(me)),
     me.contributorCode
@@ -223,12 +216,8 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
       ? inTime(deskRead<CommitteeResponse>(me, "/internal/committee", { tab: "window", sort: "closing" }))
       : null,
   ]);
-  const ideas = mine?.ideas ?? [];
   const drafts = draftRows(saved);
-  const shared = ideas
-    .filter((i) => !i.draft && i.idea_id)
-    .slice(0, 3)
-    .map(ideaRow);
+  const shared = ideaRows(lists);
   return {
     name: me.name,
     initials: initialsOf(me.name),
