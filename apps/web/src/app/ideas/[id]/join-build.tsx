@@ -37,14 +37,14 @@ export function dayMonth(iso: string | null): string | null {
 /** Status.dc.html:899, PhoneStatus.dc.html:889; the date is the Pick's team-chosen-by date, lane B's `reply_by`. */
 export function askedLine(replyBy: string | null): string {
   const by = dayMonth(replyBy);
-  // NOT DRAWN (BLD-E053): without a reply-by date the date clause goes; HR sign-off
+  // NOT DRAWN (BLD-E055): without a reply-by date the date clause goes; HR sign-off
   return by ? `Asked. The build lead replies by ${by}.` : "Asked. The build lead replies.";
 }
 
 /**
  * S-06's "Ask to join the build team" after a Pick (L-DECIDE/6, A-API `POST /ideas/:id/join-build`; J-REVIEW/6). The
  * button shows while lane B says the sharer can ask; once asked it gives way to the drawn line, with no Undo: A-API has
- * no way to take the ask back (BLD-E053). A refusal shows the screen's own "try again" line and refreshes the page,
+ * no way to take the ask back (BLD-E055). A refusal shows the screen's own "try again" line and refreshes the page,
  * so a button that no longer applies goes.
  */
 export function AskToJoin({
@@ -127,7 +127,7 @@ export function AskToJoin({
           {askedLine(join?.reply_by ?? null)}
         </p>
       ) : (
-        // The board's `btn line`; on S-06's dark card the line buttons are `soft`, as "Open IDEA-…" is (BLD-E053)
+        // The board's `btn line`; on S-06's dark card the line buttons are `soft`, as "Open IDEA-…" is (BLD-E055)
         <Button variant="soft" disabled={busy} onClick={() => void ask()}>
           {ASK}
         </Button>
