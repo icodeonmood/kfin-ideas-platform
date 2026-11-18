@@ -42,3 +42,9 @@ export function deskHref(list: DeskList, row?: string, dy?: number): string {
   if (row && dy !== undefined && Number.isFinite(dy)) p.set("dy", String(Math.round(dy)));
   return `/desk?${p.toString()}`;
 }
+
+/** A list that could not be read leaves the one on screen in place: the address to put back so it names that list
+ * again, or null when the list asked for is the one on screen. */
+export function addressBack(shown: DeskList, asked: DeskList): string | null {
+  return shown.tab === asked.tab && shown.sort === asked.sort && shown.q === asked.q ? null : deskHref(shown);
+}
