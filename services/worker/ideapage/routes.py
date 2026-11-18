@@ -66,6 +66,14 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         params = {"list": list_, "filter": filter_, "sort": sort, "q": q, "row": row}
         return _call(mine, user_id, params, device=device)
 
+    @r.get("/me/{user_id}/shell-lists")
+    def shell_lists(user_id: str) -> JSONResponse:
+        """C-SIDEBAR.anatomy/4 (A-API.me `ideas`): the sidebar's three ideas, as S-07 lists them first, each with its
+        dot and S-07's pill words. The sidebar's drafts are lane C's L-DRAFT read."""
+        from ideapage.mine import shell_lists as lists
+
+        return _call(lists, user_id)
+
     @r.post("/ideas/{key}/withdraw")
     def idea_withdraw(key: str, user_id: str, body: dict[str, Any] | None = None) -> JSONResponse:
         from ideapage.withdraw import withdraw
