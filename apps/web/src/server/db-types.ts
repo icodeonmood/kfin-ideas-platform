@@ -388,6 +388,7 @@ export interface DecisionReversals {
   note_encrypted: Buffer;
   return_at: Timestamp | null;
   return_in: string | null;
+  team_by: Timestamp | null;
   to_choice: string | null;
   window_id: string;
 }
