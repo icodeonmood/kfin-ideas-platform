@@ -231,6 +231,53 @@ def decision_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: 
     }
 
 
+COMMITTEE_ROLE = "from the Ones Committee"
+COMMITTEE_START = "The Ones Committee"
+# The committee itself, with no id or initials: for a member who is no longer in `users`.
+COMMITTEE_ITSELF = {"id": "", "name": COMMITTEE_START, "first_name": COMMITTEE_START, "initials": ""}
+
+
+def committee_speaker(conn: Conn, user_id: str | None) -> tuple[dict[str, Any], str]:
+    """Who the committee's message is from, and the line's name: "Rohan Mehta from the Ones Committee" with their
+    initials, as lane B's reversal card names the member to the sharer today (`reversal.by`, `from_line` in
+    desk/committee.sharer_lines). DEC-111 hides only the review desk's names; whether the committee's are hidden too
+    is with the product lead (BLD-F082 asked it). If they are, return `dict(COMMITTEE_ITSELF), COMMITTEE_START` here:
+    one line, and the web draws no face for it (BLD-E058)."""
+    person = read.person_by_user(conn, user_id)
+    if person is None:
+        return dict(COMMITTEE_ITSELF), COMMITTEE_START
+    speaker = {
+        "id": person["id"],
+        "name": person["name"],
+        "first_name": person["first_name"],
+        "initials": person["initials"],
+        "role_label": COMMITTEE_ROLE,
+    }
+    return speaker, f"{person['name']} {COMMITTEE_ROLE}"
+
+
+def committee_message(conn: Conn, dec: Decided, now: dt.datetime) -> dict[str, Any]:
+    """The Ones Committee's message after it reversed the desk's decision (Status.md "Reversed by the Ones Committee":
+    the desk's message stays, then the member's), at the time it reversed it. The product stores no separate short
+    message, so the words are the committee's note, lane B's masked copy: the same words as the reversal card's note.
+    A note that will not open falls back to the reversal card's own title (BLD-E058)."""
+    reversal_id = str(dec.raw["reversal_id"])
+    note = read.reversal_note(conn, reversal_id)
+    speaker, from_label = committee_speaker(conn, dec.reversed_by)
+    at = dec.reversed_at or dec.at
+    at_label = day_time(at, now)
+    return {
+        "id": f"reversal-{reversal_id}",
+        "kind": "reversal",
+        "from": speaker,
+        "from_label": from_label,
+        "at": at.isoformat(),
+        "at_label": at_label,
+        "by_line": f"{from_label}, {at_label}",  # "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm"
+        "text": note or f"The Ones Committee changed the decision to {DECISION_LABEL[dec.choice].lower()}",
+    }
+
+
 def edit_window(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
     """L-SUBMIT.edit/1: until the desk opens it, at the latest `edit_closes_at` (3 days after sharing); a question
     set sent closes it too (L-SUBMIT.edit/5, J-TRACK step 3). None once it is past review."""
@@ -668,13 +715,16 @@ def sharer_view(
     if state != "withdrawn":
         # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO) and the questions
         # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link. Once the desk
-        # has decided, the decision is the desk's message here, in time order (BLD-E058): lane F's S-08 shows it as
-        # an event line, which `entry_count` does not count, so it is counted here.
-        messages = (
-            [decision_message(conn, dec, now, names_desk=names_desk)]
-            if dec is not None and state in DECIDED_STATES
-            else []
-        )
+        # has decided, the decision is the desk's message here, and after a reversal the committee's follows it, in
+        # time order (BLD-E058): lane F's S-08 shows each as an event line, which `entry_count` does not count, so
+        # they are counted here. A reversed decision stays reversed once it is built or shipped.
+        stands = dec is not None and state in DECIDED_STATES
+        reversed_ = stands and dec is not None and dec.reversed
+        messages: list[dict[str, Any]] = []
+        if stands and dec is not None:
+            messages.append(decision_message(conn, dec, now, names_desk=names_desk))
+            if reversed_:
+                messages.append(committee_message(conn, dec, now))
         n_entries = read.entry_count(conn, uid) + len(messages)
         conversation = {
             "heading": "You and the review desk",
@@ -695,7 +745,7 @@ def sharer_view(
             )
             if phone_empty != conversation["empty_line"]:  # with Teams off the two are one line, said once
                 conversation["phone_empty_line"] = phone_empty
-        if state == "reversed":
+        if state == "reversed" or reversed_:
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
             )
