@@ -430,6 +430,12 @@ def variables(
     return tpl, data
 
 
+def _path_of(to: str) -> str:
+    """An action's path without its `#…` or `?…`: "Say hello" goes to a place on the conversation
+    (`/ideas/{ref}/conversation#say-hello`) and is that conversation's link all the same (L-INBOX.rules/6, BLD-A220)."""
+    return to.split("#", 1)[0].split("?", 1)[0]
+
+
 def resolved_actions(
     row: dict[str, Any], idea: dict[str, Any] | None, *, item_id: Any = OWN_ROW
 ) -> list[dict[str, Any]]:
@@ -455,7 +461,7 @@ def resolved_actions(
     if (
         ref
         and kind not in ONE_ACTION_KINDS
-        and not any(a.get("to", "").endswith("/conversation") for a in out)
+        and not any(_path_of(a.get("to", "")).endswith("/conversation") for a in out)
     ):
         out.append({"label": "Open the conversation", "to": f"/ideas/{ref}/conversation", "style": "line"})
     return sorted(out, key=lambda a: _STYLE_ORDER.get(str(a["style"]), 1))
