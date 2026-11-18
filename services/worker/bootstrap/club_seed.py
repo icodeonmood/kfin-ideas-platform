@@ -483,13 +483,17 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     text_chars = sum(len(w) for w in s.words)
     # An email or Teams arrival has no device (L-DRAFT.channels); otherwise where it was last saved.
     device = None if s.channel in ("email", "teams") else ("phone" if s.via == "voice" else "laptop")
+    # Every shared idea past "Checked and matched" was checked for similar ideas (L-SIMILAR.failure), as lane C's
+    # check records it; one still checking has no outcome yet.
+    similar_check = "done" if shared is not None and s.status != "checking" else None
     conn.execute(
         "INSERT INTO ideas (id, idea_id, contributor_code, status, kind, title, summary, often, city, affects, area, "
         "brings, sorting_sources, sorting_confirmed_at, helper_picks, channel, step, saved_at, saved_device, "
         "saved_device_id, char_count, archived_at, shared_at, share_seconds, declaration_version, declared_at, "
-        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, language) "
+        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, similar_check, "
+        "language) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
         (
             idea_uuid, ref, owner["code"], s.status, s.kind, s.title, s.summary, s.often,
             owner["city"] if shared else None, s.affects, s.area, s.brings, Jsonb(sources),
@@ -501,7 +505,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
             _ago(s.withdrawn_days, now) if s.withdrawn_days is not None else None,
             _working_days_after(shared, 5) if shared else None, reviewer, opened, reviewer if opened else None,
-            path[0][1],
+            path[0][1], similar_check,
         ),
     )  # fmt: skip
     if s.origin is not None:  # sealed as draft intake seals it: masked subject, the note on top, when it came
