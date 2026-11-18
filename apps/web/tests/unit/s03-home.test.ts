@@ -663,6 +663,123 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
   });
 });
 
+describe("S-03.sections/1: Needs you follows the Inbox without a reload (BLD-C145, polish round)", () => {
+  const SECOND = row({
+    id: "IDEA-2026-001477",
+    title: "Synthetic: nominee forms sent back for one missing date",
+    pill: { status: "needs_you", label: "Needs you", variant: "warn" },
+    group: "needs_you",
+  });
+  const SECOND_SET = { ...SET, id: "qs-2", idea_id: SECOND.id, idea: { id: SECOND.id, title: SECOND.title } };
+  const reads = (calls: { url: string }[], path: string) =>
+    calls.filter((c) => c.url.startsWith(path)).length;
+
+  it("L-INBOX.rules/3: one inbox:counts event re-reads Needs you once; the count and cards update, the box keeps its words and focus", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, SECOND, PICKED], { needs_you: 3 });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: ideas }),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => ({ status: 200, body: SECOND_SET }),
+      }),
+    );
+    expect(link("All 3 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(2);
+    const ta = type(WORDS);
+    act(() => ta.focus());
+    const before = {
+      mine: reads(calls, "/api/me/ideas"),
+      crew: reads(calls, "/api/crew"),
+      ones: reads(calls, "/api/ones"),
+    };
+
+    ideas = mine([NEEDS, PICKED], { needs_you: 1 }); // the second idea's questions were answered in the Inbox
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0, needs_you: 1 } }));
+    });
+    await flush();
+
+    expect(reads(calls, "/api/me/ideas")).toBe(before.mine + 1);
+    expect(reads(calls, "/api/crew")).toBe(before.crew); // only Needs you is read again
+    expect(reads(calls, "/api/ones")).toBe(before.ones);
+    expect(link("All 3 in Inbox")).toBeUndefined();
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(text()).not.toContain(SECOND.title);
+    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(WORDS);
+    expect(document.activeElement).toBe(host.querySelector("textarea"));
+    expect(text()).not.toContain(HOME_COPY.loadingNeeds);
+  });
+
+  it("S-03.sections/1: the last item answered shows Nothing needs you right now", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, PICKED]);
+    await show(baseRoutes({ "/api/me/ideas": () => ({ status: 200, body: ideas }) }));
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    ideas = mine([PICKED]);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(text()).toContain(HOME_COPY.needsNone);
+  });
+
+  it("A failed re-read keeps what is shown: no empty state, no loading rows", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let fail = false;
+    await show(
+      baseRoutes({
+        "/api/me/ideas": () =>
+          fail
+            ? { status: 500, body: { error: { code: "worker_error" } } }
+            : { status: 200, body: mine([NEEDS, PICKED], { needs_you: 3 }) },
+      }),
+    );
+    fail = true;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(link("All 3 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+    expect(text()).not.toContain(HOME_COPY.loadingNeeds);
+    expect(host.querySelectorAll(".hm-idea")).toHaveLength(2);
+  });
+
+  it("pageshow from the back/forward cache re-reads Needs you; an ordinary pageshow does not", async () => {
+    let ideas = mine([NEEDS, PICKED]);
+    const calls = await show(baseRoutes({ "/api/me/ideas": () => ({ status: 200, body: ideas }) }));
+    const first = reads(calls, "/api/me/ideas");
+    ideas = mine([PICKED]);
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first);
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 1);
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(text()).toContain(HOME_COPY.needsNone);
+  });
+
+  it("A first visit shows no Needs you, so the event reads nothing", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    const calls = await show(baseRoutes(), { firstVisit: true });
+    const first = reads(calls, "/api/me/ideas");
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first);
+  });
+});
+
 describe("lib/home/data (BLD-C143, C145, C146)", () => {
   it("loadMine: shared ideas only, the total from counts, the ideas that need the person", async () => {
     const { f } = fakeFetch(baseRoutes());

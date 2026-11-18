@@ -26,6 +26,7 @@ import { Pill, type PillVariant } from "@/components/ui/pill";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DraftClient, DraftError, newClientId } from "@/lib/compose/client";
 import type { CrewCard, MyIdeaRow } from "@/lib/contracts";
+import { COUNTS_EVENT } from "@/lib/inbox-events";
 import {
   cheer,
   loadCrew,
@@ -342,14 +343,19 @@ export function HomeScreen({
   const [ones, setOnes] = useState<Loaded<HomePost[] | null>>({ state: "loading" });
   const [crewAt, setCrewAt] = useState(0);
   const teamUp = useTeamUpSheet({ doneLabel: "Done" });
+  // Each read of Needs you gets a number, and an older read never overwrites a newer one that is shown.
+  const needsRead = useRef(0);
+  const needsShown = useRef(0);
 
   useEffect(() => {
     let gone = false;
+    const n = ++needsRead.current;
     void loadMine(f).then(async (m) => {
-      if (gone) return;
+      if (gone || n < needsShown.current) return;
+      needsShown.current = n;
       setMine({ state: "ready", value: m });
       const found = m && !firstVisit ? await loadSets(f, m.needs.rows) : [];
-      if (!gone) setSets({ state: "ready", value: found });
+      if (!gone && n >= needsShown.current) setSets({ state: "ready", value: found });
     });
     if (!firstVisit)
       void loadCrew(f).then((c) => {
@@ -360,6 +366,36 @@ export function HomeScreen({
     });
     return () => {
       gone = true;
+    };
+  }, [f, firstVisit]);
+
+  // Needs you again (S-03.sections/1, L-INBOX.rules/3): when the Inbox sends its counts (an item was answered,
+  // opened or archived) and when the browser brings Home back from its back/forward cache, Home reads the same
+  // `GET /api/me/ideas` and question sets it read on load. Only that part changes: the box, focus and scroll stay
+  // as they are, and nothing goes back to loading. A read that fails keeps what is shown.
+  useEffect(() => {
+    if (firstVisit) return; // a first visit shows no Needs you
+    let gone = false;
+    const again = async () => {
+      const n = ++needsRead.current;
+      const m = await loadMine(f);
+      if (gone || !m || n < needsShown.current) return;
+      const found = await loadSets(f, m.needs.rows);
+      if (gone || n < needsShown.current) return;
+      needsShown.current = n;
+      setMine({ state: "ready", value: m });
+      setSets({ state: "ready", value: found });
+    };
+    const onCounts = () => void again();
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) void again();
+    };
+    window.addEventListener(COUNTS_EVENT, onCounts);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      gone = true;
+      window.removeEventListener(COUNTS_EVENT, onCounts);
+      window.removeEventListener("pageshow", onShow);
     };
   }, [f, firstVisit]);
 
