@@ -695,6 +695,8 @@ def _messages(
             "lang": r["lang"],
             "at": r["created_at"].isoformat(),
             "at_label": labels.message_label(r["created_at"], r["device"], False, now),
+            # S-04B.layout/1: a message picked up from a saved draft reads with its day, time and device (BLD-C185)
+            "at_label_earlier": labels.earlier_label(r["created_at"], r["device"], False, now),
             "device": r["device"],
             "via": r["via"],
             "files": [f for f in files if f.get("message_id") == mid],

@@ -243,6 +243,25 @@ def test_l_draft_autosave_4_saved_labels() -> None:
     assert labels.day(dt.datetime(2026, 11, 2, 9, 0, tzinfo=IST), now) == "Monday 2 November"
 
 
+def test_s04b_layout_1_an_earlier_message_reads_with_its_day_time_and_device() -> None:
+    """S-04B.layout/1, ComposeResume.md "Friday, 8:42 pm, on your phone" (BLD-C185; lane G's walk, J-RESUME/3)."""
+    now = dt.datetime(2026, 11, 17, 13, 38, tzinfo=IST)
+    friday = dt.datetime(2026, 11, 13, 20, 42, tzinfo=IST)
+    assert labels.earlier_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"
+    # A message picked up seconds after it was saved is still an earlier message: never "Just now"
+    seconds = now - dt.timedelta(seconds=20)
+    assert labels.message_label(seconds, "phone", False, now) == "Just now"
+    assert labels.earlier_label(seconds, "phone", False, now) == "Today, 1:37 pm, on your phone"
+    yesterday = dt.datetime(2026, 11, 16, 10, 5, tzinfo=IST)
+    assert labels.earlier_label(yesterday, "laptop", False, now) == "Yesterday, 10:05 am, on your laptop"
+    # Today carries its day once the minute is out, as the side bar's "Today, on your laptop" does
+    assert labels.message_label(now - dt.timedelta(minutes=26), "laptop", False, now) == (
+        "Today, 1:12 pm, on your laptop"
+    )
+    # No device known: day and time only
+    assert labels.earlier_label(friday, None, False, now) == "Friday, 8:42 pm"
+
+
 # ---- DEC-103: masked before anything else sees the words ----------------------------------------------------------
 
 

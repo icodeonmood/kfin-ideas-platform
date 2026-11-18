@@ -206,6 +206,10 @@ def test_s04b_layout_2_each_message_keeps_its_own_receipt_masked(drafting: Any) 
     assert one["receipt"] == runs_by_message[one["id"]] and two["receipt"] == runs_by_message[two["id"]]
     assert draft["receipt"] == two["receipt"]  # the latest, as before
     assert pan not in str(one["receipt"]) + str(two["receipt"])  # non-negotiables 4 and 7
+    # S-04B.layout/1: each message also carries its day, time and device for when it is picked up (BLD-C185)
+    assert one["at_label_earlier"].startswith("Today, ") and one["at_label_earlier"].endswith(
+        ", on your laptop"
+    )
     # Try again (no message of its own) belongs to the newest message; the first keeps its own
     again = store.build(db, owner, idea, LAPTOP)
     _run(again)

@@ -151,6 +151,9 @@ export interface Message {
   at: IsoDate;
   /** "Just now", "Friday, 8:42 pm, on your phone" (L-DRAFT, BLD-C071). */
   at_label?: string;
+  /** Always day, time and device, never "Just now": how S-04B shows a message picked up from a saved draft
+   * ("Friday, 8:42 pm, on your phone"; S-04B.layout/1, BLD-C185). */
+  at_label_earlier?: string;
   /** This message's own receipt, from its latest finished run, masked (S-04B.layout/2, BLD-C184). */
   receipt?: string[];
   edited_at?: IsoDate;

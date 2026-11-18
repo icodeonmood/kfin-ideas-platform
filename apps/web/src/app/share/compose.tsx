@@ -20,7 +20,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
+import { IconDevice, IconLaptop, IconMail, IconPencil } from "@/components/compose/icons";
 import {
   DraftPanel,
   PANEL_COPY,
@@ -35,6 +35,7 @@ import { teamUpOpener, useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import type {
+  Device,
   Draft,
   DraftListItem,
   DraftStreamEvent,
@@ -195,9 +196,15 @@ export function Compose({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [existing, setExisting] = useState<DraftListItem | null>(null);
-  /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." as it was when the draft was opened, or null when
-   * there is no "Picked up" line. Saves made here afterwards do not change it (BLD-C158). */
-  const [pickedUp, setPickedUp] = useState<string | null>(null);
+  /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." and the device it names, as they were when the
+   * draft was opened, or null when there is no "Picked up" line. Saves made here afterwards do not change it
+   * (BLD-C158). `earlier` holds the messages it was picked up with: they read "Friday, 8:42 pm, on your phone"
+   * (S-04B.layout/1, BLD-C185). */
+  const [pickedUp, setPickedUp] = useState<{
+    line: string;
+    device: Device | null;
+    earlier: ReadonlySet<string>;
+  } | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
@@ -271,7 +278,15 @@ export function Compose({
             !handedOver.has(givenId) &&
             d.run?.state !== "running" &&
             (!d.saved_on?.this_device || ageMs > 2 * 60_000);
-          setPickedUp(back ? (d.saved_labels?.resume ?? "") : null);
+          setPickedUp(
+            back
+              ? {
+                  line: d.saved_labels?.resume ?? "",
+                  device: d.saved_on?.device ?? null,
+                  earlier: new Set(d.messages.map((m) => m.id)),
+                }
+              : null,
+          );
           const waiting = client.outbox(givenId);
           if (waiting.length) setPending(waiting.map((m) => ({ ...m, queued: true })));
         })
@@ -892,10 +907,10 @@ export function Compose({
                   {pickedUp !== null && draft ? (
                     <div className="ban" role="region" aria-label="Your draft">
                       <span className="ic" aria-hidden="true">
-                        <IconDevice size={16} />
+                        <SavedOnIcon device={pickedUp.device} size={16} />
                       </span>
                       <p className="bt">{COMPOSE_COPY.pickedUp}</p>
-                      <p className="bm">{pickedUp}</p>
+                      <p className="bm">{pickedUp.line}</p>
                       <div className="ba">
                         <button type="button" className="tb" onClick={() => router.push("/share?new=1")}>
                           {COMPOSE_COPY.startNewInstead}
@@ -921,6 +936,7 @@ export function Compose({
                     <MessageItem
                       key={m.id}
                       message={m}
+                      when={pickedUp?.earlier.has(m.id) ? (m.at_label_earlier ?? m.at_label) : m.at_label}
                       quote={quote}
                       onEdit={async (text) => {
                         if (!draftId) return;
@@ -967,7 +983,7 @@ export function Compose({
               {existing && !hasWordsTyped(box) ? (
                 <div className="ban" role="region" aria-label="Your earlier draft">
                   <span className="ic" aria-hidden="true">
-                    <IconDevice />
+                    <SavedOnIcon device={existing.saved_on?.device ?? null} />
                   </span>
                   <p className="bt">
                     {COMPOSE_COPY.existing(existing.saved_labels?.prompt_day ?? "", existing.title)}
@@ -1052,12 +1068,19 @@ export function Compose({
   );
 }
 
+/** The banner's mark follows the device its line names: the drawn phone, or a laptop (BLD-C185). A line that
+ * names no device keeps the phone the boards draw. */
+function SavedOnIcon({ device, size }: { device: Device | null; size?: number }) {
+  return device === "laptop" ? <IconLaptop size={size} /> : <IconDevice size={size} />;
+}
+
 function hasWordsTyped(box: string): boolean {
   return box.trim().length > 0;
 }
 
 function MessageItem({
   message,
+  when,
   quote,
   onEdit,
   last,
@@ -1067,6 +1090,8 @@ function MessageItem({
   onSuggestion,
 }: {
   message: Message;
+  /** "Just now", or "Friday, 8:42 pm, on your phone" for a message picked up from a saved draft. */
+  when: string | undefined;
   quote: string | null;
   onEdit(text: string): Promise<void>;
   last: boolean;
@@ -1143,7 +1168,7 @@ function MessageItem({
         </div>
         <div className="mact">
           <span className="who">{COMPOSE_COPY.you}</span>
-          <span className="meta">{message.at_label}</span>
+          <span className="meta">{when}</span>
           {editing ? null : (
             <button
               type="button"

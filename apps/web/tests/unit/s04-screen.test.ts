@@ -463,7 +463,7 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
   });
 });
 
-describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5; BLD-C184)", () => {
+describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5, J-RESUME/3; BLD-C184, BLD-C185)", () => {
   // Synthetic PAN: the person's own words carry it; every receipt carries only its masked tail.
   const PAN = "ABCPK1234Z";
   const FIRST = `${WORDS} One investor read out his PAN, ${PAN}, at the counter.`;
@@ -572,5 +572,67 @@ describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5; BLD-C184)", () =>
       { words: SECOND, receipt: R2 },
     ]);
     rawOnlyInOwnWords();
+  });
+
+  const bannerMark = () => host.querySelector(".ban .ic svg rect")!.getAttribute("width");
+
+  it("S-04B.layout/4: 'on your laptop' draws the laptop", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? {
+            status: 200,
+            body: draft({
+              saved_on: { device: "laptop", this_device: false },
+              saved_labels: { ...draft().saved_labels!, resume: "Last saved on your laptop, today 3:12 pm." },
+            }),
+          }
+        : { status: 404, body: {} };
+    await mount({ draftId: DRAFT });
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    expect(bannerMark()).toBe("15"); // the laptop's screen
+  });
+
+  it("S-04B.layout/4: 'on your phone' draws the phone, as the board does", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`) ? { status: 200, body: draft() } : { status: 404, body: {} };
+    await mount({ draftId: DRAFT });
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your phone, Friday 8:42 pm.");
+    expect(bannerMark()).toBe("8"); // the phone
+  });
+
+  it("S-04B.layout/1, J-RESUME/3: a picked-up message reads its day, time and device; one added here reads Just now", async () => {
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-2",
+            message: { id: "m-2", text: SECOND },
+            draft: draft({
+              messages: [
+                m1({ at_label: "Just now", at_label_earlier: "Today, 3:12 pm, on your phone" }),
+                m2({ at_label_earlier: "Today, 3:13 pm, on your laptop" }),
+              ],
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: draft({
+            messages: [m1({ at_label: "Just now", at_label_earlier: "Today, 3:12 pm, on your phone" })],
+          }),
+        };
+      return { status: 404, body: {} };
+    };
+    await mount({ draftId: DRAFT });
+    const metas = () => [...host.querySelectorAll(".msg.me .mact .meta")].map((m) => m.textContent);
+    expect(metas()).toEqual(["Today, 3:12 pm, on your phone"]);
+    type(host.querySelector("textarea") as HTMLTextAreaElement, SECOND);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(metas()).toEqual(["Today, 3:12 pm, on your phone", "Just now"]);
   });
 });

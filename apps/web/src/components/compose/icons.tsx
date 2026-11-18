@@ -92,6 +92,15 @@ export const IconDevice = ({ size = 18, className }: Props) => (
   </svg>
 );
 
+/** The boards draw only the phone (ComposeResume.dc.html's "Picked up" banner). A laptop is Lucide's laptop-minimal,
+ * the library F-ICONS.style/6 says the set matches, drawn in the phone's 20px frame and stroke (BLD-C185). */
+export const IconLaptop = ({ size = 18, className }: Props) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 20 20" strokeWidth={1.6} {...base}>
+    <rect x="2.5" y="3.5" width="15" height="10" rx="1.7" />
+    <path d="M1.7 16.5h16.6" />
+  </svg>
+);
+
 export const IconMail = ({ size = 18, className }: Props) => (
   <svg className={className} width={size} height={size} viewBox="0 0 20 20" strokeWidth={1.6} {...base}>
     <rect x="2.5" y="4.5" width="15" height="11" rx="2" />

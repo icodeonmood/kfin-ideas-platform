@@ -9,7 +9,8 @@ screen agrees). Office time (IST). The wording is the boards' (`reference/copy/C
   device: "Saved on this phone, 8:42 pm.");
 - the save status: "Saved at 1:38 pm";
 - My ideas: "Saved yesterday, on this laptop", "Saved 8:42 pm Friday, on your phone";
-- a message: "Just now", "Friday, 8:42 pm, on your phone".
+- a message: "Just now", "Friday, 8:42 pm, on your phone"; an earlier one always with its day, time and device
+  ("Today, 3:12 pm, on your laptop"; BLD-C185).
 """
 
 from __future__ import annotations
@@ -82,10 +83,16 @@ def saved_labels(
     }
 
 
+def earlier_label(at: dt.datetime, device: str | None, this_device: bool, now: dt.datetime) -> str:
+    """An earlier message, as S-04B draws one picked up from a saved draft: day, time and device, never "Just now"
+    ("Friday, 8:42 pm, on your phone"; today reads "Today, 3:12 pm, on your laptop", as the side bar's "Today, on
+    your laptop" and the conversation's "Today, 10:07 am"; BLD-C185)."""
+    stamp = f"{capital(day(at, now))}, {clock(at)}"
+    w = where(device, this_device)
+    return f"{stamp}, {w}" if w else stamp
+
+
 def message_label(at: dt.datetime, device: str | None, this_device: bool, now: dt.datetime) -> str:
     if (now - at).total_seconds() < 60:
         return "Just now"
-    d = day(at, now)
-    w = where(device, this_device)
-    stamp = clock(at) if d == "today" else f"{capital(d)}, {clock(at)}"
-    return f"{stamp}, {w}" if w else stamp
+    return earlier_label(at, device, this_device, now)
