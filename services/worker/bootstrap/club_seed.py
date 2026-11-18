@@ -141,8 +141,10 @@ IDEAS: dict[str, Spec] = {
                "Many leave before the second queue.",
                "Investor service",
                ["Walk-in investors who come to update KYC stand in the general queue and then again at the KYC "
-                "desk. Yesterday one investor with {folio} left after forty minutes. This happens most mornings."],
-               often="Most mornings at one branch", hidden={"{folio}": ("folio", "7700012389")},
+                "desk. Yesterday one investor with folio {folio} left after forty minutes. This happens most "
+                "mornings."],
+               # A folio by the shared pattern rules and not a phone (BLD-E064; J-RECOVER/3, /6)
+               often="Most mornings at one branch", hidden={"{folio}": ("folio", "3104582/17")},
                step="check:3", saved_days=2.2, via="voice"),
     "T2": Spec("tanvi", "draft", "problem", "SIP failure SMS gives no reason",
                "When a SIP debit fails, the SMS says only that it failed. Investors call the branch to ask why.",
@@ -446,6 +448,79 @@ def _mask(kind: str, value: str) -> str:
     return f"{MASK_LABEL[kind]} ••••{value[-2:]}"
 
 
+def _masked_words(s: Spec) -> list[str]:
+    """The sharer's words as every other service reads them (DEC-103): each hidden value masked, a shown one as typed.
+    The text the messages are sealed with in `_idea`."""
+    out = []
+    for own in s.words:
+        masked = own
+        for marker, (kind, value) in s.hidden.items():
+            masked = masked.replace(marker, value if marker in s.shown else _mask(kind, value))
+        out.append(masked)
+    return out
+
+
+def _shared_run(value: str, sentences: list[str]) -> str | None:
+    """The longest run of two or more words that a part's value and the person's words share, as the words have it
+    ("calls a day"): the kind of short quote lane C's engine shows ("about 15 times a week", ComposeResume.md)."""
+    import re
+
+    def norm(word: str) -> str:
+        return re.sub(r"[^\w]", "", word).casefold()
+
+    want = [norm(w) for w in value.split()]
+    best: list[str] = []
+    for sentence in sentences:
+        words = sentence.split()
+        have = [norm(w) for w in words]
+        for i in range(len(have)):
+            for j in range(len(want)):
+                n = 0
+                while i + n < len(have) and j + n < len(want) and have[i + n] and have[i + n] == want[j + n]:
+                    n += 1
+                if n >= 2 and n > len(best):
+                    best = words[i : i + n]
+    return " ".join(best).rstrip(".,;:!?") if best else None
+
+
+def _part_reasons(s: Spec, texts: list[str]) -> dict[str, tuple[str | None, str | None]]:
+    """Each part's reason line and source quote as lane C's draft engine writes them (`draft.parts.why_for`,
+    L-DRAFT.parts/2; BLD-E064, J-RECOVER/3, /6), from the person's own masked words as the engine's evidence: the
+    title from the first sentence ("From your first sentence.", Compose.md); how often from the words the value
+    shares with them, else the first sentence the engine's frequency cue finds; what it's worth from the first
+    sentence its worth cue finds; who it affects as "you mentioned …" the groups the words name (Compose.md
+    "Suggested because you mentioned investors."), else the first sentence; the area as "it's about …" its label
+    (ComposeResume.md "Suggested because it's about distributor experience."). No model is called."""
+    import re
+
+    from draft import parts as dp
+
+    said = [x.rstrip(".!?") for x in dp.sentences(texts)]
+
+    def cue(rx: re.Pattern[str]) -> list[str]:
+        return [x for x in said if rx.search(x)][:1]
+
+    often_run = _shared_run(s.often, said) if s.often else None
+    named = [
+        a
+        for a in s.affects
+        if any(re.search(r"(?<!\w)" + re.escape(a.casefold().rstrip("s")), t.casefold()) for t in texts)
+    ]
+    asked: dict[str, tuple[Any, list[str], str | None]] = {
+        "title": ({"title": s.title, "summary": s.summary}, said[:1], None),
+        "often": (s.often, [often_run] if often_run else cue(dp._FREQUENCY), None),
+        "who": (s.affects, cue(re.compile("|".join(re.escape(a.casefold().rstrip("s")) for a in named), re.I))
+                if named else said[:1],
+                "you mentioned " + dp.joined([dp.lower_first(a) for a in named]) if named else None),
+        "value": (s.brings, cue(dp._WORTH), None),
+        "area": (s.area, [], f"it’s about {dp.lower_first(s.area)}"),
+    }  # fmt: skip
+    return {
+        key: (dp.why_for(key, value, quotes, reason, texts), quotes[0] if quotes else None)
+        for key, (value, quotes, reason) in asked.items()
+    }
+
+
 def _status_path(s: Spec, now: dt.datetime) -> list[tuple[str, dt.datetime]]:
     created = _ago((s.shared_days or s.saved_days) + 0.05, now)
     path = [("draft", created)]
@@ -480,7 +555,13 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     opened = _ago(s.opened_days, now) if s.opened_days is not None else None
     reviewer = p[s.reviewer]["id"] if s.reviewer else None
     confirmed = shared is not None or (s.step or "").startswith("check:6")
-    sources = {f: {"source": "confirmed" if confirmed else "suggested", "why": "From your words"}
+    # Each part's reason line as the engine writes it; a confirmed sorting keeps the suggestion's (submit.sorting)
+    reasons = _part_reasons(s, _masked_words(s))
+    from submit.sorting import KIND_WHY
+
+    sorting_why = {"affects": reasons["who"][0], "kind": KIND_WHY.get(s.kind), "area": reasons["area"][0],
+                   "brings": reasons["value"][0]}  # fmt: skip
+    sources = {f: {"source": "confirmed" if confirmed else "suggested", **({"why": w} if (w := sorting_why[f]) else {})}
                for f in ("affects", "kind", "area", "brings")}  # fmt: skip
     if key == "T5":
         sources["area"] = {"source": "changed", "why": "Your call"}
@@ -580,15 +661,6 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     run_id = str(uuid.uuid4())
     timings = {"title": 1900, "often": 1300, "who": 1100, "value": 1500, "area": 900, "similar": 2600}
     failed = key == "T1"  # one draft shows the failed-part state (C-DRAFT-LOADER.failure)
-    conn.execute(
-        "INSERT INTO draft_runs (id, idea_uuid, message_id, state, parts, part_ms, receipt, suggestions, ready, "
-        "started_at, finished_at) VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, true, %s, %s)",
-        (run_id, idea_uuid, message_ids[-1], list(timings), Jsonb(timings),
-         Jsonb([*(["Turned your email into a draft. Nothing has been sent."] if s.channel == "email" else []),
-                "Wrote a title and a short summary from your words.",
-                *(["Hid 1 personal detail from everyone but you."] if s.hidden else [])]),
-         Jsonb(["Add what you already tried", "Say who feels it most"]), path[0][1], path[0][1] + dt.timedelta(seconds=3)),
-    )  # fmt: skip
     parts: dict[str, Any] = {
         "title": {"title": s.title, "summary": s.summary},
         "often": s.often,
@@ -597,6 +669,22 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         "area": s.area,
         "similar": [],  # an unsent draft's matches are filled in once the links exist (`_similar_parts`)
     }
+    # The receipt and next prompts as lane C's `draft.runs.finish` writes them after a first run (L-DRAFT.parts/8,
+    # C-HIDDEN.where): what it drafted, sorted and noted, and the run's message's hidden details by their masks
+    # ("Hid 1 personal detail from everyone but you: Folio ••••17."). "Found …" is added once the links exist.
+    from draft import parts as dp
+
+    after = {k: (None if failed and k == "often" else v) for k, v in parts.items() if k != "similar"}
+    last = s.words[-1]
+    masks = [_mask(kind, value) for marker, (kind, value) in
+             sorted(s.hidden.items(), key=lambda h: last.index(h[0]) if h[0] in last else -1) if marker in last]  # fmt: skip
+    receipt = dp.receipt({}, after, hidden_masked=masks, ready=True, email=s.channel == "email")
+    conn.execute(
+        "INSERT INTO draft_runs (id, idea_uuid, message_id, state, parts, part_ms, receipt, suggestions, ready, "
+        "started_at, finished_at) VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, true, %s, %s)",
+        (run_id, idea_uuid, message_ids[-1], list(timings), Jsonb(timings), Jsonb(receipt),
+         Jsonb(dp.suggestions(after)), path[0][1], path[0][1] + dt.timedelta(seconds=3)),
+    )  # fmt: skip
     for part, part_value in parts.items():
         filled: Any = part_value
         state = "filled"
@@ -606,13 +694,12 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             state = "pinned"
         elif filled is None:
             state = "waiting"
+        why, quote = reasons.get(part, (None, None)) if state == "filled" else (None, None)
         conn.execute(
             "INSERT INTO idea_parts (idea_uuid, key, state, value, why, source_quote, run_id, took_ms) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (idea_uuid, part, state, Jsonb(filled) if filled is not None else None,
-             "Because you mentioned it" if state == "filled" else None,
-             s.words[0][:60].split("{")[0] if state == "filled" and part in ("title", "often") else None,
-             run_id, timings[part]),
+            (idea_uuid, part, state, Jsonb(filled) if filled is not None else None, why, quote, run_id,
+             timings[part]),
         )  # fmt: skip
 
     if s.fix:
@@ -1082,6 +1169,7 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
     called. `matches_for` has no way past `matching.show`, so with it off a draft with links would keep an empty
     part while the "Checked and matched" counts say 1: the seed raises instead and its transaction writes nothing."""
     from core import killswitch
+    from draft import parts as dp
     from similar.preview import Viewer
     from similar.views import matches_for
 
@@ -1094,6 +1182,18 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
                 "UPDATE idea_parts SET value = %s WHERE idea_uuid = %s AND key = 'similar'",
                 (Jsonb(found), made.uuid),
             )
+            # The run's receipt counts them, as `draft.runs.finish` does: "Found 1 similar idea from colleagues. …"
+            # sits before "Your draft is ready. …" (BLD-E064)
+            run = conn.execute(
+                "SELECT id, receipt FROM draft_runs WHERE idea_uuid = %s ORDER BY started_at DESC LIMIT 1",
+                (made.uuid,),
+            ).fetchone()
+            if run is not None:
+                lines = list(run["receipt"] or [])
+                ready_line = dp.receipt({}, {}, ready=True)
+                at = len(lines) - 1 if lines[-1:] == ready_line else len(lines)
+                lines[at:at] = dp.receipt({}, {}, similar_found=len(found))
+                conn.execute("UPDATE draft_runs SET receipt = %s WHERE id = %s", (Jsonb(lines), run["id"]))
         elif (
             not killswitch.is_on_fresh("matching.show", conn)
             and conn.execute(
