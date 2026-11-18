@@ -28,6 +28,14 @@ describe("kill switch route map (§7.6)", () => {
       expect(switchesFor("GET", read)).toEqual([]);
   });
 
+  it("L-DECIDE/6: asking to join the build team pauses with sharing; the decision it reads stays open (DEC-111, BLD-B256)", () => {
+    const idea = "/api/ideas/IDEA-2026-001481";
+    expect(switchesFor("POST", `${idea}/join-build`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${idea}/join-build/`)).toEqual(["submissions"]);
+    expect(switchesFor("GET", `${idea}/decision`)).toEqual([]);
+    expect(switchesFor("POST", `${idea}/join-build/extra`)).toEqual([]);
+  });
+
   it("an idea's conversation (L-CONVO, BLD-F058): writing and removing a message pause with sharing; reading stays open", () => {
     const base = "/api/ideas/IDEA-2026-001481/conversation";
     expect(switchesFor("POST", `${base}/messages`)).toEqual(["submissions"]);
