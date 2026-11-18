@@ -423,3 +423,19 @@ def entry_count(conn: Conn, idea_uuid: str) -> int:
         (idea_uuid,),
     ).fetchone()
     return int(row["n"]) if row else 0
+
+
+# The merge lines lane F's S-08 shows on both ideas (`convo.render.event_line`, L-MERGE.effects/6): lane B's desk
+# merge, lane F's lead-accepted merge (into, on the merged idea; from, on the lead), the Ones Committee undoing a
+# merge, and the seed's own code for a desk merge (BLD-F061).
+MERGE_EVENTS = ("desk.merged", "merge.into", "merge.from", "committee.merge_reversed", "desk_merged")
+
+
+def merge_line_count(conn: Conn, idea_uuid: str) -> int:
+    """How many merge lines this idea's conversation shows (BLD-E065): `entry_count` leaves events out."""
+    row = conn.execute(
+        "SELECT count(*) AS n FROM conversation_entries WHERE idea_uuid = %s AND type = 'event' "
+        "AND event = ANY(%s) AND deleted_at IS NULL",
+        (idea_uuid, list(MERGE_EVENTS)),
+    ).fetchone()
+    return int(row["n"]) if row else 0
