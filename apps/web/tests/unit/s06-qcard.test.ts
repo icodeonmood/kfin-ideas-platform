@@ -146,8 +146,10 @@ describe("S-06.states with lane B's C-QCARD (J-TRACK/3, /5; BLD-E051)", () => {
   it("Questions from the review desk: the card leads; the deadline line ends at its sentence; one way to Answer", () => {
     const html = renderToStaticMarkup(createElement(SharerScreen, props("questions")));
     expect(html).toContain('class="card qcard"');
-    expect(text(html)).toContain("Harish from the review desk,");
-    expect(html).toContain(">Harish has 3 questions for you</h3>");
+    // DEC-111: lane B's card names the review desk, never the reviewer, and draws no avatar
+    expect(text(html)).toContain("The review desk,");
+    expect(html).toContain(">The review desk has 3 questions for you</h3>");
+    expect(html).not.toContain("Harish from the review desk");
     for (const [q] of QUESTIONS) expect(html).toContain(q);
     // C-QCARD.anatomy/4: the deadline line alone; the countdown is the header's pill
     expect(html).toContain(

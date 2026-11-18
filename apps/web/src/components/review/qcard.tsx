@@ -7,16 +7,19 @@
  * in the Inbox reader (S-H5, Inbox.md). Feed it the sharer's open set from `GET /api/ideas/{id}/question-set`.
  * In the reader the card is the item's body: the reader keeps its own header and pins the button to its foot
  * (S-H5.layout, S-H5.rules/3), with the words `answerLabel` gives.
+ *
+ * DEC-111: the card names the review desk, never the reviewer: no first or full name, no avatar, no initials. The
+ * sharer's set comes without the reviewer (`by` is null), and the card never reads it.
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { Avatar } from "@/components/ui/avatar";
 import { ButtonLink } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL } from "@/lib/desk/files";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import "./qcard.css";
@@ -67,7 +70,7 @@ export function QuestionsCard({
   set: Set;
   variant?: QuestionsCardVariant;
   /** `status` only: the host's own words for the title and the deadline line, where its board words them
-   * differently (S-08, Messages.md: "Meera has 3 questions about your idea", worked out by the conversation's read). */
+   * differently (S-08, Messages.md, worked out by the conversation's read). */
   title?: string;
   deadline?: string;
   /** `status` only: false where the host already shows who asked and when above the card (S-08's message line); the
@@ -75,7 +78,6 @@ export function QuestionsCard({
   byline?: boolean;
 }) {
   const now = useMinute();
-  const who = set.by.first_name;
   const answered = set.state === "answered";
   const live = set.due_at && !answered ? countdown(set.due_at, now) : null;
   const href = answerHref(ideaId);
@@ -96,7 +98,8 @@ export function QuestionsCard({
   ) : null;
 
   if (variant === "home") {
-    // Home.md "Needs you": the count, the clock, who asked about which idea, each question a way into Answer
+    // Home.md "Needs you": the count, the clock, the desk's question about which idea, each one a way into Answer.
+    // DEC-111: "Meera from the review desk asked about …" names the desk alone
     return (
       <article className="card qcard qcard-home" aria-labelledby={titleId}>
         <header className="qcard-h">
@@ -106,7 +109,7 @@ export function QuestionsCard({
           {pill}
         </header>
         <p className="meta">
-          {who} from the review desk asked about &quot;{set.idea.title}&quot;
+          {REVIEW_DESK_START} asked about &quot;{set.idea.title}&quot;
         </p>
         <ol className="qcard-links">
           {set.questions.map((q, i) => (
@@ -153,8 +156,8 @@ export function QuestionsCard({
     <h3 id={titleId} className="h3">
       {title ??
         (answered
-          ? `${who}’s ${plural(n, "question")}, answered`
-          : `${who} has ${plural(n, "question")} for you`)}
+          ? `${REVIEW_DESK_START}’s ${plural(n, "question")}, answered`
+          : `${REVIEW_DESK_START} has ${plural(n, "question")} for you`)}
     </h3>
   );
   return (
@@ -162,9 +165,9 @@ export function QuestionsCard({
       {byline ? (
         <>
           <header className="qcard-h">
-            <Avatar initials={set.by.initials} size={32} name={set.by.name} />
+            {/* DEC-111: the desk as a body, with no avatar or initials ("The review desk, Monday 16 November, …") */}
             <span className="meta">
-              {who} from the review desk, {sent}
+              {REVIEW_DESK_START}, {sent}
             </span>
             {pill}
           </header>

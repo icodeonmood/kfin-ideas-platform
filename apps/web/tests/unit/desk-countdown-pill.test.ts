@@ -27,15 +27,6 @@ vi.mock("next/link", async () => {
 const HOUR = 3_600_000;
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
 const IDEA = "IDEA-2026-000912";
-const MEERA = {
-  id: "u-meera",
-  name: "Meera Iyer",
-  first_name: "Meera",
-  initials: "MI",
-  city: null,
-  area: null,
-};
-
 function doc(html: string): HTMLElement {
   const box = document.createElement("div");
   box.innerHTML = html;
@@ -47,7 +38,7 @@ function questionSet(due: string | null, answered = false): NonNullable<SharerQu
     id: "8d2f4b6a-1c3e-4a5b-9d7f-2e6c8a0b4d13",
     idea_id: IDEA,
     idea: { id: IDEA, title: "Investors call to ask why a redemption was held" },
-    by: MEERA,
+    by: null, // DEC-111: the sharer's set never names the reviewer
     state: answered ? "answered" : "seen",
     time_to_answer: "3d",
     sent_at: at(-HOUR),
