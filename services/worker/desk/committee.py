@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Literal
 
 from core.db import Conn
-from desk import adapters, decide, promises, when
+from desk import adapters, decide, join_build, promises, when
 from desk.store import (
     COMMITTEE,
     READERS,
@@ -564,6 +564,9 @@ def decision_for_viewer(
                     joined_side=lead is not None)  # fmt: skip
     if full is not None:
         full["joined_into"] = lead["idea_id"] if lead is not None else None
+        # Ask to join the build team (L-DECIDE.rules/6, DEC-111): for the sharer and the crew only, on the idea whose
+        # Pick this is (the lead, on an idea a Pick joined); None for anyone else, the desk and committee included
+        full["join_build"] = join_build.join_build_for(conn, str((lead or idea)["id"]), viewer_id)
     if full is not None and not sharer_side:
         full["lines"] = None  # the desk and the committee read the committee's words (S-R2, S-R4)
     if full is None or may_read_decision(conn, viewer_id, idea):
