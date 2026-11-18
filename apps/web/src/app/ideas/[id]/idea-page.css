@@ -284,6 +284,13 @@
   color: #ffffff;
 }
 
+/* The rest of the sentence on its own line under the first clause, as Status.md draws the decided, answered and
+   withdrawn states (the board's lead line, then its body line 12px under it). "Just shared" stays one line. */
+.ip-rest {
+  display: block;
+  margin-top: 12px;
+}
+
 .ip-card-acts {
   display: flex;
   flex-wrap: wrap;
