@@ -7,6 +7,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } from "./helpers";
+import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
@@ -407,4 +408,67 @@ test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a number mid-text from th
   await expect(r.getByText("Hidden from everyone.", { exact: true })).toBeAttached();
   await expect(text).toBeFocused();
   await expectNoSeriousAxeIssues(r);
+});
+
+test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab; no request URL and no address holds it", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  // A word no other idea on the desk holds, so the search finds this one alone
+  const words = `Zebra${Date.now() % 100_000}Kestrel`;
+  const title = `${words} branch form needs a plain reason (${testInfo.project.name})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const r = reviewer.page;
+  const asked = watchRequestUrls(r);
+  const box = r.getByRole("searchbox", { name: "Search the desk" });
+  const link = r.getByRole("link", { name: title, exact: true });
+  await r.goto("/desk?tab=to_review&sort=decide_by");
+  await expect(r.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  const kept = await storageNames(r);
+  await expect(box).toHaveAttribute("autocomplete", "off");
+  await box.fill(words);
+  await box.press("Enter");
+  await expect(link).toBeVisible();
+  await expect(r.getByRole("link", { name: /Rejection SMS codes need plain words/ })).toHaveCount(0);
+  expect(new URL(r.url()).search).toBe("?tab=to_review&sort=decide_by");
+
+  // Browser Back from the idea: the same tab, sort and search, the row focused
+  await link.click();
+  await r.waitForURL(new RegExp(`/desk/ideas/${ideaId}$`));
+  await r.goBack();
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeFocused();
+  await expect(r.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+  // `person` opens a context of its own at the default desktop size, so C-SORTS shows its pressed buttons
+  await expect(r.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+
+  // The page's own Back link brings the search back too (J-BROWSE/3, "browser or the page's own link")
+  await link.click();
+  await r.waitForURL(new RegExp(`/desk/ideas/${ideaId}$`));
+  await r.locator(".ri-head a.back").click();
+  await r.waitForURL(/\/desk\?/);
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeVisible();
+
+  // A reload keeps it
+  await r.reload();
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeVisible();
+  await expect(r.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+
+  // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
+  expect(asked.filter(carrying(words))).toEqual([]);
+  expect(carrying(words)(r.url())).toBe(false);
+  expect(await storageNames(r)).toEqual(kept);
+  expect(await storageCarries(r, words)).toBe(false);
+
+  // The link pasted into another browser: the tab and sort apply, the search does not (J-BROWSE/6)
+  const other = await person(browser, PERSONAS.reviewer);
+  await other.page.goto(r.url());
+  await expect(other.page.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+  await expect(other.page.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+  await expect(other.page.getByRole("searchbox", { name: "Search the desk" })).toHaveValue("");
+  await other.page.context().close();
 });

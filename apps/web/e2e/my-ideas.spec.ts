@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { CLUB, clubLoaded, esc, IDEAS, NO_SEED, removePerson, seededIdea } from "./club";
 import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const isPhone = (name: string) => name.startsWith("phone");
 /** A list change waits for the server's next view; generous, so a cold server never fails a step that works. */
@@ -83,7 +84,7 @@ test.describe("S-07 on the 1% Club seed", () => {
     await expectNoSeriousAxeIssues(page);
   });
 
-  test("S-07.return, V-ACC.browse/1 (J-BROWSE/1-3): filter, sort and search in the URL; Back restores them, the row is focused, washed and announced", async ({
+  test("S-07.return, V-ACC.browse/1 (J-BROWSE/1-3), DEC-110: filter and sort in the URL, the search in the tab; Back restores them, the row is focused, washed and announced", async ({
     page,
   }, info) => {
     test.skip(
@@ -106,7 +107,9 @@ test.describe("S-07 on the 1% Club seed", () => {
     const box = page.getByRole("searchbox", { name: /^Search/ });
     await box.fill("Redemption");
     await box.press("Enter");
-    await soon.poll(() => here(page)).toBe("/my-ideas?filter=with_review_desk&sort=shared&q=Redemption");
+    // DEC-110: the search stays out of the address; the filter and sort stay in it
+    await expect(titleLink(page, t5.title)).toBeVisible();
+    await soon.poll(() => here(page)).toBe("/my-ideas?filter=with_review_desk&sort=shared");
     const list = here(page);
     await expect(titleLink(page, t5.title)).toBeVisible();
     await expect(
@@ -138,6 +141,80 @@ test.describe("S-07 on the 1% Club seed", () => {
     await soon.poll(() => here(page)).toBe(list);
     await expect(titleLink(page, t5.title)).toBeFocused();
     await expect(page.getByText("Back where you were: Yours.")).toBeVisible();
+    // ...with its search too (J-BROWSE/3, "browser or the page's own link"; DEC-110)
+    await expect(box).toHaveValue("Redemption");
+  });
+
+  test("DEC-110, S-07.return, J-BROWSE/1, /3, /6: the search stays in the tab; no request URL and no address ever holds it", async ({
+    page,
+    browser,
+  }, info) => {
+    test.skip(
+      isPhone(info.project.name),
+      "the search bar is the desktop board's; the phone opens it from a search",
+    );
+    test.setTimeout(120_000);
+    const t5 = await seededIdea("T5");
+    const words = "Redemption";
+    const asked = watchRequestUrls(page);
+    const box = page.getByRole("searchbox", { name: /^Search/ });
+    const answer = page
+      .getByRole("status")
+      .filter({ hasText: /Redemption/ })
+      .first();
+    await open(page, "/my-ideas?sort=shared");
+    const kept = await storageNames(page);
+    await box.fill(words);
+    await box.press("Enter");
+    await expect(answer).toBeVisible();
+    await expect(titleLink(page, t5.title)).toBeVisible();
+    expect(here(page)).toBe("/my-ideas?sort=shared");
+
+    // Browser Back from the row brings the search back, with the row focused
+    await titleLink(page, t5.title).click();
+    await page.waitForURL(new RegExp(`/ideas/${esc(t5.ref)}$`));
+    await page.goBack();
+    await expect(box).toHaveValue(words);
+    await expect(titleLink(page, t5.title)).toBeFocused();
+    await soon.poll(() => here(page)).toBe("/my-ideas?sort=shared");
+
+    // A reload keeps it, and the sort from the address
+    await page.reload();
+    await expect(box).toHaveValue(words);
+    await expect(answer).toBeVisible();
+    await expect(page.getByRole("button", { name: "Date shared" }).first()).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.filter(carrying(words))).toEqual([]);
+    expect(carrying(words)(page.url())).toBe(false);
+    expect(await storageNames(page)).toEqual(kept);
+    expect(await storageCarries(page, words)).toBe(false);
+
+    // A fresh visit from the sidebar is a new entry: no search (J-BROWSE/6)
+    await page.goto("/home");
+    await page.getByRole("link", { name: "View all your ideas" }).first().click();
+    await page.waitForURL(/\/my-ideas$/);
+    await expect(box).toHaveValue("");
+
+    // The link pasted into another browser: the sort applies, the search does not
+    const context = await browser.newContext();
+    try {
+      const other = await context.newPage();
+      await signIn(other, CLUB.tanvi);
+      await other.goto("/my-ideas?sort=shared");
+      await expect(other.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
+      await expect(other.getByRole("searchbox", { name: /^Search/ })).toHaveValue("");
+      await expect(other.getByRole("button", { name: "Date shared" }).first()).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    } finally {
+      await context.close();
+    }
   });
 
   test("S-07.return: Back returns to the same scroll position", async ({ page }) => {

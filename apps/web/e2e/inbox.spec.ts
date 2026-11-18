@@ -16,6 +16,7 @@ import { test as base, expect, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
@@ -330,6 +331,58 @@ test.describe("S-H5 Inbox", () => {
     await page.goto("/inbox?tab=starred&item=999999999");
     await expect(tab(page, /^All 4$/)).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
+  });
+
+  test("DEC-110, S-H5, C-INBOX-READER (J-BROWSE/4, /6): the search stays in the tab; no request URL and no address holds it", async ({
+    page,
+    inbox,
+  }) => {
+    await inbox();
+    const words = "asked you";
+    const asked = watchRequestUrls(page);
+    const box = page.getByRole("searchbox", { name: "Search your inbox" });
+    await page.goto("/inbox");
+    const kept = await storageNames(page);
+    await expect(box).toHaveAttribute("autocomplete", "off");
+    await box.fill(words);
+    const questions = row(page, /asked you 3 questions/);
+    await expect(questions).toBeVisible();
+    await expect(row(page, /mentioned you/)).toHaveCount(0);
+    await questions.click();
+    await expect(page).toHaveURL(/\/inbox\?tab=all&item=\d+$/);
+
+    // Open the item's link and come Back: the same item, the same search
+    await page.getByRole("link", { name: "Answer the questions" }).click();
+    await page.waitForURL(/\/my-ideas/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/inbox\?tab=all&item=\d+$/);
+    await expect(box).toHaveValue(words);
+    if (!isPhone(page)) {
+      await expect(questions).toHaveAttribute("aria-pressed", "true");
+      await expect(row(page, /mentioned you/)).toHaveCount(0);
+    }
+
+    // A reload keeps it
+    await page.reload();
+    await expect(box).toHaveValue(words);
+    if (!isPhone(page)) await expect(row(page, /mentioned you/)).toHaveCount(0);
+
+    // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
+    expect(asked.filter(carrying(words))).toEqual([]);
+    expect(carrying(words)(page.url())).toBe(false);
+    expect(await storageNames(page)).toEqual(kept);
+    expect(await storageCarries(page, words)).toBe(false);
+
+    // The address pasted afresh (a new entry): the tab and item apply, the search does not (J-BROWSE/6)
+    const address = page.url();
+    await page.goto("/my-ideas");
+    await page.goto(address);
+    await expect(box).toHaveValue("");
+    await expect(
+      row(page, /mentioned you/)
+        .or(page.getByRole("heading", { level: 1, name: "asked you 3 questions" }))
+        .first(),
+    ).toBeVisible();
   });
 
   test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page, inbox }) => {
