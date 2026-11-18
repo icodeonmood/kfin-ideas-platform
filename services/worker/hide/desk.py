@@ -757,6 +757,10 @@ def _owned_detail(conn: Conn, idea_uuid: str, hid: str, by: str) -> tuple[dict[s
     if not is_uuid(hid):
         raise HideError(404, "not_found")
     idea = idea_row(conn, idea_uuid)
+    if idea["status"] == "merged" and idea["idea_id"] is None:
+        # A draft its lead merged in is read, never written (BLD-C155): refused as every draft write refuses it. A
+        # shared idea, merged or not, keeps its sharer's Show it and Hide it.
+        raise HideError(404, "not_found")
     lock(conn, idea_uuid)
     row = conn.execute(
         "SELECT * FROM hidden_details WHERE id = %s AND idea_uuid = %s FOR UPDATE",

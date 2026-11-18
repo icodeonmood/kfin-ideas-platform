@@ -133,3 +133,83 @@ def test_a_shared_idea_merged_by_the_desk_is_not_read_as_a_draft(db: Conn, merge
     shared = f.idea(db, tanvi, title="Branch staff cannot see SIP pause requests", status="merged")
     err = _refused(store.view, db, merged["owner"], str(shared["id"]), LAPTOP)
     assert (err.status, err.code) == (404, "not_found")
+
+
+@pytest.fixture
+def merged_with_details(db: Conn, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
+    """Tanvi's draft from her own words with a folio and a PAN hidden (patterns only: the assistant is off), the PAN
+    shown before the merge; then Rekha merges it in."""
+    import generators
+
+    from core import killswitch
+    from hide import show
+
+    f.record_inbox(monkeypatch)
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    rekha, tanvi = f.person(db, "Rekha Iyer"), f.person(db, "Tanvi Deshmukh")
+    owner = Owner(tanvi["id"], tanvi["code"])
+    lead = f.idea(db, rekha, title="Failed SIP debits with no reason")
+    rng = generators.default_rng(5)
+    words = (
+        "The SIP debit failed and the SMS gave no reason. One investor, folio "
+        f"{generators.folio(rng)}, read out his PAN, {generators.pan(rng)}, on the call."
+    )
+    draft_id, _run = store.create(db, owner, PHONE, text=words)
+    f._made["ideas"].append(draft_id)
+    db.execute(
+        "UPDATE ideas SET title = 'SIP debit failed with no reason', "
+        "summary = 'Investors call the branch when a SIP debit fails with no reason.' WHERE id = %s",
+        (draft_id,),
+    )
+    details = {
+        r["kind"]: str(r["id"])
+        for r in db.execute(
+            "SELECT id, kind FROM hidden_details WHERE idea_uuid = %s", (draft_id,)
+        ).fetchall()
+    }
+    assert sorted(details) == ["folio", "pan"]
+    show(db, draft_id, details["pan"], reason="made_up_example", by=tanvi["id"])
+    f.similar(db, {"id": draft_id}, lead)
+    asked = drafts.ask(db, draft_id, tanvi["id"], {"other_idea_id": lead["idea_id"], "note": NOTE})
+    requests.answer(db, asked["id"], rekha["id"], {"answer": "merge"})
+    yield {"draft_id": draft_id, "tanvi": tanvi, "details": details}
+    killswitch.clear_cache()
+
+
+def _words(db: Conn, draft_id: str) -> list[Any]:
+    """Everything Show it and Hide it rewrite: the details' states, the masked and the sealed words."""
+    return [
+        db.execute(
+            "SELECT id, state, reason, shown_at FROM hidden_details WHERE idea_uuid = %s ORDER BY id",
+            (draft_id,),
+        ).fetchall(),
+        db.execute(
+            "SELECT id, text_encrypted FROM idea_messages WHERE idea_uuid = %s", (draft_id,)
+        ).fetchall(),
+        db.execute(
+            "SELECT source_id, text_encrypted FROM idea_words_sealed WHERE source = 'message' AND source_id IN "
+            "(SELECT id::text FROM idea_messages WHERE idea_uuid = %s)",
+            (draft_id,),
+        ).fetchall(),
+    ]
+
+
+def test_J_SIMILAR_6a_L_HIDE_rules_6_show_it_and_hide_it_on_a_merged_draft_are_refused_and_the_words_stay(
+    db: Conn, merged_with_details: dict[str, Any]
+) -> None:
+    from hide import HideError, hide_again, show
+
+    m = merged_with_details
+    draft_id, by = m["draft_id"], m["tanvi"]["id"]
+    assert _state(db, draft_id)["status"] == "merged"
+    before = _words(db, draft_id)
+    audits = db.execute("SELECT count(*) AS n FROM audit_log").fetchone()["n"]
+    with pytest.raises(HideError) as shown:
+        show(db, draft_id, m["details"]["folio"], reason="internal_reference", by=by)
+    with pytest.raises(HideError) as hidden:
+        hide_again(db, draft_id, m["details"]["pan"], by=by)
+    for exc in (shown, hidden):
+        assert (exc.value.status, exc.value.code) == (404, "not_found")
+    assert _words(db, draft_id) == before
+    assert db.execute("SELECT count(*) AS n FROM audit_log").fetchone()["n"] == audits
