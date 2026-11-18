@@ -59,8 +59,13 @@ REMINDER_KINDS: frozenset[str] = frozenset({"answer_reminder"})
 # in a notification, not even as an ID that points at it).
 NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 # Kinds sent as the review desk as a whole (L-HIDE/7, BLD-A205): the reviewer who acted is never stored on the item or
-# its email, so no later read can name them; the reader shows "The review desk".
-AS_THE_DESK: frozenset[str] = frozenset({"detail_hidden_by_desk"})
+# its email, so no later read can name them; the reader shows "The review desk". DEC-111 (BLD-B257): every kind the
+# desk sends a sharer is one, so a sharer never sees a reviewer's name: the questions, their reminders, the decision,
+# a desk merge and a revised worth. The reader checks the kind, so an item stored earlier with a reviewer as its
+# sender reads as the desk too. A reversal is the Ones Committee's (`decision_reversed`): it keeps its sender.
+AS_THE_DESK: frozenset[str] = frozenset(
+    {"detail_hidden_by_desk", "questions", "answer_reminder", "decision", "desk_merge", "worth_revised"}
+)
 
 Ref = str | int | bool | None
 

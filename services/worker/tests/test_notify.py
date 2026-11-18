@@ -254,7 +254,7 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
     assert lines == [
         ("1% Club", "kept your draft from your phone"),
         ("Rohan Mehta from the Ones Committee", "reversed a decision on your idea"),
-        ("Meera from the review desk", "asked you 3 questions"),
+        ("The review desk", "asked you 3 questions"),  # DEC-111: the desk, never the reviewer's name
     ]
     q = got["items"][2]
     assert q["needs_you"] and q["due"]["label"] == "3 days left" and q["idea"]["title"] == TITLE
@@ -486,8 +486,9 @@ def test_L_INBOX_kinds_items_that_name_no_set_choice_or_request_read_them_from_t
     assert mine["questions"]["line"] == "asked you 2 questions" and mine["questions"]["body"][
         "set_id"
     ] == str(s)
-    assert mine["answer_reminder"]["line"] == "5 hours left to answer Meera’s questions"
-    assert mine["answer_reminder"]["body"]["sender"] == "1% Club"
+    # DEC-111: a reminder is the review desk's, whoever sent it, and never names the reviewer
+    assert mine["answer_reminder"]["line"] == "5 hours left to answer the review desk’s questions"
+    assert mine["answer_reminder"]["body"]["sender"] == "The review desk"
     assert mine["decision"]["line"] == "picked your idea"
     request = inbox.items(db, ravi, now=WORKDAY_NOON)["items"][0]
     assert request["line"] == "asks to team up and merge their idea into yours"
