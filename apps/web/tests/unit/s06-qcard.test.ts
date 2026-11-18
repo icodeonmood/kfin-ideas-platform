@@ -5,6 +5,8 @@
  * partly answered, sits under it; the sentence's rest is its own span on its own line in every state but Just shared
  * (S-06.layout/2, Status.md; J-TRACK/7, J-REVIEW/6). Rendered on the server, as the page renders it. Synthetic people only.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -241,5 +243,50 @@ describe("S-06.layout/2, Status.md (J-REVIEW/6, J-TRACK/7): the card sentence's 
     expect(html).toContain(
       '<span class="ip-desk">We’ll tell you on Teams and by email when anything changes.</span>',
     );
+  });
+});
+
+describe("S-06.states, reversed by the Ones Committee: the committee's card keeps its own styled row and heading", () => {
+  it("renders the card with ip-r-by and ip-r-h inside ip-rcard, and the reason card gives way", () => {
+    const p = withCard("reversed", { lead: "", rest: "" });
+    const view = p.view as unknown as { page: Record<string, unknown> };
+    view.page.card = null;
+    const rohan = { ...HARISH, id: "p-r", name: "Rohan Mehta", first_name: "Rohan", initials: "RM" };
+    const decision = {
+      decision: {
+        choice: "not_now",
+        merged_into: null,
+        reason: "A reason the sharer reads.",
+        reason_heading: "Why",
+        by_line: "by Meera from the review desk",
+      },
+      decided_at: "2026-11-16T05:30:00Z",
+      return_at: "2027-02-16T04:00:00Z",
+      joined_into: null,
+      reversal: { to: "not_now", note: "Hold it till the quarter turns.", by: rohan },
+      lines: {
+        committee_line: null,
+        reversal: {
+          from_line: "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm",
+          title: "The Ones Committee changed the decision to not now",
+          note_heading: "The committee’s note to you",
+          was_line: "Was: Picked",
+          was_by_line: "by Meera from the review desk, Monday 16 November",
+          final_line: "This is final. It comes back to the review desk on Tuesday 16 February 2027.",
+          track_line: "Picked, then moved to not now by the Ones Committee",
+        },
+      },
+    };
+    const html = renderToStaticMarkup(createElement(SharerScreen, { ...p, decision } as unknown as Props));
+    expect(html).toMatch(
+      /<div class="ip-rcard"><div class="ip-r-by">.*<p>Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm<\/p><\/div><h2 class="ip-r-h">The Ones Committee changed the decision to not now<\/h2>/,
+    );
+    expect(html).toContain("“Hold it till the quarter turns.”");
+    expect(html).not.toMatch(/class="ip-q-(by|h)"/);
+    expect(html).not.toContain("A reason the sharer reads.");
+    // The two classes are styled under the card (the old ip-q-* rules left with lane E's questions card)
+    const css = readFileSync(resolve(__dirname, "../../src/app/ideas/[id]/idea-page.css"), "utf8");
+    expect(css).toMatch(/\.ip-rcard \.ip-r-by \{\s*display: flex;/);
+    expect(css).toMatch(/\.ip-rcard \.ip-r-h \{[^}]*font: 500 19px\/1\.3 var\(--fd\);/);
   });
 });

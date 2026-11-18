@@ -383,6 +383,25 @@
   margin-top: 16px;
 }
 
+/* The committee's card: who reversed it, then the heading */
+.ip-rcard .ip-r-by {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ip-rcard .ip-r-by p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+.ip-rcard .ip-r-h {
+  margin: 12px 0 0;
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.01em;
+}
+
 .ip-quote {
   margin: 12px 0 0;
 }
