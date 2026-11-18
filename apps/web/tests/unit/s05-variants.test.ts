@@ -718,6 +718,40 @@ describe("S2 Check first on a phone (PhoneReview.md simulatorS2=Check first)", (
   });
 });
 
+describe("S2 never changes a read-only Check it: a merged draft (BLD-C155, BLD-C176)", () => {
+  const ACCEPTED_MERGE = {
+    id: "m1",
+    other_idea_id: MATCH_RAVI.idea.id,
+    state: "accepted",
+    after: { state: "accepted", line: "Merged.", can_submit: false },
+  };
+
+  it("an accepted merge request on a fresh draft: the drawn order, no comparison, no exposure", async () => {
+    await mountFlagged(base({ draft: FRESH, merge: ACCEPTED_MERGE }), true);
+    expect(railNames()[0]).toMatch(/^(?:1 )?Your words/);
+    expect(document.querySelector(".ck-first")).toBeNull();
+    // The draft read did not say merged, so the visit counts; the merge read stops the exposure and the reorder.
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
+  });
+
+  it("an accepted merge request on a phone: no comparison before the page, no exposure", async () => {
+    asPhone();
+    await mountFlagged(base({ draft: FRESH, merge: ACCEPTED_MERGE }), true);
+    expect(document.querySelector(".ck-first")).toBeNull();
+    // The draft read did not say merged, so the visit counts; the merge read stops the exposure and the reorder.
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
+  });
+
+  it("a draft merged into another idea is not counted as reaching Check it", async () => {
+    await mountFlagged(
+      base({ draft: draft({ step: "tell", merged_into: MATCH_RAVI.idea.id }), merge: ACCEPTED_MERGE }),
+      true,
+    );
+    expect(document.querySelector(".ck-first")).toBeNull();
+    expect(flagCalls()).toEqual([]);
+  });
+});
+
 describe("S2 order rules (model.ts)", () => {
   it("strongMatch is the top match when close; next, previous and place follow the order", () => {
     expect(model.strongMatch({ state: "ok", matches: [MATCH_RAVI, MATCH_SUNITA] })).toBe(MATCH_RAVI);

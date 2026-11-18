@@ -251,8 +251,10 @@ export function CheckIt({
     if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
     if (!s2On || decided.current) return;
     decided.current = true;
-    // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176).
-    if (!strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
+    // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176). An
+    // accepted merge request makes the page read-only (BLD-C155), so S2 never reorders it or shows the comparison.
+    const accepted = Boolean(m.ok && m.body && typeof m.body === "object" && m.body.state === "accepted");
+    if (accepted || !strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
     flagEvent("s2", "s2.check", "close_match", "S-05", draftId); // the exposure, in either variant
     if (!checkFirst) return;
     orderRef.current = CHECK_FIRST_ORDER;
@@ -297,9 +299,11 @@ export function CheckIt({
       setPassed(passedParts(body.step));
       // Not in Check it before (Tell it's step): S2 may open it on the comparison. A merged draft is only read, each
       // part as it was left, so S2 never reorders it (BLD-C155).
-      openedFresh.current = !merged && !/^(?:check:|send$)/.test(String(body.step ?? ""));
-      if (flags && !checkLogged.current) {
-        // S2's deciding metrics need the draft that reached Check it, in either variant (codes and an id only).
+      const onlyRead = merged || body.merge_request?.state === "accepted";
+      openedFresh.current = !onlyRead && !/^(?:check:|send$)/.test(String(body.step ?? ""));
+      if (flags && !onlyRead && !checkLogged.current) {
+        // S2's deciding metrics need the draft that reached Check it, in either variant (codes and an id only). A
+        // read-only page (merged, BLD-C155) is not one S2 can change, so it is not counted.
         checkLogged.current = true;
         flagEvent("s2", "s2.check", "opened", "S-05", draftId);
       }
@@ -1140,7 +1144,7 @@ export function CheckIt({
     />
   );
 
-  const close = firstUp && !compareDone ? strongMatch(similar) : null;
+  const close = firstUp && !compareDone && !readOnly ? strongMatch(similar) : null;
   if (phone && close) {
     // S2 "Check first" on a phone: the comparison before the rest of the page (PhoneReview.md).
     const after = similar.state === "ok" ? (similar.matches[1] ?? null) : null;
