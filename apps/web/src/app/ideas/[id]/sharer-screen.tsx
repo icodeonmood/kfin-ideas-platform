@@ -577,7 +577,8 @@ export function SharerScreen({
 
       <div className="ip-cols">
         <div className="ip-main">
-          {d?.decision.reason && !reversed ? (
+          {/* After any reversal the desk's reason no longer stands: the committee's note says why (BLD-E058) */}
+          {d?.decision.reason && !reversed && !d.reversal ? (
             <section className="ip-sec ip-reason" aria-labelledby="ip-reason-h">
               <h2 id="ip-reason-h" className="ip-h2">
                 {d.decision.reason_heading}
