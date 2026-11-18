@@ -14,13 +14,14 @@ import "./my-ideas.css";
 export const metadata: Metadata = { title: "My ideas" };
 export const dynamic = "force-dynamic";
 
-const KEYS = ["list", "filter", "sort", "q", "row"] as const;
+/** The address's own keys: tab, filter, sort and the row to come back to. Never a search (DEC-110). */
+const KEYS = ["list", "filter", "sort", "row"] as const;
 
 /**
- * S-07, My ideas (copy: reference/copy/MyIdeas.md, PhoneMyIdeas.md; data A-API.my-ideas). The list state lives in
- * the URL (P-ROUTES.state): tab, filter, sort and search are read here and the server returns that exact view, so a
- * shared link reproduces it for whoever opens it, with their own ideas (J-BROWSE/6). Every change on the screen
- * replaces the URL and this page renders the new view.
+ * S-07, My ideas (copy: reference/copy/MyIdeas.md, PhoneMyIdeas.md; data A-API.my-ideas). Tab, filter and sort live
+ * in the URL (P-ROUTES.state): they are read here and the server returns that view, so a shared link reproduces it
+ * for whoever opens it, with their own ideas (J-BROWSE/6). The search never does (DEC-110): the screen keeps it in
+ * this tab's memory of the history entry and asks for the searched view itself, with the words in a request body.
  */
 export default async function Page({
   searchParams,

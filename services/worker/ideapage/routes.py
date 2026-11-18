@@ -56,15 +56,26 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         list_: str | None = Query(None, alias="list"),
         filter_: str | None = Query(None, alias="filter"),
         sort: str | None = None,
-        q: str | None = None,
         row: str | None = None,
         device: str | None = None,
     ) -> JSONResponse:
-        """S-07: the person's list in the state the URL names (P-ROUTES.state)."""
+        """S-07: the person's list in the state the URL names (P-ROUTES.state). Never a search: a search's words are
+        in no URL, this one's included (DEC-110), so a `q` here is not read."""
         from ideapage.mine import my_ideas as mine
 
-        params = {"list": list_, "filter": filter_, "sort": sort, "q": q, "row": row}
+        params = {"list": list_, "filter": filter_, "sort": sort, "row": row}
         return _call(mine, user_id, params, device=device)
+
+    @r.post("/me/{user_id}/my-ideas")
+    def my_ideas_search(user_id: str, body: dict[str, Any] | None = None) -> JSONResponse:
+        """S-07 with a search (DEC-110): the same read, its list state and the search's words in the body. A read:
+        nothing is written. Values that are not strings are left out; `mine.normalise` caps the search."""
+        from ideapage.mine import my_ideas as mine
+
+        given = body or {}
+        text = {k: v for k, v in given.items() if isinstance(v, str)}
+        params = {k: text.get(k) for k in ("list", "filter", "sort", "q", "row")}
+        return _call(mine, user_id, params, device=text.get("device"))
 
     @r.get("/me/{user_id}/shell-lists")
     def shell_lists(user_id: str) -> JSONResponse:

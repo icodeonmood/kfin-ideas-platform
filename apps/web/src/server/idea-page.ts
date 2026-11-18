@@ -14,6 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { authorize, signedIn } from "@/server/auth/authorize";
 import type { CurrentUser } from "@/server/auth/current";
+import { SEARCH_MAX, withoutSearch } from "@/lib/search-memory";
 import { readJson } from "@/server/http";
 import { workerFetch } from "@/server/worker";
 
@@ -166,7 +167,8 @@ function deviceId(request: NextRequest): string | null {
   return d && /^[A-Za-z0-9_-]{8,64}$/.test(d) ? d : null;
 }
 
-/** GET /api/ideas/:id — `IdeaViewResponse` (lib/contracts/api.ts). Query: `from`, `back` (P-ROUTES.state). */
+/** GET /api/ideas/:id — `IdeaViewResponse` (lib/contracts/api.ts). Query: `from`, `back` (P-ROUTES.state). A list's
+ * address never holds a search (DEC-110); a `q` in `back` all the same (an older link) is dropped before it goes on. */
 export async function getIdeaView(request: NextRequest, ctx: { params: Promise<{ id?: string }> }) {
   const me = await authorize("see_org_ideas");
   if (me instanceof NextResponse) return me;
@@ -176,16 +178,23 @@ export async function getIdeaView(request: NextRequest, ctx: { params: Promise<{
   return forward(
     workerPath(`/internal/ideas/${encodeURIComponent(key)}/view`, me, {
       came_from: q.get("from")?.slice(0, 40),
-      back: q.get("back")?.slice(0, 600),
+      back: backWithoutSearch(q.get("back")),
     }),
     {},
     (body) => guardView(body, me),
   );
 }
 
-const MY_IDEAS_KEYS = ["list", "filter", "sort", "q", "row"] as const;
+/** `back` as the worker gets it: at most 600 characters of a path, without a search. */
+export function backWithoutSearch(back: string | null | undefined): string | undefined {
+  return back ? withoutSearch(back.slice(0, 600)) : undefined;
+}
 
-/** GET /api/me/ideas — `MyIdeasResponse` (lib/contracts/api.ts). Query: `list`, `filter`, `sort`, `q`, `row` (S-07.return). */
+/** My ideas' list keys an address may hold (P-ROUTES.state). The search is not one (DEC-110). */
+const MY_IDEAS_KEYS = ["list", "filter", "sort", "row"] as const;
+
+/** GET /api/me/ideas — `MyIdeasResponse` (lib/contracts/api.ts). Query: `list`, `filter`, `sort`, `row` (S-07.return).
+ * A `q` in the query is never read or passed on: a search is asked for with POST (DEC-110). */
 export async function getMyIdeas(request: NextRequest) {
   const me = await signedIn();
   if (me instanceof NextResponse) return me;
@@ -193,6 +202,25 @@ export async function getMyIdeas(request: NextRequest) {
   const query: Record<string, string | null | undefined> = { device: deviceId(request) };
   for (const k of MY_IDEAS_KEYS) query[k] = q.get(k)?.slice(0, 200);
   return forward(workerPath(`/internal/me/${encodeURIComponent(me.id)}/my-ideas`, me, query));
+}
+
+/** POST /api/me/ideas `MyIdeasQuery` — the same read with the search (DEC-110): the words travel in this body and in
+ * the worker's, never in a URL. Each value is a string of at most 200 characters; anything else is left out. */
+export async function postMyIdeas(request: NextRequest) {
+  const me = await signedIn();
+  if (me instanceof NextResponse) return me;
+  const raw = await readJson(request);
+  const body: Record<string, string> = {};
+  for (const k of [...MY_IDEAS_KEYS, "q"] as const) {
+    const v = raw[k];
+    if (typeof v === "string" && v) body[k] = v.slice(0, k === "q" ? SEARCH_MAX : 200);
+  }
+  const device = deviceId(request);
+  if (device) body.device = device;
+  return forward(workerPath(`/internal/me/${encodeURIComponent(me.id)}/my-ideas`, me), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 /** POST /api/ideas/:id/withdraw `{ reason? }` and POST /api/ideas/:id/restore — the sharer's page (`SharerView`). */
