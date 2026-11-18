@@ -143,7 +143,9 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     page = v["page"]
     assert page["state"] == "answers_sent" and page["state_label"] == "Answers sent"
     assert page["card"]["lead"] == "Sent. Harish has your answers."
-    assert page["card"]["rest"].startswith("Each answer was added to its part of your idea, under What you shared.")
+    assert page["card"]["rest"].startswith(
+        "Each answer was added to its part of your idea, under What you shared."
+    )
     assert "card_from" not in page and v["idea"]["has_open_questions"] is True
     assert not page["window"]["open"] and "withdraw" not in page["actions"]
 
