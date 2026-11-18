@@ -1582,6 +1582,45 @@ def test_s06_rules_4_c_simgrid_tile_j_similar_7_j_review_m3_no_tile_for_where_it
     assert [a["op"] for a in p1_tile()["actions"]] == ["preview", "team_up"]
 
 
+def test_s06_c_simgrid_tile_l_teamup_rules_1_j_share_12_a_closed_idea_offers_no_team_up(
+    club: dict[str, Any],
+) -> None:
+    """C-SIMGRID.tile, L-TEAMUP.rules/1 (BLD-E063; J-SHARE/12): a tile offers Team up only where lane F's
+    `POST /ideas/:id/team-up` would take the ask. T5 lists P1 (shared, open) and, here, Geetanjali's G1 (Not now):
+    P1 offers Preview and Team up; G1 offers Preview alone, with no "On the crew" line, and lane F refuses the ask
+    with `idea_closed`. Not picked is closed too; back with the desk, Team up returns."""
+    from teamup import requests as teamup_requests
+    from teamup.store import Refused as TeamUpRefused
+
+    conn, m = club["conn"], club["m"]
+    t5, p1, g1 = ref(club, "T5"), ref(club, "P1"), ref(club, "G1")
+    conn.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'related', %s)",
+        (m["T5"].uuid, m["G1"].uuid, "Related: papers investors ask for"),
+    )
+
+    def tiles() -> dict[str, dict[str, Any]]:
+        return {t["idea"]["id"]: t for t in view(club, t5, "tanvi")["page"]["similar"]["tiles"]}
+
+    got = tiles()
+    assert got[g1]["pill"]["label"] == "Not now"
+    assert [a["op"] for a in got[g1]["actions"]] == ["preview"] and "done_line" not in got[g1]
+    assert got[g1]["my_state"] == "none"
+    assert [a["op"] for a in got[p1]["actions"]] == ["preview", "team_up"] and "done_line" not in got[p1]
+    # The tile agrees with lane F: the ask on G1 is refused as closed, and lane F's own read says so
+    with pytest.raises(TeamUpRefused) as refused:
+        teamup_requests.send(
+            conn, g1, club["p"]["tanvi"], {"note": "I see the same with statements at my branch."}
+        )
+    assert (refused.value.status, refused.value.code) == (409, "idea_closed")
+    assert teamup_requests.my_state(conn, p1, club["p"]["tanvi"])["can_request"] is True
+    # Not picked is closed as well; back with the review desk, it is open again
+    conn.execute("UPDATE ideas SET status = 'not_picked' WHERE id = %s", (m["G1"].uuid,))
+    assert [a["op"] for a in tiles()[g1]["actions"]] == ["preview"]
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE id = %s", (m["G1"].uuid,))
+    assert [a["op"] for a in tiles()[g1]["actions"]] == ["preview", "team_up"]
+
+
 def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(club: dict[str, Any]) -> None:
     """S-06.layout/5 (BLD-E057; J-REVIEW/1, /3, /6, J-TRACK/7): a part the sharer left empty, or wrote only spaces
     in, reads "Not given.", as S-R2 reads it, never a blank row. A part with words has no empty line."""
