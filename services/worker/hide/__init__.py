@@ -18,6 +18,16 @@ land between the hiding and the write. On an autocommit connection with no trans
 ends with the call and the guarantee is lost. The gatekeeper's model call runs before the lock is taken. A failure
 inside rolls back only hide's own savepoints, so the caller's transaction stays usable (BLD-C067).
 
+Lock order (BLD-C067): every caller takes hide's advisory lock, `hide.core.lock(conn, idea_uuid)`, BEFORE any idea,
+answer, conversation entry or other row lock in the same transaction. Calling `hide_text`, `hide_message` or `forget`
+before your own `SELECT … FOR UPDATE` or `UPDATE` does that for you; if you must lock rows first, call
+`hide.core.lock(conn, idea_uuid)` at the start of the transaction (it is re-entrant within one transaction). Then a
+`hide_message` call holds that lock across the gatekeeper's model call, which BLD-C067 otherwise avoids: a known cost
+for such callers, not the pattern to copy, until a pre-gate (`hide.gate`, not built) lets them ask the gatekeeper
+before any lock.
+`desk_hide`, `show` and `hide_again` take the advisory lock first and the rows after it; lane B's desk transactions
+take it first too. Two transactions that take the two kinds of lock in opposite orders can deadlock.
+
 `hide_text(conn, idea_uuid, text, *, by, source="desk", source_id=None) -> (masked_text, hidden_count)`
     Any text written on an idea: a desk question or reason ("desk"), an answer, a conversation message, an edit.
     Stores each value sealed with a `hidden_details` row and returns the masked copy and how many were hidden.
@@ -40,6 +50,13 @@ inside rolls back only hide's own savepoints, so the caller's transaction stays 
     the text goes on with the patterns and names, `hide.gatekeeper_skipped` is audited and a re-check is queued
     (`hide/recheck.py`).
 
+`forget(conn, idea_uuid, *, source, source_id) -> int`
+    A text is removed (lane F's L-CONVO/10: a conversation message removed within five minutes; lane C's own
+    removals): drops its `hidden_details` rows, the person's sealed words (by `sealed_key`) and each vault value no
+    other `hidden_details` row of the idea still holds, so a value also hidden in another text stays. Returns how
+    many `hidden_details` rows were removed. Takes the advisory lock first; call it in the transaction that removes
+    the text, before your own row locks. Logged and audited (`hide.forgotten`) with IDs and counts only.
+
 `preview(conn, text, *, idea_uuid=None) -> Hidden`
     Spans while the person types: patterns, names and the idea's hidden values, no model call, nothing stored.
     It has no HTTP route: A-API names none, and lane C's draft (its message path and channels) is its only caller.
@@ -57,7 +74,16 @@ from __future__ import annotations
 import uuid
 
 from core.db import Conn
-from hide.core import DETAIL_SOURCES, SEALED_SOURCES, Hidden, HideError, hide_into, preview, sealed_key
+from hide.core import (
+    DETAIL_SOURCES,
+    SEALED_SOURCES,
+    Hidden,
+    HideError,
+    forget,
+    hide_into,
+    preview,
+    sealed_key,
+)
 from hide.desk import desk_hide, hide_again, show
 from hide.detect import Found, find, kinds_line, mask, receipt
 
@@ -67,6 +93,7 @@ __all__ = [
     "HideError",
     "desk_hide",
     "find",
+    "forget",
     "hide_again",
     "hide_message",
     "hide_text",
