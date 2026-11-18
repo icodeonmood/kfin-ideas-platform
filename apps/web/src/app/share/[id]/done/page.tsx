@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { currentUser } from "@/server/auth/current";
+import { isMergedDraft } from "@/server/drafts";
 import { scanStatus } from "@/server/scan";
 import { getDraft, SubmissionError } from "@/server/submissions";
 
@@ -15,6 +16,8 @@ export default async function Done({ params }: { params: Promise<{ id: string }>
   const me = await currentUser();
   if (!me) redirect("/sign-in");
   const id = (await params).id;
+  // A draft merged into another idea was never sent: it stays on Check it, read-only (J-SIMILAR/6a, BLD-C155).
+  if (await isMergedDraft(me, id).catch(() => false)) redirect(`/share/${id}/check`);
   let row;
   try {
     row = await getDraft(me, id);

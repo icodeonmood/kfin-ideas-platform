@@ -52,10 +52,12 @@ export interface MergeView {
 
 export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): MergeView | null {
   if (!merge || !merge.after) {
-    if (!merge || merge.state !== "waiting" || !merge.other_idea_id) return null;
+    if (!merge || !merge.other_idea_id) return null;
+    if (merge.state !== "waiting" && merge.state !== "accepted") return null;
     // NOT DRAWN by the route: compose the drawn lines from the lead's first name.
     const lead = merge.lead ?? matches.find((m) => m.idea.id === merge.other_idea_id)?.idea.lead;
     const first = firstName(lead);
+    if (merge.state === "accepted") return mergedView(merge.other_idea_id, null, first);
     if (!first) return null;
     return {
       state: "waiting",
@@ -76,6 +78,29 @@ export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): Me
     line: a.line,
     action: a.action ?? null,
     canSubmit: a.can_submit ?? (state !== "waiting" && state !== "accepted"),
+  };
+}
+
+/**
+ * L-MERGE.request/5 (J-SIMILAR/6a, BLD-C155): a draft closed as merged into `ref`. Lane F's words when its read
+ * answered "accepted"; else the drawn ones: "Merged into IDEA-…", "{first} accepted. Yours is now part of IDEA-…,
+ * with credit to you. Nothing else to send." (only with the lead's first name; the bar then says just the link) and
+ * "See the merged idea". Null for a draft that is not merged.
+ */
+export function mergedView(
+  ref: string | null | undefined,
+  merge: MergeView | null,
+  first = "",
+): MergeView | null {
+  if (merge?.state === "accepted") return merge;
+  if (!ref) return null;
+  return {
+    state: "accepted",
+    otherId: ref,
+    rail: C.similar.merge.acceptedRail(ref),
+    line: first ? C.similar.merge.acceptedLine(first, ref) : "",
+    action: { label: C.similar.merge.seeMerged, to: `/ideas/${encodeURIComponent(ref)}` },
+    canSubmit: false,
   };
 }
 

@@ -39,6 +39,7 @@ import {
   EMPTY_FIX,
   fixFormFrom,
   fixRequest,
+  mergedView,
   mergeView,
   oneLine,
   partFromStep,
@@ -185,6 +186,9 @@ export function CheckIt({
     return r;
   }, []);
 
+  /** J-SIMILAR/6a, L-MERGE.request/5 (BLD-C155): merged into another idea, so nothing here changes or sends. */
+  const readOnly = Boolean(draft?.merged_into) || merge?.state === "accepted";
+
   const limits = uploads ?? config?.uploads ?? null;
   const limitMb = limits?.limit_mb ?? DEFAULT_LIMIT_MB;
   // Part 4's rows and what adding, retrying, hiding and removing does (use-proof.ts, shared with the edit page).
@@ -207,6 +211,13 @@ export function CheckIt({
     if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
   }, [draftId]);
 
+  const applySend = useCallback((r: Call<SendViewResponse>) => {
+    if (r.ok) {
+      setSendView(r.body);
+      setSendLoad("idle");
+    } else setSendLoad("failed");
+  }, []);
+
   const fetchAll = useCallback(
     () =>
       Promise.all([
@@ -228,7 +239,10 @@ export function CheckIt({
       const body = d.body;
       setDraft(body);
       setSavedAt(body.saved_at ?? null);
-      setPart(partFromStep(body.step));
+      const merged = Boolean(body.merged_into);
+      // Merged: nothing to send, so a saved "send" opens part 1, as the board draws it (BLD-C155).
+      const at = partFromStep(body.step);
+      setPart(merged && at === 7 ? 1 : at);
       if (s.ok) setSorting(s.body);
       if (cfg && cfg.ok) setConfig(cfg.body);
       if (up.ok && up.body && typeof up.body.limit_mb === "number") setUploads(up.body);
@@ -244,7 +258,8 @@ export function CheckIt({
       const saved = { picks: body.helpers?.picks ?? [], text: body.helpers?.text ?? "" };
       helpersNow.current = saved;
       setHelpers(saved);
-      const waiting = sendQueue.load(draftId);
+      const waiting = merged ? null : sendQueue.load(draftId);
+      if (merged) sendQueue.clear(draftId); // a send kept on this device has nothing left to send
       if (waiting) {
         idemKey.current = waiting;
         queued.current = true;
@@ -266,18 +281,12 @@ export function CheckIt({
     };
   }, [fetchAll, apply]);
 
-  const applySend = useCallback((r: Call<SendViewResponse>) => {
-    if (r.ok) {
-      setSendView(r.body);
-      setSendLoad("idle");
-    } else setSendLoad("failed");
-  }, []);
-
   const loadSend = useCallback(async () => applySend(await api.send(draftId)), [draftId, applySend]);
 
-  // On a phone the last look is on the same page as everything else.
+  // On a phone the last look is on the same page as everything else. A merged draft's parts 2 and 4 to 6 read as
+  // the last look words them (BLD-C155).
   useEffect(() => {
-    if (!phone || !draft || sendView || sendLoad !== "idle") return;
+    if (!(phone || readOnly) || !draft || sendView || sendLoad !== "idle") return;
     let live = true;
     void api.send(draftId).then((r) => {
       if (live) applySend(r);
@@ -285,7 +294,7 @@ export function CheckIt({
     return () => {
       live = false;
     };
-  }, [phone, draft, sendView, sendLoad, draftId, applySend]);
+  }, [phone, readOnly, draft, sendView, sendLoad, draftId, applySend]);
 
   // --- Moving between parts ---------------------------------------------------------------------------------------
 
@@ -311,9 +320,10 @@ export function CheckIt({
         setSendState((st) => (st.kind === "sending" || st.kind === "queued" ? st : { kind: "idle" }));
         void loadSend();
       }
-      void api.step(draftId, stepOf(n));
+      // A merged draft is read, never written: moving between its parts saves nothing (BLD-C155).
+      if (!readOnly) void api.step(draftId, stepOf(n));
     },
-    [draftId, part, loadSend, phone],
+    [draftId, part, loadSend, phone, readOnly],
   );
 
   useEffect(() => {
@@ -376,7 +386,9 @@ export function CheckIt({
   // --- Part 3: similar ideas ---------------------------------------------------------------------------------------
 
   const matches = similar.state === "ok" ? similar.matches : [];
-  const mv = mergeView(merge, matches);
+  const asked = mergeView(merge, matches);
+  // Merged: lane F's words when its read says so, else the drawn ones from the draft's own `merged_into`.
+  const mv = readOnly ? (mergedView(draft?.merged_into, asked) ?? asked) : asked;
 
   /** A failed Withdraw says so where it was pressed: on the bar under the task bar, or under the grid. */
   const withdraw = async (
@@ -696,9 +708,42 @@ export function CheckIt({
     6: false,
     7: false,
   };
+  // Part 3 is done once a merge request has an answer: merged, team up only or declined (BLD-C155).
+  const answered = mv !== null && mv.state !== "waiting";
   const isDone = (n: PartNo) =>
     !attention[n] &&
-    (n === 2 ? Boolean(sorting?.confirmed) : done.has(n) || (n === 5 && fixPart.kind === "added"));
+    (n === 2
+      ? Boolean(sorting?.confirmed)
+      : done.has(n) || (n === 3 && answered) || (n === 5 && fixPart.kind === "added"));
+
+  /** A merged draft's parts 2, 4, 5 and 6: the value its last look gives that part (BLD-C155). */
+  const readRow = (key: string) => {
+    const row = sendView?.rows.find((r) => r.key === key);
+    if (row) return <p className="ck-v">{row.value}</p>;
+    return sendLoad === "failed" ? (
+      <FieldMsg>{C.failed}</FieldMsg>
+    ) : (
+      <SkeletonRows what={PARTS.find((p) => p.key === key)?.label ?? C.rail} rows={1} />
+    );
+  };
+  /** Read-only: Back and Next only move between the parts; nothing is confirmed, skipped or sent. */
+  const readFoot = (n: PartNo) =>
+    phone ? undefined : (
+      <>
+        {n > 1 ? (
+          <Button variant="text" onClick={() => go((n - 1) as PartNo)}>
+            {C.back}
+          </Button>
+        ) : (
+          <span />
+        )}
+        {n < 6 ? (
+          <Button variant="line" onClick={() => go((n + 1) as PartNo)}>
+            {C.next}
+          </Button>
+        ) : null}
+      </>
+    );
 
   const back = (n: PartNo) =>
     n === 1 ? (
@@ -720,6 +765,7 @@ export function CheckIt({
       details={draft.hidden ?? []}
       onShow={showHidden}
       onHide={hideAgain}
+      readOnly={readOnly}
     />
   );
 
@@ -738,9 +784,12 @@ export function CheckIt({
           errors={wordErrors}
           onAttached={() => go(4)}
           hidden={hiddenTile}
+          readOnly={readOnly}
         />
       ),
-      foot: (
+      foot: readOnly ? (
+        readFoot(1)
+      ) : (
         <>
           {back(1)}
           <Button onClick={() => go(2, { forwardFrom: 1 })}>{C.words.forward}</Button>
@@ -802,6 +851,7 @@ export function CheckIt({
               onSent={(sent) => void teamUpSent(sent)}
               onWithdrawn={() => void loadSimilar()}
               onWithdraw={(a) => withdraw(a, "grid")}
+              readOnly={readOnly}
             />
             {mergeError?.where === "grid" ? <FieldMsg>{mergeError.text}</FieldMsg> : null}
           </>
@@ -920,13 +970,23 @@ export function CheckIt({
     },
   };
 
+  if (readOnly) {
+    // J-SIMILAR/6a (BLD-C155): each part as it was left, to read. No explanation line asks for a change, no control
+    // changes anything, and there is no Send it: the bar says where the draft went, with "See the merged idea".
+    content[2] = { heading: content[2].heading, body: readRow("sorting"), foot: readFoot(2) };
+    content[3] = { ...content[3], line: undefined, foot: readFoot(3) };
+    content[4] = { heading: content[4].heading, body: readRow("proof"), foot: readFoot(4) };
+    content[5] = { heading: content[5].heading, body: readRow("fix"), foot: readFoot(5) };
+    content[6] = { heading: content[6].heading, body: readRow("helpers"), foot: readFoot(6) };
+  }
+
   // The live region is on the page before its words, so a merge outcome that arrives later is announced (WCAG
   // 4.1.3); a failed Withdraw pressed here says so here (C-FIELD-MSG).
   const bar = (
     <div className="ck-mlive" role="status">
       {mv ? (
         <div className={`ck-mbar ck-mbar-${mv.state}`}>
-          <p>{mv.line}</p>
+          {mv.line ? <p>{mv.line}</p> : null}
           {mv.action?.to ? (
             <ButtonLink variant="text-blue" href={mv.action.to}>
               {mv.action.label}
@@ -942,9 +1002,12 @@ export function CheckIt({
     </div>
   );
 
+  // Merged: nothing to send, so no Send it part (BLD-C155).
+  const shownParts = readOnly ? PARTS.filter((p) => p.n !== 7) : PARTS;
+
   const taskbar = (
     <Taskbar
-      step={part === 7 ? "send" : "check"}
+      step={part === 7 && !readOnly ? "send" : "check"}
       stepHrefs={{ tell: `/share/${encodeURIComponent(draftId)}` }}
       save={online ? save : "offline"}
       savedAt={savedAt}
@@ -987,10 +1050,10 @@ export function CheckIt({
               ))}
             </div>
           ) : null}
-          <BackToWords href={`/share/${encodeURIComponent(draftId)}`} />
-          {PARTS.map(({ n }) => {
+          {readOnly ? null : <BackToWords href={`/share/${encodeURIComponent(draftId)}`} />}
+          {shownParts.map(({ n }) => {
             const c = content[n as PartNo];
-            const foot = n === 2 && !sorting?.confirmed ? c.foot : undefined;
+            const foot = n === 2 && !sorting?.confirmed && !readOnly ? c.foot : undefined;
             return (
               <PartFrame
                 key={n}
@@ -1011,7 +1074,8 @@ export function CheckIt({
     );
   }
 
-  const c = content[part];
+  const open: PartNo = readOnly && part === 7 ? 1 : part;
+  const c = content[open];
   return (
     <div className="ck">
       {taskbar}
@@ -1019,9 +1083,9 @@ export function CheckIt({
       <div className="ck-grid">
         <nav className="ck-rail" aria-label={C.rail}>
           <ol>
-            {PARTS.map(({ n, label }) => {
+            {shownParts.map(({ n, label }) => {
               const no = n as PartNo;
-              const now = no === part;
+              const now = no === open;
               const ok = isDone(no) && !now;
               // The Send it row's line ("One last look, then submit") sits beside its button as its description, not
               // inside it, so "Submit" names one button on the page and the button's name is its visible words
@@ -1066,13 +1130,13 @@ export function CheckIt({
           </ol>
         </nav>
         <div className="ck-stage panel" data-dir={dir > 0 ? "fwd" : "back"}>
-          <div key={part} className="ck-slide">
+          <div key={open} className="ck-slide">
             <PartFrame
               ref={heading}
-              n={part}
+              n={open}
               heading={c.heading}
               line={c.line}
-              foot={part === 7 ? undefined : c.foot}
+              foot={open === 7 ? undefined : c.foot}
             >
               {c.body}
             </PartFrame>
