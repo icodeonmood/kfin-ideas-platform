@@ -1,4 +1,4 @@
-"""`make sarvam-live`: the live contract check of the Sarvam client (BLD-C177; DEC-108; L-LISTEN).
+"""`make sarvam-live`: the live contract check of the Sarvam client (BLD-C177; DEC-108; L-LISTEN, L-DRAFT.voice).
 
 The product lead runs it in their own terminal, with `SARVAM_API_KEY` loaded there, before the gates. It never runs
 in CI: it refuses when `CI` is set, it is not a test pytest collects, and CI keeps `SPEECH_MODE=fake` with no secret.
@@ -7,12 +7,23 @@ path, never an SDK and never raw httpx or websockets here:
 
 | Call | The worker's path | Model |
 |---|---|---|
-| `tts` | Listen: `speech.listen.outgoing` (masked for the service, leak-checked), then `listen._synthesise` into `gateway.sarvam.tts`, with the audio parsed as Listen parses it | bulbul:v4-flash |
+| `tts` | Listen: `listen.outgoing` (masked for the service, leak-checked), then `listen._synthesise` into `gateway.sarvam.tts`; the audio parsed as Listen parses it | bulbul:v4-flash |
+| `stt_rest` | Voice notes: `gateway.speech.transcribe` into `gateway.sarvam.stt_rest`, then masked on return as `voice.service` masks a note (`leave_out_blocked` over `normalise`) | saaras:v4, codemix |
+| `stt_stream` | Drafts "By voice": `speech.drafts.start`, `chunk` (one second of PCM at a time, a second apart, as the browser sends it), `end`, into `gateway.sarvam.stt_stream`; masked on return by `hide_text` | saaras:v4, codemix |
+| `translate` | The English copy: `speech.drafts._english` (masked for the service, into `gateway.sarvam.translate`, masked again on return) | mayura:v1, code-mixed |
 
-Per call it checks that the reply parses the way our code expects, that the text was masked on its way through the
-worker, that `speech_calls` has its row (call, model, outcome, and no text in any column), and that with
-`speech.hosted` off the same call refuses before any network call: the client's two network entry points
-(`gateway.sarvam._post` and `_ws_open`) are replaced by tripwires, and reaching either fails the check.
+The speech-to-text calls hear the audio tts made, decoded to 16 kHz mono s16le by macOS's own `afconvert` (no new
+dependency): as a WAV file for the REST call, as raw one-second chunks for the stream. `ONLY=stt_rest` (or
+`stt_stream`) runs tts first for that reason. Without `afconvert` (not macOS), both fail with `no_decoder` and tts
+still runs. Listen's audio store and the drafts' stream store are stood in for in memory, so no audio or words are
+kept: their SQL is covered by the tests.
+
+Per call it checks that the reply parses the way our code expects; that the text was masked on its way through the
+worker (the masking is counted, since the synthetic text holds nothing to mask); that `speech_calls` has its row
+(call, model, outcome, and no text in any column); and that with `speech.hosted` off the same call refuses before any
+network call: the client's two network entry points (`gateway.sarvam._post` and `_ws_open`) are replaced by tripwires,
+and reaching either fails the check. For speech to text it also checks that a word of each spoken sentence came back,
+which shows tts spoke both sentences sent before one flush.
 
 Synthetic text only, written here: ordinary office words, no names, nothing shaped like a folio, PAN, phone number,
 email, account number or amount. The only audio is what tts makes.
@@ -21,9 +32,10 @@ The check makes its own throwaway database the way the tests' `test_database` fi
 stack's Postgres, migrated with the dbmate container, dropped at the end even on failure; `make up` must be running),
 with `speech.hosted` on inside it. It never touches the demo database or any other.
 
-Output: one line per call (the call, model, status, latency in ms, PASS or FAIL with our own reason code), then a
-summary. It never prints text, audio, the key, a header, a URL or a traceback. The worker's logs go to a buffer at
-WARNING for the run and are checked against the log rules (non-negotiable 3), never printed.
+Output: one line per call (the call, model, status, latency in ms, for speech to text whether the words came back,
+then PASS or FAIL with our own reason code), then a summary. It never prints text, audio, the key, a header, a URL or
+a traceback. The worker's logs go to a buffer at WARNING for the run and are checked against the log rules
+(non-negotiable 3), never printed. No child process (dbmate, afconvert) is given the key.
 """
 
 from __future__ import annotations
@@ -33,35 +45,50 @@ import contextlib
 import io
 import logging
 import os
+import re
 import secrets
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
+import wave
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, TextIO
 
-ALL = ("tts",)  # run order: tts makes the audio the speech-to-text calls hear
+ALL = ("tts", "stt_rest", "stt_stream", "translate")  # run order: tts makes the audio speech to text hears
+NEEDS_AUDIO = frozenset({"stt_rest", "stt_stream"})
 MISSING_KEY = "SARVAM_API_KEY is not set. Load it in your own terminal and run this again."
 IN_CI = "This check calls Sarvam with a real key, so it never runs in CI. Run it in your own terminal."
 BASE_URL_SET = "SARVAM_BASE_URL is set, so this would not reach Sarvam. Unset it and run this again."
 NO_DATABASE = (
     "The local stack's Postgres is not reachable, or dbmate failed. Run `make up` and run this again."
 )
+NO_DECODER_NOTE = "afconvert is not on this machine, so speech to text had no audio: run this on the Mac"
 APPROVAL = "DEC-108"  # the reference docs/UAT.md gives for SPEECH_HOSTED_APPROVAL (the voice row)
 DB_PREFIX = "sarvam_live"
 ACTOR = "sarvam-live"
 SPEECH_HOSTED = "speech.hosted"
+PCM_RATE = 16000
+CHUNK_BYTES = PCM_RATE * 2  # one second of 16-bit mono, as the browser sends it (drafts.chunk_contract)
+CONTRIBUTOR = "CTR-5a1e00"  # synthetic: the draft's owner in the stand-in store
 
 # Synthetic, written for this check. Each sentence carries two words that are easy to check once speech to text has
 # heard the audio tts made of it.
 SPOKEN = "The printer near the lift is out of paper. Please order more chairs for the meeting room."
 SPOKEN_TITLE = "Summary"
 HEARD = (("printer", "paper"), ("chairs", "meeting"))  # at least one word of each sentence must come back
+# Hinglish as the codemix transcript gives it (Indian words in their script, English words in English).
+HINGLISH = "ऑफिस का printer कल से काम नहीं कर रहा, कृपया नया toner मंगवा दीजिए।"
+HINGLISH_LANG = "hi-IN"
 # Words that must never show in a printed line, a `speech_calls` column or a worker warning.
-MARKERS = frozenset({"printer", "paper", "lift", "chairs", "meeting"})
+MARKERS = frozenset({"printer", "paper", "lift", "chairs", "meeting", "toner", "ऑफिस"})
+
+Decoder = Callable[[bytes], bytes]  # MP3 in, 16 kHz mono s16le PCM out; raises DecodeFailed
 
 
 class _Tripped(BaseException):
@@ -71,6 +98,14 @@ class _Tripped(BaseException):
 
 class _NoDatabase(Exception):
     pass
+
+
+class DecodeFailed(Exception):
+    """`code` is ours: `no_decoder` or `decode_failed`. Never the tool's output."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass
@@ -97,15 +132,21 @@ class _Spy:
     """What the worker's path did, by count only: never the text or the audio."""
 
     sockets: list[Any] = field(default_factory=list)
-    masked: int = 0  # texts through the worker's masking for the service
-    leak_checked: int = 0  # texts through the gateway's leak check before anything goes out
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def count(self, name: str) -> int:
+        return self.counts.get(name, 0)
 
 
 @dataclass
 class _Run:
     conn: Any
-    out: TextIO
-    mp3: bytes = b""  # what tts made, for the speech-to-text calls
+    decode: Decoder
+    pace_s: float  # the gap between two one-second chunks on the stream (the browser's pace)
+    mp3: bytes = b""  # what tts made
+    pcm: bytes | None = None  # that audio at 16 kHz mono s16le, once decoded
+    pcm_failure: str | None = None
+    notes: list[str] = field(default_factory=list)
 
 
 # ---- small tools ---------------------------------------------------------------------------------------------
@@ -124,30 +165,34 @@ def _patched(obj: Any, name: str, value: Any) -> Iterator[None]:
 @contextlib.contextmanager
 def _watching(spy: _Spy) -> Iterator[None]:
     """Count what goes through the masking and the leak check, and keep the sockets the client opens (for their close
-    codes). The real functions still run."""
+    codes). The real functions still run, with the same arguments."""
     from gateway import sarvam
-    from speech import adapters, listen
+    from speech import adapters, drafts, listen
 
-    real_open, real_check, real_mask = sarvam._ws_open, sarvam.check_masked, adapters.mask_for_service
+    real_open = sarvam._ws_open
 
     def ws_open(path: str, params: dict[str, str]) -> Any:
         ws = real_open(path, params)
         spy.sockets.append(ws)
         return ws
 
-    def check_masked(text: str) -> None:
-        spy.leak_checked += 1
-        real_check(text)
+    def counting(name: str, real: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            spy.counts[name] = spy.counts.get(name, 0) + 1
+            return real(*args, **kwargs)
 
-    def mask_for_service(text: str) -> str:
-        spy.masked += 1
-        return real_mask(text)
+        return wrapper
 
-    with (
-        _patched(sarvam, "_ws_open", ws_open),
-        _patched(sarvam, "check_masked", check_masked),
-        _patched(listen, "mask_for_service", mask_for_service),
-    ):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(_patched(sarvam, "_ws_open", ws_open))
+        stack.enter_context(_patched(sarvam, "check_masked", counting("leak_check", sarvam.check_masked)))
+        stack.enter_context(
+            _patched(listen, "mask_for_service", counting("mask_for_service", adapters.mask_for_service))
+        )
+        stack.enter_context(
+            _patched(drafts, "mask_for_service", counting("mask_for_service", adapters.mask_for_service))
+        )
+        stack.enter_context(_patched(drafts, "hide_text", counting("hide_text", adapters.hide_text)))
         yield
 
 
@@ -170,10 +215,14 @@ def _no_network() -> Iterator[list[str]]:
         yield reached
 
 
+_HOSTED_STATUS = re.compile(r"^hosted_(\d{3})$")
+
+
 def _status(kind: str, sockets: Sequence[Any], code: str | None) -> str:
     """`http 200`, `ws 1000` (the close code), `ws ok`; on a refusal at the door, the HTTP status in our code."""
-    if code and code.startswith("hosted_") and code[len("hosted_") :].isdigit():
-        return f"{kind} {code[len('hosted_') :]}"
+    m = _HOSTED_STATUS.match(code or "")
+    if m:
+        return f"{kind} {m.group(1)}"
     if kind == "http":
         return "http 200" if code is None else "http -"
     closes = [getattr(ws, "close_code", None) for ws in sockets]
@@ -188,30 +237,33 @@ def _since(conn: Any) -> int:
 
 
 def _metered(conn: Any, since: int, call: str, model: str, rows_expected: int) -> str | None:
-    """The call's rows in `speech_calls`: the right call, model and outcome, and no synthetic word in any column."""
+    """The call's rows in `speech_calls`: the right call, model and outcome. No row the call wrote (a translation the
+    stream asked for included) holds a synthetic word in any column."""
     rows = conn.execute(
         "SELECT call, model, ref_id, outcome, error_code, speech_seconds, char_count, latency_ms, cost_inr "
         "FROM speech_calls WHERE id > %s ORDER BY id",
         (since,),
     ).fetchall()
-    if len(rows) != rows_expected:
-        return "meter_rows"
     for row in rows:
-        if row["call"] != call or row["model"] != model:
-            return "meter_call"
-        if row["outcome"] not in ("ok", "ok_after_retry") or row["error_code"] is not None:
-            return "meter_outcome"
         values = " ".join(str(v) for v in row.values() if v is not None).lower()
         if any(w in values for w in MARKERS):
             return "meter_text"
+    mine = [row for row in rows if row["call"] == call]
+    if len(mine) != rows_expected:
+        return "meter_rows"
+    for row in mine:
+        if row["model"] != model:
+            return "meter_model"
+        if row["outcome"] not in ("ok", "ok_after_retry") or row["error_code"] is not None:
+            return "meter_outcome"
     return None
 
 
-def _refuses_offline(conn: Any, attempt: Callable[[], object]) -> str | None:
+def _refuses_offline(conn: Any, refused: Callable[[], str | None]) -> str | None:
     """With `speech.hosted` off, the same call must refuse with `hosted_switched_off` before either network entry
-    point is reached. The switch goes back on afterwards. Returns a reason code, or None when it refused properly."""
+    point is reached. `refused` runs the call and returns the code it refused with (None if it did not refuse). The
+    switch goes back on afterwards. Returns a reason code, or None when it refused properly."""
     from core import killswitch
-    from gateway.speech import SpeechUnavailable
 
     killswitch.set_switch(
         conn,
@@ -223,14 +275,14 @@ def _refuses_offline(conn: Any, attempt: Callable[[], object]) -> str | None:
     try:
         with _no_network() as reached:
             try:
-                attempt()
+                code = refused()
             except _Tripped:
                 return "refusal_reached_network"
-            except SpeechUnavailable as exc:
-                if reached:
-                    return "refusal_reached_network"
-                return None if exc.code == "hosted_switched_off" else f"refusal_{exc.code}"
-            return "refusal_missing"
+            if reached:
+                return "refusal_reached_network"
+            if code is None:
+                return "refusal_missing"
+            return None if code == "hosted_switched_off" else f"refusal_{code}"[:40]
     finally:
         killswitch.set_switch(
             conn,
@@ -241,13 +293,92 @@ def _refuses_offline(conn: Any, attempt: Callable[[], object]) -> str | None:
         )
 
 
+def _words_back(text: str) -> bool:
+    low = text.lower()
+    return all(any(w in low for w in sentence) for sentence in HEARD)
+
+
+def _elapsed(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+# ---- decoding the tts audio (macOS's own afconvert; no new dependency) ------------------------------------------
+
+
+def afconvert_pcm(mp3: bytes) -> bytes:
+    """MP3 to 16 kHz mono s16le PCM with macOS's built-in `afconvert`, in a private temporary folder removed at the
+    end. Arguments as a list, no shell; the child gets no key; its output is never read, printed or logged."""
+    tool = shutil.which("afconvert")
+    if tool is None:
+        raise DecodeFailed("no_decoder")
+    folder = tempfile.TemporaryDirectory(prefix="sarvam-live-")
+    try:
+        src, dst = Path(folder.name) / "tts.mp3", Path(folder.name) / "heard.wav"
+        src.write_bytes(mp3)
+        done = subprocess.run(
+            [tool, "-f", "WAVE", "-d", f"LEI16@{PCM_RATE}", "-c", "1", str(src), str(dst)],
+            env=_child_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=60,
+        )
+        if done.returncode != 0 or not dst.exists():
+            raise DecodeFailed("decode_failed")
+        try:
+            with wave.open(str(dst), "rb") as w:
+                if (w.getnchannels(), w.getsampwidth(), w.getframerate()) != (1, 2, PCM_RATE):
+                    raise DecodeFailed("decode_failed")
+                return w.readframes(w.getnframes())
+        except (wave.Error, EOFError):
+            raise DecodeFailed("decode_failed") from None
+    except subprocess.TimeoutExpired:
+        raise DecodeFailed("decode_failed") from None
+    finally:
+        folder.cleanup()
+
+
+def _wav(pcm: bytes) -> bytes:
+    """The same 16 kHz mono s16le audio in a WAV container, as a voice-note file."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(PCM_RATE)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _pcm(run: _Run) -> bytes | None:
+    """The tts audio, decoded once for both speech-to-text calls. None with `run.pcm_failure` set."""
+    if run.pcm is not None or run.pcm_failure:
+        return run.pcm
+    if not run.mp3:
+        run.pcm_failure = "no_tts_audio"
+        return None
+    try:
+        pcm = run.decode(run.mp3)
+    except DecodeFailed as exc:
+        run.pcm_failure = exc.code
+    except Exception:
+        run.pcm_failure = "decode_failed"
+    else:
+        if not pcm or len(pcm) % 2:
+            run.pcm_failure = "decode_failed"
+        else:
+            run.pcm = pcm
+    if run.pcm_failure == "no_decoder" and NO_DECODER_NOTE not in run.notes:
+        run.notes.append(NO_DECODER_NOTE)
+    return run.pcm
+
+
 # ---- the calls -------------------------------------------------------------------------------------------------
 
 
 def _tts(run: _Run) -> Line:
     """Listen's path: the script part masked for the service and leak-checked (`listen.outgoing`), spoken by
     `listen._synthesise` through `gateway.sarvam.tts`, the audio parsed as Listen parses it (leading tags stripped,
-    MPEG frames counted). Listen's store is stood in for here: the check keeps the audio in memory only."""
+    MPEG frames counted). Listen's store is stood in for: the check keeps the audio in memory only."""
     from gateway import sarvam
     from gateway.speech import SpeechUnavailable
     from speech import listen
@@ -258,8 +389,8 @@ def _tts(run: _Run) -> Line:
     idea = str(uuid.uuid4())
     kept: dict[str, Any] = {}
 
-    def keep(*_args: Any, **_kwargs: Any) -> None:
-        _conn, _idea, _version, _voice, _lang, audio, chapters, duration_s = _args
+    def keep(*args: Any) -> None:
+        _conn, _idea, _version, _voice, _lang, audio, chapters, duration_s = args
         kept.update(audio=audio, chapters=chapters, duration_s=duration_s)
 
     def attempt() -> bytes:
@@ -268,43 +399,306 @@ def _tts(run: _Run) -> Line:
             listen._synthesise(run.conn, idea, script.version, texts, listen.LANG, listen._voice())
         )
 
+    def refused() -> str | None:
+        try:
+            attempt()
+        except SpeechUnavailable as exc:
+            return exc.code
+        return None
+
     since = _since(run.conn)
     spy = _Spy()
     audio = b""
     started = time.monotonic()
-    with _patched(listen, "_store", keep), _watching(spy):
-        try:
-            audio = attempt()
-        except SpeechUnavailable as exc:
-            line.reason = exc.code
-    line.ms = int((time.monotonic() - started) * 1000)
-    line.status = _status("ws", spy.sockets, line.reason)
-    if line.reason:
-        return line
-    if not audio or kept.get("audio") != audio:
-        line.reason = "no_audio"
-    elif listen.mp3_seconds(audio) <= 0 or float(kept.get("duration_s") or 0) <= 0:
-        line.reason = "not_mp3"
-    elif [c.get("part") for c in kept.get("chapters", [])] != ["summary"]:
-        line.reason = "chapters"
-    elif spy.masked < 1 or spy.leak_checked < 2:  # outgoing's check and tts's own
-        line.reason = "not_masked"
-    else:
-        line.reason = _metered(run.conn, since, "tts", sarvam.TTS_MODEL, rows_expected=1)
-    if line.reason is None:
-        with _patched(listen, "_store", keep):  # never the real store, even if the refusal were to fail
-            line.reason = _refuses_offline(run.conn, attempt)
-    run.mp3 = audio
+    with _patched(listen, "_store", keep):
+        with _watching(spy):
+            try:
+                audio = attempt()
+            except SpeechUnavailable as exc:
+                line.reason = exc.code
+        line.ms = _elapsed(started)
+        line.status = _status("ws", spy.sockets, line.reason)
+        if line.reason:
+            return line
+        if not audio or kept.get("audio") != audio:
+            line.reason = "no_audio"
+        elif listen.mp3_seconds(audio) <= 0 or float(kept.get("duration_s") or 0) <= 0:
+            line.reason = "not_mp3"
+        elif [c.get("part") for c in kept.get("chapters", [])] != ["summary"]:
+            line.reason = "chapters"
+        elif (
+            spy.count("mask_for_service") < 1 or spy.count("leak_check") < 2
+        ):  # outgoing's check and tts's own
+            line.reason = "not_masked"
+        else:
+            line.reason = _metered(run.conn, since, "tts", sarvam.TTS_MODEL, rows_expected=1)
+        run.mp3 = audio
+        if line.reason is None:  # inside the stand-in store: never the real one, even if the refusal failed
+            line.reason = _refuses_offline(run.conn, refused)
     return line
 
 
-CHECKS: dict[str, Callable[[_Run], Line]] = {"tts": _tts}
+def _stt_rest(run: _Run) -> Line:
+    """The voice-note path: `gateway.speech.transcribe` (the route, its gate) into `gateway.sarvam.stt_rest`, the
+    audio as a 16 kHz mono WAV file, then masked on return as `voice.service.transcribe` masks a note."""
+    from gateway import sarvam, speech
+    from voice import service as voice_notes
+    from voice.numbers import normalise
+
+    line = Line("stt_rest", sarvam.STT_MODEL)
+    pcm = _pcm(run)
+    if pcm is None:
+        line.status, line.reason = "http -", run.pcm_failure
+        return line
+    wav = _wav(pcm)
+    masked_calls = 0
+
+    def heard() -> str:
+        nonlocal masked_calls
+        said = speech.transcribe(wav, "audio/wav", run.conn)
+        masked_calls += 1
+        text, _left_out = voice_notes.leave_out_blocked(normalise(said.text))
+        return text
+
+    def refused() -> str | None:
+        try:
+            heard()
+        except speech.SpeechUnavailable as exc:
+            return exc.code
+        return None
+
+    since = _since(run.conn)
+    started = time.monotonic()
+    text = ""
+    try:
+        text = heard()
+    except speech.SpeechUnavailable as exc:
+        line.reason = exc.code
+    line.ms = _elapsed(started)
+    line.status = _status("http", [], line.reason)
+    if line.reason:
+        return line
+    line.words = _words_back(text)
+    if not text.strip():
+        line.reason = "nothing_heard"
+    elif masked_calls != 1:
+        line.reason = "not_masked"
+    elif not line.words:
+        line.reason = "words_missing"
+    else:
+        line.reason = _metered(
+            run.conn, since, "stt_rest", sarvam.STT_MODEL, rows_expected=1
+        ) or _refuses_offline(run.conn, refused)
+    return line
+
+
+class _StandInStreams:
+    """The drafts' stream store (`speech.drafts.Store`), in memory for the check: one synthetic draft, owned by the
+    synthetic contributor. Nothing is kept after the run."""
+
+    def __init__(self, idea_uuid: str) -> None:
+        self.idea_uuid = idea_uuid
+        self.rows: dict[str, dict[str, Any]] = {}
+
+    def __call__(self, conn: Any) -> _StandInStreams:  # drafts asks its factory for a store per call
+        return self
+
+    def owned_draft(self, idea_uuid: str, by_code: str) -> str:
+        return "draft" if (idea_uuid, by_code) == (self.idea_uuid, CONTRIBUTOR) else "not_found"
+
+    def begin(self, stream_id: str, idea_uuid: str, by_code: str, per_hour: int) -> bool:
+        self.rows[stream_id] = {
+            "id": stream_id,
+            "idea_uuid": idea_uuid,
+            "by_code": by_code,
+            "state": "live",
+            "failure": None,
+            "ended_by": None,
+            "speech_seconds": 0,
+            "chunk_count": 0,
+            "lang": None,
+            "own_words_sealed": None,
+            "masked_encrypted": None,
+            "text_en_encrypted": None,
+            "translated": None,
+            "spans": [],
+            "hidden_count": 0,
+            "handed_at": None,
+        }
+        return True
+
+    def live_of(self, by_code: str) -> list[str]:
+        return [k for k, r in self.rows.items() if r["by_code"] == by_code and r["state"] == "live"]
+
+    def row(self, stream_id: str) -> dict[str, Any] | None:
+        return dict(self.rows[stream_id]) if stream_id in self.rows else None
+
+    def done(self, stream_id: str, v: dict[str, Any]) -> None:
+        r = self.rows[stream_id]
+        if r["state"] == "live":
+            r.update(
+                state="done",
+                ended_by=v["ended_by"],
+                speech_seconds=v["seconds"],
+                chunk_count=v["chunks"],
+                lang=v["lang"],
+                own_words_sealed=v["own_words_sealed"],
+                masked_encrypted=v["masked_encrypted"],
+                text_en_encrypted=v["text_en_encrypted"],
+                translated=v["translated"],
+                spans=v["spans"],
+                hidden_count=v["hidden_count"],
+                failure=v.get("failure"),
+            )
+
+    def failed(self, stream_id: str, code: str, ended_by: str | None, seconds: float, chunks: int) -> None:
+        r = self.rows[stream_id]
+        if r["state"] == "live":
+            r.update(
+                state="failed", failure=code, ended_by=ended_by, speech_seconds=seconds, chunk_count=chunks
+            )
+
+    def handed(self, stream_id: str) -> None:
+        self.rows.pop(stream_id, None)
+
+    def sweep(self) -> tuple[int, int]:
+        return 0, 0
+
+    def masked_copy(self, stream_id: str) -> str | None:
+        """The masked copy of the words heard (DEC-103), as `voice_to_message` reads it: what everyone but the
+        speaker sees. Kept in memory for the check only."""
+        from core.crypto import decrypt_json
+        from speech import drafts
+
+        sealed = self.rows.get(stream_id, {}).get("masked_encrypted")
+        if sealed is None:
+            return None
+        text = decrypt_json(bytes(sealed), drafts._ctx("masked", stream_id)).get("text")
+        return text if isinstance(text, str) else None
+
+    def last_failure(self) -> str | None:
+        failures = [r["failure"] for r in self.rows.values() if r["failure"]]
+        return str(failures[-1]) if failures else None
+
+
+def _stt_stream(run: _Run) -> Line:
+    """The drafts "By voice" path: `speech.drafts.start` opens `gateway.sarvam.stt_stream`; `chunk` relays one second
+    of PCM at a time, a second apart, the way the browser's audio arrives; `end` flushes, waits for the last words,
+    closes, and masks what was heard (`hide_text`). The drafts' stream store is stood in for in memory."""
+    from gateway import sarvam
+    from speech import drafts
+
+    line = Line("stt_stream", sarvam.STT_MODEL)
+    pcm = _pcm(run)
+    if pcm is None:
+        line.status, line.reason = "ws -", run.pcm_failure
+        return line
+    audio: bytes = pcm
+    idea = str(uuid.uuid4())
+    store = _StandInStreams(idea)
+
+    def stream() -> dict[str, Any]:
+        begun = drafts.start(run.conn, idea_uuid=idea, by_code=CONTRIBUTOR)
+        sid = str(begun["id"])
+        opened = time.monotonic()
+        for seq, at in enumerate(range(0, len(audio), CHUNK_BYTES)):
+            wait = opened + seq * run.pace_s - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            drafts.chunk(
+                run.conn, sid, idea_uuid=idea, by_code=CONTRIBUTOR, seq=seq, data=audio[at : at + CHUNK_BYTES]
+            )
+        return drafts.end(run.conn, sid, idea_uuid=idea, by_code=CONTRIBUTOR, ended_by="person")
+
+    def refused() -> str | None:
+        try:
+            stream()
+        except drafts.VoiceRefused:
+            return store.last_failure()
+        return None
+
+    since = _since(run.conn)
+    spy = _Spy()
+    view: dict[str, Any] = {}
+    started = time.monotonic()
+    with _patched(drafts, "_store", store):
+        with _watching(spy):
+            try:
+                view = stream()
+            except drafts.VoiceRefused as exc:
+                line.reason = store.last_failure() or exc.code
+        line.ms = _elapsed(started)
+        line.status = _status("ws", spy.sockets, line.reason)
+        if line.reason:
+            return line
+        if view.get("state") != "done":
+            line.reason = str(view.get("failure") or "stream_not_done")[:40]
+            return line
+        masked = store.masked_copy(str(view.get("id")))
+        line.words = _words_back(masked or "")
+        if not masked:
+            line.reason = "no_masked_copy"
+        elif spy.count("hide_text") < 1:
+            line.reason = "not_masked"
+        elif not line.words:
+            line.reason = "words_missing"
+        else:
+            line.reason = _metered(run.conn, since, "stt_stream", sarvam.STT_MODEL, rows_expected=1)
+        if line.reason is None:
+            line.reason = _refuses_offline(run.conn, refused)
+    return line
+
+
+def _translate(run: _Run) -> Line:
+    """The English copy: `speech.drafts._english` masks the words for the service, sends them through
+    `gateway.sarvam.translate` (mayura:v1, code-mixed, into English) and masks what comes back (`hide_text`)."""
+    from gateway import sarvam
+    from speech import drafts
+    from speech.adapters import hide_text
+
+    line = Line("translate", sarvam.TRANSLATE_MODEL)
+    masked = hide_text(HINGLISH).text  # as the stream hands it over: the masked copy of the words heard
+
+    def english() -> tuple[str | None, bool | None, str | None]:
+        return drafts._english(run.conn, str(uuid.uuid4()), masked, HINGLISH_LANG, None)
+
+    def refused() -> str | None:
+        _text, _translated, failure = english()
+        return failure.removeprefix("translation_") if failure else None
+
+    since = _since(run.conn)
+    spy = _Spy()
+    started = time.monotonic()
+    with _watching(spy):
+        text_en, translated, failure = english()
+    line.ms = _elapsed(started)
+    line.reason = failure.removeprefix("translation_") if failure else None
+    line.status = _status("http", [], line.reason)
+    if line.reason:
+        return line
+    if not isinstance(text_en, str) or not text_en.strip() or translated is not True:
+        line.reason = "hosted_bad_reply"
+    elif spy.count("mask_for_service") < 1 or spy.count("leak_check") < 1 or spy.count("hide_text") < 1:
+        line.reason = "not_masked"
+    else:
+        line.reason = _metered(
+            run.conn, since, "translate", sarvam.TRANSLATE_MODEL, rows_expected=1
+        ) or _refuses_offline(run.conn, refused)
+    return line
+
+
+CHECKS: dict[str, Callable[[_Run], Line]] = {
+    "tts": _tts,
+    "stt_rest": _stt_rest,
+    "stt_stream": _stt_stream,
+    "translate": _translate,
+}
 
 
 def _model(call: str) -> str:
     from gateway import sarvam
 
-    return {"tts": sarvam.TTS_MODEL}.get(call, "-")
+    return {"tts": sarvam.TTS_MODEL, "translate": sarvam.TRANSLATE_MODEL}.get(call, sarvam.STT_MODEL)
 
 
 # ---- the run ---------------------------------------------------------------------------------------------------
@@ -332,7 +726,7 @@ def _quiet_logs() -> Iterator[io.StringIO]:
 
 
 def _child_env() -> dict[str, str]:
-    """The environment for the dbmate container: the key never goes to a child process."""
+    """The environment for a child process (dbmate, afconvert): the key never goes to one."""
     return {k: v for k, v in os.environ.items() if k != "SARVAM_API_KEY"}
 
 
@@ -368,19 +762,9 @@ def throwaway_database() -> Iterator[str]:
         raise _NoDatabase from None
     try:
         compose = ["docker", "compose", "-f", "infra/docker-compose.yml", "--project-directory", "."]
+        url = f"DATABASE_URL={_db_url(name, 'postgres')}"
         migrate = subprocess.run(
-            [
-                *compose,
-                "--env-file",
-                ".env",
-                "run",
-                "--rm",
-                "-T",
-                "-e",
-                f"DATABASE_URL={_db_url(name, 'postgres')}",
-                "dbmate",
-                "up",
-            ],
+            [*compose, "--env-file", ".env", "run", "--rm", "-T", "-e", url, "dbmate", "up"],
             cwd=REPO_ROOT,
             env=_child_env(),
             capture_output=True,  # never printed: compose may echo settings
@@ -414,26 +798,37 @@ def _env(**values: str) -> Iterator[None]:
         get_settings.cache_clear()
 
 
-def run(calls: Sequence[str], *, out: TextIO, database: str | None = None) -> int:
+def run(
+    calls: Sequence[str],
+    *,
+    out: TextIO,
+    database: str | None = None,
+    decode: Decoder = afconvert_pcm,
+    pace_s: float = 1.0,
+) -> int:
     """Run the checks in order and print one line each, then the summary. `database` is a database that already
-    exists (the tests' fixture); without it the check makes and drops its own."""
+    exists (the tests' fixture); without it the check makes and drops its own. `decode` turns the tts MP3 into
+    16 kHz mono s16le (tests pass PCM straight in); `pace_s` is the gap between stream chunks."""
     with _quiet_logs() as logs:
         if database is not None:
-            return _run_in(database, calls, out, logs)
+            return _run_in(database, calls, out, logs, decode, pace_s)
         try:
             with throwaway_database() as name:
-                return _run_in(name, calls, out, logs)
+                return _run_in(name, calls, out, logs, decode, pace_s)
         except _NoDatabase:
             print(NO_DATABASE, file=out)
             return 1
 
 
-def _run_in(name: str, calls: Sequence[str], out: TextIO, logs: io.StringIO) -> int:
+def _run_in(
+    name: str, calls: Sequence[str], out: TextIO, logs: io.StringIO, decode: Decoder, pace_s: float
+) -> int:
     from core import killswitch
     from core.db import connect
     from pii.log_rules import scan_log_lines
 
     lines: list[Line] = []
+    notes: list[str] = []
     with _env(DATABASE_URL=_db_url(name), SPEECH_MODE="sarvam", SPEECH_HOSTED_APPROVAL=APPROVAL):
         killswitch.clear_cache()
         conn = connect(_db_url(name), autocommit=True)
@@ -448,7 +843,7 @@ def _run_in(name: str, calls: Sequence[str], out: TextIO, logs: io.StringIO) -> 
                     reason="Live check: on in its own database (BLD-C177)",
                     actor=ACTOR,
                 )
-            state = _Run(conn=conn, out=out)
+            state = _Run(conn=conn, decode=decode, pace_s=pace_s, notes=notes)
             for call in calls:
                 try:
                     line = CHECKS[call](state)
@@ -467,9 +862,10 @@ def _run_in(name: str, calls: Sequence[str], out: TextIO, logs: io.StringIO) -> 
     logs_ok = not scan_log_lines(warnings) and not any(_holds_text(w) for w in warnings)
     passed = sum(1 for line in lines if line.passed)
     ok = passed == len(lines) and logs_ok
+    note = f"  ({'; '.join(notes)})" if notes else ""
     print(
         f"summary     {passed} of {len(lines)} passed  warnings: {len(warnings)}, "
-        f"IDs only: {'yes' if logs_ok else 'no'}  {'PASS' if ok else 'FAIL'}",
+        f"IDs only: {'yes' if logs_ok else 'no'}  {'PASS' if ok else 'FAIL'}{note}",
         file=out,
         flush=True,
     )
@@ -487,9 +883,12 @@ def _holds_text(line: str) -> bool:
 
 
 def _parse(only: str) -> list[str] | None:
-    asked = [c.strip() for c in only.replace(" ", ",").split(",") if c.strip()]
+    """The calls asked for, in run order; speech to text brings tts with it (its audio is what is heard)."""
+    asked = {c.strip() for c in only.replace(" ", ",").split(",") if c.strip()}
     if any(c not in ALL for c in asked):
         return None
+    if asked & NEEDS_AUDIO:
+        asked.add("tts")
     return [c for c in ALL if c in asked] if asked else list(ALL)
 
 

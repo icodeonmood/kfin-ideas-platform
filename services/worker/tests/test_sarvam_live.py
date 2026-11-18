@@ -1,8 +1,9 @@
-"""BLD-C177 (DEC-108, L-LISTEN): `make sarvam-live`, the live contract check of the Sarvam client, run here against
-the fakes (`tests/sarvam_fakes.py`, a local WebSocket server at SARVAM_BASE_URL), never against Sarvam. It pins the
-output format, the plain refusals (no key, CI, SARVAM_BASE_URL), the proof that a call with `speech.hosted` off
-refuses before any network call, the throwaway database being dropped even on failure, and that nothing printed
-holds the synthetic text or the key."""
+"""BLD-C177 (DEC-108, L-LISTEN, L-DRAFT.voice): `make sarvam-live`, the live contract check of the Sarvam client,
+run here against the fakes (`tests/sarvam_fakes.py`: a local WebSocket server at SARVAM_BASE_URL, and an httpx
+MockTransport for the REST calls), never against Sarvam. The decoder is passed in, so CI (Linux) never needs macOS's
+afconvert. It pins the output format, the plain refusals (no key, CI, SARVAM_BASE_URL), the proof that a call with
+`speech.hosted` off refuses before any network call, the throwaway database being dropped even on failure, and that
+nothing printed holds the synthetic text or the key."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from core import killswitch
@@ -31,7 +33,43 @@ LINE = re.compile(
     r"^(?P<call>[a-z_]+) +(?P<model>[a-z0-9:._-]+) +(?P<status>(?:ws|http) (?:\d+|ok|-)) +(?P<ms>\d+) ms"
     r"(?:  words: (?:yes|no))?  (?:PASS|FAIL [a-z0-9_]+)$"
 )
-SUMMARY = re.compile(r"^summary +\d+ of \d+ passed  warnings: \d+, IDs only: (?:yes|no)  (?:PASS|FAIL)$")
+SUMMARY = re.compile(
+    r"^summary +\d+ of \d+ passed  warnings: \d+, IDs only: (?:yes|no)  (?:PASS|FAIL)(?:  \([^()]+\))?$"
+)
+# What the fakes hear and translate: synthetic, with a word of each spoken sentence.
+HEARD_TEXT = "The printer near the lift is out of paper. Please order more chairs for the meeting room."
+ENGLISH = "The office printer has not worked since yesterday, please order new toner."
+PCM = bytes(3 * sarvam_live.CHUNK_BYTES)  # three seconds of silence: the fakes do not decode audio
+
+
+def rest_fake(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
+    """Sarvam's REST replies, in the documented shapes (docs.sarvam.ai, 18 Nov 2026)."""
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/speech-to-text":
+            return httpx.Response(
+                200,
+                json={
+                    "request_id": "req-1",
+                    "transcript": HEARD_TEXT,
+                    "language_code": "en-IN",
+                    "timestamps": {
+                        "words": ["a", "b"],
+                        "start_time_seconds": [0.0, 2.1],
+                        "end_time_seconds": [2.0, 4.4],
+                    },
+                },
+            )
+        if request.url.path == "/translate":
+            return httpx.Response(
+                200, json={"request_id": "req-2", "translated_text": ENGLISH, "source_language_code": "hi-IN"}
+            )
+        return httpx.Response(404, json={"error": {"message": "not here", "code": "not_found_error"}})
+
+    monkeypatch.setattr(sarvam, "_transport", httpx.MockTransport(handle))
+    return seen
 
 
 @pytest.fixture(autouse=True)
@@ -79,6 +117,118 @@ def test_BLD_C177_L_LISTEN_tts_through_listens_path_passes_against_the_fake(
     with connect(helpers.db_url(test_database), autocommit=True) as conn:
         assert killswitch.is_on_fresh(sarvam_live.SPEECH_HOSTED, conn)
     assert get_settings().speech_mode == "fake"
+
+
+def test_BLD_C177_L_DRAFT_voice_all_four_calls_pass_through_the_workers_paths_against_the_fakes(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    rest = rest_fake(monkeypatch)
+    decoded: list[bytes] = []
+
+    def decode(mp3: bytes) -> bytes:
+        decoded.append(mp3)
+        return PCM
+
+    out = io.StringIO()
+    with ws_server(monkeypatch, FakeSarvamWs(heard=HEARD_TEXT)) as fake:
+        code = sarvam_live.run(
+            list(sarvam_live.ALL), out=out, database=test_database, decode=decode, pace_s=0
+        )
+    lines = out.getvalue().splitlines()
+    assert code == 0, lines
+    assert [x.split()[0] for x in lines[:4]] == ["tts", "stt_rest", "stt_stream", "translate"]
+    want = {
+        "tts": ("bulbul:v4-flash", "ws 1000", False),
+        "stt_rest": ("saaras:v4", "http 200", True),
+        "stt_stream": ("saaras:v4", "ws 1000", True),
+        "translate": ("mayura:v1", "http 200", False),
+    }
+    for text in lines[:4]:
+        m = LINE.match(text)
+        assert m, text
+        model, status, words = want[m["call"]]
+        assert (m["model"], m["status"]) == (model, status), text
+        assert ("  words: yes  " in text) is words and text.endswith("  PASS")
+    assert (
+        SUMMARY.match(lines[4])
+        and lines[4].startswith("summary     4 of 4 passed")
+        and lines[4].endswith("PASS")
+    )
+    printed_is_clean(out.getvalue())
+    # The decoder got the tts MP3 once; both speech-to-text calls heard its PCM.
+    assert len(decoded) == 1 and decoded[0][:2] == b"\xff\xf3"
+    stt = [r for r in rest if r.url.path == "/speech-to-text"]
+    assert len(stt) == 1 and b"RIFF" in stt[0].content and b"saaras:v4" in stt[0].content
+    assert fake.audio == PCM  # relayed unchanged, a second at a time
+    assert sum(1 for m in fake.received if "audio" in m) == 3
+    # One socket per call; every refusal with speech.hosted off reached no network entry point.
+    assert [p.split("?")[0] for p in fake.paths] == ["/text-to-speech/ws", "/speech-to-text/ws"]
+    translate = [json.loads(r.content) for r in rest if r.url.path == "/translate"]
+    assert translate and all(t["model"] == "mayura:v1" and t["mode"] == "code-mixed" for t in translate)
+    assert "speaker_gender" not in translate[-1]
+
+
+def test_BLD_C177_without_afconvert_speech_to_text_fails_with_no_decoder_and_tts_still_runs(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    rest_fake(monkeypatch)
+
+    def no_decoder(mp3: bytes) -> bytes:
+        raise sarvam_live.DecodeFailed("no_decoder")
+
+    out = io.StringIO()
+    with ws_server(monkeypatch, FakeSarvamWs(heard=HEARD_TEXT)) as fake:
+        code = sarvam_live.run(
+            list(sarvam_live.ALL), out=out, database=test_database, decode=no_decoder, pace_s=0
+        )
+    lines = out.getvalue().splitlines()
+    assert code == 1
+    assert lines[0].startswith("tts ") and lines[0].endswith("PASS")
+    assert lines[1].startswith("stt_rest ") and lines[1].endswith("FAIL no_decoder")
+    assert lines[2].startswith("stt_stream ") and lines[2].endswith("FAIL no_decoder")
+    assert lines[3].startswith("translate ") and lines[3].endswith("PASS")
+    assert SUMMARY.match(lines[4]) and lines[4].endswith(f"FAIL  ({sarvam_live.NO_DECODER_NOTE})")
+    assert [p.split("?")[0] for p in fake.paths] == ["/text-to-speech/ws"]
+    printed_is_clean(out.getvalue())
+
+
+def test_BLD_C177_afconvert_runs_as_a_list_without_the_key_in_a_private_folder_removed_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+    folders: list[Path] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append((cmd, kwargs))
+        folders.append(Path(cmd[-1]).parent)
+        assert Path(cmd[-2]).read_bytes() == b"mp3 bytes"
+        with __import__("wave").open(cmd[-1], "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(bytes(64))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(sarvam_live.shutil, "which", lambda name: "/usr/bin/afconvert")
+    monkeypatch.setattr(sarvam_live.subprocess, "run", fake_run)
+    assert sarvam_live.afconvert_pcm(b"mp3 bytes") == bytes(64)
+    cmd, kwargs = calls[0]
+    assert cmd[:7] == ["/usr/bin/afconvert", "-f", "WAVE", "-d", "LEI16@16000", "-c", "1"]
+    assert "shell" not in kwargs and "SARVAM_API_KEY" not in kwargs["env"]
+    assert kwargs["stdout"] is subprocess.DEVNULL and kwargs["stderr"] is subprocess.DEVNULL
+    assert not folders[0].exists()  # removed at the end
+
+    monkeypatch.setattr(sarvam_live.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 1))
+    with pytest.raises(sarvam_live.DecodeFailed) as failed:
+        sarvam_live.afconvert_pcm(b"mp3 bytes")
+    assert failed.value.code == "decode_failed"
+
+    monkeypatch.setattr(sarvam_live.shutil, "which", lambda name: None)
+    with pytest.raises(sarvam_live.DecodeFailed) as missing:
+        sarvam_live.afconvert_pcm(b"mp3 bytes")
+    assert missing.value.code == "no_decoder"
 
 
 def test_BLD_C177_a_call_that_ignores_the_switch_trips_the_network_guard(
@@ -159,6 +309,9 @@ def test_BLD_C177_only_takes_known_calls(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(sarvam_live, "run", _never)
     assert sarvam_live._parse("") == list(sarvam_live.ALL)
     assert sarvam_live._parse("tts") == ["tts"]
+    assert sarvam_live._parse("translate") == ["translate"]
+    assert sarvam_live._parse("stt_stream,tts") == ["tts", "stt_stream"]
+    assert sarvam_live._parse("stt_rest") == ["tts", "stt_rest"]  # speech to text hears what tts made
     assert sarvam_live._parse("tts, nope") is None
     out = io.StringIO()
     assert sarvam_live.main(["--only", "nope"], out=out) == 2
