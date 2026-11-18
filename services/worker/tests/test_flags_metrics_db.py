@@ -1,5 +1,5 @@
 """P-DECISIONS.experiments, the deciding metrics (BLD-C174, BLD-C176): `flag_events` keeps codes only and each S1 step
-once per draft; `flag_s1_metrics` and `flag_s3_metrics` count per variant from exposures, drafts and events, never a
+once per draft; `flag_s1_metrics`, `flag_s2_metrics` and `flag_s3_metrics` count per variant from exposures, drafts and events, never a
 person, an idea or a word. Synthetic people and drafts only; the test's own rows are counted before and after and
 removed at the end (rule 14)."""
 
@@ -43,7 +43,7 @@ def _draft(db: Any, code: str, *, device: str, shared: bool, parts: list[str]) -
 
 
 def _event(db: Any, flag: str, uid: str, variant: str, draft: str | None, event: str, outcome: str) -> None:
-    screen = "S-04B" if flag == "s1" else "S-04"
+    screen = {"s1": "S-04B", "s2": "S-05"}.get(flag, "S-04")
     db.execute(
         "INSERT INTO flag_events (flag_key, user_id, variant, draft_id, screen, event, outcome) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -135,7 +135,7 @@ def test_p_decisions_experiments_s1_and_s3_metrics_per_variant(people: Any) -> N
     assert s3["default"]["phone_completion_rate"] is None
 
     # Counts and rates only: no column names a person, an idea or a word
-    for view in ("flag_s1_metrics", "flag_s3_metrics"):
+    for view in ("flag_s1_metrics", "flag_s2_metrics", "flag_s3_metrics"):
         cols = {
             r["column_name"]
             for r in db.execute(
@@ -143,3 +143,37 @@ def test_p_decisions_experiments_s1_and_s3_metrics_per_variant(people: Any) -> N
             ).fetchall()
         }
         assert not cols & {"user_id", "draft_id", "idea_id", "id", "text", "title", "contributor_code"}
+
+
+def test_p_decisions_experiments_s2_metrics_duplicates_to_the_desk_and_completion(people: Any) -> None:
+    db, [(alt, alt_code), (dflt, dflt_code)] = people
+    db.execute(
+        "INSERT INTO flag_exposures (flag_key, user_id, variant, screen) VALUES "
+        "('s2', %s, 'alternative', 'S-05'), ('s2', %s, 'default', 'S-05')",
+        (alt, dflt),
+    )
+    other = _draft(db, dflt_code, device="laptop", shared=True, parts=["title"])  # the idea matched against
+    # alternative: shown the comparison first, asked to merge; not shared
+    a = _draft(db, alt_code, device="laptop", shared=False, parts=["title"])
+    _event(db, "s2", alt, "alternative", a, "s2.check", "opened")
+    _event(db, "s2", alt, "alternative", a, "s2.compare", "shown")
+    _event(db, "s2", alt, "alternative", a, "s2.compare", "merge_asked")
+    # default: the same close match, carried on and shared on its own (a duplicate reaching the desk)
+    d = _draft(db, dflt_code, device="laptop", shared=True, parts=["title"])
+    _event(db, "s2", dflt, "default", d, "s2.check", "opened")
+    db.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason, outcome) VALUES "
+        "(%s, %s, 'close', 'Close match: same SMS, same calls', 'merge_asked'), "
+        "(%s, %s, 'close', 'Close match: same SMS, same calls', NULL)",
+        (a, other, d, other),
+    )
+    s2 = {r["variant"]: r for r in db.execute("SELECT * FROM flag_s2_metrics").fetchall()}
+    assert (s2["alternative"]["drafts_checked"], s2["alternative"]["drafts_with_close_match"]) == (1, 1)
+    assert s2["alternative"]["close_match_merged"] == 1
+    assert s2["alternative"]["duplicates_to_desk"] == 0
+    assert (s2["alternative"]["compare_shown"], s2["alternative"]["compare_merge_asked"]) == (1, 1)
+    assert s2["default"]["drafts_shared"] == 1
+    assert float(s2["default"]["completion_rate"]) == 1.0
+    assert s2["default"]["duplicates_to_desk"] == 1
+    assert float(s2["default"]["duplicate_rate"]) == 1.0
+    assert s2["default"]["compare_shown"] == 0

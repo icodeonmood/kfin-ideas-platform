@@ -117,9 +117,61 @@ LEFT JOIN drafts d ON d.variant = v.variant
 LEFT JOIN ev e ON e.variant = v.variant
 GROUP BY v.variant;
 
-REVOKE ALL ON flag_s1_metrics, flag_s3_metrics FROM ideas_web_svc;
+-- S2: duplicates reaching the review desk against completion. S-05 logs `s2.check` for each draft it opens, in
+-- either variant, so the drafts are known; a "duplicate reaching the desk" is a shared draft with a close similar
+-- idea (L-SIMILAR, similar_links) that was not merged in (L-MERGE.request: asked, or merged).
+CREATE VIEW flag_s2_metrics AS
+WITH seen AS (
+  SELECT user_id, variant
+  FROM flag_exposures
+  WHERE flag_key = 's2' AND user_id IS NOT NULL
+  GROUP BY user_id, variant
+), checked AS (
+  SELECT DISTINCT variant, draft_id
+  FROM flag_events
+  WHERE flag_key = 's2' AND event = 's2.check' AND draft_id IS NOT NULL
+), drafts AS (
+  SELECT c.variant, i.id, i.shared_at,
+         EXISTS (SELECT 1 FROM similar_links l WHERE l.idea_uuid = i.id AND l.strength = 'close') AS has_close,
+         (i.status = 'merged' OR i.merged_into IS NOT NULL
+          OR EXISTS (SELECT 1 FROM similar_links l WHERE l.idea_uuid = i.id AND l.outcome = 'merge_asked')) AS merged
+  FROM checked c
+  JOIN ideas i ON i.id = c.draft_id
+), ev AS (
+  SELECT variant,
+         count(*) FILTER (WHERE outcome = 'shown') AS compare_shown,
+         count(*) FILTER (WHERE outcome = 'moved_on') AS compare_moved_on,
+         count(*) FILTER (WHERE outcome = 'kept_separate') AS compare_kept_separate,
+         count(*) FILTER (WHERE outcome = 'merge_asked') AS compare_merge_asked,
+         count(*) FILTER (WHERE outcome = 'mine_is_different') AS compare_mine_is_different
+  FROM flag_events
+  WHERE flag_key = 's2' AND event = 's2.compare'
+  GROUP BY variant
+)
+SELECT v.variant,
+       (SELECT count(*) FROM seen s WHERE s.variant = v.variant) AS people,
+       count(d.id) AS drafts_checked,
+       count(d.shared_at) AS drafts_shared,
+       round(count(d.shared_at)::numeric / nullif(count(d.id), 0), 3) AS completion_rate,
+       count(d.id) FILTER (WHERE d.has_close) AS drafts_with_close_match,
+       count(d.id) FILTER (WHERE d.has_close AND d.merged) AS close_match_merged,
+       count(d.id) FILTER (WHERE d.has_close AND d.shared_at IS NOT NULL AND NOT d.merged) AS duplicates_to_desk,
+       round(count(d.id) FILTER (WHERE d.has_close AND d.shared_at IS NOT NULL AND NOT d.merged)::numeric
+             / nullif(count(d.id) FILTER (WHERE d.has_close), 0), 3) AS duplicate_rate,
+       coalesce(max(e.compare_shown), 0) AS compare_shown,
+       coalesce(max(e.compare_moved_on), 0) AS compare_moved_on,
+       coalesce(max(e.compare_kept_separate), 0) AS compare_kept_separate,
+       coalesce(max(e.compare_merge_asked), 0) AS compare_merge_asked,
+       coalesce(max(e.compare_mine_is_different), 0) AS compare_mine_is_different
+FROM (VALUES ('default'), ('alternative')) AS v (variant)
+LEFT JOIN drafts d ON d.variant = v.variant
+LEFT JOIN ev e ON e.variant = v.variant
+GROUP BY v.variant;
+
+REVOKE ALL ON flag_s1_metrics, flag_s2_metrics, flag_s3_metrics FROM ideas_web_svc;
 
 -- migrate:down
 DROP VIEW IF EXISTS flag_s3_metrics;
+DROP VIEW IF EXISTS flag_s2_metrics;
 DROP VIEW IF EXISTS flag_s1_metrics;
 DROP TABLE IF EXISTS flag_events;

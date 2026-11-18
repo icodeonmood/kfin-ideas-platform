@@ -24,7 +24,12 @@ export const FLAG_SCREENS: Record<FlagKey, readonly string[]> = {
  * interview's own route (`/api/drafts/:id/interview`), so none are open here. */
 export const FLAG_EVENTS: Record<FlagKey, Record<string, readonly string[]>> = {
   s1: {},
-  s2: {},
+  s2: {
+    // S-05 opened for a draft, in either variant: the deciding metrics follow the draft from here.
+    "s2.check": ["opened"],
+    // The comparison put first, and what the person did with it.
+    "s2.compare": ["shown", "moved_on", "kept_separate", "merge_asked", "mine_is_different"],
+  },
   s3: {
     // On the phone's S-04: listening started at once, or the screen began with typing, and why.
     "s3.listen": ["started", "typed_instead", "no_permission", "voice_off", "failed"],
