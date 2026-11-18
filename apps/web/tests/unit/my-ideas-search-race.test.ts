@@ -3,15 +3,20 @@
  * S-07.state, P-ROUTES.state (J-BROWSE/1): on My ideas the list state lives in the URL, and quick changes build on
  * each other. The server's answer to a sort, tab or filter must not wipe what the person typed into the search box
  * meanwhile, and an answer to an earlier change must not undo a later one still on its way: the search then goes
- * into the address with the sort the person picked. Synthetic rows only.
+ * into the address with the sort the person picked. The answer to the person's own search leaves what they typed
+ * on since, and when the address moves elsewhere (Back, a link) before an answer comes, the change in flight gives
+ * way. Synthetic rows only.
  */
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const replace = vi.fn();
+// The address the page is at; Next moves it with the answer, so a test moves it with the view it renders
+let search = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => search,
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) =>
@@ -97,6 +102,7 @@ let root: Root;
 
 beforeEach(() => {
   replace.mockClear();
+  search = new URLSearchParams();
   Element.prototype.scrollIntoView = vi.fn(); // jsdom draws no layout
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -129,6 +135,19 @@ function clickSort(label: string) {
   const b = [...host.querySelectorAll("button")].find((x) => x.textContent === label)!;
   act(() => b.click());
 }
+function clickTab(label: string) {
+  const t = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) =>
+    x.textContent?.startsWith(label),
+  )!;
+  act(() => t.click());
+}
+/** The page moves to `href` and renders its view, as Next does for Back, a link or the answer to a replace. */
+function arrive(href: string, state: Partial<State>) {
+  search = new URL(href, "http://x").searchParams;
+  render(view(state));
+}
+const pressed = (label: string) =>
+  [...host.querySelectorAll("button")].find((x) => x.textContent === label)?.getAttribute("aria-pressed");
 const last = () => String(replace.mock.calls.at(-1)?.[0]);
 
 describe("S-07.state, P-ROUTES.state (J-BROWSE/1): quick changes on My ideas build on each other", () => {
@@ -154,6 +173,40 @@ describe("S-07.state, P-ROUTES.state (J-BROWSE/1): quick changes on My ideas bui
     expect(last()).toBe("/my-ideas?sort=shared&q=Redemption");
   });
 
+  it("the answer to the person's own search leaves what they typed on since (S-07.state)", () => {
+    render(view({}));
+    type("abc");
+    submit();
+    expect(last()).toBe("/my-ideas?q=abc");
+    type("abcd"); // still typing when the answer for "abc" lands
+    arrive("/my-ideas?q=abc", { q: "abc" });
+    expect(box().value).toBe("abcd");
+    submit();
+    expect(last()).toBe("/my-ideas?q=abcd");
+  });
+
+  it("Clear on the screen empties the box at once, and its answer leaves it empty", () => {
+    const none = (v: Data): Data => ({
+      ...v,
+      items: [],
+      empty: {
+        kind: "no_results",
+        title: "Nothing matches “abc”",
+        line: "",
+        actions: [{ label: "Clear", to: "/my-ideas" }],
+      },
+    });
+    search = new URLSearchParams("q=abc");
+    render(none(view({ q: "abc" })));
+    expect(box().value).toBe("abc");
+    const clear = [...host.querySelectorAll(".mi-emptyc button")].find((x) => x.textContent === "Clear")!;
+    act(() => (clear as HTMLButtonElement).click());
+    expect(last()).toBe("/my-ideas");
+    expect(box().value).toBe("");
+    arrive("/my-ideas", {});
+    expect(box().value).toBe("");
+  });
+
   it("a new search from the server, Clear or a link, puts the server's words in the box", () => {
     render(view({ q: "Redemption" }));
     expect(box().value).toBe("Redemption");
@@ -161,5 +214,39 @@ describe("S-07.state, P-ROUTES.state (J-BROWSE/1): quick changes on My ideas bui
     expect(box().value).toBe("");
     render(view({ q: "SMS" }));
     expect(box().value).toBe("SMS");
+  });
+});
+
+describe("P-ROUTES.state, S-07.state: a change in flight gives way when the address moves elsewhere", () => {
+  it("Back before the sort's answer: the screen shows the view it has, and the next change builds on that", () => {
+    render(view({}));
+    clickSort("Date shared");
+    expect(pressed("Date shared")).toBe("true");
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    expect(pressed("Latest activity")).toBe("true");
+    type("Redemption");
+    submit();
+    expect(last()).toBe("/my-ideas?q=Redemption");
+  });
+
+  it("a link to another view before the answer: that view stands, not the change asked for", () => {
+    render(view({}));
+    clickSort("Date shared");
+    arrive("/my-ideas?list=teamed", { list: "teamed" }); // a link elsewhere lands first
+    expect(pressed("Latest activity")).toBe("true");
+    type("Redemption");
+    submit();
+    expect(last()).toBe("/my-ideas?list=teamed&q=Redemption");
+  });
+
+  it("the address an earlier change of the person's put there is theirs: a later change still on its way stands", () => {
+    render(view({}));
+    clickTab("Teamed up");
+    clickSort("Date shared");
+    arrive("/my-ideas?list=teamed", { list: "teamed" }); // the tab's answer, from before the sort
+    expect(pressed("Date shared")).toBe("true");
+    type("Redemption");
+    submit();
+    expect(last()).toBe("/my-ideas?list=teamed&sort=shared&q=Redemption");
   });
 });
