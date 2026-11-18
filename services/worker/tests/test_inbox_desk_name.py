@@ -95,7 +95,9 @@ def _seed_templates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(render, "load", lambda name: templates._load(SEED, name))
 
 
-def _row(kind: str, sender: str | None, channel: str = "in_app") -> dict[str, Any]:
+def _row(
+    kind: str, sender: str | None, channel: str = "in_app", extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     refs: dict[str, Any] = {
         "questions": {"set_id": SET},
         "answer_reminder": {"set_id": SET},
@@ -104,6 +106,7 @@ def _row(kind: str, sender: str | None, channel: str = "in_app") -> dict[str, An
         "decision_reversed": {"window_id": "7d1c3b5a-9e2f-4c68-8b40-5a9e7c3d1f26", "to": "pick"},
         "sent_to_desk": {"ref": "IDEA-2026-000900"},
     }.get(kind, {})
+    refs = {**refs, **(extra or {})}
     return {
         "id": 51,
         "user_id": SHARER,
@@ -123,12 +126,14 @@ def _row(kind: str, sender: str | None, channel: str = "in_app") -> dict[str, An
     }
 
 
-def _read(kind: str, sender: str | None) -> tuple[_Conn, dict[str, Any], dict[str, Any], str]:
+def _read(
+    kind: str, sender: str | None, extra: dict[str, Any] | None = None
+) -> tuple[_Conn, dict[str, Any], dict[str, Any], str]:
     """The sharer's item, its template variables and its email, all from one connection."""
     conn = _Conn()
-    item = render.item(conn, _row(kind, sender), SHARER, NOW)  # type: ignore[arg-type]
-    _, data = render.variables(conn, _row(kind, sender), SHARER, NOW)  # type: ignore[arg-type]
-    mail = render.email(conn, _row(kind, sender, "email"), NOW)  # type: ignore[arg-type]
+    item = render.item(conn, _row(kind, sender, extra=extra), SHARER, NOW)  # type: ignore[arg-type]
+    _, data = render.variables(conn, _row(kind, sender, extra=extra), SHARER, NOW)  # type: ignore[arg-type]
+    mail = render.email(conn, _row(kind, sender, "email", extra), NOW)  # type: ignore[arg-type]
     return conn, item, data, "\n".join((mail.subject, mail.text, mail.html))
 
 
@@ -214,6 +219,102 @@ def test_DEC_111_a_teamup_answer_still_names_its_lead() -> None:
     row = {**_row("teamup_answer", OTHER), "payload": {"answer": "approve"}}
     item = render.item(conn, row, SHARER, NOW)  # type: ignore[arg-type]
     assert item["body"]["sender"] == "Ravi Nair" and item["from"]["initials"] == "RN"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The conversation's comment and mention when a reviewer writes as the desk (`as_desk`, lane F; BLD-A221)
+# ---------------------------------------------------------------------------------------------------------------
+
+ENTRY = {"entry_id": "4c2e8a6d-0f1b-4d39-b7e5-9a3c1d5f7b28"}
+
+
+@pytest.mark.parametrize("kind", ("comment", "mention"))
+def test_DEC_111_L_INBOX_kinds_a_comment_or_mention_as_the_desk_names_the_desk_not_the_reviewer(
+    kind: str,
+) -> None:
+    """Lane F posts `comment` and `mention` with `as_desk: true` when a reviewer not on the build team writes in the
+    conversation (S-08's own test). The reader gets the review desk as a whole: no users.id, name or initials of the
+    reviewer in the item's JSON, its variables or its email, and the reviewer's row is never read."""
+    conn, item, data, mail = _read(kind, REVIEWER, {**ENTRY, "as_desk": True})
+    assert (item["from"], item["body"]["sender"]) == ("system", REVIEW_DESK_START), kind
+    assert data["from"]["display"] == REVIEW_DESK_START, kind
+    seen = "\n".join(
+        (json.dumps(item, ensure_ascii=False), json.dumps(data, ensure_ascii=False, default=str), mail)
+    )
+    for trace in REVIEWER_TRACES:
+        assert trace not in seen, (kind, trace)
+    assert REVIEWER not in conn.people_read, kind
+    assert f"{REVIEW_DESK_START} {item['line']}" in mail, kind
+    # Lane F's flag is a choice of sender only; it is not part of what the reader is given
+    assert "as_desk" not in json.dumps(item), kind
+
+
+@pytest.mark.parametrize("kind", ("comment", "mention"))
+def test_DEC_111_L_INBOX_kinds_a_crew_members_comment_or_mention_still_names_them(kind: str) -> None:
+    """Without `as_desk` (a crew member, or a reviewer on the build team), the person is named as before."""
+    _, item, _, mail = _read(kind, OTHER, ENTRY)
+    assert item["body"]["sender"] == "Ravi Nair", kind
+    assert item["from"] == {
+        "id": OTHER,
+        "name": "Ravi Nair",
+        "first_name": "Ravi",
+        "initials": "RN",
+        "role_label": "",
+    }, kind
+    assert f"Ravi Nair {item['line']}" in mail, kind
+
+
+@pytest.mark.parametrize("flag", (False, "true", 1, None))
+def test_DEC_111_only_as_desk_true_speaks_as_the_desk(flag: Any) -> None:
+    """Only the boolean true counts: anything else leaves the item as the person's (fail to the kind's own rule)."""
+    _, item, _, _ = _read("comment", OTHER, {**ENTRY, "as_desk": flag})
+    assert item["body"]["sender"] == "Ravi Nair", flag
+
+
+class _Writes:
+    """`notify.post`'s reads and writes without a database: the recipient's preferences, then each INSERT, kept so
+    a test can see what would be stored."""
+
+    def __init__(self) -> None:
+        self.inserts: list[tuple[str, tuple[Any, ...]]] = []
+
+    def execute(self, sql: str, params: tuple[Any, ...] = ()) -> _Rows:
+        if "FROM users u LEFT JOIN comms_prefs" in sql:
+            return _Rows([{"id": SHARER, "email": True, "teams": False, "reminders": True}])
+        if sql.startswith("INSERT INTO notifications"):
+            self.inserts.append((sql, params))
+            return _Rows([{"id": len(self.inserts), "inserted": True}])
+        return _Rows([])
+
+
+@pytest.mark.parametrize(
+    ("kind", "refs", "stored"),
+    [
+        ("comment", {**ENTRY, "as_desk": True}, None),
+        ("mention", {**ENTRY, "as_desk": True}, None),
+        ("comment", ENTRY, REVIEWER),  # a reviewer on the build team writes as themselves
+    ],
+)
+def test_DEC_111_L_NOTIFY_post_stores_no_sender_for_an_item_as_the_desk(
+    kind: str, refs: dict[str, Any], stored: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `as_desk: true` the reviewer is not stored on the in-app item or its email, so no later read, by any
+    route, can name them (as L-HIDE/7's kind, BLD-A205). The sender is still never one of the recipients."""
+    import notify
+
+    monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)
+    conn = _Writes()
+    posted = notify.post(conn, kind, [SHARER, REVIEWER], idea_id=IDEA, sender=REVIEWER, refs=refs)  # type: ignore[arg-type]
+    assert posted.ids == [1]
+    channels = [(params[1], params) for _, params in conn.inserts]
+    assert [c for c, _ in channels] == ["inbox/" + kind, "email"]
+    in_app, email = (params for _, params in conn.inserts)
+    assert (
+        in_app[0] == SHARER and in_app[5] == stored
+    )  # (user_id, template, payload, event, kind, from_user_id, …)
+    assert (
+        email[0] == SHARER and email[6] == stored
+    )  # (user_id, channel, template, payload, event, kind, from, …)
 
 
 # ---------------------------------------------------------------------------------------------------------------

@@ -376,6 +376,49 @@ def test_L_HIDE_7_detail_hidden_by_desk_comes_from_the_review_desk_with_one_acti
             db.execute("ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check " + check)
 
 
+def test_DEC_111_a_comment_as_the_desk_stores_and_shows_no_reviewer_and_a_crew_comment_names_its_author(
+    cast: Any,
+) -> None:
+    """BLD-A221 with lane F: a comment or mention posted with `as_desk: true` (a reviewer writing as the desk) stores
+    no sender on the item or its email and reads "The review desk"; without it the author is named as before."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya = p["kavya"]["id"]
+    try:
+        for kind in ("comment", "mention"):
+            notify.post(db, kind, [kavya], idea_id=ideas["mine"], sender=p["meera"]["id"],
+                        refs={"as_desk": True}, dedupe_key=f"t:{kind}:desk")  # fmt: skip
+        notify.post(
+            db, "comment", [kavya], idea_id=ideas["mine"], sender=p["ravi"]["id"], dedupe_key="t:crew"
+        )
+        stored = db.execute(
+            "SELECT kind, channel, from_user_id, dedupe_key FROM notifications WHERE user_id = %s ORDER BY id",
+            (kavya,),
+        ).fetchall()
+        assert {(r["channel"], r["from_user_id"]) for r in stored if r["dedupe_key"].endswith(":desk")} == {
+            ("in_app", None),
+            ("email", None),
+        }
+        items = inbox.items(db, kavya, now=WORKDAY_NOON)["items"]
+        lines = sorted((it["body"]["sender"], it["line"]) for it in items)
+        assert lines == [
+            ("Ravi Nair", "commented on your idea"),
+            ("The review desk", "commented on your idea"),
+            ("The review desk", "mentioned you"),
+        ]
+        for it in items:
+            if it["body"]["sender"] == "The review desk":
+                assert it["from"] == "system" and "Meera" not in json.dumps(it, ensure_ascii=False)
+                assert p["meera"]["id"] not in json.dumps(it)
+        for row in db.execute(
+            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND dedupe_key LIKE '%%:desk'",
+            (kavya,),
+        ).fetchall():
+            mail = nrender.email(db, dict(row), WORKDAY_NOON)
+            assert "The review desk" in mail.text and "Meera" not in mail.subject + mail.text + mail.html
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+
+
 def test_L_NOTIFY_3_J_TEAMUP_4_the_request_email_opens_the_leads_item_in_the_app(cast: Any) -> None:
     """The email row has no buttons of its own, so "Answer the request" uses the kind's "inbox" link: it opens the
     person's in-app item (found by its key, else by the idea), never the email row's id; with no item, the Inbox."""
