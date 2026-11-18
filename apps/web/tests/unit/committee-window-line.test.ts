@@ -118,6 +118,16 @@ describe("S-R4 window line (Committee board .cwl, .cext)", () => {
     expect(left?.classList.contains("soon")).toBe(true);
   });
 
+  it("S-R4.layout/3, S-R4.rules/2: an extended row with 5 days left shows the Extended label and the days left in the soon tone", () => {
+    const td = cell(row(5, true));
+    const line = td.querySelector(".cm-wl");
+    expect(line?.querySelector(".cm-ext")?.textContent).toBe("Extended");
+    const left = line?.querySelector("b.cm-left");
+    expect(left?.textContent).toBe("5 days left");
+    expect(left?.classList.contains("soon")).toBe(true);
+    expect(line?.textContent).toBe("Extended 5 days left");
+  });
+
   it("S-R4.layout/3: a window with 20 days left keeps the days left in ink, and an unextended row has no label", () => {
     const td = cell(row(20, false));
     const left = td.querySelector("b.cm-left");
