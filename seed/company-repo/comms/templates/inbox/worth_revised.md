@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{from.display}} revised what your idea is worth'
-description: 'Inbox item and email for the worth_revised kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR.'
+description: 'Inbox item and email for the worth_revised kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). 1.1 (BLD-A195): typographic apostrophes (’) in the row text, note and email, as in every other line. Email wording: draft for HR.'
 tags:
 - comms
 - template
@@ -12,14 +12,14 @@ generated:
   at: '2026-11-17T00:00:00+05:30'
 kfin:
   id: TPL-inbox-worth-revised
-  version: '1.0'
+  version: '1.1'
   kinds:
   - worth_revised
   subject: '{{from.display}} revised what your idea is worth'
   inbox:
     heading: 'Worth revised'
     line: 'revised what your idea is worth'
-    note: 'The new figure and the review desk''s note are on your idea''s page.'
+    note: 'The new figure and the review desk’s note are on your idea’s page.'
   signed_as: The 1% Club team
   hr_signed_off: false
 ---

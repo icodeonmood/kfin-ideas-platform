@@ -6,7 +6,11 @@ other copy of the idea (`_sweep`): messages (and their English copy), answers, c
 summary, how-often line and helper line, the parts, the fix, the desk's questions, the saved versions, the
 similar-idea reasons and the draft's receipts. Each changed copy gets a `hidden_details` row, the value is stored
 sealed, the action is audited and the sharer is told (`detail_hidden_by_desk`). A selection must be at least three
-characters with a letter or digit in it.
+characters with a letter or digit in it, and at most 300 (`selection_too_long` above that). When the page sends the
+words it selected (`selected`, the masked words as the desk sees them) and the stored text no longer has them at
+those offsets, the hide is refused with `stale` (409), so a range never lands on words the reviewer did not select.
+A reviewer never hides on their own idea or on one their contribution was merged into (`forbidden`, as lane B's
+`refuse_own`; the attempt is audited).
 
 "Show it" needs one of the three reasons and puts the value back in the copy others read; "Hide it" masks it again.
 Both are the owner's alone and are audited; the desk reads "Shown, because …" from `hidden_details`. A detail the
@@ -47,7 +51,8 @@ log = get_logger("hide")
 
 DESK_SOURCES = ("part", "message", "answer", "title", "conversation", "fix")
 NOTIFY_KIND = "detail_hidden_by_desk"
-MAX_SELECTION = 300
+MAX_SELECTION = 300  # code points; a longer selection is `selection_too_long` (422)
+SELECTED_MAX = 10_000  # UTF-16 units of `selected`: twice the longest text (a 5,000-character message, V-FIELDS.submit/2)
 MIN_SELECTION = 3  # shorter selections ("a", "5") would mask pieces of other words (BLD-C066)
 PART_KEYS = ("title", "often", "who", "value", "area", "similar")
 TITLE_FIELDS = ("title", "summary", "often", "helper_text")  # ideas columns the desk reads
@@ -67,6 +72,13 @@ class Sealed:
     masked_now: str
     owner_text: str
     has_words: bool
+
+    @property
+    def in_place(self) -> bool:
+        """No owner's words and no owner to seal them for (an author no longer mapped): the masked copy is the only
+        copy, so it is masked in place and its details carry no span. Spans would point into a copy that changes
+        with each hide, and a second hide would garble it (BLD-C066)."""
+        return not self.has_words and not self.owner_user
 
 
 _SEALED_SQL = {
@@ -121,7 +133,18 @@ def load_sealed(conn: Conn, idea_uuid: str, source: str, source_id: str | None =
     return out
 
 
+def _write_in_place(conn: Conn, src: Sealed, new: str) -> None:
+    """Store a new masked copy for a text masked in place (`Sealed.in_place`)."""
+    conn.execute(
+        f"UPDATE {src.table} SET text_encrypted = %s WHERE id = %s",  # noqa: S608 (one of three fixed names)
+        (seal_text(src.table, "text_encrypted", src.id, new), src.id),
+    )
+    src.masked_now = src.owner_text = new
+
+
 def _write_sealed(conn: Conn, idea_uuid: str, src: Sealed, details: list[dict[str, Any]]) -> str:
+    if src.in_place:
+        return src.masked_now  # never rebuilt from spans: its callers mask it in place (`_write_in_place`)
     masked, _ = layout(src.owner_text, details)
     conn.execute(
         f"UPDATE {src.table} SET text_encrypted = %s WHERE id = %s",  # noqa: S608 (one of three fixed names)
@@ -328,6 +351,35 @@ class Swept:
     rehidden: int = 0  # the owner's "Show it" undone because the desk hid the same value
 
 
+def _sweep_sealed(
+    conn: Conn, idea_uuid: str, src: Sealed, value: str, kind: str, found_by: str, out: Swept
+) -> int:
+    """One text with the owner's words: a detail per new place, rebuilt from the words. Returns 1 when it changed."""
+    details = details_for(conn, idea_uuid, src.source, src.id)
+    flipped = False
+    if found_by == "reviewer":
+        for i, d in enumerate(details):
+            s, e = d.get("span_start"), d.get("span_end")
+            if d["state"] == "shown" and s is not None and detect.same_value(value, src.owner_text[s:e]):
+                details[i] = _rehide(conn, d, by_desk=True)
+                flipped = True
+                out.rehidden += 1
+    taken = [(int(d["span_start"]), int(d["span_end"])) for d in details if d.get("span_start") is not None]
+    new = [
+        (s, e)
+        for s, e in detect.value_places(src.owner_text, value)
+        if all(e <= a or s >= b for a, b in taken)
+    ]
+    for s, e in new:
+        details.append(
+            _new_detail(conn, idea_uuid, src.source, src.id, s, e, kind, src.owner_text[s:e], found_by)
+        )
+    if new or flipped:
+        _write_sealed(conn, idea_uuid, src, details)
+        return 1
+    return 0
+
+
 def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str = "reviewer") -> Swept:
     """Mask `value`, as whole words in any case, in every copy of this idea (L-HIDE.rules/7). Texts with the owner's
     words get a detail per place (their masked copy is rebuilt from them); the other copies are masked in place and
@@ -342,34 +394,14 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str =
     english = _has_column(conn, "idea_messages", "text_en_encrypted")  # lane C's drafts add an English copy
     for source in ("message", "answer", "conversation"):
         for src in load_sealed(conn, idea_uuid, source):
-            details = details_for(conn, idea_uuid, source, src.id)
-            flipped = False
-            if found_by == "reviewer":
-                for i, d in enumerate(details):
-                    s, e = d.get("span_start"), d.get("span_end")
-                    if (
-                        d["state"] == "shown"
-                        and s is not None
-                        and detect.same_value(value, src.owner_text[s:e])
-                    ):
-                        details[i] = _rehide(conn, d, by_desk=True)
-                        flipped = True
-                        out.rehidden += 1
-            taken = [
-                (int(d["span_start"]), int(d["span_end"])) for d in details if d.get("span_start") is not None
-            ]
-            new = [
-                (s, e)
-                for s, e in detect.value_places(src.owner_text, value)
-                if all(e <= a or s >= b for a, b in taken)
-            ]
-            for s, e in new:
-                details.append(
-                    _new_detail(conn, idea_uuid, source, src.id, s, e, kind, src.owner_text[s:e], found_by)
-                )
-            if new or flipped:
-                _write_sealed(conn, idea_uuid, src, details)
-                out.copies += 1
+            if src.in_place:
+                in_place, n = detect.mask_in(src.masked_now, value, masked)
+                if n:
+                    _write_in_place(conn, src, in_place)
+                    _copy_detail(conn, idea_uuid, source, src.id, kind, value, found_by)
+                    out.copies += 1
+            else:
+                out.copies += _sweep_sealed(conn, idea_uuid, src, value, kind, found_by, out)
             if source == "message" and english:
                 row = conn.execute(
                     "SELECT text_en_encrypted FROM idea_messages WHERE id = %s", (src.id,)
@@ -527,6 +559,40 @@ def _code_points(text: str, start: int, end: int, units: str) -> tuple[int, int]
     return s, e
 
 
+def _range(text: str, start: int, end: int, units: str, selected: str | None) -> tuple[int, int]:
+    """The reviewer's range in `text` (the masked copy they read), in code points. With `selected`, the words must
+    still be there: `text[start:end]` and `selected`, each without the spaces at its ends, compared after the UTF-16
+    conversion (the same words in either count); a range that no longer fits the text is the same case. Errors:
+    `stale` (409) with `selected`, else `range_invalid`; `selection_too_long` (422) above MAX_SELECTION."""
+    try:
+        s, e = _code_points(text, start, end, units)
+        if e > len(text):
+            raise HideError(400, "range_invalid")
+    except HideError:
+        if selected is not None:
+            raise HideError(409, "stale") from None
+        raise
+    if selected is not None and text[s:e].strip() != selected.strip():
+        raise HideError(409, "stale")
+    if e - s > MAX_SELECTION:
+        raise HideError(422, "selection_too_long")
+    return s, e
+
+
+def _refuse_own(conn: Conn, by: str, idea: dict[str, Any]) -> None:
+    """A reviewer never hides on their own idea, nor on one their contribution was merged into: lane B's rule for the
+    desk page's `own` (`desk.store.is_own`, P-PRODUCT.roles/3). 403 `forbidden`; the attempt is audited after the
+    rollback (`hide/api.py`)."""
+    from desk.store import is_own
+
+    if is_uuid(by) and is_own(conn, by, idea):
+        raise HideError(
+            403,
+            "forbidden",
+            audit=(by, "hide.own_idea_refused", str(idea["id"]), {"action": "desk_hide"}),
+        )
+
+
 def desk_hide(
     conn: Conn,
     idea_uuid: str,
@@ -537,9 +603,13 @@ def desk_hide(
     end: int,
     by: str,
     units: str = "cp",
+    selected: object = None,
 ) -> dict[str, Any]:
     """A reviewer's "Hide this". `units`: "cp" (code points, Python callers) or "utf16" (the browser's offsets, which
-    the web passes on as they are). Returns the HiddenDetail. Errors: not_found, range_invalid, already_hidden."""
+    the web passes on as they are). `selected`: optional, the masked words the reviewer selected; when the stored text
+    no longer has them at those offsets the hide is refused with `stale` (`_range`). Returns the HiddenDetail.
+    Errors: not_found, range_invalid, already_hidden, stale (409), selection_too_long (422), forbidden (403: the
+    reviewer's own idea, `_refuse_own`)."""
     if source_kind not in DESK_SOURCES or units not in UNITS:
         raise HideError(400, "range_invalid")
     if (
@@ -549,55 +619,30 @@ def desk_hide(
         or isinstance(end, bool)
     ):
         raise HideError(400, "range_invalid")
-    if start < 0 or end <= start or end - start > MAX_SELECTION * (2 if units == "utf16" else 1):
+    if selected is not None and not isinstance(selected, str):
+        raise HideError(400, "range_invalid")
+    if selected is not None and detect.to_utf16(selected, len(selected)) > SELECTED_MAX:
+        raise HideError(422, "selection_too_long")
+    if start < 0 or end <= start:
         raise HideError(400, "range_invalid")
     with conn.transaction():
         idea = idea_row(conn, idea_uuid)
         if idea["status"] == "draft":
             raise HideError(404, "not_found")  # the desk never sees a draft
+        _refuse_own(conn, by, idea)
         lock(conn, idea_uuid)
         if source_kind in ("message", "answer", "conversation"):
             found = load_sealed(conn, idea_uuid, source_kind, source_id)
             if not found:
                 raise HideError(404, "not_found")
             src = found[0]
-            start, end = _code_points(src.masked_now, start, end, units)
-            if end > len(src.masked_now) or end - start > MAX_SELECTION:
-                raise HideError(400, "range_invalid")
+            start, end = _range(src.masked_now, start, end, units, selected)
             _selection(src.masked_now, start, end)
-            details = details_for(conn, idea_uuid, source_kind, src.id)
-            o_start, o_end, shown = _owner_range(src, details, start, end)
-            if shown is not None:
-                row = _rehide(
-                    conn, shown, by_desk=True
-                )  # the desk's hide now: the owner cannot show it again
-                details = [row if str(d["id"]) == str(row["id"]) else d for d in details]
-                _write_sealed(conn, idea_uuid, src, details)
-                value = src.owner_text[o_start:o_end]
-            else:
-                o_start, value = _selection(src.owner_text, o_start, o_end)
-                kind = detect.classify(value, src.owner_text, o_start)
-                row = _new_detail(
-                    conn, idea_uuid, source_kind, src.id, o_start, o_start + len(value), kind, value
-                )
-                details.append(row)
-                _write_sealed(conn, idea_uuid, src, details)
+            row, value = _hide_sealed(conn, idea_uuid, src, start, end)
         else:
             text, write = _plain_text(conn, idea_uuid, source_kind, source_id)
-            start, end = _code_points(text, start, end, units)
-            if end > len(text) or end - start > MAX_SELECTION:
-                raise HideError(400, "range_invalid")
-            for a, b in detect.mask_tokens(text):
-                if a < end and start < b:
-                    raise (
-                        HideError(409, "already_hidden")
-                        if a <= start and end <= b
-                        else HideError(400, "range_invalid")
-                    )
-            s, value = _selection(text, start, end)
-            kind = detect.classify(value, text, s)
-            row = _new_detail(conn, idea_uuid, source_kind, source_id, s, s + len(value), kind, value)
-            write(text[:s] + str(row["masked"]) + text[s + len(value) :])
+            start, end = _range(text, start, end, units, selected)
+            row, value = _hide_plain(conn, idea_uuid, source_kind, source_id, text, start, end, write)
         swept = _sweep(conn, idea_uuid, value, str(row["kind"]))
         hid = str(row["id"])
         notified = _notify_sharer(conn, idea, by)
@@ -611,6 +656,58 @@ def desk_hide(
         )  # fmt: skip
     log.info("hide.desk_hidden", idea_id=idea_uuid, hidden_id=hid, other_copies=swept.copies)
     return detail_view(row)
+
+
+def _hide_sealed(conn: Conn, idea_uuid: str, src: Sealed, start: int, end: int) -> tuple[dict[str, Any], str]:
+    """The selection in a message, answer or conversation message: mapped to the owner's words and rebuilt from them,
+    or masked in place when there are none and no owner (`Sealed.in_place`). Returns the detail and the value."""
+    if src.in_place:
+        return _hide_plain(
+            conn, idea_uuid, src.source, src.id, src.masked_now, start, end,
+            lambda new: _write_in_place(conn, src, new), spans=False,
+        )  # fmt: skip
+    details = details_for(conn, idea_uuid, src.source, src.id)
+    o_start, o_end, shown = _owner_range(src, details, start, end)
+    if shown is not None:
+        row = _rehide(conn, shown, by_desk=True)  # the desk's hide now: the owner cannot show it again
+        details = [row if str(d["id"]) == str(row["id"]) else d for d in details]
+        _write_sealed(conn, idea_uuid, src, details)
+        return row, src.owner_text[o_start:o_end]
+    o_start, value = _selection(src.owner_text, o_start, o_end)
+    kind = detect.classify(value, src.owner_text, o_start)
+    row = _new_detail(conn, idea_uuid, src.source, src.id, o_start, o_start + len(value), kind, value)
+    details.append(row)
+    _write_sealed(conn, idea_uuid, src, details)
+    return row, value
+
+
+def _hide_plain(
+    conn: Conn,
+    idea_uuid: str,
+    source: str,
+    source_id: str,
+    text: str,
+    start: int,
+    end: int,
+    write: Callable[[str], None],
+    *,
+    spans: bool = True,
+) -> tuple[dict[str, Any], str]:
+    """Mask the selection in a text that is its only copy (a title, a part, the fix, or a text masked in place) and
+    store its detail; `spans`: whether the detail keeps where it sits. Returns the detail and the value."""
+    for a, b in detect.mask_tokens(text):
+        if a < end and start < b:
+            raise (
+                HideError(409, "already_hidden")
+                if a <= start and end <= b
+                else HideError(400, "range_invalid")
+            )
+    s, value = _selection(text, start, end)
+    kind = detect.classify(value, text, s)
+    at = (s, s + len(value)) if spans else (None, None)
+    row = _new_detail(conn, idea_uuid, source, source_id, at[0], at[1], kind, value)
+    write(text[:s] + str(row["masked"]) + text[s + len(value) :])
+    return row, value
 
 
 # ---- the owner's "Show it" and "Hide it" ------------------------------------------------------------------

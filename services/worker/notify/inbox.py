@@ -65,12 +65,20 @@ def _render(conn: Conn, row: dict[str, Any], user_id: str, now: dt.datetime) -> 
     try:
         return render.item(conn, row, user_id, now)
     except Exception as exc:  # one item we cannot show must not hide all the others
-        log.warning("notify.inbox_render_failed", notification_id=row["id"], error_type=type(exc).__name__)
+        # IDs and the kind only: never the item's words, nor the exception's text (non-negotiable 3).
+        log.warning(
+            "notify.inbox_render_failed",
+            notification_id=row["id"],
+            inbox_kind=str(row.get("kind") or ""),
+            error_type=type(exc).__name__,
+        )
         return None
 
 
 def items(conn: Conn, user_id: str, tab: str = "all", now: dt.datetime | None = None) -> dict[str, Any]:
-    """`GET /inbox`: the tab's items, newest first, with every tab's count and the unread total (A-API.inbox)."""
+    """`GET /inbox`: the tab's items, newest first, with every tab's count and the unread total (A-API.inbox). An
+    item that cannot be rendered is left out; when that leaves none of the tab's items, it is refused with
+    `unavailable` (503), so the web shows the Inbox's unavailable line instead of an empty list."""
     if tab not in TABS:
         raise InboxRefused("bad_tab", 400)
     now = now or dt.datetime.now(dt.UTC)
@@ -80,6 +88,11 @@ def items(conn: Conn, user_id: str, tab: str = "all", now: dt.datetime | None = 
         (user_id, LIMIT),
     ).fetchall()
     out = [it for it in (_render(conn, dict(r), user_id, now) for r in rows) if it is not None]
+    if rows and not out:
+        # The tab holds items and not one of them could be shown (the demo's missing `comms/templates/inbox/`):
+        # the Inbox says it cannot load just now, never "Nothing here." (C-INBOX-READER.reader, BLD-A195).
+        log.warning("notify.inbox_unavailable", inbox_tab=tab, item_count=len(rows))
+        raise InboxRefused("unavailable", 503)
     c = counts(conn, user_id)
     return {"items": out, "total": c[tab], "counts": c, "unread": c["unread"]}
 

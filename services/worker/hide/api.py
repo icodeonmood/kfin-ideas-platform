@@ -26,10 +26,14 @@ def _error(code: str, status: int) -> JSONResponse:
 
 def _call(fn: Any, *args: Any, **kwargs: Any) -> JSONResponse:
     try:
-        with connect(autocommit=True) as conn, conn.transaction():
-            body = fn(conn, *args, **kwargs)
-    except core.HideError as exc:
-        return _error(exc.code, exc.status)
+        with connect(autocommit=True) as conn:
+            try:
+                with conn.transaction():
+                    body = fn(conn, *args, **kwargs)
+            except core.HideError as exc:
+                if exc.audit is not None:  # after the rollback, so the refused attempt keeps its trace
+                    core.audit(conn, *exc.audit)
+                return _error(exc.code, exc.status)
     except Exception as exc:  # never the text: a fixed code, and the error's type in the log
         log.error("hide.route_failed", error_type=type(exc).__name__)
         return _error("hide_failed", 500)
@@ -38,8 +42,9 @@ def _call(fn: Any, *args: Any, **kwargs: Any) -> JSONResponse:
 
 @router.post("/internal/hide/desk/{idea_uuid}")
 def desk_hide(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
-    """S-R2 "Hide this" (L-HIDE.rules/7). Body: {source: {kind, id}, start, end, by (users.id), units?}. `units`
-    "utf16" when the offsets are the browser's (the web app sends them so); "cp" (code points) otherwise."""
+    """S-R2 "Hide this" (L-HIDE.rules/7). Body: {source: {kind, id}, start, end, by (users.id), units?, selected?}.
+    `units` "utf16" when the offsets are the browser's (the web app sends them so); "cp" (code points) otherwise.
+    `selected`: the masked words the reviewer selected; `stale` (409) when the text no longer has them there."""
     raw = body.get("source")
     source: dict[str, Any] = raw if isinstance(raw, dict) else {}
     return _call(
@@ -51,6 +56,7 @@ def desk_hide(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
         end=body.get("end"),
         by=str(body.get("by") or ""),
         units=str(body.get("units") or "cp"),
+        selected=body.get("selected"),
     )
 
 
