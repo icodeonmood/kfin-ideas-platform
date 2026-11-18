@@ -168,11 +168,13 @@ def test_values_never_become_markup() -> None:
     data = {
         **SAMPLE,
         "idea": {**SAMPLE["idea"], "one_line": '[win](javascript:alert(1)) **bold** <script>x</script> "q"'},
-        "reviewer": {"name": "<b>Nikhil</b>", "note": "[click](https://evil.example)"},
+        "recipient": {"first_name": "<b>Nikhil</b>"},
+        "reviewer": {"name": "Meera Iyer", "note": "[click](https://evil.example)"},
     }
     html = email_html.compose(tpl, data, BASE).html
     assert "<script>" not in html and 'href="javascript' not in html
     assert "&lt;script&gt;" in html and "&lt;b&gt;Nikhil&lt;/b&gt;" in html  # shown as typed, as text
+    assert "Meera" not in html  # DEC-111: signed by the review desk, never the reviewer
     assert 'href="https://evil.example"' not in html  # a value can't make a link
     assert "**bold**" in html  # nor bold
 
