@@ -168,7 +168,10 @@ step(
     await expect(page.getByText("Back where you were: Yours.")).toBeVisible();
     // One back line at this width: the phone's stays hidden (BLD-E061). getByText also finds hidden nodes, so visible only
     await expect(
-      page.getByRole("main").getByText(/^Back where you were:/).filter({ visible: true }),
+      page
+        .getByRole("main")
+        .getByText(/^Back where you were:/)
+        .filter({ visible: true }),
     ).toHaveCount(1);
     await expectListState(page);
     await expect(rowLink(page, t5.title)).toBeFocused();
