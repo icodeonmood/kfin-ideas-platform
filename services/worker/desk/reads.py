@@ -378,10 +378,19 @@ def _part_texts(
 
 
 def _parts(texts: dict[str, str], asked: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    from desk.questions import PART_NAMES, PARTS
+    """Each part for S-R2's left column, with `empty`, the words it reads when it has no text (S-R2.panel, BLD-B264):
+    "No fix suggested. It was optional." for Fix, "Nothing attached." for Attached, "Not given." for the rest."""
+    from desk.questions import PART_EMPTY, PART_NAMES, PARTS
 
     return [
-        {"part": p, "name": PART_NAMES[p], "text": texts[p], "questions": asked.get(p, [])} for p in PARTS
+        {
+            "part": p,
+            "name": PART_NAMES[p],
+            "text": texts[p],
+            "empty": PART_EMPTY[p],
+            "questions": asked.get(p, []),
+        }
+        for p in PARTS
     ]
 
 
