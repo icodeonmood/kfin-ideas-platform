@@ -507,7 +507,7 @@ step(
 step(
   "J-RECOVER/8",
   "S-06B",
-  "A file with personal data on the edit page: nobody can open it until it is hidden; Hide it for me or Remove",
+  "A file with personal data on the edit page: nobody can open it until it is hidden; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
   { needs: ["S-06B", "C-FILE", "L-HIDE"] },
   async ({ page }) => {
     await editPage(page);
@@ -520,7 +520,8 @@ step(
     await expect(
       page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Hide it for me" })).toBeVisible();
+    // DEC-107, BLD-C064: as on S-05, "Hide it for me" shows only while files.blackout is on, and it starts off.
+    await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(0);
     await page.getByRole("button", { name: `Remove ${name}` }).click();
     await expect(page.getByText(name)).toHaveCount(0);
   },
