@@ -166,26 +166,6 @@ const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 760;
 const tab = (page: Page, name: RegExp) => page.getByRole("tab", { name });
 const row = (page: Page, what: RegExp) => page.getByRole("button", { name: what });
 
-/** TEMPORARY (diagnostic, removed before hand-off): what the phone shows after Back. Synthetic data only. */
-async function diag(page: Page, label: string): Promise<void> {
-  await page.waitForTimeout(2500);
-  const d = await page.evaluate(() => {
-    const st = window.history.state as {
-      __PRIVATE_NEXTJS_INTERNALS_TREE?: { tree?: unknown; renderedSearch?: string };
-    } | null;
-    return {
-      path: location.pathname + location.search,
-      h1: Array.from(document.querySelectorAll("h1")).map((e) => e.textContent),
-      ibx: document.querySelector(".ibx")?.className ?? null,
-      main: (document.querySelector("main")?.textContent ?? "").slice(0, 160),
-      tree: JSON.stringify(st?.__PRIVATE_NEXTJS_INTERNALS_TREE?.tree ?? null).slice(0, 400),
-      rs: st?.__PRIVATE_NEXTJS_INTERNALS_TREE?.renderedSearch ?? null,
-    };
-  });
-  // eslint-disable-next-line no-console -- TEMPORARY diagnostic
-  console.log(`DIAG ${label} ${JSON.stringify(d)}`);
-}
-
 test.describe("S-H5 Inbox", () => {
   test("S-H5.layout V-ACC.track/8 V-ACC.visual/4: tabs and counts, the first item open, opening it drops every count at once", async ({
     page,
@@ -330,7 +310,6 @@ test.describe("S-H5 Inbox", () => {
     await page.waitForURL(/\/my-ideas/);
     await page.goBack();
     await expect(page).toHaveURL(here);
-    if (isPhone(page)) await diag(page, "phone-back");
     if (isPhone(page)) {
       // The item the person had open is its own screen again, the list hidden behind it (S-H5.rules/6); the
       // screen's own Back returns to the list, on the same tab, and the address lets the item go.
@@ -351,23 +330,6 @@ test.describe("S-H5 Inbox", () => {
     await page.goto("/inbox?tab=starred&item=999999999");
     await expect(tab(page, /^All 4$/)).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
-  });
-
-  test("TEMPORARY diagnostic: phone Back after the count refresh has settled", async ({ page, inbox }) => {
-    test.skip(!isPhone(page), "phone only");
-    await inbox();
-    await page.goto("/inbox");
-    await tab(page, /^Needs you 1$/).click();
-    await row(page, /asked you 3 questions/).click();
-    await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(1500);
-    await diag(page, "phone-settled-before");
-    await page.getByRole("link", { name: "Answer the questions" }).click();
-    await page.waitForURL(/\/my-ideas/);
-    await page.goBack();
-    await diag(page, "phone-settled-back");
-    await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
   });
 
   test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page, inbox }) => {

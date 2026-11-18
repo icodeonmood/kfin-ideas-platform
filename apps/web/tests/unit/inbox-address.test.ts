@@ -222,6 +222,25 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
     expect(here()).toBe("/inbox?tab=needs_you&item=7");
   });
 
+  it("Back or Forward to the Inbox loads its list again before opening anything, so nothing stale is marked read", async () => {
+    const staleMention = { ...MENTION, unread: true };
+    state.lists.all = list([{ ...MENTION, unread: false }, QUESTIONS]); // read since the router kept its page
+    window.history.replaceState(null, "", "/inbox?tab=all&item=8");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await show(list([staleMention, QUESTIONS]), "all", null);
+    expect(calls).toContain("GET /api/inbox?tab=all");
+    expect(calls.filter((c) => c.startsWith("POST"))).toEqual([]);
+    expect(row("8")?.getAttribute("aria-pressed")).toBe("true");
+    expect(row("8")?.className).not.toContain(" un");
+
+    // An ordinary arrival (no Back) uses the page as the server rendered it
+    act(() => root.unmount());
+    root = createRoot(host);
+    calls = [];
+    await show(ALL, "all", null);
+    expect(calls.filter((c) => c.startsWith("GET /api/inbox?"))).toEqual([]);
+  });
+
   it("a count refresh that lands late with the older address does not undo the view", async () => {
     await show(ALL, "all", null);
     expect(here()).toBe("/inbox"); // nothing is written until the person moves

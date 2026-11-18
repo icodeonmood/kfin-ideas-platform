@@ -11,7 +11,7 @@
  * question set. Everything is shown as text; nothing from a message becomes markup.
  */
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -264,18 +264,31 @@ const Icon = {
 };
 
 /** The view to start from. The page's props name the view its address had when the server rendered it; the address
- * itself (`useSearchParams`, the router's own) is where the person left it. They differ only when Back restores the
- * page from the router's cache after the reader moved the address, and then the tab the address names is loaded
- * (`reload`) and its item opened once that list is in. Otherwise the two agree, so a hydrated page renders exactly
- * what the server did (P-ROUTES.state, J-BROWSE/4). */
+ * itself (`useSearchParams`, the router's own) is where the person left it. They differ when Back restores the page
+ * from the router's cache after the reader moved the address; that page, and any Inbox reached by Back or Forward,
+ * loads the tab the address names again (`reload`) and opens its item once that list is in. Otherwise the two agree,
+ * so a hydrated page renders exactly what the server did (P-ROUTES.state, J-BROWSE/4). */
 export function startView(
   address: Parameters<typeof readInboxAddress>[0],
   initial: { tab: InboxTab; item: string | null; items: readonly { id: string }[] },
+  byHistory = false,
 ): InboxView & { reload: boolean } {
   const asked = readInboxAddress(address);
-  if (!asked.named) return { tab: initial.tab, item: initial.item, q: "", reload: false };
-  if (asked.tab !== initial.tab) return { tab: asked.tab, item: asked.item, q: asked.q, reload: true };
-  return { tab: asked.tab, item: itemIn(asked.item, initial.items), q: asked.q, reload: false };
+  const view = asked.named
+    ? { tab: asked.tab, item: asked.item, q: asked.q }
+    : { tab: initial.tab, item: initial.item, q: "" };
+  // Back or Forward may bring a page the router rendered before the person read anything: load it again first
+  if (byHistory || view.tab !== initial.tab) return { ...view, reload: true };
+  return { ...view, item: asked.named ? itemIn(asked.item, initial.items) : initial.item, reload: false };
+}
+
+/** Set when the browser moves through history (Back or Forward) and cleared when an Inbox arrives, so an Inbox the
+ * router brings back that way loads its list again before it opens anything (nothing stale is marked read). */
+const moved = { byHistory: false };
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    moved.byHistory = true;
+  });
 }
 
 function subscribeDesktop(cb: () => void): () => void {
@@ -387,10 +400,9 @@ export function InboxReader({
   initialTab: InboxTab;
   initialItem: string | null;
 }) {
-  const router = useRouter();
   const address = useSearchParams();
   const [start] = useState(() =>
-    startView(address, { tab: initialTab, item: initialItem, items: initial.items }),
+    startView(address, { tab: initialTab, item: initialItem, items: initial.items }, moved.byHistory),
   );
   const [tab, setTab] = useState<InboxTab>(start.tab);
   const [items, setItems] = useState<InboxEntry[]>(initial.items);
@@ -423,15 +435,14 @@ export function InboxReader({
   const open = chosen ?? (desktop && !switching ? (shown[0] ?? null) : null);
   const position = open ? shown.indexOf(open) : -1;
 
-  /** Every count on the page and in the shell changes at once (S-H5.rules/4, V-ACC.track/8). */
-  const applyCounts = useCallback(
-    (next: InboxCounts) => {
-      setCounts(next);
-      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: next }));
-      router.refresh();
-    },
-    [router],
-  );
+  /** Every count on the page and in the shell changes at once (S-H5.rules/4, V-ACC.track/8): the shell hears them
+   * on COUNTS_EVENT and fetches its own number again on every navigation. No `router.refresh` here: one still running
+   * when the person opens a link from the item leaves Next's history entry for the Inbox half-written, and Back then
+   * changes the address but keeps the page the person left (BLD-A198, gates run 44226165244). */
+  const applyCounts = useCallback((next: InboxCounts) => {
+    setCounts(next);
+    window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: next }));
+  }, []);
 
   const load = useCallback(async (next: InboxTab, quiet = false): Promise<InboxList | null> => {
     const res = await fetch(`/api/inbox?tab=${next}`, { cache: "no-store" }).catch(() => null);
@@ -468,15 +479,16 @@ export function InboxReader({
     }
   }, []);
 
-  // A count refresh (`router.refresh`) keeps the address it started from, so one that lands after the person moved
-  // puts the older address back. Once the reader has written the view, the address follows the screen again.
+  // The router can put back an address from an update it started before the person moved (its own state is written
+  // to the address on every change). Once the reader has written the view, the address follows the screen again.
   useEffect(() => {
     if (wrote.current) remember({});
   }, [address, remember]);
 
-  // Back to an Inbox the router kept from before the address moved: load the tab the address names, then open its
-  // item if it is still in that list (J-BROWSE/4). Once, on arrival.
+  // Back to an Inbox the router kept from before: load the tab the address names, then open its item if it is still
+  // in that list (J-BROWSE/4). Once, on arrival.
   useEffect(() => {
+    moved.byHistory = false;
     if (!start.reload) return;
     let live = true;
     const later = setTimeout(() => {
