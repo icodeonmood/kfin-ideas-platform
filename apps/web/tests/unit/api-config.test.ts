@@ -38,6 +38,7 @@ const ME = "5d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6";
 beforeEach(() => {
   state.me = { id: ME, privacyAccepted: true, roles: new Set(["contributor"]) };
   state.flagsFor = [];
+  state.workerUp = true;
 });
 
 describe("L-AUDIT.config: GET /api/config", () => {
@@ -54,10 +55,12 @@ describe("L-AUDIT.config: GET /api/config", () => {
     state.workerUp = true;
     const res = await GET();
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await res.json()).toEqual({
       ...CONFIG,
       flags: { s1: "alternative", s2: "default", s3: "default" },
     });
+    expect(state.flagsFor).toEqual([ME]);
   });
 
   it("someone signed out gets nothing", async () => {

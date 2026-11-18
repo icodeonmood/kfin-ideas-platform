@@ -94,6 +94,17 @@ function errorOf(body: unknown): ApiError["error"] | null {
   return null;
 }
 
+/** True for the full config answer (promises and sorting), false for the flags-only fallback (BLD-A216). */
+export function fullConfig(body: Partial<ConfigResponse> | null | undefined): body is ConfigResponse {
+  return (
+    !!body &&
+    typeof body.promises === "object" &&
+    body.promises !== null &&
+    typeof body.sorting === "object" &&
+    body.sorting !== null
+  );
+}
+
 export async function call<T>(
   url: string,
   init: { method?: string; body?: unknown; form?: FormData; headers?: Record<string, string> } = {},
@@ -125,7 +136,16 @@ export const api = {
   showHidden: (id: string, hid: string, reason: ShowReason) =>
     call<HiddenDetail>(urls.show(id, hid), { method: "POST", body: { reason } }),
   hideAgain: (id: string, hid: string) => call<HiddenDetail>(urls.hide(id, hid), { method: "POST" }),
-  config: () => call<ConfigResponse>(urls.config),
+  /** GET /api/config. When the worker can't give the config, the route still answers 200 with the person's flags
+   * only (`{ flags }`, BLD-A216); that counts here as "config unavailable" (503), so S-05 and S-06B keep their own
+   * defaults and never read `sorting` from an answer that has none. */
+  config: async (): Promise<Call<ConfigResponse>> => {
+    const r = await call<Partial<ConfigResponse>>(urls.config);
+    if (!r.ok) return r;
+    return fullConfig(r.body)
+      ? { ok: true, status: r.status, body: r.body }
+      : { ok: false, status: 503, error: null };
+  },
   uploads: () => call<UploadConfig>(urls.uploads),
   sorting: (id: string) => call<SortingResponse>(urls.sorting(id)),
   patchSorting: (id: string, patch: SortingPatch) =>
