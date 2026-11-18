@@ -39,7 +39,7 @@ export const HIDE_MESSAGES: Record<HideErrorCode, string> = {
   range_invalid: "Select only the words to hide, then try again.",
   already_hidden: "That is already hidden from everyone.",
   stale: "The page changed. Select again.",
-  selection_too_long: "That is too much to hide at once. Select only the words to hide.",
+  selection_too_long: "That’s too much to hide at once. Select only the words to hide.",
   reason_required: "Choose what it is first.",
   hide_failed: "We couldn't do that just now. Please try again.",
 };

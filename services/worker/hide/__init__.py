@@ -21,7 +21,10 @@ inside rolls back only hide's own savepoints, so the caller's transaction stays 
 Lock order (BLD-C067): every caller takes hide's advisory lock, `hide.core.lock(conn, idea_uuid)`, BEFORE any idea,
 answer, conversation entry or other row lock in the same transaction. Calling `hide_text`, `hide_message` or `forget`
 before your own `SELECT … FOR UPDATE` or `UPDATE` does that for you; if you must lock rows first, call
-`hide.core.lock(conn, idea_uuid)` at the start of the transaction (it is re-entrant within one transaction).
+`hide.core.lock(conn, idea_uuid)` at the start of the transaction (it is re-entrant within one transaction). Then a
+`hide_message` call holds that lock across the gatekeeper's model call, which BLD-C067 otherwise avoids: a known cost
+for such callers, not the pattern to copy, until a pre-gate (`hide.gate`, not built) lets them ask the gatekeeper
+before any lock.
 `desk_hide`, `show` and `hide_again` take the advisory lock first and the rows after it; lane B's desk transactions
 take it first too. Two transactions that take the two kinds of lock in opposite orders can deadlock.
 
