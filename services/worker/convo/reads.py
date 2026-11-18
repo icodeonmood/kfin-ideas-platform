@@ -33,7 +33,7 @@ from core import killswitch
 from core.db import Conn
 from desk.when import deadline as answer_by
 from ideapage import read as page_read
-from ideapage.shape import display_status
+from ideapage.shape import at_desk, display_status
 from onepc.enums import labels
 from onepc.words import REVIEW_DESK
 
@@ -54,7 +54,8 @@ def teams_on(conn: Conn) -> bool:
 
 
 def empty_state(teams: bool) -> dict[str, str]:
-    """S-08 "No messages yet" for the sharer: Teams is named only while it is on (BLD-F086)."""
+    """S-08 "No messages yet" for the sharer while the idea is at the review desk (BLD-F088): Teams is named only
+    while it is on (BLD-F086)."""
     return {"title": EMPTY_TITLE, "body": EMPTY_BODY if teams else EMPTY_BODY_NO_TEAMS}
 
 
@@ -121,7 +122,10 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
         # S-08's side note names Teams only while it is on; the screen reads a missing value as off (BLD-F086)
         "teams_on": teams,
     }
-    if r.sharer and not any(e["type"] in ("message", "questions", "answers") for e in entries):
+    # "No messages yet" is drawn only with the review desk (Messages.md); once the idea has left the desk, an idea
+    # with no messages shows its event lines alone (NOT DRAWN default, BLD-F088)
+    said = any(e["type"] in ("message", "questions", "answers") for e in entries)
+    if r.sharer and at_desk(idea) and not said:
         out["empty"] = empty_state(teams)
     return out
 

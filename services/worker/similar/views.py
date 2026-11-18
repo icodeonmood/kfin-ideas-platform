@@ -11,6 +11,9 @@ links, so Check it never waits on matching.
 - Each `idea` is the IdeaPreview this viewer may see (masked, names unless hidden from the Wall); for the desk its
   `compare` sits next to this idea's (`compare_with`). `my_request` is the viewer's own team-up request to that
   idea (lane F's table, read only), unless they withdrew it.
+- `can_team_up` (boolean) and `team_up_why_not` (`idea_closed`, `already_on_crew` or null) are lane F's
+  L-TEAMUP.rules/1 check for this viewer (`teamup.store.team_up_refusal`, BLD-C187): codes only, never words, so a
+  tile offers "Team up" only where the send would go. A waiting request is `my_request`, not a refusal.
 """
 
 from __future__ import annotations
@@ -114,8 +117,13 @@ def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | 
         key_ = str(row["id"])
         order = (RANK[link["strength"]], not link["forward"], link["rank"], -link["created_at"].timestamp())
         if key_ not in best or order < best[key_]["order"]:
-            best[key_] = {"order": order, "strength": link["strength"], "reason": link["reason"]}
+            best[key_] = {"order": order, "strength": link["strength"], "reason": link["reason"], "row": row}
 
+    # L-TEAMUP.rules/1 by lane F's own check, the one `POST /ideas/:id/team-up` refuses by (BLD-C187). Imported here,
+    # as teamup.store imports similar.preview inside its functions.
+    from teamup.store import code_of, team_up_refusal
+
+    me = code_of(conn, viewer.user_id) if viewer.user_id else None
     out: list[dict[str, Any]] = []
     for other, link in sorted(best.items(), key=lambda kv: kv[1]["order"]):
         # Forward links kept after an outcome, and reverse links, have no cap of their own: cap the list here.
@@ -126,7 +134,14 @@ def matches_for(conn: Conn, key: str, viewer: Viewer) -> list[dict[str, Any]] | 
         )
         if preview is None:
             continue
-        match: dict[str, Any] = {"idea": preview, "strength": link["strength"], "reason": link["reason"]}
+        refused = team_up_refusal(conn, link["row"], me)
+        match: dict[str, Any] = {
+            "idea": preview,
+            "strength": link["strength"],
+            "reason": link["reason"],
+            "can_team_up": refused is None and me is not None,
+            "team_up_why_not": refused,
+        }
         request = my_request(conn, other, viewer)
         if request is not None:
             match["my_request"] = request

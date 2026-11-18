@@ -41,11 +41,13 @@ def test_V_ACC_committee_2_and_3_extend_30_days_at_a_time_to_the_limit() -> None
     w = extend(w, now, P)
     ww = words(w, now, P)
     assert (ww.state, ww.extended, ww.until) == ("extended", "Extended once", "Until Friday 15 January 2027")
-    w = extend(extend(w, now, P), now, P)  # the third extension is capped at three months
-    assert w.closes_at == w.max_closes_at and w.extended_times == 3
+    # BLD-B263: a step that would end 2 days short of the cap goes to the cap
+    assert ww.extend_to == "Extend to Tuesday 16 February 2027"
+    w = extend(w, now, P)  # the second extension reaches the cap at three months
+    assert w.closes_at == w.max_closes_at and w.extended_times == 2
     ww = words(w, now, P)
     assert (
-        ww.extend_to is None and ww.limit_line == "At the 3-month limit" and ww.extended == "Extended 3 times"
+        ww.extend_to is None and ww.limit_line == "At the 3-month limit" and ww.extended == "Extended twice"
     )
     with pytest.raises(WindowRefused) as refused:
         extend(w, now, P)

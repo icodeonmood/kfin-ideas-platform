@@ -755,6 +755,7 @@ def load(conn: Conn, now: dt.datetime | None = None) -> dict[str, Made]:
         asks = _crews(conn, p, m, now)
         _similar_parts(conn, p, m)
         _builds_and_impact(conn, p, m, now)
+        _join_asks(conn, p, m, now)
         _ones(conn, p, m, now)
         _inbox(conn, p, m, now, asks)
         _wall_and_flags(conn, p, m, now)
@@ -1106,6 +1107,16 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
                 "kill switch matching.show is off. Nothing was changed. Switch it on (make killswitch "
                 'NAME=matching.show STATE=on REASON="…" ACTOR=…) and load the seed again.'
             )
+
+
+def _join_asks(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
+    """GAP-SEED (L-DECIDE/6, DEC-111, BLD-E059): one "Ask to join the build team" already made, so S-ADMIN's build-team
+    form has an "Asked to join" line before anyone clicks (J-ONE/1). J1 is picked, its committee window has closed
+    and no build team is chosen; its sharer asked a day ago. Lane B's table; the row goes with the idea on remove."""
+    conn.execute(
+        "INSERT INTO join_build_asks (idea_uuid, user_id, asked_at) VALUES (%s, %s, %s)",
+        (m["J1"].uuid, p["jatin"]["id"], _ago(1, now)),
+    )
 
 
 def _builds_and_impact(

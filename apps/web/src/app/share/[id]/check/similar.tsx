@@ -9,7 +9,8 @@
  * person can ask the lead to merge theirs in or keep it separate. After "Keep mine separate" the grid folds to a
  * note with "Show them again" (C-SIMGRID.grid/4); the sheet stays open over the fold, and on close focus goes to
  * "Show them again" (WCAG 2.4.3). Match cards show only the masked short summary and the reason (non-negotiable 7):
- * this grid reads nothing else about another person's idea.
+ * this grid reads nothing else about another person's idea. An idea lane F's L-TEAMUP.rules/1 check refuses (a Not
+ * now or Not picked idea, `can_team_up` false) keeps Preview only, on the tile and in the preview (BLD-C187).
  */
 import { useRef, useState } from "react";
 
@@ -122,7 +123,7 @@ export function SimilarGrid({
             matchReason={previewing?.reason}
             yours="draft"
             onClose={() => setPreviewing(null)}
-            onPrimary={readOnly ? undefined : (id) => teamUp.open(id)}
+            onPrimary={readOnly || previewAction?.kind === "none" ? undefined : (id) => teamUp.open(id)}
             primaryDone={
               previewAction?.kind === "waiting"
                 ? previewAction.label
@@ -183,7 +184,7 @@ function Tile({
         >
           {C.preview}
         </Button>
-        {action === null ? null : action.kind === "team-up" ? (
+        {action === null || action.kind === "none" ? null : action.kind === "team-up" ? (
           <Button {...teamUpOpener(idea.id)} size="sm" aria-label={C.teamUpOn(idea.title)} onClick={onTeamUp}>
             {C.teamUp}
           </Button>

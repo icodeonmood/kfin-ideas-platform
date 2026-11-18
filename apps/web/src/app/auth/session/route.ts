@@ -5,6 +5,7 @@ import { draftLookup } from "@/server/auth/drafts";
 import { ATTEMPT_COOKIE, attemptKeyHash, draftFromPath, intentStore } from "@/server/auth/intents";
 import { expiredSession, readSession, safeNext, SESSION_COOKIE } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { askingDevice } from "@/server/shell";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,9 @@ export async function GET(request: NextRequest) {
   const expired = await expiredSession(token);
   if (!expired) return NextResponse.json({ error: "sign_in_required" }, { status: 401, headers: noStore });
   const open = draftFromPath(safeNext(request.nextUrl.searchParams.get("draft")));
-  const card = open ? await draftLookup().card(expired.userId, open.draftId) : null;
+  const card = open
+    ? await draftLookup().card(expired.userId, open.draftId, (await askingDevice()).id)
+    : null;
   return NextResponse.json(
     {
       error: "expired",
@@ -48,7 +51,10 @@ export async function GET(request: NextRequest) {
               id: card.id,
               title: card.title,
               saved_at: card.savedAt.toISOString(),
-              saved_on: card.savedOn,
+              // A-API.auth: E-ENTITIES.draft's saved_on, from the asking browser's side (BLD-A227)
+              ...(card.savedOn
+                ? { saved_on: { device: card.savedOn.device, this_device: card.savedOn.thisDevice } }
+                : {}),
               step: card.step,
             },
           }

@@ -1357,3 +1357,47 @@ describe("S-06B words (F-COPY)", () => {
     }
   });
 });
+
+describe("S-06B.layout/3 J-RECOVER/7-11: a line of the problem left empty reads Not given. beside its pen (BLD-C188)", () => {
+  it("an empty How often (null) reads Not given. under its label and keeps Change how often", async () => {
+    await mount(base(() => page({ fields: { ...page().fields, often: null } })));
+    const line = all(".ck-w").find((w) => text(w.querySelector(".lbl")) === "How often")!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(line.querySelector(".ck-v")!.classList.contains("ck-empty")).toBe(true);
+    expect(button("Change how often")).toBeTruthy();
+    expect(text(document.querySelector(".ck-words h3"))).toBe(TITLE);
+  });
+
+  it("What happens left as spaces and an empty How often both read Not given.; Save sends nothing unasked", async () => {
+    await mount(base(() => page({ fields: { title: TITLE, summary: "  ", often: "" } })));
+    expect(all(".ck-words .ck-empty").map(text)).toEqual(["Not given.", "Not given."]);
+    expect(button("Change what happens")).toBeTruthy();
+    expect(saves()).toEqual([]);
+  });
+});
+
+describe("S-06B C-HIDDEN.list/3 J-RECOVER/7-10: an example already shown reads its line, as on S-05 (BLD-C189)", () => {
+  it("Folio ••••89 shown as made up for the example reads Shown, because it’s made up for the example. with Hide it", async () => {
+    await mount(
+      base(() =>
+        page({
+          hidden: [
+            {
+              id: "a1b2c3d4-0000-4000-8000-000000000001",
+              kind: "folio",
+              masked: "Folio ••••89",
+              state: "shown",
+              reason: "made_up_example",
+              shown_at: "2026-11-14T10:05:00+05:30",
+            },
+          ],
+        }),
+      ),
+    );
+    const row = document.querySelector(".ck-hid-l li")!;
+    expect(text(row.querySelector(".ck-mask"))).toBe("Folio ••••89");
+    expect(text(row.querySelector(".ck-hid-why"))).toBe("Shown, because it’s made up for the example.");
+    expect(button("Hide it")).toBeTruthy();
+    expect(button("Show it")).toBeUndefined();
+  });
+});

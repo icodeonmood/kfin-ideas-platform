@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { keptLine, sortingTouched } from "@/server/auth/drafts";
+import { keptLine, savedOn, savedOnWords, sortingTouched } from "@/server/auth/drafts";
 
 describe("S-02.states Session expired mid-draft: what is kept", () => {
   it("says the board's line for touched sorting and one hidden folio", () => {
@@ -40,5 +40,37 @@ describe("S-02.states Session expired mid-draft: what is kept", () => {
     expect(sortingTouched(new Date("2026-11-20T04:11:00Z"), {})).toBe(true);
     expect(sortingTouched(null, null)).toBe(false);
     expect(sortingTouched(null, ["changed"])).toBe(false);
+  });
+});
+
+describe("S-02.states Session expired mid-draft: where it was saved (BLD-A227, as L-DRAFT's saved_on)", () => {
+  it("says on this laptop when this browser saved it, the board's line (SignIn.md, PhoneSignIn.md)", () => {
+    expect(savedOn("laptop", "laptopdevice01", "laptopdevice01")).toEqual({
+      device: "laptop",
+      thisDevice: true,
+    });
+    expect(savedOnWords(savedOn("laptop", "laptopdevice01", "laptopdevice01"))).toBe(" on this laptop");
+    expect(savedOnWords(savedOn("phone", "phonedevice001", "phonedevice001"))).toBe(" on this phone");
+  });
+
+  it("says on your phone when another device saved it, as S-03 and S-04B do; never on this phone on a laptop", () => {
+    expect(savedOn("phone", "phonedevice001", "laptopdevice01")).toEqual({
+      device: "phone",
+      thisDevice: false,
+    });
+    expect(savedOnWords(savedOn("phone", "phonedevice001", "laptopdevice01"))).toBe(" on your phone");
+    expect(savedOnWords(savedOn("laptop", "laptopdevice01", "otherlaptop02"))).toBe(" on your laptop");
+  });
+
+  it("matches only on a known device id, as the worker's this_device does (draft/store.py _saved)", () => {
+    expect(savedOn("laptop", null, null)).toEqual({ device: "laptop", thisDevice: false });
+    expect(savedOn("laptop", "laptopdevice01", null)).toEqual({ device: "laptop", thisDevice: false });
+    expect(savedOn("laptop", null, "laptopdevice01")).toEqual({ device: "laptop", thisDevice: false });
+  });
+
+  it("leaves the device out when the draft does not say", () => {
+    expect(savedOn(null, "laptopdevice01", "laptopdevice01")).toBeNull();
+    expect(savedOn("tablet", "laptopdevice01", "laptopdevice01")).toBeNull();
+    expect(savedOnWords(null)).toBe("");
   });
 });

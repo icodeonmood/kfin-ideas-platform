@@ -54,6 +54,9 @@ export const CHECK_COPY = {
     /** The phone boards: "Change" with what it changes read out ("Change title", PhoneReview.md, PhoneEdit.md). */
     changePhone: "Change",
     changeWhat: { title: "title", summary: "what happens", often: "how often" },
+    /** NOT DRAWN: a line of your words left empty (S-05 part 1, S-06B's Your problem). Review.md, PhoneReview.md,
+     * Edit.md and PhoneEdit.md draw none, so S-06's and S-R2's words for the same part (BLD-E057, BLD-C188). */
+    notGiven: "Not given.",
     /** V-FIELDS.checkit/1–2. */
     titleNeeded: "Give it a title of a few words.",
     summaryNeeded: "Say what happens, in a sentence or two.",
@@ -146,7 +149,11 @@ export const CHECK_COPY = {
       "A call log or ticket count that shows how often",
       "A report with the time or money it costs",
     ],
-    count: (n: number) => plural(n, "file"),
+    /** The rail's Proof line: "1 file", "2 files" (Review.md, attached=…, evidence=…). NOT DRAWN on the rail: links,
+     * and files and links together, counted as Send it's Proof row counts them (submit/ready.py: "1 link", "1 file
+     * and 1 link"), so the two never disagree (BLD-C190). */
+    count: (files: number, links: number) =>
+      [files ? plural(files, "file") : "", links ? plural(links, "link") : ""].filter(Boolean).join(" and "),
     checking: "Checking for personal details",
     checked: "Checked",
     failed: "Didn’t upload. Your other files are fine.",

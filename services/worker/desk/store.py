@@ -242,6 +242,12 @@ class Person:
 UNKNOWN = Person(None, "A colleague", "A colleague", "1%", None, None)
 
 
+def joined(*bits: str | None) -> str:
+    """The bits of a line that exist, comma-separated (S-R2.similar, BLD-B264): "IDEA-2026-001412, Ravi Nair,
+    Investor service" when the city is missing, never an empty bit between two commas or a comma before a stop."""
+    return ", ".join(b.strip() for b in bits if b and b.strip())
+
+
 def _person(row: dict[str, Any] | None) -> Person:
     if row is None:
         return UNKNOWN  # erased from contributor_map: anonymised everywhere

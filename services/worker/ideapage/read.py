@@ -216,6 +216,29 @@ def decision(conn: Conn, idea_uuid: str, *, with_text: bool = False) -> dict[str
     return d
 
 
+def decision_reason(conn: Conn, decision_id: str) -> str | None:
+    """The desk's reason for one decision, as lane B stored it: already masked (`adapters.hide` in desk/decide.py), so
+    the same words S-06's reason block reads from lane B's `/decision`. Only the sharer's own page opens it, for the
+    desk's message in "You and the review desk" (S-06.layout/8, BLD-E058). Never logged."""
+    row = conn.execute("SELECT reason_encrypted FROM idea_decisions WHERE id = %s", (decision_id,)).fetchone()
+    if row is None:
+        return None
+    return open_text("idea_decisions", "reason_encrypted", decision_id, row["reason_encrypted"])
+
+
+def reversal_note(conn: Conn, reversal_id: str) -> str | None:
+    """The Ones Committee's note to the sharer when it reversed a decision, as lane B stored it: masked when the
+    committee sent it (`adapters.hide` in desk/committee.py), so the same words as the reversal card's note from lane
+    B's `/decision`. Only the sharer's own page opens it, for the committee's message in "You and the review desk"
+    (S-06.layout/8, BLD-E058). Never logged."""
+    row = conn.execute(
+        "SELECT note_encrypted FROM decision_reversals WHERE id = %s", (reversal_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return open_text("decision_reversals", "note_encrypted", reversal_id, row["note_encrypted"])
+
+
 def question_set(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
     """The latest set the desk sent (never a queued one, which only the reviewer sees): its state, who asked, when,
     how many questions and which have a sent answer. Counts and dates only: the questions card and the answers are

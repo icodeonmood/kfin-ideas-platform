@@ -591,6 +591,22 @@ export type SharerPageState =
   | "being_built"
   | "shipped"
   | "merged";
+/**
+ * A message in S-06's "You and the review desk" (S-06.layout/8, BLD-E058): the desk's decision, "Picked. <reason>",
+ * and after a reversal the Ones Committee's, its words the committee's note. DEC-111: outside the review desk and the
+ * Ones Committee the desk's `from` is the desk itself ("The review desk", no id, no initials, so no face), as lane
+ * F's S-08 sends it; the committee member is named, as lane B's reversal card names them.
+ */
+export interface SharerCardMessage {
+  id: string;
+  kind: "decision" | "reversal";
+  from: PersonRef;
+  from_label: string; // "The review desk", "Meera from the review desk", "Rohan Mehta from the Ones Committee"
+  at: IsoDate;
+  at_label: string; // "Monday 16 November, 4:58 pm"
+  by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
+  text: string;
+}
 /** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
 export interface SharerView {
   view: "sharer";
@@ -671,6 +687,8 @@ export interface SharerView {
       empty_line?: string;
       phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
+      /** The card's messages in time order: the desk's decision, then any reversal by the committee (BLD-E058). */
+      messages?: SharerCardMessage[];
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
     merged: { to: string; title: string; line: string; note: string; at: IsoDate; link: LinkWords } | null;
@@ -841,7 +859,8 @@ export interface EditPageResponse {
     line?: string;
   };
   fields: { title: string; summary: string; often: string | null };
-  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  /** As "Show it" answers each one (hide.core.detail_view): a shown detail keeps its reason (BLD-C189). */
+  hidden: HiddenDetail[];
   sorting: SortingResponse;
   fix: (FixResponse & { included: true }) | null;
   helpers: HelpersResponse;
@@ -1061,6 +1080,9 @@ export interface ReviewerPart {
   part: IdeaPart;
   name: string;
   text: string;
+  /** What the part reads when `text` is empty (S-R2.panel, BLD-B264): "No fix suggested. It was optional." for Fix,
+   * "Nothing attached." for Attached, "Not given." for the rest. The listen script reads the same words. */
+  empty: string;
   questions: ReviewerQuestion[];
 }
 export interface WorthTile {

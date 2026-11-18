@@ -19,6 +19,7 @@ from desk.store import (
     FILES_CHECKED,
     SHOWN_FILE,
     code_of,
+    joined,
     now,
     person_by_code,
 )
@@ -378,10 +379,19 @@ def _part_texts(
 
 
 def _parts(texts: dict[str, str], asked: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    from desk.questions import PART_NAMES, PARTS
+    """Each part for S-R2's left column, with `empty`, the words it reads when it has no text (S-R2.panel, BLD-B264):
+    "No fix suggested. It was optional." for Fix, "Nothing attached." for Attached, "Not given." for the rest."""
+    from desk.questions import PART_EMPTY, PART_NAMES, PARTS
 
     return [
-        {"part": p, "name": PART_NAMES[p], "text": texts[p], "questions": asked.get(p, [])} for p in PARTS
+        {
+            "part": p,
+            "name": PART_NAMES[p],
+            "text": texts[p],
+            "empty": PART_EMPTY[p],
+            "questions": asked.get(p, []),
+        }
+        for p in PARTS
     ]
 
 
@@ -522,7 +532,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         _brings(list(idea["brings"])),
     ]
     sorting_line = ", ".join(s for s in sorting if s)
-    heading = f"Shared {when.day(shared_at, t)} by {sharer.name}, {sharer.area or idea['area'] or ''}, {idea['city'] or ''}."
+    heading = f"Shared {when.day(shared_at, t)} by {joined(sharer.name, sharer.area or idea['area'], idea['city'])}."
     if idea["sorting_confirmed_at"] and sorting_line:
         heading += f" Sorting confirmed by {sharer.first_name}: {sorting_line[0].lower() + sorting_line[1:]}."
     messages = _own_words(conn, idea["id"])
@@ -567,8 +577,10 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     similar = [
         {"idea_id": s["idea_id"], "title": s["title"], "status": s["status"], "strength": s["strength"],
          "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
-         "meta": f"{s['idea_id']}, {person_by_code(conn, s['contributor_code']).name}, {s['area'] or ''}, "
-                 f"{s['city'] or ''}. {s['crew']} on its crew"}
+         # S-R2.similar (BLD-B264): "IDEA-…, Ravi Nair, Investor service, Hyderabad. 4 on its crew", from the bits
+         # that exist, so a sharer with no city or no area leaves no empty comma
+         "meta": f"{joined(s['idea_id'], person_by_code(conn, s['contributor_code']).name, s['area'], s['city'])}. "
+                 f"{s['crew']} on its crew"}
         # A link counts both ways: an idea found similar to this one while its sharer wrote (and later merged into
         # it, J-SIMILAR/6a) is this idea's similar idea too (S-R2.left/5, J-SIMILAR/7). This idea's own link wins.
         for s in conn.execute(

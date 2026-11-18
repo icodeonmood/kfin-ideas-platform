@@ -427,6 +427,163 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     );
   });
 
+  const PICKED =
+    "Picked. A clear problem, a real number and a simple fix. We’ve joined it with IDEA-2026-001412, which found the same calls in Hyderabad, so one team builds one fix.";
+  const decisionMessage = (from: Record<string, string>, fromLabel: string) => ({
+    id: "decision-d1",
+    kind: "decision",
+    from,
+    from_label: fromLabel,
+    at: "2026-11-16T11:28:00Z",
+    at_label: "Monday 16 November, 4:58 pm",
+    by_line: `${fromLabel}, Monday 16 November, 4:58 pm`,
+    text: PICKED,
+  });
+
+  it("S-06.layout/8 BLD-E058 DEC-111 (J-TRACK/7): decided, the desk's message ends the card, from the review desk with no face and no empty line", () => {
+    const desk = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "picked",
+          {
+            heading: "You and the review desk",
+            count: 1,
+            link: LINK,
+            sub_line: DECIDED_LINE,
+            messages: [decisionMessage(desk, "The review desk")],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toContain(
+      `<p class="ip-side-l">${DECIDED_LINE}</p><ol class="ip-msgs"><li class="ip-msg dec no-face"><p class="ip-msg-h"><b>The review desk</b>, Monday 16 November, 4:58 pm</p><p class="ip-msg-b">${PICKED}</p></li></ol>`,
+    );
+    expect(card).not.toContain("No messages yet");
+    expect(card).not.toContain('class="av');
+  });
+
+  it("S-06.layout/8 BLD-E058 DEC-111: a sharer on the review desk reads who decided, with her initials, as Status.md draws Meera", () => {
+    const meera = {
+      id: "u-meera",
+      name: "Meera Iyer",
+      first_name: "Meera",
+      initials: "MI",
+      role_label: "from the review desk",
+    };
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "picked",
+          {
+            heading: "You and the review desk",
+            count: 1,
+            link: LINK,
+            sub_line: DECIDED_LINE,
+            messages: [decisionMessage(meera, "Meera from the review desk")],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toMatch(
+      /<li class="ip-msg dec"><span class="av av-32"[^>]*aria-hidden="true"[^>]*>MI<\/span><p class="ip-msg-h"><b>Meera from the review desk<\/b>, Monday 16 November, 4:58 pm<\/p>/,
+    );
+    expect(card).toContain(`<p class="ip-msg-b">${PICKED}</p>`);
+  });
+
+  it("S-06.layout/8 BLD-E058 L-COMMITTEE (Reversed by the Ones Committee): the desk's message stays, then the committee member's, its face in ink, under the committee's line", () => {
+    const desk = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+    const rohan = {
+      id: "u-rohan",
+      name: "Rohan Mehta",
+      first_name: "Rohan",
+      initials: "RM",
+      role_label: "from the Ones Committee",
+    };
+    const note =
+      "We’ve moved it to not now: the SMS templates are frozen until January. It comes back first in February.";
+    const committeeLine =
+      "The Ones Committee has the last word on this decision. The full conversation is one tap away.";
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "being_built",
+          {
+            heading: "You and the review desk",
+            count: 2,
+            link: LINK,
+            sub_line: committeeLine,
+            messages: [
+              decisionMessage(desk, "The review desk"),
+              {
+                id: "reversal-r1",
+                kind: "reversal",
+                from: rohan,
+                from_label: "Rohan Mehta from the Ones Committee",
+                at: "2026-11-24T12:10:00Z",
+                at_label: "Tuesday 24 November, 5:40 pm",
+                by_line: "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm",
+                text: note,
+              },
+            ],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toContain(`<p class="ip-side-l">${committeeLine}</p><ol class="ip-msgs">`);
+    expect(card).not.toContain(DECIDED_LINE);
+    expect(card).toMatch(
+      new RegExp(
+        `<li class="ip-msg dec no-face"><p class="ip-msg-h"><b>The review desk</b>, Monday 16 November, 4:58 pm</p><p class="ip-msg-b">${PICKED}</p></li>` +
+          `<li class="ip-msg dec oc"><span class="av av-32"[^>]*>RM</span><p class="ip-msg-h"><b>Rohan Mehta from the Ones Committee</b>, Tuesday 24 November, 5:40 pm</p><p class="ip-msg-b">${note}</p></li></ol>`,
+      ),
+    );
+  });
+
+  it("S-06 BLD-E058 L-COMMITTEE: after a reversal to Pick, being built, the desk's overturned reason is not drawn", () => {
+    const decided = (reversal: Record<string, unknown> | null) =>
+      ({
+        decision: {
+          choice: "not_picked",
+          label: "Not picked",
+          reason: "OVERTURNED-DESK-REASON",
+          reason_heading: null,
+          by_line: "by the review desk, Monday 16 November",
+          merged_into: null,
+        },
+        decided_at: "2026-11-16T11:28:00Z",
+        return_at: null,
+        lines: null,
+        joined_into: null,
+        window: null,
+        reversal,
+      }) as unknown;
+    const render = (reversal: Record<string, unknown> | null) =>
+      renderToStaticMarkup(
+        createElement(SharerScreen, {
+          ...sharer("being_built", { heading: "You and the review desk", count: 0, link: LINK }, null),
+          decision: decided(reversal),
+        } as unknown as SharerProps),
+      );
+    // Without a reversal the desk's reason stands and is drawn; after one, it is not
+    expect(render(null)).toContain("OVERTURNED-DESK-REASON");
+    expect(
+      render({
+        by: { id: "u-rohan", name: "Rohan Mehta", first_name: "Rohan", initials: "RM" },
+        note: "Moved to picked.",
+      }),
+    ).not.toContain("OVERTURNED-DESK-REASON");
+  });
+
   it("just shared: the link, the empty line, and the open window stays under the track", () => {
     const empty =
       "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams.";

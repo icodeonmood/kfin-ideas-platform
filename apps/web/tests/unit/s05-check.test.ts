@@ -17,6 +17,7 @@ import type {
   SimilarMatch,
   SortingResponse,
 } from "@/lib/contracts";
+import { CLOSED_STATUSES } from "@/lib/contracts";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
@@ -2201,5 +2202,166 @@ describe("S-05 words (F-COPY)", () => {
   it("never says duplicate, rejected, already solved, appeal, invalid or Garage to the sharer", () => {
     const all = JSON.stringify(CHECK_COPY, (_k, v) => (typeof v === "function" ? v("2", "Ravi") : v));
     expect(all).not.toMatch(/\b(duplicate|rejected|already solved|appeal|invalid|Garage)\b/i);
+  });
+});
+
+describe("S-05.similar C-SIMGRID.tile L-TEAMUP.rules/1 J-SHARE/8: no Team up on an idea L-TEAMUP refuses (BLD-C187)", () => {
+  const open: SimilarMatch = { ...MATCH_RAVI, can_team_up: true, team_up_why_not: null };
+  const notNow: SimilarMatch = {
+    ...MATCH_SUNITA,
+    idea: { ...MATCH_SUNITA.idea, status: "not_now", title: "Branch calls about rejection codes" },
+    can_team_up: false,
+    team_up_why_not: "idea_closed",
+  };
+
+  it("model: an open idea offers Team up; not_now and every other closed state offer nothing; on the crew reads On the crew", () => {
+    expect(model.tileAction(open, null)).toEqual({ kind: "team-up" });
+    expect(CLOSED_STATUSES).toEqual(expect.arrayContaining(["not_now", "not_picked", "withdrawn", "merged"]));
+    for (const status of CLOSED_STATUSES) {
+      const closed: SimilarMatch = {
+        ...MATCH_RAVI,
+        idea: { ...MATCH_RAVI.idea, status },
+        can_team_up: false,
+        team_up_why_not: "idea_closed",
+      };
+      expect(model.tileAction(closed, null), status).toEqual({ kind: "none" });
+    }
+    expect(
+      model.tileAction({ ...open, can_team_up: false, team_up_why_not: "already_on_crew" }, null),
+    ).toEqual({
+      kind: "on-crew",
+    });
+    // An older worker that sends no can_team_up: offered as before.
+    expect(model.tileAction(MATCH_RAVI, null)).toEqual({ kind: "team-up" });
+  });
+
+  it("screen: the Not now tile keeps Preview and has no Team up, on the tile or in the preview; the open one keeps Team up", async () => {
+    await mount(base({ similar: [open, notNow] }));
+    await railTo("Similar ideas");
+    const tiles = Array.from(document.querySelectorAll(".simgrid > li"));
+    expect(tiles).toHaveLength(3);
+    expect(button(`Team up on ${open.idea.title}`)).toBeTruthy();
+    expect(button(`Team up on ${notNow.idea.title}`)).toBeUndefined();
+    expect(Array.from(tiles[2]!.querySelectorAll("button")).map(nameOf)).toEqual([
+      `Preview ${notNow.idea.title}`,
+    ]);
+    expect(text(tiles[2])).toContain("Not now");
+    expect(text(tiles[2])).not.toContain("On the crew");
+    await click(button(`Preview ${notNow.idea.title}`));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog).toBeTruthy();
+    expect(Array.from(dialog.querySelectorAll("button")).map(nameOf)).not.toContain(
+      `Team up on ${notNow.idea.title}`,
+    );
+    expect(text(dialog)).not.toMatch(/Team up\b/);
+  });
+});
+
+describe("S-05.parts/1 J-RECOVER/7-11: a line of your words left empty reads Not given. beside its pen (BLD-C188)", () => {
+  const parts = draft().parts;
+
+  it("an empty How often reads Not given. under its label and keeps Change how often", async () => {
+    await mount(base({ draft: draft({ parts: { ...parts, often: { state: "empty", value: "" } } }) }));
+    const line = Array.from(document.querySelectorAll(".ck-w")).find(
+      (w) => text(w.querySelector(".lbl")) === "How often",
+    )!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(line.querySelector(".ck-v")!.classList.contains("ck-empty")).toBe(true);
+    expect(button("Change how often")).toBeTruthy();
+    expect(text(document.querySelector("h3"))).toBe("Investors call to ask why a redemption was rejected");
+  });
+
+  it("every line that can be empty reads the same: the title, What happens (or only spaces) and How often", async () => {
+    await mount(
+      base({
+        draft: draft({
+          parts: {
+            ...parts,
+            title: { state: "empty", value: "" },
+            summary: { state: "filled", value: "   " },
+            often: { state: "empty", value: null },
+          },
+        }),
+      }),
+    );
+    const empty = Array.from(document.querySelectorAll(".ck-words .ck-empty")).map(text);
+    expect(empty).toEqual(["Not given.", "Not given.", "Not given."]);
+    expect(document.querySelector(".ck-words h3")).toBeNull();
+    for (const n of ["Change the title", "Change what happens", "Change how often"])
+      expect(button(n)).toBeTruthy();
+  });
+
+  it("the phone reads the same line with its Change button", async () => {
+    asPhone();
+    await mount(base({ draft: draft({ parts: { ...parts, often: { state: "empty", value: "" } } }) }));
+    const line = Array.from(document.querySelectorAll(".ck-w")).find(
+      (w) => text(w.querySelector(".lbl")) === "How often",
+    )!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(button("Change how often")).toBeTruthy();
+  });
+});
+
+describe("S-05.layout J-RECOVER/9-13: the rail's Proof step counts links as links, as Send it does (BLD-C190)", () => {
+  const at = "2026-11-17T08:00:00Z";
+  const file = (id: string, name: string): FileItem => ({
+    id,
+    kind: "file",
+    name,
+    type: "image/png",
+    size: 84_000,
+    state: "checked",
+    added_by: KAVYA,
+    added_at: at,
+  });
+  const link = (id: string, url: string): FileItem => ({
+    id,
+    kind: "link",
+    name: url,
+    type: "link",
+    state: "checked",
+    link_scope: "internal",
+    url: `https://${url}`,
+    added_by: KAVYA,
+    added_at: at,
+  });
+  const SMS = file("f1", "rejection-sms-screenshot.png");
+  const LOG = file("f2", "branch-call-log-nov.png");
+  const CODES = link("l1", "intranet.kfintech.example/codes");
+  const proofRail = () => nameOf(button(/^4 Proof/)!);
+
+  it("the words: 1 file and 2 files as Review.md draws them; 1 link, 2 links and 1 file and 1 link as Send it words them", () => {
+    expect(CHECK_COPY.proof.count(1, 0)).toBe("1 file");
+    expect(CHECK_COPY.proof.count(2, 0)).toBe("2 files");
+    expect(CHECK_COPY.proof.count(0, 1)).toBe("1 link");
+    expect(CHECK_COPY.proof.count(0, 2)).toBe("2 links");
+    expect(CHECK_COPY.proof.count(1, 1)).toBe("1 file and 1 link");
+    expect(CHECK_COPY.proof.count(2, 3)).toBe("2 files and 3 links");
+  });
+
+  for (const [what, files, drawn] of [
+    ["1 link", [CODES], "4 Proof 1 link"],
+    ["1 file", [SMS], "4 Proof 1 file"],
+    ["2 files", [SMS, LOG], "4 Proof 2 files"],
+    ["1 file and 1 link", [SMS, CODES], "4 Proof 1 file and 1 link"],
+  ] as const) {
+    it(`the rail reads ${what}`, async () => {
+      await mount(base({ draft: draft({ files }) }));
+      expect(proofRail()).toBe(drawn);
+    });
+  }
+
+  it("a link added on part 4 counts as a link on the rail", async () => {
+    await mount([(m, u) => (m === "POST" && u === "/api/links" ? { body: CODES } : undefined), ...base()]);
+    await railTo("Proof");
+    expect(proofRail()).toBe("4 Proof Optional");
+    const field = document.querySelector<HTMLInputElement>('input[inputmode="url"]')!;
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(field, "intranet.kfintech.example/codes");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Add a link"));
+    expect(proofRail()).toBe("4 Proof 1 link");
   });
 });
