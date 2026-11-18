@@ -256,7 +256,7 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
           <p className="body wl-phone">Every idea and problem shared, and where it is now.</p>
         </div>
         <div className="wl-chips">
-          <ChoiceChips label="Show" options={KINDS} value={st.kind} onChange={pickKind} scroll />
+          <ChoiceChips label="Show" options={KINDS} value={st.kind} onChange={pickKind} scroll filter />
         </div>
         {failed ? <Status kind="error" title={LOAD_FAILED} className="wl-fail" /> : null}
         <Kindling
