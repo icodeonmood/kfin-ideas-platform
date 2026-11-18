@@ -806,14 +806,15 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
     for key, reason in reasons.items():
         _did, wid = _decide(conn, m[key], p, now, reason, extended=1 if key == "C1" else 0)
         windows[key] = wid
-    # T9: the committee reversed "Not picked" to "Picked" inside the window: final.
+    # T9: the committee reversed "Not picked" to "Picked" inside the window: final. The reversal sets the team date
+    # as a Pick does (L-COMMITTEE.rules/5, BLD-B259).
     rid = str(uuid.uuid4())
     conn.execute(
-        "INSERT INTO decision_reversals (id, window_id, to_choice, note_encrypted, by_user_id, at) "
-        "VALUES (%s, %s, 'pick', %s, %s, %s)",
+        "INSERT INTO decision_reversals (id, window_id, to_choice, note_encrypted, by_user_id, at, team_by) "
+        "VALUES (%s, %s, 'pick', %s, %s, %s, %s)",
         (rid, windows["T9"], seal_text("decision_reversals", "note_encrypted", rid,
          "We can ask the exchange to move the reminder. Failed dividends cost more than the change."),
-         p["manoj"]["id"], _ago(2, now)),
+         p["manoj"]["id"], _ago(2, now), _working_days_after(_ago(2, now), 10)),
     )  # fmt: skip
     conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (windows["T9"],))
     _event(conn, m["T9"].uuid, "decision_reversed", _ago(2, now), {"reversal_id": rid})

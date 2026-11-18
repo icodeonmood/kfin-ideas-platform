@@ -16,6 +16,7 @@ import uuid
 from typing import Any, Literal
 
 from core.db import Conn
+from desk import clock, promises
 from desk.store import Refused, actor, audit, is_own, load_idea, now
 
 State = Literal["open", "not_picked", "team_chosen"]
@@ -49,10 +50,13 @@ def _may_ask(conn: Conn, user_id: str, idea: dict[str, Any]) -> bool:
 
 
 def _latest(conn: Conn, idea: dict[str, Any]) -> tuple[str | None, dt.datetime | None]:
-    """The latest decision as it stands (a committee reversal's choice when there is one) and the date the decision
-    set for choosing the team (`idea_decisions.team_by`, written on a Pick; L-DECIDE.rules/6)."""
+    """The latest decision as it stands (a committee reversal's choice when there is one) and the date it set for
+    choosing the team: a desk Pick's `idea_decisions.team_by` (L-DECIDE.rules/6), or a reversal to Pick's own
+    `decision_reversals.team_by` (L-COMMITTEE.rules/5, BLD-B259). A reversal to Pick made before that column has
+    none stored; its date is worked out from the reversal time the same way. Any other reversal sets none."""
     r = conn.execute(
-        "SELECT d.choice, d.team_by, r.id AS reversal_id, r.to_choice FROM idea_decisions d "
+        "SELECT d.choice, d.team_by, r.id AS reversal_id, r.to_choice, r.at AS reversed_at, "
+        "r.team_by AS reversed_team_by FROM idea_decisions d "
         "LEFT JOIN decision_windows w ON w.decision_id = d.id "
         "LEFT JOIN decision_reversals r ON r.window_id = w.id "
         "WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1",
@@ -60,7 +64,17 @@ def _latest(conn: Conn, idea: dict[str, Any]) -> tuple[str | None, dt.datetime |
     ).fetchone()
     if r is None:
         return None, None
-    return (str(r["to_choice"]) if r["reversal_id"] is not None else str(r["choice"])), r["team_by"]
+    if r["reversal_id"] is None:
+        return str(r["choice"]), r["team_by"]
+    choice = str(r["to_choice"])
+    if choice != "pick":
+        return choice, None
+    return choice, r["reversed_team_by"] or reversal_team_by(r["reversed_at"])
+
+
+def reversal_team_by(reversed_at: dt.datetime) -> dt.datetime:
+    """The team date of a reversal to Pick: a desk Pick's rule from the reversal time (L-DECIDE.rules/6)."""
+    return clock.team_by(reversed_at, promises.get(), clock.office_calendar())
 
 
 def _state(conn: Conn, idea: dict[str, Any], choice: str | None) -> State:

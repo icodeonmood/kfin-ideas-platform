@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Literal
 
 from core.db import Conn
-from desk import adapters, decide, join_build, promises, when
+from desk import adapters, clock, decide, join_build, promises, when
 from desk.store import (
     COMMITTEE,
     READERS,
@@ -304,12 +304,17 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             )
         masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip(), by=user_id)
         reversal_id = str(uuid.uuid4())
-        return_at = decide.return_at(t, return_in or p.return_default, p) if to == "not_now" else None
+        # L-COMMITTEE.rules/5: the new choice's consequences, dated from the reversal as the desk dates its own
+        # (L-DECIDE.rules/6-7): Not now's return date, or Pick's team-by date (BLD-B259). A desk Pick starts no timer
+        # for its team date, so neither does this.
+        dates = decide.dates_for(to, t, return_in, p, clock.office_calendar()) if to else None
+        return_at = dates.return_at if dates else None
         conn.execute(
             "INSERT INTO decision_reversals (id, window_id, to_choice, note_encrypted, by_user_id, at, return_in, "
-            "return_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "return_at, team_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (reversal_id, window_id, to, seal(masked, "decision_reversals", "note_encrypted", reversal_id), user_id,
-             t, (return_in or p.return_default) if to == "not_now" else None, return_at),
+             t, (return_in or p.return_default) if to == "not_now" else None, return_at,
+             dates.team_by if dates else None),
         )  # fmt: skip
         conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (window_id,))
         desk_user = r["merged_by"] if is_merge else r["decided_by"]

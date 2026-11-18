@@ -59,8 +59,11 @@ def decided(d: dict[str, Any] | None) -> Decided | None:
     choice = str(d["to_choice"] if reversed_ else d["choice"])
     team_by = d.get("team_by")
     if reversed_ and choice == "pick":
-        # L-COMMITTEE.rules/5: a reversal to pick has the pick's consequences, a build team by the usual date.
-        team_by = add_working_days(d["reversed_at"], int(read.promises()["team_by"]["working_days"]))
+        # L-COMMITTEE.rules/5: a reversal to pick has the pick's consequences, a build team by the usual date: the
+        # date the reversal stored (BLD-B259, the one S-06's join_build.reply_by reads), else worked out here.
+        team_by = d.get("reversed_team_by") or add_working_days(
+            d["reversed_at"], int(read.promises()["team_by"]["working_days"])
+        )
     elif reversed_:
         team_by = None
     return Decided(
