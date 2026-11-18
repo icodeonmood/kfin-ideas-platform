@@ -730,7 +730,7 @@ describe("S2 never changes a read-only Check it: a merged draft (BLD-C155, BLD-C
     await mountFlagged(base({ draft: FRESH, merge: ACCEPTED_MERGE }), true);
     expect(railNames()[0]).toMatch(/^(?:1 )?Your words/);
     expect(document.querySelector(".ck-first")).toBeNull();
-    // The draft read did not say merged, so the visit counts; the merge read stops the exposure and the reorder.
+    // A race: accepted between the draft read (not merged yet, so the visit counts) and the merge read, which stops the exposure and the reorder.
     expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
   });
 
@@ -738,8 +738,18 @@ describe("S2 never changes a read-only Check it: a merged draft (BLD-C155, BLD-C
     asPhone();
     await mountFlagged(base({ draft: FRESH, merge: ACCEPTED_MERGE }), true);
     expect(document.querySelector(".ck-first")).toBeNull();
-    // The draft read did not say merged, so the visit counts; the merge read stops the exposure and the reorder.
+    // A race: accepted between the draft read (not merged yet, so the visit counts) and the merge read, which stops the exposure and the reorder.
     expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
+  });
+
+  it("the draft read already says the merge request is accepted: the drawn order, no comparison, nothing logged", async () => {
+    await mountFlagged(
+      base({ draft: draft({ step: "tell", merge_request: ACCEPTED_MERGE }), merge: ACCEPTED_MERGE }),
+      true,
+    );
+    expect(railNames()[0]).toMatch(/^(?:1 )?Your words/);
+    expect(document.querySelector(".ck-first")).toBeNull();
+    expect(flagCalls()).toEqual([]);
   });
 
   it("a draft merged into another idea is not counted as reaching Check it", async () => {
