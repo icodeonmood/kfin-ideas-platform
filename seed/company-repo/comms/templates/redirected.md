@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-redirected
-  version: '1.2'
+  version: '1.3'
   events:
   - idea.redirected
   subject: 'Where to take this: {{redirect.team}}'
-  signed_as: '{{reviewer.name}}, review desk'
+  signed_as: 'The review desk, 1% Club'
   hr_signed_off: false
 ---
 
@@ -31,6 +31,6 @@ If you think this is really an idea for changing how KFintech works, open your i
 
 {{#links.idea}}[See your idea]({{links.idea}}){{/links.idea}}
 
-{{reviewer.name}}, review desk, 1% Club
+The review desk, 1% Club
 
 A KFintech programme
