@@ -702,9 +702,11 @@ def test_l_similar_failure_similar_status_reads_lane_c_run_first_then_the_idea(
 ) -> None:
     """L-SIMILAR.failure: `similar_status` is "done", "failed" or "none". Lane C's `similar_runs` row wins when there
     is one (its retries after sharing write only there); otherwise `ideas.similar_check`, NULL being "none"."""
+    from ideapage import adapters
     from ideapage.adapters import similar_status
 
     conn, uid = club["conn"], club["m"]["T5"].uuid
+    lane_c_reader = adapters._lane_c_last_run  # put back by name below, not with undo(): `club` patches too
     monkeypatch.delitem(sys.modules, "similar.matching", raising=False)
     monkeypatch.setattr(
         "ideapage.adapters._lane_c_last_run", lambda: None
@@ -727,7 +729,7 @@ def test_l_similar_failure_similar_status_reads_lane_c_run_first_then_the_idea(
     # Through c/similar's own reader once it is here: only its state is read, never `found`.
     fake = types.ModuleType("similar.matching")
     fake.last_run = lambda c, i: {"state": "failed", "found": 4} if i == uid else None
-    monkeypatch.undo()
+    monkeypatch.setattr("ideapage.adapters._lane_c_last_run", lane_c_reader)
     monkeypatch.setitem(sys.modules, "similar.matching", fake)
     assert similar_status(conn, uid) == "failed"
     other = club["m"]["T6"].uuid
