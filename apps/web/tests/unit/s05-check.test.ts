@@ -2256,3 +2256,48 @@ describe("S-05.similar C-SIMGRID.tile L-TEAMUP.rules/1 J-SHARE/8: no Team up on 
     expect(text(dialog)).not.toMatch(/Team up\b/);
   });
 });
+
+describe("S-05.parts/1 J-RECOVER/7-11: a line of your words left empty reads Not given. beside its pen (BLD-C188)", () => {
+  const parts = draft().parts;
+
+  it("an empty How often reads Not given. under its label and keeps Change how often", async () => {
+    await mount(base({ draft: draft({ parts: { ...parts, often: { state: "empty", value: "" } } }) }));
+    const line = Array.from(document.querySelectorAll(".ck-w")).find(
+      (w) => text(w.querySelector(".lbl")) === "How often",
+    )!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(line.querySelector(".ck-v")!.classList.contains("ck-empty")).toBe(true);
+    expect(button("Change how often")).toBeTruthy();
+    expect(text(document.querySelector("h3"))).toBe("Investors call to ask why a redemption was rejected");
+  });
+
+  it("every line that can be empty reads the same: the title, What happens (or only spaces) and How often", async () => {
+    await mount(
+      base({
+        draft: draft({
+          parts: {
+            ...parts,
+            title: { state: "empty", value: "" },
+            summary: { state: "filled", value: "   " },
+            often: { state: "empty", value: null },
+          },
+        }),
+      }),
+    );
+    const empty = Array.from(document.querySelectorAll(".ck-words .ck-empty")).map(text);
+    expect(empty).toEqual(["Not given.", "Not given.", "Not given."]);
+    expect(document.querySelector(".ck-words h3")).toBeNull();
+    for (const n of ["Change the title", "Change what happens", "Change how often"])
+      expect(button(n)).toBeTruthy();
+  });
+
+  it("the phone reads the same line with its Change button", async () => {
+    asPhone();
+    await mount(base({ draft: draft({ parts: { ...parts, often: { state: "empty", value: "" } } }) }));
+    const line = Array.from(document.querySelectorAll(".ck-w")).find(
+      (w) => text(w.querySelector(".lbl")) === "How often",
+    )!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(button("Change how often")).toBeTruthy();
+  });
+});

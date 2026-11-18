@@ -1357,3 +1357,21 @@ describe("S-06B words (F-COPY)", () => {
     }
   });
 });
+
+describe("S-06B.layout/3 J-RECOVER/7-11: a line of the problem left empty reads Not given. beside its pen (BLD-C188)", () => {
+  it("an empty How often (null) reads Not given. under its label and keeps Change how often", async () => {
+    await mount(base(() => page({ fields: { ...page().fields, often: null } })));
+    const line = all(".ck-w").find((w) => text(w.querySelector(".lbl")) === "How often")!;
+    expect(text(line.querySelector(".ck-v"))).toBe("Not given.");
+    expect(line.querySelector(".ck-v")!.classList.contains("ck-empty")).toBe(true);
+    expect(button("Change how often")).toBeTruthy();
+    expect(text(document.querySelector(".ck-words h3"))).toBe(TITLE);
+  });
+
+  it("What happens left as spaces and an empty How often both read Not given.; Save sends nothing unasked", async () => {
+    await mount(base(() => page({ fields: { title: TITLE, summary: "  ", often: "" } })));
+    expect(all(".ck-words .ck-empty").map(text)).toEqual(["Not given.", "Not given."]);
+    expect(button("Change what happens")).toBeTruthy();
+    expect(saves()).toEqual([]);
+  });
+});

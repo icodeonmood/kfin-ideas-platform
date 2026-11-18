@@ -54,6 +54,9 @@ export const CHECK_COPY = {
     /** The phone boards: "Change" with what it changes read out ("Change title", PhoneReview.md, PhoneEdit.md). */
     changePhone: "Change",
     changeWhat: { title: "title", summary: "what happens", often: "how often" },
+    /** NOT DRAWN: a line of your words left empty (S-05 part 1, S-06B's Your problem). Review.md, PhoneReview.md,
+     * Edit.md and PhoneEdit.md draw none, so S-06's and S-R2's words for the same part (BLD-E057, BLD-C188). */
+    notGiven: "Not given.",
     /** V-FIELDS.checkit/1–2. */
     titleNeeded: "Give it a title of a few words.",
     summaryNeeded: "Say what happens, in a sentence or two.",
