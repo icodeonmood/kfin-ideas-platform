@@ -529,7 +529,7 @@ step(
       await sharer.getByRole("tab", { name: /^Needs you/ }).click();
       await sharer
         .getByRole("button", {
-          name: new RegExp(`^Lavanya from the review desk asked you ${n} questions?, ${esc(k1.title)}`),
+          name: new RegExp(`^The review desk asked you ${n} questions?, ${esc(k1.title)}`), // DEC-111
         })
         .click();
       await expect(sharer.getByText(`Answer by ${deadline}.`).first()).toBeVisible();
