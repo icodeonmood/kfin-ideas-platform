@@ -766,7 +766,7 @@ export function ReviewerIdea({
                                     <li key={s.text}>
                                       <button
                                         type="button"
-                                        className="qsug"
+                                        className="ri-qsug"
                                         aria-label={`Add: ${s.text} ${PART_NAME[s.part]}`}
                                         onClick={() =>
                                           dispatch({ type: "add_suggestion", part: s.part, text: s.text })
