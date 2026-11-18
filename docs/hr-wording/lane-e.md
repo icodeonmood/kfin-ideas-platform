@@ -140,3 +140,12 @@ The worker builds these lines and sends them to the page, so they are not in `ap
 | `S-06` | Your idea's page, What it's worth, over the review desk's revised figures (not drawn before DEC-111) | `services/worker/ideapage/sharer.py:394` | Revised by {reviewer} → Revised by the review desk |
 | `S-07` | My ideas on a phone, an idea with questions waiting (PhoneMyIdeas.md). The phone now shows the computer's sentence (MyIdeas.md) | `services/worker/ideapage/mine.py:242`, `:250` | {reviewer} from the review desk asked you {questions} {when}. → The review desk asked you {questions} {when}. |
 | `S-07` | My ideas, an idea whose answers are with the review desk (not drawn) | `services/worker/ideapage/mine.py:264`, `:265`, `:268` | {reviewer} has your answers. The review desk decides by {day}. → The review desk has your answers. It decides by {day}. |
+
+## 9. Asking to join the build team (S-06, BLD-E053)
+
+The Status and PhoneStatus boards draw the first line below in the Picked state, but `1pc-handoff/reference/copy/Status.md` and `PhoneStatus.md` leave it out, because it shows only after "Ask to join the build team" is pressed. It is the boards' wording, used as drawn, and needs HR's sign-off like the rest. The second line is lane E's, for a Pick with no team-chosen-by date, which should not happen (L-DECIDE/6 sets one on every Pick). Words in braces are filled in at run time: {day month} is the date the build team is chosen by, such as 27 November. The board's "Undo" beside the line is not built (BLD-E053).
+
+| Module | Where it shows | File and line | Wording |
+|---|---|---|---|
+| `S-06` | Your idea's page after a Pick, in place of "Ask to join the build team" once you have asked (drawn at `1pc-handoff/reference/prototype/Status.dc.html:899` and `PhoneStatus.dc.html:889`) | `ideas/[id]/join-build.tsx:41` | Asked. The build lead replies by {day month}. |
+| `S-06` | The same, when the Pick has no team-chosen-by date | `ideas/[id]/join-build.tsx:41` | Asked. The build lead replies. |
