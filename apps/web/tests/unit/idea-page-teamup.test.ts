@@ -79,7 +79,7 @@ const ON_CREW: Words = {
   count_line: COUNT.replace("4 colleagues", "5 colleagues"),
   faces: [RAVI],
   line: "You’re on the crew. You’ll get its updates.",
-  action: { label: "Say hello", to: `/ideas/${IDEA}/conversation` },
+  action: { label: "Say hello", to: `/ideas/${IDEA}/conversation#say-hello` }, // BLD-F069
   can_team_up: false,
 };
 const CLOSED: Words = {
@@ -165,9 +165,9 @@ describe("S-09.states: the Team up card draws what the API sends", () => {
     expect(links()).toEqual([]);
   });
 
-  it("On the crew: Say hello goes to the conversation (S-08); no Team up", () => {
+  it("On the crew: Say hello goes to the conversation (S-08), cursor in the box (BLD-F069); no Team up", () => {
     show(ON_CREW);
-    expect(links()).toEqual([["Say hello", `/ideas/${IDEA}/conversation`]]);
+    expect(links()).toEqual([["Say hello", `/ideas/${IDEA}/conversation#say-hello`]]);
     expect(q(".ip-team-line.ip-ok")!.textContent).toBe("You’re on the crew. You’ll get its updates.");
     expect(buttons()).toEqual([]);
   });

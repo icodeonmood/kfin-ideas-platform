@@ -297,10 +297,11 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
       "/my-ideas?list=teamed",
     );
     await expect(page.getByText("You’re on the crew. You’ll get its updates.")).toBeVisible();
-    // The crew's way into the conversation (S-08), from the card (Idea.md "Say hello")
+    // The crew's way into the conversation (S-08), from the card (Idea.md "Say hello"), with the cursor in the box
+    // (#say-hello, BLD-F069)
     await expect(
       page.getByRole("region", { name: "Team up on this idea" }).getByRole("link", { name: "Say hello" }),
-    ).toHaveAttribute("href", `/ideas/${r2.ref}/conversation`);
+    ).toHaveAttribute("href", `/ideas/${r2.ref}/conversation#say-hello`);
     await expect(page.getByRole("button", { name: "Team up", exact: true })).toHaveCount(0);
     await expect(page.getByRole("img", { name: "Rekha Saxena" })).toBeVisible();
     await expectNoSeriousAxeIssues(page);
