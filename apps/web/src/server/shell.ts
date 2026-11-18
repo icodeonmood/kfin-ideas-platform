@@ -116,7 +116,9 @@ export function draftRows(items: DraftListItem[] | null | undefined): ShellRow[]
 
 /** A-API.me (shell), lane E's `GET /internal/me/{id}/shell-lists` (BLD-E047): up to three of the person's own shared
  * ideas, in S-07's first order, each with S-07's dot and pill words (`status_label`). Ideas only: drafts are L-DRAFT's. */
-export type ShellLists = { ideas: (ShellResponse["ideas"][number] & { status_label?: string })[] };
+// `status_label` stays optional here whether or not the contract requires it, so a row without it still reads.
+type ShellIdea = Omit<ShellResponse["ideas"][number], "status_label"> & { status_label?: string };
+export type ShellLists = { ideas: ShellIdea[] };
 
 export async function shellLists(me: CurrentUser): Promise<ShellLists> {
   const res = await workerFetch(`/internal/me/${encodeURIComponent(me.id)}/shell-lists`, {
