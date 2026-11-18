@@ -293,9 +293,16 @@ def revoke_all(club: dict[str, Any], who: str) -> None:
     club["conn"].execute("DELETE FROM role_grants WHERE user_id = %s", (club["p"][who],))
 
 
-def no_reviewer_named(payload: dict[str, Any]) -> bool:
+REVIEWER_KEYS = ("harish", "lavanya")  # their users.id, from the club fixture
+REVIEWER_INITIALS = ("HV", "LK")  # Harish Venkatesan, Lavanya Krishnan, as a person object carries them
+
+
+def no_reviewer_named(payload: dict[str, Any], club: dict[str, Any]) -> bool:
+    """No reviewer's name, users.id or initials (as a person object's `initials`) anywhere in the payload."""
     dump = json.dumps(payload, ensure_ascii=False, default=str)
-    return not any(name in dump for name in REVIEWERS)
+    traces = [*REVIEWERS, *(str(club["p"][k]) for k in REVIEWER_KEYS)]
+    traces += [f'"initials": "{i}"' for i in REVIEWER_INITIALS]
+    return not any(t in dump for t in traces)
 
 
 def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_reviewers_name(
@@ -332,7 +339,7 @@ def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_revie
         return v6, v7, {r["part"]: r for r in v7["page"]["shared"]["rows"]}
 
     v6, v7, rows7 = pages()
-    assert no_reviewer_named(v6) and no_reviewer_named(v7)
+    assert no_reviewer_named(v6, club) and no_reviewer_named(v7, club)
     assert "reviewer" not in v6["idea"]["review"] and "reviewer" not in v7["idea"].get("review", {})
     assert v6["page"]["card"]["lead"] == "Sent. The review desk has your answers."
     assert nodes(v6)[2] == ("reviewed", "now", f"The review desk has your answers. By {by}")
@@ -348,7 +355,10 @@ def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_revie
         assert rows7["cost"]["figures"]["reviewer"]["by_line"] == "Revised by Harish"
         assert rows7["often"]["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
         revoke_all(club, "tanvi")
-    assert no_reviewer_named(view(club, t6, "tanvi"))  # the grant gone, the name goes with it
+    assert no_reviewer_named(view(club, t6, "tanvi"), club)  # the grant gone, the name goes with it
+    # The decided ideas too: T8 (Not now) and T9 (moved by the Ones Committee), as their sharer reads them
+    assert no_reviewer_named(view(club, ref(club, "T8"), "tanvi"), club)
+    assert no_reviewer_named(view(club, ref(club, "T9"), "tanvi"), club)
 
 
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
@@ -1092,7 +1102,7 @@ def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[s
         return out, next(i for i in out["items"] if i["id"] == t6)
 
     out, row = t6_row()
-    assert no_reviewer_named(out)
+    assert no_reviewer_named(out, club)
     assert row["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
     assert "phone_sentence" not in row["next_step"]
     for role in ("committee", "reviewer"):
@@ -1110,7 +1120,7 @@ def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[s
         conn.execute("SELECT decide_by FROM ideas WHERE idea_id = %s", (t6,)).fetchone()["decide_by"], NOW
     )
     out, row = t6_row()
-    assert no_reviewer_named(out)
+    assert no_reviewer_named(out, club)
     assert row["next_step"]["sentence"] == f"The review desk has your answers. It decides by {by}."
     for role in ("committee", "reviewer"):
         grant(club, "tanvi", role)
