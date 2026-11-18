@@ -550,6 +550,10 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     await show(baseRoutes());
     expect(link("See all")?.getAttribute("href")).toBe("/crew");
     const card = host.querySelector(".hm-pcard")!;
+    // F-TYPE (BLD-D015): the hue is "hue1"/"hue2", as on lane F's card. "h1" is the page-heading style, whose
+    // tracking every line on the card inherited, running the words together (lane G's walk, J-ONE/5, J-TRACK/2).
+    expect(card.classList.contains("hue1")).toBe(true);
+    expect([...card.classList].filter((c) => /^(h[1-3]|d1)$/.test(c))).toEqual([]);
     expect(card.textContent).toContain("With the review desk");
     expect(card.textContent).toContain("Investor service, Hyderabad");
     expect(card.textContent).toContain("Same code as your idea from Saturday");
