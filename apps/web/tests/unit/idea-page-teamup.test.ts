@@ -549,6 +549,41 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     );
   });
 
+  it("S-06 BLD-E058 L-COMMITTEE: after a reversal to Pick, being built, the desk's overturned reason is not drawn", () => {
+    const decided = (reversal: Record<string, unknown> | null) =>
+      ({
+        decision: {
+          choice: "not_picked",
+          label: "Not picked",
+          reason: "OVERTURNED-DESK-REASON",
+          reason_heading: null,
+          by_line: "by the review desk, Monday 16 November",
+          merged_into: null,
+        },
+        decided_at: "2026-11-16T11:28:00Z",
+        return_at: null,
+        lines: null,
+        joined_into: null,
+        window: null,
+        reversal,
+      }) as unknown;
+    const render = (reversal: Record<string, unknown> | null) =>
+      renderToStaticMarkup(
+        createElement(SharerScreen, {
+          ...sharer("being_built", { heading: "You and the review desk", count: 0, link: LINK }, null),
+          decision: decided(reversal),
+        } as unknown as SharerProps),
+      );
+    // Without a reversal the desk's reason stands and is drawn; after one, it is not
+    expect(render(null)).toContain("OVERTURNED-DESK-REASON");
+    expect(
+      render({
+        by: { id: "u-rohan", name: "Rohan Mehta", first_name: "Rohan", initials: "RM" },
+        note: "Moved to picked.",
+      }),
+    ).not.toContain("OVERTURNED-DESK-REASON");
+  });
+
   it("just shared: the link, the empty line, and the open window stays under the track", () => {
     const empty =
       "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams.";
