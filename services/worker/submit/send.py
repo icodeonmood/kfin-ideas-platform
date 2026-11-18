@@ -29,6 +29,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from core import killswitch
 from core.db import Conn
 from core.logging import get_logger
 from ideapage.track import KIND_WORDS
@@ -41,6 +42,10 @@ log = get_logger("submit.send")
 
 ROUTE = "POST /drafts/:id/submit"
 SHARED = ("checking", "with_review_desk", "needs_you")
+# DEC-105: Teams is built but off until IT approves it (the `comms.teams` switch, read as notify reads it; an
+# unknown switch counts as off). While it is off, the hand-over names only the channels that are on; with it on,
+# the drawn words stand (BLD-C159, the same rule as BLD-E054 and BLD-F086).
+TEAMS_SWITCH = "comms.teams"
 
 
 def _hash(key: str, body: dict[str, Any]) -> str:
@@ -102,13 +107,15 @@ def checked_line(n_hidden: int, n_similar: int | None, kind: str | None = None) 
 
 def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
     """What S-06 shows the moment an idea is shared (and again on a repeated Submit): IDs, the track and the dates,
-    as words. The page itself is lane E's (`GET /ideas/:id`)."""
+    as words. The page itself is lane E's (`GET /ideas/:id`). The two lines say "on Teams" only while the Teams
+    switch is on (DEC-105, BLD-C159)."""
     ref = str(idea["idea_id"])
     status = str(idea["status"])
     shared_at: dt.datetime = idea["shared_at"]
     decide: dt.datetime | None = idea.get("decide_by")
     closes: dt.datetime | None = idea.get("edit_closes_at")
     by = day(decide, now) if decide else None
+    teams = killswitch.is_on(TEAMS_SWITCH, conn)  # BLD-C159
     shared = ("done", when_shared(shared_at, now), shared_at)
     later = [("to_come", "If it’s picked", None), ("to_come", "Then we measure what changed", None)]
     if status == "checking":
@@ -154,8 +161,11 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         out["review"] = {
             "decide_by": decide.isoformat(),
             "by_label": f"By {by}",
-            "line": f"The review desk will look at it by {by}. We’ll tell you on Teams and by email when anything "
-            "changes.",
+            "line": (
+                f"The review desk will look at it by {by}. We’ll tell you on Teams and by email when anything changes."
+                if teams
+                else f"The review desk will look at it by {by}. We’ll tell you by email when anything changes."
+            ),
         }
     if closes is not None:
         out["edit_window"] = {
@@ -164,7 +174,11 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
             **(
                 {
                     "line": f"Open to changes until {day(closes, now)}. Edit or withdraw it any time before the review "
-                    "desk opens it. We tell you on Teams and by email when anything moves.",
+                    + (
+                        "desk opens it. We tell you on Teams and by email when anything moves."
+                        if teams
+                        else "desk opens it. We tell you by email when anything moves."  # BLD-C159
+                    ),
                     "countdown": countdown(closes, now),
                     "edit": {"label": "Edit it", "to": f"/ideas/{ref}/edit"},
                 }

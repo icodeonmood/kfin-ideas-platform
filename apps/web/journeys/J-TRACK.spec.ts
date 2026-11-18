@@ -121,7 +121,7 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi", /^Needs you/);
-    const item = inboxItem(page, "Harish from the review desk", "asked you 3 questions", t6.title);
+    const item = inboxItem(page, "The review desk", "asked you 3 questions", t6.title);
     await expect(item).toContainText(new RegExp(LEFT));
     await item.click();
     await expect(page.getByText("Questions from the review desk", { exact: true }).first()).toBeVisible();
@@ -134,11 +134,7 @@ step(
     await expect(page.getByRole("heading", { level: 2, name: "Needs you" })).toBeVisible();
     await expect(page.getByText("3 questions from the review desk").first()).toBeVisible();
     await expect(
-      page
-        .getByText(
-          new RegExp(`^Harish from the review desk asked about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}$`),
-        )
-        .first(),
+      page.getByText(new RegExp(`^Asked about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}$`)).first(),
     ).toBeVisible();
     await expect(page.getByText(T6_QUESTIONS[0], { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" }).first()).toHaveAttribute(
@@ -158,7 +154,7 @@ step(
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t6));
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Harish has 3 questions for you", { exact: true })).toBeVisible();
+    await expect(page.getByText("The review desk has 3 questions for you", { exact: true })).toBeVisible();
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
     const deadline = await capture(
       page.getByText(/^Answer by .*One at a time, typed or spoken\.$/).first(),
@@ -199,7 +195,7 @@ step(
 step(
   "J-TRACK/4",
   "S-R3",
-  "Answers one at a time: the saved answer, a typed one and a skip; Send 2 answers to Harish",
+  "Answers one at a time: the saved answer, a typed one and a skip; Send 2 answers to the review desk",
   { needs: ["S-R3", "L-QUESTIONS"], changes: ["T6"] },
   async ({ page }) => {
     const t6 = await seeded("T6");
@@ -210,7 +206,7 @@ step(
       page
         .getByText(
           new RegExp(
-            `^Harish from the review desk has 3 questions about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}\\. Answer them one at a time\\. Skip any you can’t answer yet and come back before you send\\.$`,
+            `^The review desk has 3 questions about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}\\. Answer them one at a time\\. Skip any you can’t answer yet and come back before you send\\.$`,
           ),
         )
         .first(),
@@ -233,9 +229,9 @@ step(
     await expect(page.getByText(SAVED_ANSWER, { exact: true })).toBeVisible();
     await expect(page.getByText(TYPED_ANSWER, { exact: true })).toBeVisible();
     await expect(page.getByText("Not answered. It stays open until the deadline.")).toBeVisible();
-    await page.getByRole("button", { name: "Send 2 answers to Harish" }).click();
+    await page.getByRole("button", { name: "Send 2 answers to the review desk" }).click();
 
-    await expect(page.getByText(new RegExp(`^Sent to Harish, ${TIME}$`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Sent to the review desk, ${TIME}$`)).first()).toBeVisible();
     await expect(page.getByText("Your answers are with the review desk", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "See your idea" })).toHaveAttribute(
       "href",
@@ -277,8 +273,8 @@ step(
     // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
     const item = inboxItem(
       page,
-      "1% Club",
-      String.raw`(?:\d+ days?|\d+ hours?) left to answer Harish[’']s questions`,
+      "The review desk",
+      String.raw`${LEFT} to answer the review desk’s questions`,
       t6.title,
     );
     await expect(item).toBeVisible();
@@ -299,7 +295,7 @@ step(
     const t7 = await seeded("T7");
     const t8 = await seeded("T8");
     await openInbox(page, "tanvi");
-    await inboxItem(page, "Harish from the review desk", "picked your idea", t7.title).click();
+    await inboxItem(page, "The review desk", "picked your idea", t7.title).click();
     await page.getByRole("link", { name: "Read the decision" }).click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t7))}$`));
 
@@ -375,7 +371,7 @@ step(
         .first(),
     ).toBeVisible();
     await expect(page.getByText("The committee’s note to you").first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`Lavanya from the review desk, ${DAY}`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`the review desk, ${DAY}`)).first()).toBeVisible();
     await expect(page.getByText(/^This is final\./).first()).toBeVisible();
   },
 );

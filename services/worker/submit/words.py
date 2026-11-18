@@ -8,12 +8,12 @@ A year is added only when the date is not in the current year. A test pins these
 from __future__ import annotations
 
 import datetime as dt
-import math
 from collections.abc import Sequence
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from onepc import enums
+from onepc.countdown import countdown as shared_countdown
 
 IST = ZoneInfo("Asia/Kolkata")
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -71,19 +71,12 @@ def when_shared(t: dt.datetime, now: dt.datetime) -> str:
 
 
 def countdown(until: dt.datetime, now: dt.datetime) -> dict[str, Any]:
-    """'3 days left' (neutral); under a day '07:38 left' (warn); then 'Overdue' (C-PILL.rules/3)."""
-    seconds = (until - now).total_seconds()
-    if seconds <= 0:
-        return {"label": "Overdue", "variant": "bad", "until": until.isoformat()}
-    if seconds < 86400:
-        minutes = int(seconds // 60)
-        return {
-            "label": f"{minutes // 60:02d}:{minutes % 60:02d} left",
-            "variant": "warn",
-            "until": until.isoformat(),
-        }
-    days = math.ceil(seconds / 86400)
-    return {"label": f"{days} day{'s' * (days != 1)} left", "variant": "neutral", "until": until.isoformat()}
+    """'3 days left' (neutral); under a day '07:38 left' (warn); then 'Overdue by 5 hours' (bad) (C-PILL.rules/3).
+    The count is the one rule every place uses (F-COPY.plurals/3, `onepc.countdown`, BLD-A225): office calendar days
+    a day or more ahead. The pill says "neutral" where the countdown says "normal"."""
+    c = shared_countdown(until, now)
+    variant = "neutral" if c.variant == "normal" else c.variant
+    return {"label": c.label("left"), "variant": variant, "until": until.isoformat()}
 
 
 def join(items: Sequence[str]) -> str:

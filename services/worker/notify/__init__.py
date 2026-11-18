@@ -59,8 +59,23 @@ REMINDER_KINDS: frozenset[str] = frozenset({"answer_reminder"})
 # in a notification, not even as an ID that points at it).
 NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 # Kinds sent as the review desk as a whole (L-HIDE/7, BLD-A205): the reviewer who acted is never stored on the item or
-# its email, so no later read can name them; the reader shows "The review desk".
-AS_THE_DESK: frozenset[str] = frozenset({"detail_hidden_by_desk"})
+# its email, so no later read can name them; the reader shows "The review desk". DEC-111 (BLD-B257): every kind the
+# desk sends a sharer is one, so a sharer never sees a reviewer's name: the questions, their reminders, the decision,
+# a desk merge and a revised worth. The reader checks the kind, so an item stored earlier with a reviewer as its
+# sender reads as the desk too. A reversal is the Ones Committee's (`decision_reversed`): it keeps its sender.
+AS_THE_DESK: frozenset[str] = frozenset(
+    {"detail_hidden_by_desk", "questions", "answer_reminder", "decision", "desk_merge", "worth_revised"}
+)
+# DEC-111 (BLD-A221): any item whose refs say `as_desk: true` is the review desk speaking as a whole, whatever its kind.
+# Lane F posts `comment` and `mention` with it when the author writes as the desk (a reviewer not on the build team,
+# S-08's own test). Like AS_THE_DESK, the reviewer is never stored on the item or its outside messages.
+AS_DESK_REF = "as_desk"
+
+
+def as_the_desk(kind: str, refs: Mapping[str, object] | None) -> bool:
+    """True when an item is from the review desk as a whole, so no person is stored or shown (DEC-111)."""
+    return kind in AS_THE_DESK or (refs or {}).get(AS_DESK_REF) is True
+
 
 Ref = str | int | bool | None
 
@@ -176,7 +191,7 @@ def post(
     people = [p for p in people if p != from_user]
     if not people:
         return Posted()
-    stored_from = None if kind in AS_THE_DESK else from_user
+    stored_from = None if as_the_desk(kind, refs) else from_user
 
     rows = conn.execute(
         "SELECT u.id, coalesce(p.email, true) AS email, coalesce(p.teams, true) AS teams, "

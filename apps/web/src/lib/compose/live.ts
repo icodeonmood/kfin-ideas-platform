@@ -88,11 +88,13 @@ export function applyEvent(live: Live, e: DraftStreamEvent, now: number): Live {
         parts[k] = { ...parts[k], state: "updating" } as never;
         if (k === "title") parts.summary = { ...parts.summary, state: "updating" };
       }
+      // A part this run leaves out that is still empty keeps the loader from saying all six are in (BLD-C157).
+      const waiting = PART_KEYS.filter((k) => !keys.includes(k) && !partIn(parts, k));
       return {
         ...live,
         parts,
         updating: keys,
-        loader: { parts: e.data.parts, startedAt: now, answered: {} },
+        loader: { parts: e.data.parts, startedAt: now, answered: {}, waiting },
         runId: e.data.run_id,
         running: true,
         ready: false,
@@ -113,8 +115,15 @@ export function applyEvent(live: Live, e: DraftStreamEvent, now: number): Live {
       } else {
         parts[key] = { state, value: value ?? live.parts[key].value, ...extra } as never;
       }
+      // Answered either way; one that came back with nothing the words support is not in (L-DRAFT.parts/1).
+      const waiting = (live.loader?.waiting ?? []).filter((k) => k !== key);
+      if (!partIn(parts, key)) waiting.push(key);
       const loader = live.loader
-        ? { ...live.loader, answered: { ...live.loader.answered, [key]: live.loader.answered[key] ?? now } }
+        ? {
+            ...live.loader,
+            answered: { ...live.loader.answered, [key]: live.loader.answered[key] ?? now },
+            waiting,
+          }
         : null;
       return { ...live, parts, loader, updating: live.updating.filter((k) => k !== key) };
     }
@@ -172,6 +181,27 @@ export function withDraftAfterLoss(live: Live, d: Draft): Live {
     if (parts[k].state === "updating" && live.parts[k].state === "failed") parts[k] = live.parts[k] as never;
   }
   return { ...next, parts, running: false, updating: [], loader: live.loader };
+}
+
+/** The six parts, in E-ENUMS.draft order. */
+export const PART_KEYS: readonly DraftPartKey[] = ["title", "often", "who", "value", "area", "similar"];
+
+/** C-DRAFT-LOADER.maths/7 with L-DRAFT.parts/1 (BLD-C157): a part is in when it shows a value, or when it failed or
+ * was given up and asks the person to add it (failure/1). One the words do not support reads "Waiting for your
+ * words" and is not in. Similar ideas are in unless they are being built: they may be empty (L-DRAFT.parts/7), their
+ * slot never reads "Waiting for your words", and the draft's read shows "checked, no match" as `waiting`, the same
+ * as "not checked yet" (the stream says `filled` with no matches), so both wire shapes agree. */
+export function partIn(parts: Parts, key: DraftPartKey): boolean {
+  const p = parts[key] as Part<unknown>;
+  if (p.state === "failed") return true;
+  if (key === "similar") return p.state !== "updating";
+  return hasValue(p);
+}
+
+/** All six are in and nothing is building: the loader fills, says "All 6 parts are in" and folds (maths/7). A run
+ * that finishes with any part waiting for words is not all in: the strip folds away without that line. */
+export function allIn(live: Live): boolean {
+  return !live.running && PART_KEYS.every((k) => partIn(live.parts, k));
 }
 
 /** A part to show as a value: filled, or changed by the person ("Your call"). */

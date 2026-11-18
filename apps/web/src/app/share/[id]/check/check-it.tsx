@@ -1017,7 +1017,8 @@ export function CheckIt({
   const taskbar = (
     <Taskbar
       step={part === 7 && !readOnly ? "send" : "check"}
-      stepHrefs={{ tell: `/share/${encodeURIComponent(draftId)}` }}
+      // Merged: Tell it would only come back here (BLD-C155), so "Tell it, done" is words, not a link.
+      stepHrefs={readOnly ? {} : { tell: `/share/${encodeURIComponent(draftId)}` }}
       save={online ? save : "offline"}
       savedAt={savedAt}
       closeHref="/home"

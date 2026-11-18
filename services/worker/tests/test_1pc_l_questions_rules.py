@@ -110,6 +110,7 @@ def test_S_R2_panel_4_answered_with_time_to_spare() -> None:
 
 
 def test_V_FIELDS_answer_2_sending_needs_one_answer() -> None:
-    assert q.send_answers_label(0, "Meera") == "Answer at least one question"
-    assert q.send_answers_label(1, "Meera") == "Send 1 answer to Meera"
-    assert q.send_answers_label(3, "Meera") == "Send 3 answers to Meera"
+    # DEC-111: the review desk, never the reviewer's name (the board's "Send 1 answer to Meera")
+    assert q.send_answers_label(0) == "Answer at least one question"
+    assert q.send_answers_label(1) == "Send 1 answer to the review desk"
+    assert q.send_answers_label(3) == "Send 3 answers to the review desk"
