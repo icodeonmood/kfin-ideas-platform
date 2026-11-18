@@ -52,7 +52,8 @@ step(
     await expect(page.getByText("Ideas close to yours. Team up, or pass.")).toBeVisible();
     await expect(page.getByText(/^\d+ ideas? close to yours$/)).toBeVisible();
     await expect(page.getByText("The problem, in their words").first()).toBeVisible();
-    await expect(page.getByText("They're looking for").first()).toBeVisible();
+    // No "They're looking for" check here: the line is the sharer's own "Who would help" answer, else their picks, and
+    // it is hidden when neither was given (BLD-F031; AI drafting is off at launch, DEC-105). Lane F's tests own it.
     const total = (await page.getByText(/^Idea 1 of \d+$/).innerText()).replace(/^Idea 1 of /, "");
     await expect(
       page.getByRole("button", { name: /^Team up on .+: send [A-Z][a-z]+ a note$/ }).first(),
