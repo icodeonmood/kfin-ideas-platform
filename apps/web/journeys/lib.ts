@@ -94,7 +94,7 @@ export async function signInAs(page: Page, who: Person): Promise<void> {
  * IDs SYN-18000 to SYN-19999 are outside the seed's range; the tag keeps two steps of one run apart.
  */
 export async function signInFresh(page: Page, tag: string): Promise<{ emp: string; name: string }> {
-  const n = 18000 + (((Date.now() / 1000 + hash(tag)) % 2000) | 0);
+  const n = 18000 + ((runSeconds() + hash(tag)) % 2000);
   const emp = `SYN-${n}`;
   const name = `Journey ${tag}`;
   await signIn(page, emp, { email: `journey.${n}.1pc@kfintech.example`, name });
