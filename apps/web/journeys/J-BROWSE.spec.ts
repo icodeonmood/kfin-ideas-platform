@@ -54,6 +54,37 @@ async function search(page: Page): Promise<void> {
   await page.getByRole("searchbox", { name: /^Search/ }).press("Enter");
 }
 
+/**
+ * A tab or sort click on the review desk, and the list it asks for: done when the server's list for the address the
+ * click wrote (tab and sort, lib/desk/address.ts) is the table's, row for row. The read is a GET without a search
+ * (desk-view.tsx readList; a search would POST, DEC-110), and its rows land after the click: until then a row's link can
+ * still move under the pointer (the FLIP reorder), so a row is clicked only once this returns.
+ */
+async function deskRead(page: Page, click: () => Promise<void>): Promise<void> {
+  const [res] = await Promise.all([
+    page.waitForResponse((r) => {
+      const asked = new URL(r.url());
+      const shown = new URL(page.url());
+      return (
+        asked.pathname === "/api/desk" &&
+        r.ok() &&
+        asked.searchParams.get("tab") === shown.searchParams.get("tab") &&
+        asked.searchParams.get("sort") === shown.searchParams.get("sort")
+      );
+    }),
+    click(),
+  ]);
+  const order = ((await res.json()) as { items: { idea_id: string }[] }).items.map((i) => i.idea_id);
+  await expect
+    .poll(() =>
+      page
+        .getByRole("main")
+        .locator("tbody tr[data-row]")
+        .evaluateAll((rows) => rows.map((r) => r.getAttribute("data-row"))),
+    )
+    .toEqual(order);
+}
+
 /** Every address the page asks for, so a step can check the search words never appear in one (DEC-110). */
 function recordRequests(page: Page): string[] {
   const urls: string[] = [];
@@ -139,8 +170,8 @@ step(
     const t6 = await seeded("T6");
     await signInAs(page, "harish");
     await page.goto("/desk");
-    await page.getByRole("tab", { name: /^Waiting on the sharer/ }).click();
-    await page.getByRole("button", { name: "Decide by" }).click();
+    await deskRead(page, () => page.getByRole("tab", { name: /^Waiting on the sharer/ }).click());
+    await deskRead(page, () => page.getByRole("button", { name: "Decide by" }).click());
     await page.getByRole("link", { name: z1.title, exact: true }).first().click();
     await page.waitForURL(/\/desk\/ideas\//);
     await page.goBack();
