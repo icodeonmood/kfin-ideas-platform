@@ -6,7 +6,7 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step } from "./lib";
+import { addMonthsIST, dayIST, decisionWindow, ideaUrl, seeded, signInAs, step } from "./lib";
 
 const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
@@ -58,14 +58,19 @@ step(
   { needs: ["S-R4", "L-COMMITTEE"] },
   async ({ page }) => {
     const c1 = await seeded("C1");
+    // The window's end as stored, and its limit worked out from the decision: 3 months on India's calendar
+    // (L-COMMITTEE.rules/2, BLD-B258). A date outside this year carries its year (Committee.md: "up to Tuesday 16
+    // February 2027"); dayIST() decides that from today in India, as desk/when.py day() does.
+    const { opensAt, closesAt } = await decisionWindow(c1);
+    const until = dayIST(closesAt);
+    const cap = dayIST(addMonthsIST(opensAt, 3));
     await openCommittee(page);
     await rowFor(page, c1.title).getByRole("button", { name: "Review" }).click();
     await expect(page.getByText("The review desk’s reason, as Charulata read it")).toBeVisible();
     await expect(
       page.getByText(
-        // A date outside 2026 carries its year (Committee.md: "up to Tuesday 16 February 2027"). C1 starts extended,
-        // so its window and every date from it fall in 2027 and must show the year.
-        /^Open until \w+day \d{1,2} \w+ \d{4}\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+ \d{4}\. When it closes, the decision stands\.$/,
+        `Open until ${until}. You can extend it 30 days at a time, up to ${cap}. When it closes, the decision stands.`,
+        { exact: true },
       ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+ \d{4}$/ })).toBeEnabled();
@@ -146,7 +151,11 @@ step(
     await sharer.goto(ideaUrl(f1));
     await expect(sharer.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
     await expect(sharer.getByText("The committee’s note to you")).toBeVisible();
-    await expect(sharer.getByText(note)).toBeVisible();
+    await expect(sharer.locator("blockquote").filter({ hasText: note })).toBeVisible();
+    // And the conversation card carries it as the Ones Committee's message (S-06.layout/8, BLD-E058).
+    await expect(
+      sharer.getByRole("complementary", { name: "The conversation and similar ideas" }).getByText(note),
+    ).toBeVisible();
     await expect(sharer.getByText(/^This is final\./)).toBeVisible();
     await sharer.context().close();
   },

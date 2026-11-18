@@ -44,6 +44,7 @@ import {
   oneLine,
   partFromStep,
   passedParts,
+  proofCounts,
   rowView,
   similarRail,
   sortingCount,
@@ -694,11 +695,12 @@ export function CheckIt({
     return s === "failed" || s === "found" || s === "too-big";
   });
 
+  const proofCount = proofCounts(proof);
   const rail: Record<PartNo, string> = {
     1: attached.length ? C.words.railFiles(attached.length) : C.words.rail,
     2: sorting?.rail ?? "",
     3: similarRail(similar, mv),
-    4: proof.length ? C.proof.count(proof.length) : C.optional,
+    4: proof.length ? C.proof.count(proofCount.files, proofCount.links) : C.optional,
     5: fixPart.kind === "added" ? C.added : C.optional,
     6: helpersAdded ? C.added : C.optional,
     7: C.send.rail,

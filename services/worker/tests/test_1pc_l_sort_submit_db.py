@@ -1272,3 +1272,25 @@ def test_l_submit_send_a_listen_prefetch_failure_never_fails_a_send(
         .fetchone()["n"]
         == 0
     )  # the savepoint undid what the failed prefetch wrote
+
+
+def test_bld_c189_s06b_c_hidden_list_3_a_shown_example_keeps_its_reason(world: dict[str, Any]) -> None:
+    """C-HIDDEN.list/3, S-06B.layout/3, J-RECOVER/7-10 (BLD-C189): the edit page gives each hidden detail as "Show it"
+    answers it (`hide.core.detail_view`), so a detail shown as made up for the example keeps its reason and S-06B
+    reads "Shown, because it's made up for the example." as S-05 does. A detail still hidden carries no reason."""
+    conn = world["conn"]
+    ref = _shared(world)
+    shown_at = NOW + dt.timedelta(minutes=5)
+    conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked, state, reason, shown_at) VALUES "
+        "(%s, 'message', 'msg-1', 'folio', 'Folio ••••89', 'shown', 'made_up_example', %s), "
+        "(%s, 'message', 'msg-1', 'phone', 'Phone ••••10', 'hidden', NULL, NULL)",
+        (world["draft"], shown_at, world["draft"]),
+    )
+    page = edit.page(conn, ref, world["p"]["asha"], now=NOW + dt.timedelta(hours=1))
+    by_mask = {d["masked"]: d for d in page["hidden"]}
+    assert by_mask["Folio ••••89"]["state"] == "shown"
+    assert by_mask["Folio ••••89"]["reason"] == "made_up_example"
+    assert dt.datetime.fromisoformat(by_mask["Folio ••••89"]["shown_at"]) == shown_at
+    assert by_mask["Phone ••••10"]["state"] == "hidden" and "reason" not in by_mask["Phone ••••10"]
+    assert set(by_mask["Folio ••••89"]) == {"id", "kind", "masked", "state", "reason", "shown_at"}

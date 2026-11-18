@@ -496,3 +496,50 @@ def test_bld_c098_each_run_reads_only_changed_ideas_and_refreshes_the_stage(
     assert stage == "picked"
     assert index.sync(db)["read"] == 0
     assert index.sync(db, full=True)["read"] == first["read"]
+
+
+def test_bld_c187_l_teamup_rules_1_the_similar_read_carries_lane_fs_team_up_check(
+    db: Any, seeded: dict[str, Any]
+) -> None:
+    """L-TEAMUP.rules/1, C-SIMGRID.tile, J-SHARE/8 (BLD-C187): each match carries `can_team_up` and `team_up_why_not`
+    from lane F's `team_up_refusal`, the check `POST /ideas/:id/team-up` refuses by. An open idea: yes. Not now and
+    Not picked: no, `idea_closed`. An idea the viewer is on the crew of: no, `already_on_crew`. Codes only."""
+    t2, b1, g1, f1 = seeded["T2"], seeded["B1"], seeded["G1"], seeded["F1"]
+    tanvi = Viewer.of(db, _user(db, "Tanvi"))
+    db.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES "
+        "(%s, %s, 'related', 'Related: also about branches'), (%s, %s, 'related', 'Related: also about branches'), "
+        "(%s, %s, 'related', 'Related: also about branches') ON CONFLICT DO NOTHING",
+        (t2.uuid, b1.uuid, t2.uuid, g1.uuid, t2.uuid, f1.uuid),
+    )
+    out = {x["idea"]["id"]: x for x in matches_for(db, t2.uuid, tanvi) or []}
+    assert out[b1.ref]["can_team_up"] is True and out[b1.ref]["team_up_why_not"] is None
+    for closed in (g1, f1):  # not_now, not_picked
+        assert out[closed.ref]["idea"]["status"] == closed.spec.status
+        assert out[closed.ref]["can_team_up"] is False and out[closed.ref]["team_up_why_not"] == "idea_closed"
+    code = tanvi.codes[0]
+    db.execute(
+        "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'crew', 'teamup')",
+        (b1.uuid, code),
+    )
+    try:
+        on = {x["idea"]["id"]: x for x in matches_for(db, t2.uuid, tanvi) or []}[b1.ref]
+        assert on["can_team_up"] is False and on["team_up_why_not"] == "already_on_crew"
+    finally:
+        db.execute("DELETE FROM crew_members WHERE idea_uuid = %s AND contributor_code = %s", (b1.uuid, code))
+
+
+def test_bld_c187_team_up_refusal_refuses_every_closed_state_before_reading_the_crew() -> None:
+    """L-TEAMUP.rules/1, E-ENUMS.idea-status (BLD-C187): every status in the `closed` group (Not now, Not picked,
+    Withdrawn, Merged) is `idea_closed` without a database read; an open idea with no contributor code reads nothing."""
+    from onepc.enums import CLOSED_STATUSES
+    from teamup.store import team_up_refusal
+
+    class NoReads:
+        def execute(self, *_a: Any, **_k: Any) -> Any:
+            raise AssertionError("no read expected")
+
+    assert set(CLOSED_STATUSES) == {"not_now", "not_picked", "withdrawn", "merged"}
+    for status in CLOSED_STATUSES:
+        assert team_up_refusal(NoReads(), {"id": "x", "status": status}, "C-1") == "idea_closed", status  # type: ignore[arg-type]
+    assert team_up_refusal(NoReads(), {"id": "x", "status": "with_review_desk"}, None) is None  # type: ignore[arg-type]

@@ -241,7 +241,14 @@ function EditLine({
         </div>
       ) : (
         <div className="ck-w-v">
-          {title ? <h3 className="h3 ck-title">{value}</h3> : <p className="ck-v">{value}</p>}
+          {!value.trim() ? (
+            // An empty line reads "Not given." beside its pen, as S-06 reads the same part (BLD-C188).
+            <p className="ck-v ck-empty">{C.words.notGiven}</p>
+          ) : title ? (
+            <h3 className="h3 ck-title">{value}</h3>
+          ) : (
+            <p className="ck-v">{value}</p>
+          )}
           {readOnly ? null : phone ? (
             <button
               type="button"

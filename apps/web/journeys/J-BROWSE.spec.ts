@@ -8,7 +8,7 @@
  * Inbox (its answer screen is opened, nothing sent) and A1 from the Wall: being built, one of only two in Kindling's
  * Being built card (up to three each, S-WALL.kindling), so it is always drawn, never behind "Show 5 more".
  */
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Response } from "@playwright/test";
 
 import { carriedFor, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
@@ -52,6 +52,48 @@ async function expectListState(page: Page): Promise<void> {
 async function search(page: Page): Promise<void> {
   await page.getByRole("searchbox", { name: /^Search/ }).fill(SEARCH);
   await page.getByRole("searchbox", { name: /^Search/ }).press("Enter");
+}
+
+/**
+ * A tab or sort click on the review desk, and the list it asks for: done when the server's list for the address the
+ * click wrote (tab and sort, lib/desk/address.ts) is the table's, row for row. The read is a GET without a search
+ * (desk-view.tsx readList; a search would POST, DEC-110), and its rows land after the click: until then a row's link can
+ * still move under the pointer (the FLIP reorder), so a row is clicked only once this returns.
+ */
+async function deskRead(page: Page, click: () => Promise<void>): Promise<void> {
+  // A click before the page has hydrated asks for nothing, so the click is tried again until a read answers it; a
+  // tab or sort clicked again only reads the same list again (components/ui/tabs.tsx, sorts.tsx).
+  let res: Response | null = null;
+  await expect(async () => {
+    [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => {
+          const asked = new URL(r.url());
+          const shown = new URL(page.url());
+          return (
+            asked.pathname === "/api/desk" &&
+            r.ok() &&
+            asked.searchParams.get("tab") === shown.searchParams.get("tab") &&
+            asked.searchParams.get("sort") === shown.searchParams.get("sort")
+          );
+        },
+        { timeout: 5_000 },
+      ),
+      click(),
+    ]);
+  }).toPass({ timeout: 20_000 });
+  if (!res) throw new Error("the desk's list was not read");
+  const order = ((await (res as Response).json()) as { items: { idea_id: string }[] }).items.map(
+    (i) => i.idea_id,
+  );
+  await expect
+    .poll(() =>
+      page
+        .getByRole("main")
+        .locator("tbody tr[data-row]")
+        .evaluateAll((rows) => rows.map((r) => r.getAttribute("data-row"))),
+    )
+    .toEqual(order);
 }
 
 /** Every address the page asks for, so a step can check the search words never appear in one (DEC-110). */
@@ -124,6 +166,13 @@ step(
     await page.goBack();
     await expect.poll(() => new URL(page.url()).pathname + new URL(page.url()).search).toBe(listUrl());
     await expect(page.getByText("Back where you were: Yours.")).toBeVisible();
+    // One back line at this width: the phone's stays hidden (BLD-E061). getByText also finds hidden nodes, so visible only
+    await expect(
+      page
+        .getByRole("main")
+        .getByText(/^Back where you were:/)
+        .filter({ visible: true }),
+    ).toHaveCount(1);
     await expectListState(page);
     await expect(rowLink(page, t5.title)).toBeFocused();
   },
@@ -139,8 +188,8 @@ step(
     const t6 = await seeded("T6");
     await signInAs(page, "harish");
     await page.goto("/desk");
-    await page.getByRole("tab", { name: /^Waiting on the sharer/ }).click();
-    await page.getByRole("button", { name: "Decide by" }).click();
+    await deskRead(page, () => page.getByRole("tab", { name: /^Waiting on the sharer/ }).click());
+    await deskRead(page, () => page.getByRole("button", { name: "Decide by" }).click());
     await page.getByRole("link", { name: z1.title, exact: true }).first().click();
     await page.waitForURL(/\/desk\/ideas\//);
     await page.goBack();

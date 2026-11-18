@@ -627,3 +627,112 @@ def test_gap_seed_l_decide_6_j_one_1_j1_carries_one_ask_to_join_the_build_team(
     ).fetchall()
     assert [(str(r["idea_uuid"]), r["first_name"]) for r in rows] == [(made["J1"].uuid, "Jatin")]
     assert not db.execute("SELECT 1 FROM build_teams WHERE idea_uuid = %s", (made["J1"].uuid,)).fetchone()
+
+
+# --- Lane G's 23:00 walk: T1, the draft J-RECOVER/3 and /6 open (BLD-E064) ----------------------------------------
+
+
+def _t1_view(db: Any, made: dict[str, club_seed.Made]) -> dict[str, Any]:
+    """T1 as Tell it reads it for Tanvi: lane C's `GET /drafts/:id` (S-04B), the API J-RECOVER/3 and /6 open."""
+    from draft.store import Device, Owner, view
+
+    tanvi = p_id(db, "tanvi")
+    code = _one(db, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", tanvi)
+    return view(db, Owner(str(tanvi), str(code)), made["T1"].uuid, Device("phone", None))
+
+
+def test_gap_seed_j_recover_3_j_recover_6_l_hide_t1_hides_a_folio_the_shared_rules_call_a_folio(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-HIDE (J-RECOVER/3, /6): T1's hidden value is a folio by the one-source pattern rules
+    (`pii/patterns.yaml`) in the words Tanvi typed, and nothing else: not a phone, as `7700012389` was. It is stored
+    and shown as a folio ("Folio ••••17"), and her sealed words hold it while the message holds only the mask."""
+    from hide.detect import config as hide_config
+    from pii.patterns import scan
+
+    spec = club_seed.IDEAS["T1"]
+    kind, value = spec.hidden["{folio}"]
+    own = spec.words[0].replace("{folio}", value)
+    start = own.index(value)
+    over = [m for m in scan(own) if m.start < start + len(value) and m.end > start]
+    assert [(m.pattern_id, own[m.start : m.end], m.action) for m in over] == [("folio", value, "block")]
+    assert hide_config().from_patterns["folio"] == kind == "folio"
+
+    rows = db.execute(
+        "SELECT kind, masked, state FROM hidden_details WHERE idea_uuid = %s", (made["T1"].uuid,)
+    ).fetchall()
+    assert [(r["kind"], r["masked"], r["state"]) for r in rows] == [("folio", "Folio ••••17", "hidden")]
+    msg = db.execute(
+        "SELECT id, text_encrypted FROM idea_messages WHERE idea_uuid = %s", (made["T1"].uuid,)
+    ).fetchone()
+    masked = open_text("idea_messages", "text_encrypted", str(msg["id"]), msg["text_encrypted"])
+    assert masked and value not in masked and "folio Folio ••••17 left" in masked
+
+
+def test_gap_seed_j_recover_6_l_draft_parts_8_c_hidden_where_t1_receipt_lists_what_was_hidden(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-DRAFT.parts/8, C-HIDDEN.where (J-RECOVER/6): T1's receipt is what lane C's `draft.runs.finish`
+    writes after a first run, so its hidden line lists the details by their masks, "Hid 1 personal detail from
+    everyone but you: Folio ••••17.", beside the hidden list the panel reads. The drafted, sorted and found lines
+    come in the engine's order; How often failed, so there is no "Noted how often" line. Its next prompts are
+    the engine's for those parts."""
+    from draft import parts as dp
+
+    spec, out = club_seed.IDEAS["T1"], _t1_view(db, made)
+    assert [(h["kind"], h["masked"], h["state"]) for h in out["hidden"]] == [
+        ("folio", "Folio ••••17", "hidden")
+    ]
+    assert out["receipt"] == [
+        f"Drafted a title: “{spec.title}”.",
+        "Sorted it under Investor service, affecting investors.",
+        "Marked it as saves time.",
+        "Hid 1 personal detail from everyone but you: Folio ••••17.",
+        "Found 1 similar idea from colleagues. You can team up on the next step.",
+        "Your draft is ready. Add a detail, or check it.",
+    ]
+    assert out["suggestions"] == ["Say how often it happens", "Add what you already tried"]
+    after = {"title": {"title": spec.title, "summary": spec.summary}, "often": None, "who": spec.affects,
+             "value": spec.brings, "area": spec.area}  # fmt: skip
+    assert out["suggestions"] == dp.suggestions(after)
+    # Every seeded draft's receipt is the engine's: no line it would not write
+    known = (
+        "Turned your email", "Drafted a title", "Sorted it under", "Noted ", "Marked it as", "Hid ", "Found ",
+        "Your draft is ready",
+    )  # fmt: skip
+    for key, mm in made.items():
+        lines = _one(db, "SELECT receipt FROM draft_runs WHERE idea_uuid = %s", mm.uuid)
+        assert lines and all(line.startswith(known) for line in lines), key
+        hid = [line for line in lines if line.startswith("Hid ")]
+        assert all(": " in line and "••••" in line for line in hid), key
+
+
+def test_gap_seed_j_recover_3_j_recover_6_l_draft_parts_2_each_part_reads_the_engines_reason(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-DRAFT.parts/2 (J-RECOVER/3, /6): T1's parts carry the reason lines lane C's engine writes
+    (`draft.parts.why_for`), in Compose.md's words: the title "From your first sentence.", who it affects "Suggested
+    because you mentioned investors.", the area "Suggested because it’s about investor service." (ComposeResume.md's
+    form), what it's worth quoting her words; How often failed, so it has none. No part anywhere in the seed reads
+    the old "Because you mentioned it"."""
+    parts = _t1_view(db, made)["parts"]
+    assert parts["title"]["why"] == "From your first sentence."
+    assert parts["title"]["source_quote"].startswith("Walk-in investors who come to update KYC")
+    assert parts["often"]["state"] == "failed" and "why" not in parts["often"]
+    assert parts["who"]["why"] == "Suggested because you mentioned investors."
+    assert parts["area"]["why"] == "Suggested because it’s about investor service."
+    assert parts["value"]["why"] == (
+        "From your words: “Yesterday one investor with folio Folio ••••17 left after forty minutes”"
+    )
+    ours = [mm.uuid for mm in made.values()]
+    assert not _one(
+        db,
+        "SELECT count(*) FROM idea_parts WHERE idea_uuid = ANY(%s) AND why = 'Because you mentioned it'",
+        ours,
+    )
+    # A confirmed sorting keeps the suggestion's line (submit.sorting), never "From your words" on its own
+    rows = db.execute("SELECT sorting_sources FROM ideas WHERE id = ANY(%s)", (ours,)).fetchall()
+    whys = {
+        str(rec.get("why")) for r in rows for rec in (r["sorting_sources"] or {}).values() if rec.get("why")
+    }
+    assert "From your words" not in whys

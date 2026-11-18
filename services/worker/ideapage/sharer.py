@@ -717,7 +717,9 @@ def sharer_view(
         # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link. Once the desk
         # has decided, the decision is the desk's message here, and after a reversal the committee's follows it, in
         # time order (BLD-E058): lane F's S-08 shows each as an event line, which `entry_count` does not count, so
-        # they are counted here. A reversed decision stays reversed once it is built or shipped.
+        # they are counted here. A reversed decision stays reversed once it is built or shipped. So are the merge
+        # lines S-08 shows on both ideas (L-MERGE.effects/6; J-REVIEW/M3, J-SIMILAR/7; BLD-E065): the card has no
+        # message for them, but no "No messages yet" over a conversation that has them.
         stands = dec is not None and state in DECIDED_STATES
         reversed_ = stands and dec is not None and dec.reversed
         messages: list[dict[str, Any]] = []
@@ -725,7 +727,7 @@ def sharer_view(
             messages.append(decision_message(conn, dec, now, names_desk=names_desk))
             if reversed_:
                 messages.append(committee_message(conn, dec, now))
-        n_entries = read.entry_count(conn, uid) + len(messages)
+        n_entries = read.entry_count(conn, uid) + len(messages) + read.merge_line_count(conn, uid)
         conversation = {
             "heading": "You and the review desk",
             "count": n_entries,

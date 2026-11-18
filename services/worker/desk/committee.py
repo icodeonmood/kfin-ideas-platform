@@ -21,6 +21,7 @@ from desk.store import (
     audited,
     has_role,
     is_own,
+    joined,
     now,
     person_by_code,
     person_by_user,
@@ -122,7 +123,7 @@ def _row_json(
         "window_id": str(r["window_id"]),
         "kind": "merge" if is_merge else "decision",
         "idea": {"id": r["idea_id"], "title": r["title"],
-                 "meta": f"{r['idea_id']}, {sharer.name}, {r['area'] or ''}, {r['city'] or ''}".rstrip(", ")},
+                 "meta": joined(r["idea_id"], sharer.name, r["area"], r["city"])},  # BLD-B264: no empty bit
         "sharer": sharer.as_json(),
         "decision": {
             "choice": choice, "label": label, "merged_into": r["lead_idea_id"] if is_merge else None,
@@ -181,8 +182,13 @@ def listing(conn: Conn, user_id: str, tab: str = "window", sort: str = "closing"
         chosen.sort(key=lambda r: r["opens_at"], reverse=True)
     elif sort == "area":
         chosen.sort(key=lambda r: ((r["area"] or "").lower(), r["closes_at"]))
+    # S-R4.states `tab`, J-COMMITTEE/3c (BLD-B265): the default "Closing soonest" on a closed tab lists the latest
+    # first, as the Committee board draws Expired (18 November above 11 November): most recently reversed, most
+    # recently expired
     elif tab == "reversed":
         chosen.sort(key=lambda r: r["reversed_at"], reverse=True)
+    elif tab == "expired":
+        chosen.sort(key=lambda r: r["closes_at"], reverse=True)
     month_start = t.astimezone(when.IST).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     mine = conn.execute(
         "SELECT count(*) AS n FROM decision_reversals WHERE by_user_id = %s AND at >= %s",

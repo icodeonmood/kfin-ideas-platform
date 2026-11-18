@@ -859,7 +859,8 @@ export interface EditPageResponse {
     line?: string;
   };
   fields: { title: string; summary: string; often: string | null };
-  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  /** As "Show it" answers each one (hide.core.detail_view): a shown detail keeps its reason (BLD-C189). */
+  hidden: HiddenDetail[];
   sorting: SortingResponse;
   fix: (FixResponse & { included: true }) | null;
   helpers: HelpersResponse;
@@ -1079,6 +1080,9 @@ export interface ReviewerPart {
   part: IdeaPart;
   name: string;
   text: string;
+  /** What the part reads when `text` is empty (S-R2.panel, BLD-B264): "No fix suggested. It was optional." for Fix,
+   * "Nothing attached." for Attached, "Not given." for the rest. The listen script reads the same words. */
+  empty: string;
   questions: ReviewerQuestion[];
 }
 export interface WorthTile {

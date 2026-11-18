@@ -423,6 +423,11 @@ export interface SimilarMatch {
   strength: MatchStrength;
   reason: string;
   my_request?: TeamUpRequest;
+  /** Repo-side (BLD-C187): lane F's L-TEAMUP.rules/1 check for this viewer, the one `POST /ideas/:id/team-up`
+   * refuses by. False: no "Team up" on the tile. Absent (an older worker): offered as before. */
+  can_team_up?: boolean;
+  /** Why not, as a code (never words): a closed, withdrawn or merged-away idea, or the viewer is on its crew. */
+  team_up_why_not?: "idea_closed" | "already_on_crew" | null;
 }
 
 export interface CrewCard extends IdeaPreview {

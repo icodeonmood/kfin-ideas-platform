@@ -68,7 +68,7 @@ export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(idea
     .filter((p) => !shownAsColleague(p))
     .map((p) => ({ name: p.name, initials: p.initials }));
   return (
-    <article className={`card hm-pcard h${card.hue === 2 ? 2 : 1}`} aria-label={card.title}>
+    <article className={`card hm-pcard hue${card.hue === 2 ? 2 : 1}`} aria-label={card.title}>
       <div className="hm-pc-top">
         <StatusPill status={status} />
         <h3 className="h3 hm-pc-t">{card.title}</h3>

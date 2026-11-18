@@ -293,6 +293,11 @@
   color: var(--ink);
 }
 
+/* A line of your words left empty: "Not given.", muted as S-06 draws it (BLD-C188). */
+.ck-v.ck-empty {
+  color: var(--mute);
+}
+
 .ck-pen {
   display: grid;
   place-items: center;

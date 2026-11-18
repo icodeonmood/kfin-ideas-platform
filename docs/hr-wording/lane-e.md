@@ -165,4 +165,13 @@ The Status and PhoneStatus boards draw the first line below in the Picked state,
 | `S-06` | Your idea's page just after sharing, the card's line under the first clause (Status.md) | `services/worker/ideapage/sharer.py:375` | We’ll tell you on Teams and by email when anything changes. → We’ll tell you by email when anything changes. |
 | `S-06` | The same on a phone (PhoneStatus.md) | `services/worker/ideapage/sharer.py:378` | We’ll tell you on Teams and by email. → We’ll tell you by email. |
 | `S-06` | Your idea's page once the answers are sent, the card's line under "Sent." (Status.md, PhoneStatus.md) | `services/worker/ideapage/sharer.py:393`, `:395` | Each answer was added to its part of your idea, under What you shared. The review desk decides by {day}, and you hear in your Inbox, on Teams and by email. → Each answer was added to its part of your idea, under What you shared. The review desk decides by {day}, and you hear in your Inbox and by email. |
-| `S-06` | Your idea's page, You and the review desk with no messages yet (Status.md; the phone's line, PhoneStatus.md, never named Teams and is unchanged) | `services/worker/ideapage/sharer.py:741` | No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams. → No messages yet. If the review desk has a question, it shows up here and in your Inbox. |
+| `S-06` | Your idea's page, You and the review desk with no messages yet (Status.md; the phone's line, PhoneStatus.md, never named Teams and is unchanged) | `services/worker/ideapage/sharer.py:743` | No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams. → No messages yet. If the review desk has a question, it shows up here and in your Inbox. |
+
+## 10. The demo seed's reason lines (dev and demo only, BLD-E064)
+
+The 1% Club seed (`make demo DEMO_SET=1pc`) never reaches production. Its drafts now carry the lines lane C's draft engine writes (`draft/parts.py`, already in lane C's wording), fed the sharer's own words; lane E adds only the two "because" reasons below, in the boards' form, where a model would write its own. A draft's other lines (the title's "From your first sentence.", "From your words: “…”", the receipt) are the engine's own.
+
+| Module | Where it shows | File and line | Wording |
+|---|---|---|---|
+| `S-04B`, `S-05` | A seeded draft's Who it affects, when the words name the groups (Compose.md, "Suggested because you mentioned investors.") | `services/worker/bootstrap/club_seed.py:514` | Suggested because you mentioned {groups}. |
+| `S-04B`, `S-05` | A seeded draft's Area (ComposeResume.md, "Suggested because it’s about distributor experience.") | `services/worker/bootstrap/club_seed.py:516` | Suggested because it’s about {area}. |

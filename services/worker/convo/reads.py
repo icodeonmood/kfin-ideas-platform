@@ -123,8 +123,14 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
         "teams_on": teams,
     }
     # "No messages yet" is drawn only with the review desk (Messages.md); once the idea has left the desk, an idea
-    # with no messages shows its event lines alone (NOT DRAWN default, BLD-F088)
-    said = any(e["type"] in ("message", "questions", "answers") for e in entries)
+    # with no messages shows its event lines alone (NOT DRAWN default, BLD-F088). A merge line counts as said too,
+    # as S-06's "You and the review desk" counts it (lane E's `MERGE_EVENTS`, L-MERGE.effects/6, BLD-F090); the
+    # shared and checked lines and any other event line keep the empty line, as Messages.md draws it
+    said = any(
+        e["type"] in ("message", "questions", "answers")
+        or (e["type"] == "event" and e["code"] in page_read.MERGE_EVENTS)
+        for e in entries
+    )
     if r.sharer and at_desk(idea) and not said:
         out["empty"] = empty_state(teams)
     return out

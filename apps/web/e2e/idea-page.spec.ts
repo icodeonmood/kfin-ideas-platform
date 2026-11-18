@@ -160,8 +160,16 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(page.getByText("Answer goes to").first()).toBeVisible();
     // C-QCARD.anatomy/1 and /4 (lane B's card, BLD-E051): the countdown is the header's pill, the deadline line alone
     await expect(page.getByText(/^(?:\d+ days?|\d{2}:\d{2}) left$/).first()).toBeVisible();
+    // C-QCARD.anatomy/4 in either of desk/when.py deadline()'s forms: "Thursday 19 November, 6 pm" (with the year
+    // when it falls in another), or "6 pm today" / "11:52 pm tomorrow" (Answer.md) once the date is a day away. The
+    // seed sets T6 due in 2 days, so a run seeded before midnight in India and checked after it reads "tomorrow"
+    // (main run 44366827160)
     await expect(
-      page.getByText(/^Answer by \w+day \d+ \w+, .+\. One at a time, typed or spoken\.$/).first(),
+      page
+        .getByText(
+          /^Answer by (?:\w+day \d{1,2} \w+(?: \d{4})?, \d{1,2}(?::\d{2})? [ap]m|\d{1,2}(?::\d{2})? [ap]m (?:today|tomorrow))\. One at a time, typed or spoken\.$/,
+        )
+        .first(),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
       "href",

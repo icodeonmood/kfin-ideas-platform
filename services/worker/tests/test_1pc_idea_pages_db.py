@@ -593,6 +593,68 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
     assert v["idea"]["stages"] == [] and v["idea"]["merged_into"] == ref(club, "R2")
 
 
+def _merge_lines(club: dict[str, Any], key: str, who: str) -> list[str]:
+    """The merge lines lane F's S-08 shows this person on this idea (`convo.reads.conversation`), by event code, not
+    by their words, so a reworded line in lane F can't make this precondition fail for the wrong reason."""
+    from convo.reads import conversation
+    from ideapage.read import MERGE_EVENTS
+
+    out = conversation(club["conn"], ref(club, key), club["p"][who], at=NOW)
+    return [str(e["code"]) for e in out["entries"] if e["type"] == "event" and e.get("code") in MERGE_EVENTS]
+
+
+def test_s06_layout_8_l_merge_effects_6_j_similar_7_merged_pages_never_say_no_messages_yet(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, L-MERGE.effects/6 (BLD-E065; J-SIMILAR/7): T11 was merged into R2 by the review desk. Lane F's
+    S-08 shows the merge line on both conversations, so neither S-06 card says "No messages
+    yet": the line is counted, as the decision is (BLD-E058), and no message or new line is added for it. Without
+    the merge lines, the empty line is back, so it is those lines that count."""
+    conn, m = club["conn"], club["m"]
+    for key, who in (("T11", "tanvi"), ("R2", "rekha")):
+        assert _merge_lines(club, key, who), key
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and conv["count"] >= 1, key
+        assert "empty_line" not in conv and "phone_empty_line" not in conv, key
+        assert "messages" not in conv, key
+    t11_before = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]["count"]
+    conn.execute(
+        "DELETE FROM conversation_entries WHERE idea_uuid = ANY(%s) AND event = 'desk_merged'",
+        ([m["T11"].uuid, m["R2"].uuid],),
+    )
+    conv = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]
+    assert conv["count"] == t11_before - 1 and conv["empty_line"].startswith("No messages yet.")
+
+
+def test_s06_layout_8_l_merge_desk_j_review_m3_after_a_desk_merge_both_pages_drop_no_messages_yet(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, L-MERGE.desk (BLD-E065; J-REVIEW/M3): Lavanya merges Jatin's J2 into Faisal's F2 from the desk,
+    as the walk does, through lane B's `desk_merge`. Lane F's S-08 shows the merge line on both, and neither S-06
+    card says "No messages yet" any more, Jatin's merged idea or Faisal's, which is still with the review desk."""
+    from desk import merging
+
+    conn = club["conn"]
+    for key, who in (("J2", "jatin"), ("F2", "faisal")):
+        assert view(club, ref(club, key), who)["page"]["conversation"]["empty_line"].startswith(
+            "No messages yet."
+        )
+    merging.desk_merge(
+        conn,
+        ref(club, "J2"),
+        club["p"]["lavanya"],
+        {
+            "other_idea_id": ref(club, "F2"),
+            "note": "You both see bank changes held up by a cheque in the post.",
+        },
+        NOW,
+    )
+    for key, who in (("J2", "jatin"), ("F2", "faisal")):
+        assert _merge_lines(club, key, who), key
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and "empty_line" not in conv and "messages" not in conv, key
+
+
 def test_s06_sharer_sees_masked_words_until_lane_c_reader_lands(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "T6"), "tanvi")
     words = json.dumps(v["idea"]["own_words"], ensure_ascii=False)
@@ -1580,6 +1642,45 @@ def test_s06_rules_4_c_simgrid_tile_j_similar_7_j_review_m3_no_tile_for_where_it
         (m["P1"].uuid, code_of(club, "tanvi")),
     )
     assert [a["op"] for a in p1_tile()["actions"]] == ["preview", "team_up"]
+
+
+def test_s06_c_simgrid_tile_l_teamup_rules_1_j_share_12_a_closed_idea_offers_no_team_up(
+    club: dict[str, Any],
+) -> None:
+    """C-SIMGRID.tile, L-TEAMUP.rules/1 (BLD-E063; J-SHARE/12): a tile offers Team up only where lane F's
+    `POST /ideas/:id/team-up` would take the ask. T5 lists P1 (shared, open) and, here, Geetanjali's G1 (Not now):
+    P1 offers Preview and Team up; G1 offers Preview alone, with no "On the crew" line, and lane F refuses the ask
+    with `idea_closed`. Not picked is closed too; back with the desk, Team up returns."""
+    from teamup import requests as teamup_requests
+    from teamup.store import Refused as TeamUpRefused
+
+    conn, m = club["conn"], club["m"]
+    t5, p1, g1 = ref(club, "T5"), ref(club, "P1"), ref(club, "G1")
+    conn.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'related', %s)",
+        (m["T5"].uuid, m["G1"].uuid, "Related: papers investors ask for"),
+    )
+
+    def tiles() -> dict[str, dict[str, Any]]:
+        return {t["idea"]["id"]: t for t in view(club, t5, "tanvi")["page"]["similar"]["tiles"]}
+
+    got = tiles()
+    assert got[g1]["pill"]["label"] == "Not now"
+    assert [a["op"] for a in got[g1]["actions"]] == ["preview"] and "done_line" not in got[g1]
+    assert got[g1]["my_state"] == "none"
+    assert [a["op"] for a in got[p1]["actions"]] == ["preview", "team_up"] and "done_line" not in got[p1]
+    # The tile agrees with lane F: the ask on G1 is refused as closed, and lane F's own read says so
+    with pytest.raises(TeamUpRefused) as refused:
+        teamup_requests.send(
+            conn, g1, club["p"]["tanvi"], {"note": "I see the same with statements at my branch."}
+        )
+    assert (refused.value.status, refused.value.code) == (409, "idea_closed")
+    assert teamup_requests.my_state(conn, p1, club["p"]["tanvi"])["can_request"] is True
+    # Not picked is closed as well; back with the review desk, it is open again
+    conn.execute("UPDATE ideas SET status = 'not_picked' WHERE id = %s", (m["G1"].uuid,))
+    assert [a["op"] for a in tiles()[g1]["actions"]] == ["preview"]
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE id = %s", (m["G1"].uuid,))
+    assert [a["op"] for a in tiles()[g1]["actions"]] == ["preview", "team_up"]
 
 
 def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(club: dict[str, Any]) -> None:
