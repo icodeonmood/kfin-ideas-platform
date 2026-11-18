@@ -27,8 +27,9 @@ What it gives every screen of the pack something to show:
 It does not write `sla_timers`: the old SLA tick reads a rule for every running timer and would stop on the new
 clock kinds. Clock dates live on the rows themselves (decide_by, due_at, closes_at, return_at, team_by).
 
-`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again. Nobody
-else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
+`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again, in one
+transaction, so a load that fails (with the kill switch `matching.show` off it refuses, GAP-SEED) leaves the seed as
+it was. Nobody else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
 """
 
 from __future__ import annotations
@@ -1065,16 +1066,21 @@ def _crews(
     return asks
 
 
+class MatchingHidden(RuntimeError):
+    """A draft with similar links got an empty similar part: `matching.show` is off (GAP-SEED)."""
+
+
 def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made]) -> None:
     """Each unsent draft's "similar" part as lane C's draft run writes it (L-SIMILAR.rules/4, BLD-C093): the
     SimilarMatch[] that `similar.views.matches_for` gives its sharer from the links `_crews` wrote, so S-04B's panel
     reads "1 similar idea, Colleagues raised something close" for the ideas S-05's part 3 shows (T2 finds R1;
     GAP-SEED, J-SIMILAR/1). Read after the merge and team-up requests, as the panel would see them. No model is
-    called; with `matching.show` off it stays empty, as a live run's would."""
+    called. `matches_for` has no way past `matching.show`, so with it off a draft with links would keep an empty
+    part while the "Checked and matched" counts say 1: the seed raises instead and its transaction writes nothing."""
     from similar.preview import Viewer
     from similar.views import matches_for
 
-    for made in m.values():
+    for key, made in m.items():
         if made.spec.status != "draft":
             continue
         found = matches_for(conn, made.uuid, Viewer.of(conn, p[made.spec.owner]["id"]))
@@ -1082,6 +1088,14 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
             conn.execute(
                 "UPDATE idea_parts SET value = %s WHERE idea_uuid = %s AND key = 'similar'",
                 (Jsonb(found), made.uuid),
+            )
+        elif conn.execute(
+            "SELECT 1 FROM similar_links WHERE idea_uuid = %s LIMIT 1", (made.uuid,)
+        ).fetchone():
+            raise MatchingHidden(
+                f"1% Club seed: draft {key} has similar ideas, but its similar part came back empty because the "
+                "kill switch matching.show is off. Nothing was changed. Switch it on (make killswitch "
+                'NAME=matching.show STATE=on REASON="…" ACTOR=…) and load the seed again.'
             )
 
 
@@ -1458,8 +1472,13 @@ def main(argv: list[str] | None = None) -> int:
         if loaded and not args.reset:
             print("1% Club seed: already loaded (make demo-reset DEMO_SET=1pc starts it fresh)")
             return 0
-        remove(conn)
-        load(conn)
+        try:
+            with conn.transaction():  # one transaction: a load that fails leaves the seed as it was
+                remove(conn)
+                load(conn)
+        except MatchingHidden as exc:
+            print(exc, file=sys.stderr)
+            return 1
     print("1% Club seed: loaded. Sign in at http://localhost:3000 with these employee IDs as the username:")
     for emp, name, *_rest, label in PEOPLE:
         if label:
