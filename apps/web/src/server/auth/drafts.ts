@@ -4,7 +4,7 @@
  * details intact).
  *
  * Drafts are `ideas` rows with status 'draft' (lane E's cut-over, 20261121500100: title, step, saved_at,
- * saved_device, archived_at, sorting_sources, sorting_confirmed_at), owned through contributor_map; hidden details
+ * saved_device, saved_device_id, archived_at, sorting_sources, sorting_confirmed_at), owned through contributor_map; hidden details
  * are `hidden_details` rows (the kind only, never the value). The title is the masked one (L-HIDE), shown only to
  * the browser that held this person's session. No draft, or one without a title yet: the card is left out.
  */
@@ -53,12 +53,32 @@ export function sortingTouched(confirmedAt: unknown, sources: unknown): boolean 
   });
 }
 
+/** Where the draft was last saved, from the asking browser's side (L-DRAFT's `saved_on`, BLD-A227). */
+export type SavedOn = { device: "laptop" | "phone"; thisDevice: boolean };
+
+/**
+ * `thisDevice` only when the browser asking is the one that saved it, by its device id (the `device_id` cookie or
+ * `X-Device-Id`, BLD-C147), as the worker's `this_device` (draft/store.py `_saved`). An unknown device: null.
+ */
+export function savedOn(device: unknown, savedId: string | null, askingId: string | null): SavedOn | null {
+  if (device !== "laptop" && device !== "phone") return null;
+  return { device, thisDevice: Boolean(askingId && savedId === askingId) };
+}
+
+/**
+ * S-02's words after the time: " on this laptop" (the board's line, SignIn.md and PhoneSignIn.md) when this browser
+ * saved it, and " on your phone" when another device did, as S-03 and S-04B say it (NOT DRAWN on S-02); "" when unknown.
+ */
+export function savedOnWords(on: SavedOn | null): string {
+  return on ? ` on ${on.thisDevice ? "this" : "your"} ${on.device}` : "";
+}
+
 export type DraftCard = {
   id: string;
   title: string;
   savedAt: Date;
-  /** The device it was last saved on, as the composer recorded it. */
-  savedOn: "laptop" | "phone" | null;
+  /** The device it was last saved on, as the composer recorded it, and whether it is the browser asking. */
+  savedOn: SavedOn | null;
   /** E-ENUMS draft step: tell, check:1 to check:7, send. */
   step: string;
   /** What is kept, in the composer's words ("Sorting and the folio you hid are kept."), or null. */
@@ -66,12 +86,12 @@ export type DraftCard = {
 };
 
 export interface DraftLookup {
-  /** The draft, only if it belongs to this person and is still a draft. */
-  card(ownerId: string, draftId: string): Promise<DraftCard | null>;
+  /** The draft, only if it belongs to this person and is still a draft. `askingId`: the asking browser's device id. */
+  card(ownerId: string, draftId: string, askingId?: string | null): Promise<DraftCard | null>;
 }
 
 export const pgDraftLookup: DraftLookup = {
-  async card(ownerId, draftId) {
+  async card(ownerId, draftId, askingId = null) {
     const row = await getDb()
       .selectFrom("ideas")
       .innerJoin("contributor_map", "contributor_map.contributor_code", "ideas.contributor_code")
@@ -80,6 +100,7 @@ export const pgDraftLookup: DraftLookup = {
         "ideas.title",
         "ideas.saved_at",
         "ideas.saved_device",
+        "ideas.saved_device_id",
         "ideas.step",
         "ideas.sorting_confirmed_at",
         "ideas.sorting_sources",
@@ -96,12 +117,11 @@ export const pgDraftLookup: DraftLookup = {
       .where("idea_uuid", "=", row.id)
       .where("state", "=", "hidden")
       .execute();
-    const device = row.saved_device === "laptop" || row.saved_device === "phone" ? row.saved_device : null;
     return {
       id: row.id,
       title: row.title,
       savedAt: new Date(row.saved_at),
-      savedOn: device,
+      savedOn: savedOn(row.saved_device, row.saved_device_id, askingId),
       step: row.step ?? "tell",
       keptLine: keptLine({
         sorting: sortingTouched(row.sorting_confirmed_at, row.sorting_sources),

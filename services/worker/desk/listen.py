@@ -14,7 +14,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from desk.questions import PART_NAMES, PARTS, Part
+from desk.questions import PART_EMPTY, PART_NAMES, PARTS, Part
 from desk.worth import Worth, tiles
 
 # Must match the browser engine's estimate (apps/web/src/lib/desk/listen.ts) so the server's lengths and the
@@ -23,14 +23,9 @@ CHARS_PER_SECOND = 15.0
 PART_GAP_SECONDS = 0.5  # between one part and the next
 
 _MASK = re.compile(r"\s*•{2,}[^\s.,;:!?)]*")  # "Folio ••••89" → "Folio hidden"
-_EMPTY: dict[str, str] = {
-    "summary": "No summary yet.",
-    "often": "Not given.",
-    "who": "Not given.",
-    "cost": "No figures given.",
-    "evidence": "Nothing attached.",
-    "fix": "No fix suggested. It was optional.",
-}
+# An empty part reads as the reviewer's page reads it (BLD-B264: `PART_EMPTY`, the same words for Attached and Fix),
+# except the two the page never shows as words: the problem before a summary exists, and the worth figures.
+_EMPTY: dict[str, str] = {**PART_EMPTY, "summary": "No summary yet.", "cost": "No figures given."}
 _NUMBERS = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
 
 

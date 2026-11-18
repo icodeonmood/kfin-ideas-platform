@@ -432,7 +432,7 @@ export function ReviewerIdea({
                     />
                   ) : (
                     <p className="body ri-part-t">
-                      <span className="muted">Not given.</span>
+                      <span className="muted">{part.empty}</span>
                     </p>
                   )}
                   {/* L-HIDE.rules/6: beside "… hidden from everyone.", what the sharer chose to show and why */}

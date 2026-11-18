@@ -16,7 +16,17 @@
 import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, CLUB, draftUrl, endSession, runSeconds, seeded, signInAs, step } from "./lib";
+import {
+  carriedFor,
+  CLUB,
+  draftUrl,
+  endSession,
+  expectWithDesk,
+  runSeconds,
+  seeded,
+  signInAs,
+  step,
+} from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
@@ -474,7 +484,7 @@ step(
     await page.context().setOffline(false);
     await page.waitForURL(new RegExp(`/ideas/${REF}$`), { timeout: 20_000 });
     carried.idea = new URL(page.url()).pathname;
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
   },
 );
 
@@ -555,10 +565,15 @@ step(
       .getByRole("textbox", { name: "Or paste a link to a report, dashboard or ticket" })
       .fill(`https://${host}/courier-returns-edit`);
     await page.getByRole("button", { name: "Add link" }).click();
-    const row = page.getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
-    await expect(row.first()).toBeVisible();
+    // The row of the link just added (C-FILE rows are list items): the draft's own link from J-RECOVER/9 stays.
+    const row = page
+      .getByRole("listitem")
+      .filter({ hasText: "courier-returns-edit" })
+      .getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
+    await expect(row).toBeVisible();
     await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
-    await row.first().click();
+    await row.click();
+    await expect(page.getByRole("listitem").filter({ hasText: "courier-returns-edit" })).toHaveCount(0);
     expect(opened).toEqual([]);
   },
 );
@@ -636,7 +651,9 @@ step(
     await page.getByRole("button", { name: "Withdraw it" }).click();
     await expect(page.getByText("Withdrawn. It’s back in your drafts.").first()).toBeVisible();
     await page.getByRole("button", { name: "Restore it" }).click();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    // Restored (L-SUBMIT.withdraw/3): the withdrawn card and its Restore it give way to the shared idea.
+    await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
+    await expectWithDesk(page);
   },
 );
 

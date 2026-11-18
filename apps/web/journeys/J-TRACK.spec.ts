@@ -15,13 +15,16 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step, type Person } from "./lib";
+import { expectWithDesk, ideaCard, ideaUrl, seeded, signInAs, step, type Person } from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`; // "Wednesday 16 December"
 const DAY_Y = String.raw`${DAY}(?: \d{4})?`; // "Tuesday 16 February 2027"
 const TIME = String.raw`\d{1,2}(?::\d{2})? (?:am|pm)`; // "11:20 am", "6 pm"
+/** When something is due (desk/when.py due()): "7 pm today", "6 pm tomorrow", else "Thursday 19 November, 6 pm". The
+ * seed sets T6's deadline 2 days on, so a run seeded before midnight in India and walked after it reads "tomorrow". */
+const DUE = String.raw`(?:${DAY}, ${TIME}|${TIME} (?:today|tomorrow))`;
 const LEFT = String.raw`(?:\d+ days?|\d{2}:\d{2}) left`; // "3 days left", "07:38 left"
 const OPEN_Q = `["“]`;
 const CLOSE_Q = `["”]`;
@@ -90,7 +93,7 @@ step(
     await page.goto(ideaUrl(t5));
     await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeVisible();
     await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expect(ideaCard(page).getByText("With the review desk", { exact: true })).toBeVisible();
     await expect(
       page.getByText(new RegExp(`^The review desk will look at it by ${DAY}\\.`)).first(),
     ).toBeVisible();
@@ -126,7 +129,7 @@ step(
     await item.click();
     await expect(page.getByText("Questions from the review desk", { exact: true }).first()).toBeVisible();
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`^Answer by ${DAY}, ${TIME}\\.$`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Answer by ${DUE}\\.$`)).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toBeVisible();
 
     // Home's Needs you carries the same questions and the same clock (S-03, Home.md).
@@ -158,7 +161,7 @@ step(
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
     const deadline = await capture(
       page.getByText(/^Answer by .*One at a time, typed or spoken\.$/).first(),
-      new RegExp(`^Answer by (${DAY}, ${TIME})\\. One at a time, typed or spoken\\.$`),
+      new RegExp(`^Answer by (${DUE})\\. One at a time, typed or spoken\\.$`),
     );
     // L-SUBMIT.edit/5: opened by the desk, so locked; no Withdraw.
     await expect(
@@ -270,7 +273,8 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi");
-    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
+    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from the review desk as a whole (DEC-111); its countdown
+    // follows the one rule (BLD-A225): days, or HH:MM under a day.
     const item = inboxItem(
       page,
       "The review desk",
@@ -474,17 +478,8 @@ step(
     await page.getByRole("button", { name: "Restore it" }).click();
     // L-SUBMIT.withdraw/3 and its lifecycle: restored, it is shared again (Checking) with the same reference, and one
     // submit.check job, run by this stack's worker (WORKER_ROLES has jobs), hands it to the review desk.
-    await expect(page.getByText(/^(?:Checking|With the review desk)$/).first()).toBeVisible();
-    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
-    await expect
-      .poll(
-        async () => {
-          await page.reload();
-          return page.getByText("With the review desk", { exact: true }).first().isVisible();
-        },
-        { timeout: 120_000, intervals: [5_000] },
-      )
-      .toBe(true);
+    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
   },
 );
