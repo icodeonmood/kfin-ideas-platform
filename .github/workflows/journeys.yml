@@ -2,7 +2,7 @@
 # Same set-up as the gates job in ci.yml, plus the 1% Club seed and a provider that answers a silent sign-in as
 # Entra ID does (BLD-A197); runs only this suite. Synthetic data only; no secrets (LLM_MODE=fake,
 # EMBEDDINGS_MODE=hash, OIDC_MODE=mock). Part of the gates since Thu 19 Nov (BLD-A230): ci.yml calls it on every
-# branch run and pull request; on main it runs from its own push trigger below, once per commit.
+# run off main (a pull request, or a run by hand on a branch); main is walked from its own push trigger below.
 name: journeys
 
 on:
@@ -12,10 +12,12 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# One run at a time on main, never cancelled: each walk reads the latest completed run. A run by hand on another
-# branch (a builder checking its specs) has its own group, so it never displaces a pending run on main.
+# One run at a time on main, never cancelled once started: each walk reads the latest completed run. While one runs,
+# only the newest push waits (an older waiting run gives way), and pushes that change only docs are not walked.
+# Off main the group also carries the workflow's name: called from ci.yml it is "ci", run by hand it is "journeys".
+# So a builder's run by hand never queues behind, or cancels, the walk CI runs on the same branch, nor one on main.
 concurrency:
-  group: ${{ github.ref == 'refs/heads/main' && 'journeys-main' || format('journeys-{0}', github.ref) }}
+  group: ${{ github.ref == 'refs/heads/main' && 'journeys-main' || format('journeys-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: false
 
 jobs:
@@ -53,11 +55,12 @@ jobs:
           grep -qx 'MOCK_OIDC_PORT=8091' .env
           nohup python3 scripts/ci/oidc_silent_shim.py --listen 8090 --upstream 8091 \
             > "$RUNNER_TEMP/oidc-shim.log" 2>&1 &
-          # The proxy must be listening before anything signs in, or the run fails later and far from the cause.
-          # Any HTTP answer counts (the mock behind it starts with the stack); a dead proxy fails here, by name.
+          # A dead proxy would otherwise show only 120 s later, inside make up's health wait, as mock-oidc failing.
+          # Here it fails at once, by name, with its log. Any HTTP answer counts, even the proxy's own 502 while the
+          # mock behind it is still starting with the stack.
           ok=""
-          for i in 1 2 3 4 5; do
-            if curl -sS -o /dev/null http://127.0.0.1:8090/; then ok=1; break; fi
+          for _ in 1 2 3 4 5; do
+            if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8090/; then ok=1; break; fi
             sleep 1
           done
           [ -n "$ok" ] || { echo "The sign-in proxy on :8090 did not answer."; cat "$RUNNER_TEMP/oidc-shim.log"; exit 1; }
