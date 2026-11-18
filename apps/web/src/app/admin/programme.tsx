@@ -21,6 +21,13 @@ export type IdeaRow = {
   since: string | null;
   since_label: string | null;
 };
+/**
+ * Someone who asked to join a picked idea's build team (L-DECIDE.rules/6, DEC-111, BLD-A226): lane B's
+ * `asks_for_idea` as the worker returns it, oldest first, with the page's day label ("12 Nov 2026"). Names only.
+ */
+export type AskToJoin = { user_id: string; name: string; asked_at: string; asked_label: string };
+/** A picked idea waiting for its build team, with who asked to join it (J-ONE step 1). */
+export type PickedRow = IdeaRow & { asked_to_join?: AskToJoin[] };
 export type DueRow = {
   id: number;
   idea_ref: string;
@@ -57,7 +64,7 @@ export type OneRow = {
 export type ProgrammeView = {
   can: { programme: boolean; wall: boolean };
   off_wall: Removal[];
-  picked?: IdeaRow[];
+  picked?: PickedRow[];
   being_built?: IdeaRow[];
   shipped?: IdeaRow[];
   due?: DueRow[];
@@ -167,7 +174,7 @@ export function useHeadingFocus(onDone: (m: string) => Promise<void>) {
 
 // --- J-ONE step 1: choose the build team -------------------------------------------------------------------------
 
-function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) => Promise<void> }) {
+function BuildTeam({ picked, onDone }: { picked: PickedRow[]; onDone: (m: string) => Promise<void> }) {
   const id = useId();
   const [idea, setIdea] = useState("");
   const [name, setName] = useState("");
@@ -175,6 +182,7 @@ function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) 
   const [members, setMembers] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
   const chosen = idea || picked[0]?.idea_ref || "";
+  const asks = picked.find((p) => p.idea_ref === chosen)?.asked_to_join ?? [];
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -219,6 +227,7 @@ function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) 
             ))}
           </select>
           <FieldError id={`${id}-err-idea`} problem={problem} field="idea" />
+          <AskedToJoin id={`${id}-asked`} asks={asks} />
           <label htmlFor={`${id}-name`}>Team name</label>
           <input
             id={`${id}-name`}
@@ -261,6 +270,30 @@ function BuildTeam({ picked, onDone }: { picked: IdeaRow[]; onDone: (m: string) 
         </form>
       )}
     </section>
+  );
+}
+
+/**
+ * Who asked to join the chosen idea's build team (L-DECIDE.rules/6, DEC-111; J-ONE step 1), oldest first, so the
+ * admin can put them on the team. The worker sends names only, so the admin adds them by work email below.
+ * NOT DRAWN (S-ADMIN is undrawn, L-DECIDE.after OPEN): the heading, each row and the empty line are for HR's read.
+ */
+function AskedToJoin({ id, asks }: { id: string; asks: AskToJoin[] }) {
+  return (
+    <div className="admin-asks">
+      <h4 id={id}>Asked to join</h4>
+      {asks.length === 0 ? (
+        <p>No one has asked to join yet.</p>
+      ) : (
+        <ul aria-labelledby={id}>
+          {asks.map((a) => (
+            <li key={a.user_id}>
+              {a.name}, asked {a.asked_label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
