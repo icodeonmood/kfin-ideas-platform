@@ -538,13 +538,7 @@ export function SharerScreen({
           ) : null}
           {d ? (
             // L-DECIDE/6: "Ask to join the build team" after a Pick, then the line it leaves (J-REVIEW/6, BLD-E055)
-            <AskToJoin
-              ideaId={ref}
-              d={d}
-              say={setSaid}
-              failed={setFailed}
-              away={() => title.current?.focus()}
-            />
+            <AskToJoin ideaId={ref} d={d} failed={setFailed} away={() => title.current?.focus()} />
           ) : null}
           {failed ? <Status kind="error" title={TRY_AGAIN} /> : null}
         </div>

@@ -147,5 +147,5 @@ The Status and PhoneStatus boards draw the first line below in the Picked state,
 
 | Module | Where it shows | File and line | Wording |
 |---|---|---|---|
-| `S-06` | Your idea's page after a Pick, in place of "Ask to join the build team" once you have asked (drawn at `1pc-handoff/reference/prototype/Status.dc.html:899` and `PhoneStatus.dc.html:889`) | `ideas/[id]/join-build.tsx:41` | Asked. The build lead replies by {day month}. |
-| `S-06` | The same, when the Pick has no team-chosen-by date | `ideas/[id]/join-build.tsx:41` | Asked. The build lead replies. |
+| `S-06` | Your idea's page after a Pick, in place of "Ask to join the build team" once you have asked (drawn at `1pc-handoff/reference/prototype/Status.dc.html:899` and `PhoneStatus.dc.html:889`) | `ideas/[id]/join-build.tsx:39` | Asked. The build lead replies by {day month}. |
+| `S-06` | The same, when the Pick has no team-chosen-by date | `ideas/[id]/join-build.tsx:39` | Asked. The build lead replies. |
