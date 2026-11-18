@@ -98,9 +98,11 @@ def test_l_convo_7_a_message_is_masked_then_sealed_before_anyone_else_sees_it(
     assert unseal(blob, str(row["id"])) == "Folio ••••90 was rejected twice, Kavya Menon says R07 again."
     [m] = messages(conversation(db, idea["idea_id"], kavya["id"], at=NOW))
     assert m["text"] == "Folio ••••90 was rejected twice, Kavya Menon says R07 again."
-    assert (
-        m["from_label"] == "Meera from the review desk" and m["from"]["role_label"] == "from the review desk"
-    )
+    # DEC-111: the sharer reads the review desk, never the person at it; the desk reads the name (BLD-F082)
+    assert m["from_label"] == "The review desk"
+    assert m["from"] == {"id": "", "name": "The review desk", "first_name": "The review desk", "initials": ""}
+    [d] = messages(conversation(db, idea["idea_id"], meera["id"], at=NOW))
+    assert d["from_label"] == "You" and d["from"]["role_label"] == "from the review desk"
     assert "1234567890" not in captured_logs.getvalue() and "rejected twice" not in captured_logs.getvalue()
 
 

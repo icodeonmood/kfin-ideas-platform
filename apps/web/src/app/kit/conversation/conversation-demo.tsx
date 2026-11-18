@@ -2,6 +2,7 @@
 
 import { Conversation } from "@/components/convo/conversation";
 import type { ConversationView } from "@/lib/contracts";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
 
 /** Synthetic: the pack's fictional cast and idea ("Ravi's idea, after teaming up"). The e2e spec answers every call
  * for this reference. */
@@ -85,7 +86,7 @@ export const DEMO_VIEW: ConversationView = {
 };
 
 /** The review desk as the sharer reads it: never the person at it (DEC-111). */
-const DESK = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+const DESK = { id: "", name: REVIEW_DESK_START, first_name: REVIEW_DESK_START, initials: "" };
 
 /** The sharer's own idea with the review desk's open questions (Messages.md's default; lane B's card, BLD-B249). The
  * e2e spec answers `GET /api/ideas/:id/question-set` for it. */
@@ -95,7 +96,7 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
   audience: "you_and_desk",
   header: { whose: "Your idea", line: "Your idea, shared Monday 9 November" },
   participants: [
-    { person: DESK, label: "The review desk", doing: "Reviewing it", you: false },
+    { person: DESK, label: REVIEW_DESK_START, doing: "Reviewing it", you: false },
     { person: KAVYA, label: "You", doing: "Shared the idea", you: true },
   ],
   entries: [
@@ -112,7 +113,7 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
       set_id: "6c1f6a0e-0000-4000-8000-000000000013",
       state: "seen",
       by: DESK,
-      by_label: "The review desk",
+      by_label: REVIEW_DESK_START,
       count: 3,
       answered: 0,
       due_at: "2026-11-19T18:00:00+05:30",
