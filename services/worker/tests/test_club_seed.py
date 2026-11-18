@@ -469,3 +469,19 @@ def test_s_03_hero_1_bld_c148_every_persona_has_seen_home_but_sana_the_first_vis
     assert _one(conn, "SELECT count(*) FROM users WHERE emp_id_hash = %s", sana_hash) == 0
     assert _one(conn, "SELECT count(*) FROM person_settings WHERE user_id = %s", sana) == 0
     assert _one(conn, "SELECT count(*) FROM contributor_map WHERE user_id = %s", sana) == 0
+
+
+def test_bld_f069_j_teamup_faisals_seeded_team_up_answer_says_hello_into_the_box(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """BLD-F069, J-TEAMUP: Faisal's seeded team-up answer (team only, from Tanvi on T7) is posted the way lane F's
+    live `tell_requester` posts it: one "Say hello" that opens T7's conversation with the box focused."""
+    t7 = made["T7"]
+    rows = db.execute(
+        "SELECT actions FROM notifications WHERE kind = 'teamup_answer' AND user_id = %s AND idea_uuid = %s",
+        (p_id(db, "faisal"), t7.uuid),
+    ).fetchall()
+    assert len(rows) == 1 and t7.ref
+    assert rows[0]["actions"] == [
+        {"label": "Say hello", "style": "primary", "to": f"/ideas/{t7.ref}/conversation#say-hello"}
+    ]
