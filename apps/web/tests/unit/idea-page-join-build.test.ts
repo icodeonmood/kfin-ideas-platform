@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * S-06's "Ask to join the build team" after a Pick (L-DECIDE/6, A-API `POST /ideas/:id/join-build`; J-REVIEW/6;
- * BLD-E053). The button shows while lane B's `join_build.can_ask` says so; a click posts with no body and the drawn
+ * BLD-E055). The button shows while lane B's `join_build.can_ask` says so; a click posts with no body and the drawn
  * line, "Asked. The build lead replies by 27 November.", takes its place, is said in the status line and takes focus.
  * Asked before: the line, no button. No `join_build`: nothing. A refusal: the screen's "try again" line and a refresh,
  * with focus kept off the page's body. No Undo (A-API has no withdraw). Copy: Status.md, Status.dc.html:899.
@@ -198,7 +198,7 @@ describe("L-DECIDE/6, S-06 Picked: Ask to join the build team", () => {
     expect(joined()?.textContent).toBe(ASKED);
   });
 
-  it("BLD-E053: without a reply-by date the line drops its date clause", () => {
+  it("BLD-E055: without a reply-by date the line drops its date clause", () => {
     show(props({ ...ASKED_BEFORE, reply_by: null }));
     expect(joined()?.textContent).toBe("Asked. The build lead replies.");
   });
@@ -265,7 +265,7 @@ describe("L-DECIDE/6, S-06 Picked: Ask to join the build team", () => {
     }
   });
 
-  it("BLD-E053: no Undo beside the button or the asked line", async () => {
+  it("BLD-E055: no Undo beside the button or the asked line", async () => {
     show(props(CAN_ASK));
     expect(button("Undo")).toBeUndefined();
     vi.stubGlobal(
@@ -280,7 +280,7 @@ describe("L-DECIDE/6, S-06 Picked: Ask to join the build team", () => {
   });
 });
 
-describe("BLD-E053: the asked line's date", () => {
+describe("BLD-E055: the asked line's date", () => {
   it("day and month only, in office time (India)", () => {
     expect(dayMonth("2026-11-27")).toBe("27 November");
     expect(dayMonth("2026-11-27T20:00:00Z")).toBe("28 November");
