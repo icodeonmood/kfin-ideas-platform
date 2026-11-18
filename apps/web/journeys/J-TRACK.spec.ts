@@ -417,7 +417,10 @@ step(
     await signInAs(page, "varun");
     await page.goto(ideaUrl(v1));
     await expect(page.getByRole("heading", { level: 1, name: v1.title })).toBeVisible();
-    await expect(page.locator('[aria-current="step"]')).toHaveText(/Shipped/);
+    // C-TRACK.anatomy: a stage's state is its read-out suffix; at Shipped every stage is done and none is "now".
+    const track = page.getByRole("list", { name: "Where it is" }).filter({ visible: true });
+    await expect(track.getByText("Shipped, done", { exact: true })).toBeVisible();
+    await expect(track.getByText(/, now$/)).toHaveCount(0);
 
     // S-WALL.impact: the live-fixes table, with the measured sentence and when it was measured.
     await page.goto("/wall");
@@ -449,7 +452,7 @@ step(
 step(
   "J-TRACK/v1",
   "S-06",
-  "Withdraw while the window is open: back in your drafts, nobody else sees it; Restore it shares it again",
+  "Withdraw while the window is open: back in your drafts, nobody else sees it; Restore it shares it again (Checking, then with the review desk)",
   { needs: ["S-06", "L-SUBMIT"], changes: ["T5"] },
   async ({ page }) => {
     const t5 = await seeded("T5");
@@ -471,8 +474,19 @@ step(
     await expect(page.getByText("Withdrawn before review").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Restore it" }).click();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    // L-SUBMIT.withdraw/3 and its lifecycle: restored, it is shared again (Checking) with the same reference, and one
+    // submit.check job, run by this stack's worker (WORKER_ROLES has jobs), hands it to the review desk.
+    await expect(page.getByText(/^(?:Checking|With the review desk)$/).first()).toBeVisible();
     await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
+    await expect
+      .poll(
+        async () => {
+          await page.reload();
+          return page.getByText("With the review desk", { exact: true }).first().isVisible();
+        },
+        { timeout: 120_000, intervals: [5_000] },
+      )
+      .toBe(true);
   },
 );

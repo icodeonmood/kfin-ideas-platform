@@ -10,7 +10,7 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
+import { carriedFor, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const SEARCH = "Redemption"; // T5: "Redemption status is not visible to the branch"
 
@@ -23,7 +23,7 @@ function rowLink(page: Page, title: string): Locator {
   return page.getByRole("link", { name: new RegExp(`(?:^|: )${esc(title)}$`) }).first();
 }
 
-const carried: { list?: string } = {};
+const carried = carriedFor<{ list: string }>("J-BROWSE");
 
 function listUrl(): string {
   if (!carried.list)

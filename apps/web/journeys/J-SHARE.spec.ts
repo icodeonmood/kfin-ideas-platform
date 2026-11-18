@@ -16,7 +16,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { step } from "./lib";
+import { carriedFor, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ const WORDS =
 const PAN_MASKED = "PAN ••••8Z";
 const DETAIL = "We raise a ticket for each one and wait two days for an answer.";
 
-const carried: { draft?: string; title?: string; idea?: string } = {};
+const carried = carriedFor<{ draft: string; title: string; idea: string }>("J-SHARE");
 
 function need<K extends keyof typeof carried>(key: K, from: string): string {
   const v = carried[key];
