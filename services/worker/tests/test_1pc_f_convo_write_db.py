@@ -125,9 +125,10 @@ def test_l_convo_9_l_inbox_comment_the_sharer_writes_to_the_desk_after_it_opened
         and first["sender"] == meera["id"]
         and first["idea_id"] == str(idea["id"])
     )
-    assert first["refs"] == {"entry_id": reply["entry"]["id"]}
+    # Meera speaks as the review desk: lane A names the desk, not her (DEC-111, BLD-F084)
+    assert first["refs"] == {"entry_id": reply["entry"]["id"], "as_desk": True}
     assert (
-        told[0]["dedupe_key"] == told[1]["dedupe_key"] == f"convo.comment:{idea['id']}:2026111709"
+        told[0]["dedupe_key"] == told[1]["dedupe_key"] == f"convo.comment:{idea['id']}:2026111709:desk"
     )  # a burst
     assert [a.to for a in first["actions"]] == [f"/ideas/{idea['idea_id']}/conversation"]
 
@@ -526,7 +527,11 @@ def test_bld_f056_l_inbox_comment_a_new_hour_starts_a_new_comment_item(
     send(db, idea["idea_id"], meera["id"], {"text": "Before ten."}, at=fx.at(17, 9, 59))
     send(db, idea["idea_id"], meera["id"], {"text": "After ten."}, at=fx.at(17, 10, 0))
     keys = [c["dedupe_key"] for c in told if c["kind"] == "comment"]
-    assert keys == [f"convo.comment:{idea['id']}:2026111709", f"convo.comment:{idea['id']}:2026111710"]
+    # the review desk's own hourly item (DEC-111, BLD-F084)
+    assert keys == [
+        f"convo.comment:{idea['id']}:2026111709:desk",
+        f"convo.comment:{idea['id']}:2026111710:desk",
+    ]
 
 
 def test_bld_f063_l_convo_7_only_the_sharer_the_desk_and_the_core_committee_add_files(
