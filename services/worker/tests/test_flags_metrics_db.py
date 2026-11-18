@@ -78,10 +78,20 @@ def test_p_decisions_experiments_flag_events_keep_codes_and_each_s1_step_once(pe
     ):
         with pytest.raises(psycopg.errors.CheckViolation):
             _event(db, flag, uid, "default", None, event, outcome)
-    # S3's events are not once per draft: every voice note counts
-    _event(db, "s3", uid, "default", draft, "s3.note", "as_heard")
-    _event(db, "s3", uid, "default", draft, "s3.note", "as_heard")
-    assert db.execute("SELECT count(*) AS n FROM flag_events WHERE user_id = %s", (uid,)).fetchone()["n"] == 3
+    # S2's events and S3's notes name a draft, and are kept once per draft and outcome: a flood adds nothing
+    for flag, event, outcome in (("s2", "s2.check", "opened"), ("s3", "s3.note", "as_heard")):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _event(db, flag, uid, "default", None, event, outcome)
+        _event(db, flag, uid, "default", draft, event, outcome)
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            _event(db, flag, uid, "default", draft, event, outcome)
+    _event(
+        db, "s3", uid, "default", draft, "s3.note", "corrected"
+    )  # another outcome for the same draft is kept
+    # S3's listening is not per draft: each page that listened counts once per person in the view
+    _event(db, "s3", uid, "default", None, "s3.listen", "started")
+    _event(db, "s3", uid, "default", None, "s3.listen", "started")
+    assert db.execute("SELECT count(*) AS n FROM flag_events WHERE user_id = %s", (uid,)).fetchone()["n"] == 6
 
 
 def test_p_decisions_experiments_s1_and_s3_metrics_per_variant(people: Any) -> None:
@@ -104,18 +114,20 @@ def test_p_decisions_experiments_s1_and_s3_metrics_per_variant(people: Any) -> N
     ):
         _event(db, "s1", alt, "alternative", a, event, outcome)
     _event(db, "s3", alt, "alternative", a, "s3.listen", "started")
+    _event(db, "s3", alt, "alternative", None, "s3.listen", "started")  # a second page: the same person
     _event(db, "s3", alt, "alternative", a, "s3.note", "corrected")
-    _event(db, "s3", alt, "alternative", a, "s3.note", "as_heard")
+    a2 = _draft(db, alt_code, device="phone", shared=True, parts=["title"])
+    _event(db, "s3", alt, "alternative", a2, "s3.note", "as_heard")
     # default: two laptop drafts, one shared with every part
     _draft(db, dflt_code, device="laptop", shared=True, parts=["title", "often", "who", "value", "area"])
     _draft(db, dflt_code, device="laptop", shared=False, parts=[])
 
     s1 = {r["variant"]: r for r in db.execute("SELECT * FROM flag_s1_metrics").fetchall()}
     assert s1["alternative"]["people"] == 1
-    assert s1["alternative"]["drafts_started"] == 1
-    assert s1["alternative"]["drafts_shared"] == 0
-    assert float(s1["alternative"]["drop_off_rate"]) == 1.0
-    assert float(s1["alternative"]["completeness_all_drafts"]) == 0.6
+    assert s1["alternative"]["drafts_started"] == 2  # both phone drafts below
+    assert s1["alternative"]["drafts_shared"] == 1
+    assert float(s1["alternative"]["drop_off_rate"]) == 0.5
+    assert float(s1["alternative"]["completeness_all_drafts"]) == 0.4
     assert (s1["alternative"]["questions_answered"], s1["alternative"]["questions_skipped"]) == (1, 2)
     assert (s1["alternative"]["interviews_started"], s1["alternative"]["interviews_finished"]) == (1, 1)
     assert s1["default"]["drafts_started"] == 2
@@ -126,11 +138,11 @@ def test_p_decisions_experiments_s1_and_s3_metrics_per_variant(people: Any) -> N
     assert s1["default"]["questions_answered"] == 0
 
     s3 = {r["variant"]: r for r in db.execute("SELECT * FROM flag_s3_metrics").fetchall()}
-    assert s3["alternative"]["phone_drafts_started"] == 1
-    assert float(s3["alternative"]["phone_completion_rate"]) == 0.0
-    assert (s3["alternative"]["notes_sent"], s3["alternative"]["notes_corrected"]) == (2, 1)
+    assert s3["alternative"]["phone_drafts_started"] == 2
+    assert float(s3["alternative"]["phone_completion_rate"]) == 0.5
+    assert (s3["alternative"]["drafts_with_notes"], s3["alternative"]["drafts_corrected"]) == (2, 1)
     assert float(s3["alternative"]["correction_rate"]) == 0.5
-    assert s3["alternative"]["listened_at_once"] == 1
+    assert s3["alternative"]["people_listened_at_once"] == 1
     assert s3["default"]["phone_drafts_started"] == 0  # laptop drafts are not the phone's
     assert s3["default"]["phone_completion_rate"] is None
 
@@ -156,11 +168,17 @@ def test_p_decisions_experiments_s2_metrics_duplicates_to_the_desk_and_completio
     # alternative: shown the comparison first, asked to merge; not shared
     a = _draft(db, alt_code, device="laptop", shared=False, parts=["title"])
     _event(db, "s2", alt, "alternative", a, "s2.check", "opened")
+    _event(db, "s2", alt, "alternative", a, "s2.check", "close_match")
     _event(db, "s2", alt, "alternative", a, "s2.compare", "shown")
     _event(db, "s2", alt, "alternative", a, "s2.compare", "merge_asked")
     # default: the same close match, carried on and shared on its own (a duplicate reaching the desk)
     d = _draft(db, dflt_code, device="laptop", shared=True, parts=["title"])
     _event(db, "s2", dflt, "default", d, "s2.check", "opened")
+    _event(db, "s2", dflt, "default", d, "s2.check", "close_match")
+    plain = _draft(
+        db, dflt_code, device="laptop", shared=False, parts=["title"]
+    )  # no close match: not exposed
+    _event(db, "s2", dflt, "default", plain, "s2.check", "opened")
     db.execute(
         "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason, outcome) VALUES "
         "(%s, %s, 'close', 'Close match: same SMS, same calls', 'merge_asked'), "
@@ -172,6 +190,7 @@ def test_p_decisions_experiments_s2_metrics_duplicates_to_the_desk_and_completio
     assert s2["alternative"]["close_match_merged"] == 1
     assert s2["alternative"]["duplicates_to_desk"] == 0
     assert (s2["alternative"]["compare_shown"], s2["alternative"]["compare_merge_asked"]) == (1, 1)
+    assert (s2["default"]["drafts_checked"], s2["default"]["drafts_with_close_match"]) == (2, 1)
     assert s2["default"]["drafts_shared"] == 1
     assert float(s2["default"]["completion_rate"]) == 1.0
     assert s2["default"]["duplicates_to_desk"] == 1

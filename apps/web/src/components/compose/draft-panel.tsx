@@ -98,9 +98,9 @@ export function factText(key: FactKey | "title", p: Part<unknown>): string {
   return typeof v === "string" ? v : "";
 }
 
-/** Flag S1 "Interview" (BLD-C172): before the first telling the panel lists the three questions; while they are
- * asked, the desktop panel waits (the card is in the conversation) and the phone's sheet holds the card; then the
- * panel is the draft as usual. */
+/** Flag S1 "Interview" (BLD-C172): before the first telling the panel lists the three questions, and on desktop it
+ * keeps listing them while they are asked in the conversation; the phone's sheet holds the card; then the panel is
+ * the draft as usual. */
 export type PanelInterview = { stage: "intro" } | { stage: "asking"; card: ReactNode; soFar: string };
 
 export type PanelProps = {
@@ -236,11 +236,12 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
               {INTERVIEW_COPY.done}
             </button>
           </div>
-          <p className="rcpt">{asking.soFar}</p>
+          {asking.soFar ? <p className="rcpt">{asking.soFar}</p> : null}
           {asking.card}
         </>
       ) : (
-        <p className="wait cvwait">{INTERVIEW_COPY.wait}</p>
+        // Desktop: the questions are in the conversation; the panel keeps saying what they are (Compose.md).
+        <InterviewIntro />
       )}
     </div>
   ) : null;

@@ -172,22 +172,39 @@ const SEND = {
 };
 
 /** The draft's API, synthetic: only this test's browser sees these answers. */
-async function serveDraft(page: Page) {
-  await page.route(`**/api/drafts/${DRAFT}**`, (route) => {
+/** The person's own real draft (so the deciding events and the exposure are accepted for it), with the answers the
+ * screen reads served synthetic, a close match on top. */
+async function serveDraft(page: Page, id: string) {
+  await page.route(`**/api/drafts/${id}**`, (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    if (url.pathname === `/api/drafts/${DRAFT}`) {
-      return route.fulfill({ json: method === "GET" ? DRAFT_BODY : {} });
+    if (url.pathname === `/api/drafts/${id}`) {
+      return route.fulfill({ json: method === "GET" ? { ...DRAFT_BODY, id } : {} });
     }
     if (url.pathname.endsWith("/sorting")) return route.fulfill({ json: SORTING });
     if (url.pathname.endsWith("/merge-request"))
       return route.fulfill({ json: { state: "none", after: null } });
-    if (url.pathname.endsWith("/send")) return route.fulfill({ json: SEND });
+    if (url.pathname.endsWith("/send")) return route.fulfill({ json: { ...SEND, id } });
     return route.fulfill({ status: 404, json: { error: { code: "not_found", message: "" } } });
   });
-  await page.route(`**/api/ideas/${DRAFT}/similar**`, (route) =>
+  await page.route(`**/api/ideas/${id}/similar**`, (route) =>
     route.fulfill({ json: route.request().method() === "GET" ? MATCHES : { kept_separate: true } }),
   );
+}
+
+async function ownDraft(page: Page): Promise<string> {
+  const made = await page.request.post("/api/drafts", {
+    data: {
+      channel: "web",
+      via: "typed",
+      text: "Synthetic: investors call the branch to ask what a rejection code in the SMS means.",
+    },
+    headers: {
+      "Idempotency-Key": `e2e-s2-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    },
+  });
+  expect(made.status(), "make the person's draft").toBeLessThan(300);
+  return ((await made.json()) as { draft: { id: string } }).draft.id;
 }
 
 type Sent = { event?: string; outcome?: string; flag?: string };
@@ -212,8 +229,9 @@ test("S-05 S2 Check first: on a close match the comparison comes first, then you
 }, info) => {
   userId = await personWithFlag(page, "s2", info);
   const sent = watchEvents(page);
-  await serveDraft(page);
-  await page.goto(`/share/${DRAFT}/check`);
+  const id = await ownDraft(page);
+  await serveDraft(page, id);
+  await page.goto(`/share/${id}/check`);
 
   if (isPhone(page)) {
     await expect(page.getByRole("heading", { level: 2, name: "Is it one of these?" })).toBeVisible();
@@ -227,7 +245,9 @@ test("S-05 S2 Check first: on a close match the comparison comes first, then you
     await expectNoSeriousAxeIssues(page);
     await page.getByRole("button", { name: "Mine is different" }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Is it one of these?" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { level: 2, name: "Your problem" })).toBeVisible();
+    // Focus goes to the first part of the page it reveals (WCAG 2.4.3); the page passes axe too
+    await expect(page.getByRole("heading", { level: 2, name: "Your problem" })).toBeFocused();
+    await expectNoSeriousAxeIssues(page);
     await expect
       .poll(() => sent.map((s) => `${s.event}:${s.outcome}`))
       .toContain("s2.compare:mine_is_different");
@@ -241,7 +261,7 @@ test("S-05 S2 Check first: on a close match the comparison comes first, then you
     await expect(rail.nth(1)).toHaveAccessibleName(/^2 Your words/);
     await expect(page.getByRole("link", { name: "Back to your words" })).toHaveAttribute(
       "href",
-      `/share/${DRAFT}`,
+      `/share/${id}`,
     );
     await expectNoSeriousAxeIssues(page);
     await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -249,12 +269,30 @@ test("S-05 S2 Check first: on a close match the comparison comes first, then you
     await expect(page.getByText("Check it, part 2 of 6")).toBeVisible();
     await expect
       .poll(() => sent.map((s) => `${s.event}:${s.outcome}`))
-      .toEqual(["s2.check:opened", "s2.compare:shown", "s2.compare:moved_on"]);
+      .toEqual(["s2.check:opened", "s2.check:close_match", "s2.compare:shown", "s2.compare:moved_on"]);
   }
-  // Lane A's reader logged the exposure on the server as S-05 rendered
-  const seen = await sql<{ variant: string }>(
-    "SELECT variant FROM flag_exposures WHERE user_id = $1 AND flag_key = 's2' AND screen = 'S-05'",
-    [userId],
-  );
-  expect(seen.map((r) => r.variant)).toEqual(["alternative"]);
+  // The close match on a fresh Check it is the exposure: lane A's reader logged it, for S-05
+  await expect
+    .poll(async () =>
+      (
+        await sql<{ variant: string }>(
+          "SELECT variant FROM flag_exposures WHERE user_id = $1 AND flag_key = 's2' AND screen = 'S-05'",
+          [userId],
+        )
+      ).map((r) => r.variant),
+    )
+    .toEqual(["alternative"]);
+  // The deciding events, kept for the person's own draft
+  await expect
+    .poll(async () =>
+      (
+        await sql<{ event: string; outcome: string }>(
+          "SELECT event, outcome FROM flag_events WHERE user_id = $1 AND flag_key = 's2' AND draft_id = $2 ORDER BY id",
+          [userId, id],
+        )
+      )
+        .slice(0, 3)
+        .map((r) => `${r.event}:${r.outcome}`),
+    )
+    .toEqual(["s2.check:opened", "s2.check:close_match", "s2.compare:shown"]);
 });

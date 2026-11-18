@@ -155,15 +155,20 @@ export function CheckIt({
   const [triedUnconfirmed, setTriedUnconfirmed] = useState(false);
 
   const [similar, setSimilar] = useState<SimilarLoad>({ state: "loading" });
-  // Flag S2 (BLD-C176): the order is decided once, on the first read of the similar ideas; null until then.
+  // Flag S2 (BLD-C176): the page renders in the drawn order at once. A close match that arrives while a Check it
+  // opened fresh is still untouched puts the similar ideas first (the alternative), and is the exposure (either).
+  const s2On = flags !== null;
   const checkFirst = Boolean(flags?.checkFirst);
-  const [order, setOrder] = useState<readonly PartNo[] | null>(checkFirst ? null : DEFAULT_ORDER);
-  const orderRef = useRef<readonly PartNo[] | null>(checkFirst ? null : DEFAULT_ORDER);
+  const [order, setOrder] = useState<readonly PartNo[]>(DEFAULT_ORDER);
+  const orderRef = useRef<readonly PartNo[]>(DEFAULT_ORDER);
   const [firstUp, setFirstUp] = useState(false);
   const [compareDone, setCompareDone] = useState(false);
   const openedFresh = useRef(false);
+  const touched = useRef(false);
+  const decided = useRef(false);
   const compareOutcome = useRef(false);
   const checkLogged = useRef(false);
+  const focusAfterCompare = useRef(false);
   const [merge, setMerge] = useState<MergeState | null>(null);
   const [kept, setKept] = useState(false);
   const [mergeError, setMergeError] = useState<{ where: "bar" | "grid"; text: string } | null>(null);
@@ -200,6 +205,7 @@ export function CheckIt({
 
   /** A write the task bar's save status follows: "Saving…", then "Saved at 1:38 pm" (C-TASKBAR.save). */
   const track = useCallback(async <T,>(p: Promise<Call<T>>): Promise<Call<T>> => {
+    touched.current = true;
     writes.current += 1;
     setSave("saving");
     const r = await p;
@@ -228,30 +234,28 @@ export function CheckIt({
   // --- Loading ----------------------------------------------------------------------------------------------------
 
   const loadSimilar = useCallback(async () => {
-    const [s, m] = await Promise.all([api.similar(draftId), api.merge(draftId)]);
-    const load: SimilarLoad =
-      s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" };
-    setSimilar(load);
-    if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
-    if (orderRef.current === null) {
-      // S2 "Check first": a close top match puts the comparison first, and a Check it opened fresh starts on it.
-      const strong = strongMatch(load) !== null;
-      orderRef.current = strong ? CHECK_FIRST_ORDER : DEFAULT_ORDER;
-      setOrder(orderRef.current);
-      if (strong) {
-        setFirstUp(true);
-        if (openedFresh.current && !moved.current) {
-          // Opened fresh: Check it opens on the comparison (the phone's stands before the page).
-          setPart(3);
-          flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
-        } else {
-          // A Check it already begun keeps its part, and its page on a phone: the rail alone puts the comparison first.
-          compareOutcome.current = true;
-          setCompareDone(true);
-        }
-      }
-    }
-  }, [draftId]);
+    // Each answer is taken as it comes: a slow merge read never holds up the similar ideas, nor the page.
+    const similarRead = api.similar(draftId).then((s) => {
+      const load: SimilarLoad =
+        s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" };
+      setSimilar(load);
+      if (!s2On || decided.current) return;
+      decided.current = true;
+      // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176).
+      if (!strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
+      flagEvent("s2", "s2.check", "close_match", "S-05", draftId); // the exposure, in either variant
+      if (!checkFirst) return;
+      orderRef.current = CHECK_FIRST_ORDER;
+      setOrder(CHECK_FIRST_ORDER);
+      setFirstUp(true);
+      setPart(3);
+      flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
+    });
+    const mergeRead = api.merge(draftId).then((m) => {
+      if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
+    });
+    await Promise.all([similarRead, mergeRead]);
+  }, [draftId, s2On, checkFirst]);
 
   const fetchAll = useCallback(
     () =>
@@ -344,6 +348,7 @@ export function CheckIt({
 
   const go = useCallback(
     (n: PartNo, opts: { forwardFrom?: PartNo } = {}) => {
+      touched.current = true;
       if (phone) {
         // One page: "Go to the sorting", a Send row's "Change" and "Change the attached files" take the person to
         // that part's heading, scrolled to and focused (L-SORT.rules/4, WCAG 2.4.3).
@@ -422,7 +427,7 @@ export function CheckIt({
     setSorting(r.body);
     if (r.body.confirmed) {
       setTriedUnconfirmed(false);
-      if (!phone) go(nextIn(orderRef.current ?? DEFAULT_ORDER, 2), { forwardFrom: 2 });
+      if (!phone) go(nextIn(orderRef.current, 2), { forwardFrom: 2 });
     }
   };
 
@@ -430,6 +435,19 @@ export function CheckIt({
 
   const matches = similar.state === "ok" ? similar.matches : [];
   const mv = mergeView(merge, matches);
+
+  /** S2 on a phone: the comparison closes, and focus goes to the first part of the page it reveals (WCAG 2.4.3). */
+  const closeCompare = () => {
+    focusAfterCompare.current = true;
+    setCompareDone(true);
+  };
+  useEffect(() => {
+    if (!compareDone || !focusAfterCompare.current) return;
+    focusAfterCompare.current = false;
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".ck-ph [data-part] .ck-h")?.focus({ preventScroll: false }),
+    );
+  }, [compareDone]);
 
   /** S2: what the person did with the comparison put first, logged once (codes only, BLD-C176). */
   const compared = (outcome: "moved_on" | "kept_separate" | "merge_asked" | "mine_is_different") => {
@@ -463,7 +481,7 @@ export function CheckIt({
   // review desk never reads "kept it separate" for someone who only carried on (BLD-C131, as amended).
   const similarNext = () => {
     compared("moved_on");
-    go(nextIn(orderRef.current ?? DEFAULT_ORDER, 3), { forwardFrom: 3 });
+    go(nextIn(orderRef.current, 3), { forwardFrom: 3 });
   };
 
   /** The sheet's send. "Keep mine separate" is a team-up request sent with the draft (BLD-F020, BLD-F071): the
@@ -471,13 +489,18 @@ export function CheckIt({
    * The grid folds only once the server has recorded it; if it has not, the grid stays and the drawn line under it
    * says so, so the person can choose again (BLD-C131). */
   const teamUpSent = async (sent: TeamUpSent) => {
-    compared(sent.kind === "merge" ? "merge_asked" : "kept_separate");
-    setCompareDone(true);
     if (sent.kind === "teamup") {
       setMergeError(null);
       const r = await track(api.keepSeparate(draftId, true));
-      if (r.ok) setKept(true);
-      else setMergeError({ where: "grid", text: C.failed });
+      if (r.ok) {
+        setKept(true);
+        // S2: only once it is recorded (BLD-C176).
+        compared("kept_separate");
+        closeCompare();
+      } else setMergeError({ where: "grid", text: C.failed });
+    } else {
+      compared("merge_asked");
+      closeCompare();
     }
     void loadSimilar();
   };
@@ -721,8 +744,7 @@ export function CheckIt({
       </div>
     );
   }
-  // S2: until the similar ideas are read the order is not known, so the parts wait with the rest (BLD-C176).
-  if (!draft || order === null) {
+  if (!draft) {
     return (
       <div className="ck ck-loading">
         <Loading what={C.rail}>
@@ -1049,9 +1071,10 @@ export function CheckIt({
             next={after}
             onSent={(sent) => void teamUpSent(sent)}
             onWithdrawn={() => void loadSimilar()}
+            error={mergeError?.where === "grid" ? mergeError.text : null}
             onDifferent={() => {
               compared("mine_is_different");
-              setCompareDone(true);
+              closeCompare();
             }}
           />
         </div>

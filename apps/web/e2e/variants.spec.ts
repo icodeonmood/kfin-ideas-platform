@@ -51,11 +51,10 @@ test.describe("S1 Interview (P-DECISIONS.experiments, L-DRAFT.parts/10, V-ACC.sh
     const card = page.getByRole("group", { name: "How often does it happen, roughly?" });
     await expect(card).toBeVisible();
     await expect(card.getByText("Question 1 of 3. Skip any of them.")).toBeVisible();
-    await expect(page.getByText("Three quick questions to round it off. Skip any of them.")).toBeVisible();
     if (isPhone(page)) await expect(page.getByText("3 quick questions, then your draft")).toBeVisible();
     else
       await expect(
-        page.getByText("Your draft appears here once you've answered or skipped the questions."),
+        page.getByText("Tell it in your words first. Then three short questions, each one skippable."),
       ).toBeVisible();
     await expectNoSeriousAxeIssues(page);
 
@@ -75,13 +74,12 @@ test.describe("S1 Interview (P-DECISIONS.experiments, L-DRAFT.parts/10, V-ACC.sh
       .getByRole("group", { name: "Who feels it most?" })
       .getByRole("button", { name: "Skip this one" })
       .click();
-    const size = page.getByRole("group", { name: "Any rough size? Hours or money, a guess is fine." });
+    const size = page.getByRole("group", { name: "Any rough size?" });
     await expect(size.getByRole("button", { name: "Show my draft" })).toBeVisible();
     await settleMotion(page);
     await expectNoSeriousAxeIssues(page);
     await size.getByRole("button", { name: "Skip this one" }).click();
     await expect(page.getByRole("group", { name: /Question|rough size/ })).toHaveCount(0);
-    await expect(page.getByText("Three quick questions to round it off. Skip any of them.")).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe(draftPath);
 
     expect(await events(userId, "s1")).toEqual([
@@ -122,10 +120,16 @@ test.describe("S3 Voice first on a phone, the microphone not allowed yet (P-DECI
     await expect(box).toBeEditable();
     await expect(page.getByRole("button", { name: "Move to Review" })).toBeVisible();
     await expectNoSeriousAxeIssues(page);
-    const seen = await sql<{ variant: string }>(
-      "SELECT variant FROM flag_exposures WHERE user_id = $1 AND flag_key = 's3' AND screen = 'S-04'",
-      [userId],
-    );
-    expect(seen.map((r) => r.variant)).toContain("alternative");
+    // The phone's own exposure, sent once the screen knows it is a phone (lane A's reader logs it, BLD-C173)
+    await expect
+      .poll(async () =>
+        (
+          await sql<{ variant: string }>(
+            "SELECT variant FROM flag_exposures WHERE user_id = $1 AND flag_key = 's3' AND screen = 'S-04'",
+            [userId!],
+          )
+        ).map((r) => r.variant),
+      )
+      .toEqual(["alternative"]);
   });
 });

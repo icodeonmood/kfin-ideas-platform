@@ -41,7 +41,8 @@ const isQuestion = (v: unknown): v is InterviewQuestion =>
  * hidden and sealed like any message (DEC-103, L-HIDE); it is kept without building (`defer_run`). Once the last
  * question is answered or skipped, or the person moves on, the draft is built once (`/runs`), if anything was
  * answered. Each step is logged once per draft as a code (flag_events): that is the interview's place, so a reload or
- * another device carries on where the person was. `200 { interview, run_id, draft?, message? }`. Only for the
+ * another device carries on where the person was. A step that cannot be logged answers 503 (`save_failed`), and the
+ * client's retry with the same Idempotency-Key keeps the answer once. `200 { interview, run_id, draft?, message? }`. Only for the
  * person's own draft, and only while they are in the alternative; "finish" works whatever the flag says now, so
  * answers never wait for a build that will not come.
  */
@@ -60,8 +61,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const variant = (await inAlternative(me.id, "s1")) ? "alternative" : "default";
     if (action !== "finish" && variant !== "alternative") throw new DraftApiError(409, "not_in_interview");
     const place: InterviewPlace = await interviewPlace(me.id, id);
-    const step = (event: string, outcome: string) =>
-      logFlagEvent({ userId: me.id, key: "s1", variant, event, outcome, screen: SCREEN, draftId: id });
+    // A step that cannot be kept (and is not there already) answers 503: the client tries again with the same
+    // Idempotency-Key, so the answer is kept once and the place is never lost (BLD-C172).
+    const step = async (event: string, outcome: string) => {
+      const kept = await logFlagEvent({
+        userId: me.id,
+        key: "s1",
+        variant,
+        event,
+        outcome,
+        screen: SCREEN,
+        draftId: id,
+      });
+      if (kept === "failed") throw new DraftApiError(503, "save_failed");
+    };
 
     /** The one build once the questions are over (only if an answer is waiting), then the end, logged once. */
     const end = async (outcome: "finished" | "left"): Promise<string | null> => {

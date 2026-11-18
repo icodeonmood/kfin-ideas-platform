@@ -25,18 +25,33 @@ export const FLAG_SCREENS: Record<FlagKey, readonly string[]> = {
 export const FLAG_EVENTS: Record<FlagKey, Record<string, readonly string[]>> = {
   s1: {},
   s2: {
-    // S-05 opened for a draft, in either variant: the deciding metrics follow the draft from here.
-    "s2.check": ["opened"],
+    // S-05 opened for a draft, in either variant; close_match when a close similar idea is found on a Check it
+    // opened fresh: the moment the other version reorders the page, so the exposure is logged then (BLD-C173).
+    "s2.check": ["opened", "close_match"],
     // The comparison put first, and what the person did with it.
     "s2.compare": ["shown", "moved_on", "kept_separate", "merge_asked", "mine_is_different"],
   },
   s3: {
+    // A phone's new S-04 was shown: the exposure, logged by lane A's reader (only the browser knows it is a phone).
+    "s3.exposure": ["shown"],
     // On the phone's S-04: listening started at once, or the screen began with typing, and why.
     "s3.listen": ["started", "typed_instead", "no_permission", "voice_off", "failed"],
-    // A voice note sent as heard, or with its words changed first.
+    // A draft sent with a voice note as heard, or with its words changed first.
     "s3.note": ["as_heard", "corrected"],
   },
 };
+
+/** Events that log an exposure (lane A's `flagVariant`) for the screen they name, not a row of flag_events, or as
+ * well as one: S3's phone S-04, and S2's close match on a fresh Check it. */
+export const EXPOSURE_EVENTS: Record<string, { flag: FlagKey; screen: string; outcome: string }> = {
+  "s3.exposure": { flag: "s3", screen: "S-04", outcome: "shown" },
+  "s2.check": { flag: "s2", screen: "S-05", outcome: "close_match" },
+};
+
+/** Events that must name a draft of the person's own: every S2 event, and S3's notes (one row per draft). */
+export function needsDraft(event: string): boolean {
+  return event.startsWith("s2.") || event === "s3.note";
+}
 
 /** What Tell it (S-04, S-04B) is given by the server for the two flags it carries. */
 export type ComposeFlags = {

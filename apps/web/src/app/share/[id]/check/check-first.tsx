@@ -13,6 +13,7 @@ import { useId } from "react";
 import { Dock } from "@/components/shell/phone";
 import { teamUpOpener, useTeamUpSheet, type TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { Button } from "@/components/ui/button";
+import { FieldMsg } from "@/components/ui/field";
 import type { SimilarMatch } from "@/lib/contracts";
 
 import { CHECK_COPY } from "./copy";
@@ -37,6 +38,7 @@ export function CheckFirstPhone({
   onSent,
   onWithdrawn,
   onDifferent,
+  error = null,
 }: {
   draftId: string;
   draftTitle: string;
@@ -48,6 +50,8 @@ export function CheckFirstPhone({
   onSent(sent: TeamUpSent): void;
   onWithdrawn(): void;
   onDifferent(): void;
+  /** A team-up that could not be recorded: its words, under the comparison. */
+  error?: string | null;
 }) {
   const id = useId();
   const teamUp = useTeamUpSheet({ onSent, onWithdrawn, draftId, draftTitle });
@@ -75,6 +79,7 @@ export function CheckFirstPhone({
           <p className="meta">{C.where(idea.area, idea.city, idea.crew_count)}</p>
         </div>
       </div>
+      {error ? <FieldMsg>{error}</FieldMsg> : null}
       {related ? (
         <p className="meta ck-first-also">{C.alsoRelated(related.title, related.area, related.city)}</p>
       ) : null}

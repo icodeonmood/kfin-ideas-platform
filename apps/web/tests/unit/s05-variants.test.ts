@@ -429,6 +429,14 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
       {
         url: "/api/flags/events",
         flag: "s2",
+        event: "s2.check",
+        outcome: "close_match",
+        screen: "S-05",
+        draft_id: DRAFT_ID,
+      },
+      {
+        url: "/api/flags/events",
+        flag: "s2",
         event: "s2.compare",
         outcome: "shown",
         screen: "S-05",
@@ -469,21 +477,81 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     expect(railNames()[2]).toBe("3 Similar ideas");
   });
 
-  it("a Check it already begun keeps its part; the rail still puts the comparison first", async () => {
+  it("a Check it already begun stays as drawn: its part, the default order, no exposure", async () => {
     await mountFlagged(base({ draft: draft({ step: "check:2" }) }), true);
     expect(h1()).toBe("Is it sorted right?");
-    expect(counter()).toBe("Check it, part 3 of 6");
-    expect(railNames()[0]).toBe("1 Similar ideas");
-    // Not shown first, so nothing about the comparison is logged, whatever happens next
+    expect(counter()).toBe("Check it, part 2 of 6");
+    expect(railNames()[0]).toBe("1 Your words");
     await click(button("Back"));
-    expect(flagCalls().map((c) => c.event)).toEqual(["s2.check"]);
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
   });
 
-  it("the default variant: the parts as drawn, the draft logged (the exposure is lane A's), no comparison", async () => {
+  it("the default variant: the parts as drawn; a close match on a fresh Check it is the exposure, nothing changes", async () => {
     await mountFlagged(base({ draft: FRESH }), false);
     expect(h1()).toBe("Is this how you’d put it?");
     expect(railNames()[0]).toBe("1 Your words");
-    expect(flagCalls().map((c) => c.event ?? c.url)).toEqual(["s2.check"]);
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual([
+      "s2.check:opened",
+      "s2.check:close_match",
+    ]);
+  });
+
+  it("the page never waits for the similar ideas: drawn order at once; a close match that comes before anything is touched reorders it", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const late = new Promise((r) => (answer = r));
+    serve([
+      flagsRoute,
+      ...base({ draft: FRESH }).map(
+        (r): Route =>
+          (m, u, b) =>
+            m === "GET" && u.endsWith("/similar") ? undefined : r(m, u, b),
+      ),
+    ]);
+    const realFetch = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i: RequestInit = {}) =>
+        u.endsWith("/similar") && (i.method ?? "GET") === "GET"
+          ? late.then(() => ({ ok: true, status: 200, json: async () => [MATCH_RAVI, MATCH_SUNITA] }))
+          : realFetch(u, i),
+      ),
+    );
+    await act(async () =>
+      root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG, flags: { checkFirst: true } })),
+    );
+    await settle();
+    expect(h1()).toBe("Is this how you’d put it?"); // not held up by the similar ideas
+    expect(railNames()[0]).toBe("1 Your words");
+    await act(async () => answer(null));
+    await settle();
+    expect(h1()).toBe("Has someone raised this already?");
+    expect(railNames()[0]).toBe("1 Similar ideas");
+  });
+
+  it("a close match that comes after the person has moved does not reorder the page", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const late = new Promise((r) => (answer = r));
+    serve([flagsRoute, ...base({ draft: FRESH })]);
+    const realFetch = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i: RequestInit = {}) =>
+        u.endsWith("/similar") && (i.method ?? "GET") === "GET"
+          ? late.then(() => ({ ok: true, status: 200, json: async () => [MATCH_RAVI] }))
+          : realFetch(u, i),
+      ),
+    );
+    await act(async () =>
+      root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG, flags: { checkFirst: true } })),
+    );
+    await settle();
+    await click(button("Looks right"));
+    expect(h1()).toBe("Is it sorted right?");
+    await act(async () => answer(null));
+    await settle();
+    expect(h1()).toBe("Is it sorted right?");
+    expect(railNames()[0]).toMatch(/^(?:1 )?Your words/);
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
   });
 
   it("without flags from the page: nothing is logged", async () => {
@@ -514,8 +582,13 @@ describe("S2 Check first on a phone (PhoneReview.md simulatorS2=Check first)", (
     expect(button("Team up")).toBeTruthy();
 
     await click(button("Mine is different"));
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
     expect(document.querySelector(".ck-first")).toBeNull();
     expect(document.querySelector("#pr-sort-h")).toBeTruthy();
+    // Focus goes to the first part of the page it reveals (WCAG 2.4.3)
+    expect(document.activeElement).toBe(document.querySelector(".ck-ph [data-part] .ck-h"));
     expect(flagCalls().at(-1)).toMatchObject({ event: "s2.compare", outcome: "mine_is_different" });
     // Nothing about the idea is recorded: no keep-separate
     expect(calls.some((c) => c.url.endsWith("/similar/keep-separate"))).toBe(false);
@@ -542,12 +615,37 @@ describe("S2 Check first on a phone (PhoneReview.md simulatorS2=Check first)", (
     expect(flagCalls().at(-1)).toMatchObject({ event: "s2.compare", outcome: "merge_asked" });
   });
 
+  it("keep separate is logged, and the comparison closes, only once the server has recorded it", async () => {
+    asPhone();
+    await mountFlagged(
+      [
+        (m, u) => (u.endsWith("/similar/keep-separate") ? { status: 503, body: {} } : undefined),
+        ...base({ draft: FRESH }),
+      ],
+      true,
+    );
+    await act(async () => {
+      (sheetHook.options!.onSent as (s: unknown) => void)({
+        kind: "teamup",
+        id: "tu-2",
+        ideaId: MATCH_RAVI.idea.id,
+        note: "",
+        brought: [],
+        after: null,
+      });
+    });
+    await settle();
+    expect(document.querySelector(".ck-first")).toBeTruthy();
+    expect(text(document.querySelector(".ck-first"))).toContain("Something went wrong. Try again.");
+    expect(flagCalls().some((c) => c.outcome === "kept_separate")).toBe(false);
+  });
+
   it("a Check it already begun on a phone keeps its page: no comparison before it", async () => {
     asPhone();
     await mountFlagged(base({ draft: draft({ step: "check:2" }) }), true);
     expect(document.querySelector(".ck-first")).toBeNull();
     expect(document.querySelector("#pr-sort-h")).toBeTruthy();
-    expect(flagCalls().map((c) => c.event)).toEqual(["s2.check"]);
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
   });
 
   it("no close match on a phone: the page as drawn", async () => {

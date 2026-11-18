@@ -20,6 +20,7 @@ let variant: "default" | "alternative";
 let own: boolean;
 let worker: { method: string; path: string; body: Record<string, unknown> }[];
 let assistantOff: boolean;
+let eventsDown: boolean;
 
 vi.mock("@/server/auth/authorize", () => ({ authorize: async () => ME }));
 vi.mock("@/server/worker", () => ({
@@ -51,9 +52,10 @@ vi.mock("@/server/flag-events", async (importOriginal) => {
     inAlternative: async () => variant === "alternative",
     interviewPlace: async () => placeFrom(events),
     logFlagEvent: async (e: { event: string; outcome: string }) => {
-      if (events.some((x) => x.event === e.event)) return false;
+      if (events.some((x) => x.event === e.event)) return "exists";
+      if (eventsDown) return "failed";
       events.push({ event: e.event, outcome: e.outcome });
-      return true;
+      return "written";
     },
   };
 });
@@ -75,6 +77,7 @@ beforeEach(() => {
   own = true;
   worker = [];
   assistantOff = false;
+  eventsDown = false;
 });
 
 describe("L-DRAFT.parts/10 S-04B: the interview's steps", () => {
@@ -190,6 +193,28 @@ describe("L-DRAFT.parts/10 S-04B: the interview's steps", () => {
       { event: "s1.often", outcome: "answered" },
     ];
     expect((await (await call({ action: "finish" })).json()).run_id).toBe("r-build");
+  });
+
+  it("a step that cannot be kept answers 503; the retry with the same key keeps the answer once", async () => {
+    events = [{ event: "s1.start", outcome: "started" }];
+    eventsDown = true;
+    const first = await call(
+      { action: "answer", question: "often", text: "About 20 times a week" },
+      "key-often-009",
+    );
+    expect(first.status).toBe(503);
+    expect((await first.json()).error.code).toBe("save_failed");
+    expect(events).toEqual([{ event: "s1.start", outcome: "started" }]);
+    eventsDown = false;
+    const again = await call(
+      { action: "answer", question: "often", text: "About 20 times a week" },
+      "key-often-009",
+    );
+    expect(again.status).toBe(200);
+    // The worker took the same client_id both times: it keeps the message once (L-DRAFT.autosave/7)
+    const writes = worker.filter((w) => w.path.endsWith("/messages"));
+    expect(writes.map((w) => w.body.client_id)).toEqual(["key-often-009", "key-often-009"]);
+    expect(events.at(-1)).toEqual({ event: "s1.often", outcome: "answered" });
   });
 
   it("refuses an unknown action or question", async () => {

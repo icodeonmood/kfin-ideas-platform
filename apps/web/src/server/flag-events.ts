@@ -26,8 +26,10 @@ import { isOn, switchStates } from "./killswitch";
 import { log } from "./log";
 
 export {
+  EXPOSURE_EVENTS,
   FLAG_EVENTS,
   FLAG_SCREENS,
+  needsDraft,
   INTERVIEW_QUESTIONS,
   isFlagKey,
   nextQuestion,
@@ -50,25 +52,51 @@ function failed(key: FlagKey, err: unknown): void {
   }
 }
 
-/** Lane A's `flagVariant` (it logs the exposure, once per person, screen and variant), with any failure read as the
- * default: a flag never fails a page. */
+/** How long a page waits for a flag before it renders the default (a hung database call never blocks render). */
+export const FLAG_WAIT_MS = 1500;
+
+class FlagTimeout extends Error {}
+
+function within<T>(p: Promise<T>, ms: number = FLAG_WAIT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new FlagTimeout()), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
+/** Lane A's `flagVariant` (it logs the exposure, once per person, screen and variant), with any failure, or no answer
+ * within FLAG_WAIT_MS, read as the default: a flag never fails or holds up a page. */
 export async function variantOn(user: { id: string }, key: FlagKey, screen: string): Promise<Variant> {
   try {
-    return await flagVariant(user, key, screen);
+    return await within(flagVariant(user, key, screen));
   } catch (err) {
     failed(key, err);
     return "default";
   }
 }
 
-/** This person's variant without logging an exposure (lane A's `flagsFor`), or null while the flag is off: the
- * events of a flag that is off are not logged. */
+/** This person's variant without logging an exposure (lane A's `flagsFor`), the same fallback. For a screen whose
+ * exposure is logged later, when the browser knows the variant changes something (S2, S3; BLD-C173). */
+export async function quietVariant(userId: string, key: FlagKey): Promise<Variant> {
+  try {
+    return (await within(flagsFor(userId)))[key] === "alternative" ? "alternative" : "default";
+  } catch (err) {
+    failed(key, err);
+    return "default";
+  }
+}
+
+/** This person's variant without logging an exposure, or null while the flag is off: the events of a flag that is
+ * off are not logged. */
 async function liveVariant(userId: string, key: FlagKey): Promise<Variant | null> {
   try {
     const db = getDb();
-    const flag = await db.selectFrom("flags").select("state").where("key", "=", key).executeTakeFirst();
+    const flag = await within(
+      db.selectFrom("flags").select("state").where("key", "=", key).executeTakeFirst(),
+    );
     if (flag?.state !== "on") return null;
-    return (await flagsFor(userId))[key] === "alternative" ? "alternative" : "default";
+    return (await within(flagsFor(userId)))[key] === "alternative" ? "alternative" : "default";
   } catch (err) {
     failed(key, err);
     return null;
@@ -96,8 +124,12 @@ export async function ownDraft(contributorCode: string | null, draftId: string):
   }
 }
 
-/** One deciding event, codes only. Logged only while the flag is on; never throws. S1's steps are kept once per
- * draft (the unique index), so a retry writes nothing. Returns whether a row was written. */
+/** What a write of a deciding event came to: written; already there (a retry, or one per draft); not logged because
+ * the flag is off; or failed. */
+export type EventWrite = "written" | "exists" | "off" | "failed";
+
+/** One deciding event, codes only. Logged only while the flag is on; never throws. S1's steps, S2's events and S3's
+ * notes are kept once per draft (the unique indexes), so a retry writes nothing. */
 export async function logFlagEvent(input: {
   userId: string;
   key: FlagKey;
@@ -106,9 +138,9 @@ export async function logFlagEvent(input: {
   outcome: string;
   screen: string;
   draftId?: string | null;
-}): Promise<boolean> {
+}): Promise<EventWrite> {
   const variant = input.variant ?? (await liveVariant(input.userId, input.key));
-  if (!variant) return false;
+  if (!variant) return "off";
   try {
     const out = await getDb()
       .insertInto("flag_events")
@@ -123,10 +155,10 @@ export async function logFlagEvent(input: {
       })
       .onConflict((oc) => oc.doNothing())
       .executeTakeFirst();
-    return Number(out.numInsertedOrUpdatedRows ?? 0) > 0;
+    return Number(out.numInsertedOrUpdatedRows ?? 0) > 0 ? "written" : "exists";
   } catch (err) {
     failed(input.key, err);
-    return false;
+    return "failed";
   }
 }
 
@@ -160,9 +192,10 @@ export async function voiceCanRun(): Promise<boolean> {
   }
 }
 
-/** What Tell it is given for its two flags, as the screen that differs renders (lane A logs the exposures). */
+/** What Tell it is given for its two flags. S1's exposure is logged as the screen renders (lane A's `flagVariant`);
+ * S3's only from a phone's new S-04, by the browser, which alone knows it is a phone (BLD-C173). */
 export async function composeFlags(user: { id: string }, screen: "S-04" | "S-04B"): Promise<ComposeFlags> {
-  const [s1, s3] = await Promise.all([variantOn(user, "s1", screen), variantOn(user, "s3", screen)]);
+  const [s1, s3] = await Promise.all([variantOn(user, "s1", screen), quietVariant(user.id, "s3")]);
   const voiceFirst = s3 === "alternative" ? ((await voiceCanRun()) ? "listen" : "voice_off") : null;
   return { interview: s1 === "alternative", voiceFirst };
 }

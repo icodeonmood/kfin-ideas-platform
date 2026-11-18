@@ -33,7 +33,7 @@ import {
   type PanelInterview,
   type Readiness,
 } from "@/components/compose/draft-panel";
-import { INTERVIEW_COPY, InterviewCard, soFarLine } from "@/components/compose/interview";
+import { InterviewCard, soFarLine } from "@/components/compose/interview";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
@@ -59,6 +59,7 @@ import {
   newClientId,
   spokenAfterFirst,
   type HeldNote,
+  type InterviewResponse,
   type InterviewStep,
   type Outgoing,
 } from "@/lib/compose/client";
@@ -652,23 +653,49 @@ export function Compose({
   });
   const { start: voiceStart, stop: voiceStop } = voice;
   useEffect(() => {
-    if (listenTried.current || !voiceFirst || conversation || !recentChecked || existing) return;
-    listenTried.current = true;
-    if (voiceFirst === "voice_off") {
-      flagEvent("s3", "s3.listen", "voice_off", "S-04");
-      return;
-    }
-    void micAllowed().then((ok) => {
-      if (!ok) {
-        flagEvent("s3", "s3.listen", "no_permission", "S-04");
+    // A phone's new S-04 (no earlier draft offered), with the flags handed in, in either variant.
+    if (listenTried.current || !flags || !phone || conversation || !recentChecked || existing) return;
+    let gone = false;
+    const begin = () => {
+      if (gone || listenTried.current) return;
+      listenTried.current = true;
+      // The exposure: only the browser knows this is a phone (lane A's reader logs it, BLD-C173).
+      flagEvent("s3", "s3.exposure", "shown", "S-04");
+      if (!voiceFirst) return;
+      if (voiceFirst === "voice_off") {
+        flagEvent("s3", "s3.listen", "voice_off", "S-04");
         return;
       }
-      // Not if the person has begun typing or speaking meanwhile.
-      if (live$.current.box.trim() || live$.current.status !== "idle") return;
-      autoListen.current = "waiting";
-      void voiceStart();
-    });
-  }, [voiceFirst, conversation, recentChecked, existing, voiceStart]);
+      void micAllowed().then((ok) => {
+        if (!ok) {
+          flagEvent("s3", "s3.listen", "no_permission", "S-04");
+          return;
+        }
+        // Not if the person has begun typing or speaking meanwhile, or the tab went away again.
+        if (live$.current.box.trim() || live$.current.status !== "idle") return;
+        if (document.visibilityState !== "visible") return;
+        autoListen.current = "waiting";
+        void voiceStart();
+      });
+    };
+    if (document.visibilityState === "visible") {
+      begin();
+      return () => {
+        gone = true;
+      };
+    }
+    // A tab opened in the background never listens: it starts when the person first looks at it (BLD-C175).
+    const onShow = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", onShow);
+      begin();
+    };
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      gone = true;
+      document.removeEventListener("visibilitychange", onShow);
+    };
+  }, [flags, phone, voiceFirst, conversation, recentChecked, existing, voiceStart]);
   useEffect(() => {
     if (autoListen.current !== "waiting") return;
     const s = voiceState.status;
@@ -835,9 +862,9 @@ export function Compose({
   }, [interviewOn, draft?.id, place, client, adopt]);
 
   const ivStep = useCallback(
-    async (step: InterviewStep): Promise<void> => {
+    async (step: InterviewStep): Promise<InterviewResponse | null> => {
       const id = idRef.current;
-      if (!id) return;
+      if (!id) return null;
       setIvBusy(true);
       setIvError(null);
       try {
@@ -847,21 +874,29 @@ export function Compose({
         if (out.draft) adopt(out.draft, out.run_id);
         else if (out.run_id) setStreamRun(out.run_id);
         if (out.interview.ended) requestAnimationFrame(() => boxRef.current?.focus());
+        return out;
       } catch (err) {
+        // The server's own words under the question; offline, the task bar says so ("Unsaved, you're offline").
         if (err instanceof DraftError && err.offline) setSave("offline");
         else setIvError(err instanceof DraftError ? err.text : null);
+        return null;
       } finally {
         setIvBusy(false);
       }
     },
     [client, adopt],
   );
-  /** "Move to Review" while questions wait: the draft is built with what was answered, then on to Check it. */
+  /** "Move to Review" while questions wait: the draft is built with what was answered, then on to Check it. It goes
+   * only once the server says the questions are over; if that fails, the person stays, with the failure's words under
+   * the question and the button still there, so no answer is left waiting for a build (BLD-C172). */
   const moveDuringQuestions = (e: MouseEvent<HTMLAnchorElement>) => {
     const href = draftId ? `/share/${draftId}/check` : null;
     if (!question || !href) return;
     e.preventDefault();
-    void ivStep({ action: "finish" }).then(() => router.push(href));
+    if (ivBusy) return;
+    void ivStep({ action: "finish" }).then((out) => {
+      if (out?.interview.ended) router.push(href);
+    });
   };
   const oftenWords = live.parts.often.value;
   const interviewCard = question ? (
@@ -1140,16 +1175,8 @@ export function Compose({
                       {m.queued ? <p className="qtag">{COMPOSE_COPY.queued}</p> : null}
                     </div>
                   ))}
-                  {question ? (
-                    <div className="sysg ivg">
-                      <div className="msg sys">
-                        <span className="sdot" aria-hidden="true" />
-                        <p>{INTERVIEW_COPY.lead}</p>
-                      </div>
-                      {/* On a phone the card is in the draft's sheet (PhoneCompose.md). */}
-                      {phone ? null : interviewCard}
-                    </div>
-                  ) : null}
+                  {/* On a phone the card is in the draft's sheet (PhoneCompose.md). */}
+                  {question && !phone ? <div className="ivg">{interviewCard}</div> : null}
                 </div>
               </div>
               <div className="cdock">

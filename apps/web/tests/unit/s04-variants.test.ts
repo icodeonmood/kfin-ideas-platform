@@ -263,7 +263,6 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     });
     await mount({ draftId: DRAFT, flags: INTERVIEW, interviewPlace: null });
     expect(posts(`/api/drafts/${DRAFT}/interview`).map((s) => s.body)).toEqual([{ action: "start" }]);
-    expect(text()).toContain("Three quick questions to round it off. Skip any of them.");
     expect(text()).toContain("Question 1 of 3. Skip any of them.");
     expect(host.querySelector(".ivq")!.textContent).toBe("How often does it happen, roughly?");
     expect(host.querySelector(".ivq")!.tagName).toBe("H2");
@@ -271,8 +270,8 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     const answer = host.querySelector(".iv input") as HTMLInputElement;
     expect(answer.labels?.[0]?.textContent).toBe("Your answer");
     expect(answer.placeholder).toBe("For example, about 20 times a week");
-    // The panel waits; the receipt waits too
-    expect(text()).toContain("Your draft appears here once you've answered or skipped the questions.");
+    // The panel keeps listing the questions (Compose.md); the draft and the receipt wait
+    expect(host.querySelector(".canvas .ivi")).toBeTruthy();
     expect(text()).not.toContain("Bank mandate changes take a week to show");
     expect(text()).not.toContain("Your draft is ready. Add a detail, or check it.");
 
@@ -296,7 +295,8 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     expect(answered.key).toMatch(/^[0-9a-f-]{36}$/);
 
     expect(text()).toContain("Question 3 of 3. Skip any of them.");
-    expect(host.querySelector(".ivq")!.textContent).toBe("Any rough size? Hours or money, a guess is fine.");
+    expect(host.querySelector(".ivq")!.textContent).toBe("Any rough size?");
+    expect((host.querySelector(".iv input") as HTMLInputElement).placeholder).toBe("For example, 70 to 150");
     expect(button("Show my draft")).toBeTruthy();
     // An empty box counts as a skip
     await act(async () => {
@@ -358,6 +358,34 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     expect(push).toHaveBeenCalledWith(`/share/${DRAFT}/check`);
   });
 
+  it("Move to Review mid-way that cannot finish stays: the server's words under the question, the button kept", async () => {
+    route = (s) =>
+      s.method === "POST" && s.url === `/api/drafts/${DRAFT}/interview`
+        ? {
+            status: 409,
+            body: {
+              error: {
+                code: "archived",
+                message: "This draft is archived. Restore it from My ideas to carry on.",
+              },
+            },
+          }
+        : null;
+    await mount({
+      draftId: DRAFT,
+      flags: INTERVIEW,
+      interviewPlace: { started: true, done: { often: "answered" }, ended: null },
+    });
+    await act(async () => {
+      (button("Move to Review") as unknown as HTMLAnchorElement).click();
+    });
+    await settle();
+    expect(push).not.toHaveBeenCalled();
+    expect(text()).toContain("This draft is archived. Restore it from My ideas to carry on.");
+    expect(host.querySelector(".iv")).toBeTruthy();
+    expect(button("Move to Review")).toBeTruthy();
+  });
+
   it("the default variant on S-04B: no questions, exactly as before", async () => {
     await mount({ draftId: DRAFT, flags: { interview: false, voiceFirst: null }, interviewPlace: null });
     expect(host.querySelector(".iv")).toBeNull();
@@ -392,13 +420,36 @@ describe("S1 Interview on a phone (PhoneCompose.md simulatorS1=Interview)", () =
     expect(text()).toContain("Up to date");
     act(() => button("Done")!.click());
     expect(peek.getAttribute("aria-expanded")).toBe("false");
-    expect(posts("/api/flags/exposure")).toEqual([]);
+    // S3 is not exposed on S-04B, and S1's exposure is the server's
+    expect(sent.filter((s) => s.url.startsWith("/api/flags/"))).toEqual([]);
+  });
+
+  it("with nothing found yet the sheet has no so-far line", async () => {
+    phone = true;
+    route = (s) =>
+      s.method === "GET" && s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? {
+            status: 200,
+            body: draft({
+              parts: {
+                ...draft().parts,
+                who: { state: "waiting", value: [] },
+                value: { state: "waiting", value: [] },
+                area: { state: "waiting", value: "" },
+              },
+            }),
+          }
+        : null;
+    await mount({ draftId: DRAFT, flags: INTERVIEW, interviewPlace: STARTED });
+    expect(host.querySelector(".dsheet .rcpt")).toBeNull();
+    expect(text()).not.toContain("So far");
   });
 });
 
 describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice first, state Speaking)", () => {
   const VOICE_FIRST = { interview: false, voiceFirst: "listen" } satisfies ComposeFlags;
   const events = () => posts("/api/flags/events").map((s) => s.body);
+  const EXPOSED = { flag: "s3", event: "s3.exposure", outcome: "shown", screen: "S-04" };
 
   it("listening starts at once once the page is shown and the mic is allowed; Type instead and Stop in the dock", async () => {
     phone = true;
@@ -413,7 +464,10 @@ describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice fi
     );
     await settle();
     expect(button("Stop, 0:14")).toBeTruthy();
-    expect(events()).toEqual([{ flag: "s3", event: "s3.listen", outcome: "started", screen: "S-04" }]);
+    expect(events()).toEqual([
+      EXPOSED,
+      { flag: "s3", event: "s3.listen", outcome: "started", screen: "S-04" },
+    ]);
     // Said politely for a screen reader (C-PROMPT's status line)
     expect(host.querySelector('[role="status"].vh')?.textContent).toBe("Listening. Up to 3 minutes.");
 
@@ -441,6 +495,7 @@ describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice fi
       expect(v.start).not.toHaveBeenCalled();
       expect(button("Type instead")).toBeUndefined();
       expect(events()).toEqual([
+        EXPOSED,
         { flag: "s3", event: "s3.listen", outcome: "no_permission", screen: "S-04" },
       ]);
       act(() => root.unmount());
@@ -453,11 +508,44 @@ describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice fi
     micState = "granted";
     await mount({ draftId: null, flags: { interview: false, voiceFirst: "voice_off" } });
     expect(v.start).not.toHaveBeenCalled();
-    expect(events()).toEqual([{ flag: "s3", event: "s3.listen", outcome: "voice_off", screen: "S-04" }]);
+    expect(events()).toEqual([
+      EXPOSED,
+      { flag: "s3", event: "s3.listen", outcome: "voice_off", screen: "S-04" },
+    ]);
+  });
+
+  it("the default variant on a phone's new S-04: exposed, and nothing else changes", async () => {
+    phone = true;
+    micState = "granted";
+    await mount({ draftId: null, flags: { interview: false, voiceFirst: null } });
+    expect(v.start).not.toHaveBeenCalled();
+    expect(events()).toEqual([EXPOSED]);
+  });
+
+  it("a tab opened in the background does not listen until the person looks at it", async () => {
+    phone = true;
+    micState = "granted";
+    let visibility: DocumentVisibilityState = "hidden";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    try {
+      await mount({ draftId: null, flags: VOICE_FIRST });
+      expect(v.start).not.toHaveBeenCalled();
+      expect(events()).toEqual([]);
+      visibility = "visible";
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await settle();
+      expect(v.start).toHaveBeenCalledTimes(1);
+      expect(events()).toEqual([EXPOSED]);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    }
   });
 
   it("only on a phone's new S-04: not on a desktop, not when an earlier draft is offered, not on S-04B", async () => {
     micState = "granted";
+    sent = [];
     await mount({ draftId: null, flags: VOICE_FIRST }); // desktop
     expect(v.start).not.toHaveBeenCalled();
     act(() => root.unmount());
@@ -487,6 +575,8 @@ describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice fi
     route = () => null;
     await mount({ draftId: DRAFT, flags: VOICE_FIRST });
     expect(v.start).not.toHaveBeenCalled();
+    // Exposed only on the phone's new S-04: never from the desktop, an offered draft or S-04B
+    expect(events().filter((e) => e.event === "s3.exposure")).toEqual([]);
   });
 });
 

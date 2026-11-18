@@ -11,6 +11,8 @@ const tables: Record<string, Row[]> = {};
 let failing = false;
 const variants = new Map<string, "default" | "alternative">();
 let readerFails = false;
+let readerHangs = false;
+const exposures: string[] = [];
 
 function fakeDb() {
   const select = (table: string) => {
@@ -56,8 +58,10 @@ function fakeDb() {
 
 vi.mock("@/server/db", () => ({ getDb: () => fakeDb() }));
 vi.mock("@/server/flags", () => ({
-  flagVariant: async (user: { id: string }, key: string) => {
+  flagVariant: async (user: { id: string }, key: string, screen: string) => {
     if (readerFails) throw new Error("db down");
+    if (readerHangs) return new Promise(() => undefined);
+    exposures.push(`${key}:${screen}`);
     return variants.get(`${key}:${user.id}`) ?? "default";
   },
   flagsFor: async (userId: string) =>
@@ -82,19 +86,37 @@ beforeEach(() => {
   tables.flag_events = [];
   failing = false;
   readerFails = false;
+  readerHangs = false;
+  exposures.length = 0;
   variants.clear();
   switches.clear();
   for (const n of ["capture.voice", "speech.hosted", "submissions"]) switches.set(n, "on");
 });
 
 describe("P-DECISIONS.experiments: the variants the pages hand over (lane A's reader, BLD-C170)", () => {
-  it("Tell it gets S1 and S3 from flagVariant for its own screen; a failure is the default", async () => {
+  it("Tell it gets S1 from flagVariant for its own screen (the exposure) and S3 without one; a failure is the default", async () => {
     variants.set(`s1:${U1.id}`, "alternative");
     expect(await ev.composeFlags(U1, "S-04")).toEqual({ interview: true, voiceFirst: null });
     expect(await ev.composeFlags(U2, "S-04B")).toEqual({ interview: false, voiceFirst: null });
+    // S3's exposure waits for the browser to know it is a phone (BLD-C173)
+    expect(exposures).toEqual(["s1:S-04", "s1:S-04B"]);
     readerFails = true;
     expect(await ev.composeFlags(U1, "S-04")).toEqual({ interview: false, voiceFirst: null });
     expect(await ev.variantOn(U1, "s2", "S-05")).toBe("default");
+  });
+
+  it("a hung reader never holds up the page: the default after FLAG_WAIT_MS", async () => {
+    vi.useFakeTimers();
+    try {
+      readerHangs = true;
+      const flags = ev.composeFlags(U1, "S-04");
+      const s2 = ev.variantOn(U1, "s2", "S-05");
+      await vi.advanceTimersByTimeAsync(ev.FLAG_WAIT_MS);
+      expect(await flags).toEqual({ interview: false, voiceFirst: null });
+      expect(await s2).toBe("default");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("S3: kill switches beat the flag; voice first only while voice can run (BLD-C175)", async () => {
@@ -129,7 +151,7 @@ describe("the deciding events, codes only (BLD-C174)", () => {
       outcome: "corrected",
       screen: "S-04",
     };
-    expect(await ev.logFlagEvent(base)).toBe(true);
+    expect(await ev.logFlagEvent(base)).toBe("written");
     expect(tables.flag_events).toEqual([
       {
         flag_key: "s3",
@@ -142,7 +164,7 @@ describe("the deciding events, codes only (BLD-C174)", () => {
       },
     ]);
     tables.flags!.find((f) => f.key === "s3")!.state = "off";
-    expect(await ev.logFlagEvent(base)).toBe(false);
+    expect(await ev.logFlagEvent(base)).toBe("off");
     expect(tables.flag_events).toHaveLength(1);
   });
 
@@ -154,8 +176,8 @@ describe("the deciding events, codes only (BLD-C174)", () => {
       screen: "S-04B",
       draftId: DRAFT,
     };
-    expect(await ev.logFlagEvent({ ...step, event: "s1.often", outcome: "answered" })).toBe(true);
-    expect(await ev.logFlagEvent({ ...step, event: "s1.often", outcome: "answered" })).toBe(false);
+    expect(await ev.logFlagEvent({ ...step, event: "s1.often", outcome: "answered" })).toBe("written");
+    expect(await ev.logFlagEvent({ ...step, event: "s1.often", outcome: "answered" })).toBe("exists");
     expect(tables.flag_events).toHaveLength(1);
   });
 
@@ -170,7 +192,7 @@ describe("the deciding events, codes only (BLD-C174)", () => {
         outcome: "opened",
         screen: "S-05",
       }),
-    ).toBe(false);
+    ).toBe("failed");
     expect(await ev.interviewPlace(U1.id, DRAFT)).toEqual({ started: false, done: {}, ended: null });
     expect(await ev.ownDraft("CTR-0a1b2c", DRAFT)).toBe(false);
   });
@@ -179,6 +201,8 @@ describe("the deciding events, codes only (BLD-C174)", () => {
     expect(FLAG_EVENTS.s1).toEqual({});
     expect(FLAG_EVENTS.s3["s3.note"]).toEqual(["as_heard", "corrected"]);
     expect(FLAG_EVENTS.s3["s3.listen"]).toContain("typed_instead");
+    expect(FLAG_EVENTS.s2["s2.check"]).toEqual(["opened", "close_match"]);
+    expect(FLAG_EVENTS.s3["s3.exposure"]).toEqual(["shown"]);
     expect(FLAG_EVENTS.s2["s2.compare"]).toEqual([
       "shown",
       "moved_on",

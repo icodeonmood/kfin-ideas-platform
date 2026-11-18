@@ -2,9 +2,9 @@
 /**
  * Flag S1 "Interview" on Tell it (P-DECISIONS.experiments, L-DRAFT.parts/10; BLD-C172): after the first telling, up
  * to three short questions, one at a time, each skippable, then the draft. Copy word for word from the boards: the
- * intro and its list (Compose.md, `simulatorS1=Interview`), the phone's question card (PhoneCompose.md, same state),
- * and the lines the prototype boards draw for the other questions and the last step (Compose.dc.html,
- * PhoneCompose.dc.html: the questions, their examples, "Show my draft", the lead line and the panel's wait line).
+ * intro and its list (Compose.md, `simulatorS1=Interview`) and the phone's question card (PhoneCompose.md, same
+ * state). Lines the boards do not draw are made from a drawn one ("Question 2 of 3", the "So far we …" forms) or kept
+ * for HR ("Show my draft"); docs/hr-wording/lane-c.md lists them.
  *
  * The card is a group named by its question. Its answer box is labelled "Your answer"; Enter or "Next question" sends
  * the answer (an empty box counts as a skip), "Skip this one" skips. Moving on from a question puts focus in the
@@ -23,35 +23,30 @@ export const INTERVIEW_COPY = {
   introList: ["How often does it happen?", "Who feels it most?", "Any rough size?"],
   /** The phone's peek while the questions wait (PhoneCompose.md). */
   peek: "3 quick questions, then your draft",
-  /** The conversation's line before the first question (Compose.dc.html). */
-  lead: "Three quick questions to round it off. Skip any of them.",
-  /** The desktop panel while the questions are asked (Compose.dc.html). */
-  wait: "Your draft appears here once you've answered or skipped the questions.",
+  /** "Question 1 of 3. Skip any of them." as drawn; 2 and 3 follow it (for HR). */
   count: (n: number) => `Question ${n} of 3. Skip any of them.`,
   answer: "Your answer",
   offer: (suggestion: string) => `Use “${suggestion}”`,
   next: "Next question",
+  /** The last question's button: not drawn ("Done" already closes the phone's sheet beside it), kept for HR. */
   last: "Show my draft",
   skip: "Skip this one",
   /** Closes the phone's sheet (PhoneCompose.md). */
   done: "Done",
-  /** The phone sheet's line when nothing is found yet (PhoneCompose.dc.html). */
-  reading: "Reading your words. Keep going.",
 } as const;
 
-/** Each question, in order. "Who feels it most?" is a text answer here (BLD-C172): every answer goes into the draft
- * as the person's own words. */
+/** Each question, in order, as drawn: the phone's first (PhoneCompose.md), the intro's list for the others
+ * (Compose.md). "Who feels it most?" is a text answer here (BLD-C172): every answer goes into the draft as the
+ * person's own words. */
 export const QUESTIONS: Record<InterviewQuestion, { question: string; example: string | null }> = {
   often: { question: "How often does it happen, roughly?", example: "For example, about 20 times a week" },
   who: { question: "Who feels it most?", example: null },
-  size: {
-    question: "Any rough size? Hours or money, a guess is fine.",
-    example: "For example, 70 to 150 hours a month",
-  },
+  size: { question: "Any rough size?", example: "For example, 70 to 150" },
 };
 
 /** The phone sheet's line on what the draft found so far (PhoneCompose.md: "So far we hid 3 personal details,
- * suggested 3 sortings and found 2 similar ideas."). */
+ * suggested 3 sortings and found 2 similar ideas."). A part with nothing is left out, a single one is said in the
+ * singular, and with nothing found there is no line (for HR). */
 export function soFarLine(live: Live): string {
   const bits: string[] = [];
   const hidden = live.hidden.filter((d) => d.state === "hidden");
@@ -61,7 +56,7 @@ export function soFarLine(live: Live): string {
   if (sorts) bits.push(`suggested ${sorts} ${sorts === 1 ? "sorting" : "sortings"}`);
   const similar = Array.isArray(live.parts.similar.value) ? live.parts.similar.value.length : 0;
   if (similar) bits.push(`found ${similar} similar ${similar === 1 ? "idea" : "ideas"}`);
-  if (!bits.length) return INTERVIEW_COPY.reading;
+  if (!bits.length) return "";
   const last = bits.pop()!;
   return `So far we ${bits.length ? `${bits.join(", ")} and ${last}` : last}.`;
 }
