@@ -184,10 +184,18 @@ function Footer({ children }: { children: ReactNode }) {
 }
 
 /** The set's own words on the item's forward action, which goes to the Answer screen: "Carry on answering" once some
- * are sent, gone once all are (C-QCARD.states). The card is the body; its button sits in the foot (S-H5.rules/3). */
-export function questionActions(actions: Action[], set: Pick<QuestionSet, "state" | "answered">): Action[] {
+ * are sent, gone once all are (C-QCARD.states). The card is the body; its button sits in the foot (S-H5.rules/3).
+ * An answer reminder keeps its own words, "Answer the questions" (L-INBOX.kinds), while anything is left to answer,
+ * and loses the action, as the questions do, once all are sent (BLD-A199, J-TRACK/6). */
+export function questionActions(
+  actions: Action[],
+  set: Pick<QuestionSet, "state" | "answered">,
+  kind: InboxEntry["kind"] = "questions",
+): Action[] {
   const label = answerLabel(set);
-  return actions.flatMap((a) => (a.to && /\/answer$/.test(a.to) ? (label ? [{ ...a, label }] : []) : [a]));
+  const forward = (a: Action): Action[] =>
+    !label ? [] : kind === "answer_reminder" ? [a] : [{ ...a, label }];
+  return actions.flatMap((a) => (a.to && /\/answer$/.test(a.to) ? forward(a) : [a]));
 }
 
 function ItemActions({
@@ -382,7 +390,9 @@ function OpenItem({
         request.bar
       ) : (
         <ItemActions
-          actions={detail?.kind === "questions" ? questionActions(item.actions, detail.set) : item.actions}
+          actions={
+            detail?.kind === "questions" ? questionActions(item.actions, detail.set, item.kind) : item.actions
+          }
           busy={busy}
           onOp={onOp}
         />
