@@ -165,7 +165,9 @@ def test_L_DECIDE_6_a_committee_reversal_to_pick_opens_asking(db: Conn, cast: di
     assert len(_asks(db, cast)) == 1
 
 
-def test_L_COMMITTEE_rules_5_a_reversal_to_pick_sets_the_team_date_a_pick_sets(db: Conn, cast: dict[str, Any]) -> None:
+def test_L_COMMITTEE_rules_5_a_reversal_to_pick_sets_the_team_date_a_pick_sets(
+    db: Conn, cast: dict[str, Any]
+) -> None:
     """L-COMMITTEE.rules/5, L-DECIDE.rules/6 (BLD-B259): a reversal to Pick takes a Pick's consequences, so the build
     team is chosen by the desk's rule from the reversal time (10 working days, counting the day, at the deadline
     hour): Tuesday 17 November, 10 am gives Monday 30 November. S-06's join_build.reply_by and the track's "Team
@@ -203,7 +205,9 @@ def test_L_COMMITTEE_rules_5_a_reversal_to_pick_sets_the_team_date_a_pick_sets(d
     assert (nodes[3].state, nodes[3].detail) == ("now", "Team chosen by Monday 30 November")
 
 
-def test_L_COMMITTEE_rules_5_a_reversal_away_from_a_pick_sets_no_team_date(db: Conn, cast: dict[str, Any]) -> None:
+def test_L_COMMITTEE_rules_5_a_reversal_away_from_a_pick_sets_no_team_date(
+    db: Conn, cast: dict[str, Any]
+) -> None:
     """L-COMMITTEE.rules/5 (BLD-B259): a Pick reversed to Not now or Not picked has no team date: reply_by is null,
     and the reversal keeps none."""
     d = _pick(db, cast)
@@ -228,6 +232,57 @@ def test_L_DECIDE_6_once_the_team_is_chosen_it_is_team_chosen(db: Conn, cast: di
     assert (farhan["can_ask"], farhan["asked_at"]) == (False, None) and farhan["reply_by"] is not None
     assert _payload(db, cast, "kavya")["asked_at"] is not None  # her ask stays on her page
     assert len(_asks(db, cast)) == 1 and len(_audits(db, cast)) == 1
+
+
+@pytest.mark.parametrize("status", ["being_built", "shipped"])
+def test_L_DECIDE_6_being_built_or_shipped_without_a_build_team_row_is_team_chosen(
+    db: Conn, cast: dict[str, Any], status: str
+) -> None:
+    """L-DECIDE.after: the idea moving on to being built or shipped means the team is chosen, even before a
+    build_teams row is written."""
+    _pick(db, cast)
+    db.execute("UPDATE ideas SET status = %s WHERE id = %s", (status, cast["idea"]["id"]))
+    assert (
+        db.execute("SELECT 1 FROM build_teams WHERE idea_uuid = %s", (cast["idea"]["id"],)).fetchone() is None
+    )
+    for who in ("kavya", "farhan"):
+        got = _refused(join_build.ask, db, cast["idea"]["idea_id"], cast[who]["id"])
+        assert (got.status, got.code) == (409, "team_chosen")
+    assert _payload(db, cast, "kavya")["can_ask"] is False
+    assert _asks(db, cast) == [] and _audits(db, cast) == []
+
+
+def test_L_DECIDE_6_join_build_is_null_for_a_crew_member_who_left(db: Conn, cast: dict[str, Any]) -> None:
+    """P-PRODUCT.privacy: a crew member who left is no longer crew, so the decision payload carries no join_build for
+    them, and the sharer's is unchanged."""
+    _pick(db, cast)
+    assert _payload(db, cast, "farhan")["can_ask"] is True
+    db.execute(
+        "UPDATE crew_members SET left_at = now(), left_how = 'left' WHERE idea_uuid = %s AND contributor_code = %s",
+        (cast["idea"]["id"], cast["farhan"]["code"]),
+    )
+    assert join_build.join_build_for(db, str(cast["idea"]["id"]), cast["farhan"]["id"]) is None
+    got = committee.decision_for_viewer(db, cast["idea"]["idea_id"], cast["farhan"]["id"], f.at(17, 9))
+    assert got is None or got.get("join_build") is None
+    assert _payload(db, cast, "kavya")["can_ask"] is True
+
+
+def test_L_DECIDE_6_a_stranger_gets_403_or_nothing_on_a_merged_ideas_lead(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """L-MERGE.desk/5, P-PRODUCT.privacy: on an idea a Pick joined, the ask goes to the lead; a person who is neither
+    sharer nor crew of either is refused with 403 and reads no join_build, through the merged idea or the lead."""
+    ravi = f.person(db, "Ravi Nair")
+    ravis = f.idea(db, ravi, title="Rejection SMS codes confuse investors", shared_at=f.at(15, 9))
+    decide.send(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                {"choice": "pick", "reason": REASON, "joined_with": ravis["idea_id"]}, DECIDED)  # fmt: skip
+    for ref in (ravis["idea_id"], cast["idea"]["idea_id"]):
+        got = _refused(join_build.ask, db, ref, cast["nikhil"]["id"])
+        assert (got.status, got.code) == (403, "forbidden")
+        seen = committee.decision_for_viewer(db, ref, cast["nikhil"]["id"], f.at(17, 9))
+        assert seen is None or (seen.get("stage_only") is True and "join_build" not in seen)
+    assert join_build.join_build_for(db, str(cast["idea"]["id"]), cast["nikhil"]["id"]) is None
+    assert _asks(db, cast) == [] and _audits(db, cast) == []
 
 
 def test_L_DECIDE_6_the_decision_payload_join_build_for_the_sharer_before_and_after_asking(
