@@ -48,6 +48,13 @@ The boards draw no error state for these three screens. Each shows one line with
 | `S-06` | On a phone, Copy reference, when the browser will not copy | `ideas/[id]/parts.tsx:179` | Couldn't copy the reference. It's {reference}. |
 | `S-WALL` | A One who hides their name from the Wall | `wall/wall-screen.tsx:576` | One No. {n} |
 
+**Changed by DEC-111 (BLD-E053).** These are the pack's drawn lines, not new ones: each named the reviewer, and now names the review desk for a sharer who is not on the review desk or the Ones Committee. A sharer on the desk or the committee still reads the drawn line with the name. The label comes from one constant (`apps/web/src/lib/review-desk.ts`), so a different label is a one-line change. {reviewer} is the reviewer's first name, {day} a date such as Monday 16 November.
+
+| Module | Where it shows | File and line | Old → new |
+|---|---|---|---|
+| `S-06` | Your idea's page once picked, the line under "Picked. A team is being chosen to build it." (Status.md, PhoneStatus.md) | `ideas/[id]/decision.ts:47`, `:57` | {reviewer} from the review desk picked it on {day}. → The review desk picked it on {day}. (The rest of the line, "and joined it with …" and "The build team is chosen by …", is unchanged.) |
+| `S-06` | Your idea's page, Not now and Not picked, the end of the line under the card (Status.md, PhoneStatus.md) | `ideas/[id]/decision.ts:48`, `:67`, `:75`, `:77` | {reviewer}’s full reason is below. → The review desk’s full reason is below. |
+
 ## 5. A few words for a One (`/ones/write/:id`, BLD-E044)
 
 The page where a colleague writes to a One who is moving up a tier. No board draws it; S-ONE's "Messages for you" reads what it saves.

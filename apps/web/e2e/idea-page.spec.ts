@@ -187,7 +187,9 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     const t7 = await openIdea(page, "T7");
     const d7 = await decisionOf(page, t7.ref);
     await expect(page.getByText("Picked. A team is being chosen to build it.")).toBeVisible();
-    await expect(page.getByText(/Harish from the review desk picked it on \w+day \d+ \w+\./)).toBeVisible();
+    // DEC-111: Tanvi is not on the review desk or the Ones Committee, so the sentence names the desk, not Harish
+    await expect(page.getByText(/The review desk picked it on \w+day \d+ \w+\./)).toBeVisible();
+    await expect(page.getByText(/Harish from the review desk picked it/)).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 2, name: d7.decision.reason_heading })).toBeVisible();
     await expect(page.getByText(`“${d7.decision.reason}”`)).toBeVisible();
     if (d7.lines?.committee_line) await expect(page.getByText(d7.lines.committee_line)).toBeVisible();
@@ -199,7 +201,8 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(
       page.getByText(/^Not now\. The review desk looks at it again on \w+day \d+ \w+( \d{4})?\.$/),
     ).toBeVisible();
-    await expect(page.getByText(/Lavanya’s full reason is below\./)).toBeVisible();
+    await expect(page.getByText(/The review desk’s full reason is below\./)).toBeVisible();
+    await expect(page.getByText(/Lavanya’s full reason/)).toHaveCount(0);
     await expect(page.getByText(`“${d8.decision.reason}”`)).toBeVisible();
     // The window closed, so the committee line is gone (lines.committee_line is null)
     expect(d8.lines?.committee_line ?? null).toBeNull();

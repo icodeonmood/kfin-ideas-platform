@@ -603,6 +603,7 @@ export interface SharerView {
     }[];
     files: FileItem[];
     edit_window?: { open: boolean; closes_at?: IsoDate; opened_by_desk_at?: IsoDate };
+    // `reviewer` only for a sharer on the review desk or the Ones Committee (DEC-111, BLD-E053)
     review?: { decide_by: IsoDate; reviewer?: PersonRef; opened_at?: IsoDate };
     has_open_questions: boolean;
     kept_separate: boolean;

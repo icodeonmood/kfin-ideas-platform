@@ -92,6 +92,13 @@ class Viewer:
     def on_committee(self) -> bool:
         return bool(self.roles & COMMITTEE_ROLES)
 
+    @property
+    def sees_desk_names(self) -> bool:
+        """DEC-111: only the review desk and the Ones Committee see who at the desk asked, revised or decided.
+        Everyone else, the sharer and the crew included, reads "the review desk", with no name, avatar or initials
+        (`onepc.words.REVIEW_DESK`). Read from the live role grants, never from the caller (BLD-E053)."""
+        return self.on_desk or self.on_committee
+
 
 def viewer(conn: Conn, user_id: str) -> Viewer:
     """The signed-in person, from the database: their contributor code and live role grants. The web app has

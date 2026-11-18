@@ -143,7 +143,9 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     v = view(club, t6, "tanvi")
     page = v["page"]
     assert page["state"] == "answers_sent" and page["state_label"] == "Answers sent"
-    assert page["card"]["lead"] == "Sent. Harish has your answers."
+    assert (
+        page["card"]["lead"] == "Sent. The review desk has your answers."
+    )  # DEC-111: never the reviewer's name
     assert page["card"]["rest"].startswith(
         "Each answer was added to its part of your idea, under What you shared."
     )
@@ -155,7 +157,7 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
     v = view(club, t6, "tanvi")
     assert v["page"]["state"] == "answers_sent" and v["idea"]["has_open_questions"] is False
-    assert v["page"]["card"]["lead"] == "Sent. Harish has your answers."
+    assert v["page"]["card"]["lead"] == "Sent. The review desk has your answers."
 
 
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
@@ -239,7 +241,8 @@ def test_l_questions_answer_5_answers_under_their_parts_come_from_lane_b(
     monkeypatch.setitem(sys.modules, "desk.asking", fake)
     often = next(r for r in view(club, t7, "tanvi")["page"]["shared"]["rows"] if r["part"] == "often")
     assert [a["text"] for a in often["answers"]] == ["Yes, across the six largest branches."]
-    assert often["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
+    # DEC-111: lane B's `asked_by` is not read for a sharer outside the desk and the committee
+    assert often["answers"][0]["line"] == f"From your answer to the review desk, {day(asked, NOW)}"
 
 
 def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b_desk_asking_unmocked(
@@ -270,11 +273,82 @@ def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b
             "id": sent["question_id"],
             "text": "Yes, across the six largest branches.",
             "at": answered.isoformat(),
-            "line": f"From your answer to Harish, {day(answered, NOW)}",
+            "line": f"From your answer to the review desk, {day(answered, NOW)}",  # DEC-111
             "files": [],
         }
     ]
     assert all(not r.get("answers") for part, r in rows.items() if part != "often")
+
+
+# --- DEC-111: the review desk, never the reviewer's name, outside the desk and the Ones Committee ------------------
+
+REVIEWERS = ("Harish", "Venkatesan", "Lavanya", "Krishnan")  # the seed's review desk (club_seed.PEOPLE)
+
+
+def grant(club: dict[str, Any], who: str, role: str) -> None:
+    club["conn"].execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (club["p"][who], role))
+
+
+def revoke_all(club: dict[str, Any], who: str) -> None:
+    club["conn"].execute("DELETE FROM role_grants WHERE user_id = %s", (club["p"][who],))
+
+
+def no_reviewer_named(payload: dict[str, Any]) -> bool:
+    dump = json.dumps(payload, ensure_ascii=False, default=str)
+    return not any(name in dump for name in REVIEWERS)
+
+
+def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_reviewers_name(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEC-111 (J-TRACK/3, /5, /7; BLD-E053): on S-06 a sharer who is not on the review desk or the Ones Committee
+    reads "the review desk" wherever a reviewer would be named (the Answers sent card, the track's line, each
+    answer's line under its part, the revised worth's by-line) and gets no reviewer on the review card, so no name,
+    avatar or initials anywhere in the payload. A sharer on the desk or the committee still reads the name."""
+    conn, t6, t7 = club["conn"], ref(club, "T6"), ref(club, "T7")
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    row6 = conn.execute("SELECT decide_by FROM ideas WHERE idea_id = %s", (t6,)).fetchone()
+    by = day(row6["decide_by"], NOW)
+    # T7's answer, as lane B's reader returns it, names who asked (`asked_by`): lane E must not pass it on.
+    asked = NOW - dt.timedelta(days=6)
+    fake = types.ModuleType("desk.asking")
+    fake.answers_by_part = lambda conn, uuid: {
+        "often": [
+            {
+                "question_id": "q1",
+                "question": "Across branches?",
+                "asked_by": "Harish",
+                "answer": "Yes, across the six largest branches.",
+                "answered_at": asked.isoformat(),
+                "files": [],
+            }
+        ]
+    }
+    monkeypatch.setitem(sys.modules, "desk.asking", fake)
+
+    def pages() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        v6, v7 = view(club, t6, "tanvi"), view(club, t7, "tanvi")
+        return v6, v7, {r["part"]: r for r in v7["page"]["shared"]["rows"]}
+
+    v6, v7, rows7 = pages()
+    assert no_reviewer_named(v6) and no_reviewer_named(v7)
+    assert "reviewer" not in v6["idea"]["review"] and "reviewer" not in v7["idea"].get("review", {})
+    assert v6["page"]["card"]["lead"] == "Sent. The review desk has your answers."
+    assert nodes(v6)[2] == ("reviewed", "now", f"The review desk has your answers. By {by}")
+    assert rows7["cost"]["figures"]["reviewer"]["by_line"] == "Revised by the review desk"
+    assert rows7["often"]["answers"][0]["line"] == f"From your answer to the review desk, {day(asked, NOW)}"
+
+    for role in ("committee", "reviewer"):  # the Ones Committee and the review desk keep the name
+        grant(club, "tanvi", role)
+        v6, v7, rows7 = pages()
+        assert v6["page"]["card"]["lead"] == "Sent. Harish has your answers."
+        assert nodes(v6)[2] == ("reviewed", "now", f"Harish has your answers. By {by}")
+        assert v6["idea"]["review"]["reviewer"]["first_name"] == "Harish"
+        assert rows7["cost"]["figures"]["reviewer"]["by_line"] == "Revised by Harish"
+        assert rows7["often"]["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
+        revoke_all(club, "tanvi")
+    assert no_reviewer_named(view(club, t6, "tanvi"))  # the grant gone, the name goes with it
 
 
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:

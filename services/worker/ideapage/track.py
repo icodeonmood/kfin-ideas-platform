@@ -188,6 +188,8 @@ def stages(
                 n = len(qset["questions"])
                 line = f"{count(n, 'question')} for you since {day(qset['sent_at'], now)}"
             elif qset["state"] in read.ANSWERED_SET_STATES and reviewer_first:
+                # `reviewer_first` is the reviewer's first name for the review desk and the Ones Committee, and
+                # "The review desk" for anyone else (DEC-111, `sharer.sharer_view`)
                 line = (
                     f"{reviewer_first} has your answers. {by}"
                     if by
