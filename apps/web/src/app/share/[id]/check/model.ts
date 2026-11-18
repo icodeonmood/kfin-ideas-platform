@@ -104,6 +104,21 @@ export function mergedView(
   };
 }
 
+/**
+ * BLD-C156: the parts a reload shows ticked from what the server keeps, not from clicks in memory. Moving on from a
+ * part saves the next one as the draft's `step` (S-05 saves where the person is), so a saved step past a part means
+ * the person moved on from it: "Looks right" for part 1, "Next" for part 3, and so on. Sorting (part 2) is ticked
+ * only when confirmed and Send it (part 7) never, so neither is here. Part 3 is also done once "Keep mine separate"
+ * is kept or a merge request has an answer, and part 5 once a fix is added; check-it.tsx adds those.
+ */
+export function passedParts(step: DraftStep | string | undefined | null): ReadonlySet<PartNo> {
+  if (step !== "send" && !/^check:[1-7]$/.test(step ?? "")) return new Set();
+  const at = partFromStep(step);
+  const out = new Set<PartNo>();
+  for (let n = 1; n < at; n++) if (n !== 2) out.add(n as PartNo);
+  return out;
+}
+
 /** A tile's action row (C-SIMGRID.tile): "Team up", "Waiting for Ravi" + "Withdraw", or "On the crew". */
 export type TileAction =
   | { kind: "team-up" }

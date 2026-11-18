@@ -43,6 +43,7 @@ import {
   mergeView,
   oneLine,
   partFromStep,
+  passedParts,
   rowView,
   similarRail,
   sortingCount,
@@ -133,6 +134,8 @@ export function CheckIt({
   const [part, setPart] = useState<PartNo>(1);
   const [dir, setDir] = useState<1 | -1>(1);
   const [done, setDone] = useState<ReadonlySet<PartNo>>(new Set());
+  /** BLD-C156: the parts the saved step is past when the draft was read, ticked after a reload as well. */
+  const [passed, setPassed] = useState<ReadonlySet<PartNo>>(new Set());
 
   const [sorting, setSorting] = useState<SortingResponse | null>(null);
   const [sortError, setSortError] = useState<string | null>(null);
@@ -243,6 +246,7 @@ export function CheckIt({
       // Merged: nothing to send, so a saved "send" opens part 1, as the board draws it (BLD-C155).
       const at = partFromStep(body.step);
       setPart(merged && at === 7 ? 1 : at);
+      setPassed(passedParts(body.step));
       if (s.ok) setSorting(s.body);
       if (cfg && cfg.ok) setConfig(cfg.body);
       if (up.ok && up.body && typeof up.body.limit_mb === "number") setUploads(up.body);
@@ -708,13 +712,18 @@ export function CheckIt({
     6: false,
     7: false,
   };
-  // Part 3 is done once a merge request has an answer: merged, team up only or declined (BLD-C155).
+  // A tick follows what the server keeps (BLD-C156): the sorting confirmed; the saved step past the part when the
+  // draft was read; for part 3, "Keep mine separate" kept or a merge request answered; for part 5, a fix added. Moving
+  // on in this visit ticks the part at once, as before.
   const answered = mv !== null && mv.state !== "waiting";
   const isDone = (n: PartNo) =>
     !attention[n] &&
     (n === 2
       ? Boolean(sorting?.confirmed)
-      : done.has(n) || (n === 3 && answered) || (n === 5 && fixPart.kind === "added"));
+      : done.has(n) ||
+        passed.has(n) ||
+        (n === 3 && (kept || answered)) ||
+        (n === 5 && fixPart.kind === "added"));
 
   /** A merged draft's parts 2, 4, 5 and 6: the value its last look gives that part (BLD-C155). */
   const readRow = (key: string) => {

@@ -2147,6 +2147,35 @@ describe("S-05 J-SIMILAR/6a L-MERGE.request/5: a merged draft stays on Check it,
   });
 });
 
+describe("S-05.layout J-SHARE/8–11: the rail's ticks come from what the server keeps (BLD-C156)", () => {
+  it("after a reload at part 4, part 1 (Looks right) and part 3 (Similar ideas) are ticked; sorting only once confirmed", async () => {
+    await mount(base({ draft: draft({ step: "check:4" }) }));
+    expect(h1()).toBe("Anything that shows it?");
+    const rail = Array.from(document.querySelectorAll(".ck-rail button")).map(nameOf);
+    expect(rail.slice(0, 4)).toEqual([
+      "Your words, done Title, what happens, how often",
+      "2 Sorting Suggested, not confirmed yet",
+      "Similar ideas, done 2 close ideas found",
+      "4 Proof Optional",
+    ]);
+    expect(button(/^Your words, done/)!.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+    expect(button(/^Similar ideas, done/)!.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+  });
+
+  it("Keep mine separate kept on the server ticks part 3 after a reload, wherever the person is", async () => {
+    await mount(base({ draft: draft({ step: "check:2", kept_separate: true }), sorting: sorting(true) }));
+    expect(h1()).toBe("Is it sorted right?");
+    expect(button(/^Your words, done/)).toBeTruthy();
+    expect(button(/^Similar ideas, done/)).toBeTruthy();
+    expect(button(/^4 Proof/)).toBeTruthy();
+  });
+
+  it("a draft still at Tell it or part 1 shows no ticks", async () => {
+    await mount(base({ draft: draft({ step: "tell" }) }));
+    expect(Array.from(document.querySelectorAll(".ck-rail .ck-rb.done"))).toHaveLength(0);
+  });
+});
+
 describe("S-05 words (F-COPY)", () => {
   it("never says duplicate, rejected, already solved, appeal, invalid or Garage to the sharer", () => {
     const all = JSON.stringify(CHECK_COPY, (_k, v) => (typeof v === "function" ? v("2", "Ravi") : v));
