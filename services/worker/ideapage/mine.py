@@ -564,7 +564,7 @@ def my_ideas(
             # The desktop board only: the phone's empty states offer "Show all ideas" alone (PhoneMyIdeas.md)
             actions.append(
                 {
-                    "label": f"See {lists[other]} in {LIST_LABEL[other]}",
+                    "label": f"See {lists[other]} in {LIST_LABEL[other]}",  # NOT DRAWN for Yours
                     "to": url_of(state, list=other, row=None),
                     "desk_only": True,
                 }
@@ -573,7 +573,7 @@ def my_ideas(
             out["empty"] = {
                 "kind": "no_results",
                 "title": f"Nothing found for “{state['q']}”.",
-                "line": "Try other words, or clear the search.",
+                "line": "Try other words, or clear the search.",  # NOT DRAWN
                 "actions": [{"label": "Clear", "to": url_of(state, q="", row=None)}],
             }
         elif state["filter"] != "all":
