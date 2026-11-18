@@ -16,7 +16,10 @@ import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { tellInboxCounts } from "@/lib/desk/answers";
 import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+  useSearchParams: () => new URLSearchParams(globalThis.location?.search ?? ""),
+}));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {
