@@ -19,7 +19,7 @@ import { Pill } from "@/components/ui/pill";
 import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL } from "@/lib/desk/files";
-import { REVIEW_DESK_START } from "@/lib/review-desk";
+import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import "./qcard.css";
@@ -98,19 +98,17 @@ export function QuestionsCard({
   ) : null;
 
   if (variant === "home") {
-    // Home.md "Needs you": the count, the clock, the desk's question about which idea, each one a way into Answer.
-    // DEC-111: "Meera from the review desk asked about …" names the desk alone
+    // Home.md "Needs you": the count, the clock, which idea it is about, each question a way into Answer. DEC-111: the
+    // title already names the desk, so the board's "Meera from the review desk asked about …" loses the person
     return (
       <article className="card qcard qcard-home" aria-labelledby={titleId}>
         <header className="qcard-h">
           <p id={titleId} className="body qcard-t">
-            {plural(n, "question")} from the review desk
+            {plural(n, "question")} from {REVIEW_DESK}
           </p>
           {pill}
         </header>
-        <p className="meta">
-          {REVIEW_DESK_START} asked about &quot;{set.idea.title}&quot;
-        </p>
+        <p className="meta">Asked about &quot;{set.idea.title}&quot;</p>
         <ol className="qcard-links">
           {set.questions.map((q, i) => (
             <li key={q.id}>

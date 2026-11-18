@@ -102,13 +102,13 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The Answer screen, when the answers could not be checked for customer details on send | Your answers didn’t send. Try again. | The screen's existing send failure line, never a raw error |
 | The reviewer's page, the Attached part, the kind in "… shown, because …" | Phone shown, because it’s made up for the example. (also "Account", "Email", "Aadhaar", "Name", "Folio", "PAN") | L-HIDE.detect's "Label shown" for each kind; replaces "Phone number shown" and "Account number shown" |
 
-## 3. Lines changed by DEC-111: the review desk, not the reviewer's name (18 Nov)
+## 7. Lines changed by DEC-111: the review desk, not the reviewer's name (18 Nov)
 
 DEC-111: a sharer, and the crew, never see the name of the person at the review desk. Wherever the boards name the reviewer to them, the line names "the review desk" instead, with no avatar or initials beside it. "Meera" stands for the reviewer, "Kavya" for the sharer and "Ravi" for another sharer. The review desk and the Ones Committee still see each other's names, and a committee member who reverses a decision is still named to the sharer.
 
 | Where | Board copy | Changed to |
 |---|---|---|
-| Home, Needs you, the questions card (desktop) | Meera from the review desk asked about "Investors call to ask why a redemption was rejected" | The review desk asked about "Investors call to ask why a redemption was rejected" |
+| Home, Needs you, the questions card (desktop), the line under its title "3 questions from the review desk" (the title already names the desk, so the line does not say it again) | Meera from the review desk asked about "Investors call to ask why a redemption was rejected" | Asked about "Investors call to ask why a redemption was rejected" |
 | The idea page, the questions card, its byline (the avatar "MI" goes too) | Meera from the review desk, Monday 16 November, 11:20 am | The review desk, Monday 16 November, 11:20 am |
 | The idea page, the questions card's title | Meera has 3 questions for you | The review desk has 3 questions for you |
 | The idea page, the questions card once every question is answered (not drawn) | Meera’s 3 questions, answered | The review desk’s 3 questions, answered |

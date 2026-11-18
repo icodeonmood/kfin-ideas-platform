@@ -456,7 +456,7 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     await show(baseRoutes());
     expect(heading(2)).toContain("Needs you");
     expect(text()).toContain("2 questions from the review desk");
-    expect(text()).toContain(`The review desk asked about "${NEEDS.title}"`); // DEC-111: never the reviewer
+    expect(text()).toContain(`Asked about "${NEEDS.title}"`); // DEC-111: the title names the desk; never the reviewer
     expect(text()).not.toContain("Harish from the review desk");
     expect(text()).toMatch(/[34] days left/); // calendar days in office time (lib/desk/countdown)
     expect(text()).toContain("Question 1 Is it at one branch, or across Hyderabad?");
