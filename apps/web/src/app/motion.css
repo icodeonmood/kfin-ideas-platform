@@ -100,12 +100,14 @@
     animation-name: moInDeep;
   }
 
-  /* Arrivals after a hand-over (set on <html> by the hand-over helper before the first frame) */
-  .mo-a-expand {
+  /* Arrivals after a hand-over (set on <html> by the hand-over helper before the first frame). The mo-a-<kind> class
+     stays until the next navigation, because taking it off would change the blocks' animation and play the arrival
+     again; only "mo-a-wait", the wait for the hand-over, comes off after 2 s (BLD-D015). */
+  .mo-a-expand.mo-a-wait {
     --mo-base: 380ms;
   }
 
-  .mo-a-portal {
+  .mo-a-portal.mo-a-wait {
     --mo-base: 420ms;
   }
 
