@@ -83,6 +83,30 @@ function hostByKey(key: string): HTMLElement | null {
   return null;
 }
 
+/**
+ * The document's selection as it is now, against the stored texts: its range and host, whether it lies in one host
+ * whose page text is exactly the stored text, and the pick "Hide this" is offered for (null when it is not one).
+ */
+function readSelection(texts: ReadonlyMap<string, string>) {
+  const sel = document.getSelection();
+  const range = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+  const host = range ? hostOf(range.startContainer) : null;
+  const one = range !== null && host !== null && hostOf(range.endContainer) === host;
+  // offered only while the page shows exactly the stored text, so the offsets are the stored text's
+  const exact = host !== null && host.textContent === texts.get(host.dataset.hideKey ?? "");
+  const at = range && host && one && exact ? rangeOffsets(host, range) : null;
+  const pick: Picked | null =
+    host && at
+      ? {
+          key: host.dataset.hideKey ?? "",
+          ideaId: host.dataset.hideIdea ?? "",
+          source: { kind: (host.dataset.hideKind ?? "") as HideSourceKind, id: host.dataset.hideId ?? "" },
+          ...at,
+        }
+      : null;
+  return { range, host, one, exact, pick };
+}
+
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 /** An arrow, Home or End inside a focused text: the caret starts at the text's start (or, going back, its end) when
@@ -143,15 +167,9 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
       // focus on "Hide this" itself (Tab from a keyboard selection) keeps the selection it was offered for
       const active = document.activeElement;
       if (active instanceof HTMLElement && active.closest("[data-hide-ui]")) return;
-      const sel = document.getSelection();
-      const range = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null;
-      const host = range ? hostOf(range.startContainer) : null;
-      const one = range !== null && host !== null && hostOf(range.endContainer) === host;
-      // offered only while the page shows exactly the stored text, so the offsets are the stored text's
-      const exact = host !== null && host.textContent === texts.current.get(host.dataset.hideKey ?? "");
-      const at = range && host && one && exact ? rangeOffsets(host, range) : null;
+      const { range, host, one, exact, pick } = readSelection(texts.current);
       const prev = current.current;
-      if (!range || !host || !at) {
+      if (!pick) {
         if (prev) {
           current.current = null;
           setPicked(null);
@@ -170,18 +188,12 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
         }
         return;
       }
-      const d = host.dataset;
-      if (prev && prev.key === d.hideKey && prev.start === at.start && prev.end === at.end) return;
-      setPicked({
-        key: d.hideKey ?? "",
-        ideaId: d.hideIdea ?? "",
-        source: { kind: (d.hideKind ?? "") as HideSourceKind, id: d.hideId ?? "" },
-        ...at,
-      });
+      if (prev && prev.key === pick.key && prev.start === pick.start && prev.end === pick.end) return;
+      setPicked(pick);
       setError(null);
       setNotice(null);
       lastNotice.current = null;
-      if (!prev || prev.key !== d.hideKey) say(HIDE_NEXT); // said as it appears, not on every key
+      if (!prev || prev.key !== pick.key) say(HIDE_NEXT); // said as it appears, not on every key
     };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
@@ -199,12 +211,17 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
   }, [picked]);
 
   const hide = useCallback(() => {
-    if (!picked || busy.current) return;
+    // The selection as it is now, not only as last stored: "selectionchange" arrives a step after each key and is not
+    // read once focus is on "Hide this", so after a quick Shift+arrow and then Enter or Tab the stored pick can lag
+    // the last keys (J-REVIEW/2–3). The live one is taken while it is still in the same text.
+    const now = readSelection(texts.current).pick;
+    const p = now && picked && now.key === picked.key ? now : picked;
+    if (!p || busy.current) return;
     busy.current = true;
     setError(null);
-    void call<unknown>(hideUrl(picked.ideaId), {
+    void call<unknown>(hideUrl(p.ideaId), {
       method: "POST",
-      body: hideBody(picked.source, picked),
+      body: hideBody(p.source, p),
     }).then((res) => {
       busy.current = false;
       if (!res.ok && res.error.code === "stale") {
@@ -212,9 +229,9 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
         current.current = null; // so the selection's end does not empty the line said here
         setPicked(null);
         document.getSelection()?.removeAllRanges();
-        setNotice({ key: picked.key, text: HIDE_WORDS.stale });
+        setNotice({ key: p.key, text: HIDE_WORDS.stale });
         say(HIDE_WORDS.stale);
-        hostByKey(picked.key)?.focus({ preventScroll: true });
+        hostByKey(p.key)?.focus({ preventScroll: true });
         router.refresh();
         return;
       }
@@ -222,7 +239,7 @@ export function HideThisProvider({ enabled, children }: { enabled: boolean; chil
         setError(hideErrorWords(res.error.code));
         return;
       }
-      const host = hostByKey(picked.key);
+      const host = hostByKey(p.key);
       current.current = null; // so the selection's end does not empty the line said here
       setPicked(null);
       document.getSelection()?.removeAllRanges();

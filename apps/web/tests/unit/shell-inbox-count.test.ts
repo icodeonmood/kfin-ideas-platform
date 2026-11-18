@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /**
- * C-SIDEBAR's Inbox number (L-INBOX.rules/1, V-ACC.track/8; agreed with lane D): it starts from the server's
- * `inboxCounts(me).unread` (`ShellData.inboxUnread`), follows every count the Inbox sends on `inbox:counts`, and
- * goes back to the server's number when the page's data changes. Synthetic person only.
+ * The shell's Inbox number in C-SIDEBAR and C-PHONE-TABS (L-INBOX.rules/1, V-ACC.track/8; agreed with lane D): it
+ * starts from the server's `inboxCounts(me).unread` (`ShellData.inboxUnread`), follows every count the Inbox sends on
+ * `inbox:counts`, and goes back to the server's number when the page's data changes. Synthetic person only.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { PhoneTabs } from "@/components/shell/phone";
 import { Sidebar } from "@/components/shell/sidebar";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
 import type { NavItem } from "@/lib/rbac";
@@ -29,6 +30,7 @@ vi.mock("next/link", async () => {
 
 const NAV: NavItem[] = [
   { key: "home", label: "Home", href: "/", place: "main", tab: 1 },
+  { key: "share", label: "Share a problem", href: "/share", place: "new", tab: 3 },
   { key: "inbox", label: "Inbox", href: "/inbox", place: "main", tab: 5 },
 ];
 
@@ -70,6 +72,10 @@ function render(unread: number) {
   );
 }
 
+function renderTabs(unread: number) {
+  act(() => root.render(createElement(PhoneTabs, { nav: NAV, unread })));
+}
+
 function inboxLink(): string {
   const link = Array.from(host.querySelectorAll("a")).find((a) => a.getAttribute("href") === "/inbox");
   return link?.textContent ?? "";
@@ -99,5 +105,39 @@ describe("C-SIDEBAR: the Inbox number", () => {
     expect(inboxLink()).toBe("Inbox");
     render(3); // the page's data was read again (router.refresh, or another page)
     expect(inboxLink()).toBe("Inbox3, 3 unread");
+  });
+});
+
+describe("C-PHONE-TABS: the Inbox tab's number", () => {
+  it("L-INBOX.rules/1: starts from the server's unread count and follows every count the Inbox sends", () => {
+    renderTabs(2);
+    expect(inboxLink()).toBe("2Inbox, 2 new");
+    send({ all: 4, needs_you: 1, unread: 1, archived: 0 });
+    expect(inboxLink()).toBe("1Inbox, 1 new");
+    send({ all: 4, needs_you: 0, unread: 0, archived: 0 });
+    expect(inboxLink()).toBe("Inbox"); // none unread: no number
+  });
+
+  it("V-ACC.track/8: a new number from the server replaces the last one the Inbox sent", () => {
+    renderTabs(2);
+    send({ unread: 0 });
+    expect(inboxLink()).toBe("Inbox");
+    renderTabs(3);
+    expect(inboxLink()).toBe("3Inbox, 3 new");
+  });
+
+  it("ignores anything that is not a count", () => {
+    renderTabs(2);
+    for (const detail of [
+      null,
+      {},
+      { unread: "1" },
+      { unread: -1 },
+      { unread: 1.5 },
+      { unread: Number.NaN },
+    ]) {
+      send(detail);
+    }
+    expect(inboxLink()).toBe("2Inbox, 2 new");
   });
 });

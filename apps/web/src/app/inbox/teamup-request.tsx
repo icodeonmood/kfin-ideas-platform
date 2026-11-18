@@ -8,7 +8,7 @@
  * (BLD-E008, listed for HR in BLD-A207); lane F's own words when its response carries them.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { IDEA_STATUS_LABEL, type IdeaStatus } from "@/lib/contracts";
 import type { Action, InboxEntry } from "@/server/inbox";
@@ -51,6 +51,11 @@ export type Request = {
 };
 
 export type RequestView = { body: ReactNode; bar: ReactNode };
+
+/** Where focus goes after the lead acts, so it never drops to the page (WCAG 2.4.3): the reason field once Decline
+ * opens it, the Decline button again after Back, the result line once an answer is sent, and the button pressed
+ * when the answer could not be sent. */
+type FocusTo = "reason" | "decline" | "result" | "pressed";
 
 const NOT_FOUND = "We couldn’t find that.";
 const CANT_SHOW = "We can't show this request just now. Please try again in a minute.";
@@ -226,6 +231,8 @@ export function RequestBody({
   reason,
   onReason,
   error,
+  reasonRef,
+  resultRef,
 }: {
   req: Request | null;
   failure: string;
@@ -236,6 +243,8 @@ export function RequestBody({
   reason: string;
   onReason: (value: string) => void;
   error: string;
+  reasonRef?: RefObject<HTMLTextAreaElement | null>;
+  resultRef?: RefObject<HTMLParagraphElement | null>;
 }) {
   const brought = req?.brought ?? [];
   // Lane F's words count every item it listed; they fit only when every one of them is shown.
@@ -281,13 +290,19 @@ export function RequestBody({
           {declining && waiting ? (
             <div className="ibx-field">
               <label htmlFor="ibx-reason">Tell {first || "them"} why, if you like</label>
-              <textarea id="ibx-reason" rows={3} value={reason} onChange={(e) => onReason(e.target.value)} />
+              <textarea
+                id="ibx-reason"
+                ref={reasonRef}
+                rows={3}
+                value={reason}
+                onChange={(e) => onReason(e.target.value)}
+              />
             </div>
           ) : null}
         </>
       ) : null}
       {shown?.text ? (
-        <p className="ibx-result" role="status">
+        <p className="ibx-result" role="status" tabIndex={-1} ref={resultRef}>
           {shown.text}
         </p>
       ) : null}
@@ -314,6 +329,26 @@ export function useRequest(
   const [outcome, setOutcome] = useState<Result | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const resultRef = useRef<HTMLParagraphElement>(null);
+  const declineRef = useRef<HTMLButtonElement>(null);
+  const pressedRef = useRef<HTMLButtonElement | null>(null);
+  const focusTo = useRef<FocusTo | null>(null);
+
+  // After the render that shows what the lead's action led to, focus moves there (WCAG 2.4.3). It is set just
+  // before that render's state change, so it is used once and cleared.
+  useEffect(() => {
+    const to = focusTo.current;
+    if (!to) return;
+    focusTo.current = null;
+    const target = {
+      reason: reasonRef.current,
+      decline: declineRef.current,
+      result: resultRef.current,
+      pressed: pressedRef.current,
+    }[to];
+    if (target?.isConnected) target.focus();
+  });
 
   // Once per item: the reader keys the open item, so each request starts from nothing.
   useEffect(() => {
@@ -349,11 +384,13 @@ export function useRequest(
       if (!res?.ok) {
         const refused = refusedAnswer(res?.status ?? 0, data, firstName(item));
         if ("error" in refused) {
+          focusTo.current = "pressed";
           setError(refused.error);
           return;
         }
         // It ended while it was open: shown in place, nothing brought is read any more, and the item has left
         // "Needs you" (lane F resolved it), so every count is fetched again and the shell hears it.
+        focusTo.current = "result";
         setOutcome(refused.ended);
         setReq((r) => (r ? { ...r, state: refused.ended.state, brought: [] } : r));
         setDeclining(false);
@@ -361,6 +398,7 @@ export function useRequest(
         return;
       }
       const body = data as { result?: unknown; say_hello?: unknown } | null;
+      focusTo.current = "result";
       setOutcome(readResult(body?.result, body?.say_hello, answer) ?? { state: answer, text: "" });
       setDeclining(false);
       await onAnswered(item);
@@ -385,6 +423,8 @@ export function useRequest(
       reason={reason}
       onReason={setReason}
       error={error}
+      reasonRef={reasonRef}
+      resultRef={resultRef}
     />
   );
 
@@ -408,14 +448,25 @@ export function useRequest(
   } else if (waiting && declining) {
     bar = (
       <Bar>
-        <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setDeclining(false)}>
+        <button
+          type="button"
+          className="btn btn-quiet"
+          disabled={busy}
+          onClick={() => {
+            focusTo.current = "decline";
+            setDeclining(false);
+          }}
+        >
           Back
         </button>
         <button
           type="button"
           className="btn btn-primary"
           disabled={busy}
-          onClick={() => void send("decline")}
+          onClick={(e) => {
+            pressedRef.current = e.currentTarget;
+            void send("decline");
+          }}
         >
           Decline the request
         </button>
@@ -427,10 +478,19 @@ export function useRequest(
         {buttons.map((b) => (
           <button
             key={b.answer}
+            ref={b.answer === "decline" ? declineRef : undefined}
             type="button"
             className={btnClass(b.style)}
             disabled={busy}
-            onClick={() => (b.answer === "decline" ? setDeclining(true) : void send(b.answer))}
+            onClick={(e) => {
+              if (b.answer === "decline") {
+                focusTo.current = "reason";
+                setDeclining(true);
+                return;
+              }
+              pressedRef.current = e.currentTarget;
+              void send(b.answer);
+            }}
           >
             {b.label}
           </button>
