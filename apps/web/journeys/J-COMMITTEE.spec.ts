@@ -60,7 +60,7 @@ step(
     const c1 = await seeded("C1");
     // The window's end as stored, and its limit worked out from the decision: 3 months on India's calendar
     // (L-COMMITTEE.rules/2, BLD-B258). A date outside this year carries its year (Committee.md: "up to Tuesday 16
-    // February 2027"); C1 starts extended, so both fall in 2027 while the walk runs in 2026.
+    // February 2027"); dayIST() decides that from today in India, as desk/when.py day() does.
     const { opensAt, closesAt } = await decisionWindow(c1);
     const until = dayIST(closesAt);
     const cap = dayIST(addMonthsIST(opensAt, 3));
