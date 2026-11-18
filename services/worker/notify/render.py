@@ -18,7 +18,7 @@ from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
 from notify import AS_THE_DESK
-from similar.preview import HIDDEN_NAME, hidden_person, person_refs
+from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -109,24 +109,27 @@ def person(conn: Conn, user_id: Any) -> dict[str, Any] | None:
     return {"id": str(row["id"]), "name": name, "first_name": first, "initials": initials(name)}
 
 
-def lead_seen_by_requester(conn: Conn, user_id: Any, idea: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The lead as a requester they declined may see them (DEC-104, BLD-A196), by lane C's rule as lane F's team-up
-    reads use it (`similar.preview.person_refs`, never the desk's `names_always`; BLD-F029): a lead who hid their
-    name from the Wall, or has left, is lane C's `hidden_person` ("A colleague", no initials, an opaque `p…` id) with
-    `hidden` set, and their users.id is not in it. The lead's code is the one on their idea, else one of theirs; a
-    lead with none is hidden too (fail closed). An approved requester is on the crew and reads `person`."""
+def lead_seen_by_requester(
+    conn: Conn, user_id: Any, idea: dict[str, Any] | None, viewer: str
+) -> dict[str, Any] | None:
+    """The lead as the requester they declined may see them (DEC-104, BLD-A196), decided by lane F's own rule,
+    `teamup.store.lead_seen_by` (BLD-F029, lane C's `person_refs` with `names_always=False`), so the Inbox and every
+    team-up read agree: a lead who hid their name from the Wall, or has left, is lane C's `hidden_person` ("A
+    colleague", no initials, an opaque `p…` id, never their users.id) with `hidden` set, unless the reader is on the
+    idea's live crew or is the review desk or the Ones Committee. An item with no idea names no one (fail closed).
+    An approved requester is on the crew and reads `person`."""
     if not user_id:
         return None
-    codes = _codes(conn, str(user_id))
-    code = (idea or {}).get("contributor_code")
-    if code not in codes:
-        code = min(codes) if codes else None
-    if code is None:
+    if idea is None or not idea.get("contributor_code"):
         return {**hidden_person(f"user:{user_id}"), "hidden": True}
-    ref = person_refs(conn, [str(code)], names_always=False)[str(code)]
-    if ref["id"] == hidden_person(str(code))["id"]:
-        return {**ref, "hidden": True}
-    return {k: ref[k] for k in ("id", "name", "first_name", "initials")}
+    from teamup.store import crew_role, lead_seen_by  # lane F's package; imported here, as it imports notify
+
+    on_crew = next((c for c in sorted(_codes(conn, viewer)) if crew_role(conn, idea["uuid"], c)), None)
+    seen = lead_seen_by(
+        conn, {"id": idea["uuid"], "contributor_code": idea["contributor_code"]}, viewer, on_crew
+    )
+    ref = {k: seen.ref[k] for k in ("id", "name", "first_name", "initials")}
+    return ref if seen.first is not None else {**ref, "hidden": True}
 
 
 def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
@@ -394,7 +397,7 @@ def variables(
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
     if kind == "teamup_answer" and refs.get("answer") == "decline":
-        who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea))
+        who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
     else:
         who = sender(kind, person(conn, row.get("from_user_id")))
     if who.get("hidden"):  # the template's word for a sender who is not named ("The lead", BLD-A196)

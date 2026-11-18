@@ -1,7 +1,7 @@
 """DEC-104 and BLD-A196 without a database: a requester the lead declined never reads the name or users.id of a
 lead who hid their name from the Wall, or has left, in the Inbox item, its JSON or the email. The lead is read by
-lane C's rule (`similar.preview.person_refs`, BLD-F029): "A colleague" with no initials and an opaque `p…` id, and
-the sender reads "The lead" from the template. A lead who shows their name is named; an approved requester is on
+lane F's rule (`teamup.store.lead_seen_by`, lane C's `person_refs`, BLD-F029): "A colleague" with no initials and an
+opaque `p…` id, and the sender reads "The lead" from the template. A lead who shows their name is named; an approved requester is on
 the crew and reads the name. The connection answers the reads `notify.render` makes from synthetic rows; the same
 cases against the real tables run in CI in tests/test_notify.py."""
 
@@ -41,8 +41,8 @@ class _Conn:
     """The reads `notify.render` makes, answered from synthetic rows. `show` and `active` are the lead's
     `person_settings.show_name_on_wall` and `users.active`."""
 
-    def __init__(self, *, show: bool, active: bool) -> None:
-        self.show, self.active = show, active
+    def __init__(self, *, show: bool, active: bool, desk: bool = False) -> None:
+        self.show, self.active, self.desk = show, active, desk
         self.users = {LEAD: ("Ravi Nair", "Ravi"), ASKER: ("Kavya Menon", "Kavya")}
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> _Rows:
@@ -53,6 +53,8 @@ class _Conn:
             return _Rows([{"contributor_code": LEAD_CODE, "id": LEAD, "name": "Ravi Nair", "first_name": "Ravi",
                            "area": "Investor service", "location": "Hyderabad", "active": self.active,
                            "show_name": self.show}])  # fmt: skip
+        if "FROM role_grants" in sql:  # lane C's Viewer: is the reader the review desk or the committee?
+            return _Rows([{"?column?": 1}] if self.desk and params[0] == ASKER else [])
         if "FROM contributor_map WHERE user_id" in sql:
             return _Rows([{"contributor_code": LEAD_CODE}] if params[0] == LEAD else [])
         if "FROM users WHERE id" in sql:
@@ -110,6 +112,12 @@ def test_DEC_104_a_declined_requester_never_reads_a_hidden_or_departed_lead(
     everything = json.dumps(item, ensure_ascii=False) + mail
     for leak in (LEAD, "Ravi"):
         assert leak not in everything, (case, leak)
+
+
+def test_BLD_F029_a_declined_requester_on_the_review_desk_reads_the_name_by_lane_Fs_rule() -> None:
+    """The Inbox asks lane F's `teamup.store.lead_seen_by`, so it names a hidden lead exactly where team-up does."""
+    item, _ = _read(_Conn(show=False, active=True, desk=True), "decline")
+    assert item["from"]["id"] == LEAD and item["body"]["sender"] == "Ravi Nair"
 
 
 def test_DEC_104_a_declined_requester_reads_a_lead_who_shows_their_name() -> None:
