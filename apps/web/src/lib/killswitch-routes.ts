@@ -63,6 +63,14 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // Sorting, the fix, who would help, Submit and the edit page's Save (lane C; L-SORT, L-SUBMIT, S-05) stop with
+  // sharing.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/drafts\/[^/]+\/(?:sorting|fix|helpers|submit)\/?$/,
+    switches: ["submissions"],
+  },
+  { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/edit\/?$/, switches: ["submissions"] },
   // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
   { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
   // An idea's conversation (lane F; L-CONVO, BLD-F058): writing or removing a message pauses with sharing, like

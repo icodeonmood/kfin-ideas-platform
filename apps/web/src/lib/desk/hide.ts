@@ -25,13 +25,19 @@ export const HIDE_WORDS = {
   already_hidden: "That’s already hidden.",
   /** The text changed under the selection (another reviewer hid something): the page is read again (BLD-B247). */
   stale: "The page changed. Select again.",
+  /** More than one hide takes (over 300 characters, L-HIDE's rule: a hide is for a detail, not a paragraph; or the
+   * selection over lane C's cap): lane C's 422 (c/hide-3), so a whole long answer is never told it is too short. */
+  selection_too_long: "That’s too much to hide at once. Select only the words to hide.",
   /** The page's text is not exactly the stored text (a CRLF the HTML parser made LF): nothing is offered (BLD-B247). */
   select_again: "Select again.",
 } as const;
 
 /** The line under "Hide this" when the hide is refused: plain words per code, else F-COPY's failure line. */
 export function hideErrorWords(code: string): string {
-  return code === "range_invalid" || code === "already_hidden" || code === "stale"
+  return code === "range_invalid" ||
+    code === "already_hidden" ||
+    code === "stale" ||
+    code === "selection_too_long"
     ? HIDE_WORDS[code]
     : TRY_AGAIN;
 }

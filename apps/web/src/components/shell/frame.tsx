@@ -15,8 +15,14 @@ export type ShellMode = "display" | "public" | "task" | "app";
 
 /** The wall displays run full screen with no chrome (S-OFFICE, S-LAUNCH). */
 const DISPLAY = /^\/(launch|constellation|display)(\/|$)/;
-/** Task screens (F-SPACE.shell/3): Tell it, a draft, Check it, Edit, Answer. They mount their own task bar and dock. */
-const TASK = [/^\/share$/, /^\/share\/[0-9a-f-]{36}(\/check)?$/, /^\/ideas\/[^/]+\/(edit|answer)$/];
+/** Task screens (F-SPACE.shell/3): Tell it, a draft, Check it, Edit, Answer. They mount their own task bar and dock.
+ * The conversation joins them on a phone: its composer is pinned and the tab bar gives way (S-08.rules/4). */
+const TASK = [
+  /^\/share$/,
+  /^\/share\/[0-9a-f-]{36}(\/check)?$/,
+  /^\/ideas\/[^/]+\/(edit|answer)$/,
+  /^\/ideas\/[^/]+\/conversation$/,
+];
 /** Root screens get the phone's brand row (C-PHONE-TABS.top); every other screen draws its own compact bar. */
 const ROOT = [/^\/$/, /^\/home$/, /^\/my-ideas$/, /^\/wall$/, /^\/inbox$/];
 /** Full ambient light (F-COLOR.glass/1); every other signed-in screen is quiet, keeping warm colour for "needs you". */
