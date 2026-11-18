@@ -23,6 +23,7 @@ from ideapage.mine import my_ideas, snippet
 from ideapage.route import idea_view
 from ideapage.withdraw import Refused, restore, withdraw
 from ideapage.words import IST, day
+from submit import clock
 from tests import helpers
 
 NOW = dt.datetime(2026, 11, 16, 6, 0, tzinfo=dt.UTC)  # Monday 16 November, 11:30 am in the office
@@ -568,8 +569,22 @@ def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_face
 # --- L-SUBMIT.withdraw ----------------------------------------------------------------------------------------------
 
 
+@pytest.fixture
+def restore_rows(club: dict[str, Any]) -> Iterator[list[tuple[str, str]]]:
+    """(reference, ideas.id) of each idea a test restores: its review clock rows and queued check jobs are removed
+    before the seed's own teardown, so nothing a restore wrote outlives the test."""
+    restored: list[tuple[str, str]] = []
+    yield restored
+    for key, uid in restored:
+        club["conn"].execute(
+            "DELETE FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by'",
+            (key,),
+        )
+        club["conn"].execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"submit.check:{uid}",))
+
+
 def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_reference(
-    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, restore_rows: list[tuple[str, str]]
 ) -> None:
     # Lane E's own path: no restore hook. Importing the worker app plugs lane C's `submit.adapters.on_restored` in
     # (it leaves the idea `checking` and queues `submit.check`, tested in test_1pc_l_sort_submit_db.py), so pin it
@@ -578,6 +593,7 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
 
     monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)
     conn, t5 = club["conn"], ref(club, "T5")
+    restore_rows.append((t5, club["m"]["T5"].uuid))
     out = withdraw(conn, t5, club["p"]["tanvi"], "Folio 1234567890 is already being fixed", now=NOW)
     assert out["page"]["state"] == "withdrawn"
     rest = out["page"]["card"]["rest"]
@@ -590,7 +606,20 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
     back = restore(conn, t5, club["p"]["tanvi"], now=NOW + dt.timedelta(hours=1))
     row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
     assert back["idea"]["id"] == t5 and row["status"] == "with_review_desk"
-    assert row["decide_by"] > NOW + dt.timedelta(days=5) and row["withdraw_reason_encrypted"] is None
+    assert row["withdraw_reason_encrypted"] is None
+    # L-SUBMIT.send/4, L-SUBMIT.edit/1: first sharing's clocks (submit.clock), from the restore. Restored Monday
+    # 16 November at 12:30 pm: decided by Friday 20 November, 6 pm, open to changes until Thursday 19 November.
+    p = read.promises()
+    assert row["decide_by"] == clock.decide_by(NOW + dt.timedelta(hours=1), p)
+    assert row["decide_by"] == dt.datetime(2026, 11, 20, 18, 0, tzinfo=IST)
+    assert row["edit_closes_at"] == clock.edit_closes(NOW + dt.timedelta(hours=1), p)
+    running = conn.execute(
+        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
+        "AND state = 'running'",
+        (t5,),
+    ).fetchall()
+    # One review clock, due at the idea's decide-by.
+    assert [r["due_at"] for r in running] == [row["decide_by"]]
     assert back["page"]["state"] == "just_shared" and back["page"]["window"]["open"]
     history = [
         r["to_status"]
@@ -610,6 +639,58 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
         restore(conn, t5, club["p"]["tanvi"], now=NOW)["page"]["state"] == "just_shared"
     )  # repeat: no change
     assert view(club, t5, "rekha")["view"] == "colleague"
+
+
+def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with_one_check_queued(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, restore_rows: list[tuple[str, str]]
+) -> None:
+    """L-SUBMIT.withdraw/3, L-SUBMIT.send/3–4 (J-RECOVER's restore, the production path): with lane C's hook
+    installed as the worker app installs it, a restore leaves the idea `checking` with exactly one `submit.check`
+    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock."""
+    from ideapage import withdraw as withdraw_module
+    from submit import adapters
+
+    monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)  # put back as it was at teardown
+    assert adapters.install_hooks()  # as submit.routes.build does when the worker app starts
+    assert withdraw_module.ON_RESTORED_HOOK is adapters.on_restored
+    conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
+    restore_rows.append((t5, uid))
+    withdraw(conn, t5, club["p"]["tanvi"], None, now=NOW)
+    # No `now`: the hook's clock is the real one, as in production.
+    back = restore(conn, t5, club["p"]["tanvi"])
+    row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
+    assert row["status"] == "checking" and back["idea"]["id"] == t5
+    jobs = conn.execute(
+        "SELECT state, dedupe_key FROM jobs WHERE type = 'submit.check' AND payload->>'idea_uuid' = %s",
+        (uid,),
+    ).fetchall()
+    assert jobs == [{"state": "queued", "dedupe_key": f"submit.check:{uid}"}]
+    p = read.promises()
+    hook_now = row["edit_closes_at"] - dt.timedelta(days=int(p["edit_window"]["max_days"]))
+    assert abs(hook_now - row["restored_at"]) < dt.timedelta(seconds=30)
+    assert row["decide_by"] == clock.decide_by(hook_now, p)  # first sharing's reading, not restore's own
+    assert row["decide_by"].astimezone(IST).time() == dt.time(18, 0)
+    running = conn.execute(
+        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
+        "AND state = 'running'",
+        (t5,),
+    ).fetchall()
+    assert [r["due_at"] for r in running] == [row["decide_by"]]
+    assert nodes(back)[1] == ("checked_matched", "now", "Checking…")
+    history = [
+        r["to_status"]
+        for r in conn.execute(
+            "SELECT to_status FROM idea_status_history WHERE idea_uuid = %s ORDER BY id", (uid,)
+        ).fetchall()
+    ]
+    assert history[-2:] == ["withdrawn", "checking"]
+    audit = [
+        r["action"]
+        for r in conn.execute(
+            "SELECT action FROM audit_log WHERE entity = %s ORDER BY id", (f"idea:{t5}",)
+        ).fetchall()
+    ]
+    assert audit == ["idea.withdraw", "idea.restore"]
 
 
 def test_l_submit_withdraw_is_refused_once_the_desk_opened_it(club: dict[str, Any]) -> None:
