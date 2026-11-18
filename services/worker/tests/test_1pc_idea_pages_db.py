@@ -593,6 +593,68 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
     assert v["idea"]["stages"] == [] and v["idea"]["merged_into"] == ref(club, "R2")
 
 
+def _merge_lines(club: dict[str, Any], key: str, who: str) -> list[str]:
+    """The merge lines lane F's S-08 shows this person on this idea (`convo.reads.conversation`)."""
+    from convo.reads import conversation
+
+    out = conversation(club["conn"], ref(club, key), club["p"][who], at=NOW)
+    return [
+        str(e["text"]) for e in out["entries"] if e["type"] == "event" and "joined it with" in str(e["text"])
+    ]
+
+
+def test_s06_layout_8_l_merge_effects_6_j_similar_7_merged_pages_never_say_no_messages_yet(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, L-MERGE.effects/6 (BLD-E065; J-SIMILAR/7): T11 was merged into R2 by the review desk. Lane F's
+    S-08 shows the merge line on both conversations ("… joined it with …"), so neither S-06 card says "No messages
+    yet": the line is counted, as the decision is (BLD-E058), and no message or new line is added for it. Without
+    the merge lines, the empty line is back, so it is those lines that count."""
+    conn, m = club["conn"], club["m"]
+    for key, who in (("T11", "tanvi"), ("R2", "rekha")):
+        assert _merge_lines(club, key, who), key
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and conv["count"] >= 1, key
+        assert "empty_line" not in conv and "phone_empty_line" not in conv, key
+        assert "messages" not in conv, key
+    t11_before = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]["count"]
+    conn.execute(
+        "DELETE FROM conversation_entries WHERE idea_uuid = ANY(%s) AND event = 'desk_merged'",
+        ([m["T11"].uuid, m["R2"].uuid],),
+    )
+    conv = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]
+    assert conv["count"] == t11_before - 1 and conv["empty_line"].startswith("No messages yet.")
+
+
+def test_s06_layout_8_l_merge_desk_j_review_m3_after_a_desk_merge_both_pages_drop_no_messages_yet(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, L-MERGE.desk (BLD-E065; J-REVIEW/M3): Lavanya merges Jatin's J2 into Faisal's F2 from the desk,
+    as the walk does, through lane B's `desk_merge`. Lane F's S-08 shows the merge line on both, and neither S-06
+    card says "No messages yet" any more, Jatin's merged idea or Faisal's, which is still with the review desk."""
+    from desk import merging
+
+    conn = club["conn"]
+    for key, who in (("J2", "jatin"), ("F2", "faisal")):
+        assert view(club, ref(club, key), who)["page"]["conversation"]["empty_line"].startswith(
+            "No messages yet."
+        )
+    merging.desk_merge(
+        conn,
+        ref(club, "J2"),
+        club["p"]["lavanya"],
+        {
+            "other_idea_id": ref(club, "F2"),
+            "note": "You both see bank changes held up by a cheque in the post.",
+        },
+        NOW,
+    )
+    for key, who in (("J2", "jatin"), ("F2", "faisal")):
+        assert _merge_lines(club, key, who), key
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and "empty_line" not in conv and "messages" not in conv, key
+
+
 def test_s06_sharer_sees_masked_words_until_lane_c_reader_lands(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "T6"), "tanvi")
     words = json.dumps(v["idea"]["own_words"], ensure_ascii=False)
