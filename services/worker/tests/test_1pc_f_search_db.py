@@ -107,3 +107,23 @@ def test_L_SEARCH_1_someone_with_nothing_shared_and_someone_unknown(db: Conn, wo
     assert search(db, new["id"], "anything")["items"] == []
     with pytest.raises(Refused):
         search(db, "not-a-uuid", "x")
+
+
+def test_L_SEARCH_titles_and_snippets_of_a_teamed_idea_are_masked(db: Conn, world: dict[str, Any]) -> None:
+    """search/mine.py masks every title and snippet it returns (BLD-F042, L-HIDE): a teamed idea whose title holds
+    a folio number and whose short summary holds a PAN shows neither, only the kind and the last two characters.
+    Synthetic values only."""
+    w = world
+    folio, pan = "7700012389", "ABCPK1234F"
+    held = f.idea(db, w["omkar"], f"Folio {folio} is stuck at the branch", area="Operations",
+                  summary=f"The investor with PAN {pan} gets a returned cheque every month.")  # fmt: skip
+    f.join(db, held, w["leela"])
+    by_title = search(db, w["leela"]["id"], "stuck")
+    assert _ids(by_title) == [str(held["id"])]
+    assert by_title["items"][0]["title"] == "Folio ••••89 is stuck at the branch"
+    assert by_title["search"]["closest"]["title"] == "Folio ••••89 is stuck at the branch"
+    by_summary = search(db, w["leela"]["id"], "cheque")
+    assert _ids(by_summary) == [str(held["id"])]
+    assert "PAN ••••4F" in by_summary["items"][0]["snippet"]
+    for body in (by_title, by_summary):
+        assert folio not in str(body) and pan not in str(body)
