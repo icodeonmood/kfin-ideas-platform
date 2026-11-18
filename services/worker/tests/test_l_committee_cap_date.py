@@ -58,6 +58,14 @@ def test_L_COMMITTEE_rules_2_31_jan_gives_the_end_of_february_on_the_office_cale
     assert add_months(start.astimezone(UTC), months).tzinfo == UTC
 
 
+def test_L_COMMITTEE_rules_2_a_naive_time_stays_naive_at_the_same_wall_time() -> None:
+    """L-COMMITTEE.rules/2: a time without a zone is taken as office time as it stands; 3 months on, it comes back
+    without a zone at the same wall time (31 January + 3 months is 30 April)."""
+    got = add_months(dt.datetime(2026, 11, 8, 0, 30), 3)
+    assert got == dt.datetime(2027, 2, 8, 0, 30) and got.tzinfo is None
+    assert add_months(dt.datetime(2027, 1, 31, 23, 45), 3) == dt.datetime(2027, 4, 30, 23, 45)
+
+
 def test_L_COMMITTEE_rules_2_the_30_day_extensions_and_the_cap_agree() -> None:
     """L-COMMITTEE.rules/1-2, J-COMMITTEE/3a: 30 days, then 30 more twice, then the last step to the cap and no more.
     After the second extension "Extend to" names the cap, Monday 8 February 2027, and it is the same date the "up
