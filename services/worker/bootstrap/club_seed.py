@@ -48,6 +48,7 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.crypto import encrypt_json
 from core.db import Conn, connect
+from desk.window import add_months
 from identity.codes import assign_contributor_code, emp_id_hash
 from onepc.context import seal_text, sealed_context
 from pii import vault
@@ -715,7 +716,8 @@ def _decide(
     choice, days, who = made.spec.decided or ("pick", 0.0, "harish")
     at = _ago(days, now)
     did = str(uuid.uuid4())
-    return_at = at + dt.timedelta(days=91) if choice == "not_now" else None
+    # L-DECIDE.rules/7, L-COMMITTEE.rules/2 (BLD-B258): 3 months on the office calendar, as the desk writes them
+    return_at = add_months(at, 3) if choice == "not_now" else None
     team_by = _working_days_after(at, 10) if choice == "pick" else None
     conn.execute(
         "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, return_in, "
@@ -729,7 +731,7 @@ def _decide(
     conn.execute(
         "INSERT INTO decision_windows (id, decision_id, state, opens_at, closes_at, max_closes_at, extended_times, "
         "last_extended_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (wid, did, state, at, closes, at + dt.timedelta(days=91), extended,
+        (wid, did, state, at, closes, add_months(at, 3), extended,
          p["shalini"]["id"] if extended else None),
     )  # fmt: skip
     _event(conn, made.uuid, "decided", at, {"decision_id": did})
@@ -843,7 +845,7 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
     conn.execute(
         "INSERT INTO decision_windows (merge_id, state, opens_at, closes_at, max_closes_at) "
         "VALUES (%s, 'open', %s, %s, %s)",
-        (mid, merged_at, merged_at + dt.timedelta(days=30), merged_at + dt.timedelta(days=91)),
+        (mid, merged_at, merged_at + dt.timedelta(days=30), add_months(merged_at, 3)),
     )
     conn.execute("UPDATE ideas SET merged_into = %s WHERE id = %s", (m["R2"].uuid, m["T11"].uuid))
     conn.execute(
