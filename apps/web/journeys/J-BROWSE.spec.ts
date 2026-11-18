@@ -113,6 +113,8 @@ step(
     await page.goBack();
     await expect(page.getByRole("tab", { name: /^Waiting on the sharer/, selected: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+    // S-R1.rules/4: the open item is restored too; the row that was opened has focus again
+    await expect(page.getByRole("link", { name: z1.title, exact: true }).first()).toBeFocused();
 
     const context = await browser.newContext();
     const sharer = await context.newPage();
