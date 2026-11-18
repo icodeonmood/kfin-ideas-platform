@@ -11,13 +11,16 @@ import type { ShellData } from "@/server/shell";
 import { AccountMenu } from "./account-menu";
 import { IconBack, NavIcon } from "./icons";
 import { isCurrent } from "./sidebar";
+import { useInboxUnread } from "./use-inbox-unread";
 
 /**
  * C-PHONE-TABS.bar: Home, My ideas, Share (the ink tile in the middle), Wall, Inbox, at 640 px and narrower. The
- * current tab is ink, heavier and dotted in blue; Inbox carries the unread count. Never animates between screens.
+ * current tab is ink, heavier and dotted in blue; Inbox carries the unread count, the server's and then each one the
+ * Inbox sends, as the sidebar does (L-INBOX.rules/1). Never animates between screens.
  */
-export function PhoneTabs({ nav, unread }: { nav: NavItem[]; unread: number }) {
+export function PhoneTabs({ nav, unread: served }: { nav: NavItem[]; unread: number }) {
   const pathname = usePathname();
+  const unread = useInboxUnread(served);
   const tabs = nav.filter((n) => n.tab).sort((a, b) => (a.tab ?? 0) - (b.tab ?? 0));
   return (
     <nav className="ptabs" aria-label="Main">

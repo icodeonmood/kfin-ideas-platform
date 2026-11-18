@@ -1,0 +1,29 @@
+{
+ "description": "How often, quoted from the second message",
+ "input": {
+  "part": "often",
+  "words": [
+   {
+    "n": 1,
+    "text": "When a redemption is rejected, the SMS to the investor only says \"Rejected, R07\". Nobody knows what R07 means, so they call the branch. One investor, Folio ••••89, called three times last week."
+   },
+   {
+    "n": 2,
+    "text": "Our branch takes about 40 calls a day like this, and each one takes 5 to 10 minutes."
+   }
+  ]
+ },
+ "output": {
+  "part": "often",
+  "title": null,
+  "summary": null,
+  "often": "About 40 calls a day at the branch",
+  "who": [],
+  "worth": [],
+  "area": null,
+  "reason": null,
+  "evidence": [
+   "about 40 calls a day"
+  ]
+ }
+}

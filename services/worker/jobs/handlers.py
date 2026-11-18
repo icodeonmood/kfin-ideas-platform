@@ -14,6 +14,14 @@ from jobs.runner import handler, on_dead
 log = get_logger("jobs.handlers")
 
 
+@handler("drafts.archive")
+def archive_drafts(conn: Conn, payload: dict[str, Any]) -> None:
+    """Drafts untouched for 30 days are archived, never deleted (L-DRAFT.autosave/8, BLD-C074)."""
+    from draft.archive import archive_untouched
+
+    archive_untouched(conn)
+
+
 @handler("drafts.purge")
 def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.
@@ -352,3 +360,11 @@ def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     from hide import recheck
 
     recheck.run(conn, payload)
+
+
+@on_dead("hide.recheck")
+def hide_recheck_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """The re-check's last attempt failed: audited with IDs and the code only (BLD-C067)."""
+    from hide import recheck
+
+    recheck.gave_up(conn, payload)

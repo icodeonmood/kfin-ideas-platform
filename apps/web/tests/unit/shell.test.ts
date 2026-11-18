@@ -26,6 +26,8 @@ describe("F-SPACE.shell: the chrome each path gets", () => {
     [`/share/${DRAFT}/check`, true, "task"],
     ["/ideas/IDEA-2026-001473/edit", true, "task"],
     ["/ideas/IDEA-2026-001473/answer", true, "task"],
+    ["/ideas/IDEA-2026-001473/conversation", true, "task"],
+    ["/kit/conversation", true, "app"],
     [`/share/${DRAFT}/done`, true, "app"],
     ["/share/examples/sms-codes", true, "app"],
     ["/", true, "app"],

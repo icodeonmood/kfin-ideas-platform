@@ -1,0 +1,23 @@
+{
+ "description": "The words say nothing about how often: null, no evidence",
+ "input": {
+  "part": "often",
+  "words": [
+   {
+    "n": 1,
+    "text": "The rejection SMS confuses people at the counter."
+   }
+  ]
+ },
+ "output": {
+  "part": "often",
+  "title": null,
+  "summary": null,
+  "often": null,
+  "who": [],
+  "worth": [],
+  "area": null,
+  "reason": null,
+  "evidence": []
+ }
+}

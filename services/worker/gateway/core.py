@@ -32,6 +32,7 @@ from gateway.spec import AgentSpec, load
 from pii.detect import Directory, directory
 from pii.patterns import scan
 from pii.tagger import Tagged, tag_payload, tags_in
+from pii.vault import EVAL_SCOPE_LIKE
 
 log = get_logger("gateway")
 ACTOR = "process:gateway"
@@ -216,11 +217,12 @@ def _maybe_switch_off(conn: Conn, name: str, reason: str) -> None:
 
 
 def _after_leak(conn: Conn) -> None:
+    # Every live call counts, live drafts included; only golden-set runs (the eval marker) do not (BLD-C034).
     limit = int(_thresholds().get("leak_hits_per_hour_for_ai_all", 3))
     n = conn.execute(
         "SELECT count(DISTINCT ref_id) AS n FROM llm_calls WHERE outcome = 'leak_abort' "
-        "AND ref_id NOT LIKE 'DRAFT-%%' AND created_at > now() - %s::interval",
-        (LEAK_WINDOW,),
+        "AND ref_id NOT LIKE %s AND created_at > now() - %s::interval",
+        (EVAL_SCOPE_LIKE, LEAK_WINDOW),
     ).fetchone()
     if n and int(n["n"]) >= limit:
         _maybe_switch_off(conn, "ai.all", f"Automatic: the leak check fired {limit} times within an hour")
@@ -230,9 +232,9 @@ def _after_error(conn: Conn, spec: AgentSpec) -> None:
     rate = float(_thresholds().get("agent_error_rate_15min", 0.2))
     row = conn.execute(
         "SELECT count(*) AS total, count(*) FILTER (WHERE outcome IN ('agent_failed', 'route_error')) AS failed "
-        "FROM llm_calls WHERE agent = %s AND outcome <> 'switched_off' AND coalesce(ref_id, '') NOT LIKE 'DRAFT-%%' "
+        "FROM llm_calls WHERE agent = %s AND outcome <> 'switched_off' AND coalesce(ref_id, '') NOT LIKE %s "
         "AND created_at > now() - %s::interval",
-        (spec.name, ERROR_WINDOW),
+        (spec.name, EVAL_SCOPE_LIKE, ERROR_WINDOW),
     ).fetchone()
     if row and int(row["total"]) >= ERROR_MIN_CALLS and int(row["failed"]) / int(row["total"]) > rate:
         _maybe_switch_off(

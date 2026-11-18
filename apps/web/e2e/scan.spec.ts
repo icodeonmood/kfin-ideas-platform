@@ -6,17 +6,11 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { shareQuickly, expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 async function quickCapture(page: Page, noticed: string) {
   await signIn(page, PERSONAS.contributor);
-  await page.goto("/share");
-  await page.getByRole("button", { name: "Start a quick capture" }).click();
-  await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
-  await page.getByLabel(QUESTIONS.quick_noticed.label).fill(noticed);
-  await confirmQuickCapture(page);
-  await page.getByRole("button", { name: "Share your idea" }).click();
+  await page.goto(`/share/${await shareQuickly(page, noticed)}/done`);
   await page.waitForURL(/\/done$/);
 }
 

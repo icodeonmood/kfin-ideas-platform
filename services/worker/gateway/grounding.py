@@ -611,20 +611,37 @@ def problems(sent: dict[str, Any], out: dict[str, Any]) -> list[str]:
 # ---- the repair ----------------------------------------------------------------------------------------------------
 
 
-def first_sentence(details: str) -> tuple[str, str]:
-    """The person's first sentence, as (one line, its quote): at most 20 words, with "…" when trimmed. A period after
-    an abbreviation ("Rs.", "No.", "e.g.") does not end a sentence. A sentence under two words gives way to the
-    first words of the text."""
-    text = " ".join(details.split())
-    end = len(text)
+def sentence_ends(text: str) -> list[int]:
+    """Where each sentence of `text` ends (just after its mark). A period after an abbreviation ("Rs.", "No.",
+    "e.g.") does not end a sentence."""
+    ends = []
     for m in _END.finditer(text):
         if text[m.start()] == ".":
             before = re.search(r"(\S+)$", text[: m.start()])
             word = before.group(1).casefold().lstrip("(\"'") if before else ""
             if word in _ABBREVIATIONS:
                 continue
-        end = m.end()
-        break
+        ends.append(m.end())
+    return ends
+
+
+def split_sentences(text: str) -> list[str]:
+    """The sentences of `text`, the words after the last mark included, by `sentence_ends`' rule (BLD-C033)."""
+    out, start = [], 0
+    for end in [*sentence_ends(text), len(text)]:
+        piece = text[start:end].strip()
+        if piece:
+            out.append(piece)
+        start = end
+    return out
+
+
+def first_sentence(details: str) -> tuple[str, str]:
+    """The person's first sentence, as (one line, its quote): at most 20 words, with "…" when trimmed. A period after
+    an abbreviation ("Rs.", "No.", "e.g.") does not end a sentence. A sentence under two words gives way to the
+    first words of the text."""
+    text = " ".join(details.split())
+    end = next(iter(sentence_ends(text)), len(text))
     words = text[:end].split()
     if len(words) < 2:
         words = text.split()

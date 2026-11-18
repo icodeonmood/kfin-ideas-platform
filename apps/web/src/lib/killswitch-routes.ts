@@ -57,6 +57,9 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/inbox\/[^/]+\/actions\/[^/]+\/?$/, switches: ["submissions"] },
   // "Show it" puts a hidden detail back in what others read: it waits while sharing is paused (L-HIDE.rules/6).
   { methods: ["POST"], pattern: /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/show\/?$/, switches: ["submissions"] },
+  // The live draft (L-DRAFT): saving pauses with sharing. It never needs `ai.all`: with the assistant off the parts
+  // are filled by hand (DEC-105).
+  { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
   {
     methods: ["POST"],
@@ -194,7 +197,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
-  "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
+  "speech.hosted": "Voice notes are coming soon.", // the product lead, 18 Nov (BLD-C149)
   // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
   "files.blackout":
     "Hiding details inside a file is coming soon. The review desk will look at the file with you.",

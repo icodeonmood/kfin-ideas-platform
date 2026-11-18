@@ -36,6 +36,7 @@ YAML_BLOCK = re.compile(r"^```yaml[ \t]*\n(.*?)^```[ \t]*$", re.DOTALL | re.MULT
 RULE_PATHS: dict[str, str] = {
     "calendar": "rules/calendar.md",
     "compliance-tier": "rules/compliance-tier.md",
+    "drafting": "rules/drafting.md",
     "points": "rules/points.md",
     "priority": "rules/priority.md",
     "promises": "rules/promises.md",
@@ -147,6 +148,13 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
         cw = data["committee_window"]
         if cw["days"] > cw["max_months"] * 31:
             problems.append("committee_window.days cannot exceed max_months")
+    elif name == "drafting":
+        if data["similar_from_chars"] < data["parts_from_chars"]:
+            problems.append("similar_from_chars cannot be below parts_from_chars")
+        for key in ("affects", "area"):
+            labels = [i["label"].casefold() for i in data[key]]
+            if len(labels) != len(set(labels)):
+                problems.append(f"{key}: each label may appear only once")
     elif name == "tiers":
         steps = [data["tiers"][str(i)] for i in range(1, 8)]
         if steps[0]["hours_month"] != 0 or steps[0]["money_year"] != 0:

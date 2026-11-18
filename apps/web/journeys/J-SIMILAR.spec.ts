@@ -153,7 +153,11 @@ step(
   "J-SIMILAR/4a",
   "S-05",
   "Kept separate: the grid folds to a note; Show them again has the tile waiting for Rekha; nothing is held, and Submit stays available",
-  { needs: ["S-05", "C-SIMGRID", "L-SIMILAR", "L-TEAMUP", "L-SUBMIT"], changes: ["T2"] },
+  {
+    needs: ["S-05", "C-SIMGRID", "L-SIMILAR", "L-TEAMUP", "L-SUBMIT"],
+    changes: ["T2"],
+    after: ["J-SIMILAR/3"], // reads the fold row 3's "Keep mine separate" leaves
+  },
   async ({ page }) => {
     await similarPart(page);
     // A fresh load, so the fold comes from the draft (kept_separate), not from the page row 3 left open.
@@ -214,7 +218,7 @@ step(
   "J-SIMILAR/5",
   "S-H2B",
   "Rekha's Inbox: Tanvi's note word for word, a summary of her draft, and Decline, Team up only, Merge it",
-  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP", "L-MERGE"] },
+  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP", "L-MERGE"], after: ["J-SIMILAR/4b"] }, // reads 4b's note
   async ({ page }) => {
     const t2 = await seeded("T2");
     const r1 = await seeded("R1");
@@ -243,7 +247,8 @@ step(
   "J-SIMILAR/6a",
   "S-H2B",
   "Rekha merges it: Tanvi is on Rekha's crew, and her draft reads Merged into R1, with credit to her",
-  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2", "R1"] }, // Tanvi joins R1's crew
+  // Merges the request 4b sends; Tanvi joins R1's crew.
+  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2", "R1"], after: ["J-SIMILAR/4b"] },
   async ({ page, browser }, info) => {
     const t2 = await seeded("T2");
     const r1 = await seeded("R1");
