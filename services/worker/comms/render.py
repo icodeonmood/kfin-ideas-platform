@@ -193,8 +193,8 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
             (idea["idea_id"],),
         ).fetchone()
         data["review"] = {"due_date": _date(due["due_at"]) if due else ""}
-    if refs.get("reviewer_user_id") or event in ("idea.question", "idea.reviewed", "idea.redirected"):
-        data["reviewer"] = {"name": _name(conn, refs.get("reviewer_user_id"))}
+    # DEC-111 (BLD-A222): the review desk writes as a whole and signs as the desk, so the reviewer's name is never
+    # read for a message, even when the event carries `reviewer_user_id`; no template can name them.
 
     if event == "idea.question" and idea:
         q = conn.execute(
