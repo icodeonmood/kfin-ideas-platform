@@ -16,6 +16,7 @@ import { SearchBar } from "@/components/ui/search";
 import { Sorts } from "@/components/ui/sorts";
 import { Tabs, tabPanelProps } from "@/components/ui/tabs";
 import type { CountdownVariant, DeskResponse, DeskRow, DeskSort, DeskTab } from "@/lib/contracts";
+import { deskHref, deskUrlState, type DeskList } from "@/lib/desk/address";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { useFlipList } from "@/lib/motion/flip";
 
@@ -95,16 +96,6 @@ function TimeLeft({ row, tab, now }: { row: DeskRow; tab: DeskTab; now: Date }) 
   );
 }
 
-/** The tab, sort and search an address asks for, or null for any it does not name (S-R1.rules/4). */
-function deskUrlState(search: string): { tab: DeskTab | null; sort: DeskSort | null; q: string } {
-  const sp = new URLSearchParams(search);
-  return {
-    tab: TABS.find((t) => t.value === sp.get("tab"))?.value ?? null,
-    sort: SORT_OPTIONS.find((s) => s.value === sp.get("sort"))?.value ?? null,
-    q: (sp.get("q") ?? "").slice(0, 200),
-  };
-}
-
 export function DeskView({ initial, initialQuery }: { initial: DeskResponse; initialQuery: string }) {
   const [data, setData] = useState(initial);
   // The tab and sort chosen, shown pressed at once while their list loads (C-TABS, C-SORTS).
@@ -119,15 +110,18 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   const now = useMinute();
   const body = useRef<HTMLTableSectionElement>(null);
   const loading = useRef<AbortController | null>(null);
+  // The tab, sort and search of the list on screen
+  const shown = useRef<DeskList>({ tab: initial.tab, sort: initial.sort, q: initialQuery });
   useFlipList(body, `${data.tab}:${data.sort}:${data.items.map((r) => r.idea_id).join(",")}`);
 
-  const load = useCallback(async (tab: DeskTab, sort: DeskSort, q: string) => {
+  /** Reads the list for a tab, sort and search. `write` is false only on arrival, when the address already names it. */
+  const load = useCallback(async (tab: DeskTab, sort: DeskSort, q: string, write = true) => {
     const params = new URLSearchParams({ tab, sort });
     if (q) params.set("q", q);
     setView({ tab, sort });
     // The address takes the tab, sort and search at once, without a navigation: a router navigation waits for the
     // server, and a row opened before it lands would leave Back on the old address (S-R1.rules/4, J-BROWSE/4).
-    window.history.replaceState(null, "", `/desk?${params.toString()}`);
+    if (write) window.history.replaceState(null, "", deskHref({ tab, sort, q }));
     loading.current?.abort();
     const ctl = new AbortController();
     loading.current = ctl;
@@ -139,20 +133,21 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
     }
   }, []);
 
-  // Back to the desk: the page may come from the router's cache for an older address, so the list follows the
-  // address the person left, not the props (S-R1.rules/4).
+  // Back to the desk: the router may restore the page from its cache, with the props it had when the person left and
+  // for an older address. So the list is read once on arrival, as it is now (an idea decided meanwhile has left its
+  // tab), for the tab, sort and search the address names (S-R1.rules/4, L-REVIEW.queue).
   useEffect(() => {
     const want = deskUrlState(window.location.search);
-    const tab = want.tab ?? initial.tab;
-    const sort = want.sort ?? initial.sort;
-    if (tab === initial.tab && sort === initial.sort && want.q === initialQuery) return;
+    const before = loading.current;
     const frame = requestAnimationFrame(() => {
+      // The person chose a tab, sort or search before this frame: that list is already on its way
+      if (loading.current !== before) return;
       setText(want.q);
       setQuery(want.q);
-      void load(tab, sort, want.q);
+      void load(want.tab ?? shown.current.tab, want.sort ?? shown.current.sort, want.q, false);
     });
     return () => cancelAnimationFrame(frame);
-  }, [initial, initialQuery, load]);
+  }, [load]);
 
   // A reviewer coming back to the tab sees clocks and tabs as they are now (L-REVIEW.queue).
   useEffect(() => {
