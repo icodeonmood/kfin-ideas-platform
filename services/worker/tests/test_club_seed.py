@@ -614,3 +614,16 @@ def test_gap_seed_j_teamup_1_l_crew_4_the_top_crew_card_says_who_would_help(
     assert len(picks) == 3
     assert set(picks) <= set(configured)
     assert looking_for(picks, None) == "Someone in operations, someone who knows the rules, data or reports"
+
+
+def test_gap_seed_l_decide_6_j_one_1_j1_carries_one_ask_to_join_the_build_team(
+    made: dict[str, club_seed.Made], db: Any
+) -> None:
+    """BLD-E059: the seed's only join ask is J1's, from its sharer, on a Pick that stands with no build team yet."""
+    rows = db.execute(
+        "SELECT a.idea_uuid, u.first_name FROM join_build_asks a JOIN users u ON u.id = a.user_id "
+        "WHERE a.idea_uuid = ANY(%s)",
+        ([mm.uuid for mm in made.values()],),
+    ).fetchall()
+    assert [(str(r["idea_uuid"]), r["first_name"]) for r in rows] == [(made["J1"].uuid, "Jatin")]
+    assert not db.execute("SELECT 1 FROM build_teams WHERE idea_uuid = %s", (made["J1"].uuid,)).fetchone()
