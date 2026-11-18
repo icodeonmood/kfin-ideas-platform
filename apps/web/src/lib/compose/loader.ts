@@ -11,7 +11,7 @@ export type LoaderRun = {
   startedAt: number;
   answered: Partial<Record<DraftPartKey, number>>;
   /** The draft's parts that are not in (BLD-C157): one that answered with nothing the words support (L-DRAFT.parts/1,
-   * "Waiting for your words"), or one this run leaves out that is still empty (similar ideas below 50 characters).
+   * "Waiting for your words"), or one this run leaves out that still reads it (`partIn` in live.ts).
    * An answered one still counts as 1 in the bar, so the bar never moves back; but while any is listed the bar stays
    * under 97% and the line never says "All 6 parts are in". */
   waiting?: DraftPartKey[];
@@ -49,9 +49,11 @@ export function isIn(run: LoaderRun, key: DraftPartKey, now: number): boolean {
   return isAnswered(run, key, now) && !(run.waiting ?? []).includes(key);
 }
 
-/** maths/7: all six are in, this run's parts and the rest of the draft alike. */
-export function allSixIn(run: LoaderRun, now: number): boolean {
-  return !(run.waiting ?? []).length && run.parts.every((p) => isAnswered(run, p.key, now));
+/** maths/7: all six are in, this run's parts and the rest of the draft alike. A part past 10 × its mean counts only
+ * once the page has marked it failed (`failParts` records its answer), so while the run builds the bar never shows
+ * 100% and "All 6 parts are in" only to drop back to 97% (maths/4). */
+export function allSixIn(run: LoaderRun): boolean {
+  return !(run.waiting ?? []).length && run.parts.every((p) => run.answered[p.key] !== undefined);
 }
 
 /** Parts past 10 × their mean, treated as failed (failure/1). */
@@ -72,7 +74,7 @@ export function barValue(run: LoaderRun, now: number): number {
     const w = mean(p) / total;
     sum += isAnswered(run, p.key, now) ? w : w * partProgress(t, mean(p));
   }
-  return allSixIn(run, now) ? 1 : Math.min(CAP, sum);
+  return allSixIn(run) ? 1 : Math.min(CAP, sum);
 }
 
 /** The count in "2 of 6 ready": the parts that are in. */
@@ -82,7 +84,7 @@ export function readyCount(run: LoaderRun, now: number): number {
 
 /** The right-hand line: "2 of 6 ready, about 2 seconds left", "almost there", or a slow part's own line. */
 export function loaderLine(run: LoaderRun, now: number): string {
-  if (allSixIn(run, now)) return LOADER_ALL_IN;
+  if (allSixIn(run)) return LOADER_ALL_IN;
   const total = run.parts.length;
   const n = readyCount(run, now);
   const t = now - run.startedAt;

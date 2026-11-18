@@ -188,11 +188,13 @@ export const PART_KEYS: readonly DraftPartKey[] = ["title", "often", "who", "val
 
 /** C-DRAFT-LOADER.maths/7 with L-DRAFT.parts/1 (BLD-C157): a part is in when it shows a value, or when it failed or
  * was given up and asks the person to add it (failure/1). One the words do not support reads "Waiting for your
- * words" and is not in. Similar ideas are in once checked, with or without a match (L-DRAFT.parts/7). */
+ * words" and is not in. Similar ideas are in unless they are being built: they may be empty (L-DRAFT.parts/7), their
+ * slot never reads "Waiting for your words", and the draft's read shows "checked, no match" as `waiting`, the same
+ * as "not checked yet" (the stream says `filled` with no matches), so both wire shapes agree. */
 export function partIn(parts: Parts, key: DraftPartKey): boolean {
   const p = parts[key] as Part<unknown>;
   if (p.state === "failed") return true;
-  if (key === "similar") return p.state === "filled";
+  if (key === "similar") return p.state !== "updating";
   return hasValue(p);
 }
 

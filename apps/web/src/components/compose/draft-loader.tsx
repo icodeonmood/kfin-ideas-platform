@@ -44,26 +44,31 @@ export function DraftLoader({
   const over = done || ended;
   const ticking = useLoaderClock(fixedNow === undefined ? run : null, over);
   const [folded, setFolded] = useState<LoaderRun | null>(null);
+  // How this run ended, settled once when it ends: a later read of the draft or a part changed by hand never replays
+  // "All 6 parts are in" for it, nor cuts its hold short (BLD-C157).
+  const [end, setEnd] = useState<{ run: LoaderRun; all: boolean } | null>(null);
+  if (run && over && end?.run !== run) setEnd({ run, all: done });
+  const all = run !== null && end?.run === run ? end.all : done;
 
   useEffect(() => {
     if (!over || !run) return;
-    const t = setTimeout(() => setFolded(run), done ? HOLD_MS : 0);
+    const t = setTimeout(() => setFolded(run), all ? HOLD_MS : 0);
     return () => clearTimeout(t);
-  }, [over, done, run]);
+  }, [over, all, run]);
 
   if (!run) return null;
   const at = fixedNow ?? ticking;
   // The sum only grows with time and answers, so the bar never moves back (maths/4).
-  const value = done ? 1 : barValue(run, at);
-  const line = done ? LOADER_ALL_IN : loaderLine(run, at);
+  const value = all ? 1 : barValue(run, at);
+  const line = all ? LOADER_ALL_IN : loaderLine(run, at);
   // Told to screen readers at most once a second: the value at the start of this second.
-  const told = done ? 100 : Math.round(barValue(run, Math.floor(at / 1000) * 1000) * 100);
+  const told = all ? 100 : Math.round(barValue(run, Math.floor(at / 1000) * 1000) * 100);
   // Ended without all six in: it folds at once and stays folded, so nothing fills, pops or says it is all in.
-  const isFolded = folded === run || (over && !done);
+  const isFolded = folded === run || (over && !all);
 
   return (
     <div
-      className={`dload${phone ? " ph" : ""}${done ? " all" : ""}${isFolded ? " fold" : ""}`}
+      className={`dload${phone ? " ph" : ""}${all ? " all" : ""}${isFolded ? " fold" : ""}`}
       aria-hidden={isFolded ? true : undefined}
     >
       {phone ? null : (

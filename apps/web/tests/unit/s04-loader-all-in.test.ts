@@ -11,9 +11,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DraftPanel, READINESS, readinessOf } from "@/components/compose/draft-panel";
-import type { DraftPartKey, DraftStreamEvent } from "@/lib/contracts";
-import { allIn, applyEvent, fromDraft, giveUp, partIn, type Live } from "@/lib/compose/live";
-import { barValue, LOADER_ALL_IN, loaderLine, readyCount, type LoaderRun } from "@/lib/compose/loader";
+import { DraftLoader } from "@/components/compose/draft-loader";
+import type { Draft, DraftPartKey, DraftStreamEvent } from "@/lib/contracts";
+import { allIn, applyEvent, fromDraft, giveUp, partIn, withDraft, type Live } from "@/lib/compose/live";
+import {
+  allSixIn,
+  barValue,
+  LOADER_ALL_IN,
+  loaderLine,
+  readyCount,
+  type LoaderRun,
+} from "@/lib/compose/loader";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -215,6 +223,76 @@ describe("C-DRAFT-LOADER.maths/7, L-DRAFT.parts/1: a part the words do not suppo
   });
 });
 
+/** The draft as the worker reads it after a run (`_wire_parts`): a part checked with no match reads `waiting`. */
+function serverDraft(live: Live, over: Partial<Draft["parts"]> = {}): Draft {
+  return {
+    parts: { ...live.parts, similar: { state: "waiting", value: [] }, ...over },
+    hidden: [],
+    ready: true,
+    run: { id: live.runId, state: "done" },
+    receipt: [],
+    suggestions: [],
+  } as unknown as Draft;
+}
+
+describe("C-DRAFT-LOADER.maths/7 across the read after `done` (BLD-C157, review round)", () => {
+  it("L-DRAFT.parts/7 no similar match: the read after done shows similar as waiting [], and the all-in line holds, then folds", () => {
+    vi.useFakeTimers();
+    const streamed = runOf({}, { ready: true });
+    expect(streamed.parts.similar).toMatchObject({ state: "filled", value: [] });
+    const reread = withDraft(streamed, serverDraft(streamed));
+    expect(reread.parts.similar).toMatchObject({ state: "waiting", value: [] });
+    expect(reread.loader).toBe(streamed.loader);
+    expect(allIn(reread)).toBe(true);
+
+    panel(streamed);
+    expect(host.textContent).toContain(LOADER_ALL_IN);
+    act(() => vi.advanceTimersByTime(400));
+    panel(reread); // the read lands inside the hold
+    expect(host.textContent).toContain(LOADER_ALL_IN);
+    expect(strip().classList.contains("all")).toBe(true);
+    expect(strip().classList.contains("fold")).toBe(false);
+    act(() => vi.advanceTimersByTime(500));
+    expect(strip().classList.contains("fold")).toBe(true);
+    expect(strip().classList.contains("all")).toBe(true);
+  });
+
+  it("S-04B phone: the tube holds through the same read", () => {
+    vi.useFakeTimers();
+    const streamed = runOf({}, { ready: true });
+    panel(streamed, true);
+    act(() => vi.advanceTimersByTime(400));
+    panel(withDraft(streamed, serverDraft(streamed)), true);
+    expect(strip().classList.contains("all")).toBe(true);
+    expect(strip().classList.contains("fold")).toBe(false);
+    act(() => vi.advanceTimersByTime(500));
+    expect(strip().classList.contains("fold")).toBe(true);
+  });
+
+  it("C-DRAFT-LOADER.maths/7 no replay: a run that ended with parts waiting stays folded when a later read fills them", () => {
+    vi.useFakeTimers();
+    const ended = runOf({ often: null, area: null });
+    panel(ended);
+    expect(strip().classList.contains("fold")).toBe(true);
+    // A part changed by hand, or a read that has them, fills both for the run that already ended.
+    const later = withDraft(
+      ended,
+      serverDraft(ended, {
+        often: { state: "pinned", value: "About 30 new folios a day" },
+        area: { state: "filled", value: "Operations" },
+      }),
+    );
+    expect(later.loader).toBe(ended.loader);
+    expect(allIn(later)).toBe(true);
+    panel(later);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(host.textContent).not.toContain(LOADER_ALL_IN);
+    expect(strip().classList.contains("all")).toBe(false);
+    expect(strip().classList.contains("fold")).toBe(true);
+    expect(strip().getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
 describe("C-DRAFT-LOADER.maths with parts waiting for words (BLD-C157)", () => {
   const run = (over: Partial<LoaderRun> = {}): LoaderRun => ({
     parts: MEANS,
@@ -239,16 +317,33 @@ describe("C-DRAFT-LOADER.maths with parts waiting for words (BLD-C157)", () => {
     expect(loaderLine(run(), 1000)).toBe(LOADER_ALL_IN);
   });
 
-  it("L-DRAFT.parts/3 similar ideas left out of a short draft's run: still not all six in", () => {
+  it("L-DRAFT.parts/3 similar ideas left out of a short draft's run (below 50 characters) do not hold the all-in line", () => {
     const live = runOf({}, { keys: ["title", "often", "who", "value", "area"], ready: true });
-    expect(live.loader!.waiting).toEqual(["similar"]);
-    expect(loaderLine(live.loader!, 1000)).toBe("5 of 5 ready, almost there");
-    expect(allIn(live)).toBe(false);
+    expect(live.parts.similar.state).toBe("waiting");
+    expect(live.loader!.waiting).toEqual([]);
+    expect(allIn(live)).toBe(true);
     panel(live);
+    expect(host.textContent).toContain(LOADER_ALL_IN);
+    // Only similar ideas being built hold it.
+    expect(partIn({ ...live.parts, similar: { state: "updating", value: [] } }, "similar")).toBe(false);
+  });
+
+  it("maths/4 failure/1 a part past 10 × its mean while the run builds: under 97% and no all-in line until the page marks it failed", () => {
+    let live = applyEvent(fromDraft(null), { event: "run", data: { run_id: "run-1", parts: MEANS } }, 0);
+    for (const m of MEANS) if (m.key !== "area") live = applyEvent(live, part(m.key, FILLED[m.key]), 200);
+    for (let t = 0; t <= 9000; t += 250) {
+      expect(barValue(live.loader!, t)).toBeLessThanOrEqual(0.97);
+      expect(loaderLine(live.loader!, t)).not.toBe(LOADER_ALL_IN);
+    }
+    act(() =>
+      root.render(createElement(DraftLoader, { run: live.loader, done: false, ended: false, now: 7001 })),
+    );
     expect(host.textContent).not.toContain(LOADER_ALL_IN);
-    expect(strip().classList.contains("fold")).toBe(true);
-    // L-DRAFT.parts/7: title, summary and area are there, so Move to Review is on.
-    expect(move().tagName).toBe("A");
+    expect(Number(bar().getAttribute("aria-valuenow"))).toBeLessThanOrEqual(97);
+    live = giveUp(live, 7001); // area: 10 × 700, marked failed by the page's once-a-second check
+    expect(allSixIn(live.loader!)).toBe(true);
+    expect(barValue(live.loader!, 7001)).toBe(1);
+    expect(loaderLine(live.loader!, 7001)).toBe(LOADER_ALL_IN);
   });
 
   it("L-DRAFT.parts/7 Move to Review: How often, Who and Worth may wait; a missing area holds it", () => {
