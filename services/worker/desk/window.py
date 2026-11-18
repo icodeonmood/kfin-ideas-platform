@@ -27,12 +27,16 @@ class WindowRefused(Exception):
         self.code = code
 
 
-def add_months(t: dt.datetime, months: int) -> dt.datetime:
-    """The same day and time `months` later; a day the month lacks becomes its last day (31 Jan + 1 month =
-    28 or 29 Feb)."""
-    index = t.month - 1 + months
-    year, month = t.year + index // 12, index % 12 + 1
-    return t.replace(year=year, month=month, day=min(t.day, calendar.monthrange(year, month)[1]))
+def add_months(t: dt.datetime, months: int, tz: dt.tzinfo = when.IST) -> dt.datetime:
+    """The same office calendar day and wall time `months` later; a day the month lacks becomes its last day
+    (31 Jan + 1 month = 28 or 29 Feb). L-COMMITTEE.rules/2 (BLD-B258): the months are added on the date in the office
+    time zone, never on the UTC date, so a decision just after midnight in India keeps its own day. The result is in
+    the zone `t` came in."""
+    local = t.astimezone(tz) if t.tzinfo is not None else t
+    index = local.month - 1 + months
+    year, month = local.year + index // 12, index % 12 + 1
+    moved = local.replace(year=year, month=month, day=min(local.day, calendar.monthrange(year, month)[1]))
+    return moved.astimezone(t.tzinfo) if t.tzinfo is not None else moved
 
 
 @dataclass(frozen=True)
