@@ -329,6 +329,22 @@ describe("DEC-110, J-BROWSE/3, S-07.return: the search comes back with the entry
     expect(readSearch("/my-ideas")).toBe("Redemption");
   });
 
+  it("J-BROWSE/3: a row opened while an answer or the router's read is on its way leaves the address Back returns to", async () => {
+    render(view({}));
+    writeSearch("/my-ideas", "");
+    clickSort("Date shared"); // the rows stay on screen while a sort's answer comes
+    const link = host.querySelector<HTMLAnchorElement>(`[data-row="${ROW}"] h3 a`)!;
+    act(() => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
+    expect(here()).toMatch(new RegExp(`^/my-ideas\\?sort=shared&row=${ROW}&dy=-?\\d+$`));
+    const opened = here();
+    await answer(0, view({ sort: "shared", row: ROW })); // lands after the row was opened
+    render(view({ sort: "shared", row: ROW })); // the router's read of the address with the row in it
+    await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
+    expect(here()).toBe(opened);
+    expect(host.textContent).not.toContain("Back where you were");
+    expect(asked).toHaveLength(1);
+  });
+
   it("every read with a search is a POST to /api/me/ideas; no request URL and no address holds the words", async () => {
     render(view({}));
     type("Zebra7Kestrel");

@@ -162,6 +162,9 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const live = useRef(true);
   // Set while the router reads this page again after an action, so the search on screen is kept through it
   const refreshing = useRef(false);
+  // Set once a row is opened: the list is left as it stands, so nothing that lands meanwhile (an answer, the router's
+  // read of the address with the row in it) changes it or takes the row out of the address Back returns to
+  const leaving = useRef(false);
 
   useEffect(() => {
     textNow.current = text;
@@ -186,7 +189,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
       setWanted(next);
       if (how === "fade") setFading(true);
       const answer = await readView(next, row);
-      if (n !== asks.current || !live.current) return;
+      if (n !== asks.current || !live.current || leaving.current) return;
       want.current = null;
       setWanted(null);
       setFading(false);
@@ -212,6 +215,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
    * `first` is the page's arrival, when the list is held as loading until the answer lands. */
   const arrive = useCallback(
     (base: MyIdeasResponse, first: boolean) => {
+      if (leaving.current) return;
       const refresh = refreshing.current;
       const kept = spaced(refresh ? words.current : readSearch(LIST));
       refreshing.current = false;
@@ -257,6 +261,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   // the entry it is now on (P-ROUTES.state). An answer to the person's own change is left alone.
   useEffect(() => {
     const moved = () => {
+      leaving.current = false;
       asks.current += 1;
       want.current = null;
       setWanted(null);
@@ -282,12 +287,14 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   // Not before the view with the search this entry keeps is on screen, or the row would be placed in another list.
   const [restore, setRestore] = useState<{ row: string; dy: number | null } | null>(null);
   useEffect(() => {
-    if (!shown || want.current || spaced(shown.state.q) !== spaced(readSearch(LIST))) return;
+    if (!shown || want.current || leaving.current || spaced(shown.state.q) !== spaced(readSearch(LIST)))
+      return;
     const url = new URL(window.location.href);
     const row = url.searchParams.get("row");
     if (!row) return;
     const dyRaw = url.searchParams.get("dy");
     const frame = requestAnimationFrame(() => {
+      if (leaving.current) return;
       if (root.current?.querySelector(`[data-row="${CSS.escape(row)}"]`)) {
         const tab = shown.tabs.find((t) => t.selected)?.label ?? "Yours";
         const filter = shown.filters.find((f) => f.selected)?.short_label ?? "All";
@@ -358,6 +365,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const open = (e: MouseEvent<HTMLAnchorElement>, row: MyIdeaRow, to: string) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
+    leaving.current = true;
     replaceAddress(myIdeasHref(cur(), row.id, rowOffset(e.currentTarget)));
     router.push(to);
   };
