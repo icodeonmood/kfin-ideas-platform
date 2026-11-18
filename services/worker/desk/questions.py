@@ -37,6 +37,15 @@ PART_NAMES: dict[str, str] = {
     "evidence": "Attached",
     "fix": "Fix",
 }
+# S-R2.panel, L-LISTEN/2 (BLD-B264): what a part left empty reads, on the reviewer's page and in the listen script.
+# Fix as the DeskIdea board draws it; Attached with zero in words (F-COPY.plurals/2); every other part "Not given.".
+EMPTY_FIX = "No fix suggested. It was optional."
+EMPTY_ATTACHED = "Nothing attached."
+PART_EMPTY: dict[str, str] = {
+    **{p: "Not given." for p in PARTS},
+    "evidence": EMPTY_ATTACHED,
+    "fix": EMPTY_FIX,
+}
 SetState = Literal["queued", "sent", "seen", "partly_answered", "answered", "closed"]
 
 # L-QUESTIONS.ask/2: the part is guessed from the wording and can be changed before adding. Each list holds the
