@@ -151,6 +151,11 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [notRead, setNotRead] = useState(false);
+  // A view with the search this entry keeps has not been read yet: the list on screen is the server's unsearched one,
+  // so it stays held under the failed line, and the kept words stay kept for a reload (DEC-110). `landedNow` is true
+  // once any view for the entry's own words is on screen
+  const [stuck, setStuck] = useState(false);
+  const landedNow = useRef(false);
   const settle = useRef<(() => void) | null>(null);
 
   // What the person asked for last, ahead of the server's answer, so quick changes build on each other; the number
@@ -195,18 +200,25 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
       setFading(false);
       if (answer) {
         setNotRead(false);
+        setStuck(false);
+        landedNow.current = true;
         setShown(answer);
         return;
       }
       settle.current?.();
       settle.current = null;
+      setNotRead(true);
+      // A failed read never wipes the kept words, and never leaves unsearched rows under them
+      if (!landedNow.current && spaced(next.q)) {
+        setStuck(true);
+        return;
+      }
       const was = shownNow.current;
       if (was) {
         words.current = spaced(was.state.q);
         writeSearch(LIST, words.current);
         replaceAddress(myIdeasHref(was.state));
       }
-      setNotRead(true);
     },
     [],
   );
@@ -232,6 +244,8 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
         want.current = null;
         setWanted(null);
         setFading(false);
+        setStuck(false);
+        landedNow.current = true;
         setShown(base);
         return;
       }
@@ -344,6 +358,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
     }
     setArrival(null);
     setNotRead(false);
+    setStuck(false);
     words.current = spaced(next.q);
     writeSearch(LIST, words.current);
     replaceAddress(myIdeasHref(next));
@@ -440,6 +455,8 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   }
 
   const loading = fading;
+  // Counts are left out while a list loads, and while the kept search could not be read
+  const hide = loading || stuck;
   const state = wanted ?? shown.state;
   const list = loading ? state.list : shown.state.list;
   const picked = state.filter !== "all" ? [state.filter] : [];
@@ -447,7 +464,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   return (
     <div className="mi" ref={root}>
       <Head />
-      <div id="find" className={state.q ? "mi-search" : "mi-search mi-desk"}>
+      <div id="find" className={state.q || stuck ? "mi-search" : "mi-search mi-desk"}>
         <SearchBar
           label="Search your ideas, or ask a question"
           placeholder="Search your ideas"
@@ -492,7 +509,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           tabs={shown.tabs.map((t) => ({
             value: t.list,
             label: t.label,
-            count: loading ? undefined : t.count,
+            count: hide ? undefined : t.count,
           }))}
           value={list}
           onChange={(v) => go({ list: v as MyIdeasList })}
@@ -513,7 +530,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
           options={shown.filters.map((f) => ({
             value: f.filter,
             label: f.short_label,
-            count: loading ? undefined : f.count,
+            count: hide ? undefined : f.count,
           }))}
           value={state.filter}
           onChange={(v) => go({ filter: v as MyIdeasFilter })}
@@ -554,7 +571,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
       <div {...tabPanelProps("mi", list)} className="mi-panel">
         {loading ? (
           <SkeletonRows what="Loading your ideas" />
-        ) : shown.empty ? (
+        ) : stuck ? null : shown.empty ? (
           <div className="card mi-emptyc">
             <Empty title={shown.empty.title} action={<>{shown.empty.actions.map(emptyAction)}</>}>
               {shown.empty.phone_line ? (

@@ -361,6 +361,30 @@ describe("DEC-110, J-BROWSE/3, S-07.return: the search comes back with the entry
     expect(replace).not.toHaveBeenCalled();
   });
 
+  it("DEC-110: the arrival read with the kept words fails: they stay kept, and no unsearched row or count shows under them", async () => {
+    writeSearch("/my-ideas", "Redemption");
+    window.history.replaceState(window.history.state, "", `/my-ideas?row=${ROW}&dy=40`);
+    render(view({ row: ROW }));
+    await answer(0, null);
+    await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
+    expect(readSearch("/my-ideas")).toBe("Redemption");
+    expect(box().value).toBe("Redemption");
+    expect(host.querySelector(`[data-row="${ROW}"]`)).toBeNull();
+    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual([
+      "Yours",
+      "Teamed up",
+    ]);
+    expect(host.textContent).toContain("We can't load your ideas just now. Please try again in a minute.");
+    // the row stays in the address for a reload to place
+    expect(here()).toBe(`/my-ideas?row=${ROW}&dy=40`);
+    // Enter asks again with the same words
+    submit();
+    expect(lastBody()).toMatchObject({ q: "Redemption" });
+    await answer(1, view({ q: "Redemption" }));
+    expect(host.querySelector(`[data-row="${ROW}"]`)).not.toBeNull();
+    expect(host.textContent).not.toContain("We can't load your ideas just now.");
+  });
+
   it("a view that could not be read leaves the list, the address and the memory as they were; the box keeps the words", async () => {
     render(view({}));
     type("abc");
