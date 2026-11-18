@@ -123,8 +123,12 @@ export function passedParts(step: DraftStep | string | undefined | null): Readon
 export type TileAction =
   | { kind: "team-up" }
   | { kind: "waiting"; label: string; withdraw: { merge: true } | { requestId: string } }
-  | { kind: "on-crew" };
+  | { kind: "on-crew" }
+  /** L-TEAMUP refuses a team-up here (BLD-C187): the tile keeps Preview and offers nothing else. */
+  | { kind: "none" };
 
+/** A tile's action (C-SIMGRID.tile): waiting and on the crew as before; then, where lane F's L-TEAMUP.rules/1 check
+ * (`can_team_up`) refuses, "On the crew" when the viewer is on it, else nothing; else "Team up" (BLD-C187). */
 export function tileAction(match: SimilarMatch, merge: MergeView | null): TileAction {
   const first = firstName(match.idea.lead);
   if (merge && merge.otherId === match.idea.id && merge.state === "waiting") {
@@ -143,6 +147,9 @@ export function tileAction(match: SimilarMatch, merge: MergeView | null): TileAc
     (merge.state === "accepted" || merge.state === "team_only")
   ) {
     return { kind: "on-crew" };
+  }
+  if (match.can_team_up === false) {
+    return match.team_up_why_not === "already_on_crew" ? { kind: "on-crew" } : { kind: "none" };
   }
   return { kind: "team-up" };
 }

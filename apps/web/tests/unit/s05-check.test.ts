@@ -17,6 +17,7 @@ import type {
   SimilarMatch,
   SortingResponse,
 } from "@/lib/contracts";
+import { CLOSED_STATUSES } from "@/lib/contracts";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
@@ -2201,5 +2202,57 @@ describe("S-05 words (F-COPY)", () => {
   it("never says duplicate, rejected, already solved, appeal, invalid or Garage to the sharer", () => {
     const all = JSON.stringify(CHECK_COPY, (_k, v) => (typeof v === "function" ? v("2", "Ravi") : v));
     expect(all).not.toMatch(/\b(duplicate|rejected|already solved|appeal|invalid|Garage)\b/i);
+  });
+});
+
+describe("S-05.similar C-SIMGRID.tile L-TEAMUP.rules/1 J-SHARE/8: no Team up on an idea L-TEAMUP refuses (BLD-C187)", () => {
+  const open: SimilarMatch = { ...MATCH_RAVI, can_team_up: true, team_up_why_not: null };
+  const notNow: SimilarMatch = {
+    ...MATCH_SUNITA,
+    idea: { ...MATCH_SUNITA.idea, status: "not_now", title: "Branch calls about rejection codes" },
+    can_team_up: false,
+    team_up_why_not: "idea_closed",
+  };
+
+  it("model: an open idea offers Team up; not_now and every other closed state offer nothing; on the crew reads On the crew", () => {
+    expect(model.tileAction(open, null)).toEqual({ kind: "team-up" });
+    expect(CLOSED_STATUSES).toEqual(expect.arrayContaining(["not_now", "not_picked", "withdrawn", "merged"]));
+    for (const status of CLOSED_STATUSES) {
+      const closed: SimilarMatch = {
+        ...MATCH_RAVI,
+        idea: { ...MATCH_RAVI.idea, status },
+        can_team_up: false,
+        team_up_why_not: "idea_closed",
+      };
+      expect(model.tileAction(closed, null), status).toEqual({ kind: "none" });
+    }
+    expect(
+      model.tileAction({ ...open, can_team_up: false, team_up_why_not: "already_on_crew" }, null),
+    ).toEqual({
+      kind: "on-crew",
+    });
+    // An older worker that sends no can_team_up: offered as before.
+    expect(model.tileAction(MATCH_RAVI, null)).toEqual({ kind: "team-up" });
+  });
+
+  it("screen: the Not now tile keeps Preview and has no Team up, on the tile or in the preview; the open one keeps Team up", async () => {
+    await mount(base({ similar: [open, notNow] }));
+    await railTo("Similar ideas");
+    const tiles = Array.from(document.querySelectorAll(".simgrid > li"));
+    expect(tiles).toHaveLength(3);
+    expect(button(`Team up on ${open.idea.title}`)).toBeTruthy();
+    expect(button(`Team up on ${notNow.idea.title}`)).toBeUndefined();
+    expect(Array.from(tiles[2]!.querySelectorAll("button")).map(nameOf)).toEqual([
+      `Preview ${notNow.idea.title}`,
+    ]);
+    expect(text(tiles[2])).toContain("Not now");
+    expect(text(tiles[2])).not.toContain("On the crew");
+    await click(button(`Preview ${notNow.idea.title}`));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog).toBeTruthy();
+    expect(Array.from(dialog.querySelectorAll("button")).map(nameOf)).not.toContain(
+      `Team up on ${notNow.idea.title}`,
+    );
+    expect(text(dialog)).not.toMatch(/Team up\b/);
   });
 });

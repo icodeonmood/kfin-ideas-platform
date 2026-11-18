@@ -234,6 +234,24 @@ def crew_role(conn: Conn, idea_uuid: Any, code: str) -> str | None:
     return str(row["role"]) if row else None
 
 
+TEAM_UP_REFUSED: dict[str, str] = {
+    "idea_closed": "This idea is no longer open to team up.",
+    "already_on_crew": "You’re on the crew.",
+}
+
+
+def team_up_refusal(conn: Conn, idea: dict[str, Any], code: str | None) -> str | None:
+    """L-TEAMUP.rules/1: why this person may not ask to team up on this shared idea, else None. `idea_closed` for a
+    closed, withdrawn or merged-away idea (`is_closed`), then `already_on_crew` when `code` is on its live crew. The
+    one rule `POST /ideas/:id/team-up` refuses by, and the similar read's `can_team_up` (BLD-C187), so a tile never
+    offers "Team up" that the send would refuse. A waiting request of theirs is rules/4, read on its own."""
+    if is_closed(str(idea["status"])):
+        return "idea_closed"
+    if code is not None and crew_role(conn, idea["id"], code) is not None:
+        return "already_on_crew"
+    return None
+
+
 @dataclass(frozen=True)
 class SeenLead:
     """The idea's lead as one viewer may see them (BLD-F029, DEC-104). `ref` is an E-ENTITIES PersonRef, or lane C's
