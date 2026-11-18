@@ -958,14 +958,16 @@ export interface RemindResponse {
   id: string;
   reminded_at: IsoDate;
 }
-/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. */
+/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. DEC-111: the sharer never
+ * sees who at the review desk asked, so `by` is null on this read (the desk's own reads keep the reviewer). */
 export type SharerQuestionSetResponse =
-  | (QuestionSetView & {
+  | (Omit<QuestionSetView, "by"> & {
+      by: null;
       idea: { id: string; title: string };
       countdown: Countdown;
       deadline: string; // "Answer by Thursday 19 November, 6 pm"
       progress: string; // "1 of 3 answered"
-      send_label: string; // "Send 1 answer to Meera", or "Answer at least one question"
+      send_label: string; // "Send 1 answer to the review desk", or "Answer at least one question"
     })
   | null;
 export interface SaveAnswerRequest {
@@ -991,10 +993,9 @@ export interface SendAnswersResponse {
   count: number;
   sent_at: IsoDate;
   progress: string;
-  sent_line: string; // "Sent to Meera, 4:32 pm"
+  sent_line: string; // "Sent to the review desk, 4:32 pm" (DEC-111: never the reviewer's name)
   spare: string; // "Answered with 3 days to spare"
-  reviewer_first_name: string;
-  decides_by: string | null; // "Meera decides by Friday 20 November"
+  decides_by: string | null; // "The review desk decides by Friday 20 November"
 }
 
 // A-API.desk (S-R1): `GET /desk?tab=&sort=`, or `POST /desk` with a `DeskQuery` body when there is a search, whose
@@ -1314,9 +1315,13 @@ export interface CommitteeRow {
     choice: DecisionChoice | null;
     label: string;
     merged_into: string | null;
-    by_line: string; // "by Meera from the review desk, Monday 12 October"
+    // The desk and the committee: "by Meera from the review desk, Monday 12 October". The sharer and the crew
+    // (`/ideas/:id/decision`, DEC-111): "by the review desk, Monday 12 October"
+    by_line: string;
     reason: string | null;
-    reason_heading: string; // "The review desk's reason, as Kavya read it"
+    // The committee (S-R4): "The review desk's reason, as Kavya read it". null for the sharer and the crew: Status.md
+    // draws no heading over the reason
+    reason_heading: string | null;
   };
   window: {
     state: "open" | "extended" | "reversed" | "expired";
@@ -1370,9 +1375,9 @@ export interface ReverseRequest {
 }
 /** The sharer's words for a decision (S-06; reference/copy/Status.md), for the sharer and the crew. */
 export interface SharerDecisionLines {
-  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "Meera from the review desk picked it on
-  // Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." On the
-  // joined idea's page it names the lead. null for any other decision.
+  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "The review desk picked it on Monday 16
+  // November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." (DEC-111: the desk, never
+  // the reviewer.) On the joined idea's page it names the lead. null for any other decision.
   joined_line: string | null;
   // "The Ones Committee can review this decision until Wednesday 16 December. If they change it, their note comes to
   // your Inbox. After that, it stands." While the window is open; it follows an extension. null once it closes.
@@ -1382,7 +1387,7 @@ export interface SharerDecisionLines {
     title: string; // "The Ones Committee changed the decision to not now"
     note_heading: string; // "The committee’s note to you" (the note itself is `reversal.note` on the row)
     was_line: string; // "Was: Picked"
-    was_by_line: string; // "by Meera from the review desk, Monday 16 November"
+    was_by_line: string; // "by the review desk, Monday 16 November" (DEC-111)
     final_line: string; // "This is final. It comes back to the review desk on Tuesday 16 February 2027, with your answers and crew."
     track_line: string; // "Picked, then moved to not now by the Ones Committee"
   } | null;

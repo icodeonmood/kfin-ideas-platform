@@ -139,14 +139,14 @@ function btnClass(style: Action["style"]): string {
 type QuestionSet = NonNullable<SharerQuestionSetResponse>;
 type Detail = { kind: "questions"; set: QuestionSet } | { kind: "reason"; reason: string } | null;
 
-/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. */
+/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. The reviewer (`by`) is
+ * not read: the sharer's set comes without one (DEC-111). */
 function isSet(data: unknown): data is QuestionSet {
   const s = data as Partial<QuestionSet> | null;
   return (
     !!s &&
     typeof s.id === "string" &&
     typeof s.idea?.id === "string" &&
-    typeof s.by?.first_name === "string" &&
     typeof s.deadline === "string" &&
     typeof s.answered === "number" &&
     Array.isArray(s.questions) &&
