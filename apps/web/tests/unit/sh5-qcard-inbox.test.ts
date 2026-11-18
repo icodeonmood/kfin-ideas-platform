@@ -16,7 +16,10 @@ import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { tellInboxCounts } from "@/lib/desk/answers";
 import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+  useSearchParams: () => new URLSearchParams(globalThis.location?.search ?? ""),
+}));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {
@@ -313,6 +316,30 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
   it("C-QCARD.states answered: the forward action to the Answer screen goes; Open the conversation stays", () => {
     expect(questionActions(ACTIONS, { state: "answered", answered: 3 })).toEqual([ACTIONS[0]]);
     expect(questionActions(ACTIONS, { state: "seen", answered: 0 })).toEqual(ACTIONS);
+  });
+
+  it("L-INBOX.kinds, BLD-A199 (J-TRACK/6): a reminder for a partly answered set keeps Answer the questions in its foot, with the card's ticks", async () => {
+    served = questionSet(2);
+    await open({
+      ...ITEM,
+      id: "78",
+      kind: "answer_reminder",
+      line: "1 day left to answer Meera’s questions",
+    });
+    expect(host.querySelectorAll(".qcard-inbox [role=img][aria-label=Answered]")).toHaveLength(2);
+    expect(footLinks()).toEqual([
+      ["Open the conversation", `/ideas/${IDEA}/conversation`],
+      ["Answer the questions", `/ideas/${IDEA}/answer`],
+    ]);
+  });
+
+  it("L-INBOX.kinds, BLD-A199 (J-TRACK/6): an answer reminder leads to Answer in its own words while anything is left, and drops it once all are sent", () => {
+    const partly = { state: "partly_answered", answered: 2 } as const;
+    expect(questionActions(ACTIONS, partly, "answer_reminder")).toEqual(ACTIONS); // "Answer the questions", /answer
+    expect(questionActions(ACTIONS, partly).map((a) => a.label)).toContain("Carry on answering"); // the questions item
+    expect(questionActions(ACTIONS, { state: "answered", answered: 3 }, "answer_reminder")).toEqual([
+      ACTIONS[0],
+    ]);
   });
 });
 

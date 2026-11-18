@@ -68,13 +68,16 @@ def _seed_templates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(render, "load", lambda name: templates._load(SEED, name))
 
 
-def _row(answer: str, channel: str = "in_app") -> dict[str, Any]:
+def _row(answer: str, channel: str = "in_app", has_reason: bool | None = True) -> dict[str, Any]:
+    refs: dict[str, Any] = {"request_id": REQUEST, "request": "teamup", "answer": answer}
+    if has_reason is not None:  # lane F's flag, never the reason itself; None: a row that does not say
+        refs["has_reason"] = has_reason
     return {
         "id": 77,
         "user_id": ASKER,
         "channel": channel,
         "kind": "teamup_answer",
-        "payload": {"request_id": REQUEST, "request": "teamup", "answer": answer, "has_reason": True},
+        "payload": refs,
         "actions": [],
         "from_user_id": LEAD,
         "idea_uuid": IDEA,
@@ -87,9 +90,9 @@ def _row(answer: str, channel: str = "in_app") -> dict[str, Any]:
     }
 
 
-def _read(conn: _Conn, answer: str) -> tuple[dict[str, Any], str]:
-    item = render.item(conn, _row(answer), ASKER, NOW)  # type: ignore[arg-type]
-    mail = render.email(conn, _row(answer, "email"), NOW)  # type: ignore[arg-type]
+def _read(conn: _Conn, answer: str, has_reason: bool | None = True) -> tuple[dict[str, Any], str]:
+    item = render.item(conn, _row(answer, has_reason=has_reason), ASKER, NOW)  # type: ignore[arg-type]
+    mail = render.email(conn, _row(answer, "email", has_reason), NOW)  # type: ignore[arg-type]
     return item, "\n".join((mail.subject, mail.text, mail.html))
 
 
@@ -140,3 +143,30 @@ def test_DEC_104_an_approved_requester_is_on_the_crew_and_reads_the_name(answer:
     assert item["line"] == "approved your team-up request"
     assert item["body"]["note"] == "You’re on Ravi’s crew now."
     assert "Ravi Nair answered your team-up request" in mail
+
+
+@pytest.mark.parametrize(
+    ("case", "show", "sender"),
+    [("a lead who shows their name", True, "Ravi Nair"), ("a lead who hid their name", False, "The lead")],
+)
+@pytest.mark.parametrize(
+    ("has_reason", "line", "note", "email_line"),
+    [
+        (True, "declined your team-up request, with a reason", "The reason is in the app, with your request.",
+         "Read the reason in the app."),
+        (False, "declined your team-up request", "", "Your request is in the app."),
+        (None, "declined your team-up request", "", "Your request is in the app."),
+    ],
+)  # fmt: skip
+def test_L_INBOX_kinds_a_decline_says_with_a_reason_only_when_lane_F_says_there_is_one(
+    case: str, show: bool, sender: str, has_reason: bool | None, line: str, note: str, email_line: str
+) -> None:
+    """teamup_answer 1.2 (lane F's words, for HR): the decline's line, note and email follow `has_reason`, for a
+    named lead and for "The lead" alike; a row that does not say claims no reason."""
+    item, mail = _read(_Conn(show=show, active=True), "decline", has_reason)
+    assert item["body"]["sender"] == sender, case
+    assert (item["line"], item["body"]["note"]) == (line, note), (case, has_reason)
+    assert f"{sender} {line}: " in mail and email_line in mail, (case, has_reason)
+    if not has_reason:
+        for claim in ("with a reason", "The reason is", "Read the reason"):
+            assert claim not in mail and claim not in json.dumps(item, ensure_ascii=False), (case, claim)

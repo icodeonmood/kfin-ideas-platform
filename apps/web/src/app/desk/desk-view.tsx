@@ -71,15 +71,6 @@ function useMinute(): Date {
   return now;
 }
 
-function ClockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 5.5V8.5L10 10M6.5 1.75h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /** The question dots (board Desk): one per question, filled once answered. The words beside them say the same. */
 function Dots({ asked, answered }: { asked: number; answered: number }) {
   if (!asked) return null;
@@ -98,8 +89,7 @@ function TimeLeft({ row, tab, now }: { row: DeskRow; tab: DeskTab; now: Date }) 
   const label = live ? countdownLabel(live, tab === "waiting" ? "to answer" : "to decide") : row.time_left;
   const variant = live?.variant ?? row.variant ?? "normal";
   return (
-    <Pill variant={PILL[variant]}>
-      <ClockIcon />
+    <Pill variant={PILL[variant]} countdown>
       {label}
     </Pill>
   );

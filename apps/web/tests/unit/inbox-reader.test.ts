@@ -14,7 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COUNTS_EVENT, InboxReader } from "@/app/inbox/inbox-reader";
 import type { InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+  useSearchParams: () => new URLSearchParams(globalThis.location?.search ?? ""),
+}));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {

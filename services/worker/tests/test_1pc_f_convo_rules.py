@@ -1,5 +1,5 @@
-"""L-CONVO rules that need no database: who opens files is read from the RBAC policy (BLD-F062), lane C's recipe for
-forgetting a removed message runs in its order behind one function (BLD-F067), and lane C's refusal becomes a
+"""L-CONVO rules that need no database: who opens files is read from the RBAC policy (BLD-F062), forgetting a removed
+message is lane C's `hide.forget` behind one function (BLD-F067, BLD-F076), and lane C's refusal becomes a
 ready one (BLD-F054). A recording stand-in plays the connection; synthetic IDs only."""
 
 from __future__ import annotations
@@ -28,72 +28,39 @@ def test_bld_f062_file_roles_are_the_policys_view_review_queue_with_its_aliases(
     assert "committee" not in FILE_ROLES  # a plain committee holder neither opens nor adds files
 
 
-class _Rows:
-    def __init__(self, rows: list[dict[str, Any]], rowcount: int) -> None:
-        self._rows, self.rowcount = rows, rowcount
-
-    def fetchall(self) -> list[dict[str, Any]]:
-        return self._rows
-
-
-class _Conn:
-    """Records each statement; answers the tag SELECT with `tags` and each DELETE with a row count."""
-
-    def __init__(self, tags: list[str]) -> None:
-        self.tags, self.sql = tags, []  # type: ignore[var-annotated]
-        self.params: list[Any] = []
-
-    def execute(self, sql: str, params: Any = None) -> _Rows:
-        self.sql.append(sql)
-        self.params.append(params)
-        if sql.startswith("SELECT vault_tag"):
-            return _Rows([{"vault_tag": t} for t in self.tags], len(self.tags))
-        return _Rows([], 2)
-
-
-def test_bld_f067_l_convo_10_forget_runs_lane_cs_recipe_in_order_lock_first(
+def test_bld_f076_l_convo_10_forget_is_lane_cs_hide_forget_for_the_conversation_entry(
     monkeypatch: pytest.MonkeyPatch, captured_logs: Any
 ) -> None:
+    """Lane C's `hide.forget` does the whole recipe (lock first, hidden details, sealed words, unshared vault values);
+    lane F's forget hands it the conversation entry and logs IDs and counts only."""
     idea, entry = str(uuid.uuid4()), str(uuid.uuid4())
-    order: list[str] = []
-    monkeypatch.setattr(adapters, "_hide_lock", lambda conn, i: order.append(f"lock {i}"))
-    monkeypatch.setattr(adapters, "_hide_scope", lambda i: f"DRAFT-{i}")
-    conn = _Conn(["[[KFIN_FOLIO_1]]", "[[KFIN_FOLIO_2]]"])
-    real = conn.execute
+    calls: list[tuple[Any, ...]] = []
 
-    def traced(sql: str, params: Any = None) -> _Rows:
-        order.append(sql.split(" WHERE ")[0])
-        return real(sql, params)
+    def hide_forget(conn: Any, idea_uuid: str, *, source: str, source_id: str) -> int:
+        calls.append((conn, idea_uuid, source, source_id))
+        return 2
 
-    conn.execute = traced  # type: ignore[method-assign]
+    monkeypatch.setattr(adapters, "_hide_forget", hide_forget)
+    conn = object()
     adapters.forget(conn, idea, entry)  # type: ignore[arg-type]
-    assert order == [
-        f"lock {idea}",
-        "SELECT vault_tag FROM hidden_details",
-        "DELETE FROM hidden_details",
-        "DELETE FROM idea_words_sealed",
-        "DELETE FROM pseudonym_vault v",
-    ]
-    assert conn.params[:3] == [(idea, entry)] * 3  # the entry's uuid as it is, as source_id
-    assert conn.params[3] == (f"DRAFT-{idea}", ["[[KFIN_FOLIO_1]]", "[[KFIN_FOLIO_2]]"], idea)
-    assert "NOT EXISTS" in conn.sql[3]  # a value another text still uses stays
+    assert calls == [(conn, idea, "conversation", entry)]
     logs = captured_logs.getvalue()
     assert "convo.hidden_forgotten" in logs and entry in logs and "FOLIO" not in logs  # IDs and counts only
 
 
-def test_bld_f067_forget_skips_the_vault_when_nothing_was_tagged_and_does_nothing_without_lane_c(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_bld_f076_forget_does_nothing_without_lane_c(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no lane C at all, messages were masked by the patterns alone: nothing was kept, nothing to drop. With
+    lane C's `hide_message` but no `forget`, values were kept: it raises (no IDs in the message) so the removal
+    rolls back, rather than leave them behind silently."""
     idea, entry = str(uuid.uuid4()), str(uuid.uuid4())
-    monkeypatch.setattr(adapters, "_hide_lock", lambda conn, i: None)
-    monkeypatch.setattr(adapters, "_hide_scope", lambda i: f"DRAFT-{i}")
-    conn = _Conn([])
-    adapters.forget(conn, idea, entry)  # type: ignore[arg-type]
-    assert not any("pseudonym_vault" in q for q in conn.sql)
-    monkeypatch.setattr(adapters, "_hide_lock", None)
-    none = _Conn(["[[KFIN_FOLIO_1]]"])
-    adapters.forget(none, idea, entry)  # type: ignore[arg-type]
-    assert none.sql == []
+    monkeypatch.setattr(adapters, "_hide_forget", None)
+    monkeypatch.setattr(adapters, "_hide_message", None)
+    adapters.forget(NO_CONN, idea, entry)
+
+    monkeypatch.setattr(adapters, "_hide_message", lambda *a, **k: None)
+    with pytest.raises(RuntimeError) as half:
+        adapters.forget(NO_CONN, idea, entry)
+    assert idea not in str(half.value) and entry not in str(half.value)
 
 
 def test_bld_f054_lane_cs_refusal_becomes_hide_refused_with_its_status(
@@ -122,8 +89,6 @@ def test_bld_f054_lane_cs_refusal_becomes_hide_refused_with_its_status(
 def test_bld_f054_lane_cs_names_are_found_on_main() -> None:
     """Lane C's L-HIDE is on main: the guarded imports find it, so the pattern mask is only a fallback."""
     assert adapters._hide_message is not None
-    assert (
-        adapters._hide_lock is not None
-        and adapters._hide_scope is not None
-        and adapters._HideError is not None
-    )
+    import hide
+
+    assert adapters._hide_forget is hide.forget and adapters._HideError is not None

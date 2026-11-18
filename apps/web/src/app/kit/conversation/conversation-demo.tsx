@@ -137,6 +137,35 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
   },
 };
 
-export function ConversationDemo({ view = "crew" }: { view?: "crew" | "questions" }) {
-  return <Conversation initial={view === "questions" ? DEMO_QUESTIONS_VIEW : DEMO_VIEW} ideaId={DEMO_IDEA} />;
+/** Twelve messages back and forth after the kit's lines: long enough to open past the fold at any width, so e2e can
+ * check that it opens at the newest one (BLD-F081). */
+export const DEMO_LONG_VIEW: ConversationView = {
+  ...DEMO_VIEW,
+  entries: [
+    ...DEMO_VIEW.entries,
+    ...Array.from({ length: 12 }, (_, i) => {
+      const p = [RAVI, ADITI, PRAKASH][i % 3]!;
+      return {
+        type: "message" as const,
+        id: `6c1f6a0e-0000-4000-8000-0000000003${String(i).padStart(2, "0")}`,
+        from: p,
+        from_label: p.name,
+        you: false,
+        text: `Call log, day ${i + 1}: most callers asked why the redemption did not go through, and what R07 means.`,
+        files: [],
+        at: "2026-11-17T11:00:00+05:30",
+        at_label: "Today, 11:00 am",
+        mentions: [],
+        mentions_you: false,
+        removed: false,
+      };
+    }),
+  ],
+};
+
+export type DemoView = "crew" | "questions" | "long";
+
+export function ConversationDemo({ view = "crew" }: { view?: DemoView }) {
+  const initial = view === "questions" ? DEMO_QUESTIONS_VIEW : view === "long" ? DEMO_LONG_VIEW : DEMO_VIEW;
+  return <Conversation initial={initial} ideaId={DEMO_IDEA} />;
 }
