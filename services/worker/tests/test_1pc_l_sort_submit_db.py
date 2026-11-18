@@ -475,7 +475,7 @@ def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: di
     # Matching is not on main here, so it could not be checked: never "no similar ideas found" (BLD-C087)
     assert idea["similar_check"] == "failed"
     assert again["stages"][1]["detail"] == (
-        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
+        "1 phone number hidden. Couldn’t check for similar ideas. The review desk will."
     )
     assert again["stages"][2]["detail"] == "By Friday 20 November"
     check.run(conn, world["draft"])  # a second run changes nothing

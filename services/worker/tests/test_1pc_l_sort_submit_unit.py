@@ -295,16 +295,35 @@ def test_l_submit_send_hands_over_what_s06_just_shared_shows() -> None:
 def test_l_submit_send_checked_line() -> None:
     from submit.send import checked_line
 
-    assert checked_line(2, 2) == "Personal details hidden, 2 similar ideas found"
-    assert checked_line(1, 0) == "1 personal detail hidden, no similar ideas found"
+    assert checked_line(2, 2, "pan") == "Personal details hidden, 2 similar ideas found"
+    assert checked_line(1, 0, "pan") == "1 PAN hidden, no similar ideas found"
     assert checked_line(0, 1) == "No personal details found, 1 similar idea found"
+
+
+def test_c_track_s06_l_submit_send_one_hidden_detail_is_named_as_s06_names_it_bld_c153() -> None:
+    """J-SHARE's hand-over and S-06's track say one hidden detail the same way, by its kind, from the same words
+    (`ideapage.track.KIND_WORDS`), and those are L-HIDE's nouns (hide/config.yaml), so neither drifts."""
+    from hide import detect
+    from ideapage.track import KIND_WORDS
+    from submit.send import checked_line
+
+    assert {k: detect.noun(k) for k in detect.KINDS} == KIND_WORDS
+    for kind in detect.KINDS:
+        assert checked_line(1, 3, kind) == f"1 {detect.noun(kind)} hidden, 3 similar ideas found"
+    assert checked_line(1, 0, "phone") == "1 phone number hidden, no similar ideas found"
+    assert checked_line(1, 0, "aadhaar") == "1 Aadhaar number hidden, no similar ideas found"
+    assert (
+        checked_line(1, 0) == "1 detail hidden, no similar ideas found"
+    )  # S-06's own fallback, never reached
+    assert checked_line(3, 0, "pan").startswith("Personal details hidden,")  # several stay as Status.md draws
+    assert checked_line(0, 0, None).startswith("No personal details found,")
 
 
 def test_l_similar_failure_the_track_says_couldnt_check_not_none_found_bld_c087() -> None:
     from submit.send import checked_line
 
-    assert checked_line(1, None) == (
-        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
+    assert checked_line(1, None, "folio") == (
+        "1 folio number hidden. Couldn’t check for similar ideas. The review desk will."
     )
     assert "no similar ideas" not in checked_line(0, None)
 

@@ -31,6 +31,7 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from core.logging import get_logger
+from ideapage.track import KIND_WORDS
 from jobs.runner import enqueue
 from submit import adapters, check, clock, config, own, ready, sorting
 from submit.errors import Refused
@@ -80,13 +81,15 @@ def _keep(conn: Conn, user_id: str, idem: str | None, status: int, result: dict[
         )
 
 
-def checked_line(n_hidden: int, n_similar: int | None) -> str:
-    """'Personal details hidden, 2 similar ideas found' (the sharer's track, Status.md). `n_similar` None is
-    "couldn't check", never "no similar ideas found": the pack's own sentence follows (L-SIMILAR.failure)."""
+def checked_line(n_hidden: int, n_similar: int | None, kind: str | None = None) -> str:
+    """'Personal details hidden, 2 similar ideas found' (the sharer's track, Status.md). One hidden detail is named
+    by its `kind` as S-06's track names it ("1 PAN hidden", `ideapage.track.KIND_WORDS`, L-HIDE's nouns), so the
+    hand-over and the idea page never differ. `n_similar` None is "couldn't check", never "no similar ideas found":
+    the pack's own sentence follows (L-SIMILAR.failure)."""
     if n_hidden > 1:
         first = "Personal details hidden"
     elif n_hidden == 1:
-        first = "1 personal detail hidden"
+        first = f"1 {KIND_WORDS.get(kind or '', 'detail')} hidden"
     else:
         first = "No personal details found"
     if n_similar is None:
@@ -111,8 +114,9 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
     if status == "checking":
         nodes = [shared, ("now", "Checking…", None), ("to_come", None, None), *later]
     elif status in ("with_review_desk", "needs_you"):
-        hid = conn.execute(
-            "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden'",
+        hid = conn.execute(  # the kind names the detail when there is exactly one (min of one is that one)
+            "SELECT count(*) AS n, min(kind) AS kind FROM hidden_details "
+            "WHERE idea_uuid = %s AND state = 'hidden'",
             (idea["id"],),
         ).fetchone()
         sim = conn.execute(
@@ -122,7 +126,7 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         found = None if not n_sim and check.couldnt_check(conn, idea) else n_sim
         nodes = [
             shared,
-            ("done", checked_line(int(hid["n"]) if hid else 0, found), None),
+            ("done", checked_line(int(hid["n"]) if hid else 0, found, hid["kind"] if hid else None), None),
             ("now", f"By {by}" if by else None, None),
             *later,
         ]
