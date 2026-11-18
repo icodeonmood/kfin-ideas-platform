@@ -24,6 +24,7 @@ import type {
 import type { FileItem } from "@/lib/contracts/entities";
 
 import { capital, decisionSentence, type Decided } from "./decision";
+import { AskToJoin } from "./join-build";
 import { BackLink, backToList, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
@@ -533,8 +534,16 @@ export function SharerScreen({
               ) : null}
             </div>
           ) : null}
-          {/* TODO(lane B): "Ask to join the build team" (POST /ideas/:id/join-build) follows the Pick (L-DECIDE/6,
-              BLD-E012); it shows here once lane B's endpoint lands. */}
+          {d ? (
+            // L-DECIDE/6: "Ask to join the build team" after a Pick, then the line it leaves (J-REVIEW/6, BLD-E053)
+            <AskToJoin
+              ideaId={ref}
+              d={d}
+              say={setSaid}
+              failed={setFailed}
+              away={() => title.current?.focus()}
+            />
+          ) : null}
           {failed ? <Status kind="error" title={TRY_AGAIN} /> : null}
         </div>
       </article>
