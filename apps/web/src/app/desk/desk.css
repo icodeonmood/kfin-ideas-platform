@@ -88,10 +88,6 @@
 .rd-dots i.on {
   background: var(--ink);
 }
-.rd-time .pill {
-  gap: 6px;
-  white-space: nowrap;
-}
 .rd-by {
   white-space: nowrap;
   color: var(--ink2);
