@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// One time base for the whole run, which the workers inherit: the journeys make their synthetic people from it, so a
+// worker started after a failed step makes the same people, and what an earlier step carried on (carriedFor) is still
+// theirs. A time read in each worker gave a new person after every failure.
+process.env.JOURNEYS_RUN_SECONDS ??= String(Math.floor(Date.now() / 1000));
+
 /**
  * Lane G's journey suite (see `lib.ts`). Separate from `e2e/`, so `make e2e` and the gates job do not run it; the
  * journeys workflow does (`.github/workflows/journeys.yml`). Locally, against a stack with the 1% Club seed:

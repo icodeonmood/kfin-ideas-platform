@@ -14,6 +14,7 @@
  * seeded record, but changes only the records SEED gives to its journey, so journeys never break each other.
  * Synthetic data only (non-negotiable 11).
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -93,7 +94,7 @@ export async function signInAs(page: Page, who: Person): Promise<void> {
  * IDs SYN-18000 to SYN-19999 are outside the seed's range; the tag keeps two steps of one run apart.
  */
 export async function signInFresh(page: Page, tag: string): Promise<{ emp: string; name: string }> {
-  const n = 18000 + (((Date.now() / 1000 + hash(tag)) % 2000) | 0);
+  const n = 18000 + ((runSeconds() + hash(tag)) % 2000);
   const emp = `SYN-${n}`;
   const name = `Journey ${tag}`;
   await signIn(page, emp, { email: `journey.${n}.1pc@kfintech.example`, name });
@@ -174,6 +175,41 @@ export async function seeded(key: SeedKey): Promise<SeededIdea> {
       title: String(row.title),
       status: String(row.status),
     };
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * The run's time base in seconds, the same in every worker (playwright.config.ts sets it once): a journey's synthetic
+ * people are made from it, so they stay the same people after a failed step starts a new worker.
+ */
+export function runSeconds(): number {
+  return Number(process.env.JOURNEYS_RUN_SECONDS) || Math.floor(Date.now() / 1000);
+}
+
+/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
+const SESSION_COOKIE = "ideas_session";
+
+/**
+ * Ends the page's session on the server, as the 8 hours would (L-AUTH.rules/5), and leaves its cookie in the browser.
+ * S-02 shows "Session expired mid-draft" only to the browser still holding the cookie of a session that ran out
+ * (server/auth/session.ts expiredSession); a browser without the cookie has signed out and gets the plain sign-in.
+ * The suite's one write outside the screens: the page's own session row, matched by the cookie's hash as the
+ * server stores it (sessions.id_hash = sha256 of the token).
+ */
+export async function endSession(page: Page): Promise<void> {
+  const cookie = (await page.context().cookies()).find((c) => c.name === SESSION_COOKIE);
+  if (!cookie) throw new Error(`no ${SESSION_COOKIE} cookie: sign in before ending the session`);
+  const idHash = createHash("sha256").update(cookie.value, "utf8").digest();
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      "UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id_hash = $1 AND revoked_at IS NULL",
+      [idHash],
+    );
+    if (rowCount !== 1) throw new Error(`the page's session was not found to end (${rowCount} rows)`);
   } finally {
     await client.end();
   }
@@ -349,9 +385,10 @@ export async function snap(
   const padded = row.replace(/^\d+/, (d) => d.padStart(2, "0")); // 3 → 03, 4a → 04a, A1 stays
   const file = path.join(SHOTS_DIR, journey!, `${padded}-${screen}${label ? `-${label}` : ""}.png`);
   try {
-    if (page.isClosed()) return;
+    if (page.isClosed() || page.url() === "about:blank") return; // closed, or never used by the step
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    await page.screenshot({ path: file, fullPage: true, timeout: 10_000 });
+    // Animations finished, so a walker reads the screen as it settles, not a frame of a hand-over.
+    await page.screenshot({ path: file, fullPage: true, timeout: 10_000, animations: "disabled" });
     await info.attach(path.basename(file), { path: file, contentType: "image/png" });
   } catch {
     // A crashed page has nothing to show; the failure itself is the report.

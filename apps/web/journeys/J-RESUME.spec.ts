@@ -10,24 +10,21 @@
  * IT, DEC-105); they read Indira's Inbox and Share another way, where I2, a forwarded email that landed as a
  * draft, shows (lane E, 34249f1). I2 is read only.
  */
-import { expect, type Page } from "@playwright/test";
+import { devices, expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, seeded, signInAs, step } from "./lib";
+import { carriedFor, endSession, runSeconds, seeded, signInAs, snap, step } from "./lib";
 
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`; // "8:42 pm"
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
 const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
-/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
-const SESSION_COOKIE = "ideas_session";
-
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // --- The person, fixed for the run (a different offset from J-SHARE's people) ------------------------------------------
 
-const N = 18000 + ((Math.floor(Date.now() / 1000) + 350) % 2000);
+const N = 18000 + ((runSeconds() + 350) % 2000);
 const ME = { emp: `SYN-${N}`, name: "Journey Resumer", email: `journey.${N}.1pc@kfintech.example` };
 
 async function signInMe(page: Page): Promise<void> {
@@ -59,20 +56,29 @@ step(
   "S-04",
   "Starts on the phone, then leaves: the words are saved on the account within moments of a pause",
   { needs: ["S-04", "L-DRAFT"] },
-  async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await signInMe(page);
-    await page.goto("/share");
-    await expect(page.getByRole("heading", { level: 1, name: "What’s getting in your way?" })).toBeVisible();
-    await expect(
-      page.getByText("Nothing is shared until you send it. Saved as you go, here and on your computer."),
-    ).toBeVisible();
-    await page.getByRole("textbox", { name: /^(Describe the problem|For example: )/ }).fill(WORDS);
-    // L-DRAFT.autosave: saved within 2 seconds of the pause; the time is what the desktop shows next (row 3).
-    const saved = page.getByText(new RegExp(`^Saved at ${TIME}$`)).first();
-    await expect(saved).toBeVisible({ timeout: 5_000 });
-    carried.saved = (await saved.innerText()).replace(/^Saved at /, "").trim();
-    // Leaving is the end of the step: the context closes with nothing sent.
+  async ({ browser }, info) => {
+    // A phone as the server tells one: by its user agent (server/drafts.ts deviceOf), not by the window's width.
+    const context = await browser.newContext({ ...devices["Pixel 7"] });
+    const page = await context.newPage();
+    try {
+      await signInMe(page);
+      await page.goto("/share");
+      await expect(
+        page.getByRole("heading", { level: 1, name: "What’s getting in your way?" }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Nothing is shared until you send it. Saved as you go, here and on your computer."),
+      ).toBeVisible();
+      await page.getByRole("textbox", { name: /^(Describe the problem|For example: )/ }).fill(WORDS);
+      // L-DRAFT.autosave: saved within 2 seconds of the pause; the time is what the desktop shows next (row 3).
+      const saved = page.getByText(new RegExp(`^Saved at ${TIME}$`)).first();
+      await expect(saved).toBeVisible({ timeout: 5_000 });
+      carried.saved = (await saved.innerText()).replace(/^Saved at /, "").trim();
+      // Leaving is the end of the step: the context closes with nothing sent.
+    } finally {
+      await snap(page, info, "J-RESUME/1", "S-04", "phone");
+      await context.close();
+    }
   },
 );
 
@@ -187,8 +193,9 @@ step(
     await signInMe(page);
     await page.goto(draft);
     await expect(page.getByText(WORDS).first()).toBeVisible();
-    // The session ends (L-AUTH.rules/5), as after 8 hours: only its cookie goes, so S-02 still knows whose draft it is.
-    await page.context().clearCookies({ name: SESSION_COOKIE });
+    // The session ends on the server (L-AUTH.rules/5), as after 8 hours, and the browser keeps its cookie, so S-02
+    // knows whose draft it is.
+    await endSession(page);
     await page.reload();
     await page.waitForURL(/\/sign-in/);
     await expect(page.getByText("Sign in again to carry on", { exact: true })).toBeVisible();
