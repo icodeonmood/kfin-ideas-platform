@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deskHref, deskUrlState } from "@/lib/desk/address";
+import { addressBack, deskHref, deskUrlState } from "@/lib/desk/address";
 
 describe("S-R1.rules/4, J-BROWSE/4: the desk's tab, sort and search live in its address", () => {
   it("S-R1.rules/4 reads the tab, sort and search an address names, and null for any it does not", () => {
@@ -44,5 +44,21 @@ describe("S-R1.rules/4, J-BROWSE/4: Back restores the opened row", () => {
     expect(deskHref({ tab: "waiting", sort: "area", q: "" }, undefined, 40)).toBe(
       "/desk?tab=waiting&sort=area",
     );
+  });
+});
+
+describe("S-R1.rules/4: a list that could not be read leaves the page consistent", () => {
+  const shown = { tab: "waiting", sort: "time_left", q: "" } as const;
+
+  it("S-R1.rules/4 the address goes back to the list still on screen after a tab, sort or search that failed", () => {
+    expect(addressBack(shown, { ...shown, tab: "decided" })).toBe("/desk?tab=waiting&sort=time_left");
+    expect(addressBack(shown, { ...shown, sort: "area" })).toBe("/desk?tab=waiting&sort=time_left");
+    expect(addressBack({ ...shown, q: "sms" }, { ...shown, q: "kyc" })).toBe(
+      "/desk?tab=waiting&sort=time_left&q=sms",
+    );
+  });
+
+  it("S-R1.rules/4 nothing to put back when the list that failed is the one on screen", () => {
+    expect(addressBack(shown, { ...shown })).toBeNull();
   });
 });

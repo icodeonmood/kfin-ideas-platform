@@ -18,7 +18,7 @@ import { SearchBar } from "@/components/ui/search";
 import { Sorts } from "@/components/ui/sorts";
 import { Tabs, tabPanelProps } from "@/components/ui/tabs";
 import type { CountdownVariant, DeskResponse, DeskRow, DeskSort, DeskTab } from "@/lib/contracts";
-import { deskHref, deskUrlState, type DeskList } from "@/lib/desk/address";
+import { addressBack, deskHref, deskUrlState, type DeskList } from "@/lib/desk/address";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { useFlipList } from "@/lib/motion/flip";
 
@@ -120,7 +120,7 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   const router = useRouter();
   const body = useRef<HTMLTableSectionElement>(null);
   const loading = useRef<AbortController | null>(null);
-  // The tab, sort and search of the list on screen
+  // The tab, sort and search of the list on screen, kept with every list that lands
   const shown = useRef<DeskList>({ tab: initial.tab, sort: initial.sort, q: initialQuery });
   useFlipList(body, `${data.tab}:${data.sort}:${data.items.map((r) => r.idea_id).join(",")}`);
 
@@ -141,13 +141,22 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
       if (res.ok) {
         const next = (await res.json()) as DeskResponse;
         if (loading.current !== ctl) return "superseded";
+        shown.current = { tab: next.tab, sort: next.sort, q };
         setData(next);
         return "shown";
       }
     } catch {
-      // a newer request took over, or the network dropped; the table keeps what it had
+      // a newer request took over (it aborted this one), or the network dropped
     }
-    return loading.current === ctl ? "failed" : "superseded";
+    if (loading.current !== ctl) return "superseded";
+    // Not read: the table keeps what it had, so the tabs, the sort, the search and the address go back to that list
+    // rather than name a choice over rows it does not hold (S-R1.rules/4). The words in the search box stay.
+    const was = shown.current;
+    setView({ tab: was.tab, sort: was.sort });
+    setQuery(was.q);
+    const address = addressBack(was, { tab, sort, q });
+    if (address) window.history.replaceState(null, "", address);
+    return "failed";
   }, []);
 
   // Back to the desk: the router may restore the page from its cache, with the props it had when the person left and
