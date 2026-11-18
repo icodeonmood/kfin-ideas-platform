@@ -122,15 +122,21 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     navFor(rolesOf(role))
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
-  const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
+  const base = ["Share a problem", "Home", "Find your crew", "My ideas", "Wall", "Inbox"];
+  it("everyone gets Share a problem, Home, Find your crew, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
     expect(labels("contributor")).toEqual([...base, "Your profile and settings", "The Ember"]));
   it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
-    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
+    expect(labels("reviewer", "main")).toEqual(["Home", "Find your crew", "Wall", "Inbox", "Review desk"]);
     expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
   });
   it("S-R4: the core committee sees Ones Committee in the sidebar until Monday, and Delivery in the account menu", () => {
-    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
+    expect(labels("core_committee", "main")).toEqual([
+      "Home",
+      "Find your crew",
+      "Wall",
+      "Inbox",
+      "Ones Committee",
+    ]);
     expect(labels("core_committee", "account")).toEqual([
       "Your profile and settings",
       "The Ember",
@@ -139,10 +145,16 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(labels("contributor", "account")).toEqual(["Your profile and settings", "The Ember"]);
   });
   it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
-    expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
+    expect(labels("committee", "main")).toEqual([
+      "Home",
+      "Find your crew",
+      "Wall",
+      "Inbox",
+      "Ones Committee",
+    ]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
-    expect(labels("admin", "main")).toEqual(["Home", "Wall", "Inbox"]);
+    expect(labels("admin", "main")).toEqual(["Home", "Find your crew", "Wall", "Inbox"]);
   });
   it("C-PHONE-TABS.bar: the tab bar is Home, My ideas, Share, Wall, Inbox for everyone", () => {
     for (const role of ["contributor", "reviewer", "core_committee", "admin"]) {
@@ -151,6 +163,23 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
         .sort((a, b) => (a.tab ?? 0) - (b.tab ?? 0))
         .map((n) => n.key);
       expect(tabs).toEqual(["home", "my-ideas", "share", "wall", "inbox"]);
+    }
+  });
+  it("C-SIDEBAR.anatomy, S-H2: Find your crew is everyone's, straight after Home, at /crew, with no phone tab", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "admin"]) {
+      const nav = navFor(rolesOf(role));
+      expect(nav.find((n) => n.key === "crew")).toEqual({
+        key: "crew",
+        label: "Find your crew",
+        href: "/crew",
+        place: "main",
+      });
+      expect(
+        nav
+          .filter((n) => n.place === "main")
+          .map((n) => n.key)
+          .slice(0, 2),
+      ).toEqual(["home", "crew"]);
     }
   });
   it("one Share a problem button; My ideas shows only when the sidebar is folded", () => {
@@ -215,14 +244,22 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(shadowed).toEqual([]);
   });
 
-  it("the Ones console: who may propose, approve and carry out (DEC-040)", () => {
-    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals").kind).toBe("allow");
-    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals").kind).toBe("deny");
-    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/decide").kind).toBe("allow");
-    expect(decide(rolesOf("ceo"), "POST", "/api/ones/proposals/4/decide").kind).toBe("deny");
-    expect(decide(rolesOf("admin"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("allow");
-    expect(decide(rolesOf("core_committee"), "POST", "/api/ones/proposals/4/carry-out").kind).toBe("deny");
-    expect(decide(rolesOf("contributor"), "GET", "/api/ones/console").kind).toBe("deny");
+  it("L-ONES BLD-E049 (DEC-106): the Ones console, the old leaderboard and the proposals API are retired; /ones/write/:id's message route stays", () => {
+    for (const role of ["contributor", "core_committee", "core_chair", "ceo", "admin"]) {
+      for (const [method, url] of [
+        ["GET", "/api/ones/console"],
+        ["GET", "/api/ones/leaderboard"],
+        ["POST", "/api/ones/proposals"],
+        ["POST", "/api/ones/proposals/4/decide"],
+        ["POST", "/api/ones/proposals/4/carry-out"],
+        ["POST", "/api/ones/proposals/4/withdraw"],
+        ["GET", "/api/ones/proposals/4/invite"],
+        ["POST", "/api/ones/proposals/4/invites"],
+      ] as const)
+        expect(decide(rolesOf(role), method, url).kind, `${role} ${method} ${url}`).toBe("unknown"); // refused 404
+    }
+    // The committee, the CEO or an invited colleague writes at /ones/write/:id; the worker checks which (BLD-E042).
+    expect(decide(rolesOf("contributor"), "POST", "/api/ones/proposals/4/messages").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "GET", "/api/ones").kind).toBe("allow");
     expect(decide(rolesOf("contributor"), "POST", "/api/me/one/number").kind).toBe("allow");
   });

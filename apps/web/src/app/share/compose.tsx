@@ -25,10 +25,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
-import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
+import { IconDevice, IconLaptop, IconMail, IconPencil } from "@/components/compose/icons";
 import {
   DraftPanel,
   PANEL_COPY,
+  readinessOf,
   type PanelHandle,
   type PanelInterview,
   type Readiness,
@@ -41,6 +42,7 @@ import { teamUpOpener, useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
 import type {
+  Device,
   Draft,
   DraftListItem,
   DraftStreamEvent,
@@ -252,7 +254,15 @@ export function Compose({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [existing, setExisting] = useState<DraftListItem | null>(null);
-  const [pickedUp, setPickedUp] = useState(false);
+  /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." and the device it names, as they were when the
+   * draft was opened, or null when there is no "Picked up" line. Saves made here afterwards do not change it
+   * (BLD-C158). `earlier` holds the messages it was picked up with: they read "Friday, 8:42 pm, on your phone"
+   * (S-04B.layout/1, BLD-C185). */
+  const [pickedUp, setPickedUp] = useState<{
+    line: string;
+    device: Device | null;
+    earlier: ReadonlySet<string>;
+  } | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
@@ -309,6 +319,12 @@ export function Compose({
     setSave("changed");
   }, []);
 
+  // The router of the latest render, for the load below, which runs once per draft.
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
+
   // ── loading ─────────────────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let gone = false;
@@ -317,13 +333,27 @@ export function Compose({
         .get(givenId, true)
         .then((d) => {
           if (gone) return;
+          // Merged into another idea: nothing more to tell, so Check it shows it read-only (J-SIMILAR/6a, BLD-C155).
+          // The page sends it there first; this covers a page that could not tell.
+          if (d.merged_into) {
+            routerRef.current.replace(`/share/${encodeURIComponent(givenId)}/check`);
+            return;
+          }
           adopt(d, d.run?.state === "running" ? d.run.id : null);
           setSave("saved");
           const ageMs = Date.now() - new Date(d.saved_at).getTime();
-          setPickedUp(
+          const back =
             !handedOver.has(givenId) &&
-              d.run?.state !== "running" &&
-              (!d.saved_on?.this_device || ageMs > 2 * 60_000),
+            d.run?.state !== "running" &&
+            (!d.saved_on?.this_device || ageMs > 2 * 60_000);
+          setPickedUp(
+            back
+              ? {
+                  line: d.saved_labels?.resume ?? "",
+                  device: d.saved_on?.device ?? null,
+                  earlier: new Set(d.messages.map((m) => m.id)),
+                }
+              : null,
           );
           const waiting = client.outbox(givenId);
           if (waiting.length) setPending(waiting.map((m) => ({ ...m, queued: true })));
@@ -955,20 +985,23 @@ export function Compose({
 
   // ── what the screen shows ─────────────────────────────────────────────────────────────────────────────────
   const messages: Message[] = draft?.messages ?? [];
+  // S-04B.layout/2: each message keeps its own receipt, as the draft read keeps it (BLD-C184). Between a run's end
+  // on the stream and the read that follows, the last message shows the receipt the stream just gave; so does a
+  // read that keeps only the latest receipt.
+  const perMessage = messages.some((m) => Array.isArray(m.receipt));
+  const streamedOnly = !live.running && draft?.run?.state === "running";
+  const receiptFor = (m: Message, last: boolean): string[] =>
+    last && (streamedOnly || !perMessage) && live.receipt.length ? live.receipt : (m.receipt ?? []);
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
   const minChars = draft?.min_chars ?? MIN_CHARS;
   const sendingDetail = pending.length > 0;
-  const readiness: Readiness = !chars
-    ? "more"
-    : chars < minChars
-      ? "more"
-      : sendingDetail
-        ? "finishing"
-        : live.running
-          ? "working"
-          : live.ready || draft?.ready
-            ? "ready"
-            : "more"; // nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1)
+  const readiness: Readiness = readinessOf({
+    chars,
+    minChars,
+    sending: sendingDetail,
+    running: live.running,
+    ready: live.ready || Boolean(draft?.ready),
+  });
   const checkHref = draftId ? `/share/${draftId}/check` : null;
   const hiddenActions = draftId
     ? {
@@ -1118,13 +1151,13 @@ export function Compose({
                 tabIndex={0}
               >
                 <div className="tin">
-                  {pickedUp && draft ? (
+                  {pickedUp !== null && draft ? (
                     <div className="ban" role="region" aria-label="Your draft">
                       <span className="ic" aria-hidden="true">
-                        <IconDevice size={16} />
+                        <SavedOnIcon device={pickedUp.device} size={16} />
                       </span>
                       <p className="bt">{COMPOSE_COPY.pickedUp}</p>
-                      <p className="bm">{draft.saved_labels?.resume}</p>
+                      <p className="bm">{pickedUp.line}</p>
                       <div className="ba">
                         <button type="button" className="tb" onClick={() => router.push("/share?new=1")}>
                           {COMPOSE_COPY.startNewInstead}
@@ -1150,6 +1183,7 @@ export function Compose({
                     <MessageItem
                       key={m.id}
                       message={m}
+                      when={pickedUp?.earlier.has(m.id) ? (m.at_label_earlier ?? m.at_label) : m.at_label}
                       quote={quote}
                       onEdit={async (text) => {
                         if (!draftId) return;
@@ -1157,7 +1191,9 @@ export function Compose({
                         adopt(out.draft, out.run_id);
                       }}
                       last={i === messages.length - 1 && pending.length === 0}
-                      receipt={question ? [] : live.receipt}
+                      receipt={
+                        question ? [] : receiptFor(m, i === messages.length - 1 && pending.length === 0)
+                      }
                       suggestions={question ? [] : live.suggestions}
                       running={live.running}
                       onSuggestion={(s) => {
@@ -1198,7 +1234,7 @@ export function Compose({
               {existing && !hasWordsTyped(box) ? (
                 <div className="ban" role="region" aria-label="Your earlier draft">
                   <span className="ic" aria-hidden="true">
-                    <IconDevice />
+                    <SavedOnIcon device={existing.saved_on?.device ?? null} />
                   </span>
                   <p className="bt">
                     {COMPOSE_COPY.existing(existing.saved_labels?.prompt_day ?? "", existing.title)}
@@ -1306,12 +1342,19 @@ export function Compose({
   );
 }
 
+/** The banner's mark follows the device its line names: the drawn phone, or a laptop (BLD-C185). A line that
+ * names no device keeps the phone the boards draw. */
+function SavedOnIcon({ device, size }: { device: Device | null; size?: number }) {
+  return device === "laptop" ? <IconLaptop size={size} /> : <IconDevice size={size} />;
+}
+
 function hasWordsTyped(box: string): boolean {
   return box.trim().length > 0;
 }
 
 function MessageItem({
   message,
+  when,
   quote,
   onEdit,
   last,
@@ -1321,6 +1364,8 @@ function MessageItem({
   onSuggestion,
 }: {
   message: Message;
+  /** "Just now", or "Friday, 8:42 pm, on your phone" for a message picked up from a saved draft. */
+  when: string | undefined;
   quote: string | null;
   onEdit(text: string): Promise<void>;
   last: boolean;
@@ -1397,7 +1442,7 @@ function MessageItem({
         </div>
         <div className="mact">
           <span className="who">{COMPOSE_COPY.you}</span>
-          <span className="meta">{message.at_label}</span>
+          <span className="meta">{when}</span>
           {editing ? null : (
             <button
               type="button"
@@ -1413,7 +1458,7 @@ function MessageItem({
           )}
         </div>
       </div>
-      {last && receipt.length && !running ? (
+      {receipt.length && !(last && running) ? (
         <div className="sysg">
           {receipt.map((line) => (
             <div key={line} className="msg sys">
@@ -1421,7 +1466,7 @@ function MessageItem({
               <p>{line}</p>
             </div>
           ))}
-          {suggestions.length ? (
+          {last && suggestions.length ? (
             <div className="nexts">
               {suggestions.slice(0, 2).map((s) => (
                 <button key={s} type="button" className="chip nx" onClick={() => onSuggestion(s)}>

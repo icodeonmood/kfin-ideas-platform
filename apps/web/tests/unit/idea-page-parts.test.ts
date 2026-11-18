@@ -2,8 +2,9 @@
 /**
  * The idea page's client parts (BLD-E044). The way back (P-ROUTES.state, BLD-E021) is kept per history entry and keyed
  * on the page's own route, never on window.location, so moving from one idea to another without `from` and `back` (a
- * similar-idea tile) never carries the first idea's way back over; only a way back to the Wall or My ideas is ever
- * restored, as the worker's `safe_back` allows. The phone's reference copies itself as PhoneStatus.md draws it.
+ * similar-idea tile) never carries the first idea's way back over; only a way back to the Wall or My ideas, as the
+ * worker's `safe_back` allows, or to a joined idea's lead (`back_link`, S-09.layout/1) is ever restored. The phone's
+ * reference copies itself as PhoneStatus.md draws it.
  * Synthetic references only.
  */
 import { act, createElement, Fragment, useInsertionEffect, useState } from "react";
@@ -142,6 +143,17 @@ describe("BLD-E044: the way back follows the idea on screen, not the address", (
     expect(shown()).toEqual(WALL_BY_CREW);
   });
 
+  it("S-09.layout/1: a joined idea opened from its lead keeps the way back to the lead for a reload", () => {
+    const LEAD: Way = { label: `Back to ${A}`, to: `/ideas/${A}` };
+    window.history.replaceState({ __NA: true }, "", `/ideas/${B}?from=${A}`);
+    open(B, LEAD, "keep");
+    expect(window.location.pathname + window.location.search).toBe(`/ideas/${B}`);
+    expect(kept()).toEqual({ path: `/ideas/${B}`, way: LEAD });
+
+    open(B, WALL, null);
+    expect(shown()).toEqual(LEAD);
+  });
+
   it("from=share holds Home for the visit and is never kept (S-06.rules/6)", () => {
     window.history.replaceState({ __NA: true }, "", `/ideas/${B}?from=share`);
     open(B, { label: "Home", to: "/home" }, "once");
@@ -154,7 +166,7 @@ describe("BLD-E044: the way back follows the idea on screen, not the address", (
   });
 });
 
-describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the worker's safe_back allows", () => {
+describe("BLD-E044, S-09.layout/1: only a way back to the Wall, My ideas or a lead idea is restored, as the worker allows", () => {
   it.each([
     "/wall",
     "/wall?sort=crew",
@@ -162,6 +174,7 @@ describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the 
     "/my-ideas",
     "/my-ideas?filter=needs_you",
     "/my-ideas/drafts",
+    "/ideas/IDEA-2026-001481",
   ])("accepts %s", (to) => {
     expect(allowedBack(to)).toBe(true);
   });
@@ -178,7 +191,18 @@ describe("BLD-E044: only a way back to the Wall or My ideas is restored, as the 
     "/wallet",
     "/my-ideasx",
     "/home",
-    "/ideas/IDEA-2026-001412",
+    "/ideas/IDEA-2026-00148",
+    "/ideas/IDEA-2026-001481/x",
+    "/ideas/IDEA-2026-001481?from=wall",
+    "/ideas/IDEA-2026-001481#top",
+    "/ideas/IDEA-2026-001481%2F..",
+    "/ideas/IDEA-2026-001481/../../x",
+    "/ideas/IDEA-2026-0014812",
+    "/ideas/IDEA-26-001481",
+    "/ideas/foo",
+    "/ideas",
+    "//ideas/IDEA-2026-001481",
+    "/ideas/IDEA-2026-001481\n",
     "",
   ])("rejects %j", (to) => {
     expect(allowedBack(to)).toBe(false);

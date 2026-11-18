@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
+import { QuestionsCard } from "@/components/review/qcard";
 import { Status } from "@/components/status";
 import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
+import { fileBadge, fileKind } from "@/components/ui/file";
 import { Pill } from "@/components/ui/pill";
 import { Track } from "@/components/ui/track";
 import type {
@@ -21,13 +23,11 @@ import type {
   SimilarTile,
 } from "@/lib/contracts/api";
 import type { FileItem } from "@/lib/contracts/entities";
-import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import { capital, decisionSentence, type Decided } from "./decision";
-import { BackLink, CopyRef, useWay } from "./parts";
+import { AskToJoin } from "./join-build";
+import { BackLink, backToList, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
-
-type OpenSet = NonNullable<SharerQuestionSetResponse>;
 
 const TRY_AGAIN = "We can't do that just now. Please try again in a minute.";
 // The decision's or the questions' part could not be read: Status.md draws no error line, so one neutral line
@@ -130,13 +130,12 @@ function Worth({ row }: { row: SharedRow }) {
   );
 }
 
-const FILE_BADGE: Record<string, string> = {
-  image: "JPG",
-  pdf: "PDF",
-  sheet: "XLS",
-  doc: "DOC",
-  audio: "AUDIO",
-};
+/** C-FILE.row's badge: "Link" for a link and "Folder" for a folder; a file's type comes from its name's ending, and
+ * one C-FILE doesn't list reads "File". A link's address is never read for a type (".example" gave "EXAM";
+ * BLD-E062, J-RECOVER/14). */
+export function fileTileBadge(f: Pick<FileItem, "kind" | "name">): string {
+  return fileBadge(f.kind === "link" || f.kind === "folder" ? f.kind : fileKind(f.name));
+}
 
 function fileSize(f: FileItem): string {
   const bits: string[] = [];
@@ -151,11 +150,10 @@ function fileSize(f: FileItem): string {
 }
 
 function FileTile({ f }: { f: FileItem }) {
-  const ext = (f.name.split(".").pop() ?? "").toUpperCase();
   return (
     <li className="ip-file">
       <span className="ip-badge" aria-hidden="true">
-        {FILE_BADGE[f.kind] ?? (ext.slice(0, 4) || "FILE")}
+        {fileTileBadge(f)}
       </span>
       <span className="ip-file-t">
         <span className="ip-file-n">{f.name}</span>
@@ -174,55 +172,16 @@ function FileTile({ f }: { f: FileItem }) {
   );
 }
 
-/** C-QCARD on the sharer's card: who asked, the questions and the part each answer goes to, the deadline. */
-function QuestionsCard({ set, answerTo }: { set: OpenSet; answerTo: string }) {
-  const first = set.by.first_name;
-  const open = set.questions.filter((q) => !q.answer?.sent);
-  return (
-    <div className="ip-qcard">
-      <div className="ip-q-by">
-        <Avatar initials={set.by.initials} size={32} ring="neutral" />
-        <p>
-          {first} from the review desk
-          {set.sent_at ? `, ${dayLabel(set.sent_at)}, ${clockLabel(set.sent_at)}` : ""}
-        </p>
-      </div>
-      <h2 className="ip-q-h">
-        {first} has {set.count} {set.count === 1 ? "question" : "questions"} for you
-      </h2>
-      <ol className="ip-q-list">
-        {(open.length ? open : set.questions).map((q) => (
-          <li key={q.id}>
-            <p className="ip-q-t">{q.text}</p>
-            <p className="ip-q-part">
-              Answer goes to <span className="ip-q-chip">{q.part_name}</span>
-            </p>
-          </li>
-        ))}
-      </ol>
-      <div className="ip-q-foot">
-        <p className="ip-q-due">
-          {set.deadline}. One at a time, typed or spoken.{" "}
-          <Pill variant={set.countdown.variant === "normal" ? "neutral" : set.countdown.variant}>
-            {set.countdown.label}
-          </Pill>
-        </p>
-        <ButtonLink href={answerTo}>Answer the questions</ButtonLink>
-      </div>
-    </div>
-  );
-}
-
 function ReversalCard({ d }: { d: Decided }) {
   const r = d.lines?.reversal;
   if (!r || !d.reversal) return null;
   return (
     <div className="ip-rcard">
-      <div className="ip-q-by">
+      <div className="ip-r-by">
         <Avatar initials={d.reversal.by.initials} size={32} ring="neutral" />
         <p>{r.from_line}</p>
       </div>
-      <h2 className="ip-q-h">{r.title}</h2>
+      <h2 className="ip-r-h">{r.title}</h2>
       {d.reversal.note ? (
         <figure className="ip-quote">
           <blockquote>“{d.reversal.note}”</blockquote>
@@ -372,6 +331,8 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
                   </Button>
                 ) : null,
               )}
+              {/* C-SIMGRID.tile: already on its crew, the row says so where Team up would be (BLD-E056) */}
+              {t.done_line ? <span className="ip-tile-done">{t.done_line}</span> : null}
             </div>
           </li>
         ))}
@@ -385,7 +346,9 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
           matchReason={preview.reason}
           fullHref={preview.to}
           onClose={() => setPreview(null)}
-          onPrimary={teamUp.open}
+          // Team up from the preview only where the tile offers it; on its crew, the preview says so instead
+          onPrimary={preview.actions.some((a) => a.op === "team_up") ? teamUp.open : undefined}
+          primaryDone={preview.done_line}
         />
       ) : null}
       {teamUp.sheet}
@@ -433,10 +396,16 @@ export function SharerScreen({
   const d = decision && !("stage_only" in decision) ? (decision as Decided) : null;
   const stages = (idea.stages ?? []) as unknown as StageWords[];
   const track = toTrack(stages);
+  // DEC-111: the worker sends the reviewer only to a sharer on the review desk or the Ones Committee; with none the
+  // decision's sentence names the review desk (decision.ts, BLD-E053)
   const reviewer = idea.review?.reviewer?.first_name ?? null;
   const ref = idea.ref ?? idea.id;
   const reversed = page.state === "reversed" && d?.lines?.reversal ? d : null;
   const qset = page.card_from === "question_set" || idea.has_open_questions ? questions : null;
+  // Questions from the desk: lane B's C-QCARD leads the card (S-06.states). Answers sent with a question still open:
+  // "Sent." leads and the card, partly answered, sits under it for the rest (BLD-E051).
+  const asking = page.card_from === "question_set";
+  const qcard = qset ? <QuestionsCard ideaId={ref} set={qset} variant="status" /> : null;
 
   const card: { lead: string; rest: string; phone_rest?: string } | null =
     page.card ??
@@ -485,7 +454,9 @@ export function SharerScreen({
       <nav className="ip-crumb ip-desk" aria-label="Breadcrumb">
         <ol>
           <li>
-            <Link href={crumb.to}>{crumb.label}</Link>
+            <Link href={crumb.to} onClick={backToList(crumb.to)}>
+              {crumb.label}
+            </Link>
           </li>
           <li aria-current="page">{crumb.current}</li>
         </ol>
@@ -526,9 +497,11 @@ export function SharerScreen({
         <p className="ip-card-ref ip-desk">{ref}</p>
         <p className="ip-card-ref ip-phone">{page.reference_line ?? ref}</p>
         <div className="ip-card-body">
-          {qset ? <QuestionsCard set={qset} answerTo={`/ideas/${encodeURIComponent(ref)}/answer`} /> : null}
+          {asking ? qcard : null}
           {reversed ? <ReversalCard d={reversed} /> : null}
-          {card && !qset && !reversed ? (
+          {card && !asking && !reversed ? (
+            // S-06.layout/2: the first clause in white, the rest dimmer and on its own line, as Status.md draws the
+            // decided, answered and withdrawn states (J-TRACK/7, J-REVIEW/6); "Just shared" keeps one line
             <p className="ip-card-s">
               <span className="ip-lead">{card.lead}</span>{" "}
               {card.phone_rest ? (
@@ -536,11 +509,12 @@ export function SharerScreen({
                   <span className="ip-desk">{card.rest}</span>
                   <span className="ip-phone">{card.phone_rest}</span>
                 </>
-              ) : (
-                card.rest
-              )}
+              ) : card.rest ? (
+                <span className="ip-rest">{card.rest}</span>
+              ) : null}
             </p>
           ) : null}
+          {!asking ? qcard : null}
           {partFailed && !card && !qset ? <Status kind="error" title={PART_FAILED} /> : null}
           {page.merged ? (
             // The card's sentence already says where it went and by whom (S-06.rules/4): the note and the link
@@ -565,8 +539,10 @@ export function SharerScreen({
               ) : null}
             </div>
           ) : null}
-          {/* TODO(lane B): "Ask to join the build team" (POST /ideas/:id/join-build) follows the Pick (L-DECIDE/6,
-              BLD-E012); it shows here once lane B's endpoint lands. */}
+          {d ? (
+            // L-DECIDE/6: "Ask to join the build team" after a Pick, then the line it leaves (J-REVIEW/6, BLD-E055)
+            <AskToJoin ideaId={ref} d={d} failed={setFailed} away={() => title.current?.focus()} />
+          ) : null}
           {failed ? <Status kind="error" title={TRY_AGAIN} /> : null}
         </div>
       </article>
@@ -603,11 +579,17 @@ export function SharerScreen({
 
       <div className="ip-cols">
         <div className="ip-main">
-          {d?.decision.reason && !reversed ? (
-            <section className="ip-sec ip-reason" aria-labelledby="ip-reason-h">
-              <h2 id="ip-reason-h" className="ip-h2">
-                {d.decision.reason_heading}
-              </h2>
+          {/* After any reversal the desk's reason no longer stands: the committee's note says why (BLD-E058) */}
+          {d?.decision.reason && !reversed && !d.reversal ? (
+            <section
+              className="ip-sec ip-reason"
+              aria-labelledby={d.decision.reason_heading ? "ip-reason-h" : undefined}
+            >
+              {d.decision.reason_heading ? (
+                <h2 id="ip-reason-h" className="ip-h2">
+                  {d.decision.reason_heading}
+                </h2>
+              ) : null}
               <blockquote className="ip-reason-q">“{d.decision.reason}”</blockquote>
               <p className="ip-reason-by">{capital(d.decision.by_line)}</p>
             </section>
@@ -623,7 +605,13 @@ export function SharerScreen({
                 <div key={r.part} className="ip-dl-row">
                   <dt>{r.label}</dt>
                   <dd>
-                    {r.part === "cost" && r.figures ? <Worth row={r} /> : <p className="ip-val">{r.value}</p>}
+                    {r.part === "cost" && r.figures ? (
+                      <Worth row={r} />
+                    ) : !r.value && r.empty_line ? (
+                      <p className="ip-val ip-mute">{r.empty_line}</p>
+                    ) : (
+                      <p className="ip-val">{r.value}</p>
+                    )}
                     <Answers answers={r.answers} />
                   </dd>
                 </div>
@@ -740,8 +728,33 @@ export function SharerScreen({
                   )}
                 </p>
               ) : null}
-              {/* TODO(lane F): the conversation's latest entries (S-06.layout/8, L-CONVO): no entries field on
-                  SharerView yet; the card carries the count, its lines and the link. */}
+              {/* The card's messages, in time order: once the desk has decided, its decision, and after a reversal
+                  the Ones Committee's, each outlined as Status.md draws them, the committee's face in ink (BLD-E058).
+                  DEC-111: the review desk itself comes with no initials, so no face, as on S-08. TODO(lane F): the
+                  conversation's other entries (S-06.layout/8, L-CONVO). */}
+              {conv.messages?.length ? (
+                <ol className="ip-msgs">
+                  {conv.messages.map((m) => (
+                    <li
+                      key={m.id}
+                      className={[
+                        "ip-msg",
+                        m.kind === "decision" || m.kind === "reversal" ? "dec" : "",
+                        m.kind === "reversal" ? "oc" : "",
+                        m.from.initials ? "" : "no-face",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {m.from.initials ? <Avatar initials={m.from.initials} size={32} /> : null}
+                      <p className="ip-msg-h">
+                        <b>{m.from_label}</b>, {m.at_label}
+                      </p>
+                      <p className="ip-msg-b">{m.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </section>
           ) : null}
           <SimilarCard similar={page.similar} />

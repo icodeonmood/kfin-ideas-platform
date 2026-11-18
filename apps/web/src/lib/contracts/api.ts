@@ -245,7 +245,7 @@ export type SettingsError = ApiError<"bad_setting" | "teams_off" | "try_again" |
 export interface ShellResponse {
   inbox_unread: number;
   drafts: { id: string; title: string; saved_label: string }[];
-  ideas: { id: string; title: string; status_dot: string }[];
+  ideas: { id: string; title: string; status_dot: string; status_label: string }[];
   desk?: { waiting: { id: string; title: string; label: string }[] };
   committee?: { closing: { id: string; title: string; label: string }[] };
 }
@@ -489,7 +489,7 @@ export interface LinkWords {
   accessible_name?: string;
 }
 export interface WindowCountdown {
-  label: string; // "3 days left", "07:38 left", "Overdue"
+  label: string; // "3 days left", "07:38 left", "Overdue by 5 hours" (F-COPY.plurals/3)
   variant: "neutral" | "warn" | "bad";
   until: IsoDate;
 }
@@ -549,6 +549,8 @@ export interface SharedRow {
   part: IdeaPart | "area";
   label: string;
   value: string;
+  /** A part left empty: "Not given.", as S-R2 reads it (BLD-E057). */
+  empty_line?: string;
   answers?: SharerAnswer[];
   figures?: Record<string, Record<string, string>>;
 }
@@ -572,7 +574,10 @@ export interface SimilarTile {
   count_line: string;
   my_state: "none" | "request_sent" | "on_crew";
   to: string;
+  /** No "team_up" when the viewer is already on the idea's crew (BLD-E056): `done_line` stands in its place. */
   actions: { label: string; op: "preview" | "team_up"; accessible_name: string }[];
+  /** C-SIMGRID.tile after approval: "On the crew", in the action row where Team up would be. */
+  done_line?: string;
 }
 export type SharerPageState =
   | "just_shared"
@@ -586,6 +591,22 @@ export type SharerPageState =
   | "being_built"
   | "shipped"
   | "merged";
+/**
+ * A message in S-06's "You and the review desk" (S-06.layout/8, BLD-E058): the desk's decision, "Picked. <reason>",
+ * and after a reversal the Ones Committee's, its words the committee's note. DEC-111: outside the review desk and the
+ * Ones Committee the desk's `from` is the desk itself ("The review desk", no id, no initials, so no face), as lane
+ * F's S-08 sends it; the committee member is named, as lane B's reversal card names them.
+ */
+export interface SharerCardMessage {
+  id: string;
+  kind: "decision" | "reversal";
+  from: PersonRef;
+  from_label: string; // "The review desk", "Meera from the review desk", "Rohan Mehta from the Ones Committee"
+  at: IsoDate;
+  at_label: string; // "Monday 16 November, 4:58 pm"
+  by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
+  text: string;
+}
 /** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
 export interface SharerView {
   view: "sharer";
@@ -603,6 +624,7 @@ export interface SharerView {
     }[];
     files: FileItem[];
     edit_window?: { open: boolean; closes_at?: IsoDate; opened_by_desk_at?: IsoDate };
+    // `reviewer` only for a sharer on the review desk or the Ones Committee (DEC-111, BLD-E053)
     review?: { decide_by: IsoDate; reviewer?: PersonRef; opened_at?: IsoDate };
     has_open_questions: boolean;
     kept_separate: boolean;
@@ -665,6 +687,8 @@ export interface SharerView {
       empty_line?: string;
       phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
+      /** The card's messages in time order: the desk's decision, then any reversal by the committee (BLD-E058). */
+      messages?: SharerCardMessage[];
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
     merged: { to: string; title: string; line: string; note: string; at: IsoDate; link: LinkWords } | null;
@@ -718,15 +742,16 @@ export type WithdrawResponse = SharerView;
 export type RestoreResponse = SharerView;
 
 // ---------------------------------------------------------------------------------------------------------------
-// A-API.my-ideas: lane E owns this section. `GET /me/ideas` (S-07). The whole list state is in the URL
-// (P-ROUTES.state): `list`, `filter`, `sort`, `q` and `row`, the row to come back to. Search here is a plain text
-// match on title, short summary and reference; asking in your own words is lane F's (L-SEARCH) on the same `q`.
+// A-API.my-ideas: lane E owns this section. `GET /me/ideas` (S-07): `list`, `filter`, `sort` and `row`, the row to come
+// back to, in the URL (P-ROUTES.state). `POST /me/ideas` with a `MyIdeasQuery` body is the same read with the search
+// `q`, whose words go in no URL (DEC-110). Search here is a plain text match on title, short summary and reference;
+// asking in your own words is lane F's (L-SEARCH) on the same `q`.
 // ---------------------------------------------------------------------------------------------------------------
 export interface MyIdeasQuery {
   list?: MyIdeasList;
   filter?: MyIdeasFilter;
   sort?: MyIdeasSort;
-  q?: string;
+  q?: string; // POST body only (DEC-110); at most 200 characters
   row?: string;
 }
 export interface MyIdeaRow {
@@ -740,7 +765,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
-    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…", for the review desk and the Ones Committee only (DEC-111)
     action: {
       label: string;
       to?: string;
@@ -772,8 +797,8 @@ export interface MyIdeasResponse {
   counts: Record<MyIdeasFilter, number>; // per filter, for the current list
   lists: Record<MyIdeasList, number>; // per list, for the current filter
   state: { list: MyIdeasList; filter: MyIdeasFilter; sort: MyIdeasSort; q: string; row: string | null };
-  query: string; // the canonical query string, defaults left out
-  url: string; // "/my-ideas?list=teamed&sort=stage"
+  query: string; // the canonical query string, defaults left out; never the search (DEC-110)
+  url: string; // "/my-ideas?list=teamed&sort=stage"; no link in this response carries the search
   tabs: { list: MyIdeasList; label: string; count: number; selected: boolean; to: string }[];
   filters: {
     filter: MyIdeasFilter;
@@ -834,7 +859,8 @@ export interface EditPageResponse {
     line?: string;
   };
   fields: { title: string; summary: string; often: string | null };
-  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  /** As "Show it" answers each one (hide.core.detail_view): a shown detail keeps its reason (BLD-C189). */
+  hidden: HiddenDetail[];
   sorting: SortingResponse;
   fix: (FixResponse & { included: true }) | null;
   helpers: HelpersResponse;
@@ -956,14 +982,16 @@ export interface RemindResponse {
   id: string;
   reminded_at: IsoDate;
 }
-/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. */
+/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. DEC-111: the sharer never
+ * sees who at the review desk asked, so `by` is null on this read (the desk's own reads keep the reviewer). */
 export type SharerQuestionSetResponse =
-  | (QuestionSetView & {
+  | (Omit<QuestionSetView, "by"> & {
+      by: null;
       idea: { id: string; title: string };
       countdown: Countdown;
       deadline: string; // "Answer by Thursday 19 November, 6 pm"
       progress: string; // "1 of 3 answered"
-      send_label: string; // "Send 1 answer to Meera", or "Answer at least one question"
+      send_label: string; // "Send 1 answer to the review desk", or "Answer at least one question"
     })
   | null;
 export interface SaveAnswerRequest {
@@ -989,18 +1017,18 @@ export interface SendAnswersResponse {
   count: number;
   sent_at: IsoDate;
   progress: string;
-  sent_line: string; // "Sent to Meera, 4:32 pm"
+  sent_line: string; // "Sent to the review desk, 4:32 pm" (DEC-111: never the reviewer's name)
   spare: string; // "Answered with 3 days to spare"
-  reviewer_first_name: string;
-  decides_by: string | null; // "Meera decides by Friday 20 November"
+  decides_by: string | null; // "The review desk decides by Friday 20 November"
 }
 
-// A-API.desk (S-R1)
+// A-API.desk (S-R1): `GET /desk?tab=&sort=`, or `POST /desk` with a `DeskQuery` body when there is a search, whose
+// words go in no URL (DEC-110)
 export type DeskTab = "to_review" | "waiting" | "answered" | "decided";
 export interface DeskQuery {
   tab?: DeskTab;
   sort?: DeskSort;
-  q?: string;
+  q?: string; // POST body only (DEC-110); at most 200 characters
 }
 export interface DeskRow {
   idea_id: string;
@@ -1052,6 +1080,9 @@ export interface ReviewerPart {
   part: IdeaPart;
   name: string;
   text: string;
+  /** What the part reads when `text` is empty (S-R2.panel, BLD-B264): "No fix suggested. It was optional." for Fix,
+   * "Nothing attached." for Attached, "Not given." for the rest. The listen script reads the same words. */
+  empty: string;
   questions: ReviewerQuestion[];
 }
 export interface WorthTile {
@@ -1311,9 +1342,13 @@ export interface CommitteeRow {
     choice: DecisionChoice | null;
     label: string;
     merged_into: string | null;
-    by_line: string; // "by Meera from the review desk, Monday 12 October"
+    // The desk and the committee: "by Meera from the review desk, Monday 12 October". The sharer and the crew
+    // (`/ideas/:id/decision`, DEC-111): "by the review desk, Monday 12 October"
+    by_line: string;
     reason: string | null;
-    reason_heading: string; // "The review desk's reason, as Kavya read it"
+    // The committee (S-R4): "The review desk's reason, as Kavya read it". null for the sharer and the crew: Status.md
+    // draws no heading over the reason
+    reason_heading: string | null;
   };
   window: {
     state: "open" | "extended" | "reversed" | "expired";
@@ -1367,9 +1402,9 @@ export interface ReverseRequest {
 }
 /** The sharer's words for a decision (S-06; reference/copy/Status.md), for the sharer and the crew. */
 export interface SharerDecisionLines {
-  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "Meera from the review desk picked it on
-  // Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." On the
-  // joined idea's page it names the lead. null for any other decision.
+  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "The review desk picked it on Monday 16
+  // November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." (DEC-111: the desk, never
+  // the reviewer.) On the joined idea's page it names the lead. null for any other decision.
   joined_line: string | null;
   // "The Ones Committee can review this decision until Wednesday 16 December. If they change it, their note comes to
   // your Inbox. After that, it stands." While the window is open; it follows an extension. null once it closes.
@@ -1379,19 +1414,33 @@ export interface SharerDecisionLines {
     title: string; // "The Ones Committee changed the decision to not now"
     note_heading: string; // "The committee’s note to you" (the note itself is `reversal.note` on the row)
     was_line: string; // "Was: Picked"
-    was_by_line: string; // "by Meera from the review desk, Monday 16 November"
+    was_by_line: string; // "by the review desk, Monday 16 November" (DEC-111)
     final_line: string; // "This is final. It comes back to the review desk on Tuesday 16 February 2027, with your answers and crew."
     track_line: string; // "Picked, then moved to not now by the Ones Committee"
   } | null;
 }
+/** "Ask to join the build team" on S-06 (L-DECIDE.rules/6, DEC-111, BLD-B256), for the sharer and the crew. On an idea
+ * a Pick joined, it is the lead's (one team builds one fix). */
+export interface JoinBuild {
+  can_ask: boolean; // true only when an ask would succeed now (a Pick that stands, no team yet) and none was made
+  asked_at: IsoDate | null; // this person's ask; S-06 then says the ask was sent (NOT DRAWN, HR signs it off)
+  reply_by: IsoDate | null; // the Pick's team_by: "Asked. The build lead replies by 27 November."; null without one
+}
+/** POST /ideas/:id/join-build: the ask's time, the first one's on a repeat. Refusals: 403 forbidden (not the sharer or
+ * crew), 404 not_found, 409 not_picked (no Pick that stands), 409 team_chosen. */
+export interface JoinBuildResponse {
+  asked_at: IsoDate;
+}
 /** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else.
- * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. */
+ * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. `join_build` is
+ * for the sharer and the crew; null for anyone else, the desk and committee included. */
 export type DecisionForViewerResponse =
   | (CommitteeRow & {
       decided_at: IsoDate;
       return_at: IsoDate | null;
       lines: SharerDecisionLines | null;
       joined_into: string | null; // on an idea a Pick joined (status merged): the lead, whose Pick this is
+      join_build: JoinBuild | null;
     })
   | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
   | null;
@@ -1458,6 +1507,54 @@ export interface CrewResponse extends ListOf<CrewCard> {
   pending: number;
   passed: number;
 }
+/** L-CREW/5: the deck's filters, in the filter panel's order. */
+export type CrewFilterKey = "location" | "category" | "status" | "team_size" | "looking_for";
+export interface CrewFilterGroup {
+  key: CrewFilterKey;
+  label: string;
+  /** Each option's count is what it would show with the other filters as they are. */
+  options: { value: string; label: string; count: number; active: boolean }[];
+}
+/** L-CREW/9: an idea in "Your crews". `label` is "Waiting for Ravi" or "On the crew". */
+export interface YourCrew {
+  id: string;
+  title: string;
+  status: IdeaStatus;
+  lead: PersonRef;
+  state: "waiting" | "on_crew";
+  label: string;
+  request_id: string | null;
+  at: IsoDate;
+}
+/**
+ * What `GET /crew` returns (lane F, `services/worker/crew/deck.py`): `CrewResponse` plus the filter panel, the
+ * active chips, the deck's state (L-CREW/7–8), `asked` for "You asked to team up on 1 idea", the last pass for
+ * "Undo last pass", and "Your crews". `counts` keys are "<filter>:<value>".
+ */
+export interface CrewDeckResponse extends CrewResponse {
+  filters: CrewFilterGroup[];
+  active: { key: CrewFilterKey; value: string; label: string }[];
+  deck_total: number;
+  state: "cards" | "everyone_seen" | "nothing_yet";
+  asked: number;
+  last_passed: string | null;
+  your_crews?: { items: YourCrew[]; teamed_link: string };
+}
+export interface CrewPassRequest {
+  idea_id: string;
+}
+export interface CrewPassResponse {
+  passed: number;
+  last_passed: string | null;
+}
+/** "Undo last pass": the card comes back when it is still one the person could join. */
+export interface CrewUndoResponse extends CrewPassResponse {
+  restored: string | null;
+  card: CrewCard | null;
+}
+export interface CrewResetResponse extends CrewPassResponse {
+  reset: number;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // A-API.inbox
@@ -1482,6 +1579,10 @@ export interface ConversationMessageCreate {
  * (A-API.conventions/6). Event `text` is the whole line, time included ("You shared it. Saturday 14 November,
  * 10:05 am"). Question sets come by reference: the card is lane B's `C-QCARD`, filled from
  * `GET /ideas/:id/question-set` (L-CONVO/4).
+ *
+ * DEC-111: a reader outside the review desk and the Ones Committee never gets the name, initials or users.id of the
+ * person at the review desk. In their place every person field carries the desk itself, `{id: "", name: "The review
+ * desk", first_name: "The review desk", initials: ""}` (a mention: "the review desk"), and S-08 draws no face for it.
  */
 type ConvoPerson = import("./entities").PersonRef;
 export type ConversationEntryView =
@@ -1498,7 +1599,8 @@ export type ConversationEntryView =
       type: "message";
       id: string;
       from: ConvoPerson;
-      /** "Meera from the review desk", "Ravi Nair", "You". */
+      /** "Meera from the review desk" (to the desk and the committee), "The review desk" (DEC-111), "Ravi Nair",
+       * "You". */
       from_label: string;
       you: boolean;
       /** The masked copy (L-CONVO/7); "Message removed" once removed (L-CONVO/10). */
@@ -1522,8 +1624,9 @@ export type ConversationEntryView =
       count: number;
       answered: number;
       due_at: IsoDate | null;
-      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
-       * review desk asked 3 questions." for others (BLD-F065). */
+      /** The card's title in plain words: "The review desk has 3 questions about your idea" for the sharer, "The
+       * review desk asked 3 questions." for the crew and the build team (DEC-111), "Meera from the review desk asked
+       * 3 questions." for the desk and the committee (BLD-F065). */
       title: string;
       /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
        * answer is added to its part of your idea." */
@@ -1538,7 +1641,8 @@ export type ConversationEntryView =
       id: string;
       set_id: string;
       from: ConvoPerson;
-      /** "Your answers to Meera’s 3 questions". */
+      /** "Your answers to the review desk’s 3 questions" (DEC-111; "Kavya’s answers to your 3 questions" for the
+       * reviewer). */
       title: string;
       answers: {
         id: string;
@@ -1550,8 +1654,8 @@ export type ConversationEntryView =
         at: IsoDate;
         files: FileItem[];
       }[];
-      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
-       * Friday 20 November." (S-08 "Answers sent"). */
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. The review desk
+       * decides by Friday 20 November." (S-08 "Answers sent", DEC-111). */
       footer?: string;
       at: IsoDate;
       at_label: string;
@@ -1574,8 +1678,11 @@ export interface ConversationView extends Omit<Conversation, "entries" | "partic
      * shows the attach control only then. */
     can_attach: boolean;
   };
-  /** For the sharer before anyone has written ("No messages yet"). */
+  /** For the sharer before anyone has written ("No messages yet"). The body names Teams only while it is on. */
   empty?: { title: string; body: string };
+  /** Whether Teams messages go out (the `comms.teams` switch, DEC-105). S-08's side note names Teams only when this
+   * is `true`; missing counts as off (BLD-F086). */
+  teams_on?: boolean;
 }
 export interface ConversationMessageResponse {
   entry: ConversationEntryView;

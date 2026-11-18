@@ -1,8 +1,11 @@
 """S-07, My ideas: everything the person has shared or teamed up on, where each is, and the one next step for each.
 
-All list state lives in the URL (P-ROUTES.state, S-07.return/1): `list` (yours, teamed), `filter`, `sort`, `q` and
-`row` (the row opened last, for "Back where you were"). The server normalises them and returns the canonical
-query, so a link reproduces the view for whoever opens it, with only what that person may see (J-BROWSE/6).
+The list state (P-ROUTES.state, S-07.return/1) is `list` (yours, teamed), `filter`, `sort`, `q` and `row` (the row
+opened last, for "Back where you were"). All but the search live in the URL; the server normalises them and returns
+the canonical query, so a link reproduces the view for whoever opens it, with only what that person may see
+(J-BROWSE/6). The search `q` is never in a URL (DEC-110): it arrives in a POST body, and no link built here (tabs,
+filters, sorts, Copy link, Clear, a row's `back=`) carries it. A link on the screen keeps the search on screen; the
+search's own empty state ("no_results") clears it.
 
 Search here is a plain text match on the title, the short summary and the reference of the person's own list.
 Asking in your own words (`C-SEARCH` ask, `L-SEARCH`) is lane F's and arrives on the same `q`.
@@ -11,11 +14,12 @@ Asking in your own words (`C-SEARCH` ask, `L-SEARCH`) is lane F's and arrives on
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from typing import Any
 from urllib.parse import urlencode
 
 from core.db import Conn
-from ideapage import read
+from ideapage import adapters, read
 from ideapage.shape import MY_IDEAS_FILTER_LABEL, display_status
 from ideapage.track import Decided, decided
 from ideapage.words import (
@@ -29,6 +33,7 @@ from ideapage.words import (
     weekday_or_day,
 )
 from onepc import enums
+from onepc.words import REVIEW_DESK_START
 
 LISTS = tuple(enums.values("my_ideas_list"))  # yours, teamed
 SORTS = tuple(enums.values("my_ideas_sort"))  # latest, shared, stage
@@ -60,6 +65,8 @@ STAGE_RANK = {
     "draft": 0,
 }
 Q_MAX = 200
+# The statuses whose own row reads the decision (its date counts as activity, S-07's "Latest activity").
+DECIDED_STATUSES = ("picked", "not_now", "not_picked", "being_built", "shipped")
 
 
 def group_of(status: str) -> str:
@@ -88,11 +95,12 @@ def normalise(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def query_of(state: dict[str, Any], **override: Any) -> str:
-    """The canonical query string for a list state, defaults left out ('' for the plain list)."""
+    """The canonical query string for a list state, defaults left out ('' for the plain list). Never the search
+    (DEC-110): its words go in no URL."""
     s = {**state, **override}
     pairs = [
         (k, s[k])
-        for k, default in (("list", "yours"), ("filter", "all"), ("sort", "latest"), ("q", ""), ("row", None))
+        for k, default in (("list", "yours"), ("filter", "all"), ("sort", "latest"), ("row", None))
         if s.get(k) and s[k] != default
     ]
     return urlencode(pairs)
@@ -130,16 +138,30 @@ def _activity(*times: dt.datetime | None) -> dt.datetime:
     return max(t for t in (*times, dt.datetime.min.replace(tzinfo=dt.UTC)) if t is not None)
 
 
+def _saved_on(idea: dict[str, Any], device: str | None) -> dict[str, Any]:
+    """Where a draft was last saved (L-DRAFT.autosave/4): the device class, and whether it is the device asking. A
+    draft that arrived by email or Teams has no device and reads as the laptop."""
+    return {
+        "device": idea["saved_device"] or "laptop",
+        "this_device": bool(device and device == idea.get("saved_device_id")),
+    }
+
+
+def _where(saved_on: dict[str, Any]) -> str:
+    """'on this laptop', 'on your phone' (S-07.rows, C-SIDEBAR.anatomy/4)."""
+    return f"on {'this' if saved_on['this_device'] else 'your'} {saved_on['device']}"
+
+
 def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str | None) -> dict[str, Any]:
     uid = str(idea["id"])
     title = idea["title"] or "Your draft"
     saved = idea["saved_at"] or idea["created_at"]
-    on = idea["saved_device"] or "laptop"
-    where = f"on this {on}" if device and device == idea.get("saved_device_id") else f"on your {on}"
+    saved_on = _saved_on(idea, device)
+    where = _where(saved_on)
     archived = idea.get("archived_at") is not None
     waiting = conn.execute(
-        "SELECT i.idea_id, i.contributor_code FROM merge_requests r JOIN ideas i ON i.id = r.other_idea_uuid "
-        "WHERE r.draft_uuid = %s AND r.state = 'waiting' LIMIT 1",
+        "SELECT i.id, i.idea_id, i.contributor_code FROM merge_requests r "
+        "JOIN ideas i ON i.id = r.other_idea_uuid WHERE r.draft_uuid = %s AND r.state = 'waiting' LIMIT 1",
         (uid,),
     ).fetchone()
     if archived:
@@ -152,8 +174,9 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
         meta = f"Saved {saved_when(saved, now)}, {where}"
         if waiting:
             # The draft's owner is not on that idea's crew yet, so its lead is named only when they show their
-            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048).
-            lead = read.person_by_code(conn, waiting["contributor_code"])
+            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048). The lead is
+            # the live crew lead, who answers the request, not always the person who shared it (L-TEAMUP.rules/10).
+            lead = read.person_by_code(conn, adapters.lead_code(conn, dict(waiting)))
             who = lead["first_name"] if lead and read.shows_name(lead) else "the lead"
             sentence = f"Waiting for {who} to answer about joining {waiting['idea_id']}. Your words are kept."
         elif str(idea.get("step") or "").startswith("check") or idea.get("step") == "send":
@@ -189,7 +212,7 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
             "action": {**action, "accessible_name": f"{action['label']}: {title}"},
         },
         "archived": archived,
-        "saved_on": {"device": on, "this_device": bool(device and device == idea.get("saved_device_id"))},
+        "saved_on": saved_on,
         "group": "drafts",
         "_activity": saved,
         "_shared": saved,
@@ -197,16 +220,16 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
     }
 
 
-def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
+def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, *, names_desk: bool) -> dict[str, Any]:
+    """One of the person's own shared ideas. `names_desk` (DEC-111, `read.Viewer.sees_desk_names`): only someone on
+    the review desk or the Ones Committee reads who at the desk asked; everyone else reads "The review desk"."""
     uid = str(idea["id"])
     key = read.key_of(idea)
     title = idea["title"] or key
     qset = read.question_set(conn, uid)
     status = display_status(idea, qset, for_sharer=True)
     dec: Decided | None = (
-        decided(read.decision(conn, uid, with_text=True))
-        if idea["status"] in ("picked", "not_now", "not_picked", "being_built", "shipped")
-        else None
+        decided(read.decision(conn, uid, with_text=True)) if idea["status"] in DECIDED_STATUSES else None
     )
     phone_sentence: str | None = None
     see = {"label": "See where it is", "to": f"/ideas/{key}", "style": "line"}
@@ -218,8 +241,10 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         on = f" {when}" if when in ("today", "yesterday") else f" on {when}" if when else ""
         sentence = f"The review desk asked you {count(n, 'question')}{on}."
         # The phone board names who asked: "Meera from the review desk asked you 3 questions on Monday."
-        # (PhoneMyIdeas.md); the desktop board says "The review desk" (MyIdeas.md).
-        asker = read.person_by_user(conn, qset.get("by_user_id"))
+        # (PhoneMyIdeas.md); the desktop board says "The review desk" (MyIdeas.md). DEC-111: only the review desk
+        # and the Ones Committee read the name; for anyone else the phone says the desktop's sentence, so no
+        # phone sentence is sent and no name is read (BLD-E053).
+        asker = read.person_by_user(conn, qset.get("by_user_id")) if names_desk else None
         if asker:
             phone_sentence = (
                 f"{asker['first_name']} from the review desk asked you {count(n, 'question')}{on}."
@@ -230,12 +255,17 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         action = {"label": "Answer the questions", "to": f"/ideas/{key}/answer", "style": "primary"}
     elif status in ("checking", "with_review_desk"):
         if qset and qset["state"] in read.ANSWERED_SET_STATES:
-            asker = read.person_by_user(conn, qset["by_user_id"])
-            who = asker["first_name"] if asker else "The review desk"
-            by = (
-                f" The review desk decides by {day(idea['decide_by'], now)}." if idea.get("decide_by") else ""
-            )
-            sentence = f"{who} has your answers.{by}"
+            # DEC-111: "Harish has your answers. The review desk decides by …" names the reviewer to the review desk
+            # and the Ones Committee only; anyone else reads "The review desk has your answers. It decides by …"
+            # (changed by DEC-111, HR sign-off; BLD-E053).
+            asker = read.person_by_user(conn, qset["by_user_id"]) if names_desk else None
+            when = day(idea["decide_by"], now) if idea.get("decide_by") else None
+            if asker:
+                by = f" The review desk decides by {when}." if when else ""
+                sentence = f"{asker['first_name']} has your answers.{by}"
+            else:
+                by = f" It decides by {when}." if when else ""
+                sentence = f"{REVIEW_DESK_START} has your answers.{by}"
         elif idea.get("decide_by"):
             sentence = f"The review desk looks at it by {day(idea['decide_by'], now)}."
         else:
@@ -440,7 +470,7 @@ def my_ideas(
             if idea["status"] == "draft":
                 rows.append(_draft_row(conn, idea, t, device))
             elif idea["idea_id"] is not None or idea["status"] == "merged":
-                rows.append(_own_row(conn, idea, t))
+                rows.append(_own_row(conn, idea, t, names_desk=me.sees_desk_names))
         for r in conn.execute(
             "SELECT i.*, c.joined_at AS crew_joined_at FROM crew_members c JOIN ideas i ON i.id = c.idea_uuid "
             "WHERE c.contributor_code = %s AND c.left_at IS NULL AND c.role = 'crew' AND i.contributor_code <> %s "
@@ -529,7 +559,7 @@ def my_ideas(
             "matched_on": ["title", "summary", "reference"],
             "matched_line": "Matched on titles, short summaries and references.",  # NOT DRAWN: plain-text search
             "closest": {"id": best["id"], "title": best["title"], "href": best["href"]} if best else None,
-            "clear": {"label": "Clear", "to": url_of(state, q="", row=None)},
+            "clear": {"label": "Clear", "to": url_of(state, row=None)},
         }
     if not rows:
         out["empty"] = {
@@ -549,7 +579,7 @@ def my_ideas(
             # The desktop board only: the phone's empty states offer "Show all ideas" alone (PhoneMyIdeas.md)
             actions.append(
                 {
-                    "label": f"See {lists[other]} in {LIST_LABEL[other]}",
+                    "label": f"See {lists[other]} in {LIST_LABEL[other]}",  # NOT DRAWN for Yours
                     "to": url_of(state, list=other, row=None),
                     "desk_only": True,
                 }
@@ -558,8 +588,8 @@ def my_ideas(
             out["empty"] = {
                 "kind": "no_results",
                 "title": f"Nothing found for “{state['q']}”.",
-                "line": "Try other words, or clear the search.",
-                "actions": [{"label": "Clear", "to": url_of(state, q="", row=None)}],
+                "line": "Try other words, or clear the search.",  # NOT DRAWN
+                "actions": [{"label": "Clear", "to": url_of(state, row=None)}],
             }
         elif state["filter"] != "all":
             title, line = EMPTY[state["filter"]]
@@ -608,4 +638,68 @@ def _public_row(row: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
             action["to"] = linked
         out["href"] = linked
         out["next_step"] = {**out["next_step"], "action": action}
+    return out
+
+
+# --- C-SIDEBAR's Your ideas (A-API.me `ideas`): read on every navigation, so one bounded query ----------------------
+# The sidebar's drafts are lane C's L-DRAFT read (`saved_labels.sidebar`), so each list has one source.
+
+SHELL_IDEAS = 3  # C-SIDEBAR.anatomy/4: "up to 3, with View all"
+# C-SIDEBAR.anatomy/4: warn for needs you, blue for active, grey otherwise. The names are the status colours'
+# (F-COLOR.status, C-PILL): the grey dot is `neutral` (`--faint`). Keyed by S-07's own filter groups.
+SHELL_DOT = {"needs_you": "warn", "with_review_desk": "blue", "picked_and_building": "blue"}
+
+# The person's own shared ideas (S-07's Yours list without its drafts), in S-07's "Latest activity" order: the latest
+# of the status change, the save, the share, the question set's sent and answered times (`read.question_set`) and the
+# decision's time, or the committee's when it reversed it (`read.decision`, `track.decided`). Ties keep S-07's
+# reading order. The question set's state is all the status dot needs.
+_SHELL_IDEAS_SQL = (
+    "SELECT i.id, i.idea_id, i.title, i.status, q.state AS qset_state FROM ideas i "
+    "LEFT JOIN LATERAL (SELECT s.state, s.sent_at, s.answered_at FROM question_sets s "
+    "WHERE s.idea_uuid = i.id AND s.state <> 'queued' ORDER BY s.sent_at DESC NULLS LAST, s.created_at DESC "
+    "LIMIT 1) q ON true "
+    "LEFT JOIN LATERAL (SELECT CASE WHEN v.id IS NOT NULL AND v.to_choice IS NOT NULL THEN v.at ELSE d.at END "
+    "AS at FROM idea_decisions d LEFT JOIN decision_windows w ON w.decision_id = d.id "
+    "LEFT JOIN decision_reversals v ON v.window_id = w.id WHERE d.idea_uuid = i.id ORDER BY d.at DESC "
+    "LIMIT 1) d ON i.status = ANY(%(decided)s) "
+    "WHERE i.contributor_code = (SELECT m.contributor_code FROM contributor_map m JOIN users u ON u.id = m.user_id "
+    "WHERE m.user_id = %(user)s AND u.active) "
+    "AND i.status <> 'draft' AND (i.idea_id IS NOT NULL OR i.status = 'merged') "
+    "ORDER BY greatest(i.status_changed_at, i.saved_at, i.shared_at, q.sent_at, q.answered_at, d.at) DESC NULLS LAST, "
+    "coalesce(i.shared_at, i.saved_at, i.created_at) DESC, i.id LIMIT %(n)s"
+)
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def shell_lists(conn: Conn, user_id: str) -> dict[str, list[dict[str, str]]]:
+    """C-SIDEBAR.anatomy/4 (A-API.me `ideas`): up to three of the person's own shared ideas, each with a status dot
+    and S-07's pill words for it (`status_label`, so the dot is never colour alone, F-A11Y.rules/4). The same rows,
+    order, titles and links as S-07 lists first (`my_ideas`, list Yours, sort Latest activity); an idea's id is its
+    reference (`/ideas/{ref}`). Teamed-up ideas are not the person's own and are not listed. Ideas only: the
+    sidebar's drafts are lane C's L-DRAFT read. An unknown or inactive person gets an empty list. The person's own
+    titles only; nothing here is logged (non-negotiable 3)."""
+    out: dict[str, list[dict[str, str]]] = {"ideas": []}
+    if not _is_uuid(user_id):
+        return out
+    params = {"user": user_id, "n": SHELL_IDEAS, "decided": list(DECIDED_STATUSES)}
+    for r in conn.execute(_SHELL_IDEAS_SQL, params).fetchall():
+        idea = dict(r)
+        qset = {"state": idea["qset_state"]} if idea["qset_state"] else None
+        status = display_status(idea, qset, for_sharer=True)  # S-07's needs-you reading
+        key = read.key_of(idea)
+        out["ideas"].append(
+            {
+                "id": key,
+                "title": idea["title"] or key,
+                "status_dot": SHELL_DOT.get(group_of(status), "neutral"),
+                "status_label": pill(status)["label"],  # S-07's pill words (C-PILL, E-ENUMS.idea-status)
+            }
+        )
     return out

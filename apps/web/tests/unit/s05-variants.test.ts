@@ -481,7 +481,8 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     await mountFlagged(base({ draft: draft({ step: "check:2" }) }), true);
     expect(h1()).toBe("Is it sorted right?");
     expect(counter()).toBe("Check it, part 2 of 6");
-    expect(railNames()[0]).toBe("1 Your words");
+    // The default order: Your words first, ticked because the saved step is past it (BLD-C156).
+    expect(railNames()[0]).toBe("Your words, done");
     await click(button("Back"));
     expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
   });

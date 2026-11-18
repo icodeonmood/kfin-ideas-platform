@@ -9,6 +9,7 @@ import {
   isAuthExempt,
   isPublic,
 } from "@/lib/rbac";
+import { nextParam } from "@/lib/search-memory";
 import {
   cookieOptions,
   readSession,
@@ -68,11 +69,11 @@ export async function proxy(request: NextRequest) {
     });
   }
   if (!session) {
-    // S-01: `/` is Landing for anyone signed out; signed in, it is Home (S-03) as before (BLD-A172).
+    // S-01: `/` is Landing for anyone signed out (BLD-A172); signed in, `/` sends the person to Home at `/home` (S-03, BLD-C143).
     if (!isApi && pathname === "/" && SAFE_METHODS.has(method)) return NextResponse.next();
     return isApi
       ? json(401, { error: "sign_in_required" })
-      : redirect(`/sign-in?next=${encodeURIComponent(pathname + search)}`);
+      : redirect(`/sign-in?next=${nextParam(pathname, search)}`);
   }
 
   let response: NextResponse | undefined;
@@ -80,7 +81,7 @@ export async function proxy(request: NextRequest) {
     if (isApi && !allowedBeforePrivacyNotice(method, pathname)) {
       response = json(403, { error: "privacy_notice_required" });
     } else if (!isApi && pathname !== "/privacy-notice") {
-      response = redirect(`/privacy-notice?next=${encodeURIComponent(pathname + search)}`);
+      response = redirect(`/privacy-notice?next=${nextParam(pathname, search)}`);
     }
   }
 

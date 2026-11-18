@@ -18,6 +18,7 @@ from desk import when
 from desk.clock import countdown
 from desk.decide import FieldError
 from desk.promises import ANSWER_TIMES, Promises
+from onepc.words import REVIEW_DESK
 
 Part = Literal["summary", "often", "who", "cost", "evidence", "fix"]
 PARTS: tuple[Part, ...] = (
@@ -35,6 +36,15 @@ PART_NAMES: dict[str, str] = {
     "cost": "What it’s worth",
     "evidence": "Attached",
     "fix": "Fix",
+}
+# S-R2.panel, L-LISTEN/2 (BLD-B264): what a part left empty reads, on the reviewer's page and in the listen script.
+# Fix as the DeskIdea board draws it; Attached with zero in words (F-COPY.plurals/2); every other part "Not given.".
+EMPTY_FIX = "No fix suggested. It was optional."
+EMPTY_ATTACHED = "Nothing attached."
+PART_EMPTY: dict[str, str] = {
+    **{p: "Not given." for p in PARTS},
+    "evidence": EMPTY_ATTACHED,
+    "fix": EMPTY_FIX,
 }
 SetState = Literal["queued", "sent", "seen", "partly_answered", "answered", "closed"]
 
@@ -237,8 +247,9 @@ def spare_line(answered_at: dt.datetime, due_at: dt.datetime, tz: dt.tzinfo = wh
     return f"Answered with {c.count} to spare"
 
 
-def send_answers_label(n_answered: int, reviewer_first_name: str) -> str:
-    """S-R3 Checking: 'Send 1 answer to Meera'; with none answered the button is disabled and says so."""
+def send_answers_label(n_answered: int) -> str:
+    """S-R3 Checking: 'Send 1 answer to the review desk' (the board's 'Send 1 answer to Meera'; DEC-111: the sharer
+    never sees the reviewer's name); with none answered the button is disabled and says so."""
     if n_answered < 1:
         return "Answer at least one question"
-    return f"Send {plural(n_answered, 'answer')} to {reviewer_first_name}"
+    return f"Send {plural(n_answered, 'answer')} to {REVIEW_DESK}"

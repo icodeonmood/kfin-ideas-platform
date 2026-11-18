@@ -86,10 +86,12 @@ export interface MergeView {
 
 export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): MergeView | null {
   if (!merge || !merge.after) {
-    if (!merge || merge.state !== "waiting" || !merge.other_idea_id) return null;
+    if (!merge || !merge.other_idea_id) return null;
+    if (merge.state !== "waiting" && merge.state !== "accepted") return null;
     // NOT DRAWN by the route: compose the drawn lines from the lead's first name.
     const lead = merge.lead ?? matches.find((m) => m.idea.id === merge.other_idea_id)?.idea.lead;
     const first = firstName(lead);
+    if (merge.state === "accepted") return mergedView(merge.other_idea_id, null, first);
     if (!first) return null;
     return {
       state: "waiting",
@@ -113,12 +115,54 @@ export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): Me
   };
 }
 
+/**
+ * L-MERGE.request/5 (J-SIMILAR/6a, BLD-C155): a draft closed as merged into `ref`. Lane F's words when its read
+ * answered "accepted"; else the drawn ones: "Merged into IDEA-…", "{first} accepted. Yours is now part of IDEA-…,
+ * with credit to you. Nothing else to send." (only with the lead's first name; the bar then says just the link) and
+ * "See the merged idea". Null for a draft that is not merged.
+ */
+export function mergedView(
+  ref: string | null | undefined,
+  merge: MergeView | null,
+  first = "",
+): MergeView | null {
+  if (merge?.state === "accepted") return merge;
+  if (!ref) return null;
+  return {
+    state: "accepted",
+    otherId: ref,
+    rail: C.similar.merge.acceptedRail(ref),
+    line: first ? C.similar.merge.acceptedLine(first, ref) : "",
+    action: { label: C.similar.merge.seeMerged, to: `/ideas/${encodeURIComponent(ref)}` },
+    canSubmit: false,
+  };
+}
+
+/**
+ * BLD-C156: the parts a reload shows ticked from what the server keeps, not from clicks in memory. Moving on from a
+ * part saves the next one as the draft's `step` (S-05 saves where the person is), so a saved step past a part means
+ * the person moved on from it: "Looks right" for part 1, "Next" for part 3, and so on. Sorting (part 2) is ticked
+ * only when confirmed and Send it (part 7) never, so neither is here. Part 3 is also done once "Keep mine separate"
+ * is kept or a merge request has an answer, and part 5 once a fix is added; check-it.tsx adds those.
+ */
+export function passedParts(step: DraftStep | string | undefined | null): ReadonlySet<PartNo> {
+  if (step !== "send" && !/^check:[1-7]$/.test(step ?? "")) return new Set();
+  const at = partFromStep(step);
+  const out = new Set<PartNo>();
+  for (let n = 1; n < at; n++) if (n !== 2) out.add(n as PartNo);
+  return out;
+}
+
 /** A tile's action row (C-SIMGRID.tile): "Team up", "Waiting for Ravi" + "Withdraw", or "On the crew". */
 export type TileAction =
   | { kind: "team-up" }
   | { kind: "waiting"; label: string; withdraw: { merge: true } | { requestId: string } }
-  | { kind: "on-crew" };
+  | { kind: "on-crew" }
+  /** L-TEAMUP refuses a team-up here (BLD-C187): the tile keeps Preview and offers nothing else. */
+  | { kind: "none" };
 
+/** A tile's action (C-SIMGRID.tile): waiting and on the crew as before; then, where lane F's L-TEAMUP.rules/1 check
+ * (`can_team_up`) refuses, "On the crew" when the viewer is on it, else nothing; else "Team up" (BLD-C187). */
 export function tileAction(match: SimilarMatch, merge: MergeView | null): TileAction {
   const first = firstName(match.idea.lead);
   if (merge && merge.otherId === match.idea.id && merge.state === "waiting") {
@@ -137,6 +181,9 @@ export function tileAction(match: SimilarMatch, merge: MergeView | null): TileAc
     (merge.state === "accepted" || merge.state === "team_only")
   ) {
     return { kind: "on-crew" };
+  }
+  if (match.can_team_up === false) {
+    return match.team_up_why_not === "already_on_crew" ? { kind: "on-crew" } : { kind: "none" };
   }
   return { kind: "team-up" };
 }
@@ -193,6 +240,14 @@ function hostOf(url: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Part 4's rows for the rail's count (S-05.layout): a link is a link; a file or a folder, or one still uploading,
+ * is a file, as Send it's Proof row counts them (BLD-C190). Every row counts, a failed one too, as Review.md's
+ * evidence=Upload failed draws it ("2 files"). */
+export function proofCounts(proof: ProofItem[]): { files: number; links: number } {
+  const links = proof.filter((p) => p.item?.kind === "link").length;
+  return { files: proof.length - links, links };
 }
 
 /** A row as C-FILE.row draws it, with this page's own note under it and "Try again" once asking has stalled. */

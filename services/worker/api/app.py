@@ -584,6 +584,53 @@ def idea_preview_view(idea_key: str, user_id: str, compare_with: str | None = No
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
+@app.get("/internal/ideas/{idea_key}/similar", dependencies=[Depends(require_token)])
+def similar_view(idea_key: str, user_id: str) -> JSONResponse:
+    """SimilarMatch[] from the stored links (L-SIMILAR, BLD-C092): the sharer, or the desk and committee."""
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    with connect(autocommit=True) as conn:
+        out = matches_for(conn, idea_key, Viewer.of(conn, user_id))
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/ideas/{idea_key}/similar/keep-separate", dependencies=[Depends(require_token)])
+def similar_keep_separate(idea_key: str, body: dict[str, Any]) -> JSONResponse:
+    """ "Keep mine separate" or "Show them again" on the sharer's draft (L-SIMILAR.rules/8, BLD-C095)."""
+    from similar.preview import Viewer
+    from similar.views import keep_separate
+
+    on = body.get("on", True)
+    if not isinstance(on, bool):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        out = keep_separate(conn, idea_key, Viewer.of(conn, str(body.get("user_id") or "")), on=on)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out)
+
+
+@app.post("/internal/ideas/{idea_uuid}/similar/run", dependencies=[Depends(require_token)])
+def similar_run(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    """Match a draft or idea now (L-SIMILAR.rules/4, /5; BLD-C092). `found_while`: drafting, checking or later;
+    `force` re-runs without a material change. A matching failure answers `failed`, never a 500."""
+    from similar.matching import match_idea
+    from similar.preview import is_uuid
+
+    found_while = body.get("found_while", "drafting")
+    if not is_uuid(idea_uuid) or found_while not in ("drafting", "checking", "later"):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        try:
+            run = match_idea(conn, idea_uuid, found_while=found_while, force=bool(body.get("force")))
+        except LookupError:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse({"state": run.state, "found": run.found, "labelled_by": run.labelled_by})
+
+
 # --- The Ones (DEC-034 to DEC-087). The web app checks the capability and passes who is acting; the worker checks
 # the person's grants again. Refusals answer with a code; text is never echoed or logged.
 
@@ -605,41 +652,8 @@ def _actor(body: dict[str, Any]) -> str:
     return str(body.get("actor_user_id") or "")
 
 
-@app.get("/internal/ones/console", dependencies=[Depends(require_token)])
-def ones_console() -> JSONResponse:
-    from ones.views import console
-
-    return _ones_call(console)
-
-
-@app.post("/internal/ones/proposals", dependencies=[Depends(require_token)])
-def ones_propose(body: dict[str, Any]) -> JSONResponse:
-    from ones.service import propose
-
-    return _ones_call(propose, _actor(body), body, status=201)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/decide", dependencies=[Depends(require_token)])
-def ones_decide(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import decide
-
-    return _ones_call(decide, _actor(body), proposal_id, body)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/carry-out", dependencies=[Depends(require_token)])
-def ones_carry_out(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import carry_out
-
-    return _ones_call(carry_out, _actor(body), proposal_id)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/withdraw", dependencies=[Depends(require_token)])
-def ones_withdraw(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import withdraw
-
-    return _ones_call(withdraw, _actor(body), proposal_id)
-
-
+# The Ones console, its proposals API (propose, decide, carry out, withdraw, invite a colleague) and the Ones-only
+# leaderboard are retired (DEC-106, BLD-E049). `/ones/write/:id` still reads its invitation and posts its message here.
 @app.get("/internal/ones/proposals/{proposal_id}/invite/{user_id}", dependencies=[Depends(require_token)])
 def ones_invite_view(proposal_id: int, user_id: str) -> JSONResponse:
     from ones.views import invite_view
@@ -656,13 +670,6 @@ def ones_message(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
     from ones.service import add_message
 
     return _ones_call(add_message, _actor(body), proposal_id, body, status=201)
-
-
-@app.post("/internal/ones/proposals/{proposal_id}/invites", dependencies=[Depends(require_token)])
-def ones_invite(proposal_id: int, body: dict[str, Any]) -> JSONResponse:
-    from ones.service import invite_peer
-
-    return _ones_call(invite_peer, _actor(body), proposal_id, str(body.get("email") or ""))
 
 
 @app.put("/internal/ones/{one_id}/measures", dependencies=[Depends(require_token)])
@@ -794,17 +801,6 @@ def ones_constellation() -> JSONResponse:
     from ones.views import constellation
 
     return _ones_call(constellation)
-
-
-@app.get("/internal/ones/leaderboard/{user_id}", dependencies=[Depends(require_token)])
-def ones_leaderboard(user_id: str) -> JSONResponse:
-    from ones.views import leaderboard
-
-    with connect(autocommit=True) as conn:
-        out = leaderboard(conn, user_id)
-    if out is None:
-        return JSONResponse({"error": "ones_only"}, status_code=403)
-    return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/internal/me/{user_id}/one", dependencies=[Depends(require_token)])
@@ -1400,3 +1396,8 @@ app.include_router(_teamup_routes(require_token))
 from convo.routes import build as _convo_routes  # noqa: E402
 
 app.include_router(_convo_routes(require_token))
+
+# Lane F: Find your crew (A-API.team-up `GET /crew`, the passes). Its routes live with the code in crew/routes.py.
+from crew.routes import build as _crew_routes  # noqa: E402
+
+app.include_router(_crew_routes(require_token))

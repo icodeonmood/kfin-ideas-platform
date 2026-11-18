@@ -16,6 +16,7 @@ import { test as base, expect, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
@@ -183,7 +184,7 @@ test.describe("S-H5 Inbox", () => {
     }
 
     // S-H5.rules/2: the first item of the tab is open on desktop; opening it marked it read (S-H5.rules/4).
-    const questions = row(page, /^.+ from the review desk asked you 3 questions, /);
+    const questions = row(page, /^The review desk asked you 3 questions, /); // DEC-111: never the reviewer's name
     await expect(questions).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("Questions from the review desk", { exact: true })).toBeVisible();
     await expect(page.getByText("1 of 4", { exact: true })).toBeVisible();
@@ -291,6 +292,101 @@ test.describe("S-H5 Inbox", () => {
     await page.getByRole("button", { name: "Inbox", exact: true }).click();
     await expect(page.getByText("1 unread", { exact: true })).toBeVisible();
     await expect(tab(page, /^Unread 1$/)).toBeVisible();
+  });
+
+  test("S-H5, C-INBOX-READER, P-ROUTES.state (J-BROWSE/4, /6): the tab and the open item stay in the address, so Back and a reload come to the same view", async ({
+    page,
+    inbox,
+  }) => {
+    await inbox();
+    await page.goto("/inbox");
+    await tab(page, /^Needs you 1$/).click();
+    await expect(page).toHaveURL(/\/inbox\?tab=needs_you$/);
+    const questions = row(page, /asked you 3 questions/);
+    await questions.click();
+    await expect(page).toHaveURL(/\/inbox\?tab=needs_you&item=\d+$/);
+    const here = page.url();
+
+    await page.getByRole("link", { name: "Answer the questions" }).click();
+    await page.waitForURL(/\/my-ideas/);
+    await page.goBack();
+    await expect(page).toHaveURL(here);
+    if (isPhone(page)) {
+      // The item the person had open is its own screen again, the list hidden behind it (S-H5.rules/6); the
+      // screen's own Back returns to the list, on the same tab, and the address lets the item go.
+      await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
+      await page.getByRole("button", { name: "Inbox", exact: true }).click();
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+      await expect(page).toHaveURL(/\/inbox\?tab=needs_you$/);
+    } else {
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+      await expect(questions).toHaveAttribute("aria-pressed", "true");
+    }
+
+    await page.reload();
+    await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+    if (!isPhone(page)) await expect(questions).toHaveAttribute("aria-pressed", "true");
+
+    // An unknown tab or an item that is not the person's opens the default view, with no error.
+    await page.goto("/inbox?tab=starred&item=999999999");
+    await expect(tab(page, /^All 4$/)).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
+  });
+
+  test("DEC-110, S-H5, C-INBOX-READER (J-BROWSE/4, /6): the search stays in the tab; no request URL and no address holds it", async ({
+    page,
+    inbox,
+  }) => {
+    await inbox();
+    const words = "asked you";
+    const asked = watchRequestUrls(page);
+    // The box is read even while a phone shows the open item as its own screen and hides the list
+    const box = page.locator('input[type="search"][aria-label="Search your inbox"]');
+    await page.goto("/inbox");
+    const kept = await storageNames(page);
+    await expect(box).toHaveAttribute("autocomplete", "off");
+    await box.fill(words);
+    const questions = row(page, /asked you 3 questions/);
+    await expect(questions).toBeVisible();
+    await expect(row(page, /mentioned you/)).toHaveCount(0);
+    await questions.click();
+    await expect(page).toHaveURL(/\/inbox\?tab=all&item=\d+$/);
+
+    // Open the item's link and come Back: the same item, the same search
+    await page.getByRole("link", { name: "Answer the questions" }).click();
+    await page.waitForURL(/\/my-ideas/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/inbox\?tab=all&item=\d+$/);
+    await expect(box).toHaveValue(words);
+    if (!isPhone(page)) {
+      await expect(questions).toHaveAttribute("aria-pressed", "true");
+      await expect(row(page, /mentioned you/)).toHaveCount(0);
+    }
+
+    // A reload keeps it; on a phone the item is its own screen again, and its Back returns to the searched list
+    await page.reload();
+    if (isPhone(page)) await page.getByRole("button", { name: "Inbox", exact: true }).click();
+    await expect(box).toBeVisible();
+    await expect(box).toHaveValue(words);
+    await expect(row(page, /mentioned you/)).toHaveCount(0);
+    await expect(questions).toBeVisible();
+
+    // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
+    expect(asked.filter(carrying(words))).toEqual([]);
+    expect(carrying(words)(page.url())).toBe(false);
+    expect(await storageNames(page)).toEqual(kept);
+    expect(await storageCarries(page, words)).toBe(false);
+
+    // The address pasted afresh (a new entry): the tab and item apply, the search does not (J-BROWSE/6)
+    const address = page.url();
+    await page.goto("/my-ideas");
+    await page.goto(address);
+    await expect(box).toHaveValue("");
+    await expect(
+      row(page, /mentioned you/)
+        .or(page.getByRole("heading", { level: 1, name: "asked you 3 questions" }))
+        .first(),
+    ).toBeVisible();
   });
 
   test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page, inbox }) => {

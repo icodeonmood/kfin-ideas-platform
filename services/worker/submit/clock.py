@@ -25,6 +25,11 @@ TIMER_KIND = "decide_by"
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
+def now() -> dt.datetime:
+    """The current time the two clocks start from (UTC, aware), when the caller has no `now` of its own."""
+    return dt.datetime.now(dt.UTC)
+
+
 def _calendar() -> tuple[ZoneInfo, set[int], set[dt.date]]:
     cal = load_rule(get_settings().company_repo_path, "calendar").data
     tz = ZoneInfo(str(cal.get("timezone", "Asia/Kolkata")))

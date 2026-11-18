@@ -9,13 +9,13 @@ A year is added only when the date is not in the current year. Office time is In
 from __future__ import annotations
 
 import datetime as dt
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from onepc import enums
+from onepc.countdown import countdown as shared_countdown
 
 IST = ZoneInfo("Asia/Kolkata")
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -136,19 +136,12 @@ Variant = Literal["neutral", "warn", "bad"]
 
 
 def countdown(until: dt.datetime, now: dt.datetime) -> dict[str, Any]:
-    """'3 days left' (neutral); under a day '07:38 left' in the warn variant (C-PILL.rules/3); then 'Overdue'."""
-    seconds = (until - now).total_seconds()
-    if seconds <= 0:
-        return {"label": "Overdue", "variant": "bad", "until": until.isoformat()}
-    if seconds < 86400:
-        minutes = int(seconds // 60)
-        return {
-            "label": f"{minutes // 60:02d}:{minutes % 60:02d} left",
-            "variant": "warn",
-            "until": until.isoformat(),
-        }
-    days = math.ceil(seconds / 86400)
-    return {"label": f"{days} day{'s' * (days != 1)} left", "variant": "neutral", "until": until.isoformat()}
+    """'3 days left' (neutral); under a day '07:38 left' (warn); then 'Overdue by 5 hours' (bad) (C-PILL.rules/3).
+    The count is the one rule every place uses (F-COPY.plurals/3, `onepc.countdown`, BLD-A225): office calendar days
+    a day or more ahead. The pill says "neutral" where the countdown says "normal"."""
+    c = shared_countdown(until, now)
+    variant = "neutral" if c.variant == "normal" else c.variant
+    return {"label": c.label("left"), "variant": variant, "until": until.isoformat()}
 
 
 def count(n: int, one: str, many: str | None = None) -> str:
@@ -180,20 +173,23 @@ def _num(x: Any) -> str:
     return str(int(f)) if f.is_integer() else f"{f:g}"
 
 
-def hours_range(low: Any, high: Any) -> str | None:
-    """'70 to 150 hours a month' (E-ENTITIES Range.text)."""
+def hours_range(low: Any, high: Any, about: Any = None) -> str | None:
+    """'70 to 150 hours a month' (E-ENTITIES Range.text); one figure reads 'About 80 hours a month' only when the
+    sharer wrote it as approximate (`idea_worth.hours_about`, L-WORTH/1), else '80 hours a month'."""
     if low is None:
         return None
     if high is None or float(high) == float(low):
-        return f"About {_num(low)} hours a month"
+        return f"{'About ' if about else ''}{_num(low)} hours a month"
     return f"{_num(low)} to {_num(high)} hours a month"
 
 
-def money_range(low: Any, high: Any) -> str | None:
+def money_range(low: Any, high: Any, about: Any = None) -> str | None:
+    """'₹40,000 to ₹60,000 a month'; one figure reads 'About ₹25,000 a month' only when the sharer wrote it as
+    approximate (`idea_worth.cost_about`, `revenue_about`, L-WORTH/1), else '₹25,000 a month'."""
     if low is None:
         return None
     if high is None or float(high) == float(low):
-        return f"About {rupees(float(low))} a month"
+        return f"{'About ' if about else ''}{rupees(float(low))} a month"
     return f"{rupees(float(low))} to {rupees(float(high))} a month"
 
 

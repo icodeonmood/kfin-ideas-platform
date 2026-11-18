@@ -8,7 +8,8 @@
  *   - every child of <main id="main"> arrives as one block;
  *   - a screen that wants its blocks to arrive one after another puts class "arrive" on their container;
  *   - a showcase screen (F-MOTION.rules/2) adds "cine" for the deeper, slower arrival;
- *   - anything that must not move (a sticky bar, a live region) takes "mo-skip".
+ *   - anything that must not move (a sticky bar, a live region) takes "mo-skip";
+ *   - a fixed bar inside an arriving block takes "mo-pin", and that block fades in instead of rising.
  */
 
 :root {
@@ -99,12 +100,14 @@
     animation-name: moInDeep;
   }
 
-  /* Arrivals after a hand-over (set on <html> by the hand-over helper before the first frame) */
-  .mo-a-expand {
+  /* Arrivals after a hand-over (set on <html> by the hand-over helper before the first frame). The mo-a-<kind> class
+     stays until the next navigation, because taking it off would change the blocks' animation and play the arrival
+     again; only "mo-a-wait", the wait for the hand-over, comes off after 2 s (BLD-D015). */
+  .mo-a-expand.mo-a-wait {
     --mo-base: 380ms;
   }
 
-  .mo-a-portal {
+  .mo-a-portal.mo-a-wait {
     --mo-base: 420ms;
   }
 
@@ -140,6 +143,17 @@
 
   .mo-a-expand main#main :is(h1, .d1) {
     animation: none;
+  }
+
+  /* A block that holds a pinned bar fades in and does not rise (F-MOTION.arrive/4). A translate, scale or filter on
+     an ancestor makes it the frame a fixed bar is placed in, so S-08's phone message box would ride up with the block
+     and jump into place when the arrival ends. Mark a pinned bar "mo-pin"; the conversation's box is named here too.
+     Same weight as the hand-over rules above and later, so it wins after a hand-over as well. */
+  :is(
+    main#main:not(:has(.launch, .sky)) > :not(.arrive, .mo-skip, .amb, .tbar, .dock, .pnav, .ptop),
+    .arrive > :not(.mo-skip, .tbar, .dock, .pnav, .ptop)
+  ):has(.mo-pin, .cv-box) {
+    animation-name: moFade;
   }
 
   /* --- 2. Controls (F-MOTION.inside: Press, Primary hover) --- */

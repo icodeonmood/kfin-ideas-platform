@@ -20,6 +20,9 @@ from fastapi.responses import JSONResponse
 from core.db import connect
 from desk.store import READERS, REVIEWERS, Refused, require_role
 
+# The search box's limit (S-R1, DEC-110), as the web app's: the server keeps it too
+SEARCH_MAX = 200
+
 
 def _call(
     fn: Callable[..., Any],
@@ -47,12 +50,29 @@ def build(require_token: Callable[..., None]) -> APIRouter:
 
     # --- the desk (S-R1, S-R2) ---------------------------------------------------------------------------
     @r.get("/desk")
-    def desk_list(
-        user_id: str, tab: str = "waiting", sort: str = "time_left", q: str | None = None
-    ) -> JSONResponse:
+    def desk_list(user_id: str, tab: str = "waiting", sort: str = "time_left") -> JSONResponse:
+        """S-R1 without a search. A search's words are in no URL, this one's included (DEC-110): a `q` here is not
+        read; the search is the POST below."""
         from desk import reads
 
-        return _call(reads.desk, user_id, tab, sort, q, need=(READERS, user_id))
+        return _call(reads.desk, user_id, tab, sort, None, need=(READERS, user_id))
+
+    @r.post("/desk")
+    def desk_search(user_id: str, body: dict[str, Any] | None = None) -> JSONResponse:
+        """S-R1 with a search (DEC-110): the tab, sort and the search's words in the body. A read: nothing is written.
+        Values that are not strings fall back to the defaults; the search is cut at 200 characters."""
+        from desk import reads
+
+        given = body or {}
+        tab, sort, q = (given.get(k) for k in ("tab", "sort", "q"))
+        return _call(
+            reads.desk,
+            user_id,
+            tab if isinstance(tab, str) else "waiting",
+            sort if isinstance(sort, str) else "time_left",
+            q[:SEARCH_MAX] if isinstance(q, str) else None,
+            need=(READERS, user_id),
+        )
 
     @r.post("/desk/ideas/{ref}/open")
     def desk_open(ref: str, user_id: str) -> JSONResponse:
@@ -169,5 +189,13 @@ def build(require_token: Callable[..., None]) -> APIRouter:
         from desk import committee
 
         return _call(committee.decision_for_viewer, ref, user_id)
+
+    @r.post("/ideas/{ref}/join-build")
+    def idea_join_build(ref: str, user_id: str) -> JSONResponse:
+        """Ask to join the build team (L-DECIDE.rules/6, DEC-111): the sharer or crew, after a Pick, until the team is
+        chosen. No body; the worker checks who and when."""
+        from desk import join_build
+
+        return _call(join_build.ask, ref, user_id)
 
     return r

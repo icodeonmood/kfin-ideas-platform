@@ -14,10 +14,11 @@
  * seeded record, but changes only the records SEED gives to its journey, so journeys never break each other.
  * Synthetic data only (non-negotiable 11).
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { test, type Browser, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { Client } from "pg";
 
 import { signIn } from "../e2e/helpers";
@@ -79,7 +80,7 @@ export const CLUB = {
 } as const;
 export type Person = keyof typeof CLUB;
 
-/** First names as copy shows them ("Send 2 answers to Harish"). */
+/** First names as copy shows them ("Send 2 answers to the review desk"). */
 export function firstName(who: Person): string {
   return who.charAt(0).toUpperCase() + who.slice(1);
 }
@@ -93,7 +94,7 @@ export async function signInAs(page: Page, who: Person): Promise<void> {
  * IDs SYN-18000 to SYN-19999 are outside the seed's range; the tag keeps two steps of one run apart.
  */
 export async function signInFresh(page: Page, tag: string): Promise<{ emp: string; name: string }> {
-  const n = 18000 + (((Date.now() / 1000 + hash(tag)) % 2000) | 0);
+  const n = 18000 + ((runSeconds() + hash(tag)) % 2000);
   const emp = `SYN-${n}`;
   const name = `Journey ${tag}`;
   await signIn(page, emp, { email: `journey.${n}.1pc@kfintech.example`, name });
@@ -179,6 +180,47 @@ export async function seeded(key: SeedKey): Promise<SeededIdea> {
   }
 }
 
+/**
+ * The run's time base in seconds, the same in every worker (playwright.config.ts sets it once): a journey's synthetic
+ * people are made from it, so they stay the same people after a failed step starts a new worker.
+ */
+export function runSeconds(): number {
+  return Number(process.env.JOURNEYS_RUN_SECONDS) || Math.floor(Date.now() / 1000);
+}
+
+/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
+const SESSION_COOKIE = "ideas_session";
+
+/**
+ * Ends the page's session on the server, as the 8 hours would (L-AUTH.rules/5), and leaves its cookie in the browser.
+ * S-02 shows "Session expired mid-draft" only to the browser still holding the cookie of a session that ran out
+ * (server/auth/session.ts expiredSession); a browser without the cookie has signed out and gets the plain sign-in.
+ * The suite's one write outside the screens: the page's own session row, matched by the cookie's hash as the
+ * server stores it (sessions.id_hash = sha256 of the token).
+ */
+export async function endSession(page: Page): Promise<void> {
+  const cookie = (await page.context().cookies()).find((c) => c.name === SESSION_COOKIE);
+  if (!cookie) throw new Error(`no ${SESSION_COOKIE} cookie: sign in before ending the session`);
+  const idHash = createHash("sha256").update(cookie.value, "utf8").digest();
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    // As the 8 hours leave it: begun 9 hours ago and ended a minute ago. sessions has CHECK (expires_at > created_at)
+    // (20261109000100_sessions_privacy_hr.sql), so the start must move too. The proxy refreshes only a session that
+    // readSession accepted, which this one no longer is.
+    const { rowCount } = await client.query(
+      `UPDATE sessions
+          SET created_at = now() - interval '9 hours',
+              expires_at = now() - interval '1 minute'
+        WHERE id_hash = $1 AND revoked_at IS NULL`,
+      [idHash],
+    );
+    if (rowCount !== 1) throw new Error(`the page's session was not found to end (${rowCount} rows)`);
+  } finally {
+    await client.end();
+  }
+}
+
 /** Where a shared idea lives (P-ROUTES.screens: S-06 for its sharer, S-09 for anyone else). One place to change. */
 export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): string {
   return `/ideas/${idea.ref ?? idea.uuid}${sub}`;
@@ -187,6 +229,107 @@ export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): s
 /** A draft on Tell it (`S-04B`) or Check it (`sub` = "/check", `S-05`). */
 export function draftUrl(idea: { uuid: string }, sub = ""): string {
   return `/share/${idea.uuid}${sub}`;
+}
+
+/** A decision's committee window as stored (read only): when it opened (the decision's time) and where it ends now. */
+export async function decisionWindow(idea: { uuid: string }): Promise<{ opensAt: Date; closesAt: Date }> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT w.opens_at, w.closes_at FROM idea_decisions d JOIN decision_windows w ON w.decision_id = d.id
+        WHERE d.idea_uuid = $1 ORDER BY d.at DESC LIMIT 1`,
+      [idea.uuid],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("the idea has no decision window: load the seed with make demo DEMO_SET=1pc");
+    return { opensAt: new Date(row.opens_at), closesAt: new Date(row.closes_at) };
+  } finally {
+    await client.end();
+  }
+}
+
+/** India's offset; it has no daylight saving. */
+const IST_MS = 330 * 60_000;
+
+/**
+ * L-COMMITTEE.rules/2 (BLD-B258, desk/window.py add_months): the same India calendar day and wall time `months` later,
+ * a day the month lacks becoming its last day. Worked out here, not read, so the step checks the rule.
+ */
+export function addMonthsIST(t: Date, months: number): Date {
+  const local = new Date(t.getTime() + IST_MS); // its UTC fields read as India's wall clock
+  const index = local.getUTCMonth() + months;
+  const year = local.getUTCFullYear() + Math.floor(index / 12);
+  const month = index % 12;
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const moved = Date.UTC(
+    year,
+    month,
+    Math.min(local.getUTCDate(), last),
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  );
+  return new Date(moved - IST_MS);
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Where Extend moves a window's end (desk/window.py next_close, L-COMMITTEE.rules/2, BLD-B263): 30 days on, or the
+ * 3-month limit itself when that step would leave less than 7 days before it; null once the end is at the limit.
+ */
+export function nextCloseIST(opensAt: Date, closesAt: Date): Date | null {
+  const cap = addMonthsIST(opensAt, 3);
+  if (closesAt.getTime() >= cap.getTime()) return null;
+  const step = new Date(closesAt.getTime() + 30 * DAY_MS);
+  return cap.getTime() - step.getTime() < 7 * DAY_MS ? cap : step;
+}
+
+/** desk/when.py day(): "Monday 8 February", with " 2027" only when the year in India is not this one. */
+export function dayIST(t: Date, now: Date = new Date()): string {
+  const parts = (d: Date) =>
+    Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+        .formatToParts(d)
+        .map((p) => [p.type, p.value]),
+    );
+  const p = parts(t);
+  return `${p.weekday} ${p.day} ${p.month}${p.year === parts(now).year ? "" : ` ${p.year}`}`;
+}
+
+/**
+ * S-06's own card: the article that holds the page's one h1 (ideas/[id]/sharer-screen.tsx). Its pill is the idea's
+ * status; a similar idea's tile beside it carries a pill too ("With the review desk"), so a status is read in here.
+ */
+export function ideaCard(page: Page): Locator {
+  return page.getByRole("article").filter({ has: page.getByRole("heading", { level: 1 }) });
+}
+
+/**
+ * The idea is with the review desk (L-SUBMIT lifecycle): just sent or restored it reads Checking until the worker's
+ * submit.check job hands it on, so Checking is allowed first and the page is read again until the card says so.
+ */
+export async function expectWithDesk(page: Page): Promise<void> {
+  const pill = (label: string | RegExp) => ideaCard(page).getByText(label, { exact: true });
+  await expect(pill(/^(?:Checking|With the review desk)$/)).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        if (await pill("With the review desk").isVisible()) return true;
+        await page.reload();
+        return pill("With the review desk").isVisible();
+      },
+      { timeout: 120_000, intervals: [2_000, 5_000] },
+    )
+    .toBe(true);
 }
 
 // --- Which modules are on main ---------------------------------------------------------------------------------------
@@ -256,8 +399,37 @@ export type StepOptions = {
 
 /** Steps collected as fixme so far, for `after`. Specs collect in file order, so an earlier step is already here. */
 const FIXME_REFS = new Set<StepRef>();
+/** Every step collected so far: an `after` ref must be one of these, so a typo or a later row fails collection. */
+const DECLARED_REFS = new Set<StepRef>();
 
 export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) => Promise<void>;
+
+/**
+ * What a journey's steps hand on to later ones (a draft's address, a title), as `carried.draft = …` and
+ * `carried.draft`. Kept in a file in the run's output folder, which Playwright empties when a run starts, so it
+ * outlives the fresh worker Playwright starts after a failed step. Read and written only inside a running step.
+ */
+export function carriedFor<T extends Record<string, string>>(journey: JourneyId): Partial<T> {
+  const file = () => path.join(test.info().project.outputDir, ".carried.json");
+  const read = (): Partial<Record<JourneyId, Record<string, string>>> => {
+    try {
+      return JSON.parse(fs.readFileSync(file(), "utf8"));
+    } catch {
+      return {};
+    }
+  };
+  return new Proxy({} as Partial<T>, {
+    get: (_target, key) => (typeof key === "string" ? read()[journey]?.[key] : undefined),
+    set: (_target, key, value) => {
+      if (typeof key !== "string") return false;
+      const all = read();
+      all[journey] = { ...all[journey], [key]: String(value) };
+      fs.mkdirSync(path.dirname(file()), { recursive: true });
+      fs.writeFileSync(file(), JSON.stringify(all));
+      return true;
+    },
+  });
+}
 
 /**
  * One row of a journey's table. `ref` is "J-SHARE/3"; `screen` the screen it lands on ("S-04"). The test is fixme
@@ -274,6 +446,12 @@ export function step(ref: StepRef, screen: string, title: string, opts: StepOpti
       );
     }
   }
+  for (const earlier of opts.after ?? []) {
+    if (!earlier.startsWith(`${journey}/`) || !DECLARED_REFS.has(earlier)) {
+      throw new Error(`${ref} waits for ${earlier}, which is not an earlier step of ${journey}`);
+    }
+  }
+  DECLARED_REFS.add(ref);
   const name = `${ref} ${screen} · ${title}`;
   const fixme = (description: string) => {
     FIXME_REFS.add(ref);
@@ -314,9 +492,10 @@ export async function snap(
   const padded = row.replace(/^\d+/, (d) => d.padStart(2, "0")); // 3 → 03, 4a → 04a, A1 stays
   const file = path.join(SHOTS_DIR, journey!, `${padded}-${screen}${label ? `-${label}` : ""}.png`);
   try {
-    if (page.isClosed()) return;
+    if (page.isClosed() || page.url() === "about:blank") return; // closed, or never used by the step
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    await page.screenshot({ path: file, fullPage: true, timeout: 10_000 });
+    // Animations finished, so a walker reads the screen as it settles, not a frame of a hand-over.
+    await page.screenshot({ path: file, fullPage: true, timeout: 10_000, animations: "disabled" });
     await info.attach(path.basename(file), { path: file, contentType: "image/png" });
   } catch {
     // A crashed page has nothing to show; the failure itself is the report.

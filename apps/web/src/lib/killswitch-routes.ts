@@ -61,6 +61,12 @@ export const ROUTE_RULES: readonly Rule[] = [
   // are filled by hand (DEC-105).
   { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  // "Keep mine separate" is part of sending a draft (BLD-C095).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/similar\/keep-separate\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
@@ -163,6 +169,8 @@ export const ROUTE_RULES: readonly Rule[] = [
   // each one writes a note or a reason, changes who is on a crew, or merges an idea. Reads stay open, so a
   // request already sent still reads "Waiting for Ravi".
   { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/team-up\/?$/, switches: ["submissions"] },
+  // Ask to join the build team (L-DECIDE.rules/6, DEC-111) pauses with sharing, as team-up does (BLD-B256).
+  { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/join-build\/?$/, switches: ["submissions"] },
   { methods: WRITE, pattern: /^\/api\/team-up\/[^/]+(?:\/answer)?\/?$/, switches: ["submissions"] },
   { methods: WRITE, pattern: /^\/api\/drafts\/[^/]+\/merge-request\/?$/, switches: ["submissions"] },
   { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/crew\/[^/]+\/?$/, switches: ["submissions"] },
@@ -235,10 +243,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/me\/refer-as\/?$/, // how a person wants to be referred to (BLD-C111) changes nothing about ideas
   /^\/api\/me\/app-news\/?$/, // "Tell me when it's out" for the app (S-H3, L-NOTIFY/7): a person's own choice, no idea
   /^\/api\/review\/items\/[^/]+\/(?:action|veto)\/?$/, // the desk keeps clearing the queue while submissions are paused; §7.6 has no review switch
-  // The Ones console's calls keep working whatever is paused: it is the committee's own record (DEC-040). Text
-  // checks inside these calls answer 503 on their own when the assistant is off. The console page, awards and the
-  // announcement are retired (DEC-106); proposals stay until lane A's admin path replaces them.
-  /^\/api\/ones\/(?:proposals(?:\/[^/]+\/(?:decide|carry-out|withdraw|messages|invites))?|[^/]+\/measures|screen-mode)\/?$/,
+  // The Ones' records keep working whatever is paused: a glow-up message from /ones/write/:id (BLD-E042), the admin
+  // member's measures and screen mode (DEC-040). Text checks inside these calls answer 503 on their own when the
+  // assistant is off. The console, awards, the announcement and the rest of the proposals are retired (DEC-106,
+  // BLD-E049): lane A's admin path marks Founding Ones and removes a One.
+  /^\/api\/ones\/(?:proposals\/[^/]+\/messages|[^/]+\/measures|screen-mode)\/?$/,
   // A One's own record: their number, brief, glow-up and Showcase brief change nothing about ideas.
   /^\/api\/me\/one\/(?:number|brief|showcase|glow-up\/[^/]+\/seen)\/?$/,
   // The same on the 1% Club's dashboard (lane E, S-ONE), and a person's own Profile switches (S-H6): their own
@@ -265,6 +274,13 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
+  // DEC-110: My ideas' and the review desk's searches are reads sent as POST, so their words travel in the body and in
+  // no URL. They write nothing and stay open in read-only mode, as their GETs do.
+  /^\/api\/me\/ideas\/?$/,
+  /^\/api\/desk\/?$/,
+  // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
+  // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
+  /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
   // The experiments' deciding events (P-DECISIONS.experiments, BLD-C174): codes about what a screen showed, nothing
   // about ideas; logging must never depend on what is paused. The interview's answers stay behind submissions
   // (/api/drafts above).

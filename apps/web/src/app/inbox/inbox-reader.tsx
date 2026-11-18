@@ -9,12 +9,16 @@
  * part of an item: the reader asks the route that owns it when the item is opened, so it is read in the app only
  * (L-NOTIFY/3, BLD-E004). The desk's questions are lane B's card (C-QCARD, `variant="inbox"`), fed from the sharer's
  * question set. Everything is shown as text; nothing from a message becomes markup.
+ *
+ * The search filters in the browser and is never in the address (DEC-110): this tab keeps it for the history entry
+ * (`lib/search-memory`), so a reload or Back brings it back and a link or a fresh visit starts without one.
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,8 +31,18 @@ import {
 import { answerLabel, QuestionsCard } from "@/components/review/qcard";
 import type { InboxTab, SharerQuestionSetResponse } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
-import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
+import {
+  cleanAddress,
+  noSubscription,
+  readSearch,
+  replaceAddress,
+  writeSearch,
+  type SearchList,
+} from "@/lib/search-memory";
+import type { Action, InboxCounts, InboxEntry, InboxEntryKind, InboxList } from "@/server/inbox";
 
+import { inboxHref, inboxSearch, isInboxPath, itemIn, readInboxAddress, type InboxView } from "./address";
 import { useRequest } from "./teamup-request";
 
 export { COUNTS_EVENT };
@@ -88,35 +102,60 @@ export function whenLabel(iso: string, now: Date): string {
   });
 }
 
-function dueTone(label: string): string {
-  if (label === "Overdue") return "over";
-  return /hour/i.test(label) ? "soon" : "";
+/** The countdown's pill, as the worker counts it (F-COPY.plurals/3, BLD-A225): warn under a day ("07:38 left"), bad
+ * once late ("Overdue by 5 hours"). A date ("By Thu, 19 Nov") carries no variant and stays plain. */
+function dueTone(due: NonNullable<InboxEntry["due"]>): string {
+  if (due.variant === "bad") return "over";
+  return due.variant === "warn" ? "soon" : "";
 }
 
 function titleOf(item: InboxEntry): string {
   return item.idea?.title ?? "";
 }
 
-/** The row's accessible name, as on the board: "Meera from the review desk asked you 3 questions, <title>, 11:20
- * am, unread" (Inbox.md Controls). */
+/** DEC-111 (BLD-A221): the review desk's kinds come from the desk as a whole, whoever reads them, and the 1% Club's
+ * own kinds name no one. The worker already sends them that way; the reader holds to it too, so no reviewer's name
+ * or initials can show even from an item rendered before the change. */
+const DESK_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>([
+  "questions",
+  "answer_reminder",
+  "decision",
+  "worth_revised",
+  "desk_merge",
+  "detail_hidden_by_desk",
+]);
+const SYSTEM_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>(["sent_to_desk"]);
+
+/** The sender as the row and the reader show them: "The review desk" for a desk kind (DEC-111), else the worker's. */
+export function senderOf(item: InboxEntry): string {
+  return DESK_KINDS.has(item.kind) ? REVIEW_DESK_START : item.body.sender;
+}
+
+/** True when the sender is drawn with the mark, never a person's initials: the system, and the desk (DEC-111). */
+export function drawsMark(item: InboxEntry): boolean {
+  return item.from === "system" || DESK_KINDS.has(item.kind) || SYSTEM_KINDS.has(item.kind);
+}
+
+/** The row's accessible name, as on the board: "The review desk asked you 3 questions, <title>, 11:20 am, unread"
+ * (Inbox.md Controls; DEC-111 names the desk where the board names Meera). */
 export function rowName(item: InboxEntry, now: Date): string {
-  const parts = [`${item.body.sender} ${item.line}`, titleOf(item), whenLabel(item.at, now)];
+  const parts = [`${senderOf(item)} ${item.line}`, titleOf(item), whenLabel(item.at, now)];
   if (item.unread) parts.push("unread");
   return parts.filter(Boolean).join(", ");
 }
 
-function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
-  const system = item.from === "system";
+export function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
+  const mark = drawsMark(item);
   return (
-    <span className={`ibx-av ibx-av-${size}${system ? " sys" : ""}`} aria-hidden="true">
-      {item.from === "system" ? "1%" : item.from.initials}
+    <span className={`ibx-av ibx-av-${size}${mark ? " sys" : ""}`} aria-hidden="true">
+      {mark || item.from === "system" ? "1%" : item.from.initials}
     </span>
   );
 }
 
 function Due({ item, small }: { item: InboxEntry; small?: boolean }) {
   if (!item.due) return null;
-  return <span className={`ibx-due ${dueTone(item.due.label)}${small ? " xs" : ""}`}>{item.due.label}</span>;
+  return <span className={`ibx-due ${dueTone(item.due)}${small ? " xs" : ""}`}>{item.due.label}</span>;
 }
 
 function btnClass(style: Action["style"]): string {
@@ -126,14 +165,14 @@ function btnClass(style: Action["style"]): string {
 type QuestionSet = NonNullable<SharerQuestionSetResponse>;
 type Detail = { kind: "questions"; set: QuestionSet } | { kind: "reason"; reason: string } | null;
 
-/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. */
+/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. The reviewer (`by`) is
+ * not read: the sharer's set comes without one (DEC-111). */
 function isSet(data: unknown): data is QuestionSet {
   const s = data as Partial<QuestionSet> | null;
   return (
     !!s &&
     typeof s.id === "string" &&
     typeof s.idea?.id === "string" &&
-    typeof s.by?.first_name === "string" &&
     typeof s.deadline === "string" &&
     typeof s.answered === "number" &&
     Array.isArray(s.questions) &&
@@ -183,10 +222,18 @@ function Footer({ children }: { children: ReactNode }) {
 }
 
 /** The set's own words on the item's forward action, which goes to the Answer screen: "Carry on answering" once some
- * are sent, gone once all are (C-QCARD.states). The card is the body; its button sits in the foot (S-H5.rules/3). */
-export function questionActions(actions: Action[], set: Pick<QuestionSet, "state" | "answered">): Action[] {
+ * are sent, gone once all are (C-QCARD.states). The card is the body; its button sits in the foot (S-H5.rules/3).
+ * An answer reminder keeps its own words, "Answer the questions" (L-INBOX.kinds), while anything is left to answer,
+ * and loses the action, as the questions do, once all are sent (BLD-A199, J-TRACK/6). */
+export function questionActions(
+  actions: Action[],
+  set: Pick<QuestionSet, "state" | "answered">,
+  kind: InboxEntry["kind"] = "questions",
+): Action[] {
   const label = answerLabel(set);
-  return actions.flatMap((a) => (a.to && /\/answer$/.test(a.to) ? (label ? [{ ...a, label }] : []) : [a]));
+  const forward = (a: Action): Action[] =>
+    !label ? [] : kind === "answer_reminder" ? [a] : [{ ...a, label }];
+  return actions.flatMap((a) => (a.to && /\/answer$/.test(a.to) ? forward(a) : [a]));
 }
 
 function ItemActions({
@@ -262,6 +309,38 @@ const Icon = {
   ),
 };
 
+/** Where this tab keeps the Inbox's search, on `/inbox` and `/inbox/:itemId` alike (DEC-110). */
+const LIST: SearchList = "/inbox";
+
+/** The view to start from. The page's props name the view its address had when the server rendered it; the address
+ * itself (`useSearchParams`, the router's own) is where the person left it. They differ when Back restores the page
+ * from the router's cache after the reader moved the address; that page, and any Inbox reached by Back or Forward,
+ * loads the tab the address names again (`reload`) and opens its item once that list is in. Otherwise the two agree,
+ * so a hydrated page renders exactly what the server did (P-ROUTES.state, J-BROWSE/4). The search starts empty, as
+ * the server rendered it; the reader takes this tab's kept words once it has mounted (DEC-110). */
+export function startView(
+  address: Parameters<typeof readInboxAddress>[0],
+  initial: { tab: InboxTab; item: string | null; items: readonly { id: string }[] },
+  byHistory = false,
+): InboxView & { reload: boolean } {
+  const asked = readInboxAddress(address);
+  const view = asked.named
+    ? { tab: asked.tab, item: asked.item, q: "" }
+    : { tab: initial.tab, item: initial.item, q: "" };
+  // Back or Forward may bring a page the router rendered before the person read anything: load it again first
+  if (byHistory || view.tab !== initial.tab) return { ...view, reload: true };
+  return { ...view, item: asked.named ? itemIn(asked.item, initial.items) : initial.item, reload: false };
+}
+
+/** Set when the browser moves through history (Back or Forward) and cleared when an Inbox arrives, so an Inbox the
+ * router brings back that way loads its list again before it opens anything (nothing stale is marked read). */
+const moved = { byHistory: false };
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    moved.byHistory = true;
+  });
+}
+
 function subscribeDesktop(cb: () => void): () => void {
   const m = window.matchMedia(DESKTOP);
   m.addEventListener("change", cb);
@@ -282,6 +361,7 @@ function useDesktop(): boolean {
  * list's h1 is hidden with the list, so the item's title is the screen's h1 (WCAG 2.1 AA, S-H5.rules/6). */
 function OpenItem({
   item,
+  ready,
   now,
   phone,
   phoneOpen,
@@ -293,6 +373,8 @@ function OpenItem({
   onNext,
 }: {
   item: InboxEntry;
+  /** False while the page hydrates without the search this tab keeps (DEC-110), as for the mark-read effect */
+  ready: boolean;
   now: Date;
   phone: boolean;
   phoneOpen: boolean;
@@ -305,16 +387,20 @@ function OpenItem({
 }) {
   const [detail, setDetail] = useState<Detail>(null);
   useEffect(() => {
+    // As the mark-read effect: nothing is read while the page hydrates the unfiltered list, before the kept search is
+    // back: the first read of a question set marks it seen for the desk (L-QUESTIONS.clock/1, DEC-110). Once that
+    // search is in, an item it hides is no longer open; one it keeps reads now.
+    if (!ready) return;
     let live = true;
-    // As the mark-read effect: on a phone an item is open only once the person opens it
+    // On a phone an item is open only once the person opens it
     const readOn = phoneOpen || window.matchMedia(DESKTOP).matches;
     void fetchDetail(item, readOn).then((d) => live && setDetail(d));
     return () => {
       live = false;
     };
-    // Once per item: the component is keyed by it.
+    // Once per item once ready: the component is keyed by it, and `ready` only ever turns true.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
   const request = useRequest(item, onAnswered, onNext);
   const Title = phone ? "h1" : "h2";
   return (
@@ -332,7 +418,7 @@ function OpenItem({
             <Avatar item={item} size="md" />
             <span className="ibx-fw">
               <span className="ibx-fl">
-                <b>{item.body.sender}</b> {item.line}
+                <b>{senderOf(item)}</b> {item.line}
               </span>
               <span className="ibx-meta">{whenLabel(item.at, now)}</span>
             </span>
@@ -353,7 +439,9 @@ function OpenItem({
         request.bar
       ) : (
         <ItemActions
-          actions={detail?.kind === "questions" ? questionActions(item.actions, detail.set) : item.actions}
+          actions={
+            detail?.kind === "questions" ? questionActions(item.actions, detail.set, item.kind) : item.actions
+          }
           busy={busy}
           onOp={onOp}
         />
@@ -371,26 +459,53 @@ export function InboxReader({
   initialTab: InboxTab;
   initialItem: string | null;
 }) {
-  const router = useRouter();
-  const [tab, setTab] = useState<InboxTab>(initialTab);
+  const address = useSearchParams();
+  const [start] = useState(() =>
+    startView(address, { tab: initialTab, item: initialItem, items: initial.items }, moved.byHistory),
+  );
+  const [tab, setTab] = useState<InboxTab>(start.tab);
   const [items, setItems] = useState<InboxEntry[]>(initial.items);
   const [counts, setCounts] = useState<InboxCounts>(initial.counts);
-  const [openId, setOpenId] = useState<string | null>(initialItem);
-  const [query, setQuery] = useState("");
-  const [phoneOpen, setPhoneOpen] = useState(initialItem !== null);
+  // While the address's own tab loads, nothing is open, so nothing from the cached list is marked read.
+  const [openId, setOpenId] = useState<string | null>(start.reload ? null : start.item);
+  // The search: what the person typed here, else the words this tab keeps for the entry (DEC-110). The server and the
+  // hydrating render have none; the next render reads them
+  const kept = useSyncExternalStore(
+    noSubscription,
+    () => readSearch(LIST),
+    () => start.q,
+  );
+  const [typed, setTyped] = useState<string | null>(null);
+  const query = typed ?? kept;
+  const [phoneOpen, setPhoneOpen] = useState(!start.reload && start.item !== null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string>("");
   const [busy, setBusy] = useState(false);
-  const [switching, setSwitching] = useState(false);
+  const [switching, setSwitching] = useState(start.reload);
   const [now, setNow] = useState(() => new Date());
   const listRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const known = useRef(new Set(initial.items.map((i) => i.id)));
+  const view = useRef<InboxView>({ tab: start.tab, item: start.item, q: start.q });
+  const wrote = useRef(false);
+  // False while the page hydrates without the search this tab keeps: nothing is marked read from the unfiltered list
+  // before it is back (DEC-110)
+  const ready = useSyncExternalStore(
+    noSubscription,
+    () => true,
+    () => false,
+  );
+  useLayoutEffect(() => {
+    cleanAddress();
+  }, []);
+  useEffect(() => {
+    view.current = { ...view.current, q: query };
+  }, [query]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((i) => `${i.body.sender} ${i.line} ${titleOf(i)}`.toLowerCase().includes(q));
+    return items.filter((i) => `${senderOf(i)} ${i.line} ${titleOf(i)}`.toLowerCase().includes(q));
   }, [items, query]);
 
   const desktop = useDesktop();
@@ -399,21 +514,20 @@ export function InboxReader({
   const open = chosen ?? (desktop && !switching ? (shown[0] ?? null) : null);
   const position = open ? shown.indexOf(open) : -1;
 
-  /** Every count on the page and in the shell changes at once (S-H5.rules/4, V-ACC.track/8). */
-  const applyCounts = useCallback(
-    (next: InboxCounts) => {
-      setCounts(next);
-      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: next }));
-      router.refresh();
-    },
-    [router],
-  );
+  /** Every count on the page and in the shell changes at once (S-H5.rules/4, V-ACC.track/8): the shell hears them
+   * on COUNTS_EVENT and fetches its own number again on every navigation. No `router.refresh` here: one still running
+   * when the person opens a link from the item leaves Next's history entry for the Inbox half-written, and Back then
+   * changes the address but keeps the page the person left (BLD-A198, gates run 44226165244). */
+  const applyCounts = useCallback((next: InboxCounts) => {
+    setCounts(next);
+    window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: next }));
+  }, []);
 
-  const load = useCallback(async (next: InboxTab, quiet = false) => {
+  const load = useCallback(async (next: InboxTab, quiet = false): Promise<InboxList | null> => {
     const res = await fetch(`/api/inbox?tab=${next}`, { cache: "no-store" }).catch(() => null);
     if (!res?.ok) {
       if (!quiet) setNotice("We can't load your Inbox just now. Please try again in a minute.");
-      return;
+      return null;
     }
     const data = (await res.json()) as InboxList;
     const arrived = data.items.filter((i) => !known.current.has(i.id)).map((i) => i.id);
@@ -425,7 +539,51 @@ export function InboxReader({
     setNow(new Date());
     if (quiet && arrived.length) setFresh(new Set(arrived)); // one soft wash on what arrived (S-H5.rules/5)
     if (!quiet) setNotice("");
+    return data;
   }, []);
+
+  /** The tab and the open item go into the address at once with `history.replaceState`, as on the review desk
+   * (BLD-B253): no navigation, no history entry, and Back from what the person opens comes here again. The search
+   * goes into this tab's memory of the same entry, never the address (DEC-110); the two merge into the entry's state,
+   * so neither wipes the other. Written only while the Inbox is the page; a browser that limits how often history may
+   * be written keeps the last one. */
+  const remember = useCallback((change: Partial<InboxView>) => {
+    view.current = { ...view.current, ...change };
+    if (!isInboxPath(window.location.pathname)) return;
+    wrote.current = true;
+    writeSearch(LIST, view.current.q);
+    const href = inboxHref(window.location.pathname, view.current);
+    if (window.location.pathname + window.location.search === href) return;
+    replaceAddress(href);
+  }, []);
+
+  // The router can put back an address from an update it started before the person moved (its own state is written
+  // to the address on every change). Once the reader has written the view, the address follows the screen again.
+  useEffect(() => {
+    if (wrote.current) remember({});
+  }, [address, remember]);
+
+  // Back to an Inbox the router kept from before: load the tab the address names, then open its item if it is still
+  // in that list (J-BROWSE/4). Once, on arrival.
+  useEffect(() => {
+    moved.byHistory = false;
+    if (!start.reload) return;
+    let live = true;
+    const later = setTimeout(() => {
+      void load(start.tab).then((data) => {
+        if (!live || view.current.tab !== start.tab) return; // the person has moved on meanwhile
+        const item = data ? itemIn(start.item, data.items) : null;
+        setOpenId(item);
+        setPhoneOpen(item !== null);
+        setSwitching(false);
+        if (item !== start.item) remember({ item });
+      });
+    }, 0);
+    return () => {
+      live = false;
+      clearTimeout(later);
+    };
+  }, [start, load, remember]);
 
   // New items arrive at the top of Today while the page is open (S-H5.rules/5).
   useEffect(() => {
@@ -439,13 +597,14 @@ export function InboxReader({
     setOpenId(item.id);
     setNotice("");
     if (toPhone) setPhoneOpen(true);
+    remember({ item: item.id });
   }
 
   // Opening an item marks it read and every count comes back with it (L-INBOX.rules/3, S-H5.rules/4); not again
   // when it is marked unread while open. The first item opens by itself on a desktop only: the server renders the
   // desktop layout, so on a phone the first render may still hold it open, and it is not read until it is opened.
   useEffect(() => {
-    if (!open?.unread) return;
+    if (!ready || !open?.unread) return;
     if (!phoneOpen && !window.matchMedia(DESKTOP).matches) return;
     const id = open.id;
     void fetch(`/api/inbox/${id}/read`, { method: "POST" })
@@ -456,7 +615,7 @@ export function InboxReader({
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open?.id]);
+  }, [open?.id, ready]);
 
   // On a phone the item is its own screen: focus goes to its title, and back to its row on the way out.
   useEffect(() => {
@@ -467,6 +626,7 @@ export function InboxReader({
   function closePhone() {
     const id = openId;
     setPhoneOpen(false);
+    remember({ item: null });
     requestAnimationFrame(() => document.getElementById(`ibx-row-${id}`)?.focus());
   }
 
@@ -476,6 +636,7 @@ export function InboxReader({
     setOpenId(null);
     setPhoneOpen(false);
     setSwitching(true);
+    remember({ tab: next, item: null });
     await load(next);
     setSwitching(false);
   }
@@ -501,6 +662,14 @@ export function InboxReader({
       e.preventDefault();
       next.focus();
     }
+  }
+
+  /** The list filters as the person types, and this tab keeps the words at once, so Back from a link opened straight
+   * after brings them back (DEC-110). */
+  function search(value: string) {
+    const q = inboxSearch(value);
+    setTyped(q);
+    remember({ q });
   }
 
   function step(by: number) {
@@ -541,6 +710,7 @@ export function InboxReader({
     const next = rest[Math.min(position, rest.length - 1)];
     setOpenId(next?.id ?? null);
     if (!next) setPhoneOpen(false);
+    remember({ item: next?.id ?? null });
   }
 
   async function runOp(item: InboxEntry, action: Action) {
@@ -606,10 +776,11 @@ export function InboxReader({
           {Icon.search}
           <input
             type="search"
+            autoComplete="off"
             aria-label="Search your inbox"
             placeholder="Search your inbox"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => search(e.target.value)}
           />
         </div>
         <div className="ibx-tabs" role="tablist" aria-label="Show">
@@ -661,7 +832,7 @@ export function InboxReader({
                     <Avatar item={item} size="sm" />
                     <span className="ibx-b" aria-hidden="true">
                       <span className="ibx-top">
-                        <span className="ibx-who">{item.body.sender}</span>
+                        <span className="ibx-who">{senderOf(item)}</span>
                         <span className="ibx-when">{whenLabel(item.at, now)}</span>
                       </span>
                       <span className="ibx-title">{titleOf(item) || item.line}</span>
@@ -730,6 +901,7 @@ export function InboxReader({
             <OpenItem
               key={open.id}
               item={open}
+              ready={ready}
               now={now}
               phone={!desktop}
               phoneOpen={phoneOpen}

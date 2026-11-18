@@ -56,7 +56,7 @@ def test_S_H2B_states_the_lead_result_lines_follow_the_board_with_BLD_E008() -> 
     )
     assert rules.say_hello("Kavya", "IDEA-2026-001412") == {
         "label": "Say hello to Kavya",
-        "to": "/ideas/IDEA-2026-001412/conversation",
+        "to": "/ideas/IDEA-2026-001412/conversation#say-hello",  # BLD-F069: lands in the box
     }
 
 
@@ -100,6 +100,9 @@ def test_C_SHEET_TEAMUP_after_waiting_and_approved() -> None:
     merged = rules.requester_after("approved_merged", lead_first="Ravi", lead_ref="IDEA-2026-001412", reason=None,
                                    brought=1)  # fmt: skip
     assert merged is not None and merged["line"] == "Merged into IDEA-2026-001412, with credit to you."
+    # BLD-F069: "Say hello" lands with the cursor in the conversation's box; the hint carries no words
+    hello = {"label": "Say hello", "to": "/ideas/IDEA-2026-001412/conversation#say-hello"}
+    assert on["action"] == hello and merged["action"] == hello
     assert rules.requester_after("withdrawn", lead_first="Ravi", lead_ref="x", reason=None, brought=0) is None
 
 

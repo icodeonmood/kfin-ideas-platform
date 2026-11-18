@@ -16,7 +16,10 @@ import type { SharerQuestionSetResponse } from "@/lib/contracts";
 import { tellInboxCounts } from "@/lib/desk/answers";
 import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+  useSearchParams: () => new URLSearchParams(globalThis.location?.search ?? ""),
+}));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {
@@ -51,7 +54,7 @@ const ACTIONS: Action[] = [
 const ITEM: InboxEntry = {
   id: "77",
   kind: "questions",
-  from: { id: "u-meera", name: "Meera Iyer", first_name: "Meera", initials: "MI" },
+  from: "system", // DEC-111: the worker sends a desk kind from the review desk as a whole
   idea: { id: IDEA, title: TITLE, status: "needs_you" },
   line: "asked you 3 questions",
   at: new Date().toISOString(),
@@ -62,7 +65,7 @@ const ITEM: InboxEntry = {
   body: {
     heading: "Questions from the review desk",
     note: "Answer by Thursday 19 November, 6 pm.",
-    sender: "Meera from the review desk",
+    sender: "The review desk",
     count: 3,
     set_id: SET_ID,
   },
@@ -80,7 +83,7 @@ function questionSet(answered = 0): NonNullable<SharerQuestionSetResponse> {
     id: SET_ID,
     idea_id: IDEA,
     idea: { id: IDEA, title: TITLE },
-    by: MEERA,
+    by: null, // DEC-111: the sharer's set never names the reviewer
     state: answered ? "partly_answered" : "seen",
     time_to_answer: "3d",
     sent_at: new Date().toISOString(),
@@ -196,9 +199,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
     // The reader's header stays: what it is, the idea as the item's title, who asked, when and the countdown
     expect(host.querySelector(".ibx-kind")?.textContent).toBe("Questions from the review desk");
     expect(host.querySelector("#ibx-title")?.textContent).toBe(TITLE);
-    expect(host.querySelector(".ibx-from")?.textContent).toContain(
-      "Meera from the review desk asked you 3 questions",
-    );
+    expect(host.querySelector(".ibx-from")?.textContent).toContain("The review desk asked you 3 questions");
     expect(host.querySelector(".ibx-from")?.textContent).toContain("3 days left");
     for (const name of ["Archive", "Mark unread"])
       expect(host.querySelector(`.ibx-tool button[aria-label="${name}"]`)).not.toBeNull();
@@ -246,7 +247,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
       ...ITEM,
       id: "78",
       kind: "answer_reminder",
-      line: "1 day left to answer Meera’s questions",
+      line: "1 day left to answer the review desk’s questions",
     });
     expect(text(".qcard-inbox .qcard-qn")).toHaveLength(3);
     act(() => root.unmount());
@@ -313,6 +314,30 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
   it("C-QCARD.states answered: the forward action to the Answer screen goes; Open the conversation stays", () => {
     expect(questionActions(ACTIONS, { state: "answered", answered: 3 })).toEqual([ACTIONS[0]]);
     expect(questionActions(ACTIONS, { state: "seen", answered: 0 })).toEqual(ACTIONS);
+  });
+
+  it("L-INBOX.kinds, BLD-A199 (J-TRACK/6): a reminder for a partly answered set keeps Answer the questions in its foot, with the card's ticks", async () => {
+    served = questionSet(2);
+    await open({
+      ...ITEM,
+      id: "78",
+      kind: "answer_reminder",
+      line: "1 day left to answer the review desk’s questions",
+    });
+    expect(host.querySelectorAll(".qcard-inbox [role=img][aria-label=Answered]")).toHaveLength(2);
+    expect(footLinks()).toEqual([
+      ["Open the conversation", `/ideas/${IDEA}/conversation`],
+      ["Answer the questions", `/ideas/${IDEA}/answer`],
+    ]);
+  });
+
+  it("L-INBOX.kinds, BLD-A199 (J-TRACK/6): an answer reminder leads to Answer in its own words while anything is left, and drops it once all are sent", () => {
+    const partly = { state: "partly_answered", answered: 2 } as const;
+    expect(questionActions(ACTIONS, partly, "answer_reminder")).toEqual(ACTIONS); // "Answer the questions", /answer
+    expect(questionActions(ACTIONS, partly).map((a) => a.label)).toContain("Carry on answering"); // the questions item
+    expect(questionActions(ACTIONS, { state: "answered", answered: 3 }, "answer_reminder")).toEqual([
+      ACTIONS[0],
+    ]);
   });
 });
 

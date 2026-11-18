@@ -9,7 +9,6 @@ title is its masked title (L-HIDE), the one line every message may carry.
 from __future__ import annotations
 
 import datetime as dt
-import math
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,25 +16,37 @@ from comms import email_html
 from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
-from notify import AS_THE_DESK
+from notify import AS_THE_DESK, as_the_desk
+from onepc import countdown as clock
+from onepc.words import REVIEW_DESK_START
 from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# Who the sender is, in the pack's words (L-INBOX.kinds "Sender display"): the review desk by first name, the
-# Ones Committee by full name, everyone else by full name, the system as "1% Club".
-DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge", "sent_to_desk"})
+# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 changes it): the review desk's kinds come from the
+# review desk as a whole, the Ones Committee by full name, everyone else by full name, the system as "1% Club".
+# DEC-111 (BLD-A221): a sharer, a crew member or anyone outside the desk and the committee never sees the name of the
+# person at the review desk, so a desk kind reads "The review desk" with the mark, whoever reads it, and the reviewer
+# is never read: no users.id, name, first name or initials reach the item, its variables or its email. L-HIDE/7's
+# kind (`notify.AS_THE_DESK`, BLD-A205) is one of them, and its reviewer is not even stored. Any other item whose refs
+# say `as_desk: true` (lane F's comment and mention when a reviewer writes as the desk) reads the same way, and its
+# reviewer is not stored either (`notify.as_the_desk`).
+DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge"}) | AS_THE_DESK
+# Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk. It never names a
+# person, and the sender is never read. The reminder to answer the desk's questions is the desk's own
+# (`notify.AS_THE_DESK`, BLD-B257), so it reads "The review desk" through DESK_KINDS.
+SYSTEM_KINDS = frozenset({"sent_to_desk"})
 COMMITTEE_KINDS = frozenset({"decision_reversed"})
 COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; the rest read "By Thu, 19 Nov"
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}
 SYSTEM = {"display": "1% Club", "name": "1% Club", "first_name": "1% Club", "initials": "1%", "system": True}
-# L-HIDE/7 (BLD-A205): a detail hidden by a reviewer comes from the review desk as a whole, shown with the mark. The
-# reviewer's name is never shown or sent, nor stored (`notify.AS_THE_DESK`).
-REVIEW_DESK = {
+# The review desk as a whole, shown with the mark (L-HIDE/7, BLD-A205; DEC-111). The words are the shared label
+# (`onepc.words`), so every lane names the desk the same way.
+DESK_SENDER = {
     **SYSTEM,
-    "display": "The review desk",
-    "name": "The review desk",
-    "first_name": "The review desk",
+    "display": REVIEW_DESK_START,
+    "name": REVIEW_DESK_START,
+    "first_name": REVIEW_DESK_START,
 }
 # Kinds whose one action is the whole of it: no "Open the conversation" is added (L-HIDE/7: "Open your idea" only).
 ONE_ACTION_KINDS = frozenset({"detail_hidden_by_desk"})
@@ -132,18 +143,24 @@ def lead_seen_by_requester(
     return ref if seen.first is not None else {**ref, "hidden": True}
 
 
-def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
-    if kind in AS_THE_DESK:
-        return dict(REVIEW_DESK)
-    if who is None:
+def sender(kind: str, who: dict[str, Any] | None, refs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The sender as the item shows them. A desk kind, or an item whose refs say `as_desk`, is the review desk as a
+    whole, and a system kind the 1% Club, whoever `who` is (DEC-111): neither carries a person."""
+    if kind in DESK_KINDS or as_the_desk(kind, refs):
+        return dict(DESK_SENDER)
+    if who is None or kind in SYSTEM_KINDS:
         return dict(SYSTEM)
-    if kind in DESK_KINDS:
-        role, display = "from the review desk", f"{who['first_name']} from the review desk"
-    elif kind in COMMITTEE_KINDS:
+    if kind in COMMITTEE_KINDS:
         role, display = "from the Ones Committee", f"{who['name']} from the Ones Committee"
     else:
         role, display = "", who["name"]
     return {**who, "role_label": role, "display": display, "system": False}
+
+
+def names_no_one(kind: str, refs: dict[str, Any] | None = None) -> bool:
+    """An item whose sender is never read (DEC-111): the review desk's kinds and the 1% Club's own, and any item
+    whose refs say `as_desk`."""
+    return kind in DESK_KINDS or kind in SYSTEM_KINDS or as_the_desk(kind, refs)
 
 
 def _possessive(first_name: str | None) -> str:
@@ -172,25 +189,21 @@ def short_date(at: dt.datetime) -> str:
 
 
 def countdown(at: dt.datetime, now: dt.datetime) -> str:
-    """ "3 days left", "5 hours left", "Under an hour left", "Overdue" (A-API.conventions/6: the server says it)."""
-    seconds = (at - now).total_seconds()
-    if seconds <= 0:
-        return "Overdue"
-    hours = seconds / 3600
-    if hours >= 24:
-        days = math.floor(hours / 24)
-        return f"{days} day left" if days == 1 else f"{days} days left"
-    if hours >= 1:
-        h = math.floor(hours)
-        return f"{h} hour left" if h == 1 else f"{h} hours left"
-    return "Under an hour left"
+    """ "2 days left", "07:38 left", "Overdue by 5 hours" (A-API.conventions/6: the server says it). The one rule every
+    place counts by (F-COPY.plurals/3, `onepc.countdown`, BLD-A225), with the Inbox's own word after the count."""
+    return clock.label(at, now, "left")
 
 
 def due(kind: str, at: dt.datetime | None, now: dt.datetime) -> dict[str, Any] | None:
     if at is None:
         return None
-    label = countdown(at, now) if kind in COUNTDOWN_KINDS else f"By {short_date(at)}"
-    return {"at": at.isoformat(), "label": label, "long": long_date(at), "short": short_date(at), "any": True}
+    out: dict[str, Any] = {"at": at.isoformat(), "long": long_date(at), "short": short_date(at), "any": True}
+    if kind in COUNTDOWN_KINDS:
+        c = clock.countdown(at, now)
+        out["label"], out["variant"] = c.label("left"), c.variant  # the pill: warn under a day, bad once late
+    else:
+        out["label"] = f"By {short_date(at)}"
+    return out
 
 
 def _idea(conn: Conn, idea_uuid: Any) -> dict[str, Any] | None:
@@ -255,16 +268,16 @@ def _first_name_for_code(conn: Conn, code: str | None) -> str | None:
 
 
 def _left(row: dict[str, Any], now: dt.datetime) -> str:
-    """How long is left on a reminder, as it is read: "2 days", "5 hours". Once the time has passed, what was left
-    when it was sent."""
+    """How long is left on a reminder, as it is read: "2 days", "07:38" (the countdown's count, F-COPY.plurals/3).
+    Once the time has passed, what was left when it was sent: "1 day" for the day-before reminder, else the whole
+    hours as "02:00" (L-QUESTIONS.clock/2)."""
     at = row.get("due_at")
     if at is not None and at > now:
-        label = countdown(at, now)
-        return label[: -len(" left")] if label.endswith(" left") else label
+        return clock.countdown(at, now).count
     hours = 24.0
     if at is not None and row.get("created_at"):
         hours = (at - row["created_at"]).total_seconds() / 3600
-    return "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
+    return "1 day" if hours >= 20 else f"{max(1, round(hours)):02d}:00"
 
 
 def teamup_request_vars(refs: dict[str, Any], offered: list[str]) -> dict[str, Any]:
@@ -298,10 +311,9 @@ def _kind_vars(
     """The kind's facts, from the rows its IDs point to. Booleans drive the template's sections."""
     out: dict[str, Any] = {}
     if kind in ("questions", "answer_reminder"):
-        n, asker, qs = 0, None, None
-        count_sql = (
-            "SELECT s.id, s.by_user_id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
-        )
+        # The set and its count only: who asked is never read, as the desk asks as a whole (DEC-111, BLD-A221)
+        n, qs = 0, None
+        count_sql = "SELECT s.id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
         if refs.get("set_id"):
             qs = conn.execute(
                 count_sql + "FROM question_sets s WHERE s.id::text = %s", (str(refs["set_id"]),)
@@ -313,17 +325,12 @@ def _kind_vars(
                 (idea["uuid"],),
             ).fetchone()
         if qs is not None:
-            n, asker = int(qs["n"]), person(conn, qs["by_user_id"])
+            n = int(qs["n"])
             out["set_id"] = str(qs["id"])
         if not n and isinstance(refs.get("count"), int):
             n = int(refs["count"])
         out["count"] = n
         out["count_words"] = "1 question" if n == 1 else (f"{n} questions" if n else "some questions")
-        first = (asker or {}).get("first_name")
-        out["asker"] = {
-            "first_name": first or "the review desk",
-            "possessive": _possessive(first) if first else "the review desk’s",
-        }
         if kind == "answer_reminder":
             out["left"] = _left(row, now)
     elif kind == "decision":
@@ -369,7 +376,11 @@ def _kind_vars(
         out.update(teamup_request_vars(refs, offered))
     elif kind == "teamup_answer":
         answer = refs.get("answer")
-        out["answer"] = {"declined": answer == "decline", "approved": answer != "decline"}
+        declined = answer == "decline"
+        # Lane F's `has_reason` (never the reason): only a decline that says it has one reads "with a reason"
+        reason = declined and refs.get("has_reason") is True
+        out["answer"] = {"declined": declined, "approved": not declined, "with_reason": reason,
+                         "no_reason": declined and not reason}  # fmt: skip
     elif kind == "stage_moved":
         to = refs.get("to") or refs.get("stage") or (idea or {}).get("status")
         out["stage"] = {"words": STAGE_WORDS.get(str(to), "its next stage")}
@@ -396,7 +407,11 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    if kind == "teamup_answer" and refs.get("answer") == "decline":
+    if names_no_one(
+        kind, refs
+    ):  # DEC-111: the reviewer who acted is not read at all, so no template can name them
+        who = sender(kind, None, refs)
+    elif kind == "teamup_answer" and refs.get("answer") == "decline":
         who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
     else:
         who = sender(kind, person(conn, row.get("from_user_id")))
@@ -426,6 +441,12 @@ def variables(
     return tpl, data
 
 
+def _path_of(to: str) -> str:
+    """An action's path without its `#…` or `?…`: "Say hello" goes to a place on the conversation
+    (`/ideas/{ref}/conversation#say-hello`) and is that conversation's link all the same (L-INBOX.rules/6, BLD-A220)."""
+    return to.split("#", 1)[0].split("?", 1)[0]
+
+
 def resolved_actions(
     row: dict[str, Any], idea: dict[str, Any] | None, *, item_id: Any = OWN_ROW
 ) -> list[dict[str, Any]]:
@@ -451,7 +472,7 @@ def resolved_actions(
     if (
         ref
         and kind not in ONE_ACTION_KINDS
-        and not any(a.get("to", "").endswith("/conversation") for a in out)
+        and not any(_path_of(a.get("to", "")).endswith("/conversation") for a in out)
     ):
         out.append({"label": "Open the conversation", "to": f"/ideas/{ref}/conversation", "style": "line"})
     return sorted(out, key=lambda a: _STYLE_ORDER.get(str(a["style"]), 1))
@@ -504,6 +525,8 @@ def item(conn: Conn, row: dict[str, Any], viewer: str, now: dt.datetime) -> dict
     d = data["due"]
     if d.get("any") and (needs or kind == "build_ask"):
         out["due"] = {"at": d["at"], "label": d["label"]}
+        if "variant" in d:  # a countdown's pill, so the Inbox tones it as the card beside it does (BLD-A225)
+            out["due"]["variant"] = d["variant"]
     return out
 
 

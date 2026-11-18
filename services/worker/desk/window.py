@@ -1,8 +1,9 @@
 """The Ones Committee's window on a decision or a desk merge (L-COMMITTEE, E-ENTITIES.review `Window`).
 
 Pure rules over stored times: open for 30 days from the decision, extendable 30 days at a time up to 3 months in
-all, reversible once (final), and expired when it closes with nothing done. The state is worked out on read, so a
-window shows "Expired" the moment it closes, whether or not the expiry timer has run.
+all (a step that would leave less than a week before the cap goes to the cap), reversible once (final), and
+expired when it closes with nothing done. The state is worked out on read, so a window shows "Expired" the moment
+it closes, whether or not the expiry timer has run.
 """
 
 from __future__ import annotations
@@ -18,6 +19,9 @@ from desk.promises import Promises
 
 State = Literal["open", "extended", "reversed", "expired"]
 
+# L-COMMITTEE.rules/2 (BLD-B263): an extension never leaves less than this before the 3-month cap; it goes to the cap.
+MIN_LAST_STEP = dt.timedelta(days=7)
+
 
 class WindowRefused(Exception):
     """A committee action the window does not allow. `code` is the A-API.committee error code."""
@@ -27,12 +31,16 @@ class WindowRefused(Exception):
         self.code = code
 
 
-def add_months(t: dt.datetime, months: int) -> dt.datetime:
-    """The same day and time `months` later; a day the month lacks becomes its last day (31 Jan + 1 month =
-    28 or 29 Feb)."""
-    index = t.month - 1 + months
-    year, month = t.year + index // 12, index % 12 + 1
-    return t.replace(year=year, month=month, day=min(t.day, calendar.monthrange(year, month)[1]))
+def add_months(t: dt.datetime, months: int, tz: dt.tzinfo = when.IST) -> dt.datetime:
+    """The same office calendar day and wall time `months` later; a day the month lacks becomes its last day
+    (31 Jan + 1 month = 28 or 29 Feb). L-COMMITTEE.rules/2 (BLD-B258): the months are added on the date in the office
+    time zone, never on the UTC date, so a decision just after midnight in India keeps its own day. The result is in
+    the zone `t` came in."""
+    local = t.astimezone(tz) if t.tzinfo is not None else t
+    index = local.month - 1 + months
+    year, month = local.year + index // 12, index % 12 + 1
+    moved = local.replace(year=year, month=month, day=min(local.day, calendar.monthrange(year, month)[1]))
+    return moved.astimezone(t.tzinfo) if t.tzinfo is not None else moved
 
 
 @dataclass(frozen=True)
@@ -57,10 +65,16 @@ class Window:
         return self.closes_at >= self.max_closes_at
 
     def next_close(self, p: Promises) -> dt.datetime | None:
-        """Where "Extend" would move the end: 30 days on, capped at 3 months from the decision; None at the limit."""
+        """Where "Extend" would move the end: 30 days on, capped at 3 months from the decision; None at the limit.
+        L-COMMITTEE.rules/2, S-R4.rules/2 (BLD-B263): a step that would leave less than `MIN_LAST_STEP` before the
+        cap goes to the cap itself, so the button never offers a stub of a day or two. A decision's second
+        extension therefore reaches the 3-month date (day 89 to 92), and then the row reads "At the 3-month limit"."""
         if self.at_limit():
             return None
-        return min(self.closes_at + dt.timedelta(days=p.window_extend_days), self.max_closes_at)
+        step = self.closes_at + dt.timedelta(days=p.window_extend_days)
+        if self.max_closes_at - step < MIN_LAST_STEP:
+            return self.max_closes_at
+        return min(step, self.max_closes_at)
 
     def progress(self, now: dt.datetime) -> float:
         """How much of the window has passed, 0 to 1, for the progress bar on S-R2's Decided state."""

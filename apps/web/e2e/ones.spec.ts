@@ -1,19 +1,34 @@
 /**
- * The Ones, end to end (DEC-034 to DEC-087): a One is inducted through the proposal API (the console page is
- * retired, DEC-106, R21; lane A's admin path replaces the proposals); the new One chooses a number and writes a
- * brief; the committee writes a few words at /ones/write/:id and a tier up plays the glow-up once on S-ONE with
- * them; the One's Showcase brief and the committee's printable copy at /ones/showcase/:id (mapping/screens.md:111-112);
- * the office screen (the Ones on Home are in home.spec.ts). axe on every page. Synthetic people only: each run picks a synthetic
- * employee who is not a One yet.
+ * The Ones, end to end (DEC-034 to DEC-087): the programme team marks a Founding One on lane A's admin path (the
+ * console and the proposals API are retired, DEC-106, R21, BLD-E049); the committee writes a few words at
+ * /ones/write/:id and a tier up plays the glow-up once on S-ONE with them; the One's Showcase brief and the
+ * committee's printable copy at /ones/showcase/:id (mapping/screens.md:111-112); the office screen (the Ones on Home
+ * are in home.spec.ts). axe on every page. Synthetic people only: each run picks a synthetic employee who is not a One
+ * yet, and removes that One and the rows it made when it is done.
+ *
+ * With the proposals API gone, the tier up the committee writes for is put straight in the dev database the way the
+ * worker reads it (`one_proposals`, then for the moment `one_glow_ups`), as one-profile.spec.ts does.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
-const CHAIR = "SYN-00006";
+const DATABASE_URL =
+  process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
+
+async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []): Promise<T[]> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    return (await client.query(text, values)).rows as T[];
+  } finally {
+    await client.end();
+  }
+}
 
 type Person = { id: string; name: string; email: string };
 
@@ -40,24 +55,48 @@ async function api(page: Page, method: "GET" | "POST", url: string, data?: Recor
   return { status: res.status(), body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
 }
 
-/** Propose a sponsored One for a synthetic person who is not a One yet; returns them and the proposal id. */
-async function proposeSomeone(core: Page): Promise<{ person: Person; proposal: number }> {
-  const people = syntheticPeople().sort(() => Math.random() - 0.5);
-  for (const person of people.slice(0, 25)) {
-    const r = await api(core, "POST", "/api/ones/proposals", {
-      kind: "include",
-      way_in: "sponsored",
-      email: person.email,
-      title: "Synthetic test: a reconciliation check every AMC uses",
-      reason: "Synthetic test citation: rebuilt a check that saves rework every week",
-    });
-    if (r.status === 201) return { person, proposal: Number(r.body.id) };
-  }
-  throw new Error("no synthetic person left to propose");
+/** The signed-in person's own user id. */
+async function userId(page: Page): Promise<string> {
+  const body = (await (await page.request.get("/api/me/profile")).json()) as { person: { id: string } };
+  return body.person.id;
 }
 
-test.describe.serial("a new One, from proposal to glow-up", () => {
+/** Marks a synthetic person who is not a One yet as a Founding One on the admin path (lane A, DEC-106). */
+async function markSomeone(admin: Page): Promise<{ person: Person; oneId: number; userId: string }> {
+  const people = syntheticPeople().sort(() => Math.random() - 0.5);
+  for (const person of people.slice(0, 25)) {
+    const already = await sql(
+      "SELECT 1 FROM ones o JOIN users u ON u.id = o.user_id WHERE lower(u.email) = lower($1)",
+      [person.email],
+    );
+    if (already.length) continue;
+    const r = await api(admin, "POST", "/api/admin/ones/founding", { email: person.email });
+    if (r.status === 201) return { person, oneId: Number(r.body.one_id), userId: String(r.body.user_id) };
+  }
+  throw new Error("no synthetic person left to mark");
+}
+
+/**
+ * Removes the One this suite made and every row it put in (tests remove what they create), as one-profile.spec.ts
+ * does: the invitations and the committee's words on its proposals, the glow-up, the tier-up proposal, then the One
+ * itself (its number history and Showcase brief cascade with it). Children go first, so this holds even if a
+ * cascade changes. The person was not a One before (`markSomeone` skips anyone with a `ones` row), so this puts
+ * them back as they were; no settings are changed here. The `audit_log` row lane A's founding route writes
+ * (`ones.founding_marked`) stays: the audit log is append-only by design.
+ */
+async function dropOne(oneId: number) {
+  if (!oneId) return;
+  const proposals = "SELECT id FROM one_proposals WHERE one_id = $1";
+  await sql(`DELETE FROM one_message_invites WHERE proposal_id IN (${proposals})`, [oneId]);
+  await sql(`DELETE FROM one_messages WHERE proposal_id IN (${proposals})`, [oneId]);
+  await sql("DELETE FROM one_glow_ups WHERE one_id = $1", [oneId]);
+  await sql("DELETE FROM one_proposals WHERE one_id = $1", [oneId]);
+  await sql("DELETE FROM ones WHERE id = $1", [oneId]);
+}
+
+test.describe.serial("a new One, from the admin page to the glow-up", () => {
   let subject: Person;
+  let subjectId = "";
   let oneId = 0;
 
   // One run at a time: the projects would otherwise race to choose numbers for the same shared One.
@@ -66,29 +105,20 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
   });
 
-  test("the committee proposes, the chair approves and the admin carries it out (API)", async ({
+  // The One lives across the three tests, so it goes once they are done, failed or not.
+  test.afterAll(async () => {
+    await dropOne(oneId);
+    oneId = 0;
+  });
+
+  test("L-ONES BLD-E049: the programme team marks a Founding One on the admin path (the proposals API is retired)", async ({
     browser,
   }) => {
-    const core = await as(browser, PERSONAS.core);
-    const { person, proposal } = await proposeSomeone(core);
-    subject = person;
-
-    const chair = await as(browser, CHAIR);
-    expect(
-      (
-        await api(chair, "POST", `/api/ones/proposals/${proposal}/decide`, {
-          verdict: "approve",
-          how: "chair",
-        })
-      ).status,
-    ).toBe(200);
     const admin = await as(browser, PERSONAS.admin);
-    expect((await api(admin, "POST", `/api/ones/proposals/${proposal}/carry-out`)).status).toBe(200);
-
-    const roster = (await api(admin, "GET", "/api/ones/console")).body as {
-      ones: { id: number; email: string }[];
-    };
-    oneId = roster.ones.find((o) => o.email === subject.email)!.id;
+    const marked = await markSomeone(admin);
+    subject = marked.person;
+    subjectId = marked.userId;
+    oneId = marked.oneId;
     expect(oneId).toBeGreaterThan(0);
   });
 
@@ -98,15 +128,14 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
   test("J-ONE/6 S-ONE mapping/screens.md:112: the committee writes a few words at /ones/write/:id, and the tier up plays the glow-up once on S-ONE with them", async ({
     browser,
   }) => {
+    // A tier up waiting for the committee's words, as the old proposals left it (BLD-E049).
     const core = await as(browser, PERSONAS.core);
-    const up = await api(core, "POST", "/api/ones/proposals", {
-      kind: "tier_up",
-      one_id: oneId,
-      tier_to: 2,
-      reason: "Synthetic test: shipped and measured",
-    });
-    expect(up.status).toBe(201);
-    const pid = Number(up.body.id);
+    const [made] = await sql<{ pid: number }>(
+      `INSERT INTO one_proposals (kind, one_id, subject_user_id, tier_to, proposed_by, proposed_at)
+       VALUES ('tier_up', $1, $2, 2, $3, now()) RETURNING id AS pid`,
+      [oneId, subjectId, await userId(core)],
+    );
+    const pid = made!.pid;
 
     // Someone who is neither invited nor on the committee is told so, and gets no form.
     const someone = await as(browser, PERSONAS.contributor);
@@ -114,7 +143,7 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expect(someone.getByText("This invitation isn't open, or isn't for you.")).toBeVisible();
     await expect(someone.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
 
-    // The committee writes on the page the invitation links to (comms/render.py `links.write`).
+    // The committee writes on the page.
     await core.goto(`/ones/write/${pid}`);
     await expect(core.getByRole("heading", { level: 1, name: /^A few words for / })).toBeVisible();
     await expect(core.getByText(/They are moving to Glow\./)).toBeVisible();
@@ -125,13 +154,17 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     await expect(core.getByRole("textbox", { name: "Your message" })).toHaveCount(0);
     await expectNoSeriousAxeIssues(core);
 
-    const chair = await as(browser, CHAIR);
-    expect(
-      (await api(chair, "POST", `/api/ones/proposals/${pid}/decide`, { verdict: "approve", how: "chair" }))
-        .status,
-    ).toBe(200);
-    const admin = await as(browser, PERSONAS.admin);
-    expect((await api(admin, "POST", `/api/ones/proposals/${pid}/carry-out`)).status).toBe(200);
+    // The tier rises and its moment waits on S-ONE, the way the worker records a step up.
+    await sql(
+      `UPDATE one_proposals SET state = 'carried_out', approval = 'chair', decided_by = proposed_by,
+         decided_at = now(), carried_out_by = proposed_by, carried_out_at = now() WHERE id = $1`,
+      [pid],
+    );
+    await sql("UPDATE ones SET tier = 2 WHERE id = $1", [oneId]);
+    await sql("INSERT INTO one_glow_ups (one_id, proposal_id, tier_from, tier_to) VALUES ($1, $2, 1, 2)", [
+      oneId,
+      pid,
+    ]);
 
     // The words feed S-ONE's "Messages for you", with the writer named (S-ONE.states showGlowUp).
     const one = await as(browser, subject.id);
@@ -192,7 +225,14 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
   });
 });
 
-test("nobody outside the committee, the CEO or admin reads the console's data", async ({ page }) => {
-  await signIn(page, PERSONAS.contributor);
-  expect((await page.request.get("/api/ones/console")).status()).toBe(403);
+test("L-ONES BLD-E049 (DEC-106): the Ones console, the old leaderboard and the proposals API answer not found, even for the committee and admin", async ({
+  browser,
+}) => {
+  for (const persona of [PERSONAS.core, PERSONAS.admin]) {
+    const page = await as(browser, persona);
+    expect((await page.request.get("/api/ones/console")).status()).toBe(404);
+    expect((await page.request.get("/api/ones/leaderboard")).status()).toBe(404);
+    expect((await page.request.post("/api/ones/proposals", { data: {} })).status()).toBe(404);
+    expect((await page.request.post("/api/ones/proposals/1/carry-out", { data: {} })).status()).toBe(404);
+  }
 });

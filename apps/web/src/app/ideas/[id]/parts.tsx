@@ -11,8 +11,11 @@ import {
   useSyncExternalStore,
   type Dispatch,
   type ReactNode,
+  type MouseEvent,
   type SetStateAction,
 } from "react";
+
+import { backToSearchedList } from "@/lib/search-memory";
 
 /** The page's way back: the breadcrumb (S-06) or the Back link (S-09), as the server drew it. */
 export type Way = { label: string; to: string };
@@ -27,6 +30,9 @@ const WayContext = createContext<Way | null>(null);
 /** The lists a kept way back may return to: the worker's `safe_back` allows these and no others
  * (services/worker/ideapage/shape.py, sharer.py and colleague.py). */
 const BACK_TO = ["/wall", "/my-ideas"] as const;
+/** A joined idea's way back to its lead idea, as the worker's `back_link` draws it from `REF` (colleague.py,
+ * S-09.layout/1): the idea's page by its reference, with no query and nothing after it. */
+const BACK_TO_LEAD = /^\/ideas\/IDEA-[0-9]{4}-[0-9]{6}$/;
 const BACK_MAX = 600;
 
 /** The way back this visit was given, kept across a reload and a refresh (BLD-E021). */
@@ -36,11 +42,13 @@ export function useWay(fallback: Way): Way {
 
 /**
  * A way back the page may restore from history (BLD-E044): `/wall` or `/my-ideas`, or a path under either, with its
- * query (the list's view). Anything else is refused, so `//host`, `/\host`, another scheme, a control character or a
- * page outside the two lists can never come back as a link.
+ * query (the list's view), or exactly a lead idea's page, `/ideas/IDEA-YYYY-NNNNNN` (S-09.layout/1). Anything else is
+ * refused, so `//host`, `/\host`, another scheme, a control character or a page outside these can never come back as
+ * a link.
  */
 export function allowedBack(to: string): boolean {
   if (!to || to.length > BACK_MAX || /[\\\u0000-\u001f\u007f]/.test(to)) return false;
+  if (BACK_TO_LEAD.test(to)) return true;
   const end = to.search(/[?#]/);
   const path = end === -1 ? to : to.slice(0, end);
   return BACK_TO.some((list) => path === list || path.startsWith(`${list}/`));
@@ -111,7 +119,7 @@ export function WayBack({ way, carried, children }: { way: Way; carried: Carried
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.pathname !== path && safeDecode(url.pathname) !== safeDecode(path)) return; // not this idea's entry
-    // Only a way back a reload may take again is kept (a `from=IDEA-…` way back holds for the visit only)
+    // Only a way back a reload may take again is kept: a list's view, or a joined idea's lead (S-09.layout/1)
     const keep = (persist || saved) && held && allowedBack(held.to) ? held : null;
     if (url.searchParams.has("from") || url.searchParams.has("back")) {
       url.searchParams.delete("from");
@@ -147,11 +155,21 @@ function safeDecode(p: string): string {
   }
 }
 
+/** A way back to a list (the Back link, S-06's breadcrumb): when the list the person came from holds a search this tab
+ * keeps (My ideas), go back in history as browser Back does, so the search comes back with it; the link's own address
+ * never holds one (J-BROWSE/3, DEC-110). Otherwise the link opens its address as it always has. */
+export function backToList(to: string) {
+  return (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (backToSearchedList(to)) e.preventDefault();
+  };
+}
+
 /** The Back link: the whole label on desktop, the short one on a phone ("Back to the Wall", "Wall"). */
 export function BackLink({ label, to }: { label: string; to: string }) {
   const short = label.replace(/^Back to (the )?/, "");
   return (
-    <Link className="back ip-back" href={to} aria-label={label}>
+    <Link className="back ip-back" href={to} aria-label={label} onClick={backToList(to)}>
       <span className="ip-desk">{label}</span>
       <span className="ip-phone">{short}</span>
     </Link>

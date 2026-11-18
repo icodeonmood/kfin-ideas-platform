@@ -45,7 +45,8 @@ SAMPLE: dict[str, Any] = {
         "one_other": False,
         "many_others": True,
     },
-    "reviewer": {"name": "Nikhil Rao", "note": "A clear problem and a fair estimate."},
+    # DEC-111 (BLD-A222): the desk signs as a whole, so a message has no reviewer's name to fill in, only the note
+    "reviewer": {"note": "A clear problem and a fair estimate."},
     "outcome": {
         "grouped": True,
         "grouped_unnamed": False,
@@ -168,11 +169,13 @@ def test_values_never_become_markup() -> None:
     data = {
         **SAMPLE,
         "idea": {**SAMPLE["idea"], "one_line": '[win](javascript:alert(1)) **bold** <script>x</script> "q"'},
-        "reviewer": {"name": "<b>Nikhil</b>", "note": "[click](https://evil.example)"},
+        "recipient": {"first_name": "<b>Nikhil</b>"},
+        "reviewer": {"name": "Meera Iyer", "note": "[click](https://evil.example)"},
     }
     html = email_html.compose(tpl, data, BASE).html
     assert "<script>" not in html and 'href="javascript' not in html
     assert "&lt;script&gt;" in html and "&lt;b&gt;Nikhil&lt;/b&gt;" in html  # shown as typed, as text
+    assert "Meera" not in html  # DEC-111: signed by the review desk, never the reviewer
     assert 'href="https://evil.example"' not in html  # a value can't make a link
     assert "**bold**" in html  # nor bold
 
@@ -196,9 +199,10 @@ def test_the_first_link_paragraph_is_the_button_and_the_one_block_shows_the_tier
     assert email.text.startswith("Your number: No. 17 (Tier 1, Spark)\n")  # the text part has it too
 
 
-@pytest.mark.parametrize("name", ["one-message-invited", "one-removed", "ones-announced", "submitted"])
+@pytest.mark.parametrize("name", ["one-removed", "ones-announced", "submitted"])
 def test_the_number_block_is_only_for_the_ones_own_news(name: str) -> None:
-    """A peer's invitation, a removal or any other message never shows a number (Ember review)."""
+    """A removal or any other message never shows a number (Ember review; the peer's invitation is retired,
+    BLD-E049)."""
     email = email_html.compose(_load(REPO, name), _sample(name), BASE)
     assert "Your number" not in email.html and "Your number" not in email.text
 

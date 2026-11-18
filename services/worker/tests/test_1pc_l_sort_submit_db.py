@@ -338,6 +338,44 @@ def test_l_submit_send_1_the_idea_gets_its_reference_and_the_clock_starts(world:
     assert history[-1] == "checking"
 
 
+def test_l_submit_send_s06_just_shared_dec_105_bld_c159_the_hand_over_reads_the_comms_teams_row(
+    world: dict[str, Any],
+) -> None:
+    """DEC-105, BLD-C159 (L-SUBMIT.send, S-06 "Just shared"): the hand-over reads the `comms.teams` row as notify
+    does. The test database starts with every switch on, so Submit gives the drawn words; with the row off, the repeat
+    Submit's hand-over says "by email" only, every other word the same."""
+    from core import killswitch
+
+    conn = world["conn"]
+    _confirm(world)
+    killswitch.clear_cache()
+    try:
+        assert killswitch.is_on("comms.teams", conn)
+        _, h = _submit(world)
+        assert h["review"]["line"] == (
+            "The review desk will look at it by Friday 20 November. We’ll tell you on Teams and by email when "
+            "anything changes."
+        )
+        assert h["edit_window"]["line"] == (
+            "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens "
+            "it. We tell you on Teams and by email when anything moves."
+        )
+        conn.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
+        killswitch.clear_cache()
+        status, again = _submit(world)  # already sent: its hand-over again, never a second idea
+        assert status == 200 and again["ref"] == h["ref"]
+        assert again["review"]["line"] == (
+            "The review desk will look at it by Friday 20 November. We’ll tell you by email when anything changes."
+        )
+        assert again["edit_window"]["line"] == (
+            "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens "
+            "it. We tell you by email when anything moves."
+        )
+    finally:
+        conn.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'comms.teams'")
+        killswitch.clear_cache()
+
+
 def test_l_submit_send_a_retry_never_creates_two_ideas(world: dict[str, Any]) -> None:
     conn = world["conn"]
     _confirm(world)
@@ -454,7 +492,22 @@ def test_l_submit_pre_5_the_declaration_must_be_the_current_one(world: dict[str,
     assert err.value.code == "declaration_changed" and err.value.field == "declaration"
 
 
-def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: dict[str, Any]) -> None:
+@pytest.mark.parametrize(
+    ("found", "similar_check", "line"),
+    [
+        (0, "done", "1 phone number hidden, no similar ideas found"),
+        # Matching failed: never "no similar ideas found" (L-SIMILAR.failure, BLD-C087)
+        (None, "failed", "1 phone number hidden. Couldn’t check for similar ideas. The review desk will."),
+    ],
+    ids=["matched", "could_not_check"],
+)
+def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch, found: int | None, similar_check: str, line: str
+) -> None:
+    # L-SIMILAR is on main since c/similar: its matching has its own tests, so here its answer is fixed.
+    from submit import adapters
+
+    monkeypatch.setattr(adapters, "find_similar", lambda conn, idea_uuid, *, found_while: found)
     conn = world["conn"]
     _confirm(world)
     _submit(world)
@@ -472,11 +525,8 @@ def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: di
     assert [(s["stage"], s["state"]) for s in again["stages"]][:3] == [
         ("shared", "done"), ("checked_matched", "done"), ("reviewed", "now"),
     ]  # fmt: skip
-    # Matching is not on main here, so it could not be checked: never "no similar ideas found" (BLD-C087)
-    assert idea["similar_check"] == "failed"
-    assert again["stages"][1]["detail"] == (
-        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
-    )
+    assert idea["similar_check"] == similar_check
+    assert again["stages"][1]["detail"] == line
     assert again["stages"][2]["detail"] == "By Friday 20 November"
     check.run(conn, world["draft"])  # a second run changes nothing
     assert _idea(world)["status"] == "with_review_desk"
@@ -534,6 +584,65 @@ def test_l_submit_withdraw_3_restore_restarts_the_clock_and_the_check(world: dic
     assert _idea(world)["decide_by"] > dt.datetime(2026, 11, 20, 12, 30, tzinfo=dt.UTC)
     check.run(conn, world["draft"])
     assert _idea(world)["status"] == "with_review_desk"
+
+
+# Monday 23 November, 10 am in the office: decided by Friday 27 November, 6 pm, the share day counted as day 1.
+RESTORED = dt.datetime(2026, 11, 23, 4, 30, tzinfo=dt.UTC)
+
+
+def _restored_dates(world: dict[str, Any], ref: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    idea = _idea(world)
+    running = (
+        world["conn"]
+        .execute(
+            "SELECT started_at, due_at FROM sla_timers WHERE entity_id = %s AND stage = 'decide_by' AND state = 'running'",
+            (ref,),
+        )
+        .fetchall()
+    )
+    return idea, [dict(r) for r in running]
+
+
+def _withdraw_and_set_back(world: dict[str, Any]) -> str:
+    conn = world["conn"]
+    _confirm(world)
+    _, h = _submit(world)
+    check.run(conn, world["draft"])
+    conn.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (world["draft"],))
+    conn.execute(
+        "UPDATE ideas SET status = 'checking', restored_at = %s WHERE id = %s", (RESTORED, world["draft"])
+    )
+    return str(h["ref"])
+
+
+def test_l_submit_send_4_on_restored_takes_the_restores_now_bld_c154(world: dict[str, Any]) -> None:
+    """Lane C's part of a restore starts both clocks from the restore's own `now`, not a clock of its own, so the
+    restored idea's decide-by, edit window and review timer agree with lane E's restore (L-SUBMIT.send/4)."""
+    from submit import adapters, clock, config
+
+    ref = _withdraw_and_set_back(world)
+    adapters.on_restored(world["conn"], world["draft"], RESTORED)
+    idea, running = _restored_dates(world, ref)
+    p = config.promises()
+    assert (
+        idea["decide_by"] == clock.decide_by(RESTORED, p) == dt.datetime(2026, 11, 27, 12, 30, tzinfo=dt.UTC)
+    )
+    assert idea["edit_closes_at"] == clock.edit_closes(RESTORED, p)
+    assert running == [{"started_at": RESTORED, "due_at": idea["decide_by"]}]
+
+
+def test_l_submit_send_4_on_restored_without_now_uses_submit_clock_bld_c154(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lane E's hook calls `(conn, idea_uuid)` today: the time then is submit.clock's, the one a send uses."""
+    from submit import adapters, clock, config
+
+    ref = _withdraw_and_set_back(world)
+    monkeypatch.setattr(clock, "now", lambda: RESTORED)
+    adapters.on_restored(world["conn"], world["draft"])
+    idea, running = _restored_dates(world, ref)
+    assert idea["decide_by"] == clock.decide_by(RESTORED, config.promises())
+    assert running == [{"started_at": RESTORED, "due_at": idea["decide_by"]}]
 
 
 # --- L-SUBMIT.edit ------------------------------------------------------------------------------------------------
@@ -1163,3 +1272,25 @@ def test_l_submit_send_a_listen_prefetch_failure_never_fails_a_send(
         .fetchone()["n"]
         == 0
     )  # the savepoint undid what the failed prefetch wrote
+
+
+def test_bld_c189_s06b_c_hidden_list_3_a_shown_example_keeps_its_reason(world: dict[str, Any]) -> None:
+    """C-HIDDEN.list/3, S-06B.layout/3, J-RECOVER/7-10 (BLD-C189): the edit page gives each hidden detail as "Show it"
+    answers it (`hide.core.detail_view`), so a detail shown as made up for the example keeps its reason and S-06B
+    reads "Shown, because it's made up for the example." as S-05 does. A detail still hidden carries no reason."""
+    conn = world["conn"]
+    ref = _shared(world)
+    shown_at = NOW + dt.timedelta(minutes=5)
+    conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked, state, reason, shown_at) VALUES "
+        "(%s, 'message', 'msg-1', 'folio', 'Folio ••••89', 'shown', 'made_up_example', %s), "
+        "(%s, 'message', 'msg-1', 'phone', 'Phone ••••10', 'hidden', NULL, NULL)",
+        (world["draft"], shown_at, world["draft"]),
+    )
+    page = edit.page(conn, ref, world["p"]["asha"], now=NOW + dt.timedelta(hours=1))
+    by_mask = {d["masked"]: d for d in page["hidden"]}
+    assert by_mask["Folio ••••89"]["state"] == "shown"
+    assert by_mask["Folio ••••89"]["reason"] == "made_up_example"
+    assert dt.datetime.fromisoformat(by_mask["Folio ••••89"]["shown_at"]) == shown_at
+    assert by_mask["Phone ••••10"]["state"] == "hidden" and "reason" not in by_mask["Phone ••••10"]
+    assert set(by_mask["Folio ••••89"]) == {"id", "kind", "masked", "state", "reason", "shown_at"}

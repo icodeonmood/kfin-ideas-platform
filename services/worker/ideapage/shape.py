@@ -13,6 +13,7 @@ from core.db import Conn
 from ideapage import read
 from ideapage.track import Decided, stages
 from ideapage.words import STAGE_LABEL, count, nodes_json, pill
+from teamup.store import team_up_refusal
 
 MY_IDEAS_FILTER_LABEL = {
     "needs_you": "Needs you",
@@ -23,6 +24,7 @@ MY_IDEAS_FILTER_LABEL = {
     "closed": "Closed",
 }
 REF = re.compile(r"^IDEA-[0-9]{4}-[0-9]{6}$")
+ON_THE_CREW = "On the crew"  # C-SIMGRID.tile, after approval; S-05 says the same (share/[id]/check/copy.ts)
 
 
 def display_status(idea: dict[str, Any], qset: dict[str, Any] | None, *, for_sharer: bool) -> str:
@@ -158,7 +160,11 @@ def similar_tiles(
     conn: Conn, idea: dict[str, Any], viewer: read.Viewer, *, skip: set[str] | None = None
 ) -> list[dict[str, Any]]:
     """S-06's 'Colleagues on something similar' (C-SIMGRID): each match as its title, area and city, stage, the
-    match line and the crew's faces, with Preview and Team up. Summary only, never raw words (non-negotiable 7)."""
+    match line and the crew's faces, with Preview and Team up. Summary only, never raw words (non-negotiable 7).
+    On an idea whose crew the viewer is already in, the action row is C-SIMGRID.tile's "On the crew" in place of
+    Team up (`done_line`), so nobody is offered a crew they are on (J-SIMILAR/7, J-REVIEW/M3; BLD-E056). Team up shows
+    only where lane F would take the ask: lane C's `teamup.store.team_up_refusal`, the one rule
+    `POST /ideas/:id/team-up` refuses by (J-SHARE/12, BLD-E063)."""
     out = []
     for s in read.similar(conn, str(idea["id"])):
         if skip and str(s["id"]) in skip:
@@ -168,6 +174,11 @@ def similar_tiles(
         on_crew = viewer.code is not None and viewer.code in crew["_codes"]
         state = "on_crew" if on_crew else "request_sent" if mine and mine["state"] == "sent" else "none"
         lead = read.person_by_code(conn, s["contributor_code"])
+        actions = [{"label": "Preview", "op": "preview", "accessible_name": f"Preview {s['title']}"}]
+        if team_up_refusal(conn, s, viewer.code) is None:
+            actions.append(
+                {"label": "Team up", "op": "team_up", "accessible_name": f"Team up on {s['title']}"}
+            )
         out.append(
             {
                 "idea": {
@@ -189,10 +200,8 @@ def similar_tiles(
                 "count_line": count(crew["count"], "colleague") + " on it",
                 "my_state": state,
                 "to": f"/ideas/{s['idea_id']}?from={read.key_of(idea)}",
-                "actions": [
-                    {"label": "Preview", "op": "preview", "accessible_name": f"Preview {s['title']}"},
-                    {"label": "Team up", "op": "team_up", "accessible_name": f"Team up on {s['title']}"},
-                ],
+                "actions": actions,
+                **({"done_line": ON_THE_CREW} if on_crew else {}),
             }
         )
     return out

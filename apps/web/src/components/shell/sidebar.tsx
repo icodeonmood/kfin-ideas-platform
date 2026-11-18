@@ -50,6 +50,9 @@ const TONE_WORDS: Record<ShellRow["tone"], string> = {
 
 const dotWords = (r: ShellRow): string => r.words ?? TONE_WORDS[r.tone];
 
+/** "Waiting on sharers" opens the desk on the tab its rows come from (C-SIDEBAR.anatomy/4, BLD-D013). */
+const DESK_WAITING = "/desk?tab=waiting";
+
 function SectionRows({ rows }: { rows: ShellRow[] }) {
   return (
     <>
@@ -237,14 +240,47 @@ export function Sidebar({
 
         {data.desk?.length ? (
           <section className="sb-sec" aria-label="Waiting on sharers">
-            <p className="sb-h">Waiting on sharers</p>
+            <div className="sb-hr">
+              <p className="sb-h">Waiting on sharers</p>
+              {/* The desk opens on this tab; it has no way to focus its search box, so both go there (BLD-D013) */}
+              <span className="sb-ha">
+                <Link
+                  href={DESK_WAITING}
+                  className="sb-x"
+                  aria-label="Search the desk"
+                  title="Search the desk"
+                >
+                  <IconSearch />
+                </Link>
+                <Link
+                  href={DESK_WAITING}
+                  className="sb-va"
+                  aria-current={pathname === "/desk" ? "page" : undefined}
+                  aria-label="View all ideas waiting on sharers"
+                >
+                  View all
+                </Link>
+              </span>
+            </div>
             <SectionRows rows={data.desk} />
           </section>
         ) : null}
 
         {data.committee?.length ? (
           <section className="sb-sec" aria-label="Closing soonest">
-            <p className="sb-h">Closing soonest</p>
+            <div className="sb-hr">
+              <p className="sb-h">Closing soonest</p>
+              <span className="sb-ha">
+                <Link
+                  href="/committee"
+                  className="sb-va"
+                  aria-current={pathname === "/committee" ? "page" : undefined}
+                  aria-label="View all ideas closing soonest"
+                >
+                  View all
+                </Link>
+              </span>
+            </div>
             <SectionRows rows={data.committee} />
           </section>
         ) : null}

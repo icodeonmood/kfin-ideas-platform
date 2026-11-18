@@ -21,6 +21,7 @@ from teamup import adapters, rules
 from teamup.merging import apply_lead_merge, join_crew
 from teamup.rules import Answer, Kind
 from teamup.store import (
+    TEAM_UP_REFUSED,
     Person,
     Refused,
     actor,
@@ -42,6 +43,7 @@ from teamup.store import (
     remembered,
     require_code,
     seal,
+    team_up_refusal,
     unseal,
     user_of,
 )
@@ -465,10 +467,10 @@ def send(
             return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
         # BLD-F029: "Waiting for the lead" when the lead is not named to them
         lead = lead_seen_by(conn, idea, user_id, code)
-        if is_closed(str(idea["status"])):
-            raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
-        if crew_role(conn, idea["id"], code) is not None:
-            raise Refused(409, "already_on_crew", "You’re on the crew.")
+        # L-TEAMUP.rules/1, the rule the similar read shows too (BLD-C187)
+        refused = team_up_refusal(conn, idea, code)
+        if refused is not None:
+            raise Refused(409, refused, TEAM_UP_REFUSED[refused])
         if waiting_from(conn, idea["id"], code):
             raise Refused(409, "already_requested", rules.waiting_for(lead.first))
         problem = rules.check_note(note, adapters.note_min())
@@ -701,7 +703,7 @@ def tell_requester(conn: Conn, req: Req, ans: Answer, has_reason: bool, sender: 
     if ans == "merge":
         actions = [("See the merged idea", "primary", f"/ideas/{ref}", None)]
     elif ans == "team_only":
-        actions = [("Say hello", "primary", f"/ideas/{ref}/conversation", None)]
+        actions = [("Say hello", "primary", f"/ideas/{ref}/conversation#say-hello", None)]
     to = user_of(conn, str(req.row["from_code"]))
     adapters.tell(
         conn, "teamup_answer", [to] if to else [], idea_uuid=str(req.idea["id"]), sender=sender, actions=actions,

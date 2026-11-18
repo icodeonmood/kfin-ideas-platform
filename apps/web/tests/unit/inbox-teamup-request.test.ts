@@ -373,6 +373,41 @@ describe("S-H2B focus in the Inbox reader (WCAG 2.4.3)", () => {
     expect(document.activeElement?.textContent).toBe("Kavya withdrew this request.");
   });
 
+  it("S-H2B.rules/2, WCAG 2.4.11: the result line is brought into the reader's view, under a tall request too (J-SIMILAR/6a, BLD-A228)", async () => {
+    // jsdom has no layout: record the calls a browser would scroll by
+    const scrolled: { el: Element; opts: unknown }[] = [];
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Element.prototype.scrollIntoView = function (this: Element, opts?: unknown) {
+      scrolled.push({ el: this, opts });
+    } as Element["scrollIntoView"];
+    try {
+      answer = () =>
+        json(200, {
+          result: {
+            state: "merged",
+            text: "Merged. Kavya’s idea is now part of yours, and they are on your crew, credited. We’ve told them.",
+          },
+          say_hello: { label: "Say hello to Kavya", to: "/ideas/IDEA-2026-000900/conversation" },
+        });
+      await open();
+      await press("Merge it");
+      const result = host.querySelector(".ibx-result");
+      expect(document.activeElement).toBe(result);
+      expect(scrolled).toEqual([{ el: result, opts: { block: "nearest" } }]);
+
+      // Decline's reason field takes focus as before, with no extra scroll
+      scrolled.length = 0;
+      await act(async () => root.unmount());
+      root = createRoot(host);
+      await open();
+      await press("Decline");
+      expect(scrolled).toEqual([]);
+    } finally {
+      if (had) Object.defineProperty(Element.prototype, "scrollIntoView", had);
+      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
   it("S-H2B.rules/2: an answer that could not be sent keeps focus on the button pressed, with the error shown", async () => {
     answer = () => json(500, null);
     await open();

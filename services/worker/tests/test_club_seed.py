@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from bootstrap import club_seed
+from core import killswitch
 from identity.codes import emp_id_hash
 from onepc import enums
 from onepc.context import open_text
@@ -326,6 +327,44 @@ def test_l_inbox_kinds_l_teamup_l_merge_request_each_teamup_request_item_is_a_wa
     assert bhavesh["actions"] == BRINGS_NOTHING
 
 
+def test_gap_seed_l_inbox_needs_you_and_draft_kept_items_carry_notify_dedupe_keys(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-INBOX (J-TEAMUP's lead Inbox, J-RESUME/5): every seeded lead "Needs you" item carries lane F's
+    `request_key(<request id>)` and every `draft_kept` item `draft_kept:<ideas.id>`, the keys lane A's notify.post
+    stores, so a later post or `notify.resolve` on the same key finds the seeded item instead of adding a second. Each
+    key passes notify's `_KEY` rule, and no other seeded item carries one."""
+    from notify import _KEY
+    from teamup.adapters import request_key
+
+    conn, m = db, made
+    asks = conn.execute(
+        "SELECT payload, dedupe_key FROM notifications WHERE kind = 'teamup_request'"
+    ).fetchall()
+    assert len(asks) == 5
+    assert all(a["dedupe_key"] == request_key(a["payload"]["request_id"]) for a in asks)
+    assert {a["payload"]["request"] for a in asks} == {"teamup", "merge"}
+
+    kept = conn.execute(
+        "SELECT idea_uuid, dedupe_key FROM notifications WHERE kind = 'draft_kept'"
+    ).fetchall()
+    assert sorted(str(k["idea_uuid"]) for k in kept) == sorted([m["T1"].uuid, m["I2"].uuid])
+    assert all(k["dedupe_key"] == f"draft_kept:{k['idea_uuid']}" for k in kept)
+
+    keys = [r["dedupe_key"] for r in [*asks, *kept]]
+    assert all(_KEY.match(k) for k in keys) and len(set(keys)) == len(keys)
+    assert _one(conn, "SELECT count(*) FROM notifications WHERE dedupe_key IS NOT NULL") == len(keys)
+
+    # The hand-off to the lead's answer (J-TEAMUP): lane F's resolve, by request id, clears that seeded item only.
+    from teamup import adapters
+
+    rid = asks[0]["payload"]["request_id"]
+    adapters.resolve(conn, rid)
+    still = "SELECT count(*) FROM notifications WHERE kind = 'teamup_request' AND needs_you"
+    assert _one(conn, still) == len(asks) - 1
+    assert not _one(conn, "SELECT needs_you FROM notifications WHERE dedupe_key = %s", request_key(rid))
+
+
 def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
 
@@ -469,3 +508,231 @@ def test_s_03_hero_1_bld_c148_every_persona_has_seen_home_but_sana_the_first_vis
     assert _one(conn, "SELECT count(*) FROM users WHERE emp_id_hash = %s", sana_hash) == 0
     assert _one(conn, "SELECT count(*) FROM person_settings WHERE user_id = %s", sana) == 0
     assert _one(conn, "SELECT count(*) FROM contributor_map WHERE user_id = %s", sana) == 0
+
+
+def test_bld_f069_j_teamup_faisals_seeded_team_up_answer_says_hello_into_the_box(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """BLD-F069, J-TEAMUP: Faisal's seeded team-up answer (team only, from Tanvi on T7) is posted the way lane F's
+    live `tell_requester` posts it: one "Say hello" that opens T7's conversation with the box focused."""
+    t7 = made["T7"]
+    rows = db.execute(
+        "SELECT actions FROM notifications WHERE kind = 'teamup_answer' AND user_id = %s AND idea_uuid = %s",
+        (p_id(db, "faisal"), t7.uuid),
+    ).fetchall()
+    assert len(rows) == 1 and t7.ref
+    assert rows[0]["actions"] == [
+        {"label": "Say hello", "style": "primary", "to": f"/ideas/{t7.ref}/conversation#say-hello"}
+    ]
+
+
+def test_gap_seed_j_similar_1_l_similar_rules_4_each_draft_carries_the_matches_check_it_shows(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-SIMILAR/1 (L-SIMILAR.rules/4, C-SIMGRID.other S-04B): each unsent draft's similar part holds the
+    SimilarMatch[] lane C's draft run would write, the same matches S-05's part 3 reads for its sharer, so S-04B's
+    panel says "1 similar idea, Colleagues raised something close". T2 finds R1, close; a draft with no links keeps
+    none. "Checked and matched" counts what was found by the check (L-SIMILAR.rules/5); F2's later link is not."""
+    from draft.store import Device, Owner, view
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    tanvi = p_id(db, "tanvi")
+    code = _one(db, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", tanvi)
+    part = view(db, Owner(str(tanvi), str(code)), made["T2"].uuid, Device("laptop", None))["parts"]["similar"]
+    assert part["state"] == "filled"
+    assert [(x["idea"]["id"], x["strength"]) for x in part["value"]] == [(made["R1"].ref, "close")]
+    assert part["value"][0]["idea"]["title"] == club_seed.IDEAS["R1"].title
+    assert part["value"][0]["reason"] == "Close match: the same failed SIP debit"
+
+    part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+    for key in ("T1", "T2", "N2", "G2"):  # the drafts that found R1: their parts are what S-05 shows now
+        owner = p_id(db, club_seed.IDEAS[key].owner)
+        stored = _one(db, part_of, made[key].uuid)
+        assert stored and stored == matches_for(db, made[key].uuid, Viewer.of(db, str(owner))), key
+        assert [x["idea"]["id"] for x in stored] == [made["R1"].ref], key
+    assert _one(db, part_of, made["I2"].uuid) == []
+
+    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+    for key, found in (("T5", "1"), ("T6", "1"), ("T11", "1"), ("J2", "1"), ("F2", "0"), ("V1", "0")):
+        assert _one(db, matched, made[key].uuid) == found, key
+
+
+def test_gap_seed_l_similar_rules_4_with_matching_show_off_the_seed_refuses_and_a_reset_keeps_the_seed(
+    unloaded: Any, test_database: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GAP-SEED (L-SIMILAR.rules/4, /5): with `matching.show` off, `matches_for` gives a sharer no matches and has no
+    way past the switch, so a seed loaded then would leave each draft's similar part empty while "Checked and
+    matched" still counts 1. The seed raises instead, naming the switch, and writes nothing, so the parts and the
+    counts never disagree. `--reset` removes and loads in one transaction: refused, it keeps the seed it found."""
+    from core.db import connect
+    from tests import helpers
+
+    conn = unloaded
+
+    def switch(state: str) -> None:
+        conn.execute("UPDATE kill_switches SET state = %s WHERE name = 'matching.show'", (state,))
+        killswitch.clear_cache()  # past the 10-second cache, as the `club` fixture does
+
+    try:
+        switch("off")
+        with pytest.raises(club_seed.MatchingHidden, match=r"kill switch matching\.show is off"):
+            club_seed.load(conn)
+        assert club_seed.seed_user_ids(conn) == []
+        assert _one(conn, "SELECT count(*) FROM idea_parts") == 0
+        assert _one(conn, "SELECT count(*) FROM conversation_entries WHERE event = 'checked_matched'") == 0
+
+        switch("on")
+        m = club_seed.load(conn)
+        switch("off")
+        monkeypatch.setattr(club_seed, "_dev_only", lambda: None)
+        monkeypatch.setattr(club_seed, "connect", lambda **kw: connect(helpers.db_url(test_database), **kw))
+        assert club_seed.main(["--reset"]) == 1
+        assert "matching.show" in capsys.readouterr().err
+        part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+        assert [x["idea"]["id"] for x in _one(conn, part_of, m["T2"].uuid)] == [m["R1"].ref]  # the same rows
+        matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+        assert _one(conn, matched, m["T5"].uuid) == "1"
+    finally:
+        switch("on")
+
+
+def test_gap_seed_j_teamup_1_l_crew_4_the_top_crew_card_says_who_would_help(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-TEAMUP/1 (L-CREW/4, BLD-F031): with AI drafting off, "They're looking for" on the top crew card
+    ("Distributors re-send the same empanelment papers") is its sharer's Who would help picks, each one from the
+    configured list (`rules/sorting.md` `helpers`)."""
+    from pathlib import Path
+
+    from crew.deck import looking_for
+    from rules.loader import load_rule
+
+    seeded_repo = Path(__file__).resolve().parents[3] / "seed" / "company-repo"
+    configured = load_rule(seeded_repo, "sorting").data["helpers"]
+    picks = _one(db, "SELECT helper_picks FROM ideas WHERE id = %s", made["P1"].uuid)
+    assert len(picks) == 3
+    assert set(picks) <= set(configured)
+    assert looking_for(picks, None) == "Someone in operations, someone who knows the rules, data or reports"
+
+
+def test_gap_seed_l_decide_6_j_one_1_j1_carries_one_ask_to_join_the_build_team(
+    made: dict[str, club_seed.Made], db: Any
+) -> None:
+    """BLD-E059: the seed's only join ask is J1's, from its sharer, on a Pick that stands with no build team yet."""
+    rows = db.execute(
+        "SELECT a.idea_uuid, u.first_name FROM join_build_asks a JOIN users u ON u.id = a.user_id "
+        "WHERE a.idea_uuid = ANY(%s)",
+        ([mm.uuid for mm in made.values()],),
+    ).fetchall()
+    assert [(str(r["idea_uuid"]), r["first_name"]) for r in rows] == [(made["J1"].uuid, "Jatin")]
+    assert not db.execute("SELECT 1 FROM build_teams WHERE idea_uuid = %s", (made["J1"].uuid,)).fetchone()
+
+
+# --- Lane G's 23:00 walk: T1, the draft J-RECOVER/3 and /6 open (BLD-E064) ----------------------------------------
+
+
+def _t1_view(db: Any, made: dict[str, club_seed.Made]) -> dict[str, Any]:
+    """T1 as Tell it reads it for Tanvi: lane C's `GET /drafts/:id` (S-04B), the API J-RECOVER/3 and /6 open."""
+    from draft.store import Device, Owner, view
+
+    tanvi = p_id(db, "tanvi")
+    code = _one(db, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", tanvi)
+    return view(db, Owner(str(tanvi), str(code)), made["T1"].uuid, Device("phone", None))
+
+
+def test_gap_seed_j_recover_3_j_recover_6_l_hide_t1_hides_a_folio_the_shared_rules_call_a_folio(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-HIDE (J-RECOVER/3, /6): T1's hidden value is a folio by the one-source pattern rules
+    (`pii/patterns.yaml`) in the words Tanvi typed, and nothing else: not a phone, as `7700012389` was. It is stored
+    and shown as a folio ("Folio ••••17"), and her sealed words hold it while the message holds only the mask."""
+    from hide.detect import config as hide_config
+    from pii.patterns import scan
+
+    spec = club_seed.IDEAS["T1"]
+    kind, value = spec.hidden["{folio}"]
+    own = spec.words[0].replace("{folio}", value)
+    start = own.index(value)
+    over = [m for m in scan(own) if m.start < start + len(value) and m.end > start]
+    assert [(m.pattern_id, own[m.start : m.end], m.action) for m in over] == [("folio", value, "block")]
+    assert hide_config().from_patterns["folio"] == kind == "folio"
+
+    rows = db.execute(
+        "SELECT kind, masked, state FROM hidden_details WHERE idea_uuid = %s", (made["T1"].uuid,)
+    ).fetchall()
+    assert [(r["kind"], r["masked"], r["state"]) for r in rows] == [("folio", "Folio ••••17", "hidden")]
+    msg = db.execute(
+        "SELECT id, text_encrypted FROM idea_messages WHERE idea_uuid = %s", (made["T1"].uuid,)
+    ).fetchone()
+    masked = open_text("idea_messages", "text_encrypted", str(msg["id"]), msg["text_encrypted"])
+    assert masked and value not in masked and "folio Folio ••••17 left" in masked
+
+
+def test_gap_seed_j_recover_6_l_draft_parts_8_c_hidden_where_t1_receipt_lists_what_was_hidden(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-DRAFT.parts/8, C-HIDDEN.where (J-RECOVER/6): T1's receipt is what lane C's `draft.runs.finish`
+    writes after a first run, so its hidden line lists the details by their masks, "Hid 1 personal detail from
+    everyone but you: Folio ••••17.", beside the hidden list the panel reads. The drafted, sorted and found lines
+    come in the engine's order; How often failed, so there is no "Noted how often" line. Its next prompts are
+    the engine's for those parts."""
+    from draft import parts as dp
+
+    spec, out = club_seed.IDEAS["T1"], _t1_view(db, made)
+    assert [(h["kind"], h["masked"], h["state"]) for h in out["hidden"]] == [
+        ("folio", "Folio ••••17", "hidden")
+    ]
+    assert out["receipt"] == [
+        f"Drafted a title: “{spec.title}”.",
+        "Sorted it under Investor service, affecting investors.",
+        "Marked it as saves time.",
+        "Hid 1 personal detail from everyone but you: Folio ••••17.",
+        "Found 1 similar idea from colleagues. You can team up on the next step.",
+        "Your draft is ready. Add a detail, or check it.",
+    ]
+    assert out["suggestions"] == ["Say how often it happens", "Add what you already tried"]
+    after = {"title": {"title": spec.title, "summary": spec.summary}, "often": None, "who": spec.affects,
+             "value": spec.brings, "area": spec.area}  # fmt: skip
+    assert out["suggestions"] == dp.suggestions(after)
+    # Every seeded draft's receipt is the engine's: no line it would not write
+    known = (
+        "Turned your email", "Drafted a title", "Sorted it under", "Noted ", "Marked it as", "Hid ", "Found ",
+        "Your draft is ready",
+    )  # fmt: skip
+    for key, mm in made.items():
+        lines = _one(db, "SELECT receipt FROM draft_runs WHERE idea_uuid = %s", mm.uuid)
+        assert lines and all(line.startswith(known) for line in lines), key
+        hid = [line for line in lines if line.startswith("Hid ")]
+        assert all(": " in line and "••••" in line for line in hid), key
+
+
+def test_gap_seed_j_recover_3_j_recover_6_l_draft_parts_2_each_part_reads_the_engines_reason(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-DRAFT.parts/2 (J-RECOVER/3, /6): T1's parts carry the reason lines lane C's engine writes
+    (`draft.parts.why_for`), in Compose.md's words: the title "From your first sentence.", who it affects "Suggested
+    because you mentioned investors.", the area "Suggested because it’s about investor service." (ComposeResume.md's
+    form), what it's worth quoting her words; How often failed, so it has none. No part anywhere in the seed reads
+    the old "Because you mentioned it"."""
+    parts = _t1_view(db, made)["parts"]
+    assert parts["title"]["why"] == "From your first sentence."
+    assert parts["title"]["source_quote"].startswith("Walk-in investors who come to update KYC")
+    assert parts["often"]["state"] == "failed" and "why" not in parts["often"]
+    assert parts["who"]["why"] == "Suggested because you mentioned investors."
+    assert parts["area"]["why"] == "Suggested because it’s about investor service."
+    assert parts["value"]["why"] == (
+        "From your words: “Yesterday one investor with folio Folio ••••17 left after forty minutes”"
+    )
+    ours = [mm.uuid for mm in made.values()]
+    assert not _one(
+        db,
+        "SELECT count(*) FROM idea_parts WHERE idea_uuid = ANY(%s) AND why = 'Because you mentioned it'",
+        ours,
+    )
+    # A confirmed sorting keeps the suggestion's line (submit.sorting), never "From your words" on its own
+    rows = db.execute("SELECT sorting_sources FROM ideas WHERE id = ANY(%s)", (ours,)).fetchall()
+    whys = {
+        str(rec.get("why")) for r in rows for rec in (r["sorting_sources"] or {}).values() if rec.get("why")
+    }
+    assert "From your words" not in whys

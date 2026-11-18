@@ -76,6 +76,13 @@ ignore = [
 "langchain".msg = "Model SDKs are allowed only in services/worker/gateway/."
 "litellm".msg = "Model SDKs are allowed only in services/worker/gateway/."
 "websockets".msg = "Sarvam's streaming calls live only in services/worker/gateway/sarvam.py (DEC-108, non-negotiable 1)."
+# The Sarvam SDK is banned everywhere, the gateway included (BLD-C177): gateway/sarvam.py is plain httpx and websockets.
+# The gateway's TID251 ignore below would let it through there, so TID253 bans it at module level everywhere too, and
+# scripts/ci/check_no_model_sdk.py bans any import of it, anywhere, and any dependency on it.
+"sarvamai".msg = "The Sarvam SDK is banned everywhere, gateway included: use gateway/sarvam.py (BLD-C177, DEC-108)."
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-module-level-imports = ["sarvamai"]
 
 [tool.ruff.lint.per-file-ignores]
 "gateway/**" = ["TID251"]

@@ -7,6 +7,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } from "./helpers";
+import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
   process.env.E2E_DATABASE_URL || "postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable";
@@ -227,6 +228,11 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   const deskRow = reviewer.page.getByRole("row").filter({ hasText: title });
   await expect(deskRow.getByText(/0 of 2 answered|Not seen yet/)).toBeVisible();
   await expect(deskRow.getByText(/to answer$/)).toBeVisible();
+  // S-R1.layout/4, S-R2.panel/3, C-PILL.rules/3: the desk row's clock and the waiting panel's are the board's
+  // countdown (Desk .due, a clock in place of the dot)
+  await expect(deskRow.locator(".due")).toHaveText(/to answer$/);
+  await reviewer.page.goto(`/desk/ideas/${ideaId}`);
+  await expect(reviewer.page.locator(".ri-clock .due")).toHaveText(/to answer$/);
 
   // J-TRACK/3 C-QCARD.places S-H5: the questions reach the sharer's Inbox as the card, under the reader's own
   // header, and the button in the reader's foot opens the Answer screen
@@ -247,6 +253,8 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   // S-R3: one question at a time, skip, check and send
   await expect(s).toHaveURL(new RegExp(`/ideas/${ideaId}/answer$`));
   await expect(s.getByRole("heading", { name: "Answer the review desk" })).toBeVisible();
+  // S-R3.layout/1, C-PILL.rules/3: the review bar's clock is the Answer board's countdown
+  await expect(s.locator(".ans-due .due")).toHaveText(/left to answer$/);
   await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
   await expectNoSidewaysScroll(s);
@@ -400,4 +408,73 @@ test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a number mid-text from th
   await expect(r.getByText("Hidden from everyone.", { exact: true })).toBeAttached();
   await expect(text).toBeFocused();
   await expectNoSeriousAxeIssues(r);
+});
+
+/** C-SORTS: "Decide by" pressed on a desktop; on a phone the one cycler reads "Sorted by decide by". */
+async function expectDecideBy(p: Page): Promise<void> {
+  const wide = p.getByRole("button", { name: "Decide by", exact: true });
+  if (await wide.isVisible()) await expect(wide).toHaveAttribute("aria-pressed", "true");
+  else await expect(p.getByRole("button", { name: "Sorted by decide by", exact: true })).toBeVisible();
+}
+
+test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab; no request URL and no address holds it", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  // A word no other idea on the desk holds, so the search finds this one alone
+  const words = `Zebra${Date.now() % 100_000}Kestrel`;
+  const title = `${words} branch form needs a plain reason (${testInfo.project.name})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const r = reviewer.page;
+  const asked = watchRequestUrls(r);
+  const box = r.getByRole("searchbox", { name: "Search the desk" });
+  const link = r.getByRole("link", { name: title, exact: true });
+  await r.goto("/desk?tab=to_review&sort=decide_by");
+  await expect(r.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  const kept = await storageNames(r);
+  await expect(box).toHaveAttribute("autocomplete", "off");
+  await box.fill(words);
+  await box.press("Enter");
+  await expect(link).toBeVisible();
+  await expect(r.getByRole("link", { name: /Rejection SMS codes need plain words/ })).toHaveCount(0);
+  expect(new URL(r.url()).search).toBe("?tab=to_review&sort=decide_by");
+
+  // Browser Back from the idea: the same tab, sort and search, the row focused
+  await link.click();
+  await r.waitForURL(new RegExp(`/desk/ideas/${ideaId}$`));
+  await r.goBack();
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeFocused();
+  await expect(r.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+  await expectDecideBy(r);
+
+  // The page's own Back link brings the search back too (J-BROWSE/3, "browser or the page's own link")
+  await link.click();
+  await r.waitForURL(new RegExp(`/desk/ideas/${ideaId}$`));
+  await r.locator(".ri-head a.back").click();
+  await r.waitForURL(/\/desk\?/);
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeVisible();
+
+  // A reload keeps it
+  await r.reload();
+  await expect(box).toHaveValue(words);
+  await expect(link).toBeVisible();
+  await expect(r.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+
+  // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
+  expect(asked.filter(carrying(words))).toEqual([]);
+  expect(carrying(words)(r.url())).toBe(false);
+  expect(await storageNames(r)).toEqual(kept);
+  expect(await storageCarries(r, words)).toBe(false);
+
+  // The link pasted into another browser: the tab and sort apply, the search does not (J-BROWSE/6)
+  const other = await person(browser, PERSONAS.reviewer);
+  await other.page.goto(r.url());
+  await expect(other.page.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
+  await expectDecideBy(other.page);
+  await expect(other.page.getByRole("searchbox", { name: "Search the desk" })).toHaveValue("");
+  await other.page.context().close();
 });

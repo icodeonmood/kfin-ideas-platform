@@ -8,7 +8,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { CLUB, clubLoaded, esc, NO_SEED, seededIdea, type IdeaKey } from "./club";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn, switchIsOn } from "./helpers";
 
 const isPhone = (name: string) => name.startsWith("phone");
 const soon = expect.configure({ timeout: 15_000 });
@@ -33,7 +33,7 @@ async function openIdea(page: Page, key: IdeaKey, query = "") {
 }
 
 type Decision = {
-  decision: { reason: string | null; reason_heading: string; by_line: string };
+  decision: { reason: string | null; reason_heading: string | null; by_line: string };
   reversal: { note: string | null } | null;
   lines: {
     committee_line: string | null;
@@ -75,9 +75,11 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     }
     await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/^The review desk will look at it by \w+day \d+ \w+\.$/)).toBeVisible();
+    // DEC-105: while Teams is off the page names only email (BLD-E054); with it on, the drawn words stand
+    const onTeams = (await switchIsOn("comms.teams")) ? "on Teams and " : "";
     if (isPhone(info.project.name)) {
       // PhoneStatus.md: the shorter lines, the reference line under the title and Copy reference
-      await expect(page.getByText("We’ll tell you on Teams and by email.", { exact: true })).toBeVisible();
+      await expect(page.getByText(`We’ll tell you ${onTeams}by email.`, { exact: true })).toBeVisible();
       await expect(
         page.getByText(new RegExp(`^Reference ${esc(t5.ref)}, shared \\w+day \\d+ \\w+, `)),
       ).toBeVisible();
@@ -96,9 +98,7 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
         ),
       ).toBeVisible();
     } else {
-      await expect(
-        page.getByText("We’ll tell you on Teams and by email when anything changes."),
-      ).toBeVisible();
+      await expect(page.getByText(`We’ll tell you ${onTeams}by email when anything changes.`)).toBeVisible();
       await expect(page.getByRole("button", { name: `Copy reference ${t5.ref}` })).toBeHidden();
     }
     await expect(page.getByRole("link", { name: "Edit it" })).toHaveAttribute(
@@ -148,14 +148,29 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(page.getByRole("button", { name: "Withdraw" })).toBeFocused();
   });
 
-  test("S-06.states questions, V-ACC.track/3: the questions card with its countdown and Answer the questions; the window has closed", async ({
+  test("S-06.states questions, V-ACC.track/3, C-QCARD.anatomy: the questions card with its countdown and Answer the questions; the window has closed", async ({
     page,
   }) => {
     const t6 = await openIdea(page, "T6");
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Harish has 3 questions for you" })).toBeVisible();
+    // DEC-111: lane B's card names the review desk, never the reviewer
+    await expect(
+      page.getByRole("heading", { name: "The review desk has 3 questions for you" }),
+    ).toBeVisible();
     await expect(page.getByText("Answer goes to").first()).toBeVisible();
-    await expect(page.getByText(/^\d+ days? left to answer$|left to answer/).first()).toBeVisible();
+    // C-QCARD.anatomy/1 and /4 (lane B's card, BLD-E051): the countdown is the header's pill, the deadline line alone
+    await expect(page.getByText(/^(?:\d+ days?|\d{2}:\d{2}) left$/).first()).toBeVisible();
+    // C-QCARD.anatomy/4 in either of desk/when.py deadline()'s forms: "Thursday 19 November, 6 pm" (with the year
+    // when it falls in another), or "6 pm today" / "11:52 pm tomorrow" (Answer.md) once the date is a day away. The
+    // seed sets T6 due in 2 days, so a run seeded before midnight in India and checked after it reads "tomorrow"
+    // (main run 44366827160)
+    await expect(
+      page
+        .getByText(
+          /^Answer by (?:\w+day \d{1,2} \w+(?: \d{4})?, \d{1,2}(?::\d{2})? [ap]m|\d{1,2}(?::\d{2})? [ap]m (?:today|tomorrow))\. One at a time, typed or spoken\.$/,
+        )
+        .first(),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
       "href",
       `/ideas/${t6.ref}/answer`,
@@ -183,8 +198,12 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     const t7 = await openIdea(page, "T7");
     const d7 = await decisionOf(page, t7.ref);
     await expect(page.getByText("Picked. A team is being chosen to build it.")).toBeVisible();
-    await expect(page.getByText(/Harish from the review desk picked it on \w+day \d+ \w+\./)).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: d7.decision.reason_heading })).toBeVisible();
+    // DEC-111: Tanvi is not on the review desk or the Ones Committee, so the sentence names the desk, not Harish
+    await expect(page.getByText(/The review desk picked it on \w+day \d+ \w+\./)).toBeVisible();
+    await expect(page.getByText(/Harish from the review desk picked it/)).toHaveCount(0);
+    // DEC-111: Status.md draws no heading over the reason, so the sharer's decision carries none and names the desk
+    expect(d7.decision.reason_heading).toBeNull();
+    expect(d7.decision.by_line).toMatch(/^by the review desk, \w+day \d+ \w+$/);
     await expect(page.getByText(`“${d7.decision.reason}”`)).toBeVisible();
     if (d7.lines?.committee_line) await expect(page.getByText(d7.lines.committee_line)).toBeVisible();
     await expectNoSeriousAxeIssues(page);
@@ -195,7 +214,8 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(
       page.getByText(/^Not now\. The review desk looks at it again on \w+day \d+ \w+( \d{4})?\.$/),
     ).toBeVisible();
-    await expect(page.getByText(/Lavanya’s full reason is below\./)).toBeVisible();
+    await expect(page.getByText(/The review desk’s full reason is below\./)).toBeVisible();
+    await expect(page.getByText(/Lavanya’s full reason/)).toHaveCount(0);
     await expect(page.getByText(`“${d8.decision.reason}”`)).toBeVisible();
     // The window closed, so the committee line is gone (lines.committee_line is null)
     expect(d8.lines?.committee_line ?? null).toBeNull();
@@ -293,10 +313,11 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
       "/my-ideas?list=teamed",
     );
     await expect(page.getByText("You’re on the crew. You’ll get its updates.")).toBeVisible();
-    // The crew's way into the conversation (S-08), from the card (Idea.md "Say hello")
+    // The crew's way into the conversation (S-08), from the card (Idea.md "Say hello"), with the cursor in the box
+    // (#say-hello, BLD-F069)
     await expect(
       page.getByRole("region", { name: "Team up on this idea" }).getByRole("link", { name: "Say hello" }),
-    ).toHaveAttribute("href", `/ideas/${r2.ref}/conversation`);
+    ).toHaveAttribute("href", `/ideas/${r2.ref}/conversation#say-hello`);
     await expect(page.getByRole("button", { name: "Team up", exact: true })).toHaveCount(0);
     await expect(page.getByRole("img", { name: "Rekha Saxena" })).toBeVisible();
     await expectNoSeriousAxeIssues(page);

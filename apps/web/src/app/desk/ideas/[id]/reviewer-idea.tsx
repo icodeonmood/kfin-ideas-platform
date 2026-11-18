@@ -43,6 +43,7 @@ import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQu
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
+import { backToList } from "@/lib/search-memory";
 
 export type ReviewPromises = {
   reasonMin: number;
@@ -304,16 +305,17 @@ export function ReviewerIdea({
   return (
     <div className="ri">
       <div className="ri-head">
-        <Link href="/desk" className="back">
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path
-              d="M9 2.5 4.5 7 9 11.5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              fill="none"
-              strokeLinecap="round"
-            />
-          </svg>
+        {/* Back to the desk, searched or not, goes back in history when the desk is the entry before, so its tab,
+            sort and search come back as they were (J-BROWSE/3 and /4, DEC-110, BLD-B260); otherwise the plain link.
+            Its one chevron and 44px height are the shared `.back` (lane D, BLD-B261) */}
+        <Link
+          href="/desk"
+          className="back"
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if (backToList("/desk")) e.preventDefault();
+          }}
+        >
           Review desk
         </Link>
         <p className="ri-ref">
@@ -430,7 +432,7 @@ export function ReviewerIdea({
                     />
                   ) : (
                     <p className="body ri-part-t">
-                      <span className="muted">Not given.</span>
+                      <span className="muted">{part.empty}</span>
                     </p>
                   )}
                   {/* L-HIDE.rules/6: beside "… hidden from everyone.", what the sharer chose to show and why */}
@@ -766,7 +768,7 @@ export function ReviewerIdea({
                                     <li key={s.text}>
                                       <button
                                         type="button"
-                                        className="qsug"
+                                        className="ri-qsug"
                                         aria-label={`Add: ${s.text} ${PART_NAME[s.part]}`}
                                         onClick={() =>
                                           dispatch({ type: "add_suggestion", part: s.part, text: s.text })
@@ -882,6 +884,8 @@ export function ReviewerIdea({
 
 /** The match line under a similar idea and in its preview: "Close match: …" or "Related: …" (DeskIdea board). */
 function matchLine(s: ReviewerSimilar): string {
+  // A reason stored with its label already ("Related: …", as the demo seed and S-06 keep it) is not labelled twice.
+  if (/^(Close match|Related): /.test(s.reason)) return s.reason;
   return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
 }
 
@@ -1154,7 +1158,7 @@ function SentOrAnswered({
       {p.state === "sent" ? (
         <>
           <p className="ri-clock">
-            <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+            <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
               {countdownLabel(live, "to answer")}
             </Pill>
           </p>

@@ -23,7 +23,8 @@ IDEA_REF_PREFIX = "IDEA-"
 DESK_ROLES = frozenset({"reviewer"})
 # The Ones Committee (E-ENUMS.roles; the seed and the old grants still say "committee").
 COMMITTEE_ROLES = frozenset({"committee", "core_committee", "core_chair"})
-OPEN_SET_STATES = ("sent", "seen", "partly_answered")
+PARTLY_ANSWERED = "partly_answered"  # some answers sent, the rest open until the deadline
+OPEN_SET_STATES = ("sent", "seen", PARTLY_ANSWERED)
 ANSWERED_SET_STATES = ("answered",)
 
 
@@ -90,6 +91,13 @@ class Viewer:
     @property
     def on_committee(self) -> bool:
         return bool(self.roles & COMMITTEE_ROLES)
+
+    @property
+    def sees_desk_names(self) -> bool:
+        """DEC-111: only the review desk and the Ones Committee see who at the desk asked, revised or decided.
+        Everyone else, the sharer and the crew included, reads "the review desk", with no name, avatar or initials
+        (`onepc.words.REVIEW_DESK`). Read from the live role grants, never from the caller (BLD-E053)."""
+        return self.on_desk or self.on_committee
 
 
 def viewer(conn: Conn, user_id: str) -> Viewer:
@@ -188,7 +196,7 @@ def decision(conn: Conn, idea_uuid: str, *, with_text: bool = False) -> dict[str
     r = conn.execute(
         "SELECT d.*, w.id AS window_id, w.state AS window_state, w.opens_at, w.closes_at, w.max_closes_at, "
         "w.extended_times, v.id AS reversal_id, v.to_choice, v.note_encrypted, v.by_user_id AS reversed_by, "
-        "v.at AS reversed_at, v.return_at AS reversed_return_at "
+        "v.at AS reversed_at, v.return_at AS reversed_return_at, v.team_by AS reversed_team_by "
         "FROM idea_decisions d LEFT JOIN decision_windows w ON w.decision_id = d.id "
         "LEFT JOIN decision_reversals v ON v.window_id = w.id "
         "WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1",
@@ -206,6 +214,29 @@ def decision(conn: Conn, idea_uuid: str, *, with_text: bool = False) -> dict[str
         else None
     )
     return d
+
+
+def decision_reason(conn: Conn, decision_id: str) -> str | None:
+    """The desk's reason for one decision, as lane B stored it: already masked (`adapters.hide` in desk/decide.py), so
+    the same words S-06's reason block reads from lane B's `/decision`. Only the sharer's own page opens it, for the
+    desk's message in "You and the review desk" (S-06.layout/8, BLD-E058). Never logged."""
+    row = conn.execute("SELECT reason_encrypted FROM idea_decisions WHERE id = %s", (decision_id,)).fetchone()
+    if row is None:
+        return None
+    return open_text("idea_decisions", "reason_encrypted", decision_id, row["reason_encrypted"])
+
+
+def reversal_note(conn: Conn, reversal_id: str) -> str | None:
+    """The Ones Committee's note to the sharer when it reversed a decision, as lane B stored it: masked when the
+    committee sent it (`adapters.hide` in desk/committee.py), so the same words as the reversal card's note from lane
+    B's `/decision`. Only the sharer's own page opens it, for the committee's message in "You and the review desk"
+    (S-06.layout/8, BLD-E058). Never logged."""
+    row = conn.execute(
+        "SELECT note_encrypted FROM decision_reversals WHERE id = %s", (reversal_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return open_text("decision_reversals", "note_encrypted", reversal_id, row["note_encrypted"])
 
 
 def question_set(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
@@ -390,5 +421,21 @@ def entry_count(conn: Conn, idea_uuid: str) -> int:
         "SELECT count(*) AS n FROM conversation_entries WHERE idea_uuid = %s AND type <> 'event' "
         "AND deleted_at IS NULL",
         (idea_uuid,),
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+# The merge lines lane F's S-08 shows on both ideas (`convo.render.event_line`, L-MERGE.effects/6): lane B's desk
+# merge, lane F's lead-accepted merge (into, on the merged idea; from, on the lead), the Ones Committee undoing a
+# merge, and the seed's own code for a desk merge (BLD-F061).
+MERGE_EVENTS = ("desk.merged", "merge.into", "merge.from", "committee.merge_reversed", "desk_merged")
+
+
+def merge_line_count(conn: Conn, idea_uuid: str) -> int:
+    """How many merge lines this idea's conversation shows (BLD-E065): `entry_count` leaves events out."""
+    row = conn.execute(
+        "SELECT count(*) AS n FROM conversation_entries WHERE idea_uuid = %s AND type = 'event' "
+        "AND event = ANY(%s) AND deleted_at IS NULL",
+        (idea_uuid, list(MERGE_EVENTS)),
     ).fetchone()
     return int(row["n"]) if row else 0

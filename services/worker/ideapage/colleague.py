@@ -89,7 +89,7 @@ def _team_up(
             {
                 "state": "on_crew",
                 "line": "You’re on the crew. You’ll get its updates.",
-                "action": {"label": "Say hello", "to": f"/ideas/{key}/conversation"},
+                "action": {"label": "Say hello", "to": f"/ideas/{key}/conversation#say-hello"},  # BLD-F069
                 "can_team_up": False,
             }
         )

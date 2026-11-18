@@ -344,7 +344,7 @@ test.describe("S-WALL", () => {
     await expect(
       page
         .getByRole("alert")
-        .filter({ hasText: "We can't load the wall just now. Please try again in a minute." }),
+        .filter({ hasText: "We can't load the Wall just now. Please try again in a minute." }),
     ).not.toHaveCount(0);
     await expect(page.getByRole("heading", { level: 2, name: "The Ones" })).toBeVisible();
   });
@@ -408,7 +408,7 @@ test.describe("S-WALL", () => {
     const popular = page.getByRole("button", { name: "Popular", exact: true });
     await popular.click();
     await expect(
-      page.getByRole("alert").filter({ hasText: "We can't load the wall just now." }).first(),
+      page.getByRole("alert").filter({ hasText: "We can't load the Wall just now." }).first(),
     ).toBeVisible();
     // The choice and the address are back to the view on screen
     await expect(popular).toHaveAttribute("aria-pressed", "false");
@@ -422,7 +422,7 @@ test.describe("S-WALL", () => {
     await popular.click();
     await expect(popular).toHaveAttribute("aria-pressed", "true");
     await expect(page).toHaveURL(/\/wall\?kind=problem&sort=popular$/);
-    await expect(page.getByRole("alert").filter({ hasText: "We can't load the wall just now." })).toHaveCount(
+    await expect(page.getByRole("alert").filter({ hasText: "We can't load the Wall just now." })).toHaveCount(
       0,
     );
     const top = [...JUST_IN].sort((a, b) => b.opened_7d - a.opened_7d)[0]!;

@@ -22,15 +22,19 @@ import datetime as dt
 from collections.abc import Callable
 from typing import Any
 
+from core import killswitch
 from core.db import Conn
+from desk.listen import _EMPTY as S_R2_EMPTY
 from ideapage import adapters, read
 from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, similar_tiles
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
 from ideapage.words import (
+    DECISION_LABEL,
     brings_words,
     count,
     countdown,
     day,
+    day_time,
     hours_range,
     join_words,
     money_range,
@@ -38,6 +42,7 @@ from ideapage.words import (
     short_date,
 )
 from onepc.context import open_text
+from onepc.words import REVIEW_DESK, REVIEW_DESK_START
 
 STATE_LABEL = {
     "just_shared": "Just shared",
@@ -165,16 +170,112 @@ CARD_FROM = {
 def _state(idea: dict[str, Any], qset: dict[str, Any] | None, dec: Decided | None) -> str:
     status = str(idea["status"])
     if at_desk(idea):
+        # J-TRACK.steps/4-5: once answers are sent the page says so ("Answers sent"), also when a question was
+        # skipped and stays open until the deadline; the questions card then sits under the sentence for the rest
+        # (C-QCARD.states "Partly answered", BLD-E051).
+        if qset and qset["state"] in (*read.ANSWERED_SET_STATES, read.PARTLY_ANSWERED):
+            return "answers_sent"
         if status == "needs_you" or read.has_open_questions(qset):
             return "questions"
-        if qset and qset["state"] in read.ANSWERED_SET_STATES:
-            return "answers_sent"
         return "just_shared"
     if status in ("picked", "not_now", "not_picked"):
         if dec and dec.reversed and STATUS_OF_CHOICE.get(dec.choice) == status:
             return "reversed"
         return status
     return status if status in STATE_LABEL else "just_shared"
+
+
+# The states in which the desk's decision stands, or the committee changed it: the conversation card says the desk
+# has decided (its sub-line) and shows the decision as the desk's message (BLD-E058).
+DECIDED_STATES = ("picked", "not_now", "not_picked", "reversed", "being_built", "shipped")
+# DEC-111: the review desk itself, as lane F's S-08 sends it to anyone outside the desk and the Ones Committee
+# (convo.store.DESK_PERSON): no id, no initials, so no face.
+DESK_SPEAKER = {"id": "", "name": REVIEW_DESK_START, "first_name": REVIEW_DESK_START, "initials": ""}
+
+
+def decision_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: bool) -> dict[str, Any]:
+    """The desk's decision as its message in "You and the review desk" (S-06.layout/8; Status.md and PhoneStatus.md,
+    "Picked", "Not now", "Not picked, with the reason", "Reversed by the Ones Committee"): "Picked. <reason>", sent by
+    the desk at the time it decided. After a reversal it is still the desk's own decision, as the boards draw it.
+
+    The reason is lane B's stored copy, masked when the desk sent it, so the same words as S-06's reason block.
+    DEC-111: the sender is "The review desk" with no face for anyone outside the review desk and the Ones Committee,
+    and nothing about the person at the desk is read; inside them, "Meera from the review desk" with her initials.
+    NOT DRAWN (BLD-E058), HR sign-off: the desk's sender line (docs/hr-wording/lane-e.md, section 8)."""
+    decision_id = str(dec.raw["id"])
+    reason = read.decision_reason(conn, decision_id)
+    said = DECISION_LABEL[dec.desk_choice]
+    person = read.person_by_user(conn, dec.raw["by_user_id"]) if names_desk else None
+    if person is not None:
+        role = "from the review desk"
+        speaker: dict[str, Any] = {
+            "id": person["id"],
+            "name": person["name"],
+            "first_name": person["first_name"],
+            "initials": person["initials"],
+            "role_label": role,
+        }
+        from_label = f"{person['first_name']} {role}"
+    else:
+        speaker, from_label = dict(DESK_SPEAKER), REVIEW_DESK_START
+    at_label = day_time(dec.desk_at, now)
+    return {
+        "id": f"decision-{decision_id}",
+        "kind": "decision",
+        "from": speaker,
+        "from_label": from_label,
+        "at": dec.desk_at.isoformat(),
+        "at_label": at_label,
+        "by_line": f"{from_label}, {at_label}",  # "The review desk, Monday 16 November, 4:58 pm"
+        "text": f"{said}. {reason}" if reason else f"{said}.",
+    }
+
+
+COMMITTEE_ROLE = "from the Ones Committee"
+COMMITTEE_START = "The Ones Committee"
+# The committee itself, with no id or initials: for a member who is no longer in `users`.
+COMMITTEE_ITSELF = {"id": "", "name": COMMITTEE_START, "first_name": COMMITTEE_START, "initials": ""}
+
+
+def committee_speaker(conn: Conn, user_id: str | None) -> tuple[dict[str, Any], str]:
+    """Who the committee's message is from, and the line's name: "Rohan Mehta from the Ones Committee" with their
+    initials, as lane B's reversal card names the member to the sharer today (`reversal.by`, `from_line` in
+    desk/committee.sharer_lines). DEC-111 hides only the review desk's names; whether the committee's are hidden too
+    is with the product lead (BLD-F082 asked it). If they are, return `dict(COMMITTEE_ITSELF), COMMITTEE_START` here:
+    one line, and the web draws no face for it (BLD-E058)."""
+    person = read.person_by_user(conn, user_id)
+    if person is None:
+        return dict(COMMITTEE_ITSELF), COMMITTEE_START
+    speaker = {
+        "id": person["id"],
+        "name": person["name"],
+        "first_name": person["first_name"],
+        "initials": person["initials"],
+        "role_label": COMMITTEE_ROLE,
+    }
+    return speaker, f"{person['name']} {COMMITTEE_ROLE}"
+
+
+def committee_message(conn: Conn, dec: Decided, now: dt.datetime) -> dict[str, Any]:
+    """The Ones Committee's message after it reversed the desk's decision (Status.md "Reversed by the Ones Committee":
+    the desk's message stays, then the member's), at the time it reversed it. The product stores no separate short
+    message, so the words are the committee's note, lane B's masked copy: the same words as the reversal card's note.
+    A note that will not open falls back to the reversal card's title. NOT DRAWN (BLD-E058), HR sign-off."""
+    reversal_id = str(dec.raw["reversal_id"])
+    note = read.reversal_note(conn, reversal_id)
+    speaker, from_label = committee_speaker(conn, dec.reversed_by)
+    at = dec.reversed_at or dec.at
+    at_label = day_time(at, now)
+    return {
+        "id": f"reversal-{reversal_id}",
+        "kind": "reversal",
+        "from": speaker,
+        "from_label": from_label,
+        "at": at.isoformat(),
+        "at_label": at_label,
+        "by_line": f"{from_label}, {at_label}",  # "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm"
+        "text": note or f"The Ones Committee changed the decision to {DECISION_LABEL[dec.choice].lower()}",
+    }
 
 
 def edit_window(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
@@ -199,8 +300,17 @@ def may_withdraw(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.date
     return bool(w and w["open"])
 
 
-def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
-    """The window line under the track (S-06.layout/4), with its countdown while it is open."""
+# DEC-105: Teams is built but off until IT approves it (the `comms.teams` switch, read as notify reads it). While it
+# is off, a sentence names only the channels that are on; with it on, the drawn words stand. Each line for "off" is
+# marked "changed by DEC-105, HR sign-off; BLD-E054".
+TEAMS_SWITCH = "comms.teams"
+
+
+def _window_words(
+    idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime, *, teams: bool
+) -> dict[str, Any] | None:
+    """The window line under the track (S-06.layout/4), with its countdown while it is open. `teams`: whether the
+    Teams switch is on (BLD-E054)."""
     if w is None:
         return None
     closes = idea.get("edit_closes_at")
@@ -210,7 +320,12 @@ def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.dateti
             "open": True,
             "line": (
                 f"Open to changes until {day(closes, now)}. Edit or withdraw it any time before the review desk "
-                "opens it. We tell you on Teams and by email when anything moves."
+                + (
+                    "opens it. We tell you on Teams and by email when anything moves."
+                    if teams
+                    # changed by DEC-105, HR sign-off; BLD-E054
+                    else "opens it. We tell you by email when anything moves."
+                )
             ),
             # PhoneStatus.md says it shorter
             "phone_line": (
@@ -239,9 +354,14 @@ def _card(
     idea: dict[str, Any],
     qset: dict[str, Any] | None,
     now: dt.datetime,
+    *,
+    names_desk: bool,
+    teams: bool,
 ) -> dict[str, str] | None:
     """The sentence that says where it stands and what happens next: its first clause in white, the rest dimmer
-    (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint."""
+    (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint. `names_desk`
+    (DEC-111): the reviewer's first name for a sharer on the review desk or the Ones Committee only. `teams`:
+    whether the Teams switch is on; while it is off the card does not say "on Teams" (DEC-105, BLD-E054)."""
     if state in CARD_FROM:
         return None
     if state == "just_shared":
@@ -250,12 +370,18 @@ def _card(
             "lead": f"The review desk will look at it by {by}."
             if by
             else "The review desk will look at it soon.",
-            "rest": "We’ll tell you on Teams and by email when anything changes.",
-            "phone_rest": "We’ll tell you on Teams and by email.",  # PhoneStatus.md
+            "rest": "We’ll tell you on Teams and by email when anything changes."
+            if teams
+            else "We’ll tell you by email when anything changes.",  # changed by DEC-105, HR sign-off; BLD-E054
+            "phone_rest": "We’ll tell you on Teams and by email."  # PhoneStatus.md
+            if teams
+            else "We’ll tell you by email.",  # changed by DEC-105, HR sign-off; BLD-E054
         }
     if state == "answers_sent":
-        asker = read.person_by_user(conn, qset["by_user_id"]) if qset else None
-        name = asker["first_name"] if asker else "The review desk"
+        # DEC-111: "Sent. Harish has your answers." only for the review desk and the Ones Committee; anyone else
+        # reads "Sent. The review desk has your answers." (changed by DEC-111, HR sign-off; BLD-E053)
+        asker = read.person_by_user(conn, qset["by_user_id"]) if qset and names_desk else None
+        name = asker["first_name"] if asker else REVIEW_DESK_START
         by = (
             f"The review desk decides by {day(idea['decide_by'], now)}, and you"
             if idea.get("decide_by")
@@ -265,7 +391,9 @@ def _card(
             "lead": f"Sent. {name} has your answers.",
             "rest": (
                 f"Each answer was added to its part of your idea, under What you shared. {by} hear in your "
-                "Inbox, on Teams and by email."
+                + (
+                    "Inbox, on Teams and by email." if teams else "Inbox and by email."
+                )  # changed by DEC-105, HR sign-off; BLD-E054
             ),
         }
     if state == "withdrawn":
@@ -303,15 +431,20 @@ def _card(
     return None
 
 
-def _answers_under(raw: dict[str, list[dict[str, Any]]], part: str, now: dt.datetime) -> list[dict[str, Any]]:
+def _answers_under(
+    raw: dict[str, list[dict[str, Any]]], part: str, now: dt.datetime, *, names_desk: bool
+) -> list[dict[str, Any]]:
     """Sent answers under their part (L-QUESTIONS.answer/5), from lane B's reader: the answer and the line
-    "From your answer to Meera, Monday 16 November". Questions not answered are the questions card's, not here."""
+    "From your answer to Meera, Monday 16 November". Questions not answered are the questions card's, not here.
+    DEC-111: lane B's `asked_by` (a first name) is read only for a sharer on the review desk or the Ones Committee;
+    anyone else reads "From your answer to the review desk, …" (changed by DEC-111, HR sign-off; BLD-E053). Only
+    the line is sent, never `asked_by` itself."""
     out = []
     for a in raw.get(part, []):
         if not a.get("answer"):
             continue
         at = dt.datetime.fromisoformat(str(a["answered_at"])) if a.get("answered_at") else None
-        who = a.get("asked_by") or "the review desk"
+        who = (a.get("asked_by") if names_desk else None) or REVIEW_DESK
         out.append(
             {
                 "id": str(a.get("question_id") or ""),
@@ -347,16 +480,22 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
     }
 
 
+# NOT DRAWN (BLD-E057): HR sign-off. A part the sharer left empty, or only spaces, reads as S-R2 reads the same
+# part: lane B's words, imported from its listen script (as `desk/ideas/[id]/reviewer-idea.tsx` has them); Status.md
+# draws no empty part (J-REVIEW/1, /3, /6, J-TRACK/7).
+NOT_GIVEN = S_R2_EMPTY["often"]
+
+
 def _shared_rows(
-    conn: Conn, idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime
+    conn: Conn, idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime, *, names_desk: bool
 ) -> dict[str, Any]:
     """'What you shared' (S-06.layout/5–7): the short summary and sorting as everyone sees them, the hidden chips,
-    the answers under their parts, files, and the fix."""
+    the answers under their parts, files, and the fix. `names_desk` as for `_card` (DEC-111)."""
     uid = str(idea["id"])
     answers = adapters.answers_by_part(conn, uid)
 
     def under(part: str) -> list[dict[str, Any]]:
-        return _answers_under(answers, part, now)
+        return _answers_under(answers, part, now, names_desk=names_desk)
 
     worth = read.worth(conn, uid)
     figures: dict[str, Any] = {}
@@ -364,15 +503,20 @@ def _shared_rows(
         figures[side] = {
             k: v
             for k, v in {
-                "hours": hours_range(w_.get("hours_low"), w_.get("hours_high")),
-                "cost": money_range(w_.get("cost_low"), w_.get("cost_high")),
-                "revenue": money_range(w_.get("revenue_low"), w_.get("revenue_high")),
+                # "About" only before a figure the sharer marked as approximate (L-WORTH/1); NULL reads as not
+                "hours": hours_range(w_.get("hours_low"), w_.get("hours_high"), w_.get("hours_about")),
+                "cost": money_range(w_.get("cost_low"), w_.get("cost_high"), w_.get("cost_about")),
+                "revenue": money_range(
+                    w_.get("revenue_low"), w_.get("revenue_high"), w_.get("revenue_about")
+                ),
             }.items()
             if v
         }
         if side == "reviewer":
-            rev = read.person_by_user(conn, w_.get("by_user_id"))
-            figures[side]["by_line"] = f"Revised by {rev['first_name'] if rev else 'the review desk'}"
+            # DEC-111: "Revised by Harish" for the review desk and the Ones Committee only; anyone else reads
+            # "Revised by the review desk" (changed by DEC-111, HR sign-off; BLD-E053)
+            rev = read.person_by_user(conn, w_.get("by_user_id")) if names_desk else None
+            figures[side]["by_line"] = f"Revised by {rev['first_name'] if rev else REVIEW_DESK}"
             if w_.get("note"):
                 figures[side]["note"] = w_["note"]
 
@@ -385,6 +529,8 @@ def _shared_rows(
     )
     fix_row = read.fix(conn, uid)
     files = [_file(f) for f in read.files(conn, uid)]
+    often = str(idea["often"] or "").strip()  # only spaces counts as left empty
+    who = join_words([str(a).strip() for a in idea["affects"] or []])
     rows = [
         {
             "part": "summary",
@@ -392,11 +538,18 @@ def _shared_rows(
             "value": idea["summary"] or "",
             "answers": under("summary"),
         },
-        {"part": "often", "label": "How often", "value": idea["often"] or "", "answers": under("often")},
+        {
+            "part": "often",
+            "label": "How often",
+            "value": often,
+            **({} if often else {"empty_line": NOT_GIVEN}),
+            "answers": under("often"),
+        },
         {
             "part": "who",
             "label": "Who it affects",
-            "value": join_words(list(idea["affects"] or [])),
+            "value": who,
+            **({} if who else {"empty_line": NOT_GIVEN}),
             "answers": under("who"),
         },
         {
@@ -491,7 +644,10 @@ def sharer_view(
     qset = read.question_set(conn, uid)
     dec = decided(read.decision(conn, uid))
     state = _state(idea, qset, dec)
-    reviewer = read.person_by_user(conn, qset["by_user_id"]) if qset else None
+    # DEC-111: the reviewer is named, with their avatar, only to a sharer on the review desk or the Ones Committee;
+    # for anyone else nothing about them is read or sent, and the sentences say "the review desk" (BLD-E053).
+    names_desk = me.sees_desk_names
+    reviewer = read.person_by_user(conn, qset["by_user_id"]) if qset and names_desk else None
     carried = read.live_merge_into(conn, uid) if idea["status"] == "not_picked" else None
     base = public_idea(
         conn,
@@ -501,13 +657,15 @@ def sharer_view(
         dec=dec,
         qset=qset,
         carried_into=carried["lead_ref"] if carried else None,
-        reviewer_first=reviewer["first_name"] if reviewer else None,
+        reviewer_first=reviewer["first_name"] if reviewer else REVIEW_DESK_START if qset else None,
     )
     w = edit_window(idea, qset, now)
     words, unmasked = own_words(conn, uid, me.user_id)
-    desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk")
-    card = _card(conn, state, idea, qset, now)
-    open_questions = state == "questions"
+    desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk") if names_desk else None
+    teams = killswitch.is_on(TEAMS_SWITCH, conn)
+    card = _card(conn, state, idea, qset, now, names_desk=names_desk, teams=teams)
+    # A set partly answered is still open: its card sits under "Sent." for the questions left (BLD-E051)
+    open_questions = state == "questions" or (state == "answers_sent" and read.has_open_questions(qset))
 
     actions: dict[str, Any] = {
         "conversation": {"label": "Open the conversation", "to": f"/ideas/{key}/conversation"},
@@ -556,22 +714,40 @@ def sharer_view(
     conversation: dict[str, Any] | None = None
     if state != "withdrawn":
         # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO) and the questions
-        # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link.
-        n_entries = read.entry_count(conn, uid)
+        # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link. Once the desk
+        # has decided, the decision is the desk's message here, and after a reversal the committee's follows it, in
+        # time order (BLD-E058): lane F's S-08 shows each as an event line, which `entry_count` does not count, so
+        # they are counted here. A reversed decision stays reversed once it is built or shipped. So are the merge
+        # lines S-08 shows on both ideas (L-MERGE.effects/6; J-REVIEW/M3, J-SIMILAR/7; BLD-E065): the card has no
+        # message for them, but no "No messages yet" over a conversation that has them.
+        stands = dec is not None and state in DECIDED_STATES
+        reversed_ = stands and dec is not None and dec.reversed
+        messages: list[dict[str, Any]] = []
+        if stands and dec is not None:
+            messages.append(decision_message(conn, dec, now, names_desk=names_desk))
+            if reversed_:
+                messages.append(committee_message(conn, dec, now))
+        n_entries = read.entry_count(conn, uid) + len(messages) + read.merge_line_count(conn, uid)
         conversation = {
             "heading": "You and the review desk",
             "count": n_entries,
             "link": actions["conversation"],
+            **({"messages": messages} if messages else {}),
         }
         if n_entries == 0 and qset is None:
             conversation["empty_line"] = (
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
                 "tell you on Teams."
+                if teams
+                # changed by DEC-105, HR sign-off; BLD-E054
+                else "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
-            conversation["phone_empty_line"] = (  # PhoneStatus.md
+            phone_empty = (  # PhoneStatus.md
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
-        if state == "reversed":
+            if phone_empty != conversation["empty_line"]:  # with Teams off the two are one line, said once
+                conversation["phone_empty_line"] = phone_empty
+        if state == "reversed" or reversed_:
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
             )
@@ -580,6 +756,11 @@ def sharer_view(
                 "The review desk has decided. The full conversation, with every answer, is one tap away."
             )
     skip = {dec.joined_with} if dec and dec.joined_with and idea["status"] == "picked" else set()
+    # A merged idea's card and merged block already link to the idea it went into (S-06.rules/4): no tile for it
+    # (J-SIMILAR/7, J-REVIEW/M3; BLD-E056).
+    into = read.live_merge_into(conn, uid) if idea["status"] == "merged" else None
+    if into is not None:
+        skip.add(str(into["lead_idea_uuid"]))
 
     first_arrival = came_from == "share"
     idea_json = {
@@ -664,13 +845,13 @@ def sharer_view(
             "first_arrival": first_arrival,
             "card": card,
             **({"card_from": CARD_FROM[state]} if state in CARD_FROM else {}),
-            "window": _window_words(idea, w, now),
+            "window": _window_words(idea, w, now, teams=teams),
             "actions": actions,
             "lane_b": {
                 "question_set": f"/api/ideas/{key}/question-set",
                 "decision": f"/api/ideas/{key}/decision",
             },
-            "shared": _shared_rows(conn, idea, w, now),
+            "shared": _shared_rows(conn, idea, w, now, names_desk=names_desk),
             "conversation": conversation,
             "similar": {
                 "heading": "Colleagues on something similar",

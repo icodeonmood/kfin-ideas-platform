@@ -28,6 +28,14 @@ describe("kill switch route map (§7.6)", () => {
       expect(switchesFor("GET", read)).toEqual([]);
   });
 
+  it("L-DECIDE/6: asking to join the build team pauses with sharing; the decision it reads stays open (DEC-111, BLD-B256)", () => {
+    const idea = "/api/ideas/IDEA-2026-001481";
+    expect(switchesFor("POST", `${idea}/join-build`)).toEqual(["submissions"]);
+    expect(switchesFor("POST", `${idea}/join-build/`)).toEqual(["submissions"]);
+    expect(switchesFor("GET", `${idea}/decision`)).toEqual([]);
+    expect(switchesFor("POST", `${idea}/join-build/extra`)).toEqual([]);
+  });
+
   it("an idea's conversation (L-CONVO, BLD-F058): writing and removing a message pause with sharing; reading stays open", () => {
     const base = "/api/ideas/IDEA-2026-001481/conversation";
     expect(switchesFor("POST", `${base}/messages`)).toEqual(["submissions"]);
@@ -79,8 +87,19 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("GET", "/api/wall")).toEqual(["wall.public"]);
     expect(switchesFor("GET", "/api/display/office")).toEqual(["ones.public"]); // S-OFFICE, non-negotiable 9
     expect(switchesFor("GET", "/api/display/office/x")).toEqual([]);
-    expect(switchesFor("POST", "/api/ones/proposals")).toEqual([]);
+    expect(switchesFor("POST", "/api/ones/proposals/4/messages")).toEqual([]); // /ones/write/:id (BLD-E042)
     expect(switchesFor("PUT", "/api/delivery/4/pack")).toEqual([]);
+  });
+
+  it("DEC-110, BLD-A219: My ideas' and the desk's searches are reads sent as POST; no switch pauses them", async () => {
+    const { UNGUARDED_WRITES } = await import("@/lib/killswitch-routes");
+    for (const path of ["/api/me/ideas", "/api/desk"]) {
+      expect(switchesFor("POST", path)).toEqual([]);
+      expect(switchesFor("GET", path)).toEqual([]);
+      expect(UNGUARDED_WRITES.some((re) => re.test(path))).toBe(true);
+    }
+    // the desk's own writes keep their rule: only the list itself is listed
+    expect(UNGUARDED_WRITES.some((re) => re.test("/api/desk/ideas/IDEA-2026-000001/notes"))).toBe(false);
   });
 
   it("has plain-words banner text for every switch it uses", () => {

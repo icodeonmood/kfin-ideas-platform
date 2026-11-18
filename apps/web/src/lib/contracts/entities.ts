@@ -151,6 +151,11 @@ export interface Message {
   at: IsoDate;
   /** "Just now", "Friday, 8:42 pm, on your phone" (L-DRAFT, BLD-C071). */
   at_label?: string;
+  /** Always day, time and device, never "Just now": how S-04B shows a message picked up from a saved draft
+   * ("Friday, 8:42 pm, on your phone"; S-04B.layout/1, BLD-C185). */
+  at_label_earlier?: string;
+  /** This message's own receipt, from its latest finished run, masked (S-04B.layout/2, BLD-C184). */
+  receipt?: string[];
   edited_at?: IsoDate;
   device: Device;
   via: MessageVia;
@@ -280,6 +285,9 @@ export interface Draft {
   editor?: { device: Device | null; this_device: boolean } | null;
   /** "Keep mine separate" was chosen: S-05's similar grid stays folded to its note (C-SIMGRID.grid/4, BLD-C152). */
   kept_separate?: boolean;
+  /** Closed as merged into this idea (its IDEA- reference) when its lead accepted (L-MERGE.request/5): the draft
+   * is read-only, on Check it (J-SIMILAR/6a, BLD-C155). Absent for an open draft. */
+  merged_into?: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -415,6 +423,11 @@ export interface SimilarMatch {
   strength: MatchStrength;
   reason: string;
   my_request?: TeamUpRequest;
+  /** Repo-side (BLD-C187): lane F's L-TEAMUP.rules/1 check for this viewer, the one `POST /ideas/:id/team-up`
+   * refuses by. False: no "Team up" on the tile. Absent (an older worker): offered as before. */
+  can_team_up?: boolean;
+  /** Why not, as a code (never words): a closed, withdrawn or merged-away idea, or the viewer is on its crew. */
+  team_up_why_not?: "idea_closed" | "already_on_crew" | null;
 }
 
 export interface CrewCard extends IdeaPreview {
@@ -495,7 +508,9 @@ export interface InboxItem {
   at: IsoDate;
   unread: boolean;
   needs_you: boolean;
-  due?: { at: IsoDate; label: string };
+  /** A countdown ("2 days left", "07:38 left", "Overdue by 5 hours") carries its pill's `variant` (F-COPY.plurals/3,
+   * BLD-A225); a date ("By Thu, 19 Nov") has none. */
+  due?: { at: IsoDate; label: string; variant?: "normal" | "warn" | "bad" };
   archived: boolean;
   /** By kind. */
   body: Record<string, unknown>;

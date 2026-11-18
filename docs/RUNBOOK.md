@@ -50,13 +50,15 @@ Flip from **Admin → Kill switches** with a reason of at least 10 characters. E
 
 **Walkthrough (AT-B8-07).** In UAT, flip each switch off and on again in the order above and tick the "Check it worked" column. The automated version runs in `make test` (`tests/test_b8_switch_walkthrough.py`).
 
-## 2a. The Ones (DEC-040 to DEC-087)
+## 2a. The Ones (DEC-040 to DEC-087, DEC-106)
 
-Everything happens in **Ones** (`/ones/console`): propose, approve (the chair, or "Record a meeting majority" with the meeting date), then "Carry out and send" by the admin member. A tier change needs the committee's message before it can be carried out. After a committee meeting, the admin member presses **Announce new Ones**, which emails everyone. Measured impact (time, money, effort, scale) is entered against each One; money shows publicly only with "Finance confirmed" ticked. For The Ones Night, mark the four impact awards in the roster; the legend number goes through its own proposal (one a year).
+The Ones console, its proposals, awards and the "Announce new Ones" email are retired (DEC-106, BLD-E049). A person becomes a One when their shipped idea's measured difference is confirmed (L-ONES.rules/1): the programme team enters the measurements, and Finance's confirmation for money, on the admin page (`/admin`). Money shows publicly only once Finance has confirmed it. On the same page an admin marks a **Founding One** by work email, and removes a One after a confirm step (BLD-A217). The committee, the CEO and admins read and print a One's Showcase brief at `/ones/showcase/:id`. A glow-up message invitation made before the retirement can still be answered at `/ones/write/:id`.
 
-**Office screens:** open `/constellation` signed in on the screen's account and choose Full screen. It shows the static sky and alternates with impact cards. Switch to ambient mode for events from the console ("Switch to ambient mode"). Pause is on the screen itself.
+**No Ones email or Inbox item at launch**, pending the product lead's call (BLD-A186, BLD-A209, BLD-A211). Nobody is emailed or sent an Inbox item when a person becomes a One, rises a tier or is removed: the admin path and the measured-impact induction write audit rows only, and the moment shows on `/one`, the Wall and the office screen. The templates `one-inducted`, `one-tier-changed` and `one-removed` and their rules stay in the company repo, unused, for after launch. The old `ones.service.carry_out`, the only product code that sent them, is kept only for test fixtures (BLD-E049).
 
-**Founding Ones** (DEC-053): the product lead sends names and one-line citations. The CEO, or a core committee member on the CEO's behalf, proposes each one as "Founding One", the chair approves, and the admin carries it out. Numbers 1 to 6 then follow in order, as long as nobody has been inducted before.
+**Office screens:** open `/constellation` signed in on the screen's account and choose Full screen. It shows the static sky and alternates with impact cards. Ambient mode for events is set through `PUT /api/ones/screen-mode` (admin); the console's button is retired. Pause is on the screen itself.
+
+**Founding Ones** (DEC-053): the product lead sends names and one-line citations, and an admin marks each one on the admin page. Numbers then follow in order, as long as nobody has been inducted before.
 
 ## 2b. Delivery, lenses and learning (BLD-115 to BLD-124)
 

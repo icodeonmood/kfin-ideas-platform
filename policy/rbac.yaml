@@ -26,10 +26,10 @@ capabilities:
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
   grant_roles:                { admin: yes }
   manage_kill_switches:       { admin: per_switch, infosec: per_switch, hr: per_switch }
-  # The Ones (DEC-040 to DEC-086): propose, approve (chair or a recorded majority), carry out (admin member).
+  # The Ones (DEC-040 to DEC-086). The console and proposals are retired (DEC-106, BLD-E049): lane A's admin page marks
+  # Founding Ones and removes a One (run_programme). Kept: the committee's printable Showcase brief, and the admin
+  # member's measures and screen mode.
   view_ones_console:          { core_committee: yes, admin: yes, ceo: yes }
-  propose_ones:               { core_committee: yes, ceo: yes }
-  decide_ones:                { core_committee: yes }
   carry_out_ones:             { admin: yes }
   # Delivery (§4.8 to §4.11). The worker checks each person's part again: an owner, sponsor, delivery PM or
   # milestone owner acts only on their own deliveries. Lenses and learning are retired (DEC-106).
@@ -110,6 +110,7 @@ endpoints:
   - GET /api/me                                       signed_in
   - POST /api/me/privacy-notice                       signed_in
   - GET /api/me/ideas                                 signed_in       # S-07, My ideas: the person's own list (lane E)
+  - POST /api/me/ideas                                signed_in       # S-07 with a search: a read, the words in the body, never a URL (DEC-110)
   - GET /api/me/shell                                 signed_in       # the shell's drafts, ideas and Inbox count (C-SIDEBAR.rules/2)
   - GET /api/me/points                                signed_in
   - GET /api/me/data-export                           signed_in
@@ -170,8 +171,11 @@ endpoints:
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas   # S-06 for the sharer, S-09 for others; the worker decides (lane E)
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
+  - GET /api/ideas/{id}/similar                       see_org_ideas   # SimilarMatch[]; the sharer, or the desk and committee (BLD-C092)
+  - POST /api/ideas/{id}/similar/keep-separate       submit          # Keep mine separate on the sharer's draft (BLD-C095; behind submissions)
   - POST /api/ideas/{id}/withdraw                     submit          # the sharer only, inside the edit window, checked by the worker (L-SUBMIT.withdraw)
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
+  - POST /api/ideas/{id}/join-build                   signed_in       # the sharer or crew, after a Pick, until the team is chosen; checked by the worker (L-DECIDE/6, DEC-111)
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
   # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.
@@ -233,15 +237,7 @@ endpoints:
   - GET /api/ones                                     see_org_ideas
   - GET /api/ones/constellation                       see_org_ideas
   - GET /api/display/office                           open_display    # the office screen's Ones (S-OFFICE, A-API.wall)
-  - GET /api/ones/leaderboard                         signed_in       # Ones only (DEC-077)
-  - GET /api/ones/console                             view_ones_console
-  - POST /api/ones/proposals                          propose_ones
-  - POST /api/ones/proposals/{id}/decide              decide_ones
-  - POST /api/ones/proposals/{id}/carry-out           carry_out_ones
-  - POST /api/ones/proposals/{id}/withdraw            propose_ones
-  - GET /api/ones/proposals/{id}/invite               signed_in       # an invited colleague's view of what to write
-  - POST /api/ones/proposals/{id}/messages            signed_in       # committee, CEO or an invited colleague
-  - POST /api/ones/proposals/{id}/invites             decide_ones
+  - POST /api/ones/proposals/{id}/messages            signed_in       # /ones/write/:id: committee, CEO or an invited colleague (BLD-E042)
   - PUT /api/ones/{id}/measures                       carry_out_ones
   - GET /api/ones/{id}/showcase                       view_ones_console
   - PUT /api/ones/screen-mode                         carry_out_ones
@@ -318,6 +314,7 @@ endpoints:
   # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
   # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
   - GET /api/desk                                     view_review_queue
+  - POST /api/desk                                    view_review_queue   # S-R1 with a search: a read, the words in the body, never a URL (DEC-110)
   - GET /api/desk/ideas/{id}                          view_review_queue
   - GET /api/desk/ideas/{id}/listen                   view_review_queue   # behind desk.listen
   - POST /api/desk/ideas/{id}/open                    work_review_queue
@@ -337,6 +334,11 @@ endpoints:
   - GET /api/committee/windows/{id}/reversing         committee_window
   - POST /api/committee/windows/{id}/extend           committee_window
   - POST /api/committee/windows/{id}/reverse          committee_window
+  # Find your crew (lane F; A-API.team-up, L-CREW). Everyone signed in has a deck; the worker shapes it for them.
+  - GET /api/crew                                     signed_in
+  - POST /api/crew/pass                               signed_in
+  - POST /api/crew/pass/undo                          signed_in
+  - POST /api/crew/pass/reset                         signed_in
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
@@ -344,7 +346,6 @@ endpoints:
 # every role column and "allowed" for a member persona. Listing a route here never widens access.
 membership_scoped:
   ones:
-    - GET /api/ones/leaderboard
     - POST /api/me/one/number
     - POST /api/me/one/brief
     - GET /api/me/one/showcase
@@ -378,6 +379,7 @@ navigation:
   # A screen that moves or lands (Find your crew /crew, Profile /profile, Home /home) changes or adds its row here.
   - { key: share,     label: Share a problem, href: /share,     place: new,    tab: 3 }
   - { key: home,      label: Home,            href: /home,      place: main,   tab: 1 }
+  - { key: crew,      label: Find your crew,  href: /crew,      place: main }
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }

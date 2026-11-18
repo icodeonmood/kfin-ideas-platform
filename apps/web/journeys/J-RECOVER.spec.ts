@@ -16,16 +16,23 @@
 import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { CLUB, draftUrl, seeded, signInAs, step } from "./lib";
+import {
+  carriedFor,
+  CLUB,
+  draftUrl,
+  endSession,
+  expectWithDesk,
+  runSeconds,
+  seeded,
+  signInAs,
+  step,
+} from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
 const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
-/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
-const SESSION_COOKIE = "ideas_session";
-
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -35,7 +42,7 @@ function esc(s: string): string {
 type Fresh = { emp: string; name: string; email: string };
 
 function fresh(offset: number, last: string): Fresh {
-  const n = 18000 + ((Math.floor(Date.now() / 1000) + offset) % 2000);
+  const n = 18000 + ((runSeconds() + offset) % 2000);
   return { emp: `SYN-${n}`, name: `Journey ${last}`, email: `journey.${n}.1pc@kfintech.example` };
 }
 
@@ -46,13 +53,16 @@ async function signInFreshAs(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
 }
 
-/** Synthetic words with a made-up folio number that the composer hides (L-HIDE). */
+/**
+ * Synthetic words with a made-up folio number that the composer hides (L-HIDE). In the folio's own shape, "1234567/89"
+ * (services/worker/pii/patterns.yaml folio): ten digits starting 6 to 9 would read as a mobile number instead.
+ */
 const WORDS =
   "Courier returns of redemption forms are logged in a paper register at the branch. One investor with folio " +
-  "7700045612 asked four times where his form was. It happens about ten times a week.";
-const FOLIO_MASKED = "Folio ••••12";
+  "3045612/89 asked four times where his form was. It happens about ten times a week.";
+const FOLIO_MASKED = "Folio ••••89";
 
-const carried: { draft?: string; idea?: string } = {};
+const carried = carriedFor<{ draft: string; idea: string }>("J-RECOVER");
 
 /** The writer's draft, made once through S-04 and kept for the rows that follow. */
 async function ensureDraft(page: Page): Promise<string> {
@@ -142,15 +152,24 @@ step(
   "Sign-in fails: plain words, nothing lost, a reference for the IT desk, and Try again (single sign-on only, BLD-E002)",
   { needs: ["S-01", "S-02", "L-AUTH"] },
   async ({ page }) => {
-    // The identity provider answers with an error (OIDC error response), as when it times out.
+    // The identity provider answers with an error (OIDC error response), as when it times out. The browser reaches
+    // the provider through the redirect of "Use single sign-on"'s POST, and Playwright does not route a redirect's
+    // next hop, so the real start runs (its attempt keeps the place) and its redirect is turned into the provider's
+    // error, with the state it carried. GETs (the silent try on the way in) go through untouched.
     await page.route(
-      (url) => url.href.startsWith(OIDC_AUTHORIZE),
+      (url) => url.host === WEB_HOST && url.pathname === "/auth/sso/start",
       async (route) => {
-        const asked = new URL(route.request().url());
-        const back = new URL(asked.searchParams.get("redirect_uri") ?? `http://${WEB_HOST}/`);
+        if (route.request().method() !== "POST") return route.continue();
+        const started = await route.fetch({ maxRedirects: 0 });
+        const asked = new URL(started.headers()["location"] ?? OIDC_AUTHORIZE, `http://${WEB_HOST}`);
+        const back = new URL(asked.searchParams.get("redirect_uri") ?? `http://${WEB_HOST}/auth/callback`);
         back.searchParams.set("error", "temporarily_unavailable");
         back.searchParams.set("state", asked.searchParams.get("state") ?? "");
-        await route.fulfill({ status: 302, headers: { location: back.href } });
+        await route.fulfill({
+          response: started,
+          status: 303,
+          headers: { ...started.headers(), location: back.href },
+        });
       },
     );
     await page.goto("/");
@@ -167,7 +186,10 @@ step(
         "This is usually a short network hiccup on the office Wi-Fi or VPN. Nothing you typed is lost.",
       ),
     ).toBeVisible();
-    await expect(page.getByText(new RegExp(`SSO-[0-9A-F]{4}, ${TIME}`))).toBeVisible();
+    // The reference is drawn twice, for desk and phone (BLD-A179); one shows.
+    await expect(
+      page.getByText(new RegExp(`SSO-[0-9A-F]{4}, ${TIME}`)).filter({ visible: true }),
+    ).toBeVisible();
     // The intent is kept (L-AUTH.rules/4); the board's "Or get a code by email instead." waits on BLD-E002.
     await expect(page.getByText(/^You will still go straight to Share a problem\./)).toBeVisible();
     await expect(page.getByRole("link", { name: "Try again" })).toBeVisible();
@@ -203,8 +225,8 @@ step(
     const t1 = await seeded("T1");
     await signInAs(page, "tanvi");
     await page.goto(draftUrl(t1));
-    // The session ends (L-AUTH.rules/5): only its cookie goes, so S-02 still knows whose draft it was.
-    await page.context().clearCookies({ name: SESSION_COOKIE });
+    // The session ends on the server (L-AUTH.rules/5) and the browser keeps its cookie, so S-02 knows whose draft it was.
+    await endSession(page);
     await page.reload();
     await page.waitForURL(/\/sign-in/);
     await expect(page.getByText("Sign in again to carry on", { exact: true })).toBeVisible();
@@ -462,7 +484,7 @@ step(
     await page.context().setOffline(false);
     await page.waitForURL(new RegExp(`/ideas/${REF}$`), { timeout: 20_000 });
     carried.idea = new URL(page.url()).pathname;
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
   },
 );
 
@@ -543,10 +565,15 @@ step(
       .getByRole("textbox", { name: "Or paste a link to a report, dashboard or ticket" })
       .fill(`https://${host}/courier-returns-edit`);
     await page.getByRole("button", { name: "Add link" }).click();
-    const row = page.getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
-    await expect(row.first()).toBeVisible();
+    // The row of the link just added (C-FILE rows are list items): the draft's own link from J-RECOVER/9 stays.
+    const row = page
+      .getByRole("listitem")
+      .filter({ hasText: "courier-returns-edit" })
+      .getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
+    await expect(row).toBeVisible();
     await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
-    await row.first().click();
+    await row.click();
+    await expect(page.getByRole("listitem").filter({ hasText: "courier-returns-edit" })).toHaveCount(0);
     expect(opened).toEqual([]);
   },
 );
@@ -624,7 +651,9 @@ step(
     await page.getByRole("button", { name: "Withdraw it" }).click();
     await expect(page.getByText("Withdrawn. It’s back in your drafts.").first()).toBeVisible();
     await page.getByRole("button", { name: "Restore it" }).click();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    // Restored (L-SUBMIT.withdraw/3): the withdrawn card and its Restore it give way to the shared idea.
+    await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
+    await expectWithDesk(page);
   },
 );
 

@@ -3,7 +3,8 @@
 /**
  * S-R3 Answer the review desk (L-QUESTIONS.answer). One question at a time; skip and come back; each answer saves as
  * it is typed; "Check and send" lists them all; sending needs at least one answer and the rest stay open until the
- * deadline. Words about other people use their names, never a pronoun (BLD-E008).
+ * deadline. Words about other people use their names, never a pronoun (BLD-E008). The reviewer is never named: the
+ * sharer reads "the review desk" wherever the board names the person who asked (DEC-111).
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -25,24 +26,17 @@ import {
 } from "@/lib/desk/answers";
 import { call } from "@/lib/desk/reply";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
+import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
 
-/** "Home" back: the compact bar on a phone (S-R3.rules/5), a back link above the review bar on desktop (Answer board). */
+/** "Home" back: the compact bar on a phone (S-R3.rules/5), a back link above the review bar on desktop (Answer board).
+ * Its one chevron and 44px height are the shared `.back` (lane D, BLD-B261). */
 function Back() {
   return (
     <>
       <PhoneBar back={{ href: "/", label: "Home" }} title="Answer" />
       <Link href="/" className="back ans-back">
-        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-          <path
-            d="M9 2.5 4.5 7 9 11.5"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </svg>
         Home
       </Link>
     </>
@@ -143,7 +137,6 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
   const questions = set.questions.filter((q) => !q.answer?.sent);
   const answeredBefore = set.questions.filter((q) => q.answer?.sent);
   const n = questions.length;
-  const reviewer = set.by.first_name;
   const live = set.due_at ? countdown(set.due_at, now) : null;
   const ready = questions.filter((q) => (texts[q.id] ?? "").trim()).length;
   const answeredCount = answeredBefore.length + ready;
@@ -214,13 +207,13 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         Answer the review desk
       </h1>
       <p className="body">
-        {reviewer} from the review desk has {set.count} question{set.count === 1 ? "" : "s"} about &quot;
+        {REVIEW_DESK_START} has {set.count} question{set.count === 1 ? "" : "s"} about &quot;
         {set.idea.title}&quot;. Answer them one at a time. Skip any you can’t answer yet and come back before
         you send.
       </p>
       <p className="ans-due">
         {live ? (
-          <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+          <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
             {countdownLabel(live, "left to answer")}
           </Pill>
         ) : null}
@@ -237,8 +230,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         <header className="ans-bar">
           <h1 className="h2">Answer the review desk</h1>
           <p className="body">
-            {reviewer} from the review desk had {sent.count} question{sent.count === 1 ? "" : "s"} about
-            &quot;{set.idea.title}&quot;.{" "}
+            {REVIEW_DESK_START} had {sent.count} question{sent.count === 1 ? "" : "s"} about &quot;
+            {set.idea.title}&quot;.{" "}
             {all ? `You answered all ${sent.count}.` : `You answered ${sent.answered} of ${sent.count}.`}
           </p>
           <p className="ans-due">
@@ -380,21 +373,22 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
             >
               {ready === 0
                 ? "Answer at least one question"
-                : `Send ${ready} answer${ready === 1 ? "" : "s"} to ${reviewer}`}
+                : `Send ${ready} answer${ready === 1 ? "" : "s"} to ${REVIEW_DESK}`}
             </Button>
           </Dock>
         </section>
       ) : q ? (
         <section className="panel ans-sheet" aria-labelledby={`ans-q-${q.id}`}>
           <p className="meta">
-            {reviewer} from the review desk asked, {said(set.sent_at, now)}
+            {REVIEW_DESK_START} asked, {said(set.sent_at, now)}
           </p>
           <p className="meta">
             Added to <span className="chip">{q.part_name}</span>
           </p>
           <h2 id={`ans-q-${q.id}`} className="h3" ref={heading} tabIndex={-1}>
             <span className="vh">Question {step + 1}: </span>
-            {q.text}
+            {/* The question in its own element, as the board draws it apart from its number (J-TRACK/4) */}
+            <span>{q.text}</span>
           </h2>
           {/* Seams, not built yet: files on an answer (C-FILE.row, S-R3.rules/3) and "Say your answer" through
               lane C's voice route mount beside this box. */}

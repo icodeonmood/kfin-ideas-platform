@@ -154,8 +154,14 @@ def test_a_api_6_dates_read_as_the_boards_write_them() -> None:
     assert words.short_date(dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)) == "14-Nov-26"
     assert words.clock(dt.datetime(2026, 11, 14, 8, 9, tzinfo=dt.UTC)) == "1:39 pm"
     assert words.countdown(now + dt.timedelta(days=2, hours=20), now)["label"] == "3 days left"
+    # F-COPY.plurals/3 (BLD-A225): office calendar days, so Saturday 10:10 am to Sunday 11:10 am is 1 day, not 2
+    assert words.countdown(now + dt.timedelta(days=1, hours=1), now)["label"] == "1 day left"
     assert words.countdown(now + dt.timedelta(hours=7, minutes=38, seconds=30), now)["label"] == "07:38 left"
-    assert words.countdown(now - dt.timedelta(minutes=1), now)["label"] == "Overdue"
+    assert words.countdown(now - dt.timedelta(minutes=1), now) == {
+        "label": "Overdue by 1 minute",
+        "variant": "bad",
+        "until": (now - dt.timedelta(minutes=1)).isoformat(),
+    }
     assert words.in_sentence("Investors") == "investors"
     assert words.in_sentence("KFin teams") == "KFin teams"
     assert words.in_sentence("AMC clients") == "AMC clients"
@@ -251,10 +257,20 @@ def test_v_fields_sorting_each_field_is_checked(seed_rules: None, field: str, ra
 # --- L-SUBMIT.send: the hand-over to S-06 ------------------------------------------------------------------------
 
 
-def test_l_submit_send_hands_over_what_s06_just_shared_shows() -> None:
-    """V-ACC.share/12: the reference and "The review desk will look at it by <date>" are there at once."""
+def _switches(monkeypatch: pytest.MonkeyPatch, states: dict[str, str]) -> None:
+    """The kill switches as the table would hold them, past the 10-second cache: `is_on` itself still decides, so an
+    unknown switch counts as off."""
+    from core import killswitch
+
+    monkeypatch.setattr(killswitch, "states", lambda conn=None, *, now=None: dict(states))
+
+
+def test_l_submit_send_hands_over_what_s06_just_shared_shows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """V-ACC.share/12: the reference and "The review desk will look at it by <date>" are there at once. The Teams
+    switch is on here, so the drawn words stand (DEC-105, BLD-C159; the off form is the next test's)."""
     from submit.send import handover
 
+    _switches(monkeypatch, {"comms.teams": "on"})
     shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
     idea = {
         "id": "00000000-0000-4000-8000-000000000001",
@@ -292,19 +308,89 @@ def test_l_submit_send_hands_over_what_s06_just_shared_shows() -> None:
     assert h["next"] == {"to": "/ideas/IDEA-2026-001481", "replace": True, "state": "just_shared"}
 
 
+DRAWN = (
+    "The review desk will look at it by Friday 20 November. We’ll tell you on Teams and by email when anything "
+    "changes.",
+    "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens it. We tell "
+    "you on Teams and by email when anything moves.",
+)
+TEAMS_OFF = (
+    "The review desk will look at it by Friday 20 November. We’ll tell you by email when anything changes.",
+    "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens it. We tell "
+    "you by email when anything moves.",
+)
+
+
+@pytest.mark.parametrize(
+    ("states", "lines"),
+    [
+        ({"comms.teams": "on"}, DRAWN),
+        ({"comms.teams": "off"}, TEAMS_OFF),
+        ({}, TEAMS_OFF),  # a switch the table does not know counts as off
+    ],
+    ids=["on", "off", "unknown"],
+)
+def test_l_submit_send_s06_just_shared_dec_105_bld_c159_names_teams_only_while_comms_teams_is_on(
+    monkeypatch: pytest.MonkeyPatch, states: dict[str, str], lines: tuple[str, str]
+) -> None:
+    """DEC-105, BLD-C159 (L-SUBMIT.send, S-06 "Just shared"; the same rule as BLD-E054 and BLD-F086): Teams is built
+    but off until IT approves it. While `comms.teams` is off, the hand-over's review line and edit-window line drop
+    "on Teams" and keep every other word; while it is on, the drawn words stand, curly apostrophe and all."""
+    import json
+
+    from submit.send import handover
+
+    _switches(monkeypatch, states)
+    shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
+    idea = {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "idea_id": "IDEA-2026-001481",
+        "status": "checking",
+        "title": "Investors call to ask where a redemption has got to",
+        "shared_at": shared,
+        "decide_by": dt.datetime(2026, 11, 20, 12, 30, tzinfo=dt.UTC),
+        "edit_closes_at": shared + dt.timedelta(days=3),
+        "opened_at": None,
+    }
+    h = handover(None, idea, shared + dt.timedelta(seconds=2))  # type: ignore[arg-type]
+    assert (h["review"]["line"], h["edit_window"]["line"]) == lines
+    assert ("Teams" in json.dumps(h, ensure_ascii=False)) is (states.get("comms.teams") == "on")
+    assert h["review"]["by_label"] == "By Friday 20 November"  # nothing else moves
+    assert h["edit_window"]["countdown"]["label"] == "3 days left"
+
+
 def test_l_submit_send_checked_line() -> None:
     from submit.send import checked_line
 
-    assert checked_line(2, 2) == "Personal details hidden, 2 similar ideas found"
-    assert checked_line(1, 0) == "1 personal detail hidden, no similar ideas found"
+    assert checked_line(2, 2, "pan") == "Personal details hidden, 2 similar ideas found"
+    assert checked_line(1, 0, "pan") == "1 PAN hidden, no similar ideas found"
     assert checked_line(0, 1) == "No personal details found, 1 similar idea found"
+
+
+def test_c_track_s06_l_submit_send_one_hidden_detail_is_named_as_s06_names_it_bld_c153() -> None:
+    """J-SHARE's hand-over and S-06's track say one hidden detail the same way, by its kind, from the same words
+    (`ideapage.track.KIND_WORDS`), and those are L-HIDE's nouns (hide/config.yaml), so neither drifts."""
+    from hide import detect
+    from ideapage.track import KIND_WORDS
+    from submit.send import checked_line
+
+    assert {k: detect.noun(k) for k in detect.KINDS} == KIND_WORDS
+    for kind in detect.KINDS:
+        assert checked_line(1, 3, kind) == f"1 {detect.noun(kind)} hidden, 3 similar ideas found"
+    assert checked_line(1, 0, "phone") == "1 phone number hidden, no similar ideas found"
+    assert checked_line(1, 0, "aadhaar") == "1 Aadhaar number hidden, no similar ideas found"
+    assert (
+        checked_line(1, 0) == "1 detail hidden, no similar ideas found"
+    )  # S-06's own fallback, never reached
+    assert checked_line(3, 0, "pan").startswith("Personal details hidden,")  # several stay as Status.md draws
+    assert checked_line(0, 0, None).startswith("No personal details found,")
 
 
 def test_l_similar_failure_the_track_says_couldnt_check_not_none_found_bld_c087() -> None:
     from submit.send import checked_line
 
-    assert checked_line(1, None) == (
-        "1 personal detail hidden. Couldn’t check for similar ideas. The review desk will."
+    assert checked_line(1, None, "folio") == (
+        "1 folio number hidden. Couldn’t check for similar ideas. The review desk will."
     )
     assert "no similar ideas" not in checked_line(0, None)
 
@@ -326,6 +412,21 @@ def test_l_submit_withdraw_3_the_restore_hook_plugs_into_lane_e(monkeypatch: pyt
     monkeypatch.setattr(adapters, "_module", lambda name: fake if name == "ideapage.withdraw" else None)
     assert adapters.install_hooks() is True
     assert fake.ON_RESTORED_HOOK is adapters.on_restored
+
+
+def test_l_submit_send_4_on_restored_fits_lane_es_hook_and_takes_a_now_bld_c154() -> None:
+    """`on_restored` still fits lane E's `ON_RESTORED_HOOK: Callable[[Conn, str], None]` (mypy checks the assignment)
+    and takes the restore's `now` as an optional third argument, by position or by name."""
+    import inspect
+    from collections.abc import Callable
+
+    from core.db import Conn
+    from submit import adapters
+
+    hook: Callable[[Conn, str], None] = adapters.on_restored
+    assert hook is adapters.on_restored
+    now = inspect.signature(adapters.on_restored).parameters["now"]
+    assert now.default is None and now.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
 
 
 def test_l_hide_an_edit_is_masked_by_the_patterns_until_hide_lands(monkeypatch: pytest.MonkeyPatch) -> None:

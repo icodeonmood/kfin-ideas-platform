@@ -102,8 +102,8 @@ def _lang(text: str) -> str:
 _DRAFT_SELECT = (
     "SELECT id, contributor_code, status, channel, origin_encrypted, step, saved_at, saved_device, saved_device_id, "
     "char_count, archived_at, editor_device_id, editor_device, editor_at, kind, affects, area, brings, "
-    "sorting_sources, sorting_confirmed_at, helper_picks, helper_text, kept_separate, created_at FROM ideas "
-    "WHERE id = %s"
+    "sorting_sources, sorting_confirmed_at, helper_picks, helper_text, kept_separate, created_at, idea_id, "
+    "merged_into FROM ideas WHERE id = %s"
 )
 
 
@@ -112,6 +112,25 @@ def _load(conn: Conn, owner: Owner, idea_uuid: str, *, lock: bool = False) -> di
         raise DraftError(404, "not_found")
     row = conn.execute(_DRAFT_SELECT + " FOR UPDATE" if lock else _DRAFT_SELECT, (idea_uuid,)).fetchone()
     if row is None or row["contributor_code"] != owner.code or row["status"] != "draft":
+        raise DraftError(404, "not_found")
+    return row
+
+
+def _merged_draft(row: dict[str, Any]) -> bool:
+    """A draft its lead accepted to merge in (L-MERGE.request/5): closed as `merged`, never sent, so no reference."""
+    return row["status"] == "merged" and row["idea_id"] is None
+
+
+def _load_to_read(conn: Conn, owner: Owner, idea_uuid: str) -> dict[str, Any]:
+    """The owner's draft for reading only (`view`): an open draft, or one merged into another idea, which Check it
+    shows read-only with "Merged into IDEA-…" (J-SIMILAR/6a, BLD-C155). Every write keeps `_load`, which refuses a
+    merged draft exactly as before. Anyone else's looks missing."""
+    if not UUID_RE.match(idea_uuid):
+        raise DraftError(404, "not_found")
+    row = conn.execute(_DRAFT_SELECT, (idea_uuid,)).fetchone()
+    if row is None or row["contributor_code"] != owner.code:
+        raise DraftError(404, "not_found")
+    if row["status"] != "draft" and not _merged_draft(row):
         raise DraftError(404, "not_found")
     return row
 
@@ -676,6 +695,8 @@ def _messages(
             "lang": r["lang"],
             "at": r["created_at"].isoformat(),
             "at_label": labels.message_label(r["created_at"], r["device"], False, now),
+            # S-04B.layout/1: a message picked up from a saved draft reads with its day, time and device (BLD-C185)
+            "at_label_earlier": labels.earlier_label(r["created_at"], r["device"], False, now),
             "device": r["device"],
             "via": r["via"],
             "files": [f for f in files if f.get("message_id") == mid],
@@ -688,6 +709,43 @@ def _messages(
             msg["edited_at"] = r["edited_at"].isoformat()
         out.append(msg)
     return out
+
+
+def own_receipts(messages: list[dict[str, Any]], done_runs: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """S-04B.layout/2: each message keeps its own receipt, the latest non-empty one among its finished runs
+    (BLD-C184). A later run that ends with no lines ("Try again" or a build that changed nothing) leaves the earlier
+    receipt in place, so "Hid 1 personal detail …" stays after a reload. A run with no message of its own belongs to
+    the newest message sent before it started. `done_runs` are `message_id, started_at, receipt` in start order."""
+    if not messages:
+        return {}
+    sent = [(dt.datetime.fromisoformat(str(m["at"])), str(m["id"])) for m in messages]
+    ids = {mid for _, mid in sent}
+    own: dict[str, list[str]] = {}
+    for run in done_runs:
+        lines = [str(line) for line in (run["receipt"] or [])]
+        if not lines:
+            continue
+        mid = str(run["message_id"]) if run["message_id"] else None
+        if mid not in ids:
+            before = [m for at, m in sent if at <= run["started_at"]]
+            mid = before[-1] if before else sent[0][1]
+        own[mid] = lines
+    return own
+
+
+def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) -> None:
+    """Each message's own receipt on the draft read (`own_receipts`). Receipts are stored masked ("PAN ••••8Z",
+    L-HIDE), so nothing here is opened or unmasked; the draft's top-level `receipt` stays the latest run's."""
+    if not messages:
+        return
+    runs_done = conn.execute(
+        "SELECT message_id, started_at, receipt FROM draft_runs WHERE idea_uuid = %s AND state = 'done' "
+        "ORDER BY started_at, id",
+        (idea_uuid,),
+    ).fetchall()
+    own = own_receipts(messages, runs_done)
+    for m in messages:
+        m["receipt"] = own.get(str(m["id"]), [])
 
 
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
@@ -712,12 +770,18 @@ def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
 
 
 def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: bool = False) -> dict[str, Any]:
-    """`GET /drafts/:id` (owner only): everything to pick up exactly where the person left off, on any device."""
-    row = _load(conn, owner, idea_uuid)  # the owner's, before anything is settled or taken over
-    runs.settle_stale(conn, idea_uuid)
-    if open_ and device.id:
-        _take_over(conn, idea_uuid, device)
-        row = _load(conn, owner, idea_uuid)
+    """`GET /drafts/:id` (owner only): everything to pick up exactly where the person left off, on any device.
+
+    A draft merged into another idea is read-only (BLD-C155): this read writes nothing for it, `open_` included (no
+    stale run settled, no device taken over), says it cannot move on (`ready` false) and names the idea it is now
+    part of (`merged_into`, its IDEA- reference)."""
+    row = _load_to_read(conn, owner, idea_uuid)  # the owner's, before anything is settled or taken over
+    merged = _merged_draft(row)
+    if not merged:
+        runs.settle_stale(conn, idea_uuid)
+        if open_ and device.id:
+            _take_over(conn, idea_uuid, device)
+            row = _load(conn, owner, idea_uuid)
     now = _now(conn)
     means = runs.means(conn)
     part_rows = conn.execute(
@@ -745,18 +809,20 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
     ).fetchone()
     r = rules()
     files = _files(conn, idea_uuid, owner)
+    messages = _messages(conn, idea_uuid, device, now, files)
+    _own_receipts(conn, idea_uuid, messages)
     out: dict[str, Any] = {
         "id": idea_uuid,
         "owner_id": owner.user_id,
         "channel": row["channel"],
-        "messages": _messages(conn, idea_uuid, device, now, files),
+        "messages": messages,
         "parts": wire,
         "hidden": hidden,
         "sorting": _sorting(row, wire),
         "files": files,
         "step": row["step"] or "tell",
         **_saved(row, device, now),
-        "ready": runs.ready(conn, idea_uuid),
+        "ready": False if merged else runs.ready(conn, idea_uuid),
         "min_chars": r.min_chars_to_check,
         "parts_from_chars": r.parts_from_chars,
         "char_count": int(row["char_count"]),
@@ -798,6 +864,9 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
     if row["helper_picks"] or row["helper_text"]:
         out["helpers"] = {"picks": list(row["helper_picks"] or []),
                           **({"text": row["helper_text"]} if row["helper_text"] else {})}  # fmt: skip
+    if merged:
+        into = conn.execute("SELECT idea_id FROM ideas WHERE id = %s", (row["merged_into"],)).fetchone()
+        out["merged_into"] = str(into["idea_id"]) if into and into["idea_id"] else None
     return out
 
 

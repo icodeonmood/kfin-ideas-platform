@@ -231,10 +231,35 @@ def test_l_draft_autosave_4_saved_labels() -> None:
     assert mine["sidebar"] == "Yesterday, on this laptop"
     assert mine["my_ideas"] == "Saved yesterday, on this laptop"
     assert mine["prompt_line"] == "Saved on this laptop, 10:05 am."
+    # BLD-C158, S-04B.layout/4: the picked-up line always carries the day, as the sidebar does ("Today, on …").
+    assert mine["resume"] == "Last saved on this laptop, yesterday 10:05 am."
+    today = labels.saved_labels(now - dt.timedelta(minutes=26), "laptop", False, now)
+    assert today is not None
+    assert today["sidebar"] == "Today, on your laptop"
+    assert today["resume"] == "Last saved on your laptop, today 1:12 pm."
     assert labels.saved_labels(now, "laptop", True, now)["status"] == "Saved at 1:38 pm"
     assert labels.message_label(now - dt.timedelta(seconds=20), "laptop", True, now) == "Just now"
     assert labels.message_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"
     assert labels.day(dt.datetime(2026, 11, 2, 9, 0, tzinfo=IST), now) == "Monday 2 November"
+
+
+def test_s04b_layout_1_an_earlier_message_reads_with_its_day_time_and_device() -> None:
+    """S-04B.layout/1, ComposeResume.md "Friday, 8:42 pm, on your phone" (BLD-C185; lane G's walk, J-RESUME/3)."""
+    now = dt.datetime(2026, 11, 17, 13, 38, tzinfo=IST)
+    friday = dt.datetime(2026, 11, 13, 20, 42, tzinfo=IST)
+    assert labels.earlier_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"
+    # A message picked up seconds after it was saved is still an earlier message: never "Just now"
+    seconds = now - dt.timedelta(seconds=20)
+    assert labels.message_label(seconds, "phone", False, now) == "Just now"
+    assert labels.earlier_label(seconds, "phone", False, now) == "Today, 1:37 pm, on your phone"
+    yesterday = dt.datetime(2026, 11, 16, 10, 5, tzinfo=IST)
+    assert labels.earlier_label(yesterday, "laptop", False, now) == "Yesterday, 10:05 am, on your laptop"
+    # Today carries its day once the minute is out, as the side bar's "Today, on your laptop" does
+    assert labels.message_label(now - dt.timedelta(minutes=26), "laptop", False, now) == (
+        "Today, 1:12 pm, on your laptop"
+    )
+    # No device known: day and time only
+    assert labels.earlier_label(friday, None, False, now) == "Friday, 8:42 pm"
 
 
 # ---- DEC-103: masked before anything else sees the words ----------------------------------------------------------
@@ -634,3 +659,44 @@ def test_l_draft_l_hide_the_vault_scope_is_hide_core_scope_for_uuid_normalised_b
     lower = "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     for given in (lower, lower.upper(), lower.replace("-", "")):
         assert adapters.vault_scope(given) == runs.scope(given) == scope_for(lower) == f"DRAFT-{lower}"
+
+
+# ---- S-04B.layout/2: each message keeps its own receipt (BLD-C184) ------------------------------------------------
+
+
+def test_s04b_layout_2_own_receipts_keep_the_latest_non_empty_receipt_per_message() -> None:
+    """Lane C's review of c/walk-a-1: a later run with no lines never blanks a message's receipt."""
+    from draft.store import own_receipts
+
+    t0 = dt.datetime(2026, 11, 19, 10, 0, tzinfo=IST)
+    m1, m2 = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+    messages = [
+        {"id": m1, "at": t0.isoformat()},
+        {"id": m2, "at": (t0 + dt.timedelta(minutes=5)).isoformat()},
+    ]
+    hid = ["Drafted a title: “Synthetic title”.", "Hid 1 personal detail from everyone but you: PAN ••••8Z."]
+    often = ["Noted how often: about 10 a day."]
+
+    def run(mid: str | None, minutes: int, lines: list[str]) -> dict[str, object]:
+        return {
+            "message_id": mid,
+            "started_at": t0 + dt.timedelta(minutes=minutes, seconds=1),
+            "receipt": lines,
+        }
+
+    # A later run of the same message that ends with no lines keeps the earlier receipt
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(m1, 1, [])]) == {m1: hid}
+    # ... and so does a "Try again" with no message and no lines, which belongs to the newest message
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(None, 2, [])]) == {m1: hid}
+    # A later run with new lines shows the new ones
+    edited = ["Changed the title to “Synthetic title, edited”."]
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(m1, 1, edited)]) == {m1: edited}
+    # Two messages keep their own; a message-less run after the second belongs to the second
+    both = own_receipts(messages, [run(m1, 0, hid), run(m2, 5, often), run(None, 6, [])])
+    assert both == {m1: hid, m2: often}
+    retried = ["Your draft is ready. Add a detail, or check it."]
+    assert own_receipts(messages, [run(m1, 0, hid), run(m2, 5, often), run(None, 6, retried)]) == {
+        m1: hid,
+        m2: retried,
+    }
+    assert own_receipts([], [run(m1, 0, hid)]) == {}

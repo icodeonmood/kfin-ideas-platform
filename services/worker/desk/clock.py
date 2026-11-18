@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Literal
 
 from desk import when
 from desk.promises import Promises
 
-Variant = Literal["normal", "warn", "bad"]
+# One countdown rule for every place (F-COPY.plurals/3, BLD-A225): it lives in `onepc.countdown`; the desk keeps
+# importing it from here.
+from onepc.countdown import Countdown as Countdown
+from onepc.countdown import Variant as Variant
+from onepc.countdown import countdown as countdown
+
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
@@ -112,47 +116,3 @@ def reminders(sent_at: dt.datetime, due_at: dt.datetime, p: Promises) -> list[dt
 def after_decide_by(due_at: dt.datetime, decide_by_at: dt.datetime) -> bool:
     """L-QUESTIONS.ask/4: the answer deadline falls after the reviewer's own date."""
     return due_at > decide_by_at
-
-
-@dataclass(frozen=True)
-class Countdown:
-    """Time left on a clock, as the review side shows it.
-
-    `count` is the amount: '3 days', '1 day', '07:38' under a day, or how late ('5 hours') once overdue.
-    `variant` is the pill: normal, warn under a day, bad when overdue.
-    """
-
-    seconds: int
-    count: str
-    variant: Variant
-
-    @property
-    def overdue(self) -> bool:
-        return self.variant == "bad"
-
-    def label(self, suffix: str) -> str:
-        """'3 days to answer', '07:38 left', 'Overdue by 5 hours' (the suffix is the place's own words)."""
-        return f"Overdue by {self.count}" if self.overdue else f"{self.count} {suffix}"
-
-
-def _amount(n: int, unit: str) -> str:
-    return f"{n} {unit}{'s' * (n != 1)}"
-
-
-def countdown(due_at: dt.datetime, now: dt.datetime, tz: dt.tzinfo = when.IST) -> Countdown:
-    """A day or more ahead counts calendar days in office time, as people do: a 30-day window decided on Monday
-    16 November has 25 days left on Saturday 21 November at any hour (V-ACC.committee/1). Under a day it is
-    hours and minutes; once late, how late."""
-    left = int((due_at - now).total_seconds())
-    if left <= 0:
-        late = -left
-        if late < 3600:
-            return Countdown(left, _amount(max(1, -(-late // 60)), "minute"), "bad")
-        if late < 86400:
-            return Countdown(left, _amount(late // 3600, "hour"), "bad")
-        return Countdown(left, _amount(late // 86400, "day"), "bad")
-    if left < 86400:
-        minutes = max(1, left // 60)
-        return Countdown(left, f"{minutes // 60:02d}:{minutes % 60:02d}", "warn")
-    days = (due_at.astimezone(tz).date() - now.astimezone(tz).date()).days
-    return Countdown(left, _amount(days, "day"), "normal")

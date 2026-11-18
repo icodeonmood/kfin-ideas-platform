@@ -57,7 +57,9 @@
   padding-bottom: 8px;
 }
 
-/* The quiet line on coming back (S-07.states, arrival): empty and taking no room until there is something to say */
+/* The quiet line on coming back (S-07.states, arrival): empty and taking no room until there is something to say.
+   Each width has its own line, and only that width's line takes a display: one on `.mi-back:not(:empty)` outranked
+   `.mi-phone`'s display: none, so the desk showed both (BLD-E061; J-BROWSE/3). The phone's pair is below. */
 .mi-back {
   margin: 0;
   font-size: 14.5px;
@@ -65,11 +67,14 @@
 }
 
 .mi-back:not(:empty) {
-  display: inline-flex;
   margin-top: 16px;
   padding: 8px 12px;
   border-radius: 12px;
   background: var(--wash);
+}
+
+.mi-back.mi-desk:not(:empty) {
+  display: inline-flex;
 }
 
 /* The wash fades only for people who have not asked for less motion (F-MOTION.reduced) */
@@ -280,6 +285,14 @@
   .mi-back:not(:empty) {
     margin-top: 12px;
     font-size: 13.5px;
+  }
+
+  .mi-back.mi-desk:not(:empty) {
+    display: none;
+  }
+
+  .mi-back.mi-phone:not(:empty) {
+    display: inline-flex;
   }
 
   .mi-row {

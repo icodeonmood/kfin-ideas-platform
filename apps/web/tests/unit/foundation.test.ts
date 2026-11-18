@@ -1,13 +1,16 @@
 /**
  * The foundation (lane D; F-COLOR, F-SPACE, F-MOTION; DEC-102, BLD-D010). The pack's tokens.css is imported unchanged so
- * a TOKEN delta changes one value; later sheets only alias it; the colour pairs the pack relies on meet WCAG; and the
- * FLIP helper's maths is right.
+ * a TOKEN delta changes one value; later sheets only alias it; the colour pairs the pack relies on meet WCAG, including
+ * the tab counts' and countdown pills' words on their fills (C-TABS/1, C-PILL.rules/3); and the FLIP helper's maths is
+ * right.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { Pill, type PillVariant } from "@/components/ui/pill";
 import { FLIP_LIMIT, invert, isStill } from "@/lib/motion/flip";
 
 const APP = fileURLToPath(new URL("../../src/app/", import.meta.url));
@@ -54,6 +57,39 @@ function luminance(hex: string): number {
 function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi! + 0.05) / (lo! + 0.05);
+}
+
+/** The declarations of the rule whose selector is exactly `selector` in a sheet (components.css by default). */
+function componentRule(selector: string, sheet = "components.css"): Record<string, string> {
+  const css = read(`${APP}${sheet}`).replace(/\/\*[\s\S]*?\*\//g, "");
+  const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const body = css.match(new RegExp(`(?:^|\\})\\s*${esc}\\s*\\{([^}]*)\\}`))?.[1];
+  if (body === undefined) throw new Error(`${sheet} has no rule ${selector}`);
+  return Object.fromEntries(
+    body
+      .split(";")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]),
+  );
+}
+
+/** A CSS colour as painted over `under` (a hex): a token, a hex, white, transparent or an rgba() fill. */
+function paint(value: string, under: string, tokens: Map<string, string>): string {
+  const token = value.trim().match(/^var\((--[\w-]+)\)$/);
+  if (token) return paint(tokens.get(token[1]!) ?? "", under, tokens);
+  const v = value.trim().toLowerCase();
+  if (v === "transparent") return under;
+  if (v === "white" || v === "#fff") return "#ffffff";
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  const fill = v.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/);
+  if (!fill) throw new Error(`cannot paint ${value}`);
+  const [r, g, b, a] = fill.slice(1).map(Number) as [number, number, number, number];
+  const u = under.replace("#", "");
+  return `#${[r, g, b]
+    .map((c, i) => Math.round(c * a + parseInt(u.slice(i * 2, i * 2 + 2), 16) * (1 - a)))
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 describe("F-COLOR tokens", () => {
@@ -138,6 +174,98 @@ describe("F-COLOR.contrast and F-A11Y.rules/1", () => {
     for (const bg of ["#3455ec", "#f58256", hex("--slab")])
       expect(contrast("#ffffff", over(bg)), `white on .pill.band over ${bg}`).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("C-TABS/1: every count is a 22px pill in tabular figures, as the board draws it (Desk .mtab .n)", () => {
+    const n = componentRule(".tab-n");
+    expect(n).toMatchObject({
+      "min-width": "22px",
+      height: "22px",
+      padding: "0 7px",
+      "border-radius": "var(--r-pill)",
+      background: "rgba(17, 17, 17, 0.06)",
+      color: "var(--mute2)",
+      font: "600 12px/22px var(--ft)",
+      "font-variant-numeric": "tabular-nums",
+    });
+    expect(componentRule('[aria-selected="true"] > .tab-n')).toMatchObject({
+      background: "var(--ink)",
+      color: "#ffffff",
+    });
+  });
+
+  it("C-TABS/1, F-COLOR.contrast: a count reaches 4.5:1 on its disc over --paper, selected or not", () => {
+    for (const sel of [".tab-n", '[aria-selected="true"] > .tab-n']) {
+      const r = componentRule(sel);
+      const disc = paint(r.background!, hex("--paper"), t);
+      expect(contrast(paint(r.color!, disc, t), disc), `${sel} on ${disc}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("F-TYPE.rules/5: avatar initials are 12px or larger", () => {
+  it.each([".av", ".av-36", ".av-32", ".av-28", ".crew-face"])("%s", (sel) => {
+    const r = componentRule(sel, "shell.css");
+    const size = (r["font-size"] ?? r.font ?? "").match(/(\d+(?:\.\d+)?)px/)?.[1];
+    expect(Number(size), `${sel} font size`).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe("C-PILL.rules/3, S-R1.layout/4: the countdown pill", () => {
+  const t = packTokens();
+  // Pill holds no state, so calling it gives the element to render
+  const pill = (variant: PillVariant | undefined, countdown: boolean) =>
+    renderToStaticMarkup(Pill({ variant, countdown, children: "3 days to answer" }));
+
+  it.each([
+    [undefined, "due"],
+    ["neutral", "due"],
+    ["warn", "due soon"],
+    ["bad", "due over"],
+    ["ok", "due done"],
+  ] as const)("variant %s draws a clock and no dot, as class %s", (variant, cls) => {
+    const html = pill(variant, true);
+    expect(html).toMatch(new RegExp(`^<span class="${cls}"><svg[^>]*aria-hidden="true"`));
+    expect(html).not.toContain("<i");
+    expect(html).toContain("3 days to answer");
+  });
+
+  it("a Pill without countdown is unchanged: the dot, the pill class, no clock", () => {
+    expect(pill("bad", false)).toBe(
+      '<span class="pill bad"><i aria-hidden="true"></i>3 days to answer</span>',
+    );
+    expect(pill(undefined, false)).toBe(
+      '<span class="pill"><i aria-hidden="true"></i>3 days to answer</span>',
+    );
+  });
+
+  it("the board's look (Desk .due): 28px, 0 11px 0 9px, 6px gap, 500 13px/1, tabular figures", () => {
+    expect(componentRule(".due")).toMatchObject({
+      "min-height": "28px",
+      padding: "0 11px 0 9px",
+      gap: "6px",
+      font: "500 13px/1 var(--ft)",
+      "font-variant-numeric": "tabular-nums",
+      background: "rgba(17, 17, 17, 0.05)",
+      color: "var(--ink2)",
+    });
+  });
+
+  it("overdue is solid: white words on --badT", () => {
+    expect(componentRule(".due.over")).toMatchObject({ background: "var(--badT)", color: "#ffffff" });
+  });
+
+  it.each([".due", ".due.soon", ".due.over", ".due.done"])(
+    "F-COLOR.contrast: %s words reach 4.5:1 on its fill over --paper and --card",
+    (sel) => {
+      const own = componentRule(sel);
+      const base = componentRule(".due");
+      for (const under of [t.get("--paper")!, t.get("--card")!]) {
+        const fill = paint(own.background ?? base.background!, under, t);
+        const words = paint(own.color ?? base.color!, fill, t);
+        expect(contrast(words, fill), `${sel} over ${under}`).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 });
 
 describe("F-MOTION FLIP helper (BLD-E005)", () => {

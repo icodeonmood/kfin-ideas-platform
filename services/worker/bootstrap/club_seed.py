@@ -27,8 +27,9 @@ What it gives every screen of the pack something to show:
 It does not write `sla_timers`: the old SLA tick reads a rule for every running timer and would stop on the new
 clock kinds. Clock dates live on the rows themselves (decide_by, due_at, closes_at, return_at, team_by).
 
-`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again. Nobody
-else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
+`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again, in one
+transaction, so a load that fails (with the kill switch `matching.show` off it refuses, GAP-SEED) leaves the seed as
+it was. Nobody else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
 """
 
 from __future__ import annotations
@@ -48,9 +49,11 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.crypto import encrypt_json
 from core.db import Conn, connect
+from desk.window import add_months
 from identity.codes import assign_contributor_code, emp_id_hash
 from onepc.context import seal_text, sealed_context
 from pii import vault
+from teamup.adapters import request_key
 
 IST = ZoneInfo("Asia/Kolkata")
 DOMAIN = "kfintech.example"
@@ -138,8 +141,10 @@ IDEAS: dict[str, Spec] = {
                "Many leave before the second queue.",
                "Investor service",
                ["Walk-in investors who come to update KYC stand in the general queue and then again at the KYC "
-                "desk. Yesterday one investor with {folio} left after forty minutes. This happens most mornings."],
-               often="Most mornings at one branch", hidden={"{folio}": ("folio", "7700012389")},
+                "desk. Yesterday one investor with folio {folio} left after forty minutes. This happens most "
+                "mornings."],
+               # A folio by the shared pattern rules and not a phone (BLD-E064; J-RECOVER/3, /6)
+               often="Most mornings at one branch", hidden={"{folio}": ("folio", "3104582/17")},
                step="check:3", saved_days=2.2, via="voice"),
     "T2": Spec("tanvi", "draft", "problem", "SIP failure SMS gives no reason",
                "When a SIP debit fails, the SMS says only that it failed. Investors call the branch to ask why.",
@@ -189,7 +194,7 @@ IDEAS: dict[str, Spec] = {
                fix={"how": "Keep a table of codes with one plain sentence each and print it on the letter.",
                     "needs": "Sign-off from compliance on the wording", "solved_already": "no",
                     "basis": "conversation", "risks": "Codes change when the exchange changes them"},
-               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000}),
+               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000, "cost_about": True}),
     "T8": Spec("tanvi", "not_now", "business_idea", "A paid express change-of-bank service",
                "Investors in a hurry could pay a small fee for a same-day change of bank, done at the branch.",
                "New business", ["Some investors would pay a small fee to change their bank the same day."],
@@ -257,7 +262,10 @@ IDEAS: dict[str, Spec] = {
                "Distributors are asked for empanelment papers they already sent, because the check list is "
                "kept in two places.",
                "Distributor services", ["Distributors send the same empanelment papers two or three times."],
-               shared_days=3, affects=["Distributors"]),
+               shared_days=3, affects=["Distributors"],
+               # The top card on Find your crew: with AI drafting off its "They're looking for" is these picks
+               # (L-CREW/4, BLD-F031; J-TEAMUP/1). Picks from `rules/sorting.md` `helpers` only.
+               helpers=["Someone in operations", "Someone who knows the rules", "Data or reports"]),
     "Z1": Spec("zoya", "with_review_desk", "business_idea", "A paid portfolio review for distributors",
                "Distributors could buy a quarterly portfolio review report for their clients.",
                "Sales", ["Distributors ask for a quarterly portfolio review they could share with clients."],
@@ -440,6 +448,79 @@ def _mask(kind: str, value: str) -> str:
     return f"{MASK_LABEL[kind]} ••••{value[-2:]}"
 
 
+def _masked_words(s: Spec) -> list[str]:
+    """The sharer's words as every other service reads them (DEC-103): each hidden value masked, a shown one as typed.
+    The text the messages are sealed with in `_idea`."""
+    out = []
+    for own in s.words:
+        masked = own
+        for marker, (kind, value) in s.hidden.items():
+            masked = masked.replace(marker, value if marker in s.shown else _mask(kind, value))
+        out.append(masked)
+    return out
+
+
+def _shared_run(value: str, sentences: list[str]) -> str | None:
+    """The longest run of two or more words that a part's value and the person's words share, as the words have it
+    ("calls a day"): the kind of short quote lane C's engine shows ("about 15 times a week", ComposeResume.md)."""
+    import re
+
+    def norm(word: str) -> str:
+        return re.sub(r"[^\w]", "", word).casefold()
+
+    want = [norm(w) for w in value.split()]
+    best: list[str] = []
+    for sentence in sentences:
+        words = sentence.split()
+        have = [norm(w) for w in words]
+        for i in range(len(have)):
+            for j in range(len(want)):
+                n = 0
+                while i + n < len(have) and j + n < len(want) and have[i + n] and have[i + n] == want[j + n]:
+                    n += 1
+                if n >= 2 and n > len(best):
+                    best = words[i : i + n]
+    return " ".join(best).rstrip(".,;:!?") if best else None
+
+
+def _part_reasons(s: Spec, texts: list[str]) -> dict[str, tuple[str | None, str | None]]:
+    """Each part's reason line and source quote as lane C's draft engine writes them (`draft.parts.why_for`,
+    L-DRAFT.parts/2; BLD-E064, J-RECOVER/3, /6), from the person's own masked words as the engine's evidence: the
+    title from the first sentence ("From your first sentence.", Compose.md); how often from the words the value
+    shares with them, else the first sentence the engine's frequency cue finds; what it's worth from the first
+    sentence its worth cue finds; who it affects as "you mentioned …" the groups the words name (Compose.md
+    "Suggested because you mentioned investors."), else the first sentence; the area as "it's about …" its label
+    (ComposeResume.md "Suggested because it's about distributor experience."). No model is called."""
+    import re
+
+    from draft import parts as dp
+
+    said = [x.rstrip(".!?") for x in dp.sentences(texts)]
+
+    def cue(rx: re.Pattern[str]) -> list[str]:
+        return [x for x in said if rx.search(x)][:1]
+
+    often_run = _shared_run(s.often, said) if s.often else None
+    named = [
+        a
+        for a in s.affects
+        if any(re.search(r"(?<!\w)" + re.escape(a.casefold().rstrip("s")), t.casefold()) for t in texts)
+    ]
+    asked: dict[str, tuple[Any, list[str], str | None]] = {
+        "title": ({"title": s.title, "summary": s.summary}, said[:1], None),
+        "often": (s.often, [often_run] if often_run else cue(dp._FREQUENCY), None),
+        "who": (s.affects, cue(re.compile("|".join(re.escape(a.casefold().rstrip("s")) for a in named), re.I))
+                if named else said[:1],
+                "you mentioned " + dp.joined([dp.lower_first(a) for a in named]) if named else None),
+        "value": (s.brings, cue(dp._WORTH), None),
+        "area": (s.area, [], f"it’s about {dp.lower_first(s.area)}"),
+    }  # fmt: skip
+    return {
+        key: (dp.why_for(key, value, quotes, reason, texts), quotes[0] if quotes else None)
+        for key, (value, quotes, reason) in asked.items()
+    }
+
+
 def _status_path(s: Spec, now: dt.datetime) -> list[tuple[str, dt.datetime]]:
     created = _ago((s.shared_days or s.saved_days) + 0.05, now)
     path = [("draft", created)]
@@ -474,7 +555,13 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     opened = _ago(s.opened_days, now) if s.opened_days is not None else None
     reviewer = p[s.reviewer]["id"] if s.reviewer else None
     confirmed = shared is not None or (s.step or "").startswith("check:6")
-    sources = {f: {"source": "confirmed" if confirmed else "suggested", "why": "From your words"}
+    # Each part's reason line as the engine writes it; a confirmed sorting keeps the suggestion's (submit.sorting)
+    reasons = _part_reasons(s, _masked_words(s))
+    from submit.sorting import KIND_WHY
+
+    sorting_why = {"affects": reasons["who"][0], "kind": KIND_WHY.get(s.kind), "area": reasons["area"][0],
+                   "brings": reasons["value"][0]}  # fmt: skip
+    sources = {f: {"source": "confirmed" if confirmed else "suggested", **({"why": w} if (w := sorting_why[f]) else {})}
                for f in ("affects", "kind", "area", "brings")}  # fmt: skip
     if key == "T5":
         sources["area"] = {"source": "changed", "why": "Your call"}
@@ -482,13 +569,17 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     text_chars = sum(len(w) for w in s.words)
     # An email or Teams arrival has no device (L-DRAFT.channels); otherwise where it was last saved.
     device = None if s.channel in ("email", "teams") else ("phone" if s.via == "voice" else "laptop")
+    # Every shared idea past "Checked and matched" was checked for similar ideas (L-SIMILAR.failure), as lane C's
+    # check records it; one still checking has no outcome yet.
+    similar_check = "done" if shared is not None and s.status != "checking" else None
     conn.execute(
         "INSERT INTO ideas (id, idea_id, contributor_code, status, kind, title, summary, often, city, affects, area, "
         "brings, sorting_sources, sorting_confirmed_at, helper_picks, channel, step, saved_at, saved_device, "
         "saved_device_id, char_count, archived_at, shared_at, share_seconds, declaration_version, declared_at, "
-        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, language) "
+        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, similar_check, "
+        "language) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
         (
             idea_uuid, ref, owner["code"], s.status, s.kind, s.title, s.summary, s.often,
             owner["city"] if shared else None, s.affects, s.area, s.brings, Jsonb(sources),
@@ -500,7 +591,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
             _ago(s.withdrawn_days, now) if s.withdrawn_days is not None else None,
             _working_days_after(shared, 5) if shared else None, reviewer, opened, reviewer if opened else None,
-            path[0][1],
+            path[0][1], similar_check,
         ),
     )  # fmt: skip
     if s.origin is not None:  # sealed as draft intake seals it: masked subject, the note on top, when it came
@@ -570,23 +661,30 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     run_id = str(uuid.uuid4())
     timings = {"title": 1900, "often": 1300, "who": 1100, "value": 1500, "area": 900, "similar": 2600}
     failed = key == "T1"  # one draft shows the failed-part state (C-DRAFT-LOADER.failure)
-    conn.execute(
-        "INSERT INTO draft_runs (id, idea_uuid, message_id, state, parts, part_ms, receipt, suggestions, ready, "
-        "started_at, finished_at) VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, true, %s, %s)",
-        (run_id, idea_uuid, message_ids[-1], list(timings), Jsonb(timings),
-         Jsonb([*(["Turned your email into a draft. Nothing has been sent."] if s.channel == "email" else []),
-                "Wrote a title and a short summary from your words.",
-                *(["Hid 1 personal detail from everyone but you."] if s.hidden else [])]),
-         Jsonb(["Add what you already tried", "Say who feels it most"]), path[0][1], path[0][1] + dt.timedelta(seconds=3)),
-    )  # fmt: skip
     parts: dict[str, Any] = {
         "title": {"title": s.title, "summary": s.summary},
         "often": s.often,
         "who": s.affects,
         "value": s.brings,
         "area": s.area,
-        "similar": [],
+        "similar": [],  # an unsent draft's matches are filled in once the links exist (`_similar_parts`)
     }
+    # The receipt and next prompts as lane C's `draft.runs.finish` writes them after a first run (L-DRAFT.parts/8,
+    # C-HIDDEN.where): what it drafted, sorted and noted, and the run's message's hidden details by their masks
+    # ("Hid 1 personal detail from everyone but you: Folio ••••17."). "Found …" is added once the links exist.
+    from draft import parts as dp
+
+    after = {k: (None if failed and k == "often" else v) for k, v in parts.items() if k != "similar"}
+    last = s.words[-1]
+    masks = [_mask(kind, value) for marker, (kind, value) in
+             sorted(s.hidden.items(), key=lambda h: last.index(h[0]) if h[0] in last else -1) if marker in last]  # fmt: skip
+    receipt = dp.receipt({}, after, hidden_masked=masks, ready=True, email=s.channel == "email")
+    conn.execute(
+        "INSERT INTO draft_runs (id, idea_uuid, message_id, state, parts, part_ms, receipt, suggestions, ready, "
+        "started_at, finished_at) VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, true, %s, %s)",
+        (run_id, idea_uuid, message_ids[-1], list(timings), Jsonb(timings), Jsonb(receipt),
+         Jsonb(dp.suggestions(after)), path[0][1], path[0][1] + dt.timedelta(seconds=3)),
+    )  # fmt: skip
     for part, part_value in parts.items():
         filled: Any = part_value
         state = "filled"
@@ -596,13 +694,12 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             state = "pinned"
         elif filled is None:
             state = "waiting"
+        why, quote = reasons.get(part, (None, None)) if state == "filled" else (None, None)
         conn.execute(
             "INSERT INTO idea_parts (idea_uuid, key, state, value, why, source_quote, run_id, took_ms) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (idea_uuid, part, state, Jsonb(filled) if filled is not None else None,
-             "Because you mentioned it" if state == "filled" else None,
-             s.words[0][:60].split("{")[0] if state == "filled" and part in ("title", "often") else None,
-             run_id, timings[part]),
+            (idea_uuid, part, state, Jsonb(filled) if filled is not None else None, why, quote, run_id,
+             timings[part]),
         )  # fmt: skip
 
     if s.fix:
@@ -614,10 +711,10 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         )  # fmt: skip
     if s.worth:
         conn.execute(
-            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, at) "
-            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s)",
+            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, cost_about, at) "
+            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s)",
             (idea_uuid, owner["code"], s.worth.get("hours_low"), s.worth.get("hours_high"), s.worth.get("cost_low"),
-             shared or path[0][1]),
+             s.worth.get("cost_about"), shared or path[0][1]),
         )  # fmt: skip
     if shared is not None:
         conn.execute(
@@ -626,7 +723,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             (idea_uuid, owner["code"], shared),
         )
         _event(conn, idea_uuid, "shared", shared, {})
-        if s.status != "checking":
+        if s.status != "checking":  # "similar" is counted once the links exist (`_crews`)
             _event(conn, idea_uuid, "checked_matched", shared + dt.timedelta(minutes=3),
                    {"hidden": len(s.hidden), "similar": 0})  # fmt: skip
         if opened is not None and reviewer:
@@ -710,7 +807,8 @@ def _decide(
     choice, days, who = made.spec.decided or ("pick", 0.0, "harish")
     at = _ago(days, now)
     did = str(uuid.uuid4())
-    return_at = at + dt.timedelta(days=91) if choice == "not_now" else None
+    # L-DECIDE.rules/7, L-COMMITTEE.rules/2 (BLD-B258): 3 months on the office calendar, as the desk writes them
+    return_at = add_months(at, 3) if choice == "not_now" else None
     team_by = _working_days_after(at, 10) if choice == "pick" else None
     conn.execute(
         "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, return_in, "
@@ -724,7 +822,7 @@ def _decide(
     conn.execute(
         "INSERT INTO decision_windows (id, decision_id, state, opens_at, closes_at, max_closes_at, extended_times, "
         "last_extended_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (wid, did, state, at, closes, at + dt.timedelta(days=91), extended,
+        (wid, did, state, at, closes, add_months(at, 3), extended,
          p["shalini"]["id"] if extended else None),
     )  # fmt: skip
     _event(conn, made.uuid, "decided", at, {"decision_id": did})
@@ -742,7 +840,9 @@ def load(conn: Conn, now: dt.datetime | None = None) -> dict[str, Made]:
         m = {key: _idea(conn, key, spec, p, now) for key, spec in IDEAS.items()}
         _review(conn, p, m, now)
         asks = _crews(conn, p, m, now)
+        _similar_parts(conn, p, m)
         _builds_and_impact(conn, p, m, now)
+        _join_asks(conn, p, m, now)
         _ones(conn, p, m, now)
         _inbox(conn, p, m, now, asks)
         _wall_and_flags(conn, p, m, now)
@@ -799,14 +899,15 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
     for key, reason in reasons.items():
         _did, wid = _decide(conn, m[key], p, now, reason, extended=1 if key == "C1" else 0)
         windows[key] = wid
-    # T9: the committee reversed "Not picked" to "Picked" inside the window: final.
+    # T9: the committee reversed "Not picked" to "Picked" inside the window: final. The reversal sets the team date
+    # as a Pick does (L-COMMITTEE.rules/5, BLD-B259).
     rid = str(uuid.uuid4())
     conn.execute(
-        "INSERT INTO decision_reversals (id, window_id, to_choice, note_encrypted, by_user_id, at) "
-        "VALUES (%s, %s, 'pick', %s, %s, %s)",
+        "INSERT INTO decision_reversals (id, window_id, to_choice, note_encrypted, by_user_id, at, team_by) "
+        "VALUES (%s, %s, 'pick', %s, %s, %s, %s)",
         (rid, windows["T9"], seal_text("decision_reversals", "note_encrypted", rid,
          "We can ask the exchange to move the reminder. Failed dividends cost more than the change."),
-         p["manoj"]["id"], _ago(2, now)),
+         p["manoj"]["id"], _ago(2, now), _working_days_after(_ago(2, now), 10)),
     )  # fmt: skip
     conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (windows["T9"],))
     _event(conn, m["T9"].uuid, "decision_reversed", _ago(2, now), {"reversal_id": rid})
@@ -838,7 +939,7 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
     conn.execute(
         "INSERT INTO decision_windows (merge_id, state, opens_at, closes_at, max_closes_at) "
         "VALUES (%s, 'open', %s, %s, %s)",
-        (mid, merged_at, merged_at + dt.timedelta(days=30), merged_at + dt.timedelta(days=91)),
+        (mid, merged_at, merged_at + dt.timedelta(days=30), add_months(merged_at, 3)),
     )
     conn.execute("UPDATE ideas SET merged_into = %s WHERE id = %s", (m["R2"].uuid, m["T11"].uuid))
     conn.execute(
@@ -883,10 +984,14 @@ def _crews(
             "VALUES (%s, %s, 'close', %s, %s)",
             (m[a].uuid, m[b].uuid, reason, found),
         )
-    conn.execute(  # "Checked and matched" counts the one it found (L-SIMILAR.rules/5)
-        "UPDATE conversation_entries SET payload = jsonb_set(payload, '{similar}', '1') "
-        "WHERE idea_uuid = %s AND event = 'checked_matched'",
-        (m[later].uuid,),
+    # "Checked and matched" counts what the check found (L-SIMILAR.rules/5): the links found while drafting or at
+    # the check. One found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it.
+    conn.execute(
+        "UPDATE conversation_entries e SET payload = jsonb_set(e.payload, '{similar}', to_jsonb(n.found)) "
+        "FROM (SELECT idea_uuid, count(*)::int AS found FROM similar_links WHERE idea_uuid = ANY(%s::uuid[]) "
+        "AND found_while IN ('drafting', 'checking') GROUP BY idea_uuid) n "
+        "WHERE e.idea_uuid = n.idea_uuid AND e.event = 'checked_matched'",
+        ([made.uuid for made in m.values()],),
     )
 
     # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
@@ -1050,6 +1155,68 @@ def _crews(
     _message(conn, m["R1"].uuid, _ago(1.0, now), "Is the failed debit reason in the bank file, or only in the exchange report?",
              user=p["lavanya"]["id"])  # fmt: skip
     return asks
+
+
+class MatchingHidden(RuntimeError):
+    """A draft with similar links got an empty similar part: `matching.show` is off (GAP-SEED)."""
+
+
+def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made]) -> None:
+    """Each unsent draft's "similar" part as lane C's draft run writes it (L-SIMILAR.rules/4, BLD-C093): the
+    SimilarMatch[] that `similar.views.matches_for` gives its sharer from the links `_crews` wrote, so S-04B's panel
+    reads "1 similar idea, Colleagues raised something close" for the ideas S-05's part 3 shows (T2 finds R1;
+    GAP-SEED, J-SIMILAR/1). Read after the merge and team-up requests, as the panel would see them. No model is
+    called. `matches_for` has no way past `matching.show`, so with it off a draft with links would keep an empty
+    part while the "Checked and matched" counts say 1: the seed raises instead and its transaction writes nothing."""
+    from core import killswitch
+    from draft import parts as dp
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    for key, made in m.items():
+        if made.spec.status != "draft":
+            continue
+        found = matches_for(conn, made.uuid, Viewer.of(conn, p[made.spec.owner]["id"]))
+        if found:
+            conn.execute(
+                "UPDATE idea_parts SET value = %s WHERE idea_uuid = %s AND key = 'similar'",
+                (Jsonb(found), made.uuid),
+            )
+            # The run's receipt counts them, as `draft.runs.finish` does: "Found 1 similar idea from colleagues. …"
+            # sits before "Your draft is ready. …" (BLD-E064)
+            run = conn.execute(
+                "SELECT id, receipt FROM draft_runs WHERE idea_uuid = %s ORDER BY started_at DESC LIMIT 1",
+                (made.uuid,),
+            ).fetchone()
+            if run is not None:
+                lines = list(run["receipt"] or [])
+                ready_line = dp.receipt({}, {}, ready=True)
+                at = len(lines) - 1 if lines[-1:] == ready_line else len(lines)
+                lines[at:at] = dp.receipt({}, {}, similar_found=len(found))
+                conn.execute("UPDATE draft_runs SET receipt = %s WHERE id = %s", (Jsonb(lines), run["id"]))
+        elif (
+            not killswitch.is_on_fresh("matching.show", conn)
+            and conn.execute(
+                "SELECT 1 FROM similar_links WHERE idea_uuid = %s LIMIT 1", (made.uuid,)
+            ).fetchone()
+        ):
+            # Only the switch is blamed: with it on, links the matcher filters out (a merged, withdrawn or own idea)
+            # leave the part empty, as they would on a live draft
+            raise MatchingHidden(
+                f"1% Club seed: draft {key} has similar ideas, but its similar part came back empty because the "
+                "kill switch matching.show is off. Nothing was changed. Switch it on (make killswitch "
+                'NAME=matching.show STATE=on REASON="…" ACTOR=…) and load the seed again.'
+            )
+
+
+def _join_asks(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
+    """GAP-SEED (L-DECIDE/6, DEC-111, BLD-E059): one "Ask to join the build team" already made, so S-ADMIN's build-team
+    form has an "Asked to join" line before anyone clicks (J-ONE/1). J1 is picked, its committee window has closed
+    and no build team is chosen; its sharer asked a day ago. Lane B's table; the row goes with the idea on remove."""
+    conn.execute(
+        "INSERT INTO join_build_asks (idea_uuid, user_id, asked_at) VALUES (%s, %s, %s)",
+        (m["J1"].uuid, p["jatin"]["id"], _ago(1, now)),
+    )
 
 
 def _builds_and_impact(
@@ -1231,20 +1398,26 @@ def _lead_answers(brings: bool) -> list[dict[str, str]]:
     ]
 
 
+def _draft_key(idea_uuid: str) -> str:
+    """The dedupe key of a "kept your draft" item: one per draft, by its ideas.id (a draft has no IDEA- reference)."""
+    return f"draft_kept:{idea_uuid}"
+
+
 def _inbox_item(
     conn: Conn, to: str, kind: str, sender: str | None, idea_uuid: str, refs: dict[str, Any], at: dt.datetime, *,
     actions: list[dict[str, str]], needs: bool = False, due: dt.datetime | None = None, read: bool = False,
-    archived: bool = False,
+    archived: bool = False, dedupe_key: str | None = None,
 ) -> None:  # fmt: skip
-    """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088)."""
-    # TODO(lane A inbox): dedupe_key teamup_request:<id> / draft_kept:<uuid>
+    """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088).
+    `dedupe_key` is the key lane A's `notify.post` stores (L-INBOX), so a later post or `notify.resolve` on the same
+    key finds this item: `teamup_request:<request id>` for a lead's "Needs you", `draft_kept:<ideas.id>` for a draft."""
     conn.execute(
         "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
-        "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
-        "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions, dedupe_key) "
+        "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (to, f"inbox/{kind}", f"inbox.{kind}", Jsonb(refs), "read" if read else "sent", at, at,
          at + dt.timedelta(hours=1) if read else None, kind, sender, idea_uuid, needs, due,
-         at + dt.timedelta(days=1) if archived else None, Jsonb(actions)),
+         at + dt.timedelta(days=1) if archived else None, Jsonb(actions), dedupe_key),
     )  # fmt: skip
 
 
@@ -1290,8 +1463,9 @@ def _inbox(
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
         ("hemant", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
+        # As lane F's `tell_requester` posts an approved team-up: "Say hello" lands in the box (BLD-F069).
         ("faisal", "teamup_answer", "tanvi", "T7", 3.5, False, None, True, False,
-         [{"label": "Say hello", "to": "conversation", "style": "primary"}]),
+         [{"label": "Say hello", "to": f"/ideas/{m['T7'].ref}/conversation#say-hello", "style": "primary"}]),
         ("faisal", "decision", "harish", "F1", 3.0, False, None, False, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("zoya", "questions", "harish", "Z1", 4.0, True, -1.0, True, False,
@@ -1302,7 +1476,8 @@ def _inbox(
     for to, kind, sender, key, days, needs, due, read, archived, actions in items:
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
                     {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
-                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
+                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived,
+                    dedupe_key=_draft_key(m[key].uuid) if kind == "draft_kept" else None)  # fmt: skip
     # Needs you: every request still waiting on a lead (Esha's on Tanvi's T5 with E1 brought, Bhavesh's on Rekha's R1
     # with nothing brought, and T2's, N2's and G2's drafts on R1), exactly as lane F's `tell_lead` posts it
     # (teamup/requests.py): refs the real request row, which kind it is and how many ideas it brings, and the lead's
@@ -1311,14 +1486,16 @@ def _inbox(
         if ask.waiting:
             _inbox_item(conn, p[m[key].spec.owner]["id"], "teamup_request", ask.sender, m[key].uuid,
                         {"request_id": ask.request_id, "request": ask.request, "brought": ask.brought}, ask.at,
-                        actions=_lead_answers(ask.brought > 0), needs=True)  # fmt: skip
+                        actions=_lead_answers(ask.brought > 0), needs=True,
+                        dedupe_key=request_key(ask.request_id))  # fmt: skip
     # J-RESUME/5 and /6: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as
     # the draft (L-DRAFT.channels): to the sharer's users.id, from the system, refs how it came in (`via`) only, and
     # one "Check and send" to the draft by its ideas.id (a draft has no IDEA- reference).
     email = m["I2"]
     _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid, {"via": email.spec.channel},
                 _ago(email.spec.saved_days + 0.05, now),
-                actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}])  # fmt: skip
+                actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}],
+                dedupe_key=_draft_key(email.uuid))  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
@@ -1415,8 +1592,13 @@ def main(argv: list[str] | None = None) -> int:
         if loaded and not args.reset:
             print("1% Club seed: already loaded (make demo-reset DEMO_SET=1pc starts it fresh)")
             return 0
-        remove(conn)
-        load(conn)
+        try:
+            with conn.transaction():  # one transaction: a load that fails leaves the seed as it was
+                remove(conn)
+                load(conn)
+        except MatchingHidden as exc:
+            print(exc, file=sys.stderr)
+            return 1
     print("1% Club seed: loaded. Sign in at http://localhost:3000 with these employee IDs as the username:")
     for emp, name, *_rest, label in PEOPLE:
         if label:

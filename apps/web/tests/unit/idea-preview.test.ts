@@ -316,7 +316,7 @@ describe("C-PREVIEW reviewer view (BLD-C102)", () => {
     const d = dialog()!;
     expect(textOf(d.querySelector(".pvmeta"))).toBe("Investor service, Hyderabad. Shared 2 November");
     const labels = Array.from(d.querySelectorAll(".pvl")).map(textOf);
-    expect(labels).toEqual(["The problem, in Ravi’s words", "Next to Kavya’s"]);
+    expect(labels).toEqual(["The problem, in their words", "Next to Kavya’s"]);
 
     const table = d.querySelector('[role="table"]')!;
     expect(table.getAttribute("aria-label")).toBe("Ravi’s idea next to Kavya’s");
@@ -332,8 +332,10 @@ describe("C-PREVIEW reviewer view (BLD-C102)", () => {
     expect(table.querySelectorAll('[role="rowheader"]')).toHaveLength(3);
     expect(table.querySelectorAll('[role="cell"]')).toHaveLength(6);
 
-    const merge = buttonNamed(`Merge with ${RAVI.title}`)!;
+    const merge = buttonNamed("Merge")!;
     expect(textOf(merge)).toBe("Merge");
+    expect(merge.hasAttribute("aria-label")).toBe(false);
+    expect(document.getElementById(merge.getAttribute("aria-describedby")!)?.textContent).toBe(RAVI.title);
     expect(d.textContent).not.toContain("Team up");
     expect(d.textContent).not.toContain("They’re looking for");
     expect(d.querySelector(".pvnote")).toBeNull();
@@ -350,7 +352,7 @@ describe("C-PREVIEW reviewer view (BLD-C102)", () => {
       },
       log,
     );
-    await act(async () => buttonNamed(`Merge with ${RAVI.title}`)!.click());
+    await act(async () => buttonNamed("Merge")!.click());
     expect(log).toEqual(["close", "merge:IDEA-2026-001412"]);
 
     await render({ view: "reviewer", compareWith: { name: "Kavya" }, primaryDone: "Merged" });
@@ -540,5 +542,12 @@ describe("C-PREVIEW band pill and axe (BLD-D012, V-ACC)", () => {
     await act(async () => root.render(createElement("div")));
     await render({ view: "reviewer", preview: RAVI_FOR_DESK, onPrimary: () => undefined });
     expect(await check()).toEqual([]);
+  });
+});
+
+describe("C-PREVIEW.anatomy/5: the crew line always gives the count", () => {
+  it("a crew of one still reads '1 on its crew', as drawn", async () => {
+    await render({ preview: { ...RAVI, crew_count: 1, crew_faces: RAVI.crew_faces.slice(0, 1) } });
+    expect(textOf(dialog()!.querySelector(".pvcrew"))).toContain("Ravi Nair leads it, 1 on its crew");
   });
 });

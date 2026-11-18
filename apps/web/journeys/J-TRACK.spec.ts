@@ -15,13 +15,16 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step, type Person } from "./lib";
+import { expectWithDesk, ideaCard, ideaUrl, seeded, signInAs, step, type Person } from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`; // "Wednesday 16 December"
 const DAY_Y = String.raw`${DAY}(?: \d{4})?`; // "Tuesday 16 February 2027"
 const TIME = String.raw`\d{1,2}(?::\d{2})? (?:am|pm)`; // "11:20 am", "6 pm"
+/** When something is due (desk/when.py due()): "7 pm today", "6 pm tomorrow", else "Thursday 19 November, 6 pm". The
+ * seed sets T6's deadline 2 days on, so a run seeded before midnight in India and walked after it reads "tomorrow". */
+const DUE = String.raw`(?:${DAY}, ${TIME}|${TIME} (?:today|tomorrow))`;
 const LEFT = String.raw`(?:\d+ days?|\d{2}:\d{2}) left`; // "3 days left", "07:38 left"
 const OPEN_Q = `["“]`;
 const CLOSE_Q = `["”]`;
@@ -90,7 +93,7 @@ step(
     await page.goto(ideaUrl(t5));
     await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeVisible();
     await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expect(ideaCard(page).getByText("With the review desk", { exact: true })).toBeVisible();
     await expect(
       page.getByText(new RegExp(`^The review desk will look at it by ${DAY}\\.`)).first(),
     ).toBeVisible();
@@ -121,12 +124,12 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi", /^Needs you/);
-    const item = inboxItem(page, "Harish from the review desk", "asked you 3 questions", t6.title);
+    const item = inboxItem(page, "The review desk", "asked you 3 questions", t6.title);
     await expect(item).toContainText(new RegExp(LEFT));
     await item.click();
     await expect(page.getByText("Questions from the review desk", { exact: true }).first()).toBeVisible();
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`^Answer by ${DAY}, ${TIME}\\.$`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Answer by ${DUE}\\.$`)).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toBeVisible();
 
     // Home's Needs you carries the same questions and the same clock (S-03, Home.md).
@@ -134,11 +137,7 @@ step(
     await expect(page.getByRole("heading", { level: 2, name: "Needs you" })).toBeVisible();
     await expect(page.getByText("3 questions from the review desk").first()).toBeVisible();
     await expect(
-      page
-        .getByText(
-          new RegExp(`^Harish from the review desk asked about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}$`),
-        )
-        .first(),
+      page.getByText(new RegExp(`^Asked about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}$`)).first(),
     ).toBeVisible();
     await expect(page.getByText(T6_QUESTIONS[0], { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" }).first()).toHaveAttribute(
@@ -158,11 +157,11 @@ step(
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t6));
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Harish has 3 questions for you", { exact: true })).toBeVisible();
+    await expect(page.getByText("The review desk has 3 questions for you", { exact: true })).toBeVisible();
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
     const deadline = await capture(
       page.getByText(/^Answer by .*One at a time, typed or spoken\.$/).first(),
-      new RegExp(`^Answer by (${DAY}, ${TIME})\\. One at a time, typed or spoken\\.$`),
+      new RegExp(`^Answer by (${DUE})\\. One at a time, typed or spoken\\.$`),
     );
     // L-SUBMIT.edit/5: opened by the desk, so locked; no Withdraw.
     await expect(
@@ -183,7 +182,10 @@ step(
     // The conversation shows the same card and the same deadline (S-08, Messages.md).
     await page.getByRole("link", { name: "Open the conversation" }).first().click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t6, "/conversation"))}$`));
-    await expect(page.getByText("Harish has 3 questions about your idea", { exact: true })).toBeVisible();
+    // DEC-111: the sharer's conversation names the review desk, not the reviewer (lane F's S-08, bc3fa36b).
+    await expect(
+      page.getByText("The review desk has 3 questions about your idea", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText(
         `Answer by ${deadline}. One at a time, typed or spoken, and each answer is added to its part of your idea.`,
@@ -196,7 +198,7 @@ step(
 step(
   "J-TRACK/4",
   "S-R3",
-  "Answers one at a time: the saved answer, a typed one and a skip; Send 2 answers to Harish",
+  "Answers one at a time: the saved answer, a typed one and a skip; Send 2 answers to the review desk",
   { needs: ["S-R3", "L-QUESTIONS"], changes: ["T6"] },
   async ({ page }) => {
     const t6 = await seeded("T6");
@@ -207,7 +209,7 @@ step(
       page
         .getByText(
           new RegExp(
-            `^Harish from the review desk has 3 questions about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}\\. Answer them one at a time\\. Skip any you can’t answer yet and come back before you send\\.$`,
+            `^The review desk has 3 questions about ${OPEN_Q}${esc(t6.title)}${CLOSE_Q}\\. Answer them one at a time\\. Skip any you can’t answer yet and come back before you send\\.$`,
           ),
         )
         .first(),
@@ -230,9 +232,9 @@ step(
     await expect(page.getByText(SAVED_ANSWER, { exact: true })).toBeVisible();
     await expect(page.getByText(TYPED_ANSWER, { exact: true })).toBeVisible();
     await expect(page.getByText("Not answered. It stays open until the deadline.")).toBeVisible();
-    await page.getByRole("button", { name: "Send 2 answers to Harish" }).click();
+    await page.getByRole("button", { name: "Send 2 answers to the review desk" }).click();
 
-    await expect(page.getByText(new RegExp(`^Sent to Harish, ${TIME}$`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Sent to the review desk, ${TIME}$`)).first()).toBeVisible();
     await expect(page.getByText("Your answers are with the review desk", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "See your idea" })).toHaveAttribute(
       "href",
@@ -244,13 +246,13 @@ step(
 step(
   "J-TRACK/5",
   "S-06",
-  "Sent. Harish has your answers: each answer under its part of the idea",
+  "Sent. The review desk has your answers: each answer under its part of the idea (DEC-111)",
   { needs: ["S-06", "L-QUESTIONS", "S-R3"] },
   async ({ page }) => {
     const t6 = await seeded("T6");
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t6));
-    await expect(page.getByText(/^Sent\. Harish has your answers\./).first()).toBeVisible();
+    await expect(page.getByText(/^Sent\. The review desk has your answers\./).first()).toBeVisible();
     await expect(
       page.getByText(/Each answer was added to its part of your idea, under What you shared\./).first(),
     ).toBeVisible();
@@ -258,7 +260,7 @@ step(
     // The answers from J-TRACK/4, word for word, each with where it came from (S-06.layout/5).
     await expect(page.getByText(SAVED_ANSWER, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(TYPED_ANSWER, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`^From your answer to Harish, ${DAY}$`))).toHaveCount(2);
+    await expect(page.getByText(new RegExp(`^From your answer to the review desk, ${DAY}$`))).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Open the conversation" }).first()).toBeVisible();
   },
 );
@@ -271,11 +273,12 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi");
-    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
+    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from the review desk as a whole (DEC-111); its countdown
+    // follows the one rule (BLD-A225): days, or HH:MM under a day.
     const item = inboxItem(
       page,
-      "1% Club",
-      String.raw`(?:\d+ days?|\d+ hours?) left to answer Harish[’']s questions`,
+      "The review desk",
+      String.raw`${LEFT} to answer the review desk’s questions`,
       t6.title,
     );
     await expect(item).toBeVisible();
@@ -296,7 +299,7 @@ step(
     const t7 = await seeded("T7");
     const t8 = await seeded("T8");
     await openInbox(page, "tanvi");
-    await inboxItem(page, "Harish from the review desk", "picked your idea", t7.title).click();
+    await inboxItem(page, "The review desk", "picked your idea", t7.title).click();
     await page.getByRole("link", { name: "Read the decision" }).click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t7))}$`));
 
@@ -305,9 +308,7 @@ step(
     await expect(
       page
         .getByText(
-          new RegExp(
-            `^Harish from the review desk picked it on ${DAY}\\. The build team is chosen by ${DAY}\\.$`,
-          ),
+          new RegExp(`^The review desk picked it on ${DAY}\\. The build team is chosen by ${DAY}\\.$`),
         )
         .first(),
     ).toBeVisible();
@@ -374,7 +375,7 @@ step(
         .first(),
     ).toBeVisible();
     await expect(page.getByText("The committee’s note to you").first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`Lavanya from the review desk, ${DAY}`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`the review desk, ${DAY}`)).first()).toBeVisible();
     await expect(page.getByText(/^This is final\./).first()).toBeVisible();
   },
 );
@@ -417,7 +418,10 @@ step(
     await signInAs(page, "varun");
     await page.goto(ideaUrl(v1));
     await expect(page.getByRole("heading", { level: 1, name: v1.title })).toBeVisible();
-    await expect(page.locator('[aria-current="step"]')).toHaveText(/Shipped/);
+    // C-TRACK.anatomy: a stage's state is its read-out suffix; at Shipped every stage is done and none is "now".
+    const track = page.getByRole("list", { name: "Where it is" }).filter({ visible: true });
+    await expect(track.getByText("Shipped, done", { exact: true })).toBeVisible();
+    await expect(track.getByText(/, now$/)).toHaveCount(0);
 
     // S-WALL.impact: the live-fixes table, with the measured sentence and when it was measured.
     await page.goto("/wall");
@@ -449,9 +453,10 @@ step(
 step(
   "J-TRACK/v1",
   "S-06",
-  "Withdraw while the window is open: back in your drafts, nobody else sees it; Restore it shares it again",
+  "Withdraw while the window is open: back in your drafts, nobody else sees it; Restore it shares it again (Checking, then with the review desk)",
   { needs: ["S-06", "L-SUBMIT"], changes: ["T5"] },
-  async ({ page }) => {
+  async ({ page }, info) => {
+    info.setTimeout(150_000); // the wait for the check job below can take up to 120 s of it
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t5));
@@ -471,8 +476,10 @@ step(
     await expect(page.getByText("Withdrawn before review").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Restore it" }).click();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
+    // L-SUBMIT.withdraw/3 and its lifecycle: restored, it is shared again (Checking) with the same reference, and one
+    // submit.check job, run by this stack's worker (WORKER_ROLES has jobs), hands it to the review desk.
     await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
+    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
   },
 );

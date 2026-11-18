@@ -11,7 +11,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CrewCard, DraftListItem, MyIdeaRow, SharerQuestionSetResponse } from "@/lib/contracts";
+import type {
+  CrewCard,
+  CrewDeckResponse,
+  DraftListItem,
+  MyIdeaRow,
+  SharerQuestionSetResponse,
+} from "@/lib/contracts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,7 +38,7 @@ vi.mock("next/link", () => ({
 }));
 
 const { HomeScreen, HOME_COPY } = await import("@/app/home/home");
-const { loadCrew, loadMine, loadOnes, loadSets } = await import("@/lib/home/data");
+const { keepFailedSets, loadCrew, loadMine, loadOnes, loadSets, readSets } = await import("@/lib/home/data");
 const { askingDevice, draftRows } = await import("@/server/shell");
 const { DEVICE_COOKIE } = await import("@/lib/compose/client");
 
@@ -151,6 +157,24 @@ const CREW: CrewCard = {
   reason: "Same code as your idea from Saturday",
 } as CrewCard;
 
+/** Lane F's `GET /api/crew?limit=3` answer as the worker sends it (`crew/deck.py`), with only `cards` in `items`. */
+function crewDeck(cards: CrewCard[], total = cards.length): CrewDeckResponse {
+  return {
+    items: cards,
+    total,
+    counts: { "location:Hyderabad": total },
+    filters: [],
+    active: [],
+    deck_total: total,
+    state: total ? "cards" : "nothing_yet",
+    asked: 0,
+    last_passed: null,
+    joined: 0,
+    pending: 0,
+    passed: 0,
+  };
+}
+
 type Routes = Record<string, (init?: RequestInit) => { status: number; body?: unknown }>;
 
 function fakeFetch(routes: Routes) {
@@ -173,7 +197,7 @@ function fakeFetch(routes: Routes) {
 const baseRoutes = (over: Routes = {}): Routes => ({
   "/api/me/ideas": () => ({ status: 200, body: mine([NEEDS, PICKED, BUILT, DRAFT_ROW]) }),
   [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 200, body: SET }),
-  "/api/crew": () => ({ status: 200, body: { items: [CREW], total: 1, joined: 0, pending: 0, passed: 0 } }),
+  "/api/crew": () => ({ status: 200, body: crewDeck([CREW]) }),
   "/api/ones/posts": () => ({ status: 200, body: [] }),
   ...over,
 });
@@ -197,7 +221,14 @@ async function flush() {
   for (let i = 0; i < 6; i++) await act(async () => await Promise.resolve());
 }
 
-async function show(routes: Routes, props: { firstVisit?: boolean; outlookAddress?: string | null } = {}) {
+async function show(
+  routes: Routes,
+  props: {
+    firstVisit?: boolean;
+    outlookAddress?: string | null;
+    waysOn?: { email: boolean; teams: boolean };
+  } = {},
+) {
   const { f, calls } = fakeFetch(routes);
   await act(async () => {
     root.render(createElement(HomeScreen, { firstName: "Kavya", fetchImpl: f, ...props }));
@@ -432,7 +463,8 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     await show(baseRoutes());
     expect(heading(2)).toContain("Needs you");
     expect(text()).toContain("2 questions from the review desk");
-    expect(text()).toContain(`Harish from the review desk asked about "${NEEDS.title}"`);
+    expect(text()).toContain(`Asked about "${NEEDS.title}"`); // DEC-111: the title names the desk; never the reviewer
+    expect(text()).not.toContain("Harish from the review desk");
     expect(text()).toMatch(/[34] days left/); // calendar days in office time (lib/desk/countdown)
     expect(text()).toContain("Question 1 Is it at one branch, or across Hyderabad?");
     expect(link("Answer the questions")?.getAttribute("href")).toBe(`/ideas/${NEEDS.id}/answer`);
@@ -526,6 +558,10 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     await show(baseRoutes());
     expect(link("See all")?.getAttribute("href")).toBe("/crew");
     const card = host.querySelector(".hm-pcard")!;
+    // F-TYPE (BLD-D015): the hue is "hue1"/"hue2", as on lane F's card. "h1" is the page-heading style, whose
+    // tracking every line on the card inherited, running the words together (lane G's walk, J-ONE/5, J-TRACK/2).
+    expect(card.classList.contains("hue1")).toBe(true);
+    expect([...card.classList].filter((c) => /^(h[1-3]|d1)$/.test(c))).toEqual([]);
     expect(card.textContent).toContain("With the review desk");
     expect(card.textContent).toContain("Investor service, Hyderabad");
     expect(card.textContent).toContain("Same code as your idea from Saturday");
@@ -538,8 +574,8 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     expect(text()).toContain("Idea 1 of 1");
   });
 
-  it("Find your crew, none (or the crew route not there yet): the empty state and Browse the Wall", async () => {
-    await show(baseRoutes({ "/api/crew": () => ({ status: 404 }) }));
+  it("Find your crew, none: a read that found no one shows the empty state and Browse the Wall", async () => {
+    await show(baseRoutes({ "/api/crew": () => ({ status: 200, body: crewDeck([]) }) }));
     const status = [...host.querySelectorAll('[role="status"]')].find((s) =>
       s.textContent?.includes("No one close to yours yet"),
     );
@@ -547,10 +583,75 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
       "When someone shares an idea near yours or in your area, it shows up here so you can team up.",
     );
     expect(link("Browse the Wall")?.getAttribute("href")).toBe("/wall");
+    expect(link("Find your crew0")?.getAttribute("href")).toBe("/crew");
+  });
+
+  it("Find your crew, failed read (BLD-C146): no state at all, never No one close to yours yet; no count on Jump back in", async () => {
+    for (const failed of [
+      () => ({ status: 500, body: { error: { code: "unavailable", message: "" } } }),
+      () => ({ status: 503, body: { error: { code: "paused", message: "" } } }),
+      () => ({ status: 200, body: { error: "not a deck" } }),
+    ]) {
+      act(() => root.unmount());
+      root = createRoot(host);
+      await show(baseRoutes({ "/api/crew": failed }));
+      expect(heading(2)).toContain("Find your crew");
+      expect(text()).not.toContain(HOME_COPY.crewNoneTitle);
+      expect(text()).not.toContain(HOME_COPY.loadingCrew);
+      expect(host.querySelector(".hm-pcard")).toBeNull();
+      expect(link("Browse the Wall")).toBeUndefined();
+      expect(link("See all")?.getAttribute("href")).toBe("/crew");
+      expect(link("Find your crew")?.getAttribute("href")).toBe("/crew"); // the Jump back in card, no count
+    }
+  });
+
+  it("Find your crew from lane F's deck (DEC-104): only what the card carries; a hidden lead is A colleague with no face", async () => {
+    const hidden = { id: "p3f9a1c2b7d40", name: "A colleague", first_name: "A colleague", initials: "" };
+    const quiet: CrewCard = {
+      ...CREW,
+      id: "IDEA-2026-001495",
+      title: "Synthetic: nominee change asks for Folio ••••89 twice",
+      city: "",
+      lead: hidden,
+      crew_faces: [hidden, person("p-4", "Meera Iyer", "MI")],
+      crew_count: 2,
+      in_their_words: "Investors are asked for the same form at two branches.",
+      reason: "In Investor service, like yours",
+      looking_for: "Branch staff, operations",
+    } as CrewCard;
+    const calls = await show(
+      baseRoutes({ "/api/crew": () => ({ status: 200, body: crewDeck([quiet, CREW], 5) }) }),
+    );
+    expect(calls.filter((c) => c.url.startsWith("/api/crew")).map((c) => c.url)).toEqual([
+      "/api/crew?limit=3",
+    ]);
+    const card = host.querySelector(".hm-pcard")!;
+    expect(card.getAttribute("aria-label")).toBe(quiet.title);
+    expect(card.querySelector(".hm-pc-top .meta")?.textContent).toBe("Investor service"); // no empty city
+    expect(card.textContent).toContain("In Investor service, like yours");
+    expect(card.textContent).toContain("Investors are asked for the same form at two branches.");
+    expect(card.textContent).not.toContain("They're looking for");
+    expect(card.textContent).not.toContain("Branch staff, operations");
+    expect(card.textContent).toContain("A colleague and 1 other on it"); // counted, though not drawn
+    // No face for A colleague: an empty circle would still be a tab stop named "A colleague"
+    const faces = [...card.querySelectorAll(".crew-face")];
+    expect(faces.map((f) => [f.getAttribute("aria-label"), f.textContent])).toEqual([["Meera Iyer", "MI"]]);
+    expect(card.querySelectorAll('[tabindex="0"][role="img"]')).toHaveLength(1);
+    expect(
+      card.querySelector(`button[aria-label="Team up on ${quiet.title}, with a colleague"]`),
+    ).not.toBeNull();
+    expect(text()).toContain("Idea 1 of 2");
+    // Jump back in: the deck's total, and faces only for people with initials (no blank face for A colleague)
+    const jump = link("MIFind your crew5");
+    expect(jump?.getAttribute("href")).toBe("/crew");
+    expect([...jump!.querySelectorAll(".hm-jface")].map((f) => f.textContent)).toEqual(["MI"]);
   });
 
   it("Or share from where you already are: three tiles, the app Coming soon", async () => {
-    await show(baseRoutes(), { outlookAddress: "share@1pc.kfintech.example" });
+    await show(baseRoutes(), {
+      outlookAddress: "share@1pc.kfintech.example",
+      waysOn: { email: true, teams: true },
+    });
     expect(text()).toContain("Each one lands here as a draft. Nothing is sent until you check it.");
     expect(text()).toContain("Forward it from Outlook");
     expect(text()).toContain("share@1pc.kfintech.example");
@@ -663,6 +764,266 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
   });
 });
 
+describe("S-03.sections/4: the ways in follow intake.email and intake.teams (DEC-105, BLD-A192, BLD-C183)", () => {
+  const way = (name: "email" | "teams") => host.querySelector(`.hm-way[data-way="${name}"]`) as HTMLElement;
+  // The tile's blocks (heading, address, line), one space between them
+  const wayText = (name: "email" | "teams") =>
+    [...way(name).children]
+      .map((c) => c.textContent ?? "")
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const wayLinks = (name: "email" | "teams") => [...way(name).querySelectorAll("a, button")];
+  const ADDRESS = "share@1pc.kfintech.example";
+
+  it("J-RESUME/2, J-ONE/5: both off, both rows read Coming soon, with no link and no address", async () => {
+    await show(baseRoutes(), { outlookAddress: null, waysOn: { email: false, teams: false } });
+    expect(wayText("email")).toBe(
+      "Forward it from Outlook Coming soon Forward the thread that shows the problem. Your note on top becomes the draft.",
+    );
+    expect(wayText("teams")).toBe(
+      "Message it in Teams Coming soon Type or paste into a chat with 1% Club. Screenshots go straight in.",
+    );
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(wayLinks("teams")).toHaveLength(0);
+    expect(link("Forward it from Outlook")).toBeUndefined();
+    expect(link("Message it in Teams")).toBeUndefined();
+    expect(way("email").querySelector(".hm-addr")).toBeNull();
+    expect(way("teams").querySelector(".hm-addr")).toBeNull();
+    // The section's heading, intro and the app's tile are as drawn
+    expect(text()).toContain("Each one lands here as a draft. Nothing is sent until you check it.");
+    expect(text()).toContain("Use the 1% Club app Coming soon");
+  });
+
+  it("J-TRACK/2: an unknown switch counts as off (the screen's default is off)", async () => {
+    await show(baseRoutes());
+    expect(wayText("email")).toContain("Forward it from Outlook Coming soon");
+    expect(wayText("teams")).toContain("Message it in Teams Coming soon");
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(wayLinks("teams")).toHaveLength(0);
+  });
+
+  it("both on: unchanged, each heading links to Share another way, with the address and 1% Club", async () => {
+    await show(baseRoutes(), { outlookAddress: ADDRESS, waysOn: { email: true, teams: true } });
+    expect(link("Forward it from Outlook")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(link("Message it in Teams")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("email")).toBe(
+      `Forward it from Outlook ${ADDRESS} Forward the thread that shows the problem. Your note on top becomes the draft.`,
+    );
+    expect(wayText("teams")).toBe(
+      "Message it in Teams 1% Club Type or paste into a chat with 1% Club. Screenshots go straight in.",
+    );
+    expect(way("email").querySelector(".pill")).toBeNull();
+    expect(way("teams").querySelector(".pill")).toBeNull();
+  });
+
+  it("email on, Teams off: Outlook is live; Teams reads Coming soon with no Teams link", async () => {
+    await show(baseRoutes(), { outlookAddress: ADDRESS, waysOn: { email: true, teams: false } });
+    expect(link("Forward it from Outlook")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("email")).toContain(ADDRESS);
+    expect(wayText("email")).not.toContain("Coming soon");
+    expect(wayText("teams")).toContain("Message it in Teams Coming soon");
+    expect(wayLinks("teams")).toHaveLength(0);
+    expect(link("Message it in Teams")).toBeUndefined();
+  });
+
+  it("email off, Teams on: Outlook reads Coming soon with no link; Teams is live", async () => {
+    await show(baseRoutes(), { outlookAddress: null, waysOn: { email: false, teams: true } });
+    expect(wayText("email")).toContain("Forward it from Outlook Coming soon");
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(link("Message it in Teams")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("teams")).toContain("Message it in Teams 1% Club");
+    expect(wayText("teams")).not.toContain("Coming soon");
+  });
+});
+
+describe("S-03.sections/1: Needs you follows the Inbox without a reload (BLD-C145, polish round)", () => {
+  const SECOND = row({
+    id: "IDEA-2026-001477",
+    title: "Synthetic: nominee forms sent back for one missing date",
+    pill: { status: "needs_you", label: "Needs you", variant: "warn" },
+    group: "needs_you",
+  });
+  const SECOND_SET = { ...SET, id: "qs-2", idea_id: SECOND.id, idea: { id: SECOND.id, title: SECOND.title } };
+  const reads = (calls: { url: string }[], path: string) =>
+    calls.filter((c) => c.url.startsWith(path)).length;
+
+  it("L-INBOX.rules/3: one inbox:counts event re-reads Needs you once; the count and cards update, the box keeps its words and focus", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, SECOND, PICKED], { needs_you: 3 });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: ideas }),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => ({ status: 200, body: SECOND_SET }),
+      }),
+    );
+    expect(link("All 3 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(2);
+    const ta = type(WORDS);
+    act(() => ta.focus());
+    const before = {
+      mine: reads(calls, "/api/me/ideas"),
+      crew: reads(calls, "/api/crew"),
+      ones: reads(calls, "/api/ones"),
+    };
+
+    ideas = mine([NEEDS, PICKED], { needs_you: 1 }); // the second idea's questions were answered in the Inbox
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0, needs_you: 1 } }));
+    });
+    await flush();
+
+    expect(reads(calls, "/api/me/ideas")).toBe(before.mine + 1);
+    expect(reads(calls, "/api/crew")).toBe(before.crew); // only Needs you is read again
+    expect(reads(calls, "/api/ones")).toBe(before.ones);
+    expect(link("All 3 in Inbox")).toBeUndefined();
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(text()).not.toContain(SECOND.title);
+    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(WORDS);
+    expect(document.activeElement).toBe(host.querySelector("textarea"));
+    expect(text()).not.toContain(HOME_COPY.loadingNeeds);
+  });
+
+  it("S-03.sections/1: the last item answered shows Nothing needs you right now", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, PICKED]);
+    await show(baseRoutes({ "/api/me/ideas": () => ({ status: 200, body: ideas }) }));
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    ideas = mine([PICKED]);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(text()).toContain(HOME_COPY.needsNone);
+  });
+
+  it("A failed re-read keeps what is shown: no empty state, no loading rows", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let fail = false;
+    await show(
+      baseRoutes({
+        "/api/me/ideas": () =>
+          fail
+            ? { status: 500, body: { error: { code: "worker_error" } } }
+            : { status: 200, body: mine([NEEDS, PICKED], { needs_you: 3 }) },
+      }),
+    );
+    fail = true;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(link("All 3 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+    expect(text()).not.toContain(HOME_COPY.loadingNeeds);
+    expect(host.querySelectorAll(".hm-idea")).toHaveLength(2);
+  });
+
+  it("A question set that fails on a re-read keeps its card; every set failing keeps every card", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let second = (): { status: number; body?: unknown } => ({ status: 200, body: SECOND_SET });
+    let first = (): { status: number; body?: unknown } => ({ status: 200, body: SET });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: mine([NEEDS, SECOND, PICKED], { needs_you: 2 }) }),
+        [`/api/ideas/${NEEDS.id}/question-set`]: () => first(),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => second(),
+      }),
+    );
+    const cards = () => [...host.querySelectorAll(".qcard")].map((c) => c.textContent ?? "");
+    expect(cards()).toHaveLength(2);
+    const reread = async () => {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+      });
+      await flush();
+      await act(async () => await new Promise((r) => setTimeout(r, 300))); // past the gap between re-reads
+    };
+
+    second = () => ({ status: 503, body: { error: { code: "paused", message: "" } } });
+    await reread();
+    expect(reads(calls, `/api/ideas/${SECOND.id}/question-set`)).toBe(2);
+    expect(cards()).toHaveLength(2);
+    expect(cards()[1]).toContain(SECOND.title);
+
+    first = () => ({ status: 500 });
+    await reread();
+    expect(cards()).toHaveLength(2);
+    expect(link("All 2 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+
+    first = () => ({ status: 200, body: null }); // read, and no open set any more: that card goes
+    await reread();
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0]).toContain(SECOND.title);
+  });
+
+  it("A burst of Inbox events brings at most two reads: one at once, one after it with the latest", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, SECOND, PICKED], { needs_you: 2 });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: ideas }),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => ({ status: 200, body: SECOND_SET }),
+      }),
+    );
+    const first = reads(calls, "/api/me/ideas");
+    ideas = mine([NEEDS, PICKED], { needs_you: 1 });
+    await act(async () => {
+      for (let i = 0; i < 6; i++)
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: i } }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 1);
+    await act(async () => {
+      for (let i = 0; i < 3; i++)
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: i } }));
+    });
+    await act(async () => await new Promise((r) => setTimeout(r, 400)));
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 2);
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+    await act(async () => await new Promise((r) => setTimeout(r, 400)));
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 2); // nothing more queued
+  });
+
+  it("pageshow from the back/forward cache re-reads Needs you; an ordinary pageshow does not", async () => {
+    let ideas = mine([NEEDS, PICKED]);
+    const calls = await show(baseRoutes({ "/api/me/ideas": () => ({ status: 200, body: ideas }) }));
+    const first = reads(calls, "/api/me/ideas");
+    ideas = mine([PICKED]);
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first);
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 1);
+    expect(host.querySelector(".qcard")).toBeNull();
+    expect(text()).toContain(HOME_COPY.needsNone);
+  });
+
+  it("A first visit shows no Needs you, so the event reads nothing", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    const calls = await show(baseRoutes(), { firstVisit: true });
+    const first = reads(calls, "/api/me/ideas");
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first);
+  });
+});
+
 describe("lib/home/data (BLD-C143, C145, C146)", () => {
   it("loadMine: shared ideas only, the total from counts, the ideas that need the person", async () => {
     const { f } = fakeFetch(baseRoutes());
@@ -671,6 +1032,23 @@ describe("lib/home/data (BLD-C143, C145, C146)", () => {
     expect(m?.ideas.top.map((r) => r.id)).toEqual([NEEDS.id, PICKED.id, BUILT.id]);
     expect(m?.needs.rows.map((r) => r.id)).toEqual([NEEDS.id]);
     expect(m?.drafts).toBe(1);
+  });
+
+  it("readSets and keepFailedSets: a failed read is marked and keeps its card; all failed keeps the list", async () => {
+    const { f } = fakeFetch({
+      [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 503 }),
+      [`/api/ideas/${PICKED.id}/question-set`]: () => ({ status: 200, body: null }),
+    });
+    const got = await readSets(f, [NEEDS, PICKED]);
+    expect(got).toEqual([
+      { ideaId: NEEDS.id, set: null, failed: true },
+      { ideaId: PICKED.id, set: null, failed: false },
+    ]);
+    const before = [{ ideaId: NEEDS.id, set: SET }];
+    expect(keepFailedSets(before, got)).toEqual(before);
+    expect(keepFailedSets(before, [got[0]!])).toBeNull();
+    expect(keepFailedSets(before, [])).toEqual([]);
+    expect(keepFailedSets(before, [{ ideaId: NEEDS.id, set: null, failed: false }])).toEqual([]);
   });
 
   it("loadSets: an idea with no open set is left out", async () => {

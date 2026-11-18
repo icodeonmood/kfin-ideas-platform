@@ -27,6 +27,7 @@ from typing import Any
 
 from core.crypto import CryptoError, decrypt_json, encrypt_json
 from core.db import Conn
+from hide.core import detail_view
 from onepc.context import sealed_context
 from similar.preview import DESK_ROLES
 from submit import adapters, config, fix, helpers, own, ready, sorting
@@ -172,8 +173,8 @@ def page(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[str, A
     files = _files(conn, uid)
     until = day(closes, now) if closes else None
     hidden = conn.execute(
-        "SELECT id, kind, masked, state, reason FROM hidden_details WHERE idea_uuid = %s AND source <> 'file' "
-        "ORDER BY created_at",
+        "SELECT id, kind, masked, state, reason, shown_at FROM hidden_details WHERE idea_uuid = %s "
+        "AND source <> 'file' ORDER BY created_at",
         (uid,),
     ).fetchall()
     return {
@@ -197,10 +198,9 @@ def page(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[str, A
             "summary": idea.get("summary") or "",
             "often": idea.get("often"),
         },
-        "hidden": [
-            {"id": str(h["id"]), "kind": h["kind"], "masked": h["masked"], "state": h["state"]}
-            for h in hidden
-        ],
+        # E-ENTITIES HiddenDetail as "Show it" answers it (hide.core.detail_view): a shown row keeps its reason, so
+        # C-HIDDEN.list/3's "Shown, because …" reads on S-06B as on S-05 (BLD-C189)
+        "hidden": [detail_view(dict(h)) for h in hidden],
         "sorting": sorting.view(conn, idea, phase="edit"),
         "fix": fix,
         "helpers": helpers.view(idea),

@@ -33,7 +33,7 @@ import { MultiChips } from "@/components/ui/chips";
 import { Field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BRINGS_LABEL, type Brings, type DraftPartKey, type Part, type SimilarMatch } from "@/lib/contracts";
-import { hasValue, type Live } from "@/lib/compose/live";
+import { allIn, hasValue, type Live } from "@/lib/compose/live";
 import { LOADER_TITLE, loaderLine } from "@/lib/compose/loader";
 
 export const PANEL_COPY = {
@@ -72,6 +72,25 @@ export const READINESS = {
   ready: "Looks right? Check the sorting and send it.",
 } as const;
 export type Readiness = keyof typeof READINESS;
+
+/** S-04.rules/2 and L-DRAFT.parts/3, /7: which line "Move to Review" shows. Ready only once nothing is building and the
+ * draft has its title, summary and area (`ready`, the worker's `ready`, BLD-C083). A run that ends with the title or
+ * the area waiting for words stays at "Your draft needs a little more first."; How often, Who it affects and What
+ * it's worth may wait without holding it (L-DRAFT.parts/7, BLD-C157). */
+export function readinessOf(s: {
+  chars: number;
+  minChars: number;
+  /** A detail is still on its way from this device. */
+  sending: boolean;
+  running: boolean;
+  ready: boolean;
+}): Readiness {
+  if (!s.chars || s.chars < s.minChars) return "more";
+  if (s.sending) return "finishing";
+  if (s.running) return "working";
+  // Nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1).
+  return s.ready ? "ready" : "more";
+}
 
 type FactKey = "often" | "who" | "value" | "area";
 type EditKey = FactKey | "title";
@@ -164,6 +183,9 @@ export function landedLine(live: Live): string {
   return `${label}: ${factText(key, p)}`;
 }
 
+/** The header, in the boards' drawn states (Compose.md, ComposeResume.md): "Updating" while a run builds, and only
+ * then; once nothing is building, "Up to date" when any part shows a value (all six in, maths/7, or a run that ended
+ * with a part still waiting for words, BLD-C157), and "Forms as you write" before any. */
 export function panelStatus(live: Live): string {
   if (live.running) return PANEL_COPY.updating;
   const any = (["title", "often", "who", "value", "area"] as const).some((k) => hasValue(live.parts[k]));
@@ -189,6 +211,8 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
     openedForQuestions.current = true;
     setOpen(true);
   }, [phone, asking]);
+  // "All 6 parts are in" only when every part shows a value or asks to be added; never because the run ended.
+  const all = allIn(live);
 
   useImperativeHandle(
     ref,
@@ -248,7 +272,7 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
   const body = questions ?? (
     <>
       {/* On a phone the one loader is the tube under the peek (C-DRAFT-LOADER.anatomy/3). */}
-      {phone ? null : <DraftLoader run={live.loader} done={!live.running} phone={false} />}
+      {phone ? null : <DraftLoader run={live.loader} done={all} ended={!live.running} phone={false} />}
       <div className="cvb">
         <TitleSlot {...slots} />
         <dl className="rows">
@@ -311,7 +335,7 @@ export const DraftPanel = forwardRef<PanelHandle, PanelProps>(function DraftPane
           <span className="dpeek-t">{peekTitle}</span>
           <span className="dpeek-s">{peekLine}</span>
         </button>
-        <DraftLoader run={iv ? null : live.loader} done={!live.running} phone now={now} />
+        <DraftLoader run={iv ? null : live.loader} done={all} ended={!live.running} phone now={now} />
         {landed}
         <div id={bodyId} className="dsheet-b" hidden={!open}>
           <h2 className="cvt">{PANEL_COPY.heading}</h2>

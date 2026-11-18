@@ -337,17 +337,23 @@ export function useRequest(
 
   // After the render that shows what the lead's action led to, focus moves there (WCAG 2.4.3). It is set just
   // before that render's state change, so it is used once and cleared.
+  // It is kept until its target is on the page: an effect still pending from an earlier render (a fast answer lands
+  // before React has run it) would otherwise use it up while the result is not there yet (BLD-A228).
   useEffect(() => {
     const to = focusTo.current;
     if (!to) return;
-    focusTo.current = null;
     const target = {
       reason: reasonRef.current,
       decline: declineRef.current,
       result: resultRef.current,
       pressed: pressedRef.current,
     }[to];
-    if (target?.isConnected) target.focus();
+    if (!target?.isConnected) return;
+    focusTo.current = null;
+    target.focus();
+    // The result is what the lead reads next: in the reader's view even under a tall request, where focus alone left
+    // it below the pane's fold (J-SIMILAR/6a, WCAG 2.4.11, BLD-A228). No layout in tests, hence the optional call.
+    if (to === "result") target.scrollIntoView?.({ block: "nearest" });
   });
 
   // Once per item: the reader keys the open item, so each request starts from nothing.

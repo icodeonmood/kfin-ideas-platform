@@ -16,7 +16,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { step } from "./lib";
+import { carriedFor, expectWithDesk, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ function esc(s: string): string {
 type Fresh = { emp: string; first: string; name: string; email: string };
 
 function fresh(offset: number, last: string): Fresh {
-  const n = 18000 + ((Math.floor(Date.now() / 1000) + offset) % 2000);
+  const n = 18000 + ((runSeconds() + offset) % 2000);
   return {
     emp: `SYN-${n}`,
     first: "Journey",
@@ -92,7 +92,7 @@ const WORDS =
 const PAN_MASKED = "PAN ••••8Z";
 const DETAIL = "We raise a ticket for each one and wait two days for an answer.";
 
-const carried: { draft?: string; title?: string; idea?: string } = {};
+const carried = carriedFor<{ draft: string; title: string; idea: string }>("J-SHARE");
 
 function need<K extends keyof typeof carried>(key: K, from: string): string {
   const v = carried[key];
@@ -394,7 +394,7 @@ step(
     await page.goto(idea);
     await expect(page.getByRole("heading", { level: 1, name: need("title", "J-SHARE/7") })).toBeVisible();
     await expect(page.getByText(idea.split("/").pop() ?? "", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
     await expect(
       page.getByText(new RegExp(`^The review desk will look at it by ${DAY}\\.`)).first(),
     ).toBeVisible();

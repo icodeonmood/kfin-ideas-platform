@@ -70,6 +70,7 @@ export function WordsBody({
   onAttached,
   hidden,
   phone = false,
+  readOnly = false,
 }: {
   values: Record<WordKey, string>;
   attached: FileItem[];
@@ -81,6 +82,8 @@ export function WordsBody({
   /** The phone boards' look (PhoneReview.md, PhoneEdit.md): each line labelled, the title too, with a "Change"
    * button ("Change title") in place of the pen. */
   phone?: boolean;
+  /** A draft merged into another idea (BLD-C155): the words as they are, with nothing to change. */
+  readOnly?: boolean;
 }) {
   return (
     <div className="ck-words">
@@ -92,6 +95,7 @@ export function WordsBody({
         serverError={errors.title}
         title
         phone={phone}
+        readOnly={readOnly}
       />
       <EditLine
         k="summary"
@@ -100,8 +104,16 @@ export function WordsBody({
         onSave={onSave}
         serverError={errors.summary}
         phone={phone}
+        readOnly={readOnly}
       />
-      <EditLine k="often" label={C.words.often} value={values.often} onSave={onSave} phone={phone} />
+      <EditLine
+        k="often"
+        label={C.words.often}
+        value={values.often}
+        onSave={onSave}
+        phone={phone}
+        readOnly={readOnly}
+      />
       {hidden}
       {attached.length ? (
         <div className="ck-att">
@@ -121,9 +133,11 @@ export function WordsBody({
               </li>
             ))}
           </ul>
-          <Button variant="text-blue" onClick={onAttached}>
-            {C.words.changeAttached}
-          </Button>
+          {readOnly ? null : (
+            <Button variant="text-blue" onClick={onAttached}>
+              {C.words.changeAttached}
+            </Button>
+          )}
         </div>
       ) : null}
     </div>
@@ -138,6 +152,7 @@ function EditLine({
   serverError,
   title,
   phone = false,
+  readOnly = false,
 }: {
   k: WordKey;
   label: string;
@@ -146,6 +161,7 @@ function EditLine({
   serverError?: string;
   title?: boolean;
   phone?: boolean;
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
@@ -227,8 +243,15 @@ function EditLine({
         </div>
       ) : (
         <div className="ck-w-v">
-          {title ? <h3 className="h3 ck-title">{value}</h3> : <p className="ck-v">{value}</p>}
-          {phone ? (
+          {!value.trim() ? (
+            // An empty line reads "Not given." beside its pen, as S-06 reads the same part (BLD-C188).
+            <p className="ck-v ck-empty">{C.words.notGiven}</p>
+          ) : title ? (
+            <h3 className="h3 ck-title">{value}</h3>
+          ) : (
+            <p className="ck-v">{value}</p>
+          )}
+          {readOnly ? null : phone ? (
             <button
               type="button"
               className="tb blue ck-chg"

@@ -219,9 +219,7 @@ step(
       await sharer.goto("/inbox");
       await sharer
         .getByRole("button", {
-          name: new RegExp(
-            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(p1.title)}`,
-          ),
+          name: new RegExp(`^The review desk revised what your idea is worth, ${esc(p1.title)}`),
         })
         .click();
       await sharer.goto(ideaUrl(p1));
@@ -348,12 +346,15 @@ step(
     await expect(page.getByRole("heading", { name: "Decision sent to Pallavi" })).toBeVisible();
 
     // L-DECIDE.rules/3, /5: the reason word for word, at once, in the app; the window's date as the reviewer saw it.
+    // DEC-111: Pallavi is on neither the review desk nor the Ones Committee, so S-06 says "The review desk", not Lavanya.
     await asOther(browser, info, "pallavi", { ref: "J-REVIEW/6", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(p1));
       await expect(sharer.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
-      await expect(
-        sharer.getByText(new RegExp(`^Lavanya from the review desk picked it on ${DAY}\\b.*\\.$`)).first(),
-      ).toBeVisible();
+      // The Pick's team-chosen-by date, which the asked line repeats (L-DECIDE/6).
+      const teamBy = await capture(
+        sharer.getByText(new RegExp(`^The review desk picked it on ${DAY}\\b.*\\.$`)).first(),
+        new RegExp(`The build team is chosen by [A-Z][a-z]+day (\\d{1,2} [A-Z][a-z]+)`),
+      );
       await expect(sharer.getByText(REASON).first()).toBeVisible();
       await expect(
         sharer
@@ -362,7 +363,17 @@ step(
           )
           .first(),
       ).toBeVisible();
-      await expect(sharer.getByRole("button", { name: "Ask to join the build team" })).toBeVisible();
+
+      // L-DECIDE/6 (DEC-111: it ships at launch): the sharer asks to join; the button gives way to the drawn line
+      // (Status.dc.html:899) with the same date, and there is no Undo at launch although the board draws one.
+      const ask = sharer.getByRole("button", { name: "Ask to join the build team" });
+      await expect(ask).toBeVisible();
+      await ask.click();
+      await expect(
+        sharer.getByText(`Asked. The build lead replies by ${teamBy}.`, { exact: true }),
+      ).toBeVisible();
+      await expect(ask).toHaveCount(0);
+      await expect(sharer.getByRole("button", { name: /^Undo\b/ })).toHaveCount(0);
     });
   },
 );
@@ -501,7 +512,8 @@ step(
     await signInAs(page, "lavanya");
     await page.goto(deskUrl(k1));
     await openAsk(page);
-    await addQuestion(page, "Roughly how many investors are sent on to another branch each week?");
+    const asked = "Roughly how many investors are sent on to another branch each week?";
+    await addQuestion(page, asked);
     await page.getByRole("radio", { name: "3 days" }).click();
     const deadline = await capture(
       page.getByText(/^Kiran has until /).first(),
@@ -528,11 +540,13 @@ step(
       await sharer.getByRole("tab", { name: /^Needs you/ }).click();
       await sharer
         .getByRole("button", {
-          name: new RegExp(`^Lavanya from the review desk asked you ${n} questions?, ${esc(k1.title)}`),
+          name: new RegExp(`^The review desk asked you ${n} questions?, ${esc(k1.title)}`),
         })
         .click();
       await expect(sharer.getByText(`Answer by ${deadline}.`).first()).toBeVisible();
       await expect(action(sharer, "Answer the questions").first()).toBeVisible();
+      // C-INBOX-READER reads the set after the item opens (a second request): the question as the desk wrote it.
+      await expect(sharer.getByText(asked).first()).toBeVisible();
     });
   },
 );

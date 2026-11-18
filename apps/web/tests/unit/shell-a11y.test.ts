@@ -260,3 +260,48 @@ describe("S-08.rules/4: the conversation is a task screen on a phone only", () =
     expect(task.every((t) => t.endsWith("@media (max-width: 640px)"))).toBe(true);
   });
 });
+
+describe("F-MOTION.arrive/4: a block holding a pinned bar fades in, so the bar never rides up with it", () => {
+  const all = rules(read("motion.css"));
+  const text = (r: Rule) => r.selectors.join(",");
+  const pinned = all.findIndex((r) => /\):has\(\.mo-pin,\s*\.cv-box\)/.test(text(r)));
+
+  it("S-08.rules/4: the pinned block takes moFade, only where motion is allowed", () => {
+    expect(pinned).toBeGreaterThan(-1);
+    const rule = all[pinned]!;
+    expect(rule.at).toBe("@media (prefers-reduced-motion: no-preference)");
+    expect(rule.decls.get("animation-name")).toBe("moFade");
+  });
+
+  it("moFade moves nothing: no translate, scale, transform or filter", () => {
+    const body = read("motion.css").match(/@keyframes moFade\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(body).toMatch(/opacity:\s*0/);
+    expect(body).not.toMatch(/translate|scale|transform|filter/);
+  });
+
+  it("it comes after every arrival and hand-over rule of the same weight, so it wins after a hand-over too", () => {
+    const arrivals = all
+      .map((r, i) => ({ i, t: text(r) }))
+      .filter(({ t }) => t.includes("main#main:not(:has(.launch"))
+      .map(({ i }) => i)
+      .filter((i) => i !== pinned);
+    expect(arrivals.length).toBeGreaterThan(3);
+    expect(Math.max(...arrivals)).toBeLessThan(pinned);
+  });
+
+  it("its two arms are the base arrival rule's own, so the two cannot drift apart", () => {
+    const squash = (r: Rule) => text(r).replace(/\s+/g, "");
+    const base = all.find((r) => text(r).startsWith("main#main:not(:has(.launch"));
+    expect(base).toBeDefined();
+    expect(squash(all[pinned]!)).toBe(`:is(${squash(base!)}):has(.mo-pin,.cv-box)`);
+  });
+
+  it("the conversation's box is the fixed bar it names: .cv-box is position fixed on a phone", () => {
+    const convo = readFileSync(
+      fileURLToPath(new URL("../../src/components/convo/conversation.css", import.meta.url)),
+      "utf8",
+    );
+    const box = rules(convo).filter((r) => r.selectors.includes(".cv-box") && r.at.includes("max-width"));
+    expect(box.some((r) => r.decls.get("position") === "fixed")).toBe(true);
+  });
+});

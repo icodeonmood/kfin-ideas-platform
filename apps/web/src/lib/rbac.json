@@ -77,13 +77,6 @@
       "admin": "yes",
       "ceo": "yes"
     },
-    "propose_ones": {
-      "core_committee": "yes",
-      "ceo": "yes"
-    },
-    "decide_ones": {
-      "core_committee": "yes"
-    },
     "carry_out_ones": {
       "admin": "yes"
     },
@@ -238,6 +231,7 @@
     "GET /api/me                                       signed_in",
     "POST /api/me/privacy-notice                       signed_in",
     "GET /api/me/ideas                                 signed_in",
+    "POST /api/me/ideas                                signed_in",
     "GET /api/me/shell                                 signed_in",
     "GET /api/me/points                                signed_in",
     "GET /api/me/data-export                           signed_in",
@@ -293,8 +287,11 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
+    "GET /api/ideas/{id}/similar                       see_org_ideas",
+    "POST /api/ideas/{id}/similar/keep-separate       submit",
     "POST /api/ideas/{id}/withdraw                     submit",
     "POST /api/ideas/{id}/restore                      submit",
+    "POST /api/ideas/{id}/join-build                   signed_in",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/config                                   signed_in",
@@ -346,15 +343,7 @@
     "GET /api/ones                                     see_org_ideas",
     "GET /api/ones/constellation                       see_org_ideas",
     "GET /api/display/office                           open_display",
-    "GET /api/ones/leaderboard                         signed_in",
-    "GET /api/ones/console                             view_ones_console",
-    "POST /api/ones/proposals                          propose_ones",
-    "POST /api/ones/proposals/{id}/decide              decide_ones",
-    "POST /api/ones/proposals/{id}/carry-out           carry_out_ones",
-    "POST /api/ones/proposals/{id}/withdraw            propose_ones",
-    "GET /api/ones/proposals/{id}/invite               signed_in",
     "POST /api/ones/proposals/{id}/messages            signed_in",
-    "POST /api/ones/proposals/{id}/invites             decide_ones",
     "PUT /api/ones/{id}/measures                       carry_out_ones",
     "GET /api/ones/{id}/showcase                       view_ones_console",
     "PUT /api/ones/screen-mode                         carry_out_ones",
@@ -423,6 +412,7 @@
     "PUT /api/admin/flags/{key}                        manage_flags",
     "PUT /api/admin/flags/{key}/people                 manage_flags",
     "GET /api/desk                                     view_review_queue",
+    "POST /api/desk                                    view_review_queue",
     "GET /api/desk/ideas/{id}                          view_review_queue",
     "GET /api/desk/ideas/{id}/listen                   view_review_queue",
     "POST /api/desk/ideas/{id}/open                    work_review_queue",
@@ -441,11 +431,14 @@
     "GET /api/committee                                committee_window",
     "GET /api/committee/windows/{id}/reversing         committee_window",
     "POST /api/committee/windows/{id}/extend           committee_window",
-    "POST /api/committee/windows/{id}/reverse          committee_window"
+    "POST /api/committee/windows/{id}/reverse          committee_window",
+    "GET /api/crew                                     signed_in",
+    "POST /api/crew/pass                               signed_in",
+    "POST /api/crew/pass/undo                          signed_in",
+    "POST /api/crew/pass/reset                         signed_in"
   ],
   "membership_scoped": {
     "ones": [
-      "GET /api/ones/leaderboard",
       "POST /api/me/one/number",
       "POST /api/me/one/brief",
       "GET /api/me/one/showcase",
@@ -481,6 +474,12 @@
       "href": "/home",
       "place": "main",
       "tab": 1
+    },
+    {
+      "key": "crew",
+      "label": "Find your crew",
+      "href": "/crew",
+      "place": "main"
     },
     {
       "key": "my-ideas",

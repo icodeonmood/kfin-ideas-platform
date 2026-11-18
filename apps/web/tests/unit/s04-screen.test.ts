@@ -350,6 +350,55 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("S-04B.layout/4 J-SHARE/5 (BLD-C158) the picked-up line stays as opened, in the sidebar's day and device, after a detail is saved here", async () => {
+    const opened = {
+      ...draft().saved_labels!,
+      sidebar: "Today, on your laptop",
+      resume: "Last saved on your laptop, today 3:12 pm.",
+    };
+    const afterSave = {
+      ...opened,
+      sidebar: "Today, on this laptop",
+      resume: "Last saved on this laptop, today 3:14 pm.",
+    };
+    const detail = "Each new folio needs the nominee typed twice.";
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-9",
+            message: { id: "m-2", text: detail },
+            draft: draft({
+              messages: [
+                ...draft().messages,
+                { ...draft().messages[0]!, id: "m-2", text: detail, at_label: "Just now" },
+              ],
+              saved_labels: afterSave,
+              saved_on: { device: "laptop", this_device: true },
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: draft({ saved_labels: opened, saved_on: { device: "laptop", this_device: false } }),
+        };
+      return { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    };
+    await mount({ draftId: DRAFT });
+    expect(text()).toContain("Picked up where you left off.");
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    type(host.querySelector("textarea") as HTMLTextAreaElement, detail);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(text()).toContain(detail);
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    expect(text()).not.toContain("Last saved on this laptop");
+  });
+
   it("J-RECOVER/5 offline: the detail waits with its client_id and `at`; back online it goes, and Saved at", async () => {
     const detail = "We started a spreadsheet last month but nobody keeps it up to date.";
     conversationRoute((s) =>
@@ -392,6 +441,18 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     expect(localStorage.getItem(`1pc.outbox.${DRAFT}`)).toBeNull();
   });
 
+  it("J-SIMILAR/6a BLD-C155 a draft merged into another idea goes to Check it, read-only; nothing is sent from here", async () => {
+    conversationRoute((s) =>
+      s.url === `/api/drafts/${DRAFT}?open=1`
+        ? { status: 200, body: { ...draft(), merged_into: "IDEA-2026-001412", ready: false } }
+        : null,
+    );
+    await mount({ draftId: DRAFT });
+    expect(push).toHaveBeenCalledWith(`/share/${DRAFT}/check`); // the router's replace (mocked as push here)
+    expect(sent.filter((s) => s.method !== "GET")).toEqual([]);
+    expect(text()).not.toContain("Picked up where you left off.");
+  });
+
   it("A-API.conventions/2 a draft that is not there says so in plain words", async () => {
     route = () => ({
       status: 404,
@@ -399,5 +460,179 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     });
     await mount({ draftId: DRAFT });
     expect(host.querySelector('[role="alert"]')!.textContent).toBe("We couldn't find that draft.");
+  });
+});
+
+describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5, J-RESUME/3; BLD-C184, BLD-C185)", () => {
+  // Synthetic PAN: the person's own words carry it; every receipt carries only its masked tail.
+  const PAN = "ABCPK1234Z";
+  const FIRST = `${WORDS} One investor read out his PAN, ${PAN}, at the counter.`;
+  const SECOND = "We raise a ticket for each one and wait two days for an answer.";
+  const R1 = [
+    "Drafted a title: “Bank mandate changes take a week to show”.",
+    "Hid 1 personal detail from everyone but you: PAN ••••4Z.",
+  ];
+  const R2 = ["Noted how often: about 25 times a week.", "Your draft is ready. Add a detail, or check it."];
+  const m1 = (over: Partial<Draft["messages"][number]> = {}) => ({
+    ...draft().messages[0]!,
+    text: FIRST,
+    spans: [{ start: FIRST.indexOf(PAN), end: FIRST.indexOf(PAN) + PAN.length, kind: "pan" as const }],
+    ...over,
+  });
+  const m2 = (over: Partial<Draft["messages"][number]> = {}) => ({
+    ...draft().messages[0]!,
+    id: "m-2",
+    text: SECOND,
+    at_label: "Just now",
+    ...over,
+  });
+  const both = () => draft({ messages: [m1({ receipt: R1 }), m2({ receipt: R2 })], receipt: R2 }) as Draft;
+
+  /** Each message bubble, then the lines drawn after it and before the next one. */
+  function thread() {
+    const out: { words: string; receipt: string[] }[] = [];
+    for (const el of host.querySelectorAll(".tin > .msg.me, .tin > .sysg")) {
+      if (el.classList.contains("sysg"))
+        out[out.length - 1]!.receipt.push(
+          ...[...el.querySelectorAll(".msg.sys p")].map((p) => p.textContent!),
+        );
+      else out.push({ words: el.querySelector(".btx")!.textContent!, receipt: [] });
+    }
+    return out;
+  }
+
+  const rawOnlyInOwnWords = () => {
+    for (const el of host.querySelectorAll(".sysg")) expect(el.textContent).not.toContain(PAN);
+    const copy = host.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll(".msg.me .btx").forEach((b) => b.remove());
+    expect(copy.textContent).not.toContain(PAN);
+  };
+
+  it("S-04B.layout/2: two messages, each with its own receipt under it, the hidden PAN as its masked tail only", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? { status: 200, body: both() }
+        : { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: R2 },
+    ]);
+    rawOnlyInOwnWords();
+    // The suggestions stay under the last message only
+    expect(button("Add what you already tried")).toBeTruthy();
+    expect(host.querySelectorAll(".nexts")).toHaveLength(1);
+  });
+
+  it("J-SHARE/5: after a second message, the first keeps its receipt while the second is being built", async () => {
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-2",
+            message: { id: "m-2", text: SECOND },
+            draft: draft({
+              messages: [m1({ receipt: R1 }), m2({ receipt: [] })],
+              receipt: R1,
+              run: { id: "r-2", state: "running" },
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return { status: 200, body: draft({ messages: [m1({ receipt: R1 })], receipt: R1 }) };
+      return { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    };
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([{ words: FIRST, receipt: R1 }]);
+    type(host.querySelector("textarea") as HTMLTextAreaElement, SECOND);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: [] },
+    ]);
+    expect(text()).toContain("Hid 1 personal detail from everyone but you: PAN ••••4Z.");
+    rawOnlyInOwnWords();
+  });
+
+  it("J-RECOVER/5: a reload keeps both receipts, from what the draft read keeps", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? { status: 200, body: both() }
+        : { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    await mount({ draftId: DRAFT });
+    act(() => root.unmount());
+    host.remove();
+    await mount({ draftId: DRAFT });
+    expect(thread()).toEqual([
+      { words: FIRST, receipt: R1 },
+      { words: SECOND, receipt: R2 },
+    ]);
+    rawOnlyInOwnWords();
+  });
+
+  const bannerMark = () => host.querySelector(".ban .ic svg rect")!.getAttribute("width");
+
+  it("S-04B.layout/4: 'on your laptop' draws the laptop", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? {
+            status: 200,
+            body: draft({
+              saved_on: { device: "laptop", this_device: false },
+              saved_labels: { ...draft().saved_labels!, resume: "Last saved on your laptop, today 3:12 pm." },
+            }),
+          }
+        : { status: 404, body: {} };
+    await mount({ draftId: DRAFT });
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    expect(bannerMark()).toBe("15"); // the laptop's screen
+  });
+
+  it("S-04B.layout/4: 'on your phone' draws the phone, as the board does", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`) ? { status: 200, body: draft() } : { status: 404, body: {} };
+    await mount({ draftId: DRAFT });
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your phone, Friday 8:42 pm.");
+    expect(bannerMark()).toBe("8"); // the phone
+  });
+
+  it("S-04B.layout/1, J-RESUME/3: a picked-up message reads its day, time and device; one added here reads Just now", async () => {
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-2",
+            message: { id: "m-2", text: SECOND },
+            draft: draft({
+              messages: [
+                m1({ at_label: "Just now", at_label_earlier: "Today, 3:12 pm, on your phone" }),
+                m2({ at_label_earlier: "Today, 3:13 pm, on your laptop" }),
+              ],
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: draft({
+            messages: [m1({ at_label: "Just now", at_label_earlier: "Today, 3:12 pm, on your phone" })],
+          }),
+        };
+      return { status: 404, body: {} };
+    };
+    await mount({ draftId: DRAFT });
+    const metas = () => [...host.querySelectorAll(".msg.me .mact .meta")].map((m) => m.textContent);
+    expect(metas()).toEqual(["Today, 3:12 pm, on your phone"]);
+    type(host.querySelector("textarea") as HTMLTextAreaElement, SECOND);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(metas()).toEqual(["Today, 3:12 pm, on your phone", "Just now"]);
   });
 });

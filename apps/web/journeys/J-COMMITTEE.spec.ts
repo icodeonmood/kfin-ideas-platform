@@ -6,7 +6,7 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step } from "./lib";
+import { addMonthsIST, dayIST, decisionWindow, ideaUrl, nextCloseIST, seeded, signInAs, step } from "./lib";
 
 const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
@@ -19,8 +19,12 @@ async function openCommittee(page: Page) {
   await expect(page.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
 }
 
+function esc(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function rowFor(page: Page, title: string) {
-  return page.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+  return page.getByRole("row", { name: new RegExp(esc(title)) });
 }
 
 step(
@@ -54,15 +58,27 @@ step(
   { needs: ["S-R4", "L-COMMITTEE"] },
   async ({ page }) => {
     const c1 = await seeded("C1");
+    // The window's end as stored, and its limit worked out from the decision: 3 months on India's calendar
+    // (L-COMMITTEE.rules/2, BLD-B258). A date outside this year carries its year (Committee.md: "up to Tuesday 16
+    // February 2027"); dayIST() decides that from today in India, as desk/when.py day() does.
+    const { opensAt, closesAt } = await decisionWindow(c1);
+    const until = dayIST(closesAt);
+    const cap = dayIST(addMonthsIST(opensAt, 3));
     await openCommittee(page);
     await rowFor(page, c1.title).getByRole("button", { name: "Review" }).click();
     await expect(page.getByText("The review desk’s reason, as Charulata read it")).toBeVisible();
     await expect(
       page.getByText(
-        /^Open until \w+day \d{1,2} \w+\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+( \d{4})?\. When it closes, the decision stands\.$/,
+        `Open until ${until}. You can extend it 30 days at a time, up to ${cap}. When it closes, the decision stands.`,
+        { exact: true },
       ),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+( \d{4})?$/ })).toBeEnabled();
+    // Extend's target by the rule (BLD-B263): C1 was extended once, so this one reaches the 3-month date itself.
+    const next = nextCloseIST(opensAt, closesAt);
+    expect(next, "C1 starts extended once, below its limit").not.toBeNull();
+    await expect(
+      page.getByRole("button", { name: `Extend to ${dayIST(next as Date)}`, exact: true }),
+    ).toBeEnabled();
     await expect(page.getByRole("button", { name: "Reverse the decision" })).toBeEnabled();
   },
 );
@@ -74,15 +90,25 @@ step(
   { needs: ["S-R4", "L-COMMITTEE", "S-06"], changes: ["C1"] },
   async ({ page, browser }) => {
     const c1 = await seeded("C1");
+    const { opensAt, closesAt } = await decisionWindow(c1);
+    const next = nextCloseIST(opensAt, closesAt);
+    expect(next, "C1 starts extended once, below its limit").not.toBeNull();
+    const newDate = dayIST(next as Date);
+    // Closing 60 days in, the next 30 would stop 0 to 2 days short of the 3-month date, so it goes to that date.
+    expect((next as Date).getTime()).toBe(addMonthsIST(opensAt, 3).getTime());
     await openCommittee(page);
     const row = rowFor(page, c1.title);
     await row.getByRole("button", { name: "Review" }).click();
-    const extend = page.getByRole("button", { name: /^Extend to / });
-    const newDate = (await extend.innerText()).replace(/^Extend to /, "").trim();
-    await extend.click();
-    await expect(row).toContainText("Extended");
+    // The seed extended C1 once, so this is its second extension.
     await expect(row).toContainText("Extended once");
-    await expect(row).toContainText(`Until ${newDate.replace(/ \d{4}$/, "")}`);
+    const extend = page.getByRole("button", { name: `Extend to ${newDate}`, exact: true });
+    const until = esc(newDate);
+    await extend.click();
+    await expect(row).toContainText("Extended twice"); // when.times: "once", "twice", then "N times"
+    await expect(row).toContainText(new RegExp(`Until ${until}`));
+    // At the 3-month date nothing more can be added: the limit line stands where Extend was (S-R4.rules/2).
+    await expect(row.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+    await expect(row.getByText("At the 3-month limit", { exact: true })).toBeVisible();
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
     const sharer = await (await browser.newContext()).newPage();
@@ -90,7 +116,9 @@ step(
     await sharer.goto(ideaUrl(c1));
     await expect(
       sharer.getByText(
-        `The Ones Committee can review this decision until ${newDate.replace(/ \d{4}$/, "")}. If they change it, their note comes to your Inbox. After that, it stands.`,
+        new RegExp(
+          `^The Ones Committee can review this decision until ${until}\\. If they change it, their note comes to your Inbox\\. After that, it stands\\.$`,
+        ),
       ),
     ).toBeVisible();
     await sharer.context().close();
@@ -134,7 +162,11 @@ step(
     await sharer.goto(ideaUrl(f1));
     await expect(sharer.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
     await expect(sharer.getByText("The committee’s note to you")).toBeVisible();
-    await expect(sharer.getByText(note)).toBeVisible();
+    await expect(sharer.locator("blockquote").filter({ hasText: note })).toBeVisible();
+    // And the conversation card carries it as the Ones Committee's message (S-06.layout/8, BLD-E058).
+    await expect(
+      sharer.getByRole("complementary", { name: "The conversation and similar ideas" }).getByText(note),
+    ).toBeVisible();
     await expect(sharer.getByText(/^This is final\./)).toBeVisible();
     await sharer.context().close();
   },
