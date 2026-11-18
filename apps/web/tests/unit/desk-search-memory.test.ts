@@ -283,8 +283,16 @@ describe("DEC-110, S-R1.rules/4, J-BROWSE/4: the desk keeps its search in the ta
 
     down = false;
     const again = [...host.querySelectorAll("button")].find((b) => b.textContent === "Try again")!;
+    again.focus();
     act(() => again.click());
+    // S-R1 (BLD-B262): the button leaves with the failed line, and focus stays on the page: the tab panel has it
+    const panel = host.querySelector<HTMLElement>('[role="tabpanel"]')!;
+    expect(again.isConnected).toBe(false);
+    expect(document.activeElement).toBe(panel);
+    expect(panel.getAttribute("aria-busy")).toBe("true");
     await settle();
+    expect(document.activeElement).toBe(panel);
+    expect(panel.getAttribute("aria-busy")).toBeNull();
     expect(titles()).toEqual([`${WORDS} branch form`]);
     expect(readSearch("/desk")).toBe(WORDS);
     expect(host.querySelector('[role="alert"]')).toBeNull();
