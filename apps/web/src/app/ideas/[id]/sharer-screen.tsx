@@ -332,6 +332,8 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
                   </Button>
                 ) : null,
               )}
+              {/* C-SIMGRID.tile: already on its crew, the row says so where Team up would be (BLD-E056) */}
+              {t.done_line ? <span className="ip-tile-done">{t.done_line}</span> : null}
             </div>
           </li>
         ))}
@@ -345,7 +347,9 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
           matchReason={preview.reason}
           fullHref={preview.to}
           onClose={() => setPreview(null)}
-          onPrimary={teamUp.open}
+          // Team up from the preview only where the tile offers it; on its crew, the preview says so instead
+          onPrimary={preview.actions.some((a) => a.op === "team_up") ? teamUp.open : undefined}
+          primaryDone={preview.done_line}
         />
       ) : null}
       {teamUp.sheet}
@@ -601,7 +605,13 @@ export function SharerScreen({
                 <div key={r.part} className="ip-dl-row">
                   <dt>{r.label}</dt>
                   <dd>
-                    {r.part === "cost" && r.figures ? <Worth row={r} /> : <p className="ip-val">{r.value}</p>}
+                    {r.part === "cost" && r.figures ? (
+                      <Worth row={r} />
+                    ) : !r.value && r.empty_line ? (
+                      <p className="ip-val ip-mute">{r.empty_line}</p>
+                    ) : (
+                      <p className="ip-val">{r.value}</p>
+                    )}
                     <Answers answers={r.answers} />
                   </dd>
                 </div>

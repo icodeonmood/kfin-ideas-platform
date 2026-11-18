@@ -274,7 +274,7 @@ step(
     const item = inboxItem(
       page,
       "The review desk",
-      String.raw`(?:\d+ days?|\d+ hours?) left to answer the review desk’s questions`,
+      String.raw`${LEFT} to answer the review desk’s questions`,
       t6.title,
     );
     await expect(item).toBeVisible();

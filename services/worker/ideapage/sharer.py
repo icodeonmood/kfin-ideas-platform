@@ -22,7 +22,9 @@ import datetime as dt
 from collections.abc import Callable
 from typing import Any
 
+from core import killswitch
 from core.db import Conn
+from desk.listen import _EMPTY as S_R2_EMPTY
 from ideapage import adapters, read
 from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, similar_tiles
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
@@ -203,8 +205,17 @@ def may_withdraw(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.date
     return bool(w and w["open"])
 
 
-def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
-    """The window line under the track (S-06.layout/4), with its countdown while it is open."""
+# DEC-105: Teams is built but off until IT approves it (the `comms.teams` switch, read as notify reads it). While it
+# is off, a sentence names only the channels that are on; with it on, the drawn words stand. Each line for "off" is
+# marked "changed by DEC-105, HR sign-off; BLD-E054".
+TEAMS_SWITCH = "comms.teams"
+
+
+def _window_words(
+    idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime, *, teams: bool
+) -> dict[str, Any] | None:
+    """The window line under the track (S-06.layout/4), with its countdown while it is open. `teams`: whether the
+    Teams switch is on (BLD-E054)."""
     if w is None:
         return None
     closes = idea.get("edit_closes_at")
@@ -214,7 +225,12 @@ def _window_words(idea: dict[str, Any], w: dict[str, Any] | None, now: dt.dateti
             "open": True,
             "line": (
                 f"Open to changes until {day(closes, now)}. Edit or withdraw it any time before the review desk "
-                "opens it. We tell you on Teams and by email when anything moves."
+                + (
+                    "opens it. We tell you on Teams and by email when anything moves."
+                    if teams
+                    # changed by DEC-105, HR sign-off; BLD-E054
+                    else "opens it. We tell you by email when anything moves."
+                )
             ),
             # PhoneStatus.md says it shorter
             "phone_line": (
@@ -245,10 +261,12 @@ def _card(
     now: dt.datetime,
     *,
     names_desk: bool,
+    teams: bool,
 ) -> dict[str, str] | None:
     """The sentence that says where it stands and what happens next: its first clause in white, the rest dimmer
     (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint. `names_desk`
-    (DEC-111): the reviewer's first name for a sharer on the review desk or the Ones Committee only."""
+    (DEC-111): the reviewer's first name for a sharer on the review desk or the Ones Committee only. `teams`:
+    whether the Teams switch is on; while it is off the card does not say "on Teams" (DEC-105, BLD-E054)."""
     if state in CARD_FROM:
         return None
     if state == "just_shared":
@@ -257,8 +275,12 @@ def _card(
             "lead": f"The review desk will look at it by {by}."
             if by
             else "The review desk will look at it soon.",
-            "rest": "We’ll tell you on Teams and by email when anything changes.",
-            "phone_rest": "We’ll tell you on Teams and by email.",  # PhoneStatus.md
+            "rest": "We’ll tell you on Teams and by email when anything changes."
+            if teams
+            else "We’ll tell you by email when anything changes.",  # changed by DEC-105, HR sign-off; BLD-E054
+            "phone_rest": "We’ll tell you on Teams and by email."  # PhoneStatus.md
+            if teams
+            else "We’ll tell you by email.",  # changed by DEC-105, HR sign-off; BLD-E054
         }
     if state == "answers_sent":
         # DEC-111: "Sent. Harish has your answers." only for the review desk and the Ones Committee; anyone else
@@ -274,7 +296,9 @@ def _card(
             "lead": f"Sent. {name} has your answers.",
             "rest": (
                 f"Each answer was added to its part of your idea, under What you shared. {by} hear in your "
-                "Inbox, on Teams and by email."
+                + (
+                    "Inbox, on Teams and by email." if teams else "Inbox and by email."
+                )  # changed by DEC-105, HR sign-off; BLD-E054
             ),
         }
     if state == "withdrawn":
@@ -361,6 +385,12 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
     }
 
 
+# NOT DRAWN (BLD-E057): HR sign-off. A part the sharer left empty, or only spaces, reads as S-R2 reads the same
+# part: lane B's words, imported from its listen script (as `desk/ideas/[id]/reviewer-idea.tsx` has them); Status.md
+# draws no empty part (J-REVIEW/1, /3, /6, J-TRACK/7).
+NOT_GIVEN = S_R2_EMPTY["often"]
+
+
 def _shared_rows(
     conn: Conn, idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime, *, names_desk: bool
 ) -> dict[str, Any]:
@@ -404,6 +434,8 @@ def _shared_rows(
     )
     fix_row = read.fix(conn, uid)
     files = [_file(f) for f in read.files(conn, uid)]
+    often = str(idea["often"] or "").strip()  # only spaces counts as left empty
+    who = join_words([str(a).strip() for a in idea["affects"] or []])
     rows = [
         {
             "part": "summary",
@@ -411,11 +443,18 @@ def _shared_rows(
             "value": idea["summary"] or "",
             "answers": under("summary"),
         },
-        {"part": "often", "label": "How often", "value": idea["often"] or "", "answers": under("often")},
+        {
+            "part": "often",
+            "label": "How often",
+            "value": often,
+            **({} if often else {"empty_line": NOT_GIVEN}),
+            "answers": under("often"),
+        },
         {
             "part": "who",
             "label": "Who it affects",
-            "value": join_words(list(idea["affects"] or [])),
+            "value": who,
+            **({} if who else {"empty_line": NOT_GIVEN}),
             "answers": under("who"),
         },
         {
@@ -528,7 +567,8 @@ def sharer_view(
     w = edit_window(idea, qset, now)
     words, unmasked = own_words(conn, uid, me.user_id)
     desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk") if names_desk else None
-    card = _card(conn, state, idea, qset, now, names_desk=names_desk)
+    teams = killswitch.is_on(TEAMS_SWITCH, conn)
+    card = _card(conn, state, idea, qset, now, names_desk=names_desk, teams=teams)
     # A set partly answered is still open: its card sits under "Sent." for the questions left (BLD-E051)
     open_questions = state == "questions" or (state == "answers_sent" and read.has_open_questions(qset))
 
@@ -590,10 +630,15 @@ def sharer_view(
             conversation["empty_line"] = (
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
                 "tell you on Teams."
+                if teams
+                # changed by DEC-105, HR sign-off; BLD-E054
+                else "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
-            conversation["phone_empty_line"] = (  # PhoneStatus.md
+            phone_empty = (  # PhoneStatus.md
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
+            if phone_empty != conversation["empty_line"]:  # with Teams off the two are one line, said once
+                conversation["phone_empty_line"] = phone_empty
         if state == "reversed":
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
@@ -603,6 +648,11 @@ def sharer_view(
                 "The review desk has decided. The full conversation, with every answer, is one tap away."
             )
     skip = {dec.joined_with} if dec and dec.joined_with and idea["status"] == "picked" else set()
+    # A merged idea's card and merged block already link to the idea it went into (S-06.rules/4): no tile for it
+    # (J-SIMILAR/7, J-REVIEW/M3; BLD-E056).
+    into = read.live_merge_into(conn, uid) if idea["status"] == "merged" else None
+    if into is not None:
+        skip.add(str(into["lead_idea_uuid"]))
 
     first_arrival = came_from == "share"
     idea_json = {
@@ -687,7 +737,7 @@ def sharer_view(
             "first_arrival": first_arrival,
             "card": card,
             **({"card_from": CARD_FROM[state]} if state in CARD_FROM else {}),
-            "window": _window_words(idea, w, now),
+            "window": _window_words(idea, w, now, teams=teams),
             "actions": actions,
             "lane_b": {
                 "question_set": f"/api/ideas/{key}/question-set",

@@ -27,8 +27,9 @@ What it gives every screen of the pack something to show:
 It does not write `sla_timers`: the old SLA tick reads a rule for every running timer and would stop on the new
 clock kinds. Clock dates live on the rows themselves (decide_by, due_at, closes_at, return_at, team_by).
 
-`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again. Nobody
-else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
+`--remove` takes out the seed's people and everything that is theirs; `--reset` removes and loads again, in one
+transaction, so a load that fails (with the kill switch `matching.show` off it refuses, GAP-SEED) leaves the seed as
+it was. Nobody else's rows are touched. The old demo (`make demo`) is separate and can be loaded beside it.
 """
 
 from __future__ import annotations
@@ -258,7 +259,10 @@ IDEAS: dict[str, Spec] = {
                "Distributors are asked for empanelment papers they already sent, because the check list is "
                "kept in two places.",
                "Distributor services", ["Distributors send the same empanelment papers two or three times."],
-               shared_days=3, affects=["Distributors"]),
+               shared_days=3, affects=["Distributors"],
+               # The top card on Find your crew: with AI drafting off its "They're looking for" is these picks
+               # (L-CREW/4, BLD-F031; J-TEAMUP/1). Picks from `rules/sorting.md` `helpers` only.
+               helpers=["Someone in operations", "Someone who knows the rules", "Data or reports"]),
     "Z1": Spec("zoya", "with_review_desk", "business_idea", "A paid portfolio review for distributors",
                "Distributors could buy a quarterly portfolio review report for their clients.",
                "Sales", ["Distributors ask for a quarterly portfolio review they could share with clients."],
@@ -590,7 +594,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         "who": s.affects,
         "value": s.brings,
         "area": s.area,
-        "similar": [],
+        "similar": [],  # an unsent draft's matches are filled in once the links exist (`_similar_parts`)
     }
     for part, part_value in parts.items():
         filled: Any = part_value
@@ -631,7 +635,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             (idea_uuid, owner["code"], shared),
         )
         _event(conn, idea_uuid, "shared", shared, {})
-        if s.status != "checking":
+        if s.status != "checking":  # "similar" is counted once the links exist (`_crews`)
             _event(conn, idea_uuid, "checked_matched", shared + dt.timedelta(minutes=3),
                    {"hidden": len(s.hidden), "similar": 0})  # fmt: skip
         if opened is not None and reviewer:
@@ -747,6 +751,7 @@ def load(conn: Conn, now: dt.datetime | None = None) -> dict[str, Made]:
         m = {key: _idea(conn, key, spec, p, now) for key, spec in IDEAS.items()}
         _review(conn, p, m, now)
         asks = _crews(conn, p, m, now)
+        _similar_parts(conn, p, m)
         _builds_and_impact(conn, p, m, now)
         _ones(conn, p, m, now)
         _inbox(conn, p, m, now, asks)
@@ -888,10 +893,14 @@ def _crews(
             "VALUES (%s, %s, 'close', %s, %s)",
             (m[a].uuid, m[b].uuid, reason, found),
         )
-    conn.execute(  # "Checked and matched" counts the one it found (L-SIMILAR.rules/5)
-        "UPDATE conversation_entries SET payload = jsonb_set(payload, '{similar}', '1') "
-        "WHERE idea_uuid = %s AND event = 'checked_matched'",
-        (m[later].uuid,),
+    # "Checked and matched" counts what the check found (L-SIMILAR.rules/5): the links found while drafting or at
+    # the check. One found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it.
+    conn.execute(
+        "UPDATE conversation_entries e SET payload = jsonb_set(e.payload, '{similar}', to_jsonb(n.found)) "
+        "FROM (SELECT idea_uuid, count(*)::int AS found FROM similar_links WHERE idea_uuid = ANY(%s::uuid[]) "
+        "AND found_while IN ('drafting', 'checking') GROUP BY idea_uuid) n "
+        "WHERE e.idea_uuid = n.idea_uuid AND e.event = 'checked_matched'",
+        ([made.uuid for made in m.values()],),
     )
 
     # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
@@ -1055,6 +1064,45 @@ def _crews(
     _message(conn, m["R1"].uuid, _ago(1.0, now), "Is the failed debit reason in the bank file, or only in the exchange report?",
              user=p["lavanya"]["id"])  # fmt: skip
     return asks
+
+
+class MatchingHidden(RuntimeError):
+    """A draft with similar links got an empty similar part: `matching.show` is off (GAP-SEED)."""
+
+
+def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made]) -> None:
+    """Each unsent draft's "similar" part as lane C's draft run writes it (L-SIMILAR.rules/4, BLD-C093): the
+    SimilarMatch[] that `similar.views.matches_for` gives its sharer from the links `_crews` wrote, so S-04B's panel
+    reads "1 similar idea, Colleagues raised something close" for the ideas S-05's part 3 shows (T2 finds R1;
+    GAP-SEED, J-SIMILAR/1). Read after the merge and team-up requests, as the panel would see them. No model is
+    called. `matches_for` has no way past `matching.show`, so with it off a draft with links would keep an empty
+    part while the "Checked and matched" counts say 1: the seed raises instead and its transaction writes nothing."""
+    from core import killswitch
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    for key, made in m.items():
+        if made.spec.status != "draft":
+            continue
+        found = matches_for(conn, made.uuid, Viewer.of(conn, p[made.spec.owner]["id"]))
+        if found:
+            conn.execute(
+                "UPDATE idea_parts SET value = %s WHERE idea_uuid = %s AND key = 'similar'",
+                (Jsonb(found), made.uuid),
+            )
+        elif (
+            not killswitch.is_on_fresh("matching.show", conn)
+            and conn.execute(
+                "SELECT 1 FROM similar_links WHERE idea_uuid = %s LIMIT 1", (made.uuid,)
+            ).fetchone()
+        ):
+            # Only the switch is blamed: with it on, links the matcher filters out (a merged, withdrawn or own idea)
+            # leave the part empty, as they would on a live draft
+            raise MatchingHidden(
+                f"1% Club seed: draft {key} has similar ideas, but its similar part came back empty because the "
+                "kill switch matching.show is off. Nothing was changed. Switch it on (make killswitch "
+                'NAME=matching.show STATE=on REASON="…" ACTOR=…) and load the seed again.'
+            )
 
 
 def _builds_and_impact(
@@ -1430,8 +1478,13 @@ def main(argv: list[str] | None = None) -> int:
         if loaded and not args.reset:
             print("1% Club seed: already loaded (make demo-reset DEMO_SET=1pc starts it fresh)")
             return 0
-        remove(conn)
-        load(conn)
+        try:
+            with conn.transaction():  # one transaction: a load that fails leaves the seed as it was
+                remove(conn)
+                load(conn)
+        except MatchingHidden as exc:
+            print(exc, file=sys.stderr)
+            return 1
     print("1% Club seed: loaded. Sign in at http://localhost:3000 with these employee IDs as the username:")
     for emp, name, *_rest, label in PEOPLE:
         if label:

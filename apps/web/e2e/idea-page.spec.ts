@@ -8,7 +8,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { CLUB, clubLoaded, esc, NO_SEED, seededIdea, type IdeaKey } from "./club";
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, signIn, switchIsOn } from "./helpers";
 
 const isPhone = (name: string) => name.startsWith("phone");
 const soon = expect.configure({ timeout: 15_000 });
@@ -75,9 +75,11 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     }
     await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/^The review desk will look at it by \w+day \d+ \w+\.$/)).toBeVisible();
+    // DEC-105: while Teams is off the page names only email (BLD-E054); with it on, the drawn words stand
+    const onTeams = (await switchIsOn("comms.teams")) ? "on Teams and " : "";
     if (isPhone(info.project.name)) {
       // PhoneStatus.md: the shorter lines, the reference line under the title and Copy reference
-      await expect(page.getByText("We’ll tell you on Teams and by email.", { exact: true })).toBeVisible();
+      await expect(page.getByText(`We’ll tell you ${onTeams}by email.`, { exact: true })).toBeVisible();
       await expect(
         page.getByText(new RegExp(`^Reference ${esc(t5.ref)}, shared \\w+day \\d+ \\w+, `)),
       ).toBeVisible();
@@ -96,9 +98,7 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
         ),
       ).toBeVisible();
     } else {
-      await expect(
-        page.getByText("We’ll tell you on Teams and by email when anything changes."),
-      ).toBeVisible();
+      await expect(page.getByText(`We’ll tell you ${onTeams}by email when anything changes.`)).toBeVisible();
       await expect(page.getByRole("button", { name: `Copy reference ${t5.ref}` })).toBeHidden();
     }
     await expect(page.getByRole("link", { name: "Edit it" })).toHaveAttribute(
