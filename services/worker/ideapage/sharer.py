@@ -24,6 +24,7 @@ from typing import Any
 
 from core import killswitch
 from core.db import Conn
+from desk.listen import _EMPTY as S_R2_EMPTY
 from ideapage import adapters, read
 from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, similar_tiles
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
@@ -384,10 +385,10 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
     }
 
 
-# NOT DRAWN (BLD-E057): HR sign-off. A part the sharer left empty reads as S-R2 reads the same part
-# (`desk/ideas/[id]/reviewer-idea.tsx`, lane B's "Not given."); Status.md draws no empty part (J-REVIEW/1, /3, /6,
-# J-TRACK/7).
-NOT_GIVEN = "Not given."
+# NOT DRAWN (BLD-E057): HR sign-off. A part the sharer left empty, or only spaces, reads as S-R2 reads the same
+# part: lane B's words, imported from its listen script (as `desk/ideas/[id]/reviewer-idea.tsx` has them); Status.md
+# draws no empty part (J-REVIEW/1, /3, /6, J-TRACK/7).
+NOT_GIVEN = S_R2_EMPTY["often"]
 
 
 def _shared_rows(
@@ -433,6 +434,8 @@ def _shared_rows(
     )
     fix_row = read.fix(conn, uid)
     files = [_file(f) for f in read.files(conn, uid)]
+    often = str(idea["often"] or "").strip()  # only spaces counts as left empty
+    who = join_words([str(a).strip() for a in idea["affects"] or []])
     rows = [
         {
             "part": "summary",
@@ -443,15 +446,15 @@ def _shared_rows(
         {
             "part": "often",
             "label": "How often",
-            "value": idea["often"] or "",
-            **({} if idea["often"] else {"empty_line": NOT_GIVEN}),
+            "value": often,
+            **({} if often else {"empty_line": NOT_GIVEN}),
             "answers": under("often"),
         },
         {
             "part": "who",
             "label": "Who it affects",
-            "value": join_words(list(idea["affects"] or [])),
-            **({} if idea["affects"] else {"empty_line": NOT_GIVEN}),
+            "value": who,
+            **({} if who else {"empty_line": NOT_GIVEN}),
             "answers": under("who"),
         },
         {
