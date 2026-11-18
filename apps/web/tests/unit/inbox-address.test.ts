@@ -304,9 +304,11 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
   });
 
   it("DEC-110: nothing from the unfiltered list is opened or marked read before the kept search is back", async () => {
-    writeSearch("/inbox", "Harish"); // matches the questions (read) and not the mention (unread, first in the list)
+    // Matches the questions (read) and not the mention (unread, first in the list). DEC-111: the questions come from
+    // the review desk as a whole, so the desk is what a search finds, never the reviewer's name.
+    writeSearch("/inbox", "review desk");
     await show(ALL, "all", null);
-    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("Harish");
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("review desk");
     expect(row("8")).toBeNull();
     expect(row("7")?.getAttribute("aria-pressed")).toBe("true");
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual([]);
