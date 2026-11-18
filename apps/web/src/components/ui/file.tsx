@@ -34,6 +34,11 @@ export function fileKind(name: string): string {
   return Object.hasOwn(BADGE, ext) ? ext : "file";
 }
 
+/** The badge's words for a kind from `fileKind`, or "link" / "folder"; anything else reads "File" (C-FILE.row). */
+export function fileBadge(kind: string): string {
+  return (Object.hasOwn(BADGE, kind) ? BADGE[kind] : undefined) ?? "File";
+}
+
 export function FileRow({
   name,
   kind = fileKind(name),
@@ -63,7 +68,7 @@ export function FileRow({
     <li className={`frow frow-${status}`}>
       <div className="frow-in">
         <span className={`fbadge fb-${kind}`} aria-hidden="true">
-          {Object.hasOwn(BADGE, kind) ? BADGE[kind] : "File"}
+          {fileBadge(kind)}
         </span>
         <span className="frow-b">
           <span className="frow-n">{name}</span>
