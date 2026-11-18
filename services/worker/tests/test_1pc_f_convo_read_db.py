@@ -400,6 +400,51 @@ def test_l_convo_8_s_08_no_messages_yet_and_the_side_panel(db: Any, cast: dict[s
     ]
 
 
+@pytest.mark.parametrize("status", ["checking", "with_review_desk"])
+def test_s_08_l_convo_8_bld_f088_no_messages_yet_while_the_idea_is_at_the_review_desk(
+    db: Any, cast: dict[str, Any], status: str
+) -> None:
+    """Messages.md draws "No messages yet" with the review desk: the sharer of an idea being checked or waiting on
+    the desk, with no entries yet, reads it under the idea's own lines."""
+    idea = fx.idea(db, cast["kavya"], status=status)
+    view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
+    assert {e["type"] for e in view["entries"]} == {"event"}
+    assert view["empty"]["title"] == "No messages yet"
+    assert view["empty"]["body"].startswith(
+        "If the review desk has a question, it shows here and in your Inbox"
+    )
+    # Only the sharer is told the desk may ask them something
+    assert "empty" not in conversation(db, idea["idea_id"], cast["meera"]["id"], at=NOW)
+
+
+def test_s_08_l_convo_8_bld_f088_a_picked_idea_with_only_event_lines_shows_no_empty_block(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """Once the desk has decided, the empty block's words (the desk's questions) no longer fit; the board does not
+    draw it there, so the sharer reads the event lines alone (NOT DRAWN default)."""
+    kavya, meera = cast["kavya"], cast["meera"]
+    idea = fx.idea(db, kavya, status="picked", reviewer_id=meera["id"], opened_by=meera["id"])
+    post(db, str(idea["id"]), "desk.opened", author_user_id=meera["id"], at=fx.at(16, 9, 50))
+    post(db, str(idea["id"]), "desk.decided", author_user_id=meera["id"], payload={"choice": "pick"},
+         at=fx.at(16, 15))  # fmt: skip
+    view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    assert {e["type"] for e in view["entries"]} == {"event"}
+    assert "The review desk picked it. 3:00 pm" in texts(view)
+    assert "empty" not in view
+
+
+@pytest.mark.parametrize(
+    "status", ["picked", "being_built", "shipped", "not_now", "not_picked", "merged", "withdrawn"]
+)
+def test_s_08_l_convo_8_bld_f088_no_empty_block_once_the_idea_has_left_the_review_desk(
+    db: Any, cast: dict[str, Any], status: str
+) -> None:
+    idea = fx.idea(db, cast["kavya"], status=status)
+    view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
+    assert not any(e["type"] in ("message", "questions", "answers") for e in view["entries"])
+    assert "empty" not in view
+
+
 def test_l_convo_3_times_today_this_week_and_older(db: Any) -> None:
     from convo.render import when
 
