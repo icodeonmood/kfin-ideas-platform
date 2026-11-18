@@ -523,3 +523,54 @@ def test_bld_f069_j_teamup_faisals_seeded_team_up_answer_says_hello_into_the_box
     assert rows[0]["actions"] == [
         {"label": "Say hello", "style": "primary", "to": f"/ideas/{t7.ref}/conversation#say-hello"}
     ]
+
+
+def test_gap_seed_j_similar_1_l_similar_rules_4_each_draft_carries_the_matches_check_it_shows(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-SIMILAR/1 (L-SIMILAR.rules/4, C-SIMGRID.other S-04B): each unsent draft's similar part holds the
+    SimilarMatch[] lane C's draft run would write, the same matches S-05's part 3 reads for its sharer, so S-04B's
+    panel says "1 similar idea, Colleagues raised something close". T2 finds R1, close; a draft with no links keeps
+    none. "Checked and matched" counts what was found by the check (L-SIMILAR.rules/5); F2's later link is not."""
+    from draft.store import Device, Owner, view
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    tanvi = p_id(db, "tanvi")
+    code = _one(db, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", tanvi)
+    part = view(db, Owner(str(tanvi), str(code)), made["T2"].uuid, Device("laptop", None))["parts"]["similar"]
+    assert part["state"] == "filled"
+    assert [(x["idea"]["id"], x["strength"]) for x in part["value"]] == [(made["R1"].ref, "close")]
+    assert part["value"][0]["idea"]["title"] == club_seed.IDEAS["R1"].title
+    assert part["value"][0]["reason"] == "Close match: the same failed SIP debit"
+
+    part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+    for key in ("T1", "T2", "N2", "G2"):  # the drafts that found R1: their parts are what S-05 shows now
+        owner = p_id(db, club_seed.IDEAS[key].owner)
+        stored = _one(db, part_of, made[key].uuid)
+        assert stored and stored == matches_for(db, made[key].uuid, Viewer.of(db, str(owner))), key
+        assert [x["idea"]["id"] for x in stored] == [made["R1"].ref], key
+    assert _one(db, part_of, made["I2"].uuid) == []
+
+    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+    for key, found in (("T5", "1"), ("T6", "1"), ("T11", "1"), ("J2", "1"), ("F2", "0"), ("V1", "0")):
+        assert _one(db, matched, made[key].uuid) == found, key
+
+
+def test_gap_seed_j_teamup_1_l_crew_4_the_top_crew_card_says_who_would_help(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-TEAMUP/1 (L-CREW/4, BLD-F031): with AI drafting off, "They're looking for" on the top crew card
+    ("Distributors re-send the same empanelment papers") is its sharer's Who would help picks, each one from the
+    configured list (`rules/sorting.md` `helpers`)."""
+    from pathlib import Path
+
+    from crew.deck import looking_for
+    from rules.loader import load_rule
+
+    seeded_repo = Path(__file__).resolve().parents[3] / "seed" / "company-repo"
+    configured = load_rule(seeded_repo, "sorting").data["helpers"]
+    picks = _one(db, "SELECT helper_picks FROM ideas WHERE id = %s", made["P1"].uuid)
+    assert len(picks) == 3
+    assert set(picks) <= set(configured)
+    assert looking_for(picks, None) == "Someone in operations, someone who knows the rules, data or reports"
