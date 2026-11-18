@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { IconCommittee } from "@/components/shell/icons";
 import { Button } from "@/components/ui/button";
 import { ChoiceChips } from "@/components/ui/chips";
 import { Empty } from "@/components/ui/empty";
@@ -25,6 +26,7 @@ import type {
   ReversingWordsResponse,
 } from "@/lib/contracts";
 import { call } from "@/lib/desk/reply";
+import { windowBar } from "@/lib/desk/window-bar";
 import { sparkBurst } from "@/lib/motion/spark";
 
 const TABS: { value: CommitteeTab; label: string }[] = [
@@ -59,6 +61,18 @@ const EMPTY: Record<CommitteeTab, { title: string; line: string }> = {
  * bare code (401, 403) shows F-COPY's failure line; the worker's own refusals show its words (non-negotiable 9). */
 function post<T>(url: string, body?: unknown) {
   return call<T>(url, { method: "POST", body });
+}
+
+/** S-R4 "Your window" bar, as the board draws it: decorative, the words beside it say the days left. The time is read
+ * at render on the server and again in the browser, so the fill and tone may differ by a moment between the two. */
+function WindowBar({ window: w, now }: { window: CommitteeRow["window"]; now: Date }) {
+  const bar = windowBar(w, now);
+  return (
+    <div className={`cm-bar ${bar.tone}`} aria-hidden="true" suppressHydrationWarning>
+      <i style={{ width: `${bar.fill}%` }} suppressHydrationWarning />
+      {bar.ext ? <b style={{ left: `${bar.ext.left}%`, width: `${bar.ext.width}%` }} /> : null}
+    </div>
+  );
 }
 
 /** The reversal's four lines on one row (S-R4.states, Committee board): each on its own line, and read as sentences,
@@ -108,6 +122,7 @@ export function CommitteeView({
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<{ to?: string; note?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
+  const [now] = useState(() => new Date()); // the window bars' "today" (S-R4, Your window)
   // A4: one action at a time per row, so a double click extends once (and the reversal is sent once)
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const inFlight = useRef(new Set<string>());
@@ -218,7 +233,10 @@ export function CommitteeView({
         <p className="body rd-summary" role="status">
           {data.summary}
         </p>
-        <p className="meta cm-explain">{data.explanation}</p>
+        <p className="cm-explain">
+          <IconCommittee size={20} />
+          <span>{data.explanation}</span>
+        </p>
       </header>
 
       <div className="rd-bar">
@@ -270,6 +288,7 @@ export function CommitteeView({
                       <p className="body cm-reason">{row.decision.reason}</p>
                     </td>
                     <td className="cm-win">
+                      <WindowBar window={row.window} now={now} />
                       {row.reversal ? (
                         <ReversalLines reversal={row.reversal} />
                       ) : row.window.closed_line ? (
@@ -425,12 +444,18 @@ export function CommitteeView({
                                   {row.reversal.now_line} {row.reversal.now_by_line}
                                 </p>
                                 <blockquote className="well ri-reason">{row.reversal.note}</blockquote>
-                                <p className="meta">
-                                  {row.reversal.reversed_line}. {row.reversal.final_line}
-                                </p>
+                                <div className="cm-winbox">
+                                  <WindowBar window={row.window} now={now} />
+                                  <p className="meta">
+                                    {row.reversal.reversed_line}. {row.reversal.final_line}
+                                  </p>
+                                </div>
                               </>
                             ) : (
-                              <p className="meta">{row.window.open_line ?? row.window.closed_line}</p>
+                              <div className="cm-winbox">
+                                <WindowBar window={row.window} now={now} />
+                                <p className="meta">{row.window.open_line ?? row.window.closed_line}</p>
+                              </div>
                             )}
                             {row.window.state === "open" || row.window.state === "extended" ? (
                               <div className="cm-acts">

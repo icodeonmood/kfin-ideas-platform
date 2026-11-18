@@ -1,0 +1,1156 @@
+/*
+ * S-05 "Check it, then send it" (Review and PhoneReview boards; reference/css/boards/Review.css and
+ * reference/css/similar-grid.css for the values). Lane D's shell, primitives and tokens do the rest: the task bar,
+ * .panel and .tile glass, chips, buttons, file rows, field messages. Everything here is scoped under .ck, or under
+ * .ck-sheet-wrap for the fix sheet, which is mounted at the page root (F-COLOR.glass/3). Plain CSS; motion respects
+ * reduced motion (F-MOTION).
+ */
+
+.ck {
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+.ck-loading {
+  max-width: 760px;
+  margin: 48px auto;
+  padding: 0 24px;
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+/* --- The bar under the steps: merge outcomes (L-MERGE.request/4–7) ------------------------------------------ */
+.ck-mbar {
+  max-width: 1240px;
+  margin: 12px auto 0;
+  padding: 10px 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  border-radius: var(--r-md);
+  background: var(--wash);
+  color: var(--noteBlueText, var(--blueT));
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.ck-mbar p {
+  margin: 0;
+  flex: 1 1 320px;
+}
+
+.ck-mbar .fmsg {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.ck-mbar-accepted,
+.ck-mbar-team_only {
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.ck-mbar-declined {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+
+/* --- Rail and stage ------------------------------------------------------------------------------------------- */
+.ck-grid {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 0 40px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.ck-rail {
+  position: sticky;
+  top: 88px;
+}
+
+.ck-rail ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ck-rail li {
+  position: relative;
+}
+
+.ck-rb {
+  width: 100%;
+  min-height: 56px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background-color var(--mo-quick, 0.16s) ease,
+    box-shadow var(--mo-quick, 0.16s) ease;
+}
+
+.ck-rb:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.ck-rb.now {
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 18px 40px -30px rgba(17, 17, 17, 0.4);
+}
+
+.ck-rn {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px #8c8c91;
+  font: 600 12px/1 var(--ft);
+  color: var(--mute2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ck-rb.now .ck-rn {
+  background: var(--ink);
+  box-shadow: none;
+  color: #ffffff;
+}
+
+.ck-rb.done .ck-rn {
+  background: var(--okW);
+  box-shadow: inset 0 0 0 1.5px var(--okT);
+  color: var(--okT);
+}
+
+.ck-rb.warn .ck-rn {
+  background: var(--warnW);
+  box-shadow: inset 0 0 0 1.5px var(--warnT);
+  color: var(--warnT);
+}
+
+.ck-rl {
+  font: 500 15px/1.35 var(--ft);
+}
+
+.ck-rs {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--mute2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ck-rb.warn .ck-rs {
+  color: var(--warnT);
+}
+
+/* The Send it row: its line is drawn over the button's second row, outside the button (see check-it.tsx). */
+.ck-rs-gap {
+  display: block;
+  min-height: 18px;
+}
+
+.ck-rs-over {
+  position: absolute;
+  left: 50px;
+  right: 12px;
+  bottom: 10px;
+  pointer-events: none;
+}
+
+.ck-stage {
+  min-width: 0;
+  padding: 32px 36px 28px;
+  overflow: hidden;
+}
+
+.ck-slide {
+  animation: ck-in var(--mo-move, 0.32s) var(--mo-spring, cubic-bezier(0.2, 0.8, 0.2, 1)) both;
+}
+
+.ck-stage[data-dir="back"] .ck-slide {
+  animation-name: ck-in-back;
+}
+
+@keyframes ck-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes ck-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-slide,
+  .ck-stage[data-dir="back"] .ck-slide {
+    animation: none;
+  }
+}
+
+/* --- A part ----------------------------------------------------------------------------------------------- */
+.ck-part {
+  min-width: 0;
+}
+
+.ck-count {
+  margin: 0 0 8px;
+}
+
+.ck-h {
+  margin: 0;
+}
+
+.ck-h:focus {
+  outline: none;
+}
+
+.ck-h:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.ck-line {
+  margin: 10px 0 0;
+  max-width: 68ch;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--mute2);
+}
+
+.ck-body {
+  margin-top: 24px;
+}
+
+.ck-foot {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+
+/* --- Part 1: your words ---------------------------------------------------------------------------------------- */
+.ck-words {
+  display: grid;
+  gap: 18px;
+}
+
+.ck-w .lbl {
+  margin: 0 0 4px;
+}
+
+.ck-w-v {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.ck-title {
+  margin: 0;
+  font: 500 24px/1.25 var(--fd);
+  letter-spacing: -0.014em;
+}
+
+.ck-v {
+  margin: 0;
+  max-width: 66ch;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.ck-pen {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+
+.ck-pen:hover {
+  background: var(--sunk);
+  color: var(--ink);
+}
+
+.ck-w-edit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ck-w-edit .fld {
+  flex: 1;
+}
+
+.ck-att .lbl {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.ck-att-l {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ck-att-l li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+/* C-HIDDEN on Check it */
+.ck-hid {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.ck-hid-t {
+  margin: 0;
+  font: 500 15px/1.4 var(--ft);
+}
+
+.ck-hid-l {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.ck-hid-l li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.ck-mask {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--sunk);
+  font: 500 15px/1.3 var(--ft);
+  color: var(--ink);
+}
+
+.ck-hid-why {
+  font-size: 14px;
+  color: var(--mute2);
+}
+
+.ck-hid-ask {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--sunk);
+}
+
+.ck-hid-q {
+  margin: 0;
+  font: 500 15px/1.45 var(--ft);
+}
+
+.ck-hid-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  align-items: center;
+}
+
+/* --- Part 2: sorting ------------------------------------------------------------------------------------------- */
+.ck-sort {
+  padding: 22px 24px 18px;
+  transition: box-shadow var(--mo-quick, 0.16s) ease;
+}
+
+.ck-sort.bad {
+  box-shadow: 0 0 0 2px var(--badT);
+}
+
+.ck-sort-g {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 32px;
+}
+
+.ck-sf-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ck-sf-h p {
+  margin: 0;
+}
+
+.ck-sf-l {
+  font: 500 16px/1.4 var(--ft);
+}
+
+.ck-why {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.ck-cstate {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--mute2);
+}
+
+.ck-cstate.ok {
+  color: var(--okT);
+  font-weight: 500;
+}
+
+.ck .cbx {
+  position: relative;
+  margin-top: 10px;
+  max-width: 320px;
+}
+
+.ck .cin {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid var(--fieldBorder, #8c8c91);
+  border-radius: 12px;
+  padding: 0 14px;
+  font: 400 15px/1 var(--ft);
+  color: var(--ink);
+  background: var(--card);
+}
+
+.ck .cin::placeholder {
+  color: var(--placeholder, #6b6b70);
+}
+
+.ck .cin:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(57, 93, 237, 0.16);
+}
+
+.ck .lb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px #e4e4e0,
+    0 16px 40px rgba(16, 24, 40, 0.14);
+  max-height: 264px;
+  overflow: auto;
+}
+
+.ck .lb li {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.ck .lb li:hover,
+.ck .lb li.act {
+  background: var(--wash);
+  color: var(--blueT);
+}
+
+/* --- Part 3: similar ideas (C-SIMGRID.grid) ---------------------------------------------------------------- */
+.ck .simgrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ck .sgt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 236px;
+  box-sizing: border-box;
+  padding: 18px 18px 16px;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 24px 50px -36px rgba(17, 17, 17, 0.35);
+}
+
+.ck .sgt.yours {
+  background: #f7f7f5;
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.08);
+}
+
+.ck .sgt-top {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+}
+
+.ck-yours {
+  font: 500 13px/1.4 var(--ft);
+  color: var(--mute2);
+}
+
+.ck .sgt-t {
+  margin: 10px 0 0;
+  font: 500 16px/1.35 var(--fd);
+  letter-spacing: -0.006em;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ck .sgt-s {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink2);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ck .sgt .meta {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ck .sgt-m {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute2);
+}
+
+.ck .simcrew {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.ck .simacts {
+  margin-top: auto;
+  padding-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.ck-wait {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.ck .tuwait,
+.ck-crew {
+  font: 500 13px/1.4 var(--ft);
+  color: var(--okT);
+}
+
+.ck .keepn {
+  margin: 14px 0 0;
+  text-align: right;
+}
+
+.ck-more {
+  margin-top: 12px;
+}
+
+.ck-kept {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.ck-kept p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* --- Part 4: proof ------------------------------------------------------------------------------------------- */
+.ck-proof .lbl {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.ck-linkrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.ck-linkrow .fld {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.ck-proof .fdrop {
+  margin-top: 14px;
+}
+
+.ck-proof .flist {
+  margin-top: 14px;
+}
+
+.ck-helps {
+  margin-top: 22px;
+}
+
+.ck-helps ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  color: var(--mute2);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* --- Part 5: the fix ------------------------------------------------------------------------------------------ */
+.ck .fixrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 20px;
+  align-items: center;
+  padding: 20px 22px;
+}
+
+.ck .fixrow .h3 {
+  margin: 0;
+}
+
+.ck .fixrow .meta {
+  margin: 6px 0 0;
+}
+
+.ck-fix-ok {
+  margin: 0;
+  font: 500 14px/1.4 var(--ft);
+  color: var(--okT);
+}
+
+.ck-fix-l {
+  margin: 6px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.ck-started {
+  margin: 8px 0 0;
+  font-size: 14.5px;
+  color: var(--blueT);
+}
+
+.ck .fxa {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* The fix sheet: a right-hand sheet, full screen on a phone */
+.ck-sheet-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.ck-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.28);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: ck-fade var(--mo-quick, 0.2s) ease both;
+}
+
+.ck-sheet {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  left: auto;
+  width: min(560px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 40px 90px -30px rgba(17, 17, 17, 0.45);
+  animation: ck-sheet-in var(--mo-move, 0.32s) var(--mo-spring, cubic-bezier(0.2, 0.8, 0.2, 1)) both;
+}
+
+@keyframes ck-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ck-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-sheet,
+  .ck-sheet-scrim {
+    animation: none;
+  }
+}
+
+.ck-sheet-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 8px;
+}
+
+.ck-sheet-h .h2 {
+  margin: 0;
+}
+
+.ck-sheet-h .h2:focus {
+  outline: none;
+}
+
+.ck-x {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sunk);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ck-sheet-b {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 24px 24px;
+  display: grid;
+  align-content: start;
+  gap: 22px;
+}
+
+.ck-sheet-b > .meta {
+  margin: 0;
+}
+
+.ck-ready {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--wash);
+}
+
+.ck-ready p {
+  margin: 0;
+}
+
+.ck-ready-n {
+  font: 500 15px/1.45 var(--ft);
+  color: var(--blueT);
+}
+
+.ck-q {
+  display: grid;
+  gap: 8px;
+}
+
+.ck-q .lbl,
+.ck-q .help {
+  margin: 0;
+}
+
+.ck-figs {
+  display: grid;
+  gap: 10px;
+}
+
+.ck-fig {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.ck-sheet-f {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--rule2);
+}
+
+/* --- Part 6: who would help ---------------------------------------------------------------------------------- */
+.ck-helpers {
+  display: grid;
+  gap: 20px;
+}
+
+/* --- Part 7: send it ----------------------------------------------------------------------------------------- */
+.ck-rows {
+  margin: 0;
+  padding: 0;
+}
+
+.ck-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 8px 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule2);
+}
+
+.ck-row dt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  color: var(--mute2);
+}
+
+.ck-row dd {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  align-items: center;
+}
+
+.ck-v-title {
+  font: 500 18px/1.35 var(--fd);
+}
+
+.ck-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font: 700 12px/1 var(--ft);
+}
+
+.ck-mark.ok {
+  background: var(--okW);
+  color: var(--okT);
+}
+
+.ck-mark.warn {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+
+.ck-send {
+  margin-top: 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.ck .decl {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.ck .bmsg {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font: 500 14.5px/1.45 var(--ft);
+  background: var(--sunk);
+  color: var(--ink);
+}
+
+.ck .bmsg.bad {
+  background: var(--badW);
+  color: var(--badT);
+}
+
+.ck .bmsg.warn {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+
+.ck .bmsg.info {
+  background: var(--wash);
+  color: var(--blueT);
+  font-weight: 400;
+}
+
+.ck-send .ck-foot {
+  margin-top: 6px;
+}
+
+.ck-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.ck-sendfail {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+/* --- Narrower windows and the phone (S-05.phone) ------------------------------------------------------------ */
+@media (max-width: 1100px) {
+  .ck .simgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ck-grid {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (max-width: 860px) {
+  .ck-sort-g {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The page column (main) already keeps the gutter; every part shrinks to it, so nothing pushes the page sideways
+   at 320 px (WCAG 1.4.10). */
+.ck-ph {
+  padding: 4px 0 120px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.ck-phone .ck-part,
+.ck-phone .ck-body {
+  min-width: 0;
+}
+
+.ck-ph > .h1 {
+  margin: 0;
+}
+
+.ck-ph > .ck-line {
+  margin: 0;
+}
+
+/* The three counts under the phone's heading (PhoneReview.md): each a link to its part. */
+.ck-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ck-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+  font: 500 13.5px/1 var(--ft);
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ck-stat b {
+  font-weight: 600;
+}
+
+.ck-stat:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.ck-phone .ck-part {
+  padding-top: 20px;
+  border-top: 1px solid var(--rule2);
+}
+
+.ck-phone .ck-body {
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .ck .simgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ck .sgt {
+    min-height: 0;
+  }
+
+  .ck-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ck .fixrow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ck-sheet {
+    inset: 0;
+    width: auto;
+    border-radius: 0;
+  }
+
+  /* Long chip words and a file row's two actions wrap on a narrow phone instead of widening the page. */
+  .ck-phone .chip {
+    white-space: normal;
+    text-align: start;
+  }
+
+  .ck-phone .frow-in {
+    flex-wrap: wrap;
+  }
+
+  .ck-phone .frow-a {
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  .ck-phone .ck-sort {
+    padding: 16px 14px 14px;
+  }
+
+  .ck-phone .ck-send {
+    position: sticky;
+    bottom: 0;
+    z-index: 15;
+    margin: 0 calc(-1 * var(--gutter, 20px));
+    padding: 12px var(--gutter, 20px) 16px;
+    background: rgba(243, 243, 241, 0.96);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--rule);
+  }
+
+  .ck-phone .ck-send .ck-foot > .btn {
+    flex: 1;
+  }
+}
+
+/* ---------- For the edit page (S-06B) and the phone boards: the parts' optional looks ---------- */
+/* WordsBody phone: "Change" as a text button beside the line (PhoneReview, PhoneEdit) */
+.ck-chg {
+  flex: none;
+  min-height: 44px;
+}
+
+/* ProofBody edit, phone: one button that opens the file picker, with its line */
+.ck-pick {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 64px;
+  padding: 14px 16px;
+  border: 1.5px dashed var(--rule);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ck-pick-t {
+  font-weight: 500;
+}
+
+.ck-proof-edit .fdrop {
+  margin-bottom: 12px;
+}

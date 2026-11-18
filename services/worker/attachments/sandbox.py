@@ -11,7 +11,7 @@ import sys
 from multiprocessing.connection import Connection
 from typing import Any
 
-from attachments.extract import EXTRACTORS, Extracted, TooBigToCheck
+from attachments.extract import EXTRACTORS, Extracted, Locked, NotCheckable, TooBigToCheck
 from attachments.ocr import OcrFailed
 
 TIMEOUT_S = 90.0
@@ -26,16 +26,22 @@ class ExtractionFailed(Exception):
         self.code = code
 
 
-def _child(kind: str, data: bytes, memory_mb: int, conn: Connection) -> None:
+def _child(
+    kind: str, data: bytes, memory_mb: int, conn: Connection, options: dict[str, Any] | None = None
+) -> None:
     if sys.platform.startswith("linux"):
         import resource
 
         limit = memory_mb * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
     try:
-        result: Any = ("ok", EXTRACTORS[kind](data))
+        result: Any = ("ok", EXTRACTORS[kind](data, **options) if options else EXTRACTORS[kind](data))
     except TooBigToCheck as exc:
         result = ("too_big", str(exc))
+    except Locked as exc:
+        result = ("locked", str(exc))
+    except NotCheckable as exc:
+        result = ("not_checkable", str(exc))
     except MemoryError:
         result = ("too_big", "memory")
     except OcrFailed as exc:
@@ -51,12 +57,21 @@ def _child(kind: str, data: bytes, memory_mb: int, conn: Connection) -> None:
         conn.close()
 
 
-def extract(kind: str, data: bytes, *, timeout_s: float = TIMEOUT_S, memory_mb: int = MEMORY_MB) -> Extracted:
+def extract(
+    kind: str,
+    data: bytes,
+    *,
+    timeout_s: float = TIMEOUT_S,
+    memory_mb: int = MEMORY_MB,
+    options: dict[str, Any] | None = None,
+) -> Extracted:
+    """`EXTRACTORS[kind](data, **options)` in a child process. `options`: plain values only (the 1% Club's
+    configured `types` for a ZIP-family file)."""
     if kind not in EXTRACTORS:
         raise ExtractionFailed("no_extractor")
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
-    proc = ctx.Process(target=_child, args=(kind, data, memory_mb, child), daemon=True)
+    proc = ctx.Process(target=_child, args=(kind, data, memory_mb, child, options), daemon=True)
     proc.start()
     child.close()
     try:
@@ -76,4 +91,6 @@ def extract(kind: str, data: bytes, *, timeout_s: float = TIMEOUT_S, memory_mb: 
         return value
     if status == "unavailable":
         raise ExtractionFailed("ocr_unavailable")
+    if status in ("locked", "not_checkable"):  # the old pipeline treats both as unreadable, as before
+        raise ExtractionFailed(status)
     raise ExtractionFailed("too_big" if status == "too_big" else "unreadable")

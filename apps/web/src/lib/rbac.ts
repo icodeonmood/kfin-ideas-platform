@@ -31,6 +31,7 @@ function compile(line: string): Route {
 
 const endpoints = (policy.endpoints as string[]).map(compile);
 const publicRoutes = (policy.public as string[]).map(compile);
+const authExempt = (policy.auth_exempt as string[]).map(compile);
 const beforePrivacy = (policy.before_privacy_notice as string[]).map(compile);
 const pages = (policy.pages as string[]).map((line) => {
   const [path, ...caps] = line.trim().split(/\s+/);
@@ -82,6 +83,8 @@ export function decide(roles: Set<string>, method: string, path: string): Decisi
 }
 
 export const isPublic = (method: string, path: string) => Boolean(find(publicRoutes, method, path));
+/** A sign-in route listed in `auth_exempt`: it runs without a session. Any other /auth path is refused (BLD-A177). */
+export const isAuthExempt = (method: string, path: string) => Boolean(find(authExempt, method, path));
 export const allowedBeforePrivacyNotice = (method: string, path: string) =>
   Boolean(find(beforePrivacy, method, path));
 
@@ -134,6 +137,11 @@ export function canFlip(roles: Set<string>, switchName: string): boolean {
       : undefined;
   return Boolean(key && flippers[key]!.some((r) => roles.has(r)));
 }
+
+/** Every sign-in route in the policy, for tests. */
+export const AUTH_EXEMPT: ReadonlyArray<{ method: string; template: string }> = authExempt.map(
+  ({ method, template }) => ({ method, template }),
+);
 
 /** Every endpoint in the policy, for tests and documentation. */
 export const ENDPOINTS: ReadonlyArray<{ method: string; template: string; capabilities: string[] }> =

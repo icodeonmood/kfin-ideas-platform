@@ -160,14 +160,8 @@ def test_L_WORTH_a_note_that_is_not_text_is_refused(db: Conn, cast: dict[str, An
 
 
 # ---- L-CONVO: lines written in one transaction read back in the order they were written (BLD-F013) ------------
-def test_L_CONVO_lines_said_in_one_transaction_read_back_in_order(
-    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import sys
-
-    monkeypatch.setitem(
-        sys.modules, "convo", None
-    )  # the direct insert, as while lane F's convo.post is missing
+def test_L_CONVO_lines_said_in_one_transaction_read_back_in_order(db: Conn, cast: dict[str, Any]) -> None:
+    """Through lane F's `convo.post`, the only writer since BLD-B249."""
     idea_uuid = str(cast["idea"]["id"])
     said = [
         "desk.opened",

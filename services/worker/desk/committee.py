@@ -258,6 +258,10 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
     note = str(body.get("note") or "")
     require_role(conn, user_id, COMMITTEE)
     with audited(conn), conn.transaction():
+        # lane C's locks on the idea (and a merge's lead), in uuid order, before the window's and the ideas' row
+        # locks: the note is hidden below (BLD-B247)
+        seen = _load(conn, window_id, lock=False)
+        adapters.lock_refs(conn, str(seen["idea_uuid"]), str(seen["lead_idea_uuid"] or seen["idea_uuid"]))
         r = _load(conn, window_id, lock=True)
         locked = sorted({str(r["idea_uuid"]), str(r["lead_idea_uuid"] or r["idea_uuid"])})
         rows = {str(x["id"]): dict(x) for x in conn.execute(
@@ -297,7 +301,7 @@ def reverse_window(conn: Conn, window_id: str, user_id: str, body: dict[str, Any
             raise Refused(
                 409, "window_closed", "A newer decision has replaced this one. There is nothing to reverse."
             )
-        masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip())
+        masked, _ = adapters.hide(conn, str(r["idea_uuid"]), note.strip(), by=user_id)
         reversal_id = str(uuid.uuid4())
         return_at = decide.return_at(t, return_in or p.return_default, p) if to == "not_now" else None
         conn.execute(

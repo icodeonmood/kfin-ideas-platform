@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: 'A decision on your idea'
-description: 'Inbox item and email for the decision kind (L-INBOX.kinds). Row text: pack for Picked and Not picked; the Not now line is for HR. Email wording: draft for HR.'
+description: 'Inbox item and email for the decision kind (L-INBOX.kinds). Row text: pack for Picked and Not picked; the Not now line is for HR. 1.1 (BLD-A195): typographic apostrophes (’) in the row text, note and email, as in every other line. Email wording: draft for HR.'
 tags:
 - comms
 - template
@@ -12,14 +12,14 @@ generated:
   at: '2026-11-17T00:00:00+05:30'
 kfin:
   id: TPL-inbox-decision
-  version: '1.0'
+  version: '1.1'
   kinds:
   - decision
   subject: 'A decision on your idea'
   inbox:
     heading: 'Decision'
-    line: '{{#choice.pick}}picked your idea{{/choice.pick}}{{#choice.not_picked}}didn''t pick your idea, with a reason{{/choice.not_picked}}{{#choice.not_now}}said Not now to your idea, with a date it comes back{{/choice.not_now}}'
-    note: 'The reason is on your idea''s page.'
+    line: '{{#choice.pick}}picked your idea{{/choice.pick}}{{#choice.not_picked}}didn’t pick your idea, with a reason{{/choice.not_picked}}{{#choice.not_now}}said Not now to your idea, with a date it comes back{{/choice.not_now}}'
+    note: 'The reason is on your idea’s page.'
   signed_as: The 1% Club team
   hr_signed_off: false
 ---

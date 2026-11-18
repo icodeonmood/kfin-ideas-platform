@@ -6,12 +6,15 @@
  * (`GET /api/ideas/:id/conversation`, BLD-F059); this screen lays them out, sends and removes messages, and reads the
  * conversation again after each action (no live channel yet, BLD-F050).
  *
- * - The questions: a plain entry with the card's title, the sharer's deadline and "Answer the questions" (S-R3,
- *   S-08.rules/1) until lane B's C-QCARD is on main (BLD-F065).
+ * - The questions: for the sharer while the set is open, lane B's C-QCARD read from that set (BLD-B249); for anyone
+ *   else, or until the set is read, a plain entry with the card's title, the sharer's deadline and "Answer the
+ *   questions" (S-R3, S-08.rules/1, BLD-F065).
  * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
  * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
  *   sheet; the box stays at the bottom.
+ * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
+ *   never sent by themselves (BLD-C165).
  */
 import Link from "next/link";
 import {
@@ -26,6 +29,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { QuestionsCardFor } from "@/components/review/qcard-for";
 import { PhoneBar } from "@/components/shell/phone";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
@@ -48,6 +52,7 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
+import { takePrefill } from "./prefill";
 import "./conversation.css";
 
 type Entry = ConversationEntryView;
@@ -188,6 +193,21 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const openQuestions = view.entries.find(
     (e): e is QuestionsEntry => e.type === "questions" && Boolean(e.answer_url),
   );
+
+  // S-06B.rules/2: the words the person was editing when the review desk opened their idea wait in the box, unsent.
+  // Read once after mounting (an effect that was undone, as in development's double mount, reads nothing), then gone
+  // from storage; anything already typed is never replaced.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve().then(() => {
+      if (!live) return;
+      const carried = takePrefill([ideaId, initial.idea.id]);
+      if (carried) setText((t) => t || carried);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ideaId, initial.idea.id]);
 
   // Put the caret after a picked name once the words are on screen.
   useEffect(() => {
@@ -397,6 +417,22 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     );
   }
 
+  function plainQuestions(e: QuestionsEntry) {
+    return (
+      <div className={cls("cv-ask", !e.answer_url && "done")}>
+        <p className="cv-askt">{e.title}</p>
+        {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
+        <p className="cv-aska">
+          {e.answer_url ? (
+            <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
+          ) : (
+            <Link href={ideaHref}>{C.seeOnIdea}</Link>
+          )}
+        </p>
+      </div>
+    );
+  }
+
   function renderQuestions(e: QuestionsEntry) {
     return (
       <li key={e.id} id={`entry-${e.id}`} className="cv-msg wide">
@@ -405,17 +441,21 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           <b>{e.by_label}</b>
           <span>{e.at_label}</span>
         </p>
-        <div className={cls("cv-ask", !e.answer_url && "done")}>
-          <p className="cv-askt">{e.title}</p>
-          {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
-          <p className="cv-aska">
-            {e.answer_url ? (
-              <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
-            ) : (
-              <Link href={ideaHref}>{C.seeOnIdea}</Link>
-            )}
-          </p>
-        </div>
+        {e.answer_url ? (
+          // BLD-B249: `answer_url` comes only to the sharer while the set is open; the card reads that set and
+          // takes the conversation's words for its title and deadline (Messages.md)
+          <QuestionsCardFor
+            key={`${e.set_id}:${e.state}:${e.answered}`}
+            ideaId={view.idea.id}
+            setId={e.set_id}
+            title={e.title}
+            deadline={e.deadline}
+            byline={false}
+            fallback={plainQuestions(e)}
+          />
+        ) : (
+          plainQuestions(e)
+        )}
       </li>
     );
   }

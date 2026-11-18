@@ -64,15 +64,17 @@ def _public_measures(m: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _idea_line(conn: Conn, one: dict[str, Any], public: bool) -> tuple[str | None, str | None]:
-    """(what they built or are building, its stage in plain words)."""
+    """(what they built or are building, its stage in plain words). In public, an idea the review desk or an admin
+    took off the Wall gives no line (`idea_off_wall`, DEC-106, BLD-A212)."""
     if one["way_in"] == "accepted_idea" and one["idea_id"]:
         idea = conn.execute(
-            "SELECT stage, visibility, canvas FROM ideas WHERE idea_id = %s", (one["idea_id"],)
+            "SELECT stage, visibility, canvas, idea_off_wall(id) AS off_wall FROM ideas WHERE idea_id = %s",
+            (one["idea_id"],),
         ).fetchone()
         if idea is None:
             return None, None
         if public:
-            if idea["visibility"] != "org" or idea["stage"] not in PUBLIC_STAGES:
+            if idea["visibility"] != "org" or idea["stage"] not in PUBLIC_STAGES or idea["off_wall"]:
                 return None, None
             summary = public_summary(conn, idea["canvas"])  # an unsafe one is still left out
         else:

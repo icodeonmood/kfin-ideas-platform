@@ -45,7 +45,9 @@ RULE_PATHS: dict[str, str] = {
     "routing": "rules/routing.md",
     "scorecard": "rules/scorecard.md",
     "sla": "rules/sla.md",
+    "sorting": "rules/sorting.md",
     "thresholds": "rules/thresholds.md",
+    "tiers": "rules/tiers.md",
     "comms": "comms/rules.md",
 }
 
@@ -153,10 +155,29 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
             labels = [i["label"].casefold() for i in data[key]]
             if len(labels) != len(set(labels)):
                 problems.append(f"{key}: each label may appear only once")
+    elif name == "tiers":
+        steps = [data["tiers"][str(i)] for i in range(1, 8)]
+        if steps[0]["hours_month"] != 0 or steps[0]["money_year"] != 0:
+            problems.append("tier 1 is every new One: its thresholds must be 0")
+        for lower, upper in pairwise(steps):
+            if upper["hours_month"] < lower["hours_month"] or upper["money_year"] < lower["money_year"]:
+                problems.append("tier thresholds must not fall from one tier to the next")
+                break
     elif name == "sla":
         for key, spec in data.items():
             if key != "version" and not ({"limit_wd", "limit_days", "due_wd_before_session"} & set(spec)):
                 problems.append(f"{key} has no limit")
+    elif name == "sorting":
+        for list_name in ("affects", "areas"):
+            labels = [*data[list_name]["shown"], *data[list_name]["more"]]
+            if len({x.casefold() for x in labels}) != len(labels):
+                problems.append(f"{list_name}: each value may appear only once")
+        if len({h.casefold() for h in data["helpers"]}) != len(data["helpers"]):
+            problems.append("helpers: each value may appear only once")
+        areas = {a.casefold() for a in [*data["areas"]["shown"], *data["areas"]["more"]]}
+        for area in data["review_routing"]["areas"]:
+            if area.casefold() not in areas:
+                problems.append(f"review_routing.areas: {area} is not one of the areas")
     return problems
 
 

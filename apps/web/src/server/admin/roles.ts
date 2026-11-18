@@ -1,29 +1,19 @@
-/** Role grants from the Admin page (§3.1 "Grant roles": admin only). Every change is audited with a reason. */
+/**
+ * Role grants from the Admin page (L-AUDIT.permissions: admin only). Every change is audited with a reason.
+ * The pack's roles (E-ENUMS.roles): the review desk, the Ones Committee, the office and launch screens, and admins,
+ * plus InfoSec and HR, who flip their kill switches (§7.6). The old committee, panel, group, sponsor and CEO roles
+ * are retired (DEC-102, DEC-106) and can no longer be given; grants already made stay listed until they are
+ * removed. `build_team` is given per idea when the team is chosen, never here (L-DECIDE.after).
+ */
 import { sql } from "kysely";
 
 import { getDb } from "../db";
 
-export const GRANTABLE_ROLES = [
-  "reviewer",
-  "lob_committee",
-  "core_committee",
-  "core_chair",
-  "appeal_panel",
-  "working_group",
-  "sponsor",
-  "admin",
-  "infosec",
-  "hr",
-  "ceo",
-] as const;
+export const GRANTABLE_ROLES = ["reviewer", "committee", "display", "admin", "infosec", "hr"] as const;
 export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
 
-// Roles whose grant must name what it covers (§3.1 scopes).
-const SCOPE_RULES: Partial<Record<GrantableRole, RegExp>> = {
-  lob_committee: /^LOB-[a-z0-9-]+$/,
-  working_group: /^WG-[0-9]{4}$/,
-  sponsor: /^CL-[0-9]{4}$/,
-};
+// Roles whose grant must name what it covers. None of the pack's org-wide roles takes a scope.
+const SCOPE_RULES: Partial<Record<GrantableRole, RegExp>> = {};
 
 export class RoleError extends Error {
   constructor(

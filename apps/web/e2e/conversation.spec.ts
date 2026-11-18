@@ -178,6 +178,80 @@ test("S-08.rules/4 at 375px: the 'i' opens In this conversation as a sheet; Esca
   await expect(info).toBeFocused();
 });
 
+/** Meera's 3 questions as lane B's `GET /ideas/:id/question-set` sends them to Kavya (BLD-B249). */
+const SET_ID = "6c1f6a0e-0000-4000-8000-000000000013";
+function sharerSet() {
+  const MEERA = {
+    id: "6c1f6a0e-1b8e-4d0a-9a51-0d6f3e2a1b05",
+    name: "Meera Iyer",
+    first_name: "Meera",
+    initials: "MI",
+  };
+  const parts = [
+    ["summary", "The problem", "Is it mostly R07, or all rejection codes?"],
+    ["often", "How often", "Is the 40 calls a day at one branch, or across Hyderabad?"],
+    ["evidence", "Attached", "Can you add a screenshot of the SMS, with the folio hidden?"],
+  ];
+  return {
+    id: SET_ID,
+    idea_id: IDEA,
+    idea: { id: IDEA, title: TITLE },
+    by: { ...MEERA, city: null, area: null },
+    state: "seen",
+    time_to_answer: "3d",
+    sent_at: "2026-11-16T11:20:00+05:30",
+    seen_at: "2026-11-16T12:05:00+05:30",
+    due_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    answered_at: null,
+    extended_times: 0,
+    reminded_at: null,
+    count: 3,
+    answered: 0,
+    overdue: false,
+    questions: parts.map(([part, part_name, text], i) => ({
+      id: `6c1f6a0e-0000-4000-8000-00000000002${i}`,
+      seq: i + 1,
+      part,
+      part_name,
+      text,
+      suggested: false,
+      answer: null,
+    })),
+    countdown: { label: "3 days left to answer", variant: "normal" },
+    deadline: "Answer by Thursday 19 November, 6 pm",
+    progress: "0 of 3 answered",
+    send_label: "Answer at least one question",
+  };
+}
+
+test("C-QCARD.places S-08 at 375px (BLD-B249, J-TRACK/3): the sharer's open questions are lane B's card, read by the entry's set; axe; no sideways scroll", async ({
+  page,
+}) => {
+  const reads: string[] = [];
+  await page.route(`**/api/ideas/${IDEA}/question-set*`, (route) => {
+    reads.push(new URL(route.request().url()).search);
+    return route.fulfill({ json: sharerSet() });
+  });
+  await page.goto("/kit/conversation?view=questions");
+  await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
+  const card = page.getByRole("article", { name: "Meera has 3 questions about your idea" });
+  await expect(card).toBeVisible();
+  expect([...new Set(reads)]).toEqual([`?set_id=${SET_ID}`]); // only the entry's own set
+  await expect(card).toContainText("Is the 40 calls a day at one branch, or across Hyderabad?");
+  await expect(card).toContainText("Answer goes to How often");
+  await expect(card).toContainText("and each answer is added to its part of your idea.");
+  // S-08.rules/1: Answer the questions on the card and in the line above the box, both to S-R3
+  const answer = page.getByRole("link", { name: "Answer the questions" });
+  await expect(answer).toHaveCount(2);
+  await expect(card.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
+    "href",
+    `/ideas/${IDEA}/answer`,
+  );
+  await settleMotion(page);
+  await expectNoSeriousAxeIssues(page);
+  await expectNoSidewaysScroll(page);
+});
+
 /** The kit's people and box, so the stand-in GET can answer with Kavya's message after she sends it. */
 function kitView(): Record<string, unknown> {
   return {

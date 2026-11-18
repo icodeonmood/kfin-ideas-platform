@@ -7,7 +7,8 @@
  *
  * Words come from the worker (HR-signed templates). A question, a decision's reason or a request's note is never
  * part of an item: the reader asks the route that owns it when the item is opened, so it is read in the app only
- * (L-NOTIFY/3, BLD-E004). Everything is shown as text; nothing from a message becomes markup.
+ * (L-NOTIFY/3, BLD-E004). The desk's questions are lane B's card (C-QCARD, `variant="inbox"`), fed from the sharer's
+ * question set. Everything is shown as text; nothing from a message becomes markup.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,7 +24,8 @@ import {
   type RefObject,
 } from "react";
 
-import type { InboxTab } from "@/lib/contracts";
+import { answerLabel, QuestionsCard } from "@/components/review/qcard";
+import type { InboxTab, SharerQuestionSetResponse } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
 import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
 
@@ -121,25 +123,43 @@ function btnClass(style: Action["style"]): string {
   return `btn ${style === "primary" ? "btn-primary" : style === "text" ? "btn-quiet" : "btn-secondary"}`;
 }
 
-type Detail = { kind: "questions"; questions: string[] } | { kind: "reason"; reason: string } | null;
+type QuestionSet = NonNullable<SharerQuestionSetResponse>;
+type Detail = { kind: "questions"; set: QuestionSet } | { kind: "reason"; reason: string } | null;
+
+/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. */
+function isSet(data: unknown): data is QuestionSet {
+  const s = data as Partial<QuestionSet> | null;
+  return (
+    !!s &&
+    typeof s.id === "string" &&
+    typeof s.idea?.id === "string" &&
+    typeof s.by?.first_name === "string" &&
+    typeof s.deadline === "string" &&
+    typeof s.answered === "number" &&
+    Array.isArray(s.questions) &&
+    s.questions.length > 0 &&
+    s.questions.every((q) => typeof q?.id === "string" && typeof q.text === "string")
+  );
+}
 
 /** The words that belong to the item, from the route that owns them (lane B's open question set and decision).
- * Missing or refused: the reader shows the item's own note. */
-async function fetchDetail(item: InboxEntry): Promise<Detail> {
+ * Missing or refused: the reader shows the item's own note. The first read of a question set marks it seen for the
+ * desk (L-QUESTIONS.clock/1), so it is read only when the person has the item open (`readOn`: not while a phone
+ * hydrates the server's desktop layout), only while the item needs them, and only for the item's own set: the route
+ * gets its `set_id` and answers 404, marking nothing, when the open set is another (BLD-B248). */
+async function fetchDetail(item: InboxEntry, readOn: boolean): Promise<Detail> {
   const ref = item.idea?.id;
   if (!ref || !/^IDEA-\d{4}-\d{6}$/.test(ref)) return null;
   try {
-    if ((item.kind === "questions" || item.kind === "answer_reminder") && item.needs_you) {
-      const res = await fetch(`/api/ideas/${ref}/question-set`, { cache: "no-store" });
+    if (item.kind === "questions" || item.kind === "answer_reminder") {
+      const setId = typeof item.body.set_id === "string" ? item.body.set_id : "";
+      if (!readOn || !item.needs_you || !setId) return null;
+      const res = await fetch(`/api/ideas/${ref}/question-set?set_id=${encodeURIComponent(setId)}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return null;
-      const data = (await res.json()) as {
-        questions?: { text?: unknown }[];
-        set?: { questions?: { text?: unknown }[] };
-      };
-      const qs = (data.questions ?? data.set?.questions ?? [])
-        .map((q) => (typeof q.text === "string" ? q.text : ""))
-        .filter(Boolean);
-      return qs.length ? { kind: "questions", questions: qs } : null;
+      const set: unknown = await res.json();
+      return isSet(set) && set.id === setId ? { kind: "questions", set } : null;
     }
     if (item.kind === "decision") {
       const res = await fetch(`/api/ideas/${ref}/decision`, { cache: "no-store" });
@@ -162,11 +182,26 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 
-function ItemActions({ item, busy, onOp }: { item: InboxEntry; busy: boolean; onOp: (a: Action) => void }) {
-  if (!item.actions.length) return null;
+/** The set's own words on the item's forward action, which goes to the Answer screen: "Carry on answering" once some
+ * are sent, gone once all are (C-QCARD.states). The card is the body; its button sits in the foot (S-H5.rules/3). */
+export function questionActions(actions: Action[], set: Pick<QuestionSet, "state" | "answered">): Action[] {
+  const label = answerLabel(set);
+  return actions.flatMap((a) => (a.to && /\/answer$/.test(a.to) ? (label ? [{ ...a, label }] : []) : [a]));
+}
+
+function ItemActions({
+  actions,
+  busy,
+  onOp,
+}: {
+  actions: Action[];
+  busy: boolean;
+  onOp: (a: Action) => void;
+}) {
+  if (!actions.length) return null;
   return (
     <Footer>
-      {item.actions.map((a) =>
+      {actions.map((a) =>
         a.to ? (
           <Link key={`${a.label}-${a.to}`} className={btnClass(a.style)} href={a.to}>
             {a.label}
@@ -249,6 +284,7 @@ function OpenItem({
   item,
   now,
   phone,
+  phoneOpen,
   notice,
   busy,
   titleRef,
@@ -259,6 +295,7 @@ function OpenItem({
   item: InboxEntry;
   now: Date;
   phone: boolean;
+  phoneOpen: boolean;
   notice: string;
   busy: boolean;
   titleRef: RefObject<HTMLHeadingElement | null>;
@@ -269,7 +306,9 @@ function OpenItem({
   const [detail, setDetail] = useState<Detail>(null);
   useEffect(() => {
     let live = true;
-    void fetchDetail(item).then((d) => live && setDetail(d));
+    // As the mark-read effect: on a phone an item is open only once the person opens it
+    const readOn = phoneOpen || window.matchMedia(DESKTOP).matches;
+    void fetchDetail(item, readOn).then((d) => live && setDetail(d));
     return () => {
       live = false;
     };
@@ -301,20 +340,24 @@ function OpenItem({
           </div>
           {request?.body}
           {detail?.kind === "questions" ? (
-            <ol className="ibx-qs">
-              {detail.questions.map((q, i) => (
-                <li key={i}>
-                  <span className="ibx-qn">Question {i + 1}</span>
-                  <span className="ibx-qt">{q}</span>
-                </li>
-              ))}
-            </ol>
+            <QuestionsCard variant="inbox" ideaId={detail.set.idea.id} set={detail.set} />
           ) : null}
           {detail?.kind === "reason" ? <blockquote className="ibx-quote">{detail.reason}</blockquote> : null}
-          {item.body.note ? <p className="ibx-foot">{item.body.note}</p> : null}
+          {/* The card says the deadline from the set itself, so the item's own "Answer by" note would repeat it */}
+          {item.body.note && detail?.kind !== "questions" ? (
+            <p className="ibx-foot">{item.body.note}</p>
+          ) : null}
         </div>
       </article>
-      {request ? request.bar : <ItemActions item={item} busy={busy} onOp={onOp} />}
+      {request ? (
+        request.bar
+      ) : (
+        <ItemActions
+          actions={detail?.kind === "questions" ? questionActions(item.actions, detail.set) : item.actions}
+          busy={busy}
+          onOp={onOp}
+        />
+      )}
     </>
   );
 }
@@ -689,6 +732,7 @@ export function InboxReader({
               item={open}
               now={now}
               phone={!desktop}
+              phoneOpen={phoneOpen}
               notice={notice}
               busy={busy}
               titleRef={titleRef}

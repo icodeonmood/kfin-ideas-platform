@@ -21,6 +21,7 @@ import html
 import io
 import re
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 MAX_CELLS = 500_000
@@ -33,6 +34,15 @@ class TooBigToCheck(Exception):
     """The file would take too much memory or time to check fully; it is refused rather than half-checked."""
 
 
+class Locked(Exception):
+    """The file is protected by a password, so its text cannot be read or checked (L-HIDE.files/5)."""
+
+
+class NotCheckable(Exception):
+    """A file, or a file inside a ZIP, is of a type the checks cannot read or the configured list leaves out
+    (L-HIDE.files/5: each file is checked)."""
+
+
 @dataclass
 class Extracted:
     pieces: list[tuple[str, str]] = field(default_factory=list)  # (location, text)
@@ -40,6 +50,8 @@ class Extracted:
         default_factory=list
     )  # (location, values) for the column check
     scanned: bool = False
+    pages: int | None = None  # a PDF's page count, for the file row ("140 KB, 3 pages")
+    kind: str | None = None  # the type the file was read as (a ZIP-family file's, from its directory)
 
 
 def _col(n: int) -> str:
@@ -122,6 +134,14 @@ def pdf(data: bytes) -> Extracted:
 
     out = Extracted()
     reader = PdfReader(io.BytesIO(data))
+    if reader.is_encrypted:  # pypdf has tried the empty password; a user password means it cannot be read
+        try:
+            readable = bool(reader.decrypt(""))
+        except Exception:
+            readable = False
+        if not readable:
+            raise Locked("pdf_password")
+    out.pages = len(reader.pages)
     for i, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if not text:
@@ -282,6 +302,90 @@ def pdf_ocr(data: bytes) -> Extracted:
     return out
 
 
+# ---- the 1% Club's wider type list (BLD-E007, L-HIDE.files/5): Markdown, HTML and ZIP -------------------------
+
+MAX_ZIP_FILES = 100
+_SCRIPT = re.compile(r"(?is)<(script|style)\b.*?</\1\s*>")
+_BREAKS_HTML = re.compile(r"(?i)<br\s*/?>|</(?:p|div|li|tr|h[1-6]|td|th|title)>")
+_JUNK = re.compile(r"(^|/)(__MACOSX/|\.DS_Store$)")
+
+
+def _lines(text: str) -> Extracted:
+    out = Extracted()
+    for i, line in enumerate(text.splitlines(), start=1):
+        if line.strip():
+            out.pieces.append((f"line {i}", line))
+    return out
+
+
+def text_file(data: bytes) -> Extracted:
+    """Markdown or plain text: every line, by number."""
+    return _lines(data.decode("utf-8-sig", errors="replace"))
+
+
+def html_text(data: bytes) -> Extracted:
+    """HTML: the text a reader sees, scripts and styles left out (comments and attributes are swept too)."""
+    raw = data.decode("utf-8-sig", errors="replace")
+    attrs = " ".join(re.findall(r"""(?:alt|title|content|value|href)\s*=\s*["']([^"']*)["']""", raw, re.I))
+    text = html.unescape(_TAGS.sub(" ", _BREAKS_HTML.sub("\n", _SCRIPT.sub(" ", raw))))
+    out = _lines(text)
+    if attrs.strip():
+        out.pieces.append(("the page's hidden text", html.unescape(attrs)))
+    return out
+
+
+def _inner(kind: str, data: bytes) -> Extracted:
+    """One file inside a ZIP, read the way it would be read on its own (images and scanned pages by OCR)."""
+    if kind in ("png", "jpg"):
+        return image_ocr(data)
+    if kind == "pdf":
+        got = pdf(data)
+        return pdf_ocr(data) if got.scanned else got
+    return EXTRACTORS[kind](data)
+
+
+def zip_files(data: bytes, types: Iterable[str] = ()) -> Extracted:
+    """A ZIP is unpacked and every file in it checked (L-HIDE.files/5). Locations name a file by its position, never
+    by its name. A file the checks cannot read or that is not of a configured type (`types`, the rules file's list;
+    every readable type when empty), a ZIP inside the ZIP or a locked file stops the whole ZIP. Runs in the sandbox,
+    after the virus scan."""
+    from attachments.filetype import kind_of
+
+    allowed = INNER_KINDS & frozenset(types) if types else INNER_KINDS
+    check_zip(data)
+    out = Extracted(kind="zip")
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        members = [i for i in z.infolist() if not i.is_dir() and not _JUNK.search(i.filename)]
+        if len(members) > MAX_ZIP_FILES:
+            raise TooBigToCheck("too_many_files")
+        if any(i.flag_bits & 0x1 for i in members):
+            raise Locked("zip_password")
+        for n, info in enumerate(members, start=1):
+            inner = z.read(info)
+            kind = kind_of(inner, info.filename)
+            if kind is None or kind not in allowed:
+                raise NotCheckable("zip_member_type")
+            got = _inner(kind, inner)
+            out.pieces.extend((f"file {n} in the ZIP, {where}", text) for where, text in got.pieces)
+            out.columns.extend((f"file {n} in the ZIP, {where}", values) for where, values in got.columns)
+    return out
+
+
+def container(data: bytes, types: Iterable[str] = ()) -> Extracted:
+    """A file that started as a ZIP (`filetype.CONTAINER`), after the virus scan, in the sandbox: its directory says
+    whether it is Word, PowerPoint, Excel or a plain ZIP; a type not in `types` is not checked; then it is read as
+    that type. `kind` on the result is the type found."""
+    from attachments.filetype import CONTAINER_TYPES, container_kind
+
+    allowed = frozenset(types) if types else frozenset(CONTAINER_TYPES)
+    kind = container_kind(data)
+    if kind is None or kind not in allowed:
+        raise NotCheckable("type_not_allowed")
+    got = zip_files(data, types) if kind == "zip" else EXTRACTORS[kind](data)
+    got.kind = kind
+    return got
+
+
 EXTRACTORS = {
     "pdf": pdf,
     "docx": docx,
@@ -291,4 +395,9 @@ EXTRACTORS = {
     "png_ocr": image_ocr,
     "jpg_ocr": image_ocr,
     "pdf_ocr": pdf_ocr,
+    "md": text_file,
+    "html": html_text,
+    "zip": zip_files,
+    "container": container,
 }
+INNER_KINDS = frozenset({"pdf", "docx", "pptx", "xlsx", "csv", "png", "jpg", "md", "html"})

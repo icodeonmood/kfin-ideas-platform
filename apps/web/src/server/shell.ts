@@ -17,12 +17,14 @@ import { inboxCounts } from "./inbox";
 import { myOne } from "./ones";
 
 /** A row in a sidebar section. `tone` is the status dot (C-SIDEBAR.anatomy/4): warn for "needs you", blue for
- * active, neutral otherwise; drafts take the hollow dot. */
+ * active, neutral otherwise; drafts take the hollow dot. `words` says what the dot means in this section, so it is
+ * never colour alone (F-A11Y.rules/4); without it the sidebar uses its own words for the tone. */
 export type ShellRow = {
   href: string;
   title: string;
   meta?: string;
   tone: "draft" | "warn" | "blue" | "bad" | "neutral";
+  words?: string;
 };
 
 export type ShellData = {
@@ -131,6 +133,16 @@ export function draftRows(items: DraftListItem[] | null | undefined): ShellRow[]
     }));
 }
 
+/** C-SIDEBAR.anatomy, "Your ideas": the dot's words are the idea's own stage, as its page names it. */
+export function ideaRow(idea: MyIdea): ShellRow {
+  return {
+    href: `/ideas/${idea.idea_id}`,
+    title: titleOf(idea),
+    tone: toneFor(idea.stage_key),
+    words: idea.stage.trim() || undefined,
+  };
+}
+
 /** C-SIDEBAR.anatomy, the review desk's "Waiting on sharers": the three most urgent, as the desk read sorts them
  * (L-REVIEW.queue). Dots: blue normal, amber under a day, red overdue (S-R1.rules/5). */
 const DESK_TONE: Record<DeskResponse["waiting_on_sharers"][number]["dot"], ShellRow["tone"]> = {
@@ -139,11 +151,20 @@ const DESK_TONE: Record<DeskResponse["waiting_on_sharers"][number]["dot"], Shell
   red: "bad",
 };
 
+/** The dots in words, from the desk's own copy (reference/copy/Desk.md): its tab "Waiting on the sharer" and its
+ * summary line ("One is overdue and one has under a day left"). Amber here is not "Needs you". */
+const DESK_WORDS: Record<DeskResponse["waiting_on_sharers"][number]["dot"], string> = {
+  blue: "Waiting on the sharer",
+  amber: "Under a day left",
+  red: "Overdue",
+};
+
 export function deskRows(desk: Pick<DeskResponse, "waiting_on_sharers"> | null): ShellRow[] {
   return (desk?.waiting_on_sharers ?? []).slice(0, 3).map((w) => ({
     href: `/desk/ideas/${encodeURIComponent(w.idea_id)}`,
     title: w.title,
     tone: DESK_TONE[w.dot],
+    words: DESK_WORDS[w.dot],
   }));
 }
 
@@ -187,7 +208,7 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
   const shared = ideas
     .filter((i) => !i.draft && i.idea_id)
     .slice(0, 3)
-    .map<ShellRow>((i) => ({ href: `/ideas/${i.idea_id}`, title: titleOf(i), tone: toneFor(i.stage_key) }));
+    .map(ideaRow);
   const active = one?.active ? one : null;
   return {
     name: me.name,

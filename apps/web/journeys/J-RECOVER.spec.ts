@@ -3,7 +3,8 @@
  * action, and a draft is never lost. Hand-offs only: the failure's words, the way out, and that the person's work is
  * still there after it. The detail is in V-ACC.recover.
  * Copy: reference/copy/SignIn.md, Compose.md ("Mic blocked", "Offline"), Review.md ("evidence=…", "submit=…", merge
- * states), Status.md ("Withdrawn"); C-DRAFT-LOADER.failure and C-HIDDEN for the lines the boards do not draw.
+ * states), Edit.md ("evidence=…", "save=Saved"), Status.md ("Withdrawn"); C-DRAFT-LOADER.failure and C-HIDDEN for
+ * the lines the boards do not draw. Rows 7 to 10 happen on S-06B as well: those steps edit the idea row 14 sent.
  * Failures are made in the browser: an identity provider that answers with an error, a microphone the browser refuses,
  * the network switched off, and a failing upload or send answered by `page.route` on its A-API path.
  * Switched off at launch, so not walked here: email-code sign-in (BLD-E002; only row 2 is the email route, and it
@@ -305,7 +306,7 @@ step(
 step(
   "J-RECOVER/8",
   "S-05",
-  "A file has personal data: nobody can open it until it is hidden; Hide it for me or Remove",
+  "A file has personal data: nobody can open it until it is hidden; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
   { needs: ["S-05", "C-FILE", "L-HIDE"] },
   async ({ page }) => {
     await checkPart(page, "Proof");
@@ -318,7 +319,8 @@ step(
     await expect(
       page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Hide it for me" })).toBeVisible();
+    // DEC-107, BLD-C064: "Hide it for me" shows only while files.blackout is on, and it starts off.
+    await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(0);
     await page.getByRole("button", { name: `Remove ${name}` }).click();
     await expect(page.getByText(name)).toHaveCount(0);
   },
@@ -461,6 +463,146 @@ step(
     await page.waitForURL(new RegExp(`/ideas/${REF}$`), { timeout: 20_000 });
     carried.idea = new URL(page.url()).pathname;
     await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+  },
+);
+
+// --- The same failures on the edit page (S-06B), on the idea J-RECOVER/14 sent -----------------------------------------
+
+/** The writer's shared idea, on its edit page (S-06B, `/ideas/:id/edit`). */
+async function editPage(page: Page): Promise<void> {
+  await signInFreshAs(page, WRITER);
+  const idea = carried.idea;
+  if (!idea) throw new Error("J-RECOVER/14 did not leave the idea; run the journey from the start");
+  await page.goto(`${idea}/edit`);
+  await expect(page.getByRole("heading", { level: 1, name: "Edit your problem" })).toBeVisible();
+}
+
+/** The edit page's drop area is always open (Edit.md): its "browse" opens the file picker. */
+async function attachOnEdit(page: Page, file: Upload): Promise<void> {
+  const picker = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: /^browse$/i }).click();
+  await (await picker).setFiles(file);
+}
+
+step(
+  "J-RECOVER/7",
+  "S-06B",
+  "A file fails to upload on the edit page: Didn't upload. Your other files are fine., with Try again and Remove",
+  { needs: ["S-06B", "C-FILE"] },
+  async ({ page }) => {
+    await editPage(page);
+    await page.route(UPLOAD, (route) =>
+      route.request().method() === "POST" ? route.abort("failed") : route.fallback(),
+    );
+    const name = "courier-register-photo.png";
+    await attachOnEdit(page, { name, mimeType: "image/png", buffer: Buffer.from("89504e470d0a1a0a", "hex") });
+    await expect(page.getByText("Didn’t upload. Your other files are fine.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+    await page.unroute(UPLOAD);
+    await page.getByRole("button", { name: `Remove ${name}` }).click();
+    await expect(page.getByText(name)).toHaveCount(0);
+  },
+);
+
+step(
+  "J-RECOVER/8",
+  "S-06B",
+  "A file with personal data on the edit page: nobody can open it until it is hidden; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
+  { needs: ["S-06B", "C-FILE", "L-HIDE"] },
+  async ({ page }) => {
+    await editPage(page);
+    const name = "courier-call-log-edit.pdf";
+    await attachOnEdit(page, {
+      name,
+      mimeType: "application/pdf",
+      buffer: pdfWith("Investor called back on 9800000012 about the courier."),
+    });
+    await expect(
+      page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
+    ).toBeVisible({ timeout: 30_000 });
+    // DEC-107, BLD-C064: as on S-05, "Hide it for me" shows only while files.blackout is on, and it starts off.
+    await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(0);
+    await page.getByRole("button", { name: `Remove ${name}` }).click();
+    await expect(page.getByText(name)).toHaveCount(0);
+  },
+);
+
+step(
+  "J-RECOVER/9",
+  "S-06B",
+  "A link added on the edit page is kept as typed and never opened (BLD-E001)",
+  { needs: ["S-06B", "C-FILE"] },
+  async ({ page }) => {
+    const host = "intranet.kfintech.example";
+    const opened: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).host === host) opened.push(request.url());
+    });
+    await editPage(page);
+    await page
+      .getByRole("textbox", { name: "Or paste a link to a report, dashboard or ticket" })
+      .fill(`https://${host}/courier-returns-edit`);
+    await page.getByRole("button", { name: "Add link" }).click();
+    const row = page.getByRole("button", { name: new RegExp(`^Remove .*${esc(host)}`) });
+    await expect(row.first()).toBeVisible();
+    await expect(page.getByText(/couldn[’']t open this link/)).toHaveCount(0);
+    await row.first().click();
+    expect(opened).toEqual([]);
+  },
+);
+
+step(
+  "J-RECOVER/10",
+  "S-06B",
+  "Wrong sorting after sending: the reasons show, one choice changes it, and Save keeps it as a new version",
+  { needs: ["S-06B", "L-SORT", "L-SUBMIT"] },
+  async ({ page }) => {
+    await editPage(page);
+    await expect(
+      page.getByText("Confirmed when you shared it. You can still change any of these.").first(),
+    ).toBeVisible();
+    const pick = (await page.getByRole("radio", { name: "Operations", exact: true }).isChecked())
+      ? "Investor service"
+      : "Operations";
+    const other = page.getByRole("radio", { name: pick, exact: true });
+    await other.click();
+    await expect(other).toBeChecked();
+    await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Saved. The review desk will see the latest version.")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("radio", { name: pick, exact: true })).toBeChecked();
+  },
+);
+
+step(
+  "J-RECOVER/15",
+  "S-06B",
+  "Change of mind after sending: Edit it opens S-06B; a changed title saves as a new version and Back to your idea shows it",
+  { needs: ["S-06", "S-06B", "L-SUBMIT"] },
+  async ({ page }) => {
+    await signInFreshAs(page, WRITER);
+    const idea = carried.idea;
+    if (!idea) throw new Error("J-RECOVER/14 did not leave the idea; run the journey from the start");
+    await page.goto(idea);
+    await page.getByRole("link", { name: "Edit it" }).click();
+    await page.waitForURL(new RegExp(`${esc(idea)}/edit$`));
+    await expect(page.getByText(`Edit ${idea.split("/").pop()}`, { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        new RegExp(`^Shared ${DAY}\\. You can edit until the review desk opens it, at the latest ${DAY}\\.$`),
+      ),
+    ).toBeVisible();
+    const title = "Courier returns of redemption forms go untracked";
+    await page.getByRole("button", { name: "Change the title" }).click();
+    await page.getByRole("textbox", { name: "Title" }).fill(title);
+    await page.getByRole("textbox", { name: "Title" }).press("Enter");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Saved. The review desk will see the latest version.")).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Saved at ${TIME}$`))).toBeVisible();
+    await page.getByRole("link", { name: "Back to your idea" }).first().click();
+    await page.waitForURL(new RegExp(`${esc(idea)}$`));
+    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
   },
 );
 

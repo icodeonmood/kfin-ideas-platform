@@ -77,3 +77,27 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The reviewer's reason and the committee's reversal note, until long enough | 12 of at least 30 characters | A line of its own under the board's help line ("Kavya reads this word for word."), which now always shows |
 | The Answer screen, a save that did not reach the server (tried again on its own) | Couldn’t save that. Try again. | B3: an answer is never lost or misreported on a network error |
 | The Answer screen, an answer near its limit (from 1,800 characters) | 1,850 of 2,000 characters | V-FIELDS.answer/1 "counter near the limit"; not drawn |
+
+## 5. Added on 17 Nov 2026 with "Hide this" on the reviewer's page (BLD-B246)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page, next to words the reviewer selects | Hide this | L-HIDE.rules/7: a reviewer can hide a detail the checks missed; not drawn |
+| The same, when fewer than 3 letters or numbers are selected | Select at least 3 letters or numbers. | Lane C refuses shorter selections, which would mask pieces of other words |
+| The same, when the selection is already hidden | That’s already hidden. | Not drawn |
+| The same, when the selection is longer than one hide takes (over 300 characters, or a whole long answer) | That’s too much to hide at once. Select only the words to hide. | Not drawn; lane C's `selection_too_long` (c/hide-3). A hide is for a detail, not a paragraph (L-HIDE), so a long selection is never told it is too short |
+| The same, when the hide fails for any other reason | That didn’t go through. Try again. | F-COPY's failure line, as on every other send on the review side |
+| The same, read out to a screen reader once the words are hidden | Hidden from everyone. | C-HIDDEN's own words for a hidden detail |
+| The reviewer's page, the Attached part, under "… is hidden from everyone." | Folio shown, because it’s an internal reference. (also "it’s a scheme or product code" and "it’s made up for the example") | L-HIDE.rules/6: the desk sees the sharer's reason; the reasons are C-HIDDEN's |
+
+## 6. Added on 18 Nov 2026 with the "Hide this" fixes (BLD-B247)
+
+| Where | Wording | Why |
+|---|---|---|
+| The reviewer's page, read out to a screen reader each time "Hide this" appears after a selection | Hide this is next. Press Tab. | WCAG 4.1.3: the button appears without moving focus, so the screen reader is told where it is; said again for every new selection |
+| The reviewer's page, the name a screen reader reads for each text "Hide this" works on | The problem, text (also "How often, text", "Fix, text", "The title, text", "The answer, text", "Their own words, 1 of 3, text") | WCAG 2.1.1 and 4.1.2: each such text can now take focus from the keyboard, so it needs a name |
+| The reviewer's page, under the text, when the words changed before "Hide this" went through | The page changed. Select again. | Another reviewer hid something in the same text; the page is read again and the reviewer selects once more |
+| The reviewer's page, under the text (and read out), when words are selected in a text the page shows differently from how it was stored | Select again. | "Hide this" is offered only on the exact stored text, so a reviewer is told to try again rather than shown nothing; rare (a line break stored as two characters) |
+| The Answer screen, when an answer could not be stored with its details hidden | Couldn’t save that. Try again. | The line added with the review screens (section 3 of 17 Nov), now also for this case, never a raw error |
+| The Answer screen, when the answers could not be checked for customer details on send | Your answers didn’t send. Try again. | The screen's existing send failure line, never a raw error |
+| The reviewer's page, the Attached part, the kind in "… shown, because …" | Phone shown, because it’s made up for the example. (also "Account", "Email", "Aadhaar", "Name", "Folio", "PAN") | L-HIDE.detect's "Label shown" for each kind; replaces "Phone number shown" and "Account number shown" |

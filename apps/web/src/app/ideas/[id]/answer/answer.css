@@ -4,6 +4,13 @@
   gap: 24px;
   max-width: 760px;
 }
+/* S-R3: the Answer board starts the page 40px down (main.wrap) where the shell's main gives 32px. The phone board
+   (PhoneAnswer) keeps the shell's top */
+@media (min-width: 641px) {
+  .ans {
+    padding-top: 8px;
+  }
+}
 .ans-bar {
   display: grid;
   gap: 10px;

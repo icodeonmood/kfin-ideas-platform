@@ -16,7 +16,7 @@ import psycopg
 import pytest
 
 from core.crypto import decrypt_json, encrypt_json
-from hide import HideError, desk_hide, hide_again, hide_message, hide_text, show
+from hide import HideError, desk_hide, forget, hide_again, hide_message, hide_text, show
 from hide import recheck as hide_recheck
 from hide.core import own_words, scope_for, sealed_key
 from hide.detect import mask, to_utf16
@@ -709,3 +709,246 @@ def test_l_hide_rules_1_a_failure_inside_leaves_the_callers_transaction_usable(
             "n"
         ]
         assert left == 0  # nothing of the failed hide stayed
+
+
+def count(conn: Any, sql: str, *args: Any) -> int:
+    return int(conn.execute(sql, args).fetchone()["n"])
+
+
+def test_l_hide_rules_4_l_convo_10_forget_drops_a_removed_entry_and_keeps_a_value_another_text_holds(
+    hdb: Any,
+) -> None:
+    """J (lane F's L-CONVO/10, BLD-C066): `forget` drops a removed conversation message's details, its sealed words
+    and the vault values only it held. A value also hidden in another message stays, with that message's detail and
+    words. An edit's version id is found under the idea's uuid. Audited with IDs and counts only."""
+    db = hdb
+    FOLIO, PAN, _, _ = made_up()
+    crew, _ = person(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    gone, said = conversation(db, iid, crew, f"Folio {FOLIO} came back. PAN {PAN} was on the form")
+    kept, _ = conversation(db, iid, crew, f"PAN {PAN} again")
+    assert said.counts == {"folio": 1, "pan": 1}
+    scope = scope_for(iid)
+    tag_of = {v: t for t, (_, v) in vault.mapping(db, scope).items()}
+    assert {FOLIO, PAN} <= set(tag_of)
+    entity = f"idea:{iid}"
+    audits = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.forgotten' AND entity = %s"
+    before = count(db, audits, entity)
+    vault_before = count(db, "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s", scope)
+
+    with db.transaction():  # the removal and the forgetting, together; hide's lock first
+        removed = forget(db, iid, source="conversation", source_id=gone)
+        db.execute("DELETE FROM conversation_entries WHERE id = %s", (gone,))
+    assert removed == 2
+    assert (
+        count(
+            db, "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", iid, gone
+        )
+        == 0
+    )
+    assert own_words(db, "conversation", gone, idea_uuid=iid) is None
+    assert count(db, "SELECT count(*) AS n FROM idea_words_sealed WHERE source_id = %s", gone) == 0
+    values = {v for _, (_, v) in vault.mapping(db, scope).items()}
+    assert FOLIO not in values and PAN in values
+    assert (
+        count(db, "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s", scope) == vault_before - 1
+    )
+    still = db.execute(
+        "SELECT kind, vault_tag FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", (iid, kept)
+    ).fetchall()
+    assert [(r["kind"], r["vault_tag"]) for r in still] == [("pan", tag_of[PAN])]
+    assert own_words(db, "conversation", kept, idea_uuid=iid) == f"PAN {PAN} again"
+    assert count(db, audits, entity) == before + 1
+    row = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.forgotten' AND entity = %s ORDER BY id DESC LIMIT 1",
+        (entity,),
+    ).fetchone()
+    assert row["actor"] == "system"
+    assert row["after"] == {"source": "conversation", "source_id": gone, "hidden": 2, "sealed": 1, "vault": 1}
+    assert FOLIO not in str(row["after"]) and PAN not in str(row["after"])
+
+    with db.transaction():
+        hide_message(db, iid, f"Folio {FOLIO} fixed", by=uid, source="edit", source_id="2", gatekeeper=False)
+    with db.transaction():
+        assert forget(db, iid, source="edit", source_id="2") == 1
+    assert own_words(db, "edit", "2", idea_uuid=iid) is None
+    assert FOLIO not in {v for _, (_, v) in vault.mapping(db, scope).items()}
+    assert forget(db, iid, source="edit", source_id="2") == 0  # nothing left: nothing audited
+    assert count(db, audits, entity) == before + 2
+    with pytest.raises(ValueError):
+        forget(db, iid, source="nowhere", source_id=kept)
+
+
+def test_l_hide_rules_7_stale_when_the_text_changed_under_the_selection(hdb: Any) -> None:
+    """F (lane B's `selected`, BLD-C066): another hide moved the masked copy under the page, so the old range with the
+    words the reviewer selected is refused with `stale` and nothing is hidden; read again, the same words hide. A
+    title works the same; without `selected` a range off the text is still `range_invalid`; a selection over 300
+    characters is `selection_too_long`."""
+    db = hdb
+    NAME, OTHER = made_up_name(), made_up_name()
+    reviewer, _ = person(db)
+    second, _ = person(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True, title="A 5 day wait for refunds")
+    mid, _ = message(db, iid, uid, f"Refund late 😀 for {OTHER} and then {NAME} again")
+    seen = masked_message(db, mid)
+    at, o = seen.index(NAME), seen.index(OTHER)
+    start, end = to_utf16(seen, at), to_utf16(seen, at + len(NAME))
+    desk_hide(
+        db, iid, source_kind="message", source_id=mid, start=to_utf16(seen, o), end=to_utf16(seen, o + len(OTHER)),
+        by=second, units="utf16", selected=OTHER,
+    )  # fmt: skip
+    details = "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s"
+    before = count(db, details, iid)
+    with pytest.raises(HideError) as stale:
+        desk_hide(
+            db, iid, source_kind="message", source_id=mid, start=start, end=end, by=reviewer, units="utf16",
+            selected=NAME,
+        )  # fmt: skip
+    assert (stale.value.status, stale.value.code) == (409, "stale")
+    assert count(db, details, iid) == before and NAME in masked_message(db, mid)
+    now = masked_message(db, mid)
+    at = now.index(NAME)
+    d = desk_hide(
+        db, iid, source_kind="message", source_id=mid, start=to_utf16(now, at), end=to_utf16(now, at + len(NAME)),
+        by=reviewer, units="utf16", selected=f" {NAME} ",
+    )  # fmt: skip
+    assert d["masked"] == mask("name", NAME) and NAME not in masked_message(db, mid)
+
+    with pytest.raises(HideError) as title_stale:
+        desk_hide(
+            db, iid, source_kind="title", source_id="title", start=2, end=7, by=reviewer, units="utf16",
+            selected="9 day",
+        )  # fmt: skip
+    assert title_stale.value.code == "stale"
+    with pytest.raises(HideError) as off_text:
+        desk_hide(
+            db, iid, source_kind="title", source_id="title", start=2, end=900, by=reviewer, units="utf16"
+        )
+    assert off_text.value.code == "range_invalid"
+    long_id, _ = message(db, iid, uid, "Refunds wait. " * 30, seq=2)
+    with pytest.raises(HideError) as too_long:
+        desk_hide(
+            db, iid, source_kind="message", source_id=long_id, start=0, end=301, by=reviewer, units="utf16",
+            selected=("Refunds wait. " * 30)[:301],
+        )  # fmt: skip
+    assert (too_long.value.status, too_long.value.code) == (422, "selection_too_long")
+    assert count(db, details, iid) == before + 1
+
+
+def test_l_hide_rules_7_a_reviewer_never_hides_on_their_own_or_a_merged_in_idea(hdb: Any) -> None:
+    """G (BLD-C066): as lane B's `refuse_own` and the desk page's `own`, a reviewer is refused with 403 `forbidden`
+    on their own idea and on an idea their contribution was merged into; the refusal carries its audit row (IDs and
+    the action only) and changes nothing. Another reviewer hides as usual."""
+    db = hdb
+    NAME = made_up_name()
+    reviewer, r_code = person(db)
+    other, _ = person(db)
+    _, code = person(db)
+    own = idea(db, r_code, shared=True, title=f"{NAME} waits for refunds")
+    with pytest.raises(HideError) as mine:
+        desk_hide(db, own, source_kind="title", source_id="title", start=0, end=len(NAME), by=reviewer)
+    assert (mine.value.status, mine.value.code) == (403, "forbidden")
+    assert mine.value.audit == (reviewer, "hide.own_idea_refused", own, {"action": "desk_hide"})
+
+    lead = idea(db, code, shared=True, title=f"{NAME} waits again")
+    db.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s)",
+        (lead, own, other),
+    )
+    with pytest.raises(HideError) as merged:
+        desk_hide(db, lead, source_kind="title", source_id="title", start=0, end=len(NAME), by=reviewer)
+    assert (merged.value.status, merged.value.code) == (403, "forbidden")
+    assert count(db, "SELECT count(*) AS n FROM hidden_details WHERE idea_uuid = %s", lead) == 0
+    assert db.execute("SELECT title FROM ideas WHERE id = %s", (lead,)).fetchone()["title"].startswith(NAME)
+    d = desk_hide(db, lead, source_kind="title", source_id="title", start=0, end=len(NAME), by=other)
+    assert d["kind"] == "name"
+
+
+def test_l_hide_detect_a_recheck_waits_while_the_assistant_is_off_and_is_audited_when_it_gives_up(
+    hdb: Any,
+) -> None:
+    """B (BLD-C067): a re-check queued while the assistant was on, run while `ai.all` is off, fails with
+    `GatekeeperUnavailable("ai_off")` and calls no model, so the runner tries again instead of finishing with nothing
+    found. Its last attempt goes dead and is audited (`hide.recheck_gave_up`) with IDs and the code only."""
+    import jobs.handlers  # noqa: F401 (registers hide.recheck and its on_dead)
+    from core import killswitch
+    from gateway.routes import FAKE_SCRIPT, RouteError
+    from hide.core import GatekeeperUnavailable
+    from jobs.runner import run_one
+
+    db = hdb
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    FAKE_SCRIPT.append(RouteError("connection"))
+    mid, out = message(db, iid, uid, f"Forms come back from {ADDRESS} every week", gatekeeper=True)
+    job = db.execute(
+        "SELECT id, payload, max_attempts FROM jobs WHERE type = 'hide.recheck' AND payload->>'idea_uuid' = %s",
+        (iid,),
+    ).fetchone()
+    calls = "SELECT count(*) AS n FROM llm_calls WHERE ref_id = %s"
+    calls_before = count(db, calls, scope_for(iid))
+    gave = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s"
+    gave_before = count(db, gave, f"idea:{iid}")
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    try:
+        with pytest.raises(GatekeeperUnavailable) as off:
+            hide_recheck.run(db, job["payload"])
+        assert str(off.value) == "ai_off"
+        assert masked_message(db, mid) == out.masked  # nothing lost while it waits
+        db.execute(
+            "UPDATE jobs SET attempts = max_attempts - 1, run_at = '1999-01-01' WHERE id = %s", (job["id"],)
+        )  # the runner's last attempt, first in its queue
+        assert run_one(db, "test-hide-recheck")
+    finally:
+        db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
+        killswitch.clear_cache()
+    done = db.execute("SELECT state, last_error FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    assert (done["state"], done["last_error"]) == ("dead", "GatekeeperUnavailable")
+    assert count(db, gave, f"idea:{iid}") == gave_before + 1
+    row = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s ORDER BY id DESC",
+        (f"idea:{iid}",),
+    ).fetchone()
+    assert row["actor"] == "system"
+    assert row["after"] == {
+        "source": "message", "source_id": mid, "code": "ai_off", "recheck_job": job["id"],
+        "attempts": job["max_attempts"],
+    }  # fmt: skip
+    assert count(db, calls, scope_for(iid)) == calls_before  # no model call while the assistant is off
+
+
+def test_l_hide_rules_7_two_desk_hides_on_an_unmapped_authors_message_leave_a_correct_copy(hdb: Any) -> None:
+    """C (BLD-C066): a conversation message whose author is no longer mapped has no own words and no owner, so each
+    desk hide masks its copy in place and its details keep no span; a second hide never garbles the copy."""
+    db = hdb
+    NAME, OTHER = made_up_name(), made_up_name()
+    reviewer, _ = person(db)
+    _, code = person(db)
+    iid = idea(db, code, shared=True)
+    eid, unmapped = str(uuid.uuid4()), f"CTR-{secrets.token_hex(3)}"  # a code no longer in contributor_map
+    text = f"Ask {NAME} and then {OTHER} at the branch. {NAME} knows"
+    db.execute(
+        "INSERT INTO conversation_entries (id, idea_uuid, type, author_code, text_encrypted) "
+        "VALUES (%s, %s, 'message', %s, %s)",
+        (eid, iid, unmapped, seal_text("conversation_entries", "text_encrypted", eid, text)),
+    )
+    for value in (NAME, OTHER):
+        seen = masked_in(db, "conversation_entries", eid)
+        at = seen.index(value)
+        d = desk_hide(
+            db, iid, source_kind="conversation", source_id=eid, start=at, end=at + len(value), by=reviewer,
+            selected=value,
+        )  # fmt: skip
+        assert d["kind"] == "name"
+    assert masked_in(db, "conversation_entries", eid) == (
+        f"Ask {mask('name', NAME)} and then {mask('name', OTHER)} at the branch. {mask('name', NAME)} knows"
+    )
+    rows = db.execute(
+        "SELECT span_start, found_by FROM hidden_details WHERE idea_uuid = %s AND source_id = %s", (iid, eid)
+    ).fetchall()
+    assert len(rows) == 2 and all(r["span_start"] is None and r["found_by"] == "reviewer" for r in rows)
+    assert count(db, "SELECT count(*) AS n FROM idea_words_sealed WHERE source_id = %s", eid) == 0
+    assert helpers.tables_containing(db, NAME) == [] and helpers.tables_containing(db, OTHER) == []

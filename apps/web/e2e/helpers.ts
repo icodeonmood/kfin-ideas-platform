@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
@@ -13,13 +15,16 @@ export const PERSONAS = {
 } as const;
 
 /** Where this run's stack listens (`make e2e` passes both from `.env`; BLD-200). */
-const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
-const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
+export const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
+export const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
 
-/** Real sign-in through the mock IdP's form; accepts the privacy notice if it is shown. */
+/**
+ * Real sign-in through the mock IdP's form; accepts the privacy notice if it is shown. S-02's single sign-on
+ * button posts to /auth/sso/start, which keeps where to go on the server (L-AUTH.rules/4).
+ */
 export async function signIn(page: Page, username: string, claims?: Record<string, string>) {
   await page.goto("/sign-in");
-  await page.getByRole("link", { name: "Sign in with your KFintech account" }).click();
+  await page.getByRole("button", { name: "Use single sign-on" }).click();
   await page.waitForURL((url) => url.href.startsWith(OIDC_AUTHORIZE));
   await page.locator('input[name="username"]').fill(username);
   if (claims) await page.locator('textarea[name="claims"]').fill(JSON.stringify(claims));
@@ -209,6 +214,29 @@ export async function waitUntilIndexed(ideaId: string, timeoutMs = 45_000): Prom
       if (Date.now() > deadline) throw new Error(`${ideaId} was not indexed within ${timeoutMs / 1000} s`);
       await new Promise((r) => setTimeout(r, 500));
     }
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Ends this browser's session by time, as the 8 hours would (S-02 "Session expired mid-draft", L-AUTH.rules/5).
+ * The one write these helpers make: the test's own session row, found by its hash, never anyone else's.
+ */
+export async function expireSession(page: Page): Promise<void> {
+  const token = (await page.context().cookies()).find((c) => c.name === "ideas_session")?.value;
+  if (!token) throw new Error("expireSession: not signed in");
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      // As 8 hours would leave it: started 8 h 2 min ago, ran out a minute ago (expires_at must follow created_at).
+      "UPDATE sessions SET created_at = now() - interval '8 hours 2 minutes', " +
+        "last_seen_at = now() - interval '8 hours 2 minutes', expires_at = now() - interval '1 minute' " +
+        "WHERE id_hash = $1",
+      [createHash("sha256").update(token, "utf8").digest()],
+    );
+    if (rowCount !== 1) throw new Error("expireSession: no such session");
   } finally {
     await client.end();
   }

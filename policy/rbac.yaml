@@ -20,7 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
+  hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -45,6 +45,11 @@ capabilities:
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
   # core_committee (and core_chair, through it) keep it until the old roles are dropped on Monday (contracts.md §2.14).
   committee_window:           { committee: yes, core_committee: yes }
+  # The programme team's admin page (lane A; L-DECIDE.after, L-IMPACT, L-ONES admin path, L-AUDIT.flags). The worker
+  # checks the person's grants again. "Take off the Wall" is for the review desk and admins (DEC-106, §6.3).
+  run_programme:              { admin: yes }
+  take_off_wall:              { reviewer: yes, admin: yes }
+  manage_flags:               { admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -73,10 +78,25 @@ kill_switch_flippers:
   intake.teams: [admin]                              # L-DRAFT.channels: off until IT gives the Teams app (DEC-105)
   files.blackout: [admin, infosec]                    # DEC-107: "Hide it for me" for PDFs and images, after review
   desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
+  auth.email_code: [infosec]                          # BLD-E002: sign-in by email code; InfoSec only, off until it approves
 
 # No session needed.
 public:
   - GET /api/health
+
+# Sign-in routes (L-AUTH, A-API.auth): no session needed, because they start or end one. Each is listed with its
+# reason. The proxy refuses (404) any /auth path not listed here, and a unit test fails when a route file under
+# app/auth has no line (BLD-A177). The email-code routes still meet their kill switch (BLD-E002, §7.6).
+auth_exempt:
+  - GET /auth/session                                 # "am I signed in, and where was I going" (A-API.auth); 401 without one
+  - GET /auth/sso/start                               # "Share a problem" continues here to silent single sign-on (L-AUTH.rules/1)
+  - POST /auth/sso/start                              # S-02's single sign-on buttons, as a form or JSON
+  - GET /auth/callback                                # the identity provider sends the person back here
+  - GET /auth/login                                   # the older sign-in link, kept for links already sent (BLD-A173)
+  - POST /auth/code/send                              # sign-in by email code (L-AUTH.rules/2), behind auth.email_code
+  - POST /auth/code/verify                            # sign-in by email code (L-AUTH.rules/3), behind auth.email_code
+  - POST /auth/sign-out                               # ends whatever session the cookie names (A-API.auth); 204
+  - POST /auth/logout                                 # the shell's sign-out form; ends the session and goes to Landing
 
 # Allowed before the privacy notice is accepted (everything else waits for it).
 before_privacy_notice:
@@ -110,7 +130,6 @@ endpoints:
   - GET /api/ideas/{id}/conversation                  signed_in
   - POST /api/ideas/{id}/conversation/messages        signed_in
   - DELETE /api/ideas/{id}/conversation/messages/{entry_id} signed_in  # the sender’s own, within 5 minutes
-  - GET /api/canvas/config                            submit
   - GET /api/submissions/{id}                         submit          # resume a draft (owner only; addition to §8)
   - POST /api/submissions                             submit
   - PUT /api/submissions/{id}                         submit
@@ -151,6 +170,18 @@ endpoints:
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
+  # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.
+  - GET /api/config                                   signed_in       # A-API.config: the promises the copy names and the sorting lists
+  - GET /api/drafts/{id}/sorting                      submit          # L-SORT: suggested, confirmed or changed (owner only)
+  - PATCH /api/drafts/{id}/sorting                    submit          # L-SORT.rules/2–3: change a field, or confirm the rest
+  - PUT /api/drafts/{id}/fix                          submit          # S-05.fix: the fix sheet's answers (owner only)
+  - DELETE /api/drafts/{id}/fix                       submit          # S-05 part 5: Remove
+  - PUT /api/drafts/{id}/helpers                      submit          # S-05 part 6: Who would help
+  - GET /api/drafts/{id}/send                         submit          # L-SUBMIT.pre: the Send part's last look
+  - POST /api/drafts/{id}/submit                      submit          # L-SUBMIT.send, with an Idempotency-Key
+  - GET /api/ideas/{id}/edit                          submit          # S-06B: the edit page (the sharer, in the edit window)
+  - PATCH /api/ideas/{id}/edit                        submit          # A-API PATCH /ideas/:id: Save changes, a version each time
+  - GET /api/ideas/{id}/versions                      signed_in       # Draft history: the sharer, the desk, the committee (the worker checks)
   # Team-up, draft merge requests and crews (lane F; A-API.team-up, L-TEAMUP, L-MERGE.request). Any employee may
   # ask; the worker checks the rest: only the requester withdraws, only the idea's lead answers or removes.
   - GET /api/ideas/{id}/team-up                       signed_in
@@ -176,6 +207,17 @@ endpoints:
   - POST /api/desk/ideas/{id}/hide                    hide_for_desk
   - POST /api/drafts/{id}/hidden/{hid}/show           submit
   - POST /api/drafts/{id}/hidden/{hid}/hide           submit
+  # Files and links (lane C; A-API.files, L-HIDE.files, BLD-C105 to C109). The worker decides who may add, see,
+  # open, retry or remove each one (DEC-107): a file with a customer detail opens only for the person who added it,
+  # the review desk and the Ones Committee.
+  - GET /api/config/uploads                           signed_in       # the one limit, type list and help line
+  - POST /api/files                                   submit          # multipart; one of draft_id, idea_id, answer_id
+  - POST /api/links                                   submit          # never fetched (BLD-E001)
+  - GET /api/files/{id}                               open_attachments
+  - GET /api/files/{id}/view                          open_attachments  # the checked copy only
+  - POST /api/files/{id}/retry                        submit
+  - DELETE /api/files/{id}                            submit
+  - POST /api/files/{id}/hide                         submit          # not_available while files.blackout is off
   - GET /api/wall                                     see_org_ideas
   - GET /api/admin/roles                              grant_roles
   - POST /api/admin/roles                             grant_roles
@@ -253,6 +295,21 @@ endpoints:
   - PUT /api/ember/{id}/note                          write_ember_note
   - POST /api/ember/{id}/ready                        write_ember_note   # the worker allows the core committee chair only (BLD-134)
   - POST /api/ember/{id}/send                         send_ember
+  # The 1% Club's configuration for the screens (A-API.config): the promises and the person's own flags.
+  - GET /api/config                                   signed_in
+  # The admin page (lane A; J-ONE steps 1, 2, 3 and 6). Everything is audited (non-negotiable 9).
+  - GET /api/admin/programme                          run_programme take_off_wall   # each sees their own parts
+  - POST /api/admin/ideas/{id}/build-team             run_programme   # L-DECIDE.after: team chosen
+  - POST /api/admin/ideas/{id}/shipped                run_programme   # L-DECIDE.after: shipped
+  - PUT /api/admin/ideas/{id}/measurements/{mark}     run_programme   # L-IMPACT/2, /8
+  - POST /api/admin/ideas/{id}/measurements/{mark}/finance  run_programme   # L-IMPACT/3: a second person
+  - POST /api/admin/ideas/{id}/wall-removal           take_off_wall   # "Take off the Wall"
+  - DELETE /api/admin/ideas/{id}/wall-removal         take_off_wall   # and back on
+  - POST /api/admin/ones/founding                     run_programme   # DEC-106: mark a Founding One
+  - DELETE /api/admin/ones/{id}                       run_programme   # DEC-106: remove a One
+  - GET /api/admin/flags                              manage_flags    # L-AUDIT.flags
+  - PUT /api/admin/flags/{key}                        manage_flags
+  - PUT /api/admin/flags/{key}/people                 manage_flags
 
   # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
   # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
@@ -299,7 +356,7 @@ pages:
   - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
   - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
-  - /admin                     manage_kill_switches grant_roles     # any of these
+  - /admin                     manage_kill_switches grant_roles run_programme take_off_wall manage_flags   # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
