@@ -117,7 +117,10 @@
 .ip-card {
   position: relative;
   isolation: isolate;
+  /* clip, not hidden: hidden makes the card a scroll box, and focusing a line an action adds scrolled the glow
+     into view and the pill and title out of it (BLD-E060; J-REVIEW/6, J-RECOVER/15). hidden stays as the fallback. */
   overflow: hidden;
+  overflow: clip;
   margin-top: 16px;
   padding: 24px 24px 26px 26px;
   border-radius: 28px;
