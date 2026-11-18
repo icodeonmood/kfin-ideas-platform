@@ -70,7 +70,8 @@ export function SimilarGrid({
     returnFocus: () => showAgain.current,
   });
 
-  const folded = keptSeparate && load.state === "ok" && load.matches.length > 0;
+  // Read-only, the grid is shown as it is: "Show them again" would change a merged draft (BLD-C155).
+  const folded = !readOnly && keptSeparate && load.state === "ok" && load.matches.length > 0;
   const matches = load.state === "ok" ? load.matches : [];
   const shown = more ? matches : matches.slice(0, SHOWN);
   const previewAction = previewing ? tileAction(previewing, merge) : null;
