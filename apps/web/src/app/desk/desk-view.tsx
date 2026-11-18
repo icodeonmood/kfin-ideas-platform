@@ -163,6 +163,8 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
   const now = useMinute();
   const router = useRouter();
   const body = useRef<HTMLTableSectionElement>(null);
+  // The tab panel: Try again moves focus here before it goes, so focus never drops to the page (BLD-B262)
+  const panel = useRef<HTMLElement>(null);
   // The read in flight, or null once it has settled
   const loading = useRef<AbortController | null>(null);
   // False once the desk has gone (a row was opened): a read that settles later changes neither the page nor the address
@@ -361,6 +363,7 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
 
       <section
         {...tabPanelProps("desk", view.tab)}
+        ref={panel}
         className="rd-panel"
         aria-busy={(held && !unread) || undefined}
       >
@@ -371,6 +374,9 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
                 variant="line"
                 size="sm"
                 onClick={() => {
+                  // The button leaves with the failed line: focus goes to the tab panel first, which is busy while
+                  // the list is read and then holds it (S-R1, DEC-110 follow-up)
+                  panel.current?.focus();
                   setUnread(false);
                   void load(view.tab, view.sort, wordsNow(), false);
                 }}
