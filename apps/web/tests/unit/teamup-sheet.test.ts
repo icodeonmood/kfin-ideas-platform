@@ -1052,3 +1052,35 @@ describe("C-SHEET-TEAMUP, a lead who is not named (BLD-F029, DEC-104)", () => {
     );
   });
 });
+
+describe("V-ACC.teamup/1 on the sheet (J-TEAMUP/2)", () => {
+  /** Every control in the dialog a person could press: buttons, links and anything playing a button. */
+  const pressable = () =>
+    Array.from(dialog()!.querySelectorAll<HTMLElement>("button, a[href], [role='button'], [role='link']"));
+  /** The cross closes and a dropdown's field opens a list; neither is an action. */
+  const actions = () =>
+    pressable().filter((el) => nameOf(el) !== "Close without sending" && !el.hasAttribute("aria-expanded"));
+
+  it("V-ACC.teamup/1: on open the note is pre-filled, Bring your ideas along is collapsed at None picked, and the one action is Send to Ravi beside the close cross; no Cancel", async () => {
+    await render();
+    expect(note().value).toBe(DRAFTED);
+    const field = button("Bring your ideas along: None picked")!;
+    expect(field.getAttribute("aria-expanded")).toBe("false");
+    expect(actions().map(nameOf)).toEqual(["Send to Ravi"]);
+    expect(pressable().filter((el) => nameOf(el) === "Close without sending")).toHaveLength(1);
+    expect(
+      pressable()
+        .map(nameOf)
+        .filter((n) => /cancel/i.test(n)),
+    ).toEqual([]);
+    expect(text(dialog())).not.toMatch(/\bcancel\b/i);
+  });
+
+  it("V-ACC.teamup/1: opened from Check it, the choice replaces the dropdown and the one action is still Send to Ravi; no Cancel", async () => {
+    await render({ draftId: DRAFT });
+    expect(note().value).toBe(DRAFTED);
+    expect(actions().map(nameOf)).toEqual(["Send to Ravi"]);
+    expect(pressable().filter((el) => nameOf(el) === "Close without sending")).toHaveLength(1);
+    expect(text(dialog())).not.toMatch(/\bcancel\b/i);
+  });
+});
