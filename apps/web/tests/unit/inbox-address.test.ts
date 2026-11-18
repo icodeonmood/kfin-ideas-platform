@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * S-H5, C-INBOX-READER, P-ROUTES.state (J-BROWSE/4 and /6): the Inbox keeps its tab, its search and the open item in
- * the address. The reader writes them with history.replaceState as the person moves; the server reads them on a
- * reload or a link; and Back to an Inbox the router kept from before the address moved loads what the address names.
- * An unknown tab or item falls back to the default, and an item opens only if it is in the person's own list.
- * Synthetic people and ideas.
+ * S-H5, C-INBOX-READER, P-ROUTES.state (J-BROWSE/4 and /6): the Inbox keeps its tab and the open item in the
+ * address, and its search in this tab's memory of the history entry, never the address (DEC-110). The reader writes
+ * them with history.replaceState as the person moves; the server reads the address on a reload or a link; and Back
+ * to an Inbox the router kept from before the address moved loads what the address names. An unknown tab or item
+ * falls back to the default, and an item opens only if it is in the person's own list. Synthetic people and ideas.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -42,7 +42,8 @@ vi.mock("@/server/inbox", () => ({
   },
 }));
 
-import { inboxHref, itemIn, readInboxAddress } from "@/app/inbox/address";
+import { inboxHref, itemIn, readInboxAddress, type InboxView } from "@/app/inbox/address";
+import { readSearch, writeSearch } from "@/lib/search-memory";
 import { InboxReader, startView } from "@/app/inbox/inbox-reader";
 import InboxItemPage from "@/app/inbox/[item]/page";
 import Inbox from "@/app/inbox/page";
@@ -148,18 +149,26 @@ const row = (id: string) => host.querySelector<HTMLButtonElement>(`#ibx-row-${id
 const here = () => window.location.pathname + window.location.search;
 
 describe("S-H5 address: what it reads and writes (P-ROUTES.state)", () => {
-  it("J-BROWSE/4: the tab, the open item and the search go in and come back out the same", () => {
-    const href = inboxHref("/inbox", { tab: "needs_you", item: "7", q: "sip pause" });
-    expect(href).toBe("/inbox?tab=needs_you&item=7&q=sip+pause");
+  it("J-BROWSE/4, DEC-110: the tab and the open item go in and come back out the same; the search never goes in", () => {
+    const view: InboxView = { tab: "needs_you", item: "7", q: "sip pause" };
+    const href = inboxHref("/inbox", view);
+    expect(href).toBe("/inbox?tab=needs_you&item=7");
+    expect(href).not.toMatch(/sip|pause|q=/);
     expect(readInboxAddress(new URL(href, "http://x").searchParams)).toEqual({
       named: true,
       tab: "needs_you",
       item: "7",
-      q: "sip pause",
     });
+    // An older address's search is not read (J-BROWSE/6), and a search alone names no view
+    expect(readInboxAddress(new URLSearchParams("tab=all&q=sip"))).toEqual({
+      named: true,
+      tab: "all",
+      item: null,
+    });
+    expect(readInboxAddress(new URLSearchParams("q=sip")).named).toBe(false);
     // An item's own address keeps its path; anything else is the Inbox
-    expect(inboxHref("/inbox/41", { tab: "all", item: null, q: "" })).toBe("/inbox/41?tab=all");
-    expect(inboxHref("/desk", { tab: "all", item: null, q: "  " })).toBe("/inbox?tab=all");
+    expect(inboxHref("/inbox/41", { tab: "all", item: null })).toBe("/inbox/41?tab=all");
+    expect(inboxHref("/desk", { tab: "all", item: null })).toBe("/inbox?tab=all");
     expect(readInboxAddress({ tab: ["unread", "all"] }).tab).toBe("unread");
   });
 
@@ -168,7 +177,6 @@ describe("S-H5 address: what it reads and writes (P-ROUTES.state)", () => {
       named: true,
       tab: "all",
       item: null,
-      q: "",
     });
     expect(readInboxAddress(new URLSearchParams(""))).toMatchObject({ named: false, tab: "all", item: null });
     expect(readInboxAddress({ item: "1".repeat(19) }).item).toBeNull();
@@ -184,10 +192,11 @@ describe("S-H5 address: what it reads and writes (P-ROUTES.state)", () => {
       q: "",
       reload: false,
     });
+    // DEC-110: a link's search is not taken; the reader reads this tab's memory once it has mounted
     expect(startView(new URLSearchParams("tab=all&item=7&q=sip"), initial)).toEqual({
       tab: "all",
       item: "7",
-      q: "sip",
+      q: "",
       reload: false,
     });
     expect(startView(new URLSearchParams("tab=all&item=9"), initial).item).toBeNull(); // not the person's
@@ -254,24 +263,52 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
     expect(tab("needs_you").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("a search goes into the address once the person pauses, and comes back with the page", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  it("DEC-110, J-BROWSE/1 and /3: a search stays in this tab's memory, never the address, and comes back with the page", async () => {
     await show(ALL, "all", null);
     const input = host.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(input.getAttribute("autocomplete")).toBe("off");
     await act(async () => {
       const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      set.call(input, "SIP");
+      set.call(input, "Zoya");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(here()).toBe("/inbox");
-    await act(async () => {
-      vi.advanceTimersByTime(300);
-    });
-    expect(here()).toBe("/inbox?tab=all&q=SIP");
+    // kept at once, so a link opened straight after leaves it behind for Back
+    expect(readSearch("/inbox")).toBe("Zoya");
+    expect(here()).toBe("/inbox?tab=all");
+    expect(row("8")).not.toBeNull();
+    expect(row("7")).toBeNull();
+    expect(calls.filter((c) => /zoya/i.test(c))).toEqual([]);
+
+    // Back or a reload: the same entry, so the same search and the same filtered list
     act(() => root.unmount());
     root = createRoot(host);
     await show(ALL, "all", null);
-    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("SIP");
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("Zoya");
+    expect(row("7")).toBeNull();
+
+    // A fresh visit (the sidebar, a link) is a new entry: no search (J-BROWSE/6)
+    act(() => root.unmount());
+    root = createRoot(host);
+    window.history.pushState(null, "", "/inbox");
+    await show(ALL, "all", null);
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("");
+    expect(row("7")).not.toBeNull();
+  });
+
+  it("DEC-110: an older address's ?q= leaves the address and is not taken as the search", async () => {
+    window.history.replaceState(null, "", "/inbox?tab=all&q=Zoya");
+    await show(ALL, "all", null);
+    expect(here()).toBe("/inbox?tab=all");
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("");
+  });
+
+  it("DEC-110: nothing from the unfiltered list is opened or marked read before the kept search is back", async () => {
+    writeSearch("/inbox", "Harish"); // matches the questions (read) and not the mention (unread, first in the list)
+    await show(ALL, "all", null);
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("Harish");
+    expect(row("8")).toBeNull();
+    expect(row("7")?.getAttribute("aria-pressed")).toBe("true");
+    expect(calls.filter((c) => c.startsWith("POST"))).toEqual([]);
   });
 
   it("an item the address names that is not in the person's list opens nothing and is never asked for", async () => {
