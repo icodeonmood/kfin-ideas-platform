@@ -6,6 +6,11 @@ reference to the set (L-CONVO/4; lane B's `C-QCARD` fills the card from `GET /id
 the screen shows around it (the line under the header, the box's placeholder, who can see it, the line above the
 box while questions are open) are worked out here, so every screen agrees (A-API.conventions/6).
 
+The person at the review desk is named only to the review desk and the Ones Committee (DEC-111). Everyone else (the
+sharer, the crew, the build team, a mentioned person) reads "The review desk" in their place, with no id and no
+initials, on messages, the questions and answers, "In this conversation", the box's placeholder and the line above it,
+and the people a message mentions (`Ctx.shown`, BLD-F082).
+
 Live updates: nothing is sent on an event stream yet (`A-API.events` has no owner); S-08 refetches after each
 action (BLD-F050).
 """
@@ -18,11 +23,12 @@ from typing import Any
 
 from convo import render
 from convo.access import COMMITTEE_ROLES, DESK_ROLES, Reader, reader
-from convo.render import COMMITTEE, DESK, Ctx, author, plural, when
+from convo.render import COMMITTEE, DESK, Ctx, plural, when
 from convo.store import People, Person, load_idea, now, unseal
 from core.db import Conn
 from desk.when import deadline as answer_by
 from onepc.enums import labels
+from onepc.words import REVIEW_DESK
 
 REMOVE_WITHIN = dt.timedelta(minutes=5)  # L-CONVO/10 (NOT DRAWN default)
 OPEN_SET_STATES = ("sent", "seen", "partly_answered")
@@ -92,7 +98,7 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
         "audience": audience,
         "participants": _participants(ctx, idea, crew, team, rows, staff_as, sharer, t),
         "entries": entries,
-        "composer": _composer(ctx, idea, audience, has_crew, sharer, rows),
+        "composer": _composer(ctx, idea, audience, has_crew, sharer, rows, staff_as),
     }
     if r.sharer and not any(e["type"] in ("message", "questions", "answers") for e in entries):
         out["empty"] = EMPTY
@@ -141,11 +147,44 @@ class _Speaking:
 
 
 def _sender(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> Person:
+    """Who wrote it, as this reader may see them: the review desk's people as the desk itself outside the desk and
+    the committee (DEC-111)."""
     if x.get("author_user_id"):
         p = ctx.people.by_user(str(x["author_user_id"]))
         role = staff_as.role(str(x["author_user_id"]))
-        return p.as_staff(role) if role else p
+        return ctx.shown(p.as_staff(role)) if role else p
     return ctx.people.by_code(x.get("author_code"))
+
+
+def _at_desk(ctx: Ctx, staff_as: _Speaking, user_id: str) -> bool:
+    """Whether a person named by users.id (a mention) is at the review desk, asked only when this reader may not see
+    the desk's names (DEC-111)."""
+    return not ctx.sees_desk and staff_as.role(user_id) == DESK
+
+
+# DEC-111: a mention of someone at the review desk, as anyone outside the desk and the committee reads it. Lower case,
+# so "@the review desk" sits inside a sentence and the screen still marks it as a mention.
+DESK_MENTION = {"id": "", "name": REVIEW_DESK, "first_name": REVIEW_DESK, "initials": ""}
+
+
+def _mentioned(
+    ctx: Ctx, x: dict[str, Any], staff_as: _Speaking, text: str
+) -> tuple[str, list[dict[str, Any]]]:
+    """The people a message mentions, and its words, as this reader may see them: "@Meera Iyer" reads "@the review
+    desk" outside the desk and the committee (DEC-111). The words the person wrote are not changed otherwise."""
+    refs: list[dict[str, Any]] = []
+    desk_named: list[str] = []
+    for u in _mentions(x):
+        p = ctx.people.by_user(u)
+        if _at_desk(ctx, staff_as, u) and not ctx.is_me(p):
+            desk_named.append(p.name)
+            if DESK_MENTION not in refs:
+                refs.append(DESK_MENTION)
+        else:
+            refs.append(p.ref())
+    for name in sorted(set(desk_named), key=len, reverse=True):
+        text = text.replace(f"@{name}", f"@{REVIEW_DESK}")
+    return text, refs
 
 
 def _entry(
@@ -164,12 +203,15 @@ def _entry(
         who = _sender(ctx, x, staff_as)
         mine = _mine(x, ctx.reader)
         removed = x["deleted_at"] is not None
-        mentions = [ctx.people.by_user(u) for u in _mentions(x)]
+        text, mentions = (
+            (REMOVED, []) if removed else _mentioned(ctx, x, staff_as, unseal(x["text_encrypted"], eid) or "")
+        )
+        own = [] if removed else files.get(eid, [])
+        if who.desk:  # the desk's files are added by the desk, not by a named person (DEC-111)
+            own = [{**f, "added_by": who.ref()} for f in own]
         e = {
             "type": "message", "id": eid, "from": who.ref(), "from_label": ctx.name(who), "you": mine,
-            "text": REMOVED if removed else (unseal(x["text_encrypted"], eid) or ""),
-            "files": [] if removed else files.get(eid, []),
-            "mentions": [] if removed else [m.ref() for m in mentions],
+            "text": text, "files": own, "mentions": mentions,
             "mentions_you": not removed and ctx.reader.user_id in _mentions(x),
             "removed": removed,
         }  # fmt: skip
@@ -203,10 +245,11 @@ def _questions(ctx: Ctx, x: dict[str, Any], t: dt.datetime) -> dict[str, Any] | 
     s = _set(ctx, str(x["question_set_id"]))
     if s is None or s["state"] == "queued":
         return None
-    by = ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK)
+    by = ctx.shown(ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK))
     n = int(s["count"])
     is_open = s["state"] in OPEN_SET_STATES
-    # The sharer reads Messages.md's lines: "Meera has 3 questions about your idea", "Meera’s 3 questions, answered".
+    # The sharer reads Messages.md's lines: "Meera has 3 questions about your idea", "Meera’s 3 questions, answered";
+    # outside the desk and the committee, "The review desk has 3 questions about your idea" (DEC-111).
     if ctx.reader.sharer and is_open:
         title = f"{by.first_name} has {plural(n, 'question')} about your idea"
     elif ctx.reader.sharer and s["state"] == "answered":
@@ -260,10 +303,10 @@ def _answers(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking, t: dt.datetime) -
         for a in batch
     ]
     who = _sender(ctx, x, staff_as)
-    reviewer = ctx.people.by_user(str(s["by_user_id"]))
+    reviewer = ctx.shown(ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK))  # DEC-111
     n = int((x.get("payload") or {}).get("count") or len(answers))
     whose = "Your" if ctx.is_me(who) else f"{who.first_name}’s"
-    asker = "your" if ctx.is_me(reviewer) else f"{reviewer.first_name}’s"
+    asker = "your" if ctx.is_me(reviewer) else f"{reviewer.mid}’s"
     out: dict[str, Any] = {
         "type": "answers", "id": str(x["id"]), "set_id": str(s["id"]), "from": who.ref(),
         "title": f"{whose} answers to {asker} {plural(n, 'question')}", "answers": answers,
@@ -369,12 +412,14 @@ def _participants(
     ctx: Ctx, idea: dict[str, Any], crew: list[dict[str, Any]], team: dict[str, Any] | None,
     rows: list[dict[str, Any]], staff_as: _Speaking, sharer: Person, t: dt.datetime,
 ) -> list[dict[str, Any]]:  # fmt: skip
-    """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You"."""
+    """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You". Outside
+    the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111)."""
     seen: dict[str, tuple[Person, str]] = {}
 
     def add(p: Person, doing: str) -> None:
-        if p.id and p.id not in seen:
-            seen[p.id] = (p, doing)
+        key = "desk" if p.desk else p.id
+        if key and key not in seen:
+            seen[key] = (p, doing)
 
     if team:
         if team["lead_user_id"]:
@@ -387,7 +432,7 @@ def _participants(
             add(ctx.people.by_user(str(g["user_id"])), "On the build team")
     reviewer_id = idea.get("reviewer_id") or idea.get("opened_by")
     if reviewer_id:
-        add(ctx.people.by_user(str(reviewer_id)).as_staff(DESK), _reviewer_doing(ctx, idea))
+        add(ctx.shown(ctx.people.by_user(str(reviewer_id)).as_staff(DESK)), _reviewer_doing(ctx, idea))
     add(sharer, "Shared the idea")
     today = t.astimezone(render.IST).date()
     for c in crew:
@@ -397,11 +442,11 @@ def _participants(
     for x in rows:
         if x["type"] == "message" and x["deleted_at"] is None:
             for u in _mentions(x):
-                add(ctx.people.by_user(u), "Mentioned")
+                add(ctx.shown(ctx.people.by_user(u), at_desk=_at_desk(ctx, staff_as, u)), "Mentioned")
     for x in rows:
         if x["type"] == "message":
             who = _sender(ctx, x, staff_as)
-            add(who, "From the review desk" if who.role_label == DESK else
+            add(who, "From the review desk" if who.desk or who.role_label == DESK else
                 "From the Ones Committee" if who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
     me = seen.pop(ctx.reader.user_id, None)
     out = [{"person": p.ref(), "label": p.label, "doing": d, "you": False} for p, d in seen.values()]
@@ -422,13 +467,19 @@ def _reviewer_doing(ctx: Ctx, idea: dict[str, Any]) -> str:
 
 
 def _composer(
-    ctx: Ctx, idea: dict[str, Any], audience: str, has_crew: bool, sharer: Person, rows: list[dict[str, Any]]
+    ctx: Ctx,
+    idea: dict[str, Any],
+    audience: str,
+    has_crew: bool,
+    sharer: Person,
+    rows: list[dict[str, Any]],
+    staff_as: _Speaking,
 ) -> dict[str, Any]:
     """The box: its placeholder by audience (L-CONVO/5), who can see it (S-08.layout/3) and, for the sharer while
     questions are open, the line above it (L-CONVO/4)."""
     r = ctx.reader
     out: dict[str, Any] = {
-        "placeholder": _placeholder(ctx, audience, has_crew, sharer, rows),
+        "placeholder": _placeholder(ctx, audience, has_crew, sharer, rows, staff_as),
         "visibility": _visibility(ctx, audience, has_crew, sharer),
         "can_attach": r.may_attach,  # S-08 shows the attach control only then (BLD-F063)
     }
@@ -440,7 +491,7 @@ def _composer(
             (idea["id"], list(OPEN_SET_STATES)),
         ).fetchone()
         if s is not None and int(s["open"]) > 0:
-            first = ctx.people.by_user(str(s["by_user_id"])).first_name
+            first = ctx.shown(ctx.people.by_user(str(s["by_user_id"])).as_staff(DESK)).mid  # DEC-111
             out["questions_line"] = (
                 f"Answer {first}’s {plural(int(s['open']), 'question')} with Answer the questions, so each answer "
                 "lands on its part of your idea. Write here for anything else."
@@ -460,12 +511,14 @@ def closed_message(conn: Conn, idea: dict[str, Any]) -> str:
     return f"This idea is now part of another one. Write in {where}."
 
 
-def _placeholder(ctx: Ctx, audience: str, has_crew: bool, sharer: Person, rows: list[dict[str, Any]]) -> str:
+def _placeholder(
+    ctx: Ctx, audience: str, has_crew: bool, sharer: Person, rows: list[dict[str, Any]], staff_as: _Speaking
+) -> str:
     r = ctx.reader
-    if not r.full:  # "Reply to Sanjay": whoever mentioned them last
+    if not r.full:  # "Reply to Sanjay": whoever mentioned them last; "Reply to the review desk" (DEC-111)
         last = next((x for x in reversed(rows) if r.user_id in _mentions(x)), None)
         if last is not None:
-            return f"Reply to {author(ctx, last).first_name}"
+            return f"Reply to {_sender(ctx, last, staff_as).mid}"
     if audience == "build_team":
         if r.build:
             return "Message the crew" if has_crew else f"Reply to {sharer.first_name}"
