@@ -1328,3 +1328,105 @@ def test_dec_104_s06_similar_tiles_and_the_merged_line_never_name_a_lead_who_has
     merged = view(club, t11, "tanvi")["page"]["merged"]
     assert merged["line"] == f"Merged into {ref(club, 'R2')} by its lead"
     assert "Rekha" not in json.dumps(merged, ensure_ascii=False)
+
+
+# --- Lane G's 13:00 walk (run 44273019908): S-06's similar tiles, an empty part, and Teams while it is off ----------
+
+
+def test_s06_rules_4_c_simgrid_tile_j_similar_7_j_review_m3_no_tile_for_where_it_went_no_team_up_on_your_crew(
+    club: dict[str, Any],
+) -> None:
+    """S-06.rules/4, C-SIMGRID.tile (BLD-E056; J-SIMILAR/7, J-REVIEW/M3): T11 was merged into R2 by the review desk,
+    and Tanvi is on R2's crew. T11's "Colleagues on something similar" has no tile for R2 (its card and merged block
+    link there already). On any other page, a tile for an idea whose crew she is in offers Preview only, with "On
+    the crew" where Team up would be; once she leaves that crew, Team up is back."""
+    conn, m = club["conn"], club["m"]
+    t11, r2 = ref(club, "T11"), ref(club, "R2")
+    page = view(club, t11, "tanvi")["page"]
+    assert page["merged"]["to"] == r2
+    assert r2 not in [t["idea"]["id"] for t in page["similar"]["tiles"]]
+    # The tile is gone only for where it went: undo the merge and R2 is back, with the crew she is on
+    conn.execute("UPDATE merges SET reversed_at = now() WHERE merged_idea_uuid = %s", (m["T11"].uuid,))
+    tiles = view(club, t11, "tanvi")["page"]["similar"]["tiles"]
+    tile = next(t for t in tiles if t["idea"]["id"] == r2)
+    assert tile["my_state"] == "on_crew" and tile["done_line"] == "On the crew"
+    assert [a["op"] for a in tile["actions"]] == ["preview"]
+
+    # T5 lists P1; Tanvi is not on P1's crew, so it offers Team up and no "On the crew"
+    def p1_tile() -> dict[str, Any]:
+        tiles = view(club, ref(club, "T5"), "tanvi")["page"]["similar"]["tiles"]
+        return dict(next(t for t in tiles if t["idea"]["id"] == ref(club, "P1")))
+
+    t5_tile = p1_tile()
+    assert [a["op"] for a in t5_tile["actions"]] == ["preview", "team_up"] and "done_line" not in t5_tile
+    # On P1's crew, it does not; left the crew, it does again
+    conn.execute(
+        "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'crew', 'teamup')",
+        (m["P1"].uuid, code_of(club, "tanvi")),
+    )
+    t5_tile = p1_tile()
+    assert [a["op"] for a in t5_tile["actions"]] == ["preview"] and t5_tile["done_line"] == "On the crew"
+    conn.execute(
+        "UPDATE crew_members SET left_at = now(), left_how = 'left' WHERE idea_uuid = %s AND contributor_code = %s",
+        (m["P1"].uuid, code_of(club, "tanvi")),
+    )
+    assert [a["op"] for a in p1_tile()["actions"]] == ["preview", "team_up"]
+
+
+def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(club: dict[str, Any]) -> None:
+    """S-06.layout/5 (BLD-E057; J-REVIEW/1, /3, /6, J-TRACK/7): a part the sharer left empty reads "Not given.", as
+    S-R2 reads it, never a blank row. A part with words has no empty line."""
+    conn, k1 = club["conn"], ref(club, "K1")  # Kiran's K1: How often left empty
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    assert rows["often"]["value"] == "" and rows["often"]["empty_line"] == "Not given."
+    assert rows["who"]["value"] and "empty_line" not in rows["who"]
+    conn.execute("UPDATE ideas SET affects = '{}' WHERE idea_id = %s", (k1,))
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    assert rows["who"]["empty_line"] == "Not given."
+    t5 = {r["part"]: r for r in view(club, ref(club, "T5"), "tanvi")["page"]["shared"]["rows"]}
+    assert t5["often"]["value"] and "empty_line" not in t5["often"]
+
+
+def test_bld_e054_dec_105_s06_names_teams_only_while_its_switch_is_on(club: dict[str, Any]) -> None:
+    """BLD-E054, DEC-105 (S-06.layout/4, /8, S-06.states "Just shared", "Answers sent"): Teams is built but off until
+    IT approves it. With `comms.teams` on, S-06 says the drawn words; off, each sentence names only email."""
+    conn, t5, t6 = club["conn"], ref(club, "T5"), ref(club, "T6")
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+
+    def lines() -> dict[str, str]:
+        just = view(club, t5, "tanvi")["page"]
+        sent = view(club, t6, "tanvi")["page"]
+        assert just["state"] == "just_shared" and sent["state"] == "answers_sent"
+        return {
+            "window": just["window"]["line"].split(". ", 2)[-1],
+            "rest": just["card"]["rest"],
+            "phone_rest": just["card"]["phone_rest"],
+            "empty": just["conversation"]["empty_line"],
+            "phone_empty": just["conversation"]["phone_empty_line"],
+            "sent": sent["card"]["rest"].split(", and you hear in your ")[-1],
+        }
+
+    killswitch.clear_cache()
+    assert killswitch.is_on("comms.teams", conn)  # the test database starts with every switch on
+    assert lines() == {
+        "window": "We tell you on Teams and by email when anything moves.",
+        "rest": "We’ll tell you on Teams and by email when anything changes.",
+        "phone_rest": "We’ll tell you on Teams and by email.",
+        "empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
+        "tell you on Teams.",
+        "phone_empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "sent": "Inbox, on Teams and by email.",
+    }
+    conn.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
+    killswitch.clear_cache()
+    off = lines()
+    assert off == {
+        "window": "We tell you by email when anything moves.",
+        "rest": "We’ll tell you by email when anything changes.",
+        "phone_rest": "We’ll tell you by email.",
+        "empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "phone_empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "sent": "Inbox and by email.",
+    }
+    pages = [view(club, t5, "tanvi"), view(club, t6, "tanvi")]
+    assert "Teams" not in json.dumps(pages, ensure_ascii=False, default=str)

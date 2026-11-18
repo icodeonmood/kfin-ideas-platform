@@ -759,8 +759,15 @@
 .ip-tile-a {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* C-SIMGRID.tile "On the crew", as Check it draws it (share/[id]/check/check.css .ck-crew) */
+.ip-tile-done {
+  font: 500 13px/1.4 var(--ft);
+  color: var(--okT);
 }
 
 .ip-faces {
