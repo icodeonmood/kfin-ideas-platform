@@ -17,7 +17,7 @@ from comms import email_html
 from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
-from notify import AS_THE_DESK
+from notify import AS_THE_DESK, as_the_desk
 from onepc.words import REVIEW_DESK_START
 from similar.preview import HIDDEN_NAME, hidden_person
 
@@ -28,7 +28,9 @@ IST = ZoneInfo("Asia/Kolkata")
 # DEC-111 (BLD-A221): a sharer, a crew member or anyone outside the desk and the committee never sees the name of the
 # person at the review desk, so a desk kind reads "The review desk" with the mark, whoever reads it, and the reviewer
 # is never read: no users.id, name, first name or initials reach the item, its variables or its email. L-HIDE/7's
-# kind (`notify.AS_THE_DESK`, BLD-A205) is one of them, and its reviewer is not even stored.
+# kind (`notify.AS_THE_DESK`, BLD-A205) is one of them, and its reviewer is not even stored. Any other item whose refs
+# say `as_desk: true` (lane F's comment and mention when a reviewer writes as the desk) reads the same way, and its
+# reviewer is not stored either (`notify.as_the_desk`).
 DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge"}) | AS_THE_DESK
 # Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk, and a reminder to
 # answer the desk's questions, timed or from a reviewer's "Send a reminder" (lane B posts that one with the reviewer
@@ -141,10 +143,10 @@ def lead_seen_by_requester(
     return ref if seen.first is not None else {**ref, "hidden": True}
 
 
-def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
-    """The sender as the item shows them. A desk kind is the review desk as a whole and a system kind the 1% Club,
-    whoever `who` is (DEC-111): neither carries a person."""
-    if kind in DESK_KINDS:
+def sender(kind: str, who: dict[str, Any] | None, refs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The sender as the item shows them. A desk kind, or an item whose refs say `as_desk`, is the review desk as a
+    whole, and a system kind the 1% Club, whoever `who` is (DEC-111): neither carries a person."""
+    if kind in DESK_KINDS or as_the_desk(kind, refs):
         return dict(DESK_SENDER)
     if who is None or kind in SYSTEM_KINDS:
         return dict(SYSTEM)
@@ -155,9 +157,10 @@ def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
     return {**who, "role_label": role, "display": display, "system": False}
 
 
-def names_no_one(kind: str) -> bool:
-    """A kind whose sender is never read (DEC-111): the review desk's and the 1% Club's own."""
-    return kind in DESK_KINDS or kind in SYSTEM_KINDS
+def names_no_one(kind: str, refs: dict[str, Any] | None = None) -> bool:
+    """An item whose sender is never read (DEC-111): the review desk's kinds and the 1% Club's own, and any item
+    whose refs say `as_desk`."""
+    return kind in DESK_KINDS or kind in SYSTEM_KINDS or as_the_desk(kind, refs)
 
 
 def _possessive(first_name: str | None) -> str:
@@ -408,8 +411,10 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    if names_no_one(kind):  # DEC-111: the reviewer who acted is not read at all, so no template can name them
-        who = sender(kind, None)
+    if names_no_one(
+        kind, refs
+    ):  # DEC-111: the reviewer who acted is not read at all, so no template can name them
+        who = sender(kind, None, refs)
     elif kind == "teamup_answer" and refs.get("answer") == "decline":
         who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
     else:
