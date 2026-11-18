@@ -124,3 +124,12 @@ def test_BLD_C177_the_worker_dependency_files_do_not_list_the_sdk() -> None:
     assert SDK not in {name(r) for r in reqs if r.strip() and not r.strip().startswith("-")}
     locked = re.findall(r'^name = "([^"]+)"$', (WORKER / "uv.lock").read_text(encoding="utf-8"), re.MULTILINE)
     assert locked and SDK not in {n.replace("-", "").replace("_", "").lower() for n in locked}
+
+
+def test_BLD_C177_a_sarvam_sdk_hit_in_the_gateway_is_not_called_outside_the_gateway(tmp_path: Path) -> None:
+    done = _run(_tree(tmp_path, "services/worker/gateway/sarvam.py", f"import {SDK}\n"))
+    assert done.returncode == 1
+    assert "SARVAM SDK, BANNED EVERYWHERE  services/worker/gateway/sarvam.py" in done.stdout
+    assert "OUTSIDE GATEWAY" not in done.stdout
+    outside = _run(_tree(tmp_path / "b", "services/worker/scan/agent.py", "import anthropic\n"))
+    assert "MODEL SDK OUTSIDE GATEWAY  services/worker/scan/agent.py" in outside.stdout

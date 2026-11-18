@@ -151,7 +151,8 @@ def main(argv: list[str]) -> int:
     root = Path(argv[1] if len(argv) > 1 else ".").resolve()
     problems = violations(root)
     for p in problems:
-        print(f"MODEL SDK OUTSIDE GATEWAY  {p}")
+        label = "SARVAM SDK, BANNED EVERYWHERE" if p.endswith("(banned everywhere, gateway included)") else None
+        print(f"{label or 'MODEL SDK OUTSIDE GATEWAY'}  {p}")
     print(f"no-model-sdk: {'FAIL' if problems else 'ok'} ({len(problems)} violations)")
     return 1 if problems else 0
 

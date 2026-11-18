@@ -13,7 +13,7 @@ import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
@@ -34,7 +34,7 @@ LINE = re.compile(
     r"(?:  words: (?:yes|no))?  (?:PASS|FAIL [a-z0-9_]+)$"
 )
 SUMMARY = re.compile(
-    r"^summary +\d+ of \d+ passed  warnings: \d+, IDs only: (?:yes|no)  (?:PASS|FAIL)(?:  \([^()]+\))?$"
+    r"^summary +\d+ of \d+ passed  log lines: \d+, IDs only: (?:yes|no)  (?:PASS|FAIL)(?:  \([^()]+\))?$"
 )
 # What the fakes hear and translate: synthetic, with a word of each spoken sentence.
 HEARD_TEXT = "The printer near the lift is out of paper. Please order more chairs for the meeting room."
@@ -392,3 +392,227 @@ def test_BLD_C177_the_make_target_never_puts_the_key_on_a_command_line() -> None
 
 def _never(*_a: Any, **_k: Any) -> int:
     raise AssertionError("the check ran when it should have refused first")
+
+
+# ---- review round 1 (BLD-C177): masking proven, not counted; no traceback; logs at INFO; signals; meter fields ----
+
+
+def all_four(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> tuple[int, list[str], FakeSarvamWs, list[Any]]:
+    rest = rest_fake(monkeypatch)
+    out = io.StringIO()
+    with ws_server(monkeypatch, FakeSarvamWs(heard=HEARD_TEXT)) as fake:
+        code = sarvam_live.run(
+            list(sarvam_live.ALL), out=out, database=test_database, decode=lambda mp3: PCM, pace_s=0
+        )
+    printed_is_clean(out.getvalue())
+    return code, out.getvalue().splitlines(), fake, rest
+
+
+def test_BLD_C177_each_masking_function_tags_a_synthetic_vector() -> None:
+    assert sarvam_live.maskers_tag() == dict.fromkeys(sarvam_live.MASKERS, True)
+
+
+def test_BLD_C177_L_LISTEN_text_handed_on_that_is_not_the_masking_output_fails_tts(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from speech import listen
+
+    real = listen.outgoing
+
+    def copies(
+        script: Any,
+    ) -> list[tuple[str, str]]:  # equal text, but not the object mask_for_service returned
+        return [(part, "".join(list(text))) for part, text in real(script)]
+
+    monkeypatch.setattr(listen, "outgoing", copies)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[0].startswith("tts ") and lines[0].endswith("FAIL not_masked")
+
+
+def test_BLD_C177_a_voice_note_transcript_that_is_not_the_masking_output_fails_stt_rest(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from voice import service as voice_notes
+
+    real = voice_notes.status
+
+    def altered(conn: Any, voice_id: str, idea_uuid: str) -> dict[str, Any] | None:
+        view = real(conn, voice_id, idea_uuid)
+        return (
+            {**view, "transcript": view["transcript"] + " again"} if view and "transcript" in view else view
+        )
+
+    monkeypatch.setattr(voice_notes, "status", altered)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[1].startswith("stt_rest ") and lines[1].endswith("FAIL not_masked")
+    assert lines[0].endswith("PASS") and lines[2].endswith("PASS") and lines[3].endswith("PASS")
+
+
+def test_BLD_C177_L_DRAFT_voice_a_masking_function_that_tags_nothing_fails_and_the_vector_never_leaves(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from pii import vectors
+    from speech import drafts
+    from speech.adapters import Hidden
+
+    monkeypatch.setattr(drafts, "hide_text", lambda text: Hidden(text=text, spans=[], count=0))  # a no-op
+    code, lines, fake, rest = all_four(monkeypatch, test_database)
+    assert code == 1
+    assert lines[0].endswith("PASS") and lines[1].endswith("PASS")
+    assert lines[2].startswith("stt_stream ") and lines[2].endswith("FAIL masking_no_op")
+    assert lines[3].startswith("translate ") and lines[3].endswith("FAIL masking_no_op")
+    vector = next(v for v in vectors.build(n=1)["vectors"] if v["expect"]["blocks"])
+    sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
+        r.content.decode("utf-8", "replace") for r in rest
+    )
+    value = vector["text"][vector["python"][0]["start"] : vector["python"][0]["end"]]
+    assert vector["text"] not in sent and value not in sent and value not in "\n".join(lines)
+
+
+def test_BLD_C177_the_summary_scans_logs_at_info(monkeypatch: pytest.MonkeyPatch, test_database: str) -> None:
+    import logging
+
+    from core.logging import get_logger
+
+    real = sarvam_live.CHECKS["tts"]
+
+    def noisy(run: Any) -> sarvam_live.Line:
+        get_logger("voice").info("voice.ready", voice_id="printer paper")  # text in an INFO line
+        return real(run)
+
+    monkeypatch.setitem(sarvam_live.CHECKS, "tts", noisy)
+    before = logging.getLogger().level
+    out = io.StringIO()
+    with ws_server(monkeypatch, FakeSarvamWs()):
+        code = sarvam_live.run(["tts"], out=out, database=test_database)
+    lines = out.getvalue().splitlines()
+    assert code == 1 and lines[0].endswith("PASS") and lines[1].endswith("IDs only: no  FAIL")
+    assert logging.getLogger().level == before
+    printed_is_clean(out.getvalue())
+
+
+def test_BLD_C177_an_uncaught_exception_prints_its_type_only(capsys: pytest.CaptureFixture[str]) -> None:
+    import sys
+    import threading
+
+    before = (sys.excepthook, threading.excepthook)
+    with sarvam_live._quiet_logs():
+        try:
+            raise ValueError("printer paper " + KEY)
+        except ValueError as exc:
+            sys.excepthook(type(exc), exc, exc.__traceback__)
+
+        def boom() -> None:
+            raise RuntimeError("chairs meeting " + KEY)
+
+        worker = threading.Thread(target=boom)
+        worker.start()
+        worker.join()
+    assert (sys.excepthook, threading.excepthook) == before
+    err = capsys.readouterr().err
+    assert "sarvam-live stopped: ValueError." in err and "background thread stopped: RuntimeError." in err
+    printed_is_clean(err)
+
+
+def test_BLD_C177_a_settings_error_is_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv(
+        "POSTGRES_PORT", "printer-paper"
+    )  # pydantic refuses it, quoting the value in its message
+    monkeypatch.setattr(sarvam_live, "run", _never)
+    get_settings.cache_clear()
+    out = io.StringIO()
+    assert sarvam_live.main([], out=out) == 1
+    assert out.getvalue() == "sarvam-live stopped: ValidationError. Nothing more is printed.\n"
+    printed_is_clean(out.getvalue())
+
+
+class Admin:
+    """psycopg's admin connection, recording SQL; `on_create` runs when CREATE DATABASE is sent."""
+
+    sql: ClassVar[list[str]] = []
+    on_create: ClassVar[Any] = None
+
+    def __enter__(self) -> Admin:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def execute(self, statement: str) -> None:
+        Admin.sql.append(statement)
+        if statement.startswith("CREATE") and Admin.on_create:
+            Admin.on_create()
+
+
+@pytest.fixture
+def admin(monkeypatch: pytest.MonkeyPatch) -> type[Admin]:
+    import subprocess
+
+    import psycopg
+
+    Admin.sql, Admin.on_create = [], None
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: Admin())
+    monkeypatch.setattr(
+        sarvam_live.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, "", "")
+    )
+    return Admin
+
+
+def test_BLD_C177_sigterm_ends_the_run_and_the_database_is_still_dropped(
+    monkeypatch: pytest.MonkeyPatch, admin: type[Admin]
+) -> None:
+    import os
+    import signal
+    import time
+
+    before = (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGHUP))
+
+    def killed(*_a: Any) -> int:
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(5)
+        raise AssertionError("SIGTERM did not end the run")
+
+    monkeypatch.setattr(sarvam_live, "_run_in", killed)
+    with pytest.raises(KeyboardInterrupt):
+        sarvam_live.run(["tts"], out=io.StringIO())
+    assert admin.sql[-1].startswith('DROP DATABASE IF EXISTS "sarvam_live_')
+    assert (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGHUP)) == before
+
+
+def test_BLD_C177_an_interrupted_create_is_dropped_too(admin: type[Admin]) -> None:
+    def interrupted() -> None:
+        raise KeyboardInterrupt
+
+    admin.on_create = interrupted
+    with pytest.raises(KeyboardInterrupt), sarvam_live.throwaway_database():
+        pass
+    name = admin.sql[0].split('"')[1]
+    assert admin.sql == [f'CREATE DATABASE "{name}"', f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)']
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("error_code", "Printer Paper failed"),
+        ("error_code", "hosted error: see body"),
+        ("ref_id", "the meeting room"),
+        ("ref_id", "idea:not-a-uuid"),
+    ],
+)
+def test_BLD_C177_a_speech_calls_row_with_free_text_fails(column: str, value: str) -> None:
+    row = {
+        "call": "tts", "model": "bulbul:v4-flash", "ref_id": "idea:11111111-2222-4333-8444-555555555555",
+        "outcome": "ok", "error_code": None, "speech_seconds": None, "char_count": 90, "latency_ms": 5, "cost_inr": 0,
+    }  # fmt: skip
+    row[column] = value
+
+    class Rows:
+        def execute(self, sql: str, params: Any = ()) -> Any:
+            return type("R", (), {"fetchall": lambda self: [row]})()
+
+    assert sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) == "meter_text"
+    row[column] = None if column == "error_code" else "stream:11111111-2222-4333-8444-555555555555"
+    assert sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) is None
