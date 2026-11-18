@@ -1077,6 +1077,7 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
     GAP-SEED, J-SIMILAR/1). Read after the merge and team-up requests, as the panel would see them. No model is
     called. `matches_for` has no way past `matching.show`, so with it off a draft with links would keep an empty
     part while the "Checked and matched" counts say 1: the seed raises instead and its transaction writes nothing."""
+    from core import killswitch
     from similar.preview import Viewer
     from similar.views import matches_for
 
@@ -1089,9 +1090,14 @@ def _similar_parts(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made])
                 "UPDATE idea_parts SET value = %s WHERE idea_uuid = %s AND key = 'similar'",
                 (Jsonb(found), made.uuid),
             )
-        elif conn.execute(
-            "SELECT 1 FROM similar_links WHERE idea_uuid = %s LIMIT 1", (made.uuid,)
-        ).fetchone():
+        elif (
+            not killswitch.is_on_fresh("matching.show", conn)
+            and conn.execute(
+                "SELECT 1 FROM similar_links WHERE idea_uuid = %s LIMIT 1", (made.uuid,)
+            ).fetchone()
+        ):
+            # Only the switch is blamed: with it on, links the matcher filters out (a merged, withdrawn or own idea)
+            # leave the part empty, as they would on a live draft
             raise MatchingHidden(
                 f"1% Club seed: draft {key} has similar ideas, but its similar part came back empty because the "
                 "kill switch matching.show is off. Nothing was changed. Switch it on (make killswitch "
