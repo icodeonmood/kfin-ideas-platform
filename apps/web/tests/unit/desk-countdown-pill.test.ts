@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * C-PILL.rules/3, S-R1.layout/4, C-QCARD.anatomy/1: every running clock lane B draws is the board's countdown (Desk
- * `.due`), a clock in place of the dot: S-R1's time-left cell and the question card's header. Under a day is "soon",
+ * C-PILL.rules/3, S-R1.layout/4, C-QCARD.anatomy/1: S-R1's time-left cell and the question card's header countdown are
+ * the board's countdown (Desk `.due`), a clock in place of the dot. S-R2's waiting panel and S-R3's review bar take
+ * the same prop; e2e/review-desk.spec.ts checks those two. Under a day is "soon",
  * overdue is solid "over"; the card's "Answered" stays a status pill with its dot. Synthetic people only.
  */
 import { createElement } from "react";

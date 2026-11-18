@@ -1156,7 +1156,7 @@ function SentOrAnswered({
       {p.state === "sent" ? (
         <>
           <p className="ri-clock">
-            <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+            <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
               {countdownLabel(live, "to answer")}
             </Pill>
           </p>
