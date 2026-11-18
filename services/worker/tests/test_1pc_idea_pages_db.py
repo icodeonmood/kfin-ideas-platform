@@ -143,7 +143,9 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     v = view(club, t6, "tanvi")
     page = v["page"]
     assert page["state"] == "answers_sent" and page["state_label"] == "Answers sent"
-    assert page["card"]["lead"] == "Sent. Harish has your answers."
+    assert (
+        page["card"]["lead"] == "Sent. The review desk has your answers."
+    )  # DEC-111: never the reviewer's name
     assert page["card"]["rest"].startswith(
         "Each answer was added to its part of your idea, under What you shared."
     )
@@ -155,7 +157,7 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
     v = view(club, t6, "tanvi")
     assert v["page"]["state"] == "answers_sent" and v["idea"]["has_open_questions"] is False
-    assert v["page"]["card"]["lead"] == "Sent. Harish has your answers."
+    assert v["page"]["card"]["lead"] == "Sent. The review desk has your answers."
 
 
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
@@ -239,7 +241,8 @@ def test_l_questions_answer_5_answers_under_their_parts_come_from_lane_b(
     monkeypatch.setitem(sys.modules, "desk.asking", fake)
     often = next(r for r in view(club, t7, "tanvi")["page"]["shared"]["rows"] if r["part"] == "often")
     assert [a["text"] for a in often["answers"]] == ["Yes, across the six largest branches."]
-    assert often["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
+    # DEC-111: lane B's `asked_by` is not read for a sharer outside the desk and the committee
+    assert often["answers"][0]["line"] == f"From your answer to the review desk, {day(asked, NOW)}"
 
 
 def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b_desk_asking_unmocked(
@@ -257,7 +260,7 @@ def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b
     assert list(raw) == ["often"]
     [sent] = raw["often"]
     assert (sent["asked_by"], sent["by"], sent["answer"]) == (
-        "Harish",
+        "the review desk",  # DEC-111: lane B names the desk, never the reviewer, on the sharer's page
         "Tanvi",
         "Yes, across the six largest branches.",
     )
@@ -270,11 +273,92 @@ def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b
             "id": sent["question_id"],
             "text": "Yes, across the six largest branches.",
             "at": answered.isoformat(),
-            "line": f"From your answer to Harish, {day(answered, NOW)}",
+            "line": f"From your answer to the review desk, {day(answered, NOW)}",  # DEC-111
             "files": [],
         }
     ]
     assert all(not r.get("answers") for part, r in rows.items() if part != "often")
+
+
+# --- DEC-111: the review desk, never the reviewer's name, outside the desk and the Ones Committee ------------------
+
+REVIEWERS = ("Harish", "Venkatesan", "Lavanya", "Krishnan")  # the seed's review desk (club_seed.PEOPLE)
+
+
+def grant(club: dict[str, Any], who: str, role: str) -> None:
+    club["conn"].execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (club["p"][who], role))
+
+
+def revoke_all(club: dict[str, Any], who: str) -> None:
+    club["conn"].execute("DELETE FROM role_grants WHERE user_id = %s", (club["p"][who],))
+
+
+REVIEWER_KEYS = ("harish", "lavanya")  # their users.id, from the club fixture
+REVIEWER_INITIALS = ("HV", "LK")  # Harish Venkatesan, Lavanya Krishnan, as a person object carries them
+
+
+def no_reviewer_named(payload: dict[str, Any], club: dict[str, Any]) -> bool:
+    """No reviewer's name, users.id or initials (as a person object's `initials`) anywhere in the payload."""
+    dump = json.dumps(payload, ensure_ascii=False, default=str)
+    traces = [*REVIEWERS, *(str(club["p"][k]) for k in REVIEWER_KEYS)]
+    traces += [f'"initials": "{i}"' for i in REVIEWER_INITIALS]
+    return not any(t in dump for t in traces)
+
+
+def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_reviewers_name(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEC-111 (J-TRACK/3, /5, /7; BLD-E053): on S-06 a sharer who is not on the review desk or the Ones Committee
+    reads "the review desk" wherever a reviewer would be named (the Answers sent card, the track's line, each
+    answer's line under its part, the revised worth's by-line) and gets no reviewer on the review card, so no name,
+    avatar or initials anywhere in the payload. A sharer on the desk or the committee still reads the name."""
+    conn, t6, t7 = club["conn"], ref(club, "T6"), ref(club, "T7")
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    row6 = conn.execute("SELECT decide_by FROM ideas WHERE idea_id = %s", (t6,)).fetchone()
+    by = day(row6["decide_by"], NOW)
+    # T7's answer, as lane B's reader returns it, names who asked (`asked_by`): lane E must not pass it on.
+    asked = NOW - dt.timedelta(days=6)
+    fake = types.ModuleType("desk.asking")
+    fake.answers_by_part = lambda conn, uuid: {
+        "often": [
+            {
+                "question_id": "q1",
+                "question": "Across branches?",
+                "asked_by": "Harish",
+                "answer": "Yes, across the six largest branches.",
+                "answered_at": asked.isoformat(),
+                "files": [],
+            }
+        ]
+    }
+    monkeypatch.setitem(sys.modules, "desk.asking", fake)
+
+    def pages() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        v6, v7 = view(club, t6, "tanvi"), view(club, t7, "tanvi")
+        return v6, v7, {r["part"]: r for r in v7["page"]["shared"]["rows"]}
+
+    v6, v7, rows7 = pages()
+    assert no_reviewer_named(v6, club) and no_reviewer_named(v7, club)
+    assert "reviewer" not in v6["idea"]["review"] and "reviewer" not in v7["idea"].get("review", {})
+    assert v6["page"]["card"]["lead"] == "Sent. The review desk has your answers."
+    assert nodes(v6)[2] == ("reviewed", "now", f"The review desk has your answers. By {by}")
+    assert rows7["cost"]["figures"]["reviewer"]["by_line"] == "Revised by the review desk"
+    assert rows7["often"]["answers"][0]["line"] == f"From your answer to the review desk, {day(asked, NOW)}"
+
+    for role in ("committee", "reviewer"):  # the Ones Committee and the review desk keep the name
+        grant(club, "tanvi", role)
+        v6, v7, rows7 = pages()
+        assert v6["page"]["card"]["lead"] == "Sent. Harish has your answers."
+        assert nodes(v6)[2] == ("reviewed", "now", f"Harish has your answers. By {by}")
+        assert v6["idea"]["review"]["reviewer"]["first_name"] == "Harish"
+        assert rows7["cost"]["figures"]["reviewer"]["by_line"] == "Revised by Harish"
+        assert rows7["often"]["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
+        revoke_all(club, "tanvi")
+    assert no_reviewer_named(view(club, t6, "tanvi"), club)  # the grant gone, the name goes with it
+    # The decided ideas too: T8 (Not now) and T9 (moved by the Ones Committee), as their sharer reads them
+    assert no_reviewer_named(view(club, ref(club, "T8"), "tanvi"), club)
+    assert no_reviewer_named(view(club, ref(club, "T9"), "tanvi"), club)
 
 
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
@@ -840,7 +924,8 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
 ) -> None:
     """L-SUBMIT.withdraw/3, L-SUBMIT.send/3–4 (J-RECOVER's restore, the production path): with lane C's hook
     installed as the worker app installs it, a restore leaves the idea `checking` with exactly one `submit.check`
-    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock."""
+    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock, from the
+    restore's own time: `restored_at` and the review clock's start are the same instant (BLD-C154)."""
     from ideapage import withdraw as withdraw_module
     from submit import adapters
 
@@ -850,7 +935,7 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
     conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
     restore_rows.append((t5, uid))
     withdraw(conn, t5, club["p"]["tanvi"], None, now=NOW)
-    # No `now`: the hook's clock is the real one, as in production.
+    # No `now`: restore reads the real clock, as in production, and hands that same time to lane C's hook.
     back = restore(conn, t5, club["p"]["tanvi"])
     row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
     assert row["status"] == "checking" and back["idea"]["id"] == t5
@@ -860,16 +945,19 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
     ).fetchall()
     assert jobs == [{"state": "queued", "dedupe_key": f"submit.check:{uid}"}]
     p = read.promises()
-    hook_now = row["edit_closes_at"] - dt.timedelta(days=int(p["edit_window"]["max_days"]))
-    assert abs(hook_now - row["restored_at"]) < dt.timedelta(seconds=30)
-    assert row["decide_by"] == clock.decide_by(hook_now, p)  # first sharing's reading, not restore's own
+    restored = row["restored_at"]
+    assert row["decide_by"] == clock.decide_by(
+        restored, p
+    )  # first sharing's reading, from the restore's time
+    assert row["edit_closes_at"] == clock.edit_closes(restored, p)
     assert row["decide_by"].astimezone(IST).time() == dt.time(18, 0)
     running = conn.execute(
-        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
-        "AND state = 'running'",
+        "SELECT started_at, due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s "
+        "AND stage = 'decide_by' AND state = 'running'",
         (t5,),
     ).fetchall()
-    assert [r["due_at"] for r in running] == [row["decide_by"]]
+    # One review clock, started at the very instant of the restore and due at the idea's decide-by.
+    assert [(r["started_at"], r["due_at"]) for r in running] == [(restored, row["decide_by"])]
     assert nodes(back)[1] == ("checked_matched", "now", "Checking…")
     history = [
         r["to_status"]
@@ -971,8 +1059,9 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
     assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
-    # S-07.phone (PhoneMyIdeas.md): the phone names who asked
-    assert t6["next_step"]["phone_sentence"] == "Harish from the review desk asked you 3 questions yesterday."
+    # S-07.phone (PhoneMyIdeas.md) names who asked; DEC-111: only to the review desk and the Ones Committee, so the
+    # sharer's phone says the desktop's sentence (test_s07_dec111_…)
+    assert "phone_sentence" not in t6["next_step"]
     assert t6["next_step"]["action"]["label"] == "Answer the questions"
     assert t6["next_step"]["action"]["to"] == f"/ideas/{ref(club, 'T6')}/answer"
     assert (
@@ -1000,6 +1089,44 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     }
     assert draft["next_step"]["sentence"].startswith("Waiting for Rekha")  # its merge request waits on Rekha
     assert club["m"]["T3"].uuid not in rows  # archived: only under Drafts
+
+
+def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[str, Any]) -> None:
+    """DEC-111 (J-BROWSE/1-4; BLD-E053): S-07's rows never name the reviewer to a sharer outside the review desk and
+    the Ones Committee: no phone sentence naming who asked, and "The review desk has your answers. It decides by …"
+    once the answers are in. A sharer on the desk or the committee still reads the name in both."""
+    conn, t6 = club["conn"], ref(club, "T6")
+
+    def t6_row() -> tuple[dict[str, Any], dict[str, Any]]:
+        out = mine(club, "tanvi")
+        return out, next(i for i in out["items"] if i["id"] == t6)
+
+    out, row = t6_row()
+    assert no_reviewer_named(out, club)
+    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert "phone_sentence" not in row["next_step"]
+    for role in ("committee", "reviewer"):
+        grant(club, "tanvi", role)
+        _, row = t6_row()
+        assert (
+            row["next_step"]["phone_sentence"]
+            == "Harish from the review desk asked you 3 questions yesterday."
+        )
+        revoke_all(club, "tanvi")
+
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    by = day(
+        conn.execute("SELECT decide_by FROM ideas WHERE idea_id = %s", (t6,)).fetchone()["decide_by"], NOW
+    )
+    out, row = t6_row()
+    assert no_reviewer_named(out, club)
+    assert row["next_step"]["sentence"] == f"The review desk has your answers. It decides by {by}."
+    for role in ("committee", "reviewer"):
+        grant(club, "tanvi", role)
+        _, row = t6_row()
+        assert row["next_step"]["sentence"] == f"Harish has your answers. The review desk decides by {by}."
+        revoke_all(club, "tanvi")
 
 
 def test_l_draft_autosave_8_archived_drafts_are_listed_under_drafts(club: dict[str, Any]) -> None:

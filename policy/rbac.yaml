@@ -171,6 +171,7 @@ endpoints:
   - POST /api/ideas/{id}/similar/keep-separate       submit          # Keep mine separate on the sharer's draft (BLD-C095; behind submissions)
   - POST /api/ideas/{id}/withdraw                     submit          # the sharer only, inside the edit window, checked by the worker (L-SUBMIT.withdraw)
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
+  - POST /api/ideas/{id}/join-build                   signed_in       # the sharer or crew, after a Pick, until the team is chosen; checked by the worker (L-DECIDE/6, DEC-111)
   - PUT /api/ideas/{id}/canvas                        submit
   - POST /api/ideas/{id}/answer                       submit
   # Sorting and sending (lane C; L-SORT, L-SUBMIT). The worker checks the person owns the draft or idea.

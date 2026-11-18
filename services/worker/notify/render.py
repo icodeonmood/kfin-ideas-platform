@@ -17,25 +17,36 @@ from comms import email_html
 from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
-from notify import AS_THE_DESK
+from notify import AS_THE_DESK, as_the_desk
+from onepc.words import REVIEW_DESK_START
 from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# Who the sender is, in the pack's words (L-INBOX.kinds "Sender display"): the review desk by first name, the
-# Ones Committee by full name, everyone else by full name, the system as "1% Club".
-DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge", "sent_to_desk"})
+# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 changes it): the review desk's kinds come from the
+# review desk as a whole, the Ones Committee by full name, everyone else by full name, the system as "1% Club".
+# DEC-111 (BLD-A221): a sharer, a crew member or anyone outside the desk and the committee never sees the name of the
+# person at the review desk, so a desk kind reads "The review desk" with the mark, whoever reads it, and the reviewer
+# is never read: no users.id, name, first name or initials reach the item, its variables or its email. L-HIDE/7's
+# kind (`notify.AS_THE_DESK`, BLD-A205) is one of them, and its reviewer is not even stored. Any other item whose refs
+# say `as_desk: true` (lane F's comment and mention when a reviewer writes as the desk) reads the same way, and its
+# reviewer is not stored either (`notify.as_the_desk`).
+DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge"}) | AS_THE_DESK
+# Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk. It never names a
+# person, and the sender is never read. The reminder to answer the desk's questions is the desk's own
+# (`notify.AS_THE_DESK`, BLD-B257), so it reads "The review desk" through DESK_KINDS.
+SYSTEM_KINDS = frozenset({"sent_to_desk"})
 COMMITTEE_KINDS = frozenset({"decision_reversed"})
 COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; the rest read "By Thu, 19 Nov"
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}
 SYSTEM = {"display": "1% Club", "name": "1% Club", "first_name": "1% Club", "initials": "1%", "system": True}
-# L-HIDE/7 (BLD-A205): a detail hidden by a reviewer comes from the review desk as a whole, shown with the mark. The
-# reviewer's name is never shown or sent, nor stored (`notify.AS_THE_DESK`).
-REVIEW_DESK = {
+# The review desk as a whole, shown with the mark (L-HIDE/7, BLD-A205; DEC-111). The words are the shared label
+# (`onepc.words`), so every lane names the desk the same way.
+DESK_SENDER = {
     **SYSTEM,
-    "display": "The review desk",
-    "name": "The review desk",
-    "first_name": "The review desk",
+    "display": REVIEW_DESK_START,
+    "name": REVIEW_DESK_START,
+    "first_name": REVIEW_DESK_START,
 }
 # Kinds whose one action is the whole of it: no "Open the conversation" is added (L-HIDE/7: "Open your idea" only).
 ONE_ACTION_KINDS = frozenset({"detail_hidden_by_desk"})
@@ -132,18 +143,24 @@ def lead_seen_by_requester(
     return ref if seen.first is not None else {**ref, "hidden": True}
 
 
-def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
-    if kind in AS_THE_DESK:
-        return dict(REVIEW_DESK)
-    if who is None:
+def sender(kind: str, who: dict[str, Any] | None, refs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The sender as the item shows them. A desk kind, or an item whose refs say `as_desk`, is the review desk as a
+    whole, and a system kind the 1% Club, whoever `who` is (DEC-111): neither carries a person."""
+    if kind in DESK_KINDS or as_the_desk(kind, refs):
+        return dict(DESK_SENDER)
+    if who is None or kind in SYSTEM_KINDS:
         return dict(SYSTEM)
-    if kind in DESK_KINDS:
-        role, display = "from the review desk", f"{who['first_name']} from the review desk"
-    elif kind in COMMITTEE_KINDS:
+    if kind in COMMITTEE_KINDS:
         role, display = "from the Ones Committee", f"{who['name']} from the Ones Committee"
     else:
         role, display = "", who["name"]
     return {**who, "role_label": role, "display": display, "system": False}
+
+
+def names_no_one(kind: str, refs: dict[str, Any] | None = None) -> bool:
+    """An item whose sender is never read (DEC-111): the review desk's kinds and the 1% Club's own, and any item
+    whose refs say `as_desk`."""
+    return kind in DESK_KINDS or kind in SYSTEM_KINDS or as_the_desk(kind, refs)
 
 
 def _possessive(first_name: str | None) -> str:
@@ -298,10 +315,9 @@ def _kind_vars(
     """The kind's facts, from the rows its IDs point to. Booleans drive the template's sections."""
     out: dict[str, Any] = {}
     if kind in ("questions", "answer_reminder"):
-        n, asker, qs = 0, None, None
-        count_sql = (
-            "SELECT s.id, s.by_user_id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
-        )
+        # The set and its count only: who asked is never read, as the desk asks as a whole (DEC-111, BLD-A221)
+        n, qs = 0, None
+        count_sql = "SELECT s.id, (SELECT count(*) FROM questions q WHERE q.set_id = s.id) AS n "
         if refs.get("set_id"):
             qs = conn.execute(
                 count_sql + "FROM question_sets s WHERE s.id::text = %s", (str(refs["set_id"]),)
@@ -313,17 +329,12 @@ def _kind_vars(
                 (idea["uuid"],),
             ).fetchone()
         if qs is not None:
-            n, asker = int(qs["n"]), person(conn, qs["by_user_id"])
+            n = int(qs["n"])
             out["set_id"] = str(qs["id"])
         if not n and isinstance(refs.get("count"), int):
             n = int(refs["count"])
         out["count"] = n
         out["count_words"] = "1 question" if n == 1 else (f"{n} questions" if n else "some questions")
-        first = (asker or {}).get("first_name")
-        out["asker"] = {
-            "first_name": first or "the review desk",
-            "possessive": _possessive(first) if first else "the review desk’s",
-        }
         if kind == "answer_reminder":
             out["left"] = _left(row, now)
     elif kind == "decision":
@@ -400,7 +411,11 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    if kind == "teamup_answer" and refs.get("answer") == "decline":
+    if names_no_one(
+        kind, refs
+    ):  # DEC-111: the reviewer who acted is not read at all, so no template can name them
+        who = sender(kind, None, refs)
+    elif kind == "teamup_answer" and refs.get("answer") == "decline":
         who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
     else:
         who = sender(kind, person(conn, row.get("from_user_id")))

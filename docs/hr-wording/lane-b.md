@@ -101,3 +101,33 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The Answer screen, when an answer could not be stored with its details hidden | Couldn’t save that. Try again. | The line added with the review screens (section 3 of 17 Nov), now also for this case, never a raw error |
 | The Answer screen, when the answers could not be checked for customer details on send | Your answers didn’t send. Try again. | The screen's existing send failure line, never a raw error |
 | The reviewer's page, the Attached part, the kind in "… shown, because …" | Phone shown, because it’s made up for the example. (also "Account", "Email", "Aadhaar", "Name", "Folio", "PAN") | L-HIDE.detect's "Label shown" for each kind; replaces "Phone number shown" and "Account number shown" |
+
+## 7. Lines changed by DEC-111: the review desk, not the reviewer's name (18 Nov)
+
+DEC-111: a sharer, and the crew, never see the name of the person at the review desk. Wherever the boards name the reviewer to them, the line names "the review desk" instead, with no avatar or initials beside it. "Meera" stands for the reviewer, "Kavya" for the sharer and "Ravi" for another sharer. The review desk and the Ones Committee still see each other's names, and a committee member who reverses a decision is still named to the sharer.
+
+| Where | Board copy | Changed to |
+|---|---|---|
+| Home, Needs you, the questions card (desktop), the line under its title "3 questions from the review desk" (the title already names the desk, so the line does not say it again) | Meera from the review desk asked about "Investors call to ask why a redemption was rejected" | Asked about "Investors call to ask why a redemption was rejected" |
+| The idea page, the questions card, its byline (the avatar "MI" goes too) | Meera from the review desk, Monday 16 November, 11:20 am | The review desk, Monday 16 November, 11:20 am |
+| The idea page, the questions card's title | Meera has 3 questions for you | The review desk has 3 questions for you |
+| The idea page, the questions card once every question is answered (not drawn) | Meera’s 3 questions, answered | The review desk’s 3 questions, answered |
+| The Answer screen, the review bar | Meera from the review desk has 3 questions about "Investors call to ask why a redemption was rejected". Answer them one at a time. Skip any you can’t answer yet and come back before you send. | The review desk has 3 questions about "Investors call to ask why a redemption was rejected". Answer them one at a time. Skip any you can’t answer yet and come back before you send. |
+| The Answer screen, above each question | Meera from the review desk asked, today 11:20 am | The review desk asked, today 11:20 am |
+| The Answer screen, the send button | Send 1 answer to Meera | Send 1 answer to the review desk |
+| The Answer screen, once sent, the review bar | Meera from the review desk had 3 questions about "Investors call to ask why a redemption was rejected". You answered all 3. | The review desk had 3 questions about "Investors call to ask why a redemption was rejected". You answered all 3. |
+| The Answer screen, once sent, the line above the heading | Sent to Meera, 4:32 pm | Sent to the review desk, 4:32 pm |
+| The Answer screen, once sent, beside "Answered with 3 days to spare" | Meera decides by Friday 20 November | The review desk decides by Friday 20 November |
+| The Answer screen, once sent, under "Your answers are with the review desk" | Each answer is added to its part of your idea and posted in your conversation with the review desk. Meera decides by Friday 20 November, and her decision comes to your Inbox. | Each answer is added to its part of your idea and posted in your conversation with the review desk. The review desk decides by Friday 20 November, and the decision comes to your Inbox. |
+| The idea page, under each answer in What you shared | From your answer to Meera, Monday 16 November | From your answer to the review desk, Monday 16 November |
+| The idea page, Picked, when the Pick joined a similar idea | Meera from the review desk picked it on Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix. | The review desk picked it on Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix. |
+| The idea page, under the reason (not drawn) | By Meera from the review desk, Monday 16 November | By the review desk, Monday 16 November |
+| The idea page, the heading over the reason (the committee's words, not drawn on the sharer's page) | The review desk’s reason, as Kavya read it | No heading |
+| The idea page, Reversed by the Ones Committee | by Meera from the review desk, Monday 16 November | by the review desk, Monday 16 November |
+| Inbox and email, questions | Meera from the review desk asked you 3 questions | The review desk asked you 3 questions |
+| Inbox and email, a decision | Meera from the review desk picked your idea (also "didn’t pick your idea, with a reason" and "said Not now to your idea, with a date it comes back") | The review desk picked your idea (and the same for the other two) |
+| Inbox and email, ideas merged by the desk (not drawn) | Meera from the review desk merged your idea with Ravi’s | The review desk merged your idea with Ravi’s |
+| Inbox and email, what it’s worth revised (not drawn) | Meera from the review desk revised what your idea is worth | The review desk revised what your idea is worth |
+| Inbox, the answer reminder (not drawn; sent by the timer as "1% Club", or by hand under the reviewer's name) | 1% Club 1 day left to answer Meera’s questions | The review desk 1 day left to answer the review desk’s questions |
+| Email, the answer reminder's subject and first line (template `inbox/answer_reminder.md`) | 1 day left to answer Meera’s questions | 1 day left to answer the review desk’s questions |
+| Email, the old question, reviewed and redirected messages, the sign-off and the sender (templates `question.md`, `reviewed.md`, `redirected.md`) | Meera Iyer, review desk, 1% Club | The review desk, 1% Club |

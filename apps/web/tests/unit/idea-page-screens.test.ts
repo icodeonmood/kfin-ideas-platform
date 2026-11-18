@@ -74,6 +74,26 @@ describe("S-06.states: the card's sentence for a decision", () => {
       rest: "The review desk’s full reason is below.",
     });
   });
+
+  it("DEC-111 (J-TRACK/7): a sharer outside the desk and the committee gets no reviewer, so no sentence names one", () => {
+    const pick = decisionSentence(decided("pick"), null, [
+      { stage: "built", state: "now", detail: "Team chosen by Thursday 26 November" },
+    ]);
+    expect(pick?.rest).toBe(
+      "The review desk picked it on Thursday 12 November. The build team is chosen by Thursday 26 November.",
+    );
+    const joined = decisionSentence(decided("pick", { merged_into: "IDEA-2026-001412" }), null, []);
+    expect(joined?.rest).toBe(
+      "The review desk picked it on Thursday 12 November and joined it with IDEA-2026-001412, so one team builds one fix.",
+    );
+    const notNow = decisionSentence(decided("not_now", {}, "2027-02-16T04:00:00Z"), null, []);
+    expect(notNow?.rest).toBe(
+      "Your idea stays open, with your answers and anyone who teams up, and comes back to the review desk first thing in February. The review desk’s full reason is below.",
+    );
+    const merged = decisionSentence(decided("not_picked", { merged_into: "IDEA-2026-001412" }), null, []);
+    expect(merged?.rest).toMatch(/ The review desk’s full reason is below\.$/);
+    for (const s of [pick, joined, notNow, merged]) expect(JSON.stringify(s)).not.toMatch(/Harish|Meera/);
+  });
 });
 
 describe("C-TRACK from the API's stages", () => {

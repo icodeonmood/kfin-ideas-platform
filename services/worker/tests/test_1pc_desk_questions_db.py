@@ -82,7 +82,7 @@ def test_L_QUESTIONS_ask_5_sending_three_with_3_days_moves_the_idea_to_needs_you
     assert [(q["part"], q["text"], q["suggested"]) for q in got["questions"]] == [
         (q["part"], q["text"], bool(q.get("suggested"))) for q in QS
     ]
-    assert got["by"]["first_name"] == "Meera"
+    assert got["by"]["first_name"] == "Meera"  # the desk's own read keeps the reviewer (DEC-111)
     idea = _idea_row(db, cast)
     assert idea["status"] == "needs_you"
     assert idea["opened_at"] == SENT and str(idea["reviewer_id"]) == cast["meera"]["id"]  # asking is opening
@@ -231,7 +231,7 @@ def test_L_QUESTIONS_answer_6_a_saved_answer_is_masked(db: Conn, cast: dict[str,
     assert again["id"] == saved["id"]
     mine = asking.open_set_for_sharer(db, cast["idea"]["idea_id"], kavya, f.at(16, 12, 15))
     assert mine is not None and mine["questions"][0]["answer"]["text"] == "Mostly R07, about half the calls."
-    assert (mine["progress"], mine["send_label"]) == ("1 of 3 answered", "Send 1 answer to Meera")
+    assert (mine["progress"], mine["send_label"]) == ("1 of 3 answered", "Send 1 answer to the review desk")
     assert asking.answers_by_part(db, cast["idea"]["id"])["summary"][0]["answer"] is None
     with pytest.raises(Refused) as refused:
         asking.save_answer(db, _qids(sent)[1], kavya, "x" * 2001)
@@ -256,8 +256,11 @@ def test_L_QUESTIONS_answer_3_one_of_three_then_the_rest(db: Conn, cast: dict[st
     asking.save_answer(db, q1, kavya, "All of them. R07 is about half the calls.", at=f.at(16, 16, 20))
     first = asking.send_answers(db, sent["id"], kavya, f.at(16, 16, 32))
     assert (first["state"], first["sent"], first["answered"], first["count"]) == ("partly_answered", 1, 1, 3)
-    assert (first["sent_line"], first["spare"]) == ("Sent to Meera, 4:32 pm", "Answered with 3 days to spare")
-    assert first["decides_by"] == "Meera decides by Friday 20 November"
+    assert (first["sent_line"], first["spare"]) == (
+        "Sent to the review desk, 4:32 pm",
+        "Answered with 3 days to spare",
+    )
+    assert first["decides_by"] == "The review desk decides by Friday 20 November"
     assert _idea_row(db, cast)["status"] == "needs_you"
     facts = asking.facts(db, uuid_)
     assert facts is not None and (facts.count, facts.answered, facts.answered_at) == (3, 1, f.at(16, 16, 32))
@@ -288,7 +291,7 @@ def test_L_QUESTIONS_answer_3_one_of_three_then_the_rest(db: Conn, cast: dict[st
     assert (often["answer"], often["by"], often["asked_by"]) == (
         "That is our Hyderabad branch alone.",
         "Kavya",
-        "Meera",
+        "the review desk",  # read for the sharer's S-06 (DEC-111)
     )
     assert _when(often["answered_at"]) == f.at(17, 10) and _when(often["asked_at"]) == SENT
 

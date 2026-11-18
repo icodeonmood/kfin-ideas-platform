@@ -441,6 +441,18 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     expect(localStorage.getItem(`1pc.outbox.${DRAFT}`)).toBeNull();
   });
 
+  it("J-SIMILAR/6a BLD-C155 a draft merged into another idea goes to Check it, read-only; nothing is sent from here", async () => {
+    conversationRoute((s) =>
+      s.url === `/api/drafts/${DRAFT}?open=1`
+        ? { status: 200, body: { ...draft(), merged_into: "IDEA-2026-001412", ready: false } }
+        : null,
+    );
+    await mount({ draftId: DRAFT });
+    expect(push).toHaveBeenCalledWith(`/share/${DRAFT}/check`); // the router's replace (mocked as push here)
+    expect(sent.filter((s) => s.method !== "GET")).toEqual([]);
+    expect(text()).not.toContain("Picked up where you left off.");
+  });
+
   it("A-API.conventions/2 a draft that is not there says so in plain words", async () => {
     route = () => ({
       status: 404,

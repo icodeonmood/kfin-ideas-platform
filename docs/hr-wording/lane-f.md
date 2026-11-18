@@ -98,6 +98,8 @@ The person asking is still named to the lead they ask, even if they hid their na
 
 ## Conversation (L-CONVO, S-08)
 
+The lines below that name a reviewer ("Meera from the review desk", "Meera has 3 questions …") are as the review desk and the Ones Committee read them. Since DEC-111 everyone else reads the review desk in their place: see section 6.
+
 Everything else on S-08 is the design pack's own copy (`1pc-handoff/reference/copy/Messages.md`), used as it stands: "You shared it.", "Checked and matched. 1 folio number hidden, 2 similar ideas found.", "Meera from the review desk opened it.", "Meera from the review desk picked it.", "Arjun Rao’s team started building it.", "Ravi Nair approved your team-up request.", the four placeholders, the visibility lines the board draws, "No messages yet", the line above the box while questions are open, "Your answers to Meera’s 3 questions", "Each answer was added to its part of your idea. Meera decides by Friday 20 November.", "Write a message or attach a file first." and "Message removed" (`L-CONVO/10`). "Meera", "Ravi", "Kavya" and "Sanjay" stand for real people: at run time each is the person's name, and "You" for the reader. The code is `services/worker/convo/render.py` (event lines), `reads.py` (header, side panel, box) and `messages.py` (messages under the box).
 
 ### 1. Lines changed so they never guess a person's gender (BLD-E008)
@@ -176,6 +178,41 @@ Everything else on S-08 is the pack's copy (Messages.md) or comes from the conve
 | `S-08`, a file's button and the file lists, as read out | View | View plain-rejection-reasons.xlsx / Files in your message / Files in Ravi Nair’s message / Files with this answer |
 | `S-08`, the questions for a reader who did not ask them (BLD-F065) | Meera has 3 questions about your idea | Meera from the review desk asked 3 questions. / You asked 3 questions. / See them on the idea |
 | `S-08`, the sharer's questions once closed before every answer came (BLD-F065) | Meera’s 3 questions, answered | Meera’s 3 questions, now closed |
+
+### 6. The review desk, not the person at it (DEC-111, added 18 Nov)
+
+For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone mentioned never see the name of the person at the review desk. Each line below is the line they read before, with the reviewer's name replaced by "the review desk" ("The review desk" at the start of a line or as a byline), and no face or initials beside it. Nothing else in the line changes. The review desk and the Ones Committee still read the named lines in sections 2, 3 and 5. The Ones Committee's own lines ("Rohan Mehta from the Ones Committee reversed the decision.") are unchanged (BLD-F082). The code is `services/worker/convo/render.py` and `reads.py` (`Ctx.shown`), with the words from `onepc/words.py`; the screen is `apps/web/src/components/convo/conversation.tsx`.
+
+| Module | Line before (as the sharer, crew or build team read it) | Line now, for HR's sign-off (DEC-111) |
+|---|---|---|
+| `L-CONVO/3`, the desk opens the idea | Meera from the review desk opened it. | The review desk opened it. |
+| `L-CONVO/3`, the desk decides | Meera from the review desk picked it. / … chose Not now. / … didn’t pick it. / … decided. | The review desk picked it. / The review desk chose Not now. / The review desk didn’t pick it. / The review desk decided. |
+| `L-WORTH`, the desk revises what it is worth | Meera from the review desk revised what it’s worth. | The review desk revised what it’s worth. |
+| `L-REVIEW`, the date to decide moves | Meera from the review desk moved the date to decide. | The review desk moved the date to decide. |
+| `L-MERGE.effects/6`, the desk merges (on the idea that joins) | Meera from the review desk joined it with IDEA-2026-001412. The conversation carries on there. | The review desk joined it with IDEA-2026-001412. The conversation carries on there. |
+| `L-MERGE.desk`, the desk merges (on the lead idea), or the other idea is no longer there | Meera from the review desk joined it with IDEA-2026-001481. / … joined it with another idea. | The review desk joined it with IDEA-2026-001481. / The review desk joined it with another idea. |
+| `L-CONVO/5`, a message from the desk: the name above it | Meera from the review desk (with her initials in a circle) | The review desk (no circle, no initials) |
+| `S-08`, the files on the desk's message, as read out | Files in Meera from the review desk’s message | Files in the review desk’s message |
+| `L-CONVO/4`, the sharer's open questions (Messages.md) | Meera has 3 questions about your idea | The review desk has 3 questions about your idea |
+| `L-CONVO/4`, the sharer's questions once answered (Messages.md) | Meera’s 3 questions, answered | The review desk’s 3 questions, answered |
+| `L-CONVO/4`, the sharer's questions closed before every answer came (BLD-F065) | Meera’s 3 questions, now closed | The review desk’s 3 questions, now closed |
+| `L-CONVO/4`, the questions as the crew and the build team read them (BLD-F065) | Meera from the review desk asked 3 questions. | The review desk asked 3 questions. |
+| `L-CONVO/4`, the line above the box while questions are open (Messages.md) | Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else. | Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else. |
+| `L-CONVO/4`, the answers message (Messages.md) | Your answers to Meera’s 3 questions / Kavya’s answers to Meera’s 3 questions | Your answers to the review desk’s 3 questions / Kavya’s answers to the review desk’s 3 questions |
+| `S-08` "Answers sent", the sharer's line under the answers (Messages.md) | Each answer was added to its part of your idea. Meera decides by Friday 20 November. | Each answer was added to its part of your idea. The review desk decides by Friday 20 November. |
+| `L-CONVO/8`, "In this conversation" | Meera from the review desk, Reviewing it (one row per reviewer, each with initials) | The review desk, Reviewing it (one row for the desk, no circle; also Picked it / Chose Not now / Didn’t pick it / From the review desk) |
+| `L-CONVO/5`, the box of a person the desk mentioned | Reply to Meera | Reply to the review desk |
+| `L-CONVO/6`, a person at the desk mentioned in the desk's message | @Harish Kulkarni (highlighted) | @the review desk (highlighted); the mention list does not offer the desk to the sharer, the crew or the build team (BLD-F083) |
+
+### 7. Teams named only while Teams messages go out (DEC-105, BLD-F086, added 18 Nov)
+
+For HR's sign-off. Teams messages are built and switched off at launch (DEC-105), so S-08 names Teams only while the `comms.teams` switch is on. While it is on, both lines read as the board draws them (the "before" column). While it is off, only the Teams clause is dropped (the "after" column); nothing else in the line changes. The code is `services/worker/convo/reads.py` (`empty_state`) and `apps/web/src/components/convo/compose.ts` (`sideNote`).
+
+| Module | Before (Messages.md, and while Teams is on) | After, while Teams is off, for HR's sign-off |
+|---|---|---|
+| `S-08` "No messages yet", the card's line for the sharer (Messages.md:367) | If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams. | If the review desk has a question, it shows here and in your Inbox. |
+| `S-08` "In this conversation", the last line of the side panel (Messages.md:75) | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email. | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox and by email. |
+
 ## Find your crew (S-H2, L-CREW, added 18 Nov)
 
 The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `C-CREW-DECK.states`), used as they stand. "Ravi" stands for the idea's lead and "Saturday" for the day the person shared their own idea: at run time each is the real name or day. The code is `services/worker/crew/deck.py` (the card lines and "Your crews") and `apps/web/src/app/crew/` (the page). These are the lines the pack does not draw.

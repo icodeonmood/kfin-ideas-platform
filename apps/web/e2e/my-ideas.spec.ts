@@ -57,14 +57,10 @@ test.describe("S-07 on the 1% Club seed", () => {
     );
     await expect(page.getByRole("link", { name: `Read the decision: ${IDEAS.T9}` })).toBeVisible();
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
-    // The Needs-you sentence: the phone names who asked (PhoneMyIdeas.md), the desktop says the review desk
-    await expect(
-      page.getByText(
-        isPhone(info.project.name)
-          ? /^Harish from the review desk asked you 3 questions/
-          : /^The review desk asked you 3 questions/,
-      ),
-    ).toBeVisible();
+    // The Needs-you sentence: the phone board names who asked (PhoneMyIdeas.md), but DEC-111 keeps the reviewer's
+    // name for the review desk and the Ones Committee, so Tanvi reads the review desk on both
+    await expect(page.getByText(/^The review desk asked you 3 questions/)).toBeVisible();
+    await expect(page.getByText(/Harish from the review desk/)).toHaveCount(0);
     if (isPhone(info.project.name)) {
       await expect(page.getByRole("radiogroup", { name: "Filter" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Sorted by latest activity" })).toBeVisible();

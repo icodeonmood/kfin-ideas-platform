@@ -1,5 +1,6 @@
 import type { DecisionForViewerResponse } from "@/lib/contracts/api";
 import { dayLabel } from "@/lib/desk/when";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
 
 import type { StageWords } from "./track";
 
@@ -33,14 +34,18 @@ export const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /**
  * The card's sentence for a decision, composed from lane B's decision (BLD-E012) in S-06.states' words: what was
  * decided and what happens next. The reason itself is shown below the card word for word, under its heading.
+ *
+ * `reviewer` is the first name the worker sends in `idea.review.reviewer` only to a sharer on the review desk or the
+ * Ones Committee (DEC-111, BLD-E053). Everyone else gets none, so the sentence names the review desk: "The review
+ * desk picked it on …", "The review desk’s full reason is below." (changed by DEC-111, HR sign-off).
  */
 export function decisionSentence(
   d: Decided,
   reviewer: string | null,
   stages: StageWords[],
 ): { lead: string; rest: string } | null {
-  const who = reviewer ? `${reviewer} from the review desk` : "The review desk";
-  const whose = reviewer ? `${reviewer}’s` : "The review desk’s";
+  const who = reviewer ? `${reviewer} from the review desk` : REVIEW_DESK_START;
+  const whose = reviewer ? `${reviewer}’s` : `${REVIEW_DESK_START}’s`;
   const merged = d.decision.merged_into;
   switch (d.decision.choice) {
     case "pick": {

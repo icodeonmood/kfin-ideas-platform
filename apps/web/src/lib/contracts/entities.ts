@@ -280,6 +280,9 @@ export interface Draft {
   editor?: { device: Device | null; this_device: boolean } | null;
   /** "Keep mine separate" was chosen: S-05's similar grid stays folded to its note (C-SIMGRID.grid/4, BLD-C152). */
   kept_separate?: boolean;
+  /** Closed as merged into this idea (its IDEA- reference) when its lead accepted (L-MERGE.request/5): the draft
+   * is read-only, on Check it (J-SIMILAR/6a, BLD-C155). Absent for an open draft. */
+  merged_into?: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

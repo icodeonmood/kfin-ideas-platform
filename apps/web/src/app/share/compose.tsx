@@ -244,6 +244,12 @@ export function Compose({
     setSave("changed");
   }, []);
 
+  // The router of the latest render, for the load below, which runs once per draft.
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
+
   // ── loading ─────────────────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let gone = false;
@@ -252,6 +258,12 @@ export function Compose({
         .get(givenId, true)
         .then((d) => {
           if (gone) return;
+          // Merged into another idea: nothing more to tell, so Check it shows it read-only (J-SIMILAR/6a, BLD-C155).
+          // The page sends it there first; this covers a page that could not tell.
+          if (d.merged_into) {
+            routerRef.current.replace(`/share/${encodeURIComponent(givenId)}/check`);
+            return;
+          }
           adopt(d, d.run?.state === "running" ? d.run.id : null);
           setSave("saved");
           const ageMs = Date.now() - new Date(d.saved_at).getTime();
