@@ -14,6 +14,7 @@
  * seeded record, but changes only the records SEED gives to its journey, so journeys never break each other.
  * Synthetic data only (non-negotiable 11).
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -174,6 +175,33 @@ export async function seeded(key: SeedKey): Promise<SeededIdea> {
       title: String(row.title),
       status: String(row.status),
     };
+  } finally {
+    await client.end();
+  }
+}
+
+/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
+const SESSION_COOKIE = "ideas_session";
+
+/**
+ * Ends the page's session on the server, as the 8 hours would (L-AUTH.rules/5), and leaves its cookie in the browser.
+ * S-02 shows "Session expired mid-draft" only to the browser still holding the cookie of a session that ran out
+ * (server/auth/session.ts expiredSession); a browser without the cookie has signed out and gets the plain sign-in.
+ * The suite's one write outside the screens: the page's own session row, matched by the cookie's hash as the
+ * server stores it (sessions.id_hash = sha256 of the token).
+ */
+export async function endSession(page: Page): Promise<void> {
+  const cookie = (await page.context().cookies()).find((c) => c.name === SESSION_COOKIE);
+  if (!cookie) throw new Error(`no ${SESSION_COOKIE} cookie: sign in before ending the session`);
+  const idHash = createHash("sha256").update(cookie.value, "utf8").digest();
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      "UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id_hash = $1 AND revoked_at IS NULL",
+      [idHash],
+    );
+    if (rowCount !== 1) throw new Error(`the page's session was not found to end (${rowCount} rows)`);
   } finally {
     await client.end();
   }
