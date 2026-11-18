@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.db import Conn
+from desk.join_build import reversal_team_by
 from ideapage import adapters, read
 from ideapage.adapters import SimilarStatus
 from ideapage.words import DECISION_LABEL, Node, count, day, when_shared
-from sla.calendar import add_working_days
 
 STATUS_OF_CHOICE = {"pick": "picked", "not_now": "not_now", "not_picked": "not_picked"}
 KIND_WORDS = {
@@ -60,10 +60,8 @@ def decided(d: dict[str, Any] | None) -> Decided | None:
     team_by = d.get("team_by")
     if reversed_ and choice == "pick":
         # L-COMMITTEE.rules/5: a reversal to pick has the pick's consequences, a build team by the usual date: the
-        # date the reversal stored (BLD-B259, the one S-06's join_build.reply_by reads), else worked out here.
-        team_by = d.get("reversed_team_by") or add_working_days(
-            d["reversed_at"], int(read.promises()["team_by"]["working_days"])
-        )
+        # date the reversal stored (BLD-B259), else lane B's rule from the reversal time; S-06's reply_by reads both.
+        team_by = d.get("reversed_team_by") or reversal_team_by(d["reversed_at"])
     elif reversed_:
         team_by = None
     return Decided(

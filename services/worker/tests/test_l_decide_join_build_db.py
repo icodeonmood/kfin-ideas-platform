@@ -205,6 +205,28 @@ def test_L_COMMITTEE_rules_5_a_reversal_to_pick_sets_the_team_date_a_pick_sets(
     assert (nodes[3].state, nodes[3].detail) == ("now", "Team chosen by Monday 30 November")
 
 
+def test_L_COMMITTEE_rules_5_a_reversal_to_pick_stored_without_a_team_date_reads_one_date_everywhere(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """L-COMMITTEE.rules/5 (BLD-B259): a reversal to Pick stored before `decision_reversals.team_by` existed has none;
+    S-06's track and join_build.reply_by both work it out with the desk's rule from the reversal time, so they show
+    the same date (Tuesday 17 November, 10 am gives Monday 30 November)."""
+    from ideapage import read, track
+
+    d = decide.send(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                    {"choice": "not_picked", "reason": REASON}, DECIDED)  # fmt: skip
+    committee.reverse_window(db, _window(db, d["id"]), cast["rohan"]["id"], {"to": "pick", "note": NOTE},
+                             f.at(17, 10))  # fmt: skip
+    db.execute("UPDATE decision_reversals SET team_by = NULL")  # as a row reversed before the migration
+    reply_by = dt.datetime.fromisoformat(_payload(db, cast, "kavya")["reply_by"])
+    assert reply_by.astimezone(f.IST).date() == dt.date(2026, 11, 30)
+    dec = track.decided(read.decision(db, str(cast["idea"]["id"])))
+    assert dec is not None and dec.team_by == reply_by
+    idea = dict(db.execute("SELECT * FROM ideas WHERE id = %s", (cast["idea"]["id"],)).fetchone() or {})
+    nodes = track.stages(db, idea, f.at(18, 9), for_sharer=True, dec=dec, qset=None)
+    assert nodes[3].detail == "Team chosen by Monday 30 November"
+
+
 def test_L_COMMITTEE_rules_5_a_reversal_away_from_a_pick_sets_no_team_date(
     db: Conn, cast: dict[str, Any]
 ) -> None:
