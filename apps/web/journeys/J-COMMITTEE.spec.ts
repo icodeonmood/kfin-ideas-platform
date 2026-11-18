@@ -63,11 +63,12 @@ step(
     await expect(page.getByText("The review desk’s reason, as Charulata read it")).toBeVisible();
     await expect(
       page.getByText(
-        // A date outside 2026 carries its year (Committee.md: "up to Tuesday 16 February 2027"); C1 starts extended.
-        /^Open until \w+day \d{1,2} \w+(?: \d{4})?\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+(?: \d{4})?\. When it closes, the decision stands\.$/,
+        // A date outside 2026 carries its year (Committee.md: "up to Tuesday 16 February 2027"). C1 starts extended,
+        // so its window and every date from it fall in 2027 and must show the year.
+        /^Open until \w+day \d{1,2} \w+ \d{4}\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+ \d{4}\. When it closes, the decision stands\.$/,
       ),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+( \d{4})?$/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+ \d{4}$/ })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Reverse the decision" })).toBeEnabled();
   },
 );
@@ -86,10 +87,11 @@ step(
     await expect(row).toContainText("Extended once");
     const extend = page.getByRole("button", { name: /^Extend to / });
     const newDate = (await extend.innerText()).replace(/^Extend to /, "").trim();
-    // The year shows on a date outside 2026 (Committee.md, Status.md), so match the date with or without it.
-    const until = esc(newDate.replace(/ \d{4}$/, "")) + String.raw`(?: \d{4})?`;
+    // C1's new date is in 2027, so it carries the year everywhere (Committee.md, Status.md).
+    expect(newDate).toMatch(/^\w+day \d{1,2} \w+ \d{4}$/);
+    const until = esc(newDate);
     await extend.click();
-    await expect(row).toContainText(/Extended (?:twice|2 times)/);
+    await expect(row).toContainText("Extended twice"); // when.times: "once", "twice", then "N times"
     await expect(row).toContainText(new RegExp(`Until ${until}`));
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
