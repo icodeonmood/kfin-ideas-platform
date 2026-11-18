@@ -126,14 +126,14 @@ describe("DEC-111 C-QCARD: the card names the review desk, never the reviewer, w
     expect(html).toContain(">The review desk has 3 questions for you</h3>");
   });
 
-  it("home (S-03 Needs you): 'The review desk asked about …', said once", () => {
+  it("DEC-111 C-QCARD home (S-03 Needs you): the title names the desk once; the line under it is 'Asked about …'", () => {
     const html = renderToStaticMarkup(
       createElement(QuestionsCard, { ideaId: IDEA, set: set(), variant: "home" }),
     );
     expectNoReviewer(html);
-    expect(html).toContain(`The review desk asked about &quot;${TITLE}&quot;`);
-    expect(html).not.toContain("The review desk from the review desk");
     expect(html).toContain("3 questions from the review desk");
+    expect(html).toContain(`Asked about &quot;${TITLE}&quot;`);
+    expect(html.match(/review desk/gi)).toHaveLength(1); // named once, in the title (Home.md)
   });
 
   it("inbox (S-H5 reader's body): no name, no avatar", () => {
