@@ -1,10 +1,11 @@
 "use client";
 /**
- * A stand-in for lane F's crew card (C-CREW-DECK.card) on Home until Find your crew is on main (BLD-C146). Home shows
- * the card without "They're looking for" (S-03.sections/3). The data is lane F's `CrewCard` from `GET /api/crew`
- * (A-API.crew, f/crew-search); `lib/home/data.ts` reads it and the section shows its empty state while the route is
- * not there. When lane F's card is on main, `app/home/home.tsx` renders theirs and this file goes. Never create
- * anything under components/teamup/ or lane F's paths.
+ * Home's crew card (S-03.sections/3, C-CREW-DECK.card without "They're looking for", BLD-C146). The data is lane F's
+ * `CrewCard` from `GET /api/crew?limit=3` (A-API.team-up, `CrewDeckResponse`), already private by DEC-104: a lead
+ * who hid their name or has left is "A colleague" with no user id and no initials, the title is masked and "The
+ * problem, in their words" is one checked sentence. The card shows only what that card carries. "Team up on
+ * {title}, with {lead}" opens lane F's team-up sheet. Lane F's own card on S-H2 is not exported and says more (the
+ * looking-for line, Waiting for), so Home keeps this one; nothing here writes under lane F's paths.
  */
 import { CrewFaces } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,11 @@ function TeamUpIcon() {
   );
 }
 
-/** "Team up on Rejection SMS codes confuse investors, with Ravi Nair" (Home.md Controls). */
+/** "Team up on Rejection SMS codes confuse investors, with Ravi Nair" (PhoneHome.md Controls); a lead shown as "A
+ * colleague" (no initials, DEC-104) reads "with a colleague" mid-sentence. */
 export function teamUpName(card: Pick<CrewCard, "title" | "lead">): string {
-  return `Team up on ${card.title}, with ${card.lead.name}`;
+  const lead = card.lead.initials ? card.lead.name : card.lead.name.toLowerCase();
+  return `Team up on ${card.title}, with ${lead}`;
 }
 
 export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(ideaId: string): void }) {
@@ -57,9 +60,7 @@ export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(idea
       <div className="hm-pc-top">
         <StatusPill status={status} />
         <h3 className="h3 hm-pc-t">{card.title}</h3>
-        <p className="meta">
-          {card.area}, {card.city}
-        </p>
+        <p className="meta">{[card.area, card.city].filter(Boolean).join(", ")}</p>
       </div>
       {card.reason ? (
         <p className="hm-pc-why">

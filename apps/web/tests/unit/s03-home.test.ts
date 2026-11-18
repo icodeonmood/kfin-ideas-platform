@@ -11,7 +11,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CrewCard, DraftListItem, MyIdeaRow, SharerQuestionSetResponse } from "@/lib/contracts";
+import type {
+  CrewCard,
+  CrewDeckResponse,
+  DraftListItem,
+  MyIdeaRow,
+  SharerQuestionSetResponse,
+} from "@/lib/contracts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -151,6 +157,24 @@ const CREW: CrewCard = {
   reason: "Same code as your idea from Saturday",
 } as CrewCard;
 
+/** Lane F's `GET /api/crew?limit=3` answer as the worker sends it (`crew/deck.py`), with only `cards` in `items`. */
+function crewDeck(cards: CrewCard[], total = cards.length): CrewDeckResponse {
+  return {
+    items: cards,
+    total,
+    counts: { "location:Hyderabad": total },
+    filters: [],
+    active: [],
+    deck_total: total,
+    state: total ? "cards" : "nothing_yet",
+    asked: 0,
+    last_passed: null,
+    joined: 0,
+    pending: 0,
+    passed: 0,
+  };
+}
+
 type Routes = Record<string, (init?: RequestInit) => { status: number; body?: unknown }>;
 
 function fakeFetch(routes: Routes) {
@@ -173,7 +197,7 @@ function fakeFetch(routes: Routes) {
 const baseRoutes = (over: Routes = {}): Routes => ({
   "/api/me/ideas": () => ({ status: 200, body: mine([NEEDS, PICKED, BUILT, DRAFT_ROW]) }),
   [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 200, body: SET }),
-  "/api/crew": () => ({ status: 200, body: { items: [CREW], total: 1, joined: 0, pending: 0, passed: 0 } }),
+  "/api/crew": () => ({ status: 200, body: crewDeck([CREW]) }),
   "/api/ones/posts": () => ({ status: 200, body: [] }),
   ...over,
 });
@@ -538,8 +562,8 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     expect(text()).toContain("Idea 1 of 1");
   });
 
-  it("Find your crew, none (or the crew route not there yet): the empty state and Browse the Wall", async () => {
-    await show(baseRoutes({ "/api/crew": () => ({ status: 404 }) }));
+  it("Find your crew, none: a read that found no one shows the empty state and Browse the Wall", async () => {
+    await show(baseRoutes({ "/api/crew": () => ({ status: 200, body: crewDeck([]) }) }));
     const status = [...host.querySelectorAll('[role="status"]')].find((s) =>
       s.textContent?.includes("No one close to yours yet"),
     );
@@ -547,6 +571,64 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
       "When someone shares an idea near yours or in your area, it shows up here so you can team up.",
     );
     expect(link("Browse the Wall")?.getAttribute("href")).toBe("/wall");
+    expect(link("Find your crew0")?.getAttribute("href")).toBe("/crew");
+  });
+
+  it("Find your crew, failed read (BLD-C146): no state at all, never No one close to yours yet; no count on Jump back in", async () => {
+    for (const failed of [
+      () => ({ status: 500, body: { error: { code: "unavailable", message: "" } } }),
+      () => ({ status: 503, body: { error: { code: "paused", message: "" } } }),
+      () => ({ status: 200, body: { error: "not a deck" } }),
+    ]) {
+      act(() => root.unmount());
+      root = createRoot(host);
+      await show(baseRoutes({ "/api/crew": failed }));
+      expect(heading(2)).toContain("Find your crew");
+      expect(text()).not.toContain(HOME_COPY.crewNoneTitle);
+      expect(text()).not.toContain(HOME_COPY.loadingCrew);
+      expect(host.querySelector(".hm-pcard")).toBeNull();
+      expect(link("Browse the Wall")).toBeUndefined();
+      expect(link("See all")?.getAttribute("href")).toBe("/crew");
+      expect(link("Find your crew")?.getAttribute("href")).toBe("/crew"); // the Jump back in card, no count
+    }
+  });
+
+  it("Find your crew from lane F's deck (DEC-104): only what the card carries; a hidden lead is A colleague with no face", async () => {
+    const hidden = { id: "p3f9a1c2b7d40", name: "A colleague", first_name: "A colleague", initials: "" };
+    const quiet: CrewCard = {
+      ...CREW,
+      id: "IDEA-2026-001495",
+      title: "Synthetic: nominee change asks for Folio ••••89 twice",
+      city: "",
+      lead: hidden,
+      crew_faces: [hidden, person("p-4", "Meera Iyer", "MI")],
+      crew_count: 2,
+      in_their_words: "Investors are asked for the same form at two branches.",
+      reason: "In Investor service, like yours",
+      looking_for: "Branch staff, operations",
+    } as CrewCard;
+    const calls = await show(
+      baseRoutes({ "/api/crew": () => ({ status: 200, body: crewDeck([quiet, CREW], 5) }) }),
+    );
+    expect(calls.filter((c) => c.url.startsWith("/api/crew")).map((c) => c.url)).toEqual([
+      "/api/crew?limit=3",
+    ]);
+    const card = host.querySelector(".hm-pcard")!;
+    expect(card.getAttribute("aria-label")).toBe(quiet.title);
+    expect(card.querySelector(".hm-pc-top .meta")?.textContent).toBe("Investor service"); // no empty city
+    expect(card.textContent).toContain("In Investor service, like yours");
+    expect(card.textContent).toContain("Investors are asked for the same form at two branches.");
+    expect(card.textContent).not.toContain("They're looking for");
+    expect(card.textContent).not.toContain("Branch staff, operations");
+    expect(card.textContent).toContain("A colleague");
+    expect(
+      card.querySelector(`button[aria-label="Team up on ${quiet.title}, with a colleague"]`),
+    ).not.toBeNull();
+    expect(text()).toContain("Idea 1 of 2");
+    // Jump back in: the deck's total, and faces only for people with initials (no blank face for A colleague)
+    const jump = link("MIFind your crew5");
+    expect(jump?.getAttribute("href")).toBe("/crew");
+    expect([...jump!.querySelectorAll(".hm-jface")].map((f) => f.textContent)).toEqual(["MI"]);
   });
 
   it("Or share from where you already are: three tiles, the app Coming soon", async () => {

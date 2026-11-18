@@ -2,13 +2,13 @@
  * Home's data (S-03, A-API.home), read from the routes that already exist rather than one new `GET /home` (the brief
  * for BLD-C143): lane E's `GET /api/me/ideas` gives "Your ideas" and the ideas that need the person; lane B's
  * `GET /api/ideas/{id}/question-set` gives each one's questions for C-QCARD; lane F's `GET /api/crew?limit=3` gives
- * the crew cards (until it is on main the section shows its empty state); `GET /api/ones/posts` gives the Ones.
+ * the crew cards (`CrewDeckResponse`, private by DEC-104); `GET /api/ones/posts` gives the Ones.
  * Each part loads on its own and a part that cannot be read is left out of the screen, so one slow route never
  * holds up the box at the top. Nothing here logs words.
  */
 import type {
   CrewCard,
-  CrewResponse,
+  CrewDeckResponse,
   MyIdeaRow,
   MyIdeasResponse,
   OnePost,
@@ -81,9 +81,10 @@ export async function loadSets(f: FetchLike, rows: MyIdeaRow[]): Promise<{ ideaI
   return sets.filter((s): s is { ideaId: string; set: OpenSet } => s !== null);
 }
 
-/** Find your crew's top three; null when the crew route cannot be read. */
+/** Find your crew's top three from lane F's deck (L-CREW/10: its first cards and how many there are in all); null
+ * when the crew route cannot be read, so Home shows no state rather than "No one close to yours yet". */
 export async function loadCrew(f: FetchLike): Promise<{ total: number; top: CrewCard[] } | null> {
-  const body = await readJson<CrewResponse>(f, `/api/crew?limit=${CREW_SHOWN}`);
+  const body = await readJson<Pick<CrewDeckResponse, "items" | "total">>(f, `/api/crew?limit=${CREW_SHOWN}`);
   if (!body || !Array.isArray(body.items)) return null;
   return {
     total: typeof body.total === "number" ? body.total : body.items.length,

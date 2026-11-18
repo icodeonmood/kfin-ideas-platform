@@ -13,8 +13,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-// Lane F's crew card until Find your crew is on main (BLD-C146).
-import { CrewCardView } from "@/components/home/crew-shim";
 import { Prompt, PROMPT_COPY, STARTERS } from "@/components/compose/prompt";
 import { QuestionsCard } from "@/components/review/qcard";
 import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
@@ -38,6 +36,8 @@ import {
   type HomePost,
   type OpenSet,
 } from "@/lib/home/data";
+
+import { CrewCardView } from "./crew-card";
 
 export const HOME_COPY = {
   question: (name: string) => `What keeps getting in your way, ${name}?`,
@@ -418,9 +418,12 @@ export function HomeScreen({
   const ideas = mine.state === "ready" ? (mine.value?.ideas ?? null) : null;
   const needs = mine.state === "ready" ? (mine.value?.needs ?? null) : null;
   const draftCount = mine.state === "ready" ? (mine.value?.drafts ?? 0) : 0;
-  const crewData = crew.state === "ready" ? (crew.value ?? { total: 0, top: [] }) : null;
+  // A failed crew read is not an empty one: the section shows no state, never "No one close to yours yet".
+  const crewFailed = crew.state === "ready" && crew.value === null;
+  const crewData = crew.state === "ready" ? crew.value : null;
+  // Faces with initials only: a lead or crew member shown as "A colleague" has none (DEC-104).
   const crewFaces = (crewData?.top[0] ? [crewData.top[0].lead, ...crewData.top[0].crew_faces] : [])
-    .filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i)
+    .filter((p, i, all) => p.initials && all.findIndex((q) => q.id === p.id) === i)
     .slice(0, 3)
     .map((p) => p.initials);
   const openSets = sets.state === "ready" ? sets.value : null;
@@ -626,7 +629,7 @@ export function HomeScreen({
                 title={HOME_COPY.findCrew}
                 link={{ href: HOME_LINKS.crew, label: HOME_COPY.seeAll }}
               />
-              {crewData === null ? (
+              {crewFailed ? null : crewData === null ? (
                 <SkeletonRows what={HOME_COPY.loadingCrew} rows={3} />
               ) : crewData.top.length ? (
                 <div className="hm-crewbox">
