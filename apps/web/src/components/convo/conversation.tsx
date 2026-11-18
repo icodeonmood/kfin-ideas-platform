@@ -19,7 +19,8 @@
  * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
  *   carried over (BLD-F069). Neither sends anything.
  * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the pill and a
- *   round Send; the attach slot waits for BLD-F064) and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
+ *   round Send; the attach slot waits for BLD-F064)
+ *   and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
  *   header's pill, reference and line share a row and the title runs the column's width (BLD-F079), and the sticky
  *   box is solid with the page's colour under it to the window's edge (BLD-F080). A long conversation opens at its
  *   newest entry (BLD-F081).
