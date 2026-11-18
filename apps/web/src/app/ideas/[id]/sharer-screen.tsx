@@ -492,8 +492,8 @@ export function SharerScreen({
           {asking ? qcard : null}
           {reversed ? <ReversalCard d={reversed} /> : null}
           {card && !asking && !reversed ? (
-            // S-06.layout/2: the first clause in white, the rest dimmer; each its own line of words, so the rest
-            // reads as one sentence on its own (J-TRACK/7)
+            // S-06.layout/2: the first clause in white, the rest dimmer and on its own line, as Status.md draws the
+            // decided, answered and withdrawn states (J-TRACK/7, J-REVIEW/6); "Just shared" keeps one line
             <p className="ip-card-s">
               <span className="ip-lead">{card.lead}</span>{" "}
               {card.phone_rest ? (
