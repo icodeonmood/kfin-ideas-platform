@@ -38,7 +38,7 @@ vi.mock("next/link", () => ({
 }));
 
 const { HomeScreen, HOME_COPY } = await import("@/app/home/home");
-const { loadCrew, loadMine, loadOnes, loadSets } = await import("@/lib/home/data");
+const { keepFailedSets, loadCrew, loadMine, loadOnes, loadSets, readSets } = await import("@/lib/home/data");
 const { askingDevice, draftRows } = await import("@/server/shell");
 const { DEVICE_COOKIE } = await import("@/lib/compose/client");
 
@@ -620,7 +620,11 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     expect(card.textContent).toContain("Investors are asked for the same form at two branches.");
     expect(card.textContent).not.toContain("They're looking for");
     expect(card.textContent).not.toContain("Branch staff, operations");
-    expect(card.textContent).toContain("A colleague");
+    expect(card.textContent).toContain("A colleague and 1 other on it"); // counted, though not drawn
+    // No face for A colleague: an empty circle would still be a tab stop named "A colleague"
+    const faces = [...card.querySelectorAll(".crew-face")];
+    expect(faces.map((f) => [f.getAttribute("aria-label"), f.textContent])).toEqual([["Meera Iyer", "MI"]]);
+    expect(card.querySelectorAll('[tabindex="0"][role="img"]')).toHaveLength(1);
     expect(
       card.querySelector(`button[aria-label="Team up on ${quiet.title}, with a colleague"]`),
     ).not.toBeNull();
@@ -830,6 +834,75 @@ describe("S-03.sections/1: Needs you follows the Inbox without a reload (BLD-C14
     expect(host.querySelectorAll(".hm-idea")).toHaveLength(2);
   });
 
+  it("A question set that fails on a re-read keeps its card; every set failing keeps every card", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let second = (): { status: number; body?: unknown } => ({ status: 200, body: SECOND_SET });
+    let first = (): { status: number; body?: unknown } => ({ status: 200, body: SET });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: mine([NEEDS, SECOND, PICKED], { needs_you: 2 }) }),
+        [`/api/ideas/${NEEDS.id}/question-set`]: () => first(),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => second(),
+      }),
+    );
+    const cards = () => [...host.querySelectorAll(".qcard")].map((c) => c.textContent ?? "");
+    expect(cards()).toHaveLength(2);
+    const reread = async () => {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: 0 } }));
+      });
+      await flush();
+      await act(async () => await new Promise((r) => setTimeout(r, 300))); // past the gap between re-reads
+    };
+
+    second = () => ({ status: 503, body: { error: { code: "paused", message: "" } } });
+    await reread();
+    expect(reads(calls, `/api/ideas/${SECOND.id}/question-set`)).toBe(2);
+    expect(cards()).toHaveLength(2);
+    expect(cards()[1]).toContain(SECOND.title);
+
+    first = () => ({ status: 500 });
+    await reread();
+    expect(cards()).toHaveLength(2);
+    expect(link("All 2 in Inbox")?.getAttribute("href")).toBe("/inbox");
+    expect(text()).not.toContain(HOME_COPY.needsNone);
+
+    first = () => ({ status: 200, body: null }); // read, and no open set any more: that card goes
+    await reread();
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0]).toContain(SECOND.title);
+  });
+
+  it("A burst of Inbox events brings at most two reads: one at once, one after it with the latest", async () => {
+    const { COUNTS_EVENT } = await import("@/lib/inbox-events");
+    let ideas = mine([NEEDS, SECOND, PICKED], { needs_you: 2 });
+    const calls = await show(
+      baseRoutes({
+        "/api/me/ideas": () => ({ status: 200, body: ideas }),
+        [`/api/ideas/${SECOND.id}/question-set`]: () => ({ status: 200, body: SECOND_SET }),
+      }),
+    );
+    const first = reads(calls, "/api/me/ideas");
+    ideas = mine([NEEDS, PICKED], { needs_you: 1 });
+    await act(async () => {
+      for (let i = 0; i < 6; i++)
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: i } }));
+    });
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 1);
+    await act(async () => {
+      for (let i = 0; i < 3; i++)
+        window.dispatchEvent(new CustomEvent(COUNTS_EVENT, { detail: { unread: i } }));
+    });
+    await act(async () => await new Promise((r) => setTimeout(r, 400)));
+    await flush();
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 2);
+    expect(host.querySelectorAll(".qcard")).toHaveLength(1);
+    expect(link("Open the Inbox")?.getAttribute("href")).toBe("/inbox");
+    await act(async () => await new Promise((r) => setTimeout(r, 400)));
+    expect(reads(calls, "/api/me/ideas")).toBe(first + 2); // nothing more queued
+  });
+
   it("pageshow from the back/forward cache re-reads Needs you; an ordinary pageshow does not", async () => {
     let ideas = mine([NEEDS, PICKED]);
     const calls = await show(baseRoutes({ "/api/me/ideas": () => ({ status: 200, body: ideas }) }));
@@ -870,6 +943,23 @@ describe("lib/home/data (BLD-C143, C145, C146)", () => {
     expect(m?.ideas.top.map((r) => r.id)).toEqual([NEEDS.id, PICKED.id, BUILT.id]);
     expect(m?.needs.rows.map((r) => r.id)).toEqual([NEEDS.id]);
     expect(m?.drafts).toBe(1);
+  });
+
+  it("readSets and keepFailedSets: a failed read is marked and keeps its card; all failed keeps the list", async () => {
+    const { f } = fakeFetch({
+      [`/api/ideas/${NEEDS.id}/question-set`]: () => ({ status: 503 }),
+      [`/api/ideas/${PICKED.id}/question-set`]: () => ({ status: 200, body: null }),
+    });
+    const got = await readSets(f, [NEEDS, PICKED]);
+    expect(got).toEqual([
+      { ideaId: NEEDS.id, set: null, failed: true },
+      { ideaId: PICKED.id, set: null, failed: false },
+    ]);
+    const before = [{ ideaId: NEEDS.id, set: SET }];
+    expect(keepFailedSets(before, got)).toEqual(before);
+    expect(keepFailedSets(before, [got[0]!])).toBeNull();
+    expect(keepFailedSets(before, [])).toEqual([]);
+    expect(keepFailedSets(before, [{ ideaId: NEEDS.id, set: null, failed: false }])).toEqual([]);
   });
 
   it("loadSets: an idea with no open set is left out", async () => {

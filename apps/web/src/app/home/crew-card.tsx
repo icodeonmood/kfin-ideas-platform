@@ -10,7 +10,7 @@
 import { CrewFaces } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusPill, IDEA_STATUS, type IdeaStatus } from "@/components/ui/pill";
-import type { CrewCard } from "@/lib/contracts";
+import type { CrewCard, PersonRef } from "@/lib/contracts";
 
 function Spark() {
   return (
@@ -42,19 +42,31 @@ function TeamUpIcon() {
   );
 }
 
+/**
+ * Whether a person on a card is shown as "A colleague" (DEC-104: hid their name from the Wall, or has left).
+ * `CrewCard` and `PersonRef` carry no field that says so; the worker's `similar.preview.hidden_person`, which lane F's
+ * deck uses, gives such a person no initials (and a name of "A colleague"), and lane F's own card reads it the same
+ * way (`leadFirst`). Read from empty initials until the contract marks it.
+ */
+export function shownAsColleague(p: Pick<PersonRef, "initials">): boolean {
+  return !p.initials;
+}
+
 /** "Team up on Rejection SMS codes confuse investors, with Ravi Nair" (PhoneHome.md Controls); a lead shown as "A
- * colleague" (no initials, DEC-104) reads "with a colleague" mid-sentence. */
+ * colleague" reads "with a colleague" mid-sentence. */
 export function teamUpName(card: Pick<CrewCard, "title" | "lead">): string {
-  const lead = card.lead.initials ? card.lead.name : card.lead.name.toLowerCase();
+  const lead = shownAsColleague(card.lead) ? card.lead.name.toLowerCase() : card.lead.name;
   return `Team up on ${card.title}, with ${lead}`;
 }
 
 export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(ideaId: string): void }) {
   const status = (card.status in IDEA_STATUS ? card.status : "with_review_desk") as IdeaStatus;
-  const people = [card.lead, ...card.crew_faces.filter((p) => p.id !== card.lead.id)].map((p) => ({
-    name: p.name,
-    initials: p.initials,
-  }));
+  const everyone = [card.lead, ...card.crew_faces.filter((p) => p.id !== card.lead.id)];
+  // A face only for someone with initials: "A colleague" would be an empty circle that still takes focus. They are
+  // still counted, so the line reads "A colleague and 2 others on it".
+  const people = everyone
+    .filter((p) => !shownAsColleague(p))
+    .map((p) => ({ name: p.name, initials: p.initials }));
   return (
     <article className={`card hm-pcard h${card.hue === 2 ? 2 : 1}`} aria-label={card.title}>
       <div className="hm-pc-top">
@@ -75,7 +87,7 @@ export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(idea
       <div className="hm-pc-foot">
         <CrewFaces
           people={people}
-          total={Math.max(card.crew_count, people.length)}
+          total={Math.max(card.crew_count, everyone.length)}
           leadName={card.lead.name}
         />
         <Button
