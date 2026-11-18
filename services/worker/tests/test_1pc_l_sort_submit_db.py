@@ -454,7 +454,22 @@ def test_l_submit_pre_5_the_declaration_must_be_the_current_one(world: dict[str,
     assert err.value.code == "declaration_changed" and err.value.field == "declaration"
 
 
-def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: dict[str, Any]) -> None:
+@pytest.mark.parametrize(
+    ("found", "similar_check", "line"),
+    [
+        (0, "done", "1 phone number hidden, no similar ideas found"),
+        # Matching failed: never "no similar ideas found" (L-SIMILAR.failure, BLD-C087)
+        (None, "failed", "1 phone number hidden. Couldn’t check for similar ideas. The review desk will."),
+    ],
+    ids=["matched", "could_not_check"],
+)
+def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch, found: int | None, similar_check: str, line: str
+) -> None:
+    # L-SIMILAR is on main since c/similar: its matching has its own tests, so here its answer is fixed.
+    from submit import adapters
+
+    monkeypatch.setattr(adapters, "find_similar", lambda conn, idea_uuid, *, found_while: found)
     conn = world["conn"]
     _confirm(world)
     _submit(world)
@@ -472,11 +487,8 @@ def test_l_submit_send_3_checked_and_matched_then_with_the_review_desk(world: di
     assert [(s["stage"], s["state"]) for s in again["stages"]][:3] == [
         ("shared", "done"), ("checked_matched", "done"), ("reviewed", "now"),
     ]  # fmt: skip
-    # Matching is not on main here, so it could not be checked: never "no similar ideas found" (BLD-C087)
-    assert idea["similar_check"] == "failed"
-    assert again["stages"][1]["detail"] == (
-        "1 phone number hidden. Couldn’t check for similar ideas. The review desk will."
-    )
+    assert idea["similar_check"] == similar_check
+    assert again["stages"][1]["detail"] == line
     assert again["stages"][2]["detail"] == "By Friday 20 November"
     check.run(conn, world["draft"])  # a second run changes nothing
     assert _idea(world)["status"] == "with_review_desk"

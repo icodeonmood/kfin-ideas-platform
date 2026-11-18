@@ -11,8 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "@/components/shell/sidebar";
 import type { NavItem } from "@/lib/rbac";
-import type { MyIdea } from "@/server/ideas";
-import { committeeRows, deskRows, ideaRow, type ShellData } from "@/server/shell";
+import { committeeRows, deskRows, ideaRows, type ShellData } from "@/server/shell";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/desk",
@@ -21,8 +20,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   return {
-    default: (p: { href: string; className?: string; children?: unknown }) =>
-      h("a", { href: p.href, className: p.className }, p.children as never),
+    default: ({ children, ...p }: { href: string; children?: unknown }) => h("a", p, children as never),
   };
 });
 
@@ -32,22 +30,6 @@ const NAV: NavItem[] = [
   { key: "home", label: "Home", href: "/", place: "main", tab: 1 },
   { key: "desk", label: "Review desk", href: "/desk", place: "main" },
 ];
-
-function idea(over: Partial<MyIdea>): MyIdea {
-  return {
-    id: "d-1",
-    idea_id: "IDEA-2026-000101",
-    one_line: "Branch queue times are not tracked anywhere",
-    area: "Investor service",
-    shared_on: "2026-11-16T09:00:00+05:30",
-    draft: false,
-    stage: "Reviewed",
-    next_step: "",
-    due: null,
-    stage_key: "reviewed",
-    ...over,
-  };
-}
 
 const desk = deskRows({
   waiting_on_sharers: [
@@ -78,20 +60,23 @@ const DATA: ShellData = {
   tierName: null,
   inboxUnread: 0,
   drafts: [{ href: "/share/d-9", title: "Cheque scans at month end", meta: "Today", tone: "draft" }],
-  ideas: [
-    ideaRow(idea({})),
-    ideaRow(
-      idea({
-        idea_id: "IDEA-2026-000102",
-        one_line: "Same KYC details typed into three screens",
-        stage: "Needs you",
-        stage_key: "needs_you",
-      }),
-    ),
-    ideaRow(
-      idea({ idea_id: "IDEA-2026-000103", one_line: "No stage words", stage: " ", stage_key: "asked" }),
-    ),
-  ],
+  ideas: ideaRows({
+    ideas: [
+      {
+        id: "IDEA-2026-000101",
+        title: "Branch queue times are not tracked anywhere",
+        status_dot: "blue",
+        status_label: "Reviewed",
+      },
+      {
+        id: "IDEA-2026-000102",
+        title: "Same KYC details typed into three screens",
+        status_dot: "warn",
+        status_label: "Needs you",
+      },
+      { id: "IDEA-2026-000103", title: "No stage words", status_dot: "warn", status_label: " " },
+    ],
+  }),
   desk,
   committee,
 };
@@ -149,5 +134,36 @@ describe("C-SIDEBAR.anatomy/4, F-A11Y.rules/4: each dot says what it means", () 
     expect(spoken("/share/d-9")).toBe("Draft: ");
     expect(committee[0]?.words).toBeUndefined();
     expect(spoken("/committee?open=w-1")).toBeNull();
+  });
+});
+
+describe("C-SIDEBAR.anatomy/4: section actions (boards Desk and Committee, BLD-D013)", () => {
+  /** A section's header links as [name, href, text], in order. */
+  const actions = (section: string) =>
+    Array.from(host.querySelectorAll(`section[aria-label="${section}"] .sb-ha a`)).map((a) => [
+      a.getAttribute("aria-label"),
+      a.getAttribute("href"),
+      a.textContent,
+    ]);
+
+  it("Waiting on sharers: search and View all, both on the desk's waiting tab", () => {
+    expect(actions("Waiting on sharers")).toEqual([
+      ["Search the desk", "/desk?tab=waiting", ""],
+      ["View all ideas waiting on sharers", "/desk?tab=waiting", "View all"],
+    ]);
+  });
+
+  it("Closing soonest: View all opens the committee", () => {
+    expect(actions("Closing soonest")).toEqual([
+      ["View all ideas closing soonest", "/committee", "View all"],
+    ]);
+  });
+
+  it("Your ideas keeps its search and View all", () => {
+    expect(actions("Your ideas").map(([name]) => name)).toEqual(["Search your ideas", "View all your ideas"]);
+  });
+
+  it("the actions sit inside their section, which the folded bar hides", () => {
+    for (const a of host.querySelectorAll(".sb-ha a")) expect(a.closest(".sb-sec")).not.toBeNull();
   });
 });

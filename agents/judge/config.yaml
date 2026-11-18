@@ -1,6 +1,6 @@
 # judge — model and runtime settings. Bump `version` and add a CHANGELOG line on any change; `make eval` must pass.
 name: judge
-version: 0.2.2
+version: 0.3.1
 tier: reasoning
 model: claude-sonnet-5-5
 effort: medium          # no temperature: current models reject non-default sampling (BLD-070)

@@ -61,6 +61,12 @@ export const ROUTE_RULES: readonly Rule[] = [
   // are filled by hand (DEC-105).
   { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  // "Keep mine separate" is part of sending a draft (BLD-C095).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/similar\/keep-separate\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
