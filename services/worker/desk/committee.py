@@ -182,8 +182,13 @@ def listing(conn: Conn, user_id: str, tab: str = "window", sort: str = "closing"
         chosen.sort(key=lambda r: r["opens_at"], reverse=True)
     elif sort == "area":
         chosen.sort(key=lambda r: ((r["area"] or "").lower(), r["closes_at"]))
+    # S-R4.states `tab`, J-COMMITTEE/3c (BLD-B265): the default "Closing soonest" on a closed tab lists the latest
+    # first, as the Committee board draws Expired (18 November above 11 November): most recently reversed, most
+    # recently expired
     elif tab == "reversed":
         chosen.sort(key=lambda r: r["reversed_at"], reverse=True)
+    elif tab == "expired":
+        chosen.sort(key=lambda r: r["closes_at"], reverse=True)
     month_start = t.astimezone(when.IST).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     mine = conn.execute(
         "SELECT count(*) AS n FROM decision_reversals WHERE by_user_id = %s AND at >= %s",
