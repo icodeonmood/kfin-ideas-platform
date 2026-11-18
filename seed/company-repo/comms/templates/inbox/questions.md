@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{from.display}} asked you {{count_words}}'
-description: 'Inbox item and email for the questions kind (L-INBOX.kinds). Row text: pack. Email wording: draft for HR.'
+description: 'Inbox item and email for the questions kind (L-INBOX.kinds). Row text: pack. Email wording: draft for HR. 1.1 (DEC-111, BLD-B257): the sender is the review desk as a whole, so the row, subject and email read “The review desk asked you …”, never a reviewer’s name.'
 tags:
 - comms
 - template
@@ -12,7 +12,7 @@ generated:
   at: '2026-11-17T00:00:00+05:30'
 kfin:
   id: TPL-inbox-questions
-  version: '1.0'
+  version: '1.1'
   kinds:
   - questions
   subject: '{{from.display}} asked you {{count_words}}'

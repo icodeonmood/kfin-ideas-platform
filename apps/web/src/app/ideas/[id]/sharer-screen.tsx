@@ -24,6 +24,7 @@ import type {
 import type { FileItem } from "@/lib/contracts/entities";
 
 import { capital, decisionSentence, type Decided } from "./decision";
+import { AskToJoin } from "./join-build";
 import { BackLink, backToList, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
 
@@ -535,8 +536,10 @@ export function SharerScreen({
               ) : null}
             </div>
           ) : null}
-          {/* TODO(lane B): "Ask to join the build team" (POST /ideas/:id/join-build) follows the Pick (L-DECIDE/6,
-              BLD-E012); it shows here once lane B's endpoint lands. */}
+          {d ? (
+            // L-DECIDE/6: "Ask to join the build team" after a Pick, then the line it leaves (J-REVIEW/6, BLD-E055)
+            <AskToJoin ideaId={ref} d={d} failed={setFailed} away={() => title.current?.focus()} />
+          ) : null}
           {failed ? <Status kind="error" title={TRY_AGAIN} /> : null}
         </div>
       </article>
@@ -574,10 +577,15 @@ export function SharerScreen({
       <div className="ip-cols">
         <div className="ip-main">
           {d?.decision.reason && !reversed ? (
-            <section className="ip-sec ip-reason" aria-labelledby="ip-reason-h">
-              <h2 id="ip-reason-h" className="ip-h2">
-                {d.decision.reason_heading}
-              </h2>
+            <section
+              className="ip-sec ip-reason"
+              aria-labelledby={d.decision.reason_heading ? "ip-reason-h" : undefined}
+            >
+              {d.decision.reason_heading ? (
+                <h2 id="ip-reason-h" className="ip-h2">
+                  {d.decision.reason_heading}
+                </h2>
+              ) : null}
               <blockquote className="ip-reason-q">“{d.decision.reason}”</blockquote>
               <p className="ip-reason-by">{capital(d.decision.by_line)}</p>
             </section>

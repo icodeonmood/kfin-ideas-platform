@@ -11,12 +11,13 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: RULE-comms
-  version: '1.0'
+  version: '1.1'
 ---
 
 How the communication module decides who hears what. For each event: audiences, template, channels, urgency, whether a person must approve, and who signs.
 Quiet hours and holidays come from `rules/calendar.md`. Routine messages respect each person's digest preference; immediate ones always send.
 Events with `day_one: false` are switched on as their stages go live (weeks 3–8). Wording lives in `comms/templates/` and is signed off by HR.
+The review desk signs as a whole, never by a reviewer's name (DEC-111; 1.1, BLD-A222).
 
 ```yaml
 version: '1.0'
@@ -85,7 +86,7 @@ events:
     - email
     urgency: immediate
     approval: null
-    signer: reviewer
+    signer: review_desk
     reminders_wd:
     - 3
     - 6
@@ -99,7 +100,7 @@ events:
     - digest
     urgency: routine
     approval: null
-    signer: reviewer
+    signer: review_desk
   idea.redirected:
     day_one: true
     audiences:
@@ -110,7 +111,7 @@ events:
     - in_app
     urgency: immediate
     approval: null
-    signer: reviewer
+    signer: review_desk
   idea.reconsidered:
     day_one: true
     audiences:

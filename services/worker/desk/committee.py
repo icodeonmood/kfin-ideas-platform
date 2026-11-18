@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Literal
 
 from core.db import Conn
-from desk import adapters, decide, promises, when
+from desk import adapters, decide, join_build, promises, when
 from desk.store import (
     COMMITTEE,
     READERS,
@@ -30,6 +30,7 @@ from desk.store import (
     unseal,
 )
 from desk.window import Window, WindowRefused, extend, reverse, words
+from onepc.words import REVIEW_DESK, REVIEW_DESK_START
 
 Tab = Literal["window", "reversed", "expired"]
 TABS: tuple[Tab, ...] = ("window", "reversed", "expired")
@@ -396,16 +397,17 @@ def sharer_lines(
     """The sharer's words for a decision (reference/copy/Status.md; A-API.conventions/6): the Picked card's joined
     line when the Pick joined a similar idea (L-MERGE.desk/5), the committee line while the window is open
     (L-DECIDE.rules/5), and the committee's card once it reversed the decision (L-COMMITTEE.rules/5,
-    V-ACC.committee/4). `joined_side`: the reader's idea is the one the Pick joined, so the line names the lead."""
+    V-ACC.committee/4). `joined_side`: the reader's idea is the one the Pick joined, so the line names the lead.
+    DEC-111: the sharer and the crew read the review desk, never the reviewer's name ("Meera from the review desk
+    picked it on …" on the board); the committee member who reversed it is still named."""
     tz = when.IST
     w = _window(r)
     open_ = w.is_open(at)
     joined_line = None
     if r["choice"] == "pick" and r["joined_with"] is not None:
-        desk_first = person_by_user(conn, r["decided_by"]).first_name
         ref, city = (r["idea_id"], r["city"]) if joined_side else (r["joined_idea_id"], r["joined_city"])
         joined_line = (
-            f"{desk_first} from the review desk picked it on {when.day(r['opens_at'], at, tz)} and joined it with "
+            f"{REVIEW_DESK_START} picked it on {when.day(r['opens_at'], at, tz)} and joined it with "
             f"{ref}{f' from {city}' if city else ''}, so one team builds one fix."
         )
     lines: dict[str, Any] = {
@@ -418,7 +420,6 @@ def sharer_lines(
     }  # fmt: skip
     if r["reversal_id"] is not None and r["to_choice"]:
         member = person_by_user(conn, r["reversed_by"])
-        desk_person = person_by_user(conn, r["decided_by"])
         was, now_label = decide.LABELS[str(r["choice"])], decide.LABELS[str(r["to_choice"])]
         final = "This is final."
         if r["to_choice"] == "not_now" and r["reversed_return_at"]:
@@ -429,7 +430,7 @@ def sharer_lines(
             "title": f"The Ones Committee changed the decision to {_lower(now_label)}",
             "note_heading": "The committee’s note to you",
             "was_line": f"Was: {was}",
-            "was_by_line": f"by {desk_person.first_name} from the review desk, {when.day(r['opens_at'], at, tz)}",
+            "was_by_line": f"by {REVIEW_DESK}, {when.day(r['opens_at'], at, tz)}",
             "final_line": final,
             "track_line": f"{was}, then moved to {_lower(now_label)} by the Ones Committee",
         }  # fmt: skip
@@ -491,8 +492,9 @@ def for_idea(
 ) -> dict[str, Any] | None:
     """The latest decision on an idea with its window and any reversal, for the reviewer's page (S-R2 Decided)
     and the sharer's (S-06). None when the desk has not decided. `lines` adds that viewer's words under `lines`
-    (`sharer_lines`, `reviewer_lines`); the rest of the row keeps the committee's (S-R4). `joined_side`: read from
-    the idea the Pick joined (`decision_for_viewer`)."""
+    (`sharer_lines`, `reviewer_lines`); the rest of the row keeps the committee's (S-R4), except that the sharer's
+    names the review desk, not the reviewer, and has no reason heading (DEC-111). `joined_side`: read from the idea
+    the Pick joined (`decision_for_viewer`)."""
     t = at or now()
     p = promises.get()
     r = conn.execute(_ROWS + " WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1", (idea_uuid,)).fetchone()
@@ -505,6 +507,10 @@ def for_idea(
         r["reversed_return_at"] or r["return_at"]) else None  # fmt: skip
     if lines == "sharer":
         out["lines"] = sharer_lines(conn, row, t, p, joined_side=joined_side)
+        # DEC-111: the sharer and the crew read the review desk, never the reviewer, in the row's words too; Status.md
+        # draws no heading over the reason ("The review desk’s reason, as Kavya read it" is the committee's, S-R4)
+        out["decision"]["by_line"] = f"by {REVIEW_DESK}, {when.day(row['opens_at'], t, when.IST)}"
+        out["decision"]["reason_heading"] = None
     elif lines == "reviewer":
         out["lines"] = reviewer_lines(conn, row, t, p, viewer_id)
     return out
@@ -564,6 +570,9 @@ def decision_for_viewer(
                     joined_side=lead is not None)  # fmt: skip
     if full is not None:
         full["joined_into"] = lead["idea_id"] if lead is not None else None
+        # Ask to join the build team (L-DECIDE.rules/6, DEC-111): for the sharer and the crew only, on the idea whose
+        # Pick this is (the lead, on an idea a Pick joined); None for anyone else, the desk and committee included
+        full["join_build"] = join_build.join_build_for(conn, str((lead or idea)["id"]), viewer_id)
     if full is not None and not sharer_side:
         full["lines"] = None  # the desk and the committee read the committee's words (S-R2, S-R4)
     if full is None or may_read_decision(conn, viewer_id, idea):

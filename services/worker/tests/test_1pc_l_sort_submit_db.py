@@ -338,6 +338,44 @@ def test_l_submit_send_1_the_idea_gets_its_reference_and_the_clock_starts(world:
     assert history[-1] == "checking"
 
 
+def test_l_submit_send_s06_just_shared_dec_105_bld_c159_the_hand_over_reads_the_comms_teams_row(
+    world: dict[str, Any],
+) -> None:
+    """DEC-105, BLD-C159 (L-SUBMIT.send, S-06 "Just shared"): the hand-over reads the `comms.teams` row as notify
+    does. The test database starts with every switch on, so Submit gives the drawn words; with the row off, the repeat
+    Submit's hand-over says "by email" only, every other word the same."""
+    from core import killswitch
+
+    conn = world["conn"]
+    _confirm(world)
+    killswitch.clear_cache()
+    try:
+        assert killswitch.is_on("comms.teams", conn)
+        _, h = _submit(world)
+        assert h["review"]["line"] == (
+            "The review desk will look at it by Friday 20 November. We’ll tell you on Teams and by email when "
+            "anything changes."
+        )
+        assert h["edit_window"]["line"] == (
+            "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens "
+            "it. We tell you on Teams and by email when anything moves."
+        )
+        conn.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
+        killswitch.clear_cache()
+        status, again = _submit(world)  # already sent: its hand-over again, never a second idea
+        assert status == 200 and again["ref"] == h["ref"]
+        assert again["review"]["line"] == (
+            "The review desk will look at it by Friday 20 November. We’ll tell you by email when anything changes."
+        )
+        assert again["edit_window"]["line"] == (
+            "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens "
+            "it. We tell you by email when anything moves."
+        )
+    finally:
+        conn.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'comms.teams'")
+        killswitch.clear_cache()
+
+
 def test_l_submit_send_a_retry_never_creates_two_ideas(world: dict[str, Any]) -> None:
     conn = world["conn"]
     _confirm(world)

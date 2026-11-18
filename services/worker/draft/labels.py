@@ -3,7 +3,8 @@ screen agrees). Office time (IST). The wording is the boards' (`reference/copy/C
 `PhoneCompose.md`, `MyIdeas.md`):
 
 - sidebar and lists: "Friday, on your phone", "Yesterday, on this laptop";
-- resuming: "Last saved on your phone, Friday 8:42 pm.";
+- resuming: "Last saved on your phone, Friday 8:42 pm.", always with its day ("today 3:12 pm", as the boards write
+  "asked, today 11:20 am"; BLD-C158);
 - the existing-draft prompt: "You have a draft from Friday" and "Last saved on your phone, 8:42 pm." (on the same
   device: "Saved on this phone, 8:42 pm.");
 - the save status: "Saved at 1:38 pm";
@@ -58,7 +59,7 @@ def saved_labels(
         return None
     d, t, w = day(at, now), clock(at), where(device, this_device)
     on = f", {w}" if w else ""
-    when = t if d == "today" else f"{capital(d) if d == 'yesterday' else d} {t}"
+    when = f"{d} {t}"  # S-04B's "Friday 8:42 pm": the day mid-sentence, lower case for today and yesterday
     if d == "today":
         my_ideas = f"Saved {t}{on}"
     elif d == "yesterday":

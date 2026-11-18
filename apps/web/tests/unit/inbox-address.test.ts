@@ -54,7 +54,7 @@ import Inbox from "@/app/inbox/page";
 const QUESTIONS: InboxEntry = {
   id: "7",
   kind: "questions",
-  from: { id: "u-harish", name: "Harish Kulkarni", first_name: "Harish", initials: "HK" },
+  from: "system", // DEC-111: a desk kind comes from the review desk as a whole
   idea: {
     id: "IDEA-2026-000901",
     title: "Branch staff cannot see SIP pause requests",
@@ -68,7 +68,7 @@ const QUESTIONS: InboxEntry = {
   body: {
     heading: "Questions from the review desk",
     note: "",
-    sender: "Harish from the review desk",
+    sender: "The review desk",
     set_id: "s-1",
   },
   actions: [{ label: "Answer the questions", style: "primary", to: "/ideas/IDEA-2026-000901/answer" }],
@@ -304,9 +304,11 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
   });
 
   it("DEC-110: nothing from the unfiltered list is opened or marked read before the kept search is back", async () => {
-    writeSearch("/inbox", "Harish"); // matches the questions (read) and not the mention (unread, first in the list)
+    // Matches the questions (read) and not the mention (unread, first in the list). DEC-111: the questions come from
+    // the review desk as a whole, so the desk is what a search finds, never the reviewer's name.
+    writeSearch("/inbox", "review desk");
     await show(ALL, "all", null);
-    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("Harish");
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("review desk");
     expect(row("8")).toBeNull();
     expect(row("7")?.getAttribute("aria-pressed")).toBe("true");
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual([]);

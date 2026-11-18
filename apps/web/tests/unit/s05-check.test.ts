@@ -2094,6 +2094,27 @@ describe("S-05 J-SIMILAR/6a L-MERGE.request/5: a merged draft stays on Check it,
     expect(writes()).toEqual([]);
   });
 
+  it("kept separate before the merge: the grid shows as it is, with no Show them again and nothing that writes; Tell it is not a link", async () => {
+    await mount(
+      base({
+        draft: draft({ merged_into: REF, kept_separate: true, step: "check:3" }),
+        merge: ACCEPTED,
+        send: mergedSend(),
+      }),
+    );
+    expect(h1()).toBe("Has someone raised this already?");
+    expect(button("Show them again")).toBeUndefined();
+    expect(document.body.textContent).not.toContain(CHECK_COPY.similar.kept);
+    expect(document.querySelectorAll(".simgrid .sgt")).toHaveLength(3); // yours, then the two matches
+    const controls = buttons().map(nameOf);
+    expect(controls.filter((n) => /^(Team up|Withdraw|Show them again)/.test(n))).toEqual([]);
+    // The task bar: "Tell it, done" in words only, since Tell it would bring the person straight back here.
+    const tell = Array.from(document.querySelectorAll(".tbar li")).find((li) => /Tell it/.test(text(li)))!;
+    expect(text(tell)).toBe("Tell it, done");
+    expect(tell.querySelector("a")).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
   it("a saved Send it opens part 1, and a send kept on this device is dropped, never sent", async () => {
     localStorage.setItem(`1pc.s05.queued.${DRAFT_ID}`, JSON.stringify({ draftId: DRAFT_ID, key: "s05:k" }));
     await mount(

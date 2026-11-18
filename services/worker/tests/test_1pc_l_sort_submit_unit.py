@@ -257,10 +257,20 @@ def test_v_fields_sorting_each_field_is_checked(seed_rules: None, field: str, ra
 # --- L-SUBMIT.send: the hand-over to S-06 ------------------------------------------------------------------------
 
 
-def test_l_submit_send_hands_over_what_s06_just_shared_shows() -> None:
-    """V-ACC.share/12: the reference and "The review desk will look at it by <date>" are there at once."""
+def _switches(monkeypatch: pytest.MonkeyPatch, states: dict[str, str]) -> None:
+    """The kill switches as the table would hold them, past the 10-second cache: `is_on` itself still decides, so an
+    unknown switch counts as off."""
+    from core import killswitch
+
+    monkeypatch.setattr(killswitch, "states", lambda conn=None, *, now=None: dict(states))
+
+
+def test_l_submit_send_hands_over_what_s06_just_shared_shows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """V-ACC.share/12: the reference and "The review desk will look at it by <date>" are there at once. The Teams
+    switch is on here, so the drawn words stand (DEC-105, BLD-C159; the off form is the next test's)."""
     from submit.send import handover
 
+    _switches(monkeypatch, {"comms.teams": "on"})
     shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
     idea = {
         "id": "00000000-0000-4000-8000-000000000001",
@@ -296,6 +306,57 @@ def test_l_submit_send_hands_over_what_s06_just_shared_shows() -> None:
     )
     assert h["edit_window"]["countdown"]["label"] == "3 days left"
     assert h["next"] == {"to": "/ideas/IDEA-2026-001481", "replace": True, "state": "just_shared"}
+
+
+DRAWN = (
+    "The review desk will look at it by Friday 20 November. We’ll tell you on Teams and by email when anything "
+    "changes.",
+    "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens it. We tell "
+    "you on Teams and by email when anything moves.",
+)
+TEAMS_OFF = (
+    "The review desk will look at it by Friday 20 November. We’ll tell you by email when anything changes.",
+    "Open to changes until Tuesday 17 November. Edit or withdraw it any time before the review desk opens it. We tell "
+    "you by email when anything moves.",
+)
+
+
+@pytest.mark.parametrize(
+    ("states", "lines"),
+    [
+        ({"comms.teams": "on"}, DRAWN),
+        ({"comms.teams": "off"}, TEAMS_OFF),
+        ({}, TEAMS_OFF),  # a switch the table does not know counts as off
+    ],
+    ids=["on", "off", "unknown"],
+)
+def test_l_submit_send_s06_just_shared_dec_105_bld_c159_names_teams_only_while_comms_teams_is_on(
+    monkeypatch: pytest.MonkeyPatch, states: dict[str, str], lines: tuple[str, str]
+) -> None:
+    """DEC-105, BLD-C159 (L-SUBMIT.send, S-06 "Just shared"; the same rule as BLD-E054 and BLD-F086): Teams is built
+    but off until IT approves it. While `comms.teams` is off, the hand-over's review line and edit-window line drop
+    "on Teams" and keep every other word; while it is on, the drawn words stand, curly apostrophe and all."""
+    import json
+
+    from submit.send import handover
+
+    _switches(monkeypatch, states)
+    shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
+    idea = {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "idea_id": "IDEA-2026-001481",
+        "status": "checking",
+        "title": "Investors call to ask where a redemption has got to",
+        "shared_at": shared,
+        "decide_by": dt.datetime(2026, 11, 20, 12, 30, tzinfo=dt.UTC),
+        "edit_closes_at": shared + dt.timedelta(days=3),
+        "opened_at": None,
+    }
+    h = handover(None, idea, shared + dt.timedelta(seconds=2))  # type: ignore[arg-type]
+    assert (h["review"]["line"], h["edit_window"]["line"]) == lines
+    assert ("Teams" in json.dumps(h, ensure_ascii=False)) is (states.get("comms.teams") == "on")
+    assert h["review"]["by_label"] == "By Friday 20 November"  # nothing else moves
+    assert h["edit_window"]["countdown"]["label"] == "3 days left"
 
 
 def test_l_submit_send_checked_line() -> None:

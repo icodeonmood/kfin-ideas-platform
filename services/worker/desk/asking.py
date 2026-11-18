@@ -6,10 +6,13 @@ The rules that need no database (parts, checks, states, the words) are in `desk.
 
 - the reviewer: `suggested`, `send_set`, `give_more_time`, `remind`; and `remind_due`, the reminder timer's handler;
 - the sharer: `open_set_for_sharer`, `save_answer`, `send_answers`;
-- the desk's reads: `facts` (the queue's Questions column) and `answers_by_part` (the reviewer's page).
+- the reads: `facts` (the desk queue's Questions column) and `answers_by_part` (the sharer's idea page, S-06).
 
 Questions and answers are stored as the masked copy, encrypted per row (`questions.text_encrypted`,
 `answers.text_encrypted`). Audit entries and conversation payloads carry IDs and enums only (non-negotiable 3).
+
+DEC-111: what the sharer reads never names the reviewer. The sharer's set has no `by`, and its lines (the send
+button, "Sent to …", "… decides by …", who asked under each part) name the review desk. The desk's reads keep the name.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from desk.store import (
     user_of,
 )
 from hide import HideError
+from onepc.words import REVIEW_DESK, REVIEW_DESK_START
 
 log = get_logger("desk.asking")
 
@@ -520,15 +524,15 @@ def open_set_for_sharer(
             ).fetchone()
             s = dict(seen) if seen else s
         out = _set_json(conn, s, idea, t, viewer_code=code)
-        reviewer = person_by_user(conn, str(s["by_user_id"]))
         answers = [q["answer"] for q in out["questions"] if q["answer"] and _has_content(q["answer"])]
         ready = sum(1 for a in answers if not a["sent"])
         out.update({
+            "by": None,  # DEC-111: the sharer never sees who at the review desk asked, not even in the JSON
             "idea": {"id": idea["idea_id"], "title": idea["title"]},
             "countdown": _countdown(s["due_at"], t, "left to answer", tz),
             "deadline": f"Answer by {when.deadline(s['due_at'], t, tz)}",
             "progress": f"{len(answers)} of {out['count']} answered",
-            "send_label": questions.send_answers_label(ready, reviewer.first_name),
+            "send_label": questions.send_answers_label(ready),
         })  # fmt: skip
         return out
 
@@ -705,15 +709,14 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
         audit(conn, actor(user_id), "desk.answers_sent", f"idea:{idea['idea_id']}",
               before={"set_id": sid, "state": s["state"]},
               after={"set_id": sid, "count": len(ready), "state": state})  # fmt: skip
-        reviewer = person_by_user(conn, str(s["by_user_id"]))
         decide_by = idea["decide_by"]
+        # DEC-111: S-R3's sent lines name the review desk, never the reviewer ("Sent to Meera, 4:32 pm" on the board)
         return {
             "set_id": sid, "state": state, "sent": len(ready), "answered": answered, "count": len(rows),
             "sent_at": t.isoformat(), "progress": f"{answered} of {len(rows)} answered",
-            "sent_line": f"Sent to {reviewer.first_name}, {when.clock(t, tz)}",
+            "sent_line": f"Sent to {REVIEW_DESK}, {when.clock(t, tz)}",
             "spare": questions.spare_line(t, s["due_at"], tz),
-            "reviewer_first_name": reviewer.first_name,
-            "decides_by": f"{reviewer.first_name} decides by {when.day(decide_by, t, tz)}" if decide_by else None,
+            "decides_by": f"{REVIEW_DESK_START} decides by {when.day(decide_by, t, tz)}" if decide_by else None,
         }  # fmt: skip
 
 
@@ -773,7 +776,9 @@ def facts(conn: Conn, idea_uuid: Any) -> SetFacts | None:
 
 def answers_by_part(conn: Conn, idea_uuid: Any) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on the idea under its part, with its answer once sent (drafts stay the sharer's), who
-    asked and answered and when, and the answer's files (L-QUESTIONS.answer/5; V-ACC.review/8)."""
+    asked and answered and when, and the answer's files (L-QUESTIONS.answer/5; V-ACC.review/8). Read for the sharer's
+    idea page (lane E's `ideapage.sharer`; the desk's S-R2 has its own read in `desk.reads`), so `asked_by` is the
+    review desk, never the reviewer's name (DEC-111): "From your answer to the review desk, Monday 16 November"."""
     rows = [
         dict(r)
         for r in conn.execute(
@@ -789,13 +794,9 @@ def answers_by_part(conn: Conn, idea_uuid: Any) -> dict[str, list[dict[str, Any]
         k: _only(v, DESK_SEES)
         for k, v in _files(conn, [str(r["answer_id"]) for r in rows if r["answer_id"]]).items()
     }
-    staff: dict[str, str] = {}
     sharers: dict[str, str] = {}
     out: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
-        asker = str(r["by_user_id"])
-        if asker not in staff:
-            staff[asker] = person_by_user(conn, asker).first_name
         by = None
         if r["answer_id"]:
             code = str(r["by_code"])
@@ -805,7 +806,7 @@ def answers_by_part(conn: Conn, idea_uuid: Any) -> dict[str, list[dict[str, Any]
         part = str(r["added_to"] or r["part"])
         out.setdefault(part, []).append(
             {"question_id": str(r["id"]), "question": _question_text(r), "asked_at": _iso(r["asked_at"]),
-             "asked_by": staff[asker], "answer": _answer_text(r) if r["answer_id"] else None,
+             "asked_by": REVIEW_DESK, "answer": _answer_text(r) if r["answer_id"] else None,
              "answered_at": _iso(r["sent_at"]), "by": by,
              "files": files.get(str(r["answer_id"]), []) if r["answer_id"] else []}
         )  # fmt: skip
