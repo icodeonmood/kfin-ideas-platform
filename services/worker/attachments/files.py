@@ -16,7 +16,8 @@ A file's life (`attachments.file_state`, E-ENUMS.file):
    A checked or found file moves to the clean bucket; the scan's verdict, not the bucket, decides who opens it.
    When the scanner, OCR, the store or the gatekeeper does not answer, the file stays `checking` and the job tries
    again; after its last try the file is `upload_failed`, with Try again. It is never `checked` without the
-   gatekeeper unless a person switched the gatekeeper off (non-negotiable 4, DEC-103; BLD-C107).
+   gatekeeper: while `ai.all` or `agent.gatekeeper` is switched off, by a person or a process, it waits the same
+   way (non-negotiable 4, DEC-103; BLD-C107).
 4. The old `state` column is kept in step only for the checked states, which are its `clean`; nothing else is ever
    marked clean, so the old `/api/attachments/:id` route never serves a file DEC-107 keeps from people.
 
@@ -751,13 +752,13 @@ def check(conn: Conn, att_id: str) -> str:
             "checks = coalesce(checks, '{}'::jsonb) || %s, updated_at = now() WHERE id = %s",
             (state, old_state(state), got.pages, MIME.get(real, "application/octet-stream"),
              Jsonb({"type": real, "result": "found" if finds.count else "clean", "found": finds.codes(),
-                    "gatekeeper": "off" if gate.switched_off else "ran",
+                    "gatekeeper": "ran",  # always: a file never skips it (BLD-C107)
                     "ocr": real in ("png", "jpg") or any("(scanned)" in w for w, _ in got.pieces)}),
              att_id),
         )  # fmt: skip
         _audit(conn, "system:files", "file.checked", str(row["idea_uuid"]),
                {"file_id": att_id, "state": state, "kinds": finds.kinds, "count": finds.count,
-                "gatekeeper": "off" if gate.switched_off else "ran"})  # fmt: skip
+                "gatekeeper": "ran"})  # fmt: skip
     log.info("files.checked", attachment_id=att_id, file_state=state, hidden_count=finds.count)
     return state
 

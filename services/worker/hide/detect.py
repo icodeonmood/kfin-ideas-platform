@@ -15,6 +15,7 @@ A `Found` carries the value, so it is never logged; callers log counts and kinds
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -166,15 +167,34 @@ def occurrences(text: str, value: str) -> list[tuple[int, int]]:
     return out
 
 
+@lru_cache(maxsize=1)
+def word_char() -> str:
+    """A character class for what continues a word at a value's edges: `\\w`, every combining mark (Unicode Mn, Mc
+    and Me: the vowel signs and nasal marks of Devanagari and the other Indian scripts, and accents typed as marks)
+    and the zero-width joiners those scripts use inside words. Python's `\\w` misses the marks, so "किरण" would
+    otherwise match inside "किरणों" and leave "ों" after the mask (BLD-C066). The Basic Multilingual Plane holds
+    every mark the Indian languages use."""
+    ranges: list[tuple[int, int]] = []
+    for cp in range(0x10000):
+        if unicodedata.category(chr(cp)).startswith("M"):
+            if ranges and ranges[-1][1] == cp - 1:
+                ranges[-1] = (ranges[-1][0], cp)
+            else:
+                ranges.append((cp, cp))
+    marks = "".join(f"\\u{a:04x}" if a == b else f"\\u{a:04x}-\\u{b:04x}" for a, b in ranges)
+    return rf"[\w{marks}\u200c\u200d]"
+
+
 @lru_cache(maxsize=256)
 def value_pattern(value: str) -> re.Pattern[str] | None:
     """`value` as whole words, any case, any run of spaces between its words: "kiran  rao" matches "Kiran Rao",
-    and "Rao" does not match inside "Raona" (BLD-C066)."""
+    "Rao" does not match inside "Raona", and "किरण" does not match inside "किरणों" (`word_char`, BLD-C066)."""
     words = value.split()
     if not words:
         return None
     body = r"\s+".join(re.escape(w) for w in words)
-    return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
+    w = word_char()
+    return re.compile(rf"(?<!{w}){body}(?!{w})", re.IGNORECASE)
 
 
 def value_places(text: str, value: str, *, skip_masks: bool = True) -> list[tuple[int, int]]:
