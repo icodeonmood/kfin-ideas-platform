@@ -4,10 +4,14 @@
  * shared contracts land (A-API.me, A-API.inbox-count, A-API.my-drafts, A-API.my-ideas). The shell never stops a page
  * from rendering: each part that cannot be read in time is simply left out.
  */
-import type { CommitteeResponse, DeskResponse } from "@/lib/contracts";
+import { cookies, headers } from "next/headers";
+
+import { DEVICE_COOKIE } from "@/lib/compose/client";
+import type { CommitteeResponse, DeskResponse, DraftListItem } from "@/lib/contracts";
 
 import type { CurrentUser } from "./auth/current";
 import { deskRead } from "./desk";
+import { drafts as draftApi, type DeviceInfo } from "./drafts";
 import { myIdeas, type MyIdea } from "./ideas";
 import { inboxCounts } from "./inbox";
 import { myOne } from "./ones";
@@ -91,6 +95,44 @@ function titleOf(idea: MyIdea): string {
   return idea.one_line?.trim() || (idea.draft ? "Untitled draft" : "Your idea");
 }
 
+const PHONE_UA = /Mobi|Android|iPhone|iPod|Windows Phone/i;
+const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** The device asking, from the request (as `deviceOf` in server/drafts.ts), so a draft reads "on your phone" or
+ * "on this laptop". A page load sends no `X-Device-Id`, so the browser's id comes from the `device_id` cookie the
+ * draft client sets (BLD-C147). Outside a request (tests) it is a laptop with no id. */
+export async function askingDevice(): Promise<DeviceInfo> {
+  try {
+    const h = await headers();
+    const jar = await cookies();
+    const said = h.get("x-device");
+    const kind =
+      said === "phone" || said === "laptop"
+        ? said
+        : PHONE_UA.test(h.get("user-agent") ?? "")
+          ? "phone"
+          : "laptop";
+    const id = h.get("x-device-id") ?? jar.get(DEVICE_COOKIE)?.value ?? null;
+    return { kind, id: id && DEVICE_ID.test(id) ? id : null };
+  } catch {
+    return { kind: "laptop", id: null };
+  }
+}
+
+/** C-SIDEBAR "Drafts": up to two of the person's drafts (L-DRAFT, `GET /api/drafts`), newest first, each with when
+ * and where it was saved ("Friday, on your phone"), opening S-04B on that draft (P-ROUTES.nav/5, BLD-C147). */
+export function draftRows(items: DraftListItem[] | null | undefined): ShellRow[] {
+  return (items ?? [])
+    .filter((d) => !d.archived)
+    .slice(0, 2)
+    .map<ShellRow>((d) => ({
+      href: `/share/${d.id}`,
+      title: d.title?.trim() || "Untitled draft",
+      meta: d.saved_labels?.sidebar ?? whenSaved(d.saved_at),
+      tone: "draft",
+    }));
+}
+
 /** C-SIDEBAR.anatomy, "Your ideas": the dot's words are the idea's own stage, as its page names it. */
 export function ideaRow(idea: MyIdea): ShellRow {
   return {
@@ -141,13 +183,19 @@ export function committeeRows(committee: Pick<CommitteeResponse, "items"> | null
 }
 
 export async function shellData(me: CurrentUser): Promise<ShellData> {
+  const device = await askingDevice();
   // Each section only for whoever has its sidebar item (policy/rbac.yaml navigation:), so a read the worker would
   // refuse (BLD-B232) is never made.
   const onNav = (key: string) => me.nav.some((n) => n.key === key);
-  const [mine, counts, one, desk, committee] = await Promise.all([
+  const [mine, counts, one, saved, desk, committee] = await Promise.all([
     inTime(myIdeas(me)),
     inTime(inboxCounts(me)),
     inTime(myOne(me)),
+    me.contributorCode
+      ? inTime(
+          draftApi.list(me, device, false).then((r) => (r.body as { items?: DraftListItem[] }).items ?? []),
+        )
+      : Promise.resolve(null),
     onNav("desk")
       ? inTime(deskRead<DeskResponse>(me, "/internal/desk", { tab: "waiting", sort: "time_left" }))
       : null,
@@ -156,15 +204,7 @@ export async function shellData(me: CurrentUser): Promise<ShellData> {
       : null,
   ]);
   const ideas = mine?.ideas ?? [];
-  const drafts = ideas
-    .filter((i) => i.draft)
-    .slice(0, 2)
-    .map<ShellRow>((i) => ({
-      href: `/share/${i.id}`,
-      title: titleOf(i),
-      meta: whenSaved(i.shared_on),
-      tone: "draft",
-    }));
+  const drafts = draftRows(saved);
   const shared = ideas
     .filter((i) => !i.draft && i.idea_id)
     .slice(0, 3)

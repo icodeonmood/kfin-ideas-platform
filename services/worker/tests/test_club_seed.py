@@ -437,3 +437,35 @@ def test_l_questions_ask_j_review_a1_a3_k1_how_often_left_empty_waits(seeded: An
     ).fetchone()
     assert dict(part) == {"state": "waiting", "value": None, "why": None, "source_quote": None}
     assert _one(conn, "SELECT count(*) FROM notifications WHERE user_id = %s", kiran) == 0
+
+
+def test_s_03_hero_1_bld_c148_every_persona_has_seen_home_but_sana_the_first_visit(unloaded: Any) -> None:
+    """S-03's first visit (BLD-C148, J-TRACK/2): every seeded persona has seen Home, so their first /home after a reset
+    is the returning one with Needs you and Your ideas; Sana (SYN-10026) alone has not, and has nothing of her own: no
+    ideas or drafts, no crew place, no team-up or merge request, no Inbox item. `remove` takes her out (rule 14)."""
+    conn = unloaded
+    club_seed.load(conn)
+    assert club_seed.FIRST_VISIT == "sana" and club_seed.EMP["sana"] == "SYN-10026"
+    rows = conn.execute(
+        "SELECT u.id, u.emp_id_hash, s.home_seen_at FROM users u JOIN person_settings s ON s.user_id = u.id "
+        "WHERE u.emp_id_hash = ANY(%s)",
+        ([emp_id_hash(e) for e, *_ in club_seed.PEOPLE],),
+    ).fetchall()
+    assert len(rows) == len(club_seed.PEOPLE)
+    sana_hash = emp_id_hash("SYN-10026")
+    unseen = [r for r in rows if r["home_seen_at"] is None]
+    assert [r["emp_id_hash"] for r in unseen] == [sana_hash]
+    sana = str(unseen[0]["id"])
+    code = _one(conn, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", sana)
+    assert code
+    assert _one(conn, "SELECT count(*) FROM ideas WHERE contributor_code = %s", code) == 0
+    for table, column in (("crew_members", "contributor_code"), ("teamup_requests", "from_code"),
+                          ("merge_requests", "from_code"), ("answers", "by_code")):  # fmt: skip
+        assert _one(conn, f"SELECT count(*) FROM {table} WHERE {column} = %s", code) == 0, table  # noqa: S608
+    assert _one(conn, "SELECT count(*) FROM notifications WHERE user_id = %s", sana) == 0
+    assert _one(conn, "SELECT count(*) FROM idea_opens WHERE user_id = %s", sana) == 0
+
+    club_seed.remove(conn)
+    assert _one(conn, "SELECT count(*) FROM users WHERE emp_id_hash = %s", sana_hash) == 0
+    assert _one(conn, "SELECT count(*) FROM person_settings WHERE user_id = %s", sana) == 0
+    assert _one(conn, "SELECT count(*) FROM contributor_map WHERE user_id = %s", sana) == 0

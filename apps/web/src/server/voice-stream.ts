@@ -7,6 +7,7 @@ import { isUuid } from "@/lib/voice-stream";
 
 import type { CurrentUser } from "./auth/current";
 import { getDb } from "./db";
+import { spansForBrowser } from "./drafts";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
 
@@ -26,9 +27,9 @@ async function answer(res: Response): Promise<Record<string, unknown>> {
   const body = (await res.json().catch(() => ({ error: "voice_unavailable" }))) as Record<string, unknown>;
   if (!res.ok) {
     const { error, ...details } = body;
-    throw new SubmissionError(res.status, String(error ?? "voice_unavailable"), details);
+    throw new SubmissionError(res.status, String(error ?? "voice_unavailable"), spansForBrowser(details));
   }
-  return body;
+  return spansForBrowser(body); // the words so far and the note: spans in UTF-16 units, as the browser draws them
 }
 
 function code(me: CurrentUser): string {

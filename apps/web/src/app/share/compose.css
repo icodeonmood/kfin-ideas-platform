@@ -1,0 +1,1466 @@
+/*
+ * Tell it, S-04 and S-04B (BLD-C126): the board's layout (reference/css/boards/Compose.css, ComposeResume.css,
+ * PhoneCompose.css, draft-loader.css) on lane D's tokens and primitives. Screen rules only; buttons, chips, fields,
+ * the task bar and the dock are lane D's and are not restyled here.
+ */
+
+.cz {
+  --cz-panel: clamp(360px, 34vw, 520px);
+  position: relative;
+}
+
+.cz .ph-only {
+  display: none;
+}
+
+/* ---------- the two columns: the words left, the draft right (S-04B.layout) ---------- */
+.cz .cmain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--cz-panel);
+  gap: 28px;
+  align-items: start;
+}
+
+.cz .convo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: calc(100dvh - var(--taskbar-h) - 96px);
+}
+
+/* S-04: the calm prompt on its own, centred in its column (S-04.empty/1) */
+.cz .stage2 {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px 0 28px;
+}
+
+.cz .stage2 > * {
+  width: 100%;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.cz .chero {
+  text-align: center;
+  padding-bottom: 6px;
+}
+
+.cz .cq {
+  margin: 0;
+  font: 500 28px/1.15 var(--fd);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.cz .cql {
+  margin: 10px auto 0;
+  max-width: 46ch;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.cz .hpnote {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--mute);
+  text-align: center;
+}
+
+/* ---------- banners: an earlier draft, picked up, from your email ---------- */
+.cz .ban {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  border: 1px solid var(--rule2);
+}
+
+.cz .ban.blue {
+  background: var(--wash);
+  border-color: #d5ddff;
+}
+
+.cz .ban .ic {
+  grid-row: span 3;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+}
+
+.cz .ban.blue .ic {
+  background: #ffffff;
+  color: var(--blueT);
+}
+
+.cz .ban p {
+  margin: 0;
+}
+
+.cz .ban .bt {
+  font: 500 15.5px/1.4 var(--ft);
+}
+
+.cz .ban .bm {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+.cz .ban .ba {
+  grid-column: 2;
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+/* ---------- C-PROMPT: the box ---------- */
+.cz .prompt {
+  position: relative;
+  border-radius: var(--r-lg);
+  background: var(--glass-prompt);
+  -webkit-backdrop-filter: var(--glass-prompt-blur);
+  backdrop-filter: var(--glass-prompt-blur);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 1px rgba(17, 17, 17, 0.08),
+    0 2px 6px rgba(17, 17, 17, 0.05),
+    0 44px 100px -28px rgba(57, 93, 237, 0.4),
+    0 18px 40px -18px rgba(17, 17, 17, 0.18);
+  transition: box-shadow var(--mo-state, 0.2s) ease;
+}
+
+.cz .prompt:focus-within {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 1px rgba(57, 93, 237, 0.55),
+    0 0 0 5px rgba(57, 93, 237, 0.12),
+    0 44px 100px -28px rgba(57, 93, 237, 0.46),
+    0 18px 40px -18px rgba(17, 17, 17, 0.18);
+}
+
+.cz .tx {
+  position: relative;
+}
+
+.cz .mirror,
+.cz .ta {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 20px 22px 4px;
+  font: 400 17px/1.5 var(--ft);
+  letter-spacing: -0.011em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 4;
+}
+
+.cz .mirror {
+  min-height: 64px;
+  max-height: 40vh;
+  color: transparent;
+  overflow: hidden;
+}
+
+.cz .ta {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--blue);
+}
+
+.cz .ta::placeholder {
+  color: var(--placeholder);
+}
+
+.cz :is(.mirror, .btx) .pii {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--warnT);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.cz :is(.mirror, .btx) .src {
+  background: #dce3ff;
+  border-radius: var(--r-xs);
+  box-shadow: 0 0 0 2px #dce3ff;
+}
+
+.cz .cfoot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 10px 22px;
+}
+
+.cz .cnt {
+  margin: 0 auto 0 0;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
+.cz .mic2 {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+}
+
+.cz .mic2:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.cz .mic2.stop {
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.cz .mic2.blk {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+
+.cz .mic2.hid {
+  display: none;
+}
+
+.cz .sendw {
+  position: relative;
+  display: inline-flex;
+}
+
+.cz .send {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: var(--ink);
+  color: #ffffff;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.cz .send:active {
+  transform: scale(0.94);
+}
+
+.cz .send.dim {
+  background: rgba(17, 17, 17, 0.06);
+  color: #6c6c70;
+  cursor: default;
+}
+
+.cz :is(.mic2, .send):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.cz .vhint {
+  position: absolute;
+  right: -4px;
+  bottom: calc(100% + 12px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px 10px;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: #ffffff;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 12px 26px -12px rgba(17, 17, 17, 0.6);
+  animation:
+    czHintIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.9s both,
+    czHintOut 0.45s ease 5.9s forwards;
+}
+
+.cz .vhint::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.cz .vhint b {
+  font: 500 13.5px/1.2 var(--ft);
+}
+
+.cz .vhint span {
+  font: 400 12.5px/1.2 var(--ft);
+  color: #c4c4cc;
+}
+
+@keyframes czHintIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+
+@keyframes czHintOut {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* the English copy of a voice note (L-DRAFT.voice/4), and its label */
+.cz .cen {
+  margin: 0 22px 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+}
+
+.cz .bub .cen {
+  margin: 10px 0 0;
+}
+
+.cz .cen p {
+  margin: 0;
+}
+
+.cz .cen-l {
+  font: 500 12.5px/1.3 var(--ft);
+  color: var(--mute);
+}
+
+.cz .cen-t {
+  margin-top: 4px !important;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink2);
+}
+
+/* the microphone blocked (C-PROMPT.voice), the notice before recording, the voice banner */
+.cz .blkn {
+  margin: 4px 14px 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-sm);
+  background: var(--warnW);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--warnT);
+}
+
+.cz .blkn p {
+  margin: 0;
+}
+
+.cz .blkn-t {
+  font-weight: 500;
+}
+
+.cz .vnotice {
+  margin: 0 22px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+.cz .prompt > .fmsg {
+  margin: 0 22px 12px;
+}
+
+/* starters (C-PROMPT.anatomy/3) */
+.cz .hstarters {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+}
+
+.cz .hstarter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font: 400 15px/1.3 var(--ft);
+  color: var(--ink2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cz .hstarter:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+}
+
+.cz .hstarter svg {
+  flex: none;
+  color: var(--mute);
+}
+
+.cz .hstarter:hover svg {
+  color: var(--blue);
+}
+
+.cz .hstarters.ph {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- S-04B: the conversation scrolls; the box stays at the bottom of the column (S-04B.layout/3) ---------- */
+.cz.has .convo {
+  height: calc(100dvh - var(--taskbar-h) - 72px);
+  min-height: 420px;
+}
+
+.cz .thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 4px;
+}
+
+.cz .tin {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.cz .msg.me {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cz .msg.me .bub {
+  padding: 14px 18px 15px;
+  border-radius: var(--r-md);
+  background: #edf0ff;
+  box-shadow: inset 0 0 0 1px rgba(57, 93, 237, 0.14);
+}
+
+.cz .btx {
+  margin: 0;
+  font: 400 16.5px/1.6 var(--ft);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.cz .msg.me.queued .bub {
+  background: rgba(237, 240, 255, 0.5);
+}
+
+.cz .msg.me.queued .btx {
+  color: var(--mute2);
+}
+
+.cz .qtag {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+.cz .mact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+.cz .mact .who {
+  font: 600 12.5px/1 var(--ft);
+  color: var(--blue);
+}
+
+.cz .mt-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-height: 44px;
+}
+
+.cz .cmore {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  margin: 0;
+  resize: vertical;
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: #ffffff;
+  padding: 10px 12px;
+  font: 400 16px/1.55 var(--ft);
+  color: var(--ink);
+}
+
+/* the system's side: quiet, muted lines after the message */
+.cz .sysg {
+  margin: 2px 0 4px 18px;
+  padding: 2px 0 2px 14px;
+  border-left: 1px solid rgba(17, 17, 17, 0.09);
+  display: flex;
+  flex-direction: column;
+}
+
+.cz .msg.sys {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.cz .msg.sys p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6c6c70;
+}
+
+.cz .sdot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b5b5bc;
+}
+
+.cz .nexts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cz .chip.nx {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+/* the box pinned at the bottom of the conversation */
+.cz .cdock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 8px 0 14px;
+}
+
+.cz .cdock > * {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cz .phint {
+  min-height: 18px;
+  margin: 8px auto 0;
+  padding: 0 22px;
+  text-align: right;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
+.cz .cz-gone {
+  margin: 48px auto;
+  max-width: 560px;
+  font-size: 16px;
+  text-align: center;
+  color: var(--mute2);
+}
+
+/* ---------- C-DRAFT-PANEL ---------- */
+.cz .canvas {
+  position: sticky;
+  top: calc(var(--taskbar-h) + 12px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: calc(100dvh - var(--taskbar-h) - 32px);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.74));
+  -webkit-backdrop-filter: var(--glass-panel-blur);
+  backdrop-filter: var(--glass-panel-blur);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+    0 0 0 1px rgba(17, 17, 17, 0.06),
+    0 40px 90px -44px rgba(17, 17, 17, 0.4);
+  overflow: hidden;
+}
+
+.cz.has .canvas {
+  max-height: calc(100dvh - var(--taskbar-h) - 72px);
+}
+
+.cz.start .canvas {
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.06);
+}
+
+.cz .cvh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.06);
+}
+
+.cz .cvt {
+  margin: 0;
+  font: 500 15px/1 var(--ft);
+  color: var(--mute2);
+}
+
+.cz .dstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--mute2);
+}
+
+.cz .dstat i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--okD);
+}
+
+.cz .dstat.idle i {
+  background: #a3a3a6;
+}
+
+.cz .dstat.ing i {
+  display: none;
+}
+
+.cz .cvb {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 24px 20px;
+}
+
+.cz .tslot {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  border-radius: var(--r-xs);
+}
+
+.cz .dt {
+  margin: 0;
+  font: 500 24px/1.2 var(--fd);
+  letter-spacing: -0.022em;
+}
+
+.cz .sslot {
+  margin-top: 12px;
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--ink2);
+}
+
+.cz .sslot p {
+  margin: 0;
+}
+
+.cz .sk-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cz .wait {
+  margin: 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.cz .rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin: 20px 0 0;
+}
+
+.cz .row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 13px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.07);
+}
+
+.cz .row:focus-visible,
+.cz .tslot:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.cz .row:has(.ed) {
+  grid-column: 1 / -1;
+}
+
+.cz .row dt {
+  padding-right: 64px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--mute);
+}
+
+.cz .row dd {
+  margin: 0;
+}
+
+.cz .val {
+  display: block;
+  padding-top: 6px;
+  font: 500 15.5px/1.4 var(--ft);
+}
+
+.cz .row .wait {
+  display: block;
+  padding-top: 6px;
+  font-size: 13.5px;
+}
+
+.cz .why {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+.cz .why.pin {
+  color: var(--blueT);
+}
+
+.cz .row .tb {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.cz .ed {
+  padding-top: 10px;
+}
+
+.cz .edf {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.cz .rdone {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 13px 0 9px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgba(18, 183, 106, 0.1);
+  color: var(--okT);
+  font: 500 14px/1 var(--ft);
+  cursor: pointer;
+}
+
+.cz .rdone .tk {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--okD);
+  color: #ffffff;
+}
+
+/* C-HIDDEN: one bar, a count, folded by default */
+.cz .hid {
+  margin-top: 10px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.07);
+  overflow: hidden;
+}
+
+.cz .hidb {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--r-md);
+}
+
+.cz .hic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: #fff1e8;
+  color: var(--warnT);
+}
+
+.cz .hbt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cz .hbt b {
+  font: 500 15px/1.3 var(--ft);
+}
+
+.cz .hbt span {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cz .hcount {
+  flex: none;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 9px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: #fff1e8;
+  color: var(--warnT);
+  font: 600 12.5px/26px var(--ft);
+  text-align: center;
+}
+
+.cz .hidb .chev {
+  flex: none;
+  color: var(--mute2);
+  transition: transform 0.2s ease;
+}
+
+.cz .hidb[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+
+.cz .hidl {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px;
+}
+
+.cz .hidl > li {
+  border-top: 1px solid rgba(17, 17, 17, 0.07);
+}
+
+.cz .hrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.cz .hkind {
+  flex: none;
+  min-width: 54px;
+  height: 26px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: var(--r-xs);
+  background: rgba(17, 17, 17, 0.05);
+  font: 600 11.5px/26px var(--ft);
+  color: var(--mute2);
+  text-align: center;
+}
+
+.cz .htx {
+  flex: 1;
+  min-width: 0;
+}
+
+.cz .hv {
+  margin: 0;
+  font: 500 15.5px/1.3 var(--ft);
+  font-variant-numeric: tabular-nums;
+}
+
+.cz .hs {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
+.cz .hask {
+  margin: 0 0 12px;
+  padding: 14px;
+  border-radius: var(--r-sm);
+  background: rgba(17, 17, 17, 0.025);
+}
+
+.cz .hq {
+  margin: 0 0 10px;
+  font: 500 14px/1.45 var(--ft);
+  color: var(--ink);
+}
+
+.cz .hopts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cz .hopt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.08);
+  font: 450 14.5px/1.3 var(--ft);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.cz .hopt[data-checked] {
+  box-shadow: inset 0 0 0 2px var(--blue);
+  background: #f5f7ff;
+}
+
+.cz .hopt:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.cz .rdot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px #a3a3a6;
+  background: #ffffff;
+}
+
+.cz .hopt[data-checked] .rdot {
+  box-shadow: inset 0 0 0 5px var(--blue);
+}
+
+.cz .hact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 12px;
+}
+
+.cz .hnote {
+  margin-right: auto;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+/* similar ideas: quiet until asked */
+.cz .sim {
+  margin-top: 12px;
+  border-radius: var(--r-sm);
+  background: rgba(17, 17, 17, 0.04);
+}
+
+.cz .simb {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--r-sm);
+}
+
+.cz .simt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cz .simt b {
+  font: 500 14.5px/1.3 var(--ft);
+}
+
+.cz .simt span {
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.cz .simb svg {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+}
+
+.cz .simb[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.cz .siml {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 12px;
+}
+
+.cz .siml li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #deded9;
+}
+
+.cz .sit {
+  flex: 1;
+  min-width: 0;
+}
+
+.cz .siml .st {
+  margin: 0;
+  font: 500 15px/1.35 var(--fd);
+}
+
+.cz .siml .sm {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.cz .sim-sk {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: rgba(17, 17, 17, 0.03);
+}
+
+/* the footer: one full-width Move to Review, its line above */
+.cz .cvf {
+  padding: 14px 20px 16px;
+  border-top: 1px solid rgba(17, 17, 17, 0.06);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.cz .cvfn {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--mute2);
+}
+
+/* ---------- C-DRAFT-LOADER ---------- */
+.cz .dload {
+  margin: 14px 24px 2px;
+  padding: 12px 14px 14px;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(240, 243, 255, 0.9));
+  box-shadow:
+    inset 0 0 0 1px rgba(57, 93, 237, 0.12),
+    0 8px 22px -14px rgba(57, 93, 237, 0.55);
+  overflow: hidden;
+  max-height: 96px;
+  transition:
+    max-height 0.38s cubic-bezier(0.2, 0.7, 0.2, 1),
+    margin 0.38s cubic-bezier(0.2, 0.7, 0.2, 1),
+    padding 0.38s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.3s ease;
+}
+
+.cz .dload.fold {
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+}
+
+.cz .dl-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.cz .dl-t {
+  font: 500 14px/1.2 var(--ft);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.cz .dl-n {
+  font: 400 13px/1.25 var(--ft);
+  color: var(--mute2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cz .dl-tube {
+  position: relative;
+  display: block;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, rgba(17, 17, 17, 0.08), rgba(17, 17, 17, 0.03));
+  box-shadow:
+    inset 0 1px 2px rgba(17, 17, 17, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.cz .dl-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--p) * 100%);
+  border-radius: inherit;
+  background: linear-gradient(180deg, #7088ff 0%, #395ded 55%, #2b4bcd 100%);
+  box-shadow:
+    0 0 14px rgba(57, 93, 237, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+  overflow: hidden;
+}
+
+.cz .dl-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -70px;
+  width: 70px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0)
+  );
+  animation: czSweep 1.25s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+.cz .dl-bead {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--p) * 100%);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #ffffff 0 11%, #9aacff 30%, #395ded 62%, #1d37c9 100%);
+  box-shadow:
+    0 0 0 4px rgba(57, 93, 237, 0.16),
+    0 2px 7px rgba(29, 55, 201, 0.5);
+  transition: left 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: czPulse 1.5s ease-in-out infinite;
+}
+
+.cz .dload.all .dl-fill::after {
+  animation: none;
+  opacity: 0;
+}
+
+.cz .dload.all .dl-bead {
+  animation: czPop 0.5s cubic-bezier(0.3, 1.7, 0.5, 1);
+}
+
+.cz .dload.ph {
+  margin: -4px 20px 12px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  max-height: 24px;
+  overflow: visible;
+}
+
+.cz .dload.ph.fold {
+  max-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.cz .dload.ph .dl-tube {
+  height: 8px;
+}
+
+.cz .dload.ph .dl-bead {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+
+@keyframes czSweep {
+  to {
+    left: 100%;
+  }
+}
+
+@keyframes czPulse {
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(57, 93, 237, 0.07),
+      0 2px 7px rgba(29, 55, 201, 0.5);
+  }
+}
+
+@keyframes czPop {
+  40% {
+    transform: scale(1.4);
+  }
+}
+
+/* ---------- narrower: the draft below the words ---------- */
+@media (max-width: 1100px) {
+  .cz .cmain {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cz.has .convo {
+    height: auto;
+    min-height: 0;
+  }
+
+  .cz .thread {
+    overflow-y: visible;
+  }
+
+  .cz .canvas {
+    position: static;
+    max-height: none;
+  }
+
+  .cz .convo {
+    min-height: 0;
+  }
+}
+
+/* ---------- phone (S-04.phone): the conversation scrolls, the box above the dock, the draft a peek sheet ---------- */
+@media (max-width: 640px) {
+  .cz .ph-only {
+    display: revert;
+  }
+
+  .cz .dk-only {
+    display: none;
+  }
+
+  .cz .chero {
+    text-align: left;
+  }
+
+  .cz .cq {
+    font-size: 26px;
+  }
+
+  .cz .cql {
+    margin-left: 0;
+    font-size: 15px;
+  }
+
+  .cz .stage2 {
+    justify-content: flex-start;
+    padding-top: 8px;
+  }
+
+  .cz .pstep {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin: 0 0 8px;
+    font-size: 13.5px;
+    color: var(--mute2);
+  }
+
+  .cz .pstep .pnext {
+    margin-left: auto;
+    color: var(--mute);
+  }
+
+  .cz .ccount,
+  .cz .cpriv {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--mute);
+  }
+
+  /* the dock (~98 px), then the sheet's peek (~80 px), then the box */
+  .cz .cdock {
+    bottom: calc(var(--ctl-full) + 42px + 80px);
+  }
+
+  .cz .rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cz .vhint {
+    display: none;
+  }
+
+  .cz .dsheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--ctl-full) + 42px);
+    z-index: var(--z-sheet);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    background: var(--glass-dock);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow:
+      0 -1px 0 var(--rule2),
+      0 -20px 40px -30px rgba(17, 17, 17, 0.4);
+  }
+
+  .cz .dpeek {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    min-height: 56px;
+    padding: 12px 20px 10px;
+    border: 0;
+    background: none;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .cz .dpeek-t {
+    font: 500 15.5px/1.3 var(--fd);
+  }
+
+  .cz .dpeek-s {
+    font-size: 13px;
+    color: var(--mute2);
+  }
+
+  .cz .dsheet-b {
+    max-height: 62dvh;
+    overflow-y: auto;
+    padding: 0 0 12px;
+  }
+
+  .cz .dsheet-b > .cvt {
+    padding: 0 20px;
+  }
+
+  .cz .dsheet .cvb {
+    padding: 6px 20px 12px;
+  }
+
+  .cz .convo {
+    padding-bottom: 96px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz .dl-fill::after,
+  .cz .dl-bead,
+  .cz .dload.all .dl-bead,
+  .cz .vhint {
+    animation: none;
+  }
+
+  .cz .dl-fill,
+  .cz .dl-bead,
+  .cz .dload,
+  .cz .prompt,
+  .cz .hidb .chev,
+  .cz .simb svg {
+    transition: none;
+  }
+}

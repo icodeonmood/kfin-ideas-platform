@@ -196,6 +196,12 @@
     "speech.hosted": [
       "infosec"
     ],
+    "intake.email": [
+      "admin"
+    ],
+    "intake.teams": [
+      "admin"
+    ],
     "files.blackout": [
       "admin",
       "infosec"
@@ -264,6 +270,17 @@
     "POST /api/submissions/{id}/voice                  submit",
     "GET /api/submissions/{id}/voice/{voice}           submit",
     "DELETE /api/submissions/{id}/voice/{voice}        submit",
+    "GET /api/drafts                                   submit",
+    "POST /api/drafts                                  submit",
+    "GET /api/drafts/{id}                              submit",
+    "PATCH /api/drafts/{id}                            submit",
+    "DELETE /api/drafts/{id}                           submit",
+    "POST /api/drafts/{id}/restore                     submit",
+    "POST /api/drafts/{id}/messages                    submit",
+    "PATCH /api/drafts/{id}/messages/{mid}             submit",
+    "PATCH /api/drafts/{id}/parts/{part}               submit",
+    "POST /api/drafts/{id}/runs                        submit",
+    "GET /api/drafts/{id}/stream                       submit",
     "POST /api/drafts/{id}/voice/start                 submit",
     "POST /api/drafts/{id}/voice/chunk                 submit",
     "POST /api/drafts/{id}/voice/end                   submit",
@@ -459,7 +476,7 @@
     {
       "key": "home",
       "label": "Home",
-      "href": "/",
+      "href": "/home",
       "place": "main",
       "tab": 1
     },

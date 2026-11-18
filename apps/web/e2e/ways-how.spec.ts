@@ -28,7 +28,7 @@ test.describe("S-H3: Share another way", () => {
     );
     await signIn(page, PERSONAS.contributor);
     await page.goto("/share/other-ways");
-    await expect(page.getByRole("link", { name: "Home" }).last()).toHaveAttribute("href", "/");
+    await expect(page.getByRole("link", { name: "Home" }).last()).toHaveAttribute("href", "/home");
     await expect(page.getByRole("heading", { level: 1, name: "Share another way" })).toBeVisible();
     await expect(
       page.getByText("Each one lands here as a draft. Nothing is sent until you check it."),

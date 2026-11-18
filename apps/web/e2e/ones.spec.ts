@@ -3,7 +3,7 @@
  * retired, DEC-106, R21; lane A's admin path replaces the proposals); the new One chooses a number and writes a
  * brief; the committee writes a few words at /ones/write/:id and a tier up plays the glow-up once on S-ONE with
  * them; the One's Showcase brief and the committee's printable copy at /ones/showcase/:id (mapping/screens.md:111-112);
- * the home carousel and the office screen. axe on every page. Synthetic people only: each run picks a synthetic
+ * the office screen (the Ones on Home are in home.spec.ts). axe on every page. Synthetic people only: each run picks a synthetic
  * employee who is not a One yet.
  */
 import { readFileSync } from "node:fs";
@@ -182,12 +182,9 @@ test.describe.serial("a new One, from proposal to glow-up", () => {
     }
   });
 
-  test("the home carousel and the office screen", async ({ browser }) => {
+  // The old home carousel retired with S-03 (BLD-C143); the Ones' fan on Home is checked in home.spec.ts.
+  test("the office screen", async ({ browser }) => {
     const someone = await as(browser, PERSONAS.contributor);
-    await someone.goto("/");
-    await expect(someone.getByRole("heading", { name: "What the Ones are up to" })).toBeVisible();
-    await someone.getByRole("button", { name: "Next One" }).click();
-    await expectNoSeriousAxeIssues(someone);
     await someone.goto("/constellation");
     await expect(someone.getByRole("heading", { level: 1, name: "The Ones" })).toBeVisible();
     await expect(someone.getByRole("navigation", { name: "Main" })).toHaveCount(0); // a wall display has no chrome

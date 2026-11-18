@@ -69,7 +69,7 @@ export default async function Page() {
   const anyOpen = ways.email.on || ways.teams.on;
   return (
     <div className="wy">
-      <Link href="/" className="wy-back">
+      <Link href="/home" className="wy-back">
         <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path d="M10 3.5 5.5 8l4.5 4.5" />
         </svg>
