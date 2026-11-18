@@ -83,6 +83,9 @@ export const DEMO_VIEW: ConversationView = {
     visibility: "The crew and the review desk see this conversation.",
     can_attach: false,
   },
+  // The board draws Teams on (Messages.md), so the kit shows its words for side-by-side checks; the live screen
+  // follows the `comms.teams` switch, off at launch (DEC-105, BLD-F086)
+  teams_on: true,
 };
 
 /** The review desk as the sharer reads it: never the person at it (DEC-111). */
