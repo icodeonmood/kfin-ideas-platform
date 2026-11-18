@@ -100,6 +100,7 @@ Not from the pack. Each is the build's default wording, marked `// NOT DRAWN (BL
 | Module | Where | Lines |
 |---|---|---|
 | `S-06` | `apps/web/src/app/ideas/[id]/sharer-screen.tsx`, `parts.tsx` (BLD-E044) | "We can't load this just now. Please try again in a minute." (a part of the page could not be read); "Couldn't copy the reference. It's IDEA-…." (the browser would not copy) |
+| `S-06` | `services/worker/ideapage/sharer.py` (BLD-E057) | "Not given." for How often or Who it affects left empty (S-R2's words for the same part; Status.md draws no empty part) |
 | `S-09` | `apps/web/src/app/ideas/[id]/colleague-screen.tsx` (BLD-E046) | "Withdrawing…" (Withdraw on the Team up card while it runs; the team-up sheet's busy word); after a refused withdraw, the API's own error line, as the sheet shows it (BLD-F073), or "Check your connection, then try again." when the API cannot be reached |
 | `S-WALL` | `apps/web/src/app/wall/wall-screen.tsx` (BLD-E044) | "One No. N" for a One who hides their name |
 | `S-ONE` | `apps/web/src/app/one/rules.ts` (BLD-E041), `showcase-sheet.tsx` (BLD-E042) | "Your new brief is with the programme team. It goes on the Wall once they approve it."; "No brief on the Wall yet."; "Your new brief"; "n of 140 characters"; "Send for approval"; "Cancel"; "Being measured"; "We can't load your One dashboard just now. Please try again in a minute."; "Try again"; "We can't load your Showcase brief just now. Please try again in a minute."; "Close" |

@@ -205,7 +205,8 @@ def may_withdraw(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.date
 
 
 # DEC-105: Teams is built but off until IT approves it (the `comms.teams` switch, read as notify reads it). While it
-# is off, a sentence names only the channels that are on; with it on, the drawn words stand (BLD-E054).
+# is off, a sentence names only the channels that are on; with it on, the drawn words stand. Each line for "off" is
+# marked "changed by DEC-105, HR sign-off; BLD-E054".
 TEAMS_SWITCH = "comms.teams"
 
 
@@ -226,7 +227,8 @@ def _window_words(
                 + (
                     "opens it. We tell you on Teams and by email when anything moves."
                     if teams
-                    else "opens it. We tell you by email when anything moves."  # BLD-E054
+                    # changed by DEC-105, HR sign-off; BLD-E054
+                    else "opens it. We tell you by email when anything moves."
                 )
             ),
             # PhoneStatus.md says it shorter
@@ -274,10 +276,10 @@ def _card(
             else "The review desk will look at it soon.",
             "rest": "We’ll tell you on Teams and by email when anything changes."
             if teams
-            else "We’ll tell you by email when anything changes.",  # BLD-E054
+            else "We’ll tell you by email when anything changes.",  # changed by DEC-105, HR sign-off; BLD-E054
             "phone_rest": "We’ll tell you on Teams and by email."  # PhoneStatus.md
             if teams
-            else "We’ll tell you by email.",  # BLD-E054
+            else "We’ll tell you by email.",  # changed by DEC-105, HR sign-off; BLD-E054
         }
     if state == "answers_sent":
         # DEC-111: "Sent. Harish has your answers." only for the review desk and the Ones Committee; anyone else
@@ -293,7 +295,9 @@ def _card(
             "lead": f"Sent. {name} has your answers.",
             "rest": (
                 f"Each answer was added to its part of your idea, under What you shared. {by} hear in your "
-                + ("Inbox, on Teams and by email." if teams else "Inbox and by email.")  # BLD-E054
+                + (
+                    "Inbox, on Teams and by email." if teams else "Inbox and by email."
+                )  # changed by DEC-105, HR sign-off; BLD-E054
             ),
         }
     if state == "withdrawn":
@@ -380,8 +384,9 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
     }
 
 
-# A part the sharer left empty reads as S-R2 reads the same part (`desk/ideas/[id]/reviewer-idea.tsx`, lane B's
-# "Not given."); Status.md draws no empty part (J-REVIEW/1, /3, /6, J-TRACK/7; BLD-E057).
+# NOT DRAWN (BLD-E057): HR sign-off. A part the sharer left empty reads as S-R2 reads the same part
+# (`desk/ideas/[id]/reviewer-idea.tsx`, lane B's "Not given."); Status.md draws no empty part (J-REVIEW/1, /3, /6,
+# J-TRACK/7).
 NOT_GIVEN = "Not given."
 
 
@@ -623,7 +628,8 @@ def sharer_view(
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
                 "tell you on Teams."
                 if teams
-                else "No messages yet. If the review desk has a question, it shows up here and in your Inbox."  # BLD-E054
+                # changed by DEC-105, HR sign-off; BLD-E054
+                else "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
             conversation["phone_empty_line"] = (  # PhoneStatus.md
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
