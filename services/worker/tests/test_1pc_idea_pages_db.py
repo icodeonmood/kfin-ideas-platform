@@ -516,6 +516,52 @@ def test_s06_rules_4_dec_104_a_merge_by_a_lead_who_hides_their_name_says_by_its_
     assert "Rekha" not in json.dumps(v["page"]["merged"], ensure_ascii=False)
 
 
+def test_s06_layout_l_worth_1_about_only_before_figures_the_sharer_marked_as_approximate(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/5, L-WORTH/1 (J-TRACK/1): "About" goes before a worth figure only where the sharer wrote it as
+    approximate (`idea_worth.hours_about`, `cost_about`, `revenue_about`); an exact figure, a range, NULL (rows
+    written before the flags) and the reviewer's revision read plain."""
+    conn, t7, uid = club["conn"], ref(club, "T7"), club["m"]["T7"].uuid
+
+    def figures() -> dict[str, Any]:
+        rows = {r["part"]: r for r in view(club, t7, "tanvi")["page"]["shared"]["rows"]}
+        return dict(rows["cost"]["figures"])
+
+    seeded = figures()  # the seed: a range of hours, and "about 40k" for the cost
+    assert {k: seeded["sharer"][k] for k in ("hours", "cost")} == {
+        "hours": "120 to 200 hours a month",
+        "cost": "About ₹40,000 a month",
+    }
+    assert {k: seeded["reviewer"][k] for k in ("hours", "cost")} == {
+        "hours": "150 to 220 hours a month",
+        "cost": "₹40,000 to ₹60,000 a month",
+    }
+    conn.execute(
+        "UPDATE idea_worth SET hours_low = 80, hours_high = NULL, hours_about = false, cost_about = NULL, "
+        "revenue_low = 15000, revenue_about = true WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (uid,),
+    )
+    mixed = figures()["sharer"]
+    assert (mixed["hours"], mixed["cost"], mixed["revenue"]) == (
+        "80 hours a month",  # exact
+        "₹40,000 a month",  # not marked (NULL)
+        "About ₹15,000 a month",  # marked as approximate
+    )
+    conn.execute(
+        "UPDATE idea_worth SET hours_about = true, cost_about = false, revenue_about = false "
+        "WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (uid,),
+    )
+    flipped = figures()["sharer"]
+    assert (flipped["hours"], flipped["cost"], flipped["revenue"]) == (
+        "About 80 hours a month",
+        "₹40,000 a month",
+        "₹15,000 a month",
+    )
+    assert not any(str(v).startswith("About") for v in figures()["reviewer"].values())
+
+
 def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: dict[str, Any]) -> None:
     """C-TRACK, L-HIDE: a detail the sharer brought back with "Show it" is not counted as hidden."""
     conn, t6 = club["conn"], ref(club, "T6")

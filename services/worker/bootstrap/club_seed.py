@@ -186,7 +186,7 @@ IDEAS: dict[str, Spec] = {
                fix={"how": "Keep a table of codes with one plain sentence each and print it on the letter.",
                     "needs": "Sign-off from compliance on the wording", "solved_already": "no",
                     "basis": "conversation", "risks": "Codes change when the exchange changes them"},
-               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000}),
+               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000, "cost_about": True}),
     "T8": Spec("tanvi", "not_now", "business_idea", "A paid express change-of-bank service",
                "Investors in a hurry could pay a small fee for a same-day change of bank, done at the branch.",
                "New business", ["Some investors would pay a small fee to change their bank the same day."],
@@ -614,10 +614,10 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         )  # fmt: skip
     if s.worth:
         conn.execute(
-            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, at) "
-            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s)",
+            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, cost_about, at) "
+            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s)",
             (idea_uuid, owner["code"], s.worth.get("hours_low"), s.worth.get("hours_high"), s.worth.get("cost_low"),
-             shared or path[0][1]),
+             s.worth.get("cost_about"), shared or path[0][1]),
         )  # fmt: skip
     if shared is not None:
         conn.execute(

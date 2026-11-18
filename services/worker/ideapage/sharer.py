@@ -364,9 +364,12 @@ def _shared_rows(
         figures[side] = {
             k: v
             for k, v in {
-                "hours": hours_range(w_.get("hours_low"), w_.get("hours_high")),
-                "cost": money_range(w_.get("cost_low"), w_.get("cost_high")),
-                "revenue": money_range(w_.get("revenue_low"), w_.get("revenue_high")),
+                # "About" only before a figure the sharer marked as approximate (L-WORTH/1); NULL reads as not
+                "hours": hours_range(w_.get("hours_low"), w_.get("hours_high"), w_.get("hours_about")),
+                "cost": money_range(w_.get("cost_low"), w_.get("cost_high"), w_.get("cost_about")),
+                "revenue": money_range(
+                    w_.get("revenue_low"), w_.get("revenue_high"), w_.get("revenue_about")
+                ),
             }.items()
             if v
         }
