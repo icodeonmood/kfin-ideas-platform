@@ -335,6 +335,7 @@ function useDesktop(): boolean {
  * list's h1 is hidden with the list, so the item's title is the screen's h1 (WCAG 2.1 AA, S-H5.rules/6). */
 function OpenItem({
   item,
+  ready,
   now,
   phone,
   phoneOpen,
@@ -346,6 +347,8 @@ function OpenItem({
   onNext,
 }: {
   item: InboxEntry;
+  /** False while the page hydrates without the search this tab keeps (DEC-110), as for the mark-read effect */
+  ready: boolean;
   now: Date;
   phone: boolean;
   phoneOpen: boolean;
@@ -358,16 +361,20 @@ function OpenItem({
 }) {
   const [detail, setDetail] = useState<Detail>(null);
   useEffect(() => {
+    // As the mark-read effect: nothing is read while the page hydrates the unfiltered list, before the kept search is
+    // back: the first read of a question set marks it seen for the desk (L-QUESTIONS.clock/1, DEC-110). Once that
+    // search is in, an item it hides is no longer open; one it keeps reads now.
+    if (!ready) return;
     let live = true;
-    // As the mark-read effect: on a phone an item is open only once the person opens it
+    // On a phone an item is open only once the person opens it
     const readOn = phoneOpen || window.matchMedia(DESKTOP).matches;
     void fetchDetail(item, readOn).then((d) => live && setDetail(d));
     return () => {
       live = false;
     };
-    // Once per item: the component is keyed by it.
+    // Once per item once ready: the component is keyed by it, and `ready` only ever turns true.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
   const request = useRequest(item, onAnswered, onNext);
   const Title = phone ? "h1" : "h2";
   return (
@@ -868,6 +875,7 @@ export function InboxReader({
             <OpenItem
               key={open.id}
               item={open}
+              ready={ready}
               now={now}
               phone={!desktop}
               phoneOpen={phoneOpen}

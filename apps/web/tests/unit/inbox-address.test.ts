@@ -7,7 +7,8 @@
  * falls back to the default, and an item opens only if it is in the person's own list. Synthetic people and ideas.
  */
 import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
@@ -309,6 +310,27 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
     expect(row("8")).toBeNull();
     expect(row("7")?.getAttribute("aria-pressed")).toBe("true");
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual([]);
+  });
+
+  it("DEC-110, L-QUESTIONS.clock/1: a hydrating page never reads a question set the kept search hides (the first read marks it seen for the desk)", async () => {
+    // Questions first, so the unfiltered list the server renders opens them on a desktop; the kept words match only
+    // the mention, so the person never sees the questions on this load.
+    const first = list([QUESTIONS, MENTION]);
+    state.lists = { ...state.lists, all: first };
+    writeSearch("/inbox", "Zoya");
+    const el = createElement(InboxReader, { initial: first, initialTab: "all", initialItem: null });
+    act(() => root.unmount());
+    host.innerHTML = renderToString(el);
+    await act(async () => {
+      root = hydrateRoot(host, el, { onRecoverableError: () => undefined });
+    });
+    await settle();
+    expect(host.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("Zoya");
+    expect(row("7")).toBeNull();
+    expect(calls.filter((c) => c.includes("question-set"))).toEqual([]);
+    // The item the search keeps opens and is read as usual (S-H5.rules/2); the hidden questions are never touched
+    expect(calls.filter((c) => c.startsWith("POST"))).toEqual(["POST /api/inbox/8/read"]);
+    expect(calls.some((c) => c.includes("/inbox/7/"))).toBe(false);
   });
 
   it("an item the address names that is not in the person's list opens nothing and is never asked for", async () => {
