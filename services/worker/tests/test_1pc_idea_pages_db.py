@@ -257,7 +257,7 @@ def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b
     assert list(raw) == ["often"]
     [sent] = raw["often"]
     assert (sent["asked_by"], sent["by"], sent["answer"]) == (
-        "Harish",
+        "the review desk",  # DEC-111: lane B names the desk, never the reviewer, on the sharer's page
         "Tanvi",
         "Yes, across the six largest branches.",
     )
@@ -270,7 +270,7 @@ def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b
             "id": sent["question_id"],
             "text": "Yes, across the six largest branches.",
             "at": answered.isoformat(),
-            "line": f"From your answer to Harish, {day(answered, NOW)}",
+            "line": f"From your answer to the review desk, {day(answered, NOW)}",
             "files": [],
         }
     ]
