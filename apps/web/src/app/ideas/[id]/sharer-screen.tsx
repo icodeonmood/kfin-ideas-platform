@@ -177,11 +177,11 @@ function ReversalCard({ d }: { d: Decided }) {
   if (!r || !d.reversal) return null;
   return (
     <div className="ip-rcard">
-      <div className="ip-q-by">
+      <div className="ip-r-by">
         <Avatar initials={d.reversal.by.initials} size={32} ring="neutral" />
         <p>{r.from_line}</p>
       </div>
-      <h2 className="ip-q-h">{r.title}</h2>
+      <h2 className="ip-r-h">{r.title}</h2>
       {d.reversal.note ? (
         <figure className="ip-quote">
           <blockquote>“{d.reversal.note}”</blockquote>
