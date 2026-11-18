@@ -1045,8 +1045,9 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
     assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
-    # S-07.phone (PhoneMyIdeas.md): the phone names who asked
-    assert t6["next_step"]["phone_sentence"] == "Harish from the review desk asked you 3 questions yesterday."
+    # S-07.phone (PhoneMyIdeas.md) names who asked; DEC-111: only to the review desk and the Ones Committee, so the
+    # sharer's phone says the desktop's sentence (test_s07_dec111_…)
+    assert "phone_sentence" not in t6["next_step"]
     assert t6["next_step"]["action"]["label"] == "Answer the questions"
     assert t6["next_step"]["action"]["to"] == f"/ideas/{ref(club, 'T6')}/answer"
     assert (
@@ -1074,6 +1075,44 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     }
     assert draft["next_step"]["sentence"].startswith("Waiting for Rekha")  # its merge request waits on Rekha
     assert club["m"]["T3"].uuid not in rows  # archived: only under Drafts
+
+
+def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[str, Any]) -> None:
+    """DEC-111 (J-BROWSE/1-4; BLD-E053): S-07's rows never name the reviewer to a sharer outside the review desk and
+    the Ones Committee: no phone sentence naming who asked, and "The review desk has your answers. It decides by …"
+    once the answers are in. A sharer on the desk or the committee still reads the name in both."""
+    conn, t6 = club["conn"], ref(club, "T6")
+
+    def t6_row() -> tuple[dict[str, Any], dict[str, Any]]:
+        out = mine(club, "tanvi")
+        return out, next(i for i in out["items"] if i["id"] == t6)
+
+    out, row = t6_row()
+    assert no_reviewer_named(out)
+    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert "phone_sentence" not in row["next_step"]
+    for role in ("committee", "reviewer"):
+        grant(club, "tanvi", role)
+        _, row = t6_row()
+        assert (
+            row["next_step"]["phone_sentence"]
+            == "Harish from the review desk asked you 3 questions yesterday."
+        )
+        revoke_all(club, "tanvi")
+
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    by = day(
+        conn.execute("SELECT decide_by FROM ideas WHERE idea_id = %s", (t6,)).fetchone()["decide_by"], NOW
+    )
+    out, row = t6_row()
+    assert no_reviewer_named(out)
+    assert row["next_step"]["sentence"] == f"The review desk has your answers. It decides by {by}."
+    for role in ("committee", "reviewer"):
+        grant(club, "tanvi", role)
+        _, row = t6_row()
+        assert row["next_step"]["sentence"] == f"Harish has your answers. The review desk decides by {by}."
+        revoke_all(club, "tanvi")
 
 
 def test_l_draft_autosave_8_archived_drafts_are_listed_under_drafts(club: dict[str, Any]) -> None:

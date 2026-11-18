@@ -742,7 +742,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
-    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…", for the review desk and the Ones Committee only (DEC-111)
     action: {
       label: string;
       to?: string;
