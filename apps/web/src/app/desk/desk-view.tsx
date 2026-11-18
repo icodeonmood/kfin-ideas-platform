@@ -4,11 +4,20 @@
  * S-R1 Review desk (L-REVIEW.queue): search, four tabs with counts, a sort, and one table whose rows carry every
  * running clock. Countdowns tick each minute without a reload (S-R1.rules/2); tab, sort and search are kept in the
  * URL, and Back returns to the row that was opened (S-R1.rules/4); "Remind {sharer}" acts in place (S-R1.rules/3).
- * On a phone the table becomes cards (S-R1.rules/6).
+ * On a phone the table becomes cards (S-R1.rules/6). The search is never in the URL or a request's URL (DEC-110): it
+ * stays in this tab's memory of the history entry (`lib/search-memory`), and a list with a search is read with POST.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from "react";
 
 import { restoreRow, rowOffset } from "@/components/browse/return-to";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -18,9 +27,18 @@ import { SearchBar } from "@/components/ui/search";
 import { Sorts } from "@/components/ui/sorts";
 import { Tabs, tabPanelProps } from "@/components/ui/tabs";
 import type { CountdownVariant, DeskResponse, DeskRow, DeskSort, DeskTab } from "@/lib/contracts";
-import { addressBack, deskHref, deskUrlState, type DeskList } from "@/lib/desk/address";
+import { addressBack, deskHref, deskSearchBody, deskUrlState, type DeskList } from "@/lib/desk/address";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { useFlipList } from "@/lib/motion/flip";
+import {
+  clampSearch,
+  cleanAddress,
+  noSubscription,
+  readSearch,
+  replaceAddress,
+  writeSearch,
+  type SearchList,
+} from "@/lib/search-memory";
 
 import "@/components/browse/browse.css";
 
@@ -55,6 +73,23 @@ const EMPTY: Record<DeskTab, { title: string; line: string }> = {
 type Loaded = "shown" | "failed" | "superseded";
 
 const ideaHref = (row: DeskRow) => `/desk/ideas/${encodeURIComponent(row.idea_id)}`;
+/** Where this tab keeps the desk's search (DEC-110). */
+const LIST: SearchList = "/desk";
+
+/** One read of the desk's list: GET names the tab and sort; a search goes in a POST body, never in a URL (DEC-110). */
+function readList(list: DeskList, signal: AbortSignal): Promise<Response> {
+  if (!list.q) {
+    const params = new URLSearchParams({ tab: list.tab, sort: list.sort });
+    return fetch(`/api/desk?${params.toString()}`, { signal, cache: "no-store" });
+  }
+  return fetch("/api/desk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: deskSearchBody(list),
+    signal,
+    cache: "no-store",
+  });
+}
 
 /** The time now, refreshed on each whole minute: every countdown label can only change then. */
 function useMinute(): Date {
@@ -95,15 +130,25 @@ function TimeLeft({ row, tab, now }: { row: DeskRow; tab: DeskTab; now: Date }) 
   );
 }
 
-export function DeskView({ initial, initialQuery }: { initial: DeskResponse; initialQuery: string }) {
+export function DeskView({ initial }: { initial: DeskResponse }) {
   const [data, setData] = useState(initial);
   // The tab and sort chosen, shown pressed at once while their list loads (C-TABS, C-SORTS).
   const [view, setView] = useState<{ tab: DeskTab; sort: DeskSort }>({
     tab: initial.tab,
     sort: initial.sort,
   });
-  const [text, setText] = useState(initialQuery);
-  const [query, setQuery] = useState(initialQuery);
+  // The server renders the list without a search (DEC-110); the words this entry keeps are read on arrival
+  const [text, setText] = useState("");
+  const [query, setQuery] = useState("");
+  // Held from arrival until the list with the search this entry keeps is in: the unsearched rows, counts and summary
+  // the server rendered are not shown, so no live region reads them out in between
+  const kept = useSyncExternalStore(
+    noSubscription,
+    () => readSearch(LIST),
+    () => "",
+  );
+  const [landed, setLanded] = useState(false);
+  const held = kept !== "" && !landed;
   const [reminded, setReminded] = useState<Set<string>>(() => new Set());
   const [failed, setFailed] = useState<string | null>(null);
   const now = useMinute();
@@ -121,53 +166,66 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
     };
   }, []);
   // The tab, sort and search of the list on screen, kept with every list that lands
-  const shown = useRef<DeskList>({ tab: initial.tab, sort: initial.sort, q: initialQuery });
+  const shown = useRef<DeskList>({ tab: initial.tab, sort: initial.sort, q: "" });
   useFlipList(body, `${data.tab}:${data.sort}:${data.items.map((r) => r.idea_id).join(",")}`);
 
-  /** Reads the list for a tab, sort and search. `write` is false only on arrival, when the address already names it.
-   * Says whether that list is now on screen, or a newer request took over. */
-  const load = useCallback(async (tab: DeskTab, sort: DeskSort, q: string, write = true): Promise<Loaded> => {
-    const params = new URLSearchParams({ tab, sort });
-    if (q) params.set("q", q);
-    setView({ tab, sort });
-    // The address takes the tab, sort and search at once, without a navigation: a router navigation waits for the
-    // server, and a row opened before it lands would leave Back on the old address (S-R1.rules/4, J-BROWSE/4).
-    if (write) window.history.replaceState(null, "", deskHref({ tab, sort, q }));
-    loading.current?.abort();
-    const ctl = new AbortController();
-    loading.current = ctl;
-    try {
-      const res = await fetch(`/api/desk?${params.toString()}`, { signal: ctl.signal, cache: "no-store" });
-      if (res.ok) {
-        const next = (await res.json()) as DeskResponse;
-        if (loading.current !== ctl || !live.current) return "superseded";
-        loading.current = null;
-        shown.current = { tab: next.tab, sort: next.sort, q };
-        setData(next);
-        return "shown";
+  /** Reads the list for a tab, sort and search. `write` is false only on arrival, when the address and this tab's
+   * memory already name it. Says whether that list is now on screen, or a newer request took over. */
+  const load = useCallback(
+    async (tab: DeskTab, sort: DeskSort, words: string, write = true): Promise<Loaded> => {
+      const q = clampSearch(words);
+      setView({ tab, sort });
+      // The address takes the tab and sort at once, and this tab's memory the search, without a navigation: a router
+      // navigation waits for the server, and a row opened before it lands would leave Back on the old address
+      // (S-R1.rules/4, J-BROWSE/4). Both merge into the entry's state, so neither wipes the other (DEC-110).
+      if (write) {
+        writeSearch(LIST, q);
+        replaceAddress(deskHref({ tab, sort }));
       }
-    } catch {
-      // a newer request took over (it aborted this one), the desk has gone, or the network dropped
-    }
-    if (loading.current !== ctl || !live.current) return "superseded";
-    loading.current = null;
-    // Not read: the table keeps what it had, so the tabs, the sort, the search and the address go back to that list
-    // rather than name a choice over rows it does not hold (S-R1.rules/4). The words in the search box stay.
-    const was = shown.current;
-    setView({ tab: was.tab, sort: was.sort });
-    setQuery(was.q);
-    const address = addressBack(was, { tab, sort, q });
-    if (address) window.history.replaceState(null, "", address);
-    return "failed";
-  }, []);
+      loading.current?.abort();
+      const ctl = new AbortController();
+      loading.current = ctl;
+      try {
+        const res = await readList({ tab, sort, q }, ctl.signal);
+        if (res.ok) {
+          const next = (await res.json()) as DeskResponse;
+          if (loading.current !== ctl || !live.current) return "superseded";
+          loading.current = null;
+          shown.current = { tab: next.tab, sort: next.sort, q };
+          setData(next);
+          setLanded(true);
+          return "shown";
+        }
+      } catch {
+        // a newer request took over (it aborted this one), the desk has gone, or the network dropped
+      }
+      if (loading.current !== ctl || !live.current) return "superseded";
+      loading.current = null;
+      // Not read: the table keeps what it had, so the tabs, the sort, the search and the address go back to that list
+      // rather than name a choice over rows it does not hold (S-R1.rules/4). The words in the search box stay.
+      const was = shown.current;
+      setView({ tab: was.tab, sort: was.sort });
+      setQuery(was.q);
+      setLanded(true);
+      writeSearch(LIST, was.q);
+      const address = addressBack(was, { tab, sort, q });
+      if (address) replaceAddress(address);
+      return "failed";
+    },
+    [],
+  );
 
   // Back to the desk: the router may restore the page from its cache, with the props it had when the person left and
   // for an older address. So the list is read once on arrival, as it is now (an idea decided meanwhile has left its
-  // tab), for the tab, sort and search the address names (S-R1.rules/4, L-REVIEW.queue).
+  // tab), for the tab and sort the address names and the search this entry keeps (S-R1.rules/4, L-REVIEW.queue,
+  // DEC-110). Until it lands, a kept search holds the table, so the unsearched list never stands in for it.
   // When the address also names the row that was opened (J-BROWSE/4), that row goes back to where it sat, its link has
   // focus and it is washed once, as on the Wall and My ideas; unless the person has moved focus meanwhile, or the
   // idea has left the list. The row and its offset leave the address at once, so it reads as the list's own again.
   const [back, setBack] = useState<{ row: string; dy: number | null } | null>(null);
+  useLayoutEffect(() => {
+    cleanAddress();
+  }, []);
   useEffect(() => {
     const want = deskUrlState(window.location.search);
     const before = loading.current;
@@ -175,15 +233,17 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
     const frame = requestAnimationFrame(() => {
       // The person chose a tab, sort or search before this frame: that list is already on its way
       if (loading.current !== before) return;
-      setText(want.q);
-      setQuery(want.q);
+      // Read in the same pass as the address, so the row goes back into the list with its search
+      const words = readSearch(LIST);
+      setText(words);
+      setQuery(words);
       if (want.row) {
         const url = new URL(window.location.href);
         url.searchParams.delete("row");
         url.searchParams.delete("dy");
-        window.history.replaceState(null, "", url.pathname + url.search);
+        replaceAddress(url.pathname + url.search);
       }
-      void load(want.tab ?? shown.current.tab, want.sort ?? shown.current.sort, want.q, false).then((got) => {
+      void load(want.tab ?? shown.current.tab, want.sort ?? shown.current.sort, words, false).then((got) => {
         const active = document.activeElement;
         const moved = active !== null && active !== document.body && active !== focused;
         if (want.row && got !== "superseded" && !moved) setBack({ row: want.row, dy: want.dy });
@@ -207,8 +267,9 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   const open = (e: MouseEvent<HTMLAnchorElement>, row: DeskRow) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    const list = { tab: view.tab, sort: view.sort, q: query };
-    window.history.replaceState(null, "", deskHref(list, row.idea_id, rowOffset(e.currentTarget)));
+    // The entry Back returns to: its address names the list and the row, its memory the search (DEC-110)
+    writeSearch(LIST, query);
+    replaceAddress(deskHref(view, row.idea_id, rowOffset(e.currentTarget)));
     router.push(ideaHref(row));
   };
 
@@ -233,7 +294,7 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   }
 
   const decided = data.tab === "decided";
-  const tabs = TABS.map((t) => ({ ...t, count: data.counts[t.value] }));
+  const tabs = TABS.map((t) => ({ ...t, count: held ? undefined : data.counts[t.value] }));
   const empty = EMPTY[data.tab];
 
   return (
@@ -241,7 +302,7 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
       <header className="rd-head">
         <h1 className="h1">Review desk</h1>
         <p className="body rd-summary" role="status">
-          {data.summary}
+          {held ? "" : data.summary}
         </p>
       </header>
 
@@ -254,7 +315,7 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
         picked={[]}
         onPicked={() => undefined}
         onSubmit={(q) => {
-          setQuery(q.trim());
+          setQuery(clampSearch(q.trim()));
           void load(view.tab, view.sort, q.trim());
         }}
       />
@@ -274,8 +335,8 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
         />
       </div>
 
-      <section {...tabPanelProps("desk", view.tab)} className="rd-panel">
-        {data.items.length === 0 ? (
+      <section {...tabPanelProps("desk", view.tab)} className="rd-panel" aria-busy={held || undefined}>
+        {held ? null : data.items.length === 0 ? (
           <Empty title={empty.title} align="left" level={2}>
             {empty.line}
           </Empty>
