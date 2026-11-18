@@ -166,41 +166,65 @@ def lead_result(answer: Answer, first: str, brought: int, reason: str | None) ->
 
 def say_hello(first: str, lead_ref: str) -> dict[str, str]:
     """S-H2B.states: "Say hello to {requester}" opens the lead idea's conversation (S-08)."""
-    return {"label": f"Say hello to {first}", "to": f"/ideas/{lead_ref}/conversation"}
+    return {"label": f"Say hello to {first}", "to": f"/ideas/{lead_ref}/conversation#say-hello"}
 
 
 # --- What the requester sees: C-SHEET-TEAMUP.after, and L-MERGE.request/4–8 on Check it ------------------------
+# `lead_first` is the lead's first name, or None when the lead is not named to the requester (they hid their name
+# from the Wall, or are no longer active, and the requester is not on the crew): the words then say "the lead"
+# (BLD-F029, DEC-104). The lines are the boards' with only the name replaced (docs/hr-wording/lane-f.md).
+THE_LEAD = "the lead"
+
+
+def lead_word(first: str | None, *, start: bool = False) -> str:
+    """The lead in a sentence: the first name, or "the lead" ("The lead" to start a sentence)."""
+    if first:
+        return first
+    return THE_LEAD.capitalize() if start else THE_LEAD
+
+
+def waiting_for(first: str | None) -> str:
+    """ "Waiting for Ravi" / "Waiting for the lead": the opener's line and the `already_requested` refusal."""
+    return f"Waiting for {lead_word(first)}"
+
+
+def waiting_on_merge(first: str | None) -> str:
+    """ "Waiting on Ravi to merge" / "Waiting on the lead to merge" (Review.md, `merge` tweak)."""
+    return f"Waiting on {lead_word(first)} to merge"
+
+
 def requester_after(
-    state: str, *, lead_first: str, lead_ref: str, reason: str | None, brought: int
+    state: str, *, lead_first: str | None, lead_ref: str, reason: str | None, brought: int
 ) -> dict[str, object] | None:
     """C-SHEET-TEAMUP.after for a team-up request, by its E-ENUMS.teamup state. None means "back to Team up"."""
+    lead_ = lead_word(lead_first, start=True)
     if state == "sent":
-        return {"state": "waiting", "line": f"Waiting for {lead_first}",
-                "detail": f"{lead_first} reads your note, then approves or declines. You’ll hear in your Inbox.",
+        return {"state": "waiting", "line": waiting_for(lead_first),
+                "detail": f"{lead_} reads your note, then approves or declines. You’ll hear in your Inbox.",
                 "action": {"label": "Withdraw", "op": "withdraw"}}  # fmt: skip
     if state == "approved_team_only":
         return {"state": "on_crew", "line": "You’re on the crew. You’ll get its updates.",
-                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation"}}  # fmt: skip
+                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation#say-hello"}}  # fmt: skip
     if state == "approved_merged":
         return {"state": "merged", "line": f"Merged into {lead_ref}, with credit to you.",
-                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation"}}  # fmt: skip
+                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation#say-hello"}}  # fmt: skip
     if state == "declined":  # NOT DRAWN: "The lead's reason if given; the person can send theirs on its own"
-        said = f"{lead_first} declined: {quoted(reason)}" if reason else f"{lead_first} declined."
+        said = f"{lead_} declined: {quoted(reason)}" if reason else f"{lead_} declined."
         return {"state": "declined", "line": said + (" Send yours on its own." if brought else ""),
                 "action": None}  # fmt: skip
     return None  # withdrawn or closed: back to "Team up"
 
 
 def draft_after(
-    state: str, *, lead_first: str, lead_ref: str, reason: str | None
+    state: str, *, lead_first: str | None, lead_ref: str, reason: str | None
 ) -> dict[str, object] | None:
     """L-MERGE.request/4–8, the Similar ideas part and the bar on Check it (Review board, `merge` tweak)."""
+    lead, lead_ = lead_word(lead_first), lead_word(lead_first, start=True)
     if state == "waiting":
         return {
             "state": "waiting",
-            "label": f"Waiting on {lead_first} to merge",
-            "line": f"Waiting for {lead_first} to accept the merge. If {lead_first} declines, you can send yours "
-            "on its own.",
+            "label": waiting_on_merge(lead_first),
+            "line": f"Waiting for {lead} to accept the merge. If {lead} declines, you can send yours on its own.",
             "action": {"label": "Withdraw the request", "op": "withdraw"},
             "can_submit": False,
         }
@@ -208,8 +232,7 @@ def draft_after(
         return {
             "state": "accepted",
             "label": f"Merged into {lead_ref}",
-            "line": f"{lead_first} accepted. Yours is now part of {lead_ref}, with credit to you. "
-            "Nothing else to send.",
+            "line": f"{lead_} accepted. Yours is now part of {lead_ref}, with credit to you. Nothing else to send.",
             "action": {"label": "See the merged idea", "to": f"/ideas/{lead_ref}"},
             "can_submit": False,
         }
@@ -224,13 +247,13 @@ def draft_after(
     if state == "declined":
         # no reason: NOT DRAWN
         said = (
-            f"{lead_first} kept that idea separate: {quoted(reason)}"
+            f"{lead_} kept that idea separate: {quoted(reason)}"
             if reason
-            else f"{lead_first} kept that idea separate."
+            else f"{lead_} kept that idea separate."
         )
         return {
             "state": "declined",
-            "label": f"{lead_first} kept it separate",
+            "label": f"{lead_} kept it separate",
             "line": f"{said} Send yours on its own.",
             "action": {"label": "Send mine on its own", "op": "submit"},
             "can_submit": True,

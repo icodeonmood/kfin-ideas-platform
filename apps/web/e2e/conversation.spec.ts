@@ -178,6 +178,80 @@ test("S-08.rules/4 at 375px: the 'i' opens In this conversation as a sheet; Esca
   await expect(info).toBeFocused();
 });
 
+/** Meera's 3 questions as lane B's `GET /ideas/:id/question-set` sends them to Kavya (BLD-B249). */
+const SET_ID = "6c1f6a0e-0000-4000-8000-000000000013";
+function sharerSet() {
+  const MEERA = {
+    id: "6c1f6a0e-1b8e-4d0a-9a51-0d6f3e2a1b05",
+    name: "Meera Iyer",
+    first_name: "Meera",
+    initials: "MI",
+  };
+  const parts = [
+    ["summary", "The problem", "Is it mostly R07, or all rejection codes?"],
+    ["often", "How often", "Is the 40 calls a day at one branch, or across Hyderabad?"],
+    ["evidence", "Attached", "Can you add a screenshot of the SMS, with the folio hidden?"],
+  ];
+  return {
+    id: SET_ID,
+    idea_id: IDEA,
+    idea: { id: IDEA, title: TITLE },
+    by: { ...MEERA, city: null, area: null },
+    state: "seen",
+    time_to_answer: "3d",
+    sent_at: "2026-11-16T11:20:00+05:30",
+    seen_at: "2026-11-16T12:05:00+05:30",
+    due_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    answered_at: null,
+    extended_times: 0,
+    reminded_at: null,
+    count: 3,
+    answered: 0,
+    overdue: false,
+    questions: parts.map(([part, part_name, text], i) => ({
+      id: `6c1f6a0e-0000-4000-8000-00000000002${i}`,
+      seq: i + 1,
+      part,
+      part_name,
+      text,
+      suggested: false,
+      answer: null,
+    })),
+    countdown: { label: "3 days left to answer", variant: "normal" },
+    deadline: "Answer by Thursday 19 November, 6 pm",
+    progress: "0 of 3 answered",
+    send_label: "Answer at least one question",
+  };
+}
+
+test("C-QCARD.places S-08 at 375px (BLD-B249, J-TRACK/3): the sharer's open questions are lane B's card, read by the entry's set; axe; no sideways scroll", async ({
+  page,
+}) => {
+  const reads: string[] = [];
+  await page.route(`**/api/ideas/${IDEA}/question-set*`, (route) => {
+    reads.push(new URL(route.request().url()).search);
+    return route.fulfill({ json: sharerSet() });
+  });
+  await page.goto("/kit/conversation?view=questions");
+  await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
+  const card = page.getByRole("article", { name: "Meera has 3 questions about your idea" });
+  await expect(card).toBeVisible();
+  expect([...new Set(reads)]).toEqual([`?set_id=${SET_ID}`]); // only the entry's own set
+  await expect(card).toContainText("Is the 40 calls a day at one branch, or across Hyderabad?");
+  await expect(card).toContainText("Answer goes to How often");
+  await expect(card).toContainText("and each answer is added to its part of your idea.");
+  // S-08.rules/1: Answer the questions on the card and in the line above the box, both to S-R3
+  const answer = page.getByRole("link", { name: "Answer the questions" });
+  await expect(answer).toHaveCount(2);
+  await expect(card.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
+    "href",
+    `/ideas/${IDEA}/answer`,
+  );
+  await settleMotion(page);
+  await expectNoSeriousAxeIssues(page);
+  await expectNoSidewaysScroll(page);
+});
+
 /** The kit's people and box, so the stand-in GET can answer with Kavya's message after she sends it. */
 function kitView(): Record<string, unknown> {
   return {
@@ -223,3 +297,274 @@ function kitView(): Record<string, unknown> {
     },
   };
 }
+
+/** Twelve messages back and forth after the kit's lines, then Kavya's: long enough to scroll at 375 × 812. */
+function longView(): Record<string, unknown> {
+  const base = kitView();
+  const people = (base.participants as { person: { id: string }; label: string }[]).filter(
+    (p) => p.label !== "You",
+  );
+  const entries: unknown[] = [
+    {
+      type: "event",
+      id: "6c1f6a0e-0000-4000-8000-000000000101",
+      code: "teamup.approved_team_only",
+      text: "Ravi Nair approved your team-up request. Today, 10:05 am",
+      at: "2026-11-17T10:05:00+05:30",
+    },
+  ];
+  for (let i = 0; i < 12; i++) {
+    const p = people[i % people.length]!;
+    entries.push({
+      type: "message",
+      id: `6c1f6a0e-0000-4000-8000-0000000002${String(i).padStart(2, "0")}`,
+      from: p.person,
+      from_label: p.label,
+      you: false,
+      text: `Call log, day ${i + 1}: most callers asked why the redemption did not go through, and what R07 means.`,
+      files: [],
+      at: "2026-11-17T10:07:00+05:30",
+      at_label: "Today, 10:07 am",
+      mentions: [],
+      mentions_you: false,
+      removed: false,
+    });
+  }
+  return { ...base, entries };
+}
+
+/** The box, the tab bar (on the kit the shell still shows one) and the last line of the timeline, as laid out. */
+async function layout(page: Page) {
+  return page.evaluate(() => {
+    const rect = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, height: r.height };
+    };
+    const tabs = document.querySelector(".ptabs");
+    return {
+      viewport: window.innerHeight,
+      scrollY: window.scrollY,
+      box: rect(document.querySelector("form.cv-box"))!,
+      tabs: tabs && getComputedStyle(tabs).display !== "none" ? rect(tabs) : null,
+      last: rect(document.querySelector(".cv-conv > li:last-child"))!,
+    };
+  });
+}
+
+test("S-08.rules/4, PhoneMessages at 375px: the bar reads Conversation; the box stays pinned at the bottom as the timeline scrolls, and the last line and a focused Remove clear it; axe", async ({
+  page,
+}) => {
+  await answerConversation(page, longView());
+  await open(page);
+  // PhoneMessages.md: Back to the idea, then "Conversation" (the idea's title is the page's h1, under the bar)
+  const bar = page.locator(".pnav");
+  await expect(bar).toBeVisible();
+  await expect(bar.locator(".pnav-t")).toHaveText("Conversation");
+  await expect(bar.getByRole("link", { name: "The idea" })).toBeVisible();
+
+  // A long conversation: send, and the read after it brings the twelve messages and Kavya's.
+  const box = page.getByRole("textbox", { name: "Message the crew" });
+  await box.fill("Thanks @Aditi Sharma for the call list.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText(HELLO, { exact: true })).toBeAttached();
+  await expect(page.locator(".cv-conv > li")).toHaveCount(14);
+  await page.locator("body").click({ position: { x: 4, y: 200 } }); // out of the box, so no keyboard is pretended
+  await settleMotion(page);
+
+  // Pinned: at the top, in the middle and at the end the box sits in the same place, on the tab bar here (the kit
+  // keeps the shell's tab bar; on the real route lane D's shell takes it away and the box sits at the bottom).
+  const seen: { top: number; bottom: number }[] = [];
+  for (const where of ["top", "middle", "end"] as const) {
+    await page.evaluate((w) => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, w === "top" ? 0 : w === "middle" ? max / 2 : max);
+    }, where);
+    const l = await layout(page);
+    if (where === "top") expect(l.scrollY).toBe(0);
+    else expect(l.scrollY, `${where}: the page scrolls`).toBeGreaterThan(200);
+    const floor = l.tabs ? l.tabs.top : l.viewport;
+    expect(
+      Math.abs(l.box.bottom - floor),
+      `${where}: the box sits on the tab bar or the bottom`,
+    ).toBeLessThanOrEqual(1);
+    expect(l.box.top, `${where}: the box is on screen`).toBeGreaterThan(l.viewport / 2);
+    await expect(box).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+    seen.push(l.box);
+    if (where === "end") {
+      // The last line is never under the box (S-08.rules/4)
+      expect(l.last.bottom, "the last line clears the box").toBeLessThanOrEqual(l.box.top);
+    }
+  }
+  expect(seen.every((b) => Math.abs(b.top - seen[0]!.top) <= 1)).toBe(true);
+
+  // Focus not hidden (WCAG 2.4.11): from the top, focus moves to Remove on Kavya's message, the timeline's last
+  // control; the page brings it out from under the box.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const remove = page.getByRole("button", { name: "Remove your message from Today, 10:12 am" });
+  await remove.focus();
+  await expect(remove).toBeFocused();
+  const r = (await remove.boundingBox())!;
+  const l = await layout(page);
+  expect(r.y + r.height, "Remove clears the box").toBeLessThanOrEqual(l.box.top);
+  expect(r.y).toBeGreaterThanOrEqual(0);
+
+  await expectNoSeriousAxeIssues(page);
+  await expectNoSidewaysScroll(page);
+});
+
+test("S-08.rules/4, F-SPACE.shell at 375px on the route's task screen: no tab bar, so the box sits at the very bottom with the safe area only, and the last line clears it (BLD-F068)", async ({
+  page,
+}) => {
+  await answerConversation(page, longView());
+  await open(page);
+  await page
+    .getByRole("textbox", { name: "Message the crew" })
+    .fill("Thanks @Aditi Sharma for the call list.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".cv-conv > li")).toHaveCount(14);
+  // /ideas/:id/conversation is a task screen on a phone (lane D, F-SPACE.shell): the shell marks it data-mode="task"
+  // and draws no tab bar. The kit is not a task path, so it takes that shape here; the box measures it again.
+  await page.evaluate(() => {
+    document.querySelector(".shell")?.setAttribute("data-mode", "task");
+    const tabs = document.querySelector<HTMLElement>(".ptabs");
+    if (tabs) tabs.style.display = "none";
+    window.dispatchEvent(new Event("resize"));
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.querySelector<HTMLElement>(".cv")?.style.getPropertyValue("--cv-at")),
+    )
+    .toBe("0px");
+  await settleMotion(page);
+  const vars = await page.evaluate(() => {
+    const cv = document.querySelector<HTMLElement>(".cv")!;
+    return {
+      safe: cv.style.getPropertyValue("--cv-safe"),
+      mainPad: getComputedStyle(document.querySelector("main")!).paddingBottom,
+    };
+  });
+  expect(vars.safe).toBe("1"); // the box takes the safe area itself
+  expect(vars.mainPad).toBe("120px"); // lane D's room for a task screen's dock
+  for (const where of ["top", "end"] as const) {
+    await page.evaluate(
+      (w) => window.scrollTo(0, w === "top" ? 0 : document.documentElement.scrollHeight),
+      where,
+    );
+    const l = await layout(page);
+    expect(l.tabs).toBeNull();
+    expect(
+      Math.abs(l.box.bottom - l.viewport),
+      `${where}: the box sits at the very bottom`,
+    ).toBeLessThanOrEqual(1);
+    if (where === "end") expect(l.last.bottom, "the last line clears the box").toBeLessThanOrEqual(l.box.top);
+  }
+  await expectNoSeriousAxeIssues(page);
+  await expectNoSidewaysScroll(page);
+});
+
+test("L-MERGE.effects/6 at 375px: closed while open, a merged idea's closing line takes the box's place with no room kept under it (BLD-F068)", async ({
+  page,
+}) => {
+  const closed = "This idea is now part of another one. Write in IDEA-2026-001481’s conversation.";
+  await page.route(`**/api/ideas/${IDEA}/conversation/messages`, (route) =>
+    route.fulfill({
+      status: 409,
+      json: { error: { code: "conversation_closed", message: "This conversation takes no new messages." } },
+    }),
+  );
+  await page.route(`**/api/ideas/${IDEA}/conversation`, (route) =>
+    route.fulfill({ json: { ...kitView(), composer: { ...(kitView().composer as object), closed } } }),
+  );
+  await open(page);
+  await expect(page.locator(".cv")).toHaveAttribute("data-box", "open");
+  await page.getByRole("textbox", { name: "Message the crew" }).fill("Thanks for the call list.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText(closed)).toBeVisible();
+  await expect(page.locator("form.cv-box")).toHaveCount(0);
+  await expect(page.locator(".cv")).toHaveAttribute("data-box", "closed");
+  await settleMotion(page);
+  const gap = await page.evaluate(() => {
+    const main = document.querySelector("main")!;
+    const note = document.querySelector(".cv-closed")!.getBoundingClientRect();
+    const end = main.getBoundingClientRect().bottom;
+    return {
+      cvMain: getComputedStyle(document.querySelector(".cv-main")!).paddingBottom,
+      below: end - note.bottom, // the closing line to the end of the page
+      mainPad: Number.parseFloat(getComputedStyle(main).paddingBottom),
+    };
+  });
+  expect(gap.cvMain).toBe("0px");
+  // Under the closing line: only the shell's own padding (and the side panel's place, hidden on a phone)
+  expect(gap.below).toBeLessThanOrEqual(gap.mainPad + 1);
+  await expectNoSeriousAxeIssues(page);
+});
+
+test("S-08 at 375px: the box has no resize grip; it grows with its words to 120px, then scrolls (BLD-F068)", async ({
+  page,
+}) => {
+  await open(page);
+  const box = page.getByRole("textbox", { name: "Message the crew" });
+  expect(await box.evaluate((el) => getComputedStyle(el).resize)).toBe("none");
+  const one = (await box.boundingBox())!.height;
+  await box.fill("Line one\nLine two\nLine three");
+  const three = (await box.boundingBox())!.height;
+  expect(three).toBeGreaterThan(one);
+  await box.fill(Array.from({ length: 12 }, (_, i) => `Line ${i + 1}`).join("\n"));
+  const many = await box.evaluate((el) => ({ h: el.getBoundingClientRect().height, sh: el.scrollHeight }));
+  expect(many.h).toBeLessThanOrEqual(120.5);
+  expect(many.sh).toBeGreaterThan(many.h); // past the cap it scrolls
+  await box.fill("");
+  expect((await box.boundingBox())!.height).toBeLessThanOrEqual(one + 0.5); // and shrinks back once sent or cleared
+});
+
+test("L-TEAMUP.rules/9 at 375px: a Say hello link (#say-hello) lands with the cursor in the box, and the hint comes off the address (BLD-F069); axe", async ({
+  page,
+}) => {
+  await page.goto("/kit/conversation#say-hello");
+  await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
+  const box = page.getByRole("textbox", { name: "Message the crew" });
+  await expect(box).toBeFocused();
+  await expect(page).toHaveURL(/\/kit\/conversation$/);
+  await expect(box).toBeInViewport();
+  await settleMotion(page);
+  await expectNoSeriousAxeIssues(page);
+
+  // A reload, without the hint, leaves focus alone.
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
+  await expect(box).not.toBeFocused();
+});
+
+test("L-TEAMUP.rules/9 with S-06B.rules/2 at 375px: words carried over from the edit page and a #say-hello arrival: the words wait in the box with the cursor at their end, and nothing is sent (BLD-F069, BLD-C165)", async ({
+  page,
+}) => {
+  const words = "How often: About 50 calls a day at one branch";
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() !== "GET" && r.url().includes("/conversation")) writes.push(r.url());
+  });
+  // The edit page kept the words in this tab (S-06B "Open the conversation"); the arrival is one navigation.
+  await page.addInitScript(
+    ([key, w]) => {
+      if (window.location.pathname === "/kit/conversation") window.sessionStorage.setItem(key, w);
+    },
+    [`1pc.conversation.prefill.${IDEA}`, words] as const,
+  );
+  await page.goto("/kit/conversation#say-hello");
+  const box = page.getByRole("textbox", { name: "Message the crew" });
+  await expect(box).toHaveValue(words);
+  await expect(box).toBeFocused();
+  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([
+    words.length,
+    words.length,
+  ]);
+  await expect(page).toHaveURL(/\/kit\/conversation$/);
+  expect(
+    await page.evaluate((key) => window.sessionStorage.getItem(key), `1pc.conversation.prefill.${IDEA}`),
+  ).toBeNull();
+  await page.keyboard.type(" and more");
+  await expect(box).toHaveValue(`${words} and more`);
+  expect(writes).toEqual([]);
+});

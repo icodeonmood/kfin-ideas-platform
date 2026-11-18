@@ -1,0 +1,932 @@
+/*
+ * S-WALL, the Wall: board values from reference/css/boards/Wall.css and PhoneWall.css on the app's tokens. Lane D's
+ * components (chips, sorts, pills, cards, the slab, the jersey) keep their own look; this sheet only lays them out.
+ * `.wl-desk` and `.wl-phone` hold the words that differ between the two boards: the width shows one of them.
+ */
+.wl {
+  --wl-gap: 104px;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.wl-phone {
+  display: none;
+}
+
+.wl-sec {
+  padding-top: var(--wl-gap);
+}
+
+/* The older sheet spaces every section after a section; the Wall spaces its own (104px apart) */
+.wl section + section {
+  margin-top: 0;
+}
+
+/* ---------- Top: the title, its line and the section index ---------- */
+.wl-top {
+  padding-top: 24px;
+}
+
+.wl-top-row,
+.wl-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px 24px;
+}
+
+.wl-title {
+  font-size: clamp(56px, 8vw, 128px);
+  line-height: 0.98;
+}
+
+.wl-top-row .lead {
+  margin: 0;
+  max-width: 640px;
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--mute);
+}
+
+.wl-head .body {
+  max-width: 460px;
+}
+
+.wl-secnav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 24px;
+  margin-top: 48px;
+}
+
+.wl-secnav a {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 16px 0;
+  border-top: 1px solid var(--ink);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.wl-secnav a:hover .wl-sn-t {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.wl-sn-n {
+  font: 500 14px/1.35 var(--ft);
+}
+
+.wl-sn-t {
+  font: 500 19px/1.2 var(--fd);
+  letter-spacing: -0.015em;
+}
+
+.wl-sn-s {
+  font-size: 14px;
+  color: var(--mute);
+}
+
+/* ---------- Kindling ---------- */
+.wl-chips {
+  margin-top: 28px;
+}
+
+.wl-fail {
+  margin-top: 24px;
+}
+
+.wl-kin[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.wl-stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.wl-stage.card {
+  padding: 22px 22px 8px;
+  border-radius: var(--r-md);
+}
+
+.wl-st-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The stage's name is its heading for a screen reader; on a wide screen the pill says it on screen */
+.wl-st-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wl-st-n {
+  margin-left: auto;
+  font-size: 30px;
+}
+
+.wl-rows {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.wl-row {
+  padding: 16px 0;
+  border-top: 1px solid var(--rule2);
+}
+
+.wl-rt {
+  margin: 0;
+  font: 500 17px/1.35 var(--fd);
+  letter-spacing: -0.01em;
+}
+
+.wl-rt a,
+.wl-jtt a,
+.wl-lw a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.wl-rt a:hover,
+.wl-jtt a:hover,
+.wl-lw a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.wl-rm {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+/* ---------- Just in ---------- */
+.wl-jin {
+  margin-top: 40px;
+}
+
+.wl-jhead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px 24px;
+}
+
+.wl-jh {
+  margin: 0;
+  font: 500 22px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.wl-jsub {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.wl-jrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 136px 104px 72px 72px;
+  gap: 20px;
+  align-items: baseline;
+}
+
+.wl-jhd {
+  margin-top: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.wl-jhd p {
+  margin: 0;
+  font: 500 14px/1.35 var(--ft);
+  color: var(--mute);
+}
+
+.wl-jlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wl-jlist > li.wl-jrow {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wl-jtt {
+  margin: 0;
+  font: 500 18px/1.3 var(--fd);
+  letter-spacing: -0.015em;
+}
+
+.wl-jk {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--mute);
+}
+
+p.wl-jv {
+  margin: 0;
+  text-align: right;
+  font-size: 14px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wl-jlist p.wl-jv.on {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.wl-jhd p.wl-jv.on {
+  color: var(--ink);
+}
+
+.wl-jmore {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.wl-jnone {
+  margin: 16px 0 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--ink);
+  font-size: 15px;
+  color: var(--mute);
+}
+
+/* ---------- The Ones ---------- */
+.wl-slab.slab {
+  padding: 64px 56px;
+  border-radius: var(--r-lg);
+}
+
+.wl-slab::before {
+  content: "";
+  position: absolute;
+  inset: -60% 35% 30% -10%;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(244, 104, 53, 0.22), rgba(244, 104, 53, 0));
+  pointer-events: none;
+}
+
+.wl-slab-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.wl-slab-head .d2 {
+  color: #ffffff;
+}
+
+.wl-slab-lead {
+  margin: 0;
+  max-width: 460px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ash-lit, #c4c4c7);
+}
+
+.wl-ones {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 44px 0 0;
+  padding: 0;
+}
+
+/* Each list item holds one card and stretches it to the row's height */
+.wl-one-li {
+  display: flex;
+}
+
+.wl-one.jersey {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 330px;
+  padding: 20px 20px 22px;
+  border-radius: var(--r-md);
+}
+
+.wl-one-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wl-one-flag {
+  font-size: 12px;
+  color: var(--ash-lit, #c4c4c7);
+}
+
+.wl-one-no {
+  margin: 24px 0 0;
+  font-size: 80px;
+  color: #ffffff;
+}
+
+.wl-one-name {
+  margin: 16px 0 0;
+  font: 500 18px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.wl-one-tier {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ash-lit, #c4c4c7);
+}
+
+.wl-one-brief {
+  margin: auto 0 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+  line-height: 1.45;
+  color: #ffffff;
+}
+
+.wl-slab-link {
+  margin: 28px 0 0;
+}
+
+.wl-slab-link a {
+  color: #ffffff;
+  font: 500 15px/1 var(--ft);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+
+.wl-slab a:focus-visible {
+  outline-color: #8fa8ff;
+}
+
+/* ---------- Impact ---------- */
+.wl-imp-h {
+  max-width: 760px;
+}
+
+.wl-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--ink);
+}
+
+/* One build for all four: the number on one line, the unit in the label (S-WALL.impact/4, V-ACC.browse/5) */
+.wl-tile {
+  min-width: 0;
+  padding-top: 22px;
+}
+
+.wl-tbig {
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(48px, 4.6vw, 72px);
+}
+
+.wl-tsuf {
+  font-size: 0.34em;
+  letter-spacing: -0.01em;
+}
+
+.wl-tlabel {
+  margin: 14px 0 0;
+  font: 500 14px/1.35 var(--ft);
+  color: var(--mute);
+}
+
+.wl-live {
+  margin-top: 56px;
+  border-top: 1px solid var(--ink);
+}
+
+.wl-live ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wl-trow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 0.9fr);
+  gap: 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: baseline;
+}
+
+.wl-thd {
+  padding: 12px 0;
+}
+
+.wl-trow p {
+  margin: 0;
+}
+
+.wl-thd p {
+  font: 500 14px/1.35 var(--ft);
+  color: var(--mute);
+}
+
+.wl-lw {
+  font: 500 18px/1.3 var(--fd);
+  letter-spacing: -0.015em;
+}
+
+.wl-lc {
+  font-size: 15px;
+}
+
+.wl-trow p.wl-lm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.wl-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b5b5b0;
+}
+
+.wl-dot.ok {
+  background: var(--okD);
+}
+
+.wl-dot.warn {
+  background: var(--warnD);
+}
+
+.wl-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+
+/* ---------- The Ember ---------- */
+.wl-emb-lead {
+  margin-top: 14px;
+  max-width: 560px;
+}
+
+.wl-emb {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.wl-emb.solo {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 560px;
+}
+
+.wl-emb-side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.wl-issue.card {
+  padding: 32px 34px 34px;
+}
+
+.wl-issue-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.wl-eb {
+  margin: 0;
+  font: 500 14px/1.35 var(--ft);
+  color: var(--mute);
+}
+
+.wl-issue-h {
+  margin: 18px 0 0;
+  font: 500 clamp(28px, 2.6vw, 36px) / 1.1 var(--fd);
+  letter-spacing: -0.025em;
+}
+
+.wl-issue-items {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule2);
+}
+
+.wl-issue-items li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule2);
+}
+
+.wl-issue-items li:last-child {
+  border-bottom: 0;
+}
+
+.wl-issue-items span {
+  font: 500 13px/1.6 var(--ft);
+  color: var(--mute);
+}
+
+.wl-issue-items p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.wl-issue-a {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.wl-soon.placeholder {
+  padding: 26px 28px;
+}
+
+.wl-soon-t {
+  margin: 16px 0 0;
+  font: 500 22px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.wl-soon .body,
+.wl-inbox .body {
+  margin-top: 8px;
+}
+
+.wl-inbox.card {
+  padding: 26px 28px;
+}
+
+.wl-inbox-t {
+  margin: 0;
+  font: 500 19px/1.3 var(--fd);
+  letter-spacing: -0.015em;
+}
+
+/* ---------- Footer ---------- */
+.wl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 120px;
+  padding: 32px 0 40px;
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.wl-foot p {
+  margin: 0;
+}
+
+.wl-foot-b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.wl-foot a {
+  color: var(--ink);
+}
+
+/* ---------- 1100 px and below: Kindling stacks, the tiles go two across ---------- */
+@media (max-width: 1100px) {
+  .wl-stages,
+  .wl-emb {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wl-ones {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .wl-tiles,
+  .wl-secnav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .wl-jrow {
+    grid-template-columns: minmax(0, 1fr) 120px 92px 56px 56px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .wl-trow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .wl-thd {
+    display: none;
+  }
+}
+
+/* ---------- Phone (PhoneWall): one column, Kindling as groups with Just in first ---------- */
+@media (max-width: 640px) {
+  .wl {
+    --wl-gap: 40px;
+  }
+
+  .wl-desk {
+    display: none;
+  }
+
+  .wl-phone {
+    display: revert;
+  }
+
+  .wl-top {
+    padding-top: 4px;
+  }
+
+  .wl-title {
+    font-size: 32px;
+  }
+
+  .wl-top-row {
+    gap: 8px;
+  }
+
+  .wl-top-row .lead {
+    font-size: 15px;
+  }
+
+  .wl-sec#kindling .d2,
+  .wl-sec .d2 {
+    font-size: 24px;
+    line-height: 1.15;
+  }
+
+  .wl-head {
+    gap: 4px;
+  }
+
+  .wl-head .body {
+    font-size: 13.5px;
+  }
+
+  .wl-chips {
+    margin: 14px calc(-1 * var(--page-gutter)) 0;
+    padding: 0 var(--page-gutter);
+  }
+
+  .wl-kin {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wl-jin {
+    order: -1;
+    margin-top: 24px;
+  }
+
+  .wl-stages {
+    display: block;
+    margin-top: 0;
+  }
+
+  .wl-stage.card {
+    margin-top: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .wl-st-h,
+  .wl-jtitle {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink);
+    align-items: baseline;
+  }
+
+  .wl-st-name {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    margin: 0;
+    font: 500 17px/1.3 var(--ft);
+  }
+
+  .wl-st-n,
+  .wl-jcount {
+    font: 400 13px/1 var(--ft);
+    letter-spacing: 0;
+    color: var(--mute);
+  }
+
+  .wl-jhead {
+    flex-wrap: nowrap;
+  }
+
+  .wl-jhead .sorts-phone {
+    align-self: flex-start;
+    margin-top: 10px;
+  }
+
+  .wl-jtitle {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    width: 100%;
+  }
+
+  .wl-jh {
+    font: 500 17px/1.3 var(--ft);
+    letter-spacing: 0;
+  }
+
+  .wl-jhead {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .wl-rows {
+    margin: 0;
+  }
+
+  .wl-row {
+    padding: 0;
+    border-top: 0;
+    border-bottom: 1px solid var(--rule2);
+  }
+
+  .wl-prow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 14px 0;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .wl-pmain {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+  }
+
+  .wl-pt {
+    font: 500 17px/1.3 var(--fd);
+    letter-spacing: -0.01em;
+  }
+
+  .wl-pm {
+    font-size: 13px;
+    color: var(--mute);
+  }
+
+  .wl-chev {
+    flex: none;
+    color: var(--faint);
+  }
+
+  .wl-pmore {
+    margin-top: 4px;
+  }
+
+  .wl-none {
+    margin-top: 16px;
+    padding: 24px 16px;
+    text-align: center;
+  }
+
+  .wl-none p {
+    margin: 0 0 12px;
+    color: var(--mute);
+  }
+
+  .wl-slab.slab {
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: 28px var(--page-gutter) 32px;
+    border-radius: 0;
+  }
+
+  .wl-slab-lead {
+    font-size: 14px;
+  }
+
+  /* The cards scroll sideways inside the slab, never the page (F-SPACE.scroll/4) */
+  .wl-ones {
+    display: flex;
+    gap: 10px;
+    margin: 16px calc(-1 * var(--page-gutter)) 0;
+    padding: 0 var(--page-gutter) 4px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+  }
+
+  .wl-one-li {
+    flex: none;
+    width: 236px;
+    scroll-snap-align: start;
+  }
+
+  .wl-one.jersey {
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .wl-one-flag {
+    display: none;
+  }
+
+  .wl-one-no {
+    margin-top: 12px;
+    font-size: 44px;
+  }
+
+  .wl-one-brief {
+    margin-top: 14px;
+  }
+
+  .wl-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 16px;
+    margin-top: 12px;
+    padding-top: 0;
+  }
+
+  .wl-tile {
+    padding-top: 16px;
+  }
+
+  .wl-tbig {
+    font-size: 32px;
+  }
+
+  .wl-tsuf {
+    font-size: 0.45em;
+  }
+
+  .wl-tlabel {
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
+  .wl-issue.card {
+    padding: 20px;
+  }
+
+  .wl-foot {
+    margin-top: 56px;
+  }
+}

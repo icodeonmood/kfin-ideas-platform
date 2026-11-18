@@ -5,19 +5,13 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { confirmQuickCapture, expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
+import { shareQuickly, expectNoSeriousAxeIssues, PERSONAS, signIn, waitUntilIndexed } from "./helpers";
 
 const SHARED = "Branch staff photocopy every SIP mandate twice before couriering the batch to Hyderabad";
 
 async function quickCapture(page: Page, persona: string, noticed: string) {
   await signIn(page, persona);
-  await page.goto("/share");
-  await page.getByRole("button", { name: "Start a quick capture" }).click();
-  await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
-  await page.getByLabel(QUESTIONS.quick_noticed.label).fill(noticed);
-  await confirmQuickCapture(page);
-  await page.getByRole("button", { name: "Share your idea" }).click();
+  await page.goto(`/share/${await shareQuickly(page, noticed)}/done`);
   await page.waitForURL(/\/done$/);
   await expect(page.getByRole("heading", { level: 3, name: "Your summary is ready" })).toBeVisible({
     timeout: 20_000,

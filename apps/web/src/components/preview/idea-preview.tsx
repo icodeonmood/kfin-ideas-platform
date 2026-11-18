@@ -29,6 +29,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Pill } from "@/components/ui/pill";
 import type { IdeaPreview } from "@/lib/contracts";
 import { ONEPC } from "@/lib/contracts/enums.gen";
 
@@ -71,7 +72,6 @@ export interface IdeaPreviewDialogProps {
 export const PREVIEW_COPY = {
   close: "Close the preview",
   problemTheirs: "The problem, in their words",
-  problemOf: (first: string) => `The problem, in ${first}’s words`,
   lookingFor: "They’re looking for",
   nextTo: (name: string) => `Next to ${name}’s`,
   tableLabel: (first: string, name: string) => `${first}’s idea next to ${name}’s`,
@@ -79,8 +79,7 @@ export const PREVIEW_COPY = {
   column: (first: string) => `${first}’s`,
   rows: { often: "How often", who: "Who it affects", worth: "What it’s worth" },
   notGiven: "Not given",
-  crew: (lead: string, count: number) =>
-    count > 1 ? `${lead} leads it, ${count} on its crew` : `${lead} leads it`,
+  crew: (lead: string, count: number) => `${lead} leads it, ${count} on its crew`,
   note: {
     draft: "Teaming up adds you to their crew. Your draft stays yours.",
     idea: "Teaming up adds you to their crew. Your idea stays yours.",
@@ -89,7 +88,6 @@ export const PREVIEW_COPY = {
   teamUp: "Team up",
   teamUpOn: (title: string) => `Team up on ${title}`,
   merge: "Merge",
-  mergeWith: (title: string) => `Merge with ${title}`,
   shared: (when: string) => `Shared ${when}`,
   loading: "Loading the idea",
   failed: "This idea did not load",
@@ -382,11 +380,7 @@ function PreviewBody({
     <>
       <div className={p.hue === 2 ? "pvband hue2" : "pvband hue1"}>
         <div className="pvtop">
-          {/* TODO(lane D, BLD-C100): swap to <StatusPill status={p.status} /> (band variant) from @/components/ui/pill. */}
-          <span className="pill">
-            <i aria-hidden="true" />
-            {status}
-          </span>
+          <Pill variant="band">{status}</Pill>
           <p className="pvref">{p.id}</p>
         </div>
         <h2 id={titleId} className="pvt">
@@ -404,7 +398,7 @@ function PreviewBody({
         ) : null}
 
         <div className="pvsec">
-          <h3 className="pvl">{reviewer ? PREVIEW_COPY.problemOf(first) : PREVIEW_COPY.problemTheirs}</h3>
+          <h3 className="pvl">{PREVIEW_COPY.problemTheirs}</h3>
           <p className="pva">{p.in_their_words}</p>
         </div>
 
@@ -439,7 +433,9 @@ function PreviewBody({
           <button
             type="button"
             className="btn btn-primary pvjoin"
-            aria-label={reviewer ? PREVIEW_COPY.mergeWith(p.title) : PREVIEW_COPY.teamUpOn(p.title)}
+            // Reviewer: the name is exactly the visible "Merge" (WCAG 2.5.3), the idea's title its description.
+            aria-label={reviewer ? undefined : PREVIEW_COPY.teamUpOn(p.title)}
+            aria-describedby={reviewer ? titleId : undefined}
             onClick={onPrimaryClick}
           >
             {reviewer ? null : <TeamIcon />}

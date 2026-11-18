@@ -33,6 +33,16 @@ def require_token(x_internal_token: str = Header(default="")) -> None:
         raise HTTPException(status_code=401, detail="internal token required")
 
 
+def _include_drafts() -> None:
+    """L-DRAFT (BLD-C071): the draft API's worker side, behind the same internal token."""
+    from api import drafts
+
+    app.include_router(drafts.router, dependencies=[Depends(require_token)])
+
+
+_include_drafts()
+
+
 @app.get("/internal/health")
 def health() -> dict[str, Any]:
     try:
@@ -59,6 +69,26 @@ def index_now() -> dict[str, Any]:
 @app.get("/internal/canvas-config", dependencies=[Depends(require_token)])
 def get_canvas_config() -> dict[str, Any]:
     return canvas_config()
+
+
+@app.post("/internal/auth/code-email", dependencies=[Depends(require_token)])
+def auth_code_email(body: dict[str, Any]) -> Response:
+    """Send a sign-in code now (L-AUTH.rules/2-3, BLD-E002). The code is never stored or logged."""
+    from comms import sign_in_code
+
+    try:
+        with connect(autocommit=True) as conn:
+            sign_in_code.send(
+                conn,
+                str(body.get("user_id", "")),
+                str(body.get("code", "")),
+                int(body.get("valid_minutes", 0)),
+            )
+    except sign_in_code.CodeEmailRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    return Response(status_code=204)
 
 
 @app.post("/internal/scan", dependencies=[Depends(require_token)])
@@ -1375,10 +1405,21 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     return _json(body)
 
 
+# Sorting and sending (lane C): the sorting confirm, Submit, the edit page and its versions, and lane C's values for
+# GET /config (A-API.drafts, A-API.ideas, A-API.config). Its routes live with the code in submit/routes.py.
+from submit.routes import build as _sort_submit_routes  # noqa: E402
+
+app.include_router(_sort_submit_routes(require_token))
+
 # L-HIDE (lane C): "Hide this", "Show it", "Hide it" and files, in their own module so lanes don't collide here.
 from hide.api import router as hide_router  # noqa: E402
 
 app.include_router(hide_router, dependencies=[Depends(require_token)])
+
+# Files and links (A-API.files, L-HIDE.files; lane C): upload, the check job's results, view, retry, remove.
+from attachments.files_api import router as files_router  # noqa: E402
+
+app.include_router(files_router, dependencies=[Depends(require_token)])
 
 
 # The review side (lane B): the desk, questions and answers, the Ones Committee (A-API.desk, .questions,
@@ -1393,6 +1434,11 @@ from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
 
+# The programme team's admin path (lane A; J-ONE steps 1, 2, 3 and 6; L-DECIDE.after, L-IMPACT, L-ONES admin,
+# "Take off the Wall"). Routes live with the code in programme/routes.py.
+from programme.routes import build as _admin_routes  # noqa: E402
+
+app.include_router(_admin_routes(require_token))
 # Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
 from teamup.routes import build as _teamup_routes  # noqa: E402
 

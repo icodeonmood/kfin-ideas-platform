@@ -22,6 +22,7 @@ from core.config import REPO_ROOT, get_settings
 from core.db import connect
 from core.speech_route import hosted_problem, key_set, voice_problem
 from core.watch import SARVAM_KEY_MISSING
+from pii.vault import EVAL_SCOPE_LIKE
 
 ROOT = REPO_ROOT or Path.cwd()  # in the worker container there is no repo root: /app
 
@@ -47,6 +48,11 @@ def _latest(folder: Path, pattern: str) -> dict[str, Any] | None:
 # on. Voice left this list with DEC-108 (on at launch through Sarvam). The channels built and switched off until
 # IT or InfoSec approve them (DEC-105: Teams, email intake, email-code sign-in) join it as their switches land.
 OFF_BY_DESIGN: dict[str, str] = {
+    # L-DRAFT.channels (BLD-C077), migration 20261122300210: built and off until IT gives the mailbox and the app.
+    "intake.email": "Off until IT gives the 1% Club mailbox (DEC-105): forwarded emails land as drafts once it is on",
+    "intake.teams": "Off until IT gives the 1% Club Teams app (DEC-105): Teams messages land as drafts once it is on",
+    # Migration 20261122100100 (BLD-E002): the email-code route of sign-in waits for InfoSec.
+    "auth.email_code": "Off until InfoSec approves sign-in by email code (BLD-E002, DEC-105)",
     # Matches its reason in migration 20261122300100 (lane C, BLD-C064).
     "files.blackout": "Off until black-out passes review (DEC-107)",
 }
@@ -163,8 +169,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         with connect(autocommit=True) as conn:
             leaks = conn.execute(
                 "SELECT count(*) AS n FROM llm_calls WHERE outcome = 'leak_abort' AND created_at >= %s "
-                "AND ref_id NOT LIKE 'DRAFT-%%'",  # golden-set runs use DRAFT- scopes, as the gateway's own count
-                (args.since,),
+                "AND coalesce(ref_id, '') NOT LIKE %s",  # live drafts count; golden-set runs carry the eval marker
+                (args.since, EVAL_SCOPE_LIKE),
             ).fetchone()
             switches_off.extend(
                 r["name"]
@@ -295,7 +301,8 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
 def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
     """How often the gateway dropped canvas-assist suggestions the person's words did not back
     (`ungrounded_dropped`) and refused its answer outright (`invalid_output`), over the last 24 hours, since launch
-    (live calls) and in golden-set runs since --since (DRAFT- scopes, as the gateway's own counts tell them apart).
+    (live calls, live drafts included) and in golden-set runs since --since (the eval runner's `DRAFT-eeeeeeee-`
+    scopes, as the gateway's own counts tell them apart, BLD-C034).
     A high invalid share would trip the automatic switch-off (20% of calls over 15 minutes, BLD-072). Counts only."""
     windows = [
         ("last 24 hours", "now() - interval '24 hours'", False),
@@ -303,6 +310,7 @@ def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
         (f"golden-set runs since {args.since}", "%(since)s::date", True),
     ]
     out = []
+    params = {"launch": args.launch, "since": args.since, "eval_like": EVAL_SCOPE_LIKE}
     with connect(autocommit=True) as conn:
         for label, start, eval_runs in windows:
             row = conn.execute(
@@ -310,8 +318,8 @@ def canvas_assist_shares(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "count(*) FILTER (WHERE error_code = 'ungrounded_dropped') AS dropped, "
                 "count(*) FILTER (WHERE error_code = 'invalid_output') AS invalid "
                 f"FROM llm_calls WHERE agent = 'canvas-assist' AND created_at >= {start} "
-                "AND (coalesce(ref_id, '') LIKE 'DRAFT-%%') = %(eval_runs)s",
-                {"launch": args.launch, "since": args.since, "eval_runs": eval_runs},
+                "AND (coalesce(ref_id, '') LIKE %(eval_like)s) = %(eval_runs)s",
+                {**params, "eval_runs": eval_runs},
             ).fetchone()
             assert row is not None  # an aggregate always returns a row
             out.append(

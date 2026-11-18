@@ -58,8 +58,8 @@ def _roles(conn: Conn, user_id: str) -> list[str]:
 
 def profile(conn: Conn, user_id: str) -> dict[str, Any]:
     """`GET /me/profile`: E-ENTITIES Person with `points` and `settings` (self only), plus what S-H6 shows: the
-    line under the name, the tier ring for the avatar, the One dashboard link for a One (S-H6.rules/4), and
-    `refer_as` for "How should we refer to you?" (DEC-108; lane C's answer, "unset" until its route lands)."""
+    line under the name, the tier ring for the avatar and the One dashboard link for a One (S-H6.rules/4). "How
+    should we refer to you?" is not here: lane C's `GET/PUT /api/me/refer-as` is its only source (BLD-C111)."""
     u = conn.execute(
         "SELECT id, name, first_name, email, area, location, tier FROM users WHERE id = %s AND active",
         (user_id,),
@@ -104,11 +104,6 @@ def profile(conn: Conn, user_id: str) -> dict[str, Any]:
         "one_dashboard": "/one" if one is not None else None,
         "one_since_label": day_label(one["inducted_at"]) if one is not None else None,
         "available": {"teams": teams_available(conn)},
-        # "How should we refer to you?" (DEC-108, BLD-E010): "she", "he", "they" or "unset" (the default, and
-        # "Prefer not to say"). TODO(lane C): lane C owns the answer and its store through `GET/PUT
-        # /api/me/refer-as` (on main by Wed 18 Nov, 12:00); the screen saves there directly. Until then this is
-        # "unset", so S-H6 needs no special case. Lane E builds no store and no write path for it.
-        "refer_as": "unset",
     }
 
 

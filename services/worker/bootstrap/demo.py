@@ -304,8 +304,10 @@ def _people(conn: Conn) -> dict[str, dict[str, str]]:
         for role in roles:
             conn.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, %s)", (uid, role))
         # The name choice as the toggle writes it: the rule, and the old copy kept until Monday (BLD-E013).
+        # Every demo person has seen Home, so their /home is the returning one (S-03, BLD-C148).
         conn.execute(
-            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, %s)", (uid, consent)
+            "INSERT INTO person_settings (user_id, show_name_on_wall, home_seen_at) VALUES (%s, %s, now())",
+            (uid, consent),
         )
         conn.execute("INSERT INTO comms_prefs (user_id, public_name_consent) VALUES (%s, %s)", (uid, consent))
         conn.execute(

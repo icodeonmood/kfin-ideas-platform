@@ -151,8 +151,10 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
     else:
         meta = f"Saved {saved_when(saved, now)}, {where}"
         if waiting:
+            # The draft's owner is not on that idea's crew yet, so its lead is named only when they show their
+            # name on the Wall and are still here; otherwise "the lead" (DEC-104, BLD-F029, BLD-E048).
             lead = read.person_by_code(conn, waiting["contributor_code"])
-            who = lead["first_name"] if lead else "the lead"
+            who = lead["first_name"] if lead and read.shows_name(lead) else "the lead"
             sentence = f"Waiting for {who} to answer about joining {waiting['idea_id']}. Your words are kept."
         elif str(idea.get("step") or "").startswith("check") or idea.get("step") == "send":
             kept = (
@@ -206,6 +208,7 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         if idea["status"] in ("picked", "not_now", "not_picked", "being_built", "shipped")
         else None
     )
+    phone_sentence: str | None = None
     see = {"label": "See where it is", "to": f"/ideas/{key}", "style": "line"}
     read_it = {"label": "Read the decision", "to": f"/ideas/{key}", "style": "line"}
     meta_when = f"Shared {day(idea['shared_at'], now)}" if idea["shared_at"] else ""
@@ -214,6 +217,13 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         when = weekday_or_day(qset["sent_at"], now) if qset.get("sent_at") else None
         on = f" {when}" if when in ("today", "yesterday") else f" on {when}" if when else ""
         sentence = f"The review desk asked you {count(n, 'question')}{on}."
+        # The phone board names who asked: "Meera from the review desk asked you 3 questions on Monday."
+        # (PhoneMyIdeas.md); the desktop board says "The review desk" (MyIdeas.md).
+        asker = read.person_by_user(conn, qset.get("by_user_id"))
+        if asker:
+            phone_sentence = (
+                f"{asker['first_name']} from the review desk asked you {count(n, 'question')}{on}."
+            )
         action = {"label": "Answer the questions", "to": f"/ideas/{key}/answer", "style": "primary"}
     elif status == "needs_you":  # questions sent, the set not readable yet
         sentence = "The review desk asked you some questions."
@@ -311,6 +321,7 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         "track": mini_track(status),
         "next_step": {
             "sentence": sentence,
+            **({"phone_sentence": phone_sentence} if phone_sentence else {}),
             "action": {**action, "accessible_name": f"{action['label']}: {title}"},
         },
         "group": group_of(status),
@@ -402,6 +413,8 @@ EMPTY = {
     "shipped": ("Nothing shipped yet.", "Ideas land here once they ship and their effect is measured."),
     "closed": ("Nothing closed.", "Ideas that weren’t picked or were withdrawn show here, with the reason."),
 }  # needs_you, drafts and picked_and_building: NOT DRAWN, written to the pattern of the drawn three
+# Where the phone board words a line differently (PhoneMyIdeas.md); the desktop's is in EMPTY (MyIdeas.md).
+PHONE_EMPTY_LINE = {"shipped": "Ideas land here once they ship and their impact is measured."}
 
 
 def my_ideas(
@@ -533,10 +546,12 @@ def my_ideas(
         other = "teamed" if state["list"] == "yours" else "yours"
         actions = []
         if lists[other]:
+            # The desktop board only: the phone's empty states offer "Show all ideas" alone (PhoneMyIdeas.md)
             actions.append(
                 {
                     "label": f"See {lists[other]} in {LIST_LABEL[other]}",
                     "to": url_of(state, list=other, row=None),
+                    "desk_only": True,
                 }
             )
         if state["q"] and not hits:
@@ -550,10 +565,12 @@ def my_ideas(
             title, line = EMPTY[state["filter"]]
             days = read.promises()["review"]["decide_by_working_days"]
             actions.append({"label": "Show all ideas", "to": url_of(state, filter="all", row=None)})
+            phone_line = PHONE_EMPTY_LINE.get(state["filter"])
             out["empty"] = {
                 "kind": "filtered",
                 "title": title,
                 "line": line.format(days=days),
+                **({"phone_line": phone_line.format(days=days)} if phone_line else {}),
                 "actions": actions,
             }
         else:  # NOT DRAWN: one list empty, the other not

@@ -1,0 +1,74 @@
+{
+ "description": "Who it affects, only from the list, with a reason",
+ "input": {
+  "part": "who",
+  "words": [
+   {
+    "n": 1,
+    "text": "When a redemption is rejected, the SMS to the investor only says \"Rejected, R07\". Nobody knows what R07 means, so they call the branch. One investor, Folio ••••89, called three times last week."
+   },
+   {
+    "n": 2,
+    "text": "Our branch takes about 40 calls a day like this, and each one takes 5 to 10 minutes."
+   }
+  ],
+  "options": {
+   "choices": [
+    {
+     "label": "Investors",
+     "cues": [
+      "investor",
+      "investors",
+      "customer",
+      "customers"
+     ]
+    },
+    {
+     "label": "KFin teams",
+     "cues": [
+      "branch",
+      "team",
+      "ops",
+      "operations",
+      "staff"
+     ]
+    },
+    {
+     "label": "Distributors",
+     "cues": [
+      "distributor",
+      "distributors",
+      "ifa",
+      "mfd",
+      "broker"
+     ]
+    },
+    {
+     "label": "AMC clients",
+     "cues": [
+      "amc",
+      "amcs",
+      "fund house"
+     ]
+    }
+   ]
+  }
+ },
+ "output": {
+  "part": "who",
+  "title": null,
+  "summary": null,
+  "often": null,
+  "who": [
+   "Investors",
+   "KFin teams"
+  ],
+  "worth": [],
+  "area": null,
+  "reason": "you mentioned investors and the branch",
+  "evidence": [
+   "the SMS to the investor only says",
+   "so they call the branch"
+  ]
+ }
+}

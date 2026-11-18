@@ -6,18 +6,25 @@
  * (`GET /api/ideas/:id/conversation`, BLD-F059); this screen lays them out, sends and removes messages, and reads the
  * conversation again after each action (no live channel yet, BLD-F050).
  *
- * - The questions: a plain entry with the card's title, the sharer's deadline and "Answer the questions" (S-R3,
- *   S-08.rules/1) until lane B's C-QCARD is on main (BLD-F065).
+ * - The questions: for the sharer while the set is open, lane B's C-QCARD read from that set (BLD-B249); for anyone
+ *   else, or until the set is read, a plain entry with the card's title, the sharer's deadline and "Answer the
+ *   questions" (S-R3, S-08.rules/1, BLD-F065).
  * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
- * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
- *   sheet; the box stays at the bottom.
+ * - Phone (S-08.rules/4): the compact bar with Back, "Conversation" and an "i" button that opens the side panel as a
+ *   sheet; the box is pinned at the bottom, above the tab bar or the keyboard, and the timeline keeps room for it
+ *   (BLD-F068, `pin.ts`).
+ * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
+ *   never sent by themselves (BLD-C165).
+ * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
+ *   carried over (BLD-F069). Neither sends anything.
  */
 import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +33,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { QuestionsCardFor } from "@/components/review/qcard-for";
 import { PhoneBar } from "@/components/shell/phone";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
@@ -48,6 +56,8 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
+import { grow, usePinnedBox, useSayHello } from "./pin";
+import { takePrefill } from "./prefill";
 import "./conversation.css";
 
 type Entry = ConversationEntryView;
@@ -137,9 +147,12 @@ export interface ConversationProps {
   ideaId: string;
   /** The clock, for "Remove" while a message can still be removed; tests pass their own. */
   now?: () => number;
+  /** Writing is paused by the kill switch (`submissions`, BLD-F058). The box stays, and a send shows the pause; only
+   * "Say hello" no longer puts the cursor in it (BLD-F069). */
+  paused?: boolean;
 }
 
-export function Conversation({ initial, ideaId, now = Date.now }: ConversationProps) {
+export function Conversation({ initial, ideaId, now = Date.now, paused = false }: ConversationProps) {
   const [view, setView] = useState(initial);
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<ReadonlyMap<string, string>>(new Map());
@@ -152,6 +165,8 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const [panelOpen, setPanelOpen] = useState(false);
 
   const box = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const caretAfter = useRef<number | null>(null);
   const keyRef = useRef<string | null>(null);
   // The "@" whose list Escape closed: it stays closed until a new "@" (a ref, so a select event in the same tick
@@ -188,6 +203,31 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const openQuestions = view.entries.find(
     (e): e is QuestionsEntry => e.type === "questions" && Boolean(e.answer_url),
   );
+
+  // S-06B.rules/2: the words the person was editing when the review desk opened their idea wait in the box, unsent.
+  // Read once after mounting (an effect that was undone, as in development's double mount, reads nothing), then gone
+  // from storage; anything already typed is never replaced.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve().then(() => {
+      if (!live) return;
+      const carried = takePrefill([ideaId, initial.idea.id]);
+      if (carried) setText((t) => t || carried);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ideaId, initial.idea.id]);
+
+  // The box grows with its words, up to its max-height (BLD-F068).
+  useLayoutEffect(() => grow(box.current), [text]);
+
+  // S-08.rules/4: pinned at the bottom on a phone, with room kept under the timeline (BLD-F068).
+  usePinnedBox(root, form, !view.composer.closed);
+
+  // "Say hello" (#say-hello): the cursor in the box, if the person can write here; words carried over from the edit
+  // page arrive just after and the cursor ends after them (BLD-F069).
+  useSayHello(box, !view.composer.closed && !paused);
 
   // Put the caret after a picked name once the words are on screen.
   useEffect(() => {
@@ -397,6 +437,22 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
     );
   }
 
+  function plainQuestions(e: QuestionsEntry) {
+    return (
+      <div className={cls("cv-ask", !e.answer_url && "done")}>
+        <p className="cv-askt">{e.title}</p>
+        {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
+        <p className="cv-aska">
+          {e.answer_url ? (
+            <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
+          ) : (
+            <Link href={ideaHref}>{C.seeOnIdea}</Link>
+          )}
+        </p>
+      </div>
+    );
+  }
+
   function renderQuestions(e: QuestionsEntry) {
     return (
       <li key={e.id} id={`entry-${e.id}`} className="cv-msg wide">
@@ -405,17 +461,21 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           <b>{e.by_label}</b>
           <span>{e.at_label}</span>
         </p>
-        <div className={cls("cv-ask", !e.answer_url && "done")}>
-          <p className="cv-askt">{e.title}</p>
-          {e.deadline ? <p className="cv-askd">{e.deadline}</p> : null}
-          <p className="cv-aska">
-            {e.answer_url ? (
-              <ButtonLink href={e.answer_url}>{C.answer}</ButtonLink>
-            ) : (
-              <Link href={ideaHref}>{C.seeOnIdea}</Link>
-            )}
-          </p>
-        </div>
+        {e.answer_url ? (
+          // BLD-B249: `answer_url` comes only to the sharer while the set is open; the card reads that set and
+          // takes the conversation's words for its title and deadline (Messages.md)
+          <QuestionsCardFor
+            key={`${e.set_id}:${e.state}:${e.answered}`}
+            ideaId={view.idea.id}
+            setId={e.set_id}
+            title={e.title}
+            deadline={e.deadline}
+            byline={false}
+            fallback={plainQuestions(e)}
+          />
+        ) : (
+          plainQuestions(e)
+        )}
       </li>
     );
   }
@@ -463,10 +523,10 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
 
   return (
-    <div className="cv">
+    <div className="cv" ref={root} data-box={composer.closed ? "closed" : "open"}>
       <PhoneBar
         back={{ href: ideaHref, label: view.header.whose }}
-        title={view.idea.title}
+        title={C.heading}
         actions={
           <button
             ref={infoButton}
@@ -517,7 +577,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           {composer.closed ? (
             <p className="cv-closed">{composer.closed}</p>
           ) : (
-            <form className="cv-box" onSubmit={(e) => void send(e)} noValidate>
+            <form ref={form} className="cv-box" onSubmit={(e) => void send(e)} noValidate>
               {composer.questions_line ? (
                 <p className="cv-hint">
                   {linkedText(composer.questions_line, C.answer, openQuestions?.answer_url)}
@@ -527,7 +587,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
                 <textarea
                   ref={box}
                   className="cv-in"
-                  rows={2}
+                  rows={1}
                   value={text}
                   placeholder={composer.placeholder}
                   aria-label={composer.placeholder}

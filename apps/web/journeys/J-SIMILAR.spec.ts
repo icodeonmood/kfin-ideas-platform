@@ -7,7 +7,8 @@
  * accept either.
  * Cast: Kavya (sharer) is Tanvi, Ravi (lead) Rekha, Meera (reviewer) Lavanya.
  * Seed: T2 (Tanvi's draft at Check it, close to Rekha's R1, a merge request waiting on Rekha) is J-SIMILAR's with that
- * request. Row 3 withdraws the seeded request and sends a "Keep mine separate" team-up; row 4b swaps it for a merge
+ * request. Row 3 withdraws the seeded request and sends a "Keep mine separate" team-up, which folds the grid to a note
+ * from then on (C-SIMGRID.grid/4: rows 4a and 4b open it with "Show them again"); row 4b swaps it for a merge
  * request; Rekha merges it (6a), so Tanvi joins R1's crew. R1 is shared with J-TEAMUP: both only add requests and
  * crew to it, and nobody decides it, so no row here depends on whether R1 is picked. Team up only (6b) and Decline
  * (6c) use requests of their own into R1 (lane E, 34249f1): Naveen's N2 and Geetanjali's G2. Row 7 reads the desk
@@ -41,6 +42,19 @@ async function similarPart(page: Page): Promise<{ t2: string; r1Title: string; r
     page.getByRole("heading", { level: 1, name: "Has someone raised this already?" }),
   ).toBeVisible();
   return { t2: t2.title, r1Title: r1.title, r1Ref: r1.ref ?? "" };
+}
+
+/** C-SIMGRID.grid/4: after "Keep mine separate" the grid folds to this note, kept across a reload. */
+const KEPT_NOTE = "Kept separate. The review desk still sees the similar ideas next to yours.";
+
+/** Brings the tiles back if the grid is folded (C-SIMGRID.grid/4, "Show them again"); does nothing if it is open. */
+async function unfold(page: Page): Promise<void> {
+  await expect(page.getByText("Yours, not sent yet").first().or(page.getByText(KEPT_NOTE))).toBeVisible();
+  const show = page.getByRole("button", { name: "Show them again" });
+  if (await show.count()) {
+    await show.click();
+    await expect(page.getByText("Yours, not sent yet").first()).toBeVisible();
+  }
 }
 
 /** The team-up sheet (C-SHEET-TEAMUP) from R1's tile, with the Check it choice. */
@@ -129,16 +143,26 @@ step(
       "Rekha reads your note, then approves or declines. You’ll hear in your Inbox.",
     );
     await expect(sheet).toContainText(NOTE_KEEP);
+    // S-05 saves kept_separate in its own write after the sheet sends; the grid folds once that write is back, so
+    // waiting for the note keeps row 4a's fresh load from racing it (C-SIMGRID.grid/4).
+    await expect(page.getByText(KEPT_NOTE)).toBeVisible();
   },
 );
 
 step(
   "J-SIMILAR/4a",
   "S-05",
-  "Kept separate: the tile waits for Rekha, nothing is held, and Submit stays available",
-  { needs: ["S-05", "C-SIMGRID", "L-SIMILAR", "L-TEAMUP", "L-SUBMIT"], changes: ["T2"] },
+  "Kept separate: the grid folds to a note; Show them again has the tile waiting for Rekha; nothing is held, and Submit stays available",
+  {
+    needs: ["S-05", "C-SIMGRID", "L-SIMILAR", "L-TEAMUP", "L-SUBMIT"],
+    changes: ["T2"],
+    after: ["J-SIMILAR/3"], // reads the fold row 3's "Keep mine separate" leaves
+  },
   async ({ page }) => {
     await similarPart(page);
+    // A fresh load, so the fold comes from the draft (kept_separate), not from the page row 3 left open.
+    await expect(page.getByText(KEPT_NOTE)).toBeVisible();
+    await page.getByRole("button", { name: "Show them again" }).click();
     await expect(page.getByText("Waiting for Rekha", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/^Waiting for Rekha to accept the merge\./)).toHaveCount(0);
     await page.getByRole("button", { name: /^(?:\d )?Send it\b/ }).click();
@@ -156,7 +180,9 @@ step(
   { needs: ["S-05", "C-SIMGRID", "C-SHEET-TEAMUP", "L-MERGE"], changes: ["T2", "R1"] },
   async ({ page }) => {
     const { r1Title } = await similarPart(page);
+    await unfold(page); // row 3's "Keep mine separate" left the grid folded
     await withdrawWaiting(page);
+    await unfold(page);
     const sheet = await openSheet(page, r1Title);
     await sheet.getByRole("radio", { name: /^Ask Rekha to merge mine in/ }).click();
     await expect(sheet).toContainText(
@@ -192,7 +218,7 @@ step(
   "J-SIMILAR/5",
   "S-H2B",
   "Rekha's Inbox: Tanvi's note word for word, a summary of her draft, and Decline, Team up only, Merge it",
-  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP", "L-MERGE"] },
+  { needs: ["S-H2B", "S-H5", "L-INBOX", "L-TEAMUP", "L-MERGE"], after: ["J-SIMILAR/4b"] }, // reads 4b's note
   async ({ page }) => {
     const t2 = await seeded("T2");
     const r1 = await seeded("R1");
@@ -221,7 +247,8 @@ step(
   "J-SIMILAR/6a",
   "S-H2B",
   "Rekha merges it: Tanvi is on Rekha's crew, and her draft reads Merged into R1, with credit to her",
-  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2", "R1"] }, // Tanvi joins R1's crew
+  // Merges the request 4b sends; Tanvi joins R1's crew.
+  { needs: ["S-H2B", "L-TEAMUP", "L-MERGE", "S-05"], changes: ["T2", "R1"], after: ["J-SIMILAR/4b"] },
   async ({ page, browser }, info) => {
     const t2 = await seeded("T2");
     const r1 = await seeded("R1");

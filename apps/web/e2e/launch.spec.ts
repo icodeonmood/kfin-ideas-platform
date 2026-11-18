@@ -46,7 +46,7 @@ test("the admin runs the launch screen to the invitation and back", async ({ pag
 test("nobody else can open the launch screen", async ({ page }) => {
   await signIn(page, PERSONAS.reviewer);
   await page.goto("/launch");
-  await expect(page).toHaveURL((url) => url.pathname === "/");
+  await expect(page).toHaveURL((url) => url.pathname === "/home");
 });
 
 test.describe("the full timed sequence (review A6)", () => {

@@ -5,8 +5,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { QUESTIONS } from "../src/lib/canvas/model";
-import { confirmQuickCapture, PERSONAS, setSwitch, signIn } from "./helpers";
+import { shareQuickly, PERSONAS, setSwitch, signIn } from "./helpers";
 
 test("the waiting screen follows the scan over server-sent events", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "the switch is shared between projects");
@@ -25,17 +24,12 @@ test("the waiting screen follows the scan over server-sent events", async ({ bro
         { timeout: 20_000, intervals: [1_000] },
       )
       .not.toBe(503);
-    await a.goto("/share");
-    await a.getByRole("button", { name: "Start a quick capture" }).click();
-    await a.waitForURL(/\/share\/[0-9a-f-]{36}$/);
-    await a
-      .getByLabel(QUESTIONS.quick_noticed.label)
-      .fill(
-        "Cheque deposit slips are typed twice at the branch counter, adding ten minutes to every deposit.",
-      );
-    await confirmQuickCapture(a);
+    const shared = await shareQuickly(
+      a,
+      "Cheque deposit slips are typed twice at the branch counter, adding ten minutes to every deposit.",
+    );
     const stream = a.waitForResponse((r) => r.url().includes("/scan-events"), { timeout: 30_000 });
-    await a.getByRole("button", { name: "Share your idea" }).click();
+    await a.goto(`/share/${shared}/done`);
     await a.waitForURL(/\/done$/);
     const res = await stream;
     expect(res.status()).toBe(200);

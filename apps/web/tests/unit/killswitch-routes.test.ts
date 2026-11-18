@@ -54,8 +54,20 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("DELETE", "/api/submissions/abc/voice/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10")).toEqual([
       "submissions",
     ]);
+    // BLD-C149, the product lead's decision of 18 Nov: every voice-off line reads exactly this.
     expect(BANNERS["capture.voice"]).toBe("Voice notes are coming soon.");
+    expect(BANNERS["speech.hosted"]).toBe("Voice notes are coming soon.");
     expect(BANNERS["speech.hosted"]).not.toMatch(/sarvam|vendor|third/i);
+  });
+
+  it("BLD-E002: sign-in by email code needs auth.email_code; single sign-on needs no switch", () => {
+    expect(switchesFor("POST", "/auth/code/send")).toEqual(["auth.email_code"]);
+    expect(switchesFor("POST", "/auth/code/verify")).toEqual(["auth.email_code"]);
+    expect(switchesFor("POST", "/auth/sso/start")).toEqual([]);
+    expect(switchesFor("GET", "/auth/callback")).toEqual([]);
+    expect(BANNERS["auth.email_code"]).toBe(
+      "Signing in with a code by email is coming soon. Use single sign-on.",
+    );
   });
 
   it("leaves reads open, except file downloads and the wall", () => {

@@ -3,11 +3,14 @@
 - `tell`: L-NOTIFY and L-INBOX (lane A, `notify.post`, BLD-A180). A no-op until `notify` is importable.
 - `resolve`: L-INBOX.rules/3 (lane A, `notify.resolve`): a Needs you item, and every item keyed under it, leaves the
   list once its action is done. A no-op until `notify` has `resolve` (it lands with lane A's inbox).
-- `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Writes `conversation_entries`
-  directly until `convo` is importable.
-- `hide`: L-HIDE (lane C): free text masked before it is stored or shown to anyone else. Until lane C's entry point
-  lands it masks what the shared patterns find (kind + •••• + last two), so nothing a reviewer types reaches a
-  sharer unmasked.
+- `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Only through `convo.post`
+  (BLD-B249).
+- `hide`: L-HIDE (lane C, `hide.hide_text`): free text masked before it is stored or shown to anyone else, each value
+  kept sealed in the vault under the idea with a `hidden_details` row. `by` is the users.id of whoever typed it.
+  `hide_answer`, `answer_words` and `forget_answer`: a sharer's answer (lane C's `hide_message`, `own_words`).
+- `lock_idea`, `lock_refs`: lane C's per-idea lock (`hide.core.lock`), taken FIRST in every transaction that hides,
+  before any idea, set, answer or window row lock, so a reviewer's "Hide this" (which takes it first too) and a desk
+  action on the same idea always queue in one order and never deadlock (BLD-B247).
 - `schedule`: lane A's timers. A no-op until lane A publishes its interface; every screen works it out on read.
 """
 
@@ -18,12 +21,11 @@ import importlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from psycopg.types.json import Jsonb
-
-from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
-from pii.patterns import scan
+from hide import Hidden, hide_message, hide_text, sealed_key
+from hide.core import lock as hide_lock
+from hide.core import own_words
 
 log = get_logger("desk")
 
@@ -90,64 +92,75 @@ def say(
     at: dt.datetime | None = None,
 ) -> None:
     """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time.
-    Lane F's `convo.post` takes these same arguments (SHIP_PLAN §5a); the direct insert is the fallback until it is
-    importable. Like `convo.post` (BLD-F013), the direct insert places each line just after the idea's last one, so
-    lines written in one transaction (one `now()`, random ids) read back in the order they were written (L-CONVO)."""
-    try:
-        convo = importlib.import_module("convo")
-    except ModuleNotFoundError:
-        convo = None
-    if convo is not None:
-        convo.post(
-            conn, idea_uuid, event, author_user_id=author_user_id, author_code=author_code, payload=dict(payload or {}),
-            question_set_id=question_set_id, entry_type=entry_type, at=at,
-        )  # fmt: skip
-        return
-    conn.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, author_code, "
-        "question_set_id, at) VALUES (%(idea)s, %(type)s, %(event)s, %(payload)s, %(user)s, %(code)s, %(set)s, "
-        "greatest(coalesce(%(at)s, now()), (SELECT max(e.at) FROM conversation_entries e WHERE e.idea_uuid = "
-        "%(idea)s) + interval '1 microsecond'))",
-        {
-            "idea": idea_uuid,
-            "type": entry_type,
-            "event": event,
-            "payload": Jsonb(dict(payload or {})),
-            "user": author_user_id,
-            "code": author_code,
-            "set": question_set_id,
-            "at": at,
-        },
+    Written only through lane F's `convo.post` (SHIP_PLAN §5a): it places each line just after the idea's last one,
+    so lines written in one transaction read back in the order they were written (BLD-F013, BLD-F057, L-CONVO). The
+    desk has no direct insert of its own any more (BLD-B249)."""
+    from convo import post  # here, not at the top: lane F's reads use the desk's words (`desk.when`)
+
+    post(
+        conn, idea_uuid, event, author_user_id=author_user_id, author_code=author_code, payload=dict(payload or {}),
+        question_set_id=question_set_id, entry_type=entry_type, at=at,
+    )  # fmt: skip
+
+
+def hide(
+    conn: Conn, idea_uuid: str, text: str, *, by: str, source: str = "desk", source_id: str | None = None
+) -> tuple[str, int]:
+    """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103), through lane C's `hide_text`
+    inside the caller's transaction. The desk's own words (a question, a reason, a note) are `source="desk"`; a
+    sharer's answer is `source="answer"` with its row id, so its details keep their ids across autosaves and the
+    sharer's own words are sealed for them alone (BLD-B246)."""
+    return hide_text(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
+
+
+def lock_idea(conn: Conn, idea_uuid: str) -> None:
+    """Lane C's lock on one idea, held until the caller's transaction ends (re-entrant in one session). Take it as the
+    first statement of any transaction that hides text on the idea, before any row lock (BLD-B247)."""
+    hide_lock(conn, str(idea_uuid))
+
+
+def lock_refs(conn: Conn, *refs: str) -> None:
+    """`lock_idea` for ideas named by IDEA- reference or uuid, in uuid order (the order `merging.lock_pair` locks their
+    rows in). Each uuid is read with no row lock; a reference that is no idea is left to the caller's own 404."""
+    found: set[str] = set()
+    for ref in refs:
+        if not ref:
+            continue
+        column = "idea_id" if ref.startswith("IDEA-") else "id::text"
+        row = conn.execute(f"SELECT id FROM ideas WHERE {column} = %s", (ref,)).fetchone()  # noqa: S608 (fixed)
+        if row is not None:
+            found.add(str(row["id"]))
+    for idea_uuid in sorted(found):
+        lock_idea(conn, idea_uuid)
+
+
+def hide_answer(
+    conn: Conn, idea_uuid: str, text: str, *, by: str, answer_id: str, gatekeeper: bool
+) -> Hidden:
+    """A sharer's answer, through lane C's `hide_message` with `source="answer"` and the answer's id: its details keep
+    their ids across saves and the sharer's own words are sealed for them alone. Autosave runs the patterns only
+    (`gatekeeper=False`, no model call per keystroke); sending runs the gatekeeper once (L-HIDE.rules/1; BLD-B247)."""
+    return hide_message(
+        conn, idea_uuid, text, by=by, source="answer", source_id=answer_id, gatekeeper=gatekeeper
     )
 
 
-_KINDS = {"Mobile": "Phone", "Email": "Email", "Bank": "Account", "Date": "Date of birth"}
+def answer_words(conn: Conn, idea_uuid: str, answer_id: str) -> str | None:
+    """The sharer's own words for an answer, as they typed them (worker only; never returned to anyone else)."""
+    return own_words(conn, "answer", answer_id, idea_uuid=str(idea_uuid))
 
 
-def _mask(value: str, label: str, before: str) -> str:
-    """'Folio ••••89': the kind, unless the words just before already name it, then the last two characters."""
-    first = label.split(" ")[0]
-    kind = _KINDS.get(first, first)
-    tail = "".join(ch for ch in value if ch.isalnum())[-2:]
-    named = before[-16:].lower().rstrip(" :#-").endswith(kind.lower()) or before[-16:].lower().rstrip(
-        " :#-"
-    ).endswith(first.lower())
-    return f"••••{tail}" if named else f"{kind} ••••{tail}"
-
-
-def hide(conn: Conn, idea_uuid: str, text: str) -> tuple[str, int]:
-    """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103)."""
-    _ = (conn, idea_uuid)  # lane C's version keeps the values in the vault under the idea's scope
-    matches = sorted(scan(text, kfin_domains=get_settings().kfin_domains), key=lambda m: m.start)
-    out, last, n = [], 0, 0
-    for m in matches:
-        if m.start < last:
-            continue
-        out.append(text[last : m.start])
-        out.append(_mask(text[m.start : m.end], m.label, text[: m.start]))
-        last, n = m.end, n + 1
-    out.append(text[last:])
-    return "".join(out), n
+def forget_answer(conn: Conn, idea_uuid: str, answer_id: str) -> None:
+    """An answer emptied again holds no words: its details and its sealed words go, so a co-sharer who takes the empty
+    draft over seals their own words under the same answer id (L-HIDE.rules/4, L-QUESTIONS.answer/4; BLD-B247)."""
+    conn.execute(
+        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'answer' AND source_id = %s",
+        (idea_uuid, answer_id),
+    )
+    conn.execute(
+        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'answer' AND source_id = %s",
+        (idea_uuid, sealed_key(str(idea_uuid), answer_id)),
+    )
 
 
 def schedule(

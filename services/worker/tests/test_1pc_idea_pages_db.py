@@ -66,6 +66,18 @@ def test_s06_states_just_shared_shows_the_decide_by_date(club: dict[str, Any]) -
     assert page["pill"] == {"status": "with_review_desk", "label": "With the review desk", "variant": "blue"}
     assert page["card"]["lead"] == f"The review desk will look at it by {day(idea['decide_by'], NOW)}."
     assert page["card"]["rest"] == "We’ll tell you on Teams and by email when anything changes."
+    # S-06.phone (PhoneStatus.md): the shorter lines and the reference line under the title
+    assert page["card"]["phone_rest"] == "We’ll tell you on Teams and by email."
+    assert page["window"]["phone_line"] == (
+        f"Open to changes until {day(idea['edit_closes_at'], NOW)}. Edit or withdraw it before the review desk "
+        "opens it."
+    )
+    assert page["reference_line"] == (
+        f"Reference {ref(club, 'T5')}, shared {day(idea['shared_at'], NOW)}, {idea['area']}"
+    )
+    assert page["conversation"]["phone_empty_line"] == (
+        "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
+    )
     assert page["window"]["open"] and page["window"]["line"].startswith(
         f"Open to changes until {day(idea['edit_closes_at'], NOW)}."
     )
@@ -76,6 +88,29 @@ def test_s06_states_just_shared_shows_the_decide_by_date(club: dict[str, Any]) -
     assert nodes(v)[2] == ("reviewed", "now", f"By {day(idea['decide_by'], NOW)}")
     # BLD-E012: no question set is open, so the card is lane E's own and nothing is composed from lane B's.
     assert v["idea"]["has_open_questions"] is False and "card_from" not in page
+
+
+def test_s06_layout_breadcrumb_names_where_the_sharer_came_from(club: dict[str, Any]) -> None:
+    """S-06.layout/1, S-06.rules/6, J-BROWSE/5: the breadcrumb returns to My ideas' filtered view, to the Wall's
+    own view when the sharer opened it from the Wall, and Home after first sharing; an off-site back is dropped."""
+    t5 = ref(club, "T5")
+
+    def crumb(**kw: Any) -> dict[str, Any]:
+        return dict(view(club, t5, "tanvi", **kw)["page"]["breadcrumb"])
+
+    assert crumb(came_from="my-ideas", back="/my-ideas?filter=needs_you&row=X") == {
+        "label": "My ideas, Needs you",
+        "to": "/my-ideas?filter=needs_you&row=X",
+        "current": t5,
+    }
+    assert crumb(came_from="wall", back="/wall?sort=popular&at=X&dy=120") == {
+        "label": "Wall",
+        "to": "/wall?sort=popular&at=X&dy=120",
+        "current": t5,
+    }
+    assert crumb(came_from="wall", back="https://example.com/wall")["to"] == "/wall"
+    assert crumb(came_from="wall", back="/my-ideas")["to"] == "/wall"
+    assert crumb(came_from="share")["label"] == "Home"
 
 
 def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(club: dict[str, Any]) -> None:
@@ -91,6 +126,35 @@ def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(clu
     assert not page["window"]["open"] and page["window"]["line"].startswith("The review desk opened it on")
     assert "withdraw" not in page["actions"] and "edit" not in page["actions"]
     assert nodes(v)[2][2] == f"3 questions for you since {day(NOW - dt.timedelta(days=1), NOW)}"
+
+
+def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its_card(
+    club: dict[str, Any],
+) -> None:
+    """J-TRACK.steps/4-5, S-06.states "Answers sent", BLD-E051: "Send 2 answers to Harish" with one question skipped
+    leaves the set partly answered and the idea Needs you (lane B, desk/asking.py). The page says "Sent." with the
+    review desk's date, and keeps the open set, so lane B's card sits under the sentence for the question left."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    conn.execute(
+        "UPDATE question_sets SET state = 'partly_answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,)
+    )
+    conn.execute("UPDATE ideas SET status = 'needs_you' WHERE idea_id = %s", (t6,))
+    v = view(club, t6, "tanvi")
+    page = v["page"]
+    assert page["state"] == "answers_sent" and page["state_label"] == "Answers sent"
+    assert page["card"]["lead"] == "Sent. Harish has your answers."
+    assert page["card"]["rest"].startswith(
+        "Each answer was added to its part of your idea, under What you shared."
+    )
+    assert "card_from" not in page and v["idea"]["has_open_questions"] is True
+    assert not page["window"]["open"] and "withdraw" not in page["actions"]
+
+    # Every question answered: the same sentence, and no set left open
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    v = view(club, t6, "tanvi")
+    assert v["page"]["state"] == "answers_sent" and v["idea"]["has_open_questions"] is False
+    assert v["page"]["card"]["lead"] == "Sent. Harish has your answers."
 
 
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
@@ -194,6 +258,8 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
     v = view(club, ref(club, "T11"), "tanvi")
     merged = v["page"]["merged"]
     assert merged["line"] == f"Merged into {ref(club, 'R2')} by the review desk"
+    # Said once: the card carries the line, the merged block the note and the link
+    assert v["page"]["card"]["lead"] == f"Merged into {ref(club, 'R2')} by the review desk."
     assert merged["note"] == "Both ideas ask for one clear message after a failed debit."
     assert v["idea"]["stages"] == [] and v["idea"]["merged_into"] == ref(club, "R2")
 
@@ -380,12 +446,131 @@ def test_l_wall_justin_4_a_colleague_opening_counts_once_a_day(club: dict[str, A
     )
 
 
+def code_of(club: dict[str, Any], who: str) -> str:
+    row = (
+        club["conn"]
+        .execute("SELECT contributor_code FROM contributor_map WHERE user_id = %s", (club["p"][who],))
+        .fetchone()
+    )
+    return str(row["contributor_code"])
+
+
+def hide_name(club: dict[str, Any], who: str) -> None:
+    """The person hides their name from the Wall (DEC-104). The seed's people are removed with all that is theirs
+    after each test, so the setting goes with them."""
+    club["conn"].execute(
+        "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false) "
+        "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = false",
+        (club["p"][who],),
+    )
+
+
+def test_p_product_privacy_s09_a_colleague_sees_the_stage_not_the_committee_reversal(
+    club: dict[str, Any],
+) -> None:
+    """C-TRACK, P-PRODUCT.privacy, DEC-104: T9 was moved by the Ones Committee. Its sharer, its crew and the
+    committee read "then moved to picked by the Ones Committee"; a colleague reads the stage and its date only."""
+    conn, t9 = club["conn"], ref(club, "T9")
+    reversed_at = conn.execute(
+        "SELECT r.at FROM decision_reversals r JOIN decision_windows w ON w.id = r.window_id "
+        "JOIN idea_decisions d ON d.id = w.decision_id JOIN ideas i ON i.id = d.idea_uuid WHERE i.idea_id = %s",
+        (t9,),
+    ).fetchone()["at"]
+    moved = "Not picked, then moved to picked by the Ones Committee"
+    assert nodes(view(club, t9, "tanvi"))[2][2] == moved
+    colleague = view(club, t9, "rekha")
+    assert colleague["view"] == "colleague"
+    assert nodes(colleague)[2] == ("reviewed", "done", f"Picked, {day(reversed_at, NOW)}")
+    dump = json.dumps(colleague, ensure_ascii=False, default=str)
+    assert "Ones Committee" not in dump and "then moved" not in dump and "Not picked" not in dump
+    conn.execute(
+        "INSERT INTO crew_members (idea_uuid, contributor_code, role, via, joined_at) "
+        "VALUES (%s, %s, 'crew', 'teamup', %s)",
+        (club["m"]["T9"].uuid, code_of(club, "zoya"), NOW - dt.timedelta(days=1)),
+    )
+    assert nodes(view(club, t9, "zoya"))[2][2] == moved  # crew
+    assert nodes(view(club, t9, "manoj"))[2][2] == moved  # the Ones Committee
+
+
+def test_s06_rules_4_dec_104_a_merge_by_a_lead_who_hides_their_name_says_by_its_lead(
+    club: dict[str, Any],
+) -> None:
+    """S-06.rules/4, L-MERGE.effects/1, DEC-104: the merged line names the lead who accepted the merge, unless they
+    hide their name from the Wall."""
+    conn, t11 = club["conn"], ref(club, "T11")
+    conn.execute(
+        "UPDATE merges SET via = 'lead_accepted', by_code = %s, by_user_id = NULL WHERE merged_idea_uuid = %s",
+        (code_of(club, "rekha"), club["m"]["T11"].uuid),
+    )
+    assert view(club, t11, "tanvi")["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by Rekha"
+    hide_name(club, "rekha")
+    v = view(club, t11, "tanvi")
+    assert v["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by its lead"
+    assert "Rekha" not in json.dumps(v["page"]["merged"], ensure_ascii=False)
+
+
+def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: dict[str, Any]) -> None:
+    """C-TRACK, L-HIDE: a detail the sharer brought back with "Show it" is not counted as hidden."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    uid = club["m"]["T6"].uuid
+    similar = nodes(view(club, t6, "tanvi"))[1][2]
+    assert str(similar).startswith("1 PAN hidden, ")
+    rest = str(similar).removeprefix("1 PAN hidden")
+    folio = conn.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) "
+        "VALUES (%s, 'message', 'synthetic-p3', 'folio', 'Folio ••••89') RETURNING id",
+        (uid,),
+    ).fetchone()["id"]
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "Personal details hidden" + rest
+    conn.execute(
+        "UPDATE hidden_details SET state = 'shown', reason = 'made_up_example', shown_at = %s WHERE id = %s",
+        (NOW, folio),
+    )
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "1 PAN hidden" + rest
+    conn.execute(
+        "UPDATE hidden_details SET state = 'shown', reason = 'made_up_example', shown_at = %s "
+        "WHERE idea_uuid = %s",
+        (NOW, uid),
+    )
+    assert nodes(view(club, t6, "tanvi"))[1][2] == "No personal details found" + rest
+    conn.execute("DELETE FROM hidden_details WHERE id = %s", (folio,))
+
+
+def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_faces(
+    club: dict[str, Any],
+) -> None:
+    """DEC-104, S-09.layout/6: a crew member and a lead who hide their names from the Wall are counted but never
+    named, in the idea's crew or in the Team up card's faces."""
+    r1 = ref(club, "R1")
+    before = view(club, r1, "pallavi")
+    assert [m["first_name"] for m in before["idea"]["crew"]["members"]] == ["Zoya"]
+    hide_name(club, "zoya")
+    v = view(club, r1, "pallavi")
+    assert v["idea"]["crew"]["members"] == [] and v["idea"]["crew"]["count"] == 2
+    assert [f["first_name"] for f in v["page"]["team_up"]["faces"]] == ["Rekha"]
+    assert "Zoya" not in json.dumps(v, ensure_ascii=False, default=str)
+    hide_name(club, "rekha")
+    v = view(club, r1, "pallavi")
+    assert v["idea"]["crew"]["lead"] is None and v["idea"]["sharer"] is None
+    assert v["page"]["team_up"]["faces"] == [] and v["page"]["team_up"]["count"] == 2
+    dump = json.dumps(v, ensure_ascii=False, default=str)
+    assert "Zoya" not in dump and "Rekha" not in dump
+    # The sharer still sees their whole crew (crew_of's names_for_all).
+    assert [m["first_name"] for m in view(club, r1, "rekha")["idea"]["crew"]["members"]] == ["Zoya"]
+
+
 # --- L-SUBMIT.withdraw ----------------------------------------------------------------------------------------------
 
 
 def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_reference(
-    club: dict[str, Any],
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Lane E's own path: no restore hook. Importing the worker app plugs lane C's `submit.adapters.on_restored` in
+    # (it leaves the idea `checking` and queues `submit.check`, tested in test_1pc_l_sort_submit_db.py), so pin it
+    # here rather than depend on which test imported the app first, and leave no job for a later `run_one`.
+    from ideapage import withdraw as withdraw_module
+
+    monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)
     conn, t5 = club["conn"], ref(club, "T5")
     out = withdraw(conn, t5, club["p"]["tanvi"], "Folio 1234567890 is already being fixed", now=NOW)
     assert out["page"]["state"] == "withdrawn"
@@ -499,6 +684,8 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
     assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    # S-07.phone (PhoneMyIdeas.md): the phone names who asked
+    assert t6["next_step"]["phone_sentence"] == "Harish from the review desk asked you 3 questions yesterday."
     assert t6["next_step"]["action"]["label"] == "Answer the questions"
     assert t6["next_step"]["action"]["to"] == f"/ideas/{ref(club, 'T6')}/answer"
     assert (
@@ -596,6 +783,12 @@ def test_s07_states_empty_first_time_and_filtered(club: dict[str, Any]) -> None:
     shipped = mine(club, "tanvi", filter="shipped")
     assert shipped["empty"]["title"] == "Nothing shipped yet."
     assert [a["label"] for a in shipped["empty"]["actions"]] == ["See 1 in Teamed up", "Show all ideas"]
+    # S-07.phone: the phone says "impact" where the desktop says "effect", and offers "Show all ideas" alone
+    assert shipped["empty"]["line"] == "Ideas land here once they ship and their effect is measured."
+    assert shipped["empty"]["phone_line"] == "Ideas land here once they ship and their impact is measured."
+    assert [a["label"] for a in shipped["empty"]["actions"] if not a.get("desk_only")] == ["Show all ideas"]
+    closed = mine(club, "tanvi", list="teamed", filter="closed")["empty"]
+    assert "phone_line" not in closed
     desk = mine(club, "tanvi", list="teamed", filter="with_review_desk")
     assert desk["total"] == 1  # R2
 
@@ -604,3 +797,90 @@ def test_j_browse_6_a_shared_link_shows_only_what_that_person_may_see(club: dict
     tanvis = {i["id"] for i in mine(club, "tanvi", filter="closed")["items"]}
     rekhas = {i["id"] for i in mine(club, "rekha", filter="closed")["items"]}
     assert tanvis and not tanvis & rekhas
+
+
+# --- DEC-104: a lead who hid their name, or has left, is never named outside the crew, desk and committee ---------
+
+
+def leave(club: dict[str, Any], who: str) -> None:
+    """The person has left KFintech (`users.active = false`). The seed's people are removed after each test, so the
+    flag goes with them."""
+    club["conn"].execute("UPDATE users SET active = false WHERE id = %s", (club["p"][who],))
+
+
+GONE = {"hid_their_name": hide_name, "has_left": leave}
+
+
+@pytest.mark.parametrize("how", sorted(GONE))
+def test_dec_104_s07_a_draft_waiting_on_a_lead_who_hid_their_name_or_left_says_the_lead(
+    club: dict[str, Any], how: str
+) -> None:
+    """DEC-104, S-07 Drafts, J-SIMILAR/4, J-BROWSE/4 (BLD-E048): T2 is Tanvi's draft with a merge request waiting
+    on Rekha, R1's lead. Tanvi is not on R1's crew, so Rekha is named only while she shows her name on the Wall
+    and is still here."""
+    r1, t2 = ref(club, "R1"), club["m"]["T2"].uuid
+    before = {i["id"]: i for i in mine(club, "tanvi", filter="drafts")["items"]}[t2]
+    assert (
+        before["next_step"]["sentence"]
+        == f"Waiting for Rekha to answer about joining {r1}. Your words are kept."
+    )
+    GONE[how](club, "rekha")
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    assert row["next_step"]["sentence"] == (
+        f"Waiting for the lead to answer about joining {r1}. Your words are kept."
+    )
+    assert "Rekha" not in json.dumps(drafts, ensure_ascii=False, default=str)
+    all_rows = {i["id"]: i for i in mine(club, "tanvi")["items"]}
+    assert all_rows[t2]["next_step"]["sentence"].startswith("Waiting for the lead to answer")
+
+
+def test_dec_104_s09_a_sharer_who_has_left_is_never_named_to_a_colleague(club: dict[str, Any]) -> None:
+    """DEC-104, S-09.layout/2 and /6 (BLD-E048): once Rekha has left, a colleague reads R1 as the Wall shows it, with
+    no name in the shared line, the note, the crew, the faces or the Team up card; one who asked to join waits for
+    "the lead"."""
+    r1 = ref(club, "R1")
+    leave(club, "rekha")
+    v = view(club, r1, "pallavi")
+    page = v["page"]
+    assert v["idea"]["sharer"] is None and v["idea"]["crew"]["lead"] is None
+    assert "Rekha" not in page["shared_line"] and page["shared_line"].startswith("Shared ")
+    assert "The sharer’s own words stay with them" in page["summary_note"]
+    assert page["team_up"]["count_line"].startswith("2 colleagues on it. The person who shared it leads it")
+    assert "Send the lead a note about what you bring." in page["team_up"]["line"]
+    assert [f["first_name"] for f in page["team_up"]["faces"]] == ["Zoya"]
+    assert "Rekha" not in json.dumps(v, ensure_ascii=False, default=str)
+    sent = view(club, r1, "bhavesh")
+    assert sent["page"]["team_up"]["heading"] == "Waiting for the lead"
+    assert (
+        sent["page"]["team_up"]["line"] == "The lead reads your note and decides. You’ll hear in your Inbox."
+    )
+    assert "Rekha" not in json.dumps(sent, ensure_ascii=False, default=str)
+
+
+def test_dec_104_s06_similar_tiles_and_the_merged_line_never_name_a_lead_who_has_left(
+    club: dict[str, Any],
+) -> None:
+    """DEC-104, S-06 'Colleagues on something similar' (C-SIMGRID) and S-06.rules/4 (BLD-E048): Tanvi's T5 lists
+    Pallavi's P1 as similar, and T11 was merged into R2 by Rekha as its lead. Once Pallavi has left, P1's tile has no
+    lead and no face for her; once Rekha has left, the merged line says "by its lead"."""
+    conn, t5, t11, p1 = club["conn"], ref(club, "T5"), ref(club, "T11"), ref(club, "P1")
+    conn.execute(
+        "UPDATE merges SET via = 'lead_accepted', by_code = %s, by_user_id = NULL WHERE merged_idea_uuid = %s",
+        (code_of(club, "rekha"), club["m"]["T11"].uuid),
+    )
+
+    def tile() -> dict[str, Any]:
+        tiles = view(club, t5, "tanvi")["page"]["similar"]["tiles"]
+        return dict(next(t for t in tiles if t["idea"]["id"] == p1))
+
+    assert tile()["idea"]["lead"]["first_name"] == "Pallavi"
+    leave(club, "pallavi")
+    t = tile()
+    assert t["idea"]["lead"] is None and t["idea"]["crew_faces"] == [] and t["idea"]["crew_count"] == 1
+    assert "Pallavi" not in json.dumps(t, ensure_ascii=False, default=str)
+    assert view(club, t11, "tanvi")["page"]["merged"]["line"] == f"Merged into {ref(club, 'R2')} by Rekha"
+    leave(club, "rekha")
+    merged = view(club, t11, "tanvi")["page"]["merged"]
+    assert merged["line"] == f"Merged into {ref(club, 'R2')} by its lead"
+    assert "Rekha" not in json.dumps(merged, ensure_ascii=False)

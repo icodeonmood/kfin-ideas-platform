@@ -221,3 +221,111 @@ def test_l_hide_rules_7_a_shown_detail_selected_exactly_is_hidden_again() -> Non
     src = _sealed(own, rows)
     s, e, shown = _owner_range(src, rows, 7, 7 + len(PAN))
     assert (s, e) == (7, 17) and shown is not None and shown["id"] == "d1"
+
+
+def test_l_hide_rules_7_stale_when_the_selected_words_are_no_longer_at_the_range() -> None:
+    """F (lane B's `selected`, BLD-C066): the range is compared with the masked words the reviewer selected, in the
+    same units after the UTF-16 conversion and without the spaces at either end; a range off the text with
+    `selected` is stale too. Without `selected` nothing changes."""
+    from hide.desk import MAX_SELECTION, _range
+
+    seen = "Late 😀 for Kiran Rao and Folio ••••89"
+    at = seen.index("Kiran Rao")
+    u_start, u_end = detect.to_utf16(seen, at), detect.to_utf16(seen, at + len("Kiran Rao"))
+    assert u_start == at + 1  # the browser's count after the emoji
+    assert _range(seen, u_start, u_end, "utf16", "Kiran Rao") == (at, at + len("Kiran Rao"))
+    assert _range(seen, u_start, u_end, "utf16", " Kiran Rao\n") == (at, at + len("Kiran Rao"))
+    assert _range(seen, u_start, u_end, "utf16", None) == (at, at + len("Kiran Rao"))
+    for start, end, selected in (
+        (u_start + 1, u_end + 1, "Kiran Rao"),  # the text moved by one under the page
+        (u_start, u_end, "Kiran Raona"),
+        (detect.to_utf16(seen, seen.index("😀")) + 1, u_end, "Kiran Rao"),  # splits the emoji now
+        (u_start, 10_000, "Kiran Rao"),  # past the end of the text now
+    ):
+        with pytest.raises(HideError) as stale:
+            _range(seen, start, end, "utf16", selected)
+        assert (stale.value.status, stale.value.code) == (409, "stale")
+    with pytest.raises(HideError) as outside:
+        _range(seen, u_start, 10_000, "utf16", None)
+    assert outside.value.code == "range_invalid"
+    with pytest.raises(HideError) as cp_outside:
+        _range(seen, at, 10_000, "cp", None)
+    assert cp_outside.value.code == "range_invalid"
+    long = "x" * (MAX_SELECTION + 1)
+    with pytest.raises(HideError) as too_long:
+        _range(long, 0, len(long), "cp", long)
+    assert (too_long.value.status, too_long.value.code) == (422, "selection_too_long")
+
+
+def test_l_hide_rules_7_selected_is_checked_before_the_database() -> None:
+    """F: `selected` must be a string of at most 10,000 UTF-16 units (twice the longest text, V-FIELDS.submit/2);
+    the refusal comes before any database work and never echoes the words."""
+    from hide.desk import SELECTED_MAX, desk_hide
+
+    base: dict[str, Any] = {"source_kind": "message", "source_id": "m1", "start": 0, "end": 5, "by": "u1"}
+    with pytest.raises(HideError) as not_text:
+        desk_hide(None, "idea", **base, selected=42)  # type: ignore[arg-type]
+    assert not_text.value.code == "range_invalid"
+    with pytest.raises(HideError) as too_long:
+        desk_hide(None, "idea", **base, selected="😀" * (SELECTED_MAX // 2 + 1))  # type: ignore[arg-type]
+    assert (too_long.value.status, too_long.value.code) == (422, "selection_too_long")
+    assert "😀" not in str(too_long.value)
+
+
+def test_l_hide_rules_7_a_refused_own_idea_is_audited_after_the_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """G (BLD-C066): the route writes the refusal's audit row (IDs and the action only) once the transaction that
+    refused has rolled back, and answers 403 `forbidden` in the A-API shape."""
+    import json
+
+    from hide import api, core
+
+    written: list[tuple[Any, ...]] = []
+    rolled_back: list[bool] = []
+
+    class FakeConn:
+        def __enter__(self) -> FakeConn:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            if exc[0] is not None:
+                rolled_back.append(True)
+            return None
+
+        def transaction(self) -> FakeConn:
+            return self
+
+    def own(conn: Any) -> None:
+        raise HideError(
+            403, "forbidden", audit=("u1", "hide.own_idea_refused", "i1", {"action": "desk_hide"})
+        )
+
+    def audit(conn: Any, *args: Any) -> None:
+        assert rolled_back, "the audit row is written after the rollback"
+        written.append(args)
+
+    monkeypatch.setattr(api, "connect", lambda **_: FakeConn())
+    monkeypatch.setattr(core, "audit", audit)
+    refused = api._call(own)
+    assert refused.status_code == 403
+    assert json.loads(bytes(refused.body)) == {"error": {"code": "forbidden", "message": ""}}
+    assert written == [("u1", "hide.own_idea_refused", "i1", {"action": "desk_hide"})]
+
+
+def test_l_hide_detect_a_word_ends_after_its_marks_in_devanagari_and_latin() -> None:
+    """A (BLD-C066): combining marks continue a word, so a made-up name hidden as "किरण सुधाकलन" is not masked inside
+    "किरण सुधाकलनों" (which would leave "ों" after the mask); it is masked before a space, a danda or a comma. The
+    same holds for an accent typed as a mark in Latin, and the old Latin cases stay."""
+    name = "किरण सुधाकलन"
+    text = f"{name}ों से बात हुई। फिर {name} ने कहा, {name}। {name},"
+    places = detect.value_places(text, name)
+    assert [text[s:e] for s, e in places] == [name] * 3
+    assert all(not text[e:].startswith("ों") for _, e in places)
+    masked, n = detect.mask_in(text, name, detect.mask("name", name))
+    assert n == 3 and masked.startswith(f"{name}ों से") and masked.count("Name ••••") == 3
+    assert detect.value_places("किरणों", "किरण") == [] and detect.value_places("किरण ने", "किरण") == [(0, 4)]
+    assert detect.same_value(name, name) and not detect.same_value("किरण", "किरणों")
+    assert detect.value_places("José and Jose went", "Jose") == [(10, 14)]
+    assert detect.value_places("Ask kiran  rao, not Kiran Raona", "Kiran Rao") == [(4, 14)]
+    assert detect.value_places("Folio 1234567/89, again 1234567/89.", "1234567/89") == [(6, 16), (24, 34)]

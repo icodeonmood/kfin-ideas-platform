@@ -1,6 +1,8 @@
 """AT-B2-01: first sign-in creates a `users` row from claims, shows the privacy notice, and stores acceptance with
-the notice version. Driven through the real flow: /auth/login → mock IdP → /auth/callback."""
+the notice version. Driven through the real flow: /auth/login → mock IdP → /auth/callback. A refused or failed
+sign-in carries a reference for the IT service desk (L-AUTH.rules/8)."""
 
+import re
 import secrets
 from collections.abc import Iterator
 from typing import Any
@@ -53,7 +55,7 @@ def test_first_sign_in_of_someone_not_yet_in_hr(dev_db: Any) -> None:
             "SELECT notice_version FROM privacy_acceptances WHERE user_id = %s", (user["id"],)
         ).fetchall()
         assert [r["notice_version"] for r in accepted] == [version]
-        assert browser.get("/").status_code == 200
+        assert browser.get("/home").status_code == 200  # Home is S-03 at /home; / forwards there (BLD-C143)
 
         # A second sign-in does not create a second person.
         sign_in_with_mock(employee_id, {"email": email, "name": name, "employeeId": employee_id})
@@ -85,7 +87,8 @@ def test_leavers_cannot_sign_in(dev_db: Any) -> None:
         )
         dev_db.execute("UPDATE users SET active = false WHERE emp_id_hash = %s", (emp_id_hash(employee_id),))
         _, callback = sign_in_with_mock(employee_id, {"email": email, "employeeId": employee_id})
-        assert callback.headers["location"].endswith("/sign-in?error=inactive")
+        # L-AUTH.errors: "This account can't sign in", with the reference the log line carries (L-AUTH.rules/8)
+        assert re.search(r"/sign-in\?refused=SSO-[0-9A-F]{4}&at=\d+$", callback.headers["location"])
         assert "ideas_session" not in callback.headers.get("set-cookie", "").split("=")[0]
     finally:
         dev_db.execute("DELETE FROM users WHERE emp_id_hash = %s", (emp_id_hash(employee_id),))
@@ -97,10 +100,11 @@ def test_a_forged_state_is_refused() -> None:
     b = Browser()
     b.get("/auth/login?next=/")
     r = b.get("/auth/callback?code=anything&state=not-the-one-we-sent")
-    assert r.headers["location"].endswith("/sign-in?error=state_mismatch")
+    assert re.search(r"/sign-in\?failed=SSO-[0-9A-F]{4}&at=\d+$", r.headers["location"])  # L-AUTH.rules/8
 
 
 def test_next_cannot_leave_the_site() -> None:
+    """The place to go is kept on the server (L-AUTH.rules/4), and only ever as a path on this site."""
     from tests.web import Browser
 
     for evil in (
@@ -110,10 +114,10 @@ def test_next_cannot_leave_the_site() -> None:
         "/%09/example.com",
         "/%0A/example.com",
     ):
-        b = Browser()
-        b.get(f"/auth/login?next={evil}")
-        page = b.get(f"/sign-in?next={evil}")
-        assert "/auth/login?next=%2F" in page.text
+        page = Browser().get(f"/sign-in?next={evil}")
+        assert 'name="to" value="/"' in page.text, evil
+        _, callback = sign_in_with_mock("SYN-00017", next_path=evil)
+        assert callback.headers["location"] in (f"{WEB}/", f"{WEB}/privacy-notice?next=%2F"), evil
 
 
 def test_conflicting_claims_are_refused(dev_db: Any) -> None:
@@ -125,7 +129,7 @@ def test_conflicting_claims_are_refused(dev_db: Any) -> None:
     _, callback = sign_in_with_mock(
         stranger, {"employeeId": stranger, "email": colleague_email, "name": "Someone"}
     )
-    assert callback.headers["location"].endswith("/sign-in?error=identity_mismatch")
+    assert re.search(r"/sign-in\?refused=SSO-[0-9A-F]{4}&at=\d+$", callback.headers["location"])
     assert (
         dev_db.execute(
             "SELECT count(*) AS n FROM users WHERE emp_id_hash = %s", (emp_id_hash(stranger),)

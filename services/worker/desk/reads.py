@@ -145,6 +145,10 @@ PILLS = {"needs_you": "warn", "not_now": "warn", "shipped": "ok", "not_picked": 
          "merged": "neutral"}  # fmt: skip
 HIDDEN_KINDS = {"folio": "Folio", "pan": "PAN", "phone": "Phone number", "email": "Email", "account": "Account number",
                 "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
+# L-HIDE.detect's "Label shown" for each kind, as the desk's "Shown, because …" lines name them
+DETECT_LABELS = {"folio": "Folio", "pan": "PAN", "phone": "Phone", "email": "Email", "account": "Account",
+                 "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
+
 _BRINGS = {"saves_time": "saves time", "saves_cost": "saves cost", "earns_revenue": "earns revenue",
            "less_outside_tools": "cuts reliance on outside tools", "not_sure": "not sure yet"}  # fmt: skip
 CHECKED = FILES_CHECKED
@@ -215,13 +219,53 @@ def _evidence_text(files: list[dict[str, Any]], hidden: Hidden) -> str:
 
 
 def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
+    """The details hidden from everyone, one per value: a desk "Hide this" adds a row for each copy it masks, so the
+    rows are grouped by vault tag (L-HIDE.rules/7). Shown details are not here (`_shown`). Only what the sharer has
+    given the desk: never the desk's own words (a question, a reason) nor an answer still in draft, which stays the
+    sharer's until sent (non-negotiable 7; BLD-B247). `_shown` reads under the same filter."""
     return [
         (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
-            "SELECT kind, masked FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' ORDER BY created_at",
+            "SELECT kind, masked FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, masked, created_at "
+            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' AND NOT (source = "
+            "'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id AND a.sent_at IS NOT NULL)) "
+            "ORDER BY coalesce(vault_tag, id::text), created_at) d ORDER BY created_at",
             (idea_uuid,),
         )
     ]
+
+
+SHOWN_BECAUSE = {
+    "scheme_or_product_code": "it’s a scheme or product code",
+    "internal_reference": "it’s an internal reference",
+    "made_up_example": "it’s made up for the example",
+}  # L-HIDE.rules/6, C-HIDDEN.list/1
+
+
+def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
+    """L-HIDE.rules/6: what the sharer chose to show, and why, as the review desk reads it: "Folio shown, because
+    it’s an internal reference." One line per value (grouped by vault tag; the latest showing), oldest first. The
+    value itself is never here: the desk reads it in the masked copy's place, as everyone does."""
+    from desk.store import person_by_user
+
+    rows = conn.execute(
+        "SELECT kind, reason, shown_by, shown_at FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, "
+        "reason, shown_by, shown_at FROM hidden_details WHERE idea_uuid = %s AND state = 'shown' AND source <> 'desk' "
+        "AND NOT (source = 'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id "
+        "AND a.sent_at IS NOT NULL)) "
+        "ORDER BY coalesce(vault_tag, id::text), shown_at DESC) d ORDER BY shown_at, kind",
+        (idea_uuid,),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        kind, reason = str(r["kind"]), str(r["reason"])
+        label = DETECT_LABELS.get(kind, kind)
+        out.append({
+            "kind": kind, "kind_label": label, "reason": reason, "because": SHOWN_BECAUSE.get(reason, ""),
+            "by": person_by_user(conn, str(r["shown_by"]) if r["shown_by"] else None).first_name,
+            "at": r["shown_at"].isoformat(), "line": f"{label} shown, because {SHOWN_BECAUSE.get(reason, '')}.",
+        })  # fmt: skip
+    return out
 
 
 def _said_at(t: dt.datetime, at: dt.datetime) -> str:
@@ -283,6 +327,7 @@ def _questions(
                 (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
             item["answer"] = {
+                "id": str(r["answer_id"]),
                 "text": unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"])),
                 "at": r["answered_at"].isoformat(), "by": by.first_name,
                 "line": f"{by.first_name} answered, {_said_at(r['answered_at'], at)}",
@@ -345,7 +390,7 @@ def _own_words(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
     from desk.store import unseal
 
     return [
-        {"seq": m["seq"], "via": m["via"], "at": m["created_at"].isoformat(),
+        {"id": str(m["id"]), "seq": m["seq"], "via": m["via"], "at": m["created_at"].isoformat(),
          "text": unseal(m["text_encrypted"], "idea_messages", "text_encrypted", str(m["id"]))}
         for m in conn.execute("SELECT * FROM idea_messages WHERE idea_uuid = %s ORDER BY seq", (idea_uuid,))
     ]  # fmt: skip
@@ -464,7 +509,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     """Everything a reviewer needs to decide on one idea, on one page (S-R2.left, S-R2.panel). Raw words are the
     masked copy (L-REVIEW.open/3); unmasked hidden details never reach the desk."""
     from desk import revise, worth
-    from desk.store import is_own, load_idea, person_by_code
+    from desk.store import READERS, has_role, is_own, load_idea, person_by_code
 
     t = at or now()
     idea = load_idea(conn, ref)
@@ -524,12 +569,17 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
          "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
          "meta": f"{s['idea_id']}, {person_by_code(conn, s['contributor_code']).name}, {s['area'] or ''}, "
                  f"{s['city'] or ''}. {s['crew']} on its crew"}
+        # A link counts both ways: an idea found similar to this one while its sharer wrote (and later merged into
+        # it, J-SIMILAR/6a) is this idea's similar idea too (S-R2.left/5, J-SIMILAR/7). This idea's own link wins.
         for s in conn.execute(
-            "SELECT o.idea_id, o.title, o.status, o.area, o.city, o.contributor_code, o.merged_into, l.strength, l.reason, "
+            "SELECT * FROM (SELECT DISTINCT ON (o.id) o.idea_id, o.title, o.status, o.area, o.city, o.contributor_code, "
+            "o.merged_into, l.strength, l.reason, l.rank, l.idea_uuid = %(id)s AS own_link, "
             "(SELECT count(*) FROM crew_members c WHERE c.idea_uuid = o.id AND c.left_at IS NULL) AS crew "
-            "FROM similar_links l JOIN ideas o ON o.id = l.other_idea_uuid "
-            "WHERE l.idea_uuid = %s AND o.status NOT IN ('draft', 'withdrawn') ORDER BY l.rank",
-            (idea["id"],),
+            "FROM similar_links l JOIN ideas o "
+            "ON o.id = CASE WHEN l.idea_uuid = %(id)s THEN l.other_idea_uuid ELSE l.idea_uuid END "
+            "WHERE (l.idea_uuid = %(id)s OR l.other_idea_uuid = %(id)s) AND o.status NOT IN ('draft', 'withdrawn') "
+            "ORDER BY o.id, own_link DESC) s ORDER BY s.own_link DESC, s.rank, s.idea_id",
+            {"id": idea["id"]},
         )
     ]  # fmt: skip
     decide_by = idea["decide_by"]
@@ -568,6 +618,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             ),
         },
         "similar": similar,
+        # L-HIDE.rules/6: the review desk and the Ones Committee read why a detail was shown; no one else does
+        "shown": _shown(conn, idea["id"]) if has_role(conn, user_id, READERS) else [],
         "contributions": _contributions(conn, idea, t, user_id),
         "panel": _panel(conn, idea, user_id, t),
     }

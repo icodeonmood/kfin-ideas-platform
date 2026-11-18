@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
+
+import { emptyCanvas } from "../src/lib/canvas/model";
 
 /** Personas from `make seed` (BLD-039). */
 export const PERSONAS = {
@@ -11,13 +15,16 @@ export const PERSONAS = {
 } as const;
 
 /** Where this run's stack listens (`make e2e` passes both from `.env`; BLD-200). */
-const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
-const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
+export const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
+export const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
 
-/** Real sign-in through the mock IdP's form; accepts the privacy notice if it is shown. */
+/**
+ * Real sign-in through the mock IdP's form; accepts the privacy notice if it is shown. S-02's single sign-on
+ * button posts to /auth/sso/start, which keeps where to go on the server (L-AUTH.rules/4).
+ */
 export async function signIn(page: Page, username: string, claims?: Record<string, string>) {
   await page.goto("/sign-in");
-  await page.getByRole("link", { name: "Sign in with your KFintech account" }).click();
+  await page.getByRole("button", { name: "Use single sign-on" }).click();
   await page.waitForURL((url) => url.href.startsWith(OIDC_AUTHORIZE));
   await page.locator('input[name="username"]').fill(username);
   if (claims) await page.locator('textarea[name="claims"]').fill(JSON.stringify(claims));
@@ -91,12 +98,26 @@ export async function expectNoSidewaysScroll(page: Page) {
 }
 
 /**
- * Quick capture's one confirmation (DEC-094): a single tick covers the three declarations. The category is
- * optional and saved as "Not sure yet", and nothing else is required, so this is all a quick share needs after the
- * box is filled.
+ * Shares a problem through the submissions API the old quick capture used, as the signed-in person in `page`, and
+ * returns its id; the caller opens `/share/<id>/done`. The quick-capture screens it stood in for are replaced by
+ * Tell it (S-04, S-04B; BLD-C128) and the send screen is S-05's, so the specs whose subject is what happens after
+ * sharing (the scan, the crew, the desk, the Inbox) start from the API until S-05 lands. One box, the three
+ * declarations ticked: all a quick share needs (DEC-094).
  */
-export async function confirmQuickCapture(page: Page) {
-  await page.getByRole("checkbox", { name: /in this idea or its files, it is my own work/ }).check();
+export async function shareQuickly(page: Page, noticed: string): Promise<string> {
+  const made = await page.request.post("/api/submissions", { data: { mode: "quick" } });
+  expect(made.status(), "start a share").toBeLessThan(300);
+  const { id } = (await made.json()) as { id: string };
+  const canvas = {
+    ...emptyCanvas("quick"),
+    details: noticed,
+    declarations: { no_personal_data: true, own_work_or_credited: true, ip_terms: true },
+  };
+  const saved = await page.request.put(`/api/submissions/${id}`, { data: { canvas } });
+  expect(saved.status(), "save the share").toBeLessThan(300);
+  const sent = await page.request.post(`/api/submissions/${id}/submit`, { data: { canvas } });
+  expect(sent.status(), "send the share").toBe(202);
+  return id;
 }
 
 export type SwitchState = "on" | "off";
@@ -193,6 +214,29 @@ export async function waitUntilIndexed(ideaId: string, timeoutMs = 45_000): Prom
       if (Date.now() > deadline) throw new Error(`${ideaId} was not indexed within ${timeoutMs / 1000} s`);
       await new Promise((r) => setTimeout(r, 500));
     }
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Ends this browser's session by time, as the 8 hours would (S-02 "Session expired mid-draft", L-AUTH.rules/5).
+ * The one write these helpers make: the test's own session row, found by its hash, never anyone else's.
+ */
+export async function expireSession(page: Page): Promise<void> {
+  const token = (await page.context().cookies()).find((c) => c.name === "ideas_session")?.value;
+  if (!token) throw new Error("expireSession: not signed in");
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      // As 8 hours would leave it: started 8 h 2 min ago, ran out a minute ago (expires_at must follow created_at).
+      "UPDATE sessions SET created_at = now() - interval '8 hours 2 minutes', " +
+        "last_seen_at = now() - interval '8 hours 2 minutes', expires_at = now() - interval '1 minute' " +
+        "WHERE id_hash = $1",
+      [createHash("sha256").update(token, "utf8").digest()],
+    );
+    if (rowCount !== 1) throw new Error("expireSession: no such session");
   } finally {
     await client.end();
   }

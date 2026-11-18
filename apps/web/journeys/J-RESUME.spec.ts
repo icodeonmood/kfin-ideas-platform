@@ -13,7 +13,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { seeded, signInAs, step } from "./lib";
+import { carriedFor, seeded, signInAs, step } from "./lib";
 
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`; // "8:42 pm"
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
@@ -39,7 +39,7 @@ const WORDS =
   "Walk-in investors who update their address at the branch fill the same form twice, once for KYC and once for " +
   "the folio. It happens about ten times a day at our branch.";
 
-const carried: { saved?: string; draft?: string } = {};
+const carried = carriedFor<{ saved: string; draft: string }>("J-RESUME");
 
 function need<K extends keyof typeof carried>(key: K, from: string): string {
   const v = carried[key];

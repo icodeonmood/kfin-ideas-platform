@@ -50,15 +50,18 @@ async function person(browser: Browser, persona: string): Promise<{ page: Page; 
 }
 
 /** A shared idea on the desk for `code`, with its sharer as crew lead. */
-async function sharedIdea(code: string, title: string): Promise<string> {
+async function sharedIdea(
+  code: string,
+  title: string,
+  summary = "Investors call the branch because the rejection SMS gives a code, not a reason.",
+): Promise<string> {
   return db(async (c) => {
     const r = await c.query<{ idea_id: string; id: string }>(
       "INSERT INTO ideas (idea_id, contributor_code, status, title, summary, often, affects, area, city, kind, " +
-        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, " +
-        "'Investors call the branch because the rejection SMS gives a code, not a reason.', " +
+        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, $3, " +
         "'About 40 calls a day at one branch.', ARRAY['Investors'], 'Investor service', 'Hyderabad', 'problem', " +
         "now(), now() + interval '5 days', now() + interval '3 days') RETURNING idea_id, id",
-      [code, title],
+      [code, title, summary],
     );
     await c.query(
       "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES ($1, $2, 'lead', 'shared')",
@@ -225,9 +228,24 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   await expect(deskRow.getByText(/0 of 2 answered|Not seen yet/)).toBeVisible();
   await expect(deskRow.getByText(/to answer$/)).toBeVisible();
 
-  // S-R3: one question at a time, skip, check and send
+  // J-TRACK/3 C-QCARD.places S-H5: the questions reach the sharer's Inbox as the card, under the reader's own
+  // header, and the button in the reader's foot opens the Answer screen
   const s = sharer.page;
-  await s.goto(`/ideas/${ideaId}/answer`);
+  await s.goto("/inbox?tab=needs_you");
+  await s.getByRole("button", { name: `asked you 2 questions, ${title}` }).click();
+  const reader = s.locator(".ibx-read");
+  await expect(reader.locator(".qcard-inbox")).toBeVisible();
+  await expect(reader.getByText("Is it 40 calls a day at one branch, or across Hyderabad?")).toBeVisible();
+  await expect(reader.getByText(/^Answer by .+\.$/)).toHaveCount(1);
+  await expect(reader.getByRole("link", { name: "Open the conversation" })).toHaveAttribute(
+    "href",
+    `/ideas/${ideaId}/conversation`,
+  );
+  await expectNoSeriousAxeIssues(s);
+  await reader.getByRole("link", { name: "Answer the questions" }).click();
+
+  // S-R3: one question at a time, skip, check and send
+  await expect(s).toHaveURL(new RegExp(`/ideas/${ideaId}/answer$`));
   await expect(s.getByRole("heading", { name: "Answer the review desk" })).toBeVisible();
   await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
@@ -272,4 +290,114 @@ test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", asyn
   await expect(reviewer.page.getByRole("heading", { name: "Your own idea" })).toBeVisible();
   await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
   await expect(reviewer.page.getByRole("button", { name: /^Ask about / })).toHaveCount(0);
+});
+
+/** Ideas the "Hide this" test made. Removed after it with what a hide leaves behind: the sharer's Inbox item, the
+ * values sealed in the vault under the idea's hide scope (DRAFT-<uuid>), then the idea, whose rows go with it
+ * (BLD-B247). */
+const hideMade: string[] = [];
+test.afterEach(async () => {
+  if (!hideMade.length) return;
+  const refs = hideMade.splice(0);
+  await db(async (c) => {
+    const ids = (
+      await c.query<{ id: string }>("SELECT id::text AS id FROM ideas WHERE idea_id = ANY($1)", [refs])
+    ).rows.map((r) => r.id);
+    if (!ids.length) return;
+    await c.query("DELETE FROM notifications WHERE idea_uuid = ANY($1::uuid[])", [ids]);
+    await c.query("DELETE FROM pseudonym_vault WHERE scope_id = ANY($1)", [ids.map((id) => `DRAFT-${id}`)]);
+    await c.query("DELETE FROM ideas WHERE id = ANY($1::uuid[])", [ids]);
+  });
+});
+
+/** Select `words` inside the one text of a part that offers "Hide this", as a reviewer's drag would. */
+async function selectIn(p: Page, part: string, words: string) {
+  await p
+    .getByRole("region", { name: part })
+    .locator("[data-hide-key]")
+    .first()
+    .evaluate((el, w) => {
+      const node = el.firstChild as Text;
+      const at = node.data.indexOf(w);
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + w.length);
+      const sel = document.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, words);
+}
+
+test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a name the checks missed, and every copy reads masked", async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `A missed name on the desk (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(
+    sharer.code,
+    title,
+    "Investors call the branch because the rejection SMS gives a code. Lakshmi Narayanan called four times.",
+  );
+  hideMade.push(ideaId);
+  const r = reviewer.page;
+  await r.goto(`/desk/ideas/${ideaId}`);
+  const problem = r.getByRole("region", { name: "The problem" });
+
+  // too little selected: refused in plain words, nothing changes
+  await selectIn(r, "The problem", "a ");
+  await problem.getByRole("button", { name: "Hide this" }).click();
+  await expect(problem.getByRole("alert")).toHaveText("Select at least 3 letters or numbers.");
+
+  // the name: masked at once, the page read again
+  await selectIn(r, "The problem", "Lakshmi Narayanan");
+  await problem.getByRole("button", { name: "Hide this" }).click();
+  await expect(problem).toContainText("••••an called four times.");
+  await expect(problem).not.toContainText("Lakshmi Narayanan");
+  await expect(problem.getByRole("button", { name: "Hide this" })).toHaveCount(0);
+  await expectNoSeriousAxeIssues(r);
+});
+
+test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a number mid-text from the keyboard alone (WCAG 2.1.1, 4.1.3)", async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `A missed number on the desk (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(
+    sharer.code,
+    title,
+    "Ring 9876501234 back: investors call the branch because the rejection SMS gives a code.",
+  );
+  hideMade.push(ideaId);
+  const r = reviewer.page;
+  await r.goto(`/desk/ideas/${ideaId}`);
+  const problem = r.getByRole("region", { name: "The problem" });
+  const text = problem.getByRole("group", { name: "The problem, text" });
+  await text.focus();
+
+  // the caret moves with the arrows (the first one starts it at the text's start), then Shift extends from there
+  for (let i = 0; i < "Ring ".length; i += 1) await r.keyboard.press("ArrowRight");
+  for (let i = 0; i < "9876501234".length; i += 1) await r.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => r.evaluate(() => document.getSelection()?.toString())).toBe("9876501234");
+  const hideButton = problem.getByRole("button", { name: "Hide this" });
+  await expect(hideButton).toBeVisible();
+  await expect(r.getByText("Hide this is next. Press Tab.", { exact: true })).toBeAttached();
+
+  // Enter moves to "Hide this"; Enter there hides exactly the selected number
+  await r.keyboard.press("Enter");
+  await expect(hideButton).toBeFocused();
+  const posted = r.waitForRequest((req) => req.method() === "POST" && req.url().endsWith(`/${ideaId}/hide`));
+  await r.keyboard.press("Enter");
+  expect((await posted).postDataJSON()).toMatchObject({
+    start: 5,
+    end: 15,
+    units: "utf16",
+    selected: "9876501234",
+  });
+  await expect(problem).not.toContainText("9876501234");
+  await expect(problem).toContainText("••••34 back: investors call the branch");
+  await expect(r.getByText("Hidden from everyone.", { exact: true })).toBeAttached();
+  await expect(text).toBeFocused();
+  await expectNoSeriousAxeIssues(r);
 });

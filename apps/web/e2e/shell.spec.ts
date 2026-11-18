@@ -176,8 +176,8 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
     });
   }
 
-  test("public pages: sign in and signed out", async ({ page }) => {
-    for (const path of ["/sign-in", "/signed-out"]) {
+  test("public pages: sign in and Landing (S-01, S-02)", async ({ page }) => {
+    for (const path of ["/sign-in", "/"]) {
       await page.goto(path);
       await expectNoSeriousAxeIssues(page);
     }
@@ -187,7 +187,7 @@ test.describe("axe on the shell pages (AT-B2-07)", () => {
 test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the browser)", async ({ page }) => {
   const id = `SYN-E${Date.now().toString(36).toUpperCase()}`;
   await page.goto("/sign-in");
-  await page.getByRole("link", { name: "Sign in with your KFintech account" }).click();
+  await page.getByRole("button", { name: "Use single sign-on" }).click();
   await page.locator('input[name="username"]').fill(id);
   await page.locator('textarea[name="claims"]').fill(
     JSON.stringify({
@@ -204,7 +204,7 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
   await page.getByRole("button", { name: /I have read this/ }).click();
-  await page.waitForURL((url) => url.pathname === "/");
+  await page.waitForURL((url) => url.pathname === "/home"); // Home is S-03 at /home (BLD-C143)
   expect(await navLabels(page)).toEqual(isPhone(test.info()) ? PHONE_TABS : BASE);
 });
 
@@ -259,7 +259,7 @@ test("people without the role are sent home from Review and Admin", async ({ pag
   await signIn(page, PERSONAS.contributor);
   for (const path of ["/review", "/admin", "/committee"]) {
     await page.goto(path);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/home$/);
   }
 });
 
@@ -287,7 +287,10 @@ test("sign out ends the session", async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
   await openAccountMenu(page);
   await page.getByRole("button", { name: "Sign out" }).click();
-  await page.waitForURL(/\/signed-out/);
+  // S-01 Landing (BLD-A179). Signed in, "/" is Home, so wait for Landing's own heading, not the address.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Every fix starts with someone who noticed." }),
+  ).toBeVisible();
   await page.goto("/my-ideas");
   await expect(page).toHaveURL(/\/sign-in\?next=%2Fmy-ideas/);
 });

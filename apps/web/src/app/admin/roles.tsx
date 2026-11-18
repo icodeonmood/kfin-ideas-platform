@@ -13,22 +13,33 @@ export type Grant = {
 
 const ROLES: Array<{ value: string; label: string; scope?: string }> = [
   { value: "reviewer", label: "Review desk" },
-  { value: "core_committee", label: "Core committee member" },
-  { value: "core_chair", label: "Core committee chair" },
-  { value: "lob_committee", label: "LOB committee member", scope: "LOB, for example LOB-mf" },
-  { value: "appeal_panel", label: "Appeal panel" },
-  { value: "working_group", label: "Working group member", scope: "Working group, for example WG-0001" },
-  { value: "sponsor", label: "Sponsor", scope: "Cluster, for example CL-0012" },
+  { value: "committee", label: "Ones Committee" },
+  { value: "display", label: "Office and launch screens" },
   { value: "admin", label: "Admin" },
   { value: "infosec", label: "InfoSec (kill switches)" },
   { value: "hr", label: "HR (wall switch)" },
 ];
-const LABEL = Object.fromEntries(ROLES.map((r) => [r.value, r.label]));
+// Grants made before the 1% Club's roles (DEC-102) are still listed, by these names, until someone removes them.
+const RETIRED: Record<string, string> = {
+  core_committee: "Core committee member (retired role)",
+  core_chair: "Core committee chair (retired role)",
+  lob_committee: "LOB committee member (retired role)",
+  appeal_panel: "Appeal panel (retired role)",
+  working_group: "Working group member (retired role)",
+  sponsor: "Sponsor (retired role)",
+  ceo: "CEO (retired role)",
+  build_team: "Build team",
+};
+const LABEL: Record<string, string> = {
+  ...RETIRED,
+  ...Object.fromEntries(ROLES.map((r) => [r.value, r.label])),
+};
 const ERRORS: Record<string, string> = {
   no_such_person: "No active person has that email address.",
   already_granted: "That person already has this role.",
   scope_required: "This role needs a scope in the format shown.",
   scope_not_allowed: "This role does not take a scope. Leave it empty.",
+  unknown_role: "That role can't be given any more.",
   reason_required: "Please give a reason of at least 10 characters.",
   last_admin: "You can't remove the last admin.",
 };

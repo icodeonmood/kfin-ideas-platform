@@ -5,8 +5,10 @@
  * colours and type from the OFFER tokens on main (offer.css, DEC-101). Everything is scoped under `.pvwrap`, so
  * nothing here leaks into a screen. Plain CSS and the Web Animations API only (BLD-E005).
  *
- * TODO(lane D, BLD-C100): the `.pill`, `.tb`, `.btn` and `.pvav` rules below stand in for C-PILL, C-BUTTON and
- * C-AVATAR until `@/components/ui/*` reach main; delete them when the component swaps to those primitives.
+ * The status pill on the band is lane D's `<Pill variant="band">` (BLD-D012); no rule here may set its fill, which
+ * passes AA on both band ends only with lane D's value.
+ * TODO(lane D, BLD-C100): the `.tb`, `.btn` and `.pvav` rules below stand in for C-BUTTON and C-AVATAR until the
+ * component swaps to those primitives.
  */
 .pvwrap {
   /* F-MOTION.tokens: lane D's custom properties win once they are on main. */
@@ -235,29 +237,6 @@
   line-height: 1.4;
   color: #ffffff;
   overflow-wrap: anywhere;
-}
-
-/* C-PILL on the band (stand-in until `@/components/ui/pill` is on main). */
-.pvwrap .pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font: 500 13px/1.4 var(--font-sans);
-}
-
-.pvband .pill {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-}
-
-.pvwrap .pill i {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .pvbody {

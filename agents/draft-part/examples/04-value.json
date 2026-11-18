@@ -1,0 +1,55 @@
+{
+ "description": "What it's worth: categories only, never a figure",
+ "input": {
+  "part": "value",
+  "words": [
+   {
+    "n": 1,
+    "text": "When a redemption is rejected, the SMS to the investor only says \"Rejected, R07\". Nobody knows what R07 means, so they call the branch. One investor, Folio ••••89, called three times last week."
+   },
+   {
+    "n": 2,
+    "text": "Our branch takes about 40 calls a day like this, and each one takes 5 to 10 minutes."
+   }
+  ],
+  "options": {
+   "choices": [
+    {
+     "id": "saves_time",
+     "label": "Saves time"
+    },
+    {
+     "id": "saves_cost",
+     "label": "Saves cost"
+    },
+    {
+     "id": "earns_revenue",
+     "label": "Earns revenue"
+    },
+    {
+     "id": "less_outside_tools",
+     "label": "Cuts reliance on outside tools"
+    },
+    {
+     "id": "not_sure",
+     "label": "Not sure yet"
+    }
+   ]
+  }
+ },
+ "output": {
+  "part": "value",
+  "title": null,
+  "summary": null,
+  "often": null,
+  "who": [],
+  "worth": [
+   "saves_time"
+  ],
+  "area": null,
+  "reason": null,
+  "evidence": [
+   "each one takes 5 to 10 minutes"
+  ]
+ }
+}

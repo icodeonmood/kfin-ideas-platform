@@ -10,6 +10,7 @@ import type {
   DeskSort,
   DraftPartKey,
   DraftStep,
+  HiddenKind,
   IdeaPart,
   IdeaStatus,
   InboxTab,
@@ -29,6 +30,7 @@ import type {
   Brings,
   Channel,
   OutsideTools,
+  SortingSource,
 } from "./enums";
 import type {
   CrewCard,
@@ -52,13 +54,14 @@ import type {
   Person,
   PersonRef,
   PersonSettings,
+  Range,
   SimilarMatch,
-  Sorting,
   StageState,
   TeamUpRequest,
   WallStage,
   Conversation,
   ConversationEntry,
+  SavedLabels,
 } from "./entities";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -103,6 +106,21 @@ export type ErrorCode =
   | "merge_waiting"
   | "not_ready"
   | "offline_queued"
+  // Lane C's sorting and sending (L-SORT, L-SUBMIT; BLD-C081 to BLD-C085)
+  | "sorting_incomplete"
+  | "declaration_changed"
+  | "idempotency_key_reused"
+  | "idempotency_key_bad"
+  | "not_a_draft"
+  | "already_shared"
+  | "merged"
+  | "field_needed"
+  | "fix_how_needed"
+  | "worth_unclear"
+  | "send_failed"
+  | "unavailable"
+  | "not_found"
+  | "body_required"
   // A-API.files
   | "too_big"
   | "type_not_allowed"
@@ -206,15 +224,9 @@ export interface ProfileResponse {
   one_since_label: string | null;
   /** Teams messages stay off until IT approves them (DEC-105): the switch shows, cannot be turned on. */
   available: { teams: boolean };
-  /**
-   * "How should we refer to you?" (DEC-108, BLD-E010); "unset" is the default and "Prefer not to say".
-   * TODO(lane C): lane C owns the answer and its store through `GET/PUT /api/me/refer-as`; S-H6 saves there
-   * directly. Until that route is on main this is always "unset".
-   */
-  refer_as: ReferAs;
+  // "How should we refer to you?" is not here: lane C's `GET/PUT /api/me/refer-as` is its only source (BLD-C111,
+  // `lib/refer-as.ts`).
 }
-/** Lane C's `/api/me/refer-as` values (DEC-108). */
-export type ReferAs = "she" | "he" | "they" | "unset";
 /** `PATCH /api/me/settings`: any of the switches; each saves at once (S-H6.rules/1). */
 export type SettingsPatch = Partial<PersonSettings>;
 /** Every switch's state after the save. */
@@ -251,30 +263,129 @@ export interface HomeResponse {
 // ---------------------------------------------------------------------------------------------------------------
 export interface CreateDraftRequest {
   text?: string;
+  /** DEC-108: the English copy of a voice note or another language. */
+  text_en?: string;
+  via?: MessageVia;
   files?: string[];
   channel: Channel;
+}
+export interface CreateDraftResponse {
+  draft: Draft;
+  run_id: string | null;
 }
 export interface AddMessageRequest {
   text: string;
   via: MessageVia;
+  /** DEC-108: the English copy of a voice note or another language; context only, never quoted. */
+  text_en?: string;
+  /** A voice note's stream (DEC-108): the message is taken from the voice service, its words and its English copy;
+   * words changed before sending are kept without the copy. Without voice in this build: `voice_unavailable`. */
+  stream_id?: string;
+  /** When it was typed, for a message sent again after being offline (L-DRAFT.autosave/7). */
+  at?: IsoDate;
+  /** Keep the words without building (the S1 interview's answers until the last, L-DRAFT.parts/10). */
+  defer_run?: boolean;
   files?: string[];
 }
+/** `run_id` is null when nothing was built: under the minimum, deferred, or every part pinned. */
 export interface AddMessageResponse {
-  run_id: string;
+  run_id: string | null;
+  message: Message;
+  draft: Draft;
+}
+export interface EditMessageRequest {
+  text: string;
+  text_en?: string;
+}
+export interface PartResponse {
+  run_id: string | null;
+  draft: Draft;
+}
+/** One row of GET /drafts?recent=1 (L-DRAFT.autosave/6, /8). */
+export interface DraftListItem {
+  id: string;
+  title: string;
+  saved_at: IsoDate | null;
+  saved_on: Draft["saved_on"];
+  saved_labels: SavedLabels | null;
+  step: DraftStep;
+  char_count: number;
+  channel: Channel;
+  archived: boolean;
 }
 export type PartPatch = { value: unknown } | { pinned: false };
 export type SortingPatch =
   { affects?: string[]; kind?: Kind; area?: string; brings?: Brings[] } | { confirm: true };
-export type SortingResponse = Sorting;
+/** Lane C: one sorting field with the words beside it ("Suggested because …"); none for the person's own change. */
+export interface SortingChoiceView<T> {
+  value: T;
+  source: SortingSource;
+  why: string | null;
+  why_line: string | null;
+}
+/** `Sorting` as lane C returns it (L-SORT): each field, plus the lines S-05 part 2, the rail and the Send row show. */
+export interface SortingResponse {
+  affects: SortingChoiceView<string[]>;
+  kind: SortingChoiceView<Kind>;
+  area: SortingChoiceView<string | null>;
+  brings: SortingChoiceView<Brings[]>;
+  confirmed: boolean;
+  complete: boolean;
+  confirmed_at: IsoDate | null;
+  /** "Suggested, not confirmed yet" → "Investor service, saves time, saves cost". */
+  rail: string;
+  /** "Not confirmed yet" → "Investor service, affecting investors and KFin teams, saves time, saves cost". */
+  summary: string;
+  /** "These are suggestions from your words. Not confirmed yet." (S-05) or "Confirmed when you shared it. …" (S-06B). */
+  note: string | null;
+  problem: ApiError["error"] | null;
+}
 export interface ShowHiddenRequest {
   reason: ShowReason;
 }
 export type HiddenResponse = HiddenDetail;
-export type FixRequest = Omit<Fix, "ready_count">;
-export type FixResponse = Fix;
+/** One figure as typed ("2 lakh", "70 to 150", "25k"), a number, or a `Range` sent back; the worker reads it with
+ * lane B's one quantity reader (L-WORTH/1) and returns it normalised in `Range.text`. */
+export type WorthInput = string | number | Pick<Range, "text"> | Pick<Range, "low" | "high">;
+/** `PUT /drafts/:id/fix` and the edit page's `fix`: the sheet's answers. `included: false` keeps a started fix
+ * ("Close, and keep what you wrote"); otherwise `how` is needed, at least 20 characters (V-FIELDS.checkit/8). */
+export type FixRequest = Omit<Fix, "ready_count" | "included" | "worth" | "how"> & {
+  how?: string;
+  included?: boolean;
+  worth?: {
+    hours_month?: WorthInput;
+    cost_month?: WorthInput;
+    revenue_month?: WorthInput;
+    outside_tools?: OutsideTools;
+  };
+};
+/** `Fix` with the words S-05 shows: "2 of 5 ready for the review desk", the most useful next answer, and on the
+ * part "Included, 5 of 5 ready", the one-line fix and its size line, or the started-fix line. */
+export type FixResponse = Omit<Fix, "how"> & {
+  how?: string;
+  ready_of: 5;
+  readiness: string;
+  next: { key: "how" | "needs" | "solved_already" | "worth" | "basis"; line: string } | null;
+  part:
+    | { rail: "Added"; line: string; fix_line: string; size_line?: string }
+    | { rail: "Optional"; line: string; action: string };
+};
+/** `DELETE /drafts/:id/fix`. */
+export interface FixRemoved {
+  fix: null;
+  part: { rail: "Optional" };
+}
 export interface HelpersRequest {
   picks: string[];
   text?: string;
+}
+/** `PUT /drafts/:id/helpers`: the picks in the list's spelling, the masked own words and the Send part's row. */
+export interface HelpersResponse {
+  picks: string[];
+  text: string | null;
+  /** "Not said", or "Someone at a branch and a branch head". */
+  line: string;
+  part: { rail: "Added" | "Optional" };
 }
 export interface DraftStepPatch {
   step: DraftStep;
@@ -286,8 +397,44 @@ export interface MergeRequestCreate {
 export interface SubmitRequest {
   declaration_version: string;
 }
+/** `GET /drafts/:id/send` (lane C): the Send part's rows, the declaration, the button and what stops Submit. */
+export interface SendViewResponse {
+  id: string;
+  rows: {
+    key: "title" | "sorting" | "similar" | "proof" | "fix" | "helpers";
+    label: string;
+    value: string | null;
+    ok: boolean;
+    step: DraftStep;
+  }[];
+  declaration: { version: string; text: string };
+  button: "Submit" | "Submit with my fix";
+  ready: boolean;
+  problems: ApiError["error"][];
+  submit_says?: ApiError["error"];
+  go_to?: { label: "Go to the sorting"; step: DraftStep };
+}
+/** What S-06 "Just shared" shows at once (L-SUBMIT.send, V-ACC.share/12), as server-computed words. 201 when sent
+ * now, 200 for a draft sent before (a retry never creates two ideas). */
 export interface SubmitResponse {
   idea_id: string;
+  id: string;
+  ref: string;
+  status: IdeaStatus;
+  pill: { status: IdeaStatus; label: string; variant: string };
+  title: string;
+  shared_at: IsoDate;
+  shared_label: string;
+  stages: (StageState & { label: string; suffix: string })[];
+  next: { to: string; replace: true; state: "just_shared" };
+  review?: { decide_by: IsoDate; by_label: string; line: string };
+  edit_window?: {
+    open: boolean;
+    closes_at: IsoDate;
+    line?: string;
+    countdown?: { label: string; variant: "neutral" | "warn" | "bad"; until: IsoDate };
+    edit?: { label: string; to: string };
+  };
 }
 
 /** Server-sent events on GET /drafts/:id/stream, one run per message. */
@@ -468,12 +615,13 @@ export interface SharerView {
     pill: PillWords;
     breadcrumb: { label: string; to: string; current: string }; // "My ideas, Needs you" / IDEA-2026-001481
     shared_label: string | null; // "Shared 14-Nov-26"
+    reference_line?: string; // the phone's "Reference IDEA-…, shared Saturday 14 November, Investor service"
     share_seconds_label?: string; // "Done in 40 seconds", first arrival only
     first_arrival: boolean;
     /** Null where the sentence names the decision or the questions: compose it from `card_from`'s endpoint. */
-    card: { lead: string; rest: string } | null;
+    card: { lead: string; rest: string; phone_rest?: string } | null; // phone_rest: PhoneStatus.md's shorter rest
     card_from?: "decision" | "question_set";
-    window: { open: boolean; line: string; countdown?: WindowCountdown } | null;
+    window: { open: boolean; line: string; phone_line?: string; countdown?: WindowCountdown } | null;
     actions: {
       conversation: LinkWords;
       edit?: LinkWords;
@@ -515,6 +663,7 @@ export interface SharerView {
       count: number;
       link: LinkWords;
       empty_line?: string;
+      phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
@@ -591,6 +740,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
     action: {
       label: string;
       to?: string;
@@ -611,7 +761,9 @@ export interface MyIdeasEmpty {
   kind: "first_time" | "filtered" | "no_results" | "list";
   title: string;
   line: string;
-  actions: { label: string; to: string; style?: "primary" | "line" }[];
+  phone_line?: string; // the phone board's wording where it differs ("…their impact is measured.")
+  // desk_only: the desktop board's action only ("See 1 in Teamed up"); the phone offers "Show all ideas" alone
+  actions: { label: string; to: string; style?: "primary" | "line"; desk_only?: boolean }[];
   hint?: string; // "or press P anywhere"
 }
 export interface MyIdeasResponse {
@@ -649,18 +801,63 @@ export interface MyIdeasResponse {
 // A-API.ideas, lane C's operations: the edit page's save (S-06B), the preview (C-PREVIEW), versions, similar.
 // ---------------------------------------------------------------------------------------------------------------
 export type IdeaPreviewResponse = IdeaPreview;
+/** The edit page's Save: only what changed. `often: null` empties "How often"; `fix: null` is "Remove". */
 export interface IdeaPatch {
   title?: string;
   summary?: string;
-  often?: string;
+  often?: string | null;
   sorting?: SortingPatch;
-  fix?: FixRequest;
+  fix?: FixRequest | null;
   helpers?: HelpersRequest;
+  /** S-06B (BLD-C161): the files and links the edit page added or removed since it was loaded or last saved. They
+   * acted at once; Save records them in the version (`changed_fields` gets `files`). Attachment IDs only. */
+  files?: { added: string[]; removed: string[] };
 }
 export interface IdeaVersion {
   n: number;
   changed_fields: string[];
   at: IsoDate;
+}
+/** `GET /ideas/:id/edit` (lane C, S-06B): the edit page for the sharer. */
+export interface EditPageResponse {
+  screen: "S-06B";
+  id: string;
+  ref: string;
+  status: IdeaStatus;
+  kind: Kind;
+  bar: { title: string; line: string; back: { label: string; to: string } };
+  window: {
+    open: boolean;
+    closes_at?: IsoDate;
+    opened_by_desk_at?: IsoDate;
+    countdown?: { label: string; variant: "neutral" | "warn" | "bad"; until: IsoDate };
+    line?: string;
+  };
+  fields: { title: string; summary: string; often: string | null };
+  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  sorting: SortingResponse;
+  fix: (FixResponse & { included: true }) | null;
+  helpers: HelpersResponse;
+  files: Pick<FileItem, "id" | "kind" | "name" | "state" | "hidden_note" | "link_scope">[];
+  prompts: { fix?: string; files?: string };
+  side: { when: string; line: string }[];
+  declaration: { version: string; text: string };
+  versions: { count: number; summary: string };
+  saved_label?: string;
+}
+/** The edit page's Save (`PATCH /ideas/:id/edit`): the new version, or nothing when nothing changed. */
+export interface EditSaveResponse {
+  version: IdeaVersion | null;
+  changed_fields: string[];
+  saved_label?: string;
+  message: string;
+  next: { to: string; replace: true };
+}
+/** `GET /ideas/:id/versions`: "Draft history" for the sharer, the review desk and the Ones Committee. */
+export interface VersionsResponse {
+  count: number;
+  summary: string;
+  items: (IdeaVersion & { label: string; at_label: string; before?: unknown; after?: unknown })[];
 }
 export type SimilarResponse = SimilarMatch[];
 
@@ -843,6 +1040,7 @@ export interface ReviewerQuestion {
   asked_line: string; // "You asked, today 11:20 am"; another reviewer's: "Meera asked, today 11:20 am"
   state: "Answered" | "Not answered yet";
   answer: {
+    id: string; // the answer row: S-R2 "Hide this" source { kind: "answer", id } (L-HIDE.rules/7)
     text: string | null;
     at: IsoDate;
     by: string;
@@ -899,7 +1097,26 @@ export interface ReviewerContribution {
   label: string; // "Ravi’s idea, IDEA-2026-001412"
   parts: ReviewerPart[];
   files: ReviewerArtefact[]; // kind "file" only
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
+}
+/** One of the sharer's messages, the masked copy; `id` is the "Hide this" source { kind: "message", id }. */
+export interface ReviewerOwnWords {
+  id: string;
+  seq: number;
+  via: string;
+  at: IsoDate;
+  text: string | null;
+}
+/** A detail the sharer chose to show, as the review desk reads it (L-HIDE.rules/6, `desk.reads._shown`): one per
+ * value, never the value itself. */
+export interface ReviewerShown {
+  kind: HiddenKind;
+  kind_label: string; // "Folio"
+  reason: ShowReason;
+  because: string; // "it’s an internal reference"
+  by: string; // the first name of who showed it
+  at: IsoDate;
+  line: string; // "Folio shown, because it’s an internal reference."
 }
 /** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
 export interface ReviewerDecisionLines {
@@ -961,10 +1178,11 @@ export interface ReviewerIdeaResponse {
   can_act: boolean;
   decide_by: { at: IsoDate | null; label: string | null; left: string | null };
   artefacts: ReviewerArtefact[];
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
   parts: ReviewerPart[];
   worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
   similar: ReviewerSimilar[];
+  shown: ReviewerShown[]; // L-HIDE.rules/6: the desk and the committee only; empty for anyone else
   contributions: ReviewerContribution[];
   panel: ReviewerPanel;
 }
@@ -1575,11 +1793,27 @@ export interface SearchSuggestResponse {
   examples: [string, string, string];
 }
 export interface ConfigResponse {
-  promises: Record<string, number | string | string[]>;
-  sorting: { affects: string[]; areas: string[]; brings: Brings[]; helpers: string[] };
-  uploads: UploadConfig;
-  placeholders: [string, string, string];
-  flags: Record<string, "default" | "alternative" | "off">;
+  promises: Record<string, number | string | string[] | number[]>;
+  sorting: {
+    affects: string[];
+    areas: string[];
+    brings: Brings[];
+    helpers: string[];
+    /** Lane C: the chips shown first, the search words and the choice rules (S-05 part 2, S-06B). */
+    controls?: {
+      affects: { shown: string[]; all: string[]; search_link: string; search_label: string; rule: string };
+      area: { shown: string[]; all: string[]; search_link: string; search_label: string; rule: string };
+      kind: { options: { value: Kind; label: string }[]; rule: string };
+      brings: { options: { value: Brings; label: string }[]; exclusive: Brings; rule: string };
+      helpers: string[];
+    };
+  };
+  /** Lane C: the declaration beside Submit and Save (L-SUBMIT.pre/5). */
+  declaration?: { version: string; submit: string; save: string };
+  /** From their lanes as they land (A-API.config). */
+  uploads?: UploadConfig;
+  placeholders?: [string, string, string];
+  flags?: Record<string, "default" | "alternative" | "off">;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
