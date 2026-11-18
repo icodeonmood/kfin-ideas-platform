@@ -154,8 +154,14 @@ def test_a_api_6_dates_read_as_the_boards_write_them() -> None:
     assert words.short_date(dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)) == "14-Nov-26"
     assert words.clock(dt.datetime(2026, 11, 14, 8, 9, tzinfo=dt.UTC)) == "1:39 pm"
     assert words.countdown(now + dt.timedelta(days=2, hours=20), now)["label"] == "3 days left"
+    # F-COPY.plurals/3 (BLD-A225): office calendar days, so Saturday 10:10 am to Sunday 11:10 am is 1 day, not 2
+    assert words.countdown(now + dt.timedelta(days=1, hours=1), now)["label"] == "1 day left"
     assert words.countdown(now + dt.timedelta(hours=7, minutes=38, seconds=30), now)["label"] == "07:38 left"
-    assert words.countdown(now - dt.timedelta(minutes=1), now)["label"] == "Overdue"
+    assert words.countdown(now - dt.timedelta(minutes=1), now) == {
+        "label": "Overdue by 1 minute",
+        "variant": "bad",
+        "until": (now - dt.timedelta(minutes=1)).isoformat(),
+    }
     assert words.in_sentence("Investors") == "investors"
     assert words.in_sentence("KFin teams") == "KFin teams"
     assert words.in_sentence("AMC clients") == "AMC clients"
