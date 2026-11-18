@@ -110,9 +110,9 @@ def test_j_teamup_5_6_l_convo_2_a_crew_member_who_joins_later_reads_earlier_entr
     post(db, str(idea["id"]), "crew.joined", author_code=kavya["code"], at=fx.at(17, 10, 5))
 
     view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
-    assert texts(view) == [
+    assert texts(view) == [  # DEC-111: the crew reads the review desk, not the person at it
         "Ravi Nair shared it. Monday 9 November",
-        "Meera from the review desk opened it. Monday 16 November, 9:50 am",
+        "The review desk opened it. Monday 16 November, 9:50 am",
         "Ravi Nair approved your team-up request. Today, 10:05 am",
         "You joined the crew. 10:05 am",
     ]
@@ -126,7 +126,7 @@ def test_j_teamup_5_6_l_convo_2_a_crew_member_who_joins_later_reads_earlier_entr
     assert view["composer"]["visibility"] == "The crew and the review desk see this conversation."
     assert view["header"] == {"whose": "The idea", "line": "Ravi Nair’s idea, Investor service, Hyderabad"}
     assert [(p["label"], p["doing"]) for p in view["participants"]] == [
-        ("Meera from the review desk", "Reviewing it"),
+        ("The review desk", "Reviewing it"),
         ("Ravi Nair", "Shared the idea"),
         ("You", "Joined today"),
     ]
@@ -266,14 +266,19 @@ def test_l_convo_3_event_lines_render_at_read_time_with_names_and_you(db: Any, c
     assert texts(view) == [
         "You shared it. Saturday 14 November, 10:05 am",
         "Checked and matched. 1 folio number hidden, 2 similar ideas found. 10:06 am",
-        "Meera from the review desk opened it. Monday 16 November, 9:50 am",
-        "Meera from the review desk picked it. 3:00 pm",
+        "The review desk opened it. Monday 16 November, 9:50 am",  # DEC-111
+        "The review desk picked it. 3:00 pm",
         "Rohan Mehta from the Ones Committee reversed the decision. It’s now Not now. Today, 9:00 am",
         "It’s back with the review desk. 9:30 am",
     ]
     as_meera = texts(conversation(db, idea["idea_id"], meera["id"], at=NOW))
     assert "You opened it. Monday 16 November, 9:50 am" in as_meera
     assert "Kavya Menon shared it. Saturday 14 November, 10:05 am" in as_meera
+    as_rohan = texts(
+        conversation(db, idea["idea_id"], rohan["id"], at=NOW)
+    )  # the committee sees the desk's names
+    assert "Meera from the review desk opened it. Monday 16 November, 9:50 am" in as_rohan
+    assert "You reversed the decision. It’s now Not now. Today, 9:00 am" in as_rohan
 
 
 def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link(
@@ -290,9 +295,8 @@ def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link
              at=fx.at(17, 9))  # fmt: skip
     view = conversation(db, merged["idea_id"], cast["kavya"]["id"], at=NOW)
     [line] = [e for e in view["entries"] if e.get("code") == "desk.merged"]
-    assert line["text"] == (
-        f"Meera from the review desk joined it with {lead['idea_id']}. The conversation carries on there. "
-        "Today, 9:00 am"
+    assert line["text"] == (  # DEC-111
+        f"The review desk joined it with {lead['idea_id']}. The conversation carries on there. Today, 9:00 am"
     )
     assert line["link"] == {"label": lead["idea_id"], "to": f"/ideas/{lead['idea_id']}/conversation"}
     assert (
@@ -300,7 +304,7 @@ def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link
         == f"This idea is now part of another one. Write in {lead['idea_id']}’s conversation."
     )
     on_lead = conversation(db, lead["idea_id"], cast["ravi"]["id"], at=NOW)
-    assert f"Meera from the review desk joined it with {merged['idea_id']}. Today, 9:00 am" in texts(on_lead)
+    assert f"The review desk joined it with {merged['idea_id']}. Today, 9:00 am" in texts(on_lead)
 
 
 def test_l_convo_3_f1_merge_and_crew_codes(db: Any, cast: dict[str, Any]) -> None:
@@ -343,9 +347,10 @@ def test_l_convo_4_questions_by_reference_with_the_line_above_the_box_then_answe
     view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
     [q] = [e for e in view["entries"] if e["type"] == "questions"]
     assert (q["set_id"], q["state"], q["count"], q["answered"]) == (set_id, "sent", 3, 0)
-    assert q["by_label"] == "Meera from the review desk" and q["at_label"] == "Monday 16 November, 11:20 am"
+    assert q["by_label"] == "The review desk" and q["at_label"] == "Monday 16 November, 11:20 am"  # DEC-111
+    assert q["by"] == {"id": "", "name": "The review desk", "first_name": "The review desk", "initials": ""}
     # BLD-F065: the card's plain words, for S-08 until lane B's C-QCARD is on main; the deadline as lane B words it.
-    assert q["title"] == "Meera has 3 questions about your idea"
+    assert q["title"] == "The review desk has 3 questions about your idea"
     assert q["deadline"] == (
         "Answer by Thursday 19 November, 11:20 am. One at a time, typed or spoken, and each answer is added to its "
         "part of your idea."
@@ -358,8 +363,8 @@ def test_l_convo_4_questions_by_reference_with_the_line_above_the_box_then_answe
     ]
     assert dq["title"] == "You asked 3 questions." and "deadline" not in dq and "answer_url" not in dq
     assert view["composer"]["questions_line"] == (
-        "Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. "
-        "Write here for anything else."
+        "Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your "
+        "idea. Write here for anything else."
     )
     assert "empty" not in view
     assert "questions_line" not in conversation(db, idea["idea_id"], meera["id"], at=NOW)["composer"]
@@ -369,10 +374,10 @@ def test_l_convo_4_questions_by_reference_with_the_line_above_the_box_then_answe
          question_set_id=set_id, entry_type="answers", at=fx.at(16, 16, 32))  # fmt: skip
     view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
     [a] = [e for e in view["entries"] if e["type"] == "answers"]
-    assert a["title"] == "Your answers to Meera’s 3 questions"
+    assert a["title"] == "Your answers to the review desk’s 3 questions"
     [q] = [e for e in view["entries"] if e["type"] == "questions"]
     if q["state"] == "answered":
-        assert q["title"] == "Meera’s 3 questions, answered" and "answer_url" not in q
+        assert q["title"] == "The review desk’s 3 questions, answered" and "answer_url" not in q
     assert [(x["text"], x["added_to_label"]) for x in a["answers"]] == [
         ("Synthetic answer 1.", "The problem"),
         ("Synthetic answer 2.", "How often"),
@@ -390,7 +395,7 @@ def test_l_convo_8_s_08_no_messages_yet_and_the_side_panel(db: Any, cast: dict[s
     view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
     assert view["empty"]["title"] == "No messages yet"
     assert [(p["label"], p["doing"], p["you"]) for p in view["participants"]] == [
-        ("Meera from the review desk", "Reviewing it", False),
+        ("The review desk", "Reviewing it", False),  # DEC-111
         ("You", "Shared the idea", True),
     ]
 
@@ -484,8 +489,8 @@ def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
     assert texts(conversation(db, idea["idea_id"], kavya["id"], at=NOW)) == [
         "You shared it. Saturday 14 November, 10:05 am",
         "Checked and matched. Nothing to hide, no similar ideas found. 10:08 am",
-        "Meera from the review desk opened it. Monday 16 November, 9:50 am",
-        "Meera from the review desk picked it. 3:00 pm",
+        "The review desk opened it. Monday 16 November, 9:50 am",  # DEC-111
+        "The review desk picked it. 3:00 pm",
         "Arjun Rao’s team started building it. Today, 9:00 am",
         "Ravi Nair joined the crew. 9:30 am",
     ]
@@ -522,7 +527,10 @@ def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
         "Rohan Mehta from the Ones Committee reversed the decision. It’s now Picked. Today, 9:00 am"
     )
     assert texts(conversation(db, lead["idea_id"], ravi["id"], at=NOW))[-1] == (
-        f"Meera from the review desk joined it with {turned['idea_id']}. Today, 9:15 am"
+        f"The review desk joined it with {turned['idea_id']}. Today, 9:15 am"
+    )
+    assert texts(conversation(db, lead["idea_id"], meera["id"], at=NOW))[-1] == (
+        f"You joined it with {turned['idea_id']}. Today, 9:15 am"
     )
     assert "convo.render.unknown_code" not in captured_logs.getvalue()[logged_before:]
 
@@ -541,7 +549,8 @@ def test_l_convo_4_s_08_answers_sent_tell_the_sharer_when_the_desk_decides(
     ]
     assert a["at_label"] == "Monday 16 November, 4:32 pm"
     assert (
-        a["footer"] == "Each answer was added to its part of your idea. Meera decides by Friday 20 November."
+        a["footer"]
+        == "Each answer was added to its part of your idea. The review desk decides by Friday 20 November."
     )
     [seen] = [
         e for e in conversation(db, idea["idea_id"], meera["id"], at=NOW)["entries"] if e["type"] == "answers"
@@ -565,6 +574,10 @@ def test_bld_f065_s_08_a_closed_question_set_is_not_worded_answered(db: Any, cas
 
     db.execute("UPDATE question_sets SET state = 'closed' WHERE id = %s", (set_id,))
     q = sharers_card()
-    assert q["title"] == "Meera’s 2 questions, now closed" and "deadline" not in q and "answer_url" not in q
+    assert (
+        q["title"] == "The review desk’s 2 questions, now closed"
+        and "deadline" not in q
+        and "answer_url" not in q
+    )
     db.execute("UPDATE question_sets SET state = 'answered' WHERE id = %s", (set_id,))
-    assert sharers_card()["title"] == "Meera’s 2 questions, answered"
+    assert sharers_card()["title"] == "The review desk’s 2 questions, answered"
