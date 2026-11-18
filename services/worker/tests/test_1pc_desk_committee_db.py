@@ -194,3 +194,41 @@ def test_for_idea_gives_the_decision_with_its_window(db: Conn, cast: dict[str, A
     assert (
         got is not None and got["window"]["left"] == "30 days left" and got["decision"]["label"] == "Picked"
     )
+
+
+def test_S_R4_states_tab_J_COMMITTEE_3c_closed_tabs_list_the_latest_first(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """S-R4.states `tab`, S-R4.layout/2, J-COMMITTEE/3c (BLD-B265). Committee.md "State: tab=Expired" draws
+    Wednesday 18 November above Wednesday 11 November: the Expired tab lists the most recently expired first.
+    Reversed lists the most recently reversed first. "In the window" keeps "Closing soonest". All three under the
+    default sort, "Closing soonest"."""
+    meera, rohan = cast["meera"]["id"], cast["rohan"]["id"]
+
+    def decided(on: dt.datetime) -> str:
+        idea = f.idea(db, cast["kavya"], shared_at=on - dt.timedelta(days=2))
+        decide.send(db, idea["idea_id"], meera, {"choice": "not_picked", "reason": REASON}, on)
+        return str(idea["idea_id"])
+
+    older, newer = decided(f.at(12, 10, m=10)), decided(f.at(19, 10, m=10))  # expire 11 and 18 November
+    later = decided(f.at(18, 10))  # closes Friday 18 December, after the cast's Wednesday 16 December
+    at = f.at(20, 12)
+    expired = committee.listing(db, rohan, tab="expired", sort="closing", at=at)["items"]
+    assert [r["idea"]["id"] for r in expired] == [newer, older]
+    assert [r["window"]["closed_line"] for r in expired] == [
+        "Expired Wednesday 18 November. After 30 days. The decision stands.",
+        "Expired Wednesday 11 November. After 30 days. The decision stands.",
+    ]
+    window = committee.listing(db, rohan, tab="window", at=at)["items"]
+    assert [r["idea"]["id"] for r in window] == [cast["idea"]["idea_id"], later]  # closing soonest
+
+    by_idea = {r["idea"]["id"]: r["window_id"] for r in window}
+    committee.reverse_window(db, by_idea[later], rohan, {"to": "pick", "note": NOTE}, f.at(20, 12, 5))
+    committee.reverse_window(
+        db, by_idea[cast["idea"]["idea_id"]], rohan, {"to": "not_picked", "note": NOTE}, f.at(20, 12, 30)
+    )
+    reversed_ = committee.listing(db, rohan, tab="reversed", at=f.at(20, 13))["items"]
+    assert [r["idea"]["id"] for r in reversed_] == [
+        cast["idea"]["idea_id"],
+        later,
+    ]  # reversed 12:30, then 12:05
