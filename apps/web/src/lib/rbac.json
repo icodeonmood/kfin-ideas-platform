@@ -44,6 +44,7 @@
     },
     "hide_for_desk": {
       "reviewer": "yes",
+      "committee": "yes",
       "core_committee": "yes"
     },
     "open_attachments": {
@@ -112,6 +113,16 @@
     "committee_window": {
       "committee": "yes",
       "core_committee": "yes"
+    },
+    "run_programme": {
+      "admin": "yes"
+    },
+    "take_off_wall": {
+      "reviewer": "yes",
+      "admin": "yes"
+    },
+    "manage_flags": {
+      "admin": "yes"
     }
   },
   "kill_switch_flippers": {
@@ -192,10 +203,24 @@
     "desk.listen": [
       "admin",
       "infosec"
+    ],
+    "auth.email_code": [
+      "infosec"
     ]
   },
   "public": [
     "GET /api/health"
+  ],
+  "auth_exempt": [
+    "GET /auth/session",
+    "GET /auth/sso/start",
+    "POST /auth/sso/start",
+    "GET /auth/callback",
+    "GET /auth/login",
+    "POST /auth/code/send",
+    "POST /auth/code/verify",
+    "POST /auth/sign-out",
+    "POST /auth/logout"
   ],
   "before_privacy_notice": [
     "GET /api/me",
@@ -365,6 +390,19 @@
     "PUT /api/ember/{id}/note                          write_ember_note",
     "POST /api/ember/{id}/ready                        write_ember_note",
     "POST /api/ember/{id}/send                         send_ember",
+    "GET /api/config                                   signed_in",
+    "GET /api/admin/programme                          run_programme take_off_wall",
+    "POST /api/admin/ideas/{id}/build-team             run_programme",
+    "POST /api/admin/ideas/{id}/shipped                run_programme",
+    "PUT /api/admin/ideas/{id}/measurements/{mark}     run_programme",
+    "POST /api/admin/ideas/{id}/measurements/{mark}/finance  run_programme",
+    "POST /api/admin/ideas/{id}/wall-removal           take_off_wall",
+    "DELETE /api/admin/ideas/{id}/wall-removal         take_off_wall",
+    "POST /api/admin/ones/founding                     run_programme",
+    "DELETE /api/admin/ones/{id}                       run_programme",
+    "GET /api/admin/flags                              manage_flags",
+    "PUT /api/admin/flags/{key}                        manage_flags",
+    "PUT /api/admin/flags/{key}/people                 manage_flags",
     "GET /api/desk                                     view_review_queue",
     "GET /api/desk/ideas/{id}                          view_review_queue",
     "GET /api/desk/ideas/{id}/listen                   view_review_queue",
@@ -403,7 +441,7 @@
     "/review                    view_review_queue",
     "/desk                      view_review_queue",
     "/committee                 committee_window",
-    "/admin                     manage_kill_switches grant_roles",
+    "/admin                     manage_kill_switches grant_roles run_programme take_off_wall manage_flags",
     "/launch                    grant_roles",
     "/display                   open_display",
     "/ones/showcase             view_ones_console",
@@ -464,6 +502,19 @@
         "committee",
         "core_committee"
       ]
+    },
+    {
+      "key": "profile",
+      "label": "Your profile and settings",
+      "href": "/profile",
+      "place": "account"
+    },
+    {
+      "key": "one",
+      "label": "Your One dashboard",
+      "href": "/one",
+      "place": "account",
+      "member": "ones"
     },
     {
       "key": "ember",

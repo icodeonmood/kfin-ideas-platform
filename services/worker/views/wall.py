@@ -35,10 +35,12 @@ def _ideas(
     conn: Conn, stages: tuple[str, ...], areas: dict[str, str], limit: int, *, unclustered: bool = False
 ) -> list[dict[str, Any]]:
     """Org-visible ideas at these stages. Named only for the person who shared the idea, and only if they said
-    yes; people who joined or added +1 are counted, never named (B7 review)."""
+    yes; people who joined or added +1 are counted, never named (B7 review). An idea the desk or an admin took off
+    the Wall is left out (`idea_off_wall`, DEC-106, BLD-A212)."""
     rows = conn.execute(
         "SELECT idea_id, stage, visibility, canvas, area_ids, contributor_code FROM ideas "
         "WHERE visibility = 'org' AND stage = ANY(%s) AND idea_id IS NOT NULL AND (NOT %s OR cluster_id IS NULL) "
+        "AND NOT idea_off_wall(id) "
         "ORDER BY updated_at DESC, idea_id LIMIT %s",
         (list(stages), unclustered, limit),
     ).fetchall()

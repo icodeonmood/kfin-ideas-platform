@@ -20,7 +20,7 @@ capabilities:
   work_review_queue:          { reviewer: yes, admin: yes }
   view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
   veto_desk_decision:         { core_committee: yes }
-  hide_for_desk:              { reviewer: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060)
+  hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
   see_restored_values:        { contributor: own_idea, reviewer: handled_items, lob_committee: own_lob, core_committee: yes, appeal_panel: case, working_group: own_cluster, sponsor: own_cluster, admin: with_reason_logged }
   approve_handover:           { sponsor: yes, ceo: yes }                 # the named sponsor only (the worker checks)
@@ -45,6 +45,11 @@ capabilities:
   # `committee` is the pack's role (E-ENUMS.roles); the worker refuses a member's own idea (L-COMMITTEE.rules/9).
   # core_committee (and core_chair, through it) keep it until the old roles are dropped on Monday (contracts.md §2.14).
   committee_window:           { committee: yes, core_committee: yes }
+  # The programme team's admin page (lane A; L-DECIDE.after, L-IMPACT, L-ONES admin path, L-AUDIT.flags). The worker
+  # checks the person's grants again. "Take off the Wall" is for the review desk and admins (DEC-106, §6.3).
+  run_programme:              { admin: yes }
+  take_off_wall:              { reviewer: yes, admin: yes }
+  manage_flags:               { admin: yes }
 
 # §7.6 "Who can flip". The handler checks the switch named in the request against this list.
 kill_switch_flippers:
@@ -71,10 +76,25 @@ kill_switch_flippers:
   speech.hosted: [infosec]                            # DEC-096: hosted speech services; InfoSec only, after DPO approval
   files.blackout: [admin, infosec]                    # DEC-107: "Hide it for me" for PDFs and images, after review
   desk.listen: [admin, infosec]                       # BLD-B230: the review desk's listen player
+  auth.email_code: [infosec]                          # BLD-E002: sign-in by email code; InfoSec only, off until it approves
 
 # No session needed.
 public:
   - GET /api/health
+
+# Sign-in routes (L-AUTH, A-API.auth): no session needed, because they start or end one. Each is listed with its
+# reason. The proxy refuses (404) any /auth path not listed here, and a unit test fails when a route file under
+# app/auth has no line (BLD-A177). The email-code routes still meet their kill switch (BLD-E002, §7.6).
+auth_exempt:
+  - GET /auth/session                                 # "am I signed in, and where was I going" (A-API.auth); 401 without one
+  - GET /auth/sso/start                               # "Share a problem" continues here to silent single sign-on (L-AUTH.rules/1)
+  - POST /auth/sso/start                              # S-02's single sign-on buttons, as a form or JSON
+  - GET /auth/callback                                # the identity provider sends the person back here
+  - GET /auth/login                                   # the older sign-in link, kept for links already sent (BLD-A173)
+  - POST /auth/code/send                              # sign-in by email code (L-AUTH.rules/2), behind auth.email_code
+  - POST /auth/code/verify                            # sign-in by email code (L-AUTH.rules/3), behind auth.email_code
+  - POST /auth/sign-out                               # ends whatever session the cookie names (A-API.auth); 204
+  - POST /auth/logout                                 # the shell's sign-out form; ends the session and goes to Landing
 
 # Allowed before the privacy notice is accepted (everything else waits for it).
 before_privacy_notice:
@@ -261,6 +281,21 @@ endpoints:
   - PUT /api/ember/{id}/note                          write_ember_note
   - POST /api/ember/{id}/ready                        write_ember_note   # the worker allows the core committee chair only (BLD-134)
   - POST /api/ember/{id}/send                         send_ember
+  # The 1% Club's configuration for the screens (A-API.config): the promises and the person's own flags.
+  - GET /api/config                                   signed_in
+  # The admin page (lane A; J-ONE steps 1, 2, 3 and 6). Everything is audited (non-negotiable 9).
+  - GET /api/admin/programme                          run_programme take_off_wall   # each sees their own parts
+  - POST /api/admin/ideas/{id}/build-team             run_programme   # L-DECIDE.after: team chosen
+  - POST /api/admin/ideas/{id}/shipped                run_programme   # L-DECIDE.after: shipped
+  - PUT /api/admin/ideas/{id}/measurements/{mark}     run_programme   # L-IMPACT/2, /8
+  - POST /api/admin/ideas/{id}/measurements/{mark}/finance  run_programme   # L-IMPACT/3: a second person
+  - POST /api/admin/ideas/{id}/wall-removal           take_off_wall   # "Take off the Wall"
+  - DELETE /api/admin/ideas/{id}/wall-removal         take_off_wall   # and back on
+  - POST /api/admin/ones/founding                     run_programme   # DEC-106: mark a Founding One
+  - DELETE /api/admin/ones/{id}                       run_programme   # DEC-106: remove a One
+  - GET /api/admin/flags                              manage_flags    # L-AUDIT.flags
+  - PUT /api/admin/flags/{key}                        manage_flags
+  - PUT /api/admin/flags/{key}/people                 manage_flags
 
   # The review side of the 1% Club (lane B; A-API.desk, A-API.questions, A-API.committee). The worker checks what
   # the person may do to this idea: never their own on the desk or the committee; the sharer alone answers.
@@ -307,7 +342,7 @@ pages:
   - /desk                      view_review_queue                    # S-R1 and S-R2, the review desk (lane B)
   - /committee                 committee_window                     # S-R4, the Ones Committee's window (lane B)
   # First match wins: a page under /admin with its own rule must come before /admin.
-  - /admin                     manage_kill_switches grant_roles     # any of these
+  - /admin                     manage_kill_switches grant_roles run_programme take_off_wall manage_flags   # any of these
   - /launch                    grant_roles                          # the lamp-lighting launch screen (DEC-046); admin only
   - /display                   open_display                         # S-LAUNCH and S-OFFICE (L-DISPLAY, BLD-A190)
   - /ones/showcase             view_ones_console                    # a One's Showcase brief, for the committee
@@ -316,6 +351,8 @@ pages:
 
 # Navigation (AT-B2-06): items without `roles` are everyone's; the rest by role. `when_on` / `when_off` may name a
 # kill switch: the item shows only while that switch is on (or off). An unknown switch counts as off (§7.6).
+# `member` names a membership group (`membership_scoped` above): the item shows only to its members, an active One
+# for `ones` (S-ONE.rules/1). No role grants membership; the signed-in person's own record decides (BLD-E040).
 navigation:
   # The signed-in shell (C-SIDEBAR, C-PHONE-TABS; lane D, BLD-D011). The only place the shell reads its links.
   # place: new = the "Share a problem" button; main = a sidebar item; folded = only while the sidebar is folded;
@@ -328,6 +365,8 @@ navigation:
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }
   - { key: desk,      label: Review desk,     href: /desk,      place: main,   roles: [reviewer] }
   - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
+  - { key: profile,   label: Your profile and settings, href: /profile, place: account }
+  - { key: one,       label: Your One dashboard, href: /one,    place: account, member: ones }
   - { key: ember,     label: The Ember,       href: /ember,     place: account }
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }

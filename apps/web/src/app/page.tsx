@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import { OnesCarousel } from "@/components/ones-carousel";
 import { currentUser } from "@/server/auth/current";
-import { publicOnes } from "@/server/ones";
+import { wallOnes } from "@/server/ones";
+
+import { Landing } from "./landing";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +14,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function Home() {
   const me = await currentUser();
+  // `/` signed out is S-01 Landing; signed in it stays Home (S-03), the repo's route for it (BLD-A172).
+  if (!me) return <Landing />;
   const firstName = me?.name.split(" ")[0];
-  const ones = me?.privacyAccepted ? await publicOnes().catch(() => null) : null;
+  const ones = me?.privacyAccepted ? await wallOnes().catch(() => null) : null;
   return (
     <>
       <div className="home-hero">

@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from core.db import Conn
+from core.logging import get_logger
 from desk import adapters, clock, promises, questions, review, when
 from desk.decide import FieldError
 from desk.questions import PART_NAMES, PARTS, SetFacts
@@ -43,6 +44,9 @@ from desk.store import (
     unseal,
     user_of,
 )
+from hide import HideError
+
+log = get_logger("desk.asking")
 
 OPEN: tuple[str, ...] = ("sent", "seen", "partly_answered")  # a set the sharer can still answer
 CLOSED = "The review desk has decided, so these questions are closed."
@@ -51,6 +55,8 @@ ANSWER_IN_PROGRESS = (
     "Someone else who shared this idea is answering this question. You can answer the others."
 )
 FILE_CANT_BE_ADDED = "That file can’t be added to this answer."
+NOT_SAVED = "Couldn’t save that. Try again."  # S-R3's failure line (lib/desk/answers.ts SAVE_FAILED)
+NOT_SENT = "Your answers didn’t send. Try again."  # S-R3's send failure line (answer-view.tsx)
 REMINDER_KIND = "desk.answer_reminder"
 
 
@@ -165,7 +171,8 @@ def _answer_text(r: dict[str, Any]) -> str:
 
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
     """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
-    of their own. `customer_detail` marks a file in which the scan found a customer detail (DEC-107)."""
+    of their own. A link's `type` is "link" (it has no MIME type); a file's is its MIME type. `customer_detail` marks
+    a file in which the scan found a customer detail (DEC-107)."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
@@ -175,7 +182,8 @@ def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, An
         (list(answer_ids),),
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
-            {"id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"], "size": r["bytes"],
+            {"id": r["id"], "kind": r["kind"], "name": r["name"],
+             "type": "link" if r["kind"] == "link" else r["mime"], "size": r["bytes"],
              "pages": r["pages"], "state": r["file_state"], "hidden_note": r["hidden_note"],
              "customer_detail": r["file_state"] == CUSTOMER_DETAIL}
         )  # fmt: skip
@@ -302,6 +310,8 @@ def send_set(
     )
     chosen = body.get("time_to_answer")
     with audited(conn), conn.transaction():
+        # lane C's lock before any row lock: the questions are hidden below (BLD-B247)
+        adapters.lock_refs(conn, ref)
         idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "ask")
         review.ensure_on_desk(idea)
@@ -331,7 +341,7 @@ def send_set(
         )
         for seq, q in enumerate(asked, start=1):
             qid = str(uuid.uuid4())
-            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip())
+            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
             conn.execute(
                 "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -484,10 +494,11 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
 
 
 def open_set_for_sharer(
-    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None
+    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None, set_id: str | None = None
 ) -> dict[str, Any] | None:
     """`GET /ideas/:id/question-set`: the latest set sent (not closed), with the sharer's own saved answers and
-    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm"."""
+    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm". With `set_id` (the Inbox reader
+    opening one item), a different open set is not that item's: nothing is returned and nothing is marked seen."""
     t = at or now()
     tz = clock.office_calendar().tz
     with conn.transaction():
@@ -498,7 +509,7 @@ def open_set_for_sharer(
             "ORDER BY sent_at DESC NULLS LAST, created_at DESC LIMIT 1 FOR UPDATE",
             (idea["id"],),
         ).fetchone()
-        if row is None:
+        if row is None or (set_id is not None and str(row["id"]) != set_id):
             return None
         s = dict(row)
         if s["seen_at"] is None:
@@ -579,6 +590,14 @@ def save_answer(
     qid = _uuid(question_id)
     text, file_ids = _answer_body(text, file_ids)
     with conn.transaction():
+        # lane C's lock on the idea first, read with no row lock, then the set (BLD-B247)
+        on = conn.execute(
+            "SELECT s.idea_uuid FROM questions q JOIN question_sets s ON s.id = q.set_id WHERE q.id = %s",
+            (qid,),
+        ).fetchone()
+        if on is None:
+            raise Refused(404, "not_found")
+        adapters.lock_idea(conn, str(on["idea_uuid"]))
         q = conn.execute(
             "SELECT q.id, q.part, q.set_id, s.idea_uuid, s.state FROM questions q "
             "JOIN question_sets s ON s.id = q.set_id WHERE q.id = %s FOR UPDATE OF s",
@@ -603,8 +622,26 @@ def save_answer(
         errors = questions.check_answer(text, p)
         if errors:
             raise _refused(errors[0])
-        masked, hidden = adapters.hide(conn, str(idea["id"]), text) if text and text.strip() else ("", 0)
         aid = str(existing["id"]) if existing else str(uuid.uuid4())
+        # the sharer's answer: its details keep their ids across autosaves and their own words are sealed for them
+        # (L-HIDE.rules/4). Autosave runs the patterns only; the gatekeeper runs once, on send (BLD-B247). A refusal
+        # from hiding (the sealed words under this id are someone else's) is S-R3's failure line, never a raw error,
+        # and so is any other failure inside it (500, tried again by the screen); the log has its type only.
+        masked, hidden = "", 0
+        if text and text.strip():
+            try:
+                done = adapters.hide_answer(
+                    conn, str(idea["id"]), text, by=user_id, answer_id=aid, gatekeeper=False
+                )
+            except HideError:
+                raise Refused(409, "answer_not_saved", NOT_SAVED) from None
+            except Exception:
+                log.exception("desk.answer_hide_failed", step="save")
+                raise Refused(500, "answer_not_saved", NOT_SAVED) from None
+            masked, hidden = done.masked, done.hidden_count
+        elif existing:
+            # an emptied box hides nothing and keeps no words any more, so a co-sharer may take it over
+            adapters.forget_answer(conn, str(idea["id"]), aid)
         sealed = seal(masked, "answers", "text_encrypted", aid) if masked.strip() else None
         if existing:
             conn.execute(
@@ -633,6 +670,7 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
     sid = _uuid(set_id)
     with audited(conn), conn.transaction():
         first = _load_set(conn, sid)
+        adapters.lock_idea(conn, str(first["idea_uuid"]))  # lane C's lock before any row lock (BLD-B247)
         idea = load_idea(conn, str(first["idea_uuid"]), lock=True)
         code = _sharer_code(conn, idea, user_id)
         s = _load_set(conn, sid, lock=True)
@@ -649,6 +687,7 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
         ready = [r for r in unsent if _answer_text(r).strip() or files.get(str(r["answer_id"]))]
         if not ready:
             raise Refused(422, "nothing_answered", NOTHING_ANSWERED)
+        _gatekeep(conn, str(idea["id"]), ready, user_id)
         # DEC-107: a file holding a customer detail goes too, marked; the desk decides whether it stays
         conn.execute(
             "UPDATE answers SET sent_at = %s WHERE id = ANY(%s::uuid[])",
@@ -676,6 +715,34 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
             "reviewer_first_name": reviewer.first_name,
             "decides_by": f"{reviewer.first_name} decides by {when.day(decide_by, t, tz)}" if decide_by else None,
         }  # fmt: skip
+
+
+def _gatekeep(conn: Conn, idea_uuid: str, ready: Sequence[dict[str, Any]], user_id: str) -> None:
+    """Before an answer reaches the desk, one pass with the gatekeeper over the sharer's own words (autosave ran the
+    patterns only), and the masked copy written again (non-negotiable 4; L-HIDE.rules/1; BLD-B247). An answer with no
+    sealed words (one saved before they were kept) is checked as stored. Any refusal, or any other failure inside
+    hiding, is S-R3's send failure line, never a raw error. When the gateway is down lane C's hide goes on with the
+    patterns, audits `hide.gatekeeper_skipped` and queues a `hide.recheck` (BLD-C067): the answers are sent."""
+    for r in ready:
+        aid = str(r["answer_id"])
+        stored = _answer_text(r)
+        if not stored.strip():
+            continue  # files only: the file checks cover them
+        try:
+            words = adapters.answer_words(conn, idea_uuid, aid)
+            done = adapters.hide_answer(
+                conn, idea_uuid, words or stored, by=user_id, answer_id=aid, gatekeeper=True
+            )
+        except HideError:
+            raise Refused(409, "answers_not_sent", NOT_SENT) from None
+        except Exception:
+            log.exception("desk.answer_hide_failed", step="send")
+            raise Refused(500, "answers_not_sent", NOT_SENT) from None
+        if done.masked != stored:
+            conn.execute(
+                "UPDATE answers SET text_encrypted = %s WHERE id = %s",
+                (seal(done.masked, "answers", "text_encrypted", aid) if done.masked.strip() else None, aid),
+            )
 
 
 # ---------------------------------------------------------------------------------------------------------------

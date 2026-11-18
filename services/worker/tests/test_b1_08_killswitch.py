@@ -76,7 +76,15 @@ def test_web_refuses_submissions_when_switched_off() -> None:
             assert _request("PUT", "/api/submissions/any-draft", token)[0] == 503
 
             assert _request("GET", "/api/health") == (200, {"status": "ok"})
+            # The proxy and the route handlers are separate bundles, each with its own 10-second switch cache, so
+            # /api/status can list the switch a little after the proxy first refused (BLD-A178).
+            deadline = time.monotonic() + 15
             status, body = _request("GET", "/api/status", token)
+            while time.monotonic() < deadline and not (
+                status == 200 and any(p["switch"] == "submissions" for p in body.get("paused", []))
+            ):
+                time.sleep(0.5)
+                status, body = _request("GET", "/api/status", token)
             assert status == 200
             assert any(p["switch"] == "submissions" for p in body["paused"])
         finally:

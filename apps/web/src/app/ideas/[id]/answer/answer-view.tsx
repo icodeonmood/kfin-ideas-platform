@@ -15,7 +15,14 @@ import { Field, FieldMsg } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { SendAnswersResponse, SharerQuestionSetResponse, SetQuestion } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
-import { MAX_ANSWER, NEAR_LIMIT, putAnswer, RETRY_MS, SAVE_AFTER_MS } from "@/lib/desk/answers";
+import {
+  MAX_ANSWER,
+  NEAR_LIMIT,
+  putAnswer,
+  RETRY_MS,
+  SAVE_AFTER_MS,
+  tellInboxCounts,
+} from "@/lib/desk/answers";
 import { call } from "@/lib/desk/reply";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 
@@ -195,6 +202,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         return;
       }
       setSent(r.body);
+      void tellInboxCounts(); // the item left Needs you: every Inbox count is sent again (L-INBOX.rules/1, /3)
     } finally {
       setBusy(false);
     }

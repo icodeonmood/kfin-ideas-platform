@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/motion/spark", () => ({ sparkBurst: vi.fn() }));
 
 const { sparkBurst } = await import("@/lib/motion/spark");
-const { TEAMUP_COPY, TeamUpSheet, errorFrom, noteHint, quotedList, teamUpOpener, useTeamUpSheet } =
+const { TEAMUP_COPY, TeamUpSheet, errorFrom, leadWord, noteHint, quotedList, teamUpOpener, useTeamUpSheet } =
   await import("@/components/teamup/teamup-sheet");
 type Props = import("@/components/teamup/teamup-sheet").TeamUpSheetProps;
 
@@ -955,5 +955,100 @@ describe("C-SHEET-TEAMUP review fixes (BLD-F074)", () => {
     routes[U.me] = { status: 401, body: { error: "sign_in_required" } }; // not known: nothing is restored
     await click(opener);
     expect(note().value).toBe(DRAFTED);
+  });
+});
+
+describe("C-SHEET-TEAMUP, a lead who is not named (BLD-F029, DEC-104)", () => {
+  /** Lane C's hidden person, as the API sends a lead who hid their name from the Wall or has left. */
+  const HIDDEN = { id: "p0a1b2c3d4e5f", name: "A colleague", first_name: "A colleague", initials: "" };
+  const HIDDEN_WAITING = {
+    state: "waiting",
+    line: "Waiting for the lead",
+    detail: "The lead reads your note, then approves or declines. You’ll hear in your Inbox.",
+    action: { label: "Withdraw", op: "withdraw" },
+  };
+  beforeEach(() => {
+    routes[U.mine()] = { body: { ...free(), lead: HIDDEN } };
+    routes[U.note()] = { body: { ...drafted(), lead: HIDDEN } };
+  });
+
+  it("leadWord: the first name, or the lead for lane C's hidden person; nothing before a load", () => {
+    expect(leadWord(RAVI)).toBe("Ravi");
+    expect(leadWord({ name: "Ravi Nair", first_name: "", initials: "RN" })).toBe("Ravi Nair");
+    expect(leadWord(HIDDEN)).toBe("the lead");
+    expect(leadWord({ ...HIDDEN, initials: "AC" })).toBe("the lead");
+    expect(leadWord(undefined)).toBe("");
+  });
+
+  it("C-SHEET-TEAMUP.compose: Team up with the lead, the line, the note's label, the privacy line, Send to the lead", async () => {
+    await render();
+    const d = dialog()!;
+    expect(nameOf(d)).toBe("Team up with the lead");
+    expect(byIds(d.getAttribute("aria-describedby"))).toBe(
+      `The lead of “${TITLE}” decides who joins. Tell them what you bring.`,
+    );
+    expect(nameOf(note())).toBe("Your note to the lead");
+    expect(text(d)).toContain("The lead sees your name, your note.");
+    expect(button("Send to the lead")).toBeDefined();
+    // The lead's disc has no initials to show; the pair stays decorative.
+    expect(Array.from(d.querySelectorAll(".tus-pair .av")).map(text)).toEqual(["KI", ""]);
+    expect(text(d)).not.toContain("A colleague");
+  });
+
+  it("C-SHEET-TEAMUP.sent: Sent to the lead, and the lead reads your note", async () => {
+    routes[U.send()] = (b) => ({
+      status: 201,
+      body: { ...request((b as { note: string }).note), after: HIDDEN_WAITING },
+    });
+    const { onSent } = await render();
+    await type(NOTE);
+    await click(button("Send to the lead"));
+    const d = dialog()!;
+    expect(nameOf(d)).toBe("Team up with the lead");
+    const status = d.querySelector('[role="status"]')!;
+    expect(text(status)).toContain("Sent to the lead");
+    expect(byIds(d.getAttribute("aria-describedby"))).toBe(
+      "The lead reads your note, then approves or declines. You’ll hear in your Inbox.",
+    );
+    expect(onSent.mock.calls[0]![0]).toMatchObject({ after: { line: "Waiting for the lead" } });
+    expect(text(d)).not.toContain("A colleague");
+  });
+
+  it("C-SHEET-TEAMUP Check it: Ask the lead to merge mine in, and the lead decides", async () => {
+    await render({ draftId: DRAFT });
+    const merge = radio("Ask the lead to merge mine in")!;
+    expect(nameOf(merge)).toBe("Ask the lead to merge mine in");
+    expect(byIds(merge.getAttribute("aria-describedby"))).toBe(
+      "The lead decides. If the lead accepts, yours joins that idea with credit to you. If not, you send yours on its own.",
+    );
+    await click(merge);
+    expect(text(dialog())).toContain("The lead sees your name, your note and the idea you bring.");
+  });
+
+  it("C-SHEET-TEAMUP, L-TEAMUP.rules/4: still waiting with no request back reads Waiting for the lead", async () => {
+    routes[U.mine()] = {
+      body: { ...free(), lead: HIDDEN, can_request: false, why_not: "already_requested" },
+    };
+    await render();
+    expect(nameOf(dialog()!)).toBe("Team up with the lead");
+    expect(byIds(dialog()!.getAttribute("aria-describedby"))).toBe("Waiting for the lead");
+    expect(button("Send to the lead")).toBeUndefined();
+  });
+
+  it("C-SHEET-TEAMUP copy: every line with the lead reads as a sentence", () => {
+    const lead = leadWord(HIDDEN);
+    expect(TEAMUP_COPY.title(lead)).toBe("Team up with the lead");
+    expect(TEAMUP_COPY.send(lead)).toBe("Send to the lead");
+    expect(TEAMUP_COPY.sentTitle(lead)).toBe("Sent to the lead");
+    expect(TEAMUP_COPY.waiting(lead)).toBe("Waiting for the lead");
+    expect(TEAMUP_COPY.merge(lead)).toBe("Ask the lead to merge mine in");
+    expect(TEAMUP_COPY.privacy(lead, 2)).toBe("The lead sees your name, your note and the ideas you bring.");
+    // A named lead keeps the board's words.
+    expect(TEAMUP_COPY.line("Ravi", TITLE)).toBe(
+      `Ravi leads “${TITLE}” and decides who joins. Tell Ravi what you bring.`,
+    );
+    expect(TEAMUP_COPY.sentLine("Ravi")).toBe(
+      "Ravi reads your note, then approves or declines. You’ll hear in your Inbox.",
+    );
   });
 });

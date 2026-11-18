@@ -61,6 +61,26 @@ def get_canvas_config() -> dict[str, Any]:
     return canvas_config()
 
 
+@app.post("/internal/auth/code-email", dependencies=[Depends(require_token)])
+def auth_code_email(body: dict[str, Any]) -> Response:
+    """Send a sign-in code now (L-AUTH.rules/2-3, BLD-E002). The code is never stored or logged."""
+    from comms import sign_in_code
+
+    try:
+        with connect(autocommit=True) as conn:
+            sign_in_code.send(
+                conn,
+                str(body.get("user_id", "")),
+                str(body.get("code", "")),
+                int(body.get("valid_minutes", 0)),
+            )
+    except sign_in_code.CodeEmailRefused as exc:
+        return JSONResponse({"error": exc.code}, status_code=exc.status)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    return Response(status_code=204)
+
+
 @app.post("/internal/scan", dependencies=[Depends(require_token)])
 def scan() -> JSONResponse:
     return JSONResponse({"error": "not_built", "block": "B4"}, status_code=501)
@@ -1357,6 +1377,11 @@ from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
 
+# The programme team's admin path (lane A; J-ONE steps 1, 2, 3 and 6; L-DECIDE.after, L-IMPACT, L-ONES admin,
+# "Take off the Wall"). Routes live with the code in programme/routes.py.
+from programme.routes import build as _admin_routes  # noqa: E402
+
+app.include_router(_admin_routes(require_token))
 # Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
 from teamup.routes import build as _teamup_routes  # noqa: E402
 

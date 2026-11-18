@@ -216,11 +216,11 @@ export function OneDashboard({ one }: { one: MyOne }) {
         <h3>More for Ones</h3>
         <ul>
           <li>
-            <Link href="/my-ideas/showcase">Your Showcase brief</Link>
+            <Link href="/one">Your Showcase brief</Link>
             {one.showcase_updated ? ` (updated ${day(one.showcase_updated)})` : ""}
           </li>
           <li>
-            <Link href="/ones/leaderboard">The Ones leaderboard</Link>
+            <Link href="/wall?ones=leaderboard#ones">The Ones leaderboard</Link>
           </li>
         </ul>
       </div>

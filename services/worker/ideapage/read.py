@@ -21,6 +21,8 @@ from rules import load_rule
 IDEA_REF_PREFIX = "IDEA-"
 # Roles that land on the reviewer's page (P-ROUTES.screens: "A reviewer following a link to an idea lands on S-R2").
 DESK_ROLES = frozenset({"reviewer"})
+# The Ones Committee (E-ENUMS.roles; the seed and the old grants still say "committee").
+COMMITTEE_ROLES = frozenset({"committee", "core_committee", "core_chair"})
 OPEN_SET_STATES = ("sent", "seen", "partly_answered")
 ANSWERED_SET_STATES = ("answered",)
 
@@ -84,6 +86,10 @@ class Viewer:
     @property
     def on_desk(self) -> bool:
         return bool(self.roles & DESK_ROLES)
+
+    @property
+    def on_committee(self) -> bool:
+        return bool(self.roles & COMMITTEE_ROLES)
 
 
 def viewer(conn: Conn, user_id: str) -> Viewer:

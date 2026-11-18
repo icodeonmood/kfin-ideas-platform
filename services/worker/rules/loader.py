@@ -46,6 +46,7 @@ RULE_PATHS: dict[str, str] = {
     "sla": "rules/sla.md",
     "sorting": "rules/sorting.md",
     "thresholds": "rules/thresholds.md",
+    "tiers": "rules/tiers.md",
     "comms": "comms/rules.md",
 }
 
@@ -146,6 +147,14 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
         cw = data["committee_window"]
         if cw["days"] > cw["max_months"] * 31:
             problems.append("committee_window.days cannot exceed max_months")
+    elif name == "tiers":
+        steps = [data["tiers"][str(i)] for i in range(1, 8)]
+        if steps[0]["hours_month"] != 0 or steps[0]["money_year"] != 0:
+            problems.append("tier 1 is every new One: its thresholds must be 0")
+        for lower, upper in pairwise(steps):
+            if upper["hours_month"] < lower["hours_month"] or upper["money_year"] < lower["money_year"]:
+                problems.append("tier thresholds must not fall from one tier to the next")
+                break
     elif name == "sla":
         for key, spec in data.items():
             if key != "version" and not ({"limit_wd", "limit_days", "due_wd_before_session"} & set(spec)):

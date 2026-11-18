@@ -4,7 +4,7 @@
  * policy/rbac.yaml; (2) a table-driven test over every endpoint × role generated from rbac.yaml.
  * The HTTP half (the proxy really enforces it) is services/worker/tests/test_b2_04_rbac_http.py.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import { parse } from "yaml";
 
 import policyJson from "@/lib/rbac.json";
 import {
+  AUTH_EXEMPT,
   ENDPOINTS,
   ROLE_COLUMNS,
   can,
@@ -19,6 +20,7 @@ import {
   canSeePage,
   decide,
   effectiveRoles,
+  isAuthExempt,
   navFor,
   scopesFor,
 } from "@/lib/rbac";
@@ -49,6 +51,8 @@ const SECTION_3_1: Record<string, string[]> = {
   grant_roles: ["admin"],
   // L-COMMITTEE: the 30-day window, extend, reverse once (lane B); core_committee until Monday (BLD-B238)
   committee_window: ["core_committee", "committee"],
+  // L-HIDE.rules/7, S-R2 "Hide this": the review desk and the Ones Committee, old and new roles (BLD-B247)
+  hide_for_desk: ["reviewer", "core_committee", "committee"],
 };
 
 describe("policy agrees with ARCHITECTURE §3.1", () => {
@@ -119,16 +123,20 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
   const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and The Ember in the account menu", () =>
-    expect(labels("contributor")).toEqual([...base, "The Ember"]));
+  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
+    expect(labels("contributor")).toEqual([...base, "Your profile and settings", "The Ember"]));
   it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
     expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
     expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
   });
   it("S-R4: the core committee sees Ones Committee in the sidebar until Monday, and Delivery in the account menu", () => {
     expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
-    expect(labels("core_committee", "account")).toEqual(["The Ember", "Delivery"]);
-    expect(labels("contributor", "account")).toEqual(["The Ember"]);
+    expect(labels("core_committee", "account")).toEqual([
+      "Your profile and settings",
+      "The Ember",
+      "Delivery",
+    ]);
+    expect(labels("contributor", "account")).toEqual(["Your profile and settings", "The Ember"]);
   });
   it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
     expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
@@ -149,6 +157,21 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     const nav = navFor(rolesOf("contributor"));
     expect(nav.filter((n) => n.place === "new").map((n) => n.href)).toEqual(["/share"]);
     expect(nav.find((n) => n.key === "my-ideas")?.place).toBe("folded");
+  });
+  it("S-ONE.rules/1: only an active One gets Your One dashboard, in the account menu; no role grants it (BLD-E040)", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "committee", "admin"]) {
+      expect(navFor(rolesOf(role)).map((n) => n.href)).not.toContain("/one");
+      expect(navFor(rolesOf(role), new Set(), new Set(["ones"])).find((n) => n.href === "/one")).toEqual({
+        key: "one",
+        label: "Your One dashboard",
+        href: "/one",
+        place: "account",
+      });
+    }
+  });
+  it("S-H6: Profile is in everyone's account menu", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "admin"])
+      expect(navFor(rolesOf(role)).find((n) => n.href === "/profile")?.place).toBe("account");
   });
   it("retired features have no navigation (DEC-106)", () => {
     const hrefs = (policyJson.navigation as Array<{ href: string }>).map((n) => n.href);
@@ -172,8 +195,13 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(canSeePage(rolesOf("core_chair"), "/committee")).toBe(true);
     expect(canSeePage(rolesOf("lob_committee"), "/committee")).toBe(false);
     expect(canSeePage(rolesOf("contributor"), "/share")).toBe(true);
+  });
+  it("S-ONE (mapping/screens.md:111-112): the printable Showcase brief is for the committee, CEO and admin only; the glow-up message page opens for anyone signed in and checks the invitation itself", () => {
     expect(canSeePage(rolesOf("contributor"), "/ones/showcase/3")).toBe(false);
-    expect(canSeePage(rolesOf("contributor"), "/ones/leaderboard")).toBe(true); // the page itself says "Ones only"
+    expect(canSeePage(rolesOf("reviewer"), "/ones/showcase/3")).toBe(false);
+    for (const role of ["core_committee", "admin", "ceo"])
+      expect(canSeePage(rolesOf(role), "/ones/showcase/3")).toBe(true);
+    expect(canSeePage(rolesOf("contributor"), "/ones/write/12")).toBe(true);
   });
 
   it("never lists a page below a page that already covers it (the first matching rule wins)", () => {
@@ -241,6 +269,11 @@ describe("kill switch flippers (§7.6)", () => {
     expect(canFlip(r("infosec"), "speech.hosted")).toBe(true);
     expect(canFlip(r("admin"), "speech.hosted")).toBe(false);
   });
+
+  it("sign-in by email code (BLD-E002): InfoSec alone switches it", () => {
+    expect(canFlip(r("infosec"), "auth.email_code")).toBe(true);
+    expect(canFlip(r("admin"), "auth.email_code")).toBe(false);
+  });
 });
 
 describe("shared policy file", () => {
@@ -257,5 +290,50 @@ describe("canFlip with names that are not switches (BLD-A171 review)", () => {
       expect(() => canFlip(admin, name)).not.toThrow();
       expect(canFlip(admin, name)).toBe(false);
     }
+  });
+});
+
+describe("L-AUTH sign-in routes in the policy (BLD-A177)", () => {
+  const authRoot = path.resolve(__dirname, "../../src/app/auth");
+  /** Every handler a route file under app/auth exports, as "METHOD /auth/…". */
+  const handlers = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (name === "route.ts") {
+          const url = "/auth/" + path.relative(authRoot, dir).split(path.sep).join("/");
+          const source = readFileSync(full, "utf8");
+          const methods = [
+            ...source.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g),
+          ];
+          expect(methods.length, `${url} exports no handler`).toBeGreaterThan(0);
+          for (const m of methods) out.push(`${m[1]} ${url}`);
+        }
+      }
+    };
+    walk(authRoot);
+    return out.sort();
+  };
+
+  it("L-AUTH: every route file under app/auth has its line in auth_exempt, and every line has a route", () => {
+    const routes = handlers();
+    expect(routes.length).toBeGreaterThan(0);
+    const missing = routes.filter((r) => {
+      const [method, url] = r.split(" ");
+      return !isAuthExempt(method!, url!);
+    });
+    expect(missing, "add these to auth_exempt in policy/rbac.yaml, with the reason").toEqual([]);
+    expect(AUTH_EXEMPT.map((r) => `${r.method} ${r.template}`).sort()).toEqual(routes);
+  });
+
+  it("L-AUTH: only listed sign-in routes and methods run without a session", () => {
+    expect(isAuthExempt("GET", "/auth/callback")).toBe(true);
+    expect(isAuthExempt("HEAD", "/auth/session")).toBe(true);
+    expect(isAuthExempt("POST", "/auth/sso/start")).toBe(true);
+    expect(isAuthExempt("GET", "/auth/sign-out")).toBe(false);
+    expect(isAuthExempt("GET", "/auth/anything-new")).toBe(false);
+    expect(isAuthExempt("POST", "/auth/code/send/extra")).toBe(false);
   });
 });

@@ -10,6 +10,7 @@ import type {
   DeskSort,
   DraftPartKey,
   DraftStep,
+  HiddenKind,
   IdeaPart,
   IdeaStatus,
   InboxTab,
@@ -222,15 +223,9 @@ export interface ProfileResponse {
   one_since_label: string | null;
   /** Teams messages stay off until IT approves them (DEC-105): the switch shows, cannot be turned on. */
   available: { teams: boolean };
-  /**
-   * "How should we refer to you?" (DEC-108, BLD-E010); "unset" is the default and "Prefer not to say".
-   * TODO(lane C): lane C owns the answer and its store through `GET/PUT /api/me/refer-as`; S-H6 saves there
-   * directly. Until that route is on main this is always "unset".
-   */
-  refer_as: ReferAs;
+  // "How should we refer to you?" is not here: lane C's `GET/PUT /api/me/refer-as` is its only source (BLD-C111,
+  // `lib/refer-as.ts`).
 }
-/** Lane C's `/api/me/refer-as` values (DEC-108). */
-export type ReferAs = "she" | "he" | "they" | "unset";
 /** `PATCH /api/me/settings`: any of the switches; each saves at once (S-H6.rules/1). */
 export type SettingsPatch = Partial<PersonSettings>;
 /** Every switch's state after the save. */
@@ -580,12 +575,13 @@ export interface SharerView {
     pill: PillWords;
     breadcrumb: { label: string; to: string; current: string }; // "My ideas, Needs you" / IDEA-2026-001481
     shared_label: string | null; // "Shared 14-Nov-26"
+    reference_line?: string; // the phone's "Reference IDEA-…, shared Saturday 14 November, Investor service"
     share_seconds_label?: string; // "Done in 40 seconds", first arrival only
     first_arrival: boolean;
     /** Null where the sentence names the decision or the questions: compose it from `card_from`'s endpoint. */
-    card: { lead: string; rest: string } | null;
+    card: { lead: string; rest: string; phone_rest?: string } | null; // phone_rest: PhoneStatus.md's shorter rest
     card_from?: "decision" | "question_set";
-    window: { open: boolean; line: string; countdown?: WindowCountdown } | null;
+    window: { open: boolean; line: string; phone_line?: string; countdown?: WindowCountdown } | null;
     actions: {
       conversation: LinkWords;
       edit?: LinkWords;
@@ -627,6 +623,7 @@ export interface SharerView {
       count: number;
       link: LinkWords;
       empty_line?: string;
+      phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
@@ -703,6 +700,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
     action: {
       label: string;
       to?: string;
@@ -723,7 +721,9 @@ export interface MyIdeasEmpty {
   kind: "first_time" | "filtered" | "no_results" | "list";
   title: string;
   line: string;
-  actions: { label: string; to: string; style?: "primary" | "line" }[];
+  phone_line?: string; // the phone board's wording where it differs ("…their impact is measured.")
+  // desk_only: the desktop board's action only ("See 1 in Teamed up"); the phone offers "Show all ideas" alone
+  actions: { label: string; to: string; style?: "primary" | "line"; desk_only?: boolean }[];
   hint?: string; // "or press P anywhere"
 }
 export interface MyIdeasResponse {
@@ -1000,6 +1000,7 @@ export interface ReviewerQuestion {
   asked_line: string; // "You asked, today 11:20 am"; another reviewer's: "Meera asked, today 11:20 am"
   state: "Answered" | "Not answered yet";
   answer: {
+    id: string; // the answer row: S-R2 "Hide this" source { kind: "answer", id } (L-HIDE.rules/7)
     text: string | null;
     at: IsoDate;
     by: string;
@@ -1056,7 +1057,26 @@ export interface ReviewerContribution {
   label: string; // "Ravi’s idea, IDEA-2026-001412"
   parts: ReviewerPart[];
   files: ReviewerArtefact[]; // kind "file" only
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
+}
+/** One of the sharer's messages, the masked copy; `id` is the "Hide this" source { kind: "message", id }. */
+export interface ReviewerOwnWords {
+  id: string;
+  seq: number;
+  via: string;
+  at: IsoDate;
+  text: string | null;
+}
+/** A detail the sharer chose to show, as the review desk reads it (L-HIDE.rules/6, `desk.reads._shown`): one per
+ * value, never the value itself. */
+export interface ReviewerShown {
+  kind: HiddenKind;
+  kind_label: string; // "Folio"
+  reason: ShowReason;
+  because: string; // "it’s an internal reference"
+  by: string; // the first name of who showed it
+  at: IsoDate;
+  line: string; // "Folio shown, because it’s an internal reference."
 }
 /** The reviewer's words for their decision (S-R2 Decided; reference/copy/DeskIdea.md). */
 export interface ReviewerDecisionLines {
@@ -1118,10 +1138,11 @@ export interface ReviewerIdeaResponse {
   can_act: boolean;
   decide_by: { at: IsoDate | null; label: string | null; left: string | null };
   artefacts: ReviewerArtefact[];
-  own_words: { seq: number; via: string; at: IsoDate; text: string | null }[];
+  own_words: ReviewerOwnWords[];
   parts: ReviewerPart[];
   worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
   similar: ReviewerSimilar[];
+  shown: ReviewerShown[]; // L-HIDE.rules/6: the desk and the committee only; empty for anyone else
   contributions: ReviewerContribution[];
   panel: ReviewerPanel;
 }
