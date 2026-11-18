@@ -549,6 +549,8 @@ export interface SharedRow {
   part: IdeaPart | "area";
   label: string;
   value: string;
+  /** A part left empty: "Not given.", as S-R2 reads it (BLD-E057). */
+  empty_line?: string;
   answers?: SharerAnswer[];
   figures?: Record<string, Record<string, string>>;
 }
@@ -572,7 +574,10 @@ export interface SimilarTile {
   count_line: string;
   my_state: "none" | "request_sent" | "on_crew";
   to: string;
+  /** No "team_up" when the viewer is already on the idea's crew (BLD-E056): `done_line` stands in its place. */
   actions: { label: string; op: "preview" | "team_up"; accessible_name: string }[];
+  /** C-SIMGRID.tile after approval: "On the crew", in the action row where Team up would be. */
+  done_line?: string;
 }
 export type SharerPageState =
   | "just_shared"
