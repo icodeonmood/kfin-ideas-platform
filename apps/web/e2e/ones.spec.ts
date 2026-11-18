@@ -3,7 +3,8 @@
  * console and the proposals API are retired, DEC-106, R21, BLD-E049); the committee writes a few words at
  * /ones/write/:id and a tier up plays the glow-up once on S-ONE with them; the One's Showcase brief and the
  * committee's printable copy at /ones/showcase/:id (mapping/screens.md:111-112); the home carousel and the office
- * screen. axe on every page. Synthetic people only: each run picks a synthetic employee who is not a One yet.
+ * screen. axe on every page. Synthetic people only: each run picks a synthetic employee who is not a One yet, and
+ * removes that One and the rows it made when it is done.
  *
  * With the proposals API gone, the tier up the committee writes for is put straight in the dev database the way the
  * worker reads it (`one_proposals`, then for the moment `one_glow_ups`), as one-profile.spec.ts does.
@@ -75,6 +76,24 @@ async function markSomeone(admin: Page): Promise<{ person: Person; oneId: number
   throw new Error("no synthetic person left to mark");
 }
 
+/**
+ * Removes the One this suite made and every row it put in (tests remove what they create), as one-profile.spec.ts
+ * does: the invitations and the committee's words on its proposals, the glow-up, the tier-up proposal, then the One
+ * itself (its number history and Showcase brief cascade with it). Children go first, so this holds even if a
+ * cascade changes. The person was not a One before (`markSomeone` skips anyone with a `ones` row), so this puts
+ * them back as they were; no settings are changed here. The `audit_log` row lane A's founding route writes
+ * (`ones.founding_marked`) stays: the audit log is append-only by design.
+ */
+async function dropOne(oneId: number) {
+  if (!oneId) return;
+  const proposals = "SELECT id FROM one_proposals WHERE one_id = $1";
+  await sql(`DELETE FROM one_message_invites WHERE proposal_id IN (${proposals})`, [oneId]);
+  await sql(`DELETE FROM one_messages WHERE proposal_id IN (${proposals})`, [oneId]);
+  await sql("DELETE FROM one_glow_ups WHERE one_id = $1", [oneId]);
+  await sql("DELETE FROM one_proposals WHERE one_id = $1", [oneId]);
+  await sql("DELETE FROM ones WHERE id = $1", [oneId]);
+}
+
 test.describe.serial("a new One, from the admin page to the glow-up", () => {
   let subject: Person;
   let subjectId = "";
@@ -84,6 +103,12 @@ test.describe.serial("a new One, from the admin page to the glow-up", () => {
   // The 360 px check is inside the dashboard test.
   test.beforeEach(({}, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "one run at a time; the 360 px check is inside");
+  });
+
+  // The One lives across the three tests, so it goes once they are done, failed or not.
+  test.afterAll(async () => {
+    await dropOne(oneId);
+    oneId = 0;
   });
 
   test("L-ONES BLD-E049: the programme team marks a Founding One on the admin path (the proposals API is retired)", async ({
