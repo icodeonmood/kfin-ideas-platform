@@ -30,6 +30,7 @@ from ideapage.words import (
     weekday_or_day,
 )
 from onepc import enums
+from onepc.words import REVIEW_DESK_START
 
 LISTS = tuple(enums.values("my_ideas_list"))  # yours, teamed
 SORTS = tuple(enums.values("my_ideas_sort"))  # latest, shared, stage
@@ -214,7 +215,9 @@ def _draft_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, device: str |
     }
 
 
-def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
+def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime, *, names_desk: bool) -> dict[str, Any]:
+    """One of the person's own shared ideas. `names_desk` (DEC-111, `read.Viewer.sees_desk_names`): only someone on
+    the review desk or the Ones Committee reads who at the desk asked; everyone else reads "The review desk"."""
     uid = str(idea["id"])
     key = read.key_of(idea)
     title = idea["title"] or key
@@ -233,8 +236,10 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         on = f" {when}" if when in ("today", "yesterday") else f" on {when}" if when else ""
         sentence = f"The review desk asked you {count(n, 'question')}{on}."
         # The phone board names who asked: "Meera from the review desk asked you 3 questions on Monday."
-        # (PhoneMyIdeas.md); the desktop board says "The review desk" (MyIdeas.md).
-        asker = read.person_by_user(conn, qset.get("by_user_id"))
+        # (PhoneMyIdeas.md); the desktop board says "The review desk" (MyIdeas.md). DEC-111: only the review desk
+        # and the Ones Committee read the name; for anyone else the phone says the desktop's sentence, so no
+        # phone sentence is sent and no name is read (BLD-E053).
+        asker = read.person_by_user(conn, qset.get("by_user_id")) if names_desk else None
         if asker:
             phone_sentence = (
                 f"{asker['first_name']} from the review desk asked you {count(n, 'question')}{on}."
@@ -245,12 +250,17 @@ def _own_row(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         action = {"label": "Answer the questions", "to": f"/ideas/{key}/answer", "style": "primary"}
     elif status in ("checking", "with_review_desk"):
         if qset and qset["state"] in read.ANSWERED_SET_STATES:
-            asker = read.person_by_user(conn, qset["by_user_id"])
-            who = asker["first_name"] if asker else "The review desk"
-            by = (
-                f" The review desk decides by {day(idea['decide_by'], now)}." if idea.get("decide_by") else ""
-            )
-            sentence = f"{who} has your answers.{by}"
+            # DEC-111: "Harish has your answers. The review desk decides by …" names the reviewer to the review desk
+            # and the Ones Committee only; anyone else reads "The review desk has your answers. It decides by …"
+            # (changed by DEC-111, HR sign-off; BLD-E053).
+            asker = read.person_by_user(conn, qset["by_user_id"]) if names_desk else None
+            when = day(idea["decide_by"], now) if idea.get("decide_by") else None
+            if asker:
+                by = f" The review desk decides by {when}." if when else ""
+                sentence = f"{asker['first_name']} has your answers.{by}"
+            else:
+                by = f" It decides by {when}." if when else ""
+                sentence = f"{REVIEW_DESK_START} has your answers.{by}"
         elif idea.get("decide_by"):
             sentence = f"The review desk looks at it by {day(idea['decide_by'], now)}."
         else:
@@ -455,7 +465,7 @@ def my_ideas(
             if idea["status"] == "draft":
                 rows.append(_draft_row(conn, idea, t, device))
             elif idea["idea_id"] is not None or idea["status"] == "merged":
-                rows.append(_own_row(conn, idea, t))
+                rows.append(_own_row(conn, idea, t, names_desk=me.sees_desk_names))
         for r in conn.execute(
             "SELECT i.*, c.joined_at AS crew_joined_at FROM crew_members c JOIN ideas i ON i.id = c.idea_uuid "
             "WHERE c.contributor_code = %s AND c.left_at IS NULL AND c.role = 'crew' AND i.contributor_code <> %s "

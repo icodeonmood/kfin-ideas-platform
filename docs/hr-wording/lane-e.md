@@ -129,3 +129,14 @@ The worker builds these lines and sends them to the page, so they are not in `ap
 | `S-06` | The same, the line under it (the first sentence only when a build team is named) | `services/worker/ideapage/sharer.py:284`, `:285` | {name} is building it. The build team writes to you in the conversation. |
 | `S-06` | Your idea's page once it has shipped, the card's first line | `services/worker/ideapage/sharer.py:290` | Shipped. It’s live. |
 | `S-06` | The same, the line under it | `services/worker/ideapage/sharer.py:291` | We measure what changed {checks} days after it shipped. |
+
+**Changed by DEC-111 (BLD-E053).** Each of these lines named the reviewer by first name ({reviewer}). For a sharer who is not on the review desk or the Ones Committee it now names the review desk; a sharer on the desk or the committee still reads the old line. The label comes from one constant (`services/worker/onepc/words.py`), so a different label is a one-line change. In the code each is marked `DEC-111`. {day} is a date such as Monday 16 November, {questions} a count such as "3 questions", {when} "today", "yesterday" or "on Monday".
+
+| Module | Where it shows | File and line | Old → new |
+|---|---|---|---|
+| `S-06` | Your idea's page once the answers are sent, the card's first line (Status.md, PhoneStatus.md) | `services/worker/ideapage/sharer.py:267`, `:274` | Sent. {reviewer} has your answers. → Sent. The review desk has your answers. |
+| `S-06` | The same, the track's Reviewed line (Status.md, PhoneStatus.md) | `services/worker/ideapage/sharer.py:526`, `services/worker/ideapage/track.py:194` | {reviewer} has your answers. By {day} → The review desk has your answers. By {day} |
+| `S-06` | Your idea's page, What you shared, the line over each answer under its part (Status.md) | `services/worker/ideapage/sharer.py:328`, `:334` | From your answer to {reviewer}, {day} → From your answer to the review desk, {day} |
+| `S-06` | Your idea's page, What it's worth, over the review desk's revised figures (not drawn before DEC-111) | `services/worker/ideapage/sharer.py:394` | Revised by {reviewer} → Revised by the review desk |
+| `S-07` | My ideas on a phone, an idea with questions waiting (PhoneMyIdeas.md). The phone now shows the computer's sentence (MyIdeas.md) | `services/worker/ideapage/mine.py:237`, `:242` | {reviewer} from the review desk asked you {questions} {when}. → The review desk asked you {questions} {when}. |
+| `S-07` | My ideas, an idea whose answers are with the review desk (not drawn) | `services/worker/ideapage/mine.py:259`, `:262`, `:263` | {reviewer} has your answers. The review desk decides by {day}. → The review desk has your answers. It decides by {day}. |
