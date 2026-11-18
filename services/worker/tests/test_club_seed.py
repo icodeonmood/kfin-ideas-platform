@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from bootstrap import club_seed
+from core import killswitch
 from identity.codes import emp_id_hash
 from onepc import enums
 from onepc.context import open_text
@@ -523,3 +524,106 @@ def test_bld_f069_j_teamup_faisals_seeded_team_up_answer_says_hello_into_the_box
     assert rows[0]["actions"] == [
         {"label": "Say hello", "style": "primary", "to": f"/ideas/{t7.ref}/conversation#say-hello"}
     ]
+
+
+def test_gap_seed_j_similar_1_l_similar_rules_4_each_draft_carries_the_matches_check_it_shows(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-SIMILAR/1 (L-SIMILAR.rules/4, C-SIMGRID.other S-04B): each unsent draft's similar part holds the
+    SimilarMatch[] lane C's draft run would write, the same matches S-05's part 3 reads for its sharer, so S-04B's
+    panel says "1 similar idea, Colleagues raised something close". T2 finds R1, close; a draft with no links keeps
+    none. "Checked and matched" counts what was found by the check (L-SIMILAR.rules/5); F2's later link is not."""
+    from draft.store import Device, Owner, view
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    tanvi = p_id(db, "tanvi")
+    code = _one(db, "SELECT contributor_code FROM contributor_map WHERE user_id = %s", tanvi)
+    part = view(db, Owner(str(tanvi), str(code)), made["T2"].uuid, Device("laptop", None))["parts"]["similar"]
+    assert part["state"] == "filled"
+    assert [(x["idea"]["id"], x["strength"]) for x in part["value"]] == [(made["R1"].ref, "close")]
+    assert part["value"][0]["idea"]["title"] == club_seed.IDEAS["R1"].title
+    assert part["value"][0]["reason"] == "Close match: the same failed SIP debit"
+
+    part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+    for key in ("T1", "T2", "N2", "G2"):  # the drafts that found R1: their parts are what S-05 shows now
+        owner = p_id(db, club_seed.IDEAS[key].owner)
+        stored = _one(db, part_of, made[key].uuid)
+        assert stored and stored == matches_for(db, made[key].uuid, Viewer.of(db, str(owner))), key
+        assert [x["idea"]["id"] for x in stored] == [made["R1"].ref], key
+    assert _one(db, part_of, made["I2"].uuid) == []
+
+    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+    for key, found in (("T5", "1"), ("T6", "1"), ("T11", "1"), ("J2", "1"), ("F2", "0"), ("V1", "0")):
+        assert _one(db, matched, made[key].uuid) == found, key
+
+
+def test_gap_seed_l_similar_rules_4_with_matching_show_off_the_seed_refuses_and_a_reset_keeps_the_seed(
+    unloaded: Any, test_database: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GAP-SEED (L-SIMILAR.rules/4, /5): with `matching.show` off, `matches_for` gives a sharer no matches and has no
+    way past the switch, so a seed loaded then would leave each draft's similar part empty while "Checked and
+    matched" still counts 1. The seed raises instead, naming the switch, and writes nothing, so the parts and the
+    counts never disagree. `--reset` removes and loads in one transaction: refused, it keeps the seed it found."""
+    from core.db import connect
+    from tests import helpers
+
+    conn = unloaded
+
+    def switch(state: str) -> None:
+        conn.execute("UPDATE kill_switches SET state = %s WHERE name = 'matching.show'", (state,))
+        killswitch.clear_cache()  # past the 10-second cache, as the `club` fixture does
+
+    try:
+        switch("off")
+        with pytest.raises(club_seed.MatchingHidden, match=r"kill switch matching\.show is off"):
+            club_seed.load(conn)
+        assert club_seed.seed_user_ids(conn) == []
+        assert _one(conn, "SELECT count(*) FROM idea_parts") == 0
+        assert _one(conn, "SELECT count(*) FROM conversation_entries WHERE event = 'checked_matched'") == 0
+
+        switch("on")
+        m = club_seed.load(conn)
+        switch("off")
+        monkeypatch.setattr(club_seed, "_dev_only", lambda: None)
+        monkeypatch.setattr(club_seed, "connect", lambda **kw: connect(helpers.db_url(test_database), **kw))
+        assert club_seed.main(["--reset"]) == 1
+        assert "matching.show" in capsys.readouterr().err
+        part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+        assert [x["idea"]["id"] for x in _one(conn, part_of, m["T2"].uuid)] == [m["R1"].ref]  # the same rows
+        matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+        assert _one(conn, matched, m["T5"].uuid) == "1"
+    finally:
+        switch("on")
+
+
+def test_gap_seed_j_teamup_1_l_crew_4_the_top_crew_card_says_who_would_help(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, J-TEAMUP/1 (L-CREW/4, BLD-F031): with AI drafting off, "They're looking for" on the top crew card
+    ("Distributors re-send the same empanelment papers") is its sharer's Who would help picks, each one from the
+    configured list (`rules/sorting.md` `helpers`)."""
+    from pathlib import Path
+
+    from crew.deck import looking_for
+    from rules.loader import load_rule
+
+    seeded_repo = Path(__file__).resolve().parents[3] / "seed" / "company-repo"
+    configured = load_rule(seeded_repo, "sorting").data["helpers"]
+    picks = _one(db, "SELECT helper_picks FROM ideas WHERE id = %s", made["P1"].uuid)
+    assert len(picks) == 3
+    assert set(picks) <= set(configured)
+    assert looking_for(picks, None) == "Someone in operations, someone who knows the rules, data or reports"
+
+
+def test_gap_seed_l_decide_6_j_one_1_j1_carries_one_ask_to_join_the_build_team(
+    made: dict[str, club_seed.Made], db: Any
+) -> None:
+    """BLD-E059: the seed's only join ask is J1's, from its sharer, on a Pick that stands with no build team yet."""
+    rows = db.execute(
+        "SELECT a.idea_uuid, u.first_name FROM join_build_asks a JOIN users u ON u.id = a.user_id "
+        "WHERE a.idea_uuid = ANY(%s)",
+        ([mm.uuid for mm in made.values()],),
+    ).fetchall()
+    assert [(str(r["idea_uuid"]), r["first_name"]) for r in rows] == [(made["J1"].uuid, "Jatin")]
+    assert not db.execute("SELECT 1 FROM build_teams WHERE idea_uuid = %s", (made["J1"].uuid,)).fetchone()

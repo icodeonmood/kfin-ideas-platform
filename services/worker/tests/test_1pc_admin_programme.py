@@ -552,6 +552,28 @@ def test_l_audit_permissions_admin_view_shows_the_desk_only_take_off_the_wall(
         view.admin_view(db, cast["nobody"]["id"], NOW)
 
 
+def test_s_admin_j_one_1_l_decide_6_picked_ideas_show_who_asked_to_join(
+    db: Conn, cast: Any, posted: Any
+) -> None:
+    """DEC-111, BLD-A226: the admin sees the asks while choosing the team, oldest first, names only."""
+    idea = an_idea(db, cast["sharer"])
+    quiet = an_idea(db, cast["nobody"], title="Branch queue tokens")
+    # fixture rows in lane B's table (its ask() and its rules are tested in test_l_decide_join_build_db.py)
+    for who, days in (("member", 2), ("sharer", 1)):
+        db.execute(
+            "INSERT INTO join_build_asks (idea_uuid, user_id, asked_at) VALUES (%s, %s, %s)",
+            (idea["id"], cast[who]["id"], NOW - dt.timedelta(days=days)),
+        )
+    picked = {p["idea_ref"]: p for p in view.admin_view(db, cast["admin"]["id"], NOW)["picked"]}
+    asks = picked[idea["idea_id"]]["asked_to_join"]
+    assert [(a["user_id"], a["name"], a["asked_label"]) for a in asks] == [
+        (cast["member"]["id"], "Nandini Iyer", "16 Nov 2026"),
+        (cast["sharer"]["id"], "Arjun Pillai", "17 Nov 2026"),
+    ]
+    assert all(set(a) == {"user_id", "name", "asked_at", "asked_label"} for a in asks)
+    assert picked[quiet["idea_id"]]["asked_to_join"] == []
+
+
 # --- L-AUDIT.flags ------------------------------------------------------------------------------------------------
 
 # The same vector is checked in apps/web/tests/unit/flags.test.ts, so both sides place a person alike.

@@ -204,7 +204,8 @@ step(
         "KFintech apps sign everyone out after 8 hours. Your draft is safe, exactly as you left it.",
       ),
     ).toBeVisible();
-    await expect(page.getByText(new RegExp(`^Draft, saved ${TIME} on your phone$`))).toBeVisible();
+    // No draft card here: S-02's card names the draft by its title ("Draft, saved 9:41 am on this laptop", the title;
+    // server/auth/drafts.ts card), and this draft is still at Tell it with none. J-RECOVER/3 checks the card.
 
     // Single sign-on only (BLD-E002): no "Send a code to …", so the button has nothing to be "instead" of.
     await page.getByRole("button", { name: "Use single sign-on", exact: true }).click();

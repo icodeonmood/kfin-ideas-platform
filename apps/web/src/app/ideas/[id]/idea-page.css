@@ -790,8 +790,15 @@
 .ip-tile-a {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* C-SIMGRID.tile "On the crew", as Check it draws it (share/[id]/check/check.css .ck-crew) */
+.ip-tile-done {
+  font: 500 13px/1.4 var(--ft);
+  color: var(--okT);
 }
 
 .ip-faces {
@@ -962,6 +969,66 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 4px 16px;
+}
+
+/* The card's messages (S-06.layout/8, BLD-E058), Status.md's `.msgs`: the face, the sender line, the words; the
+   desk's decision outlined in ink. The review desk itself has no face (DEC-111), so its words sit flush left. */
+.ip-msgs {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ip-msg {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: start;
+}
+
+.ip-msg.no-face {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ip-msg-h {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+.ip-msg-h b {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ip-msg-b {
+  grid-column: 2;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule2);
+  border-radius: 8px 12px 12px 12px;
+  background: var(--card);
+  font-size: 15.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.ip-msg.no-face .ip-msg-b {
+  grid-column: 1;
+}
+
+.ip-msg.dec .ip-msg-b {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+/* The Ones Committee's message: its face in ink, as Status.md's `.msg.oc .ini` */
+.ip-msg.oc .av {
+  background: var(--ink);
+  color: #ffffff;
 }
 
 .ip-team-line {

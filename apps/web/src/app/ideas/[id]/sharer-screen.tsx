@@ -332,6 +332,8 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
                   </Button>
                 ) : null,
               )}
+              {/* C-SIMGRID.tile: already on its crew, the row says so where Team up would be (BLD-E056) */}
+              {t.done_line ? <span className="ip-tile-done">{t.done_line}</span> : null}
             </div>
           </li>
         ))}
@@ -345,7 +347,9 @@ function SimilarCard({ similar }: { similar: SharerView["page"]["similar"] }) {
           matchReason={preview.reason}
           fullHref={preview.to}
           onClose={() => setPreview(null)}
-          onPrimary={teamUp.open}
+          // Team up from the preview only where the tile offers it; on its crew, the preview says so instead
+          onPrimary={preview.actions.some((a) => a.op === "team_up") ? teamUp.open : undefined}
+          primaryDone={preview.done_line}
         />
       ) : null}
       {teamUp.sheet}
@@ -576,7 +580,8 @@ export function SharerScreen({
 
       <div className="ip-cols">
         <div className="ip-main">
-          {d?.decision.reason && !reversed ? (
+          {/* After any reversal the desk's reason no longer stands: the committee's note says why (BLD-E058) */}
+          {d?.decision.reason && !reversed && !d.reversal ? (
             <section
               className="ip-sec ip-reason"
               aria-labelledby={d.decision.reason_heading ? "ip-reason-h" : undefined}
@@ -601,7 +606,13 @@ export function SharerScreen({
                 <div key={r.part} className="ip-dl-row">
                   <dt>{r.label}</dt>
                   <dd>
-                    {r.part === "cost" && r.figures ? <Worth row={r} /> : <p className="ip-val">{r.value}</p>}
+                    {r.part === "cost" && r.figures ? (
+                      <Worth row={r} />
+                    ) : !r.value && r.empty_line ? (
+                      <p className="ip-val ip-mute">{r.empty_line}</p>
+                    ) : (
+                      <p className="ip-val">{r.value}</p>
+                    )}
                     <Answers answers={r.answers} />
                   </dd>
                 </div>
@@ -718,8 +729,33 @@ export function SharerScreen({
                   )}
                 </p>
               ) : null}
-              {/* TODO(lane F): the conversation's latest entries (S-06.layout/8, L-CONVO): no entries field on
-                  SharerView yet; the card carries the count, its lines and the link. */}
+              {/* The card's messages, in time order: once the desk has decided, its decision, and after a reversal
+                  the Ones Committee's, each outlined as Status.md draws them, the committee's face in ink (BLD-E058).
+                  DEC-111: the review desk itself comes with no initials, so no face, as on S-08. TODO(lane F): the
+                  conversation's other entries (S-06.layout/8, L-CONVO). */}
+              {conv.messages?.length ? (
+                <ol className="ip-msgs">
+                  {conv.messages.map((m) => (
+                    <li
+                      key={m.id}
+                      className={[
+                        "ip-msg",
+                        m.kind === "decision" || m.kind === "reversal" ? "dec" : "",
+                        m.kind === "reversal" ? "oc" : "",
+                        m.from.initials ? "" : "no-face",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {m.from.initials ? <Avatar initials={m.from.initials} size={32} /> : null}
+                      <p className="ip-msg-h">
+                        <b>{m.from_label}</b>, {m.at_label}
+                      </p>
+                      <p className="ip-msg-b">{m.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </section>
           ) : null}
           <SimilarCard similar={page.similar} />

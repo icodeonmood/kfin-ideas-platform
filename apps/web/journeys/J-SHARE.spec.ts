@@ -16,7 +16,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, runSeconds, step } from "./lib";
+import { carriedFor, expectWithDesk, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -394,7 +394,7 @@ step(
     await page.goto(idea);
     await expect(page.getByRole("heading", { level: 1, name: need("title", "J-SHARE/7") })).toBeVisible();
     await expect(page.getByText(idea.split("/").pop() ?? "", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
     await expect(
       page.getByText(new RegExp(`^The review desk will look at it by ${DAY}\\.`)).first(),
     ).toBeVisible();

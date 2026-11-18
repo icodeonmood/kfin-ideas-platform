@@ -1,95 +1,222 @@
 {
- "_note": "Shared by desk/clock.py and apps/web/src/lib/desk/countdown.ts (S-R1.rules/2). Regenerate only with a rule change.",
+ "_note": "One countdown rule for every place (F-COPY.plurals/3, L-QUESTIONS.clock/1, C-QCARD; BLD-A225). Shared by services/worker/onepc/countdown.py (desk/clock.py re-exports it) and apps/web/src/lib/countdown.ts (lib/desk/countdown.ts re-exports it). `label` is the Inbox, Home and questions card's words (suffix \"left\"). Regenerate only with a rule change.",
  "cases": [
   {
    "due": "2026-11-19T18:00:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "3 days",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "3 days left"
   },
   {
    "due": "2026-11-17T12:00:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "1 day",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "1 day left"
   },
   {
    "due": "2026-11-17T11:20:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "1 day",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "1 day left"
   },
   {
    "due": "2026-11-17T11:19:59+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "23:59",
-   "variant": "warn"
+   "variant": "warn",
+   "label": "23:59 left"
   },
   {
    "due": "2026-11-16T18:58:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "07:38",
-   "variant": "warn"
+   "variant": "warn",
+   "label": "07:38 left"
   },
   {
    "due": "2026-11-16T11:20:30+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "00:01",
-   "variant": "warn"
+   "variant": "warn",
+   "label": "00:01 left"
   },
   {
    "due": "2026-11-16T11:20:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "1 minute",
-   "variant": "bad"
+   "variant": "bad",
+   "label": "Overdue by 1 minute"
   },
   {
    "due": "2026-11-16T11:00:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "20 minutes",
-   "variant": "bad"
+   "variant": "bad",
+   "label": "Overdue by 20 minutes"
   },
   {
    "due": "2026-11-16T06:20:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "5 hours",
-   "variant": "bad"
+   "variant": "bad",
+   "label": "Overdue by 5 hours"
   },
   {
    "due": "2026-11-14T11:00:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "2 days",
-   "variant": "bad"
+   "variant": "bad",
+   "label": "Overdue by 2 days"
   },
   {
    "due": "2026-11-22T18:00:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "6 days",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "6 days left"
   },
   {
    "due": "2026-11-16T23:59:00+05:30",
    "now": "2026-11-16T00:00:00+05:30",
    "count": "23:59",
-   "variant": "warn"
+   "variant": "warn",
+   "label": "23:59 left"
   },
   {
    "due": "2026-12-16T00:30:00+05:30",
    "now": "2026-11-21T23:00:00+05:30",
    "count": "25 days",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "25 days left"
   },
   {
    "due": "2027-01-02T00:00:00+05:30",
    "now": "2026-12-31T23:00:00+05:30",
    "count": "2 days",
-   "variant": "normal"
+   "variant": "normal",
+   "label": "2 days left"
   },
   {
    "due": "2026-11-16T10:20:00+05:30",
    "now": "2026-11-16T11:20:00+05:30",
    "count": "1 hour",
-   "variant": "bad"
+   "variant": "bad",
+   "label": "Overdue by 1 hour"
+  },
+  {
+   "why": "J-TRACK/2 walk, Wed 1 pm: Friday 2:40 pm is two office days away",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-18T13:00:00+05:30",
+   "count": "2 days",
+   "variant": "normal",
+   "label": "2 days left"
+  },
+  {
+   "why": "J-TRACK/2 walk, Wed 4 pm: still 2 days, not 1 (46 h 40 min left; whole 24 h periods would say 1)",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-18T16:00:00+05:30",
+   "count": "2 days",
+   "variant": "normal",
+   "label": "2 days left"
+  },
+  {
+   "why": "just after midnight IST, more than 24 h left: the next day counts",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-19T00:05:00+05:30",
+   "count": "1 day",
+   "variant": "normal",
+   "label": "1 day left"
+  },
+  {
+   "why": "24 h 20 min left across two midnights: 2 office days",
+   "due": "2026-11-21T00:10:00+05:30",
+   "now": "2026-11-19T23:50:00+05:30",
+   "count": "2 days",
+   "variant": "normal",
+   "label": "2 days left"
+  },
+  {
+   "why": "exactly 24 h left",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-19T14:40:00+05:30",
+   "count": "1 day",
+   "variant": "normal",
+   "label": "1 day left"
+  },
+  {
+   "why": "23:59 left",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-19T14:41:00+05:30",
+   "count": "23:59",
+   "variant": "warn",
+   "label": "23:59 left"
+  },
+  {
+   "why": "1 minute left",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-20T14:39:00+05:30",
+   "count": "00:01",
+   "variant": "warn",
+   "label": "00:01 left"
+  },
+  {
+   "why": "0 seconds left is overdue",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-20T14:40:00+05:30",
+   "count": "1 minute",
+   "variant": "bad",
+   "label": "Overdue by 1 minute"
+  },
+  {
+   "why": "30 seconds overdue",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-20T14:40:30+05:30",
+   "count": "1 minute",
+   "variant": "bad",
+   "label": "Overdue by 1 minute"
+  },
+  {
+   "why": "5 hours overdue",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-20T19:40:00+05:30",
+   "count": "5 hours",
+   "variant": "bad",
+   "label": "Overdue by 5 hours"
+  },
+  {
+   "why": "3 days overdue",
+   "due": "2026-11-20T14:40:00+05:30",
+   "now": "2026-11-23T14:40:00+05:30",
+   "count": "3 days",
+   "variant": "bad",
+   "label": "Overdue by 3 days"
+  },
+  {
+   "why": "due 1 am IST Fri (Thu in UTC), now 11:30 pm IST Wed: office dates say 2 days, UTC dates would say 1",
+   "due": "2026-11-19T19:30:00Z",
+   "now": "2026-11-18T18:00:00Z",
+   "count": "2 days",
+   "variant": "normal",
+   "label": "2 days left"
+  },
+  {
+   "why": "now 12:10 am IST Thu (Wed in UTC), due 11 pm IST Fri: office dates say 1 day, UTC dates would say 2",
+   "due": "2026-11-20T17:30:00Z",
+   "now": "2026-11-18T18:40:00Z",
+   "count": "1 day",
+   "variant": "normal",
+   "label": "1 day left"
+  },
+  {
+   "why": "3,599 s late rounds up to 60 minutes; it reads 59 minutes, and 3,600 s reads 1 hour",
+   "due": "2026-11-16T10:20:01+05:30",
+   "now": "2026-11-16T11:20:00+05:30",
+   "count": "59 minutes",
+   "variant": "bad",
+   "label": "Overdue by 59 minutes"
   }
  ]
 }

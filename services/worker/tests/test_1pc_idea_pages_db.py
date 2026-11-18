@@ -22,7 +22,7 @@ from ideapage.colleague import Paused
 from ideapage.mine import my_ideas, snippet
 from ideapage.route import idea_view
 from ideapage.withdraw import Refused, restore, withdraw
-from ideapage.words import IST, day
+from ideapage.words import IST, day, day_time
 from submit import clock
 from tests import helpers
 
@@ -180,22 +180,31 @@ def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
 
 def test_s06_states_decisions_leave_the_decision_to_lane_b(club: dict[str, Any]) -> None:
     """Picked, Not now, Not picked and Reversed: the decision, its reason, the committee's window and any reversal
-    are lane B's (GET /ideas/:id/decision). This page keeps the state, the pill and the track."""
+    are lane B's (GET /ideas/:id/decision). This page keeps the state, the pill and the track; the only places it
+    says the reason and the committee's note are the desk's and the committee's messages in the conversation card
+    (BLD-E058)."""
     expected = {
-        "T7": ("Picked", "Picked"),
-        "T8": ("Not now", "Not now"),
-        "T9": ("Reversed by the Ones Committee", "Picked"),
+        "T7": ("Picked", "Picked", ["decision"]),
+        "T8": ("Not now", "Not now", ["decision"]),
+        "T9": ("Reversed by the Ones Committee", "Picked", ["decision", "reversal"]),
     }
-    for key, (label, pill_label) in expected.items():
+    for key, (label, pill_label, kinds) in expected.items():
         v = view(club, ref(club, key), "tanvi")
         page = v["page"]
         assert page["state_label"] == label and page["pill"]["label"] == pill_label
         assert page["card"] is None and page["card_from"] == "decision"
         assert page["lane_b"]["decision"] == f"/api/ideas/{ref(club, key)}/decision"
         assert "decision" not in v["idea"] and "join_build" not in page["actions"]
-        dump = json.dumps(v, ensure_ascii=False, default=str)
-        for words in ("compliance sign-off", "exchange calendar", "Failed dividends cost more"):
-            assert words not in dump  # reasons and the committee's note are read from lane B only
+        conv = dict(page["conversation"])
+        assert [m["kind"] for m in conv.pop("messages")] == kinds
+        rest = json.dumps({**v, "page": {**page, "conversation": conv}}, ensure_ascii=False, default=str)
+        for words in (
+            "compliance sign-off",
+            "pricing policy",
+            "exchange calendar",
+            "Failed dividends cost more",
+        ):
+            assert words not in rest  # the reason and the note are said once, in their messages
     picked = nodes(view(club, ref(club, "T7"), "tanvi"))
     assert picked[2][1] == "done" and str(picked[2][2]).startswith("Picked, ")
     assert picked[3][1] == "now" and str(picked[3][2]).startswith("Team chosen by ")
@@ -359,6 +368,206 @@ def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_revie
     # The decided ideas too: T8 (Not now) and T9 (moved by the Ones Committee), as their sharer reads them
     assert no_reviewer_named(view(club, ref(club, "T8"), "tanvi"), club)
     assert no_reviewer_named(view(club, ref(club, "T9"), "tanvi"), club)
+
+
+DECIDED_LINE = "The review desk has decided. The full conversation, with every answer, is one tap away."
+COMMITTEE_LINE = (
+    "The Ones Committee has the last word on this decision. The full conversation is one tap away."
+)
+THE_DESK = {"id": "", "name": "The review desk", "first_name": "The review desk", "initials": ""}
+
+
+def lane_b(club: dict[str, Any], key: str, who: str) -> dict[str, Any]:
+    """The decision as S-06's reason block and reversal card read it: lane B's `GET /ideas/:id/decision`."""
+    from desk.committee import decision_for_viewer
+
+    got = decision_for_viewer(club["conn"], ref(club, key), club["p"][who], NOW)
+    assert got is not None and "stage_only" not in got
+    return got
+
+
+def desk_reason(club: dict[str, Any], key: str, who: str) -> str:
+    return str(lane_b(club, key, who)["decision"]["reason"])
+
+
+def decided_at(club: dict[str, Any], key: str) -> dt.datetime:
+    row = (
+        club["conn"]
+        .execute("SELECT at FROM idea_decisions WHERE idea_uuid = %s", (club["m"][key].uuid,))
+        .fetchone()
+    )
+    return row["at"]
+
+
+def the_desks_message(club: dict[str, Any], key: str, said: str, msg_id: str) -> dict[str, Any]:
+    """The desk's message as a sharer outside the desk and the committee reads it (DEC-111)."""
+    at = decided_at(club, key)
+    return {
+        "id": msg_id,
+        "kind": "decision",
+        "from": THE_DESK,
+        "from_label": "The review desk",
+        "at": at.isoformat(),
+        "at_label": day_time(at, NOW),
+        "by_line": f"The review desk, {day_time(at, NOW)}",
+        "text": f"{said}. {desk_reason(club, key, 'tanvi')}",
+    }
+
+
+def the_committees_message(club: dict[str, Any], key: str, msg_id: str) -> dict[str, Any]:
+    """The committee's message, named as lane B's reversal card names the member, its words the card's note."""
+    d = lane_b(club, key, "tanvi")
+    by, at = d["reversal"]["by"], dt.datetime.fromisoformat(d["reversal"]["at"])
+    return {
+        "id": msg_id,
+        "kind": "reversal",
+        "from": {
+            "id": by["id"],
+            "name": by["name"],
+            "first_name": by["first_name"],
+            "initials": by["initials"],
+            "role_label": "from the Ones Committee",
+        },
+        "from_label": f"{by['name']} from the Ones Committee",
+        "at": at.isoformat(),
+        "at_label": day_time(at, NOW),
+        "by_line": d["lines"]["reversal"]["from_line"],
+        "text": d["reversal"]["note"],
+    }
+
+
+def test_s06_layout_8_j_track_7_j_review_6_bld_e058_the_decision_is_the_desks_message_in_the_card(
+    club: dict[str, Any],
+) -> None:
+    """BLD-E058 (S-06.layout/8; Status.md and PhoneStatus.md "Picked", "Not now"; J-TRACK/7, J-REVIEW/6): once the
+    desk has decided, "You and the review desk" ends with the desk's message, the choice and then the reason word for
+    word, the same masked words as the reason block. No empty line next to the decided line. DEC-111: the sharer
+    reads it from "The review desk", with no face and nothing of the reviewer."""
+    for key, said in (("T7", "Picked"), ("T8", "Not now")):
+        v = view(club, ref(club, key), "tanvi")
+        conv = v["page"]["conversation"]
+        assert conv["sub_line"] == DECIDED_LINE
+        assert "empty_line" not in conv and "phone_empty_line" not in conv
+        assert conv["messages"] == [the_desks_message(club, key, said, conv["messages"][0]["id"])]
+        assert no_reviewer_named(v, club)
+    # T8 has no other entry: the decision is the card's one message, and the count says so
+    assert view(club, ref(club, "T8"), "tanvi")["page"]["conversation"]["count"] == 1
+    t7 = view(club, ref(club, "T7"), "tanvi")["page"]["conversation"]
+    assert t7["messages"][0]["text"].startswith("Picked. This is a clear problem with a simple fix.")
+    entries = (
+        club["conn"]
+        .execute(
+            "SELECT count(*) AS n FROM conversation_entries WHERE idea_uuid = %s AND type <> 'event'",
+            (club["m"]["T7"].uuid,),
+        )
+        .fetchone()
+    )
+    assert t7["count"] == int(entries["n"]) + 1
+
+
+def test_s06_layout_8_l_committee_bld_e058_after_a_reversal_the_committees_message_follows_the_desks(
+    club: dict[str, Any],
+) -> None:
+    """BLD-E058 (Status.md "Reversed by the Ones Committee", L-COMMITTEE.rules/5): the desk's decision stays on
+    record as its message, then the committee member's message at the time they reversed it, its words the note the
+    reversal card shows (lane B's masked copy), its sender named as the card names them, with their initials. The
+    sub-line is the committee's. T9: the desk said Not picked, the committee moved it to Picked. Then it is built
+    and shipped: both messages and the committee's sub-line stay, so the card never ends on the desk's Not picked
+    alone under "The review desk has decided"."""
+    conn, t9 = club["conn"], ref(club, "T9")
+    for status, state in (("picked", "reversed"), ("being_built", "being_built"), ("shipped", "shipped")):
+        conn.execute("UPDATE ideas SET status = %s WHERE id = %s", (status, club["m"]["T9"].uuid))
+        v = view(club, t9, "tanvi")
+        conv = v["page"]["conversation"]
+        assert v["page"]["state"] == state
+        desk, committee = conv["messages"]
+        assert desk == the_desks_message(club, "T9", "Not picked", desk["id"])
+        assert committee == the_committees_message(club, "T9", committee["id"])
+        assert committee["from_label"] == "Manoj Agarwal from the Ones Committee"
+        assert committee["from"]["initials"] == "MA" and committee["from"]["id"] == club["p"]["manoj"]
+        assert (
+            committee["text"]
+            == "We can ask the exchange to move the reminder. Failed dividends cost more than the change."
+        )
+        assert dt.datetime.fromisoformat(desk["at"]) < dt.datetime.fromisoformat(committee["at"])
+        assert conv["sub_line"] == COMMITTEE_LINE and DECIDED_LINE not in json.dumps(v, ensure_ascii=False)
+        assert "empty_line" not in conv and conv["count"] >= 2
+        assert no_reviewer_named(v, club)  # the desk's message still reads "The review desk"
+    # A Pick nobody reversed, now being built: the desk's message alone, under the desk's sub-line
+    a1 = view(club, ref(club, "A1"), "aparna")["page"]
+    assert a1["state"] == "being_built" and a1["conversation"]["sub_line"] == DECIDED_LINE
+    assert [m["kind"] for m in a1["conversation"]["messages"]] == ["decision"]
+
+
+def test_s06_layout_8_dec111_bld_e058_the_desk_and_the_committee_read_who_decided(
+    club: dict[str, Any],
+) -> None:
+    """DEC-111, BLD-E058: a sharer on the review desk or the Ones Committee reads the decision from the person who
+    made it, "Lavanya from the review desk, <day>, <time>", with her initials for the face, as Status.md draws
+    Meera's. The grant gone, the desk speaks again and the reviewer leaves the payload."""
+    t8 = ref(club, "T8")
+    at = decided_at(club, "T8")
+    for role in ("reviewer", "committee"):
+        grant(club, "tanvi", role)
+        (m,) = view(club, t8, "tanvi")["page"]["conversation"]["messages"]
+        assert m["from"] == {
+            "id": club["p"]["lavanya"],
+            "name": "Lavanya Krishnan",
+            "first_name": "Lavanya",
+            "initials": "LK",
+            "role_label": "from the review desk",
+        }
+        assert m["from_label"] == "Lavanya from the review desk"
+        assert m["by_line"] == f"Lavanya from the review desk, {day_time(at, NOW)}"
+        assert m["text"].startswith("Not now. The right idea, but fees need a pricing policy first.")
+        revoke_all(club, "tanvi")
+    v = view(club, t8, "tanvi")
+    assert v["page"]["conversation"]["messages"][0]["from"] == THE_DESK and no_reviewer_named(v, club)
+
+
+def test_s06_layout_8_j_review_6_j_track_7_bld_e058_a_decision_sent_after_answers_comes_after_them_masked(
+    club: dict[str, Any],
+) -> None:
+    """J-REVIEW/6 to J-TRACK/7 through lane B's own send (L-DECIDE): B1's answers are in, the desk picks it with a
+    reason that holds a customer's PAN. S-06's card then ends with the desk's message, after the answers in time,
+    and the reason is the masked copy lane B stored (L-HIDE, DEC-103): the PAN is nowhere in the page. Before the
+    decision the card is as it was: no message, and no empty line next to the answers."""
+    from desk import decide
+
+    conn, b1 = club["conn"], ref(club, "B1")
+    before = view(club, b1, "bhavesh")["page"]["conversation"]
+    assert "messages" not in before and "empty_line" not in before
+    pan = "ABCPK4321L"  # synthetic, in the PAN pattern
+    reason = (
+        f"A searchable log saves a day a week. The courier for {pan} came back twice before anyone found it."
+    )
+    decide.send(conn, b1, club["p"]["lavanya"], {"choice": "pick", "reason": reason}, NOW)
+    v = view(club, b1, "bhavesh")
+    conv = v["page"]["conversation"]
+    (m,) = conv["messages"]
+    answered = conn.execute(
+        "SELECT max(at) AS at FROM conversation_entries WHERE idea_uuid = %s AND type = 'answers'",
+        (club["m"]["B1"].uuid,),
+    ).fetchone()["at"]
+    assert answered is not None and dt.datetime.fromisoformat(m["at"]) == NOW > answered
+    assert m["by_line"] == f"The review desk, {day_time(NOW, NOW)}" and m["from"] == THE_DESK
+    assert m["text"] == f"Picked. {desk_reason(club, 'B1', 'bhavesh')}"
+    assert m["text"].startswith("Picked. A searchable log saves a day a week. The courier for ")
+    assert pan not in json.dumps(v, ensure_ascii=False, default=str)
+    assert conv["sub_line"] == DECIDED_LINE and "empty_line" not in conv
+    assert no_reviewer_named(v, club)
+
+
+def test_s06_layout_8_bld_e058_before_a_decision_and_withdrawn_the_card_is_unchanged(
+    club: dict[str, Any],
+) -> None:
+    """BLD-E058 changes nothing before a decision or after a withdrawal: Just shared keeps its empty line and no
+    message, Questions from the review desk has no message, and a withdrawn idea has no card."""
+    just = view(club, ref(club, "T5"), "tanvi")["page"]["conversation"]
+    assert "messages" not in just and just["empty_line"].startswith("No messages yet.") and just["count"] == 0
+    asked = view(club, ref(club, "T6"), "tanvi")["page"]
+    assert asked["state"] == "questions" and "messages" not in asked["conversation"]
+    assert view(club, ref(club, "T10"), "tanvi")["page"]["conversation"] is None
 
 
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
@@ -1328,3 +1537,109 @@ def test_dec_104_s06_similar_tiles_and_the_merged_line_never_name_a_lead_who_has
     merged = view(club, t11, "tanvi")["page"]["merged"]
     assert merged["line"] == f"Merged into {ref(club, 'R2')} by its lead"
     assert "Rekha" not in json.dumps(merged, ensure_ascii=False)
+
+
+# --- Lane G's 13:00 walk (run 44273019908): S-06's similar tiles, an empty part, and Teams while it is off ----------
+
+
+def test_s06_rules_4_c_simgrid_tile_j_similar_7_j_review_m3_no_tile_for_where_it_went_no_team_up_on_your_crew(
+    club: dict[str, Any],
+) -> None:
+    """S-06.rules/4, C-SIMGRID.tile (BLD-E056; J-SIMILAR/7, J-REVIEW/M3): T11 was merged into R2 by the review desk,
+    and Tanvi is on R2's crew. T11's "Colleagues on something similar" has no tile for R2 (its card and merged block
+    link there already). On any other page, a tile for an idea whose crew she is in offers Preview only, with "On
+    the crew" where Team up would be; once she leaves that crew, Team up is back."""
+    conn, m = club["conn"], club["m"]
+    t11, r2 = ref(club, "T11"), ref(club, "R2")
+    page = view(club, t11, "tanvi")["page"]
+    assert page["merged"]["to"] == r2
+    assert r2 not in [t["idea"]["id"] for t in page["similar"]["tiles"]]
+    # The tile is gone only for where it went: undo the merge and R2 is back, with the crew she is on
+    conn.execute("UPDATE merges SET reversed_at = now() WHERE merged_idea_uuid = %s", (m["T11"].uuid,))
+    tiles = view(club, t11, "tanvi")["page"]["similar"]["tiles"]
+    tile = next(t for t in tiles if t["idea"]["id"] == r2)
+    assert tile["my_state"] == "on_crew" and tile["done_line"] == "On the crew"
+    assert [a["op"] for a in tile["actions"]] == ["preview"]
+
+    # T5 lists P1; Tanvi is not on P1's crew, so it offers Team up and no "On the crew"
+    def p1_tile() -> dict[str, Any]:
+        tiles = view(club, ref(club, "T5"), "tanvi")["page"]["similar"]["tiles"]
+        return dict(next(t for t in tiles if t["idea"]["id"] == ref(club, "P1")))
+
+    t5_tile = p1_tile()
+    assert [a["op"] for a in t5_tile["actions"]] == ["preview", "team_up"] and "done_line" not in t5_tile
+    # On P1's crew, it does not; left the crew, it does again
+    conn.execute(
+        "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES (%s, %s, 'crew', 'teamup')",
+        (m["P1"].uuid, code_of(club, "tanvi")),
+    )
+    t5_tile = p1_tile()
+    assert [a["op"] for a in t5_tile["actions"]] == ["preview"] and t5_tile["done_line"] == "On the crew"
+    conn.execute(
+        "UPDATE crew_members SET left_at = now(), left_how = 'left' WHERE idea_uuid = %s AND contributor_code = %s",
+        (m["P1"].uuid, code_of(club, "tanvi")),
+    )
+    assert [a["op"] for a in p1_tile()["actions"]] == ["preview", "team_up"]
+
+
+def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(club: dict[str, Any]) -> None:
+    """S-06.layout/5 (BLD-E057; J-REVIEW/1, /3, /6, J-TRACK/7): a part the sharer left empty, or wrote only spaces
+    in, reads "Not given.", as S-R2 reads it, never a blank row. A part with words has no empty line."""
+    conn, k1 = club["conn"], ref(club, "K1")  # Kiran's K1: How often left empty
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    assert rows["often"]["value"] == "" and rows["often"]["empty_line"] == "Not given."
+    assert rows["who"]["value"] and "empty_line" not in rows["who"]
+    conn.execute("UPDATE ideas SET affects = '{}' WHERE idea_id = %s", (k1,))
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    assert rows["who"]["empty_line"] == "Not given."
+    conn.execute("UPDATE ideas SET often = '   ', affects = ARRAY['  ', ' '] WHERE idea_id = %s", (k1,))
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    for part in ("often", "who"):
+        assert rows[part]["value"] == "" and rows[part]["empty_line"] == "Not given.", part
+    t5 = {r["part"]: r for r in view(club, ref(club, "T5"), "tanvi")["page"]["shared"]["rows"]}
+    assert t5["often"]["value"] and "empty_line" not in t5["often"]
+
+
+def test_bld_e054_dec_105_s06_names_teams_only_while_its_switch_is_on(club: dict[str, Any]) -> None:
+    """BLD-E054, DEC-105 (S-06.layout/4, /8, S-06.states "Just shared", "Answers sent"): Teams is built but off until
+    IT approves it. With `comms.teams` on, S-06 says the drawn words; off, each sentence names only email."""
+    conn, t5, t6 = club["conn"], ref(club, "T5"), ref(club, "T6")
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+
+    def lines() -> dict[str, str]:
+        just = view(club, t5, "tanvi")["page"]
+        sent = view(club, t6, "tanvi")["page"]
+        assert just["state"] == "just_shared" and sent["state"] == "answers_sent"
+        return {
+            "window": just["window"]["line"].split(". ", 2)[-1],
+            "rest": just["card"]["rest"],
+            "phone_rest": just["card"]["phone_rest"],
+            "empty": just["conversation"]["empty_line"],
+            "phone_empty": just["conversation"].get("phone_empty_line"),
+            "sent": sent["card"]["rest"].split(", and you hear in your ")[-1],
+        }
+
+    killswitch.clear_cache()
+    assert killswitch.is_on("comms.teams", conn)  # the test database starts with every switch on
+    assert lines() == {
+        "window": "We tell you on Teams and by email when anything moves.",
+        "rest": "We’ll tell you on Teams and by email when anything changes.",
+        "phone_rest": "We’ll tell you on Teams and by email.",
+        "empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we "
+        "tell you on Teams.",
+        "phone_empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "sent": "Inbox, on Teams and by email.",
+    }
+    conn.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'comms.teams'")
+    killswitch.clear_cache()
+    off = lines()
+    assert off == {
+        "window": "We tell you by email when anything moves.",
+        "rest": "We’ll tell you by email when anything changes.",
+        "phone_rest": "We’ll tell you by email.",
+        "empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "phone_empty": None,  # the phone's line is the same one: sent once, so the page says it once
+        "sent": "Inbox and by email.",
+    }
+    pages = [view(club, t5, "tanvi"), view(club, t6, "tanvi")]
+    assert "Teams" not in json.dumps(pages, ensure_ascii=False, default=str)

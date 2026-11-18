@@ -489,7 +489,7 @@ export interface LinkWords {
   accessible_name?: string;
 }
 export interface WindowCountdown {
-  label: string; // "3 days left", "07:38 left", "Overdue"
+  label: string; // "3 days left", "07:38 left", "Overdue by 5 hours" (F-COPY.plurals/3)
   variant: "neutral" | "warn" | "bad";
   until: IsoDate;
 }
@@ -549,6 +549,8 @@ export interface SharedRow {
   part: IdeaPart | "area";
   label: string;
   value: string;
+  /** A part left empty: "Not given.", as S-R2 reads it (BLD-E057). */
+  empty_line?: string;
   answers?: SharerAnswer[];
   figures?: Record<string, Record<string, string>>;
 }
@@ -572,7 +574,10 @@ export interface SimilarTile {
   count_line: string;
   my_state: "none" | "request_sent" | "on_crew";
   to: string;
+  /** No "team_up" when the viewer is already on the idea's crew (BLD-E056): `done_line` stands in its place. */
   actions: { label: string; op: "preview" | "team_up"; accessible_name: string }[];
+  /** C-SIMGRID.tile after approval: "On the crew", in the action row where Team up would be. */
+  done_line?: string;
 }
 export type SharerPageState =
   | "just_shared"
@@ -586,6 +591,22 @@ export type SharerPageState =
   | "being_built"
   | "shipped"
   | "merged";
+/**
+ * A message in S-06's "You and the review desk" (S-06.layout/8, BLD-E058): the desk's decision, "Picked. <reason>",
+ * and after a reversal the Ones Committee's, its words the committee's note. DEC-111: outside the review desk and the
+ * Ones Committee the desk's `from` is the desk itself ("The review desk", no id, no initials, so no face), as lane
+ * F's S-08 sends it; the committee member is named, as lane B's reversal card names them.
+ */
+export interface SharerCardMessage {
+  id: string;
+  kind: "decision" | "reversal";
+  from: PersonRef;
+  from_label: string; // "The review desk", "Meera from the review desk", "Rohan Mehta from the Ones Committee"
+  at: IsoDate;
+  at_label: string; // "Monday 16 November, 4:58 pm"
+  by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
+  text: string;
+}
 /** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
 export interface SharerView {
   view: "sharer";
@@ -666,6 +687,8 @@ export interface SharerView {
       empty_line?: string;
       phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
+      /** The card's messages in time order: the desk's decision, then any reversal by the committee (BLD-E058). */
+      messages?: SharerCardMessage[];
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };
     merged: { to: string; title: string; line: string; note: string; at: IsoDate; link: LinkWords } | null;

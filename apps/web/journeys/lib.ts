@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { test, type Browser, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { Client } from "pg";
 
 import { signIn } from "../e2e/helpers";
@@ -205,11 +205,12 @@ export async function endSession(page: Page): Promise<void> {
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
   try {
-    // sessions has CHECK (expires_at > created_at) (20261109000100_sessions_privacy_hr.sql), and the session was made
-    // seconds ago, so its start moves back too: two minutes before the new end, or earlier if it already was.
+    // As the 8 hours leave it: begun 9 hours ago and ended a minute ago. sessions has CHECK (expires_at > created_at)
+    // (20261109000100_sessions_privacy_hr.sql), so the start must move too. The proxy refreshes only a session that
+    // readSession accepted, which this one no longer is.
     const { rowCount } = await client.query(
       `UPDATE sessions
-          SET created_at = LEAST(created_at, now() - interval '2 minutes'),
+          SET created_at = now() - interval '9 hours',
               expires_at = now() - interval '1 minute'
         WHERE id_hash = $1 AND revoked_at IS NULL`,
       [idHash],
@@ -228,6 +229,94 @@ export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): s
 /** A draft on Tell it (`S-04B`) or Check it (`sub` = "/check", `S-05`). */
 export function draftUrl(idea: { uuid: string }, sub = ""): string {
   return `/share/${idea.uuid}${sub}`;
+}
+
+/** A decision's committee window as stored (read only): when it opened (the decision's time) and where it ends now. */
+export async function decisionWindow(idea: { uuid: string }): Promise<{ opensAt: Date; closesAt: Date }> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT w.opens_at, w.closes_at FROM idea_decisions d JOIN decision_windows w ON w.decision_id = d.id
+        WHERE d.idea_uuid = $1 ORDER BY d.at DESC LIMIT 1`,
+      [idea.uuid],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("the idea has no decision window: load the seed with make demo DEMO_SET=1pc");
+    return { opensAt: new Date(row.opens_at), closesAt: new Date(row.closes_at) };
+  } finally {
+    await client.end();
+  }
+}
+
+/** India's offset; it has no daylight saving. */
+const IST_MS = 330 * 60_000;
+
+/**
+ * L-COMMITTEE.rules/2 (BLD-B258, desk/window.py add_months): the same India calendar day and wall time `months` later,
+ * a day the month lacks becoming its last day. Worked out here, not read, so the step checks the rule.
+ */
+export function addMonthsIST(t: Date, months: number): Date {
+  const local = new Date(t.getTime() + IST_MS); // its UTC fields read as India's wall clock
+  const index = local.getUTCMonth() + months;
+  const year = local.getUTCFullYear() + Math.floor(index / 12);
+  const month = index % 12;
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const moved = Date.UTC(
+    year,
+    month,
+    Math.min(local.getUTCDate(), last),
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  );
+  return new Date(moved - IST_MS);
+}
+
+/** desk/when.py day(): "Monday 8 February", with " 2027" only when the year in India is not this one. */
+export function dayIST(t: Date, now: Date = new Date()): string {
+  const parts = (d: Date) =>
+    Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+        .formatToParts(d)
+        .map((p) => [p.type, p.value]),
+    );
+  const p = parts(t);
+  return `${p.weekday} ${p.day} ${p.month}${p.year === parts(now).year ? "" : ` ${p.year}`}`;
+}
+
+/**
+ * S-06's own card: the article that holds the page's one h1 (ideas/[id]/sharer-screen.tsx). Its pill is the idea's
+ * status; a similar idea's tile beside it carries a pill too ("With the review desk"), so a status is read in here.
+ */
+export function ideaCard(page: Page): Locator {
+  return page.getByRole("article").filter({ has: page.getByRole("heading", { level: 1 }) });
+}
+
+/**
+ * The idea is with the review desk (L-SUBMIT lifecycle): just sent or restored it reads Checking until the worker's
+ * submit.check job hands it on, so Checking is allowed first and the page is read again until the card says so.
+ */
+export async function expectWithDesk(page: Page): Promise<void> {
+  const pill = (label: string | RegExp) => ideaCard(page).getByText(label, { exact: true });
+  await expect(pill(/^(?:Checking|With the review desk)$/)).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        if (await pill("With the review desk").isVisible()) return true;
+        await page.reload();
+        return pill("With the review desk").isVisible();
+      },
+      { timeout: 120_000, intervals: [2_000, 5_000] },
+    )
+    .toBe(true);
 }
 
 // --- Which modules are on main ---------------------------------------------------------------------------------------
