@@ -43,6 +43,7 @@ import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQu
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
+import { backToSearchedList } from "@/lib/search-memory";
 
 export type ReviewPromises = {
   reasonMin: number;
@@ -304,7 +305,16 @@ export function ReviewerIdea({
   return (
     <div className="ri">
       <div className="ri-head">
-        <Link href="/desk" className="back">
+        {/* Back to a desk whose search this tab keeps goes back in history, so the list comes back as it was
+            (J-BROWSE/3 and /4, DEC-110) */}
+        <Link
+          href="/desk"
+          className="back"
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if (backToSearchedList("/desk")) e.preventDefault();
+          }}
+        >
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path
               d="M9 2.5 4.5 7 9 11.5"
