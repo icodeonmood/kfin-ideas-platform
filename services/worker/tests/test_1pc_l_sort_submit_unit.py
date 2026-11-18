@@ -347,6 +347,21 @@ def test_l_submit_withdraw_3_the_restore_hook_plugs_into_lane_e(monkeypatch: pyt
     assert fake.ON_RESTORED_HOOK is adapters.on_restored
 
 
+def test_l_submit_send_4_on_restored_fits_lane_es_hook_and_takes_a_now_bld_c154() -> None:
+    """`on_restored` still fits lane E's `ON_RESTORED_HOOK: Callable[[Conn, str], None]` (mypy checks the assignment)
+    and takes the restore's `now` as an optional third argument, by position or by name."""
+    import inspect
+    from collections.abc import Callable
+
+    from core.db import Conn
+    from submit import adapters
+
+    hook: Callable[[Conn, str], None] = adapters.on_restored
+    assert hook is adapters.on_restored
+    now = inspect.signature(adapters.on_restored).parameters["now"]
+    assert now.default is None and now.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+
+
 def test_l_hide_an_edit_is_masked_by_the_patterns_until_hide_lands(monkeypatch: pytest.MonkeyPatch) -> None:
     """DEC-103: kind + •••• + the last two characters, with positions in the person's own text and no value."""
     from submit import adapters

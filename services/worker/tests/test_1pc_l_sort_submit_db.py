@@ -536,6 +536,65 @@ def test_l_submit_withdraw_3_restore_restarts_the_clock_and_the_check(world: dic
     assert _idea(world)["status"] == "with_review_desk"
 
 
+# Monday 23 November, 10 am in the office: decided by Friday 27 November, 6 pm, the share day counted as day 1.
+RESTORED = dt.datetime(2026, 11, 23, 4, 30, tzinfo=dt.UTC)
+
+
+def _restored_dates(world: dict[str, Any], ref: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    idea = _idea(world)
+    running = (
+        world["conn"]
+        .execute(
+            "SELECT started_at, due_at FROM sla_timers WHERE entity_id = %s AND stage = 'decide_by' AND state = 'running'",
+            (ref,),
+        )
+        .fetchall()
+    )
+    return idea, [dict(r) for r in running]
+
+
+def _withdraw_and_set_back(world: dict[str, Any]) -> str:
+    conn = world["conn"]
+    _confirm(world)
+    _, h = _submit(world)
+    check.run(conn, world["draft"])
+    conn.execute("UPDATE ideas SET status = 'withdrawn' WHERE id = %s", (world["draft"],))
+    conn.execute(
+        "UPDATE ideas SET status = 'checking', restored_at = %s WHERE id = %s", (RESTORED, world["draft"])
+    )
+    return str(h["ref"])
+
+
+def test_l_submit_send_4_on_restored_takes_the_restores_now_bld_c154(world: dict[str, Any]) -> None:
+    """Lane C's part of a restore starts both clocks from the restore's own `now`, not a clock of its own, so the
+    restored idea's decide-by, edit window and review timer agree with lane E's restore (L-SUBMIT.send/4)."""
+    from submit import adapters, clock, config
+
+    ref = _withdraw_and_set_back(world)
+    adapters.on_restored(world["conn"], world["draft"], RESTORED)
+    idea, running = _restored_dates(world, ref)
+    p = config.promises()
+    assert (
+        idea["decide_by"] == clock.decide_by(RESTORED, p) == dt.datetime(2026, 11, 27, 12, 30, tzinfo=dt.UTC)
+    )
+    assert idea["edit_closes_at"] == clock.edit_closes(RESTORED, p)
+    assert running == [{"started_at": RESTORED, "due_at": idea["decide_by"]}]
+
+
+def test_l_submit_send_4_on_restored_without_now_uses_submit_clock_bld_c154(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lane E's hook calls `(conn, idea_uuid)` today: the time then is submit.clock's, the one a send uses."""
+    from submit import adapters, clock, config
+
+    ref = _withdraw_and_set_back(world)
+    monkeypatch.setattr(clock, "now", lambda: RESTORED)
+    adapters.on_restored(world["conn"], world["draft"])
+    idea, running = _restored_dates(world, ref)
+    assert idea["decide_by"] == clock.decide_by(RESTORED, config.promises())
+    assert running == [{"started_at": RESTORED, "due_at": idea["decide_by"]}]
+
+
 # --- L-SUBMIT.edit ------------------------------------------------------------------------------------------------
 
 
