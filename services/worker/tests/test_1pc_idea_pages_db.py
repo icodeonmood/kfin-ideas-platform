@@ -22,7 +22,7 @@ from ideapage.colleague import Paused
 from ideapage.mine import my_ideas, snippet
 from ideapage.route import idea_view
 from ideapage.withdraw import Refused, restore, withdraw
-from ideapage.words import IST, day
+from ideapage.words import IST, day, day_time
 from submit import clock
 from tests import helpers
 
@@ -180,7 +180,9 @@ def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
 
 def test_s06_states_decisions_leave_the_decision_to_lane_b(club: dict[str, Any]) -> None:
     """Picked, Not now, Not picked and Reversed: the decision, its reason, the committee's window and any reversal
-    are lane B's (GET /ideas/:id/decision). This page keeps the state, the pill and the track."""
+    are lane B's (GET /ideas/:id/decision). This page keeps the state, the pill and the track; the only place it
+    says the reason is the desk's message in the conversation card (BLD-E058), and it never says the committee's
+    note."""
     expected = {
         "T7": ("Picked", "Picked"),
         "T8": ("Not now", "Not now"),
@@ -193,9 +195,12 @@ def test_s06_states_decisions_leave_the_decision_to_lane_b(club: dict[str, Any])
         assert page["card"] is None and page["card_from"] == "decision"
         assert page["lane_b"]["decision"] == f"/api/ideas/{ref(club, key)}/decision"
         assert "decision" not in v["idea"] and "join_build" not in page["actions"]
-        dump = json.dumps(v, ensure_ascii=False, default=str)
-        for words in ("compliance sign-off", "exchange calendar", "Failed dividends cost more"):
-            assert words not in dump  # reasons and the committee's note are read from lane B only
+        assert "Failed dividends cost more" not in json.dumps(v, ensure_ascii=False, default=str)  # the note
+        conv = dict(page["conversation"])
+        assert [m["kind"] for m in conv.pop("messages")] == ["decision"]
+        rest = json.dumps({**v, "page": {**page, "conversation": conv}}, ensure_ascii=False, default=str)
+        for words in ("compliance sign-off", "pricing policy", "exchange calendar"):
+            assert words not in rest  # the reason is said once, in the desk's message
     picked = nodes(view(club, ref(club, "T7"), "tanvi"))
     assert picked[2][1] == "done" and str(picked[2][2]).startswith("Picked, ")
     assert picked[3][1] == "now" and str(picked[3][2]).startswith("Team chosen by ")
@@ -359,6 +364,149 @@ def test_s06_dec111_a_sharer_outside_the_desk_and_committee_never_sees_the_revie
     # The decided ideas too: T8 (Not now) and T9 (moved by the Ones Committee), as their sharer reads them
     assert no_reviewer_named(view(club, ref(club, "T8"), "tanvi"), club)
     assert no_reviewer_named(view(club, ref(club, "T9"), "tanvi"), club)
+
+
+DECIDED_LINE = "The review desk has decided. The full conversation, with every answer, is one tap away."
+COMMITTEE_LINE = (
+    "The Ones Committee has the last word on this decision. The full conversation is one tap away."
+)
+THE_DESK = {"id": "", "name": "The review desk", "first_name": "The review desk", "initials": ""}
+
+
+def desk_reason(club: dict[str, Any], key: str, who: str) -> str:
+    """The reason as S-06's reason block reads it: lane B's `GET /ideas/:id/decision` for the sharer."""
+    from desk.committee import decision_for_viewer
+
+    got = decision_for_viewer(club["conn"], ref(club, key), club["p"][who], NOW)
+    assert got is not None and "stage_only" not in got
+    return str(got["decision"]["reason"])
+
+
+def decided_at(club: dict[str, Any], key: str) -> dt.datetime:
+    row = (
+        club["conn"]
+        .execute("SELECT at FROM idea_decisions WHERE idea_uuid = %s", (club["m"][key].uuid,))
+        .fetchone()
+    )
+    return row["at"]
+
+
+def test_s06_layout_8_j_track_7_j_review_6_bld_e058_the_decision_is_the_desks_message_in_the_card(
+    club: dict[str, Any],
+) -> None:
+    """BLD-E058 (S-06.layout/8; Status.md and PhoneStatus.md "Picked", "Not now", "Reversed by the Ones Committee";
+    J-TRACK/7, J-REVIEW/6): once the desk has decided, "You and the review desk" ends with the desk's message, the
+    choice and then the reason word for word, the same masked words as the reason block. No empty line next to the
+    decided line. DEC-111: the sharer reads it from "The review desk", with no face and nothing of the reviewer.
+    T9 was moved by the Ones Committee: the message is still the desk's own decision, as the board draws it."""
+    expected = {
+        "T7": ("Picked", DECIDED_LINE),
+        "T8": ("Not now", DECIDED_LINE),
+        "T9": ("Not picked", COMMITTEE_LINE),
+    }
+    for key, (said, sub_line) in expected.items():
+        v = view(club, ref(club, key), "tanvi")
+        conv = v["page"]["conversation"]
+        at = decided_at(club, key)
+        assert conv["sub_line"] == sub_line
+        assert "empty_line" not in conv and "phone_empty_line" not in conv
+        assert conv["messages"] == [
+            {
+                "id": conv["messages"][0]["id"],
+                "kind": "decision",
+                "from": THE_DESK,
+                "from_label": "The review desk",
+                "at": at.isoformat(),
+                "at_label": day_time(at, NOW),
+                "by_line": f"The review desk, {day_time(at, NOW)}",
+                "text": f"{said}. {desk_reason(club, key, 'tanvi')}",
+            }
+        ]
+        assert no_reviewer_named(v, club)
+    # T8 has no other entry: the decision is the card's one message, and the count says so
+    assert view(club, ref(club, "T8"), "tanvi")["page"]["conversation"]["count"] == 1
+    t7 = view(club, ref(club, "T7"), "tanvi")["page"]["conversation"]
+    assert t7["messages"][0]["text"].startswith("Picked. This is a clear problem with a simple fix.")
+    entries = (
+        club["conn"]
+        .execute(
+            "SELECT count(*) AS n FROM conversation_entries WHERE idea_uuid = %s AND type <> 'event'",
+            (club["m"]["T7"].uuid,),
+        )
+        .fetchone()
+    )
+    assert t7["count"] == int(entries["n"]) + 1
+
+
+def test_s06_layout_8_dec111_bld_e058_the_desk_and_the_committee_read_who_decided(
+    club: dict[str, Any],
+) -> None:
+    """DEC-111, BLD-E058: a sharer on the review desk or the Ones Committee reads the decision from the person who
+    made it, "Lavanya from the review desk, <day>, <time>", with her initials for the face, as Status.md draws
+    Meera's. The grant gone, the desk speaks again and the reviewer leaves the payload."""
+    t8 = ref(club, "T8")
+    at = decided_at(club, "T8")
+    for role in ("reviewer", "committee"):
+        grant(club, "tanvi", role)
+        (m,) = view(club, t8, "tanvi")["page"]["conversation"]["messages"]
+        assert m["from"] == {
+            "id": club["p"]["lavanya"],
+            "name": "Lavanya Krishnan",
+            "first_name": "Lavanya",
+            "initials": "LK",
+            "role_label": "from the review desk",
+        }
+        assert m["from_label"] == "Lavanya from the review desk"
+        assert m["by_line"] == f"Lavanya from the review desk, {day_time(at, NOW)}"
+        assert m["text"].startswith("Not now. The right idea, but fees need a pricing policy first.")
+        revoke_all(club, "tanvi")
+    v = view(club, t8, "tanvi")
+    assert v["page"]["conversation"]["messages"][0]["from"] == THE_DESK and no_reviewer_named(v, club)
+
+
+def test_s06_layout_8_j_review_6_j_track_7_bld_e058_a_decision_sent_after_answers_comes_after_them_masked(
+    club: dict[str, Any],
+) -> None:
+    """J-REVIEW/6 to J-TRACK/7 through lane B's own send (L-DECIDE): B1's answers are in, the desk picks it with a
+    reason that holds a customer's PAN. S-06's card then ends with the desk's message, after the answers in time,
+    and the reason is the masked copy lane B stored (L-HIDE, DEC-103): the PAN is nowhere in the page. Before the
+    decision the card is as it was: no message, and no empty line next to the answers."""
+    from desk import decide
+
+    conn, b1 = club["conn"], ref(club, "B1")
+    before = view(club, b1, "bhavesh")["page"]["conversation"]
+    assert "messages" not in before and "empty_line" not in before
+    pan = "ABCPK4321L"  # synthetic, in the PAN pattern
+    reason = (
+        f"A searchable log saves a day a week. The courier for {pan} came back twice before anyone found it."
+    )
+    decide.send(conn, b1, club["p"]["lavanya"], {"choice": "pick", "reason": reason}, NOW)
+    v = view(club, b1, "bhavesh")
+    conv = v["page"]["conversation"]
+    (m,) = conv["messages"]
+    answered = conn.execute(
+        "SELECT max(at) AS at FROM conversation_entries WHERE idea_uuid = %s AND type = 'answers'",
+        (club["m"]["B1"].uuid,),
+    ).fetchone()["at"]
+    assert answered is not None and dt.datetime.fromisoformat(m["at"]) == NOW > answered
+    assert m["by_line"] == f"The review desk, {day_time(NOW, NOW)}" and m["from"] == THE_DESK
+    assert m["text"] == f"Picked. {desk_reason(club, 'B1', 'bhavesh')}"
+    assert m["text"].startswith("Picked. A searchable log saves a day a week. The courier for ")
+    assert pan not in json.dumps(v, ensure_ascii=False, default=str)
+    assert conv["sub_line"] == DECIDED_LINE and "empty_line" not in conv
+    assert no_reviewer_named(v, club)
+
+
+def test_s06_layout_8_bld_e058_before_a_decision_and_withdrawn_the_card_is_unchanged(
+    club: dict[str, Any],
+) -> None:
+    """BLD-E058 changes nothing before a decision or after a withdrawal: Just shared keeps its empty line and no
+    message, Questions from the review desk has no message, and a withdrawn idea has no card."""
+    just = view(club, ref(club, "T5"), "tanvi")["page"]["conversation"]
+    assert "messages" not in just and just["empty_line"].startswith("No messages yet.") and just["count"] == 0
+    asked = view(club, ref(club, "T6"), "tanvi")["page"]
+    assert asked["state"] == "questions" and "messages" not in asked["conversation"]
+    assert view(club, ref(club, "T10"), "tanvi")["page"]["conversation"] is None
 
 
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
