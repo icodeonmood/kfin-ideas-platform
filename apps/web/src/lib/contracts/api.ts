@@ -1384,14 +1384,28 @@ export interface SharerDecisionLines {
     track_line: string; // "Picked, then moved to not now by the Ones Committee"
   } | null;
 }
+/** "Ask to join the build team" on S-06 (L-DECIDE.rules/6, DEC-111, BLD-B256), for the sharer and the crew. On an idea
+ * a Pick joined, it is the lead's (one team builds one fix). */
+export interface JoinBuild {
+  can_ask: boolean; // true only when an ask would succeed now (a Pick that stands, no team yet) and none was made
+  asked_at: IsoDate | null; // this person's ask; S-06 then says the ask was sent (NOT DRAWN, HR signs it off)
+  reply_by: IsoDate | null; // the Pick's team_by: "Asked. The build lead replies by 27 November."; null without one
+}
+/** POST /ideas/:id/join-build: the ask's time, the first one's on a repeat. Refusals: 403 forbidden (not the sharer or
+ * crew), 404 not_found, 409 not_picked (no Pick that stands), 409 team_chosen. */
+export interface JoinBuildResponse {
+  asked_at: IsoDate;
+}
 /** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else.
- * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. */
+ * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. `join_build` is
+ * for the sharer and the crew; null for anyone else, the desk and committee included. */
 export type DecisionForViewerResponse =
   | (CommitteeRow & {
       decided_at: IsoDate;
       return_at: IsoDate | null;
       lines: SharerDecisionLines | null;
       joined_into: string | null; // on an idea a Pick joined (status merged): the lead, whose Pick this is
+      join_build: JoinBuild | null;
     })
   | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
   | null;
