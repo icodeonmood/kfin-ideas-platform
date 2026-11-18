@@ -18,9 +18,15 @@ function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** A row's link on My ideas: the title, or "{action} : {title}" (MyIdeas.md Controls). */
+/**
+ * A row's link on My ideas: the title, or "{action} : {title}" (MyIdeas.md Controls). Looked for in the page's
+ * main area only: the shell's sidebar lists the same idea under "Your ideas" with a link of the same shape.
+ */
 function rowLink(page: Page, title: string): Locator {
-  return page.getByRole("link", { name: new RegExp(`(?:^|: )${esc(title)}$`) }).first();
+  return page
+    .getByRole("main")
+    .getByRole("link", { name: new RegExp(`(?:^|: )${esc(title)}$`) })
+    .first();
 }
 
 const carried = carriedFor<{ list: string }>("J-BROWSE");
