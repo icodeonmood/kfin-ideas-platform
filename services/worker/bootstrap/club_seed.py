@@ -1301,8 +1301,9 @@ def _inbox(
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
         ("hemant", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
+        # As lane F's `tell_requester` posts an approved team-up: "Say hello" lands in the box (BLD-F069).
         ("faisal", "teamup_answer", "tanvi", "T7", 3.5, False, None, True, False,
-         [{"label": "Say hello", "to": "conversation", "style": "primary"}]),
+         [{"label": "Say hello", "to": f"/ideas/{m['T7'].ref}/conversation#say-hello", "style": "primary"}]),
         ("faisal", "decision", "harish", "F1", 3.0, False, None, False, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("zoya", "questions", "harish", "Z1", 4.0, True, -1.0, True, False,
