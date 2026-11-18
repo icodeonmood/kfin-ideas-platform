@@ -261,13 +261,14 @@ step(
       .first()
       .click();
     await page.getByRole("button", { name: "Merge it", exact: true }).click();
-    await expect(
-      page
-        .getByText(
-          /^Merged\. Tanvi’s idea is now part of yours, and (?:Tanvi is|they are) on your crew, credited\. We’ve told (?:Tanvi|them)\.$/,
-        )
-        .first(),
-    ).toBeVisible();
+    const merged = page
+      .getByText(
+        /^Merged\. Tanvi’s idea is now part of yours, and (?:Tanvi is|they are) on your crew, credited\. We’ve told (?:Tanvi|them)\.$/,
+      )
+      .first();
+    await expect(merged).toBeVisible();
+    // VERIFY ONLY (lane A, not for merge): the result line is in the reader's view, not below its fold
+    await expect(merged).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole("link", { name: "Say hello to Tanvi" })).toBeVisible();
 
     // L-MERGE.request/5: what Tanvi reads on her draft.
