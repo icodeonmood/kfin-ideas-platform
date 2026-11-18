@@ -16,7 +16,7 @@
 import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { CLUB, draftUrl, seeded, signInAs, step } from "./lib";
+import { carriedFor, CLUB, draftUrl, seeded, signInAs, step } from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
@@ -52,7 +52,7 @@ const WORDS =
   "7700045612 asked four times where his form was. It happens about ten times a week.";
 const FOLIO_MASKED = "Folio ••••12";
 
-const carried: { draft?: string; idea?: string } = {};
+const carried = carriedFor<{ draft: string; idea: string }>("J-RECOVER");
 
 /** The writer's draft, made once through S-04 and kept for the rows that follow. */
 async function ensureDraft(page: Page): Promise<string> {
