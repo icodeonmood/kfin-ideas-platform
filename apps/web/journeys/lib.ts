@@ -256,8 +256,37 @@ export type StepOptions = {
 
 /** Steps collected as fixme so far, for `after`. Specs collect in file order, so an earlier step is already here. */
 const FIXME_REFS = new Set<StepRef>();
+/** Every step collected so far: an `after` ref must be one of these, so a typo or a later row fails collection. */
+const DECLARED_REFS = new Set<StepRef>();
 
 export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) => Promise<void>;
+
+/**
+ * What a journey's steps hand on to later ones (a draft's address, a title), as `carried.draft = …` and
+ * `carried.draft`. Kept in a file in the run's output folder, which Playwright empties when a run starts, so it
+ * outlives the fresh worker Playwright starts after a failed step. Read and written only inside a running step.
+ */
+export function carriedFor<T extends Record<string, string>>(journey: JourneyId): Partial<T> {
+  const file = () => path.join(test.info().project.outputDir, ".carried.json");
+  const read = (): Partial<Record<JourneyId, Record<string, string>>> => {
+    try {
+      return JSON.parse(fs.readFileSync(file(), "utf8"));
+    } catch {
+      return {};
+    }
+  };
+  return new Proxy({} as Partial<T>, {
+    get: (_target, key) => (typeof key === "string" ? read()[journey]?.[key] : undefined),
+    set: (_target, key, value) => {
+      if (typeof key !== "string") return false;
+      const all = read();
+      all[journey] = { ...all[journey], [key]: String(value) };
+      fs.mkdirSync(path.dirname(file()), { recursive: true });
+      fs.writeFileSync(file(), JSON.stringify(all));
+      return true;
+    },
+  });
+}
 
 /**
  * One row of a journey's table. `ref` is "J-SHARE/3"; `screen` the screen it lands on ("S-04"). The test is fixme
@@ -274,6 +303,12 @@ export function step(ref: StepRef, screen: string, title: string, opts: StepOpti
       );
     }
   }
+  for (const earlier of opts.after ?? []) {
+    if (!earlier.startsWith(`${journey}/`) || !DECLARED_REFS.has(earlier)) {
+      throw new Error(`${ref} waits for ${earlier}, which is not an earlier step of ${journey}`);
+    }
+  }
+  DECLARED_REFS.add(ref);
   const name = `${ref} ${screen} · ${title}`;
   const fixme = (description: string) => {
     FIXME_REFS.add(ref);

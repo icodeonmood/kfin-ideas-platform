@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import type { NavItem } from "@/lib/rbac";
+import { clearOutboxes } from "@/lib/compose/client";
 import type { ShellData } from "@/server/shell";
 
 import { IconKey, IconSignOut, NavIcon } from "./icons";
@@ -122,7 +123,7 @@ export function AccountMenu({
               </button>
             </li>
             <li>
-              <form method="post" action="/auth/logout">
+              <form method="post" action="/auth/logout" onSubmit={() => clearOutboxes()}>
                 <button type="submit" className="acct-mi">
                   <IconSignOut size={18} />
                   Sign out

@@ -227,6 +227,11 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   const deskRow = reviewer.page.getByRole("row").filter({ hasText: title });
   await expect(deskRow.getByText(/0 of 2 answered|Not seen yet/)).toBeVisible();
   await expect(deskRow.getByText(/to answer$/)).toBeVisible();
+  // S-R1.layout/4, S-R2.panel/3, C-PILL.rules/3: the desk row's clock and the waiting panel's are the board's
+  // countdown (Desk .due, a clock in place of the dot)
+  await expect(deskRow.locator(".due")).toHaveText(/to answer$/);
+  await reviewer.page.goto(`/desk/ideas/${ideaId}`);
+  await expect(reviewer.page.locator(".ri-clock .due")).toHaveText(/to answer$/);
 
   // J-TRACK/3 C-QCARD.places S-H5: the questions reach the sharer's Inbox as the card, under the reader's own
   // header, and the button in the reader's foot opens the Answer screen
@@ -247,6 +252,8 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   // S-R3: one question at a time, skip, check and send
   await expect(s).toHaveURL(new RegExp(`/ideas/${ideaId}/answer$`));
   await expect(s.getByRole("heading", { name: "Answer the review desk" })).toBeVisible();
+  // S-R3.layout/1, C-PILL.rules/3: the review bar's clock is the Answer board's countdown
+  await expect(s.locator(".ans-due .due")).toHaveText(/left to answer$/);
   await expect(s.getByRole("button", { name: "Question 1, not answered yet" })).toBeVisible();
   await expectNoSeriousAxeIssues(s);
   await expectNoSidewaysScroll(s);

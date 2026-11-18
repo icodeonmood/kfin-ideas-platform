@@ -19,8 +19,12 @@ async function openCommittee(page: Page) {
   await expect(page.getByRole("heading", { level: 1, name: "Ones Committee" })).toBeVisible();
 }
 
+function esc(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function rowFor(page: Page, title: string) {
-  return page.getByRole("row", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+  return page.getByRole("row", { name: new RegExp(esc(title)) });
 }
 
 step(
@@ -59,10 +63,12 @@ step(
     await expect(page.getByText("The review desk’s reason, as Charulata read it")).toBeVisible();
     await expect(
       page.getByText(
-        /^Open until \w+day \d{1,2} \w+\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+( \d{4})?\. When it closes, the decision stands\.$/,
+        // A date outside 2026 carries its year (Committee.md: "up to Tuesday 16 February 2027"). C1 starts extended,
+        // so its window and every date from it fall in 2027 and must show the year.
+        /^Open until \w+day \d{1,2} \w+ \d{4}\. You can extend it 30 days at a time, up to \w+day \d{1,2} \w+ \d{4}\. When it closes, the decision stands\.$/,
       ),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+( \d{4})?$/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+ \d{4}$/ })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Reverse the decision" })).toBeEnabled();
   },
 );
@@ -77,12 +83,16 @@ step(
     await openCommittee(page);
     const row = rowFor(page, c1.title);
     await row.getByRole("button", { name: "Review" }).click();
+    // The seed extended C1 once, so this is its second extension.
+    await expect(row).toContainText("Extended once");
     const extend = page.getByRole("button", { name: /^Extend to / });
     const newDate = (await extend.innerText()).replace(/^Extend to /, "").trim();
+    // C1's new date is in 2027, so it carries the year everywhere (Committee.md, Status.md).
+    expect(newDate).toMatch(/^\w+day \d{1,2} \w+ \d{4}$/);
+    const until = esc(newDate);
     await extend.click();
-    await expect(row).toContainText("Extended");
-    await expect(row).toContainText("Extended once");
-    await expect(row).toContainText(`Until ${newDate.replace(/ \d{4}$/, "")}`);
+    await expect(row).toContainText("Extended twice"); // when.times: "once", "twice", then "N times"
+    await expect(row).toContainText(new RegExp(`Until ${until}`));
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
     const sharer = await (await browser.newContext()).newPage();
@@ -90,7 +100,9 @@ step(
     await sharer.goto(ideaUrl(c1));
     await expect(
       sharer.getByText(
-        `The Ones Committee can review this decision until ${newDate.replace(/ \d{4}$/, "")}. If they change it, their note comes to your Inbox. After that, it stands.`,
+        new RegExp(
+          `^The Ones Committee can review this decision until ${until}\\. If they change it, their note comes to your Inbox\\. After that, it stands\\.$`,
+        ),
       ),
     ).toBeVisible();
     await sharer.context().close();

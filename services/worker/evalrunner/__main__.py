@@ -123,6 +123,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
         canvas_assist,
         cluster_summary,
         committee,
+        draft_part,
         gatekeeper,
         handover_draft,
         judge,
@@ -140,6 +141,7 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
             for runner, agent in (
                 (gatekeeper, "gatekeeper"),
                 (canvas_assist, "canvas-assist"),
+                (draft_part, "draft-part"),
                 (judge, "judge"),
                 (cluster_summary, "cluster-summary"),
                 (attachment_digest, "attachment-digest"),

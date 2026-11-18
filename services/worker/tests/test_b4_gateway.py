@@ -143,6 +143,37 @@ def test_a_missed_identifier_aborts_alerts_and_three_switch_ai_off(gw: Any, monk
     assert calls(db)[-1]["outcome"] == "switched_off"
 
 
+def test_l_draft_a_leak_abort_on_a_live_draft_counts_toward_the_ai_all_switch_off_bld_c034(
+    gw: Any, monkeypatch: Any
+) -> None:
+    """Non-negotiable 9: live drafts (`DRAFT-<idea uuid>`) count like any idea; only the eval runner's golden-set
+    scopes (`DRAFT-eeeeeeee-…`) are left out of the automatic switch-off."""
+    db, spy, d = gw
+    monkeypatch.setattr(tagger_mod, "detect", lambda *a, **k: [])  # detection misses everything
+    rng = random.Random(94)
+    evals = [f"{vault.EVAL_SCOPE_PREFIX}abcd-4abc-8abc-abcdefabcde{n}" for n in "abc"]
+    for scope in evals:  # three golden-set aborts within the hour: not counted
+        with pytest.raises(core.LeakAbort):
+            core.run_agent("draft-part", _draft_inputs(f"Investor PAN {g.pan(rng)}"), scope, conn=db, d=d)
+    killswitch.clear_cache()
+    assert db.execute("SELECT state FROM kill_switches WHERE name = 'ai.all'").fetchone()["state"] == "on"
+    lives = [f"DRAFT-abcdefab-cdef-4abc-8def-abcdefabcde{n}" for n in "abc"]
+    for scope in lives:  # three live drafts within the hour: ai.all goes off
+        with pytest.raises(core.LeakAbort):
+            core.run_agent("draft-part", _draft_inputs(f"Investor PAN {g.pan(rng)}"), scope, conn=db, d=d)
+    assert spy.calls == []
+    assert [r["ref_id"] for r in calls(db)] == [*evals, *lives]
+    killswitch.clear_cache()
+    assert db.execute("SELECT state, changed_by FROM kill_switches WHERE name = 'ai.all'").fetchone() == {
+        "state": "off",
+        "changed_by": "process:gateway",
+    }
+
+
+def _draft_inputs(text: str) -> dict[str, Any]:
+    return {"part": "often", "words": [{"n": 1, "text": text}]}
+
+
 def test_invalid_output_is_retried_once_with_the_problems(gw: Any) -> None:
     db, spy, d = gw
     good = load("gatekeeper").example("01-problem-clean.json").output

@@ -262,6 +262,99 @@ def reason_writer(sent: dict[str, Any], out: dict[str, Any], d: Directory | None
     return problems
 
 
+# ---- draft-part (L-DRAFT.parts, BLD-C072) ------------------------------------------------------------------------
+# The fields each part may fill; everything else stays empty.
+DRAFT_FIELDS: dict[str, tuple[str, ...]] = {
+    "title": ("title", "summary"),
+    "often": ("often",),
+    "who": ("who", "reason"),
+    "value": ("worth",),
+    "area": ("area", "reason"),
+}
+DRAFT_TEXT = ("title", "summary", "often", "reason")
+_DRAFT_EMPTY: dict[str, Any] = {
+    "title": None, "summary": None, "often": None, "who": [], "worth": [], "area": None, "reason": None,
+}  # fmt: skip
+
+
+def _draft_words(sent: dict[str, Any]) -> list[str]:
+    """The person's own words, one piece per message: `text` only, never the English copy (DEC-108)."""
+    return [
+        str(w.get("text") or "") for w in sent.get("words") or [] if isinstance(w, dict) and w.get("text")
+    ]
+
+
+def _draft_filled(part: str, out: dict[str, Any]) -> bool:
+    if part == "title":
+        return bool(out.get("title") or out.get("summary"))
+    if part == "value":
+        return bool(out.get("worth")) and out.get("worth") != ["not_sure"]
+    key = {"often": "often", "who": "who", "area": "area"}[part]
+    return out.get(key) not in (None, "", [])
+
+
+def draft_part(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:
+    """Only the asked part, only from the person's own words (DEC-095), numbers only as they gave them, choices
+    only from the options, no tags in anything shown as a sentence."""
+    problems: list[str] = []
+    part = str(sent.get("part") or "")
+    if out["part"] != part or part not in DRAFT_FIELDS:
+        return [f"part must be {part!r}, the part you were asked for"]
+    for key, empty in _DRAFT_EMPTY.items():
+        if key not in DRAFT_FIELDS[part] and out.get(key) not in (None, [], ""):
+            problems.append(f"{key} belongs to another part; leave it {'[]' if empty == [] else 'null'}")
+    pieces = _draft_words(sent)
+    padded = grounding._padded(pieces)
+    evidence = out.get("evidence") or []
+    if _draft_filled(part, out):
+        code = grounding._quote_problem(evidence, padded)
+        if code:
+            problems.append(f"evidence: {grounding.MESSAGES[code]}")
+    elif evidence:
+        problems.append("evidence must be [] when the part is empty")
+    for key in DRAFT_TEXT:
+        text = out.get(key)
+        if isinstance(text, str) and TAG_RE.search(text):
+            problems.append(f"{key} must not contain tags; say 'a colleague' or 'an AMC client' instead")
+    said = grounding.numbers(" ".join(pieces))
+    quoted = grounding.numbers(" ".join(str(q) for q in evidence))
+    for key, allowed in (("title", said), ("summary", said), ("often", quoted), ("reason", quoted)):
+        text = out.get(key)
+        if isinstance(text, str) and not grounding.numbers(text) <= allowed:
+            problems.append(
+                f"{key} holds a number the person did not give{' in the quotes' if allowed is quoted else ''}"
+            )
+    if isinstance(out.get("summary"), str) and len(grounding.split_sentences(out["summary"])) > 3:
+        problems.append("summary must be at most 3 sentences")
+    choices = [c for c in ((sent.get("options") or {}).get("choices") or []) if isinstance(c, dict)]
+    labels = {str(c.get("label")) for c in choices}
+    if any(w not in labels for w in out.get("who") or []):
+        problems.append("who may only hold labels copied from options.choices")
+    if out.get("area") is not None and out["area"] not in labels:
+        problems.append("area must be one label copied from options.choices")
+    worth = out.get("worth") or []
+    ids = {str(c.get("id")) for c in choices}
+    if part == "value" and any(w not in ids for w in worth):
+        problems.append("worth may only hold ids from options.choices")
+    if "not_sure" in worth and len(worth) > 1:
+        problems.append("worth: not_sure stands alone")
+    if len(set(worth)) != len(worth) or len(set(out.get("who") or [])) != len(out.get("who") or []):
+        problems.append("who and worth list each choice once")
+    return problems
+
+
+def draft_part_repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """After the one re-ask, an answer that still fails is dropped: the part comes back empty and the person fills
+    it by hand ("Waiting for your words"). Returns the dropped part's field paths, never text."""
+    if not draft_part(sent, out, None):
+        return out, []
+    part = str(sent.get("part") or "")
+    fixed = {"part": part, **_DRAFT_EMPTY, "evidence": []}
+    if part == "value":
+        fixed["worth"] = ["not_sure"]
+    return fixed, list(DRAFT_FIELDS.get(part, ()))
+
+
 CHECKS: dict[str, Check] = {
     "gatekeeper": gatekeeper,
     "canvas-assist": canvas_assist,
@@ -274,11 +367,12 @@ CHECKS: dict[str, Check] = {
     "pitch-prep": pitch_prep,
     "collation": collation,
     "reason-writer": reason_writer,
+    "draft-part": draft_part,
 }
 
 
 # After the one re-ask, problems these can mend are mended by dropping the offending suggestions (DEC-095).
-REPAIRS: dict[str, Repair] = {"canvas-assist": grounding.repair}
+REPAIRS: dict[str, Repair] = {"canvas-assist": grounding.repair, "draft-part": draft_part_repair}
 
 
 def run(name: str, sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -> list[str]:

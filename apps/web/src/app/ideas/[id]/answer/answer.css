@@ -4,6 +4,13 @@
   gap: 24px;
   max-width: 760px;
 }
+/* S-R3: the Answer board starts the page 40px down (main.wrap) where the shell's main gives 32px. The phone board
+   (PhoneAnswer) keeps the shell's top */
+@media (min-width: 641px) {
+  .ans {
+    padding-top: 8px;
+  }
+}
 .ans-bar {
   display: grid;
   gap: 10px;
@@ -27,6 +34,14 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+/* C-PILL.rules/3: the Answer board's clock is the larger countdown (.clock .due); the phone board keeps the base */
+@media (min-width: 641px) {
+  .ans-due .due {
+    min-height: 34px;
+    padding: 0 14px 0 12px;
+    font-size: 14.5px;
+  }
 }
 .ans-steps ol {
   list-style: none;

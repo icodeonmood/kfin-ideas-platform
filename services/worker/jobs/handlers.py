@@ -14,6 +14,14 @@ from jobs.runner import handler, on_dead
 log = get_logger("jobs.handlers")
 
 
+@handler("drafts.archive")
+def archive_drafts(conn: Conn, payload: dict[str, Any]) -> None:
+    """Drafts untouched for 30 days are archived, never deleted (L-DRAFT.autosave/8, BLD-C074)."""
+    from draft.archive import archive_untouched
+
+    archive_untouched(conn)
+
+
 @handler("drafts.purge")
 def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.
@@ -107,6 +115,22 @@ def scan_run_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
         conn.execute("INSERT INTO scans (idea_uuid) VALUES (%s) ON CONFLICT DO NOTHING", (idea_uuid,))
     if row is None or row["state"] in ("queued", "running"):
         pipeline.go_async(conn, idea_uuid, "scan_job_dead")
+
+
+@handler("submit.check")
+def submit_check(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-SUBMIT.send/3: "Checked and matched" after Submit or a restore, then the idea goes to the review desk."""
+    from submit import check
+
+    check.run(conn, str(payload["idea_uuid"]))
+
+
+@on_dead("submit.check")
+def submit_check_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """A check that keeps failing never holds an idea back: it goes to the desk without the matching."""
+    from submit import check
+
+    check.run(conn, str(payload["idea_uuid"]), gave_up=True)
 
 
 @handler("vault.purge_scope")
@@ -336,3 +360,11 @@ def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     from hide import recheck
 
     recheck.run(conn, payload)
+
+
+@on_dead("hide.recheck")
+def hide_recheck_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
+    """The re-check's last attempt failed: audited with IDs and the code only (BLD-C067)."""
+    from hide import recheck
+
+    recheck.gave_up(conn, payload)

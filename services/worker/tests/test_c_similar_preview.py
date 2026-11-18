@@ -5,6 +5,7 @@ names unless hidden from the Wall; `compare` for the desk and the Ones Committee
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -19,8 +20,12 @@ def _user(conn: Any, first: str) -> str:
 
 
 @pytest.fixture
-def seeded(db: Any) -> dict[str, Any]:
-    return club_seed.load(db)
+def seeded(db: Any) -> Iterator[dict[str, Any]]:
+    made = club_seed.load(db)
+    try:
+        yield made
+    finally:
+        club_seed.remove(db)
 
 
 def test_bld_c090_a_colleague_sees_the_public_preview(db: Any, seeded: dict[str, Any]) -> None:

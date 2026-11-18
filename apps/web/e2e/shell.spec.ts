@@ -18,7 +18,7 @@ import {
   signIn,
 } from "./helpers";
 
-const BASE = ["Share a problem", "Home", "Wall", "Inbox"];
+const BASE = ["Share a problem", "Home", "Find your crew", "Wall", "Inbox"];
 const isPhone = (info: TestInfo) => info.project.name === "phone-360";
 
 test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => {
@@ -204,7 +204,7 @@ test("first sign-in shows the privacy notice, then the shell (AT-B2-01 in the br
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);
   await page.getByRole("button", { name: /I have read this/ }).click();
-  await page.waitForURL((url) => url.pathname === "/");
+  await page.waitForURL((url) => url.pathname === "/home"); // Home is S-03 at /home (BLD-C143)
   expect(await navLabels(page)).toEqual(isPhone(test.info()) ? PHONE_TABS : BASE);
 });
 
@@ -259,7 +259,7 @@ test("people without the role are sent home from Review and Admin", async ({ pag
   await signIn(page, PERSONAS.contributor);
   for (const path of ["/review", "/admin", "/committee"]) {
     await page.goto(path);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/home$/);
   }
 });
 

@@ -106,3 +106,11 @@ Not from the pack. Each is the build's default wording, marked `// NOT DRAWN (BL
 | `S-H6` | `apps/web/src/app/profile/rules.ts` (BLD-E043) | "How should we refer to you?"; "She"; "He"; "They"; "Prefer not to say"; "We use this only to word the English copy of your voice notes."; "Coming soon"; "Your One dashboard"; "We can't load your profile just now. Please try again in a minute."; "Try again" |
 | `/ones/write/:id` | `apps/web/src/app/ones/write/[id]/page.tsx`, `write-form.tsx` (BLD-E044) | "A few words for a One"; "This invitation isn't open, or isn't for you."; "Back to home"; "A few words for <One>"; "They are moving to <tier>. They'll read your message, with your name, when they see their new tier."; "Thank you. Your message is saved."; "Your message"; "A few sentences. What did they do that mattered? No personal details."; "Send your message"; the errors "Please take out any personal details (numbers, addresses, investor names).", "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.", "Leave out the names of colleagues and clients: everyone will see this.", "Please write at least a short sentence.", "Please keep it under 600 characters.", "You've already written a message for this.", "We can't check text just now. Please try again in a few minutes.", "That didn't save. Please try again." |
 | `/ones/showcase/:id` | `apps/web/src/app/ones/showcase/[id]/page.tsx` (BLD-E044) | "Showcase brief"; "We can't find that Showcase brief."; "Back to the Wall"; "Showcase brief: No. <n> (or retired), <name>"; "Tier <n>, <tier name>."; "The One last updated it <date>."; "The One hasn't added their own words yet." |
+
+## `P-GAPS.build` Drawn, and waiting in the build
+
+Not a pack gap: what the pack draws but the build has not wired yet, and when it will be. Each line names its build decision.
+
+| Module | Line |
+|---|---|
+| `C-PROMPT` | Attach in the prompt box (`C-PROMPT.anatomy/2`, `C-PROMPT.attach`) waits for `POST /api/files` with `draft_id` (c/files-2). Until it is on main, the prompt's tool row has the mic and send only; `Prompt` takes an `attach` slot, first in the row, where `C-FILE.uploader` mounts in a later small round (BLD-C124). |

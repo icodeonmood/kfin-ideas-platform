@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kfin-ideas/agents/draft-part",
+  "title": "draft-part output: one part of the live draft (L-DRAFT.parts)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "part",
+    "title",
+    "summary",
+    "often",
+    "who",
+    "worth",
+    "area",
+    "reason",
+    "evidence"
+  ],
+  "properties": {
+    "part": {
+      "type": "string",
+      "enum": [
+        "title",
+        "often",
+        "who",
+        "value",
+        "area"
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 70,
+      "description": "part title: at most 70 characters, sentence case, plain words"
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600,
+      "description": "part title: 2 to 3 sentences using only what the person said"
+    },
+    "often": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120,
+      "description": "part often: a frequency phrase, or null"
+    },
+    "who": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "description": "part who: labels copied from options.choices"
+    },
+    "worth": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "enum": [
+          "saves_time",
+          "saves_cost",
+          "earns_revenue",
+          "less_outside_tools",
+          "not_sure"
+        ]
+      },
+      "description": "part value: ids from options.choices"
+    },
+    "area": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 60,
+      "description": "part area: one label copied from options.choices"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 160,
+      "description": "parts who and area: a short 'because …' in plain words"
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "description": "1 to 3 exact quotes from words[].text that back the answer; empty when the answer is empty"
+    }
+  }
+}

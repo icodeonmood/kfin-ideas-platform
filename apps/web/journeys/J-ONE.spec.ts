@@ -22,8 +22,10 @@ step(
     await signInAs(page, "varun");
     await page.goto(ideaUrl(v1));
     await expect(page.getByRole("heading", { level: 1 })).toContainText(v1.title);
-    // C-TRACK marks the current stage; Shipped is the last one (Status.md).
-    await expect(page.locator('[aria-current="step"]')).toHaveText(/Shipped/);
+    // C-TRACK.anatomy: a stage's state is its read-out suffix; at Shipped every stage is done and none is "now".
+    const track = page.getByRole("list", { name: "Where it is" }).filter({ visible: true });
+    await expect(track.getByText("Shipped, done", { exact: true })).toBeVisible();
+    await expect(track.getByText(/, now$/)).toHaveCount(0);
     await page.goto("/wall");
     await expect(page.getByRole("heading", { level: 1, name: "Wall" })).toBeVisible();
     await expect(page.getByRole("link", { name: v1.title }).first()).toBeVisible();

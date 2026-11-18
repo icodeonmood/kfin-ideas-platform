@@ -8,6 +8,8 @@
   `by` = the author's users.id, inside the transaction that inserts the entry (L-CONVO/7, BLD-F054). Until lane C's
   package is importable here, a message is masked with the shared patterns only (kind + •••• + last two
   characters, DEC-103), the way lane B's desk adapter does. Either way only the masked copy is kept with the entry.
+- `forget`: L-HIDE (lane C's `hide.forget`, BLD-F076) with `source="conversation"`, `source_id` = the removed
+  entry's id, inside the removal's transaction and before any row lock (L-CONVO/10).
 """
 
 from __future__ import annotations
@@ -35,8 +37,7 @@ def _lane_c(module: str, name: str) -> Any:
 
 
 _hide_message: Callable[..., Any] | None = _lane_c("hide", "hide_message")
-_hide_lock: Callable[[Conn, str], None] | None = _lane_c("hide.core", "lock")
-_hide_scope: Callable[[str], str] | None = _lane_c("hide.core", "scope_for")
+_hide_forget: Callable[..., int] | None = _lane_c("hide", "forget")
 _HideError: type[Exception] | None = _lane_c("hide.core", "HideError")
 
 
@@ -106,45 +107,20 @@ def hide(conn: Conn, idea_uuid: str, text: str, *, by: str, entry_id: str) -> tu
 
 
 def forget(conn: Conn, idea_uuid: str, entry_id: str) -> None:
-    """Drop what L-HIDE kept for a removed message (L-CONVO/10, BLD-F067): its hidden details, the writer's sealed
-    words, and each vault value no other text on the idea still uses. Lane C's recipe of 18 Nov, step for step, until
-    its `hide.forget` lands (c/hide-3); then this body becomes that one call.
+    """Drop what L-HIDE kept for a removed message (L-CONVO/10, BLD-F067, BLD-F076): lane C's `hide.forget` removes
+    its hidden details, the writer's sealed words, and each vault value no other text on the idea still uses.
 
-    Call it inside the removal's transaction, before any row lock: lane C's lock comes first, as every L-HIDE write
-    takes it. IDs and counts only in the log."""
-    if _hide_lock is None or _hide_scope is None:
-        return  # lane C's package is not here, so nothing was kept
-    _hide_lock(conn, idea_uuid)
-    key = (idea_uuid, entry_id)
-    tags = [
-        str(r["vault_tag"])
-        for r in conn.execute(
-            "SELECT vault_tag FROM hidden_details WHERE idea_uuid = %s AND source = 'conversation' "
-            "AND source_id = %s AND vault_tag IS NOT NULL",
-            key,
-        ).fetchall()
-    ]
-    details = conn.execute(
-        "DELETE FROM hidden_details WHERE idea_uuid = %s AND source = 'conversation' AND source_id = %s", key
-    ).rowcount
-    words = conn.execute(
-        "DELETE FROM idea_words_sealed WHERE idea_uuid = %s AND source = 'conversation' AND source_id = %s",
-        key,
-    ).rowcount
-    values = 0
-    if tags:
-        values = conn.execute(
-            "DELETE FROM pseudonym_vault v WHERE v.scope_id = %s AND v.tag = ANY(%s::text[]) AND NOT EXISTS "
-            "(SELECT 1 FROM hidden_details h WHERE h.idea_uuid = %s AND h.vault_tag = v.tag)",
-            (_hide_scope(idea_uuid), tags, idea_uuid),
-        ).rowcount
-    log.info(
-        "convo.hidden_forgotten",
-        entry_id=entry_id,
-        hidden_count=details,
-        sealed_count=words,
-        vault_rows=values,
-    )
+    Call it inside the removal's transaction, before any row lock: `hide.forget` takes lane C's lock first, as every
+    L-HIDE write does. IDs and counts only in the log. With no lane C at all nothing was kept, so nothing is done;
+    with lane C's `hide_message` but not its `forget`, it raises, so the removal rolls back rather than leave the
+    kept values behind."""
+    if _hide_forget is None:
+        if _hide_message is None:
+            return  # lane C's package is not here: messages were masked by the patterns alone, nothing was kept
+        # Lane C hid this message's details but cannot drop them: never leave kept personal data behind silently
+        raise RuntimeError("L-HIDE keeps details but has no forget; the message was not removed")
+    n = _hide_forget(conn, idea_uuid, source="conversation", source_id=entry_id)
+    log.info("convo.hidden_forgotten", entry_id=entry_id, hidden_count=int(n))
 
 
 def pattern_mask(text: str) -> tuple[str, int]:

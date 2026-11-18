@@ -83,6 +83,44 @@
   box-shadow: inset 0 0 0 1px #bdbdb7;
 }
 
+/* A countdown (C-PILL.rules/3, S-R1.layout/4; board Desk .due): a clock in place of the dot. Under a day is "soon",
+ * overdue is solid "over", a closed clock is "done" */
+.due {
+  display: inline-flex;
+  justify-self: start;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 11px 0 9px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: rgba(17, 17, 17, 0.05);
+  color: var(--ink2);
+  font: 500 13px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.due > svg {
+  flex: none;
+}
+
+.due.soon {
+  background: var(--badW);
+  color: var(--badT);
+}
+
+.due.over {
+  background: var(--badT);
+  color: #ffffff;
+}
+
+.due.done {
+  background: var(--okW);
+  color: var(--okT);
+}
+
 /* ---------- C-FIELD ---------- */
 .lbl {
   display: block;
@@ -444,6 +482,13 @@ textarea:is(.fld, .textarea) {
   display: inline-flex;
 }
 
+/* Filter chips take the tick on a phone only; above it the ring and wash say which is on (C-CHIP.states) */
+@media (min-width: 641px) {
+  .chips.filter .chip .chip-tick {
+    display: none;
+  }
+}
+
 .chip .chip-n {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
@@ -611,13 +656,16 @@ textarea:is(.fld, .textarea) {
   }
 }
 
+/* Every count sits in a 22px pill (board Desk .mtab .n): grey on other tabs, ink on the selected one */
 .tab-n {
-  min-width: 20px;
-  padding: 2px 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
   box-sizing: border-box;
   border-radius: var(--r-pill);
-  color: var(--mute);
-  font: 500 13px/1.2 var(--ft);
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--mute2);
+  font: 600 12px/22px var(--ft);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -867,11 +915,10 @@ textarea:is(.fld, .textarea) {
   transition: box-shadow 0.2s ease;
 }
 
-.qbox:focus-within {
-  box-shadow:
-    0 0 0 1px rgba(57, 93, 237, 0.55),
-    0 0 0 5px rgba(57, 93, 237, 0.12),
-    0 22px 48px -30px rgba(57, 93, 237, 0.5);
+/* The field's own outline is off, so the box draws the ring every field has: 2px --focus, 3px out (F-A11Y.rules/2) */
+.qbox:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 .qbox > svg {
@@ -1226,19 +1273,21 @@ textarea:is(.fld, .textarea) {
   box-shadow: inset 0 0 0 1px var(--rule2);
 }
 
+/* One width for every type, so names line up row to row; it fits the longest label ("Folder") at 12px (F-TYPE.rules/5) */
 .fbadge {
   flex: none;
   display: grid;
   place-items: center;
-  min-width: 36px;
+  width: 44px;
   height: 36px;
-  padding: 0 4px;
+  padding: 0 2px;
   box-sizing: border-box;
   border-radius: var(--r-xs);
   background: var(--mute);
   color: #ffffff;
-  font: 700 10.5px/1 var(--ft);
+  font: 700 12px/1 var(--ft);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* Badge fills, each with white words at 4.5:1 or better */
@@ -1738,6 +1787,11 @@ button.opost-cheer:hover {
 button.opost-cheer[aria-pressed="true"] {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.14);
+}
+
+/* Pressed is more than a lighter fill: the flame fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
+button.opost-cheer[aria-pressed="true"] svg {
+  fill: currentColor;
 }
 
 .opost-n {

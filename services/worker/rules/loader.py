@@ -36,6 +36,7 @@ YAML_BLOCK = re.compile(r"^```yaml[ \t]*\n(.*?)^```[ \t]*$", re.DOTALL | re.MULT
 RULE_PATHS: dict[str, str] = {
     "calendar": "rules/calendar.md",
     "compliance-tier": "rules/compliance-tier.md",
+    "drafting": "rules/drafting.md",
     "points": "rules/points.md",
     "priority": "rules/priority.md",
     "promises": "rules/promises.md",
@@ -44,6 +45,7 @@ RULE_PATHS: dict[str, str] = {
     "routing": "rules/routing.md",
     "scorecard": "rules/scorecard.md",
     "sla": "rules/sla.md",
+    "sorting": "rules/sorting.md",
     "thresholds": "rules/thresholds.md",
     "tiers": "rules/tiers.md",
     "comms": "comms/rules.md",
@@ -146,6 +148,13 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
         cw = data["committee_window"]
         if cw["days"] > cw["max_months"] * 31:
             problems.append("committee_window.days cannot exceed max_months")
+    elif name == "drafting":
+        if data["similar_from_chars"] < data["parts_from_chars"]:
+            problems.append("similar_from_chars cannot be below parts_from_chars")
+        for key in ("affects", "area"):
+            labels = [i["label"].casefold() for i in data[key]]
+            if len(labels) != len(set(labels)):
+                problems.append(f"{key}: each label may appear only once")
     elif name == "tiers":
         steps = [data["tiers"][str(i)] for i in range(1, 8)]
         if steps[0]["hours_month"] != 0 or steps[0]["money_year"] != 0:
@@ -158,6 +167,17 @@ def _semantic(name: str, data: dict[str, Any]) -> list[str]:
         for key, spec in data.items():
             if key != "version" and not ({"limit_wd", "limit_days", "due_wd_before_session"} & set(spec)):
                 problems.append(f"{key} has no limit")
+    elif name == "sorting":
+        for list_name in ("affects", "areas"):
+            labels = [*data[list_name]["shown"], *data[list_name]["more"]]
+            if len({x.casefold() for x in labels}) != len(labels):
+                problems.append(f"{list_name}: each value may appear only once")
+        if len({h.casefold() for h in data["helpers"]}) != len(data["helpers"]):
+            problems.append("helpers: each value may appear only once")
+        areas = {a.casefold() for a in [*data["areas"]["shown"], *data["areas"]["more"]]}
+        for area in data["review_routing"]["areas"]:
+            if area.casefold() not in areas:
+                problems.append(f"review_routing.areas: {area} is not one of the areas")
     return problems
 
 

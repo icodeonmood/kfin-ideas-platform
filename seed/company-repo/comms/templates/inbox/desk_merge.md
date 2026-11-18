@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{from.display}} merged your idea'
-description: 'Inbox item and email for the desk_merge kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR.'
+description: 'Inbox item and email for the desk_merge kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). 1.1 (BLD-A195): typographic apostrophes (’) in the row text, note and email, as in every other line. Email wording: draft for HR.'
 tags:
 - comms
 - template
@@ -12,14 +12,14 @@ generated:
   at: '2026-11-17T00:00:00+05:30'
 kfin:
   id: TPL-inbox-desk-merge
-  version: '1.0'
+  version: '1.1'
   kinds:
   - desk_merge
   subject: '{{from.display}} merged your idea'
   inbox:
     heading: 'Ideas merged by the desk'
     line: 'merged your idea with {{other.possessive}}'
-    note: 'Both of you are credited, and you''re on one crew now.'
+    note: 'Both of you are credited, and you’re on one crew now.'
   signed_as: The 1% Club team
   hr_signed_off: false
 ---

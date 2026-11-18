@@ -2,10 +2,10 @@
 `python -m bootstrap.club_seed`). Dev only: refused unless APP_ENV=dev and the database is the local `ideas` one.
 
 Everything here is invented and clearly synthetic. People are new names, not the pack's demo cast (P-PRODUCT.cast
-stays out of every database) and not the old demo's; employee IDs are `SYN-10001`… (above the synthetic HR
-directory's range), emails `….1pc@kfintech.example`. Customer details in the words are made-up values that only
-look like a folio, PAN or phone number; they are masked as the pack masks them and the unmasked words sit in the
-worker-only `idea_words_sealed` (DEC-103).
+stays out of every database) and, but for Sana Qureshi (S-03's first visit), not the old demo's; employee IDs are
+`SYN-10001`… (above the synthetic HR directory's range), emails `….1pc@kfintech.example`. Customer details in the
+words are made-up values that only look like a folio, PAN or phone number; they are masked as the pack masks them and
+the unmasked words sit in the worker-only `idea_words_sealed` (DEC-103).
 
 What it gives every screen of the pack something to show:
 - ideas in every stored status (draft, checking, with the review desk, picked, being built, shipped, not now,
@@ -84,8 +84,12 @@ PEOPLE: list[tuple[str, str, str, str, str, tuple[str, ...], int, bool, str]] = 
     ("SYN-10023", "Indira Natarajan", "Corporate registry", "Chennai", "LOB-corporate-registry", (), 2, True, ""),
     ("SYN-10024", "Jatin Khurana", "Sales", "Jaipur", "LOB-sales", (), 1, True, ""),
     ("SYN-10025", "Kiran Bhatia", "Investor service", "Chennai", "LOB-mf", (), 1, True, "Sharer the review desk asks first"),
+    ("SYN-10026", "Sana Qureshi", "Operations", "Jaipur", "LOB-shared-operations", (), 1, True, "First visit to Home"),
 ]  # fmt: skip
 EMP = {name.split()[0].lower(): emp for emp, name, *_ in PEOPLE}  # "tanvi" -> "SYN-10001"
+# S-03's first visit (BLD-C148): the one person who has never seen Home, with no ideas, drafts, crew or Inbox items.
+# Everyone else has seen it, so their first /home after a reset is the returning one (J-TRACK/2, journey walks).
+FIRST_VISIT = "sana"
 
 MASK_LABEL = {"folio": "Folio", "pan": "PAN", "phone": "Phone", "email": "Email", "account": "Account",
               "aadhaar": "Aadhaar", "name": "Name"}  # fmt: skip
@@ -397,8 +401,9 @@ def _people(conn: Conn) -> dict[str, dict[str, str]]:
             (uid, on_wall, emp not in (EMP["bhavesh"], EMP["zoya"]), emp != EMP["jatin"]),
         )
         conn.execute(
-            "INSERT INTO person_settings (user_id, show_name_on_wall, sidebar_folded) VALUES (%s, %s, %s)",
-            (uid, on_wall, emp == EMP["harish"]),
+            "INSERT INTO person_settings (user_id, show_name_on_wall, sidebar_folded, home_seen_at) "
+            "VALUES (%s, %s, %s, CASE WHEN %s THEN NULL ELSE now() END)",
+            (uid, on_wall, emp == EMP["harish"], emp == EMP[FIRST_VISIT]),
         )
         if version:
             conn.execute(
@@ -1318,7 +1323,7 @@ def _inbox(
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
     """Opened this week (L-WALL.justin/4), per day and per person, and the S1–S3 assignments with exposures."""
-    viewers = [k for k in p if k not in ("hyderabad",)]
+    viewers = [k for k in p if k not in ("hyderabad", FIRST_VISIT)]
     popularity = {"R1": 14, "P1": 9, "T6": 6, "Z1": 11, "B1": 3, "T5": 5, "R2": 7, "E1": 1, "C1": 8, "J1": 4}
     for key, count in popularity.items():
         owner = m[key].spec.owner

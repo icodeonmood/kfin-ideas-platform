@@ -293,6 +293,45 @@ test.describe("S-H5 Inbox", () => {
     await expect(tab(page, /^Unread 1$/)).toBeVisible();
   });
 
+  test("S-H5, C-INBOX-READER, P-ROUTES.state (J-BROWSE/4, /6): the tab and the open item stay in the address, so Back and a reload come to the same view", async ({
+    page,
+    inbox,
+  }) => {
+    await inbox();
+    await page.goto("/inbox");
+    await tab(page, /^Needs you 1$/).click();
+    await expect(page).toHaveURL(/\/inbox\?tab=needs_you$/);
+    const questions = row(page, /asked you 3 questions/);
+    await questions.click();
+    await expect(page).toHaveURL(/\/inbox\?tab=needs_you&item=\d+$/);
+    const here = page.url();
+
+    await page.getByRole("link", { name: "Answer the questions" }).click();
+    await page.waitForURL(/\/my-ideas/);
+    await page.goBack();
+    await expect(page).toHaveURL(here);
+    if (isPhone(page)) {
+      // The item the person had open is its own screen again, the list hidden behind it (S-H5.rules/6); the
+      // screen's own Back returns to the list, on the same tab, and the address lets the item go.
+      await expect(page.getByRole("heading", { level: 1, name: "asked you 3 questions" })).toBeVisible();
+      await page.getByRole("button", { name: "Inbox", exact: true }).click();
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+      await expect(page).toHaveURL(/\/inbox\?tab=needs_you$/);
+    } else {
+      await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+      await expect(questions).toHaveAttribute("aria-pressed", "true");
+    }
+
+    await page.reload();
+    await expect(tab(page, /^Needs you/)).toHaveAttribute("aria-selected", "true");
+    if (!isPhone(page)) await expect(questions).toHaveAttribute("aria-pressed", "true");
+
+    // An unknown tab or an item that is not the person's opens the default view, with no error.
+    await page.goto("/inbox?tab=starred&item=999999999");
+    await expect(tab(page, /^All 4$/)).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toBeVisible();
+  });
+
   test("S-H2B route: /inbox/:itemId opens the Inbox with that item open", async ({ page, inbox }) => {
     const userId = await inbox();
     const { rows } = await withDb((db) =>

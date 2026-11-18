@@ -220,7 +220,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
       </p>
       <p className="ans-due">
         {live ? (
-          <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>
+          <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
             {countdownLabel(live, "left to answer")}
           </Pill>
         ) : null}
@@ -394,7 +394,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
           </p>
           <h2 id={`ans-q-${q.id}`} className="h3" ref={heading} tabIndex={-1}>
             <span className="vh">Question {step + 1}: </span>
-            {q.text}
+            {/* The question in its own element, as the board draws it apart from its number (J-TRACK/4) */}
+            <span>{q.text}</span>
           </h2>
           {/* Seams, not built yet: files on an answer (C-FILE.row, S-R3.rules/3) and "Say your answer" through
               lane C's voice route mount beside this box. */}

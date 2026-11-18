@@ -11,14 +11,26 @@
  *   questions" (S-R3, S-08.rules/1, BLD-F065).
  * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
- * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
- *   sheet; the box stays at the bottom.
+ * - Phone (S-08.rules/4): the compact bar with Back, "Conversation" and an "i" button that opens the side panel as a
+ *   sheet; the box is pinned at the bottom, above the tab bar or the keyboard, and the timeline keeps room for it
+ *   (BLD-F068, `pin.ts`).
+ * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
+ *   never sent by themselves (BLD-C165).
+ * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
+ *   carried over (BLD-F069). Neither sends anything.
+ * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the pill and a
+ *   round Send; the attach slot waits for BLD-F064)
+ *   and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
+ *   header's pill, reference and line share a row and the title runs the column's width (BLD-F079), and the sticky
+ *   box is solid with the page's colour under it to the window's edge (BLD-F080). A long conversation opens at its
+ *   newest entry (BLD-F081).
  */
 import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -50,6 +62,8 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
+import { grow, useOpenAtNewest, usePhone, usePinnedBox, useSayHello } from "./pin";
+import { takePrefill } from "./prefill";
 import "./conversation.css";
 
 type Entry = ConversationEntryView;
@@ -81,6 +95,16 @@ function InfoIcon() {
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v5M12 8h.01" />
+    </svg>
+  ); // prettier-ignore
+}
+
+/** The phone's round Send: an arrow up (PhoneMessages, `.cvsend`). */
+function SendIcon() {
+  return (
+    <svg className="cv-send-ic" width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 19V5M6 11l6-6 6 6" />
     </svg>
   ); // prettier-ignore
 }
@@ -139,9 +163,12 @@ export interface ConversationProps {
   ideaId: string;
   /** The clock, for "Remove" while a message can still be removed; tests pass their own. */
   now?: () => number;
+  /** Writing is paused by the kill switch (`submissions`, BLD-F058). The box stays, and a send shows the pause; only
+   * "Say hello" no longer puts the cursor in it (BLD-F069). */
+  paused?: boolean;
 }
 
-export function Conversation({ initial, ideaId, now = Date.now }: ConversationProps) {
+export function Conversation({ initial, ideaId, now = Date.now, paused = false }: ConversationProps) {
   const [view, setView] = useState(initial);
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<ReadonlyMap<string, string>>(new Map());
@@ -152,8 +179,12 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // The phone's layout (640px and narrower, as conversation.css): where who-sees-it is drawn (BLD-F078)
+  const phone = usePhone();
 
   const box = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const caretAfter = useRef<number | null>(null);
   const keyRef = useRef<string | null>(null);
   // The "@" whose list Escape closed: it stays closed until a new "@" (a ref, so a select event in the same tick
@@ -190,6 +221,35 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const openQuestions = view.entries.find(
     (e): e is QuestionsEntry => e.type === "questions" && Boolean(e.answer_url),
   );
+
+  // S-06B.rules/2: the words the person was editing when the review desk opened their idea wait in the box, unsent.
+  // Read once after mounting (an effect that was undone, as in development's double mount, reads nothing), then gone
+  // from storage; anything already typed is never replaced.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve().then(() => {
+      if (!live) return;
+      const carried = takePrefill([ideaId, initial.idea.id]);
+      if (carried) setText((t) => t || carried);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ideaId, initial.idea.id]);
+
+  // The box grows with its words, up to its max-height (BLD-F068).
+  useLayoutEffect(() => grow(box.current), [text]);
+
+  // S-08.rules/4: pinned at the bottom on a phone, with room kept under the timeline (BLD-F068).
+  usePinnedBox(root, form, !view.composer.closed);
+
+  // A long conversation opens at its newest entry, just above the box (BLD-F081); after the pin, so the room it keeps
+  // under the timeline is already there.
+  useOpenAtNewest(root);
+
+  // "Say hello" (#say-hello): the cursor in the box, if the person can write here; words carried over from the edit
+  // page arrive just after and the cursor ends after them (BLD-F069).
+  useSayHello(box, !view.composer.closed && !paused);
 
   // Put the caret after a picked name once the words are on screen.
   useEffect(() => {
@@ -485,10 +545,10 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
 
   return (
-    <div className="cv">
+    <div className="cv" ref={root} data-box={composer.closed ? "closed" : "open"}>
       <PhoneBar
         back={{ href: ideaHref, label: view.header.whose }}
-        title={view.idea.title}
+        title={C.heading}
         actions={
           <button
             ref={infoButton}
@@ -509,14 +569,33 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
             {view.header.whose}
           </Link>
         </p>
+        {/* Messages.jpg: the pill, the reference and the line on one row (it wraps where the row is too narrow) */}
         <p className="cv-meta">
           {status ? <Pill variant={status.pill}>{status.label}</Pill> : null}
           <span>{view.idea.id}</span>
+          <span className="cv-line">{view.header.line}</span>
         </p>
-        <p className="cv-line">{view.header.line}</p>
         <h1 className="h1 cv-title">
           <Link href={ideaHref}>{view.idea.title}</Link>
         </h1>
+        {/* On a phone (PhoneMessages, `.cvppl`) the faces and who sees the conversation sit under the title; wider, the
+            line sits in the box beside Send (Messages.jpg). The line is drawn once, in one place or the other, so the
+            page never holds it twice (BLD-F078); the server draws the phone's, which CSS hides on a wider screen. */}
+        {phone ? (
+          <p className="cv-seen">
+            <span className="cv-faces" aria-hidden="true">
+              {view.participants.slice(0, 4).map((p) => (
+                <Avatar
+                  key={`${p.person.id}-${p.label}`}
+                  initials={p.person.initials}
+                  size={28}
+                  ring="neutral"
+                />
+              ))}
+            </span>
+            <span id={ids.who}>{composer.visibility}</span>
+          </p>
+        ) : null}
       </header>
 
       <div className="cv-cols">
@@ -539,72 +618,84 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           {composer.closed ? (
             <p className="cv-closed">{composer.closed}</p>
           ) : (
-            <form className="cv-box" onSubmit={(e) => void send(e)} noValidate>
+            <form ref={form} className="cv-box" onSubmit={(e) => void send(e)} noValidate>
               {composer.questions_line ? (
                 <p className="cv-hint">
                   {linkedText(composer.questions_line, C.answer, openQuestions?.answer_url)}
                 </p>
               ) : null}
-              <div className="cv-field">
-                <textarea
-                  ref={box}
-                  className="cv-in"
-                  rows={2}
-                  value={text}
-                  placeholder={composer.placeholder}
-                  aria-label={composer.placeholder}
-                  aria-describedby={described}
-                  aria-invalid={error ? true : undefined}
-                  aria-autocomplete="list"
-                  aria-controls={open ? ids.list : undefined}
-                  aria-activedescendant={open ? ids.option(Math.min(active, choices.length - 1)) : undefined}
-                  onChange={(e) => {
-                    keyRef.current = null;
-                    setText(e.target.value);
-                    if (error) setError(null);
-                    track(e.target.value, e.target.selectionStart ?? e.target.value.length);
-                  }}
-                  onSelect={(e) => {
-                    const t = e.currentTarget;
-                    track(t.value, t.selectionStart ?? t.value.length);
-                  }}
-                  onKeyDown={onKeyDown}
-                  onBlur={() => setMenu(null)}
-                />
-                {open ? (
-                  <ul id={ids.list} className="cv-menu" role="listbox" aria-label={C.mentionList}>
-                    {choices.map((p, i) => (
-                      <li
-                        key={p.id}
-                        id={ids.option(i)}
-                        role="option"
-                        aria-selected={i === active}
-                        className={i === active ? "on" : undefined}
-                        onMouseDown={(ev) => {
-                          ev.preventDefault(); // keep focus in the box
-                          pick(p);
-                        }}
-                      >
-                        <Avatar initials={p.initials} size={28} />
-                        <span className="cv-menu-n">{p.name}</span>
-                        <span className="cv-menu-d">{p.doing}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+              {/* One grid: on a phone a single row (the pill and the round Send; the attach slot waits for
+                  BLD-F064) with any error above it; wider, the words, then who sees it and Send (BLD-F078) */}
+              <div className="cv-row">
+                <div className="cv-field">
+                  <textarea
+                    ref={box}
+                    className="cv-in"
+                    rows={1}
+                    value={text}
+                    placeholder={composer.placeholder}
+                    aria-label={composer.placeholder}
+                    aria-describedby={described}
+                    aria-invalid={error ? true : undefined}
+                    aria-autocomplete="list"
+                    aria-controls={open ? ids.list : undefined}
+                    aria-activedescendant={
+                      open ? ids.option(Math.min(active, choices.length - 1)) : undefined
+                    }
+                    onChange={(e) => {
+                      keyRef.current = null;
+                      setText(e.target.value);
+                      if (error) setError(null);
+                      track(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                    }}
+                    onSelect={(e) => {
+                      const t = e.currentTarget;
+                      track(t.value, t.selectionStart ?? t.value.length);
+                    }}
+                    onKeyDown={onKeyDown}
+                    onBlur={() => setMenu(null)}
+                  />
+                  {open ? (
+                    <ul id={ids.list} className="cv-menu" role="listbox" aria-label={C.mentionList}>
+                      {choices.map((p, i) => (
+                        <li
+                          key={p.id}
+                          id={ids.option(i)}
+                          role="option"
+                          aria-selected={i === active}
+                          className={i === active ? "on" : undefined}
+                          onMouseDown={(ev) => {
+                            ev.preventDefault(); // keep focus in the box
+                            pick(p);
+                          }}
+                        >
+                          <Avatar initials={p.initials} size={28} />
+                          <span className="cv-menu-n">{p.name}</span>
+                          <span className="cv-menu-d">{p.doing}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                {error ? <FieldMsg id={ids.error}>{error}</FieldMsg> : null}
+                {phone ? null : (
+                  <p id={ids.who} className="cv-sees">
+                    {composer.visibility}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  className="cv-send"
+                  busy={busy}
+                  busyLabel={<span className="cv-send-t">{C.sending}</span>}
+                >
+                  <SendIcon />
+                  <span className="cv-send-t">{C.send}</span>
+                </Button>
               </div>
               <p className="visually-hidden" aria-live="polite">
                 {hint}
               </p>
-              {error ? <FieldMsg id={ids.error}>{error}</FieldMsg> : null}
-              <div className="cv-bar">
-                <p id={ids.who} className="cv-sees">
-                  {composer.visibility}
-                </p>
-                <Button type="submit" className="cv-send" busy={busy} busyLabel={C.sending}>
-                  {C.send}
-                </Button>
-              </div>
             </form>
           )}
         </section>

@@ -148,14 +148,18 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(page.getByRole("button", { name: "Withdraw" })).toBeFocused();
   });
 
-  test("S-06.states questions, V-ACC.track/3: the questions card with its countdown and Answer the questions; the window has closed", async ({
+  test("S-06.states questions, V-ACC.track/3, C-QCARD.anatomy: the questions card with its countdown and Answer the questions; the window has closed", async ({
     page,
   }) => {
     const t6 = await openIdea(page, "T6");
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "Harish has 3 questions for you" })).toBeVisible();
     await expect(page.getByText("Answer goes to").first()).toBeVisible();
-    await expect(page.getByText(/^\d+ days? left to answer$|left to answer/).first()).toBeVisible();
+    // C-QCARD.anatomy/1 and /4 (lane B's card, BLD-E051): the countdown is the header's pill, the deadline line alone
+    await expect(page.getByText(/^(?:\d+ days?|\d{2}:\d{2}) left$/).first()).toBeVisible();
+    await expect(
+      page.getByText(/^Answer by \w+day \d+ \w+, .+\. One at a time, typed or spoken\.$/).first(),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
       "href",
       `/ideas/${t6.ref}/answer`,

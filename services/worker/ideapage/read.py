@@ -23,7 +23,8 @@ IDEA_REF_PREFIX = "IDEA-"
 DESK_ROLES = frozenset({"reviewer"})
 # The Ones Committee (E-ENUMS.roles; the seed and the old grants still say "committee").
 COMMITTEE_ROLES = frozenset({"committee", "core_committee", "core_chair"})
-OPEN_SET_STATES = ("sent", "seen", "partly_answered")
+PARTLY_ANSWERED = "partly_answered"  # some answers sent, the rest open until the deadline
+OPEN_SET_STATES = ("sent", "seen", PARTLY_ANSWERED)
 ANSWERED_SET_STATES = ("answered",)
 
 
@@ -142,6 +143,7 @@ def _person(row: dict[str, Any] | None, role_label: str | None = None) -> dict[s
         **({"city": row["city"]} if row.get("city") else {}),
         **({"role_label": role_label} if role_label else {}),
         "_show_name": bool(row["show_name"]),
+        "_active": bool(row["active"]),
     }
     return out
 
@@ -161,14 +163,19 @@ def person_by_user(conn: Conn, user_id: Any, role_label: str | None = None) -> d
 
 
 def public_person(p: dict[str, Any] | None) -> dict[str, Any] | None:
-    """A PersonRef as the API sends it: the private `_show_name` flag removed."""
+    """A PersonRef as the API sends it: the private `_show_name` and `_active` flags removed."""
     if p is None:
         return None
     return {k: v for k, v in p.items() if not k.startswith("_")}
 
 
 def shows_name(p: dict[str, Any] | None) -> bool:
-    return bool(p and p.get("_show_name"))
+    """Whether this person may be named to someone outside their crew, the review desk and the Ones Committee:
+    they show their name on the Wall (Profile's switch, no row means shown) and they are still here
+    (`users.active`). A person who hid their name, or has left, is "the lead", "A colleague" or left out
+    (DEC-104, P-PRODUCT.privacy; the same rule as lane C's `similar.preview.person_refs` and lane F's team-up,
+    BLD-C090, BLD-F029; BLD-E048)."""
+    return bool(p and p.get("_show_name") and p.get("_active"))
 
 
 # --- Lane B's tables, read only: the decision, its window and reversal; questions and answers ----------------------

@@ -54,7 +54,9 @@ describe("kill switch route map (§7.6)", () => {
     expect(switchesFor("DELETE", "/api/submissions/abc/voice/0b7d9d2e-3c1f-4c55-9a51-2f7b0f6f1a10")).toEqual([
       "submissions",
     ]);
+    // BLD-C149, the product lead's decision of 18 Nov: every voice-off line reads exactly this.
     expect(BANNERS["capture.voice"]).toBe("Voice notes are coming soon.");
+    expect(BANNERS["speech.hosted"]).toBe("Voice notes are coming soon.");
     expect(BANNERS["speech.hosted"]).not.toMatch(/sarvam|vendor|third/i);
   });
 

@@ -90,12 +90,15 @@ def test_draft_lifecycle_and_submit(person: Any) -> None:
     row = conn.execute(
         "SELECT stage, idea_id, draft_encrypted, raw_encrypted, canvas FROM ideas WHERE id = %s", (draft_id,)
     ).fetchone()
-    assert row["stage"] == "scanning" and row["idea_id"] == body["idea_id"]
-    assert row["draft_encrypted"] is None and row["raw_encrypted"] is not None and row["canvas"] is None
+    assert row["idea_id"] == body["idea_id"] and row["draft_encrypted"] is None
+    if row["stage"] == "scanning":  # CI's live job runner (below) may already have scanned it and moved it on
+        assert row["raw_encrypted"] is not None and row["canvas"] is None
     job = conn.execute(
         "SELECT state, payload FROM jobs WHERE dedupe_key = %s", (f"scan:{body['idea_id']}",)
     ).fetchone()
-    assert job["state"] == "queued" and job["payload"]["idea_id"] == body["idea_id"]
+    # In CI the worker container's job runner polls this same database (WORKER_ROLES includes jobs), so it may
+    # already have claimed or finished the scan; the test checks the scan was enqueued for this idea.
+    assert job["state"] in {"queued", "running", "done"} and job["payload"]["idea_id"] == body["idea_id"]
 
     assert b.post(f"/api/submissions/{draft_id}/submit", json={"canvas": full_canvas()}).status_code == 409
     conn.execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"scan:{body['idea_id']}",))

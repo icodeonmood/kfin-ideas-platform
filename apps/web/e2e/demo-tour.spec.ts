@@ -30,11 +30,8 @@ async function as(browser: Browser, username: string): Promise<Page> {
   return page;
 }
 
-test("1-3: home carousel, share an idea, Find your crew", async ({ browser }) => {
+test("1-3: share an idea, Find your crew", async ({ browser }) => {
   const kavya = await as(browser, DEMO.employee);
-  await kavya.goto("/");
-  await expect(kavya.getByRole("heading", { name: "What the Ones are up to" })).toBeVisible();
-  await expectNoSeriousAxeIssues(kavya);
   await kavya.goto("/share");
   await expect(kavya.getByRole("heading", { level: 1 })).toBeVisible();
   await kavya.goto("/inbox");

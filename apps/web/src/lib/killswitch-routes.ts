@@ -57,12 +57,29 @@ export const ROUTE_RULES: readonly Rule[] = [
   { methods: ["POST"], pattern: /^\/api\/inbox\/[^/]+\/actions\/[^/]+\/?$/, switches: ["submissions"] },
   // "Show it" puts a hidden detail back in what others read: it waits while sharing is paused (L-HIDE.rules/6).
   { methods: ["POST"], pattern: /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/show\/?$/, switches: ["submissions"] },
+  // The live draft (L-DRAFT): saving pauses with sharing. It never needs `ai.all`: with the assistant off the parts
+  // are filled by hand (DEC-105).
+  { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  // "Keep mine separate" is part of sending a draft (BLD-C095).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/similar\/keep-separate\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
     switches: ["submissions"],
   },
+  // Sorting, the fix, who would help, Submit and the edit page's Save (lane C; L-SORT, L-SUBMIT, S-05) stop with
+  // sharing.
+  {
+    methods: WRITE,
+    pattern: /^\/api\/drafts\/[^/]+\/(?:sorting|fix|helpers|submit)\/?$/,
+    switches: ["submissions"],
+  },
+  { methods: WRITE, pattern: /^\/api\/ideas\/[^/]+\/edit\/?$/, switches: ["submissions"] },
   // Restoring a withdrawn idea shares it again (L-SUBMIT.withdraw/3); withdrawing only takes it back, so it stays open.
   { methods: ["POST"], pattern: /^\/api\/ideas\/[^/]+\/restore\/?$/, switches: ["submissions"] },
   // An idea's conversation (lane F; L-CONVO, BLD-F058): writing or removing a message pauses with sharing, like
@@ -186,7 +203,7 @@ export const BANNERS: Record<SwitchName, string> = {
   "capture.mic_hint": "The tip about your phone keyboard's mic is hidden for now.",
   "capture.voice": "Voice notes are coming soon.",
   // Employees never see a vendor's name (DEC-096). Since DEC-108 the hosted route is how voice works, so off pauses it.
-  "speech.hosted": "Voice notes are paused for a short while. You can type instead.",
+  "speech.hosted": "Voice notes are coming soon.", // the product lead, 18 Nov (BLD-C149)
   // DEC-107: until black-out passes review, a file with a detail found opens only for its sharer and the desk.
   "files.blackout":
     "Hiding details inside a file is coming soon. The review desk will look at the file with you.",
@@ -254,6 +271,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
+  // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
+  // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
+  /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

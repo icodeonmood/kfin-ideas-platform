@@ -166,7 +166,7 @@ def lead_result(answer: Answer, first: str, brought: int, reason: str | None) ->
 
 def say_hello(first: str, lead_ref: str) -> dict[str, str]:
     """S-H2B.states: "Say hello to {requester}" opens the lead idea's conversation (S-08)."""
-    return {"label": f"Say hello to {first}", "to": f"/ideas/{lead_ref}/conversation"}
+    return {"label": f"Say hello to {first}", "to": f"/ideas/{lead_ref}/conversation#say-hello"}
 
 
 # --- What the requester sees: C-SHEET-TEAMUP.after, and L-MERGE.request/4–8 on Check it ------------------------
@@ -204,10 +204,10 @@ def requester_after(
                 "action": {"label": "Withdraw", "op": "withdraw"}}  # fmt: skip
     if state == "approved_team_only":
         return {"state": "on_crew", "line": "You’re on the crew. You’ll get its updates.",
-                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation"}}  # fmt: skip
+                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation#say-hello"}}  # fmt: skip
     if state == "approved_merged":
         return {"state": "merged", "line": f"Merged into {lead_ref}, with credit to you.",
-                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation"}}  # fmt: skip
+                "action": {"label": "Say hello", "to": f"/ideas/{lead_ref}/conversation#say-hello"}}  # fmt: skip
     if state == "declined":  # NOT DRAWN: "The lead's reason if given; the person can send theirs on its own"
         said = f"{lead_} declined: {quoted(reason)}" if reason else f"{lead_} declined."
         return {"state": "declined", "line": said + (" Send yours on its own." if brought else ""),

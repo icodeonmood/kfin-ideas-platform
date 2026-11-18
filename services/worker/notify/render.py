@@ -18,6 +18,7 @@ from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
 from notify import AS_THE_DESK
+from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -108,6 +109,29 @@ def person(conn: Conn, user_id: Any) -> dict[str, Any] | None:
     return {"id": str(row["id"]), "name": name, "first_name": first, "initials": initials(name)}
 
 
+def lead_seen_by_requester(
+    conn: Conn, user_id: Any, idea: dict[str, Any] | None, viewer: str
+) -> dict[str, Any] | None:
+    """The lead as the requester they declined may see them (DEC-104, BLD-A196), decided by lane F's own rule,
+    `teamup.store.lead_seen_by` (BLD-F029, lane C's `person_refs` with `names_always=False`), so the Inbox and every
+    team-up read agree: a lead who hid their name from the Wall, or has left, is lane C's `hidden_person` ("A
+    colleague", no initials, an opaque `p…` id, never their users.id) with `hidden` set, unless the reader is on the
+    idea's live crew or is the review desk or the Ones Committee. An item with no idea names no one (fail closed).
+    An approved requester is on the crew and reads `person`."""
+    if not user_id:
+        return None
+    if idea is None or not idea.get("contributor_code"):
+        return {**hidden_person(f"user:{user_id}"), "hidden": True}
+    from teamup.store import crew_role, lead_seen_by  # lane F's package; imported here, as it imports notify
+
+    on_crew = next((c for c in sorted(_codes(conn, viewer)) if crew_role(conn, idea["uuid"], c)), None)
+    seen = lead_seen_by(
+        conn, {"id": idea["uuid"], "contributor_code": idea["contributor_code"]}, viewer, on_crew
+    )
+    ref = {k: seen.ref[k] for k in ("id", "name", "first_name", "initials")}
+    return ref if seen.first is not None else {**ref, "hidden": True}
+
+
 def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
     if kind in AS_THE_DESK:
         return dict(REVIEW_DESK)
@@ -123,9 +147,10 @@ def sender(kind: str, who: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _possessive(first_name: str | None) -> str:
+    """ "Meera’s", "Dhanus’", "a colleague’s": the typographic apostrophe of every inbox line (BLD-A195)."""
     if not first_name:
-        return "a colleague's"
-    return f"{first_name}'" if first_name.endswith("s") else f"{first_name}'s"
+        return "a colleague’s"
+    return f"{first_name}’" if first_name.endswith("s") else f"{first_name}’s"
 
 
 def _clock(t: dt.datetime) -> str:
@@ -242,6 +267,25 @@ def _left(row: dict[str, Any], now: dt.datetime) -> str:
     return "1 day" if hours >= 20 else ("1 hour" if hours < 1.5 else f"{round(hours)} hours")
 
 
+def teamup_request_vars(refs: dict[str, Any], offered: list[str]) -> dict[str, Any]:
+    """Which request the lead reads (S-H2B.reader/1, L-INBOX.kinds): a "Merge request" when it brings an idea, so a
+    draft merge request (`request` "merge") and a sheet request with any idea brought (lane F's `tell_lead` posts
+    `request` "teamup" with `brought`, the number of ideas brought); a "Team-up request" when nothing comes along.
+    An item that names neither (the seed, BLD-A206) is a merge when it offers one. Lane F's reader words agree
+    (`teamup.rules.reader_words`): "idea" for one, "ideas" for more (BLD-A195)."""
+    raw = refs.get("brought")
+    brought = int(raw) if isinstance(raw, int) else 0  # True counts as one
+    merge = (
+        refs.get("request") == "merge"
+        or brought > 0
+        or ("request" not in refs and any(op.rsplit(".", 1)[-1] == "merge" for op in offered))
+    )
+    return {
+        "request": {"merge": merge, "team_only": not merge},
+        "brought": {"any": brought > 0, "count": brought, "many": brought > 1, "single": brought <= 1},
+    }
+
+
 def _kind_vars(
     conn: Conn,
     kind: str,
@@ -278,7 +322,7 @@ def _kind_vars(
         first = (asker or {}).get("first_name")
         out["asker"] = {
             "first_name": first or "the review desk",
-            "possessive": _possessive(first) if first else "the review desk's",
+            "possessive": _possessive(first) if first else "the review desk’s",
         }
         if kind == "answer_reminder":
             out["left"] = _left(row, now)
@@ -321,17 +365,15 @@ def _kind_vars(
                 other = _first_name_for_code(conn, code)
         out["other"] = {"possessive": _possessive(other)}
     elif kind == "teamup_request":
-        # Lane F says which in `request` ("teamup" or "merge"); an item that does not is a merge when it offers one.
         offered = [str(a.get("op") or "") for a in (row.get("actions") or []) if isinstance(a, dict)]
-        merge = refs.get("request") == "merge" or (
-            "request" not in refs and any(op.rsplit(".", 1)[-1] == "merge" for op in offered)
-        )
-        brought = refs.get("brought")
-        out["request"] = {"merge": merge, "team_only": not merge}
-        out["brought"] = {"any": bool(brought), "count": brought if isinstance(brought, int) else 0}
+        out.update(teamup_request_vars(refs, offered))
     elif kind == "teamup_answer":
         answer = refs.get("answer")
-        out["answer"] = {"declined": answer == "decline", "approved": answer != "decline"}
+        declined = answer == "decline"
+        # Lane F's `has_reason` (never the reason): only a decline that says it has one reads "with a reason"
+        reason = declined and refs.get("has_reason") is True
+        out["answer"] = {"declined": declined, "approved": not declined, "with_reason": reason,
+                         "no_reason": declined and not reason}  # fmt: skip
     elif kind == "stage_moved":
         to = refs.get("to") or refs.get("stage") or (idea or {}).get("status")
         out["stage"] = {"words": STAGE_WORDS.get(str(to), "its next stage")}
@@ -358,7 +400,12 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    who = sender(kind, person(conn, row.get("from_user_id")))
+    if kind == "teamup_answer" and refs.get("answer") == "decline":
+        who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
+    else:
+        who = sender(kind, person(conn, row.get("from_user_id")))
+    if who.get("hidden"):  # the template's word for a sender who is not named ("The lead", BLD-A196)
+        who["display"] = tpl.inbox.get("hidden_sender") or HIDDEN_NAME
     base = get_settings().app_base_url.rstrip("/") if absolute else ""
     actions = resolved_actions(row, idea, item_id=item_id)
     forward = next((a for a in reversed(actions) if a.get("to")), None)

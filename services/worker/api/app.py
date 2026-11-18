@@ -33,6 +33,16 @@ def require_token(x_internal_token: str = Header(default="")) -> None:
         raise HTTPException(status_code=401, detail="internal token required")
 
 
+def _include_drafts() -> None:
+    """L-DRAFT (BLD-C071): the draft API's worker side, behind the same internal token."""
+    from api import drafts
+
+    app.include_router(drafts.router, dependencies=[Depends(require_token)])
+
+
+_include_drafts()
+
+
 @app.get("/internal/health")
 def health() -> dict[str, Any]:
     try:
@@ -572,6 +582,53 @@ def idea_preview_view(idea_key: str, user_id: str, compare_with: str | None = No
     if out is None:
         return JSONResponse({"error": "not_found"}, status_code=404)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/internal/ideas/{idea_key}/similar", dependencies=[Depends(require_token)])
+def similar_view(idea_key: str, user_id: str) -> JSONResponse:
+    """SimilarMatch[] from the stored links (L-SIMILAR, BLD-C092): the sharer, or the desk and committee."""
+    from similar.preview import Viewer
+    from similar.views import matches_for
+
+    with connect(autocommit=True) as conn:
+        out = matches_for(conn, idea_key, Viewer.of(conn, user_id))
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/internal/ideas/{idea_key}/similar/keep-separate", dependencies=[Depends(require_token)])
+def similar_keep_separate(idea_key: str, body: dict[str, Any]) -> JSONResponse:
+    """ "Keep mine separate" or "Show them again" on the sharer's draft (L-SIMILAR.rules/8, BLD-C095)."""
+    from similar.preview import Viewer
+    from similar.views import keep_separate
+
+    on = body.get("on", True)
+    if not isinstance(on, bool):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        out = keep_separate(conn, idea_key, Viewer.of(conn, str(body.get("user_id") or "")), on=on)
+    if out is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(out)
+
+
+@app.post("/internal/ideas/{idea_uuid}/similar/run", dependencies=[Depends(require_token)])
+def similar_run(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
+    """Match a draft or idea now (L-SIMILAR.rules/4, /5; BLD-C092). `found_while`: drafting, checking or later;
+    `force` re-runs without a material change. A matching failure answers `failed`, never a 500."""
+    from similar.matching import match_idea
+    from similar.preview import is_uuid
+
+    found_while = body.get("found_while", "drafting")
+    if not is_uuid(idea_uuid) or found_while not in ("drafting", "checking", "later"):
+        return JSONResponse({"error": "bad_request"}, status_code=400)
+    with connect(autocommit=True) as conn:
+        try:
+            run = match_idea(conn, idea_uuid, found_while=found_while, force=bool(body.get("force")))
+        except LookupError:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse({"state": run.state, "found": run.found, "labelled_by": run.labelled_by})
 
 
 # --- The Ones (DEC-034 to DEC-087). The web app checks the capability and passes who is acting; the worker checks
@@ -1348,6 +1405,12 @@ def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONRes
     return _json(body)
 
 
+# Sorting and sending (lane C): the sorting confirm, Submit, the edit page and its versions, and lane C's values for
+# GET /config (A-API.drafts, A-API.ideas, A-API.config). Its routes live with the code in submit/routes.py.
+from submit.routes import build as _sort_submit_routes  # noqa: E402
+
+app.include_router(_sort_submit_routes(require_token))
+
 # L-HIDE (lane C): "Hide this", "Show it", "Hide it" and files, in their own module so lanes don't collide here.
 from hide.api import router as hide_router  # noqa: E402
 
@@ -1384,3 +1447,8 @@ app.include_router(_teamup_routes(require_token))
 from convo.routes import build as _convo_routes  # noqa: E402
 
 app.include_router(_convo_routes(require_token))
+
+# Lane F: Find your crew (A-API.team-up `GET /crew`, the passes). Its routes live with the code in crew/routes.py.
+from crew.routes import build as _crew_routes  # noqa: E402
+
+app.include_router(_crew_routes(require_token))

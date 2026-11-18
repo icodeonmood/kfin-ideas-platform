@@ -124,3 +124,53 @@ def test_l_hide_rules_6_show_it_and_hide_it_are_the_sharers_alone(world: dict[st
         .fetchall()
     )
     assert [r["action"] for r in rows] == ["hide.shown", "hide.rehidden"]
+
+
+def test_l_hide_rules_7_s_r2_stale_too_long_and_the_reviewers_own_idea(world: dict[str, Any]) -> None:
+    """F and G (BLD-C066), lane B's contract: `selected` that is no longer at the range answers 409 `stale`; one over
+    10,000 UTF-16 units answers 422 `selection_too_long`; the reviewer's own idea, and an idea theirs was merged
+    into, answer 403 `forbidden` with lane B's words, and each refusal leaves one audit row after the rollback."""
+    conn, masked, mid = world["conn"], world["masked"], world["mid"]
+    start = masked.index("Kiran Rao")
+    body = {"source": {"kind": "message", "id": mid}, "start": start, "end": start + len("Kiran Rao")}
+    path = f"/api/desk/ideas/{world['ref']}/hide"
+    reviewer = world["reviewer"].browser()
+
+    stale = reviewer.post(path, json={**body, "start": start + 1, "end": start + 10, "selected": "Kiran Rao"})
+    assert stale.status_code == 409
+    assert stale.json()["error"] == {"code": "stale", "message": "The page changed. Select again."}
+    long = reviewer.post(path, json={**body, "selected": "x" * 10_001})
+    assert long.status_code == 422 and long.json()["error"]["code"] == "selection_too_long"
+
+    own = conn.execute(
+        "INSERT INTO ideas (contributor_code, status, kind, title, summary, idea_id) VALUES "
+        "(%s, 'with_review_desk', 'problem', 'Kiran Rao waits for refunds', 'Refunds', next_idea_ref()) "
+        "RETURNING id, idea_id",
+        (world["reviewer"].contributor_code,),
+    ).fetchone()
+    refusals = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.own_idea_refused' AND entity = %s"
+    before_own = conn.execute(refusals, (f"idea:{own['id']}",)).fetchone()["n"]
+    title = {"source": {"kind": "title", "id": "title"}, "start": 0, "end": 9, "selected": "Kiran Rao"}
+    refused = reviewer.post(f"/api/desk/ideas/{own['idea_id']}/hide", json=title)
+    assert refused.status_code == 403
+    assert refused.json()["error"] == {
+        "code": "forbidden",
+        "message": "This is your own idea. Another reviewer takes it.",
+    }
+    assert conn.execute(refusals, (f"idea:{own['id']}",)).fetchone()["n"] == before_own + 1
+
+    conn.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s)",
+        (world["iid"], own["id"], world["committee"].user_id),
+    )
+    before_lead = conn.execute(refusals, (f"idea:{world['iid']}",)).fetchone()["n"]
+    merged = reviewer.post(path, json={**body, "selected": "Kiran Rao"})
+    assert merged.status_code == 403 and merged.json()["error"]["code"] == "forbidden"
+    assert conn.execute(refusals, (f"idea:{world['iid']}",)).fetchone()["n"] == before_lead + 1
+    row = conn.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.own_idea_refused' AND entity = %s ORDER BY id DESC",
+        (f"idea:{world['iid']}",),
+    ).fetchone()
+    assert row["actor"] == f"user:{world['reviewer'].user_id}" and row["after"] == {"action": "desk_hide"}
+    for r in (stale, long, refused, merged):
+        assert "Kiran" not in r.text and FOLIO not in r.text

@@ -84,7 +84,9 @@ export function QuestionsCard({
   const pill = answered ? (
     <Pill variant="ok">Answered</Pill>
   ) : live ? (
-    <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>{countdownLabel(live, "left")}</Pill>
+    <Pill variant={live.variant === "normal" ? "neutral" : live.variant} countdown>
+      {countdownLabel(live, "left")}
+    </Pill>
   ) : null;
   const label = answerLabel(set);
   const button = label ? (

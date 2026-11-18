@@ -646,6 +646,7 @@ export interface IdeaLinks {
 
 export interface IdeaMessages {
   char_count: Generated<number>;
+  client_id: string | null;
   created_at: Generated<Timestamp>;
   device: string | null;
   edited_at: Timestamp | null;
@@ -654,6 +655,7 @@ export interface IdeaMessages {
   lang: string | null;
   seq: number;
   spans: Generated<Json>;
+  text_en_encrypted: Buffer | null;
   text_encrypted: Buffer;
   via: string;
 }
@@ -710,6 +712,9 @@ export interface Ideas {
   draft_encrypted: Buffer | null;
   draft_expires_at: Timestamp | null;
   edit_closes_at: Timestamp | null;
+  editor_at: Timestamp | null;
+  editor_device: string | null;
+  editor_device_id: string | null;
   helper_picks: Generated<string[]>;
   helper_text: string | null;
   id: Generated<string>;
@@ -736,6 +741,7 @@ export interface Ideas {
   scope: string | null;
   share_seconds: number | null;
   shared_at: Timestamp | null;
+  similar_check: string | null;
   sorting_confirmed_at: Timestamp | null;
   sorting_sources: Generated<Json>;
   stage: Generated<string>;
@@ -800,8 +806,10 @@ export interface IdeaWorth {
   by_code: string | null;
   by_side: string;
   by_user_id: string | null;
+  cost_about: boolean | null;
   cost_high: Numeric | null;
   cost_low: Numeric | null;
+  hours_about: boolean | null;
   hours_high: Numeric | null;
   hours_low: Numeric | null;
   id: Generated<Int8>;
@@ -809,6 +817,7 @@ export interface IdeaWorth {
   kind: string | null;
   note_encrypted: Buffer | null;
   outside_tools: string | null;
+  revenue_about: boolean | null;
   revenue_high: Numeric | null;
   revenue_low: Numeric | null;
 }
@@ -1120,6 +1129,7 @@ export interface Outbox {
 }
 
 export interface PersonSettings {
+  home_seen_at: Timestamp | null;
   refer_as: string | null;
   shortcut_p: Generated<boolean>;
   show_name_on_wall: Generated<boolean>;
