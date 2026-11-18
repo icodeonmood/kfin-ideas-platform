@@ -8,7 +8,8 @@
   align-items: center;
   gap: 10px;
 }
-.qcard-h .pill {
+.qcard-h .pill,
+.qcard-h .due {
   margin-left: auto;
 }
 .qcard h3,
