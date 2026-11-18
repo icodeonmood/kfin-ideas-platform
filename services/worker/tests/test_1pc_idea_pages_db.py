@@ -1402,7 +1402,7 @@ def test_bld_e054_dec_105_s06_names_teams_only_while_its_switch_is_on(club: dict
             "rest": just["card"]["rest"],
             "phone_rest": just["card"]["phone_rest"],
             "empty": just["conversation"]["empty_line"],
-            "phone_empty": just["conversation"]["phone_empty_line"],
+            "phone_empty": just["conversation"].get("phone_empty_line"),
             "sent": sent["card"]["rest"].split(", and you hear in your ")[-1],
         }
 
@@ -1425,7 +1425,7 @@ def test_bld_e054_dec_105_s06_names_teams_only_while_its_switch_is_on(club: dict
         "rest": "We’ll tell you by email when anything changes.",
         "phone_rest": "We’ll tell you by email.",
         "empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
-        "phone_empty": "No messages yet. If the review desk has a question, it shows up here and in your Inbox.",
+        "phone_empty": None,  # the phone's line is the same one: sent once, so the page says it once
         "sent": "Inbox and by email.",
     }
     pages = [view(club, t5, "tanvi"), view(club, t6, "tanvi")]

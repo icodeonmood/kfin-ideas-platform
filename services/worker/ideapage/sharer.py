@@ -631,9 +631,11 @@ def sharer_view(
                 # changed by DEC-105, HR sign-off; BLD-E054
                 else "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
-            conversation["phone_empty_line"] = (  # PhoneStatus.md
+            phone_empty = (  # PhoneStatus.md
                 "No messages yet. If the review desk has a question, it shows up here and in your Inbox."
             )
+            if phone_empty != conversation["empty_line"]:  # with Teams off the two are one line, said once
+                conversation["phone_empty_line"] = phone_empty
         if state == "reversed":
             conversation["sub_line"] = (
                 "The Ones Committee has the last word on this decision. The full conversation is one tap away."
