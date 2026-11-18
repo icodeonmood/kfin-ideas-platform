@@ -223,3 +223,31 @@ export function backToSearchedList(to: string): boolean {
   window.history.back();
   return true;
 }
+
+/**
+ * S-R2's own Back link to the review desk (J-BROWSE/3 and /4, S-R2.layout; lane B's helper, BLD-B260): when the
+ * entry before this one is that page (the same path, any tab, sort or search), go back to it as browser Back does, so
+ * the tab, sort, row and any search come back as the reviewer left them. Says whether it did; when it did not (no
+ * Navigation API, another page before this one, or the first entry), the link opens its plain address. Unlike
+ * `backToSearchedList`, which its other callers keep as it is, a list without a search goes back too.
+ */
+export function backToList(to: string): boolean {
+  if (typeof window === "undefined") return false;
+  const nav = navigationApi();
+  const current = nav?.currentEntry;
+  if (!nav || !current || nav.canGoBack === false || current.index < 1) return false;
+  let target: URL;
+  let at: URL;
+  try {
+    target = new URL(to, window.location.href);
+    const prev = nav.entries()[current.index - 1];
+    if (!prev?.url) return false;
+    at = new URL(prev.url);
+  } catch {
+    return false;
+  }
+  if (target.origin !== window.location.origin || at.origin !== target.origin) return false;
+  if (at.pathname !== target.pathname) return false;
+  window.history.back();
+  return true;
+}

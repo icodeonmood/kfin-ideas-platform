@@ -43,7 +43,7 @@ import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQu
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
-import { backToSearchedList } from "@/lib/search-memory";
+import { backToList } from "@/lib/search-memory";
 
 export type ReviewPromises = {
   reasonMin: number;
@@ -305,14 +305,14 @@ export function ReviewerIdea({
   return (
     <div className="ri">
       <div className="ri-head">
-        {/* Back to a desk whose search this tab keeps goes back in history, so the list comes back as it was
-            (J-BROWSE/3 and /4, DEC-110) */}
+        {/* Back to the desk, searched or not, goes back in history when the desk is the entry before, so its tab,
+            sort and search come back as they were (J-BROWSE/3 and /4, DEC-110, BLD-B260); otherwise the plain link */}
         <Link
           href="/desk"
           className="back"
           onClick={(e) => {
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-            if (backToSearchedList("/desk")) e.preventDefault();
+            if (backToList("/desk")) e.preventDefault();
           }}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
