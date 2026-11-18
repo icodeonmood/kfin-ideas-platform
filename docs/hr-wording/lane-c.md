@@ -43,6 +43,7 @@ Written Wednesday 18 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN �
 | The idea preview pop-up, read out while it loads | Loading the idea | Not drawn (BLD-C090) |
 | The idea preview pop-up, when the idea's short summary is not ready or does not pass the checks | A short summary is on its way. | Not drawn. The pop-up never shows a person's own words in its place (BLD-C090) |
 | Similar ideas, the reason under each match, when the assistant is off or its phrase does not pass the checks | Close match: same SMS, same calls / Close match: the same problem / Related: also about SIP and debit / Related: also in Investor service / Related: a similar problem | The pack's lines are examples ("Close match: the same failed SIP debit"). With the assistant on, it writes a short phrase after "Close match:" or "Related:", read by both sharers; otherwise these are built from the words both ideas share (BLD-C092, BLD-C094) |
+| Home, the crew card, when the idea’s lead has hidden their name or has left | Team up on {title}, with a colleague | The board names the lead; when the name can’t be shown (DEC-104), the card says "a colleague" (BLD-C146) |
 
 ## 2a. The three A/B variants (shown only to people an admin puts on the other version; 0% at launch)
 
