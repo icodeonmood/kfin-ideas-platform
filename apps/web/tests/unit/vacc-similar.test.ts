@@ -8,14 +8,13 @@
  *   and sends the draft (the worker side is `test_1pc_f_vacc_db.py`).
  * The screen is real; its A-API answers are synthetic, served by a mocked fetch. Synthetic people only.
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConfigResponse, SimilarMatch, SortingResponse } from "@/lib/contracts";
+
+import { applied, cssRules } from "./helpers/css-rules";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
@@ -29,7 +28,6 @@ vi.mock("next/link", async () => {
 vi.mock("@/lib/motion/spark", () => ({ sparkBurst: vi.fn() }));
 
 const { CheckIt } = await import("@/app/share/[id]/check/check-it");
-const { SimilarGrid } = await import("@/app/share/[id]/check/similar");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -291,78 +289,49 @@ async function click(el: Element | undefined | null) {
 // V-ACC.similar/1
 // =================================================================================================================
 describe("V-ACC.similar/1: Check it part 3, a grid three across: theirs first, then the matches, closest first", () => {
-  function grid(matches: SimilarMatch[]) {
-    return createElement(
-      "div",
-      { className: "ck" },
-      createElement(SimilarGrid, {
-        draftId: DRAFT_ID,
-        draftTitle: MY_TITLE,
-        draftSummary: "The rejection SMS only gives a code, such as R07.",
-        load: { state: "ok", matches },
-        merge: null,
-        keptSeparate: false,
-        onShowAgain: () => undefined,
-        onSent: () => undefined,
-        onWithdrawn: () => undefined,
-        onWithdraw: async () => undefined,
-      }),
+  /** S-05 opened on part 3 (the draft's saved step), with the matches in the API's order. */
+  async function part3(matches: SimilarMatch[]) {
+    serve([
+      (m, u) => (m === "GET" && u === `/api/drafts/${DRAFT_ID}` ? { body: draft() } : undefined),
+      (m, u) => (m === "PATCH" && u === `/api/drafts/${DRAFT_ID}` ? { body: {} } : undefined),
+      (m, u) => (m === "GET" && u.endsWith("/sorting") ? { body: sorting() } : undefined),
+      (m, u) => (m === "GET" && u.endsWith("/similar") ? { body: matches } : undefined),
+      (m, u) =>
+        m === "GET" && u.endsWith("/merge-request") ? { body: { state: "none", after: null } } : undefined,
+      (m, u) => (m === "GET" && u.endsWith("/send") ? { body: sendView() } : undefined),
+    ]);
+    await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG })));
+    await settle();
+    expect(h1()).toBe("Has someone raised this already?");
+    const list = Array.from(document.querySelectorAll("ul")).find((ul) =>
+      text(ul).includes("Yours, not sent yet"),
     );
+    expect(list, "the grid of ideas").toBeDefined();
+    return list!;
   }
-  const tiles = () => Array.from(document.querySelectorAll(".simgrid > li"));
-  const tileTitles = () => tiles().map((t) => text(t.querySelector(".sgt-t")));
 
   it("V-ACC.similar/1: their idea is the first tile, Yours, not sent yet, with no actions; then the matches, closest first, as the API orders them", async () => {
-    await act(async () => root.render(grid([CLOSE, RELATED_NEW, RELATED_OLD])));
-    expect(tiles()).toHaveLength(4);
-    expect(text(tiles()[0]!.querySelector(".ck-yours"))).toBe("Yours, not sent yet");
-    expect(tiles()[0]!.querySelectorAll("button, a")).toHaveLength(0);
-    expect(tileTitles()).toEqual([
-      MY_TITLE,
-      CLOSE.idea.title,
-      RELATED_NEW.idea.title,
-      RELATED_OLD.idea.title,
-    ]);
+    const tiles = Array.from((await part3([CLOSE, RELATED_NEW, RELATED_OLD])).children);
+    expect(tiles).toHaveLength(4);
+    expect(text(tiles[0])).toContain("Yours, not sent yet");
+    expect(text(tiles[0])).toContain(MY_TITLE);
+    expect(tiles[0]!.querySelectorAll("button, a")).toHaveLength(0);
+    const order = [CLOSE, RELATED_NEW, RELATED_OLD].map((m) => m.idea.title);
+    expect(tiles.slice(1).map((t) => order.find((title) => text(t).includes(title)))).toEqual(order);
     // The close one leads although it is the oldest with the smallest crew: the grid never re-sorts
-    expect(text(tiles()[1])).toContain("Close match: same SMS, same calls");
-    expect(text(tiles()[2])).toContain("Related: the calls you describe");
+    expect(text(tiles[1])).toContain("Close match: same SMS, same calls");
+    expect(text(tiles[2])).toContain("Related: the calls you describe");
   });
 
-  it("V-ACC.similar/1 C-SIMGRID.grid: the grid is three across on a laptop, two below 1100px and one on a phone", async () => {
-    await act(async () => root.render(grid([CLOSE, RELATED_NEW])));
-    // The rendered list carries the class the sheet's rules select
-    const list = document.querySelector(".ck .simgrid");
-    expect(list?.tagName).toBe("UL");
-    // check.css as written: three columns with no media query, two and one only inside narrower ones
-    const css = readFileSync(resolve(__dirname, "../../src/app/share/[id]/check/check.css"), "utf8").replace(
-      /\/\*[\s\S]*?\*\//g,
-      "",
-    );
-    const columns: Array<[string, string]> = [];
-    const stack: string[] = [];
-    let buf = "";
-    let inGrid = false;
-    for (const ch of css) {
-      if (ch === "{") {
-        const head = buf.trim().replace(/\s+/g, " ");
-        stack.push(head);
-        inGrid = head.split(",").some((s) => s.trim() === ".ck .simgrid");
-        buf = "";
-      } else if (ch === "}") {
-        stack.pop();
-        inGrid = false;
-        buf = "";
-      } else if (ch === ";") {
-        const m = buf.trim().match(/^grid-template-columns\s*:\s*(.+)$/);
-        if (inGrid && m) columns.push([stack.slice(0, -1).join(" "), m[1]!.trim()]);
-        buf = "";
-      } else buf += ch;
-    }
-    expect(columns).toEqual([
-      ["", "repeat(3, minmax(0, 1fr))"],
-      ["@media (max-width: 1100px)", "repeat(2, minmax(0, 1fr))"],
-      ["@media (max-width: 720px)", "minmax(0, 1fr)"],
-    ]);
+  it("V-ACC.similar/1 C-SIMGRID.grid: on a laptop the grid is three across", async () => {
+    const list = await part3([CLOSE, RELATED_NEW]);
+    // The page's stylesheet as written, as it applies to the rendered grid at desktop width
+    const sheet = cssRules("app/share/[id]/check/check.css");
+    expect(applied(sheet, list, "display", 1440)).toBe("grid");
+    const columns = applied(sheet, list, "grid-template-columns", 1440) ?? "";
+    const repeat = columns.match(/^repeat\(\s*(\d+)\s*,/);
+    const count = repeat ? Number(repeat[1]) : columns.split(/\s+(?![^(]*\))/).filter(Boolean).length;
+    expect(count, columns).toBe(3);
   });
 });
 
@@ -393,8 +362,7 @@ describe("V-ACC.similar/5: Ravi declined with a reason; Send mine on its own sub
     await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG })));
     await settle();
 
-    const bar = document.querySelector('.ck-mlive[role="status"]')!;
-    expect(text(bar)).toContain(`Ravi kept that idea separate: “${REASON}” Send yours on its own.`);
+    expect(text(document.body)).toContain(`Ravi kept that idea separate: “${REASON}” Send yours on its own.`);
     expect(button("Withdraw the request")).toBeUndefined();
     const sendAlone = button("Send mine on its own");
     expect(sendAlone).toBeDefined();

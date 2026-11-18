@@ -111,9 +111,14 @@ def forget(conn: Conn, idea_uuid: str, entry_id: str) -> None:
     its hidden details, the writer's sealed words, and each vault value no other text on the idea still uses.
 
     Call it inside the removal's transaction, before any row lock: `hide.forget` takes lane C's lock first, as every
-    L-HIDE write does. IDs and counts only in the log."""
+    L-HIDE write does. IDs and counts only in the log. With no lane C at all nothing was kept, so nothing is done;
+    with lane C's `hide_message` but not its `forget`, it raises, so the removal rolls back rather than leave the
+    kept values behind."""
     if _hide_forget is None:
-        return  # lane C's package is not here, so nothing was kept
+        if _hide_message is None:
+            return  # lane C's package is not here: messages were masked by the patterns alone, nothing was kept
+        # Lane C hid this message's details but cannot drop them: never leave kept personal data behind silently
+        raise RuntimeError("L-HIDE keeps details but has no forget; the message was not removed")
     n = _hide_forget(conn, idea_uuid, source="conversation", source_id=entry_id)
     log.info("convo.hidden_forgotten", entry_id=entry_id, hidden_count=int(n))
 

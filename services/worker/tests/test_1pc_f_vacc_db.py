@@ -142,8 +142,9 @@ def test_V_ACC_similar_8_over_http_no_route_merges_without_the_lead(
     db: Conn, client: TestClient, cast: dict[str, Any]
 ) -> None:
     """A sharer (Kavya) and a crew member (Asha) try every route a merge could go through: the lead's answer route,
-    the draft's merge-request route with an answer of its own, someone else's draft, the lead's Inbox item, and a
-    team-up that brings a shared idea. Each is refused with the route's own code; nothing is merged or joined."""
+    the draft's merge-request route with an answer of its own, someone else's draft, the lead's Inbox item, a
+    team-up that brings a shared idea, and lane B's desk merge. Each is refused with the route's own code; nothing
+    is merged or joined."""
     kavya, asha, ravi, lead_ref = cast["kavya"], cast["asha"], cast["ravi"], cast["lead"]["idea_id"]
     draft = f.draft(db, kavya)
     f.similar(db, draft, cast["lead"])
@@ -200,6 +201,18 @@ def test_V_ACC_similar_8_over_http_no_route_merges_without_the_lead(
         )
         assert (r.status_code, r.json()) == (403, NOT_LEAD), who["name"]
 
+    # 5. Lane B's desk merge (L-MERGE.desk), which needs no consent: only the review desk may call it, so a sharer
+    # who is not a reviewer is refused, whichever idea they put first
+    forbidden = {"error": {"code": "forbidden", "message": "Only the review desk can do this."}}
+    for who, ref, other in ((pradeep, brought["idea_id"], lead_ref), (kavya, lead_ref, brought["idea_id"]),
+                            (kavya, str(draft["id"]), lead_ref)):  # fmt: skip
+        r = client.post(
+            f"/internal/desk/ideas/{ref}/merge",
+            params={"user_id": who["id"]},
+            json={"other_idea_id": other, "lead": lead_ref, "team_up": True, "note": NOTE},
+        )
+        assert (r.status_code, r.json()) == (403, forbidden), (who["name"], ref)
+
     # Nothing moved: the draft is still Kavya's and held, the idea brought is still with the desk, no merge exists,
     # neither asker is on Ravi's crew, and each refused answer is in the audit log
     state = client.get(drafts_url, params={"user_id": kavya["id"]}).json()
@@ -238,16 +251,23 @@ def _answer_item(db: Conn, person: dict[str, str]) -> dict[str, Any]:
 
 
 @pytest.mark.usefixtures("seed_templates")
-def test_V_ACC_teamup_6_the_askers_inbox_item_for_merge_and_for_decline_reads_the_matching_line(
+def test_V_ACC_teamup_6_the_askers_inbox_item_for_each_answer_reads_the_matching_line(
     db: Conn, cast: dict[str, Any]
 ) -> None:
-    """Ravi answers Merge it on Kavya's request and Decline, with a reason, on Pradeep's. Each asker's Inbox item, as
-    lane A renders it from `comms/templates/inbox/teamup_answer.md`, says which; neither offers an Undo."""
+    """Ravi answers Merge it on Kavya's request, Team up only on Meghna's and Decline, with a reason, on Pradeep's.
+    Each asker's Inbox item, as lane A renders it from `comms/templates/inbox/teamup_answer.md`, says which; none
+    offers an Undo."""
     ravi, kavya, lead_ref = cast["ravi"], cast["kavya"], cast["lead"]["idea_id"]
     mine = f.idea(db, kavya, title="Investors call to ask why a redemption was rejected")
     merge = requests.send(db, lead_ref, kavya["id"], {"note": NOTE, "brought_idea_ids": [mine["idea_id"]]})
     out = requests.answer(db, merge["id"], ravi["id"], {"answer": "merge"})
     assert out["result"]["state"] == "merged"
+
+    meghna = f.person(db, "Meghna Das")
+    hers = f.idea(db, meghna, title="No script for calls about rejections")
+    team = requests.send(db, lead_ref, meghna["id"], {"note": NOTE, "brought_idea_ids": [hers["idea_id"]]})
+    out = requests.answer(db, team["id"], ravi["id"], {"answer": "team_only"})
+    assert out["result"]["state"] == "teamed_up"
 
     pradeep = f.person(db, "Pradeep Kumar")
     decline = requests.send(db, lead_ref, pradeep["id"], {"note": NOTE, "brought_idea_ids": []})
@@ -260,6 +280,10 @@ def test_V_ACC_teamup_6_the_askers_inbox_item_for_merge_and_for_decline_reads_th
     assert merged["body"]["note"] == "You’re on Ravi’s crew now."
     assert merged["idea"]["id"] == lead_ref and merged["needs_you"] is False
 
+    teamed = _answer_item(db, meghna)
+    assert (teamed["body"]["sender"], teamed["line"]) == ("Ravi Nair", "approved your team-up request")
+    assert teamed["body"]["note"] == "You’re on Ravi’s crew now."
+
     declined = _answer_item(db, pradeep)
     assert (declined["body"]["sender"], declined["line"]) == (
         "Ravi Nair",
@@ -269,7 +293,7 @@ def test_V_ACC_teamup_6_the_askers_inbox_item_for_merge_and_for_decline_reads_th
     assert REASON not in str(declined)  # the reason is read in the app, never in the Inbox line (L-NOTIFY/3)
 
     # Each item only opens things: no Undo, and no server operation that could take the answer back
-    for item in (merged, declined):
+    for item in (merged, teamed, declined):
         labels = [a["label"] for a in item["actions"]]
         assert labels and all(a.get("to") and not a.get("op") for a in item["actions"]), item["actions"]
         assert not any("undo" in label.lower() for label in labels), labels
@@ -366,6 +390,7 @@ _MATCHES_ON_MAIN = importlib.util.find_spec("similar.views") is not None
 @pytest.mark.xfail(
     not _MATCHES_ON_MAIN,
     strict=True,
+    raises=ModuleNotFoundError,
     reason="V-ACC.similar/1: lane C — `similar.views.matches_for` (c/similar) is not on main, so no worker code "
     "orders a draft's matches yet; the test runs as a plain test once it lands",
 )

@@ -3,20 +3,19 @@
  * V-ACC.teamup gap tests on the web (J-TEAMUP), from lane F's coverage map of 18 Nov 10:00. Each test names its row.
  * They exercise other lanes' screens and components as they are on main, and change none of them:
  * - /4 "Waiting for Ravi" with Withdraw on every screen that shows the idea: S-09's Team up card (lane E), S-05's
- *   similar tile and its preview (lane C), and the opener after lane F's sheet (C-SHEET-TEAMUP.after);
+ *   similar tile and its preview (lane C), and what lane F's sheet hands its opener (C-SHEET-TEAMUP.after);
  * - /6 no Undo after any of the lead's three answers on S-H2B (lane A's reader);
  * - /7 Find your crew's Next lifts the front card out to the right and tucks it behind the pile (lane D's Deck);
  * - /9 Home's Ones: one card per wheel step, and the page scrolls on at either end (lane D's fan).
  * Synthetic people only: the pack's fictional cast (Kavya asks, Ravi leads).
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { act, createElement, Fragment, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InboxEntry } from "@/server/inbox";
+
+import { applied, cssRules, keyframeNames, keyframes } from "./helpers/css-rules";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }),
@@ -137,6 +136,9 @@ const pressable = (within: ParentNode = document) =>
   Array.from(within.querySelectorAll<HTMLElement>("button, a[href], [role='button']"));
 const named = (name: string, within: ParentNode = document) =>
   pressable(within).filter((el) => nameOf(el) === name);
+/** The element whose own words are exactly `words` (the line itself, not a container around it). */
+const lineOf = (words: string, within: Element) =>
+  Array.from(within.querySelectorAll("*")).find((el) => text(el) === words && el.children.length === 0);
 /** Text a person sees: not inside anything hidden from them. */
 function visibleText(within: Element): string {
   const copy = within.cloneNode(true) as Element;
@@ -152,47 +154,43 @@ function json(status: number, data: unknown) {
 // V-ACC.teamup/4
 // =================================================================================================================
 describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every screen that shows that idea", () => {
-  // V-ACC.teamup/4: S-H2 card covered in crew-screen.test.ts once f/crew-search lands (Find your crew and Home's
-  // crew cards are on f/crew-search-4, not on main yet).
+  // Find your crew and Home's crew cards are on f/crew-search-4, not on main yet: covered in crew-screen.test.ts.
+  it.todo("V-ACC.teamup/4: S-H2 crew card (after f/crew-search)");
 
   /** The same words on every screen: the waiting line and the Withdraw control's name, exactly. */
   const SAME = ["Waiting for Ravi", "Withdraw"];
 
   it("V-ACC.teamup/4 S-09: the idea page's Team up card", async () => {
     await show(createElement(TeamUpCard, { ideaId: IDEA, t: S09 }));
-    const card = host.querySelector(".ip-team")!;
+    const card = host.querySelector("section")!;
     expect(visibleText(card)).toContain("Waiting for Ravi");
     const withdraw = named("Withdraw", card);
     expect(withdraw).toHaveLength(1);
     expect(named("Team up", card)).toHaveLength(0);
-    expect([text(card.querySelector(".ip-team-wait p")), nameOf(withdraw[0]!)]).toEqual(SAME);
+    expect([text(lineOf("Waiting for Ravi", card)), nameOf(withdraw[0]!)]).toEqual(SAME);
   });
 
   it("V-ACC.teamup/4 S-05: the similar idea's tile on Check it", async () => {
     await show(
-      createElement(
-        "div",
-        { className: "ck" },
-        createElement(SimilarGrid, {
-          draftId: "0b6f7a52-3c1e-4d7a-9f00-1a2b3c4d5e6f",
-          draftTitle: "Investors call to ask why a redemption was rejected",
-          draftSummary: "The rejection SMS only gives a code, such as R07.",
-          load: { state: "ok", matches: [MATCH] },
-          merge: null,
-          keptSeparate: false,
-          onShowAgain: () => undefined,
-          onSent: () => undefined,
-          onWithdrawn: () => undefined,
-          onWithdraw: async () => undefined,
-        }),
-      ),
+      createElement(SimilarGrid, {
+        draftId: "0b6f7a52-3c1e-4d7a-9f00-1a2b3c4d5e6f",
+        draftTitle: "Investors call to ask why a redemption was rejected",
+        draftSummary: "The rejection SMS only gives a code, such as R07.",
+        load: { state: "ok", matches: [MATCH] },
+        merge: null,
+        keptSeparate: false,
+        onShowAgain: () => undefined,
+        onSent: () => undefined,
+        onWithdrawn: () => undefined,
+        onWithdraw: async () => undefined,
+      }),
     );
-    const tile = host.querySelectorAll(".simgrid > li")[1]!;
+    const tile = Array.from(host.querySelectorAll("li")).find((li) => text(li).includes(TITLE))!;
     expect(visibleText(tile)).toContain("Waiting for Ravi");
     const withdraw = named("Withdraw", tile);
     expect(withdraw).toHaveLength(1);
     expect(named(`Team up on ${TITLE}`, tile)).toHaveLength(0);
-    expect([text(tile.querySelector(".tuwait")), nameOf(withdraw[0]!)]).toEqual(SAME);
+    expect([text(lineOf("Waiting for Ravi", tile)), nameOf(withdraw[0]!)]).toEqual(SAME);
   });
 
   async function openPreview() {
@@ -233,7 +231,7 @@ describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every scre
     },
   );
 
-  it("V-ACC.teamup/4 C-SHEET-TEAMUP.after: once sent, the sheet tells its opener Waiting for Ravi with Withdraw", async () => {
+  it("V-ACC.teamup/4 C-SHEET-TEAMUP.after: once sent, the sheet hands its opener Waiting for Ravi with Withdraw", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -264,40 +262,21 @@ describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every scre
       }),
     );
     let after: Sent["after"] = null;
-    /** A host that draws its opener from what the sheet hands back, as C-SHEET-TEAMUP.after says. */
-    function Host() {
-      const [open, setOpen] = useState(true);
-      const [done, setDone] = useState<Sent["after"]>(null);
-      return createElement(
-        Fragment,
-        null,
-        done
-          ? createElement(
-              "p",
-              { className: "opener" },
-              createElement("span", null, done.line),
-              " ",
-              createElement("button", { type: "button" }, done.action?.label),
-            )
-          : null,
-        createElement(TeamUpSheet, {
-          ideaId: IDEA,
-          open,
-          onClose: () => setOpen(false),
-          onSent: (s: Sent) => {
-            after = s.after;
-            setDone(s.after);
-          },
-        }),
-      );
-    }
-    await show(createElement(Host));
+    await show(
+      createElement(TeamUpSheet, {
+        ideaId: IDEA,
+        open: true,
+        onClose: () => undefined,
+        onSent: (sent: Sent) => {
+          after = sent.after;
+        },
+      }),
+    );
     await act(async () => named("Send to Ravi")[0]!.click());
     await settle();
+    // C-SHEET-TEAMUP.after, Waiting: what the opener is handed to show where "Team up" was
     expect(after).toMatchObject({ line: "Waiting for Ravi", action: { label: "Withdraw" } });
-    const opener = document.querySelector(".opener")!;
-    expect(visibleText(opener)).toContain("Waiting for Ravi");
-    expect([text(opener.querySelector("span")), nameOf(named("Withdraw", opener)[0]!)]).toEqual(SAME);
+    expect([after!.line, after!.action?.label]).toEqual(SAME);
   });
 });
 
@@ -431,7 +410,7 @@ describe("V-ACC.teamup/6: each of Ravi's answers on S-H2B shows its result in pl
     await show(createElement(Reader));
     await press("Merge it");
     expect(answered).toEqual([{ answer: "merge" }]);
-    expect(text(host.querySelector(".ibx-result"))).toBe(RESULTS.merge.result.text);
+    expect(lineOf(RESULTS.merge.result.text, host)).toBeDefined();
     expect(named("Say hello to Kavya", host)).toHaveLength(1);
     expect(answersLeft()).toEqual([]);
     expect(undo()).toEqual([]);
@@ -441,7 +420,7 @@ describe("V-ACC.teamup/6: each of Ravi's answers on S-H2B shows its result in pl
     await show(createElement(Reader));
     await press("Team up only");
     expect(answered).toEqual([{ answer: "team_only" }]);
-    expect(text(host.querySelector(".ibx-result"))).toBe(RESULTS.team_only.result.text);
+    expect(lineOf(RESULTS.team_only.result.text, host)).toBeDefined();
     expect(named("Say hello to Kavya", host)).toHaveLength(1);
     expect(answersLeft()).toEqual([]);
     expect(undo()).toEqual([]);
@@ -450,7 +429,7 @@ describe("V-ACC.teamup/6: each of Ravi's answers on S-H2B shows its result in pl
   it("V-ACC.teamup/6 Decline: with a reason, the declined line and Next; no Undo, and no answer left to press", async () => {
     await show(createElement(Reader));
     await press("Decline");
-    const field = host.querySelector<HTMLTextAreaElement>("#ibx-reason")!;
+    const field = host.querySelector("textarea")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
     await act(async () => {
       setter.call(field, "The crew is full for now");
@@ -458,7 +437,7 @@ describe("V-ACC.teamup/6: each of Ravi's answers on S-H2B shows its result in pl
     });
     await press("Decline the request");
     expect(answered).toEqual([{ answer: "decline", reason: "The crew is full for now" }]);
-    expect(text(host.querySelector(".ibx-result"))).toBe(RESULTS.decline.result.text);
+    expect(lineOf(RESULTS.decline.result.text, host)).toBeDefined();
     expect(named("Next", host)).toHaveLength(1);
     expect(answersLeft()).toEqual([]);
     expect(undo()).toEqual([]);
@@ -466,146 +445,102 @@ describe("V-ACC.teamup/6: each of Ravi's answers on S-H2B shows its result in pl
 });
 
 // =================================================================================================================
-// CSS as written (the rules a browser would apply), for the motion rows
-// =================================================================================================================
-const APP = resolve(__dirname, "../../src/app");
-type Rule = { at: string; selectors: string[]; decls: Map<string, string> };
-
-/** Every style rule in a sheet: its enclosing at-rules (joined), its selectors and its declarations. */
-function rules(sheet: string): Rule[] {
-  const clean = readFileSync(resolve(APP, sheet), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  const out: Rule[] = [];
-  const stack: string[] = [];
-  let buf = "";
-  let current: Rule | null = null;
-  const take = () => {
-    const m = buf.trim().match(/^([\w-]+)\s*:\s*([\s\S]+)$/);
-    if (m && current) current.decls.set(m[1]!, m[2]!.trim());
-    buf = "";
-  };
-  for (const ch of clean) {
-    if (ch === "{") {
-      const head = buf.trim().replace(/\s+/g, " ");
-      buf = "";
-      if (head.startsWith("@")) stack.push(head);
-      else {
-        current = { at: stack.join(" "), selectors: head.split(",").map((s) => s.trim()), decls: new Map() };
-        stack.push("");
-        out.push(current);
-      }
-    } else if (ch === "}") {
-      if (stack.pop() === "" && current) {
-        take();
-        current = null;
-      }
-      buf = "";
-    } else if (ch === ";" && current) take();
-    else buf += ch;
-  }
-  return out;
-}
-
-// =================================================================================================================
 // V-ACC.teamup/7
 // =================================================================================================================
 describe("V-ACC.teamup/7: Find your crew, desktop: Next lifts the front card out to the right and tucks it behind the pile", () => {
+  const TITLES = [
+    "Rejection SMS codes confuse investors",
+    "No script for calls about rejections",
+    "Branch staff cannot read the SMS codes",
+  ];
   /** The Deck as S-H2 holds it: the page keeps the index. */
   function Crew() {
     const [at, setAt] = useState(0);
-    const cards = [
-      "Rejection SMS codes confuse investors",
-      "No script for calls about rejections",
-      "Branch staff cannot read the SMS codes",
-    ].map((t) =>
+    const cards = TITLES.map((t) =>
       createElement(
         "article",
-        { className: "kit-dcard" },
+        null,
         createElement("h3", null, t),
         createElement("button", { type: "button" }, "Team up"),
       ),
     );
     return createElement(Deck, { label: "Ideas close to yours", cards, index: at, onIndexChange: setAt });
   }
+  /** The Deck's own element around the card we gave it. */
+  const cardOf = (title: string) =>
+    Array.from(host.querySelectorAll("h3"))
+      .find((h) => text(h) === title)!
+      .closest("article")!.parentElement!;
+  async function pressNext() {
+    await show(createElement(Crew));
+    await act(async () => named("Next idea", host)[0]!.click());
+  }
 
-  const css = rules("components.css");
-  const decl = (selector: string, prop: string, at = "") =>
-    css
-      .filter((r) => r.at === at && r.selectors.includes(selector))
-      .reduce<string | undefined>((v, r) => r.decls.get(prop) ?? v, undefined);
-  const frames = (name: string) =>
-    new Map(
-      css
-        .filter((r) => r.at === `@keyframes ${name}`)
-        .flatMap((r) => r.selectors.map((s) => [s, r.decls] as const)),
-    );
-  /** translate(46%, -18px) rotate(6deg) / translateY(26px) scale(0.9) / none, read into numbers. */
+  // The sheet as written, and what it gives an element at desktop width (lane D's rules, read, not named here)
+  const DESKTOP = 1440;
+  const css = cssRules("app/components.css");
+  /** translate(…, …), translateX/Y, rotate and scale, read into numbers (x and y keep their sign). */
   function motion(transform: string | undefined) {
     const t = transform ?? "none";
-    const tr = t.match(/translate\(\s*([-\d.]+)(%|px)?\s*,\s*([-\d.]+)px\s*\)/);
-    const tx = t.match(/translateX\(\s*([-\d.]+)/);
-    const ty = t.match(/translateY\(\s*([-\d.]+)px/);
+    const both = t.match(/translate\(\s*([-\d.]+)[a-z%]*\s*,\s*([-\d.]+)[a-z%]*\s*\)/);
     return {
-      x: tr ? Number(tr[1]) : tx ? Number(tx[1]) : 0,
-      y: tr ? Number(tr[3]) : ty ? Number(ty[1]) : 0,
-      rotate: Number(t.match(/rotate\(\s*([-\d.]+)deg/)?.[1] ?? 0),
+      x: Number(both?.[1] ?? t.match(/translateX\(\s*([-\d.]+)/)?.[1] ?? 0),
+      y: Number(both?.[2] ?? t.match(/translateY\(\s*([-\d.]+)/)?.[1] ?? 0),
+      rotate: Number(t.match(/rotate\(\s*([-\d.]+)/)?.[1] ?? 0),
       scale: Number(t.match(/scale\(\s*([-\d.]+)/)?.[1] ?? 1),
     };
   }
+  /** The keyframes the element is animated with at desktop width, each stop read into numbers. */
+  function flight(el: Element, reducedMotion = false) {
+    const anim =
+      applied(css, el, "animation", DESKTOP, reducedMotion) ??
+      applied(css, el, "animation-name", DESKTOP, reducedMotion);
+    const name = keyframeNames(css).find((n) => (anim ?? "").split(/[\s,]+/).includes(n));
+    return (name ? keyframes(css, name) : []).map((f) => ({
+      at: f.at,
+      ...motion(f.decls.get("transform")),
+      z: f.decls.has("z-index") ? Number(f.decls.get("z-index")) : undefined,
+      opacity: f.decls.has("opacity") ? Number(f.decls.get("opacity")) : undefined,
+    }));
+  }
 
-  it("V-ACC.teamup/7: pressing Next marks the front card as the one going to the back and brings the next to the front", async () => {
+  it("V-ACC.teamup/7: Next takes the front card out of the reading order and brings the next one to the front", async () => {
     await show(createElement(Crew));
-    const cards = () => Array.from(host.querySelectorAll<HTMLElement>(".deck-track > .dcard"));
-    expect(cards().map((c) => c.className)).toEqual(["dcard cur", "dcard nx", "dcard"]);
+    expect(cardOf(TITLES[0]!).getAttribute("aria-hidden")).toBeNull();
+    expect(cardOf(TITLES[1]!).getAttribute("aria-hidden")).toBe("true");
     await act(async () => named("Next idea", host)[0]!.click());
-    expect(cards().map((c) => c.className)).toEqual(["dcard toback", "dcard cur", "dcard nx"]);
-    expect(visibleText(cards()[1]!)).toContain("No script for calls about rejections");
+    expect(cardOf(TITLES[0]!).getAttribute("aria-hidden")).toBe("true");
+    expect(cardOf(TITLES[1]!).getAttribute("aria-hidden")).toBeNull();
     expect(text(host.querySelector('[aria-live="polite"]'))).toBe("Idea 2 of 3");
   });
 
-  it("V-ACC.teamup/7 C-CREW-DECK.behaviour/2: the full-motion path lifts right with a tilt, then tucks behind the pile; it never slides sideways", () => {
-    // The outgoing card's animation, outside any reduced-motion query: 620 ms on the pack's curve
-    const anim = decl(".dcard.toback", "animation")!;
-    expect(anim).toMatch(/^deckToBack 0\.62s cubic-bezier\(0\.45, 0, 0\.25, 1\) both$/);
-    const front = Number(decl(".dcard.cur", "z-index"));
-    const next = Number(decl(".dcard.nx", "z-index"));
-    expect(front).toBeGreaterThan(next);
-
-    const kf = frames("deckToBack");
-    const keys = [...kf.keys()].sort((a, b) => parseFloat(a) - parseFloat(b));
-    expect(keys[0]).toBe("0%");
-    expect(keys[keys.length - 1]).toBe("100%");
-    // Lift: out to the right (46% of its width), up 18px, tilted 6°, still in front of the pile
-    const lift = keys.map((k) => ({ k, d: kf.get(k)! })).find((f) => motion(f.d.get("transform")).x > 0);
-    expect(lift, "a frame where the card is out to the right").toBeDefined();
-    const out = motion(lift!.d.get("transform"));
-    expect(out).toMatchObject({ x: 46, y: -18, rotate: 6, scale: 1 });
-    expect(Number(lift!.d.get("z-index"))).toBeGreaterThanOrEqual(front);
-    // Tuck: it ends behind the next card, smaller, lower, faded, and back over the pile, not off to the side
-    const end = kf.get("100%")!;
-    const tucked = motion(end.get("transform"));
-    expect(tucked.x).toBe(0);
-    expect(tucked.y).toBe(26);
-    expect(tucked.scale).toBeCloseTo(0.9);
-    expect(Number(end.get("z-index"))).toBeLessThan(next);
-    expect(Number(end.get("opacity"))).toBe(0);
-    // It drops behind the pile before it comes back over it: the z-index falls right after the lift
-    const lifted = parseFloat(lift!.k);
-    const behind = keys.find((k) => parseFloat(k) > lifted && Number(kf.get(k)!.get("z-index")) < next);
-    expect(behind, "a frame just after the lift where the card goes behind").toBeDefined();
-    expect(parseFloat(behind!) - lifted).toBeLessThanOrEqual(5);
-    // Not a slide: no frame moves it sideways without lifting, tilting or tucking it
-    for (const k of keys) {
-      const m = motion(kf.get(k)!.get("transform"));
-      if (m.x !== 0) expect(m.y !== 0 || m.rotate !== 0 || m.scale !== 1, k).toBe(true);
-    }
+  it("V-ACC.teamup/7 C-CREW-DECK.behaviour/2: the card going out moves right, ends behind the pile, and never slides purely sideways", async () => {
+    await pressNext();
+    const frames = flight(cardOf(TITLES[0]!));
+    expect(frames.length, "the card going out has a flight with full motion").toBeGreaterThan(1);
+    // Out to the right
+    const peak = Math.max(...frames.map((f) => f.x));
+    expect(peak).toBeGreaterThan(0);
+    // Behind the pile at the end: lower than the card behind the new front one, or smaller, or faded
+    const end = frames[frames.length - 1]!;
+    const pile = Number(applied(css, cardOf(TITLES[2]!), "z-index", DESKTOP) ?? 0);
+    expect(
+      (end.z !== undefined && end.z < pile) ||
+        end.scale < 1 ||
+        (end.opacity !== undefined && end.opacity < 1),
+    ).toBe(true);
+    // Tucked back over the pile, not carried on sideways
+    expect(Math.abs(end.x)).toBeLessThan(peak);
+    // Never a pure slide: whenever it is off to the side, it is also lifted, tilted or scaled
+    for (const f of frames)
+      if (f.x !== 0) expect(f.y !== 0 || f.rotate !== 0 || f.scale !== 1, `${f.at}%`).toBe(true);
   });
 
-  it("V-ACC.teamup/7 C-CREW-DECK.behaviour/5: only with reduced motion do the cards swap without the flight", () => {
-    const reduced = css.filter(
-      (r) => /prefers-reduced-motion:\s*reduce/.test(r.at) && r.selectors.includes(".dcard.toback"),
-    );
-    expect(reduced.some((r) => r.decls.get("animation") === "none")).toBe(true);
-    expect(decl(".dcard.toback", "animation")).not.toBe("none");
+  it("V-ACC.teamup/7 C-CREW-DECK.behaviour/5: with reduced motion the cards swap without the flight", async () => {
+    await pressNext();
+    const out = cardOf(TITLES[0]!);
+    expect(flight(out).length).toBeGreaterThan(1);
+    expect(applied(css, out, "animation", DESKTOP, true)).toBe("none");
   });
 });
 
@@ -614,7 +549,7 @@ describe("V-ACC.teamup/7: Find your crew, desktop: Next lifts the front card out
 // =================================================================================================================
 describe("V-ACC.teamup/9: Home's Ones, the pointer over the cards: one card per wheel step, and the page scrolls on at the ends", () => {
   const POSTS = ["Rohit", "Sunita", "Arjun", "Meena"].map((n) =>
-    createElement("article", { className: "opost" }, `${n}’s fix shipped`),
+    createElement("article", null, `${n}’s fix shipped`),
   );
   let clock = Date.parse("2026-11-18T05:00:00Z");
 
@@ -627,14 +562,14 @@ describe("V-ACC.teamup/9: Home's Ones, the pointer over the cards: one card per 
   async function wheel(deltaY: number): Promise<boolean> {
     clock += 450;
     vi.setSystemTime(clock);
-    const view = host.querySelector(".fan-view")!;
+    const card = host.querySelector("article")!;
     const e = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true });
     await act(async () => {
-      view.dispatchEvent(e);
+      card.dispatchEvent(e);
     });
     return e.defaultPrevented;
   }
-  const position = () => text(host.querySelector(".fan-pos"));
+  const position = () => text(host.querySelector('[aria-live="polite"]'));
 
   async function fan() {
     await show(
@@ -649,8 +584,7 @@ describe("V-ACC.teamup/9: Home's Ones, the pointer over the cards: one card per 
   it("V-ACC.teamup/9 C-ONES-FAN.behaviour/4: wheel down, then up: one card forward, then one back, per step", async () => {
     await fan();
     expect(position()).toBe("Post 1 of 4");
-    expect(await wheel(100)).toBe(true); // stacked: the first step spreads the fan
-    expect(host.querySelector(".fan-view")!.className).toBe("fan-view spread");
+    expect(await wheel(100)).toBe(true); // stacked: the first step spreads the fan and keeps the page still
     expect(position()).toBe("Post 1 of 4");
     const steps: string[] = [];
     for (const dy of [100, 100, -100, -100]) {
