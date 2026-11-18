@@ -39,8 +39,15 @@ PEOPLE = {
 # Every way the reviewer could show: their users.id, name, first name, surname and initials
 REVIEWER_TRACES = (REVIEWER, "Meera", "Iyer", '"MI"')
 
-DESK_KINDS = ("questions", "decision", "worth_revised", "desk_merge", "detail_hidden_by_desk")
-SYSTEM_KINDS = ("sent_to_desk", "answer_reminder")
+DESK_KINDS = (
+    "questions",
+    "answer_reminder",
+    "decision",
+    "worth_revised",
+    "desk_merge",
+    "detail_hidden_by_desk",
+)
+SYSTEM_KINDS = ("sent_to_desk",)
 
 
 class _Rows:
@@ -150,7 +157,10 @@ def test_DEC_111_L_INBOX_kinds_J_TRACK_a_desk_kind_comes_from_the_review_desk_an
     )
     for trace in REVIEWER_TRACES:
         assert trace not in seen, (kind, trace)
-    assert f"{REVIEW_DESK_START} {item['line']}" in mail, kind
+    # The reminder's line stands alone ("1 day left to answer the review desk’s questions"); the other kinds' email
+    # opens with the sender and the line
+    if kind != "answer_reminder":
+        assert f"{REVIEW_DESK_START} {item['line']}" in mail, kind
     assert REVIEWER not in conn.people_read, kind  # not read at all, so no future template can name them
 
 

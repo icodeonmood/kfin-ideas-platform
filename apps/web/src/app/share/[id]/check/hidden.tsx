@@ -35,6 +35,7 @@ export function HiddenTile({
   onShow,
   onHide,
   phone = false,
+  readOnly = false,
 }: {
   /** The phone's anchor for "1 detail hidden" (#pr-hidden). */
   id?: string;
@@ -45,6 +46,8 @@ export function HiddenTile({
   onHide(id: string): Promise<boolean>;
   /** The phone boards' label for a row's button: "Not personal? Show it" (PhoneReview.md, PhoneEdit.md). */
   phone?: boolean;
+  /** A draft merged into another idea (BLD-C155): the details as they are, with no Show it or Hide it. */
+  readOnly?: boolean;
 }) {
   const [asking, setAsking] = useState<string | null>(null);
   const [reason, setReason] = useState<ShowReason | null>(null);
@@ -103,11 +106,13 @@ export function HiddenTile({
             {d.state === "shown" ? (
               <>
                 <span className="ck-hid-why">{d.reason ? C.shown(reasonWords(d.reason)) : null}</span>
-                <Button variant="text-blue" disabled={busy} onClick={() => void hide(d.id)}>
-                  {C.hide}
-                </Button>
+                {readOnly ? null : (
+                  <Button variant="text-blue" disabled={busy} onClick={() => void hide(d.id)}>
+                    {C.hide}
+                  </Button>
+                )}
               </>
-            ) : (
+            ) : readOnly ? null : (
               <Button
                 variant="text-blue"
                 aria-expanded={asking === d.id}

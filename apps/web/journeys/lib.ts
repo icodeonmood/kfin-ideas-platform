@@ -80,7 +80,7 @@ export const CLUB = {
 } as const;
 export type Person = keyof typeof CLUB;
 
-/** First names as copy shows them ("Send 2 answers to Harish"). */
+/** First names as copy shows them ("Send 2 answers to the review desk"). */
 export function firstName(who: Person): string {
   return who.charAt(0).toUpperCase() + who.slice(1);
 }

@@ -116,15 +116,13 @@ function titleOf(item: InboxEntry): string {
  * or initials can show even from an item rendered before the change. */
 const DESK_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>([
   "questions",
+  "answer_reminder",
   "decision",
   "worth_revised",
   "desk_merge",
   "detail_hidden_by_desk",
 ]);
-const SYSTEM_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>([
-  "sent_to_desk",
-  "answer_reminder",
-]);
+const SYSTEM_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>(["sent_to_desk"]);
 
 /** The sender as the row and the reader show them: "The review desk" for a desk kind (DEC-111), else the worker's. */
 export function senderOf(item: InboxEntry): string {
@@ -165,14 +163,14 @@ function btnClass(style: Action["style"]): string {
 type QuestionSet = NonNullable<SharerQuestionSetResponse>;
 type Detail = { kind: "questions"; set: QuestionSet } | { kind: "reason"; reason: string } | null;
 
-/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. */
+/** The sharer's open set as `GET /ideas/:id/question-set` sends it, with what the card reads. The reviewer (`by`) is
+ * not read: the sharer's set comes without one (DEC-111). */
 function isSet(data: unknown): data is QuestionSet {
   const s = data as Partial<QuestionSet> | null;
   return (
     !!s &&
     typeof s.id === "string" &&
     typeof s.idea?.id === "string" &&
-    typeof s.by?.first_name === "string" &&
     typeof s.deadline === "string" &&
     typeof s.answered === "number" &&
     Array.isArray(s.questions) &&

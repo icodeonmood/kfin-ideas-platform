@@ -52,10 +52,12 @@ export interface MergeView {
 
 export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): MergeView | null {
   if (!merge || !merge.after) {
-    if (!merge || merge.state !== "waiting" || !merge.other_idea_id) return null;
+    if (!merge || !merge.other_idea_id) return null;
+    if (merge.state !== "waiting" && merge.state !== "accepted") return null;
     // NOT DRAWN by the route: compose the drawn lines from the lead's first name.
     const lead = merge.lead ?? matches.find((m) => m.idea.id === merge.other_idea_id)?.idea.lead;
     const first = firstName(lead);
+    if (merge.state === "accepted") return mergedView(merge.other_idea_id, null, first);
     if (!first) return null;
     return {
       state: "waiting",
@@ -77,6 +79,44 @@ export function mergeView(merge: MergeState | null, matches: SimilarMatch[]): Me
     action: a.action ?? null,
     canSubmit: a.can_submit ?? (state !== "waiting" && state !== "accepted"),
   };
+}
+
+/**
+ * L-MERGE.request/5 (J-SIMILAR/6a, BLD-C155): a draft closed as merged into `ref`. Lane F's words when its read
+ * answered "accepted"; else the drawn ones: "Merged into IDEA-…", "{first} accepted. Yours is now part of IDEA-…,
+ * with credit to you. Nothing else to send." (only with the lead's first name; the bar then says just the link) and
+ * "See the merged idea". Null for a draft that is not merged.
+ */
+export function mergedView(
+  ref: string | null | undefined,
+  merge: MergeView | null,
+  first = "",
+): MergeView | null {
+  if (merge?.state === "accepted") return merge;
+  if (!ref) return null;
+  return {
+    state: "accepted",
+    otherId: ref,
+    rail: C.similar.merge.acceptedRail(ref),
+    line: first ? C.similar.merge.acceptedLine(first, ref) : "",
+    action: { label: C.similar.merge.seeMerged, to: `/ideas/${encodeURIComponent(ref)}` },
+    canSubmit: false,
+  };
+}
+
+/**
+ * BLD-C156: the parts a reload shows ticked from what the server keeps, not from clicks in memory. Moving on from a
+ * part saves the next one as the draft's `step` (S-05 saves where the person is), so a saved step past a part means
+ * the person moved on from it: "Looks right" for part 1, "Next" for part 3, and so on. Sorting (part 2) is ticked
+ * only when confirmed and Send it (part 7) never, so neither is here. Part 3 is also done once "Keep mine separate"
+ * is kept or a merge request has an answer, and part 5 once a fix is added; check-it.tsx adds those.
+ */
+export function passedParts(step: DraftStep | string | undefined | null): ReadonlySet<PartNo> {
+  if (step !== "send" && !/^check:[1-7]$/.test(step ?? "")) return new Set();
+  const at = partFromStep(step);
+  const out = new Set<PartNo>();
+  for (let n = 1; n < at; n++) if (n !== 2) out.add(n as PartNo);
+  return out;
 }
 
 /** A tile's action row (C-SIMGRID.tile): "Team up", "Waiting for Ravi" + "Withdraw", or "On the crew". */

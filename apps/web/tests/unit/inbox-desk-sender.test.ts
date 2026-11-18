@@ -115,9 +115,9 @@ describe("DEC-111 C-INBOX-READER: a desk sender is the review desk, with the mar
     }
   });
 
-  it("L-INBOX.kinds: the 1% Club's own kinds draw the mark even when a reviewer set them off", () => {
+  it("L-INBOX.kinds: the answer reminder is the review desk's (BLD-B257) and draws the mark even when a reviewer sent it", () => {
     expect(drawsMark(REMINDER)).toBe(true);
-    expect(senderOf(REMINDER)).toBe("1% Club");
+    expect(senderOf(REMINDER)).toBe("The review desk");
     expect(html(createElement(Avatar, { item: REMINDER, size: "md" }))).not.toContain("MI");
   });
 

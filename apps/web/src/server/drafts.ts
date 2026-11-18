@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BANNERS } from "@/lib/killswitch-routes";
 
 import type { CurrentUser } from "./auth/current";
+import { getDb } from "./db";
 import { spansToUtf16, type CodePointSpan } from "./hide-offsets";
 import { workerFetch } from "./worker";
 
@@ -134,6 +135,24 @@ export const drafts = {
       method,
     }),
 };
+
+/**
+ * J-SIMILAR/6a, L-MERGE.request/5 (BLD-C155): whether this is the person's own draft, closed as merged into another
+ * idea before it was ever sent (status `merged`, no reference of its own). Such a draft lives on Check it, read-only
+ * with "Merged into IDEA-…", so Tell it (`/share/:id`) and Done (`/share/:id/done`) send it there. Someone else's
+ * draft, a missing one, a plain draft and a shared idea all answer false, and nothing else changes for them.
+ */
+export async function isMergedDraft(me: CurrentUser, id: string): Promise<boolean> {
+  if (!UUID.test(id) || !me.contributorCode) return false;
+  const row = await getDb()
+    .selectFrom("ideas")
+    .select(["status", "idea_id", "contributor_code"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  return Boolean(
+    row && row.contributor_code === me.contributorCode && row.status === "merged" && row.idea_id === null,
+  );
+}
 
 /** Known refusals become A-API errors; anything else is rethrown. */
 export function draftError(err: unknown): NextResponse {

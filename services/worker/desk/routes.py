@@ -190,4 +190,12 @@ def build(require_token: Callable[..., None]) -> APIRouter:
 
         return _call(committee.decision_for_viewer, ref, user_id)
 
+    @r.post("/ideas/{ref}/join-build")
+    def idea_join_build(ref: str, user_id: str) -> JSONResponse:
+        """Ask to join the build team (L-DECIDE.rules/6, DEC-111): the sharer or crew, after a Pick, until the team is
+        chosen. No body; the worker checks who and when."""
+        from desk import join_build
+
+        return _call(join_build.ask, ref, user_id)
+
     return r

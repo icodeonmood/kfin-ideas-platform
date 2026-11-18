@@ -83,7 +83,7 @@ function questionSet(answered = 0): NonNullable<SharerQuestionSetResponse> {
     id: SET_ID,
     idea_id: IDEA,
     idea: { id: IDEA, title: TITLE },
-    by: MEERA,
+    by: null, // DEC-111: the sharer's set never names the reviewer
     state: answered ? "partly_answered" : "seen",
     time_to_answer: "3d",
     sent_at: new Date().toISOString(),

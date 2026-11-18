@@ -32,10 +32,10 @@ IST = ZoneInfo("Asia/Kolkata")
 # say `as_desk: true` (lane F's comment and mention when a reviewer writes as the desk) reads the same way, and its
 # reviewer is not stored either (`notify.as_the_desk`).
 DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge"}) | AS_THE_DESK
-# Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk, and a reminder to
-# answer the desk's questions, timed or from a reviewer's "Send a reminder" (lane B posts that one with the reviewer
-# as its sender). They never name a person, and the sender is never read.
-SYSTEM_KINDS = frozenset({"sent_to_desk", "answer_reminder"})
+# Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk. It never names a
+# person, and the sender is never read. The reminder to answer the desk's questions is the desk's own
+# (`notify.AS_THE_DESK`, BLD-B257), so it reads "The review desk" through DESK_KINDS.
+SYSTEM_KINDS = frozenset({"sent_to_desk"})
 COMMITTEE_KINDS = frozenset({"decision_reversed"})
 COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; the rest read "By Thu, 19 Nov"
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}

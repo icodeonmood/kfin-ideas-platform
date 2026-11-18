@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{left}} left to answer the review desk’s questions'
-description: 'Inbox item and email for the answer_reminder kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR. 1.1 (DEC-111, BLD-A222): the questions are the review desk’s, never a reviewer’s by name ("Meera’s questions" on the board); for HR.'
+description: 'Inbox item and email for the answer_reminder kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR. 1.1 (DEC-111, BLD-B257): the questions are the review desk’s, never a reviewer’s by name.'
 tags:
 - comms
 - template
