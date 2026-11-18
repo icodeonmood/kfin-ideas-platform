@@ -156,7 +156,7 @@ step(
       await sharer.goto("/inbox");
       await sharer.getByRole("tab", { name: /^Needs you/ }).click();
       const item = sharer.getByRole("button", {
-        name: new RegExp(`^Harish from the review desk asked you 3 questions, ${esc(t6.title)}, `),
+        name: new RegExp(`^The review desk asked you 3 questions, ${esc(t6.title)}, `),
       });
       await item.click();
       await sharer.getByRole("link", { name: "Answer the questions" }).click();
