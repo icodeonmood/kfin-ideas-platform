@@ -10,6 +10,7 @@ import { Status } from "@/components/status";
 import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
+import { fileBadge, fileKind } from "@/components/ui/file";
 import { Pill } from "@/components/ui/pill";
 import { Track } from "@/components/ui/track";
 import type {
@@ -129,13 +130,12 @@ function Worth({ row }: { row: SharedRow }) {
   );
 }
 
-const FILE_BADGE: Record<string, string> = {
-  image: "JPG",
-  pdf: "PDF",
-  sheet: "XLS",
-  doc: "DOC",
-  audio: "AUDIO",
-};
+/** C-FILE.row's badge: "Link" for a link and "Folder" for a folder; a file's type comes from its name's ending, and
+ * one C-FILE doesn't list reads "File". A link's address is never read for a type (".example" gave "EXAM";
+ * BLD-E062, J-RECOVER/14). */
+export function fileTileBadge(f: Pick<FileItem, "kind" | "name">): string {
+  return fileBadge(f.kind === "link" || f.kind === "folder" ? f.kind : fileKind(f.name));
+}
 
 function fileSize(f: FileItem): string {
   const bits: string[] = [];
@@ -150,11 +150,10 @@ function fileSize(f: FileItem): string {
 }
 
 function FileTile({ f }: { f: FileItem }) {
-  const ext = (f.name.split(".").pop() ?? "").toUpperCase();
   return (
     <li className="ip-file">
       <span className="ip-badge" aria-hidden="true">
-        {FILE_BADGE[f.kind] ?? (ext.slice(0, 4) || "FILE")}
+        {fileTileBadge(f)}
       </span>
       <span className="ip-file-t">
         <span className="ip-file-n">{f.name}</span>

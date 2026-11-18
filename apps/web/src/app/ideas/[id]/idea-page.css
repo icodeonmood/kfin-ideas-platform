@@ -667,6 +667,8 @@
 
 .ip-files {
   display: grid;
+  /* One column no wider than the row's: an auto column grew to a long name or link (BLD-E062; J-RECOVER/14) */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -677,6 +679,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--card);
@@ -702,9 +705,7 @@
 }
 
 .ip-file-n {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 14.5px;
 }
 
