@@ -882,6 +882,8 @@ export function ReviewerIdea({
 
 /** The match line under a similar idea and in its preview: "Close match: …" or "Related: …" (DeskIdea board). */
 function matchLine(s: ReviewerSimilar): string {
+  // A reason stored with its label already ("Related: …", as the demo seed and S-06 keep it) is not labelled twice.
+  if (/^(Close match|Related): /.test(s.reason)) return s.reason;
   return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
 }
 
