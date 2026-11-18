@@ -93,6 +93,7 @@ def printed_is_clean(text: str) -> None:
     assert sarvam_live.SPOKEN.lower() not in low
     assert "traceback" not in low and "http://" not in low and "ws://" not in low and "wss://" not in low
     assert "subscription" not in low
+    assert sarvam_live.SENTINEL not in text  # the stored-output sentinel is never printed
 
 
 def test_BLD_C177_L_LISTEN_tts_through_listens_path_passes_against_the_fake(
@@ -407,6 +408,10 @@ def all_four(
             list(sarvam_live.ALL), out=out, database=test_database, decode=lambda mp3: PCM, pace_s=0
         )
     printed_is_clean(out.getvalue())
+    sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
+        r.content.decode("utf-8", "replace") for r in rest
+    )
+    assert sarvam_live.SENTINEL not in sent and "\\u200b" not in sent  # never sent to Sarvam
     return code, out.getvalue().splitlines(), fake, rest
 
 
@@ -616,3 +621,120 @@ def test_BLD_C177_a_speech_calls_row_with_free_text_fails(column: str, value: st
     assert sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) == "meter_text"
     row[column] = None if column == "error_code" else "stream:11111111-2222-4333-8444-555555555555"
     assert sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) is None
+
+
+# ---- review round 2 (BLD-C177): a path that ignores its masker's output fails; codes are the gateway's own ----
+
+
+def test_BLD_C177_L_LISTEN_tts_that_discards_the_masking_output_fails(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from speech import listen
+    from speech.adapters import spoken
+
+    def discarding(script: Any) -> list[tuple[str, str]]:  # masks, then hands on its own input
+        texts = [(p.part, spoken(p.title, p.text)) for p in listen._ordered(script)]
+        for _part, text in texts:
+            listen.mask_for_service(text)
+            sarvam.check_masked(text)
+        return texts
+
+    monkeypatch.setattr(listen, "outgoing", discarding)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[0].startswith("tts ") and lines[0].endswith("FAIL not_masked")
+
+
+def test_BLD_C177_stt_rest_that_stores_the_masking_input_fails(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from voice import service as voice_notes
+
+    seen: dict[str, str] = {}
+    real_normalise, real_encrypt = voice_notes.normalise, voice_notes.encrypt_bytes
+
+    def normalise(text: str) -> str:
+        seen["input"] = real_normalise(text)
+        return seen["input"]
+
+    def encrypt(plain: bytes, context: str, *args: Any, **kwargs: Any) -> bytes:
+        if context.startswith("voice:"):  # stores what went into leave_out_blocked, not what came out
+            plain = json.dumps({"text": seen["input"]}).encode()
+        return real_encrypt(plain, context, *args, **kwargs)
+
+    monkeypatch.setattr(voice_notes, "normalise", normalise)
+    monkeypatch.setattr(voice_notes, "encrypt_bytes", encrypt)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[1].startswith("stt_rest ") and lines[1].endswith("FAIL not_masked")
+
+
+def test_BLD_C177_L_DRAFT_voice_stt_stream_that_keeps_the_masking_input_fails(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from speech import drafts
+
+    seen: dict[str, str] = {}
+    real_bytes, real_json = drafts.encrypt_bytes, drafts.encrypt_json
+
+    def sealed(plain: bytes, context: str, *args: Any, **kwargs: Any) -> bytes:
+        if context.startswith("voice_streams.own_words:"):
+            seen["own"] = plain.decode()
+        return real_bytes(plain, context, *args, **kwargs)
+
+    def kept(value: dict[str, Any], context: str, *args: Any, **kwargs: Any) -> bytes:
+        if context.startswith("voice_streams.masked:"):  # keeps what went into hide_text, not what came out
+            value = {"text": seen["own"]}
+        return real_json(value, context, *args, **kwargs)
+
+    monkeypatch.setattr(drafts, "encrypt_bytes", sealed)
+    monkeypatch.setattr(drafts, "encrypt_json", kept)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[2].startswith("stt_stream ") and lines[2].endswith("FAIL not_masked")
+
+
+def test_BLD_C177_L_DRAFT_voice_translate_that_discards_the_masking_output_fails(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from speech import drafts
+
+    def discarding(
+        conn: Any, stream_id: str, masked: str, lang: str | None, user_id: str | None
+    ) -> tuple[
+        str | None, bool | None, str | None
+    ]:  # masks both ways, then uses its own input and Sarvam's reply
+        drafts.mask_for_service(masked)
+        got = sarvam.translate(masked, conn=conn, ref_id=f"stream:{stream_id}", source=lang or "auto")
+        drafts.hide_text(got.text)
+        return got.text, got.translated, None
+
+    monkeypatch.setattr(drafts, "_english", discarding)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[3].startswith("translate ") and lines[3].endswith("FAIL not_masked")
+
+
+def test_BLD_C177_an_error_code_must_be_one_of_the_workers_own() -> None:
+    row = {
+        "call": "tts", "model": "bulbul:v4-flash", "ref_id": None, "outcome": "route_error", "error_code": "printer",
+        "speech_seconds": None, "char_count": 90, "latency_ms": 5, "cost_inr": 0,
+    }  # fmt: skip
+
+    class Rows:
+        def execute(self, sql: str, params: Any = ()) -> Any:
+            return type("R", (), {"fetchall": lambda self: [row]})()
+
+    assert sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) == "meter_text"  # one lowercase word
+    row["error_code"] = "hosted_403"
+    assert (
+        sarvam_live._metered(Rows(), 0, "tts", "bulbul:v4-flash", 1) == "meter_outcome"
+    )  # ours, but a failure
+
+
+def test_BLD_C177_the_code_prefixes_are_the_gateways_own() -> None:
+    found: set[str] = set()
+    for name in ("sarvam.py", "speech.py"):
+        src = (ROOT / "services" / "worker" / "gateway" / name).read_text(encoding="utf-8")
+        found |= set(re.findall(r'(?:SarvamFailed|SpeechUnavailable|HostedRefused)\(\s*"([a-z0-9_]+)"', src))
+        found |= set(re.findall(r'(?<!outcome, )\b(?:code|_failure)\s*=\s*"([a-z0-9_]+)"', src))
+        found |= {p + "403" for p in re.findall(r'(?:SpeechUnavailable\(|\bcode\s*=\s*)f"([a-z]+_)\{', src)}
+    assert len(found) >= 20, sorted(found)
+    assert [c for c in sorted(found) if not sarvam_live.CODE.match(c)] == []
+    assert set(sarvam_live.CODE_PREFIXES) == {c.split("_", 1)[0] + "_" for c in found}

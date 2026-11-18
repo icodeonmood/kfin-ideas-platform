@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import importlib
 import io
 import logging
@@ -96,8 +97,15 @@ MASKERS = {
     "drafts.hide_text": ("speech.drafts", "hide_text"),  # stt_stream and translate, on return
     "drafts.mask_for_service": ("speech.drafts", "mask_for_service"),  # translate, on the way out
 }
-# What a `speech_calls` row may hold besides numbers: our own codes, and an ID or a uuid (optionally `kind:`).
-CODE = re.compile(r"^[a-z0-9_.]{1,60}$")
+# What a `speech_calls` row may hold besides numbers: one of the worker's own codes, and an ID or a uuid (optionally
+# `kind:`). The prefixes are those of every code `gateway/sarvam.py` (SarvamFailed) and `gateway/speech.py`
+# (SpeechUnavailable, HostedRefused) raise; tests/test_sarvam_live.py reads both files and holds this list to them.
+CODE_PREFIXES = ("hosted_", "stream_", "unmasked_", "fake_", "engine_", "isolation_", "model_", "unknown_")
+CODE = re.compile(rf"^(?:{'|'.join(CODE_PREFIXES)})[a-z0-9_]{{1,50}}$")
+# Appended to a masking function's output where the path stores it (the voice note's transcript, the stream's masked
+# copy), so the stored value proves it is that output. Only in the check's own database and stand-ins: stripped from
+# anything going to Sarvam, and never printed.
+SENTINEL = "\u200b"
 REF = re.compile(
     r"^(?:[a-z_]{1,20}:)?(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Z]{2,8}-[0-9]{4}-[0-9]{6})$"
 )
@@ -205,11 +213,49 @@ def _patched(obj: Any, name: str, value: Any) -> Iterator[None]:
         setattr(obj, name, old)
 
 
+def _fresh(text: str) -> str:
+    """An equal string that is a new object, never `text` itself."""
+    fresh = (text + "\x00")[:-1]
+    if (
+        fresh is text
+    ):  # only an empty or one-character text could come back shared; masked texts are never that
+        raise RuntimeError("fresh_copy")
+    return fresh
+
+
+def _text_of(value: Any) -> Any:
+    """The text in a masking function's output: a str, a (text, count) tuple, or a dataclass with `text`."""
+    if isinstance(value, tuple) and value:
+        return value[0]
+    return getattr(value, "text", value)
+
+
+def _handed(out: Any, *, mark: bool) -> Any:
+    """What the wrapper hands the path in place of the masking function's output: equal, but a fresh object, so a path
+    that ignores the output and hands on its own input fails the identity check; with `mark`, the sentinel appended,
+    for a path that stores it. Any sentinel already in the text is dropped first, so it never travels on."""
+
+    def fix(text: str) -> str:
+        bare = text.replace(SENTINEL, "")
+        return bare + SENTINEL if mark else _fresh(bare)
+
+    if isinstance(out, str):
+        return fix(out)
+    if isinstance(out, tuple) and out and isinstance(out[0], str):
+        return (fix(out[0]), *out[1:])
+    text = getattr(out, "text", None)
+    if dataclasses.is_dataclass(out) and not isinstance(out, type) and isinstance(text, str):
+        return dataclasses.replace(out, text=fix(text))
+    raise RuntimeError("unknown_masker_output")
+
+
 @contextlib.contextmanager
-def _watching(spy: _Spy) -> Iterator[None]:
-    """Record what each masking function was given and gave back, what the paths hand to `sarvam.tts` and
-    `sarvam.translate`, and the sockets the client opens (for their close codes). The real functions still run, with
-    the same arguments, and their results are returned unchanged (the same objects)."""
+def _watching(spy: _Spy, mark: frozenset[str] = frozenset()) -> Iterator[None]:
+    """Record what each masking function was given and what the path was handed back, what the paths hand to
+    `sarvam.tts` and `sarvam.translate`, and the sockets the client opens (for their close codes). The real functions
+    run with the same arguments; the path gets an equal but fresh copy of each output (`_handed`), or for the maskers
+    in `mark` the output with the sentinel appended. The text that goes to Sarvam is unchanged, and never carries the
+    sentinel."""
     from gateway import sarvam
 
     real_open = sarvam._ws_open
@@ -222,13 +268,18 @@ def _watching(spy: _Spy) -> Iterator[None]:
     def recording(name: str, real: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper(text: Any, *args: Any, **kwargs: Any) -> Any:
             out = real(text, *args, **kwargs)
-            spy.masked.setdefault(name, []).append((text, out))
-            return out
+            handed = _handed(out, mark=name in mark)
+            if _text_of(handed) is text or _text_of(handed) is _text_of(out):
+                raise RuntimeError("fresh_copy")
+            spy.masked.setdefault(name, []).append((text, handed))
+            return handed
 
         return wrapper
 
     def handing(call: str, real: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper(text: Any, *args: Any, **kwargs: Any) -> Any:
+            if isinstance(text, str) and SENTINEL in text:  # never: the outgoing maskers drop it
+                raise RuntimeError("sentinel_outgoing")
             spy.sent.setdefault(call, []).append(text)
             return real(text, *args, **kwargs)
 
@@ -582,7 +633,7 @@ def _stt_rest(run: _Run) -> Line:
     with _patched(voice_notes, "store", bucket), _patched(voice_notes, "clamav", scanner):
         voice_id = note()
         started = time.monotonic()
-        with _watching(spy):
+        with _watching(spy, mark=frozenset({"voice.leave_out_blocked"})):
             state, code = transcribe(voice_id)
         line.ms = _elapsed(started)
         if state != "ready":
@@ -594,10 +645,12 @@ def _stt_rest(run: _Run) -> Line:
         text = view.get("transcript")
         line.words = _words_back(text if isinstance(text, str) else "")
         masked = [out for out in spy.outputs("voice.leave_out_blocked") if isinstance(out, tuple)]
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str) or not text.replace(SENTINEL, "").strip():
             line.reason = "nothing_heard"
-        elif len(masked) != 1 or masked[0][0] != text:
-            line.reason = "not_masked"
+        elif len(masked) != 1 or masked[0][0] != text or not text.endswith(SENTINEL):
+            line.reason = (
+                "not_masked"  # the stored transcript is leave_out_blocked's output, sentinel and all
+            )
         elif not run.masking_works("voice.leave_out_blocked"):
             line.reason = "masking_no_op"
         elif not line.words:
@@ -740,7 +793,7 @@ def _stt_stream(run: _Run) -> Line:
     view: dict[str, Any] = {}
     started = time.monotonic()
     with _patched(drafts, "_store", store):
-        with _watching(spy):
+        with _watching(spy, mark=frozenset({"drafts.hide_text"})):
             try:
                 view = stream()
             except drafts.VoiceRefused as exc:
@@ -760,7 +813,11 @@ def _stt_stream(run: _Run) -> Line:
         translated = bool(spy.sent.get("translate"))
         if not masked or not isinstance(own, str):
             line.reason = "no_masked_copy"
-        elif not hidden or any(getattr(out, "text", None) != masked for out in hidden):
+        elif (
+            not masked.endswith(SENTINEL)
+            or not hidden
+            or any(getattr(out, "text", None) != masked for out in hidden)
+        ):
             line.reason = (
                 "not_masked"  # the masked copy kept for everyone else is hide_text's output for these words
             )
@@ -1061,7 +1118,7 @@ def _holds_text(line: str) -> bool:
     """A worker log line holding any synthetic word or the key."""
     low = line.lower()
     key = os.environ.get("SARVAM_API_KEY", "").strip()
-    return any(w in low for w in MARKERS) or bool(key and key in line)
+    return any(w in low for w in MARKERS) or SENTINEL in line or bool(key and key in line)
 
 
 # ---- the command -----------------------------------------------------------------------------------------------
