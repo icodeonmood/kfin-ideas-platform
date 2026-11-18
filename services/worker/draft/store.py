@@ -711,25 +711,39 @@ def _messages(
     return out
 
 
-def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) -> None:
-    """S-04B.layout/2: each message keeps its own receipt, the one from its latest finished run (BLD-C184). A run
-    with no message of its own (try again, a build) belongs to the newest message sent before it started. Receipts are
-    stored masked ("PAN ••••8Z", L-HIDE), so nothing here is opened or unmasked."""
+def own_receipts(messages: list[dict[str, Any]], done_runs: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """S-04B.layout/2: each message keeps its own receipt, the latest non-empty one among its finished runs
+    (BLD-C184). A later run that ends with no lines ("Try again" or a build that changed nothing) leaves the earlier
+    receipt in place, so "Hid 1 personal detail …" stays after a reload. A run with no message of its own belongs to
+    the newest message sent before it started. `done_runs` are `message_id, started_at, receipt` in start order."""
     if not messages:
-        return
+        return {}
     sent = [(dt.datetime.fromisoformat(str(m["at"])), str(m["id"])) for m in messages]
     ids = {mid for _, mid in sent}
     own: dict[str, list[str]] = {}
-    for run in conn.execute(
-        "SELECT message_id, started_at, receipt FROM draft_runs WHERE idea_uuid = %s AND state = 'done' "
-        "ORDER BY started_at, id",
-        (idea_uuid,),
-    ).fetchall():
+    for run in done_runs:
+        lines = [str(line) for line in (run["receipt"] or [])]
+        if not lines:
+            continue
         mid = str(run["message_id"]) if run["message_id"] else None
         if mid not in ids:
             before = [m for at, m in sent if at <= run["started_at"]]
             mid = before[-1] if before else sent[0][1]
-        own[mid] = [str(line) for line in (run["receipt"] or [])]
+        own[mid] = lines
+    return own
+
+
+def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) -> None:
+    """Each message's own receipt on the draft read (`own_receipts`). Receipts are stored masked ("PAN ••••8Z",
+    L-HIDE), so nothing here is opened or unmasked; the draft's top-level `receipt` stays the latest run's."""
+    if not messages:
+        return
+    runs_done = conn.execute(
+        "SELECT message_id, started_at, receipt FROM draft_runs WHERE idea_uuid = %s AND state = 'done' "
+        "ORDER BY started_at, id",
+        (idea_uuid,),
+    ).fetchall()
+    own = own_receipts(messages, runs_done)
     for m in messages:
         m["receipt"] = own.get(str(m["id"]), [])
 

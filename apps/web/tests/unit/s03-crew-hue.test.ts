@@ -2,8 +2,8 @@
 /**
  * S-03's crew card (C-CREW-DECK.card, F-TYPE; BLD-C186): the hue sits on the card's top block, not the whole card,
  * as Home.dc.html:287-289 and PhoneHome.dc.html:289-291 draw `.pc-top.hue1` and `.pc-top.hue2`. The card carries
- * `hue1` or `hue2` (lane D's d/crew-hue; the class check waits for it while the card still says h1/h2) and its top
- * block takes the board's gradient from home.css. jsdom applies
+ * `hue1` or `hue2` (lane D's d/crew-hue, BLD-D015; these checks fail until it is on main, so the hue can never
+ * silently not show) and its top block takes the board's gradient from home.css. jsdom applies
  * no stylesheet, so the rules are read from the file; the look itself is checked by lane G's walk. Synthetic data.
  */
 import { readFileSync } from "node:fs";
@@ -71,14 +71,8 @@ function render(hue: 1 | 2) {
 
 describe("S-03 crew card hue on the top block (C-CREW-DECK.card, F-TYPE; BLD-C186)", () => {
   for (const hue of [1, 2] as const) {
-    it(`hue ${hue}: the card carries hue${hue}, and its top block is the first block with the status and title`, (ctx) => {
+    it(`hue ${hue}: the card carries hue${hue}, and its top block is the first block with the status and title`, () => {
       const el = render(hue);
-      // Lane D's d/crew-hue (BLD-D015) renames the card's h1/h2 to hue1/hue2 in crew-card.tsx, which lane C does not
-      // edit. Until it is on main the card says h1/h2, so this check waits for it; the stylesheet checks below run.
-      ctx.skip(
-        el.classList.contains("h1") || el.classList.contains("h2"),
-        "waits for lane D's d/crew-hue (hue1/hue2 on the card)",
-      );
       expect(el.classList.contains(`hue${hue}`)).toBe(true);
       expect(el.classList.contains(`hue${3 - hue}`)).toBe(false);
       const top = el.querySelector(`:scope.hue${hue} > .hm-pc-top`);

@@ -659,3 +659,44 @@ def test_l_draft_l_hide_the_vault_scope_is_hide_core_scope_for_uuid_normalised_b
     lower = "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     for given in (lower, lower.upper(), lower.replace("-", "")):
         assert adapters.vault_scope(given) == runs.scope(given) == scope_for(lower) == f"DRAFT-{lower}"
+
+
+# ---- S-04B.layout/2: each message keeps its own receipt (BLD-C184) ------------------------------------------------
+
+
+def test_s04b_layout_2_own_receipts_keep_the_latest_non_empty_receipt_per_message() -> None:
+    """Lane C's review of c/walk-a-1: a later run with no lines never blanks a message's receipt."""
+    from draft.store import own_receipts
+
+    t0 = dt.datetime(2026, 11, 19, 10, 0, tzinfo=IST)
+    m1, m2 = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+    messages = [
+        {"id": m1, "at": t0.isoformat()},
+        {"id": m2, "at": (t0 + dt.timedelta(minutes=5)).isoformat()},
+    ]
+    hid = ["Drafted a title: “Synthetic title”.", "Hid 1 personal detail from everyone but you: PAN ••••8Z."]
+    often = ["Noted how often: about 10 a day."]
+
+    def run(mid: str | None, minutes: int, lines: list[str]) -> dict[str, object]:
+        return {
+            "message_id": mid,
+            "started_at": t0 + dt.timedelta(minutes=minutes, seconds=1),
+            "receipt": lines,
+        }
+
+    # A later run of the same message that ends with no lines keeps the earlier receipt
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(m1, 1, [])]) == {m1: hid}
+    # ... and so does a "Try again" with no message and no lines, which belongs to the newest message
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(None, 2, [])]) == {m1: hid}
+    # A later run with new lines shows the new ones
+    edited = ["Changed the title to “Synthetic title, edited”."]
+    assert own_receipts(messages[:1], [run(m1, 0, hid), run(m1, 1, edited)]) == {m1: edited}
+    # Two messages keep their own; a message-less run after the second belongs to the second
+    both = own_receipts(messages, [run(m1, 0, hid), run(m2, 5, often), run(None, 6, [])])
+    assert both == {m1: hid, m2: often}
+    retried = ["Your draft is ready. Add a detail, or check it."]
+    assert own_receipts(messages, [run(m1, 0, hid), run(m2, 5, often), run(None, 6, retried)]) == {
+        m1: hid,
+        m2: retried,
+    }
+    assert own_receipts([], [run(m1, 0, hid)]) == {}

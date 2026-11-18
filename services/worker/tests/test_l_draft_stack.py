@@ -210,16 +210,15 @@ def test_s04b_layout_2_each_message_keeps_its_own_receipt_masked(drafting: Any) 
     assert one["at_label_earlier"].startswith("Today, ") and one["at_label_earlier"].endswith(
         ", on your laptop"
     )
-    # Try again (no message of its own) belongs to the newest message; the first keeps its own
+    # Try again (no message of its own) belongs to the newest message; the first keeps its own, and an empty
+    # receipt from it leaves the second's in place (the deterministic cases are in test_l_draft_unit.py)
     again = store.build(db, owner, idea, LAPTOP)
     _run(again)
+    db.execute("UPDATE draft_runs SET receipt = '[]'::jsonb WHERE id = %s", (again,))
     later = store.view(db, owner, idea, LAPTOP)
     assert later["messages"][0]["receipt"] == one["receipt"]
-    latest = db.execute("SELECT receipt FROM draft_runs WHERE id = %s", (again,)).fetchone()["receipt"]
-    if latest:
-        assert later["messages"][1]["receipt"] == list(latest)
-    else:
-        assert later["messages"][1]["receipt"] == two["receipt"]
+    assert later["messages"][1]["receipt"] == two["receipt"]
+    assert later["receipt"] == []  # the top-level receipt is still the latest run's, as other readers expect
 
 
 def test_l_draft_pins_a_pinned_part_is_never_overwritten_and_unpinning_suggests_again(drafting: Any) -> None:
