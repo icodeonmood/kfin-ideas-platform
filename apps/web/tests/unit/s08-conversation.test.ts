@@ -18,6 +18,7 @@ vi.mock("next/link", () => ({
 const { Conversation } = await import("@/components/convo/conversation");
 const {
   S08_COPY,
+  sideNote,
   errorText,
   fileSize,
   mentionAt,
@@ -121,6 +122,7 @@ function yourIdea(): View {
         "Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
       can_attach: true,
     },
+    teams_on: true, // the board draws Teams on (DEC-105 keeps it off at launch: BLD-F086)
   } as View;
 }
 
@@ -432,6 +434,45 @@ describe("S-08 states", () => {
     expect(host.textContent).toContain(
       "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams.",
     );
+  });
+
+  it("S-08 DEC-105 BLD-F086 Teams off: the side note and the empty card drop only the Teams clause; a missing switch never promises Teams", async () => {
+    for (const teams of [false, undefined, "true", 1] as unknown[]) {
+      const v = yourIdea();
+      v.entries = v.entries.slice(0, 2);
+      delete v.composer.questions_line;
+      if (teams === undefined) delete v.teams_on;
+      else (v as { teams_on?: unknown }).teams_on = teams;
+      // The worker words the empty card by the same switch (convo.reads.empty_state)
+      v.empty = {
+        title: "No messages yet",
+        body: "If the review desk has a question, it shows here and in your Inbox.",
+      };
+      await show(v);
+      const side = $("aside")!;
+      expect(side.textContent).toContain(
+        "This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox and by email.",
+      );
+      expect(host.textContent).not.toContain("Teams");
+      expect(host.textContent).toContain(
+        "If the review desk has a question, it shows here and in your Inbox.",
+      );
+    }
+    expect(sideNote(true)).toBe(S08_COPY.sideNote);
+    expect(S08_COPY.sideNote).toBe(
+      "This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email.",
+    );
+    expect(sideNote(false)).toBe(S08_COPY.sideNoteNoTeams);
+    expect(sideNote(undefined)).toBe(S08_COPY.sideNoteNoTeams);
+  });
+
+  it("S-08 J-TRACK/3 BLD-F085: the header pill is the status the server shows this reader (the crew: With the review desk)", async () => {
+    // The sharer's "Needs you" is the first state above; the crew reads the same idea with the review desk.
+    const crew = yourIdea();
+    crew.idea = { ...crew.idea, status: "with_review_desk", meta: "IDEA-2026-001481, with the review desk" };
+    await show(crew);
+    expect($(".cv-meta")?.textContent).toContain("With the review desk");
+    expect($(".cv-meta")?.textContent).not.toContain("Needs you");
   });
 
   it("S-08 view=Answers sent: the answers as one message, each with Added to, and when the desk decides", async () => {

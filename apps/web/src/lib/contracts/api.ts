@@ -1631,8 +1631,11 @@ export interface ConversationView extends Omit<Conversation, "entries" | "partic
      * shows the attach control only then. */
     can_attach: boolean;
   };
-  /** For the sharer before anyone has written ("No messages yet"). */
+  /** For the sharer before anyone has written ("No messages yet"). The body names Teams only while it is on. */
   empty?: { title: string; body: string };
+  /** Whether Teams messages go out (the `comms.teams` switch, DEC-105). S-08's side note names Teams only when this
+   * is `true`; missing counts as off (BLD-F086). */
+  teams_on?: boolean;
 }
 export interface ConversationMessageResponse {
   entry: ConversationEntryView;

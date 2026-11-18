@@ -11,6 +11,10 @@ sharer, the crew, the build team, a mentioned person) reads "The review desk" in
 initials, on messages, the questions and answers, "In this conversation", the box's placeholder and the line above it,
 and the people a message mentions (`Ctx.shown`, BLD-F082).
 
+The header's status is the one S-06 shows the reader (lane E's `ideapage.shape.display_status`): "Needs you" for the
+sharer while a question set is open, "With the review desk" for everyone else (J-TRACK/3, BLD-F085). A line that
+names Teams names it only while the `comms.teams` switch is on (DEC-105; `teams_on`, BLD-F086).
+
 Live updates: nothing is sent on an event stream yet (`A-API.events` has no owner); S-08 refetches after each
 action (BLD-F050).
 """
@@ -25,8 +29,11 @@ from convo import render
 from convo.access import COMMITTEE_ROLES, DESK_ROLES, Reader, reader
 from convo.render import COMMITTEE, DESK, Ctx, plural, when
 from convo.store import People, Person, load_idea, now, unseal
+from core import killswitch
 from core.db import Conn
 from desk.when import deadline as answer_by
+from ideapage import read as page_read
+from ideapage.shape import display_status
 from onepc.enums import labels
 from onepc.words import REVIEW_DESK
 
@@ -34,10 +41,21 @@ REMOVE_WITHIN = dt.timedelta(minutes=5)  # L-CONVO/10 (NOT DRAWN default)
 OPEN_SET_STATES = ("sent", "seen", "partly_answered")
 CLEAN_FILE_STATES = ("checked", "hidden_checked")
 REMOVED = "Message removed"
-EMPTY = {
-    "title": "No messages yet",
-    "body": "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams.",
-}
+TEAMS_SWITCH = "comms.teams"  # DEC-105: Teams is built and off until IT approves it
+EMPTY_TITLE = "No messages yet"
+# Messages.md "No messages yet"; without its Teams clause while Teams is off (BLD-F086, for HR's sign-off)
+EMPTY_BODY = "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams."
+EMPTY_BODY_NO_TEAMS = "If the review desk has a question, it shows here and in your Inbox."
+
+
+def teams_on(conn: Conn) -> bool:
+    """Whether Teams messages go out (DEC-105), read as `notify.post` reads it: an unknown switch counts as off."""
+    return killswitch.is_on(TEAMS_SWITCH, conn)
+
+
+def empty_state(teams: bool) -> dict[str, str]:
+    """S-08 "No messages yet" for the sharer: Teams is named only while it is on (BLD-F086)."""
+    return {"title": EMPTY_TITLE, "body": EMPTY_BODY if teams else EMPTY_BODY_NO_TEAMS}
 
 
 def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None = None) -> dict[str, Any]:
@@ -92,16 +110,19 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
         previous = at_
 
     sharer = ctx.people.by_code(idea["contributor_code"])
+    teams = teams_on(conn)
     out: dict[str, Any] = {
-        "idea": _idea_ref(idea),
+        "idea": _idea_ref(idea, _shown_status(conn, idea, r)),
         "header": _header(ctx, sharer, team, t),
         "audience": audience,
         "participants": _participants(ctx, idea, crew, team, rows, staff_as, sharer, t),
         "entries": entries,
         "composer": _composer(ctx, idea, audience, has_crew, sharer, rows, staff_as),
+        # S-08's side note names Teams only while it is on; the screen reads a missing value as off (BLD-F086)
+        "teams_on": teams,
     }
     if r.sharer and not any(e["type"] in ("message", "questions", "answers") for e in entries):
-        out["empty"] = EMPTY
+        out["empty"] = empty_state(teams)
     return out
 
 
@@ -144,6 +165,13 @@ class _Speaking:
                 )
             self.cache[user_id] = label
         return self.cache[user_id]  # type: ignore[no-any-return]
+
+
+def speaks_as_desk(conn: Conn, idea: dict[str, Any], r: Reader) -> bool:
+    """Whether a message this person writes is spoken as the review desk, as `_sender` reads it (DEC-111): written by
+    users.id (the sharer and the crew write by their code) by someone `_Speaking` places at the review desk (the
+    reviewer role, and not on the idea's build team)."""
+    return not (r.sharer or r.crew) and _Speaking(conn, idea).role(r.user_id) == DESK
 
 
 def _sender(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> Person:
@@ -376,10 +404,21 @@ def _answer_files(ctx: Ctx, answer_ids: list[str]) -> dict[str, list[dict[str, A
 # ---------------------------------------------------------------------------------------------------------------
 # Around the timeline
 # ---------------------------------------------------------------------------------------------------------------
-def _idea_ref(idea: dict[str, Any]) -> dict[str, Any]:
-    status = labels("idea_status").get(str(idea["status"]), "")
-    meta = f"{idea['idea_id']}, {status[:1].lower()}{status[1:]}" if status else str(idea["idea_id"])
-    return {"id": idea["idea_id"], "title": idea.get("title") or "", "status": idea["status"], "meta": meta}
+def _shown_status(conn: Conn, idea: dict[str, Any], r: Reader) -> str:
+    """The status S-06 shows this reader (J-TRACK/3, BLD-F085), as lane E works it out: "needs_you" for the sharer
+    while the latest question set the desk sent is open, "with_review_desk" for everyone else, even where the idea
+    stores "needs_you"."""
+    status = str(idea["status"])
+    if status not in ("with_review_desk", "needs_you"):
+        return status  # the set is read only where it can change what is shown
+    qset = page_read.question_set(conn, str(idea["id"])) if r.sharer else None
+    return display_status(idea, qset, for_sharer=r.sharer)
+
+
+def _idea_ref(idea: dict[str, Any], status: str) -> dict[str, Any]:
+    label = labels("idea_status").get(status, "")
+    meta = f"{idea['idea_id']}, {label[:1].lower()}{label[1:]}" if label else str(idea["idea_id"])
+    return {"id": idea["idea_id"], "title": idea.get("title") or "", "status": status, "meta": meta}
 
 
 def _header(ctx: Ctx, sharer: Person, team: dict[str, Any] | None, t: dt.datetime) -> dict[str, str]:
