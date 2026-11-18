@@ -260,7 +260,49 @@ step(
       })
       .first()
       .click();
+    // DIAGNOSTIC ONLY (lane A, never for merge): what scrolls and what takes focus after Merge it
+    await page.evaluate(() => {
+      const w = window as unknown as { __diag: unknown[] };
+      w.__diag = [];
+      const log = (...a: unknown[]) => w.__diag.push([Math.round(performance.now()), ...a]);
+      const body = document.querySelector(".ibx-body");
+      body?.addEventListener("scroll", () => log("scroll", (body as HTMLElement).scrollTop));
+      const sv = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element, o?: boolean | ScrollIntoViewOptions) {
+        log("scrollIntoView", this.className, JSON.stringify(o ?? null));
+        return sv.call(this, o as ScrollIntoViewOptions);
+      };
+      const fo = HTMLElement.prototype.focus;
+      HTMLElement.prototype.focus = function (this: HTMLElement, o?: FocusOptions) {
+        log("focus", this.tagName, this.className, JSON.stringify(o ?? null));
+        return fo.call(this, o);
+      };
+      new MutationObserver(() => log("mut", document.querySelectorAll(".ibx-body").length)).observe(
+        document.querySelector(".ibx") ?? document.body,
+        { childList: true },
+      );
+    });
     await page.getByRole("button", { name: "Merge it", exact: true }).click();
+    await page.waitForTimeout(1500);
+    const diag = await page.evaluate(() => {
+      const b = document.querySelector(".ibx-body") as HTMLElement | null;
+      const r = document.querySelector(".ibx-result") as HTMLElement | null;
+      const rr = r?.getBoundingClientRect();
+      const br = b?.getBoundingClientRect();
+      return {
+        events: (window as unknown as { __diag: unknown[] }).__diag,
+        active: [document.activeElement?.tagName, document.activeElement?.className],
+        body: b && {
+          top: b.scrollTop,
+          ch: b.clientHeight,
+          sh: b.scrollHeight,
+          rect: br && [br.top, br.bottom],
+        },
+        result: rr && [rr.top, rr.bottom],
+        sameBody: b === document.querySelector(".ibx-body"),
+      };
+    });
+    console.log("DIAG6a " + JSON.stringify(diag));
     const merged = page
       .getByText(
         /^Merged\. Tanvi’s idea is now part of yours, and (?:Tanvi is|they are) on your crew, credited\. We’ve told (?:Tanvi|them)\.$/,
