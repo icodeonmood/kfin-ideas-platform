@@ -205,11 +205,12 @@ export async function endSession(page: Page): Promise<void> {
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
   try {
-    // sessions has CHECK (expires_at > created_at) (20261109000100_sessions_privacy_hr.sql), and the session was made
-    // seconds ago, so its start moves back too: two minutes before the new end, or earlier if it already was.
+    // As the 8 hours leave it: begun 9 hours ago and ended a minute ago. sessions has CHECK (expires_at > created_at)
+    // (20261109000100_sessions_privacy_hr.sql), so the start must move too, and a start older than the session's
+    // hours means a later refreshSession (expires_at = created_at + hours) can never bring it back.
     const { rowCount } = await client.query(
       `UPDATE sessions
-          SET created_at = LEAST(created_at, now() - interval '2 minutes'),
+          SET created_at = now() - interval '9 hours',
               expires_at = now() - interval '1 minute'
         WHERE id_hash = $1 AND revoked_at IS NULL`,
       [idHash],
