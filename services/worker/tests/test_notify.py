@@ -254,9 +254,10 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
     assert lines == [
         ("1% Club", "kept your draft from your phone"),
         ("Rohan Mehta from the Ones Committee", "reversed a decision on your idea"),
-        ("Meera from the review desk", "asked you 3 questions"),
+        ("The review desk", "asked you 3 questions"),  # DEC-111: the desk as a whole, never Meera by name
     ]
     q = got["items"][2]
+    assert q["from"] == "system" and "Meera" not in json.dumps(q, ensure_ascii=False)
     assert q["needs_you"] and q["due"]["label"] == "3 days left" and q["idea"]["title"] == TITLE
     assert q["body"]["heading"] == "Questions from the review desk"
     assert q["body"]["note"] == "Answer by Saturday 21 November, 12 pm."
