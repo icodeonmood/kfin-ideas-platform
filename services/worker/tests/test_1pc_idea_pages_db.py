@@ -572,6 +572,72 @@ def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: 
     conn.execute("DELETE FROM hidden_details WHERE id = %s", (folio,))
 
 
+@pytest.fixture
+def similar_runs(club: dict[str, Any]) -> Iterator[Any]:
+    """Lane C's `similar_runs` (c/similar, not on main yet): made here with the columns a row needs when it is
+    missing, and dropped again; when a migration has made it, only this test's rows are removed."""
+    conn = club["conn"]
+    made = not conn.execute("SELECT to_regclass('similar_runs') IS NOT NULL AS here").fetchone()["here"]
+    if made:
+        conn.execute(
+            "CREATE TABLE similar_runs (idea_uuid uuid PRIMARY KEY REFERENCES ideas (id) ON DELETE CASCADE, "
+            "state text NOT NULL CHECK (state IN ('done', 'failed')), found_while text NOT NULL, "
+            "found smallint NOT NULL DEFAULT 0)"
+        )
+    uids = [m.uuid for m in club["m"].values()]
+
+    def put(uid: str, state: str, found: int = 0) -> None:
+        conn.execute(
+            "INSERT INTO similar_runs (idea_uuid, state, found_while, found) VALUES (%s, %s, 'checking', %s) "
+            "ON CONFLICT (idea_uuid) DO UPDATE SET state = EXCLUDED.state, found = EXCLUDED.found",
+            (uid, state, found),
+        )
+
+    yield put
+    if made:
+        conn.execute("DROP TABLE similar_runs")
+    else:
+        conn.execute("DELETE FROM similar_runs WHERE idea_uuid = ANY(%s::uuid[])", (uids,))
+
+
+def test_l_similar_failure_similar_status_reads_lane_c_run_first_then_the_idea(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, similar_runs: Any
+) -> None:
+    """L-SIMILAR.failure: `similar_status` is "done", "failed" or "none". Lane C's `similar_runs` row wins when there
+    is one (its retries after sharing write only there); otherwise `ideas.similar_check`, NULL being "none"."""
+    from ideapage.adapters import similar_status
+
+    conn, uid = club["conn"], club["m"]["T5"].uuid
+    monkeypatch.delitem(sys.modules, "similar.matching", raising=False)
+    monkeypatch.setattr(
+        "ideapage.adapters._lane_c_last_run", lambda: None
+    )  # c/similar's reader not here: SQL
+
+    def check(value: str | None) -> None:
+        conn.execute("UPDATE ideas SET similar_check = %s WHERE id = %s", (value, uid))
+
+    for value, status in ((None, "none"), ("done", "done"), ("failed", "failed")):
+        check(value)
+        assert similar_status(conn, uid) == status  # no run for the idea: the idea's own record
+    check("done")
+    similar_runs(uid, "failed")
+    assert similar_status(conn, uid) == "failed"  # the run wins over the idea
+    check("failed")
+    similar_runs(uid, "done", found=4)
+    assert similar_status(conn, uid) == "done"
+    check(None)
+    assert similar_status(conn, uid) == "done"
+    # Through c/similar's own reader once it is here: only its state is read, never `found`.
+    fake = types.ModuleType("similar.matching")
+    fake.last_run = lambda c, i: {"state": "failed", "found": 4} if i == uid else None  # type: ignore[attr-defined]
+    monkeypatch.undo()
+    monkeypatch.setitem(sys.modules, "similar.matching", fake)
+    assert similar_status(conn, uid) == "failed"
+    other = club["m"]["T6"].uuid
+    conn.execute("UPDATE ideas SET similar_check = 'done' WHERE id = %s", (other,))
+    assert similar_status(conn, other) == "done"  # no run from the reader: the idea's record
+
+
 def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_faces(
     club: dict[str, Any],
 ) -> None:
