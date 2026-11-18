@@ -22,6 +22,9 @@ import { expectWithDesk, ideaCard, ideaUrl, seeded, signInAs, step, type Person 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`; // "Wednesday 16 December"
 const DAY_Y = String.raw`${DAY}(?: \d{4})?`; // "Tuesday 16 February 2027"
 const TIME = String.raw`\d{1,2}(?::\d{2})? (?:am|pm)`; // "11:20 am", "6 pm"
+/** When something is due (desk/when.py due()): "7 pm today", "6 pm tomorrow", else "Thursday 19 November, 6 pm". The
+ * seed sets T6's deadline 2 days on, so a run seeded before midnight in India and walked after it reads "tomorrow". */
+const DUE = String.raw`(?:${DAY}, ${TIME}|${TIME} (?:today|tomorrow))`;
 const LEFT = String.raw`(?:\d+ days?|\d{2}:\d{2}) left`; // "3 days left", "07:38 left"
 const OPEN_Q = `["“]`;
 const CLOSE_Q = `["”]`;
@@ -126,7 +129,7 @@ step(
     await item.click();
     await expect(page.getByText("Questions from the review desk", { exact: true }).first()).toBeVisible();
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`^Answer by ${DAY}, ${TIME}\\.$`)).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`^Answer by ${DUE}\\.$`)).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toBeVisible();
 
     // Home's Needs you carries the same questions and the same clock (S-03, Home.md).
@@ -158,7 +161,7 @@ step(
     for (const q of T6_QUESTIONS) await expect(page.getByText(q, { exact: true }).first()).toBeVisible();
     const deadline = await capture(
       page.getByText(/^Answer by .*One at a time, typed or spoken\.$/).first(),
-      new RegExp(`^Answer by (${DAY}, ${TIME})\\. One at a time, typed or spoken\\.$`),
+      new RegExp(`^Answer by (${DUE})\\. One at a time, typed or spoken\\.$`),
     );
     // L-SUBMIT.edit/5: opened by the desk, so locked; no Withdraw.
     await expect(

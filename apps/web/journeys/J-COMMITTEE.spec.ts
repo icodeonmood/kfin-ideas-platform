@@ -151,7 +151,11 @@ step(
     await sharer.goto(ideaUrl(f1));
     await expect(sharer.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
     await expect(sharer.getByText("The committee’s note to you")).toBeVisible();
-    await expect(sharer.getByText(note)).toBeVisible();
+    await expect(sharer.locator("blockquote").filter({ hasText: note })).toBeVisible();
+    // And the conversation card carries it as the Ones Committee's message (S-06.layout/8, BLD-E058).
+    await expect(
+      sharer.getByRole("complementary", { name: "The conversation and similar ideas" }).getByText(note),
+    ).toBeVisible();
     await expect(sharer.getByText(/^This is final\./)).toBeVisible();
     await sharer.context().close();
   },
