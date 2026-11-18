@@ -16,16 +16,13 @@
 import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { carriedFor, CLUB, draftUrl, seeded, signInAs, step } from "./lib";
+import { carriedFor, CLUB, draftUrl, endSession, runSeconds, seeded, signInAs, step } from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 const WEB_HOST = new URL(process.env.E2E_BASE_URL || "http://localhost:3000").host;
 const OIDC_AUTHORIZE = `${(process.env.OIDC_ISSUER || "http://localhost:8090/default").replace(/\/$/, "")}/authorize`;
-/** The session's cookie (src/server/auth/session.ts SESSION_COOKIE). */
-const SESSION_COOKIE = "ideas_session";
-
 function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -35,7 +32,7 @@ function esc(s: string): string {
 type Fresh = { emp: string; name: string; email: string };
 
 function fresh(offset: number, last: string): Fresh {
-  const n = 18000 + ((Math.floor(Date.now() / 1000) + offset) % 2000);
+  const n = 18000 + ((runSeconds() + offset) % 2000);
   return { emp: `SYN-${n}`, name: `Journey ${last}`, email: `journey.${n}.1pc@kfintech.example` };
 }
 
@@ -46,11 +43,14 @@ async function signInFreshAs(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
 }
 
-/** Synthetic words with a made-up folio number that the composer hides (L-HIDE). */
+/**
+ * Synthetic words with a made-up folio number that the composer hides (L-HIDE). In the folio's own shape, "1234567/89"
+ * (services/worker/pii/patterns.yaml folio): ten digits starting 6 to 9 would read as a mobile number instead.
+ */
 const WORDS =
   "Courier returns of redemption forms are logged in a paper register at the branch. One investor with folio " +
-  "7700045612 asked four times where his form was. It happens about ten times a week.";
-const FOLIO_MASKED = "Folio ••••12";
+  "3045612/89 asked four times where his form was. It happens about ten times a week.";
+const FOLIO_MASKED = "Folio ••••89";
 
 const carried = carriedFor<{ draft: string; idea: string }>("J-RECOVER");
 
@@ -215,8 +215,8 @@ step(
     const t1 = await seeded("T1");
     await signInAs(page, "tanvi");
     await page.goto(draftUrl(t1));
-    // The session ends (L-AUTH.rules/5): only its cookie goes, so S-02 still knows whose draft it was.
-    await page.context().clearCookies({ name: SESSION_COOKIE });
+    // The session ends on the server (L-AUTH.rules/5) and the browser keeps its cookie, so S-02 knows whose draft it was.
+    await endSession(page);
     await page.reload();
     await page.waitForURL(/\/sign-in/);
     await expect(page.getByText("Sign in again to carry on", { exact: true })).toBeVisible();
