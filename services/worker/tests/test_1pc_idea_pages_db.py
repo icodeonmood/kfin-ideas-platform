@@ -395,7 +395,7 @@ def test_s09_states_not_asked_request_sent_and_on_the_crew(club: dict[str, Any])
     assert sent["line"] == "Rekha reads your note and decides. You’ll hear in your Inbox."
     crew = view(club, r1, "zoya")["page"]["team_up"]
     assert crew["state"] == "on_crew" and crew["line"] == "You’re on the crew. You’ll get its updates."
-    assert crew["action"] == {"label": "Say hello", "to": f"/ideas/{r1}/conversation"}
+    assert crew["action"] == {"label": "Say hello", "to": f"/ideas/{r1}/conversation#say-hello"}  # BLD-F069
     assert crew["count_line"].startswith("2 colleagues on it. Rekha leads it and decides who joins.")
 
 
