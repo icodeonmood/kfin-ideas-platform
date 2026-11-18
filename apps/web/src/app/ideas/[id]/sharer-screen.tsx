@@ -574,7 +574,10 @@ export function SharerScreen({
       <div className="ip-cols">
         <div className="ip-main">
           {d?.decision.reason && !reversed ? (
-            <section className="ip-sec ip-reason" aria-labelledby="ip-reason-h">
+            <section
+              className="ip-sec ip-reason"
+              aria-labelledby={d.decision.reason_heading ? "ip-reason-h" : undefined}
+            >
               {d.decision.reason_heading ? (
                 <h2 id="ip-reason-h" className="ip-h2">
                   {d.decision.reason_heading}
