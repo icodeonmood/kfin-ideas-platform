@@ -75,6 +75,25 @@ function WindowBar({ window: w, now }: { window: CommitteeRow["window"]; now: Da
   );
 }
 
+/** S-R4.layout/3, S-R4.rules/2: the window line as the board draws it (`.cwl`). "Extended" is a 12px label without a
+ * dot (board `.cext`), on one line with the days left; the days left are weight 500, and amber text when the bar is
+ * amber (7 office days or fewer). The tone is read from the same moment as the bar, so it may differ by a moment
+ * between the server and the browser. */
+function WindowLine({ window: w, now }: { window: CommitteeRow["window"]; now: Date }) {
+  if (!w.extended && !w.left) return null;
+  const soon = windowBar(w, now).tone === "soon";
+  return (
+    <p className="cm-wl">
+      {w.extended ? <span className="cm-ext">Extended</span> : null}{" "}
+      {w.left ? (
+        <b className={soon ? "cm-left soon" : "cm-left"} suppressHydrationWarning>
+          {w.left}
+        </b>
+      ) : null}
+    </p>
+  );
+}
+
 /** The reversal's four lines on one row (S-R4.states, Committee board): each on its own line, and read as sentences,
  * "Now: Picked by Rohan Mehta, Friday 13 November. Reversed Friday 13 November. Final. Kavya has the note." */
 function ReversalLines({ reversal }: { reversal: NonNullable<CommitteeRow["reversal"]> }) {
@@ -295,8 +314,7 @@ export function CommitteeView({
                         <span className="meta">{row.window.closed_line}</span>
                       ) : (
                         <>
-                          {row.window.extended ? <Pill variant="blue">Extended</Pill> : null}
-                          <span className="body">{row.window.left}</span>
+                          <WindowLine window={row.window} now={now} />
                           <span className="meta">
                             {row.window.until}
                             {row.window.extended ? `. ${row.window.extended}` : ""}
