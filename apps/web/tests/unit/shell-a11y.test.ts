@@ -289,6 +289,13 @@ describe("F-MOTION.arrive/4: a block holding a pinned bar fades in, so the bar n
     expect(Math.max(...arrivals)).toBeLessThan(pinned);
   });
 
+  it("its two arms are the base arrival rule's own, so the two cannot drift apart", () => {
+    const squash = (r: Rule) => text(r).replace(/\s+/g, "");
+    const base = all.find((r) => text(r).startsWith("main#main:not(:has(.launch"));
+    expect(base).toBeDefined();
+    expect(squash(all[pinned]!)).toBe(`:is(${squash(base!)}):has(.mo-pin,.cv-box)`);
+  });
+
   it("the conversation's box is the fixed bar it names: .cv-box is position fixed on a phone", () => {
     const convo = readFileSync(
       fileURLToPath(new URL("../../src/components/convo/conversation.css", import.meta.url)),
