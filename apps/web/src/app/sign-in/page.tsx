@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { SparkMark } from "@/components/spark-mark";
 import { currentUser } from "@/server/auth/current";
 import { allowedDomains } from "@/server/auth/codes";
-import { draftLookup, type DraftCard } from "@/server/auth/drafts";
+import { draftLookup, savedOnWords, type DraftCard } from "@/server/auth/drafts";
 import { emailCodeOn } from "@/server/auth/email-code";
 import {
   ATTEMPT_COOKIE,
@@ -28,6 +28,7 @@ import {
   sessionTtlSeconds,
 } from "@/server/auth/session";
 import { itServiceDeskExtension, oidcConfig } from "@/server/config";
+import { askingDevice } from "@/server/shell";
 
 import { EmailCode } from "./email-code";
 import { SsoForm } from "./sso-form";
@@ -85,8 +86,9 @@ async function stateFor(params: Params, intent: Intent | null): Promise<State> {
   if (open?.draftId && draftFromPath(destination(open))) {
     const expired = await expiredSession((await cookies()).get(SESSION_COOKIE)?.value).catch(() => null);
     if (expired) {
+      const asking = await askingDevice();
       const draft = await draftLookup()
-        .card(expired.userId, open.draftId)
+        .card(expired.userId, open.draftId, asking.id)
         .catch(() => null);
       return { kind: "expired", email: expired.email, draft, intent: open };
     }
@@ -329,7 +331,8 @@ function ExpiredState({
   hours: number;
 }) {
   const card = state.draft;
-  const device = card?.savedOn ? ` on this ${card.savedOn}` : "";
+  // "on this laptop" when this browser saved it (the board's line), "on your phone" when another device did (BLD-A227)
+  const device = savedOnWords(card?.savedOn ?? null);
   const intent = { to: state.intent.to, draft_id: state.intent.draftId, step: state.intent.step };
   return (
     <div className="si-step">
