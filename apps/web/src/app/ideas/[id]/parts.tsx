@@ -14,6 +14,8 @@ import {
   type SetStateAction,
 } from "react";
 
+import { backToSearchedList } from "@/lib/search-memory";
+
 /** The page's way back: the breadcrumb (S-06) or the Back link (S-09), as the server drew it. */
 export type Way = { label: string; to: string };
 
@@ -147,11 +149,21 @@ function safeDecode(p: string): string {
   }
 }
 
-/** The Back link: the whole label on desktop, the short one on a phone ("Back to the Wall", "Wall"). */
+/** The Back link: the whole label on desktop, the short one on a phone ("Back to the Wall", "Wall"). Back to a list
+ * whose search this tab keeps (My ideas) goes back in history as browser Back does, so the search comes back with
+ * it; the link's own address never holds one (J-BROWSE/3, DEC-110). */
 export function BackLink({ label, to }: { label: string; to: string }) {
   const short = label.replace(/^Back to (the )?/, "");
   return (
-    <Link className="back ip-back" href={to} aria-label={label}>
+    <Link
+      className="back ip-back"
+      href={to}
+      aria-label={label}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (backToSearchedList(to)) e.preventDefault();
+      }}
+    >
       <span className="ip-desk">{label}</span>
       <span className="ip-phone">{short}</span>
     </Link>
