@@ -206,8 +206,8 @@ export async function endSession(page: Page): Promise<void> {
   await client.connect();
   try {
     // As the 8 hours leave it: begun 9 hours ago and ended a minute ago. sessions has CHECK (expires_at > created_at)
-    // (20261109000100_sessions_privacy_hr.sql), so the start must move too, and a start older than the session's
-    // hours means a later refreshSession (expires_at = created_at + hours) can never bring it back.
+    // (20261109000100_sessions_privacy_hr.sql), so the start must move too. The proxy refreshes only a session that
+    // readSession accepted, which this one no longer is.
     const { rowCount } = await client.query(
       `UPDATE sessions
           SET created_at = now() - interval '9 hours',
