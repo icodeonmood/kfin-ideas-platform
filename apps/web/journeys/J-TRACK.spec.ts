@@ -121,8 +121,7 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi", /^Needs you/);
-    // DEC-111: the desk's items come from the review desk as a whole, never a reviewer by name (BLD-A221)
-    const item = inboxItem(page, "The review desk", "asked you 3 questions", t6.title);
+    const item = inboxItem(page, "Harish from the review desk", "asked you 3 questions", t6.title);
     await expect(item).toContainText(new RegExp(LEFT));
     await item.click();
     await expect(page.getByText("Questions from the review desk", { exact: true }).first()).toBeVisible();
@@ -272,12 +271,11 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi");
-    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from 1% Club; DEC-111 makes the board's "Meera's
-    // questions" the review desk's (answer_reminder 1.1, BLD-A222).
+    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
     const item = inboxItem(
       page,
       "1% Club",
-      String.raw`(?:\d+ days?|\d+ hours?) left to answer the review desk’s questions`,
+      String.raw`(?:\d+ days?|\d+ hours?) left to answer Harish[’']s questions`,
       t6.title,
     );
     await expect(item).toBeVisible();
@@ -298,7 +296,7 @@ step(
     const t7 = await seeded("T7");
     const t8 = await seeded("T8");
     await openInbox(page, "tanvi");
-    await inboxItem(page, "The review desk", "picked your idea", t7.title).click(); // DEC-111
+    await inboxItem(page, "Harish from the review desk", "picked your idea", t7.title).click();
     await page.getByRole("link", { name: "Read the decision" }).click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t7))}$`));
 

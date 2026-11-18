@@ -220,7 +220,7 @@ step(
       await sharer
         .getByRole("button", {
           name: new RegExp(
-            `^The review desk revised what your idea is worth, ${esc(p1.title)}`, // DEC-111, BLD-A221
+            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(p1.title)}`,
           ),
         })
         .click();
@@ -529,7 +529,7 @@ step(
       await sharer.getByRole("tab", { name: /^Needs you/ }).click();
       await sharer
         .getByRole("button", {
-          name: new RegExp(`^The review desk asked you ${n} questions?, ${esc(k1.title)}`), // DEC-111
+          name: new RegExp(`^Lavanya from the review desk asked you ${n} questions?, ${esc(k1.title)}`),
         })
         .click();
       await expect(sharer.getByText(`Answer by ${deadline}.`).first()).toBeVisible();
