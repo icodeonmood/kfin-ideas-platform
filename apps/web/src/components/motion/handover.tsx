@@ -30,6 +30,12 @@ type Record = {
 
 const KINDS: HandoverKind[] = ["expand", "portal", "peer", "fwd", "back"];
 
+/** On <html> while the new screen's content waits for the hand-over to play (motion.css sets --mo-base under it). */
+export const ARRIVAL_WAIT = "mo-a-wait";
+/** Longer than any arrival takes after the longest wait: a showcase screen's last block starts at 420 + 6 × 80 ms and
+ * runs 1,000 ms (1,900 ms in all), so the wait never comes off while a block is still arriving. */
+export const ARRIVAL_WAIT_MS = 2_000;
+
 export function classifyLink(a: HTMLAnchorElement): HandoverKind {
   if (a.closest(".sb-new, .ptab.share")) return "portal";
   if (a.closest(".sbar .sb-nav, .sbar .sb-top, .sbar .sb-va, .ptabs, .ptop, .acct-menu")) return "peer";
@@ -98,12 +104,15 @@ export function Handover() {
     }
     const html = document.documentElement;
     // Every navigation clears the last arrival first, so Back (which records nothing) never inherits a direction
-    KINDS.forEach((k) => html.classList.remove(`mo-a-${k}`));
+    html.classList.remove(ARRIVAL_WAIT, ...KINDS.map((k) => `mo-a-${k}`));
     const rec = pending.current;
     pending.current = null;
     if (!rec || Date.now() - rec.at > 5_000 || reducedMotion()) return;
-    html.classList.add(`mo-a-${rec.kind}`);
-    const clear = window.setTimeout(() => html.classList.remove(`mo-a-${rec.kind}`), 1_600);
+    // The arrival's class stays until the next navigation. Taking it off sooner changes the blocks' animation-name,
+    // and a new name restarts the animation: the whole screen would vanish and rise out of the blur a second time
+    // (BLD-D015). Only the wait for the hand-over (--mo-base) comes off, since a new delay never restarts anything.
+    html.classList.add(`mo-a-${rec.kind}`, ARRIVAL_WAIT);
+    const clear = window.setTimeout(() => html.classList.remove(ARRIVAL_WAIT), ARRIVAL_WAIT_MS);
 
     const fx = document.getElementById("mo-fx");
     if (fx && rec.kind === "portal") {
