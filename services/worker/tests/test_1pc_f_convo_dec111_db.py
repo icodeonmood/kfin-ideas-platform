@@ -388,8 +388,6 @@ def _as_desk(item: dict[str, Any]) -> bool:
 def test_dec_111_bld_f084_l_inbox_a_reviewers_message_posts_comment_and_mention_as_the_review_desk(
     db: Any, world: dict[str, Any]
 ) -> None:
-    import notify
-
     w = world
     out = send(db, w["idea"]["idea_id"], w["meera"]["id"],
                {"text": "One more question on the calls.",
@@ -400,8 +398,7 @@ def test_dec_111_bld_f084_l_inbox_a_reviewers_message_posts_comment_and_mention_
     for key in (("comment", w["kavya"]["id"]), ("mention", w["tara"]["id"]), ("mention", w["ravi"]["id"])):
         assert _as_desk(items[key]), key
         assert items[key]["payload"] == {"entry_id": out["entry"]["id"], "as_desk": True}
-        if hasattr(notify, "as_the_desk"):  # lane A's half (BLD-A221) is on this base
-            assert items[key]["from_user"] is None, key
+        assert items[key]["from_user"] is None, key  # lane A's half (BLD-A221) is on main (BLD-F089)
     assert items[("comment", w["kavya"]["id"])]["dedupe_key"].endswith(":2026111710:desk")
     # The desk and the committee read the desk's names in the conversation, so their items name Meera
     for key in (("mention", w["harish"]["id"]), ("mention", w["rohan"]["id"])):
@@ -427,6 +424,45 @@ def test_dec_111_bld_f084_l_inbox_a_message_from_the_sharer_the_crew_the_committ
     for i in items:
         assert not _as_desk(i) and i["from_user"] == writer["id"], i["kind"]
         assert not i["dedupe_key"].endswith(":desk")
+
+
+def _comments_to(db: Any, sharer: dict[str, str], key_start: str) -> dict[str, dict[str, Any]]:
+    """The sharer's in-app `comment` items whose key starts with `key_start`, by key."""
+    return {
+        str(r["dedupe_key"]): dict(r)
+        for r in db.execute(
+            "SELECT payload, from_user_id::text AS from_user, dedupe_key FROM notifications "
+            "WHERE channel = 'in_app' AND kind = 'comment' AND user_id = %s AND starts_with(dedupe_key, %s)",
+            (sharer["id"], key_start),
+        ).fetchall()
+    }
+
+
+def test_dec_111_bld_f084_l_inbox_the_desk_and_the_crew_in_one_hour_post_two_comment_items_to_the_sharer(
+    db: Any, world: dict[str, Any]
+) -> None:
+    """Meera (at the review desk) writes, then Ravi (the crew) writes, in the same hour: Kavya gets two `comment`
+    items, the desk's keyed ":desk" with no sender stored, and the crew's with Ravi's users.id. When the desk writes
+    again in that hour, only the desk's item is brought up to date (BLD-F084, BLD-F089)."""
+    w = world
+    kavya, ravi, ref, uuid = w["kavya"], w["ravi"], w["idea"]["idea_id"], str(w["idea"]["id"])
+    first = send(db, ref, w["meera"]["id"], {"text": "Thanks for the log."}, at=fx.at(17, 11, 5))
+    crew = send(db, ref, ravi["id"], {"text": "Adding last week’s calls today."}, at=fx.at(17, 11, 20))
+    hour = f"convo.comment:{uuid}:2026111711"
+    items = _comments_to(db, kavya, hour)
+    assert set(items) == {hour, f"{hour}:desk"}
+    desk, mine = items[f"{hour}:desk"], items[hour]
+    assert desk["payload"] == {"entry_id": first["entry"]["id"], "as_desk": True}
+    assert desk["from_user"] is None
+    assert mine["payload"] == {"entry_id": crew["entry"]["id"]}
+    assert mine["from_user"] == ravi["id"]
+
+    again = send(db, ref, w["meera"]["id"], {"text": "One more thing on R07."}, at=fx.at(17, 11, 40))
+    items = _comments_to(db, kavya, hour)
+    assert set(items) == {hour, f"{hour}:desk"}
+    assert items[f"{hour}:desk"]["payload"] == {"entry_id": again["entry"]["id"], "as_desk": True}
+    assert items[f"{hour}:desk"]["from_user"] is None
+    assert items[hour] == mine  # the crew's item keeps Ravi and his message
 
 
 # --- BLD-F085: S-08's pill is the status S-06 shows the reader (J-TRACK/3) --------------------------------------
