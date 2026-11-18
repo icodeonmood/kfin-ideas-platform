@@ -70,7 +70,7 @@ const DRAFT_BODY = {
       added_at: "2026-11-17T08:02:00Z",
     },
   ],
-  step: "check:1",
+  step: "tell", // straight from Tell it: a fresh Check it opens on the comparison (BLD-C176)
   saved_at: "2026-11-17T08:08:00Z",
   saved_on: { device: "laptop", this_device: true },
   ready: true,
