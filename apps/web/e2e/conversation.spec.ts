@@ -134,7 +134,7 @@ test("S-08 at 375px: the compact bar, the timeline as a log, the labelled box an
   await expectNoSidewaysScroll(page);
 });
 
-test("BLD-F078, PhoneMessages at 375px on the route's task screen: the box is one row about 90px tall (an empty attach slot, the pill, a round 44px Send named Send, its focus ring visible); who sees it sits under the title; axe", async ({
+test("BLD-F078, PhoneMessages at 375px on the route's task screen: the box is one row about 90px tall (the pill starting at the content edge, a round 44px Send named Send, its focus ring visible); who sees it sits under the title; axe", async ({
   page,
 }) => {
   await open(page);
@@ -164,8 +164,8 @@ test("BLD-F078, PhoneMessages at 375px on the route's task screen: the box is on
   expect(row.field.height).toBeCloseTo(44, 0);
   expect(row.field.top).toBeCloseTo(row.send.top, 0); // side by side on one row
   expect(row.field.right).toBeLessThan(row.send.left);
-  // The attach slot is left empty (BLD-F064): the pill starts 44px and a gap in from the dock's edge
-  expect(row.field.left).toBeGreaterThanOrEqual(12 + 44);
+  // No empty attach slot until BLD-F064 brings attach: the pill starts at the dock's content edge (lane D's QA)
+  expect(row.field.left).toBeLessThan(44);
   await expect(form.getByRole("button")).toHaveCount(1);
   const send = page.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeVisible();
