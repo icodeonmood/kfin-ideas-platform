@@ -354,11 +354,11 @@ describe("The look pass from lane D's QA (BLD-F078 to F081)", () => {
     expect(host.textContent!.split(line)).toHaveLength(2);
   });
 
-  it("BLD-F078 at 640px and narrower: one row of an empty 44px slot, the pill and a round 44px Send, any error above it; the line in the box gives way to the header's", () => {
+  it("BLD-F078 at 640px and narrower: one row of the pill and a round 44px Send (no empty attach slot until BLD-F064), any error above it; the line in the box gives way to the header's", () => {
     const { phone, wide } = sheet();
     const row = rule(phone, ".cv-row");
-    expect(row).toMatch(/grid-template-columns: 44px minmax\(0, 1fr\) 44px;/);
-    expect(row.replace(/\s+/g, " ")).toMatch(/grid-template-areas: "err err err" ". field send";/);
+    expect(row).toMatch(/grid-template-columns: minmax\(0, 1fr\) 44px;/);
+    expect(row.replace(/\s+/g, " ")).toMatch(/grid-template-areas: "err err" "field send";/);
     expect(row).toMatch(/align-items: end;/); // Send stays on the row's bottom edge as the pill grows
     const send = rule(phone, ".cv-box .cv-send");
     expect(send).toMatch(/width: 44px;/);

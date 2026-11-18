@@ -623,13 +623,14 @@
   .cv-box:focus-within {
     box-shadow: none;
   }
-  /* One row (PhoneMessages, `.cvrow`): the attach slot, kept empty until a conversation takes an upload (BLD-F064),
-   * the pill and the round Send, on the row's bottom edge as the pill grows; an error sits just above the row */
+  /* One row (PhoneMessages, `.cvrow`): the pill and the round Send, on the row's bottom edge as the pill grows; an
+   * error sits just above the row. The board's attach slot comes back with attach (BLD-F064); until then the pill
+   * starts at the content edge, so no empty gap reads as a misalignment (lane D's QA, BLD-F078) */
   .cv-row {
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 1fr) 44px;
     grid-template-areas:
-      "err err err"
-      ". field send";
+      "err err"
+      "field send";
     align-items: end;
     column-gap: 6px;
   }

@@ -18,8 +18,8 @@
  *   never sent by themselves (BLD-C165).
  * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
  *   carried over (BLD-F069). Neither sends anything.
- * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (an empty attach slot, the
- *   pill, a round Send) and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
+ * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the pill and a
+ *   round Send; the attach slot waits for BLD-F064) and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
  *   header's pill, reference and line share a row and the title runs the column's width (BLD-F079), and the sticky
  *   box is solid with the page's colour under it to the window's edge (BLD-F080). A long conversation opens at its
  *   newest entry (BLD-F081).
@@ -623,8 +623,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                   {linkedText(composer.questions_line, C.answer, openQuestions?.answer_url)}
                 </p>
               ) : null}
-              {/* One grid: on a phone a single row (the attach slot, left empty until BLD-F064, the pill and the round
-                  Send) with any error above it; wider, the words, then who sees it and Send (BLD-F078) */}
+              {/* One grid: on a phone a single row (the pill and the round Send; the attach slot waits for
+                  BLD-F064) with any error above it; wider, the words, then who sees it and Send (BLD-F078) */}
               <div className="cv-row">
                 <div className="cv-field">
                   <textarea
