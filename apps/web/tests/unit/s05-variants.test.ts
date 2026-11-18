@@ -561,6 +561,67 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
   });
 });
 
+describe("the default arm: similar ideas and the merge request arrive together (S-05, C-SIMGRID)", () => {
+  it("a merge answer that comes after the similar ideas never leaves Team up clickable in between", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const late = new Promise((r) => (answer = r));
+    serve(base({ draft: draft({ step: "check:3" }) }));
+    const realFetch = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i: RequestInit = {}) =>
+        u.endsWith("/merge-request") && (i.method ?? "GET") === "GET"
+          ? late.then(() => ({
+              ok: true,
+              status: 200,
+              json: async () => ({ state: "waiting", other_idea_id: MATCH_RAVI.idea.id, after: null }),
+            }))
+          : realFetch(u, i),
+      ),
+    );
+    await act(async () => root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG })));
+    await settle();
+    expect(h1()).toBe("Has someone raised this already?");
+    // The similar ideas have answered, the merge request has not: no tile offers Team up yet
+    expect(button(`Team up on ${MATCH_RAVI.idea.title}`)).toBeUndefined();
+    await act(async () => answer(null));
+    await settle();
+    expect(button(`Team up on ${MATCH_RAVI.idea.title}`)).toBeUndefined();
+    expect(text(document.querySelector(".simgrid"))).toContain("Waiting for Ravi");
+  });
+});
+
+describe("S2: a page the person has begun is never reordered under them (BLD-C176)", () => {
+  it("typing or moving into the page before a late close match keeps the drawn order", async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const late = new Promise((r) => (answer = r));
+    serve([flagsRoute, ...base({ draft: FRESH })]);
+    const realFetch = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string, i: RequestInit = {}) =>
+        u.endsWith("/similar") && (i.method ?? "GET") === "GET"
+          ? late.then(() => ({ ok: true, status: 200, json: async () => [MATCH_RAVI] }))
+          : realFetch(u, i),
+      ),
+    );
+    await act(async () =>
+      root.render(createElement(CheckIt, { draftId: DRAFT_ID, config: CONFIG, flags: { checkFirst: true } })),
+    );
+    await settle();
+    expect(h1()).toBe("Is this how you’d put it?");
+    // The person moves into the page (a change button), without saving or moving part
+    await act(async () => {
+      (document.querySelector(".ck-stage button") as HTMLButtonElement).focus();
+    });
+    await act(async () => answer(null));
+    await settle();
+    expect(h1()).toBe("Is this how you’d put it?");
+    expect(railNames()[0]).toMatch(/^(?:1 )?Your words/);
+    expect(flagCalls().map((c) => `${c.event}:${c.outcome}`)).toEqual(["s2.check:opened"]);
+  });
+});
+
 describe("S2 Check first on a phone (PhoneReview.md simulatorS2=Check first)", () => {
   it("the comparison stands before the rest; Mine is different carries on to the page", async () => {
     asPhone();

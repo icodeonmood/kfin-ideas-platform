@@ -234,27 +234,24 @@ export function CheckIt({
   // --- Loading ----------------------------------------------------------------------------------------------------
 
   const loadSimilar = useCallback(async () => {
-    // Each answer is taken as it comes: a slow merge read never holds up the similar ideas, nor the page.
-    const similarRead = api.similar(draftId).then((s) => {
-      const load: SimilarLoad =
-        s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" };
-      setSimilar(load);
-      if (!s2On || decided.current) return;
-      decided.current = true;
-      // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176).
-      if (!strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
-      flagEvent("s2", "s2.check", "close_match", "S-05", draftId); // the exposure, in either variant
-      if (!checkFirst) return;
-      orderRef.current = CHECK_FIRST_ORDER;
-      setOrder(CHECK_FIRST_ORDER);
-      setFirstUp(true);
-      setPart(3);
-      flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
-    });
-    const mergeRead = api.merge(draftId).then((m) => {
-      if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
-    });
-    await Promise.all([similarRead, mergeRead]);
+    // Both answers are applied together, as the grid needs them: a tile never shows "Team up" for a moment before the
+    // merge request says it is already asked. The page itself never waits for them.
+    const [s, m] = await Promise.all([api.similar(draftId), api.merge(draftId)]);
+    const load: SimilarLoad =
+      s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" };
+    setSimilar(load);
+    if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
+    if (!s2On || decided.current) return;
+    decided.current = true;
+    // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176).
+    if (!strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
+    flagEvent("s2", "s2.check", "close_match", "S-05", draftId); // the exposure, in either variant
+    if (!checkFirst) return;
+    orderRef.current = CHECK_FIRST_ORDER;
+    setOrder(CHECK_FIRST_ORDER);
+    setFirstUp(true);
+    setPart(3);
+    flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
   }, [draftId, s2On, checkFirst]);
 
   const fetchAll = useCallback(
@@ -435,6 +432,18 @@ export function CheckIt({
 
   const matches = similar.state === "ok" ? similar.matches : [];
   const mv = mergeView(merge, matches);
+
+  /** S2: typing in, or moving into, anything on the page counts as begun, so a late close match never reorders the
+   * page, or moves it to the comparison, under someone who is busy with it (BLD-C176). Only the person's own focus
+   * and input: the page moves focus itself only after they have moved. */
+  const touchWatch = {
+    onFocusCapture: () => {
+      touched.current = true;
+    },
+    onInputCapture: () => {
+      touched.current = true;
+    },
+  };
 
   /** S2 on a phone: the comparison closes, and focus goes to the first part of the page it reveals (WCAG 2.4.3). */
   const closeCompare = () => {
@@ -1058,7 +1067,7 @@ export function CheckIt({
     // S2 "Check first" on a phone: the comparison before the rest of the page (PhoneReview.md).
     const after = similar.state === "ok" ? (similar.matches[1] ?? null) : null;
     return (
-      <div className="ck ck-phone">
+      <div className="ck ck-phone" {...touchWatch}>
         {taskbar}
         {bar}
         <div className="ck-ph">
@@ -1093,7 +1102,7 @@ export function CheckIt({
       { n: matches.length, words: C.phone.similarCount(matches.length), href: "#pr-sim-h" },
     ].filter((x) => x.n > 0);
     return (
-      <div className="ck ck-phone">
+      <div className="ck ck-phone" {...touchWatch}>
         {taskbar}
         {bar}
         <div className="ck-ph">
@@ -1134,7 +1143,7 @@ export function CheckIt({
 
   const c = content[part];
   return (
-    <div className="ck">
+    <div className="ck" {...touchWatch}>
       {taskbar}
       {bar}
       <div className="ck-grid">

@@ -58,11 +58,13 @@ test.describe("S1 Interview (P-DECISIONS.experiments, L-DRAFT.parts/10, V-ACC.sh
       ).toBeVisible();
     await expectNoSeriousAxeIssues(page);
 
-    await card.getByRole("textbox", { name: "Your answer" }).fill("About 20 times a week at one branch");
+    await card
+      .getByRole("textbox", { name: "How often does it happen, roughly?" })
+      .fill("About 20 times a week at one branch");
     await card.getByRole("button", { name: "Next question" }).click();
     const who = page.getByRole("group", { name: "Who feels it most?" });
     await expect(who.getByText("Question 2 of 3. Skip any of them.")).toBeVisible();
-    await expect(who.getByRole("textbox", { name: "Your answer" })).toBeFocused();
+    await expect(who.getByRole("textbox", { name: "Who feels it most?" })).toBeFocused();
     // The answer is in the conversation as the person's own words
     await expect(page.getByText("About 20 times a week at one branch", { exact: true })).toBeVisible();
 

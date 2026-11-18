@@ -6,7 +6,7 @@
  * state). Lines the boards do not draw are made from a drawn one ("Question 2 of 3", the "So far we …" forms) or kept
  * for HR ("Show my draft"); docs/hr-wording/lane-c.md lists them.
  *
- * The card is a group named by its question. Its answer box is labelled "Your answer"; Enter or "Next question" sends
+ * The card is a group named by its question, and its answer box is named by the question too; Enter or "Next question" sends
  * the answer (an empty box counts as a skip), "Skip this one" skips. Moving on from a question puts focus in the
  * next one's box, so the keyboard never drops to the page.
  */
@@ -25,7 +25,6 @@ export const INTERVIEW_COPY = {
   peek: "3 quick questions, then your draft",
   /** "Question 1 of 3. Skip any of them." as drawn; 2 and 3 follow it (for HR). */
   count: (n: number) => `Question ${n} of 3. Skip any of them.`,
-  answer: "Your answer",
   offer: (suggestion: string) => `Use “${suggestion}”`,
   next: "Next question",
   /** The last question's button: not drawn ("Done" already closes the phone's sheet beside it), kept for HR. */
@@ -144,9 +143,6 @@ export function InterviewCard({
           </button>
         </div>
       ) : null}
-      <label className="vh" htmlFor={`${id}-a`}>
-        {INTERVIEW_COPY.answer}
-      </label>
       <input
         ref={input}
         id={`${id}-a`}
@@ -156,6 +152,7 @@ export function InterviewCard({
         placeholder={q.example ?? undefined}
         maxLength={5000}
         enterKeyHint="next"
+        aria-labelledby={`${id}-q`}
         aria-describedby={error ? `${id}-e` : undefined}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

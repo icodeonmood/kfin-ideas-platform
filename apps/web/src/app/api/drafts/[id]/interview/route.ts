@@ -13,6 +13,7 @@ import {
   UUID,
 } from "@/server/drafts";
 import {
+  builtSinceAnswers,
   inAlternative,
   INTERVIEW_QUESTIONS,
   interviewPlace,
@@ -77,9 +78,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     };
 
     /** The one build once the questions are over (only if an answer is waiting), then the end, logged once. */
+    /** The one build, then the end. If the end cannot be logged (503), the retry finds the draft already built since
+     * the last answer and only logs the end: the draft is built once (BLD-C172). */
     const end = async (outcome: "finished" | "left"): Promise<string | null> => {
       let runId: string | null = null;
-      if (waitingToBuild(place)) {
+      if (waitingToBuild(place) && !(await builtSinceAnswers(id))) {
         try {
           const { body: built } = await drafts.write(me, device, "POST", `${path}/runs`);
           runId =

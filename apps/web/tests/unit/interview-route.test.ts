@@ -21,6 +21,7 @@ let own: boolean;
 let worker: { method: string; path: string; body: Record<string, unknown> }[];
 let assistantOff: boolean;
 let eventsDown: boolean;
+let endDownOnce: boolean;
 
 vi.mock("@/server/auth/authorize", () => ({ authorize: async () => ME }));
 vi.mock("@/server/worker", () => ({
@@ -49,11 +50,16 @@ vi.mock("@/server/flag-events", async (importOriginal) => {
   return {
     ...real,
     ownDraft: async () => own,
+    // A build is a /runs call the worker took: once one has been made since the last answer, it is not made again.
+    builtSinceAnswers: async () => worker.some((w) => w.path.endsWith("/runs")) && !assistantOff,
     inAlternative: async () => variant === "alternative",
     interviewPlace: async () => placeFrom(events),
     logFlagEvent: async (e: { event: string; outcome: string }) => {
       if (events.some((x) => x.event === e.event)) return "exists";
-      if (eventsDown) return "failed";
+      if (eventsDown || (endDownOnce && e.event === "s1.end")) {
+        endDownOnce = false;
+        return "failed";
+      }
       events.push({ event: e.event, outcome: e.outcome });
       return "written";
     },
@@ -78,6 +84,7 @@ beforeEach(() => {
   worker = [];
   assistantOff = false;
   eventsDown = false;
+  endDownOnce = false;
 });
 
 describe("L-DRAFT.parts/10 S-04B: the interview's steps", () => {
@@ -215,6 +222,23 @@ describe("L-DRAFT.parts/10 S-04B: the interview's steps", () => {
     const writes = worker.filter((w) => w.path.endsWith("/messages"));
     expect(writes.map((w) => w.body.client_id)).toEqual(["key-often-009", "key-often-009"]);
     expect(events.at(-1)).toEqual({ event: "s1.often", outcome: "answered" });
+  });
+
+  it("the end that cannot be logged answers 503; the retry logs it and does not build the draft again", async () => {
+    events = [
+      { event: "s1.start", outcome: "started" },
+      { event: "s1.often", outcome: "answered" },
+      { event: "s1.who", outcome: "skipped" },
+    ];
+    endDownOnce = true;
+    const first = await call({ action: "skip", question: "size" });
+    expect(first.status).toBe(503);
+    expect(worker.filter((w) => w.path.endsWith("/runs"))).toHaveLength(1);
+    const again = await call({ action: "skip", question: "size" });
+    expect(again.status).toBe(200);
+    expect((await again.json()).interview.ended).toBe("finished");
+    expect(worker.filter((w) => w.path.endsWith("/runs"))).toHaveLength(1); // built exactly once
+    expect(events.at(-1)).toEqual({ event: "s1.end", outcome: "finished" });
   });
 
   it("refuses an unknown action or question", async () => {

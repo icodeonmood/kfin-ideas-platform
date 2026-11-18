@@ -20,6 +20,8 @@ import {
   type Variant,
 } from "@/lib/flags";
 
+import { sql } from "kysely";
+
 import { getDb } from "./db";
 import { flagsFor, flagVariant } from "./flags";
 import { isOn, switchStates } from "./killswitch";
@@ -178,6 +180,24 @@ export async function interviewPlace(userId: string, draftId: string): Promise<I
   } catch (err) {
     failed("s1", err);
     return NO_INTERVIEW;
+  }
+}
+
+/** S1: has the draft been built since its last answer was kept? Then the one build after the questions has happened
+ * (a retry after its end could not be logged must not build again, BLD-C172). Unreadable counts as not built. */
+export async function builtSinceAnswers(draftId: string): Promise<boolean> {
+  try {
+    const out = await sql<{ built: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM draft_runs r
+        WHERE r.idea_uuid = ${draftId}
+          AND r.started_at >= (SELECT max(e.at) FROM flag_events e
+                               WHERE e.draft_id = ${draftId} AND e.flag_key = 's1' AND e.outcome = 'answered')
+      ) AS built`.execute(getDb());
+    return Boolean(out.rows[0]?.built);
+  } catch (err) {
+    failed("s1", err);
+    return false;
   }
 }
 

@@ -268,7 +268,11 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     expect(host.querySelector(".ivq")!.tagName).toBe("H2");
     expect(button("Use “About 25 times a week at one branch”")).toBeTruthy();
     const answer = host.querySelector(".iv input") as HTMLInputElement;
-    expect(answer.labels?.[0]?.textContent).toBe("Your answer");
+    // Named by the drawn question itself (no undrawn label)
+    expect(answer.labels).toHaveLength(0);
+    expect(document.getElementById(answer.getAttribute("aria-labelledby")!)?.textContent).toBe(
+      "How often does it happen, roughly?",
+    );
     expect(answer.placeholder).toBe("For example, about 20 times a week");
     // The panel keeps listing the questions (Compose.md); the draft and the receipt wait
     expect(host.querySelector(".canvas .ivi")).toBeTruthy();
