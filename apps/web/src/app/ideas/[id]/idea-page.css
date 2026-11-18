@@ -994,6 +994,12 @@
   box-shadow: inset 0 0 0 1px var(--ink);
 }
 
+/* The Ones Committee's message: its face in ink, as Status.md's `.msg.oc .ini` */
+.ip-msg.oc .av {
+  background: var(--ink);
+  color: #ffffff;
+}
+
 .ip-team-line {
   margin: 14px 0 0;
   font-size: 14.5px;
