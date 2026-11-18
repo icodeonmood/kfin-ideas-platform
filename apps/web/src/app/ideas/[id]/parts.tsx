@@ -11,6 +11,7 @@ import {
   useSyncExternalStore,
   type Dispatch,
   type ReactNode,
+  type MouseEvent,
   type SetStateAction,
 } from "react";
 
@@ -149,21 +150,21 @@ function safeDecode(p: string): string {
   }
 }
 
-/** The Back link: the whole label on desktop, the short one on a phone ("Back to the Wall", "Wall"). Back to a list
- * whose search this tab keeps (My ideas) goes back in history as browser Back does, so the search comes back with
- * it; the link's own address never holds one (J-BROWSE/3, DEC-110). */
+/** A way back to a list (the Back link, S-06's breadcrumb): when the list the person came from holds a search this tab
+ * keeps (My ideas), go back in history as browser Back does, so the search comes back with it; the link's own address
+ * never holds one (J-BROWSE/3, DEC-110). Otherwise the link opens its address as it always has. */
+export function backToList(to: string) {
+  return (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (backToSearchedList(to)) e.preventDefault();
+  };
+}
+
+/** The Back link: the whole label on desktop, the short one on a phone ("Back to the Wall", "Wall"). */
 export function BackLink({ label, to }: { label: string; to: string }) {
   const short = label.replace(/^Back to (the )?/, "");
   return (
-    <Link
-      className="back ip-back"
-      href={to}
-      aria-label={label}
-      onClick={(e) => {
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        if (backToSearchedList(to)) e.preventDefault();
-      }}
-    >
+    <Link className="back ip-back" href={to} aria-label={label} onClick={backToList(to)}>
       <span className="ip-desk">{label}</span>
       <span className="ip-phone">{short}</span>
     </Link>

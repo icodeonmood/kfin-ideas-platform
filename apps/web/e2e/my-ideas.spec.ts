@@ -325,19 +325,28 @@ test.describe("S-07 on the 1% Club seed", () => {
       ),
     ).toBeVisible();
     await expectNoSeriousAxeIssues(page);
-    // A question goes in the address like any search
+    // A question is asked like any search: in the box and the request's body, never the address (DEC-110)
+    const asked = page.waitForRequest(
+      (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/me/ideas",
+    );
     await page.getByRole("button", { name: "Ideas about the rejection SMS" }).click();
-    await soon
-      .poll(() => here(page))
-      .toBe(`/my-ideas?${new URLSearchParams({ q: "Ideas about the rejection SMS" }).toString()}`);
+    expect((await asked).postDataJSON()).toMatchObject({ q: "Ideas about the rejection SMS" });
+    await expect(page.getByRole("searchbox", { name: "Search your ideas, or ask a question" })).toHaveValue(
+      "Ideas about the rejection SMS",
+    );
+    expect(here(page)).toBe("/my-ideas");
   });
 
   test("S-07.states view=Loading: three skeleton rows while the next view comes", async ({ page }) => {
     await open(page);
-    // Hold the next view's server answer for a moment, so the loading state can be seen (a change asks for its view
-    // with POST /api/me/ideas, DEC-110)
+    // Hold the next view's server answers for a moment, so the loading state can be seen: a change asks for its view
+    // with POST /api/me/ideas (DEC-110), and the router reads the page again for the new address
     await page.route("**/api/me/ideas", async (route) => {
       if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 1_500));
+      await route.continue();
+    });
+    await page.route("**/my-ideas?**", async (route) => {
+      if (route.request().headers()["rsc"]) await new Promise((r) => setTimeout(r, 1_500));
       await route.continue();
     });
     await page.getByRole("tab", { name: /^Teamed up/ }).click();

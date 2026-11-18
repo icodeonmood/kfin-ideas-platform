@@ -340,7 +340,8 @@ test.describe("S-H5 Inbox", () => {
     await inbox();
     const words = "asked you";
     const asked = watchRequestUrls(page);
-    const box = page.getByRole("searchbox", { name: "Search your inbox" });
+    // The box is read even while a phone shows the open item as its own screen and hides the list
+    const box = page.locator('input[type="search"][aria-label="Search your inbox"]');
     await page.goto("/inbox");
     const kept = await storageNames(page);
     await expect(box).toHaveAttribute("autocomplete", "off");
@@ -362,10 +363,13 @@ test.describe("S-H5 Inbox", () => {
       await expect(row(page, /mentioned you/)).toHaveCount(0);
     }
 
-    // A reload keeps it
+    // A reload keeps it; on a phone the item is its own screen again, and its Back returns to the searched list
     await page.reload();
+    if (isPhone(page)) await page.getByRole("button", { name: "Inbox", exact: true }).click();
+    await expect(box).toBeVisible();
     await expect(box).toHaveValue(words);
-    if (!isPhone(page)) await expect(row(page, /mentioned you/)).toHaveCount(0);
+    await expect(row(page, /mentioned you/)).toHaveCount(0);
+    await expect(questions).toBeVisible();
 
     // Not one request URL held the words, raw or encoded; nothing new in localStorage or a cookie
     expect(asked.filter(carrying(words))).toEqual([]);

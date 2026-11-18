@@ -212,7 +212,8 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
    * `first` is the page's arrival, when the list is held as loading until the answer lands. */
   const arrive = useCallback(
     (base: MyIdeasResponse, first: boolean) => {
-      const kept = spaced(refreshing.current ? words.current : readSearch(LIST));
+      const refresh = refreshing.current;
+      const kept = spaced(refresh ? words.current : readSearch(LIST));
       refreshing.current = false;
       // The router writes the entry's state afresh on its own navigations: the words go back in
       writeSearch(LIST, kept);
@@ -231,6 +232,11 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
         return;
       }
       if (want.current && viewKey(want.current) === viewKey(target)) return; // already on its way
+      // The router also reads the page again when the address moves; with a search, the view on screen already is the
+      // one it names, unless an action changed what is in it
+      const on = shownNow.current;
+      if (!first && !refresh && on && viewKey({ ...on.state, q: spaced(on.state.q) }) === viewKey(target))
+        return;
       const row = new URL(window.location.href).searchParams.get("row");
       void ask(target, first ? "fade" : "quiet", row);
     },

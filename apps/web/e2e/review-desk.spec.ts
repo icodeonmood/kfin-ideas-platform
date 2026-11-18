@@ -410,6 +410,13 @@ test("L-HIDE.rules/7, J-REVIEW/2–3: a reviewer hides a number mid-text from th
   await expectNoSeriousAxeIssues(r);
 });
 
+/** C-SORTS: "Decide by" pressed on a desktop; on a phone the one cycler reads "Sorted by decide by". */
+async function expectDecideBy(p: Page): Promise<void> {
+  const wide = p.getByRole("button", { name: "Decide by", exact: true });
+  if (await wide.isVisible()) await expect(wide).toHaveAttribute("aria-pressed", "true");
+  else await expect(p.getByRole("button", { name: "Sorted by decide by", exact: true })).toBeVisible();
+}
+
 test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab; no request URL and no address holds it", async ({
   browser,
 }, testInfo) => {
@@ -441,8 +448,7 @@ test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab
   await expect(box).toHaveValue(words);
   await expect(link).toBeFocused();
   await expect(r.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
-  // `person` opens a context of its own at the default desktop size, so C-SORTS shows its pressed buttons
-  await expect(r.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+  await expectDecideBy(r);
 
   // The page's own Back link brings the search back too (J-BROWSE/3, "browser or the page's own link")
   await link.click();
@@ -468,7 +474,7 @@ test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab
   const other = await person(browser, PERSONAS.reviewer);
   await other.page.goto(r.url());
   await expect(other.page.getByRole("tab", { name: /^To review/, selected: true })).toBeVisible();
-  await expect(other.page.getByRole("button", { name: "Decide by" })).toHaveAttribute("aria-pressed", "true");
+  await expectDecideBy(other.page);
   await expect(other.page.getByRole("searchbox", { name: "Search the desk" })).toHaveValue("");
   await other.page.context().close();
 });
