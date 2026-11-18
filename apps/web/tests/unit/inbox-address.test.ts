@@ -222,6 +222,19 @@ describe("S-H5, C-INBOX-READER: the reader keeps the view in the address (J-BROW
     expect(here()).toBe("/inbox?tab=needs_you&item=7");
   });
 
+  it("a count refresh that lands late with the older address does not undo the view", async () => {
+    await show(ALL, "all", null);
+    expect(here()).toBe("/inbox"); // nothing is written until the person moves
+    await act(async () => tab("needs_you").click());
+    await settle();
+    expect(here()).toBe("/inbox?tab=needs_you");
+    // The router puts back the address its refresh started from, and renders the page again
+    window.history.replaceState(null, "", "/inbox");
+    await show(ALL, "all", null);
+    expect(here()).toBe("/inbox?tab=needs_you");
+    expect(tab("needs_you").getAttribute("aria-selected")).toBe("true");
+  });
+
   it("a search goes into the address once the person pauses, and comes back with the page", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await show(ALL, "all", null);

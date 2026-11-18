@@ -409,6 +409,7 @@ export function InboxReader({
   const known = useRef(new Set(initial.items.map((i) => i.id)));
   const view = useRef<InboxView>({ tab: start.tab, item: start.item, q: start.q });
   const typing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const wrote = useRef(false);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -457,12 +458,21 @@ export function InboxReader({
   const remember = useCallback((change: Partial<InboxView>) => {
     view.current = { ...view.current, ...change };
     if (!isInboxPath(window.location.pathname)) return;
+    wrote.current = true;
+    const href = inboxHref(window.location.pathname, view.current);
+    if (window.location.pathname + window.location.search === href) return;
     try {
-      window.history.replaceState(null, "", inboxHref(window.location.pathname, view.current));
+      window.history.replaceState(null, "", href);
     } catch {
       // the next change writes it
     }
   }, []);
+
+  // A count refresh (`router.refresh`) keeps the address it started from, so one that lands after the person moved
+  // puts the older address back. Once the reader has written the view, the address follows the screen again.
+  useEffect(() => {
+    if (wrote.current) remember({});
+  }, [address, remember]);
 
   // Back to an Inbox the router kept from before the address moved: load the tab the address names, then open its
   // item if it is still in that list (J-BROWSE/4). Once, on arrival.
