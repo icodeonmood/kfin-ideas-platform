@@ -256,6 +256,8 @@ export type StepOptions = {
 
 /** Steps collected as fixme so far, for `after`. Specs collect in file order, so an earlier step is already here. */
 const FIXME_REFS = new Set<StepRef>();
+/** Every step collected so far: an `after` ref must be one of these, so a typo or a later row fails collection. */
+const DECLARED_REFS = new Set<StepRef>();
 
 export type StepBody = (ctx: { page: Page; browser: Browser }, info: TestInfo) => Promise<void>;
 
@@ -274,6 +276,12 @@ export function step(ref: StepRef, screen: string, title: string, opts: StepOpti
       );
     }
   }
+  for (const earlier of opts.after ?? []) {
+    if (!earlier.startsWith(`${journey}/`) || !DECLARED_REFS.has(earlier)) {
+      throw new Error(`${ref} waits for ${earlier}, which is not an earlier step of ${journey}`);
+    }
+  }
+  DECLARED_REFS.add(ref);
   const name = `${ref} ${screen} · ${title}`;
   const fixme = (description: string) => {
     FIXME_REFS.add(ref);
