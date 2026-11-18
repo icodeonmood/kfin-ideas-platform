@@ -11,16 +11,20 @@
  *   questions" (S-R3, S-08.rules/1, BLD-F065).
  * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
  *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
- * - Phone (S-08.rules/4): the compact bar with Back, the title and an "i" button that opens the side panel as a
- *   sheet; the box stays at the bottom.
+ * - Phone (S-08.rules/4): the compact bar with Back, "Conversation" and an "i" button that opens the side panel as a
+ *   sheet; the box is pinned at the bottom, above the tab bar or the keyboard, and the timeline keeps room for it
+ *   (BLD-F068, `pin.ts`).
  * - Words carried over from the edit page (S-06B.rules/2, `prefill.ts`): read once on arrival and put in the box,
  *   never sent by themselves (BLD-C165).
+ * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
+ *   carried over (BLD-F069). Neither sends anything.
  */
 import Link from "next/link";
 import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +56,7 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
+import { grow, usePinnedBox, useSayHello } from "./pin";
 import { takePrefill } from "./prefill";
 import "./conversation.css";
 
@@ -142,9 +147,12 @@ export interface ConversationProps {
   ideaId: string;
   /** The clock, for "Remove" while a message can still be removed; tests pass their own. */
   now?: () => number;
+  /** Writing is paused by the kill switch (`submissions`, BLD-F058). The box stays, and a send shows the pause; only
+   * "Say hello" no longer puts the cursor in it (BLD-F069). */
+  paused?: boolean;
 }
 
-export function Conversation({ initial, ideaId, now = Date.now }: ConversationProps) {
+export function Conversation({ initial, ideaId, now = Date.now, paused = false }: ConversationProps) {
   const [view, setView] = useState(initial);
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<ReadonlyMap<string, string>>(new Map());
@@ -157,6 +165,8 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const [panelOpen, setPanelOpen] = useState(false);
 
   const box = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const caretAfter = useRef<number | null>(null);
   const keyRef = useRef<string | null>(null);
   // The "@" whose list Escape closed: it stays closed until a new "@" (a ref, so a select event in the same tick
@@ -208,6 +218,16 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
       live = false;
     };
   }, [ideaId, initial.idea.id]);
+
+  // The box grows with its words, up to its max-height (BLD-F068).
+  useLayoutEffect(() => grow(box.current), [text]);
+
+  // S-08.rules/4: pinned at the bottom on a phone, with room kept under the timeline (BLD-F068).
+  usePinnedBox(root, form, !view.composer.closed);
+
+  // "Say hello" (#say-hello): the cursor in the box, if the person can write here; words carried over from the edit
+  // page arrive just after and the cursor ends after them (BLD-F069).
+  useSayHello(box, !view.composer.closed && !paused);
 
   // Put the caret after a picked name once the words are on screen.
   useEffect(() => {
@@ -503,10 +523,10 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
 
   return (
-    <div className="cv">
+    <div className="cv" ref={root} data-box={composer.closed ? "closed" : "open"}>
       <PhoneBar
         back={{ href: ideaHref, label: view.header.whose }}
-        title={view.idea.title}
+        title={C.heading}
         actions={
           <button
             ref={infoButton}
@@ -557,7 +577,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
           {composer.closed ? (
             <p className="cv-closed">{composer.closed}</p>
           ) : (
-            <form className="cv-box" onSubmit={(e) => void send(e)} noValidate>
+            <form ref={form} className="cv-box" onSubmit={(e) => void send(e)} noValidate>
               {composer.questions_line ? (
                 <p className="cv-hint">
                   {linkedText(composer.questions_line, C.answer, openQuestions?.answer_url)}
@@ -567,7 +587,7 @@ export function Conversation({ initial, ideaId, now = Date.now }: ConversationPr
                 <textarea
                   ref={box}
                   className="cv-in"
-                  rows={2}
+                  rows={1}
                   value={text}
                   placeholder={composer.placeholder}
                   aria-label={composer.placeholder}

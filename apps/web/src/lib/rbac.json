@@ -291,6 +291,8 @@
     "GET /api/ideas                                    see_org_ideas",
     "GET /api/ideas/{id}                               see_org_ideas",
     "GET /api/ideas/{id}/preview                       see_org_ideas",
+    "GET /api/ideas/{id}/similar                       see_org_ideas",
+    "POST /api/ideas/{id}/similar/keep-separate       submit",
     "POST /api/ideas/{id}/withdraw                     submit",
     "POST /api/ideas/{id}/restore                      submit",
     "PUT /api/ideas/{id}/canvas                        submit",
@@ -439,7 +441,11 @@
     "GET /api/committee                                committee_window",
     "GET /api/committee/windows/{id}/reversing         committee_window",
     "POST /api/committee/windows/{id}/extend           committee_window",
-    "POST /api/committee/windows/{id}/reverse          committee_window"
+    "POST /api/committee/windows/{id}/reverse          committee_window",
+    "GET /api/crew                                     signed_in",
+    "POST /api/crew/pass                               signed_in",
+    "POST /api/crew/pass/undo                          signed_in",
+    "POST /api/crew/pass/reset                         signed_in"
   ],
   "membership_scoped": {
     "ones": [
@@ -479,6 +485,12 @@
       "href": "/home",
       "place": "main",
       "tab": 1
+    },
+    {
+      "key": "crew",
+      "label": "Find your crew",
+      "href": "/crew",
+      "place": "main"
     },
     {
       "key": "my-ideas",

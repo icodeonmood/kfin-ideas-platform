@@ -166,6 +166,8 @@ endpoints:
   - GET /api/ideas                                    see_org_ideas
   - GET /api/ideas/{id}                               see_org_ideas   # S-06 for the sharer, S-09 for others; the worker decides (lane E)
   - GET /api/ideas/{id}/preview                       see_org_ideas   # IdeaPreview; compare for the desk and committee only (BLD-C090)
+  - GET /api/ideas/{id}/similar                       see_org_ideas   # SimilarMatch[]; the sharer, or the desk and committee (BLD-C092)
+  - POST /api/ideas/{id}/similar/keep-separate       submit          # Keep mine separate on the sharer's draft (BLD-C095; behind submissions)
   - POST /api/ideas/{id}/withdraw                     submit          # the sharer only, inside the edit window, checked by the worker (L-SUBMIT.withdraw)
   - POST /api/ideas/{id}/restore                      submit          # the sharer only, checked by the worker; behind submissions
   - PUT /api/ideas/{id}/canvas                        submit
@@ -333,6 +335,11 @@ endpoints:
   - GET /api/committee/windows/{id}/reversing         committee_window
   - POST /api/committee/windows/{id}/extend           committee_window
   - POST /api/committee/windows/{id}/reverse          committee_window
+  # Find your crew (lane F; A-API.team-up, L-CREW). Everyone signed in has a deck; the worker shapes it for them.
+  - GET /api/crew                                     signed_in
+  - POST /api/crew/pass                               signed_in
+  - POST /api/crew/pass/undo                          signed_in
+  - POST /api/crew/pass/reset                         signed_in
 
 # Membership-scoped endpoints (BLD-108). The proxy lets every signed-in person through (the capability above
 # is signed_in), and the handler serves only members of the named group, refusing everyone else with 403
@@ -374,6 +381,7 @@ navigation:
   # A screen that moves or lands (Find your crew /crew, Profile /profile, Home /home) changes or adds its row here.
   - { key: share,     label: Share a problem, href: /share,     place: new,    tab: 3 }
   - { key: home,      label: Home,            href: /home,      place: main,   tab: 1 }
+  - { key: crew,      label: Find your crew,  href: /crew,      place: main }
   - { key: my-ideas,  label: My ideas,        href: /my-ideas,  place: folded, tab: 2 }
   - { key: wall,      label: Wall,            href: /wall,      place: main,   tab: 4 }
   - { key: inbox,     label: Inbox,           href: /inbox,     place: main,   tab: 5 }

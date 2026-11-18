@@ -1,6 +1,6 @@
 # New wording in lane F, for HR's sign-off
 
-Written 17 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Two parts: team-up and merge requests, then the conversation.
+Written 17 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN §8). Four parts: team-up and merge requests, the conversation, Find your crew, and search.
 
 ## Team-up and merge requests (L-TEAMUP, L-MERGE.request, C-SHEET-TEAMUP)
 
@@ -176,3 +176,33 @@ Everything else on S-08 is the pack's copy (Messages.md) or comes from the conve
 | `S-08`, a file's button and the file lists, as read out | View | View plain-rejection-reasons.xlsx / Files in your message / Files in Ravi Nair’s message / Files with this answer |
 | `S-08`, the questions for a reader who did not ask them (BLD-F065) | Meera has 3 questions about your idea | Meera from the review desk asked 3 questions. / You asked 3 questions. / See them on the idea |
 | `S-08`, the sharer's questions once closed before every answer came (BLD-F065) | Meera’s 3 questions, answered | Meera’s 3 questions, now closed |
+## Find your crew (S-H2, L-CREW, added 18 Nov)
+
+The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `C-CREW-DECK.states`), used as they stand. "Ravi" stands for the idea's lead and "Saturday" for the day the person shared their own idea: at run time each is the real name or day. The code is `services/worker/crew/deck.py` (the card lines and "Your crews") and `apps/web/src/app/crew/` (the page). These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `L-CREW/2`, "touches their work" (BLD-F034) | The card's reason strip, when the sharer asked for help from the person's line of work | They need someone in Investor service |
+| `L-CREW/2`, "close to an idea of theirs" when the match's reason was written for the other person, or there is none (BLD-F032) | The card's reason strip | Close to your idea from Saturday |
+| `L-CREW/2`, a match reason that does not start "Same …" (BLD-F032) | The card's reason strip | The calls you describe, like your idea from Saturday |
+| `L-CREW/2`, the day in those lines | The card's reason strip | today / yesterday / a weekday within the week / 12 November |
+| `S-H2`, a lead who hid their name from the Wall or has left (BLD-F042) | The card's Team up button, read by a screen reader; "Your crews" | Team up on Rejection SMS codes confuse investors: send the lead a note / Waiting for the lead (and "A colleague" for the name, lane C's line) |
+| `S-H2`, filters that match nothing (BLD-F037; the pack draws no state) | In place of the deck, with "Clear all" | No ideas match these filters / Try fewer filters, or clear them to see every idea close to yours. |
+| `L-CREW/7`, the end of the deck when nothing was asked (the pack draws "You asked to team up on 1 idea.") | "That's everyone for now" | New ideas close to yours show up here. (the line without its first sentence) / You asked to team up on 2 ideas. (the plural) |
+| `L-CREW/5`, the filter panel's count, read by a screen reader | As options are picked | 1 idea matches / 2 ideas match (the board's "2 ideas match") |
+| `S-H2`, the card's title as a button (it opens the preview) | Read by a screen reader | Rejection SMS codes confuse investors. Preview the idea |
+| `S-H2`, while the deck loads | Read by a screen reader only | Loading ideas close to yours |
+| `S-H2`, when the deck does not load | In place of the deck, with "Try again" | These ideas did not load / Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
+| `S-H2`, when a pass, an undo or "See them again" does not go through | Under the deck | That did not go through. Check your connection, then try again. |
+
+## Search on your own list (L-SEARCH, added 18 Nov)
+
+The first sentence over a result set is lane E's My ideas line, used as it stands ("Found 3 ideas about “SMS”: 2 of yours and 1 you teamed up on. Closest: “…”." and "Nothing found for “SMS”."). The code is `services/worker/search/rules.py`. These are the lines the pack does not draw.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `L-SEARCH/3`, the second sentence (BLD-F041) | Under the first, naming only what matched | Matched on titles, short summaries and your own words. (any of: titles, references, short summaries, your own words, the review desk’s reasons) |
+| `L-SEARCH/7`, filters that match nothing, with no words typed | In place of the list | No ideas match these filters. / Try fewer filters. |
+| `L-SEARCH/7`, words that match nothing | In place of the list, with "Show all ideas" | Nothing found for “SMS”. / Try other words, or clear the search. (lane E's lines) |
+| `L-SEARCH/5`, the filter names | The filter panel | List (Yours, Teamed up) / Status (lane E's filter names) / Category |
+

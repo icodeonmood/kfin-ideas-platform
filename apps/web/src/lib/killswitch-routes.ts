@@ -61,6 +61,12 @@ export const ROUTE_RULES: readonly Rule[] = [
   // are filled by hand (DEC-105).
   { methods: WRITE, pattern: /^\/api\/drafts(?:\/.*)?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/ideas\/[^/]+\/canvas\/?$/, switches: ["submissions"] },
+  // "Keep mine separate" is part of sending a draft (BLD-C095).
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/ideas\/[^/]+\/similar\/keep-separate\/?$/,
+    switches: ["submissions"],
+  },
   {
     methods: ["POST"],
     pattern: /^\/api\/ideas\/[^/]+\/answer\/?$/,
@@ -265,6 +271,9 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
+  // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
+  // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
+  /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

@@ -122,15 +122,21 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     navFor(rolesOf(role))
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
-  const base = ["Share a problem", "Home", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
+  const base = ["Share a problem", "Home", "Find your crew", "My ideas", "Wall", "Inbox"];
+  it("everyone gets Share a problem, Home, Find your crew, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
     expect(labels("contributor")).toEqual([...base, "Your profile and settings", "The Ember"]));
   it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
-    expect(labels("reviewer", "main")).toEqual(["Home", "Wall", "Inbox", "Review desk"]);
+    expect(labels("reviewer", "main")).toEqual(["Home", "Find your crew", "Wall", "Inbox", "Review desk"]);
     expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
   });
   it("S-R4: the core committee sees Ones Committee in the sidebar until Monday, and Delivery in the account menu", () => {
-    expect(labels("core_committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]);
+    expect(labels("core_committee", "main")).toEqual([
+      "Home",
+      "Find your crew",
+      "Wall",
+      "Inbox",
+      "Ones Committee",
+    ]);
     expect(labels("core_committee", "account")).toEqual([
       "Your profile and settings",
       "The Ember",
@@ -139,10 +145,16 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
     expect(labels("contributor", "account")).toEqual(["Your profile and settings", "The Ember"]);
   });
   it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
-    expect(labels("committee", "main")).toEqual(["Home", "Wall", "Inbox", "Ones Committee"]));
+    expect(labels("committee", "main")).toEqual([
+      "Home",
+      "Find your crew",
+      "Wall",
+      "Inbox",
+      "Ones Committee",
+    ]));
   it("admin, InfoSec and HR reach Admin from the account menu, not the sidebar", () => {
     for (const role of ["admin", "infosec", "hr"]) expect(labels(role, "account")).toContain("Admin");
-    expect(labels("admin", "main")).toEqual(["Home", "Wall", "Inbox"]);
+    expect(labels("admin", "main")).toEqual(["Home", "Find your crew", "Wall", "Inbox"]);
   });
   it("C-PHONE-TABS.bar: the tab bar is Home, My ideas, Share, Wall, Inbox for everyone", () => {
     for (const role of ["contributor", "reviewer", "core_committee", "admin"]) {
@@ -151,6 +163,23 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
         .sort((a, b) => (a.tab ?? 0) - (b.tab ?? 0))
         .map((n) => n.key);
       expect(tabs).toEqual(["home", "my-ideas", "share", "wall", "inbox"]);
+    }
+  });
+  it("C-SIDEBAR.anatomy, S-H2: Find your crew is everyone's, straight after Home, at /crew, with no phone tab", () => {
+    for (const role of ["contributor", "reviewer", "core_committee", "admin"]) {
+      const nav = navFor(rolesOf(role));
+      expect(nav.find((n) => n.key === "crew")).toEqual({
+        key: "crew",
+        label: "Find your crew",
+        href: "/crew",
+        place: "main",
+      });
+      expect(
+        nav
+          .filter((n) => n.place === "main")
+          .map((n) => n.key)
+          .slice(0, 2),
+      ).toEqual(["home", "crew"]);
     }
   });
   it("one Share a problem button; My ideas shows only when the sidebar is folded", () => {

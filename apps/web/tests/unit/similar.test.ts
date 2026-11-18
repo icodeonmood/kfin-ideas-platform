@@ -1,6 +1,7 @@
 /** BLD-C090, BLD-C092 (L-SIMILAR, A-API.idea-preview): which ideas the routes accept, and who reaches them. */
 import { describe, expect, it } from "vitest";
 
+import { switchesFor } from "@/lib/killswitch-routes";
 import { decide, effectiveRoles } from "@/lib/rbac";
 import { isIdeaKey } from "@/server/similar";
 
@@ -15,12 +16,22 @@ describe("BLD-C090 idea keys", () => {
   });
 });
 
-describe("BLD-C090 BLD-C092 routes in the policy", () => {
+describe("BLD-C090 BLD-C092 routes in the policy (L-SIMILAR.rules/5-7, /10)", () => {
   const everyone = effectiveRoles([]);
-  for (const path of ["/api/ideas/IDEA-2026-001412/preview"]) {
+  for (const path of ["/api/ideas/IDEA-2026-001412/preview", "/api/ideas/IDEA-2026-001412/similar"]) {
     it(`${path}: any signed-in person reaches the handler, which decides what they see`, () => {
       expect(decide(everyone, "GET", path).kind).toBe("allow");
       expect(decide(everyone, "POST", path).kind).toBe("unknown");
     });
   }
+});
+
+describe("BLD-C095 keep mine separate (L-SIMILAR.rules/8)", () => {
+  const path = "/api/ideas/0b4c6f6e-8d1a-4c3e-9a51-2f0f6f1f6a10/similar/keep-separate";
+  it("is a sharer's write, behind the submissions switch; reading similar ideas is behind none", () => {
+    expect(decide(effectiveRoles([]), "POST", path).kind).toBe("allow");
+    expect(switchesFor("POST", path)).toEqual(["submissions"]);
+    expect(switchesFor("GET", "/api/ideas/IDEA-2026-001412/similar")).toEqual([]);
+    expect(switchesFor("GET", "/api/ideas/IDEA-2026-001412/preview")).toEqual([]);
+  });
 });

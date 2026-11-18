@@ -40,3 +40,21 @@ export async function similarIdeas(me: CurrentUser, ideaKey: string): Promise<Si
   if (!res.ok) throw new SubmissionError(502, "similar_unavailable");
   return (await res.json()) as SimilarMatch[];
 }
+
+/** POST /api/ideas/:id/similar/keep-separate { on? } (BLD-C095): "Keep mine separate" (or, with on: false, "Show
+ * them again") on the sharer's own unsent draft. */
+export async function keepSeparate(
+  me: CurrentUser,
+  ideaKey: string,
+  on: boolean,
+): Promise<{ kept_separate: boolean; found_while_drafting: number }> {
+  if (!isIdeaKey(ideaKey)) throw new SubmissionError(404, "not_found");
+  const res = await workerFetch(`/internal/ideas/${encodeURIComponent(ideaKey)}/similar/keep-separate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: me.id, on }),
+  });
+  if (res.status === 404) throw new SubmissionError(404, "not_found");
+  if (!res.ok) throw new SubmissionError(502, "keep_separate_failed");
+  return (await res.json()) as { kept_separate: boolean; found_while_drafting: number };
+}
