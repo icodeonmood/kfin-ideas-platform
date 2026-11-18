@@ -141,6 +141,7 @@ The worker builds these lines and sends them to the page, so they are not in `ap
 | `S-06` | Your idea's page, What it's worth, over the review desk's revised figures (not drawn before DEC-111) | `services/worker/ideapage/sharer.py:424` | Revised by {reviewer} → Revised by the review desk |
 | `S-07` | My ideas on a phone, an idea with questions waiting (PhoneMyIdeas.md). The phone now shows the computer's sentence (MyIdeas.md) | `services/worker/ideapage/mine.py:242`, `:250` | {reviewer} from the review desk asked you {questions} {when}. → The review desk asked you {questions} {when}. |
 | `S-07` | My ideas, an idea whose answers are with the review desk (not drawn) | `services/worker/ideapage/mine.py:264`, `:265`, `:268` | {reviewer} has your answers. The review desk decides by {day}. → The review desk has your answers. It decides by {day}. |
+| `S-06` | Your idea's page once the desk has decided, You and the review desk, the line over the desk's decision (Status.md, PhoneStatus.md; BLD-E058). No initials face beside it. The words under it are the board's, "{Picked, Not now or Not picked}. {the desk's reason}", unchanged | `services/worker/ideapage/sharer.py:217`, `:219`, `:228` | {reviewer} from the review desk, {day}, {time} → The review desk, {day}, {time} |
 
 ## 9. Asking to join the build team (S-06, BLD-E055)
 
