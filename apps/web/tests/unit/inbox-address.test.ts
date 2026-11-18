@@ -52,7 +52,7 @@ import Inbox from "@/app/inbox/page";
 const QUESTIONS: InboxEntry = {
   id: "7",
   kind: "questions",
-  from: { id: "u-harish", name: "Harish Kulkarni", first_name: "Harish", initials: "HK" },
+  from: "system", // DEC-111: a desk kind comes from the review desk as a whole
   idea: {
     id: "IDEA-2026-000901",
     title: "Branch staff cannot see SIP pause requests",
@@ -66,7 +66,7 @@ const QUESTIONS: InboxEntry = {
   body: {
     heading: "Questions from the review desk",
     note: "",
-    sender: "Harish from the review desk",
+    sender: "The review desk",
     set_id: "s-1",
   },
   actions: [{ label: "Answer the questions", style: "primary", to: "/ideas/IDEA-2026-000901/answer" }],

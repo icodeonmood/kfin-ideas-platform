@@ -183,7 +183,8 @@ test.describe("S-H5 Inbox", () => {
     }
 
     // S-H5.rules/2: the first item of the tab is open on desktop; opening it marked it read (S-H5.rules/4).
-    const questions = row(page, /^.+ from the review desk asked you 3 questions, /);
+    // DEC-111: the desk's questions come from the review desk as a whole, never a reviewer by name
+    const questions = row(page, /^The review desk asked you 3 questions, /);
     await expect(questions).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("Questions from the review desk", { exact: true })).toBeVisible();
     await expect(page.getByText("1 of 4", { exact: true })).toBeVisible();
