@@ -68,8 +68,8 @@ export function AskToJoin({
   const [busy, setBusy] = useState(false);
   const [askedAt, setAskedAt] = useState<string | null>(null);
   const line = useRef<HTMLParagraphElement>(null);
-  // After the click the button is gone either way: focus goes to the line that replaced it, or, after a refusal
-  // that took the button away, to the title, so a keyboard user is never left on the page's body
+  // After the click focus goes to the line that replaced the button, or, when a refusal's refresh took the button
+  // away, to the title, so a keyboard user is never left on the page's body; a button that stays keeps its focus
   const next = useRef<"line" | "away" | null>(null);
 
   const standing = d.decision.choice === "pick" && !d.reversal && d.window?.state !== "reversed";
