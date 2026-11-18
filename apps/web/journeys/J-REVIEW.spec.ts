@@ -220,7 +220,7 @@ step(
       await sharer
         .getByRole("button", {
           name: new RegExp(
-            `^Lavanya( from the review desk)? revised what your idea is worth, ${esc(p1.title)}`,
+            `^The review desk revised what your idea is worth, ${esc(p1.title)}`, // DEC-111, BLD-A221
           ),
         })
         .click();
