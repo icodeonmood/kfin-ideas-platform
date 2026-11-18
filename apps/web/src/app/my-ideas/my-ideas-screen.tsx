@@ -36,6 +36,12 @@ export function myIdeasHref(s: ListState, row?: string, dy?: number): string {
   return qs ? `/my-ideas?${qs}` : "/my-ideas";
 }
 
+/** The view a state names, with the search spaced as the server keeps it (ideapage/mine.py normalise), so a change
+ * the person asked for can be matched with the server's answer for it. */
+function viewKey(s: ListState): string {
+  return myIdeasHref({ ...s, q: s.q.split(/\s+/).filter(Boolean).join(" ").slice(0, 200) });
+}
+
 function stateFromHref(href: string, base: ListState): ListState {
   const p = new URL(href, "http://x").searchParams;
   return {
@@ -95,13 +101,21 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const [given, setGiven] = useState(data);
   if (given !== data) {
     setGiven(data);
-    setText(data?.state.q ?? "");
-    setFading(false);
-    setWanted(null);
+    // The box takes the server's words only when the search itself changed (a search run, Clear, a link). The
+    // answer to a tab, sort or filter leaves what the person is typing meanwhile alone (S-07.state, J-BROWSE/1).
+    const q = data?.state.q ?? "";
+    if (q !== (given?.state.q ?? "")) setText(q);
+    // An answer to an earlier change, while a later one is on its way, leaves the later one standing
+    if (!wanted || !data || viewKey(wanted) === viewKey(data.state)) {
+      setFading(false);
+      setWanted(null);
+    }
   }
   useEffect(() => {
-    textNow.current = data?.state.q ?? "";
-    want.current = null;
+    textNow.current = text;
+  }, [text]);
+  useEffect(() => {
+    if (!data || !want.current || viewKey(want.current) === viewKey(data.state)) want.current = null;
   }, [data]);
 
   // A sort's new order has rendered: the glide can measure where each row went
