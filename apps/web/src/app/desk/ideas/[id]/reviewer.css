@@ -224,7 +224,9 @@
 .qx:hover {
   background: var(--sunk);
 }
-.qsug {
+/* A suggested question in the Ask panel. Not .qsug: that is the search bar's menu (components.css), absolutely
+   placed, which stacked every suggestion on the last one so only it could be pressed (J-REVIEW/A2). */
+.ri-qsug {
   border: 0;
   background: none;
   padding: 6px 0;
@@ -233,7 +235,7 @@
   text-align: left;
   cursor: pointer;
 }
-.qsug:hover {
+.ri-qsug:hover {
   color: var(--blue);
 }
 
