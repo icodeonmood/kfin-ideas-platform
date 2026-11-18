@@ -392,6 +392,8 @@ export function SharerScreen({
   const d = decision && !("stage_only" in decision) ? (decision as Decided) : null;
   const stages = (idea.stages ?? []) as unknown as StageWords[];
   const track = toTrack(stages);
+  // DEC-111: the worker sends the reviewer only to a sharer on the review desk or the Ones Committee; with none the
+  // decision's sentence names the review desk (decision.ts, BLD-E053)
   const reviewer = idea.review?.reviewer?.first_name ?? null;
   const ref = idea.ref ?? idea.id;
   const reversed = page.state === "reversed" && d?.lines?.reversal ? d : null;

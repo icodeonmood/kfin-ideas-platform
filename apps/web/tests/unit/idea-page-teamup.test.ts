@@ -353,7 +353,7 @@ function sharer(
         breadcrumb: { label: "My ideas", to: "/my-ideas", current: "IDEA-2026-001481" },
         shared_label: null,
         first_arrival: false,
-        card: { lead: "Sent. Meera has your answers.", rest: "" },
+        card: { lead: "Sent. The review desk has your answers.", rest: "" },
         window,
         actions: { conversation: conversation.link },
         lane_b: { question_set: "", decision: "" },
