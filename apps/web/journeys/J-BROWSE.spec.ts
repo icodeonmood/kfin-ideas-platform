@@ -31,33 +31,59 @@ function listUrl(): string {
   return carried.list;
 }
 
-async function expectListState(page: Page): Promise<void> {
+/** The tab and sort, which the URL keeps. */
+async function expectTabAndSort(page: Page): Promise<void> {
   await expect(page.getByRole("tab", { name: /^Yours/, selected: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Date shared" })).toHaveAttribute("aria-pressed", "true");
+}
+
+/** Tab, sort and the search, which the tab's own memory keeps (DEC-110). */
+async function expectListState(page: Page): Promise<void> {
+  await expectTabAndSort(page);
   await expect(page.getByRole("searchbox", { name: /^Search/ })).toHaveValue(SEARCH);
+}
+
+async function search(page: Page): Promise<void> {
+  await page.getByRole("searchbox", { name: /^Search/ }).fill(SEARCH);
+  await page.getByRole("searchbox", { name: /^Search/ }).press("Enter");
+}
+
+/** Every address the page asks for, so a step can check the search words never appear in one (DEC-110). */
+function recordRequests(page: Page): string[] {
+  const urls: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    try {
+      urls.push(decodeURIComponent(url));
+    } catch {
+      urls.push(url);
+    }
+  });
+  return urls;
 }
 
 step(
   "J-BROWSE/1",
   "S-07",
-  "My ideas: a tab, a sort and a search are kept in the URL, so a reload shows the same list",
+  "My ideas: the tab and sort are kept in the URL and the search in the tab's memory, so a reload shows the same list (DEC-110)",
   { needs: ["S-07", "P-ROUTES"] },
   async ({ page }) => {
     const t5 = await seeded("T5");
+    const asked = recordRequests(page);
     await signInAs(page, "tanvi");
     await page.goto("/my-ideas");
     await expect(page.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
     await page.getByRole("tab", { name: /^Yours/ }).click();
     await page.getByRole("button", { name: "Date shared" }).click();
-    await page.getByRole("searchbox", { name: /^Search/ }).fill(SEARCH);
-    await page.getByRole("searchbox", { name: /^Search/ }).press("Enter");
+    await search(page);
     await expect(rowLink(page, t5.title)).toBeVisible();
-    await expect.poll(() => decodeURIComponent(new URL(page.url()).search)).toContain(SEARCH);
     carried.list = new URL(page.url()).pathname + new URL(page.url()).search;
 
     await page.reload();
     await expectListState(page);
     await expect(rowLink(page, t5.title)).toBeVisible();
+    // DEC-110: search words never leave the tab, so no address the page used carries them.
+    expect(asked.filter((url) => url.toLowerCase().includes(SEARCH.toLowerCase()))).toEqual([]);
   },
 );
 
@@ -86,6 +112,7 @@ step(
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
     await page.goto(listUrl());
+    await search(page); // a fresh tab: the search lives in the tab's memory, not the URL (DEC-110)
     await rowLink(page, t5.title).click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t5))}$`));
     await page.goBack();
@@ -178,23 +205,25 @@ step(
 step(
   "J-BROWSE/6",
   "S-07",
-  "A shared link to a filtered list reproduces the view, for what each person may see",
+  "A shared link to a filtered list reproduces the tab and sort, for what each person may see; the search stays behind (DEC-110)",
   { needs: ["S-07", "P-ROUTES"], after: ["J-BROWSE/1"] },
   async ({ page, browser }, info) => {
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
     await page.goto(listUrl());
-    await expectListState(page);
+    await expectTabAndSort(page);
+    await expect(page.getByRole("searchbox", { name: /^Search/ })).toHaveValue("");
     await expect(rowLink(page, t5.title)).toBeVisible();
 
-    // Someone else opening the same link gets the same view of their own ideas: never Tanvi's.
+    // Someone else opening the same link gets the same tab and sort over their own ideas: never Tanvi's, and never
+    // Tanvi's search words (DEC-110).
     const context = await browser.newContext();
     const other = await context.newPage();
     try {
       await signInAs(other, "naveen");
       await other.goto(listUrl());
       await expect(other.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
-      await expect(other.getByRole("searchbox", { name: /^Search/ })).toHaveValue(SEARCH);
+      await expect(other.getByRole("searchbox", { name: /^Search/ })).toHaveValue("");
       await expect(other.getByRole("button", { name: "Date shared" })).toHaveAttribute(
         "aria-pressed",
         "true",
