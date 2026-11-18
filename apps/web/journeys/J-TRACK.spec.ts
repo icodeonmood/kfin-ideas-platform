@@ -15,7 +15,7 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step, type Person } from "./lib";
+import { expectWithDesk, ideaCard, ideaUrl, seeded, signInAs, step, type Person } from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
@@ -90,7 +90,7 @@ step(
     await page.goto(ideaUrl(t5));
     await expect(page.getByRole("heading", { level: 1, name: t5.title })).toBeVisible();
     await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("With the review desk", { exact: true }).first()).toBeVisible();
+    await expect(ideaCard(page).getByText("With the review desk", { exact: true })).toBeVisible();
     await expect(
       page.getByText(new RegExp(`^The review desk will look at it by ${DAY}\\.`)).first(),
     ).toBeVisible();
@@ -270,7 +270,8 @@ step(
   async ({ page }) => {
     const t6 = await seeded("T6");
     await openInbox(page, "tanvi");
-    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN: "1 day left to answer Meera's questions"), from 1% Club.
+    // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from the review desk as a whole (DEC-111); its countdown
+    // follows the one rule (BLD-A225): days, or HH:MM under a day.
     const item = inboxItem(
       page,
       "The review desk",
@@ -474,17 +475,8 @@ step(
     await page.getByRole("button", { name: "Restore it" }).click();
     // L-SUBMIT.withdraw/3 and its lifecycle: restored, it is shared again (Checking) with the same reference, and one
     // submit.check job, run by this stack's worker (WORKER_ROLES has jobs), hands it to the review desk.
-    await expect(page.getByText(/^(?:Checking|With the review desk)$/).first()).toBeVisible();
-    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Restore it" })).toHaveCount(0);
-    await expect
-      .poll(
-        async () => {
-          await page.reload();
-          return page.getByText("With the review desk", { exact: true }).first().isVisible();
-        },
-        { timeout: 120_000, intervals: [5_000] },
-      )
-      .toBe(true);
+    await expect(page.getByText(t5.ref ?? "", { exact: true }).first()).toBeVisible();
+    await expectWithDesk(page);
   },
 );
