@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
+import { QuestionsCard } from "@/components/review/qcard";
 import { Status } from "@/components/status";
 import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { Avatar } from "@/components/ui/avatar";
@@ -21,13 +22,10 @@ import type {
   SimilarTile,
 } from "@/lib/contracts/api";
 import type { FileItem } from "@/lib/contracts/entities";
-import { clockLabel, dayLabel } from "@/lib/desk/when";
 
 import { capital, decisionSentence, type Decided } from "./decision";
 import { BackLink, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
-
-type OpenSet = NonNullable<SharerQuestionSetResponse>;
 
 const TRY_AGAIN = "We can't do that just now. Please try again in a minute.";
 // The decision's or the questions' part could not be read: Status.md draws no error line, so one neutral line
@@ -171,45 +169,6 @@ function FileTile({ f }: { f: FileItem }) {
         </a>
       ) : null}
     </li>
-  );
-}
-
-/** C-QCARD on the sharer's card: who asked, the questions and the part each answer goes to, the deadline. */
-function QuestionsCard({ set, answerTo }: { set: OpenSet; answerTo: string }) {
-  const first = set.by.first_name;
-  const open = set.questions.filter((q) => !q.answer?.sent);
-  return (
-    <div className="ip-qcard">
-      <div className="ip-q-by">
-        <Avatar initials={set.by.initials} size={32} ring="neutral" />
-        <p>
-          {first} from the review desk
-          {set.sent_at ? `, ${dayLabel(set.sent_at)}, ${clockLabel(set.sent_at)}` : ""}
-        </p>
-      </div>
-      <h2 className="ip-q-h">
-        {first} has {set.count} {set.count === 1 ? "question" : "questions"} for you
-      </h2>
-      <ol className="ip-q-list">
-        {(open.length ? open : set.questions).map((q) => (
-          <li key={q.id}>
-            <p className="ip-q-t">{q.text}</p>
-            <p className="ip-q-part">
-              Answer goes to <span className="ip-q-chip">{q.part_name}</span>
-            </p>
-          </li>
-        ))}
-      </ol>
-      <div className="ip-q-foot">
-        <p className="ip-q-due">
-          {set.deadline}. One at a time, typed or spoken.{" "}
-          <Pill variant={set.countdown.variant === "normal" ? "neutral" : set.countdown.variant}>
-            {set.countdown.label}
-          </Pill>
-        </p>
-        <ButtonLink href={answerTo}>Answer the questions</ButtonLink>
-      </div>
-    </div>
   );
 }
 
@@ -437,6 +396,10 @@ export function SharerScreen({
   const ref = idea.ref ?? idea.id;
   const reversed = page.state === "reversed" && d?.lines?.reversal ? d : null;
   const qset = page.card_from === "question_set" || idea.has_open_questions ? questions : null;
+  // Questions from the desk: lane B's C-QCARD leads the card (S-06.states). Answers sent with a question still open:
+  // "Sent." leads and the card, partly answered, sits under it for the rest (BLD-E051).
+  const asking = page.card_from === "question_set";
+  const qcard = qset ? <QuestionsCard ideaId={ref} set={qset} variant="status" /> : null;
 
   const card: { lead: string; rest: string; phone_rest?: string } | null =
     page.card ??
@@ -526,9 +489,11 @@ export function SharerScreen({
         <p className="ip-card-ref ip-desk">{ref}</p>
         <p className="ip-card-ref ip-phone">{page.reference_line ?? ref}</p>
         <div className="ip-card-body">
-          {qset ? <QuestionsCard set={qset} answerTo={`/ideas/${encodeURIComponent(ref)}/answer`} /> : null}
+          {asking ? qcard : null}
           {reversed ? <ReversalCard d={reversed} /> : null}
-          {card && !qset && !reversed ? (
+          {card && !asking && !reversed ? (
+            // S-06.layout/2: the first clause in white, the rest dimmer; each its own line of words, so the rest
+            // reads as one sentence on its own (J-TRACK/7)
             <p className="ip-card-s">
               <span className="ip-lead">{card.lead}</span>{" "}
               {card.phone_rest ? (
@@ -536,11 +501,12 @@ export function SharerScreen({
                   <span className="ip-desk">{card.rest}</span>
                   <span className="ip-phone">{card.phone_rest}</span>
                 </>
-              ) : (
-                card.rest
-              )}
+              ) : card.rest ? (
+                <span className="ip-rest">{card.rest}</span>
+              ) : null}
             </p>
           ) : null}
+          {!asking ? qcard : null}
           {partFailed && !card && !qset ? <Status kind="error" title={PART_FAILED} /> : null}
           {page.merged ? (
             // The card's sentence already says where it went and by whom (S-06.rules/4): the note and the link

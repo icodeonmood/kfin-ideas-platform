@@ -165,10 +165,13 @@ CARD_FROM = {
 def _state(idea: dict[str, Any], qset: dict[str, Any] | None, dec: Decided | None) -> str:
     status = str(idea["status"])
     if at_desk(idea):
+        # J-TRACK.steps/4-5: once answers are sent the page says so ("Answers sent"), also when a question was
+        # skipped and stays open until the deadline; the questions card then sits under the sentence for the rest
+        # (C-QCARD.states "Partly answered", BLD-E051).
+        if qset and qset["state"] in (*read.ANSWERED_SET_STATES, read.PARTLY_ANSWERED):
+            return "answers_sent"
         if status == "needs_you" or read.has_open_questions(qset):
             return "questions"
-        if qset and qset["state"] in read.ANSWERED_SET_STATES:
-            return "answers_sent"
         return "just_shared"
     if status in ("picked", "not_now", "not_picked"):
         if dec and dec.reversed and STATUS_OF_CHOICE.get(dec.choice) == status:
@@ -507,7 +510,8 @@ def sharer_view(
     words, unmasked = own_words(conn, uid, me.user_id)
     desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk")
     card = _card(conn, state, idea, qset, now)
-    open_questions = state == "questions"
+    # A set partly answered is still open: its card sits under "Sent." for the questions left (BLD-E051)
+    open_questions = state == "questions" or (state == "answers_sent" and read.has_open_questions(qset))
 
     actions: dict[str, Any] = {
         "conversation": {"label": "Open the conversation", "to": f"/ideas/{key}/conversation"},

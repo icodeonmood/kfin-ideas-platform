@@ -128,6 +128,33 @@ def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(clu
     assert nodes(v)[2][2] == f"3 questions for you since {day(NOW - dt.timedelta(days=1), NOW)}"
 
 
+def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its_card(
+    club: dict[str, Any],
+) -> None:
+    """J-TRACK.steps/4-5, S-06.states "Answers sent", BLD-E051: "Send 2 answers to Harish" with one question skipped
+    leaves the set partly answered and the idea Needs you (lane B, desk/asking.py). The page says "Sent." with the
+    review desk's date, and keeps the open set, so lane B's card sits under the sentence for the question left."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    conn.execute(
+        "UPDATE question_sets SET state = 'partly_answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,)
+    )
+    conn.execute("UPDATE ideas SET status = 'needs_you' WHERE idea_id = %s", (t6,))
+    v = view(club, t6, "tanvi")
+    page = v["page"]
+    assert page["state"] == "answers_sent" and page["state_label"] == "Answers sent"
+    assert page["card"]["lead"] == "Sent. Harish has your answers."
+    assert page["card"]["rest"].startswith("Each answer was added to its part of your idea, under What you shared.")
+    assert "card_from" not in page and v["idea"]["has_open_questions"] is True
+    assert not page["window"]["open"] and "withdraw" not in page["actions"]
+
+    # Every question answered: the same sentence, and no set left open
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    v = view(club, t6, "tanvi")
+    assert v["page"]["state"] == "answers_sent" and v["idea"]["has_open_questions"] is False
+    assert v["page"]["card"]["lead"] == "Sent. Harish has your answers."
+
+
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
     """Lane B writes `needs_you` on the idea when it sends questions (E-ENUMS.idea-status)."""
     conn, t6 = club["conn"], ref(club, "T6")
