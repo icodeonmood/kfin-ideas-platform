@@ -110,7 +110,7 @@ function props(state: "questions" | "answers_sent"): Props {
         card: asking
           ? null
           : {
-              lead: "Sent. Harish has your answers.",
+              lead: "Sent. The review desk has your answers.",
               rest: "Each answer was added to its part of your idea, under What you shared.",
             },
         ...(asking ? { card_from: "question_set" } : {}),
@@ -154,19 +154,19 @@ describe("S-06.states with lane B's C-QCARD (J-TRACK/3, /5; BLD-E051)", () => {
       '<p class="meta">Answer by Friday 20 November, 5:39 am. One at a time, typed or spoken.</p>',
     );
     expect(html).toMatch(new RegExp(`href="/ideas/${REF}/answer"[^>]*>Answer the questions</a>`));
-    expect(html).not.toContain("Sent. Harish has your answers.");
+    expect(html).not.toContain("Sent. The review desk has your answers.");
     expect(html).toMatch(/class="ip-card-body"><article class="card qcard"/);
   });
 
   it("Answers sent with a question left: Sent. leads, the partly answered card under it says Carry on answering", () => {
     const html = renderToStaticMarkup(createElement(SharerScreen, props("answers_sent")));
-    const sent = html.indexOf("Sent. Harish has your answers.");
+    const sent = html.indexOf("Sent. The review desk has your answers.");
     expect(sent).toBeGreaterThan(-1);
     expect(html.indexOf('class="card qcard"')).toBeGreaterThan(sent);
     expect(html).toMatch(/>Carry on answering<\/a>/);
     // S-06.layout/2 (J-TRACK/7): the rest of the sentence is its own span after the white first clause
     expect(html).toContain(
-      '<span class="ip-lead">Sent. Harish has your answers.</span> <span class="ip-rest">Each answer was added to its part of your idea, under What you shared.</span>',
+      '<span class="ip-lead">Sent. The review desk has your answers.</span> <span class="ip-rest">Each answer was added to its part of your idea, under What you shared.</span>',
     );
     expect(html.split('aria-label="Answered"').length - 1).toBe(2);
   });
@@ -210,18 +210,23 @@ describe("S-06.layout/2, Status.md (J-REVIEW/6, J-TRACK/7): the card sentence's 
   });
 
   it.each([
+    // DEC-111: the sharer's words, which name the review desk, never a reviewer
     [
       "picked",
       "Picked. A team is being chosen to build it.",
-      "Lavanya from the review desk picked it on Friday 13 November.",
+      "The review desk picked it on Friday 13 November.",
     ],
     [
       "not_now",
       "Not now. The review desk looks at it again on Tuesday 16 February.",
-      "Harish’s full reason is below.",
+      "The review desk’s full reason is below.",
     ],
-    ["not_picked", "Not picked.", "Harish’s full reason is below."],
-    ["answers_sent", "Sent. Harish has your answers.", "Each answer was added to its part of your idea."],
+    ["not_picked", "Not picked.", "The review desk’s full reason is below."],
+    [
+      "answers_sent",
+      "Sent. The review desk has your answers.",
+      "Each answer was added to its part of your idea.",
+    ],
     ["withdrawn", "Withdrawn. It’s back in your drafts.", "Nobody else can see it now. No reason given."],
   ])("%s: the lead, then the rest in its own element on its own line", (state, lead, rest) => {
     const html = renderToStaticMarkup(createElement(SharerScreen, withCard(state, { lead, rest })));
@@ -242,6 +247,49 @@ describe("S-06.layout/2, Status.md (J-REVIEW/6, J-TRACK/7): the card sentence's 
     expect(html).not.toContain('class="ip-rest"');
     expect(html).toContain(
       '<span class="ip-desk">We’ll tell you on Teams and by email when anything changes.</span>',
+    );
+  });
+});
+
+describe("DEC-111 (J-TRACK/7): the decision's sentence names a reviewer only when the worker sends one", () => {
+  const LAVANYA = { ...HARISH, id: "p-l", name: "Lavanya Iyer", first_name: "Lavanya", initials: "LI" };
+  /** Picked, its card composed from lane B's decision, as lane B sends it to a sharer (no reviewer named). */
+  function picked(reviewer: typeof LAVANYA | null): Props {
+    const p = withCard("picked", { lead: "", rest: "" });
+    const view = p.view as unknown as { idea: Record<string, unknown>; page: Record<string, unknown> };
+    view.page.card = null;
+    view.page.card_from = "decision";
+    view.idea.status = "picked";
+    view.idea.review = { decide_by: "2026-11-20T12:30:00Z", ...(reviewer ? { reviewer } : {}) };
+    const decision = {
+      decision: {
+        choice: "pick",
+        merged_into: null,
+        reason: "A reason the sharer reads, word for word.",
+        reason_heading: "Why it was picked",
+        by_line: "by the review desk, Friday 13 November",
+      },
+      decided_at: "2026-11-13T05:30:00Z",
+      return_at: null,
+      joined_into: null,
+      reversal: null,
+      lines: { committee_line: null, reversal: null },
+    };
+    return { ...p, decision } as unknown as Props;
+  }
+
+  it("a sharer outside the desk and the committee: the review desk picked it, and no reviewer's name or initials", () => {
+    const html = renderToStaticMarkup(createElement(SharerScreen, picked(null)));
+    expect(html).toContain(
+      '<span class="ip-lead">Picked. A team is being chosen to build it.</span> <span class="ip-rest">The review desk picked it on Friday 13 November.</span>',
+    );
+    expect(html).not.toMatch(/Lavanya|Iyer|>LI</);
+  });
+
+  it("a sharer on the review desk or the Ones Committee still reads who picked it", () => {
+    const html = renderToStaticMarkup(createElement(SharerScreen, picked(LAVANYA)));
+    expect(html).toContain(
+      '<span class="ip-rest">Lavanya from the review desk picked it on Friday 13 November.</span>',
     );
   });
 });

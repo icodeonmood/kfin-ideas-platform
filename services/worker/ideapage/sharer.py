@@ -38,6 +38,7 @@ from ideapage.words import (
     short_date,
 )
 from onepc.context import open_text
+from onepc.words import REVIEW_DESK, REVIEW_DESK_START
 
 STATE_LABEL = {
     "just_shared": "Just shared",
@@ -242,9 +243,12 @@ def _card(
     idea: dict[str, Any],
     qset: dict[str, Any] | None,
     now: dt.datetime,
+    *,
+    names_desk: bool,
 ) -> dict[str, str] | None:
     """The sentence that says where it stands and what happens next: its first clause in white, the rest dimmer
-    (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint."""
+    (S-06.layout/2). None for a state in CARD_FROM: the screen composes it from lane B's endpoint. `names_desk`
+    (DEC-111): the reviewer's first name for a sharer on the review desk or the Ones Committee only."""
     if state in CARD_FROM:
         return None
     if state == "just_shared":
@@ -257,8 +261,10 @@ def _card(
             "phone_rest": "We’ll tell you on Teams and by email.",  # PhoneStatus.md
         }
     if state == "answers_sent":
-        asker = read.person_by_user(conn, qset["by_user_id"]) if qset else None
-        name = asker["first_name"] if asker else "The review desk"
+        # DEC-111: "Sent. Harish has your answers." only for the review desk and the Ones Committee; anyone else
+        # reads "Sent. The review desk has your answers." (changed by DEC-111, HR sign-off; BLD-E053)
+        asker = read.person_by_user(conn, qset["by_user_id"]) if qset and names_desk else None
+        name = asker["first_name"] if asker else REVIEW_DESK_START
         by = (
             f"The review desk decides by {day(idea['decide_by'], now)}, and you"
             if idea.get("decide_by")
@@ -306,15 +312,20 @@ def _card(
     return None
 
 
-def _answers_under(raw: dict[str, list[dict[str, Any]]], part: str, now: dt.datetime) -> list[dict[str, Any]]:
+def _answers_under(
+    raw: dict[str, list[dict[str, Any]]], part: str, now: dt.datetime, *, names_desk: bool
+) -> list[dict[str, Any]]:
     """Sent answers under their part (L-QUESTIONS.answer/5), from lane B's reader: the answer and the line
-    "From your answer to Meera, Monday 16 November". Questions not answered are the questions card's, not here."""
+    "From your answer to Meera, Monday 16 November". Questions not answered are the questions card's, not here.
+    DEC-111: lane B's `asked_by` (a first name) is read only for a sharer on the review desk or the Ones Committee;
+    anyone else reads "From your answer to the review desk, …" (changed by DEC-111, HR sign-off; BLD-E053). Only
+    the line is sent, never `asked_by` itself."""
     out = []
     for a in raw.get(part, []):
         if not a.get("answer"):
             continue
         at = dt.datetime.fromisoformat(str(a["answered_at"])) if a.get("answered_at") else None
-        who = a.get("asked_by") or "the review desk"
+        who = (a.get("asked_by") if names_desk else None) or REVIEW_DESK
         out.append(
             {
                 "id": str(a.get("question_id") or ""),
@@ -351,15 +362,15 @@ def _merged(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, Any
 
 
 def _shared_rows(
-    conn: Conn, idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime
+    conn: Conn, idea: dict[str, Any], w: dict[str, Any] | None, now: dt.datetime, *, names_desk: bool
 ) -> dict[str, Any]:
     """'What you shared' (S-06.layout/5–7): the short summary and sorting as everyone sees them, the hidden chips,
-    the answers under their parts, files, and the fix."""
+    the answers under their parts, files, and the fix. `names_desk` as for `_card` (DEC-111)."""
     uid = str(idea["id"])
     answers = adapters.answers_by_part(conn, uid)
 
     def under(part: str) -> list[dict[str, Any]]:
-        return _answers_under(answers, part, now)
+        return _answers_under(answers, part, now, names_desk=names_desk)
 
     worth = read.worth(conn, uid)
     figures: dict[str, Any] = {}
@@ -377,8 +388,10 @@ def _shared_rows(
             if v
         }
         if side == "reviewer":
-            rev = read.person_by_user(conn, w_.get("by_user_id"))
-            figures[side]["by_line"] = f"Revised by {rev['first_name'] if rev else 'the review desk'}"
+            # DEC-111: "Revised by Harish" for the review desk and the Ones Committee only; anyone else reads
+            # "Revised by the review desk" (changed by DEC-111, HR sign-off; BLD-E053)
+            rev = read.person_by_user(conn, w_.get("by_user_id")) if names_desk else None
+            figures[side]["by_line"] = f"Revised by {rev['first_name'] if rev else REVIEW_DESK}"
             if w_.get("note"):
                 figures[side]["note"] = w_["note"]
 
@@ -497,7 +510,10 @@ def sharer_view(
     qset = read.question_set(conn, uid)
     dec = decided(read.decision(conn, uid))
     state = _state(idea, qset, dec)
-    reviewer = read.person_by_user(conn, qset["by_user_id"]) if qset else None
+    # DEC-111: the reviewer is named, with their avatar, only to a sharer on the review desk or the Ones Committee;
+    # for anyone else nothing about them is read or sent, and the sentences say "the review desk" (BLD-E053).
+    names_desk = me.sees_desk_names
+    reviewer = read.person_by_user(conn, qset["by_user_id"]) if qset and names_desk else None
     carried = read.live_merge_into(conn, uid) if idea["status"] == "not_picked" else None
     base = public_idea(
         conn,
@@ -507,12 +523,12 @@ def sharer_view(
         dec=dec,
         qset=qset,
         carried_into=carried["lead_ref"] if carried else None,
-        reviewer_first=reviewer["first_name"] if reviewer else None,
+        reviewer_first=reviewer["first_name"] if reviewer else REVIEW_DESK_START if qset else None,
     )
     w = edit_window(idea, qset, now)
     words, unmasked = own_words(conn, uid, me.user_id)
-    desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk")
-    card = _card(conn, state, idea, qset, now)
+    desk = read.person_by_user(conn, idea.get("reviewer_id"), "from the review desk") if names_desk else None
+    card = _card(conn, state, idea, qset, now, names_desk=names_desk)
     # A set partly answered is still open: its card sits under "Sent." for the questions left (BLD-E051)
     open_questions = state == "questions" or (state == "answers_sent" and read.has_open_questions(qset))
 
@@ -677,7 +693,7 @@ def sharer_view(
                 "question_set": f"/api/ideas/{key}/question-set",
                 "decision": f"/api/ideas/{key}/decision",
             },
-            "shared": _shared_rows(conn, idea, w, now),
+            "shared": _shared_rows(conn, idea, w, now, names_desk=names_desk),
             "conversation": conversation,
             "similar": {
                 "heading": "Colleagues on something similar",
