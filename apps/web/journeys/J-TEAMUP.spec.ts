@@ -40,6 +40,10 @@ async function r1ForBhavesh(page: Page): Promise<{ title: string; ref: string; u
   return { title: r1.title, ref: r1.ref ?? "", url: ideaUrl(r1) };
 }
 
+/** A crew card's reason for being shown (L-CREW/2; deck.py builds every one of these shapes). */
+const CREW_REASON =
+  /(?: as your idea from .+|, like your idea from .+|^Close to your idea from .+|^They need someone in .+|^Your area, .+|^Same office as you, .+)$/;
+
 step(
   "J-TEAMUP/1",
   "S-H2",
@@ -52,6 +56,9 @@ step(
     await expect(page.getByText("Ideas close to yours. Team up, or pass.")).toBeVisible();
     await expect(page.getByText(/^\d+ ideas? close to yours$/)).toBeVisible();
     await expect(page.getByText("The problem, in their words").first()).toBeVisible();
+    // Row 1's "why it is shown": each card's reason line, in one of L-CREW's shapes (services/worker/crew/deck.py:
+    // close_reason, touches_reason, area_reason, office_reason; Crew.md "Same office as you, Hyderabad").
+    await expect(page.getByText(CREW_REASON).first()).toBeVisible();
     // No "They're looking for" check here: the line is the sharer's own "Who would help" answer, else their picks, and
     // it is hidden when neither was given (BLD-F031; AI drafting is off at launch, DEC-105). Lane F's tests own it.
     const total = (await page.getByText(/^Idea 1 of \d+$/).innerText()).replace(/^Idea 1 of /, "");
