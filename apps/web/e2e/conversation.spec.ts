@@ -449,3 +449,35 @@ test("L-TEAMUP.rules/9 at 375px: a Say hello link (#say-hello) lands with the cu
   await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
   await expect(box).not.toBeFocused();
 });
+
+test("L-TEAMUP.rules/9 with S-06B.rules/2 at 375px: words carried over from the edit page and a #say-hello arrival: the words wait in the box with the cursor at their end, and nothing is sent (BLD-F069, BLD-C165)", async ({
+  page,
+}) => {
+  const words = "How often: About 50 calls a day at one branch";
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() !== "GET" && r.url().includes("/conversation")) writes.push(r.url());
+  });
+  // The edit page kept the words in this tab (S-06B "Open the conversation"); the arrival is one navigation.
+  await page.addInitScript(
+    ([key, w]) => {
+      if (window.location.pathname === "/kit/conversation") window.sessionStorage.setItem(key, w);
+    },
+    [`1pc.conversation.prefill.${IDEA}`, words] as const,
+  );
+  await page.goto("/kit/conversation#say-hello");
+  const box = page.getByRole("textbox", { name: "Message the crew" });
+  await expect(box).toHaveValue(words);
+  await expect(box).toBeFocused();
+  expect(await box.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([
+    words.length,
+    words.length,
+  ]);
+  await expect(page).toHaveURL(/\/kit\/conversation$/);
+  expect(
+    await page.evaluate((key) => window.sessionStorage.getItem(key), `1pc.conversation.prefill.${IDEA}`),
+  ).toBeNull();
+  await page.keyboard.type(" and more");
+  await expect(box).toHaveValue(`${words} and more`);
+  expect(writes).toEqual([]);
+});

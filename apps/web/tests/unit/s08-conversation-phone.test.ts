@@ -2,8 +2,9 @@
 /**
  * S-08 polish (lane F): the phone bar's title (PhoneMessages.md), the box pinned on a phone (S-08.rules/4, BLD-F068:
  * the pin's measurements, the grip-free box that grows with its words) and "Say hello" landing with the cursor in the
- * box (L-TEAMUP.rules/9, BLD-F069: `#say-hello` focuses the box only when the person can write here, and the hint
- * comes off the address either way). Synthetic people only: the pack's fictional cast.
+ * box (L-TEAMUP.rules/9, BLD-F069: `#say-hello` focuses the box only when the person can write here, at the end of any
+ * words carried over from the edit page, and the hint comes off the address either way; nothing is sent). Synthetic
+ * people only: the pack's fictional cast.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -192,6 +193,37 @@ describe("Say hello lands in the box (L-TEAMUP.rules/9, BLD-F069)", () => {
     await arrive(`${PAGE}#entry-e-approved`);
     expect(document.activeElement).toBe(before);
     expect(window.location.hash).toBe("#entry-e-approved");
+  });
+
+  it("with words carried over from the edit page (S-06B.rules/2, BLD-C165): the words wait in the box, the cursor is at their end, and nothing is sent", async () => {
+    const key = `1pc.conversation.prefill.${IDEA}`;
+    const words = "How often: About 50 calls a day at one branch";
+    window.sessionStorage.setItem(key, words);
+    try {
+      await arrive(`${PAGE}${SAY_HELLO}`);
+      const el = box()!;
+      expect(el.value).toBe(words);
+      expect(document.activeElement).toBe(el);
+      expect([el.selectionStart, el.selectionEnd]).toEqual([words.length, words.length]);
+      expect(fetch).not.toHaveBeenCalled(); // neither arrival sends anything
+      expect(window.sessionStorage.getItem(key)).toBeNull();
+      expect(window.location.hash).toBe("");
+    } finally {
+      window.sessionStorage.clear();
+    }
+  });
+
+  it("carried words without the hint: they wait in the box and focus stays where it was", async () => {
+    const key = `1pc.conversation.prefill.${IDEA}`;
+    window.sessionStorage.setItem(key, "How often: About 50 calls a day at one branch");
+    try {
+      await arrive(PAGE);
+      expect(box()!.value).toBe("How often: About 50 calls a day at one branch");
+      expect(document.activeElement).toBe(before);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      window.sessionStorage.clear();
+    }
   });
 
   it("writing paused by the kill switch (BLD-F058): focus stays where it was; the hint still comes off", async () => {
