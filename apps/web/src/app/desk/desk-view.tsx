@@ -119,7 +119,17 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   const now = useMinute();
   const router = useRouter();
   const body = useRef<HTMLTableSectionElement>(null);
+  // The read in flight, or null once it has settled
   const loading = useRef<AbortController | null>(null);
+  // False once the desk has gone (a row was opened): a read that settles later changes neither the page nor the address
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      loading.current?.abort();
+    };
+  }, []);
   // The tab, sort and search of the list on screen, kept with every list that lands
   const shown = useRef<DeskList>({ tab: initial.tab, sort: initial.sort, q: initialQuery });
   useFlipList(body, `${data.tab}:${data.sort}:${data.items.map((r) => r.idea_id).join(",")}`);
@@ -140,15 +150,17 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
       const res = await fetch(`/api/desk?${params.toString()}`, { signal: ctl.signal, cache: "no-store" });
       if (res.ok) {
         const next = (await res.json()) as DeskResponse;
-        if (loading.current !== ctl) return "superseded";
+        if (loading.current !== ctl || !live.current) return "superseded";
+        loading.current = null;
         shown.current = { tab: next.tab, sort: next.sort, q };
         setData(next);
         return "shown";
       }
     } catch {
-      // a newer request took over (it aborted this one), or the network dropped
+      // a newer request took over (it aborted this one), the desk has gone, or the network dropped
     }
-    if (loading.current !== ctl) return "superseded";
+    if (loading.current !== ctl || !live.current) return "superseded";
+    loading.current = null;
     // Not read: the table keeps what it had, so the tabs, the sort, the search and the address go back to that list
     // rather than name a choice over rows it does not hold (S-R1.rules/4). The words in the search box stay.
     const was = shown.current;
@@ -213,7 +225,8 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   // A reviewer coming back to the tab sees clocks and tabs as they are now (L-REVIEW.queue).
   useEffect(() => {
     const again = () => {
-      if (document.visibilityState === "visible") void load(view.tab, view.sort, query);
+      // a read already on its way is as fresh, and replacing it would drop the row the arrival read restores
+      if (document.visibilityState === "visible" && !loading.current) void load(view.tab, view.sort, query);
     };
     document.addEventListener("visibilitychange", again);
     return () => document.removeEventListener("visibilitychange", again);
