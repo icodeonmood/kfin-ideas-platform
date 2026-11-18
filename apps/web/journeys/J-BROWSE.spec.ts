@@ -8,7 +8,7 @@
  * Inbox (its answer screen is opened, nothing sent) and A1 from the Wall: being built, one of only two in Kindling's
  * Being built card (up to three each, S-WALL.kindling), so it is always drawn, never behind "Show 5 more".
  */
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Response } from "@playwright/test";
 
 import { carriedFor, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
@@ -61,20 +61,31 @@ async function search(page: Page): Promise<void> {
  * still move under the pointer (the FLIP reorder), so a row is clicked only once this returns.
  */
 async function deskRead(page: Page, click: () => Promise<void>): Promise<void> {
-  const [res] = await Promise.all([
-    page.waitForResponse((r) => {
-      const asked = new URL(r.url());
-      const shown = new URL(page.url());
-      return (
-        asked.pathname === "/api/desk" &&
-        r.ok() &&
-        asked.searchParams.get("tab") === shown.searchParams.get("tab") &&
-        asked.searchParams.get("sort") === shown.searchParams.get("sort")
-      );
-    }),
-    click(),
-  ]);
-  const order = ((await res.json()) as { items: { idea_id: string }[] }).items.map((i) => i.idea_id);
+  // A click before the page has hydrated asks for nothing, so the click is tried again until a read answers it; a
+  // tab or sort clicked again only reads the same list again (components/ui/tabs.tsx, sorts.tsx).
+  let res: Response | null = null;
+  await expect(async () => {
+    [res] = await Promise.all([
+      page.waitForResponse(
+        (r) => {
+          const asked = new URL(r.url());
+          const shown = new URL(page.url());
+          return (
+            asked.pathname === "/api/desk" &&
+            r.ok() &&
+            asked.searchParams.get("tab") === shown.searchParams.get("tab") &&
+            asked.searchParams.get("sort") === shown.searchParams.get("sort")
+          );
+        },
+        { timeout: 5_000 },
+      ),
+      click(),
+    ]);
+  }).toPass({ timeout: 20_000 });
+  if (!res) throw new Error("the desk's list was not read");
+  const order = ((await (res as Response).json()) as { items: { idea_id: string }[] }).items.map(
+    (i) => i.idea_id,
+  );
   await expect
     .poll(() =>
       page
