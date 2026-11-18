@@ -13,7 +13,7 @@ from core.db import Conn
 from ideapage import read
 from ideapage.track import Decided, stages
 from ideapage.words import STAGE_LABEL, count, nodes_json, pill
-from teamup.store import is_closed
+from teamup.store import crew_role, is_closed
 
 MY_IDEAS_FILTER_LABEL = {
     "needs_you": "Needs you",
@@ -163,7 +163,7 @@ def similar_tiles(
     match line and the crew's faces, with Preview and Team up. Summary only, never raw words (non-negotiable 7).
     On an idea whose crew the viewer is already in, the action row is C-SIMGRID.tile's "On the crew" in place of
     Team up (`done_line`), so nobody is offered a crew they are on (J-SIMILAR/7, J-REVIEW/M3; BLD-E056). Team up shows
-    only where lane F would take the ask (`_team_up_taken`; J-SHARE/12, BLD-E063)."""
+    only where lane F would take the ask (`_team_up_refusal`; J-SHARE/12, BLD-E063)."""
     out = []
     for s in read.similar(conn, str(idea["id"])):
         if skip and str(s["id"]) in skip:
@@ -174,7 +174,7 @@ def similar_tiles(
         state = "on_crew" if on_crew else "request_sent" if mine and mine["state"] == "sent" else "none"
         lead = read.person_by_code(conn, s["contributor_code"])
         actions = [{"label": "Preview", "op": "preview", "accessible_name": f"Preview {s['title']}"}]
-        if _team_up_taken(s, on_crew=on_crew):
+        if _team_up_refusal(conn, s, viewer.code) is None:
             actions.append(
                 {"label": "Team up", "op": "team_up", "accessible_name": f"Team up on {s['title']}"}
             )
@@ -206,13 +206,18 @@ def similar_tiles(
     return out
 
 
-def _team_up_taken(other: dict[str, Any], *, on_crew: bool) -> bool:
-    """Whether lane F's `POST /ideas/:id/team-up` would take this viewer's ask on `other` (L-TEAMUP.rules/1), from
-    the checks `teamup.requests.send` refuses on that a tile can know: `idea_closed` (`teamup.store.is_closed`: not
-    now, not picked, withdrawn or merged away) and `already_on_crew`. A request of theirs already waiting keeps Team
-    up: lane F's sheet opens on "Waiting for …" with Withdraw (V-ACC.teamup/4), which is how they withdraw it here.
-    TODO(BLD-E063): swap for the team-up eligibility helper when lane C's walk-b lands."""
-    return not on_crew and not is_closed(str(other["status"]))
+def _team_up_refusal(conn: Conn, idea: dict[str, Any], code: str | None) -> str | None:
+    """L-TEAMUP.rules/1: why `POST /ideas/:id/team-up` would refuse this person's ask on `idea`, else None. The checks
+    `teamup.requests.send` makes, in its order, from lane F's own pieces: `idea_closed` (`teamup.store.is_closed`:
+    not now, not picked, withdrawn or merged away), then `already_on_crew`. A request of theirs already waiting is
+    rules/4, not this: the tile keeps Team up, and lane F's sheet opens on "Waiting for …" with Withdraw
+    (V-ACC.teamup/4). Same signature and return as lane C's `teamup.store.team_up_refusal` (c/walk-b-1).
+    TODO(BLD-E063): swap for the team-up eligibility helper when lane C's walk-b lands (a one-line import)."""
+    if is_closed(str(idea["status"])):
+        return "idea_closed"
+    if code is not None and crew_role(conn, idea["id"], code) is not None:
+        return "already_on_crew"
+    return None
 
 
 def safe_back(back: str | None, allowed: tuple[str, ...]) -> str | None:
