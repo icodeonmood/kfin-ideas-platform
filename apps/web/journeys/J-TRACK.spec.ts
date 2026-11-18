@@ -454,7 +454,8 @@ step(
   "S-06",
   "Withdraw while the window is open: back in your drafts, nobody else sees it; Restore it shares it again (Checking, then with the review desk)",
   { needs: ["S-06", "L-SUBMIT"], changes: ["T5"] },
-  async ({ page }) => {
+  async ({ page }, info) => {
+    info.setTimeout(150_000); // the wait for the check job below can take up to 120 s of it
     const t5 = await seeded("T5");
     await signInAs(page, "tanvi");
     await page.goto(ideaUrl(t5));
