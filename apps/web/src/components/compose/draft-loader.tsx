@@ -1,8 +1,10 @@
 "use client";
 /**
  * C-DRAFT-LOADER: one bar for six independent parts (BLD-C120). The fill follows `lib/compose/loader.ts`; the strip
- * folds away a moment after "All 6 parts are in". `role="progressbar"`, its value told at most once a second, with
- * the visible line as its text (C-DRAFT-LOADER.a11y). Reduced motion: no sweep, no bead pulse (CSS).
+ * folds away a moment after "All 6 parts are in". A run that ends with a part still waiting for words is not all in:
+ * no fill to 100%, no pop and no line of its own, the strip just folds (BLD-C157). `role="progressbar"`, its value
+ * told at most once a second, with the visible line as its text (C-DRAFT-LOADER.a11y). Reduced motion: no sweep, no
+ * bead pulse (CSS).
  */
 import { useEffect, useState } from "react";
 
@@ -25,24 +27,29 @@ export function useLoaderClock(run: LoaderRun | null, done: boolean): number {
 export function DraftLoader({
   run,
   done,
+  ended = done,
   phone = false,
   now: fixedNow,
 }: {
   run: LoaderRun | null;
-  /** Every part is in (the `done` event): the bar fills and the strip folds. */
+  /** All six parts are in and nothing is building (`allIn`): the bar fills, the bead pops, the line reads "All 6
+   * parts are in", and the strip folds after a short hold (maths/7). */
   done: boolean;
+  /** The run has finished. Without all six in, the strip folds away at once and quietly (BLD-C157). */
+  ended?: boolean;
   phone?: boolean;
   /** A clock from outside (the phone peek shares its own), or a fixed one in tests. */
   now?: number;
 }) {
-  const ticking = useLoaderClock(fixedNow === undefined ? run : null, done);
+  const over = done || ended;
+  const ticking = useLoaderClock(fixedNow === undefined ? run : null, over);
   const [folded, setFolded] = useState<LoaderRun | null>(null);
 
   useEffect(() => {
-    if (!done || !run) return;
-    const t = setTimeout(() => setFolded(run), HOLD_MS);
+    if (!over || !run) return;
+    const t = setTimeout(() => setFolded(run), done ? HOLD_MS : 0);
     return () => clearTimeout(t);
-  }, [done, run]);
+  }, [over, done, run]);
 
   if (!run) return null;
   const at = fixedNow ?? ticking;
@@ -51,7 +58,8 @@ export function DraftLoader({
   const line = done ? LOADER_ALL_IN : loaderLine(run, at);
   // Told to screen readers at most once a second: the value at the start of this second.
   const told = done ? 100 : Math.round(barValue(run, Math.floor(at / 1000) * 1000) * 100);
-  const isFolded = folded === run;
+  // Ended without all six in: it folds at once and stays folded, so nothing fills, pops or says it is all in.
+  const isFolded = folded === run || (over && !done);
 
   return (
     <div

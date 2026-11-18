@@ -21,7 +21,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
-import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
+import {
+  DraftPanel,
+  PANEL_COPY,
+  readinessOf,
+  type PanelHandle,
+  type Readiness,
+} from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
@@ -706,17 +712,13 @@ export function Compose({
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
   const minChars = draft?.min_chars ?? MIN_CHARS;
   const sendingDetail = pending.length > 0;
-  const readiness: Readiness = !chars
-    ? "more"
-    : chars < minChars
-      ? "more"
-      : sendingDetail
-        ? "finishing"
-        : live.running
-          ? "working"
-          : live.ready || draft?.ready
-            ? "ready"
-            : "more"; // nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1)
+  const readiness: Readiness = readinessOf({
+    chars,
+    minChars,
+    sending: sendingDetail,
+    running: live.running,
+    ready: live.ready || Boolean(draft?.ready),
+  });
   const checkHref = draftId ? `/share/${draftId}/check` : null;
   const hiddenActions = draftId
     ? {
