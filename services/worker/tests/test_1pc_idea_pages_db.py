@@ -914,7 +914,8 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
 ) -> None:
     """L-SUBMIT.withdraw/3, L-SUBMIT.send/3–4 (J-RECOVER's restore, the production path): with lane C's hook
     installed as the worker app installs it, a restore leaves the idea `checking` with exactly one `submit.check`
-    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock."""
+    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock, from the
+    restore's own time: `restored_at` and the review clock's start are the same instant (BLD-C154)."""
     from ideapage import withdraw as withdraw_module
     from submit import adapters
 
@@ -924,7 +925,7 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
     conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
     restore_rows.append((t5, uid))
     withdraw(conn, t5, club["p"]["tanvi"], None, now=NOW)
-    # No `now`: the hook's clock is the real one, as in production.
+    # No `now`: restore reads the real clock, as in production, and hands that same time to lane C's hook.
     back = restore(conn, t5, club["p"]["tanvi"])
     row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
     assert row["status"] == "checking" and back["idea"]["id"] == t5
@@ -934,16 +935,19 @@ def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with
     ).fetchall()
     assert jobs == [{"state": "queued", "dedupe_key": f"submit.check:{uid}"}]
     p = read.promises()
-    hook_now = row["edit_closes_at"] - dt.timedelta(days=int(p["edit_window"]["max_days"]))
-    assert abs(hook_now - row["restored_at"]) < dt.timedelta(seconds=30)
-    assert row["decide_by"] == clock.decide_by(hook_now, p)  # first sharing's reading, not restore's own
+    restored = row["restored_at"]
+    assert row["decide_by"] == clock.decide_by(
+        restored, p
+    )  # first sharing's reading, from the restore's time
+    assert row["edit_closes_at"] == clock.edit_closes(restored, p)
     assert row["decide_by"].astimezone(IST).time() == dt.time(18, 0)
     running = conn.execute(
-        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
-        "AND state = 'running'",
+        "SELECT started_at, due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s "
+        "AND stage = 'decide_by' AND state = 'running'",
         (t5,),
     ).fetchall()
-    assert [r["due_at"] for r in running] == [row["decide_by"]]
+    # One review clock, started at the very instant of the restore and due at the idea's decide-by.
+    assert [(r["started_at"], r["due_at"]) for r in running] == [(restored, row["decide_by"])]
     assert nodes(back)[1] == ("checked_matched", "now", "Checking…")
     history = [
         r["to_status"]
