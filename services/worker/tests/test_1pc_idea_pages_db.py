@@ -594,20 +594,20 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
 
 
 def _merge_lines(club: dict[str, Any], key: str, who: str) -> list[str]:
-    """The merge lines lane F's S-08 shows this person on this idea (`convo.reads.conversation`)."""
+    """The merge lines lane F's S-08 shows this person on this idea (`convo.reads.conversation`), by event code, not
+    by their words, so a reworded line in lane F can't make this precondition fail for the wrong reason."""
     from convo.reads import conversation
+    from ideapage.read import MERGE_EVENTS
 
     out = conversation(club["conn"], ref(club, key), club["p"][who], at=NOW)
-    return [
-        str(e["text"]) for e in out["entries"] if e["type"] == "event" and "joined it with" in str(e["text"])
-    ]
+    return [str(e["code"]) for e in out["entries"] if e["type"] == "event" and e.get("code") in MERGE_EVENTS]
 
 
 def test_s06_layout_8_l_merge_effects_6_j_similar_7_merged_pages_never_say_no_messages_yet(
     club: dict[str, Any],
 ) -> None:
     """S-06.layout/8, L-MERGE.effects/6 (BLD-E065; J-SIMILAR/7): T11 was merged into R2 by the review desk. Lane F's
-    S-08 shows the merge line on both conversations ("… joined it with …"), so neither S-06 card says "No messages
+    S-08 shows the merge line on both conversations, so neither S-06 card says "No messages
     yet": the line is counted, as the decision is (BLD-E058), and no message or new line is added for it. Without
     the merge lines, the empty line is back, so it is those lines that count."""
     conn, m = club["conn"], club["m"]
