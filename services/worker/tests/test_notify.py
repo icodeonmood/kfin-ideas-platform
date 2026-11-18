@@ -530,7 +530,8 @@ def test_L_INBOX_kinds_items_that_name_no_set_choice_or_request_read_them_from_t
     assert mine["questions"]["line"] == "asked you 2 questions" and mine["questions"]["body"][
         "set_id"
     ] == str(s)
-    assert mine["answer_reminder"]["line"] == "5 hours left to answer Meera’s questions"
+    # DEC-111 (BLD-A222): the questions are the review desk's, never the asker's by name
+    assert mine["answer_reminder"]["line"] == "5 hours left to answer the review desk’s questions"
     assert mine["answer_reminder"]["body"]["sender"] == "1% Club"
     assert mine["decision"]["line"] == "picked your idea"
     request = inbox.items(db, ravi, now=WORKDAY_NOON)["items"][0]
