@@ -16,6 +16,7 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from onepc.context import open_text, seal_text
+from onepc.words import REVIEW_DESK, REVIEW_DESK_START
 
 
 class Refused(Exception):
@@ -86,7 +87,10 @@ def audit(conn: Conn, user_id: str, action: str, entity: str, after: dict[str, A
 @dataclass(frozen=True)
 class Person:
     """E-ENTITIES PersonRef. `role_label` is "from the review desk" or "from the Ones Committee" for staff speaking
-    as staff; `label` is how the timeline names them ("Meera from the review desk", "Ravi Nair", "You")."""
+    as staff; `label` is how the timeline names them ("Meera from the review desk", "Ravi Nair", "You").
+
+    `desk` marks the review desk itself (`DESK_PERSON`, DEC-111): what a reader outside the review desk and the Ones
+    Committee sees in place of the person at the desk. It has no id, no initials and no avatar."""
 
     id: str | None
     name: str
@@ -95,6 +99,7 @@ class Person:
     city: str | None = None
     area: str | None = None
     role_label: str | None = None
+    desk: bool = False
 
     def ref(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -113,14 +118,23 @@ class Person:
 
     @property
     def label(self) -> str:
+        if self.desk:
+            return REVIEW_DESK_START  # DEC-111: "The review desk", at the start of a line or as a byline
         if self.role_label == "from the review desk":
             return f"{self.first_name} {self.role_label}"  # "Meera from the review desk" (Messages.md)
         if self.role_label:
             return f"{self.name} {self.role_label}"  # "Rohan Mehta from the Ones Committee"
         return self.name
 
+    @property
+    def mid(self) -> str:
+        """The first name inside a sentence: "Reply to Kavya", "Answer the review desk’s 3 questions"."""
+        return REVIEW_DESK if self.desk else self.first_name
+
 
 UNKNOWN = Person(None, "A colleague", "A colleague", "1%")  # erased from contributor_map: anonymised
+# DEC-111: the person at the review desk as a sharer, the crew, the build team or a mentioned person reads them.
+DESK_PERSON = Person(None, REVIEW_DESK_START, REVIEW_DESK_START, "", desk=True)
 
 
 class People:

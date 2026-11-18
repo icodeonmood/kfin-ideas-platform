@@ -18,6 +18,9 @@
  *   never sent by themselves (BLD-C165).
  * - "Say hello" arrives with `#say-hello`: the cursor lands in the box when the person can write, after any words
  *   carried over (BLD-F069). Neither sends anything.
+ * - The review desk (DEC-111): a reader outside the review desk and the Ones Committee gets the desk itself in place of
+ *   the person at it ("The review desk", no id, no initials); the screen draws no face for it (`Face`) and the mention
+ *   list never offers it (it has no id) (BLD-F082, BLD-F083).
  * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the pill and a
  *   round Send; the attach slot waits for BLD-F064)
  *   and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
@@ -47,7 +50,8 @@ import { Empty } from "@/components/ui/empty";
 import { FieldMsg } from "@/components/ui/field";
 import { FileList, FileRow, fileKind } from "@/components/ui/file";
 import { IDEA_STATUS, Pill } from "@/components/ui/pill";
-import type { ConversationEntryView, ConversationView, FileItem } from "@/lib/contracts";
+import type { ConversationEntryView, ConversationView, FileItem, PersonRef } from "@/lib/contracts";
+import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
 import {
   S08_COPY as C,
@@ -59,6 +63,7 @@ import {
   mentionHint,
   mentionsIn,
   putMention,
+  sideNote,
   withMentions,
   type MentionQuery,
 } from "./compose";
@@ -107,6 +112,17 @@ function SendIcon() {
       <path d="M12 19V5M6 11l6-6 6 6" />
     </svg>
   ); // prettier-ignore
+}
+
+/** A person's face, or none for the review desk itself, which comes with no initials (DEC-111). */
+function Face({ person, size, ring }: { person: PersonRef; size: 28 | 36; ring?: "neutral" }) {
+  return person.initials ? <Avatar initials={person.initials} size={size} ring={ring} /> : null;
+}
+
+/** "your", "the review desk’s", "Ravi Nair’s": whose message it is, inside a sentence. */
+function whose(label: string): string {
+  if (label === "You") return "your";
+  return `${label === REVIEW_DESK_START ? REVIEW_DESK : label}’s`;
 }
 
 /** Words with one part of them linked: an event's reference ("It’s now part of IDEA-…"), or "Answer the questions"
@@ -424,7 +440,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
         tabIndex={-1}
       >
         <p className="cv-who">
-          {e.you ? null : <Avatar initials={e.from.initials} size={28} />}
+          {e.you ? null : <Face person={e.from} size={28} />}
           <b>{e.from_label}</b>
           <span>{e.at_label}</span>
         </p>
@@ -439,10 +455,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
             ),
           )}
         </p>
-        <Files
-          files={e.files}
-          label={`Files in ${e.from_label === "You" ? "your" : `${e.from_label}’s`} message`}
-        />
+        <Files files={e.files} label={`Files in ${whose(e.from_label)} message`} />
         {canRemove ? (
           <Button
             variant="text"
@@ -479,7 +492,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     return (
       <li key={e.id} id={`entry-${e.id}`} className="cv-msg wide">
         <p className="cv-who">
-          <Avatar initials={e.by.initials} size={28} />
+          <Face person={e.by} size={28} />
           <b>{e.by_label}</b>
           <span>{e.at_label}</span>
         </p>
@@ -584,14 +597,12 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
         {phone ? (
           <p className="cv-seen">
             <span className="cv-faces" aria-hidden="true">
-              {view.participants.slice(0, 4).map((p) => (
-                <Avatar
-                  key={`${p.person.id}-${p.label}`}
-                  initials={p.person.initials}
-                  size={28}
-                  ring="neutral"
-                />
-              ))}
+              {view.participants
+                .filter((p) => p.person.initials)
+                .slice(0, 4)
+                .map((p) => (
+                  <Face key={`${p.person.id}-${p.label}`} person={p.person} size={28} ring="neutral" />
+                ))}
             </span>
             <span id={ids.who}>{composer.visibility}</span>
           </p>
@@ -669,7 +680,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                             pick(p);
                           }}
                         >
-                          <Avatar initials={p.initials} size={28} />
+                          <Face person={p} size={28} />
                           <span className="cv-menu-n">{p.name}</span>
                           <span className="cv-menu-d">{p.doing}</span>
                         </li>
@@ -721,7 +732,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
             <ul className="cv-ppl">
               {view.participants.map((p) => (
                 <li key={`${p.person.id}-${p.label}`}>
-                  <Avatar initials={p.person.initials} size={36} />
+                  {/* the review desk has no face; the empty cell keeps its name in line with the others */}
+                  {p.person.initials ? <Face person={p.person} size={36} /> : <span aria-hidden="true" />}
                   <span>
                     <b>{p.label}</b>
                     <span className="cv-doing">{p.doing}</span>
@@ -729,7 +741,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                 </li>
               ))}
             </ul>
-            <p className="cv-sidenote">{C.sideNote}</p>
+            <p className="cv-sidenote">{sideNote(view.teams_on)}</p>
           </div>
         </aside>
       </div>

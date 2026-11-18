@@ -48,6 +48,13 @@ The boards draw no error state for these three screens. Each shows one line with
 | `S-06` | On a phone, Copy reference, when the browser will not copy | `ideas/[id]/parts.tsx:179` | Couldn't copy the reference. It's {reference}. |
 | `S-WALL` | A One who hides their name from the Wall | `wall/wall-screen.tsx:576` | One No. {n} |
 
+**Changed by DEC-111 (BLD-E053).** These are the pack's drawn lines, not new ones: each named the reviewer, and now names the review desk for a sharer who is not on the review desk or the Ones Committee. A sharer on the desk or the committee still reads the drawn line with the name. The label comes from one constant (`apps/web/src/lib/review-desk.ts`), so a different label is a one-line change. {reviewer} is the reviewer's first name, {day} a date such as Monday 16 November.
+
+| Module | Where it shows | File and line | Old → new |
+|---|---|---|---|
+| `S-06` | Your idea's page once picked, the line under "Picked. A team is being chosen to build it." (Status.md, PhoneStatus.md) | `ideas/[id]/decision.ts:47`, `:57` | {reviewer} from the review desk picked it on {day}. → The review desk picked it on {day}. (The rest of the line, "and joined it with …" and "The build team is chosen by …", is unchanged.) |
+| `S-06` | Your idea's page, Not now and Not picked, the end of the line under the card (Status.md, PhoneStatus.md) | `ideas/[id]/decision.ts:48`, `:67`, `:75`, `:77` | {reviewer}’s full reason is below. → The review desk’s full reason is below. |
+
 ## 5. A few words for a One (`/ones/write/:id`, BLD-E044)
 
 The page where a colleague writes to a One who is moving up a tier. No board draws it; S-ONE's "Messages for you" reads what it saves.
@@ -122,3 +129,23 @@ The worker builds these lines and sends them to the page, so they are not in `ap
 | `S-06` | The same, the line under it (the first sentence only when a build team is named) | `services/worker/ideapage/sharer.py:284`, `:285` | {name} is building it. The build team writes to you in the conversation. |
 | `S-06` | Your idea's page once it has shipped, the card's first line | `services/worker/ideapage/sharer.py:290` | Shipped. It’s live. |
 | `S-06` | The same, the line under it | `services/worker/ideapage/sharer.py:291` | We measure what changed {checks} days after it shipped. |
+
+**Changed by DEC-111 (BLD-E053).** Each of these lines named the reviewer by first name ({reviewer}). For a sharer who is not on the review desk or the Ones Committee it now names the review desk; a sharer on the desk or the committee still reads the old line. The label comes from one constant (`services/worker/onepc/words.py`), so a different label is a one-line change. In the code each is marked `DEC-111`. {day} is a date such as Monday 16 November, {questions} a count such as "3 questions", {when} "today", "yesterday" or "on Monday".
+
+| Module | Where it shows | File and line | Old → new |
+|---|---|---|---|
+| `S-06` | Your idea's page once the answers are sent, the card's first line (Status.md, PhoneStatus.md) | `services/worker/ideapage/sharer.py:267`, `:274` | Sent. {reviewer} has your answers. → Sent. The review desk has your answers. |
+| `S-06` | The same, the track's Reviewed line (Status.md, PhoneStatus.md) | `services/worker/ideapage/sharer.py:526`, `services/worker/ideapage/track.py:194` | {reviewer} has your answers. By {day} → The review desk has your answers. By {day} |
+| `S-06` | Your idea's page, What you shared, the line over each answer under its part (Status.md) | `services/worker/ideapage/sharer.py:328`, `:334` | From your answer to {reviewer}, {day} → From your answer to the review desk, {day} |
+| `S-06` | Your idea's page, What it's worth, over the review desk's revised figures (not drawn before DEC-111) | `services/worker/ideapage/sharer.py:394` | Revised by {reviewer} → Revised by the review desk |
+| `S-07` | My ideas on a phone, an idea with questions waiting (PhoneMyIdeas.md). The phone now shows the computer's sentence (MyIdeas.md) | `services/worker/ideapage/mine.py:242`, `:250` | {reviewer} from the review desk asked you {questions} {when}. → The review desk asked you {questions} {when}. |
+| `S-07` | My ideas, an idea whose answers are with the review desk (not drawn) | `services/worker/ideapage/mine.py:264`, `:265`, `:268` | {reviewer} has your answers. The review desk decides by {day}. → The review desk has your answers. It decides by {day}. |
+
+## 9. Asking to join the build team (S-06, BLD-E055)
+
+The Status and PhoneStatus boards draw the first line below in the Picked state, but `1pc-handoff/reference/copy/Status.md` and `PhoneStatus.md` leave it out, because it shows only after "Ask to join the build team" is pressed. It is the boards' wording, used as drawn, and needs HR's sign-off like the rest. The second line is lane E's, for a Pick with no team-chosen-by date, which should not happen (L-DECIDE/6 sets one on every Pick). Words in braces are filled in at run time: {day month} is the date the build team is chosen by, such as 27 November. The board's "Undo" beside the line is not built (BLD-E055).
+
+| Module | Where it shows | File and line | Wording |
+|---|---|---|---|
+| `S-06` | Your idea's page after a Pick, in place of "Ask to join the build team" once you have asked (drawn at `1pc-handoff/reference/prototype/Status.dc.html:899` and `PhoneStatus.dc.html:889`) | `ideas/[id]/join-build.tsx:39` | Asked. The build lead replies by {day month}. |
+| `S-06` | The same, when the Pick has no team-chosen-by date | `ideas/[id]/join-build.tsx:39` | Asked. The build lead replies. |

@@ -289,6 +289,7 @@
     "POST /api/ideas/{id}/similar/keep-separate       submit",
     "POST /api/ideas/{id}/withdraw                     submit",
     "POST /api/ideas/{id}/restore                      submit",
+    "POST /api/ideas/{id}/join-build                   signed_in",
     "PUT /api/ideas/{id}/canvas                        submit",
     "POST /api/ideas/{id}/answer                       submit",
     "GET /api/config                                   signed_in",

@@ -1,7 +1,7 @@
 ---
 type: comms-template
-title: '{{left}} left to answer {{asker.possessive}} questions'
-description: 'Inbox item and email for the answer_reminder kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR.'
+title: '{{left}} left to answer the review desk’s questions'
+description: 'Inbox item and email for the answer_reminder kind (L-INBOX.kinds). Row text: pack (NOT DRAWN default). Email wording: draft for HR. 1.1 (DEC-111, BLD-B257): the questions are the review desk’s, never a reviewer’s by name.'
 tags:
 - comms
 - template
@@ -12,13 +12,13 @@ generated:
   at: '2026-11-17T00:00:00+05:30'
 kfin:
   id: TPL-inbox-answer-reminder
-  version: '1.0'
+  version: '1.1'
   kinds:
   - answer_reminder
-  subject: '{{left}} left to answer {{asker.possessive}} questions'
+  subject: '{{left}} left to answer the review desk’s questions'
   inbox:
     heading: 'Answer reminder'
-    line: '{{left}} left to answer {{asker.possessive}} questions'
+    line: '{{left}} left to answer the review desk’s questions'
     note: 'Answer by {{due.long}}.'
   signed_as: The 1% Club team
   hr_signed_off: false
@@ -29,7 +29,7 @@ reader opens those in the app (L-NOTIFY/3, BLD-E004). No pronouns for a person: 
 
 Hi {{recipient.first_name}},
 
-{{left}} left to answer {{asker.possessive}} questions about **{{idea.title}}**.
+{{left}} left to answer the review desk’s questions about **{{idea.title}}**.
 
 Answer by {{due.long}}.
 

@@ -2,6 +2,7 @@
 
 import { Conversation } from "@/components/convo/conversation";
 import type { ConversationView } from "@/lib/contracts";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
 
 /** Synthetic: the pack's fictional cast and idea ("Ravi's idea, after teaming up"). The e2e spec answers every call
  * for this reference. */
@@ -84,12 +85,8 @@ export const DEMO_VIEW: ConversationView = {
   },
 };
 
-const MEERA = {
-  id: "6c1f6a0e-1b8e-4d0a-9a51-0d6f3e2a1b05",
-  name: "Meera Iyer",
-  first_name: "Meera",
-  initials: "MI",
-};
+/** The review desk as the sharer reads it: never the person at it (DEC-111). */
+const DESK = { id: "", name: REVIEW_DESK_START, first_name: REVIEW_DESK_START, initials: "" };
 
 /** The sharer's own idea with the review desk's open questions (Messages.md's default; lane B's card, BLD-B249). The
  * e2e spec answers `GET /api/ideas/:id/question-set` for it. */
@@ -99,7 +96,7 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
   audience: "you_and_desk",
   header: { whose: "Your idea", line: "Your idea, shared Monday 9 November" },
   participants: [
-    { person: MEERA, label: "Meera from the review desk", doing: "Reviewing it", you: false },
+    { person: DESK, label: REVIEW_DESK_START, doing: "Reviewing it", you: false },
     { person: KAVYA, label: "You", doing: "Shared the idea", you: true },
   ],
   entries: [
@@ -107,7 +104,7 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
       type: "event",
       id: "6c1f6a0e-0000-4000-8000-000000000011",
       code: "desk.opened",
-      text: "Meera from the review desk opened it. Monday 16 November, 9:50 am",
+      text: "The review desk opened it. Monday 16 November, 9:50 am",
       at: "2026-11-16T09:50:00+05:30",
     },
     {
@@ -115,12 +112,12 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
       id: "6c1f6a0e-0000-4000-8000-000000000012",
       set_id: "6c1f6a0e-0000-4000-8000-000000000013",
       state: "seen",
-      by: MEERA,
-      by_label: "Meera from the review desk",
+      by: DESK,
+      by_label: REVIEW_DESK_START,
       count: 3,
       answered: 0,
       due_at: "2026-11-19T18:00:00+05:30",
-      title: "Meera has 3 questions about your idea",
+      title: "The review desk has 3 questions about your idea",
       deadline:
         "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each answer is added to its part of your idea.",
       answer_url: `/ideas/${DEMO_IDEA}/answer`,
@@ -132,7 +129,7 @@ export const DEMO_QUESTIONS_VIEW: ConversationView = {
     placeholder: "Message the review desk",
     visibility: "Only you and the review desk see this conversation.",
     questions_line:
-      "Answer Meera’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
+      "Answer the review desk’s 3 questions with Answer the questions, so each answer lands on its part of your idea. Write here for anything else.",
     can_attach: true,
   },
 };

@@ -603,6 +603,7 @@ export interface SharerView {
     }[];
     files: FileItem[];
     edit_window?: { open: boolean; closes_at?: IsoDate; opened_by_desk_at?: IsoDate };
+    // `reviewer` only for a sharer on the review desk or the Ones Committee (DEC-111, BLD-E053)
     review?: { decide_by: IsoDate; reviewer?: PersonRef; opened_at?: IsoDate };
     has_open_questions: boolean;
     kept_separate: boolean;
@@ -741,7 +742,7 @@ export interface MyIdeaRow {
   track: { segments: StageStateValue[]; label: string } | null; // drafts show the pill only
   next_step: {
     sentence: string;
-    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…"
+    phone_sentence?: string; // the phone board's wording where it differs: "Meera from the review desk asked you…", for the review desk and the Ones Committee only (DEC-111)
     action: {
       label: string;
       to?: string;
@@ -957,14 +958,16 @@ export interface RemindResponse {
   id: string;
   reminded_at: IsoDate;
 }
-/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. */
+/** S-R3: the sharer's open set, with their own saved answers. Null when nothing is open. DEC-111: the sharer never
+ * sees who at the review desk asked, so `by` is null on this read (the desk's own reads keep the reviewer). */
 export type SharerQuestionSetResponse =
-  | (QuestionSetView & {
+  | (Omit<QuestionSetView, "by"> & {
+      by: null;
       idea: { id: string; title: string };
       countdown: Countdown;
       deadline: string; // "Answer by Thursday 19 November, 6 pm"
       progress: string; // "1 of 3 answered"
-      send_label: string; // "Send 1 answer to Meera", or "Answer at least one question"
+      send_label: string; // "Send 1 answer to the review desk", or "Answer at least one question"
     })
   | null;
 export interface SaveAnswerRequest {
@@ -990,10 +993,9 @@ export interface SendAnswersResponse {
   count: number;
   sent_at: IsoDate;
   progress: string;
-  sent_line: string; // "Sent to Meera, 4:32 pm"
+  sent_line: string; // "Sent to the review desk, 4:32 pm" (DEC-111: never the reviewer's name)
   spare: string; // "Answered with 3 days to spare"
-  reviewer_first_name: string;
-  decides_by: string | null; // "Meera decides by Friday 20 November"
+  decides_by: string | null; // "The review desk decides by Friday 20 November"
 }
 
 // A-API.desk (S-R1): `GET /desk?tab=&sort=`, or `POST /desk` with a `DeskQuery` body when there is a search, whose
@@ -1313,9 +1315,13 @@ export interface CommitteeRow {
     choice: DecisionChoice | null;
     label: string;
     merged_into: string | null;
-    by_line: string; // "by Meera from the review desk, Monday 12 October"
+    // The desk and the committee: "by Meera from the review desk, Monday 12 October". The sharer and the crew
+    // (`/ideas/:id/decision`, DEC-111): "by the review desk, Monday 12 October"
+    by_line: string;
     reason: string | null;
-    reason_heading: string; // "The review desk's reason, as Kavya read it"
+    // The committee (S-R4): "The review desk's reason, as Kavya read it". null for the sharer and the crew: Status.md
+    // draws no heading over the reason
+    reason_heading: string | null;
   };
   window: {
     state: "open" | "extended" | "reversed" | "expired";
@@ -1369,9 +1375,9 @@ export interface ReverseRequest {
 }
 /** The sharer's words for a decision (S-06; reference/copy/Status.md), for the sharer and the crew. */
 export interface SharerDecisionLines {
-  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "Meera from the review desk picked it on
-  // Monday 16 November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." On the
-  // joined idea's page it names the lead. null for any other decision.
+  // The Picked card when the Pick joined a similar idea (L-MERGE.desk/5): "The review desk picked it on Monday 16
+  // November and joined it with IDEA-2026-001412 from Hyderabad, so one team builds one fix." (DEC-111: the desk, never
+  // the reviewer.) On the joined idea's page it names the lead. null for any other decision.
   joined_line: string | null;
   // "The Ones Committee can review this decision until Wednesday 16 December. If they change it, their note comes to
   // your Inbox. After that, it stands." While the window is open; it follows an extension. null once it closes.
@@ -1381,19 +1387,33 @@ export interface SharerDecisionLines {
     title: string; // "The Ones Committee changed the decision to not now"
     note_heading: string; // "The committee’s note to you" (the note itself is `reversal.note` on the row)
     was_line: string; // "Was: Picked"
-    was_by_line: string; // "by Meera from the review desk, Monday 16 November"
+    was_by_line: string; // "by the review desk, Monday 16 November" (DEC-111)
     final_line: string; // "This is final. It comes back to the review desk on Tuesday 16 February 2027, with your answers and crew."
     track_line: string; // "Picked, then moved to not now by the Ones Committee"
   } | null;
 }
+/** "Ask to join the build team" on S-06 (L-DECIDE.rules/6, DEC-111, BLD-B256), for the sharer and the crew. On an idea
+ * a Pick joined, it is the lead's (one team builds one fix). */
+export interface JoinBuild {
+  can_ask: boolean; // true only when an ask would succeed now (a Pick that stands, no team yet) and none was made
+  asked_at: IsoDate | null; // this person's ask; S-06 then says the ask was sent (NOT DRAWN, HR signs it off)
+  reply_by: IsoDate | null; // the Pick's team_by: "Asked. The build lead replies by 27 November."; null without one
+}
+/** POST /ideas/:id/join-build: the ask's time, the first one's on a repeat. Refusals: 403 forbidden (not the sharer or
+ * crew), 404 not_found, 409 not_picked (no Pick that stands), 409 team_chosen. */
+export interface JoinBuildResponse {
+  asked_at: IsoDate;
+}
 /** GET /ideas/:id/decision: in full for the sharer, crew, desk and committee; the stage only for anyone else.
- * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. */
+ * `lines` is the sharer's words for the sharer and the crew, null for the desk and the committee. `join_build` is
+ * for the sharer and the crew; null for anyone else, the desk and committee included. */
 export type DecisionForViewerResponse =
   | (CommitteeRow & {
       decided_at: IsoDate;
       return_at: IsoDate | null;
       lines: SharerDecisionLines | null;
       joined_into: string | null; // on an idea a Pick joined (status merged): the lead, whose Pick this is
+      join_build: JoinBuild | null;
     })
   | { stage_only: true; decision: { choice: DecisionChoice; label: string } }
   | null;
@@ -1532,6 +1552,10 @@ export interface ConversationMessageCreate {
  * (A-API.conventions/6). Event `text` is the whole line, time included ("You shared it. Saturday 14 November,
  * 10:05 am"). Question sets come by reference: the card is lane B's `C-QCARD`, filled from
  * `GET /ideas/:id/question-set` (L-CONVO/4).
+ *
+ * DEC-111: a reader outside the review desk and the Ones Committee never gets the name, initials or users.id of the
+ * person at the review desk. In their place every person field carries the desk itself, `{id: "", name: "The review
+ * desk", first_name: "The review desk", initials: ""}` (a mention: "the review desk"), and S-08 draws no face for it.
  */
 type ConvoPerson = import("./entities").PersonRef;
 export type ConversationEntryView =
@@ -1548,7 +1572,8 @@ export type ConversationEntryView =
       type: "message";
       id: string;
       from: ConvoPerson;
-      /** "Meera from the review desk", "Ravi Nair", "You". */
+      /** "Meera from the review desk" (to the desk and the committee), "The review desk" (DEC-111), "Ravi Nair",
+       * "You". */
       from_label: string;
       you: boolean;
       /** The masked copy (L-CONVO/7); "Message removed" once removed (L-CONVO/10). */
@@ -1572,8 +1597,9 @@ export type ConversationEntryView =
       count: number;
       answered: number;
       due_at: IsoDate | null;
-      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
-       * review desk asked 3 questions." for others (BLD-F065). */
+      /** The card's title in plain words: "The review desk has 3 questions about your idea" for the sharer, "The
+       * review desk asked 3 questions." for the crew and the build team (DEC-111), "Meera from the review desk asked
+       * 3 questions." for the desk and the committee (BLD-F065). */
       title: string;
       /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
        * answer is added to its part of your idea." */
@@ -1588,7 +1614,8 @@ export type ConversationEntryView =
       id: string;
       set_id: string;
       from: ConvoPerson;
-      /** "Your answers to Meera’s 3 questions". */
+      /** "Your answers to the review desk’s 3 questions" (DEC-111; "Kavya’s answers to your 3 questions" for the
+       * reviewer). */
       title: string;
       answers: {
         id: string;
@@ -1600,8 +1627,8 @@ export type ConversationEntryView =
         at: IsoDate;
         files: FileItem[];
       }[];
-      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
-       * Friday 20 November." (S-08 "Answers sent"). */
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. The review desk
+       * decides by Friday 20 November." (S-08 "Answers sent", DEC-111). */
       footer?: string;
       at: IsoDate;
       at_label: string;
@@ -1624,8 +1651,11 @@ export interface ConversationView extends Omit<Conversation, "entries" | "partic
      * shows the attach control only then. */
     can_attach: boolean;
   };
-  /** For the sharer before anyone has written ("No messages yet"). */
+  /** For the sharer before anyone has written ("No messages yet"). The body names Teams only while it is on. */
   empty?: { title: string; body: string };
+  /** Whether Teams messages go out (the `comms.teams` switch, DEC-105). S-08's side note names Teams only when this
+   * is `true`; missing counts as off (BLD-F086). */
+  teams_on?: boolean;
 }
 export interface ConversationMessageResponse {
   entry: ConversationEntryView;
