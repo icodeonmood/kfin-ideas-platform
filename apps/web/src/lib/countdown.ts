@@ -40,7 +40,12 @@ export function countdown(dueAt: string | Date, now: Date = new Date()): Countdo
   if (left <= 0) {
     const late = -left;
     if (late < 3600)
-      return { seconds: left, count: amount(Math.max(1, Math.ceil(late / 60)), "minute"), variant: "bad" };
+      // At most 59: from 3,541 s late, rounding up would say "60 minutes" rather than an hour (BLD-A225 review)
+      return {
+        seconds: left,
+        count: amount(Math.min(59, Math.max(1, Math.ceil(late / 60))), "minute"),
+        variant: "bad",
+      };
     if (late < DAY) return { seconds: left, count: amount(Math.floor(late / 3600), "hour"), variant: "bad" };
     return { seconds: left, count: amount(Math.floor(late / DAY), "day"), variant: "bad" };
   }

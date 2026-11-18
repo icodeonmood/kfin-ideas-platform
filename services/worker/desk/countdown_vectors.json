@@ -209,6 +209,14 @@
    "count": "1 day",
    "variant": "normal",
    "label": "1 day left"
+  },
+  {
+   "why": "3,599 s late rounds up to 60 minutes; it reads 59 minutes, and 3,600 s reads 1 hour",
+   "due": "2026-11-16T10:20:01+05:30",
+   "now": "2026-11-16T11:20:00+05:30",
+   "count": "59 minutes",
+   "variant": "bad",
+   "label": "Overdue by 59 minutes"
   }
  ]
 }

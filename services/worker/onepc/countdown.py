@@ -57,7 +57,8 @@ def countdown(due_at: dt.datetime, now: dt.datetime, tz: dt.tzinfo = IST) -> Cou
     if left <= 0:
         late = -left
         if late < 3600:
-            return Countdown(left, _amount(max(1, -(-late // 60)), "minute"), "bad")
+            # At most 59: from 3,541 s late, rounding up would say "60 minutes" rather than an hour (BLD-A225 review)
+            return Countdown(left, _amount(min(59, max(1, -(-late // 60))), "minute"), "bad")
         if late < DAY:
             return Countdown(left, _amount(late // 3600, "hour"), "bad")
         return Countdown(left, _amount(late // DAY, "day"), "bad")
