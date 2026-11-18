@@ -171,7 +171,8 @@ def _answer_text(r: dict[str, Any]) -> str:
 
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
     """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
-    of their own. `customer_detail` marks a file in which the scan found a customer detail (DEC-107)."""
+    of their own. A link's `type` is "link" (it has no MIME type); a file's is its MIME type. `customer_detail` marks
+    a file in which the scan found a customer detail (DEC-107)."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
@@ -181,7 +182,8 @@ def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, An
         (list(answer_ids),),
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
-            {"id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"], "size": r["bytes"],
+            {"id": r["id"], "kind": r["kind"], "name": r["name"],
+             "type": "link" if r["kind"] == "link" else r["mime"], "size": r["bytes"],
              "pages": r["pages"], "state": r["file_state"], "hidden_note": r["hidden_note"],
              "customer_detail": r["file_state"] == CUSTOMER_DETAIL}
         )  # fmt: skip
@@ -492,10 +494,11 @@ def remind_due(conn: Conn, set_id: str, at: dt.datetime | None = None) -> bool:
 
 
 def open_set_for_sharer(
-    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None
+    conn: Conn, ref: str, user_id: str, at: dt.datetime | None = None, set_id: str | None = None
 ) -> dict[str, Any] | None:
     """`GET /ideas/:id/question-set`: the latest set sent (not closed), with the sharer's own saved answers and
-    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm"."""
+    S-R3's words. The first look marks it seen; the desk shows "seen 12:05 pm". With `set_id` (the Inbox reader
+    opening one item), a different open set is not that item's: nothing is returned and nothing is marked seen."""
     t = at or now()
     tz = clock.office_calendar().tz
     with conn.transaction():
@@ -506,7 +509,7 @@ def open_set_for_sharer(
             "ORDER BY sent_at DESC NULLS LAST, created_at DESC LIMIT 1 FOR UPDATE",
             (idea["id"],),
         ).fetchone()
-        if row is None:
+        if row is None or (set_id is not None and str(row["id"]) != set_id):
             return None
         s = dict(row)
         if s["seen_at"] is None:

@@ -5,7 +5,7 @@
  * conversation (the phone's sheet on a phone) with the panel waiting; the place carried from the server; the draft
  * built once; "Move to Review" mid-way builds first. S3 "Voice first": on a phone's empty S-04 listening starts at once
  * once the microphone is allowed, with "Type instead" and "Stop" in the dock; with no permission, or voice off, it
- * starts with typing. Exposures only when the page hands the flags in. Synthetic words only.
+ * starts with typing. Exposures are lane A's, on the server. Synthetic words only.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -228,17 +228,18 @@ function interviewRoute(after: (s: Sent) => InterviewPlace, extra: Partial<Recor
 }
 
 describe("S1 Interview, S-04 before the first telling (Compose.md simulatorS1=Interview)", () => {
-  it("S-04 the panel lists the three questions instead of the draft's slots; one exposure for S-04", async () => {
+  it("S-04 the panel lists the three questions instead of the draft's slots; the browser logs no exposure", async () => {
     await mount({ draftId: null, flags: INTERVIEW });
     expect(text()).toContain("Tell it in your words first. Then three short questions, each one skippable.");
     const items = [...host.querySelectorAll(".ivi li")].map((li) => li.textContent);
     expect(items).toEqual(["How often does it happen?", "Who feels it most?", "Any rough size?"]);
     expect(text()).not.toContain("Your title appears here");
     expect(text()).not.toContain("Waiting for your words");
-    expect(posts("/api/flags/exposure").map((s) => s.body)).toEqual([{ flag: "s1", screen: "S-04" }]);
+    // The exposure is lane A's, logged on the server as the page renders (BLD-A216).
+    expect(posts("/api/flags/exposure")).toEqual([]);
   });
 
-  it("S-04 without flags from the page: the default, and no exposure is logged", async () => {
+  it("S-04 without flags from the page: the default, and nothing is logged", async () => {
     await mount({ draftId: null });
     expect(text()).toContain("Your title appears here");
     expect(text()).not.toContain("Tell it in your words first.");
@@ -362,7 +363,7 @@ describe("S1 Interview, S-04B after the first telling (L-DRAFT.parts/10, V-ACC.s
     expect(host.querySelector(".iv")).toBeNull();
     expect(text()).toContain("Your draft is ready. Add a detail, or check it.");
     expect(posts(`/api/drafts/${DRAFT}/interview`)).toEqual([]);
-    expect(posts("/api/flags/exposure").map((s) => s.body)).toEqual([{ flag: "s1", screen: "S-04B" }]);
+    expect(sent.filter((s) => s.url.startsWith("/api/flags/"))).toEqual([]);
   });
 });
 
@@ -391,10 +392,7 @@ describe("S1 Interview on a phone (PhoneCompose.md simulatorS1=Interview)", () =
     expect(text()).toContain("Up to date");
     act(() => button("Done")!.click());
     expect(peek.getAttribute("aria-expanded")).toBe("false");
-    expect(posts("/api/flags/exposure").map((s) => s.body)).toEqual([
-      { flag: "s1", screen: "S-04B" },
-      { flag: "s3", screen: "S-04B" },
-    ]);
+    expect(posts("/api/flags/exposure")).toEqual([]);
   });
 });
 

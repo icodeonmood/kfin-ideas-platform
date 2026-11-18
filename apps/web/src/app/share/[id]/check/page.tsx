@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import type { ConfigResponse } from "@/lib/contracts";
 import { currentUser } from "@/server/auth/current";
-import { variantFor } from "@/server/flags";
+import { variantOn } from "@/server/flag-events";
 import { isOn, switchStates } from "@/server/killswitch";
 import { isKey, publicConfig } from "@/server/share";
 
@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
  * through the API, so a draft that is not theirs answers 404 there. The sorting lists, the declaration and the upload
  * limits come with the page (A-API.config); the screen asks for them itself if this read fails. So does the
  * `files.blackout` switch, which decides whether a file row offers "Hide it for me". Flag S2 "Check first" comes from
- * the server too (P-DECISIONS.experiments, BLD-C176); a flag never fails the page.
+ * lane A's reader on the server, which logs the exposure as S-05 renders (P-DECISIONS.experiments, BLD-A216, BLD-C176);
+ * a flag never fails the page.
  */
 export default async function CheckPage({ params }: { params: Promise<{ id: string }> }) {
   const id = (await params).id;
@@ -27,7 +28,7 @@ export default async function CheckPage({ params }: { params: Promise<{ id: stri
   const [config, states, s2] = await Promise.all([
     publicConfig().catch((): ConfigResponse | null => null),
     switchStates().catch(() => new Map<string, "on" | "off">()),
-    variantFor(me.id, "s2"),
+    variantOn(me, "s2", "S-05"),
   ]);
   // "Hide it for me" waits for `files.blackout` (off at launch, DEC-107); an unread switch counts as off.
   return (

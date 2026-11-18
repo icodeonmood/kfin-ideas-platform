@@ -13,16 +13,16 @@ import {
   UUID,
 } from "@/server/drafts";
 import {
+  inAlternative,
   INTERVIEW_QUESTIONS,
   interviewPlace,
   logFlagEvent,
   nextQuestion,
   ownDraft,
-  variantFor,
   waitingToBuild,
   type InterviewPlace,
   type InterviewQuestion,
-} from "@/server/flags";
+} from "@/server/flag-events";
 
 const SCREEN = "S-04B";
 
@@ -56,7 +56,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!UUID.test(id) || !(await ownDraft(me.contributorCode, id)))
       throw new DraftApiError(404, "not_found");
     const action = body.action;
-    const variant = await variantFor(me.id, "s1");
+    // Lane A's reader decides (BLD-A216); this asks without logging an exposure (the page logged it).
+    const variant = (await inAlternative(me.id, "s1")) ? "alternative" : "default";
     if (action !== "finish" && variant !== "alternative") throw new DraftApiError(409, "not_in_interview");
     const place: InterviewPlace = await interviewPlace(me.id, id);
     const step = (event: string, outcome: string) =>

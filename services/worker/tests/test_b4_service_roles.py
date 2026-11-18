@@ -24,9 +24,10 @@ HIDDEN_FROM_WEB = {
     "voice_streams",  # what a voice note heard, sealed for the person until the draft takes it (DEC-108, BLD-C112)
 }  # fmt: skip
 # Final or audit-like records of the handoff cut-over: the web role inserts and reads them, never changes or removes
-# them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags).
+# them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags; "Take off the Wall", DEC-106).
 APPEND_ONLY_FOR_WEB = {
     "idea_decisions", "decision_reversals", "idea_versions", "flag_exposures", "idea_opens", "idea_status_history",
+    "wall_removals",
     "flag_events",  # the experiments' deciding events, codes only (P-DECISIONS.experiments, BLD-C174)
 }  # fmt: skip
 

@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
+    UV_HTTP_TIMEOUT=600 \
     PATH=/opt/venv/bin:$PATH
 
 # Tesseract (English and Hindi) reads images and scanned PDF pages for the week-3 file checks (§4.2, D3).
@@ -17,6 +18,8 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY services/worker/pyproject.toml services/worker/uv.lock ./
+# UV_HTTP_TIMEOUT above: en-core-web-sm comes from a GitHub release (12.8 MB) that can take a minute or more to
+# download, past uv's 30-second default; on 18 Nov it timed out four builds running in a row.
 RUN uv sync --frozen --no-dev --no-install-project
 # UAT and prod images: `--build-arg WITH_BGE=1` adds sentence-transformers for BGE-M3 (BLD-080); the model files
 # are mounted at EMBEDDINGS_MODEL_PATH, never baked in or downloaded at run time.

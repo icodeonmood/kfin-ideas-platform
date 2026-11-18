@@ -164,6 +164,10 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: { method: string; url: string; body: unknown; key: string | null }[];
 let answers: ((method: string, url: string, body: unknown) => { status: number; json?: unknown } | Error)[];
+/** Lane B's question-set reads (BLD-B249) are answered apart from the conversation's own calls: none by default (404),
+ * so a test that is not about the card sees the plain entry and the calls it expects. */
+let setReads: string[];
+let setReply: { status: number; json?: unknown };
 
 function respond(status: number, json?: unknown) {
   return { status, json };
@@ -175,9 +179,18 @@ beforeEach(() => {
   root = createRoot(host);
   calls = [];
   answers = [];
+  setReads = [];
+  setReply = { status: 404, json: { error: { code: "not_found", message: "" } } };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (url.includes("/question-set")) {
+        setReads.push(url);
+        return new Response(JSON.stringify(setReply.json), {
+          status: setReply.status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       const method = (init.method ?? "GET").toUpperCase();
       const body = typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
       const headers = new Headers(init.headers);
@@ -498,6 +511,9 @@ describe("S-08 states", () => {
     expect(host.textContent).toContain("Meera from the review desk asked 2 questions.");
     expect(links(S08_COPY.answer)).toHaveLength(0);
     expect(links(S08_COPY.seeOnIdea)[0]?.getAttribute("href")).toBe("/ideas/IDEA-2026-001412");
+    // BLD-B249: the card is the sharer's; anyone else keeps the plain line and never reads the set
+    expect(setReads).toEqual([]);
+    expect($(".qcard")).toBeNull();
   });
 
   it("S-08 L-MERGE.effects/6 a merged idea: no box, the closing line with where to write", async () => {
@@ -521,6 +537,126 @@ describe("S-08 states", () => {
       "This idea is now part of another one. Write in IDEA-2026-001412’s conversation.",
     );
     expect(links("IDEA-2026-001412")[0]?.getAttribute("href")).toBe("/ideas/IDEA-2026-001412/conversation");
+  });
+});
+
+// --- C-QCARD in the conversation (lane B, BLD-B249) ---------------------------------------------------------------
+/** Meera's 3 questions as `GET /ideas/:id/question-set` sends them to Kavya (lane B), `answered` of them sent. */
+function sharerSet(answered = 0, id = "set-1") {
+  const parts = [
+    ["summary", "The problem", "Is it mostly R07, or all rejection codes?"],
+    ["often", "How often", "Is the 40 calls a day at one branch, or across Hyderabad?"],
+    ["evidence", "Attached", "Can you add a screenshot of the SMS, with the folio hidden?"],
+  ] as const;
+  return {
+    id,
+    idea_id: "IDEA-2026-001481",
+    idea: { id: "IDEA-2026-001481", title: "Investors call to ask why a redemption was rejected" },
+    by: { ...MEERA, city: null, area: null },
+    state: answered ? "partly_answered" : "seen",
+    time_to_answer: "3d",
+    sent_at: "2026-11-16T11:20:00+05:30",
+    seen_at: "2026-11-16T12:05:00+05:30",
+    due_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    answered_at: null,
+    extended_times: 0,
+    reminded_at: null,
+    count: 3,
+    answered,
+    overdue: false,
+    questions: parts.map(([part, part_name, text], i) => ({
+      id: `q-${i + 1}`,
+      seq: i + 1,
+      part,
+      part_name,
+      text,
+      suggested: false,
+      answer:
+        i < answered
+          ? {
+              id: `a-${i + 1}`,
+              question_id: `q-${i + 1}`,
+              text: "Our Hyderabad branch alone.",
+              files: [],
+              sent: true,
+            }
+          : null,
+    })),
+    countdown: { label: "3 days left to answer", variant: "normal" },
+    deadline: "Answer by Thursday 19 November, 6 pm",
+    progress: `${answered} of 3 answered`,
+    send_label: "Answer at least one question",
+  };
+}
+
+async function settle() {
+  for (let i = 0; i < 5; i++) await act(async () => await Promise.resolve());
+}
+
+describe("S-08 C-QCARD.places: the questions as lane B's card for the sharer (BLD-B249, J-TRACK/3)", () => {
+  it("Messages.md: the sharer's open set is the card, in the conversation's words, read by its own set id", async () => {
+    setReply = { status: 200, json: sharerSet() };
+    await show(yourIdea());
+    await settle();
+    expect(setReads).toEqual(["/api/ideas/IDEA-2026-001481/question-set?set_id=set-1"]);
+    expect(calls).toEqual([]); // the conversation's own calls are untouched
+    const entry = $("#entry-e-asked")!;
+    // The message line stays: who asked and when; the card is the body, not the plain line
+    expect(entry.querySelector(".cv-who")?.textContent).toContain("Meera from the review desk");
+    expect(entry.querySelector(".cv-who")?.textContent).toContain("Monday 16 November, 11:20 am");
+    expect(entry.querySelector(".cv-ask")).toBeNull();
+    const card = entry.querySelector("article.qcard")!;
+    expect(card.querySelector("h3")?.textContent).toBe("Meera has 3 questions about your idea");
+    expect(card.getAttribute("aria-labelledby")).toBe(card.querySelector("h3")?.id);
+    expect(card.querySelector(".qcard-h")?.textContent).toContain("left"); // the countdown beside the title
+    expect([...card.querySelectorAll(".qcard-list li")].map((li) => li.textContent)).toEqual([
+      "Is it mostly R07, or all rejection codes?Answer goes to The problem",
+      "Is the 40 calls a day at one branch, or across Hyderabad?Answer goes to How often",
+      "Can you add a screenshot of the SMS, with the folio hidden?Answer goes to Attached",
+    ]);
+    expect(card.querySelector(".qcard-f .meta")?.textContent).toBe(
+      "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each answer is added to its part of your idea.",
+    );
+    // S-08.rules/1: one Answer the questions on the card, one in the line above the box, both to S-R3
+    expect(links(S08_COPY.answer).map((a) => a.getAttribute("href"))).toEqual([
+      "/ideas/IDEA-2026-001481/answer",
+      "/ideas/IDEA-2026-001481/answer",
+    ]);
+  });
+
+  it("C-QCARD.states partly answered: a tick on the answered question and Carry on answering", async () => {
+    setReply = { status: 200, json: sharerSet(1) };
+    const v = yourIdea();
+    v.entries = v.entries.map((e) =>
+      e.type === "questions" ? { ...e, state: "partly_answered", answered: 1 } : e,
+    );
+    await show(v);
+    await settle();
+    const card = $("#entry-e-asked article.qcard")!;
+    expect(
+      [...card.querySelectorAll(".qcard-list li")].map((li) => li.querySelector("[role=img]") !== null),
+    ).toEqual([true, false, false]);
+    expect(links("Carry on answering").map((a) => a.getAttribute("href"))).toEqual([
+      "/ideas/IDEA-2026-001481/answer",
+    ]);
+  });
+
+  it("L-QUESTIONS.clock/1: another set, a refused read or a failed one keeps the plain entry", async () => {
+    for (const reply of [
+      { status: 200, json: sharerSet(0, "set-2") },
+      { status: 404, json: { error: { code: "not_found", message: "" } } },
+      { status: 503, json: { error: { code: "unavailable", message: "" } } },
+    ]) {
+      setReply = reply;
+      setReads = [];
+      await show(yourIdea());
+      await settle();
+      expect(setReads).toEqual(["/api/ideas/IDEA-2026-001481/question-set?set_id=set-1"]);
+      expect($("#entry-e-asked .qcard")).toBeNull();
+      expect($("#entry-e-asked .cv-ask .cv-askt")?.textContent).toBe("Meera has 3 questions about your idea");
+      act(() => root.unmount());
+      root = createRoot(host);
+    }
   });
 });
 

@@ -78,59 +78,31 @@ The speech service's base image is pinned by digest and every Python package by 
 2. Base image: look up the current multi-architecture digest of `python:3.12-slim` (`docker buildx imagetools inspect python:3.12-slim`, or the registry's API) and put it in the `FROM` line of `services/worker/speech_service/Dockerfile`.
 3. Rebuild with `COMPOSE_PROFILES=speech docker compose build speech`, run `make test` (the contract and compose tests), then deploy through UAT as usual.
 
-## 2c. The A/B experiments S1 to S3 (P-DECISIONS.experiments, BLD-C170 to C175)
+## 2c. The A/B experiments S1 to S3 (P-DECISIONS.experiments, BLD-A216, BLD-C170 to C176)
 
-Three choices on Share a problem are switchable for a test. Each ships **on, at 0 %**: everyone sees the default until HR or ops sets a percentage.
+Three choices on Share a problem are switchable for a test. Each ships **on, at 0 %**: everyone sees the default until an admin sets a share.
 
-| Flag | What the alternative does | Decided by (view) |
+| Flag | What the other version does | Decided by (view) |
 |---|---|---|
 | `s1` | After the first telling, up to three short skippable questions (how often, who feels it most, any rough size), then the draft, built once | `flag_s1_metrics`: drop-off, median seconds to share, draft completeness; questions answered and skipped |
-| `s2` | Check it opens on the comparison when a close similar idea is found | `flag_s2_metrics` (with S-05's build) |
-| `s3` | On a phone, listening starts at once, with "Type instead" and "Stop" | `flag_s3_metrics`: phone completion, how often a voice note's words were corrected |
+| `s2` | On a close similar idea, Check it opens on the comparison before the other parts | `flag_s2_metrics`: duplicates reaching the review desk, completion rate; what people did with the comparison |
+| `s3` | On a phone, listening starts at once, with "Type instead" and "Stop" in the dock | `flag_s3_metrics`: phone completion, how often a voice note's words were corrected |
 
-**Rules the code keeps.** The server decides each person's variant; it never comes from the browser or the address. A flag that is `off` shows everyone the default and logs nothing. A person given a variant by name keeps it. Otherwise, once a percentage is set, each person's first visit puts them in a variant by a fixed hash of their user id and writes it down; it never changes after that, even if the percentage does (BLD-C171). Kill switches win over flags: S3 never listens while `capture.voice`, `speech.hosted` or `submissions` is off, or before the phone already allows the microphone. Exposures and events hold ids and codes, never anyone's words.
+**Setting the share or one person: Admin → Experiments** (lane A's page, `/admin#flags`; `setFlag` and `assignFlag` in `apps/web/src/server/flags.ts`, L-AUDIT.flags). Each flag has a state (on or off) and the share, 0 to 100, who see the other version; "Put one person on a version" takes a work email, or puts the person back on the share. Every change needs a reason and is written to `audit_log`. Use the page, not SQL.
 
-**Change a flag** (as the database owner; one transaction, with the audit row; `REV-0001` is the person making the change):
+**Rules the code keeps.** The server decides each person's version (lane A's `flagVariant`); it never comes from the browser or the address. A flag that is off shows everyone the default and logs nothing. A person put on a version keeps it. Everyone else is placed by a fixed hash of their user id, so raising the share only adds people and lowering it only takes people out. Kill switches win over flags: S3 never listens while `capture.voice`, `speech.hosted` or `submissions` is off, or before the phone already allows the microphone. An exposure is logged once per person, screen and version; the deciding events hold ids and codes, never anyone's words.
 
-```sql
-BEGIN;
-INSERT INTO audit_log (actor, action, entity, before, after, reason)
-SELECT 'REV-0001', 'flag.set', 'flag:s1', jsonb_build_object('state', state, 'alternative_percent', alternative_percent),
-       jsonb_build_object('state', 'on', 'alternative_percent', 20), 'Start the S1 test at 20 per cent'
-FROM flags WHERE key = 's1';
-UPDATE flags SET state = 'on', alternative_percent = 20, changed_by = 'REV-0001', changed_at = now() WHERE key = 's1';
-COMMIT;
-```
-
-To stop a test, set `state = 'off'` the same way: everyone sees the default at once. Lowering the percentage does not move people already in the alternative.
-
-**Put one person in a variant** (a pilot group, or a support case), with its audit row:
-
-```sql
-BEGIN;
-INSERT INTO flag_assignments (flag_key, user_id, variant, assigned_by)
-SELECT 's3', id, 'alternative', 'REV-0001' FROM users WHERE lower(email) = lower('someone@kfintech.com')
-ON CONFLICT (flag_key, user_id) DO UPDATE
-  SET variant = EXCLUDED.variant, assigned_by = EXCLUDED.assigned_by, assigned_at = now();
-INSERT INTO audit_log (actor, action, entity, after, reason)
-SELECT 'REV-0001', 'flag.assign', 'flag:s3:' || id, '{"variant": "alternative"}', 'Phone pilot, branch team'
-FROM users WHERE lower(email) = lower('someone@kfintech.com');
-COMMIT;
-```
-
-Deleting the person's row hands them back to the rule at the current percentage on their next visit.
-
-**Read the results** (counts and rates per variant only; the web app cannot read these views):
+**Read the results** (counts and rates per version only; the web app cannot read these views), as the database owner or the worker role:
 
 ```sql
 SELECT * FROM flag_s1_metrics;
+SELECT * FROM flag_s2_metrics;
 SELECT * FROM flag_s3_metrics;
-SELECT flag_key, variant, count(*) FROM flag_assignments GROUP BY 1, 2 ORDER BY 1, 2;  -- who is in which
 ```
 
-A person counts from their first exposure to the flag, and their drafts are those they started after it. `drop_off_rate` is drafts not shared over drafts started; `completeness_*` is the share of the five parts (title, how often, who, worth, area) filled; `correction_rate` is voice notes whose words were changed before sending. Compare variants only once each has a few hundred exposures; until then the numbers move a lot.
+A person counts from their first exposure to the flag. S1 and S3 count the web drafts they started after it; S2 counts the drafts that reached Check it. `drop_off_rate` is drafts not shared over drafts started; `completeness_*` is the share of the five parts (title, how often, who, worth, area) filled; `duplicates_to_desk` is drafts shared on their own although a close similar idea was found, and `duplicate_rate` is that over drafts with a close match; `correction_rate` is voice notes whose words were changed before sending. Compare the versions only once each has a few hundred exposures; until then the numbers move a lot. Admin → Experiments also shows how many people have seen each version.
 
-**Where the rows are.** `flag_assignments` (who sees what), `flag_exposures` (one row each time a screen that differs is shown), `flag_events` (S1 questions answered or skipped and the interview's place, S3 listening and notes, S2 comparisons). The web app only adds to `flag_exposures` and `flag_events`.
+**Where the rows are.** `flags` and `flag_assignments` (lane A's; the admin page writes them), `flag_exposures` (one row per person, screen and version), `flag_events` (S1's questions and the interview's place, S2's comparison and the drafts that reached Check it, S3's listening and voice notes). The web app only adds to `flag_exposures` and `flag_events`.
 
 ## 3. Scheduled jobs to watch
 

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 
 import { signedIn } from "@/server/auth/authorize";
 import { bodyOf, UUID } from "@/server/drafts";
-import { FLAG_EVENTS, FLAG_SCREENS, isFlagKey, logFlagEvent, ownDraft } from "@/server/flags";
+import { FLAG_EVENTS, FLAG_SCREENS, isFlagKey, logFlagEvent, ownDraft } from "@/server/flag-events";
 
 /** POST /api/flags/events `{ flag, event, outcome, screen, draft_id? }` — one deciding event the tables do not hold
  * already, as codes (P-DECISIONS.experiments, BLD-C174): S3's listening at once and its voice notes sent as heard or
  * corrected; S2's check-first comparison. Only the events and outcomes FLAG_EVENTS lists, on a screen the flag
- * changes, and a draft only if it is the person's own. The server decides the variant; nothing is logged while the
- * flag is off. Always `204`: logging never fails a screen. */
+ * changes, and a draft only if it is the person's own. The server decides the variant (lane A's reader, BLD-A216);
+ * nothing is logged while the flag is off. Always `204`: logging never fails a screen. */
 export async function POST(request: Request) {
   const me = await signedIn();
   if (me instanceof NextResponse) return me;

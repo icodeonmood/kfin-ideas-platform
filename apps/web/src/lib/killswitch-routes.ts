@@ -221,6 +221,13 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/me\/privacy-notice\/?$/, // accepting the notice must work in read-only mode, or nobody could browse
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
+  // The admin page (lane A; J-ONE): build teams, shipping, measurements and Finance's confirmation are the programme's
+  // own records, kept whatever is paused, like the review desk. "Take off the Wall" must work most of all while the
+  // Wall is paused. Founding Ones and removing a One are records too: `ones.public` pauses showing them, not keeping
+  // them. Flags must stay changeable so an experiment can be turned off at once.
+  /^\/api\/admin\/ideas\/[^/]+\/(?:build-team|shipped|measurements\/[^/]+(?:\/finance)?|wall-removal)\/?$/,
+  /^\/api\/admin\/ones\/(?:founding|[^/]+)\/?$/,
+  /^\/api\/admin\/flags\/[^/]+(?:\/people)?\/?$/,
   // Reading, marking unread, archiving and "Mark all read" change only the person's own Inbox, nothing about ideas;
   // they work in read-only mode (L-INBOX).
   /^\/api\/inbox\/(?:read-all|[^/]+\/(?:read|unread|archive))\/?$/,
@@ -258,10 +265,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
-  // The experiments' exposures and events (P-DECISIONS.experiments, BLD-C173): codes about what a screen showed,
-  // nothing about ideas; logging must never depend on what is paused. The interview's answers stay behind
-  // submissions (/api/drafts above).
-  /^\/api\/flags\/(?:exposure|events)\/?$/,
+  // The experiments' deciding events (P-DECISIONS.experiments, BLD-C174): codes about what a screen showed, nothing
+  // about ideas; logging must never depend on what is paused. The interview's answers stay behind submissions
+  // (/api/drafts above).
+  /^\/api\/flags\/events\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

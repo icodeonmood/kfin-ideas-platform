@@ -36,7 +36,7 @@ import type {
   SortingResponse,
   UploadConfig,
 } from "@/lib/contracts";
-import { flagEvent, useFlagExposure } from "@/lib/flags-client";
+import { flagEvent } from "@/lib/flags-client";
 
 import { CheckFirstPhone } from "./check-first";
 import { api, sendKey, sendQueue, type Call, type CheckDraft, type MergeState } from "./client";
@@ -164,7 +164,6 @@ export function CheckIt({
   const openedFresh = useRef(false);
   const compareOutcome = useRef(false);
   const checkLogged = useRef(false);
-  useFlagExposure("s2", "S-05", flags !== null);
   const [merge, setMerge] = useState<MergeState | null>(null);
   const [kept, setKept] = useState(false);
   const [mergeError, setMergeError] = useState<{ where: "bar" | "grid"; text: string } | null>(null);

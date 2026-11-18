@@ -3,8 +3,8 @@
 - `tell`: L-NOTIFY and L-INBOX (lane A, `notify.post`, BLD-A180). A no-op until `notify` is importable.
 - `resolve`: L-INBOX.rules/3 (lane A, `notify.resolve`): a Needs you item, and every item keyed under it, leaves the
   list once its action is done. A no-op until `notify` has `resolve` (it lands with lane A's inbox).
-- `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Writes `conversation_entries`
-  directly until `convo` is importable.
+- `say`: L-CONVO (lane F, `convo.post`): a line in the idea's conversation, IDs only. Only through `convo.post`
+  (BLD-B249).
 - `hide`: L-HIDE (lane C, `hide.hide_text`): free text masked before it is stored or shown to anyone else, each value
   kept sealed in the vault under the idea with a `hidden_details` row. `by` is the users.id of whoever typed it.
   `hide_answer`, `answer_words` and `forget_answer`: a sharer's answer (lane C's `hide_message`, `own_words`).
@@ -20,8 +20,6 @@ import datetime as dt
 import importlib
 from collections.abc import Mapping, Sequence
 from typing import Any
-
-from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from core.logging import get_logger
@@ -94,35 +92,15 @@ def say(
     at: dt.datetime | None = None,
 ) -> None:
     """A line in the idea's conversation ('Meera from the review desk opened it'), rendered by lane F at read time.
-    Lane F's `convo.post` takes these same arguments (SHIP_PLAN §5a); the direct insert is the fallback until it is
-    importable. Like `convo.post` (BLD-F013), the direct insert places each line just after the idea's last one, so
-    lines written in one transaction (one `now()`, random ids) read back in the order they were written (L-CONVO)."""
-    try:
-        convo = importlib.import_module("convo")
-    except ModuleNotFoundError:
-        convo = None
-    if convo is not None:
-        convo.post(
-            conn, idea_uuid, event, author_user_id=author_user_id, author_code=author_code, payload=dict(payload or {}),
-            question_set_id=question_set_id, entry_type=entry_type, at=at,
-        )  # fmt: skip
-        return
-    conn.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, author_user_id, author_code, "
-        "question_set_id, at) VALUES (%(idea)s, %(type)s, %(event)s, %(payload)s, %(user)s, %(code)s, %(set)s, "
-        "greatest(coalesce(%(at)s, now()), (SELECT max(e.at) FROM conversation_entries e WHERE e.idea_uuid = "
-        "%(idea)s) + interval '1 microsecond'))",
-        {
-            "idea": idea_uuid,
-            "type": entry_type,
-            "event": event,
-            "payload": Jsonb(dict(payload or {})),
-            "user": author_user_id,
-            "code": author_code,
-            "set": question_set_id,
-            "at": at,
-        },
-    )
+    Written only through lane F's `convo.post` (SHIP_PLAN §5a): it places each line just after the idea's last one,
+    so lines written in one transaction read back in the order they were written (BLD-F013, BLD-F057, L-CONVO). The
+    desk has no direct insert of its own any more (BLD-B249)."""
+    from convo import post  # here, not at the top: lane F's reads use the desk's words (`desk.when`)
+
+    post(
+        conn, idea_uuid, event, author_user_id=author_user_id, author_code=author_code, payload=dict(payload or {}),
+        question_set_id=question_set_id, entry_type=entry_type, at=at,
+    )  # fmt: skip
 
 
 def hide(

@@ -20,33 +20,30 @@ export type DeskFile = {
   state?: string | null;
 };
 
-/** The new pipeline's checked states. Only these read `state = 'clean'` in the old column (lane C, 17 Nov). */
-const CHECKED: ReadonlySet<string> = new Set(["checked", "hidden_checked", "ok"]);
+/** The states lane C's route opens a stored copy in (`VIEWABLE` in services/worker/attachments/files.py): checked,
+ * hidden_checked, and personal_data_found, which DEC-107 opens for the review desk and the Ones Committee. A link's
+ * `ok` is not one: links are never fetched (non-negotiable 8). */
+const VIEWABLE: ReadonlySet<string> = new Set(["checked", "hidden_checked", "personal_data_found"]);
 
 /**
- * Today's route, `GET /api/attachments/:id`: it serves a file whose old state is clean, to its owner and the review
- * desk, and answers anything else with a raw 403 (or 404). So it is offered only for a file it serves: checked, or
- * from before the new pipeline, and never one holding a customer detail. The row still shows, with its label, but
- * without "Open" (BLD-B243).
+ * Whether the file has passed its checks. The new pipeline's `file_state` decides when there is one (a found file's
+ * old `state` stays `quarantine`, so it is not read then); a file from before the cut-over has only the old `state`,
+ * whose `clean` is checked. Nothing else opens (non-negotiable 8): lane C's route answers 403 for it, so no "Open" is
+ * offered and the row shows with its label only (BLD-B243).
  */
-function attachmentsRoute(file: DeskFile): string | null {
-  if (!file.id || file.customer_detail) return null;
-  if (file.file_state != null && !CHECKED.has(file.file_state)) return null;
-  if (file.state != null && file.state !== "clean") return null;
-  return `/api/attachments/${encodeURIComponent(file.id)}`;
+function passedChecks(file: DeskFile): boolean {
+  if (file.file_state != null) return VIEWABLE.has(file.file_state);
+  return file.state == null || file.state === "clean";
 }
 
-/** Lane C's `GET /api/files/:id/view` (A-API.files): it applies DEC-107 itself, committee roles included, so every
- * listed file opens through it. */
+/** Lane C's `GET /api/files/:id/view` (A-API.files, C-FILE.view): the checked copy, for the review desk and the Ones
+ * Committee too when the file holds a customer detail (DEC-107). It decides and audits each opening itself. */
 export function filesViewRoute(file: DeskFile): string | null {
   return file.id ? `/api/files/${encodeURIComponent(file.id)}/view` : null;
 }
 
-/** The one place the review side chooses a file's route. When lane C's route is on main, this line becomes
- * `const route = filesViewRoute;` and nothing else changes. */
-const route: (file: DeskFile) => string | null = attachmentsRoute;
-
-/** Where a file's "Open" goes, or null when no route can open it for this viewer yet (no "Open" is shown). */
+/** Where a file's "Open" goes on the review side, or null when the file has not passed its checks (no "Open" is
+ * shown). A file holding a customer detail opens here, for the desk and the committee only (DEC-107; BLD-B251). */
 export function fileHref(file: DeskFile): string | null {
-  return route(file);
+  return passedChecks(file) ? filesViewRoute(file) : null;
 }

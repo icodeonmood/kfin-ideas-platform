@@ -79,7 +79,7 @@ import {
   type InterviewPlace,
   type InterviewQuestion,
 } from "@/lib/flags";
-import { flagEvent, useFlagExposure } from "@/lib/flags-client";
+import { flagEvent } from "@/lib/flags-client";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
@@ -240,10 +240,6 @@ export function Compose({
   const device = phone ? "phone" : "desktop";
   const client = useMemo(() => new DraftClient(), []);
   const conversation = givenId !== null; // S-04B
-  // One exposure per page load for each flag this screen carries, only when the page handed the flags in (S3 on a
-  // phone only). The server decides the variant it logs.
-  useFlagExposure("s1", conversation ? "S-04B" : "S-04", flags !== null);
-  useFlagExposure("s3", conversation ? "S-04B" : "S-04", flags !== null && phone);
 
   const [draftId, setDraftId] = useState<string | null>(givenId);
   const idRef = useRef<string | null>(givenId);

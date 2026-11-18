@@ -42,13 +42,13 @@ vi.mock("@/server/worker", () => ({
     return Response.json({ id: DRAFT, messages: [], run: { id: "r-build", state: "running" } });
   }),
 }));
-vi.mock("@/server/flags", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/server/flags")>();
+vi.mock("@/server/flag-events", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/server/flag-events")>();
   const { placeFrom } = await import("@/lib/flags");
   return {
     ...real,
     ownDraft: async () => own,
-    variantFor: async () => variant,
+    inAlternative: async () => variant === "alternative",
     interviewPlace: async () => placeFrom(events),
     logFlagEvent: async (e: { event: string; outcome: string }) => {
       if (events.some((x) => x.event === e.event)) return false;

@@ -10,13 +10,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ConfigResponse,
-  FileItem,
-  SendViewResponse,
-  SimilarMatch,
-  SortingResponse,
-} from "@/lib/contracts";
+import type { ConfigResponse, SendViewResponse, SimilarMatch, SortingResponse } from "@/lib/contracts";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
@@ -45,8 +39,6 @@ vi.mock("next/link", () => ({
 
 const { CheckIt } = await import("@/app/share/[id]/check/check-it");
 const model = await import("@/app/share/[id]/check/model");
-const { withExclusive } = await import("@/app/share/[id]/check/parts");
-const { CHECK_COPY } = await import("@/app/share/[id]/check/copy");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -334,10 +326,6 @@ async function click(el: Element | undefined | null) {
   await settle();
 }
 
-async function railTo(label: string) {
-  await click(button(new RegExp(`^(?:\\d )?${label}\\b`)));
-}
-
 /** This browser's storage, in memory, fresh for each test (Node's own `localStorage` is not a browser's). */
 function memoryStorage(): Storage {
   const m = new Map<string, string>();
@@ -368,7 +356,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-const flagCalls = () =>
+const flagCalls = (): Array<Record<string, unknown> & { url: string; event?: string }> =>
   calls
     .filter((c) => c.url.startsWith("/api/flags/"))
     .map((c) => ({ url: c.url, ...(c.body as Record<string, unknown>) }));
@@ -430,7 +418,6 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     expect(counter()).toBe("Check it, part 4 of 6");
 
     expect(flagCalls()).toEqual([
-      { url: "/api/flags/exposure", flag: "s2", screen: "S-05" },
       {
         url: "/api/flags/events",
         flag: "s2",
@@ -467,7 +454,7 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     expect(h1()).toBe("Is this how you’d put it?");
     expect(counter()).toBe("Check it, part 1 of 6");
     expect(railNames().slice(0, 3)).toEqual(["1 Your words", "2 Sorting Suggested,", "3 Similar ideas"]);
-    expect(flagCalls().map((c) => c.event ?? c.url)).toEqual(["/api/flags/exposure", "s2.check"]);
+    expect(flagCalls().map((c) => c.event ?? c.url)).toEqual(["s2.check"]);
   });
 
   it("couldn't check for similar ideas: the default, and sharing is not blocked", async () => {
@@ -489,11 +476,11 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     expect(railNames()[0]).toBe("1 Similar ideas");
   });
 
-  it("the default variant: the parts as drawn, the exposure and the draft logged, no comparison", async () => {
+  it("the default variant: the parts as drawn, the draft logged (the exposure is lane A's), no comparison", async () => {
     await mountFlagged(base({ draft: FRESH }), false);
     expect(h1()).toBe("Is this how you’d put it?");
     expect(railNames()[0]).toBe("1 Your words");
-    expect(flagCalls().map((c) => c.event ?? c.url)).toEqual(["/api/flags/exposure", "s2.check"]);
+    expect(flagCalls().map((c) => c.event ?? c.url)).toEqual(["s2.check"]);
   });
 
   it("without flags from the page: nothing is logged", async () => {

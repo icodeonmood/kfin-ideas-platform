@@ -1,224 +1,272 @@
 /**
- * The S1 to S3 experiments, server side only (P-DECISIONS.experiments; BLD-C170 to C179). One reader for all three
- * flags: `variantFor(userId, key)` says which variant a person sees, and the page hands it to the screen as a prop.
- * The client never picks its own variant and the URL never carries one.
+ * L-AUDIT.flags: the S1 to S3 experiments (P-DECISIONS.experiments), per person or by percentage, with exposure
+ * logged (lane A, BLD-A216). The worker has the same rules in `services/worker/programme/flags.py`; a shared test
+ * vector keeps the two buckets equal.
  *
- *   - A flag whose state is 'off' gives 'default' and logs no exposure.
- *   - A flag_assignments row (an admin's, or one written by the rule) wins.
- *   - Otherwise a stable hash of the user id against `alternative_percent` decides, and the answer is written as an
- *     assignment (`assigned_by 'rule'`) so it never flips. At 0 % nothing is written: no one is in the experiment
- *     yet, so raising the percentage later reaches people who have already used the screen (BLD-C171).
- *   - Any database error gives 'default'. A flag never fails a page.
- *
- * Exposures and events carry IDs and codes only, never words (non-negotiable 3). Kill switches beat flags: the
- * screens check them first (S3's voice first runs only while voice can run).
+ * - An admin sets each flag's state (on or off) and the share of people who get the alternative (0 to 100).
+ * - A person an admin assigned gets that variant. Everyone else is placed by a deterministic bucket: the first four
+ *   bytes of SHA-256 of "<key>:<user id>", as an unsigned number, modulo 100; below `alternative_percent` means the
+ *   alternative. Raising the percentage only adds people.
+ * - A flag that is off, or unknown, gives the default and logs nothing.
+ * - `flagVariant(user, key, screen)` logs one exposure per person, screen and variant (`flag_exposures_once`).
+ *   `flagsFor` (for `GET /api/config`) logs nothing: a screen logs when it shows a variant.
+ * - Every admin change is written to `audit_log` with its reason.
  */
 import { createHash } from "node:crypto";
 
-import {
-  FLAG_SCREENS,
-  NO_INTERVIEW,
-  placeFrom,
-  type ComposeFlags,
-  type FlagKey,
-  type InterviewPlace,
-  type Variant,
-} from "@/lib/flags";
+import { sql } from "kysely";
 
 import { getDb } from "./db";
-import { isOn, switchStates } from "./killswitch";
-import { log } from "./log";
 
-export {
-  FLAG_EVENTS,
-  FLAG_SCREENS,
-  INTERVIEW_QUESTIONS,
-  isFlagKey,
-  nextQuestion,
-  waitingToBuild,
-  type ComposeFlags,
-  type FlagKey,
-  type InterviewPlace,
-  type InterviewQuestion,
-  type Variant,
-} from "@/lib/flags";
+export type Variant = "default" | "alternative";
+export const FLAG_KEYS = ["s1", "s2", "s3"] as const;
 
-/** The person's bucket, 0 to 99, for one flag: the same every time, and independent between flags. */
-export function bucketOf(userId: string, key: FlagKey): number {
+export class FlagError extends Error {
+  constructor(
+    public code: string,
+    public status: number,
+    public text: string,
+    public field?: string,
+  ) {
+    super(code);
+  }
+  body() {
+    return { error: { code: this.code, message: this.text, ...(this.field ? { field: this.field } : {}) } };
+  }
+}
+
+export function bucket(key: string, userId: string): number {
   return createHash("sha256").update(`${key}:${userId}`).digest().readUInt32BE(0) % 100;
 }
 
-const asVariant = (v: unknown): Variant => (v === "alternative" ? "alternative" : "default");
+type FlagRow = { key: string; state: string; alternative_percent: number };
 
-type Resolved = { variant: Variant; on: boolean };
+function decide(flag: FlagRow | undefined, assigned: string | undefined, userId: string): Variant | null {
+  if (!flag || flag.state !== "on") return null;
+  if (assigned) return assigned === "alternative" ? "alternative" : "default";
+  return bucket(flag.key, userId) < flag.alternative_percent ? "alternative" : "default";
+}
 
-function failed(key: FlagKey, err: unknown): void {
-  try {
-    log.warn("flags.read_failed", {
-      flag_key: key,
-      error_type: err instanceof Error ? err.constructor.name : "unknown",
+/** What `screen` (a screen ID such as "S-04") shows this person; logs the exposure the first time. */
+export async function flagVariant(user: { id: string }, key: string, screen: string): Promise<Variant> {
+  const db = getDb();
+  const flag = await db
+    .selectFrom("flags")
+    .select(["key", "state", "alternative_percent"])
+    .where("key", "=", key)
+    .executeTakeFirst();
+  const assigned = await db
+    .selectFrom("flag_assignments")
+    .select("variant")
+    .where("flag_key", "=", key)
+    .where("user_id", "=", user.id)
+    .executeTakeFirst();
+  const variant = decide(flag, assigned?.variant, user.id);
+  if (!variant) return "default";
+  await sql`INSERT INTO flag_exposures (flag_key, user_id, variant, screen)
+            VALUES (${key}, ${user.id}, ${variant}, ${screen})
+            ON CONFLICT (flag_key, user_id, screen, variant) DO NOTHING`.execute(db);
+  return variant;
+}
+
+/** Every flag's variant for this person, for `GET /api/config`. Logs nothing. */
+export async function flagsFor(userId: string): Promise<Record<string, Variant>> {
+  const db = getDb();
+  const flags = await db.selectFrom("flags").select(["key", "state", "alternative_percent"]).execute();
+  const assigned = await db
+    .selectFrom("flag_assignments")
+    .select(["flag_key", "variant"])
+    .where("user_id", "=", userId)
+    .execute();
+  const mine = new Map(assigned.map((a) => [a.flag_key, a.variant]));
+  return Object.fromEntries(flags.map((f) => [f.key, decide(f, mine.get(f.key), userId) ?? "default"]));
+}
+
+export type AdminFlag = {
+  key: string;
+  description: string;
+  state: "on" | "off";
+  alternative_percent: number;
+  changed_at: string;
+  people: Array<{ user_id: string; name: string; email: string; variant: Variant }>;
+  exposures: { default: number; alternative: number };
+};
+
+/** The flags with their per-person assignments and exposure counts, for the admin page. */
+export async function listFlags(): Promise<AdminFlag[]> {
+  const db = getDb();
+  const flags = await db.selectFrom("flags").selectAll().orderBy("key").execute();
+  const people = await db
+    .selectFrom("flag_assignments as a")
+    .innerJoin("users as u", "u.id", "a.user_id")
+    .select(["a.flag_key", "a.user_id", "a.variant", "u.name", "u.email"])
+    .orderBy("u.name")
+    .execute();
+  const counts = await db
+    .selectFrom("flag_exposures")
+    .select(["flag_key", "variant", sql<number>`count(DISTINCT user_id)::int`.as("n")])
+    .groupBy(["flag_key", "variant"])
+    .execute();
+  return flags.map((f) => ({
+    key: f.key,
+    description: f.description,
+    state: f.state === "on" ? "on" : "off",
+    alternative_percent: f.alternative_percent,
+    changed_at: new Date(f.changed_at).toISOString(),
+    people: people
+      .filter((p) => p.flag_key === f.key)
+      .map((p) => ({
+        user_id: p.user_id,
+        name: p.name,
+        email: p.email,
+        variant: p.variant === "alternative" ? "alternative" : "default",
+      })),
+    exposures: {
+      default: counts.find((c) => c.flag_key === f.key && c.variant === "default")?.n ?? 0,
+      alternative: counts.find((c) => c.flag_key === f.key && c.variant === "alternative")?.n ?? 0,
+    },
+  }));
+}
+
+const REASON_MIN = 10;
+const REASON_MAX = 500;
+
+function reasonOf(value: unknown): string {
+  const reason = typeof value === "string" ? value.trim() : "";
+  if (reason.length < REASON_MIN || reason.length > REASON_MAX)
+    throw new FlagError("reason_required", 422, "Give a reason of at least 10 characters.", "reason");
+  return reason;
+}
+
+function knownKey(key: string): string {
+  if (!(FLAG_KEYS as readonly string[]).includes(key))
+    throw new FlagError("not_found", 404, "There is no such experiment.");
+  return key;
+}
+
+/** An admin changes a flag's state or share; audited with before and after. */
+export async function setFlag(input: {
+  key: string;
+  state: unknown;
+  alternativePercent: unknown;
+  reason: unknown;
+  actorUserId: string;
+}) {
+  const key = knownKey(input.key);
+  const reason = reasonOf(input.reason);
+  if (input.state !== "on" && input.state !== "off")
+    throw new FlagError("state_required", 422, "Choose on or off.", "state");
+  // An empty field is not 0 per cent (BLD-A216): only a number, or a string of digits, counts.
+  const raw = input.alternativePercent;
+  const percent =
+    typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(percent) || percent < 0 || percent > 100)
+    throw new FlagError(
+      "percent_not_valid",
+      422,
+      "Enter a whole number from 0 to 100.",
+      "alternative_percent",
+    );
+  await getDb()
+    .transaction()
+    .execute(async (trx) => {
+      const before = await trx
+        .selectFrom("flags")
+        .select(["state", "alternative_percent"])
+        .where("key", "=", key)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!before) throw new FlagError("not_found", 404, "There is no such experiment.");
+      await trx
+        .updateTable("flags")
+        .set({
+          state: input.state as string,
+          alternative_percent: percent,
+          changed_by: `user:${input.actorUserId}`,
+          changed_at: new Date(),
+        })
+        .where("key", "=", key)
+        .execute();
+      await trx
+        .insertInto("audit_log")
+        .values({
+          actor: `user:${input.actorUserId}`,
+          action: "flag.changed",
+          entity: `flag:${key}`,
+          before: JSON.stringify(before),
+          after: JSON.stringify({ state: input.state, alternative_percent: percent }),
+          reason,
+        })
+        .execute();
     });
-  } catch {
-    // the default stands either way
-  }
 }
 
-async function resolve(userId: string, key: FlagKey): Promise<Resolved> {
-  try {
-    const db = getDb();
-    const flag = await db
-      .selectFrom("flags")
-      .select(["state", "alternative_percent"])
-      .where("key", "=", key)
-      .executeTakeFirst();
-    if (!flag || flag.state !== "on") return { variant: "default", on: false };
-    const given = await db
-      .selectFrom("flag_assignments")
-      .select("variant")
-      .where("flag_key", "=", key)
-      .where("user_id", "=", userId)
-      .executeTakeFirst();
-    if (given) return { variant: asVariant(given.variant), on: true };
-    const percent = Math.max(0, Math.min(100, Number(flag.alternative_percent) || 0));
-    if (percent === 0) return { variant: "default", on: true };
-    const variant: Variant = bucketOf(userId, key) < percent ? "alternative" : "default";
-    const made = await db
-      .insertInto("flag_assignments")
-      .values({ flag_key: key, user_id: userId, variant, assigned_by: "rule" })
-      .onConflict((oc) => oc.columns(["flag_key", "user_id"]).doNothing())
-      .returning("variant")
-      .executeTakeFirst();
-    if (made) return { variant: asVariant(made.variant), on: true };
-    const raced = await db
-      .selectFrom("flag_assignments")
-      .select("variant")
-      .where("flag_key", "=", key)
-      .where("user_id", "=", userId)
-      .executeTakeFirst();
-    return { variant: asVariant(raced?.variant), on: true };
-  } catch (err) {
-    failed(key, err);
-    return { variant: "default", on: false };
-  }
-}
-
-/** Which variant this person sees. Never throws: any failure is 'default'. */
-export async function variantFor(userId: string, key: FlagKey): Promise<Variant> {
-  return (await resolve(userId, key)).variant;
-}
-
-/** One exposure: the screen that differs was rendered for this person. None while the flag is off, or for a screen
- * the flag does not change. Returns the variant logged, or null. */
-export async function logExposure(userId: string, key: FlagKey, screen: string): Promise<Variant | null> {
-  if (!FLAG_SCREENS[key].includes(screen)) return null;
-  const { variant, on } = await resolve(userId, key);
-  if (!on) return null;
-  try {
-    await getDb()
-      .insertInto("flag_exposures")
-      .values({ flag_key: key, user_id: userId, variant, screen })
-      .execute();
-    return variant;
-  } catch (err) {
-    failed(key, err);
-    return null;
-  }
-}
-
-/** A draft of this person's (by their contributor code), still a draft. Events name only their own drafts. */
-export async function ownDraft(contributorCode: string | null, draftId: string): Promise<boolean> {
-  if (!contributorCode) return false;
-  try {
-    const row = await getDb()
-      .selectFrom("ideas")
-      .select("id")
-      .where("id", "=", draftId)
-      .where("contributor_code", "=", contributorCode)
-      .executeTakeFirst();
-    return Boolean(row);
-  } catch {
-    return false;
-  }
-}
-
-/** One deciding event, codes only. Logged only while the flag is on; never throws. `once` keeps a second row for
- * the same draft and event out (S1, by the unique index). Returns whether a row was written. */
-export async function logFlagEvent(input: {
-  userId: string;
-  key: FlagKey;
-  variant?: Variant;
-  event: string;
-  outcome: string;
-  screen: string;
-  draftId?: string | null;
-}): Promise<boolean> {
-  let variant = input.variant;
-  if (!variant) {
-    const r = await resolve(input.userId, input.key);
-    if (!r.on) return false;
-    variant = r.variant;
-  }
-  try {
-    const out = await getDb()
-      .insertInto("flag_events")
-      .values({
-        flag_key: input.key,
-        user_id: input.userId,
-        variant,
-        draft_id: input.draftId ?? null,
-        screen: input.screen,
-        event: input.event,
-        outcome: input.outcome,
-      })
-      .onConflict((oc) => oc.doNothing())
-      .executeTakeFirst();
-    return Number(out.numInsertedOrUpdatedRows ?? 0) > 0;
-  } catch (err) {
-    failed(input.key, err);
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// S1, the interview: its place, kept with the draft (L-DRAFT.parts/10)
-// ---------------------------------------------------------------------------------------------------------------
-
-/** Where this person's interview on this draft stands; NO_INTERVIEW when it never started or cannot be read. */
-export async function interviewPlace(userId: string, draftId: string): Promise<InterviewPlace> {
-  try {
-    const rows = await getDb()
-      .selectFrom("flag_events")
-      .select(["event", "outcome"])
-      .where("flag_key", "=", "s1")
-      .where("draft_id", "=", draftId)
-      .where("user_id", "=", userId)
-      .orderBy("id")
-      .execute();
-    return placeFrom(rows);
-  } catch (err) {
-    failed("s1", err);
-    return NO_INTERVIEW;
-  }
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// S3: voice first runs only while voice can run (kill switches beat flags)
-// ---------------------------------------------------------------------------------------------------------------
-
-/** The switches a voice note needs on the drafts' voice routes (killswitch-routes: capture.voice, speech.hosted and
- * submissions). Unreadable counts as off. */
-export async function voiceCanRun(): Promise<boolean> {
-  try {
-    const states = await switchStates();
-    return isOn(states, "capture.voice") && isOn(states, "speech.hosted") && isOn(states, "submissions");
-  } catch {
-    return false;
-  }
-}
-
-/** What Tell it (S-04, S-04B) is given for its two flags: S1 and S3 (kill switches first). */
-export async function composeFlags(userId: string): Promise<ComposeFlags> {
-  const [s1, s3] = await Promise.all([variantFor(userId, "s1"), variantFor(userId, "s3")]);
-  const voiceFirst = s3 === "alternative" ? ((await voiceCanRun()) ? "listen" : "voice_off") : null;
-  return { interview: s1 === "alternative", voiceFirst };
+/** An admin puts one person on a variant, or back on the rule (`variant: null`); audited. */
+export async function assignFlag(input: {
+  key: string;
+  email: unknown;
+  variant: unknown;
+  reason: unknown;
+  actorUserId: string;
+}) {
+  const key = knownKey(input.key);
+  const reason = reasonOf(input.reason);
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  if (!email || email.length > 320)
+    throw new FlagError("email_required", 422, "Enter a work email.", "email");
+  const variant = input.variant;
+  if (variant !== null && variant !== "default" && variant !== "alternative")
+    throw new FlagError("variant_required", 422, "Choose which version they see.", "variant");
+  await getDb()
+    .transaction()
+    .execute(async (trx) => {
+      const user = await trx
+        .selectFrom("users")
+        .select(["id"])
+        .where(sql`lower(email)`, "=", email)
+        .where("active", "=", true)
+        .executeTakeFirst();
+      if (!user) throw new FlagError("no_such_person", 404, "No one active has that work email.", "email");
+      const before = await trx
+        .selectFrom("flag_assignments")
+        .select("variant")
+        .where("flag_key", "=", key)
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+      if (variant === null) {
+        await trx
+          .deleteFrom("flag_assignments")
+          .where("flag_key", "=", key)
+          .where("user_id", "=", user.id)
+          .execute();
+      } else {
+        await trx
+          .insertInto("flag_assignments")
+          .values({
+            flag_key: key,
+            user_id: user.id,
+            variant: variant as string,
+            assigned_by: `user:${input.actorUserId}`,
+          })
+          .onConflict((oc) =>
+            oc.columns(["flag_key", "user_id"]).doUpdateSet({
+              variant: variant as string,
+              assigned_by: `user:${input.actorUserId}`,
+              assigned_at: new Date(),
+            }),
+          )
+          .execute();
+      }
+      await trx
+        .insertInto("audit_log")
+        .values({
+          actor: `user:${input.actorUserId}`,
+          action: "flag.assigned",
+          entity: `flag:${key}`,
+          before: JSON.stringify({ user_id: user.id, variant: before?.variant ?? null }),
+          after: JSON.stringify({ user_id: user.id, variant }),
+          reason,
+        })
+        .execute();
+    });
 }

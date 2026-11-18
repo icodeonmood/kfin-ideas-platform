@@ -1043,6 +1043,135 @@ def test_BLD_F024_a_read_writes_only_when_a_brought_draft_has_left_draft(
     assert _writes(log) == []
 
 
+# --- BLD-F029, DEC-104: a lead who hid their name from the Wall, or has left, is "the lead" to someone asking ------
+def _unnamed(db: Conn, person: dict[str, str], how: str) -> None:
+    """The lead hides their name from the Wall in Profile, or is no longer active (lane C's `person_refs` rule)."""
+    if how == "hidden":
+        db.execute(
+            "INSERT INTO person_settings (user_id, show_name_on_wall) VALUES (%s, false) "
+            "ON CONFLICT (user_id) DO UPDATE SET show_name_on_wall = false",
+            (person["id"],),
+        )
+    else:
+        db.execute("UPDATE users SET active = false WHERE id = %s", (person["id"],))
+
+
+def _no_trace_of(person: dict[str, str], *payloads: Any) -> None:
+    """Neither the lead's name nor their users.id is anywhere in what the requester receives."""
+    for payload in payloads:
+        text = str(payload)
+        for secret in (person["name"], person["first_name"], person["name"].split()[-1], person["id"]):
+            assert secret not in text, secret
+
+
+def _hidden_lead(ref: dict[str, Any]) -> None:
+    assert (ref["name"], ref["first_name"], ref["initials"]) == ("A colleague", "A colleague", "")
+    assert ref["id"].startswith("p") and "area" not in ref and "city" not in ref
+
+
+@pytest.mark.parametrize("how", ["hidden", "inactive"])
+def test_BLD_F029_DEC_104_a_lead_who_is_not_named_stays_the_lead_until_the_requester_is_on_the_crew(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, how: str
+) -> None:
+    ravi, kavya, ref = cast["ravi"], cast["kavya"]["id"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, how)
+    # The sheet's two reads (C-SHEET-TEAMUP.compose): the lead is lane C's hidden person, with no users.id.
+    note = requests.draft_note(db, ref, kavya)
+    before = requests.my_state(db, ref, kavya)
+    _hidden_lead(note["lead"])
+    _hidden_lead(before["lead"])
+    _no_trace_of(ravi, note, before)
+    # Sent: "Waiting for the lead" on the opener (C-SHEET-TEAMUP.after), in every read the requester makes.
+    sent = _send(db, cast)
+    assert sent["after"]["line"] == "Waiting for the lead"
+    assert (
+        sent["after"]["detail"]
+        == "The lead reads your note, then approves or declines. You’ll hear in your Inbox."
+    )
+    waiting = requests.my_state(db, ref, kavya)
+    assert waiting["after"]["line"] == "Waiting for the lead" and waiting["why_not"] == "already_requested"
+    again = _refused(_send, db, cast)
+    assert (again.status, again.code, again.message) == (409, "already_requested", "Waiting for the lead")
+    read = requests.read(db, sent["id"], kavya)
+    assert read["after"]["line"] == "Waiting for the lead"
+    _no_trace_of(ravi, sent, waiting, again.body(), read)
+    # Declined: Kavya is not on the crew, so the lead stays unnamed in the reason line.
+    requests.answer(db, sent["id"], ravi["id"], {"answer": "decline", "reason": "The crew is full for now"})
+    declined = requests.read(db, sent["id"], kavya)
+    assert declined["after"]["line"] == "The lead declined: “The crew is full for now”."
+    after_no = requests.my_state(db, ref, kavya)
+    _hidden_lead(after_no["lead"])
+    _no_trace_of(ravi, declined, after_no)
+    # Approved: Kavya is on the crew now, and the crew sees the lead's name (BLD-F042).
+    second = _send(db, cast)
+    requests.answer(db, second["id"], ravi["id"], {"answer": "team_only"})
+    on_crew = requests.my_state(db, ref, kavya)
+    assert on_crew["me"] == "crew"
+    assert (on_crew["lead"]["id"], on_crew["lead"]["name"]) == (ravi["id"], ravi["name"])
+    assert requests.read(db, second["id"], kavya)["after"]["state"] == "on_crew"
+
+
+@pytest.mark.parametrize("how", ["hidden", "inactive"])
+def test_BLD_F029_a_draft_merge_request_says_the_lead_and_carries_no_users_id(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, how: str
+) -> None:
+    ravi, kavya = cast["ravi"], cast["kavya"]["id"]
+    _unnamed(db, ravi, how)
+    draft = f.draft(db, cast["kavya"])
+    body = {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE}
+    asked = drafts.ask(db, str(draft["id"]), kavya, body)
+    _hidden_lead(asked["lead"])
+    assert asked["after"]["label"] == "Waiting on the lead to merge"
+    assert asked["after"]["line"] == (
+        "Waiting for the lead to accept the merge. If the lead declines, you can send yours on its own."
+    )
+    again = _refused(drafts.ask, db, str(draft["id"]), kavya, body)
+    assert (again.code, again.message) == ("already_requested", "Waiting on the lead to merge")
+    state = drafts.state(db, str(draft["id"]), kavya)
+    _no_trace_of(ravi, asked, again.body(), state)
+    requests.answer(db, asked["id"], ravi["id"], {"answer": "decline", "reason": REASON})
+    kept = drafts.state(db, str(draft["id"]), kavya)
+    assert kept["after"]["label"] == "The lead kept it separate"
+    _no_trace_of(ravi, kept)
+
+
+def test_BLD_F029_DEC_104_the_desk_and_the_committee_and_the_crew_always_see_the_lead(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    ravi, ref = cast["ravi"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, "hidden")
+    for role in ("reviewer", "committee", "core_chair"):
+        desk = f.person(db, f"Meera Pillai {role.title()}", roles=(role,))
+        seen = requests.my_state(db, ref, desk["id"])
+        assert (seen["lead"]["id"], seen["lead"]["name"]) == (ravi["id"], ravi["name"]), role
+        assert requests.draft_note(db, ref, desk["id"])["lead"]["first_name"] == "Ravi", role
+    # Asha is on Ravi's crew: she sees his name too; Ravi sees his own.
+    assert requests.my_state(db, ref, cast["asha"]["id"])["lead"]["name"] == ravi["name"]
+    assert requests.my_state(db, ref, ravi["id"])["lead"]["name"] == ravi["name"]
+    # A lead who shows their name is named to everyone, as before.
+    shown = f.person(db, "Gopal Iyengar")
+    open_idea = f.idea(db, shown, title="Branch tokens run out by noon")
+    seen = requests.my_state(db, open_idea["idea_id"], cast["kavya"]["id"])
+    assert (seen["lead"]["id"], seen["lead"]["first_name"]) == (shown["id"], "Gopal")
+    sent = requests.send(
+        db, open_idea["idea_id"], cast["kavya"]["id"], {"note": NOTE, "brought_idea_ids": []}
+    )
+    assert sent["after"]["line"] == "Waiting for Gopal"
+
+
+def test_BLD_F075_the_lead_still_reads_the_name_of_a_requester_who_hid_theirs_from_the_wall(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """The sheet tells the requester "Ravi sees your name, your note." before they send (Crew.md), and Profile's
+    switch is about the Wall next to their shared ideas (S-H6), so the lead they chose to ask reads who they are."""
+    _unnamed(db, cast["kavya"], "hidden")
+    sent = _send(db, cast, [cast["mine"]["idea_id"]])
+    lead_view = requests.read(db, sent["id"], cast["ravi"]["id"])
+    assert lead_view["reader"]["line"] == "Kavya Menon asks to team up and merge their idea into yours"
+    assert lead_view["from"]["name"] == "Kavya Menon"
+    assert lead_view["brought"][0]["byline"].startswith("Kavya Menon, Investor service, Hyderabad.")
+
+
 def test_the_fixtures_leave_no_people_or_ideas_behind(
     db: Conn, cast: dict[str, Any], held: dict[str, Any]
 ) -> None:

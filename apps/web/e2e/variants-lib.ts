@@ -22,7 +22,7 @@ export async function sql<T = Record<string, unknown>>(text: string, values: unk
 }
 
 /** A new person, signed in, with `flag` forced to the alternative for them. Returns their users.id. */
-export async function personWithFlag(page: Page, flag: "s1" | "s3", info: TestInfo): Promise<string> {
+export async function personWithFlag(page: Page, flag: "s1" | "s2" | "s3", info: TestInfo): Promise<string> {
   const id = `SYN-EV${flag.toUpperCase()}${info.workerIndex}${Date.now().toString(36).toUpperCase()}`;
   const email = `${id.toLowerCase()}@kfintech.example`;
   await signIn(page, id, { employeeId: id, email, name: "Synthetic Variant" });

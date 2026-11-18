@@ -16,7 +16,9 @@
  * sending; what was typed is kept for this session if the sheet is reopened.
  *
  * Privacy (non-negotiables 3, 4 and 7): the note goes only to the API, which masks it before anyone else reads it;
- * the sent step shows back what the API returns. Nothing is logged.
+ * the sent step shows back what the API returns. Nothing is logged. The lead is named only as the API names them: a
+ * lead who hid their name from the Wall, or has left, comes as lane C's hidden person ("A colleague", no initials)
+ * and every line says "the lead" (BLD-F029, DEC-104).
  */
 import {
   useCallback,
@@ -53,12 +55,35 @@ import "./teamup-sheet.css";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Words (C-SHEET-TEAMUP, Crew.md view=Request and view=Request sent). No gendered pronoun for a real person
-// (BLD-E008): the lead is always named. Lines the pack does not draw are listed in docs/hr-wording/lane-f.md §4.
+// (BLD-E008): the lead is named by first name, or is "the lead" when the API does not name them (BLD-F029; `lead`
+// below is `leadWord(…)`). Lines the pack does not draw are listed in docs/hr-wording/lane-f.md §4.
 // ---------------------------------------------------------------------------------------------------------------
+/** How the sheet says a lead the API does not name (they hid their name from the Wall, or have left). */
+export const THE_LEAD = "the lead";
+/** Lane C's name for a hidden person (`similar.preview.HIDDEN_NAME`). */
+const HIDDEN_NAME = "A colleague";
+
+/**
+ * The lead in a sentence: their first name, or "the lead" when the API sends lane C's hidden person (no initials,
+ * "A colleague"), as the crew cards do (BLD-F042, BLD-F029). Empty while nothing has loaded.
+ */
+export function leadWord(
+  lead: Pick<PersonRef, "name" | "first_name" | "initials"> | null | undefined,
+): string {
+  if (!lead) return "";
+  if (!lead.initials || lead.name === HIDDEN_NAME || lead.first_name === HIDDEN_NAME) return THE_LEAD;
+  return lead.first_name || lead.name;
+}
+
+/** "the lead" starts a sentence as "The lead"; a name is left as it is. */
+const cap = (lead: string) => (lead === THE_LEAD ? "The lead" : lead);
+
 export const TEAMUP_COPY = {
   title: (lead: string) => `Team up with ${lead}`,
   line: (lead: string, title: string) =>
-    `${lead} leads “${title}” and decides who joins. Tell ${lead} what you bring.`,
+    lead === THE_LEAD
+      ? `The lead of “${title}” decides who joins. Tell them what you bring.`
+      : `${lead} leads “${title}” and decides who joins. Tell ${lead} what you bring.`,
   close: "Close without sending",
   noteLabel: (lead: string) => `Your note to ${lead}`,
   hintDrafted: "We drafted this from your idea. Change anything you like.",
@@ -73,18 +98,18 @@ export const TEAMUP_COPY = {
   draftChoice: "Your draft",
   merge: (lead: string) => `Ask ${lead} to merge mine in`,
   mergeHelp: (lead: string) =>
-    `${lead} decides. If ${lead} accepts, yours joins that idea with credit to you. If not, you send yours on its own.`,
+    `${cap(lead)} decides. If ${lead} accepts, yours joins that idea with credit to you. If not, you send yours on its own.`,
   separate: "Keep mine separate",
   separateHelp: "Team up, and send yours as its own idea",
   privacy: (lead: string, brought: number) =>
     brought === 0
-      ? `${lead} sees your name, your note.`
-      : `${lead} sees your name, your note and the ${brought === 1 ? "idea" : "ideas"} you bring.`,
+      ? `${cap(lead)} sees your name, your note.`
+      : `${cap(lead)} sees your name, your note and the ${brought === 1 ? "idea" : "ideas"} you bring.`,
   send: (lead: string) => `Send to ${lead}`,
   sending: "Sending…",
   sentTitle: (lead: string) => `Sent to ${lead}`,
   sentLine: (lead: string) =>
-    `${lead} reads your note, then approves or declines. You’ll hear in your Inbox.`,
+    `${cap(lead)} reads your note, then approves or declines. You’ll hear in your Inbox.`,
   yourNote: "Your note",
   bringing: (titles: string[]) => `Bringing ${quotedList(titles)}`,
   withdraw: "Withdraw request",
@@ -371,7 +396,7 @@ function Sheet(props: TeamUpSheetProps) {
         }
         if (m?.why_not) {
           // A request still waiting that did not come back as one: say so rather than offer a send the API refuses.
-          const first = m.lead.first_name || m.lead.name;
+          const first = leadWord(m.lead);
           const message =
             m.why_not === "idea_closed"
               ? TEAMUP_COPY.closed
@@ -481,7 +506,7 @@ function Sheet(props: TeamUpSheetProps) {
   };
 
   const lead = view.kind === "loading" ? undefined : view.kind === "compose" ? view.data.lead : view.lead;
-  const first = lead ? lead.first_name || lead.name : "";
+  const first = leadWord(lead);
 
   return (
     <div className="tus-wrap" onKeyDown={onKeyDown}>
