@@ -195,7 +195,9 @@ export function Compose({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [existing, setExisting] = useState<DraftListItem | null>(null);
-  const [pickedUp, setPickedUp] = useState(false);
+  /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." as it was when the draft was opened, or null when
+   * there is no "Picked up" line. Saves made here afterwards do not change it (BLD-C158). */
+  const [pickedUp, setPickedUp] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
@@ -253,11 +255,11 @@ export function Compose({
           adopt(d, d.run?.state === "running" ? d.run.id : null);
           setSave("saved");
           const ageMs = Date.now() - new Date(d.saved_at).getTime();
-          setPickedUp(
+          const back =
             !handedOver.has(givenId) &&
-              d.run?.state !== "running" &&
-              (!d.saved_on?.this_device || ageMs > 2 * 60_000),
-          );
+            d.run?.state !== "running" &&
+            (!d.saved_on?.this_device || ageMs > 2 * 60_000);
+          setPickedUp(back ? (d.saved_labels?.resume ?? "") : null);
           const waiting = client.outbox(givenId);
           if (waiting.length) setPending(waiting.map((m) => ({ ...m, queued: true })));
         })
@@ -868,13 +870,13 @@ export function Compose({
                 tabIndex={0}
               >
                 <div className="tin">
-                  {pickedUp && draft ? (
+                  {pickedUp !== null && draft ? (
                     <div className="ban" role="region" aria-label="Your draft">
                       <span className="ic" aria-hidden="true">
                         <IconDevice size={16} />
                       </span>
                       <p className="bt">{COMPOSE_COPY.pickedUp}</p>
-                      <p className="bm">{draft.saved_labels?.resume}</p>
+                      <p className="bm">{pickedUp}</p>
                       <div className="ba">
                         <button type="button" className="tb" onClick={() => router.push("/share?new=1")}>
                           {COMPOSE_COPY.startNewInstead}

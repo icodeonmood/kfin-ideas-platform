@@ -231,6 +231,12 @@ def test_l_draft_autosave_4_saved_labels() -> None:
     assert mine["sidebar"] == "Yesterday, on this laptop"
     assert mine["my_ideas"] == "Saved yesterday, on this laptop"
     assert mine["prompt_line"] == "Saved on this laptop, 10:05 am."
+    # BLD-C158, S-04B.layout/4: the picked-up line always carries the day, as the sidebar does ("Today, on …").
+    assert mine["resume"] == "Last saved on this laptop, yesterday 10:05 am."
+    today = labels.saved_labels(now - dt.timedelta(minutes=26), "laptop", False, now)
+    assert today is not None
+    assert today["sidebar"] == "Today, on your laptop"
+    assert today["resume"] == "Last saved on your laptop, today 1:12 pm."
     assert labels.saved_labels(now, "laptop", True, now)["status"] == "Saved at 1:38 pm"
     assert labels.message_label(now - dt.timedelta(seconds=20), "laptop", True, now) == "Just now"
     assert labels.message_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"

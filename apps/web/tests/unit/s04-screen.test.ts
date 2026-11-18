@@ -350,6 +350,55 @@ describe("S-04B Tell it, the conversation (J-SHARE/5, J-RESUME/3, J-RECOVER/5; B
     expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("S-04B.layout/4 J-SHARE/5 (BLD-C158) the picked-up line stays as opened, in the sidebar's day and device, after a detail is saved here", async () => {
+    const opened = {
+      ...draft().saved_labels!,
+      sidebar: "Today, on your laptop",
+      resume: "Last saved on your laptop, today 3:12 pm.",
+    };
+    const afterSave = {
+      ...opened,
+      sidebar: "Today, on this laptop",
+      resume: "Last saved on this laptop, today 3:14 pm.",
+    };
+    const detail = "Each new folio needs the nominee typed twice.";
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-9",
+            message: { id: "m-2", text: detail },
+            draft: draft({
+              messages: [
+                ...draft().messages,
+                { ...draft().messages[0]!, id: "m-2", text: detail, at_label: "Just now" },
+              ],
+              saved_labels: afterSave,
+              saved_on: { device: "laptop", this_device: true },
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: draft({ saved_labels: opened, saved_on: { device: "laptop", this_device: false } }),
+        };
+      return { status: 404, body: { error: { code: "not_found", message: "We couldn't find that draft." } } };
+    };
+    await mount({ draftId: DRAFT });
+    expect(text()).toContain("Picked up where you left off.");
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    type(host.querySelector("textarea") as HTMLTextAreaElement, detail);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(text()).toContain(detail);
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your laptop, today 3:12 pm.");
+    expect(text()).not.toContain("Last saved on this laptop");
+  });
+
   it("J-RECOVER/5 offline: the detail waits with its client_id and `at`; back online it goes, and Saved at", async () => {
     const detail = "We started a spreadsheet last month but nobody keeps it up to date.";
     conversationRoute((s) =>
