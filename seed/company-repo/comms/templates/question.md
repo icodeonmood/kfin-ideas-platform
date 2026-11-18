@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: A quick question about {{idea.id}}
-description: Message template for idea.question.
+description: 'Message template for idea.question. 1.2 (DEC-111, BLD-A222): signed by the review desk as a whole, never by a reviewer’s name. The opening reads “We’re reviewing” to match. For HR.'
 tags:
 - comms
 - template
@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-question
-  version: '1.1'
+  version: '1.2'
   events:
   - idea.question
   subject: A quick question about {{idea.id}}
-  signed_as: '{{reviewer.name}}, review desk'
+  signed_as: 'The review desk, 1% Club'
   hr_signed_off: false
 ---
 
@@ -23,7 +23,7 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-I'm reviewing your idea **"{{idea.one_line}}"** and have one question:
+We're reviewing your idea **"{{idea.one_line}}"** and have one question:
 
 > {{question.text}}
 
@@ -31,6 +31,6 @@ Please reply in the app by **{{question.due_date}}**. The review clock pauses un
 
 [Reply here]({{links.idea}})
 
-{{reviewer.name}}, review desk, 1% Club
+The review desk, 1% Club
 
 A KFintech programme

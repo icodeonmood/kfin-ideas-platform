@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{idea.id}} has been reviewed'
-description: Message template for idea.reviewed.
+description: 'Message template for idea.reviewed. 1.4 (DEC-111, BLD-A222): signed by the review desk as a whole, never by a reviewer’s name. For HR.'
 tags:
 - comms
 - template
@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-reviewed
-  version: '1.3'
+  version: '1.4'
   events:
   - idea.reviewed
   subject: '{{idea.id}} has been reviewed'
-  signed_as: '{{reviewer.name}}, review desk'
+  signed_as: 'The review desk, 1% Club'
   hr_signed_off: false
 ---
 
@@ -35,6 +35,6 @@ Your idea **"{{idea.one_line}}"** has been reviewed.
 
 [See your idea]({{links.idea}})
 
-{{reviewer.name}}, review desk, 1% Club
+The review desk, 1% Club
 
 A KFintech programme
