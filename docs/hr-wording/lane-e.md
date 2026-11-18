@@ -98,7 +98,7 @@ These words are lane F's, from the team-up sheet, and are already on HR's list i
 
 ## 8. Worker (`services/worker/ideapage/`)
 
-The worker builds these lines and sends them to the page, so they are not in `apps/web/src/app/`: paths in this section are from the repo root. In the code each is marked `# NOT DRAWN`. Words in braces are filled in at run time: {lead_ref} is the reference of the idea it now belongs to, {q} the words searched for, {closes} the day changes closed, {name} the build team's name and {checks} the days after shipping when the effect is measured.
+The worker builds these lines and sends them to the page, so they are not in `apps/web/src/app/`: paths in this section are from the repo root. In the code each is marked `# NOT DRAWN`. Words in braces are filled in at run time: {lead_ref} is the reference of the idea it now belongs to, {q} the words searched for, {n} how many ideas the other list holds, {list} that list's name (Yours or Teamed up), {closes} the day changes closed, {name} the build team's name, {checks} the days after shipping when the effect is measured and {details} the line's first part about personal details ("Personal details hidden", "1 PAN hidden" or "No personal details found").
 
 | Module | Where it shows | File and line | Wording |
 |---|---|---|---|
@@ -111,8 +111,11 @@ The worker builds these lines and sends them to the page, so they are not in `ap
 | `S-07` | The same, the line under it | `services/worker/ideapage/mine.py:409` | Ideas the review desk picks show here while a team builds them. |
 | `S-07` | My ideas, a search that finds nothing | `services/worker/ideapage/mine.py:524`, `:558` | Nothing found for “{q}”. |
 | `S-07` | My ideas, under a search's answer, what it looked at | `services/worker/ideapage/mine.py:528` | Matched on titles, short summaries and references. |
+| `S-07` | My ideas, a search that finds nothing, the line under its heading | `services/worker/ideapage/mine.py:559` | Try other words, or clear the search. |
+| `S-07` | My ideas on a computer, when the list on show has nothing for the filter or search and the other list has some, the button (the board draws “See 1 in Teamed up”; the count, and “Yours” for the other list, are filled in) | `services/worker/ideapage/mine.py:550` | See {n} in {list} |
 | `S-07` | My ideas, "Teamed up" with nothing in it, the heading | `services/worker/ideapage/mine.py:577` | You haven’t teamed up on an idea yet. |
 | `S-07` | The same, the line under it | `services/worker/ideapage/mine.py:580` | Find your crew to join colleagues on something similar. |
+| `S-06`, `S-09` | An idea's track, the “Checked and matched” line when similar ideas could not be checked and none are linked (the sentence is the pack's, from Check it; on the track it is not drawn, BLD-E052). On your own idea's page it follows the personal details part; a colleague sees the sentence alone | `services/worker/ideapage/track.py:100` | {details}. Couldn’t check for similar ideas. The review desk will. |
 | `S-06` | Your idea's page, when questions came before the review desk opened it | `services/worker/ideapage/sharer.py:228` | The idea itself can’t be changed now. Write to the review desk in the conversation. |
 | `S-06` | Your idea's page, when the time for changes ran out before the review desk opened it | `services/worker/ideapage/sharer.py:230`, `:231` | The time for changes ended on {closes}, so the idea itself can’t be changed now. Write to the review desk in the conversation. |
 | `S-06` | Your idea's page while it is being built, the card's first line | `services/worker/ideapage/sharer.py:283` | Being built. |
