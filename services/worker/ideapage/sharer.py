@@ -201,7 +201,7 @@ def decision_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: 
     The reason is lane B's stored copy, masked when the desk sent it, so the same words as S-06's reason block.
     DEC-111: the sender is "The review desk" with no face for anyone outside the review desk and the Ones Committee,
     and nothing about the person at the desk is read; inside them, "Meera from the review desk" with her initials.
-    The words for the message are BLD-E058's (docs/hr-wording/lane-e.md)."""
+    NOT DRAWN (BLD-E058), HR sign-off: the desk's sender line (docs/hr-wording/lane-e.md, section 8)."""
     decision_id = str(dec.raw["id"])
     reason = read.decision_reason(conn, decision_id)
     said = DECISION_LABEL[dec.desk_choice]
@@ -260,7 +260,7 @@ def committee_message(conn: Conn, dec: Decided, now: dt.datetime) -> dict[str, A
     """The Ones Committee's message after it reversed the desk's decision (Status.md "Reversed by the Ones Committee":
     the desk's message stays, then the member's), at the time it reversed it. The product stores no separate short
     message, so the words are the committee's note, lane B's masked copy: the same words as the reversal card's note.
-    A note that will not open falls back to the reversal card's own title (BLD-E058)."""
+    A note that will not open falls back to the reversal card's title. NOT DRAWN (BLD-E058), HR sign-off."""
     reversal_id = str(dec.raw["reversal_id"])
     note = read.reversal_note(conn, reversal_id)
     speaker, from_label = committee_speaker(conn, dec.reversed_by)
