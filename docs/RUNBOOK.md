@@ -80,6 +80,32 @@ The speech service's base image is pinned by digest and every Python package by 
 2. Base image: look up the current multi-architecture digest of `python:3.12-slim` (`docker buildx imagetools inspect python:3.12-slim`, or the registry's API) and put it in the `FROM` line of `services/worker/speech_service/Dockerfile`.
 3. Rebuild with `COMPOSE_PROFILES=speech docker compose build speech`, run `make test` (the contract and compose tests), then deploy through UAT as usual.
 
+## 2c. The A/B experiments S1 to S3 (P-DECISIONS.experiments, BLD-A216, BLD-C170 to C176)
+
+Three choices on Share a problem are switchable for a test. Each ships **on, at 0 %**: everyone sees the default until an admin sets a share.
+
+| Flag | What the other version does | Decided by (view) |
+|---|---|---|
+| `s1` | After the first telling, up to three short skippable questions (how often, who feels it most, any rough size), then the draft, built once | `flag_s1_metrics`: drop-off, median seconds to share, draft completeness; questions answered and skipped |
+| `s2` | On a close similar idea, Check it opens on the comparison before the other parts | `flag_s2_metrics`: duplicates reaching the review desk, completion rate; what people did with the comparison |
+| `s3` | On a phone, listening starts at once, with "Type instead" and "Stop" in the dock | `flag_s3_metrics`: phone completion, how often a voice note's words were corrected |
+
+**Setting the share or one person: Admin → Experiments** (lane A's page, `/admin#flags`; `setFlag` and `assignFlag` in `apps/web/src/server/flags.ts`, L-AUDIT.flags). Each flag has a state (on or off) and the share, 0 to 100, who see the other version; "Put one person on a version" takes a work email, or puts the person back on the share. Every change needs a reason and is written to `audit_log`. Use the page, not SQL.
+
+**Rules the code keeps.** The server decides each person's version (lane A's `flagVariant`); it never comes from the browser or the address. A flag that is off shows everyone the default and logs nothing. A person put on a version keeps it. Everyone else is placed by a fixed hash of their user id, so raising the share only adds people and lowering it only takes people out. Kill switches win over flags: S3 never listens while `capture.voice`, `speech.hosted` or `submissions` is off, before the phone already allows the microphone, or in a tab nobody is looking at. An exposure is logged once per person, screen and version, and only where the other version would change what the person sees: S1 on every Tell it page (S-04, S-04B), S3 only on a phone's new Tell it page, and S2 only when a close similar idea is found on a Check it opened straight from Tell it. One caveat stays: S1 also counts people whose Tell it page is a draft they picked up later, where neither version asks questions, so read S1 by its drafts rather than by its people. If the flag lookup takes longer than 1.5 seconds the page shows the default, but the late lookup can still record an exposure, so S1's counts can include a few people who saw the default. The deciding events hold ids and codes, never anyone's words.
+
+**Read the results** (counts and rates per version only; the web app cannot read these views), as the database owner or the worker role:
+
+```sql
+SELECT * FROM flag_s1_metrics;
+SELECT * FROM flag_s2_metrics;
+SELECT * FROM flag_s3_metrics;
+```
+
+Every count is of distinct people or drafts. A person counts from their first exposure to the flag. S1 and S3 count the web drafts they started after it (S3 only those started on a phone); S2 counts the drafts that reached Check it, and decides on those with a close match found on a fresh Check it. `drop_off_rate` is drafts not shared over drafts started; `completeness_*` is the share of the five parts (title, how often, who, worth, area) filled; `completion_rate` (S2) is drafts with a close match that were shared; `duplicates_to_desk` is those shared on their own, not merged, and `duplicate_rate` is that over drafts with a close match; `correction_rate` is drafts sent with a voice note whose words were changed first. Compare the versions only once each has a few hundred exposures; until then the numbers move a lot. Admin → Experiments also shows how many people have seen each version.
+
+**Where the rows are.** `flags` and `flag_assignments` (lane A's; the admin page writes them), `flag_exposures` (one row per person, screen and version), `flag_events` (S1's questions and the interview's place, S2's comparison and the drafts that reached Check it, S3's listening and voice notes). The web app only adds to `flag_exposures` and `flag_events`.
+
 ## 3. Scheduled jobs to watch
 
 | Job | When (IST) | Healthy when |

@@ -1159,3 +1159,58 @@
 .ck-proof-edit .fdrop {
   margin-bottom: 12px;
 }
+
+/* ---------- Flag S2 "Check first" on a phone (PhoneReview.md, simulatorS2=Check first; BLD-C176) ---------- */
+.ck-first {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.ck-first > .ck-h,
+.ck-first > .ck-line {
+  margin: 0;
+}
+
+.ck-first-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.ck .ck-first-cards .sgt {
+  min-height: 0;
+}
+
+.ck .ck-first-cards .sgt-s {
+  -webkit-line-clamp: unset;
+  display: block;
+}
+
+.ck .ck-first-close {
+  box-shadow:
+    inset 0 0 0 1.5px var(--blue),
+    0 24px 50px -36px rgba(17, 17, 17, 0.35);
+}
+
+.ck .ck-first-close > .meta:first-child {
+  margin-top: 0;
+}
+
+.ck-first-also {
+  margin: 0;
+}
+
+.ck-first-dock {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.ck-first-dock > .tb {
+  align-self: flex-start;
+  min-height: 44px;
+}

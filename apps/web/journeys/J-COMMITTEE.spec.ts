@@ -4,9 +4,9 @@
  * Seed: Manoj is on the committee. C1 (picked 10 days ago) is extended, F1 (not picked 3 days ago) is reversed,
  * J1 (picked 38 days ago) has expired, T7 (picked 5 days ago) is read.
  */
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
-import { addMonthsIST, dayIST, decisionWindow, ideaUrl, seeded, signInAs, step } from "./lib";
+import { addMonthsIST, dayIST, decisionWindow, ideaUrl, nextCloseIST, seeded, signInAs, step } from "./lib";
 
 const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
@@ -25,6 +25,19 @@ function esc(s: string): string {
 
 function rowFor(page: Page, title: string) {
   return page.getByRole("row", { name: new RegExp(esc(title)) });
+}
+
+// Review (or See it) opens the decision in a second row below the summary row: the reason, the window, then Extend
+// or the limit line, and Reverse (S-R4). The button names that panel in aria-controls, so what the panel holds is
+// read there, never in the summary row, where a missing button would pass unseen.
+async function openPanel(page: Page, title: string, action: "Review" | "See it"): Promise<Locator> {
+  const button = rowFor(page, title).getByRole("button", { name: new RegExp(`^${action}`) });
+  const id = await button.getAttribute("aria-controls");
+  expect(id, `${action} names the panel it opens`).toBeTruthy();
+  await button.click();
+  const panel = page.locator(`[id="${id}"]`);
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 step(
@@ -73,7 +86,12 @@ step(
         { exact: true },
       ),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Extend to \w+day \d{1,2} \w+ \d{4}$/ })).toBeEnabled();
+    // Extend's target by the rule (BLD-B263): C1 was extended once, so this one reaches the 3-month date itself.
+    const next = nextCloseIST(opensAt, closesAt);
+    expect(next, "C1 starts extended once, below its limit").not.toBeNull();
+    await expect(
+      page.getByRole("button", { name: `Extend to ${dayIST(next as Date)}`, exact: true }),
+    ).toBeEnabled();
     await expect(page.getByRole("button", { name: "Reverse the decision" })).toBeEnabled();
   },
 );
@@ -85,19 +103,26 @@ step(
   { needs: ["S-R4", "L-COMMITTEE", "S-06"], changes: ["C1"] },
   async ({ page, browser }) => {
     const c1 = await seeded("C1");
+    const { opensAt, closesAt } = await decisionWindow(c1);
+    const next = nextCloseIST(opensAt, closesAt);
+    expect(next, "C1 starts extended once, below its limit").not.toBeNull();
+    const newDate = dayIST(next as Date);
+    // Closing 60 days in, the next 30 would stop 0 to 2 days short of the 3-month date, so it goes to that date.
+    expect((next as Date).getTime()).toBe(addMonthsIST(opensAt, 3).getTime());
     await openCommittee(page);
     const row = rowFor(page, c1.title);
-    await row.getByRole("button", { name: "Review" }).click();
+    const panel = await openPanel(page, c1.title, "Review");
     // The seed extended C1 once, so this is its second extension.
     await expect(row).toContainText("Extended once");
-    const extend = page.getByRole("button", { name: /^Extend to / });
-    const newDate = (await extend.innerText()).replace(/^Extend to /, "").trim();
-    // C1's new date is in 2027, so it carries the year everywhere (Committee.md, Status.md).
-    expect(newDate).toMatch(/^\w+day \d{1,2} \w+ \d{4}$/);
+    const extend = panel.getByRole("button", { name: `Extend to ${newDate}`, exact: true });
     const until = esc(newDate);
     await extend.click();
     await expect(row).toContainText("Extended twice"); // when.times: "once", "twice", then "N times"
     await expect(row).toContainText(new RegExp(`Until ${until}`));
+    // At the 3-month date nothing more can be added: in the open panel the limit line stands where Extend was
+    // (S-R4.rules/2). The line is checked first, so the panel is known to be there when no Extend is found in it.
+    await expect(panel.getByText("At the 3-month limit", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
     const sharer = await (await browser.newContext()).newPage();
@@ -172,7 +197,9 @@ step(
     await page.getByRole("tab", { name: /Expired/ }).click();
     const row = rowFor(page, j1.title);
     await expect(row).toContainText(/Expired \w+day \d{1,2} \w+\. After 30 days\. The decision stands\./);
-    await expect(row.getByRole("button", { name: "See it" })).toBeVisible();
-    await expect(row.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+    // See it opens the panel; a closed window offers neither Extend nor Reverse there.
+    const panel = await openPanel(page, j1.title, "See it");
+    await expect(panel.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Reverse the decision" })).toHaveCount(0);
   },
 );

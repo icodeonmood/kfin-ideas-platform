@@ -46,6 +46,12 @@ export function kindsLine(details: Pick<HiddenDetail, "kind">[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+/** One kind in a sentence ("hid 1 folio number"): the kind's name in lower case, PAN and Aadhaar as written. */
+export function kindNoun(kind: HiddenKind): string {
+  const name = KIND_NAME[kind] ?? kind;
+  return KEEP_CASE.has(kind) ? name : name.charAt(0).toLowerCase() + name.slice(1);
+}
+
 export const HIDDEN_COPY = {
   label: "Hidden details",
   bar: "Personal details hidden",

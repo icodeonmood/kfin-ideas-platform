@@ -11,6 +11,12 @@
  * Data: the draft (A-API.drafts), its sorting, fix, helpers and the Send part's last look (lane C), similar ideas and
  * "Keep mine separate" (c/similar), files and links (A-API.files), the merge request (lane F). Submit sends the
  * declaration's version with an idempotency key and hands over to S-06 with the idea's reference (L-SUBMIT.send).
+ *
+ * Flag S2 "Check first" (P-DECISIONS.experiments, L-SIMILAR "Flag S2"; BLD-C176), handed in by the page: when the top
+ * similar idea is `close`, the comparison comes first. On desktop the similar ideas become part 1 of the rail and Check
+ * it opens on them (Review.md, `simulatorS2=Check first`); on a phone the comparison stands before the rest of the page
+ * until the person teams up or says "Mine is different" (PhoneReview.md). With no close match, or without the flag,
+ * Check it is exactly the default.
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -30,25 +36,33 @@ import type {
   SortingResponse,
   UploadConfig,
 } from "@/lib/contracts";
+import { flagEvent } from "@/lib/flags-client";
 
+import { CheckFirstPhone } from "./check-first";
 import { api, sendKey, sendQueue, type Call, type CheckDraft, type MergeState } from "./client";
 import { CHECK_COPY, PARTS, type PartNo } from "./copy";
 import { FixPartBody, FixSheet, typedAnything, type FixPart, type FixProblem } from "./fix";
 import { HiddenTile } from "./hidden";
 import {
+  CHECK_FIRST_ORDER,
+  DEFAULT_ORDER,
   EMPTY_FIX,
   fixFormFrom,
   fixRequest,
   mergedView,
   mergeView,
+  nextIn,
   oneLine,
   partFromStep,
   passedParts,
+  placeIn,
+  prevIn,
   proofCounts,
   rowView,
   similarRail,
   sortingCount,
   stepOf,
+  strongMatch,
   type FixForm,
   type SimilarLoad,
   type TileAction,
@@ -118,11 +132,14 @@ export function CheckIt({
   draftId,
   config: initialConfig,
   blackout = false,
+  flags = null,
 }: {
   draftId: string;
   config: ConfigResponse | null;
   /** `files.blackout` (DEC-107, BLD-C064): "Hide it for me" on a file is offered only while it is on. */
   blackout?: boolean;
+  /** S2 as the server decided it for this person (P-DECISIONS.experiments). Null: the default, and nothing logged. */
+  flags?: { checkFirst: boolean } | null;
 }) {
   const router = useRouter();
   const online = useOnline();
@@ -143,6 +160,20 @@ export function CheckIt({
   const [triedUnconfirmed, setTriedUnconfirmed] = useState(false);
 
   const [similar, setSimilar] = useState<SimilarLoad>({ state: "loading" });
+  // Flag S2 (BLD-C176): the page renders in the drawn order at once. A close match that arrives while a Check it
+  // opened fresh is still untouched puts the similar ideas first (the alternative), and is the exposure (either).
+  const s2On = flags !== null;
+  const checkFirst = Boolean(flags?.checkFirst);
+  const [order, setOrder] = useState<readonly PartNo[]>(DEFAULT_ORDER);
+  const orderRef = useRef<readonly PartNo[]>(DEFAULT_ORDER);
+  const [firstUp, setFirstUp] = useState(false);
+  const [compareDone, setCompareDone] = useState(false);
+  const openedFresh = useRef(false);
+  const touched = useRef(false);
+  const decided = useRef(false);
+  const compareOutcome = useRef(false);
+  const checkLogged = useRef(false);
+  const focusAfterCompare = useRef(false);
   const [merge, setMerge] = useState<MergeState | null>(null);
   const [kept, setKept] = useState(false);
   const [mergeError, setMergeError] = useState<{ where: "bar" | "grid"; text: string } | null>(null);
@@ -179,6 +210,7 @@ export function CheckIt({
 
   /** A write the task bar's save status follows: "Saving…", then "Saved at 1:38 pm" (C-TASKBAR.save). */
   const track = useCallback(async <T,>(p: Promise<Call<T>>): Promise<Call<T>> => {
+    touched.current = true;
     writes.current += 1;
     setSave("saving");
     const r = await p;
@@ -210,10 +242,27 @@ export function CheckIt({
   // --- Loading ----------------------------------------------------------------------------------------------------
 
   const loadSimilar = useCallback(async () => {
+    // Both answers are applied together, as the grid needs them: a tile never shows "Team up" for a moment before the
+    // merge request says it is already asked. The page itself never waits for them.
     const [s, m] = await Promise.all([api.similar(draftId), api.merge(draftId)]);
-    setSimilar(s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" });
+    const load: SimilarLoad =
+      s.ok && Array.isArray(s.body) ? { state: "ok", matches: s.body } : { state: "failed" };
+    setSimilar(load);
     if (m.ok && m.body && typeof m.body === "object") setMerge(m.body);
-  }, [draftId]);
+    if (!s2On || decided.current) return;
+    decided.current = true;
+    // S2: only a close top match on a Check it opened fresh and not yet touched changes anything (BLD-C176). An
+    // accepted merge request makes the page read-only (BLD-C155), so S2 never reorders it or shows the comparison.
+    const accepted = Boolean(m.ok && m.body && typeof m.body === "object" && m.body.state === "accepted");
+    if (accepted || !strongMatch(load) || !openedFresh.current || moved.current || touched.current) return;
+    flagEvent("s2", "s2.check", "close_match", "S-05", draftId); // the exposure, in either variant
+    if (!checkFirst) return;
+    orderRef.current = CHECK_FIRST_ORDER;
+    setOrder(CHECK_FIRST_ORDER);
+    setFirstUp(true);
+    setPart(3);
+    flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
+  }, [draftId, s2On, checkFirst]);
 
   const applySend = useCallback((r: Call<SendViewResponse>) => {
     if (r.ok) {
@@ -248,6 +297,16 @@ export function CheckIt({
       const at = partFromStep(body.step);
       setPart(merged && at === 7 ? 1 : at);
       setPassed(passedParts(body.step));
+      // Not in Check it before (Tell it's step): S2 may open it on the comparison. A merged draft is only read, each
+      // part as it was left, so S2 never reorders it (BLD-C155).
+      const onlyRead = merged || body.merge_request?.state === "accepted";
+      openedFresh.current = !onlyRead && !/^(?:check:|send$)/.test(String(body.step ?? ""));
+      if (flags && !onlyRead && !checkLogged.current) {
+        // S2's deciding metrics need the draft that reached Check it, in either variant (codes and an id only). A
+        // read-only page (merged, BLD-C155) is not one S2 can change, so it is not counted.
+        checkLogged.current = true;
+        flagEvent("s2", "s2.check", "opened", "S-05", draftId);
+      }
       if (s.ok) setSorting(s.body);
       if (cfg && cfg.ok) setConfig(cfg.body);
       if (up.ok && up.body && typeof up.body.limit_mb === "number") setUploads(up.body);
@@ -273,7 +332,7 @@ export function CheckIt({
       }
       void loadSimilar();
     },
-    [loadSimilar, loadProof, draftId],
+    [loadSimilar, loadProof, draftId, flags],
   );
 
   useEffect(() => {
@@ -305,6 +364,7 @@ export function CheckIt({
 
   const go = useCallback(
     (n: PartNo, opts: { forwardFrom?: PartNo } = {}) => {
+      touched.current = true;
       if (phone) {
         // One page: "Go to the sorting", a Send row's "Change" and "Change the attached files" take the person to
         // that part's heading, scrolled to and focused (L-SORT.rules/4, WCAG 2.4.3).
@@ -384,7 +444,7 @@ export function CheckIt({
     setSorting(r.body);
     if (r.body.confirmed) {
       setTriedUnconfirmed(false);
-      if (!phone) go(3, { forwardFrom: 2 });
+      if (!phone) go(nextIn(orderRef.current, 2), { forwardFrom: 2 });
     }
   };
 
@@ -394,6 +454,38 @@ export function CheckIt({
   const asked = mergeView(merge, matches);
   // Merged: lane F's words when its read says so, else the drawn ones from the draft's own `merged_into`.
   const mv = readOnly ? (mergedView(draft?.merged_into, asked) ?? asked) : asked;
+
+  /** S2: typing in, or moving into, anything on the page counts as begun, so a late close match never reorders the
+   * page, or moves it to the comparison, under someone who is busy with it (BLD-C176). Only the person's own focus
+   * and input: the page moves focus itself only after they have moved. */
+  const touchWatch = {
+    onFocusCapture: () => {
+      touched.current = true;
+    },
+    onInputCapture: () => {
+      touched.current = true;
+    },
+  };
+
+  /** S2 on a phone: the comparison closes, and focus goes to the first part of the page it reveals (WCAG 2.4.3). */
+  const closeCompare = () => {
+    focusAfterCompare.current = true;
+    setCompareDone(true);
+  };
+  useEffect(() => {
+    if (!compareDone || !focusAfterCompare.current) return;
+    focusAfterCompare.current = false;
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".ck-ph [data-part] .ck-h")?.focus({ preventScroll: false }),
+    );
+  }, [compareDone]);
+
+  /** S2: what the person did with the comparison put first, logged once (codes only, BLD-C176). */
+  const compared = (outcome: "moved_on" | "kept_separate" | "merge_asked" | "mine_is_different") => {
+    if (!firstUp || compareOutcome.current) return;
+    compareOutcome.current = true;
+    flagEvent("s2", "s2.compare", outcome, "S-05", draftId);
+  };
 
   /** A failed Withdraw says so where it was pressed: on the bar under the task bar, or under the grid. */
   const withdraw = async (
@@ -418,7 +510,10 @@ export function CheckIt({
 
   // "Next" only moves on: it records nothing. Only an explicit "Keep mine separate" in lane F's sheet does, so the
   // review desk never reads "kept it separate" for someone who only carried on (BLD-C131, as amended).
-  const similarNext = () => go(4, { forwardFrom: 3 });
+  const similarNext = () => {
+    compared("moved_on");
+    go(nextIn(orderRef.current, 3), { forwardFrom: 3 });
+  };
 
   /** The sheet's send. "Keep mine separate" is a team-up request sent with the draft (BLD-F020, BLD-F071): the
    * draft is kept separate and the grid folds (C-SIMGRID.grid/4, V-ACC.share/7); a merge request reloads the bar.
@@ -428,8 +523,15 @@ export function CheckIt({
     if (sent.kind === "teamup") {
       setMergeError(null);
       const r = await track(api.keepSeparate(draftId, true));
-      if (r.ok) setKept(true);
-      else setMergeError({ where: "grid", text: C.failed });
+      if (r.ok) {
+        setKept(true);
+        // S2: only once it is recorded (BLD-C176).
+        compared("kept_separate");
+        closeCompare();
+      } else setMergeError({ where: "grid", text: C.failed });
+    } else {
+      compared("merge_asked");
+      closeCompare();
     }
     void loadSimilar();
   };
@@ -756,16 +858,19 @@ export function CheckIt({
       </>
     );
 
-  const back = (n: PartNo) =>
-    n === 1 ? (
+  // The first part in the order goes back to the words on Tell it; any other to the part before it (S2 reorders).
+  const back = (n: PartNo) => {
+    const before = prevIn(order, n);
+    return before === null ? (
       <BackToWords href={`/share/${encodeURIComponent(draftId)}`} />
     ) : (
-      <Button variant="text" onClick={() => go((n - 1) as PartNo)}>
+      <Button variant="text" onClick={() => go(before)}>
         {C.back}
       </Button>
     );
+  };
   const forward = (n: PartNo, filled: boolean) => (
-    <Button variant={filled ? "primary" : "line"} onClick={() => go((n + 1) as PartNo, { forwardFrom: n })}>
+    <Button variant={filled ? "primary" : "line"} onClick={() => go(nextIn(order, n), { forwardFrom: n })}>
       {filled ? C.next : C.skip}
     </Button>
   );
@@ -803,7 +908,7 @@ export function CheckIt({
       ) : (
         <>
           {back(1)}
-          <Button onClick={() => go(2, { forwardFrom: 1 })}>{C.words.forward}</Button>
+          <Button onClick={() => go(nextIn(order, 1), { forwardFrom: 1 })}>{C.words.forward}</Button>
         </>
       ),
     },
@@ -1015,6 +1120,8 @@ export function CheckIt({
 
   // Merged: nothing to send, so no Send it part (BLD-C155).
   const shownParts = readOnly ? PARTS.filter((p) => p.n !== 7) : PARTS;
+  // The desktop rail in S2's order when it applies (BLD-C176), with no Send it for a merged draft.
+  const shownOrder = readOnly ? order.filter((no) => no !== 7) : order;
 
   const taskbar = (
     <Taskbar
@@ -1037,6 +1144,36 @@ export function CheckIt({
     />
   );
 
+  const close = firstUp && !compareDone && !readOnly ? strongMatch(similar) : null;
+  if (phone && close) {
+    // S2 "Check first" on a phone: the comparison before the rest of the page (PhoneReview.md).
+    const after = similar.state === "ok" ? (similar.matches[1] ?? null) : null;
+    return (
+      <div className="ck ck-phone" {...touchWatch}>
+        {taskbar}
+        {bar}
+        <div className="ck-ph">
+          <h1 className="h1">{C.phone.heading}</h1>
+          <CheckFirstPhone
+            draftId={draftId}
+            draftTitle={title}
+            draftSummary={summary}
+            close={close}
+            next={after}
+            onSent={(sent) => void teamUpSent(sent)}
+            onWithdrawn={() => void loadSimilar()}
+            error={mergeError?.where === "grid" ? mergeError.text : null}
+            onDifferent={() => {
+              compared("mine_is_different");
+              closeCompare();
+            }}
+          />
+        </div>
+        {sheet}
+      </div>
+    );
+  }
+
   if (phone) {
     // PhoneReview.md: "1 detail hidden", "3 sortings", "2 similar ideas", each a link to its part. A count of none
     // is left out (NOT DRAWN), so no link points at a part with nothing to show (BLD-C138).
@@ -1047,7 +1184,7 @@ export function CheckIt({
       { n: matches.length, words: C.phone.similarCount(matches.length), href: "#pr-sim-h" },
     ].filter((x) => x.n > 0);
     return (
-      <div className="ck ck-phone">
+      <div className="ck ck-phone" {...touchWatch}>
         {taskbar}
         {bar}
         <div className="ck-ph">
@@ -1089,14 +1226,15 @@ export function CheckIt({
   const open: PartNo = readOnly && part === 7 ? 1 : part;
   const c = content[open];
   return (
-    <div className="ck">
+    <div className="ck" {...touchWatch}>
       {taskbar}
       {bar}
       <div className="ck-grid">
         <nav className="ck-rail" aria-label={C.rail}>
           <ol>
-            {shownParts.map(({ n, label }) => {
-              const no = n as PartNo;
+            {shownOrder.map((no) => {
+              const { n, label } = PARTS[no - 1]!;
+              const place = placeIn(order, no);
               const now = no === open;
               const ok = isDone(no) && !now;
               // The Send it row's line ("One last look, then submit") sits beside its button as its description, not
@@ -1115,11 +1253,11 @@ export function CheckIt({
                     onClick={() => go(no)}
                   >
                     <span className="ck-rn" aria-hidden={ok || attention[no] ? true : undefined}>
-                      {ok ? <IconTick size={12} /> : attention[no] ? "!" : n}
+                      {ok ? <IconTick size={12} /> : attention[no] ? "!" : place}
                     </span>
                     {/* The tick and the "!" are drawn only; a screen reader hears ", done" (the task bar's words)
                         or the part's number, as the board names the button ("2 Sorting Suggested, …"). */}
-                    {attention[no] && !ok ? <span className="vh">{`${n} `}</span> : ok ? null : " "}
+                    {attention[no] && !ok ? <span className="vh">{`${place} `}</span> : ok ? null : " "}
                     <span className="ck-rl">{label}</span>
                     {ok ? <span className="vh">{C.done}</span> : null}
                     {send ? (
@@ -1146,6 +1284,7 @@ export function CheckIt({
             <PartFrame
               ref={heading}
               n={open}
+              place={placeIn(order, open)}
               heading={c.heading}
               line={c.line}
               foot={open === 7 ? undefined : c.foot}

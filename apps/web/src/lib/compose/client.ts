@@ -16,12 +16,28 @@ import {
   type DraftListItem,
   type DraftPartKey,
   type HiddenDetail,
+  type Message,
   type MessageVia,
   type PartResponse,
   type ShowReason,
 } from "@/lib/contracts";
+import type { InterviewPlace, InterviewQuestion } from "@/lib/flags";
 
 export type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** Flag S1 "Interview" (BLD-C172): one step of the questions. An answer keeps its own client_id on every try. */
+export type InterviewStep =
+  | { action: "start" }
+  | { action: "answer"; question: InterviewQuestion; text: string; clientId: string }
+  | { action: "skip"; question: InterviewQuestion }
+  | { action: "finish" };
+
+export type InterviewResponse = {
+  interview: InterviewPlace;
+  run_id: string | null;
+  draft?: Draft;
+  message?: Message;
+};
 
 export const DEVICE_ID_KEY = "1pc.device-id";
 /** The same opaque id as a first-party cookie, so pages the server renders (the side bar's Drafts) can say "on this
@@ -383,6 +399,22 @@ export class DraftClient {
       method: "POST",
       body: JSON.stringify({}),
     });
+  }
+
+  /** POST /api/drafts/:id/interview: flag S1's questions (start, answer, skip, finish). The answer goes in like the
+   * person's own words; the place comes back, and the draft once it is built. */
+  interview(draftId: string, step: InterviewStep): Promise<InterviewResponse> {
+    const body =
+      step.action === "answer"
+        ? { action: step.action, question: step.question, text: step.text }
+        : step.action === "skip"
+          ? { action: step.action, question: step.question }
+          : { action: step.action };
+    return this.withRetries(
+      `/api/drafts/${encodeURIComponent(draftId)}/interview`,
+      { method: "POST", body: JSON.stringify(body) },
+      step.action === "answer" ? step.clientId : undefined,
+    );
   }
 
   /** PATCH /api/drafts/:id `{ step }`. */
