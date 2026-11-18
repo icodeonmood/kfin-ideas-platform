@@ -142,7 +142,8 @@ def _hours_by_one(conn: Conn, rows: list[dict[str, Any]]) -> dict[int, float]:
 
 def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> list[dict[str, Any]]:
     """`OnePost[]` for Home, newest first: the One's card, what changed, the headline figure, likes (and whether
-    the viewer liked it), the idea's comment count and where its thread is."""
+    the viewer liked it), the idea's comment count and where its thread is. A post about an idea the review desk or
+    an admin took off the Wall is left out with it (`idea_off_wall`, DEC-106, BLD-A212); a post with no idea stays."""
     rows = conn.execute(
         f"SELECT {_ONE_COLS}, p.id AS post_id, p.text_encrypted, p.figure_value, p.figure_line, p.shipped, "  # noqa: S608
         "p.adopted_by, p.posted_at, p.idea_uuid AS post_idea, i.idea_id AS idea_ref, "
@@ -153,6 +154,7 @@ def posts(conn: Conn, viewer_id: str, now: dt.datetime, limit: int = POSTS) -> l
         f"FROM one_posts p JOIN ones o ON o.id = p.one_id AND o.status = 'active' AND o.number IS NOT NULL "
         "JOIN users u ON u.id = o.user_id AND u.active LEFT JOIN person_settings ps ON ps.user_id = u.id "
         "LEFT JOIN ideas i ON i.id = p.idea_uuid WHERE p.removed_at IS NULL "
+        "AND (p.idea_uuid IS NULL OR NOT idea_off_wall(p.idea_uuid)) "
         "ORDER BY p.posted_at DESC, p.id LIMIT %(limit)s",
         {"viewer": viewer_id, "limit": limit},
     ).fetchall()

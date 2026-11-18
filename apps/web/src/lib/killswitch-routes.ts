@@ -77,6 +77,18 @@ export const ROUTE_RULES: readonly Rule[] = [
     pattern: /^\/api\/attachments\/(?!.*\/status\/?$)[^/]+\/?$/,
     switches: ["attachments.open"],
   },
+  // Files and links on the 1% Club (A-API.files, lane C): adding a file, or trying one again, stops with uploads
+  // and with sharing; a link stops with sharing only (attachments.upload's notice says links still work). Opening
+  // a file stops with attachments.open. "Hide it for me" checks files.blackout in its handler, to answer
+  // `not_available` in the pack's shape; removing a file is never paused (UNGUARDED_WRITES).
+  { methods: ["POST"], pattern: /^\/api\/files\/?$/, switches: ["attachments.upload", "submissions"] },
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/files\/[^/]+\/retry\/?$/,
+    switches: ["attachments.upload", "submissions"],
+  },
+  { methods: ["POST"], pattern: /^\/api\/links\/?$/, switches: ["submissions"] },
+  { methods: ["GET"], pattern: /^\/api\/files\/[^/]+\/view\/?$/, switches: ["attachments.open"] },
   { methods: ["GET"], pattern: /^\/api\/wall\/?$/, switches: ["wall.public"] },
   // The office screen's Ones (S-OFFICE) rest with the rest of the public Ones.
   {
@@ -198,6 +210,13 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/me\/privacy-notice\/?$/, // accepting the notice must work in read-only mode, or nobody could browse
   /^\/api\/admin\/kill-switches\/?$/, // admins must be able to switch features back on
   /^\/api\/admin\/roles(?:\/[^/]+)?\/?$/, // granting a reviewer must not depend on submissions being open
+  // The admin page (lane A; J-ONE): build teams, shipping, measurements and Finance's confirmation are the programme's
+  // own records, kept whatever is paused, like the review desk. "Take off the Wall" must work most of all while the
+  // Wall is paused. Founding Ones and removing a One are records too: `ones.public` pauses showing them, not keeping
+  // them. Flags must stay changeable so an experiment can be turned off at once.
+  /^\/api\/admin\/ideas\/[^/]+\/(?:build-team|shipped|measurements\/[^/]+(?:\/finance)?|wall-removal)\/?$/,
+  /^\/api\/admin\/ones\/(?:founding|[^/]+)\/?$/,
+  /^\/api\/admin\/flags\/[^/]+(?:\/people)?\/?$/,
   // Reading, marking unread, archiving and "Mark all read" change only the person's own Inbox, nothing about ideas;
   // they work in read-only mode (L-INBOX).
   /^\/api\/inbox\/(?:read-all|[^/]+\/(?:read|unread|archive))\/?$/,
@@ -225,6 +244,11 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // whatever is paused.
   /^\/api\/desk\/ideas\/[^/]+\/hide\/?$/,
   /^\/api\/drafts\/[^/]+\/hidden\/[^/]+\/hide\/?$/,
+  // Files (A-API.files, lane C): removing a file only ever protects someone, and DEC-107 lets the review desk ask
+  // for it, so it works whatever is paused. "Hide it for me" checks files.blackout itself and answers
+  // `not_available` while it is off.
+  /^\/api\/files\/[^/]+\/?$/,
+  /^\/api\/files\/[^/]+\/hide\/?$/,
   // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
   // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,

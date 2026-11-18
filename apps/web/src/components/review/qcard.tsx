@@ -5,6 +5,8 @@
  * box. Placed by other lanes, each with its board's words (C-QCARD.places): `variant="status"` on the sharer's idea
  * page (S-06, Status.md) and the conversation (S-08), `"home"` in Home's "Needs you" (S-03, Home.md) and `"inbox"`
  * in the Inbox reader (S-H5, Inbox.md). Feed it the sharer's open set from `GET /api/ideas/{id}/question-set`.
+ * In the reader the card is the item's body: the reader keeps its own header and pins the button to its foot
+ * (S-H5.layout, S-H5.rules/3), with the words `answerLabel` gives.
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -41,21 +43,42 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+/** The card's one button (C-QCARD.anatomy/5, .states): "Answer the questions", "Carry on answering" once some are
+ * sent, none once every question is answered. */
+export function answerLabel(set: Pick<Set, "state" | "answered">): string | null {
+  if (set.state === "answered") return null;
+  return set.answered > 0 ? "Carry on answering" : "Answer the questions";
+}
+
+/** Where the button goes: the Answer screen (S-R3). */
+export function answerHref(ideaId: string): string {
+  return `/ideas/${encodeURIComponent(ideaId)}/answer`;
+}
+
 export function QuestionsCard({
   ideaId,
   set,
   variant = "status",
+  title,
+  deadline,
+  byline = true,
 }: {
   ideaId: string;
   set: Set;
   variant?: QuestionsCardVariant;
+  /** `status` only: the host's own words for the title and the deadline line, where its board words them
+   * differently (S-08, Messages.md: "Meera has 3 questions about your idea", worked out by the conversation's read). */
+  title?: string;
+  deadline?: string;
+  /** `status` only: false where the host already shows who asked and when above the card (S-08's message line); the
+   * countdown then sits beside the title. */
+  byline?: boolean;
 }) {
   const now = useMinute();
   const who = set.by.first_name;
   const answered = set.state === "answered";
-  const partly = !answered && set.answered > 0;
   const live = set.due_at && !answered ? countdown(set.due_at, now) : null;
-  const href = `/ideas/${encodeURIComponent(ideaId)}/answer`;
+  const href = answerHref(ideaId);
   const n = set.count;
   const titleId = `qcard-${variant}-${set.id}`;
   const pill = answered ? (
@@ -63,11 +86,12 @@ export function QuestionsCard({
   ) : live ? (
     <Pill variant={live.variant === "normal" ? "neutral" : live.variant}>{countdownLabel(live, "left")}</Pill>
   ) : null;
-  const button = answered ? null : (
+  const label = answerLabel(set);
+  const button = label ? (
     <ButtonLink href={href} variant="primary" size="sm">
-      {partly ? "Carry on answering" : "Answer the questions"}
+      {label}
     </ButtonLink>
-  );
+  ) : null;
 
   if (variant === "home") {
     // Home.md "Needs you": the count, the clock, who asked about which idea, each question a way into Answer
@@ -97,62 +121,59 @@ export function QuestionsCard({
   }
 
   if (variant === "inbox") {
-    // Inbox.md, the reader: what it is, the idea, who asked and when, the questions, the deadline, two ways on
-    const sentAt = set.sent_at
-      ? dayLabel(set.sent_at, now) === dayLabel(now, now)
-        ? clockLabel(set.sent_at)
-        : `${dayLabel(set.sent_at, now)}, ${clockLabel(set.sent_at)}`
-      : "";
+    // Inbox.md, the reader's body: the questions, numbered, then the deadline. The reader above it says what it is,
+    // the idea, who asked and when with the countdown, and pins "Open the conversation" and the button to its foot
     return (
-      <article className="qcard qcard-inbox" aria-labelledby={titleId}>
-        <p className="label">Questions from the review desk</p>
-        <h2 id={titleId} className="h3">
-          {set.idea.title}
-        </h2>
-        <header className="qcard-h">
-          <Avatar initials={set.by.initials} size={32} name={set.by.name} />
-          <span className="qcard-who">
-            <span className="body">
-              {who} from the review desk asked you {plural(n, "question")}
-            </span>
-            {sentAt ? <span className="meta">{sentAt}</span> : null}
-          </span>
-          {pill}
-        </header>
-        <ol className="qcard-plain">
+      <div className="qcard qcard-inbox">
+        <ol className="qcard-qs">
           {set.questions.map((q, i) => (
             <li key={q.id}>
-              <span className="label">Question {i + 1}</span>
-              <p className="body">{q.text}</p>
+              <span className="qcard-qn">Question {i + 1}</span>
+              <span className="qcard-qt">
+                {/* Partly answered (NOT DRAWN): an answered question shows a tick beside its words */}
+                {q.answer?.sent && !answered ? (
+                  <span className="qcard-tick" role="img" aria-label="Answered">
+                    ✓{" "}
+                  </span>
+                ) : null}
+                {q.text}
+              </span>
             </li>
           ))}
         </ol>
-        {answered ? null : <p className="meta">{set.deadline}.</p>}
-        <footer className="qcard-f">
-          <Link href={`/ideas/${encodeURIComponent(ideaId)}/conversation`} className="tb blue">
-            Open the conversation
-          </Link>
-          {button}
-        </footer>
-      </article>
+        {answered ? null : <p className="qcard-due">{set.deadline}.</p>}
+      </div>
     );
   }
 
   const sent = set.sent_at ? `${dayLabel(set.sent_at, now)}, ${clockLabel(set.sent_at)}` : "";
+  const heading = (
+    <h3 id={titleId} className="h3">
+      {title ??
+        (answered
+          ? `${who}’s ${plural(n, "question")}, answered`
+          : `${who} has ${plural(n, "question")} for you`)}
+    </h3>
+  );
   return (
     <article className="card qcard" aria-labelledby={titleId}>
-      <header className="qcard-h">
-        <Avatar initials={set.by.initials} size={32} name={set.by.name} />
-        <span className="meta">
-          {who} from the review desk, {sent}
-        </span>
-        {pill}
-      </header>
-      <h3 id={titleId} className="h3">
-        {answered
-          ? `${who}’s ${plural(n, "question")}, answered`
-          : `${who} has ${plural(n, "question")} for you`}
-      </h3>
+      {byline ? (
+        <>
+          <header className="qcard-h">
+            <Avatar initials={set.by.initials} size={32} name={set.by.name} />
+            <span className="meta">
+              {who} from the review desk, {sent}
+            </span>
+            {pill}
+          </header>
+          {heading}
+        </>
+      ) : (
+        <header className="qcard-h">
+          {heading}
+          {pill}
+        </header>
+      )}
       {answered && set.answered_at ? (
         <p className="meta">
           Answered on {dayLabel(set.answered_at, now)}, {clockLabel(set.answered_at)}. Your answers are below,
@@ -196,7 +217,7 @@ export function QuestionsCard({
       </ol>
       {answered ? null : (
         <footer className="qcard-f">
-          <p className="meta">{set.deadline}. One at a time, typed or spoken.</p>
+          <p className="meta">{deadline ?? `${set.deadline}. One at a time, typed or spoken.`}</p>
           {button}
         </footer>
       )}

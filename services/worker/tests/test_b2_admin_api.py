@@ -31,9 +31,11 @@ def test_grant_and_revoke_are_audited(dev_db: Any) -> None:
             ).status_code
             == 400
         )
-        assert b.post(
-            "/api/admin/roles", json={"email": email, "role": "lob_committee", "reason": "launch week rota"}
-        ).json() == {"error": "scope_required"}
+        # The old committee roles are retired (DEC-102, DEC-106): only the pack's roles can be given (BLD-A215).
+        for retired in ("lob_committee", "core_committee", "sponsor"):
+            assert b.post(
+                "/api/admin/roles", json={"email": email, "role": retired, "reason": "launch week rota"}
+            ).json() == {"error": "unknown_role"}
         r = b.post(
             "/api/admin/roles",
             json={"email": email, "role": "reviewer", "reason": "launch week review desk rota"},

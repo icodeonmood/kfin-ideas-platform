@@ -70,7 +70,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TABS` | built: `components/ui/tabs.tsx` (`Tabs`, `tabPanelProps`); the sliding underline waits for the FLIP polish | S to M | P0 | D |
 | `C-SEARCH` | bar built (lane D): `components/ui/search.tsx` (`SearchBar`: chips in the bar, Backspace, Clear, Filter, the panel with counts and example questions, the result line); search by meaning and "ask" are lane F's (`L-SEARCH`) | M | P0 | D (bar), F (ask) |
 | `C-TRACK` | built: `components/ui/track.tsx` (horizontal and vertical, state suffixes, draw-in motion) | S to M | P0 | D |
-| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx`; no "couldn't open this link" state (BLD-E001) | M | P0 | D (UI), C (wiring) |
+| `C-FILE` | UI built (lane D): `components/ui/file.tsx` (`FileRow`, `FileList`, `DropArea`); upload, quarantine and scan stay in `share/[id]/attachments.tsx` until S-05 moves to the files API; no "couldn't open this link" state (BLD-E001). Files API (lane C, BLD-C105 to C109): `services/worker/attachments/files.py`, `files_api.py`, `hide/files.py`; web `server/files.ts`, `/api/files`, `/api/files/:id`, `/view`, `/retry`, `/hide`, `/api/links`, `/api/config/uploads` | M | P0 | D (UI), C (wiring) |
 | `C-DROPDOWN` | built: `components/ui/dropdown.tsx`; named "{label}: {summary}", with `optional` and `empty` (lane F, BLD-F070) | S | P0 | D |
 | `C-PROMPT` | exists, differs | L | P0 | C |
 | `C-DRAFT-LOADER` | missing | M | P0 | C |
@@ -79,7 +79,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-SIMGRID` | exists, differs | M | P0 | C |
 | `C-PREVIEW` | missing | M | P0 | C |
 | `C-WORTH` | reviewer's view and editor built (lane B): `components/review/worth.tsx` (`WorthView`, `WorthEditor` from `WorthResponse`), its sheet `worth.css` imported with it, so S-05 can place `WorthView` | M | P0 | C, B |
-| `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it | M | P0 | B |
+| `C-QCARD` | built (lane B): `components/review/qcard.tsx` (`QuestionsCard`, `variant` `status` for S-06 and S-08, `home` for S-03's Needs you, `inbox` for the S-H5 reader, each with its board's words); placed by the screens that show it. Placed on S-H5 (18 Nov, BLD-B248): the reader's body for `questions` and `answer_reminder`, with the reader's header and foot (`answerLabel` gives the forward action's words). Placed on S-08 (18 Nov, BLD-B249): `components/review/qcard-for.tsx` reads the entry's set for the sharer while it is open; everyone else keeps the plain line | M | P0 | B |
 | `C-INBOX-READER` | built (17 Nov, BLD-A201, A204): `app/inbox/inbox-reader.tsx`; S-H2B's request body and answers in `app/inbox/teamup-request.tsx` over lane F's `/api/team-up/:id` | L | P0 | A |
 | `C-LISTEN` | built (lane B): `components/review/listen-player.tsx` with `listen.css`, `lib/desk/listen.ts`; lane C's hosted audio and chapters first (DEC-108, `AudioEngine`), the browser's voice (BLD-B230, `ListenEngine`) on a 404 or 503 (BLD-B245) | M | P0 | B |
 | `C-SHEET-MERGE` | built (lane B): `components/review/merge-sheet.tsx` with `merge-sheet.css`, opened from S-R2's rows and C-PREVIEW's Merge | M | P0 | B |
@@ -91,7 +91,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 
 | ID | Owner today | State | Phase | Lane |
 |---|---|---|---|---|
-| `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts` | exists, differs | P0 | A |
+| `L-AUDIT` | `policy/rbac.yaml`, `proxy.ts`, `audit_log`, `core/killswitch.py`, `server/killswitch.ts`; the admin page `app/admin/*` (roles: the pack's only, BLD-A215; flags S1 to S3 with `server/flags.ts`, `programme/flags.py`, `GET /api/config`, BLD-A216) | built (17 Nov, BLD-A210, A215, A216) | P0 | A |
 | `L-AUTH` | `server/auth/{intents,sso,reference,codes,email-code,drafts,session}.ts`; `app/auth/{sso/start,login,callback,code/send,code/verify,session,sign-out,logout}`; worker `comms/sign_in_code.py` (BLD-A173 to A176) | built (branch `a/auth-landing`) on the cut-over's `sign_in_intents` and `sign_in_codes` | P0 (single sign-on), P2 (email code) | A |
 | `L-DRAFT` | `gateway/run_agent`, `gateway/grounding.py`, `agents/canvas-assist`; `L-DRAFT.voice`: `speech/drafts.py` and `POST /api/drafts/:id/voice/start|chunk|end` (BLD-C112) | exists, differs | P0 | C |
 | `L-HIDE` | `pii/*`, `agents/gatekeeper`, `attachments/*` | exists, differs | P0 | C |
@@ -104,7 +104,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `L-NOTIFY` | worker `notify/__init__.py` (`post`, `resolve`, BLD-A180), `comms/send.py`, `notify/digest.py` (decide-by digest, `comms.digest` job), migration `20261122100300_notify_dedupe.sql` | built (17 Nov, BLD-A180, A200, A203); Teams built and switched off (`comms.teams`, DEC-105) | P0 (email, in-app), P2 (Teams) | A |
 | `L-WALL` | `views/wall.py` | exists, differs | P0 | E |
 | `L-ONES` | `ones/*` | exists, differs | P0 | E |
-| `L-IMPACT` | `delivery_measurements`, `delivery/service.py` | exists, differs | P0 (admin entry) | A |
+| `L-IMPACT` | write side: `programme/impact.py` and `programme/build.py` (team chosen, shipped, the 30- and 90-day due dates, Finance's confirmation by a second admin) behind `/api/admin/ideas/*`, on `delivery_measurements`; read side lane E's `wall/impact.py`. Inductions call lane E's `wall.ones`; tiers `programme/ones.py` with `rules/tiers.md`. "Take off the Wall": `programme/wall.py`, `wall_removals`, `idea_off_wall()` inside lane E's `on_wall_sql`, `wall.ones.posts` and the old `ones/views.py` | built (17 Nov, BLD-A211 to A214, A217) | P0 (admin entry) | A |
 | `L-DISPLAY` | `app/display/*`, `open_display` in `policy/rbac.yaml` (the `display` role and admins), `server/display.ts` over the worker's `display/office.py` (`/internal/display/office`) | built (16 Nov, BLD-A190 to A193) | P0 | A |
 | `L-QUESTIONS` | `services/worker/desk/asking.py`, `questions.py`, `clock.py`; `question_sets`, `questions`, `answers` | landed at 82668c1 (17 Nov, back end) | P0 | B |
 | `L-COMMITTEE` | `services/worker/desk/committee.py`, `window.py`; `decision_windows`, `decision_reversals` | landed at 82668c1 (17 Nov, back end) | P0 | B |

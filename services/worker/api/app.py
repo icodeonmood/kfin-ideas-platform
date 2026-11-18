@@ -1353,6 +1353,11 @@ from hide.api import router as hide_router  # noqa: E402
 
 app.include_router(hide_router, dependencies=[Depends(require_token)])
 
+# Files and links (A-API.files, L-HIDE.files; lane C): upload, the check job's results, view, retry, remove.
+from attachments.files_api import router as files_router  # noqa: E402
+
+app.include_router(files_router, dependencies=[Depends(require_token)])
+
 
 # The review side (lane B): the desk, questions and answers, the Ones Committee (A-API.desk, .questions,
 # .committee). Its routes live with the code in desk/routes.py.
@@ -1366,6 +1371,11 @@ from ideapage.routes import build as _idea_page_routes  # noqa: E402
 
 app.include_router(_idea_page_routes(require_token))
 
+# The programme team's admin path (lane A; J-ONE steps 1, 2, 3 and 6; L-DECIDE.after, L-IMPACT, L-ONES admin,
+# "Take off the Wall"). Routes live with the code in programme/routes.py.
+from programme.routes import build as _admin_routes  # noqa: E402
+
+app.include_router(_admin_routes(require_token))
 # Lane F: team-up requests, draft merge requests and crews (A-API.team-up, L-TEAMUP, L-MERGE.request).
 from teamup.routes import build as _teamup_routes  # noqa: E402
 
