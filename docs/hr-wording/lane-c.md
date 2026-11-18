@@ -44,6 +44,19 @@ Written Wednesday 18 Nov 2026 for HR's review of launch-facing copy (SHIP_PLAN Â
 | The idea preview pop-up, when the idea's short summary is not ready or does not pass the checks | A short summary is on its way. | Not drawn. The pop-up never shows a person's own words in its place (BLD-C090) |
 | Similar ideas, the reason under each match, when the assistant is off or its phrase does not pass the checks | Close match: same SMS, same calls / Close match: the same problem / Related: also about SIP and debit / Related: also in Investor service / Related: a similar problem | The pack's lines are examples ("Close match: the same failed SIP debit"). With the assistant on, it writes a short phrase after "Close match:" or "Related:", read by both sharers; otherwise these are built from the words both ideas share (BLD-C092, BLD-C094) |
 
+## 2a. The three A/B variants (shown only to people an admin puts on the other version; 0% at launch)
+
+The pack keeps three choices open for testing (`P-DECISIONS.experiments`): S1, a short interview before the draft; S2, similar ideas checked first; S3, the phone starting with voice. The boards draw each one's first state. These lines follow the drawn pattern for the states the boards don't draw.
+
+| Where | Wording | Why |
+|---|---|---|
+| S1, the question card: Tell it on a laptop, the draft sheet on a phone | Question 2 of 3. Skip any of them. / Question 3 of 3. Skip any of them. | Only "Question 1 of 3. Skip any of them." is drawn (BLD-C172) |
+| S1, the last question's button, laptop and phone | Show my draft | The phone's drawn "Done" already closes the sheet beside it, so the card needs its own words (BLD-C172) |
+| S1, the phone's draft sheet while the questions are asked | So far we hid 1 folio number, suggested 1 sorting and found 1 similar idea. (any part with nothing found is left out; with nothing found, no line) | Only the plural form is drawn: "So far we hid 3 personal details, suggested 3 sortings and found 2 similar ideas." (BLD-C172) |
+| S3, the phone's dock while listening, before any words are heard | Stop | The drawn "Stop, 0:14" needs a running time, which starts once words are heard (BLD-C175) |
+| S2, the close idea's card on the phone's comparison | Investor service, Hyderabad, 1 colleague | Only "4 colleagues" is drawn (BLD-C176) |
+| S2 and Check it, the similar ideas line when one colleague's idea is close | One colleague shared something close while you were writing. Team up with them, and bring yours along if you like, or keep yours separate. | The drawn line is for several colleagues; this is its singular (BLD-C138, BLD-C176) |
+
 ## 3. Places where we show nothing, because no line is drawn (HR can supply one)
 
 | Where | Wording | Why |
