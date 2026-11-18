@@ -474,6 +474,9 @@ describe("S2 Check first on desktop (Review.md simulatorS2=Check first)", () => 
     expect(h1()).toBe("Is it sorted right?");
     expect(counter()).toBe("Check it, part 3 of 6");
     expect(railNames()[0]).toBe("1 Similar ideas");
+    // Not shown first, so nothing about the comparison is logged, whatever happens next
+    await click(button("Back"));
+    expect(flagCalls().map((c) => c.event)).toEqual(["s2.check"]);
   });
 
   it("the default variant: the parts as drawn, the draft logged (the exposure is lane A's), no comparison", async () => {
@@ -537,6 +540,14 @@ describe("S2 Check first on a phone (PhoneReview.md simulatorS2=Check first)", (
     await settle();
     expect(document.querySelector(".ck-first")).toBeNull();
     expect(flagCalls().at(-1)).toMatchObject({ event: "s2.compare", outcome: "merge_asked" });
+  });
+
+  it("a Check it already begun on a phone keeps its page: no comparison before it", async () => {
+    asPhone();
+    await mountFlagged(base({ draft: draft({ step: "check:2" }) }), true);
+    expect(document.querySelector(".ck-first")).toBeNull();
+    expect(document.querySelector("#pr-sort-h")).toBeTruthy();
+    expect(flagCalls().map((c) => c.event)).toEqual(["s2.check"]);
   });
 
   it("no close match on a phone: the page as drawn", async () => {

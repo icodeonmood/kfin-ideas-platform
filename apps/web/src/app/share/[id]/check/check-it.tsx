@@ -240,8 +240,15 @@ export function CheckIt({
       setOrder(orderRef.current);
       if (strong) {
         setFirstUp(true);
-        if (openedFresh.current && !moved.current) setPart(3);
-        flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
+        if (openedFresh.current && !moved.current) {
+          // Opened fresh: Check it opens on the comparison (the phone's stands before the page).
+          setPart(3);
+          flagEvent("s2", "s2.compare", "shown", "S-05", draftId);
+        } else {
+          // A Check it already begun keeps its part, and its page on a phone: the rail alone puts the comparison first.
+          compareOutcome.current = true;
+          setCompareDone(true);
+        }
       }
     }
   }, [draftId]);
