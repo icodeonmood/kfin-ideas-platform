@@ -75,9 +75,19 @@ def test_V_ACC_committee_2_extend_moves_the_end_30_days(db: Conn, cast: dict[str
 
 
 def test_V_ACC_committee_3_no_extension_past_three_months(db: Conn, cast: dict[str, Any]) -> None:
+    """V-ACC.committee/3, L-COMMITTEE.rules/2, S-R4.rules/2 (BLD-B263): the second extension goes to the 3-month date
+    the button names, Tuesday 16 February 2027, and the stored end agrees with the label; no 2-day stub follows."""
     t = DECIDED + dt.timedelta(days=2)
-    for _ in range(3):
-        row = committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
+    row = committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
+    assert row["window"]["extend_to"] == "Extend to Tuesday 16 February 2027"
+    row = committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
+    stored = db.execute("SELECT closes_at, max_closes_at FROM decision_windows WHERE id = %s",
+                        (cast["window"],)).fetchone()  # fmt: skip
+    assert stored is not None and stored["closes_at"] == stored["max_closes_at"]
+    assert (
+        row["window"]["until"] == "Until Tuesday 16 February 2027"
+        and row["window"]["extended"] == "Extended twice"
+    )
     assert row["can_extend"] is False and row["window"]["limit_line"] == "At the 3-month limit"
     with pytest.raises(Refused) as refused:
         committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
