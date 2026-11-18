@@ -1,13 +1,15 @@
 """What people see of the Ones (DEC-068 to DEC-086).
 
-- **The console** (core committee, CEO, admin): every One and every proposal, with names and reasons.
 - **Public** (wall, home carousel, office screens): active Ones, newest first. A name shows only for a One who said
   yes to showing their name; otherwise "One No. 17". The idea line is the checked neutral summary of an accepted
   idea everyone may see, or the checked title of a sponsored or founding One. Money shows only once Finance has
   confirmed it. `ones.public` off hides all of it.
 - **The One's own dashboard**: their number, tier, swap window, brief, glow-up and story.
-- **The leaderboard**: Ones only (DEC-077), by tier then measured impact (DEC-083).
+- **The Showcase brief**, and **what `/ones/write/:id` asks a writer** for a tier change (both kept, BLD-E042).
 - **A manager's team view**: their direct reports' activity, counts only (DEC-079).
+
+The console and the Ones-only leaderboard are retired (DEC-106, BLD-E049): lane A's admin page and the Wall's
+leaderboard (`wall.ones.one_cards(order="leaderboard")`) replace them.
 """
 
 from __future__ import annotations
@@ -30,19 +32,9 @@ from views.common import (
     SUMMARY_PENDING,
     checked_summary,
     public_summary,
-    taxonomy_names,
 )
 
 WAY_IN_WORDS = {"accepted_idea": "Accepted idea", "sponsored": "Sponsored", "founding": "Founding One"}
-KIND_WORDS = {
-    "include": "Inclusion",
-    "remove": "Removal",
-    "tier_up": "Tier up",
-    "tier_down": "Tier down",
-    "impact_brief": "Impact brief",
-    "legend": "Legend number",
-}
-MEMBERSHIP = dt.timedelta(days=365)
 
 
 def _iso(ts: Any) -> str | None:
@@ -84,128 +76,6 @@ def _idea_line(conn: Conn, one: dict[str, Any], public: bool) -> tuple[str | Non
     if public:  # checked when it was written; checked again before everyone sees it (Ones review, BLD-111)
         title = checked_summary(conn, title)
     return title, None
-
-
-def _names(conn: Conn, user_ids: list[str]) -> dict[str, str]:
-    if not user_ids:
-        return {}
-    rows = conn.execute("SELECT id, name FROM users WHERE id = ANY(%s::uuid[])", (user_ids,)).fetchall()
-    return {str(r["id"]): str(r["name"]) for r in rows}
-
-
-# --- Console -----------------------------------------------------------------------------------------------------
-
-
-def console(conn: Conn, now: dt.datetime | None = None) -> dict[str, Any]:
-    now = now or dt.datetime.now(dt.UTC)
-    ones = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT o.*, u.name, u.email FROM ones o JOIN users u ON u.id = o.user_id "
-            "ORDER BY (o.status = 'active') DESC, o.number NULLS LAST, o.induction_no"
-        ).fetchall()
-    ]
-    legends = {
-        int(r["one_id"]): int(r["number"])
-        for r in conn.execute("SELECT * FROM one_legend_numbers").fetchall()
-    }
-    showcase = {
-        int(r["one_id"]): _iso(r["updated_at"])
-        for r in conn.execute("SELECT one_id, updated_at FROM one_showcase_briefs").fetchall()
-    }
-    roster = []
-    for o in ones:
-        line, stage = _idea_line(conn, o, public=False)
-        lapses = o["inducted_at"] + MEMBERSHIP
-        roster.append(
-            {
-                "id": o["id"], "induction_no": o["induction_no"], "number": o["number"], "name": o["name"],
-                "email": o["email"], "status": o["status"], "way_in": WAY_IN_WORDS[o["way_in"]], "idea_id": o["idea_id"],
-                **_tier(o["tier"]), "line": line, "stage": stage,
-                "brief": unseal(o["brief_encrypted"], f"one:{o['id']}:brief"),
-                "measures": o["measures"] or {}, "since": _iso(o["inducted_at"]), "lapses_on": _iso(lapses),
-                "lapsed": o["status"] == "active" and now > lapses, "retired_at": _iso(o["retired_at"]),
-                "legend_number": legends.get(o["id"]), "announced": o["announced_at"] is not None,
-                "showcase_updated": showcase.get(o["id"]),
-            }
-        )  # fmt: skip
-    rows = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM one_proposals WHERE state IN ('proposed', 'approved') OR proposed_at > %s "
-            "ORDER BY (state IN ('proposed', 'approved')) DESC, proposed_at DESC LIMIT 100",
-            (now - dt.timedelta(days=30),),
-        ).fetchall()
-    ]
-    people = _names(
-        conn,
-        sorted(
-            {
-                str(p[k])
-                for p in rows
-                for k in ("subject_user_id", "proposed_by", "decided_by", "carried_out_by")
-                if p[k]
-            }
-        ),
-    )
-    messages: dict[int, list[dict[str, Any]]] = {}
-    for m in conn.execute(
-        "SELECT m.proposal_id, m.author_role, u.name FROM one_messages m JOIN users u ON u.id = m.author_user_id "
-        "WHERE m.proposal_id = ANY(%s) ORDER BY m.written_at",
-        ([p["id"] for p in rows],),
-    ).fetchall():
-        messages.setdefault(int(m["proposal_id"]), []).append({"from": m["author_role"], "name": m["name"]})
-    invites: dict[int, list[str]] = {}
-    for i in conn.execute(
-        "SELECT i.proposal_id, u.name FROM one_message_invites i JOIN users u ON u.id = i.user_id "
-        "WHERE i.proposal_id = ANY(%s)",
-        ([p["id"] for p in rows],),
-    ).fetchall():
-        invites.setdefault(int(i["proposal_id"]), []).append(str(i["name"]))
-    tiers = {o["id"]: o["tier"] for o in ones}
-    proposals = []
-    for p in rows:
-        pid = p["id"]
-        proposals.append(
-            {
-                "id": pid, "kind": p["kind"], "kind_words": KIND_WORDS[p["kind"]], "state": p["state"],
-                "one_id": p["one_id"], "subject": people.get(str(p["subject_user_id"])),
-                "way_in": WAY_IN_WORDS.get(p["way_in"] or ""), "idea_id": p["idea_id"],
-                "tier_from": tiers.get(p["one_id"]) if p["one_id"] else None,
-                "tier_to": p["tier_to"], "tier_to_name": tier_name(p["tier_to"]) if p["tier_to"] else None,
-                "reason": unseal(p["reason_encrypted"], f"one_proposal:{pid}:reason"),
-                "text": unseal(p["text_encrypted"], f"one_proposal:{pid}:text"),
-                "proposed_by": people.get(str(p["proposed_by"])), "proposed_by_id": str(p["proposed_by"]),
-                "proposed_at": _iso(p["proposed_at"]), "approval": p["approval"],
-                "meeting_on": p["meeting_on"].isoformat() if p["meeting_on"] else None,
-                "decided_by": people.get(str(p["decided_by"])) if p["decided_by"] else None,
-                "decided_at": _iso(p["decided_at"]),
-                "carried_out_by": people.get(str(p["carried_out_by"])) if p["carried_out_by"] else None,
-                "messages": messages.get(pid, []), "invited": invites.get(pid, []),
-                "committee_message": any(m["from"] == "committee" for m in messages.get(pid, [])),
-            }
-        )  # fmt: skip
-    counter = conn.execute(
-        "SELECT last_value FROM id_counters WHERE kind = 'ONE-NO' AND period = ''"
-    ).fetchone()
-    mode = conn.execute("SELECT mode FROM screen_settings WHERE id").fetchone()
-    awards = [
-        {"year": r["year"], "category": r["category"], "one_id": r["one_id"], "name": r["name"]}
-        for r in conn.execute(
-            "SELECT a.year, a.category, a.one_id, u.name FROM one_awards a JOIN ones o ON o.id = a.one_id "
-            "JOIN users u ON u.id = o.user_id ORDER BY a.year DESC, a.category"
-        ).fetchall()
-    ]
-    return {
-        "ones": roster,
-        "proposals": proposals,
-        "resting": numbers.resting(conn, now),
-        "legends": [{"number": n, "one_id": i} for i, n in sorted(legends.items(), key=lambda x: x[1])],
-        "last_allocated": int(counter["last_value"]) if counter else 0,
-        "screen_mode": mode["mode"] if mode else "static",
-        "awards": awards,
-        "active": sum(1 for o in ones if o["status"] == "active"),
-    }
 
 
 # --- Public: wall, home carousel, screens ---------------------------------------------------------------------------
@@ -402,70 +272,7 @@ def showcase_for_user(conn: Conn, user_id: str) -> dict[str, Any] | None:
     return showcase(conn, int(one["id"])) if one else None
 
 
-# --- Leaderboard (Ones only) and the manager's team view ------------------------------------------------------------
-
-
-def _hours_a_year(m: dict[str, Any]) -> int:
-    t = m.get("time") or {}
-    v = int(t.get("value") or 0)
-    return v * 12 if t.get("unit") == "hours a month" else v * 8
-
-
-def _rupees_a_year(m: dict[str, Any]) -> int:
-    x = m.get("money") or {}
-    if not x.get("finance_confirmed"):
-        return 0
-    v = int(x.get("value") or 0)
-    return v * 12 if x.get("unit") == "rupees a month" else v
-
-
-def leaderboard(conn: Conn, viewer_id: str) -> dict[str, Any] | None:
-    """Visible only to active Ones (DEC-077). People by tier, then measured impact (DEC-083); teams by line of
-    business."""
-    if not conn.execute(
-        "SELECT 1 FROM ones WHERE user_id = %s AND status = 'active'", (viewer_id,)
-    ).fetchone():
-        return None
-    rows = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT o.id, o.number, o.tier, o.measures, o.user_id, u.name, u.lob_id, "
-            "coalesce(s.show_name_on_wall, true) AS shown FROM ones o "
-            "JOIN users u ON u.id = o.user_id LEFT JOIN person_settings s ON s.user_id = o.user_id "
-            "WHERE o.status = 'active'"
-        ).fetchall()
-    ]
-
-    def score(r: dict[str, Any]) -> tuple[int, int, int, int]:
-        pm = _public_measures(r["measures"])
-        return (r["tier"], len(pm), _rupees_a_year(r["measures"] or {}), _hours_a_year(r["measures"] or {}))
-
-    rows.sort(key=lambda r: (*(-x for x in score(r)), r["number"] or 0))
-    _, lobs = taxonomy_names()
-    people = [
-        {
-            "rank": i + 1, "number": r["number"], **_tier(r["tier"]),
-            # A name shows unless its One hid it; everyone sees their own (DEC-077, DEC-104, non-negotiable 7).
-            "name": r["name"] if r["shown"] or str(r["user_id"]) == viewer_id else None,
-            "measures": _public_measures(r["measures"]), "you": str(r["user_id"]) == viewer_id,
-        }
-        for i, r in enumerate(rows)
-    ]  # fmt: skip
-    teams: dict[str, dict[str, Any]] = {}
-    for r in rows:
-        key = r["lob_id"] or "LOB-unknown"
-        t = teams.setdefault(
-            key, {"lob": lobs.get(key, "Other teams"), "ones": 0, "top_tier": 0, "tiers": 0, "measured": 0}
-        )
-        t["ones"] += 1
-        t["top_tier"] = max(t["top_tier"], r["tier"])
-        t["tiers"] += r["tier"]
-        t["measured"] += len(_public_measures(r["measures"]))
-    team_list = sorted(teams.values(), key=lambda t: (-t["top_tier"], -t["tiers"], -t["measured"], t["lob"]))
-    for i, t in enumerate(team_list):
-        t["rank"] = i + 1
-        t["top_tier_name"] = tier_name(t["top_tier"])
-    return {"people": people, "teams": team_list}
+# --- The manager's team view ------------------------------------------------------------------------------------
 
 
 def team(conn: Conn, manager_id: str) -> dict[str, Any]:

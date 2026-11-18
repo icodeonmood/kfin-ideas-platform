@@ -23,6 +23,7 @@ from ideapage.mine import my_ideas, snippet
 from ideapage.route import idea_view
 from ideapage.withdraw import Refused, restore, withdraw
 from ideapage.words import IST, day
+from submit import clock
 from tests import helpers
 
 NOW = dt.datetime(2026, 11, 16, 6, 0, tzinfo=dt.UTC)  # Monday 16 November, 11:30 am in the office
@@ -241,6 +242,41 @@ def test_l_questions_answer_5_answers_under_their_parts_come_from_lane_b(
     assert often["answers"][0]["line"] == f"From your answer to Harish, {day(asked, NOW)}"
 
 
+def test_s06_layout_5_l_questions_answer_5_seeded_t7_answers_come_through_lane_b_desk_asking_unmocked(
+    club: dict[str, Any],
+) -> None:
+    """The seam, with nothing stubbed: lane B's real `desk.asking.answers_by_part` reads the seeded T7 set (asked by
+    Harish, answered by Tanvi, closed with the pick) and S-06 shows each sent answer under its part, with its line,
+    exactly as lane B returns it (S-06.layout/5, L-QUESTIONS.answer/5; J-BROWSE/4)."""
+    from desk import asking
+    from ideapage import adapters
+
+    conn, m = club["conn"], club["m"]
+    assert adapters._lane_b_answers() is asking.answers_by_part  # the real module, not a stand-in
+    raw = asking.answers_by_part(conn, m["T7"].uuid)
+    assert list(raw) == ["often"]
+    [sent] = raw["often"]
+    assert (sent["asked_by"], sent["by"], sent["answer"]) == (
+        "Harish",
+        "Tanvi",
+        "Yes, across the six largest branches.",
+    )
+    answered = dt.datetime.fromisoformat(str(sent["answered_at"]))
+    assert answered == NOW - dt.timedelta(days=7.5) + dt.timedelta(hours=20)  # club_seed._questions for T7
+
+    rows = {r["part"]: r for r in view(club, ref(club, "T7"), "tanvi")["page"]["shared"]["rows"]}
+    assert rows["often"]["answers"] == [
+        {
+            "id": sent["question_id"],
+            "text": "Yes, across the six largest branches.",
+            "at": answered.isoformat(),
+            "line": f"From your answer to Harish, {day(answered, NOW)}",
+            "files": [],
+        }
+    ]
+    assert all(not r.get("answers") for part, r in rows.items() if part != "often")
+
+
 def test_s06_states_withdrawn_offers_restore_it(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "T10"), "tanvi")
     page = v["page"]
@@ -395,7 +431,7 @@ def test_s09_states_not_asked_request_sent_and_on_the_crew(club: dict[str, Any])
     assert sent["line"] == "Rekha reads your note and decides. You’ll hear in your Inbox."
     crew = view(club, r1, "zoya")["page"]["team_up"]
     assert crew["state"] == "on_crew" and crew["line"] == "You’re on the crew. You’ll get its updates."
-    assert crew["action"] == {"label": "Say hello", "to": f"/ideas/{r1}/conversation"}
+    assert crew["action"] == {"label": "Say hello", "to": f"/ideas/{r1}/conversation#say-hello"}  # BLD-F069
     assert crew["count_line"].startswith("2 colleagues on it. Rekha leads it and decides who joins.")
 
 
@@ -509,6 +545,52 @@ def test_s06_rules_4_dec_104_a_merge_by_a_lead_who_hides_their_name_says_by_its_
     assert "Rekha" not in json.dumps(v["page"]["merged"], ensure_ascii=False)
 
 
+def test_s06_layout_l_worth_1_about_only_before_figures_the_sharer_marked_as_approximate(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/5, L-WORTH/1 (J-TRACK/1): "About" goes before a worth figure only where the sharer wrote it as
+    approximate (`idea_worth.hours_about`, `cost_about`, `revenue_about`); an exact figure, a range, NULL (rows
+    written before the flags) and the reviewer's revision read plain."""
+    conn, t7, uid = club["conn"], ref(club, "T7"), club["m"]["T7"].uuid
+
+    def figures() -> dict[str, Any]:
+        rows = {r["part"]: r for r in view(club, t7, "tanvi")["page"]["shared"]["rows"]}
+        return dict(rows["cost"]["figures"])
+
+    seeded = figures()  # the seed: a range of hours, and "about 40k" for the cost
+    assert {k: seeded["sharer"][k] for k in ("hours", "cost")} == {
+        "hours": "120 to 200 hours a month",
+        "cost": "About ₹40,000 a month",
+    }
+    assert {k: seeded["reviewer"][k] for k in ("hours", "cost")} == {
+        "hours": "150 to 220 hours a month",
+        "cost": "₹40,000 to ₹60,000 a month",
+    }
+    conn.execute(
+        "UPDATE idea_worth SET hours_low = 80, hours_high = NULL, hours_about = false, cost_about = NULL, "
+        "revenue_low = 15000, revenue_about = true WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (uid,),
+    )
+    mixed = figures()["sharer"]
+    assert (mixed["hours"], mixed["cost"], mixed["revenue"]) == (
+        "80 hours a month",  # exact
+        "₹40,000 a month",  # not marked (NULL)
+        "About ₹15,000 a month",  # marked as approximate
+    )
+    conn.execute(
+        "UPDATE idea_worth SET hours_about = true, cost_about = false, revenue_about = false "
+        "WHERE idea_uuid = %s AND by_side = 'sharer'",
+        (uid,),
+    )
+    flipped = figures()["sharer"]
+    assert (flipped["hours"], flipped["cost"], flipped["revenue"]) == (
+        "About 80 hours a month",
+        "₹40,000 a month",
+        "₹15,000 a month",
+    )
+    assert not any(str(v).startswith("About") for v in figures()["reviewer"].values())
+
+
 def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: dict[str, Any]) -> None:
     """C-TRACK, L-HIDE: a detail the sharer brought back with "Show it" is not counted as hidden."""
     conn, t6 = club["conn"], ref(club, "T6")
@@ -534,6 +616,125 @@ def test_c_track_l_hide_the_checked_line_counts_only_details_still_hidden(club: 
     )
     assert nodes(view(club, t6, "tanvi"))[1][2] == "No personal details found" + rest
     conn.execute("DELETE FROM hidden_details WHERE id = %s", (folio,))
+
+
+def test_c_track_l_similar_failure_the_checked_line_follows_whether_similar_ideas_were_checked(
+    club: dict[str, Any],
+) -> None:
+    """C-TRACK, L-SIMILAR.failure (S-06 at J-SHARE's end and J-TRACK/1, S-09): a check that failed never reads as
+    "none found"; nothing recorded says nothing about similar ideas; a done check keeps the count wording. Linked
+    ideas are counted whatever was recorded (BLD-E052)."""
+    conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
+    conn.execute("DELETE FROM similar_links WHERE idea_uuid = %s", (uid,))
+
+    def lines() -> tuple[str | None, str | None]:
+        return nodes(view(club, t5, "tanvi"))[1][2], nodes(view(club, t5, "rekha"))[1][2]
+
+    def check(value: str | None) -> None:
+        conn.execute("UPDATE ideas SET similar_check = %s WHERE id = %s", (value, uid))
+
+    couldnt = "Couldn’t check for similar ideas. The review desk will."
+    check("failed")
+    sharer, colleague = lines()
+    assert sharer == f"No personal details found. {couldnt}" and colleague == couldnt
+    assert "no similar ideas found" not in str(sharer) and "0 similar" not in str(colleague)
+    check(None)
+    assert lines() == ("No personal details found", None)
+    check("done")
+    assert lines() == ("No personal details found, no similar ideas found", "0 similar ideas linked")
+    for other in ("R1", "P1"):
+        conn.execute(
+            "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'related', %s)",
+            (uid, club["m"][other].uuid, "Related: synthetic"),
+        )
+    two = ("No personal details found, 2 similar ideas found", "2 similar ideas linked")
+    assert lines() == two
+    for value in ("failed", None):
+        check(value)
+        assert lines() == two  # links found after a failed check, or with nothing recorded, are still counted
+
+
+def test_c_track_l_similar_failure_the_couldnt_check_line_is_lane_c_handover_line() -> None:
+    """J-SHARE's end hands over to J-TRACK/1: lane C's handover (`submit.send.checked_line`) and S-06's track say
+    the same when similar ideas could not be checked, with the pack's own sentence (L-SIMILAR.failure)."""
+    from ideapage import track
+    from submit import check as submit_check
+    from submit import send
+
+    assert track.COULDNT_CHECK == submit_check.COULDNT_CHECK
+    for hidden in (0, 2):
+        mine = track.checked_line(hidden, ["pan"] * hidden, 0, "failed", for_sharer=True)
+        assert mine == send.checked_line(hidden, None)
+    assert track.checked_line(2, ["pan", "folio"], 2, "done", for_sharer=True) == send.checked_line(2, 2)
+    assert track.checked_line(0, [], 0, "done", for_sharer=True) == send.checked_line(0, 0)
+
+
+@pytest.fixture
+def similar_runs(club: dict[str, Any]) -> Iterator[Any]:
+    """Lane C's `similar_runs` (c/similar, not on main yet): made here with the columns a row needs when it is
+    missing, and dropped again; when a migration has made it, only this test's rows are removed."""
+    conn = club["conn"]
+    made = not conn.execute("SELECT to_regclass('similar_runs') IS NOT NULL AS here").fetchone()["here"]
+    if made:
+        conn.execute(
+            "CREATE TABLE similar_runs (idea_uuid uuid PRIMARY KEY REFERENCES ideas (id) ON DELETE CASCADE, "
+            "state text NOT NULL CHECK (state IN ('done', 'failed')), found_while text NOT NULL, "
+            "found smallint NOT NULL DEFAULT 0)"
+        )
+    uids = [m.uuid for m in club["m"].values()]
+
+    def put(uid: str, state: str, found: int = 0) -> None:
+        conn.execute(
+            "INSERT INTO similar_runs (idea_uuid, state, found_while, found) VALUES (%s, %s, 'checking', %s) "
+            "ON CONFLICT (idea_uuid) DO UPDATE SET state = EXCLUDED.state, found = EXCLUDED.found",
+            (uid, state, found),
+        )
+
+    yield put
+    if made:
+        conn.execute("DROP TABLE similar_runs")
+    else:
+        conn.execute("DELETE FROM similar_runs WHERE idea_uuid = ANY(%s::uuid[])", (uids,))
+
+
+def test_l_similar_failure_similar_status_reads_lane_c_run_first_then_the_idea(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, similar_runs: Any
+) -> None:
+    """L-SIMILAR.failure: `similar_status` is "done", "failed" or "none". Lane C's `similar_runs` row wins when there
+    is one (its retries after sharing write only there); otherwise `ideas.similar_check`, NULL being "none"."""
+    from ideapage import adapters
+    from ideapage.adapters import similar_status
+
+    conn, uid = club["conn"], club["m"]["T5"].uuid
+    lane_c_reader = adapters._lane_c_last_run  # put back by name below, not with undo(): `club` patches too
+    monkeypatch.delitem(sys.modules, "similar.matching", raising=False)
+    monkeypatch.setattr(
+        "ideapage.adapters._lane_c_last_run", lambda: None
+    )  # c/similar's reader not here: SQL
+
+    def check(value: str | None) -> None:
+        conn.execute("UPDATE ideas SET similar_check = %s WHERE id = %s", (value, uid))
+
+    for value, status in ((None, "none"), ("done", "done"), ("failed", "failed")):
+        check(value)
+        assert similar_status(conn, uid) == status  # no run for the idea: the idea's own record
+    check("done")
+    similar_runs(uid, "failed")
+    assert similar_status(conn, uid) == "failed"  # the run wins over the idea
+    check("failed")
+    similar_runs(uid, "done", found=4)
+    assert similar_status(conn, uid) == "done"
+    check(None)
+    assert similar_status(conn, uid) == "done"
+    # Through c/similar's own reader once it is here: only its state is read, never `found`.
+    fake = types.ModuleType("similar.matching")
+    fake.last_run = lambda c, i: {"state": "failed", "found": 4} if i == uid else None
+    monkeypatch.setattr("ideapage.adapters._lane_c_last_run", lane_c_reader)
+    monkeypatch.setitem(sys.modules, "similar.matching", fake)
+    assert similar_status(conn, uid) == "failed"
+    other = club["m"]["T6"].uuid
+    conn.execute("UPDATE ideas SET similar_check = 'done' WHERE id = %s", (other,))
+    assert similar_status(conn, other) == "done"  # no run from the reader: the idea's record
 
 
 def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_faces(
@@ -562,8 +763,22 @@ def test_dec_104_s09_a_colleague_never_sees_hidden_names_in_the_crew_or_its_face
 # --- L-SUBMIT.withdraw ----------------------------------------------------------------------------------------------
 
 
+@pytest.fixture
+def restore_rows(club: dict[str, Any]) -> Iterator[list[tuple[str, str]]]:
+    """(reference, ideas.id) of each idea a test restores: its review clock rows and queued check jobs are removed
+    before the seed's own teardown, so nothing a restore wrote outlives the test."""
+    restored: list[tuple[str, str]] = []
+    yield restored
+    for key, uid in restored:
+        club["conn"].execute(
+            "DELETE FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by'",
+            (key,),
+        )
+        club["conn"].execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"submit.check:{uid}",))
+
+
 def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_reference(
-    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, restore_rows: list[tuple[str, str]]
 ) -> None:
     # Lane E's own path: no restore hook. Importing the worker app plugs lane C's `submit.adapters.on_restored` in
     # (it leaves the idea `checking` and queues `submit.check`, tested in test_1pc_l_sort_submit_db.py), so pin it
@@ -572,6 +787,7 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
 
     monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)
     conn, t5 = club["conn"], ref(club, "T5")
+    restore_rows.append((t5, club["m"]["T5"].uuid))
     out = withdraw(conn, t5, club["p"]["tanvi"], "Folio 1234567890 is already being fixed", now=NOW)
     assert out["page"]["state"] == "withdrawn"
     rest = out["page"]["card"]["rest"]
@@ -584,7 +800,20 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
     back = restore(conn, t5, club["p"]["tanvi"], now=NOW + dt.timedelta(hours=1))
     row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
     assert back["idea"]["id"] == t5 and row["status"] == "with_review_desk"
-    assert row["decide_by"] > NOW + dt.timedelta(days=5) and row["withdraw_reason_encrypted"] is None
+    assert row["withdraw_reason_encrypted"] is None
+    # L-SUBMIT.send/4, L-SUBMIT.edit/1: first sharing's clocks (submit.clock), from the restore. Restored Monday
+    # 16 November at 12:30 pm: decided by Friday 20 November, 6 pm, open to changes until Thursday 19 November.
+    p = read.promises()
+    assert row["decide_by"] == clock.decide_by(NOW + dt.timedelta(hours=1), p)
+    assert row["decide_by"] == dt.datetime(2026, 11, 20, 18, 0, tzinfo=IST)
+    assert row["edit_closes_at"] == clock.edit_closes(NOW + dt.timedelta(hours=1), p)
+    running = conn.execute(
+        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
+        "AND state = 'running'",
+        (t5,),
+    ).fetchall()
+    # One review clock, due at the idea's decide-by.
+    assert [r["due_at"] for r in running] == [row["decide_by"]]
     assert back["page"]["state"] == "just_shared" and back["page"]["window"]["open"]
     history = [
         r["to_status"]
@@ -604,6 +833,58 @@ def test_l_submit_withdraw_inside_the_window_then_restore_with_the_same_referenc
         restore(conn, t5, club["p"]["tanvi"], now=NOW)["page"]["state"] == "just_shared"
     )  # repeat: no change
     assert view(club, t5, "rekha")["view"] == "colleague"
+
+
+def test_l_submit_withdraw_3_restore_through_lane_c_hook_leaves_it_checking_with_one_check_queued(
+    club: dict[str, Any], monkeypatch: pytest.MonkeyPatch, restore_rows: list[tuple[str, str]]
+) -> None:
+    """L-SUBMIT.withdraw/3, L-SUBMIT.send/3–4 (J-RECOVER's restore, the production path): with lane C's hook
+    installed as the worker app installs it, a restore leaves the idea `checking` with exactly one `submit.check`
+    queued, and decide-by, the edit window and the review clock are written once, by lane C's submit.clock."""
+    from ideapage import withdraw as withdraw_module
+    from submit import adapters
+
+    monkeypatch.setattr(withdraw_module, "ON_RESTORED_HOOK", None)  # put back as it was at teardown
+    assert adapters.install_hooks()  # as submit.routes.build does when the worker app starts
+    assert withdraw_module.ON_RESTORED_HOOK is adapters.on_restored
+    conn, t5, uid = club["conn"], ref(club, "T5"), club["m"]["T5"].uuid
+    restore_rows.append((t5, uid))
+    withdraw(conn, t5, club["p"]["tanvi"], None, now=NOW)
+    # No `now`: the hook's clock is the real one, as in production.
+    back = restore(conn, t5, club["p"]["tanvi"])
+    row = conn.execute("SELECT * FROM ideas WHERE idea_id = %s", (t5,)).fetchone()
+    assert row["status"] == "checking" and back["idea"]["id"] == t5
+    jobs = conn.execute(
+        "SELECT state, dedupe_key FROM jobs WHERE type = 'submit.check' AND payload->>'idea_uuid' = %s",
+        (uid,),
+    ).fetchall()
+    assert jobs == [{"state": "queued", "dedupe_key": f"submit.check:{uid}"}]
+    p = read.promises()
+    hook_now = row["edit_closes_at"] - dt.timedelta(days=int(p["edit_window"]["max_days"]))
+    assert abs(hook_now - row["restored_at"]) < dt.timedelta(seconds=30)
+    assert row["decide_by"] == clock.decide_by(hook_now, p)  # first sharing's reading, not restore's own
+    assert row["decide_by"].astimezone(IST).time() == dt.time(18, 0)
+    running = conn.execute(
+        "SELECT due_at FROM sla_timers WHERE entity_type = 'idea' AND entity_id = %s AND stage = 'decide_by' "
+        "AND state = 'running'",
+        (t5,),
+    ).fetchall()
+    assert [r["due_at"] for r in running] == [row["decide_by"]]
+    assert nodes(back)[1] == ("checked_matched", "now", "Checking…")
+    history = [
+        r["to_status"]
+        for r in conn.execute(
+            "SELECT to_status FROM idea_status_history WHERE idea_uuid = %s ORDER BY id", (uid,)
+        ).fetchall()
+    ]
+    assert history[-2:] == ["withdrawn", "checking"]
+    audit = [
+        r["action"]
+        for r in conn.execute(
+            "SELECT action FROM audit_log WHERE entity = %s ORDER BY id", (f"idea:{t5}",)
+        ).fetchall()
+    ]
+    assert audit == ["idea.withdraw", "idea.restore"]
 
 
 def test_l_submit_withdraw_is_refused_once_the_desk_opened_it(club: dict[str, Any]) -> None:
@@ -839,6 +1120,36 @@ def test_dec_104_s07_a_draft_waiting_on_a_lead_who_hid_their_name_or_left_says_t
     assert "Rekha" not in json.dumps(drafts, ensure_ascii=False, default=str)
     all_rows = {i["id"]: i for i in mine(club, "tanvi")["items"]}
     assert all_rows[t2]["next_step"]["sentence"].startswith("Waiting for the lead to answer")
+
+
+def test_s07_drafts_l_teamup_rules_10_a_draft_waits_on_the_live_crew_lead_not_the_sharer(
+    club: dict[str, Any],
+) -> None:
+    """S-07 Drafts, L-TEAMUP.rules/10, DEC-104: Rekha shared R1 and hands its lead to Zoya, already on its crew. Tanvi's
+    T2 draft, whose merge request waits on R1, now waits on Zoya (lane F's `teamup.store.lead_code`), and Rekha is not
+    named. Zoya is named only while she shows her name on the Wall and is still here."""
+    conn, r1, t2 = club["conn"], ref(club, "R1"), club["m"]["T2"].uuid
+    r1_uuid = club["m"]["R1"].uuid
+    conn.execute(
+        "UPDATE crew_members SET role = 'crew' WHERE idea_uuid = %s AND contributor_code = %s AND left_at IS NULL",
+        (r1_uuid, code_of(club, "rekha")),
+    )
+    conn.execute(
+        "UPDATE crew_members SET role = 'lead' WHERE idea_uuid = %s AND contributor_code = %s AND left_at IS NULL",
+        (r1_uuid, code_of(club, "zoya")),
+    )
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    names = f"Waiting for Zoya to answer about joining {r1}. Your words are kept."
+    assert row["next_step"]["sentence"] == names
+    assert "Rekha" not in json.dumps(drafts, ensure_ascii=False, default=str)
+    hide_name(club, "zoya")
+    drafts = mine(club, "tanvi", filter="drafts")
+    row = {i["id"]: i for i in drafts["items"]}[t2]
+    waits = f"Waiting for the lead to answer about joining {r1}. Your words are kept."
+    assert row["next_step"]["sentence"] == waits
+    dump = json.dumps(drafts, ensure_ascii=False, default=str)
+    assert "Zoya" not in dump and "Rekha" not in dump
 
 
 def test_dec_104_s09_a_sharer_who_has_left_is_never_named_to_a_colleague(club: dict[str, Any]) -> None:

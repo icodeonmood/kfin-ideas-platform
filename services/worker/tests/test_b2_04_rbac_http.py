@@ -93,7 +93,8 @@ def test_membership_scoped_endpoints_are_listed_and_signed_in() -> None:
 
 
 def test_membership_scoped_endpoints_admit_their_members() -> None:
-    """The same requests the matrix sends, from an active One: never 401 or 403, and the leaderboard serves."""
+    """The same requests the matrix sends, from an active One: never 401 or 403, and S-ONE's dashboard serves (the old
+    Ones-only leaderboard is retired, BLD-E049)."""
     with connect(autocommit=True) as conn, people(conn) as make:
         one = make()
         conn.execute(
@@ -112,7 +113,7 @@ def test_membership_scoped_endpoints_admit_their_members() -> None:
                 if status in (401, 403):
                     wrong.append(f"{method} {path}: a One got {status}")
             assert wrong == []
-            assert browser.get("/api/ones/leaderboard").status_code == 200
+            assert browser.get("/api/one").status_code == 200
         finally:
             conn.execute("DELETE FROM ones WHERE user_id = %s", (one.user_id,))
 

@@ -13,8 +13,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-// Lane F's crew card until Find your crew is on main (BLD-C146).
-import { CrewCardView } from "@/components/home/crew-shim";
 import { Prompt, PROMPT_COPY, STARTERS } from "@/components/compose/prompt";
 import { QuestionsCard } from "@/components/review/qcard";
 import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
@@ -26,17 +24,22 @@ import { Pill, type PillVariant } from "@/components/ui/pill";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DraftClient, DraftError, newClientId } from "@/lib/compose/client";
 import type { CrewCard, MyIdeaRow } from "@/lib/contracts";
+import { COUNTS_EVENT } from "@/lib/inbox-events";
 import {
   cheer,
+  keepFailedSets,
   loadCrew,
   loadMine,
   loadOnes,
   loadSets,
+  readSets,
   type FetchLike,
   type HomeMine,
   type HomePost,
-  type OpenSet,
+  type NeedsCard,
 } from "@/lib/home/data";
+
+import { CrewCardView, shownAsColleague } from "./crew-card";
 
 export const HOME_COPY = {
   question: (name: string) => `What keeps getting in your way, ${name}?`,
@@ -118,6 +121,9 @@ export const HOME_COPY = {
 const MAX_MESSAGE = 5000; // V-FIELDS.tellit/2
 
 const WAYS_COUNT = 3;
+/** Needs you's re-reads: one at a time, and a burst of Inbox events within this long of a read's start brings at
+ * most one more read after it. */
+export const REREAD_GAP_MS = 250;
 
 /** Where each "Jump back in" card and section link goes (P-ROUTES.screens). */
 export const HOME_LINKS = {
@@ -337,19 +343,24 @@ export function HomeScreen({
 
   // ── the sections ──────────────────────────────────────────────────────────────────────────────────────────────
   const [mine, setMine] = useState<Loaded<HomeMine | null>>({ state: "loading" });
-  const [sets, setSets] = useState<Loaded<{ ideaId: string; set: OpenSet }[]>>({ state: "loading" });
+  const [sets, setSets] = useState<Loaded<NeedsCard[]>>({ state: "loading" });
   const [crew, setCrew] = useState<Loaded<{ total: number; top: CrewCard[] } | null>>({ state: "loading" });
   const [ones, setOnes] = useState<Loaded<HomePost[] | null>>({ state: "loading" });
   const [crewAt, setCrewAt] = useState(0);
   const teamUp = useTeamUpSheet({ doneLabel: "Done" });
+  // Each read of Needs you gets a number, and an older read never overwrites a newer one that is shown.
+  const needsRead = useRef(0);
+  const needsShown = useRef(0);
 
   useEffect(() => {
     let gone = false;
+    const n = ++needsRead.current;
     void loadMine(f).then(async (m) => {
-      if (gone) return;
+      if (gone || n < needsShown.current) return;
+      needsShown.current = n;
       setMine({ state: "ready", value: m });
       const found = m && !firstVisit ? await loadSets(f, m.needs.rows) : [];
-      if (!gone) setSets({ state: "ready", value: found });
+      if (!gone && n >= needsShown.current) setSets({ state: "ready", value: found });
     });
     if (!firstVisit)
       void loadCrew(f).then((c) => {
@@ -360,6 +371,65 @@ export function HomeScreen({
     });
     return () => {
       gone = true;
+    };
+  }, [f, firstVisit]);
+
+  // Needs you again (S-03.sections/1, L-INBOX.rules/3): when the Inbox sends its counts (an item was answered,
+  // opened or archived) and when the browser brings Home back from its back/forward cache, Home reads the same
+  // `GET /api/me/ideas` and question sets it read on load. Only that part changes: the box, focus and scroll stay
+  // as they are, and nothing goes back to loading. A read that fails keeps what is shown: a failed `/api/me/ideas`
+  // keeps the section, and a question set that could not be read keeps that idea's card (all failing, every card).
+  // One read at a time: events while one runs, or within REREAD_GAP_MS of its start, bring at most one more.
+  useEffect(() => {
+    if (firstVisit) return; // a first visit shows no Needs you
+    let gone = false;
+    const again = async () => {
+      const n = ++needsRead.current;
+      const m = await loadMine(f);
+      if (gone || !m || n < needsShown.current) return;
+      const reads = await readSets(f, m.needs.rows);
+      if (gone || n < needsShown.current) return;
+      needsShown.current = n;
+      setMine({ state: "ready", value: m });
+      setSets((prev) => {
+        if (prev.state !== "ready") return { state: "ready", value: keepFailedSets([], reads) ?? [] };
+        const kept = keepFailedSets(prev.value, reads);
+        return kept === null ? prev : { state: "ready", value: kept };
+      });
+    };
+    let busy = false;
+    let more = false;
+    let gap: ReturnType<typeof setTimeout> | undefined;
+    const run = () => {
+      busy = true;
+      const started = Date.now();
+      void again().finally(() => {
+        gap = setTimeout(
+          () => {
+            busy = false;
+            if (more && !gone) {
+              more = false;
+              run();
+            }
+          },
+          Math.max(0, REREAD_GAP_MS - (Date.now() - started)),
+        );
+      });
+    };
+    const reread = () => {
+      if (busy) more = true;
+      else run();
+    };
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) reread();
+    };
+    window.addEventListener(COUNTS_EVENT, reread);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      gone = true;
+      clearTimeout(gap);
+      window.removeEventListener(COUNTS_EVENT, reread);
+      window.removeEventListener("pageshow", onShow);
     };
   }, [f, firstVisit]);
 
@@ -382,9 +452,12 @@ export function HomeScreen({
   const ideas = mine.state === "ready" ? (mine.value?.ideas ?? null) : null;
   const needs = mine.state === "ready" ? (mine.value?.needs ?? null) : null;
   const draftCount = mine.state === "ready" ? (mine.value?.drafts ?? 0) : 0;
-  const crewData = crew.state === "ready" ? (crew.value ?? { total: 0, top: [] }) : null;
+  // A failed crew read is not an empty one: the section shows no state, never "No one close to yours yet".
+  const crewFailed = crew.state === "ready" && crew.value === null;
+  const crewData = crew.state === "ready" ? crew.value : null;
+  // Faces only for people not shown as "A colleague" (DEC-104), who have no initials to draw.
   const crewFaces = (crewData?.top[0] ? [crewData.top[0].lead, ...crewData.top[0].crew_faces] : [])
-    .filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i)
+    .filter((p, i, all) => !shownAsColleague(p) && all.findIndex((q) => q.id === p.id) === i)
     .slice(0, 3)
     .map((p) => p.initials);
   const openSets = sets.state === "ready" ? sets.value : null;
@@ -590,7 +663,7 @@ export function HomeScreen({
                 title={HOME_COPY.findCrew}
                 link={{ href: HOME_LINKS.crew, label: HOME_COPY.seeAll }}
               />
-              {crewData === null ? (
+              {crewFailed ? null : crewData === null ? (
                 <SkeletonRows what={HOME_COPY.loadingCrew} rows={3} />
               ) : crewData.top.length ? (
                 <div className="hm-crewbox">

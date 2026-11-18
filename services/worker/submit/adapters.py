@@ -54,16 +54,19 @@ def _module(name: str) -> ModuleType | None:
 # --- Restore: lane E -------------------------------------------------------------------------------------------
 
 
-def on_restored(conn: Conn, idea_uuid: str) -> None:
+def on_restored(conn: Conn, idea_uuid: str, now: dt.datetime | None = None) -> None:
     """Lane E's restore has set the idea back to `checking` (same reference, inside its transaction). The review
-    clock restarts from now with the boards' decide-by, and the check runs again, which moves it to the desk."""
+    clock restarts from the restore with the boards' decide-by, and the check runs again, which moves it to the desk.
+    `now` is the restore's own time, so the restored idea's dates agree with it (L-SUBMIT.send/4); a caller that
+    passes none gets `submit.clock`'s current time. Lane E's hook calls `(conn, idea_uuid)` and may add `now`."""
     from jobs.runner import enqueue
     from submit import clock, config
 
     row = conn.execute("SELECT id, idea_id FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
     if row is None or row["idea_id"] is None:
         return
-    now = dt.datetime.now(dt.UTC)
+    if now is None:
+        now = clock.now()
     p = config.promises()
     due = clock.decide_by(now, p)
     conn.execute(

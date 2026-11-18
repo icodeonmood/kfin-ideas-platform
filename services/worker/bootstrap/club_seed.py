@@ -51,6 +51,7 @@ from core.db import Conn, connect
 from identity.codes import assign_contributor_code, emp_id_hash
 from onepc.context import seal_text, sealed_context
 from pii import vault
+from teamup.adapters import request_key
 
 IST = ZoneInfo("Asia/Kolkata")
 DOMAIN = "kfintech.example"
@@ -189,7 +190,7 @@ IDEAS: dict[str, Spec] = {
                fix={"how": "Keep a table of codes with one plain sentence each and print it on the letter.",
                     "needs": "Sign-off from compliance on the wording", "solved_already": "no",
                     "basis": "conversation", "risks": "Codes change when the exchange changes them"},
-               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000}),
+               worth={"hours_low": 120, "hours_high": 200, "cost_low": 40000, "cost_about": True}),
     "T8": Spec("tanvi", "not_now", "business_idea", "A paid express change-of-bank service",
                "Investors in a hurry could pay a small fee for a same-day change of bank, done at the branch.",
                "New business", ["Some investors would pay a small fee to change their bank the same day."],
@@ -482,13 +483,17 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
     text_chars = sum(len(w) for w in s.words)
     # An email or Teams arrival has no device (L-DRAFT.channels); otherwise where it was last saved.
     device = None if s.channel in ("email", "teams") else ("phone" if s.via == "voice" else "laptop")
+    # Every shared idea past "Checked and matched" was checked for similar ideas (L-SIMILAR.failure), as lane C's
+    # check records it; one still checking has no outcome yet.
+    similar_check = "done" if shared is not None and s.status != "checking" else None
     conn.execute(
         "INSERT INTO ideas (id, idea_id, contributor_code, status, kind, title, summary, often, city, affects, area, "
         "brings, sorting_sources, sorting_confirmed_at, helper_picks, channel, step, saved_at, saved_device, "
         "saved_device_id, char_count, archived_at, shared_at, share_seconds, declaration_version, declared_at, "
-        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, language) "
+        "edit_closes_at, withdrawn_at, decide_by, reviewer_id, opened_at, opened_by, created_at, similar_check, "
+        "language) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'en')",
         (
             idea_uuid, ref, owner["code"], s.status, s.kind, s.title, s.summary, s.often,
             owner["city"] if shared else None, s.affects, s.area, s.brings, Jsonb(sources),
@@ -500,7 +505,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
             _ago(s.withdrawn_days, now) if s.withdrawn_days is not None else None,
             _working_days_after(shared, 5) if shared else None, reviewer, opened, reviewer if opened else None,
-            path[0][1],
+            path[0][1], similar_check,
         ),
     )  # fmt: skip
     if s.origin is not None:  # sealed as draft intake seals it: masked subject, the note on top, when it came
@@ -614,10 +619,10 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
         )  # fmt: skip
     if s.worth:
         conn.execute(
-            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, at) "
-            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s)",
+            "INSERT INTO idea_worth (idea_uuid, by_side, by_code, hours_low, hours_high, cost_low, cost_about, at) "
+            "VALUES (%s, 'sharer', %s, %s, %s, %s, %s, %s)",
             (idea_uuid, owner["code"], s.worth.get("hours_low"), s.worth.get("hours_high"), s.worth.get("cost_low"),
-             shared or path[0][1]),
+             s.worth.get("cost_about"), shared or path[0][1]),
         )  # fmt: skip
     if shared is not None:
         conn.execute(
@@ -1231,20 +1236,26 @@ def _lead_answers(brings: bool) -> list[dict[str, str]]:
     ]
 
 
+def _draft_key(idea_uuid: str) -> str:
+    """The dedupe key of a "kept your draft" item: one per draft, by its ideas.id (a draft has no IDEA- reference)."""
+    return f"draft_kept:{idea_uuid}"
+
+
 def _inbox_item(
     conn: Conn, to: str, kind: str, sender: str | None, idea_uuid: str, refs: dict[str, Any], at: dt.datetime, *,
     actions: list[dict[str, str]], needs: bool = False, due: dt.datetime | None = None, read: bool = False,
-    archived: bool = False,
+    archived: bool = False, dedupe_key: str | None = None,
 ) -> None:  # fmt: skip
-    """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088)."""
-    # TODO(lane A inbox): dedupe_key teamup_request:<id> / draft_kept:<uuid>
+    """One in-app Inbox item. `refs` are IDs and small values only; the line is rendered at read time (BLD-088).
+    `dedupe_key` is the key lane A's `notify.post` stores (L-INBOX), so a later post or `notify.resolve` on the same
+    key finds this item: `teamup_request:<request id>` for a lead's "Needs you", `draft_kept:<ideas.id>` for a draft."""
     conn.execute(
         "INSERT INTO notifications (user_id, channel, template, event, payload, state, created_at, sent_at, "
-        "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions) "
-        "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "read_at, kind, from_user_id, idea_uuid, needs_you, due_at, archived_at, actions, dedupe_key) "
+        "VALUES (%s, 'in_app', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (to, f"inbox/{kind}", f"inbox.{kind}", Jsonb(refs), "read" if read else "sent", at, at,
          at + dt.timedelta(hours=1) if read else None, kind, sender, idea_uuid, needs, due,
-         at + dt.timedelta(days=1) if archived else None, Jsonb(actions)),
+         at + dt.timedelta(days=1) if archived else None, Jsonb(actions), dedupe_key),
     )  # fmt: skip
 
 
@@ -1290,8 +1301,9 @@ def _inbox(
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
         ("hemant", "build_ask", "gopal", "A1", 1.0, True, 3.0, False, False,
          [{"label": "Open the conversation", "to": "conversation", "style": "primary"}]),
+        # As lane F's `tell_requester` posts an approved team-up: "Say hello" lands in the box (BLD-F069).
         ("faisal", "teamup_answer", "tanvi", "T7", 3.5, False, None, True, False,
-         [{"label": "Say hello", "to": "conversation", "style": "primary"}]),
+         [{"label": "Say hello", "to": f"/ideas/{m['T7'].ref}/conversation#say-hello", "style": "primary"}]),
         ("faisal", "decision", "harish", "F1", 3.0, False, None, False, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
         ("zoya", "questions", "harish", "Z1", 4.0, True, -1.0, True, False,
@@ -1302,7 +1314,8 @@ def _inbox(
     for to, kind, sender, key, days, needs, due, read, archived, actions in items:
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
                     {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
-                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived)  # fmt: skip
+                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived,
+                    dedupe_key=_draft_key(m[key].uuid) if kind == "draft_kept" else None)  # fmt: skip
     # Needs you: every request still waiting on a lead (Esha's on Tanvi's T5 with E1 brought, Bhavesh's on Rekha's R1
     # with nothing brought, and T2's, N2's and G2's drafts on R1), exactly as lane F's `tell_lead` posts it
     # (teamup/requests.py): refs the real request row, which kind it is and how many ideas it brings, and the lead's
@@ -1311,14 +1324,16 @@ def _inbox(
         if ask.waiting:
             _inbox_item(conn, p[m[key].spec.owner]["id"], "teamup_request", ask.sender, m[key].uuid,
                         {"request_id": ask.request_id, "request": ask.request, "brought": ask.brought}, ask.at,
-                        actions=_lead_answers(ask.brought > 0), needs=True)  # fmt: skip
+                        actions=_lead_answers(ask.brought > 0), needs=True,
+                        dedupe_key=request_key(ask.request_id))  # fmt: skip
     # J-RESUME/5 and /6: the email arrival's "kept your draft", as lane C's intake posts it in the same transaction as
     # the draft (L-DRAFT.channels): to the sharer's users.id, from the system, refs how it came in (`via`) only, and
     # one "Check and send" to the draft by its ideas.id (a draft has no IDEA- reference).
     email = m["I2"]
     _inbox_item(conn, p[email.spec.owner]["id"], "draft_kept", None, email.uuid, {"via": email.spec.channel},
                 _ago(email.spec.saved_days + 0.05, now),
-                actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}])  # fmt: skip
+                actions=[{"label": "Check and send", "style": "primary", "to": f"/share/{email.uuid}"}],
+                dedupe_key=_draft_key(email.uuid))  # fmt: skip
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:

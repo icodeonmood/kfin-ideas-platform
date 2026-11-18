@@ -527,6 +527,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
         <ChoiceChips
           label="Filter"
           scroll
+          filter
           options={shown.filters.map((f) => ({
             value: f.filter,
             label: f.short_label,

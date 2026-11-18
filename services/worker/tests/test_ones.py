@@ -1,6 +1,7 @@
 """The Ones module (DEC-034 to DEC-087): jersey numbers, the propose / approve / carry-out flow, tier changes with
-their messages and glow-up, impact briefs, the Showcase brief, public views, the leaderboard, the manager's view,
-announcements and their messages. Synthetic people only."""
+their messages and glow-up, impact briefs, the Showcase brief, public views, the manager's view, announcements and
+their messages. Synthetic people only. The console view, the Ones-only leaderboard and inviting a colleague are
+retired (DEC-106, BLD-E049); a colleague's message is checked on an invitation already made."""
 
 from __future__ import annotations
 
@@ -317,7 +318,18 @@ def test_a_tier_change_needs_the_committees_message_and_plays_a_glow_up_once(one
     service.add_message(
         db, cast["ceo"], p["id"], {"from": "ceo", "text": "This is what the 1% Club is for. Thank you."}
     )
-    service.invite_peer(db, cast["member"], p["id"], email(db, peer))
+    # An invitation made before inviting was retired (BLD-E049) still lets the colleague write at /ones/write/:id.
+    db.execute(
+        "INSERT INTO one_message_invites (proposal_id, user_id, invited_by) VALUES (%s, %s, %s)",
+        (p["id"], peer, cast["member"]),
+    )
+    seen = views.invite_view(db, p["id"], peer)
+    assert seen is not None and (seen["as"], seen["tier_to_name"], seen["written"]) == (
+        "peer",
+        "Flame",
+        False,
+    )
+    assert views.invite_view(db, p["id"], cast["employee"]) is None
     service.add_message(db, peer, p["id"], {"from": "peer", "text": "Proud to have built this with you."})
     refused(
         "already_written",
@@ -432,23 +444,6 @@ def test_the_public_view_respects_consent_finance_and_the_switch(ones_db: Any, c
         killswitch.clear_cache()
 
 
-def test_the_leaderboard_is_for_ones_and_ranks_by_tier_then_impact(ones_db: Any, cast: Any) -> None:
-    db = ones_db
-    a, b = person(db, name="Tier One Synthetic"), person(db, name="Tier Four Synthetic", consent=True)
-    quiet = person(db, name="Tier Two Quiet Synthetic", consent=False)
-    induct(db, cast, a)
-    one_b, one_q = induct(db, cast, b), induct(db, cast, quiet)
-    db.execute("UPDATE ones SET tier = 4 WHERE id = %s", (one_b["one_id"],))
-    db.execute("UPDATE ones SET tier = 2 WHERE id = %s", (one_q["one_id"],))
-    assert views.leaderboard(db, cast["employee"]) is None
-    board = views.leaderboard(db, a)
-    # Tier first; a name shows unless hidden (the quiet One hid it: a number), and you always see your own.
-    assert [p["name"] for p in board["people"]][:3] == ["Tier Four Synthetic", None, "Tier One Synthetic"]
-    assert board["people"][1]["number"] == one_q["number"]
-    assert board["people"][2]["you"] and board["teams"][0]["ones"] >= 3
-    assert "Tier Two Quiet Synthetic" not in str(board)
-
-
 # --- A name follows person_settings.show_name_on_wall on every surface (DEC-104, P-PRODUCT.privacy, L-ONES) ----------
 
 
@@ -487,11 +482,9 @@ def test_l_ones_public_names_a_one_with_no_settings_row_and_numbers_one_who_hid_
     assert cards[ones[never]["number"]]["name"] == "Kavitha Ghatge"
     assert cards[ones[old_off]["number"]]["name"] == "Mohan Lokhande"
     assert cards[ones[hid]["number"]]["name"] is None and "Hrishikesh Bhat" not in str(out)
-    # Their own /one page and the leaderboard say the same.
+    # Their own /one page says the same (the old leaderboard is retired, BLD-E049).
     assert views.my_one(db, never, now=NOW)["name_on_wall"] is True
     assert views.my_one(db, hid, now=NOW)["name_on_wall"] is False
-    board = {p["number"]: p["name"] for p in views.leaderboard(db, never)["people"]}
-    assert board[ones[old_off]["number"]] == "Mohan Lokhande" and board[ones[hid]["number"]] is None
 
 
 def test_l_ones_announced_email_names_a_one_with_no_settings_row_not_one_who_hid_it(
@@ -580,7 +573,9 @@ def test_the_showcase_brief_fills_from_the_record_and_keeps_the_ones_words(ones_
     parts = {p["key"]: p for p in brief["parts"]}
     assert list(parts) == list(service.SHOWCASE_PARTS)
     assert parts["idea"]["from_record"] == TITLE and parts["timelines"]["own"].startswith("Pilot in January")
-    assert views.console(db)["ones"][0]["showcase_updated"] is not None
+    assert (
+        brief["updated_at"] is not None and views.my_one(db, subject, now=NOW)["showcase_updated"] is not None
+    )
 
 
 def test_the_ones_night_marks_one_award_per_category_a_year(ones_db: Any, cast: Any) -> None:
@@ -597,7 +592,9 @@ def test_the_ones_night_marks_one_award_per_category_a_year(ones_db: Any, cast: 
         now=NOW,
     )
     refused("forbidden", service.award, db, cast["chair"], one["one_id"], {"category": "money"}, now=NOW)
-    assert views.console(db)["awards"][0]["category"] == "time"
+    assert db.execute("SELECT category FROM one_awards WHERE one_id = %s", (one["one_id"],)).fetchone() == {
+        "category": "time"
+    }
 
 
 def test_the_committee_flow_can_propose_the_owner_of_an_accepted_idea(ones_db: Any, cast: Any) -> None:

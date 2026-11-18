@@ -30,6 +30,9 @@ const WayContext = createContext<Way | null>(null);
 /** The lists a kept way back may return to: the worker's `safe_back` allows these and no others
  * (services/worker/ideapage/shape.py, sharer.py and colleague.py). */
 const BACK_TO = ["/wall", "/my-ideas"] as const;
+/** A joined idea's way back to its lead idea, as the worker's `back_link` draws it from `REF` (colleague.py,
+ * S-09.layout/1): the idea's page by its reference, with no query and nothing after it. */
+const BACK_TO_LEAD = /^\/ideas\/IDEA-[0-9]{4}-[0-9]{6}$/;
 const BACK_MAX = 600;
 
 /** The way back this visit was given, kept across a reload and a refresh (BLD-E021). */
@@ -39,11 +42,13 @@ export function useWay(fallback: Way): Way {
 
 /**
  * A way back the page may restore from history (BLD-E044): `/wall` or `/my-ideas`, or a path under either, with its
- * query (the list's view). Anything else is refused, so `//host`, `/\host`, another scheme, a control character or a
- * page outside the two lists can never come back as a link.
+ * query (the list's view), or exactly a lead idea's page, `/ideas/IDEA-YYYY-NNNNNN` (S-09.layout/1). Anything else is
+ * refused, so `//host`, `/\host`, another scheme, a control character or a page outside these can never come back as
+ * a link.
  */
 export function allowedBack(to: string): boolean {
   if (!to || to.length > BACK_MAX || /[\\\u0000-\u001f\u007f]/.test(to)) return false;
+  if (BACK_TO_LEAD.test(to)) return true;
   const end = to.search(/[?#]/);
   const path = end === -1 ? to : to.slice(0, end);
   return BACK_TO.some((list) => path === list || path.startsWith(`${list}/`));
@@ -114,7 +119,7 @@ export function WayBack({ way, carried, children }: { way: Way; carried: Carried
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.pathname !== path && safeDecode(url.pathname) !== safeDecode(path)) return; // not this idea's entry
-    // Only a way back a reload may take again is kept (a `from=IDEA-…` way back holds for the visit only)
+    // Only a way back a reload may take again is kept: a list's view, or a joined idea's lead (S-09.layout/1)
     const keep = (persist || saved) && held && allowedBack(held.to) ? held : null;
     if (url.searchParams.has("from") || url.searchParams.has("back")) {
       url.searchParams.delete("from");

@@ -44,7 +44,7 @@ const SORTS: { value: WallSort; label: string }[] = [
 /** The phone's cycler goes newest, popular, crew size, Ones (S-WALL.phone). */
 const PHONE_SORTS = ["newest", "popular", "crew", "ones"].map((v) => SORTS.find((o) => o.value === v)!);
 const STAGE_NAME = { picked: "Picked", being_built: "Being built", shipped: "Shipped" } as const;
-const LOAD_FAILED = "We can't load the wall just now. Please try again in a minute.";
+const LOAD_FAILED = "We can't load the Wall just now. Please try again in a minute.";
 
 /** A Kindling row's line on a phone: "Problem, Investor service. 4 colleagues on it" (PhoneWall.md). */
 function phoneMeta(meta: string): string {
@@ -256,7 +256,7 @@ export function WallScreen({ state, data }: { state: WallState; data: WallData }
           <p className="body wl-phone">Every idea and problem shared, and where it is now.</p>
         </div>
         <div className="wl-chips">
-          <ChoiceChips label="Show" options={KINDS} value={st.kind} onChange={pickKind} scroll />
+          <ChoiceChips label="Show" options={KINDS} value={st.kind} onChange={pickKind} scroll filter />
         </div>
         {failed ? <Status kind="error" title={LOAD_FAILED} className="wl-fail" /> : null}
         <Kindling

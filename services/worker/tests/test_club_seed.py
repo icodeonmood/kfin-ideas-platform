@@ -326,6 +326,44 @@ def test_l_inbox_kinds_l_teamup_l_merge_request_each_teamup_request_item_is_a_wa
     assert bhavesh["actions"] == BRINGS_NOTHING
 
 
+def test_gap_seed_l_inbox_needs_you_and_draft_kept_items_carry_notify_dedupe_keys(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, L-INBOX (J-TEAMUP's lead Inbox, J-RESUME/5): every seeded lead "Needs you" item carries lane F's
+    `request_key(<request id>)` and every `draft_kept` item `draft_kept:<ideas.id>`, the keys lane A's notify.post
+    stores, so a later post or `notify.resolve` on the same key finds the seeded item instead of adding a second. Each
+    key passes notify's `_KEY` rule, and no other seeded item carries one."""
+    from notify import _KEY
+    from teamup.adapters import request_key
+
+    conn, m = db, made
+    asks = conn.execute(
+        "SELECT payload, dedupe_key FROM notifications WHERE kind = 'teamup_request'"
+    ).fetchall()
+    assert len(asks) == 5
+    assert all(a["dedupe_key"] == request_key(a["payload"]["request_id"]) for a in asks)
+    assert {a["payload"]["request"] for a in asks} == {"teamup", "merge"}
+
+    kept = conn.execute(
+        "SELECT idea_uuid, dedupe_key FROM notifications WHERE kind = 'draft_kept'"
+    ).fetchall()
+    assert sorted(str(k["idea_uuid"]) for k in kept) == sorted([m["T1"].uuid, m["I2"].uuid])
+    assert all(k["dedupe_key"] == f"draft_kept:{k['idea_uuid']}" for k in kept)
+
+    keys = [r["dedupe_key"] for r in [*asks, *kept]]
+    assert all(_KEY.match(k) for k in keys) and len(set(keys)) == len(keys)
+    assert _one(conn, "SELECT count(*) FROM notifications WHERE dedupe_key IS NOT NULL") == len(keys)
+
+    # The hand-off to the lead's answer (J-TEAMUP): lane F's resolve, by request id, clears that seeded item only.
+    from teamup import adapters
+
+    rid = asks[0]["payload"]["request_id"]
+    adapters.resolve(conn, rid)
+    still = "SELECT count(*) FROM notifications WHERE kind = 'teamup_request' AND needs_you"
+    assert _one(conn, still) == len(asks) - 1
+    assert not _one(conn, "SELECT needs_you FROM notifications WHERE dedupe_key = %s", request_key(rid))
+
+
 def p_id(conn: Any, first: str) -> Any:
     return _one(conn, "SELECT id FROM users WHERE emp_id_hash = %s", emp_id_hash(club_seed.EMP[first]))
 
@@ -469,3 +507,19 @@ def test_s_03_hero_1_bld_c148_every_persona_has_seen_home_but_sana_the_first_vis
     assert _one(conn, "SELECT count(*) FROM users WHERE emp_id_hash = %s", sana_hash) == 0
     assert _one(conn, "SELECT count(*) FROM person_settings WHERE user_id = %s", sana) == 0
     assert _one(conn, "SELECT count(*) FROM contributor_map WHERE user_id = %s", sana) == 0
+
+
+def test_bld_f069_j_teamup_faisals_seeded_team_up_answer_says_hello_into_the_box(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """BLD-F069, J-TEAMUP: Faisal's seeded team-up answer (team only, from Tanvi on T7) is posted the way lane F's
+    live `tell_requester` posts it: one "Say hello" that opens T7's conversation with the box focused."""
+    t7 = made["T7"]
+    rows = db.execute(
+        "SELECT actions FROM notifications WHERE kind = 'teamup_answer' AND user_id = %s AND idea_uuid = %s",
+        (p_id(db, "faisal"), t7.uuid),
+    ).fetchall()
+    assert len(rows) == 1 and t7.ref
+    assert rows[0]["actions"] == [
+        {"label": "Say hello", "style": "primary", "to": f"/ideas/{t7.ref}/conversation#say-hello"}
+    ]

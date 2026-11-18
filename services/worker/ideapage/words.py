@@ -180,20 +180,23 @@ def _num(x: Any) -> str:
     return str(int(f)) if f.is_integer() else f"{f:g}"
 
 
-def hours_range(low: Any, high: Any) -> str | None:
-    """'70 to 150 hours a month' (E-ENTITIES Range.text)."""
+def hours_range(low: Any, high: Any, about: Any = None) -> str | None:
+    """'70 to 150 hours a month' (E-ENTITIES Range.text); one figure reads 'About 80 hours a month' only when the
+    sharer wrote it as approximate (`idea_worth.hours_about`, L-WORTH/1), else '80 hours a month'."""
     if low is None:
         return None
     if high is None or float(high) == float(low):
-        return f"About {_num(low)} hours a month"
+        return f"{'About ' if about else ''}{_num(low)} hours a month"
     return f"{_num(low)} to {_num(high)} hours a month"
 
 
-def money_range(low: Any, high: Any) -> str | None:
+def money_range(low: Any, high: Any, about: Any = None) -> str | None:
+    """'₹40,000 to ₹60,000 a month'; one figure reads 'About ₹25,000 a month' only when the sharer wrote it as
+    approximate (`idea_worth.cost_about`, `revenue_about`, L-WORTH/1), else '₹25,000 a month'."""
     if low is None:
         return None
     if high is None or float(high) == float(low):
-        return f"About {rupees(float(low))} a month"
+        return f"{'About ' if about else ''}{rupees(float(low))} a month"
     return f"{rupees(float(low))} to {rupees(float(high))} a month"
 
 
