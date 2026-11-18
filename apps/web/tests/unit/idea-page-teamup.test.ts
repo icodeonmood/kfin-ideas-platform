@@ -465,3 +465,55 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     expect(q("[data-testid=teamup-sheet]")).not.toBeNull();
   });
 });
+
+describe("S-06: similar tiles on a crew you are already in, and a part left empty (BLD-E056, BLD-E057)", () => {
+  const ON_CREW = {
+    ...TILE,
+    my_state: "on_crew",
+    actions: [TILE.actions[0]],
+    done_line: "On the crew",
+  };
+  function withTiles(tiles: unknown[], rows: unknown[] = []): SharerProps {
+    const props = sharer("just_shared", { heading: "x", count: 0, link: LINK }, null);
+    const page = (props.view as unknown as { page: Record<string, Record<string, unknown>> }).page;
+    page.similar = { ...page.similar, tiles };
+    page.shared = { ...page.shared, rows };
+    return props;
+  }
+
+  it("C-SIMGRID.tile J-SIMILAR/7, J-REVIEW/M3: on its crew, the row says On the crew and offers no Team up", () => {
+    act(() => root!.render(createElement(SharerScreen, withTiles([ON_CREW]))));
+    const row = q(".ip-tile-a")!;
+    expect(row.querySelector(".ip-tile-done")?.textContent).toBe("On the crew");
+    const labels = Array.from(row.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).toEqual(["Preview"]);
+    expect(buttons().some((b) => b?.startsWith("Team up"))).toBe(false);
+  });
+
+  it("C-SIMGRID.tile: a tile the payload offers Team up on keeps it, and no On the crew line", () => {
+    act(() => root!.render(createElement(SharerScreen, withTiles([TILE]))));
+    const row = q(".ip-tile-a")!;
+    expect(Array.from(row.querySelectorAll("button")).map((b) => b.textContent)).toEqual([
+      "Preview",
+      "Team up",
+    ]);
+    expect(row.querySelector(".ip-tile-done")).toBeNull();
+  });
+
+  it("S-06.layout/5 J-REVIEW/1, J-TRACK/7: an empty How often reads Not given., as S-R2 reads it", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        withTiles(
+          [],
+          [
+            { part: "often", label: "How often", value: "", empty_line: "Not given.", answers: [] },
+            { part: "area", label: "Area", value: "Operations" },
+          ],
+        ),
+      ),
+    );
+    expect(html).toContain('<dt>How often</dt><dd><p class="ip-val ip-mute">Not given.</p>');
+    expect(html).toContain('<dt>Area</dt><dd><p class="ip-val">Operations</p>');
+  });
+});
