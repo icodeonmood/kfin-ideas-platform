@@ -165,6 +165,56 @@ def test_L_DECIDE_6_a_committee_reversal_to_pick_opens_asking(db: Conn, cast: di
     assert len(_asks(db, cast)) == 1
 
 
+def test_L_COMMITTEE_rules_5_a_reversal_to_pick_sets_the_team_date_a_pick_sets(db: Conn, cast: dict[str, Any]) -> None:
+    """L-COMMITTEE.rules/5, L-DECIDE.rules/6 (BLD-B259): a reversal to Pick takes a Pick's consequences, so the build
+    team is chosen by the desk's rule from the reversal time (10 working days, counting the day, at the deadline
+    hour): Tuesday 17 November, 10 am gives Monday 30 November. S-06's join_build.reply_by and the track's "Team
+    chosen by …" read that one date. The desk's Not picked stays on record without one."""
+    from desk import clock, promises
+    from ideapage import read, track
+
+    d = decide.send(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                    {"choice": "not_picked", "reason": REASON}, DECIDED)  # fmt: skip
+    reversed_at = f.at(17, 10)
+    assert _payload(db, cast, "kavya")["reply_by"] is None
+    committee.reverse_window(db, _window(db, d["id"]), cast["rohan"]["id"], {"to": "pick", "note": NOTE},
+                             reversed_at)  # fmt: skip
+    row = db.execute(
+        "SELECT r.team_by, r.return_at, d.team_by AS desk_team_by FROM decision_reversals r "
+        "JOIN decision_windows w ON w.id = r.window_id JOIN idea_decisions d ON d.id = w.decision_id "
+        "WHERE d.id = %s",
+        (d["id"],),
+    ).fetchone()
+    assert row is not None
+    stored = row["team_by"]
+    assert stored == clock.team_by(reversed_at, promises.get(), clock.office_calendar())
+    assert stored.astimezone(f.IST).date() == dt.date(2026, 11, 30)
+    assert row["return_at"] is None and row["desk_team_by"] is None
+    # the sharer and the crew: S-06's "Ask to join the build team" replies by that date
+    for who in ("kavya", "farhan"):
+        jb = _payload(db, cast, who)
+        assert jb["can_ask"] is True and dt.datetime.fromisoformat(jb["reply_by"]) == stored
+    # the sharer's track (S-06, S-07): "Team chosen by Monday 30 November", where a Pick shows it
+    dec = track.decided(read.decision(db, str(cast["idea"]["id"])))
+    assert dec is not None and dec.choice == "pick" and dec.team_by == stored
+    idea = dict(db.execute("SELECT * FROM ideas WHERE id = %s", (cast["idea"]["id"],)).fetchone() or {})
+    assert idea["status"] == "picked"
+    nodes = track.stages(db, idea, f.at(18, 9), for_sharer=True, dec=dec, qset=None)
+    assert (nodes[3].state, nodes[3].detail) == ("now", "Team chosen by Monday 30 November")
+
+
+def test_L_COMMITTEE_rules_5_a_reversal_away_from_a_pick_sets_no_team_date(db: Conn, cast: dict[str, Any]) -> None:
+    """L-COMMITTEE.rules/5 (BLD-B259): a Pick reversed to Not now or Not picked has no team date: reply_by is null,
+    and the reversal keeps none."""
+    d = _pick(db, cast)
+    assert _payload(db, cast, "kavya")["reply_by"] is not None
+    committee.reverse_window(db, _window(db, d["id"]), cast["rohan"]["id"], {"to": "not_picked", "note": NOTE},
+                             f.at(17, 10))  # fmt: skip
+    assert _payload(db, cast, "kavya") == {"can_ask": False, "asked_at": None, "reply_by": None}
+    row = db.execute("SELECT team_by FROM decision_reversals").fetchone()
+    assert row is not None and row["team_by"] is None
+
+
 def test_L_DECIDE_6_once_the_team_is_chosen_it_is_team_chosen(db: Conn, cast: dict[str, Any]) -> None:
     _pick(db, cast)
     join_build.ask(db, cast["idea"]["idea_id"], cast["kavya"]["id"], f.at(17, 9))
