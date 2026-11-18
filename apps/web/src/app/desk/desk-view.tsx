@@ -7,7 +7,6 @@
  * (S-R1.rules/6).
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -96,9 +95,23 @@ function TimeLeft({ row, tab, now }: { row: DeskRow; tab: DeskTab; now: Date }) 
   );
 }
 
+/** The tab, sort and search an address asks for, or null for any it does not name (S-R1.rules/4). */
+function deskUrlState(search: string): { tab: DeskTab | null; sort: DeskSort | null; q: string } {
+  const sp = new URLSearchParams(search);
+  return {
+    tab: TABS.find((t) => t.value === sp.get("tab"))?.value ?? null,
+    sort: SORT_OPTIONS.find((s) => s.value === sp.get("sort"))?.value ?? null,
+    q: (sp.get("q") ?? "").slice(0, 200),
+  };
+}
+
 export function DeskView({ initial, initialQuery }: { initial: DeskResponse; initialQuery: string }) {
-  const router = useRouter();
   const [data, setData] = useState(initial);
+  // The tab and sort chosen, shown pressed at once while their list loads (C-TABS, C-SORTS).
+  const [view, setView] = useState<{ tab: DeskTab; sort: DeskSort }>({
+    tab: initial.tab,
+    sort: initial.sort,
+  });
   const [text, setText] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery);
   const [reminded, setReminded] = useState<Set<string>>(() => new Set());
@@ -108,32 +121,47 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
   const loading = useRef<AbortController | null>(null);
   useFlipList(body, `${data.tab}:${data.sort}:${data.items.map((r) => r.idea_id).join(",")}`);
 
-  const load = useCallback(
-    async (tab: DeskTab, sort: DeskSort, q: string) => {
-      const params = new URLSearchParams({ tab, sort });
-      if (q) params.set("q", q);
-      router.replace(`/desk?${params.toString()}`, { scroll: false });
-      loading.current?.abort();
-      const ctl = new AbortController();
-      loading.current = ctl;
-      try {
-        const res = await fetch(`/api/desk?${params.toString()}`, { signal: ctl.signal });
-        if (res.ok) setData((await res.json()) as DeskResponse);
-      } catch {
-        // a newer request took over, or the network dropped; the table keeps what it had
-      }
-    },
-    [router],
-  );
+  const load = useCallback(async (tab: DeskTab, sort: DeskSort, q: string) => {
+    const params = new URLSearchParams({ tab, sort });
+    if (q) params.set("q", q);
+    setView({ tab, sort });
+    // The address takes the tab, sort and search at once, without a navigation: a router navigation waits for the
+    // server, and a row opened before it lands would leave Back on the old address (S-R1.rules/4, J-BROWSE/4).
+    window.history.replaceState(null, "", `/desk?${params.toString()}`);
+    loading.current?.abort();
+    const ctl = new AbortController();
+    loading.current = ctl;
+    try {
+      const res = await fetch(`/api/desk?${params.toString()}`, { signal: ctl.signal, cache: "no-store" });
+      if (res.ok && loading.current === ctl) setData((await res.json()) as DeskResponse);
+    } catch {
+      // a newer request took over, or the network dropped; the table keeps what it had
+    }
+  }, []);
+
+  // Back to the desk: the page may come from the router's cache for an older address, so the list follows the
+  // address the person left, not the props (S-R1.rules/4).
+  useEffect(() => {
+    const want = deskUrlState(window.location.search);
+    const tab = want.tab ?? initial.tab;
+    const sort = want.sort ?? initial.sort;
+    if (tab === initial.tab && sort === initial.sort && want.q === initialQuery) return;
+    const frame = requestAnimationFrame(() => {
+      setText(want.q);
+      setQuery(want.q);
+      void load(tab, sort, want.q);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initial, initialQuery, load]);
 
   // A reviewer coming back to the tab sees clocks and tabs as they are now (L-REVIEW.queue).
   useEffect(() => {
     const again = () => {
-      if (document.visibilityState === "visible") void load(data.tab, data.sort, query);
+      if (document.visibilityState === "visible") void load(view.tab, view.sort, query);
     };
     document.addEventListener("visibilitychange", again);
     return () => document.removeEventListener("visibilitychange", again);
-  }, [load, data.tab, data.sort, query]);
+  }, [load, view.tab, view.sort, query]);
 
   async function remind(row: DeskRow) {
     if (!row.set_id) return;
@@ -168,7 +196,7 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
         onPicked={() => undefined}
         onSubmit={(q) => {
           setQuery(q.trim());
-          void load(data.tab, data.sort, q.trim());
+          void load(view.tab, view.sort, q.trim());
         }}
       />
 
@@ -177,17 +205,17 @@ export function DeskView({ initial, initialQuery }: { initial: DeskResponse; ini
           id="desk"
           label="Review desk"
           tabs={tabs}
-          value={data.tab}
-          onChange={(t) => void load(t as DeskTab, data.sort, query)}
+          value={view.tab}
+          onChange={(t) => void load(t as DeskTab, view.sort, query)}
         />
         <Sorts
           options={SORT_OPTIONS}
-          value={data.sort}
-          onChange={(s) => void load(data.tab, s as DeskSort, query)}
+          value={view.sort}
+          onChange={(s) => void load(view.tab, s as DeskSort, query)}
         />
       </div>
 
-      <section {...tabPanelProps("desk", data.tab)} className="rd-panel">
+      <section {...tabPanelProps("desk", view.tab)} className="rd-panel">
         {data.items.length === 0 ? (
           <Empty title={empty.title} align="left" level={2}>
             {empty.line}
