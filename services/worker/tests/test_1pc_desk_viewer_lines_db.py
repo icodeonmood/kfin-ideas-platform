@@ -101,7 +101,7 @@ def test_V_ACC_committee_4_the_sharer_reads_the_committees_card_and_this_is_fina
         "title": "The Ones Committee changed the decision to not now",
         "note_heading": "The committee’s note to you",
         "was_line": "Was: Picked",
-        "was_by_line": "by Meera from the review desk, Monday 16 November",
+        "was_by_line": "by the review desk, Monday 16 November",  # DEC-111: the desk, not the reviewer
         "final_line": (
             "This is final. It comes back to the review desk on Wednesday 24 February 2027, with your answers and crew."
         ),
