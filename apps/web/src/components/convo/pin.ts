@@ -10,7 +10,30 @@
  *   Back does not do it again.
  * - Open at the newest entry (BLD-F081): a long conversation opens at its end, not at the top.
  */
-import { useEffect, type RefObject } from "react";
+import { useEffect, useSyncExternalStore, type RefObject } from "react";
+
+/** The phone layout's query, the same as conversation.css's `@media (max-width: 640px)`. */
+export const PHONE = "(max-width: 640px)";
+
+function phoneNow(): boolean {
+  return typeof window.matchMedia === "function" ? window.matchMedia(PHONE).matches : true;
+}
+
+function subscribePhone(changed: () => void): () => void {
+  if (typeof window.matchMedia !== "function") return () => {};
+  const m = window.matchMedia(PHONE);
+  m.addEventListener("change", changed);
+  return () => m.removeEventListener("change", changed);
+}
+
+/**
+ * Whether the screen has its phone layout (BLD-F078), for the one thing CSS cannot move: who sees the conversation is
+ * under the title on a phone and in the box wider, drawn once. The server (and a browser without `matchMedia`) draws
+ * the phone's; on a wider screen CSS hides it until the page has loaded and it moves into the box.
+ */
+export function usePhone(): boolean {
+  return useSyncExternalStore(subscribePhone, phoneNow, () => true);
+}
 
 /** The hint on every "Say hello" link to a conversation (lane F's in teamup/, others' on request). */
 export const SAY_HELLO = "#say-hello";

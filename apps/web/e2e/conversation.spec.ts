@@ -114,11 +114,12 @@ test("S-08 at 375px: the compact bar, the timeline as a log, the labelled box an
   await expect(log).toContainText("Welcome to the crew, Kavya.");
   const box = page.getByRole("textbox", { name: "Message the crew" });
   await expect(box).toBeVisible();
-  // PhoneMessages (BLD-F078): who sees it is under the title, beside the faces; the box's own line gives way to it
-  const seen = page.locator("header .cv-seen");
-  await expect(seen).toBeVisible();
-  await expect(seen).toContainText("The crew and the review desk see this conversation.");
-  await expect(page.locator("form.cv-box .cv-sees")).toBeHidden();
+  // PhoneMessages (BLD-F078): who sees it is under the title, beside the faces, and on the page once (strict)
+  await expect(page.getByText("The crew and the review desk see this conversation.")).toBeVisible();
+  await expect(page.locator("header .cv-seen")).toContainText(
+    "The crew and the review desk see this conversation.",
+  );
+  await expect(page.locator("form.cv-box .cv-sees")).toHaveCount(0);
   // No attach control for the crew (BLD-F063), and none yet for anyone (BLD-F064).
   await expect(page.getByRole("button", { name: "Attach a file" })).toHaveCount(0);
   // Touch targets (F-A11Y): Send and the "i" are 44px or more each way, measured once the shell has arrived (its
@@ -743,7 +744,6 @@ test.describe("S-08 at 1440px (Messages.jpg)", () => {
         line: r(meta.querySelector(".cv-line")),
         title: r(document.querySelector("h1")),
         column: r(document.querySelector(".cv-main")),
-        seen: getComputedStyle(document.querySelector("header .cv-seen")!).display,
       };
     });
     const mid = (b: DOMRect) => b.top + b.height / 2;
@@ -755,8 +755,10 @@ test.describe("S-08 at 1440px (Messages.jpg)", () => {
     expect(head.title.right).toBeLessThanOrEqual(head.column.right + 1);
     await expect(page.getByRole("heading", { level: 1, name: TITLE })).toHaveCount(1);
     expect(head.title.height).toBeLessThan(70); // "Rejection SMS codes confuse investors" on one line
-    // Wider than a phone who sees it is in the box beside Send (Messages.jpg), not under the title
-    expect(head.seen).toBe("none");
+    // Wider than a phone who sees it is in the box beside Send (Messages.jpg), not under the title, and on the page
+    // once (lane G's journeys find it by its words, strict)
+    await expect(page.locator("header .cv-seen")).toHaveCount(0);
+    await expect(page.getByText("The crew and the review desk see this conversation.")).toBeVisible();
     await expect(page.locator("form.cv-box .cv-sees")).toHaveText(
       "The crew and the review desk see this conversation.",
     );
