@@ -32,14 +32,32 @@ const REF = "IDEA-2026-000014";
 const NEHA = { id: "p-n", name: "Neha Joshi", first_name: "Neha", initials: "NJ" };
 const LINK_URL = "https://intranet.kfintech.example/branch-notes/redemption-holds-for-the-west-zone-review";
 
-function file(id: string, kind: "file" | "link" | "folder", name: string, extra: Record<string, unknown> = {}) {
-  return { id, kind, name, type: "", state: "checked", added_by: NEHA, added_at: "2026-11-16T06:00:00Z", ...extra };
+function file(
+  id: string,
+  kind: "file" | "link" | "folder",
+  name: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    kind,
+    name,
+    type: "",
+    state: "checked",
+    added_by: NEHA,
+    added_at: "2026-11-16T06:00:00Z",
+    ...extra,
+  };
 }
 
 const FILES = [
   file("ATT-1", "link", LINK_URL, { link_scope: "internal" }),
   file("ATT-2", "folder", "Branch notes", { count: 6 }),
-  file("ATT-3", "file", "Redemption holds.pdf", { size: 1_200_000, pages: 3, view_url: "/api/files/ATT-3/view" }),
+  file("ATT-3", "file", "Redemption holds.pdf", {
+    size: 1_200_000,
+    pages: 3,
+    view_url: "/api/files/ATT-3/view",
+  }),
   file("ATT-4", "file", "Screenshot 16 Nov.jpeg", { size: 240_000 }),
   file("ATT-5", "file", "Holds notes.txt", { size: 4_000 }),
 ];
@@ -93,7 +111,10 @@ function props(): Props {
 }
 
 const css = () =>
-  readFileSync(resolve(__dirname, "../../src/app/ideas/[id]/idea-page.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  readFileSync(resolve(__dirname, "../../src/app/ideas/[id]/idea-page.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
 
 /** The body of the first rule for `selector`. */
 function rule(sheet: string, selector: string): string {
@@ -126,7 +147,9 @@ describe("C-FILE.row on S-06 Attached (BLD-E062; J-RECOVER/14, J-RECOVER/15)", (
 
   it("C-FILE.row: the rendered tiles carry those badges, and no badge is cut from an address", () => {
     const html = renderToStaticMarkup(createElement(SharerScreen, props()));
-    const badges = [...html.matchAll(/<span class="ip-badge" aria-hidden="true">([^<]*)<\/span>/g)].map((m) => m[1]);
+    const badges = [...html.matchAll(/<span class="ip-badge" aria-hidden="true">([^<]*)<\/span>/g)].map(
+      (m) => m[1],
+    );
     expect(badges).toEqual(["Link", "Folder", "PDF", "JPG", "File"]);
     expect(html).not.toMatch(/>EXAM<|>HTTP<|>BRAN</);
     expect(html).toContain(`<span class="ip-file-n">${LINK_URL}</span>`);
