@@ -204,6 +204,15 @@ For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone
 | `L-CONVO/5`, the box of a person the desk mentioned | Reply to Meera | Reply to the review desk |
 | `L-CONVO/6`, a person at the desk mentioned in the desk's message | @Harish Kulkarni (highlighted) | @the review desk (highlighted); the mention list does not offer the desk to the sharer, the crew or the build team (BLD-F083) |
 
+### 7. Teams named only while Teams messages go out (DEC-105, BLD-F086, added 18 Nov)
+
+For HR's sign-off. Teams messages are built and switched off at launch (DEC-105), so S-08 names Teams only while the `comms.teams` switch is on. While it is on, both lines read as the board draws them (the "before" column). While it is off, only the Teams clause is dropped (the "after" column); nothing else in the line changes. The code is `services/worker/convo/reads.py` (`empty_state`) and `apps/web/src/components/convo/compose.ts` (`sideNote`).
+
+| Module | Before (Messages.md, and while Teams is on) | After, while Teams is off, for HR's sign-off |
+|---|---|---|
+| `S-08` "No messages yet", the card's line for the sharer (Messages.md:367) | If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams. | If the review desk has a question, it shows here and in your Inbox. |
+| `S-08` "In this conversation", the last line of the side panel (Messages.md:75) | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email. | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox and by email. |
+
 ## Find your crew (S-H2, L-CREW, added 18 Nov)
 
 The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `C-CREW-DECK.states`), used as they stand. "Ravi" stands for the idea's lead and "Saturday" for the day the person shared their own idea: at run time each is the real name or day. The code is `services/worker/crew/deck.py` (the card lines and "Your crews") and `apps/web/src/app/crew/` (the page). These are the lines the pack does not draw.
