@@ -60,6 +60,15 @@ export function oidcConfig() {
  * (P-DECISIONS.signoff/5); until then the lines leave it out rather than show a placeholder.
  */
 export function itServiceDeskExtension(): string | null {
-  const value = process.env.IT_SERVICE_DESK_EXTENSION?.trim();
-  return value ? value : null;
+  return envText("IT_SERVICE_DESK_EXTENSION");
+}
+
+/**
+ * A setting's text, or null when it is unset or empty. Docker Compose reads `KEY=   # note` as the value "# note",
+ * so a value that starts with "#" is a comment and counts as unset, as the worker's settings treat it
+ * (services/worker/core/config.py `_no_comment_values`; BLD-A224).
+ */
+export function envText(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value && !value.startsWith("#") ? value : null;
 }
