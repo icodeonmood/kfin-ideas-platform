@@ -21,6 +21,7 @@ from desk.store import (
     audited,
     has_role,
     is_own,
+    joined,
     now,
     person_by_code,
     person_by_user,
@@ -122,7 +123,7 @@ def _row_json(
         "window_id": str(r["window_id"]),
         "kind": "merge" if is_merge else "decision",
         "idea": {"id": r["idea_id"], "title": r["title"],
-                 "meta": f"{r['idea_id']}, {sharer.name}, {r['area'] or ''}, {r['city'] or ''}".rstrip(", ")},
+                 "meta": joined(r["idea_id"], sharer.name, r["area"], r["city"])},  # BLD-B264: no empty bit
         "sharer": sharer.as_json(),
         "decision": {
             "choice": choice, "label": label, "merged_into": r["lead_idea_id"] if is_merge else None,
