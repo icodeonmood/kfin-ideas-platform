@@ -271,6 +271,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
+  // DEC-110: My ideas' and the review desk's searches are reads sent as POST, so their words travel in the body and in
+  // no URL. They write nothing and stay open in read-only mode, as their GETs do.
+  /^\/api\/me\/ideas\/?$/,
+  /^\/api\/desk\/?$/,
   // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
   // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
   /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
