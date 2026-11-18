@@ -71,6 +71,16 @@ export async function expectNoSeriousAxeIssues(page: Page) {
   const blocking = results.violations
     .filter((v) => v.impact === "serious" || v.impact === "critical")
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
+  // INVENTORY ONLY (lane A, never for merge): WCAG 2.2 findings, logged and not failing
+  const extra = await new AxeBuilder({ page }).withTags(["wcag22a", "wcag22aa"]).analyze();
+  for (const v of extra.violations) {
+    for (const n of v.nodes) {
+      // eslint-disable-next-line no-console -- inventory only
+      console.log(
+        `AXE22 ${new URL(page.url()).pathname} ${v.id} ${v.impact} ${n.target.join(" ")} :: ${(n.failureSummary ?? "").replace(/\s+/g, " ").slice(0, 160)}`,
+      );
+    }
+  }
   expect(blocking, `axe on ${page.url()}`).toEqual([]);
   await expectNoSidewaysScroll(page);
 }
