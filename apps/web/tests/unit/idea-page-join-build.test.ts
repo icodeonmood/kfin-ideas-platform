@@ -2,7 +2,7 @@
 /**
  * S-06's "Ask to join the build team" after a Pick (L-DECIDE/6, A-API `POST /ideas/:id/join-build`; J-REVIEW/6;
  * BLD-E055). The button shows while lane B's `join_build.can_ask` says so; a click posts with no body and the drawn
- * line, "Asked. The build lead replies by 27 November.", takes its place, is said in the status line and takes focus.
+ * line, "Asked. The build lead replies by 27 November.", takes its place, takes focus (which reads it out once; it is not also put in the status line).
  * Asked before: the line, no button. No `join_build`: nothing. A refusal: the screen's "try again" line and a refresh,
  * with focus kept off the page's body. No Undo (A-API has no withdraw). Copy: Status.md, Status.dc.html:899.
  * Synthetic people only.
@@ -176,7 +176,7 @@ describe("L-DECIDE/6, S-06 Picked: Ask to join the build team", () => {
     expect(init?.body).toBeUndefined();
   });
 
-  it("J-REVIEW/6: on 200 the drawn line with the reply-by date replaces the button, is said and takes focus", async () => {
+  it("J-REVIEW/6: on 200 the drawn line with the reply-by date replaces the button and takes focus, heard once", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ asked_at: "2026-11-18T09:30:00Z" }), { status: 200 })),
@@ -186,7 +186,7 @@ describe("L-DECIDE/6, S-06 Picked: Ask to join the build team", () => {
     expect(button(ASK)).toBeUndefined();
     expect(joined()?.textContent).toBe(ASKED);
     expect(joined()?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(said()).toBe(ASKED);
+    expect(said()).toBe(""); // focus reads the line; the status line stays quiet, so it is heard once
     expect(document.activeElement).toBe(joined());
     expect(host.textContent).not.toContain(TRY_AGAIN);
     expect(refresh).not.toHaveBeenCalled();

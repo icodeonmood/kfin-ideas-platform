@@ -4,11 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import type { JoinBuild } from "@/lib/contracts";
 
 import type { Decided } from "./decision";
-
-// lane B's contract adds join_build to DecisionForViewerResponse; switch to it when b/1pc-join-build lands
-export type JoinBuild = { can_ask: boolean; asked_at: string | null; reply_by: string | null };
 
 const ASK = "Ask to join the build team";
 
@@ -50,14 +48,11 @@ export function askedLine(replyBy: string | null): string {
 export function AskToJoin({
   ideaId,
   d,
-  say,
   failed,
   away,
 }: {
   ideaId: string;
   d: Decided;
-  /** The screen's visually hidden status line. */
-  say: (line: string) => void;
   /** The screen's TRY_AGAIN line under the card. */
   failed: (on: boolean) => void;
   /** Where focus goes if the button leaves after a refusal: the idea's title, as after Withdraw and Restore. */
@@ -99,8 +94,8 @@ export function AskToJoin({
       const at =
         typeof body?.asked_at === "string" && body.asked_at ? body.asked_at : new Date().toISOString();
       next.current = "line";
+      // The line takes focus, which reads it out; it is not also put in the status line, so it is heard once
       setAskedAt(at);
-      say(askedLine(join?.reply_by ?? null));
     } catch {
       next.current = "away";
       failed(true);
