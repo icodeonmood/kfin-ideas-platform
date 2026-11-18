@@ -841,7 +841,8 @@ export interface EditPageResponse {
     line?: string;
   };
   fields: { title: string; summary: string; often: string | null };
-  hidden: Pick<HiddenDetail, "id" | "kind" | "masked" | "state">[];
+  /** As "Show it" answers each one (hide.core.detail_view): a shown detail keeps its reason (BLD-C189). */
+  hidden: HiddenDetail[];
   sorting: SortingResponse;
   fix: (FixResponse & { included: true }) | null;
   helpers: HelpersResponse;

@@ -1375,3 +1375,29 @@ describe("S-06B.layout/3 J-RECOVER/7-11: a line of the problem left empty reads 
     expect(saves()).toEqual([]);
   });
 });
+
+describe("S-06B C-HIDDEN.list/3 J-RECOVER/7-10: an example already shown reads its line, as on S-05 (BLD-C189)", () => {
+  it("Folio ••••89 shown as made up for the example reads Shown, because it’s made up for the example. with Hide it", async () => {
+    await mount(
+      base(() =>
+        page({
+          hidden: [
+            {
+              id: "a1b2c3d4-0000-4000-8000-000000000001",
+              kind: "folio",
+              masked: "Folio ••••89",
+              state: "shown",
+              reason: "made_up_example",
+              shown_at: "2026-11-14T10:05:00+05:30",
+            },
+          ],
+        }),
+      ),
+    );
+    const row = document.querySelector(".ck-hid-l li")!;
+    expect(text(row.querySelector(".ck-mask"))).toBe("Folio ••••89");
+    expect(text(row.querySelector(".ck-hid-why"))).toBe("Shown, because it’s made up for the example.");
+    expect(button("Hide it")).toBeTruthy();
+    expect(button("Show it")).toBeUndefined();
+  });
+});
