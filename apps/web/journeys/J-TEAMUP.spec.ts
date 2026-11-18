@@ -148,7 +148,8 @@ step(
     await expect(page.getByText(/^Teamed up\. Bhavesh is on your crew\./).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Say hello to Bhavesh" })).toHaveAttribute(
       "href",
-      new RegExp(`${esc(ideaUrl(r1, "/conversation"))}$`),
+      // BLD-F069: "Say hello" may end in #say-hello, which puts the cursor in the message box on S-08.
+      new RegExp(`${esc(ideaUrl(r1, "/conversation"))}(?:#say-hello)?$`),
     );
   },
 );
@@ -169,7 +170,8 @@ step(
       .click();
     await expect(page.getByRole("link", { name: "Say hello" })).toHaveAttribute(
       "href",
-      new RegExp(`${esc(ideaUrl(r1, "/conversation"))}$`),
+      // BLD-F069: "Say hello" may end in #say-hello, which puts the cursor in the message box on S-08.
+      new RegExp(`${esc(ideaUrl(r1, "/conversation"))}(?:#say-hello)?$`),
     );
 
     await page.goto("/my-ideas");
