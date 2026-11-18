@@ -23,7 +23,8 @@ IDEA_REF_PREFIX = "IDEA-"
 DESK_ROLES = frozenset({"reviewer"})
 # The Ones Committee (E-ENUMS.roles; the seed and the old grants still say "committee").
 COMMITTEE_ROLES = frozenset({"committee", "core_committee", "core_chair"})
-OPEN_SET_STATES = ("sent", "seen", "partly_answered")
+PARTLY_ANSWERED = "partly_answered"  # some answers sent, the rest open until the deadline
+OPEN_SET_STATES = ("sent", "seen", PARTLY_ANSWERED)
 ANSWERED_SET_STATES = ("answered",)
 
 

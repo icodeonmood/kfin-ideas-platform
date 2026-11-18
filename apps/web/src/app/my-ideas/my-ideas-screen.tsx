@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, useTransition, type MouseEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+  type MouseEvent,
+} from "react";
 
 import { restoreRow, rowOffset } from "@/components/browse/return-to";
 import { Status } from "@/components/status";
@@ -21,6 +29,8 @@ import { flip } from "@/lib/motion/flip";
 import "@/components/browse/browse.css";
 
 type ListState = { list: MyIdeasList; filter: MyIdeasFilter; sort: MyIdeasSort; q: string };
+/** The view an address with nothing in it names. */
+const START: ListState = { list: "yours", filter: "all", sort: "latest", q: "" };
 
 /** My ideas' own address for a list state, in the server's canonical order with defaults left out (A-API.my-ideas):
  * list, filter, sort, q, then the row to come back to and how far it sat from the top of the window. */
@@ -34,6 +44,15 @@ export function myIdeasHref(s: ListState, row?: string, dy?: number): string {
   if (row && dy !== undefined) q.set("dy", String(dy));
   const qs = q.toString();
   return qs ? `/my-ideas?${qs}` : "/my-ideas";
+}
+
+/** A search spaced as the server keeps it (ideapage/mine.py normalise). */
+const spaced = (q: string) => q.split(/\s+/).filter(Boolean).join(" ").slice(0, 200);
+
+/** The view a state names, with the search spaced as the server keeps it, so a change the person asked for can be
+ * matched with the server's answer for it. */
+function viewKey(s: ListState): string {
+  return myIdeasHref({ ...s, q: spaced(s.q) });
 }
 
 function stateFromHref(href: string, base: ListState): ListState {
@@ -89,20 +108,54 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   const [failed, setFailed] = useState<string | null>(null);
   const settle = useRef<(() => void) | null>(null);
 
-  // What the person asked for last, ahead of the server's answer, so quick changes build on each other
+  // What the person asked for last, ahead of the server's answer, so quick changes build on each other, and every
+  // view asked for here whose answer hasn't come yet
   const want = useRef<ListState | null>(null);
+  const asked = useRef(new Set<string>());
   const [wanted, setWanted] = useState<ListState | null>(null);
   const [given, setGiven] = useState(data);
   if (given !== data) {
     setGiven(data);
-    setText(data?.state.q ?? "");
-    setFading(false);
-    setWanted(null);
+    // The box takes the server's words only when the search itself changed, and not by the person's own search: a
+    // search run here, Clear or a link on the screen put the words in the box already, and they may have typed on
+    // since. The answer to a tab, sort or filter leaves what the person is typing meanwhile alone (S-07.state,
+    // J-BROWSE/1).
+    const q = data?.state.q ?? "";
+    if (q !== (given?.state.q ?? "") && !(wanted && spaced(wanted.q) === q)) setText(q);
+    // An answer to an earlier change, while a later one is on its way, leaves the later one standing
+    if (!wanted || !data || viewKey(wanted) === viewKey(data.state)) {
+      setFading(false);
+      setWanted(null);
+    }
   }
   useEffect(() => {
-    textNow.current = data?.state.q ?? "";
-    want.current = null;
+    textNow.current = text;
+  }, [text]);
+  useEffect(() => {
+    if (!data || !want.current || viewKey(want.current) === viewKey(data.state)) {
+      want.current = null;
+      asked.current.clear();
+    }
   }, [data]);
+
+  // The address moved to a view not asked for here (Back, Forward, a link) before the answer came: the change in
+  // flight gives way, so the screen shows the view it has and the next change builds on that (P-ROUTES.state). An
+  // address one of the person's own changes put there is left alone, as is an earlier answer (above).
+  const drop = useCallback(() => {
+    want.current = null;
+    asked.current.clear();
+    setWanted(null);
+    setFading(false);
+  }, []);
+  const params = useSearchParams();
+  const at = viewKey(stateFromHref(`/my-ideas?${params?.toString() ?? ""}`, START));
+  useEffect(() => {
+    if (want.current && !asked.current.has(at)) drop();
+  }, [at, drop]);
+  useEffect(() => {
+    window.addEventListener("popstate", drop);
+    return () => window.removeEventListener("popstate", drop);
+  }, [drop]);
 
   // A sort's new order has rendered: the glide can measure where each row went
   useLayoutEffect(() => {
@@ -159,9 +212,17 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
   /** Every change replaces the address and the server answers with that view (P-ROUTES.state). A sort glides the
    * rows to their new order; a tab, filter or search fades the list through, with three skeleton rows meanwhile. */
   const go = (patch: Partial<ListState>, how: "sort" | "fade" = "fade") => {
-    const next = { ...cur(), ...patch };
+    const now = cur();
+    const next = { ...now, ...patch };
     want.current = next;
+    asked.current.add(viewKey(next));
     setWanted(next);
+    // A new search from here (Enter, an example question, Clear, a link on the screen) puts its words in the box at
+    // once, so its answer can leave the box to whatever the person types next
+    if (spaced(next.q) !== spaced(now.q)) {
+      textNow.current = next.q;
+      setText(next.q);
+    }
     setArrival(null);
     const url = myIdeasHref(next);
     if (how === "sort") {

@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: () => undefined, push: () => undefined, refresh: () => undefined }),
   usePathname: () => "/my-ideas",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import { ColleagueScreen } from "@/app/ideas/[id]/colleague-screen";

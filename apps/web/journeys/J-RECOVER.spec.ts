@@ -16,7 +16,7 @@
 import { expect, type FileChooser, type Page } from "@playwright/test";
 
 import { signIn } from "../e2e/helpers";
-import { CLUB, draftUrl, seeded, signInAs, step } from "./lib";
+import { carriedFor, CLUB, draftUrl, seeded, signInAs, step } from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 const TIME = String.raw`\d{1,2}:\d{2} (?:am|pm)`;
@@ -52,7 +52,7 @@ const WORDS =
   "7700045612 asked four times where his form was. It happens about ten times a week.";
 const FOLIO_MASKED = "Folio ••••12";
 
-const carried: { draft?: string; idea?: string } = {};
+const carried = carriedFor<{ draft: string; idea: string }>("J-RECOVER");
 
 /** The writer's draft, made once through S-04 and kept for the rows that follow. */
 async function ensureDraft(page: Page): Promise<string> {
@@ -142,15 +142,24 @@ step(
   "Sign-in fails: plain words, nothing lost, a reference for the IT desk, and Try again (single sign-on only, BLD-E002)",
   { needs: ["S-01", "S-02", "L-AUTH"] },
   async ({ page }) => {
-    // The identity provider answers with an error (OIDC error response), as when it times out.
+    // The identity provider answers with an error (OIDC error response), as when it times out. The browser reaches
+    // the provider through the redirect of "Use single sign-on"'s POST, and Playwright does not route a redirect's
+    // next hop, so the real start runs (its attempt keeps the place) and its redirect is turned into the provider's
+    // error, with the state it carried. GETs (the silent try on the way in) go through untouched.
     await page.route(
-      (url) => url.href.startsWith(OIDC_AUTHORIZE),
+      (url) => url.host === WEB_HOST && url.pathname === "/auth/sso/start",
       async (route) => {
-        const asked = new URL(route.request().url());
-        const back = new URL(asked.searchParams.get("redirect_uri") ?? `http://${WEB_HOST}/`);
+        if (route.request().method() !== "POST") return route.continue();
+        const started = await route.fetch({ maxRedirects: 0 });
+        const asked = new URL(started.headers()["location"] ?? OIDC_AUTHORIZE, `http://${WEB_HOST}`);
+        const back = new URL(asked.searchParams.get("redirect_uri") ?? `http://${WEB_HOST}/auth/callback`);
         back.searchParams.set("error", "temporarily_unavailable");
         back.searchParams.set("state", asked.searchParams.get("state") ?? "");
-        await route.fulfill({ status: 302, headers: { location: back.href } });
+        await route.fulfill({
+          response: started,
+          status: 303,
+          headers: { ...started.headers(), location: back.href },
+        });
       },
     );
     await page.goto("/");
@@ -167,7 +176,10 @@ step(
         "This is usually a short network hiccup on the office Wi-Fi or VPN. Nothing you typed is lost.",
       ),
     ).toBeVisible();
-    await expect(page.getByText(new RegExp(`SSO-[0-9A-F]{4}, ${TIME}`))).toBeVisible();
+    // The reference is drawn twice, for desk and phone (BLD-A179); one shows.
+    await expect(
+      page.getByText(new RegExp(`SSO-[0-9A-F]{4}, ${TIME}`)).filter({ visible: true }),
+    ).toBeVisible();
     // The intent is kept (L-AUTH.rules/4); the board's "Or get a code by email instead." waits on BLD-E002.
     await expect(page.getByText(/^You will still go straight to Share a problem\./)).toBeVisible();
     await expect(page.getByRole("link", { name: "Try again" })).toBeVisible();
