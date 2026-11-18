@@ -282,17 +282,15 @@ test("S-05 S2 Check first: on a close match the comparison comes first, then you
       ).map((r) => r.variant),
     )
     .toEqual(["alternative"]);
-  // The deciding events, kept for the person's own draft
+  // The deciding events, kept for the person's own draft (the browser sends them without waiting, so in any order)
   await expect
     .poll(async () =>
       (
         await sql<{ event: string; outcome: string }>(
-          "SELECT event, outcome FROM flag_events WHERE user_id = $1 AND flag_key = 's2' AND draft_id = $2 ORDER BY id",
+          "SELECT event, outcome FROM flag_events WHERE user_id = $1 AND flag_key = 's2' AND draft_id = $2",
           [userId, id],
         )
-      )
-        .slice(0, 3)
-        .map((r) => `${r.event}:${r.outcome}`),
+      ).map((r) => `${r.event}:${r.outcome}`),
     )
-    .toEqual(["s2.check:opened", "s2.check:close_match", "s2.compare:shown"]);
+    .toEqual(expect.arrayContaining(["s2.check:opened", "s2.check:close_match", "s2.compare:shown"]));
 });
