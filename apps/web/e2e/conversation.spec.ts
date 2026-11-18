@@ -665,6 +665,9 @@ test("BLD-F081 at 375px: a long conversation opens at its newest entry, just abo
     await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeAttached();
     const last = page.locator(".cv-conv > li:last-child");
     await expect(last).toContainText("Call log, day 12");
+    // Measured once the screen has arrived: while lane D's arrival moves .cv, the pinned box is drawn relative to it
+    // (a transformed ancestor), a little above its place (production build, CI run 44242807052)
+    await settleMotion(page);
     await expect(last).toBeInViewport();
     const at = await page.evaluate(() => ({
       y: window.scrollY,
@@ -827,6 +830,7 @@ test.describe("S-08 at 1440px (Messages.jpg)", () => {
     await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeAttached();
     const last = page.locator(".cv-conv > li:last-child");
     await expect(last).toContainText("Call log, day 12");
+    await settleMotion(page); // measured once the screen has arrived
     await expect(last).toBeInViewport();
     const at = await page.evaluate(() => ({
       y: window.scrollY,
