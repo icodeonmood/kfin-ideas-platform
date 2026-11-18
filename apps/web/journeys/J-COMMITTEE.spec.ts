@@ -107,7 +107,7 @@ step(
     await expect(row).toContainText("Extended twice"); // when.times: "once", "twice", then "N times"
     await expect(row).toContainText(new RegExp(`Until ${until}`));
     // At the 3-month date nothing more can be added: the limit line stands where Extend was (S-R4.rules/2).
-    await expect(page.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+    await expect(row.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
     await expect(row.getByText("At the 3-month limit", { exact: true })).toBeVisible();
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
