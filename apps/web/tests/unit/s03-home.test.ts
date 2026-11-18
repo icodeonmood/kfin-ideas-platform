@@ -221,7 +221,14 @@ async function flush() {
   for (let i = 0; i < 6; i++) await act(async () => await Promise.resolve());
 }
 
-async function show(routes: Routes, props: { firstVisit?: boolean; outlookAddress?: string | null } = {}) {
+async function show(
+  routes: Routes,
+  props: {
+    firstVisit?: boolean;
+    outlookAddress?: string | null;
+    waysOn?: { email: boolean; teams: boolean };
+  } = {},
+) {
   const { f, calls } = fakeFetch(routes);
   await act(async () => {
     root.render(createElement(HomeScreen, { firstName: "Kavya", fetchImpl: f, ...props }));
@@ -637,7 +644,10 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
   });
 
   it("Or share from where you already are: three tiles, the app Coming soon", async () => {
-    await show(baseRoutes(), { outlookAddress: "share@1pc.kfintech.example" });
+    await show(baseRoutes(), {
+      outlookAddress: "share@1pc.kfintech.example",
+      waysOn: { email: true, teams: true },
+    });
     expect(text()).toContain("Each one lands here as a draft. Nothing is sent until you check it.");
     expect(text()).toContain("Forward it from Outlook");
     expect(text()).toContain("share@1pc.kfintech.example");
@@ -747,6 +757,80 @@ describe("S-03.sections (BLD-C143, C145, C146)", () => {
     await flush();
     expect(cheer().getAttribute("aria-pressed")).toBe("false");
     expect(likes.map((l) => l.body)).toEqual([{ liked: true }, { liked: false }]);
+  });
+});
+
+describe("S-03.sections/4: the ways in follow intake.email and intake.teams (DEC-105, BLD-A192, BLD-C183)", () => {
+  const way = (name: "email" | "teams") => host.querySelector(`.hm-way[data-way="${name}"]`) as HTMLElement;
+  // The tile's blocks (heading, address, line), one space between them
+  const wayText = (name: "email" | "teams") =>
+    [...way(name).children]
+      .map((c) => c.textContent ?? "")
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const wayLinks = (name: "email" | "teams") => [...way(name).querySelectorAll("a, button")];
+  const ADDRESS = "share@1pc.kfintech.example";
+
+  it("J-RESUME/2, J-ONE/5: both off, both rows read Coming soon, with no link and no address", async () => {
+    await show(baseRoutes(), { outlookAddress: null, waysOn: { email: false, teams: false } });
+    expect(wayText("email")).toBe(
+      "Forward it from Outlook Coming soon Forward the thread that shows the problem. Your note on top becomes the draft.",
+    );
+    expect(wayText("teams")).toBe(
+      "Message it in Teams Coming soon Type or paste into a chat with 1% Club. Screenshots go straight in.",
+    );
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(wayLinks("teams")).toHaveLength(0);
+    expect(link("Forward it from Outlook")).toBeUndefined();
+    expect(link("Message it in Teams")).toBeUndefined();
+    expect(way("email").querySelector(".hm-addr")).toBeNull();
+    expect(way("teams").querySelector(".hm-addr")).toBeNull();
+    // The section's heading, intro and the app's tile are as drawn
+    expect(text()).toContain("Each one lands here as a draft. Nothing is sent until you check it.");
+    expect(text()).toContain("Use the 1% Club app Coming soon");
+  });
+
+  it("J-TRACK/2: an unknown switch counts as off (the screen's default is off)", async () => {
+    await show(baseRoutes());
+    expect(wayText("email")).toContain("Forward it from Outlook Coming soon");
+    expect(wayText("teams")).toContain("Message it in Teams Coming soon");
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(wayLinks("teams")).toHaveLength(0);
+  });
+
+  it("both on: unchanged, each heading links to Share another way, with the address and 1% Club", async () => {
+    await show(baseRoutes(), { outlookAddress: ADDRESS, waysOn: { email: true, teams: true } });
+    expect(link("Forward it from Outlook")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(link("Message it in Teams")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("email")).toBe(
+      `Forward it from Outlook ${ADDRESS} Forward the thread that shows the problem. Your note on top becomes the draft.`,
+    );
+    expect(wayText("teams")).toBe(
+      "Message it in Teams 1% Club Type or paste into a chat with 1% Club. Screenshots go straight in.",
+    );
+    expect(way("email").querySelector(".pill")).toBeNull();
+    expect(way("teams").querySelector(".pill")).toBeNull();
+  });
+
+  it("email on, Teams off: Outlook is live; Teams reads Coming soon with no Teams link", async () => {
+    await show(baseRoutes(), { outlookAddress: ADDRESS, waysOn: { email: true, teams: false } });
+    expect(link("Forward it from Outlook")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("email")).toContain(ADDRESS);
+    expect(wayText("email")).not.toContain("Coming soon");
+    expect(wayText("teams")).toContain("Message it in Teams Coming soon");
+    expect(wayLinks("teams")).toHaveLength(0);
+    expect(link("Message it in Teams")).toBeUndefined();
+  });
+
+  it("email off, Teams on: Outlook reads Coming soon with no link; Teams is live", async () => {
+    await show(baseRoutes(), { outlookAddress: null, waysOn: { email: false, teams: true } });
+    expect(wayText("email")).toContain("Forward it from Outlook Coming soon");
+    expect(wayLinks("email")).toHaveLength(0);
+    expect(link("Message it in Teams")?.getAttribute("href")).toBe("/share/other-ways");
+    expect(wayText("teams")).toContain("Message it in Teams 1% Club");
+    expect(wayText("teams")).not.toContain("Coming soon");
   });
 });
 

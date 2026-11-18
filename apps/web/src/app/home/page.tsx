@@ -25,6 +25,7 @@ export default async function Home() {
       firstName={firstName}
       firstVisit={firstVisit}
       outlookAddress={ways?.email.on ? ways.email.address : null}
+      waysOn={{ email: ways?.email.on === true, teams: ways?.teams.on === true }}
     />
   );
 }

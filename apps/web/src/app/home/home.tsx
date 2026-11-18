@@ -121,6 +121,10 @@ export const HOME_COPY = {
 const MAX_MESSAGE = 5000; // V-FIELDS.tellit/2
 
 const WAYS_COUNT = 3;
+
+/** Section 4's ways in that have their own switch (BLD-C183). */
+export type WaysOn = { email: boolean; teams: boolean };
+const WAYS_OFF: WaysOn = { email: false, teams: false };
 /** Needs you's re-reads: one at a time, and a burst of Inbox events within this long of a read's start brings at
  * most one more read after it. */
 export const REREAD_GAP_MS = 250;
@@ -280,12 +284,16 @@ export function HomeScreen({
   firstName,
   firstVisit = false,
   outlookAddress = null,
+  waysOn = WAYS_OFF,
   fetchImpl,
 }: {
   firstName: string;
   firstVisit?: boolean;
   /** The 1% Club mailbox, when IT has given it (L-DRAFT.channels); otherwise the tile says only how. */
   outlookAddress?: string | null;
+  /** Which ways in are open, from the server's `intake.email` and `intake.teams` switches (DEC-105, BLD-C183).
+   * Unknown counts as off, as on S-H3 (BLD-A192). */
+  waysOn?: WaysOn;
   /** Tests pass a fake; the screen uses the browser's. */
   fetchImpl?: FetchLike;
 }) {
@@ -699,24 +707,42 @@ export function HomeScreen({
         </h2>
         <p className="meta hm-ways-intro">{HOME_COPY.waysIntro}</p>
         <ul className="hm-ways">
-          <li className="card hm-way">
+          {/* A way that is off reads as S-H3 draws it (BLD-A192, BLD-C183): its heading with "Coming soon" and its
+              line, no link and no address, like the app's tile beside it. */}
+          <li className="card hm-way" data-way="email" data-off={waysOn.email ? undefined : ""}>
             <span className="hm-way-ic">
               <WayIcon kind="mail" />
             </span>
-            <h3 className="h3">
-              <Link href={HOME_LINKS.ways}>{HOME_COPY.outlook}</Link>
-            </h3>
-            {outlookAddress ? <p className="hm-addr">{outlookAddress}</p> : null}
+            {waysOn.email ? (
+              <>
+                <h3 className="h3">
+                  <Link href={HOME_LINKS.ways}>{HOME_COPY.outlook}</Link>
+                </h3>
+                {outlookAddress ? <p className="hm-addr">{outlookAddress}</p> : null}
+              </>
+            ) : (
+              <h3 className="h3">
+                {HOME_COPY.outlook} <Pill variant="soon">{HOME_COPY.soon}</Pill>
+              </h3>
+            )}
             <p className="meta">{HOME_COPY.outlookBody}</p>
           </li>
-          <li className="card hm-way">
+          <li className="card hm-way" data-way="teams" data-off={waysOn.teams ? undefined : ""}>
             <span className="hm-way-ic">
               <WayIcon kind="chat" />
             </span>
-            <h3 className="h3">
-              <Link href={HOME_LINKS.ways}>{HOME_COPY.teams}</Link>
-            </h3>
-            <p className="hm-addr">{HOME_COPY.teamsAddr}</p>
+            {waysOn.teams ? (
+              <>
+                <h3 className="h3">
+                  <Link href={HOME_LINKS.ways}>{HOME_COPY.teams}</Link>
+                </h3>
+                <p className="hm-addr">{HOME_COPY.teamsAddr}</p>
+              </>
+            ) : (
+              <h3 className="h3">
+                {HOME_COPY.teams} <Pill variant="soon">{HOME_COPY.soon}</Pill>
+              </h3>
+            )}
             <p className="meta">{HOME_COPY.teamsBody}</p>
           </li>
           <li className="card hm-way">
