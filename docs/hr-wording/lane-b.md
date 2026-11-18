@@ -131,3 +131,15 @@ DEC-111: a sharer, and the crew, never see the name of the person at the review 
 | Inbox, the answer reminder (not drawn; sent by the timer as "1% Club", or by hand under the reviewer's name) | 1% Club 1 day left to answer Meera’s questions | The review desk 1 day left to answer the review desk’s questions |
 | Email, the answer reminder's subject and first line (template `inbox/answer_reminder.md`) | 1 day left to answer Meera’s questions | 1 day left to answer the review desk’s questions |
 | Email, the old question, reviewed and redirected messages, the sign-off and the sender (templates `question.md`, `reviewed.md`, `redirected.md`) | Meera Iyer, review desk, 1% Club | The review desk, 1% Club |
+
+## 8. Lines changed after lane G's walk (19 Nov, BLD-B264)
+
+Before this, every empty part of an idea on the reviewer's page read "Not given.", and a similar idea or a heading whose sharer has no city or area left an empty gap between two commas. The page now uses the board's words for an empty Fix and an empty Attached, and the listen script reads the same words. "Kavya" stands for the sharer and "Ravi" for another sharer.
+
+| Where | Board copy | On screen |
+|---|---|---|
+| The reviewer's page, the Fix part, when the sharer suggested no fix (also read aloud by Listen) | No fix suggested. It was optional. | No fix suggested. It was optional. (was "Not given.") |
+| The reviewer's page, the Attached part, when nothing is attached and nothing is hidden (also read aloud by Listen) | Not drawn; F-COPY writes zero in words: "Nothing attached" | Nothing attached. (was "Not given.") |
+| The reviewer's page, a similar idea, when its sharer has no city (likewise with no area) | IDEA-2026-001412, Ravi Nair, Investor service, Hyderabad. 4 on its crew | IDEA-2026-001412, Ravi Nair, Investor service. 1 on its crew (was "…, Investor service, . 1 on its crew") |
+| The reviewer's page, the heading, when the idea has no city | Shared Saturday 14 November by Kavya Menon, Investor service, Hyderabad. | Shared Saturday 14 November by Kavya Menon, Investor service. (was "…, Investor service, .") |
+| The Ones Committee, the Idea column, when the idea has no area | IDEA-2026-001433, Swati Kulkarni, Distributor services, Mumbai | IDEA-2026-001433, Swati Kulkarni, Mumbai (was "…, Swati Kulkarni, , Mumbai") |
