@@ -369,7 +369,11 @@ def _kind_vars(
         out.update(teamup_request_vars(refs, offered))
     elif kind == "teamup_answer":
         answer = refs.get("answer")
-        out["answer"] = {"declined": answer == "decline", "approved": answer != "decline"}
+        declined = answer == "decline"
+        # Lane F's `has_reason` (never the reason): only a decline that says it has one reads "with a reason"
+        reason = declined and refs.get("has_reason") is True
+        out["answer"] = {"declined": declined, "approved": not declined, "with_reason": reason,
+                         "no_reason": declined and not reason}  # fmt: skip
     elif kind == "stage_moved":
         to = refs.get("to") or refs.get("stage") or (idea or {}).get("status")
         out["stage"] = {"words": STAGE_WORDS.get(str(to), "its next stage")}
