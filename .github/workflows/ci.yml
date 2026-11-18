@@ -20,6 +20,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # The journey suite is a gate too (SHIP_PLAN_1PC.md, Thu 19 Nov 09:30; BLD-A230): every branch run and pull request
+  # walks every journey (apps/web/journeys) on its own runner, beside the gates, with no retries. On main the suite
+  # runs from journeys.yml's own push trigger, so each main commit is walked once and the walks read those runs.
+  journeys:
+    if: github.ref != 'refs/heads/main'
+    uses: ./.github/workflows/journeys.yml
+
   gates:
     runs-on: ubuntu-24.04
     timeout-minutes: 75

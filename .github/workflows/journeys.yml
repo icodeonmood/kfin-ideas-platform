@@ -1,7 +1,8 @@
 # The journey suite (lane G, apps/web/journeys/): every journey in 1pc-handoff/03-journeys/, end to end, on main.
 # Same set-up as the gates job in ci.yml, plus the 1% Club seed and a provider that answers a silent sign-in as
 # Entra ID does (BLD-A197); runs only this suite. Synthetic data only; no secrets (LLM_MODE=fake,
-# EMBEDDINGS_MODE=hash, OIDC_MODE=mock). Not part of the gates until lane A adds it (Thu 19).
+# EMBEDDINGS_MODE=hash, OIDC_MODE=mock). Part of the gates since Thu 19 Nov (BLD-A230): ci.yml calls it on every
+# branch run and pull request; on main it runs from its own push trigger below, once per commit.
 name: journeys
 
 on:
@@ -9,6 +10,7 @@ on:
     branches: [main]
     paths-ignore: ["docs/**", "*.md"]
   workflow_dispatch:
+  workflow_call:
 
 # One run at a time on main, never cancelled: each walk reads the latest completed run. A run by hand on another
 # branch (a builder checking its specs) has its own group, so it never displaces a pending run on main.
@@ -51,6 +53,14 @@ jobs:
           grep -qx 'MOCK_OIDC_PORT=8091' .env
           nohup python3 scripts/ci/oidc_silent_shim.py --listen 8090 --upstream 8091 \
             > "$RUNNER_TEMP/oidc-shim.log" 2>&1 &
+          # The proxy must be listening before anything signs in, or the run fails later and far from the cause.
+          # Any HTTP answer counts (the mock behind it starts with the stack); a dead proxy fails here, by name.
+          ok=""
+          for i in 1 2 3 4 5; do
+            if curl -sS -o /dev/null http://127.0.0.1:8090/; then ok=1; break; fi
+            sleep 1
+          done
+          [ -n "$ok" ] || { echo "The sign-in proxy on :8090 did not answer."; cat "$RUNNER_TEMP/oidc-shim.log"; exit 1; }
           make up
 
       - name: Seed the company repo
