@@ -497,6 +497,58 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     expect(card).toContain(`<p class="ip-msg-b">${PICKED}</p>`);
   });
 
+  it("S-06.layout/8 BLD-E058 L-COMMITTEE (Reversed by the Ones Committee): the desk's message stays, then the committee member's, its face in ink, under the committee's line", () => {
+    const desk = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+    const rohan = {
+      id: "u-rohan",
+      name: "Rohan Mehta",
+      first_name: "Rohan",
+      initials: "RM",
+      role_label: "from the Ones Committee",
+    };
+    const note =
+      "We’ve moved it to not now: the SMS templates are frozen until January. It comes back first in February.";
+    const committeeLine =
+      "The Ones Committee has the last word on this decision. The full conversation is one tap away.";
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "being_built",
+          {
+            heading: "You and the review desk",
+            count: 2,
+            link: LINK,
+            sub_line: committeeLine,
+            messages: [
+              decisionMessage(desk, "The review desk"),
+              {
+                id: "reversal-r1",
+                kind: "reversal",
+                from: rohan,
+                from_label: "Rohan Mehta from the Ones Committee",
+                at: "2026-11-24T12:10:00Z",
+                at_label: "Tuesday 24 November, 5:40 pm",
+                by_line: "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm",
+                text: note,
+              },
+            ],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toContain(`<p class="ip-side-l">${committeeLine}</p><ol class="ip-msgs">`);
+    expect(card).not.toContain(DECIDED_LINE);
+    expect(card).toMatch(
+      new RegExp(
+        `<li class="ip-msg dec no-face"><p class="ip-msg-h"><b>The review desk</b>, Monday 16 November, 4:58 pm</p><p class="ip-msg-b">${PICKED}</p></li>` +
+          `<li class="ip-msg dec oc"><span class="av av-32"[^>]*>RM</span><p class="ip-msg-h"><b>Rohan Mehta from the Ones Committee</b>, Tuesday 24 November, 5:40 pm</p><p class="ip-msg-b">${note}</p></li></ol>`,
+      ),
+    );
+  });
+
   it("just shared: the link, the empty line, and the open window stays under the track", () => {
     const empty =
       "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams.";

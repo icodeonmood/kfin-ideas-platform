@@ -591,22 +591,23 @@ export type SharerPageState =
   | "being_built"
   | "shipped"
   | "merged";
-/** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
 /**
- * A message in S-06's "You and the review desk" (S-06.layout/8): the desk's decision, "Picked. <reason>" (BLD-E058).
- * DEC-111: outside the review desk and the Ones Committee `from` is the desk itself ("The review desk", no id, no
- * initials, so no face), as lane F's S-08 sends it.
+ * A message in S-06's "You and the review desk" (S-06.layout/8, BLD-E058): the desk's decision, "Picked. <reason>",
+ * and after a reversal the Ones Committee's, its words the committee's note. DEC-111: outside the review desk and the
+ * Ones Committee the desk's `from` is the desk itself ("The review desk", no id, no initials, so no face), as lane
+ * F's S-08 sends it; the committee member is named, as lane B's reversal card names them.
  */
 export interface SharerCardMessage {
   id: string;
-  kind: "decision";
+  kind: "decision" | "reversal";
   from: PersonRef;
-  from_label: string; // "The review desk", "Meera from the review desk"
+  from_label: string; // "The review desk", "Meera from the review desk", "Rohan Mehta from the Ones Committee"
   at: IsoDate;
   at_label: string; // "Monday 16 November, 4:58 pm"
   by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
   text: string;
 }
+/** S-06: everything the sharer's page shows that lane B's two endpoints do not. */
 export interface SharerView {
   view: "sharer";
   screen: "S-06";
@@ -686,7 +687,7 @@ export interface SharerView {
       empty_line?: string;
       phone_empty_line?: string; // PhoneStatus.md's shorter line
       sub_line?: string;
-      /** The card's messages in time order: once the desk has decided, its decision (BLD-E058). */
+      /** The card's messages in time order: the desk's decision, then any reversal by the committee (BLD-E058). */
       messages?: SharerCardMessage[];
     } | null;
     similar: { heading: string; intro: string; tiles: SimilarTile[] };

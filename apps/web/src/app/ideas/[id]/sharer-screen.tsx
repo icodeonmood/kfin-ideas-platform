@@ -728,9 +728,10 @@ export function SharerScreen({
                   )}
                 </p>
               ) : null}
-              {/* The card's messages, in time order: once the desk has decided, its decision, as Status.md draws the
-                  last message (BLD-E058). DEC-111: the review desk itself comes with no initials, so no face, as on
-                  S-08. TODO(lane F): the conversation's other entries (S-06.layout/8, L-CONVO). */}
+              {/* The card's messages, in time order: once the desk has decided, its decision, and after a reversal
+                  the Ones Committee's, each outlined as Status.md draws them, the committee's face in ink (BLD-E058).
+                  DEC-111: the review desk itself comes with no initials, so no face, as on S-08. TODO(lane F): the
+                  conversation's other entries (S-06.layout/8, L-CONVO). */}
               {conv.messages?.length ? (
                 <ol className="ip-msgs">
                   {conv.messages.map((m) => (
@@ -738,7 +739,8 @@ export function SharerScreen({
                       key={m.id}
                       className={[
                         "ip-msg",
-                        m.kind === "decision" ? "dec" : "",
+                        m.kind === "decision" || m.kind === "reversal" ? "dec" : "",
+                        m.kind === "reversal" ? "oc" : "",
                         m.from.initials ? "" : "no-face",
                       ]
                         .filter(Boolean)
