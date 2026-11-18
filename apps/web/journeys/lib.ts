@@ -205,8 +205,13 @@ export async function endSession(page: Page): Promise<void> {
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
   try {
+    // sessions has CHECK (expires_at > created_at) (20261109000100_sessions_privacy_hr.sql), and the session was made
+    // seconds ago, so its start moves back too: two minutes before the new end, or earlier if it already was.
     const { rowCount } = await client.query(
-      "UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id_hash = $1 AND revoked_at IS NULL",
+      `UPDATE sessions
+          SET created_at = LEAST(created_at, now() - interval '2 minutes'),
+              expires_at = now() - interval '1 minute'
+        WHERE id_hash = $1 AND revoked_at IS NULL`,
       [idHash],
     );
     if (rowCount !== 1) throw new Error(`the page's session was not found to end (${rowCount} rows)`);
