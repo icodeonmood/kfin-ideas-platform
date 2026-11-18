@@ -57,9 +57,32 @@
 .cm-win > .cm-bar + * {
   margin-top: 10px;
 }
-/* After the bar the Extended pill is no longer first: it keeps its own row and its dot beside the word */
-.cm-win > .pill {
+/* The window line (board .cwl, .cext): "Extended" as a small label without a dot, on one line with the days left;
+   the days left turn amber text with the bar (S-R4.layout/3, S-R4.rules/2) */
+.cm-win > .cm-wl {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  font-size: 14.5px;
+}
+.cm-win > .cm-wl + .meta {
+  margin-top: 0;
+}
+.cm-wl b {
+  font-weight: 500;
+}
+.cm-wl b.soon {
+  color: var(--warnT);
+}
+.cm-ext {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--wash);
+  color: var(--blueT);
+  font: 500 12px/1.4 var(--ft);
 }
 /* The opened row's window, boxed as the board's big window */
 .cm-winbox {
