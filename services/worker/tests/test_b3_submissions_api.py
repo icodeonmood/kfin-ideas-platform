@@ -95,7 +95,9 @@ def test_draft_lifecycle_and_submit(person: Any) -> None:
     job = conn.execute(
         "SELECT state, payload FROM jobs WHERE dedupe_key = %s", (f"scan:{body['idea_id']}",)
     ).fetchone()
-    assert job["state"] == "queued" and job["payload"]["idea_id"] == body["idea_id"]
+    # In CI the worker container's job runner polls this same database (WORKER_ROLES includes jobs), so it may
+    # already have claimed or finished the scan; the test checks the scan was enqueued for this idea.
+    assert job["state"] in {"queued", "running", "done"} and job["payload"]["idea_id"] == body["idea_id"]
 
     assert b.post(f"/api/submissions/{draft_id}/submit", json={"canvas": full_canvas()}).status_code == 409
     conn.execute("DELETE FROM jobs WHERE dedupe_key = %s", (f"scan:{body['idea_id']}",))
