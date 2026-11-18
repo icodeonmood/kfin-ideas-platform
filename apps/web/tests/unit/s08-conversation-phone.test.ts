@@ -307,16 +307,51 @@ describe("The look pass from lane D's QA (BLD-F078 to F081)", () => {
     expect(form.textContent).not.toContain("Attach");
   });
 
-  it("BLD-F078 PhoneMessages: who sees the conversation is under the title with the faces; the box still names it to a screen reader", async () => {
-    await arrive(PAGE);
+  it("BLD-F078 PhoneMessages: on a phone (and from the server) who sees the conversation is under the title with the faces, and drawn once; the box is described by it", async () => {
+    await arrive(PAGE); // jsdom has no matchMedia: the server's phone layout
+    const line = "The crew and the review desk see this conversation.";
     const seen = host.querySelector("header .cv-seen")!;
-    expect(seen.textContent).toContain("The crew and the review desk see this conversation.");
+    expect(seen.textContent).toContain(line);
     const faces = seen.querySelector(".cv-faces")!;
     expect(faces.getAttribute("aria-hidden")).toBe("true"); // the names are in "In this conversation"
     expect([...faces.querySelectorAll(".av")].map((a) => a.textContent)).toEqual(["RN", "KM"]);
+    expect(host.querySelector("form .cv-sees")).toBeNull();
     const who = document.getElementById(box()!.getAttribute("aria-describedby")!)!;
-    expect(who.closest("form")).not.toBeNull();
-    expect(who.textContent).toBe("The crew and the review desk see this conversation.");
+    expect(who.closest("header")).not.toBeNull();
+    expect(who.textContent).toBe(line);
+    expect(host.textContent!.split(line)).toHaveLength(2); // once on the page (lane G's journeys find it by its words)
+  });
+
+  it("BLD-F078 Messages.jpg: wider than a phone the line is in the box beside Send, drawn once, and moves when the width crosses 640px", async () => {
+    const changed = new Set<() => void>();
+    let matches = false;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({
+        get matches() {
+          return q === "(max-width: 640px)" ? matches : false;
+        },
+        media: q,
+        addEventListener: (_: string, cb: () => void) => changed.add(cb),
+        removeEventListener: (_: string, cb: () => void) => changed.delete(cb),
+      })),
+    );
+    await arrive(PAGE);
+    const line = "The crew and the review desk see this conversation.";
+    expect(host.querySelector("header .cv-seen")).toBeNull();
+    const sees = host.querySelector("form .cv-row > .cv-sees")!;
+    expect(sees.textContent).toBe(line);
+    expect(box()!.getAttribute("aria-describedby")).toBe(sees.id);
+    expect(host.textContent!.split(line)).toHaveLength(2);
+    // Narrowed to a phone: the line goes under the title
+    matches = true;
+    await act(async () => changed.forEach((cb) => cb()));
+    expect(host.querySelector("form .cv-sees")).toBeNull();
+    expect(host.querySelector("header .cv-seen")?.textContent).toContain(line);
+    expect(
+      document.getElementById(box()!.getAttribute("aria-describedby")!)?.closest("header"),
+    ).not.toBeNull();
+    expect(host.textContent!.split(line)).toHaveLength(2);
   });
 
   it("BLD-F078 at 640px and narrower: one row of an empty 44px slot, the pill and a round 44px Send, any error above it; the line in the box gives way to the header's", () => {

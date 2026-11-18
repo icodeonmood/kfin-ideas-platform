@@ -61,7 +61,7 @@ import {
   withMentions,
   type MentionQuery,
 } from "./compose";
-import { grow, useOpenAtNewest, usePinnedBox, useSayHello } from "./pin";
+import { grow, useOpenAtNewest, usePhone, usePinnedBox, useSayHello } from "./pin";
 import { takePrefill } from "./prefill";
 import "./conversation.css";
 
@@ -178,6 +178,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // The phone's layout (640px and narrower, as conversation.css): where who-sees-it is drawn (BLD-F078)
+  const phone = usePhone();
 
   const box = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -575,21 +577,24 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
         <h1 className="h1 cv-title">
           <Link href={ideaHref}>{view.idea.title}</Link>
         </h1>
-        {/* Phone only (PhoneMessages, `.cvppl`): the faces and who sees the conversation, under the title; wider, the
-            line sits in the box beside Send (Messages.jpg) */}
-        <p className="cv-seen">
-          <span className="cv-faces" aria-hidden="true">
-            {view.participants.slice(0, 4).map((p) => (
-              <Avatar
-                key={`${p.person.id}-${p.label}`}
-                initials={p.person.initials}
-                size={28}
-                ring="neutral"
-              />
-            ))}
-          </span>
-          <span>{composer.visibility}</span>
-        </p>
+        {/* On a phone (PhoneMessages, `.cvppl`) the faces and who sees the conversation sit under the title; wider, the
+            line sits in the box beside Send (Messages.jpg). The line is drawn once, in one place or the other, so the
+            page never holds it twice (BLD-F078); the server draws the phone's, which CSS hides on a wider screen. */}
+        {phone ? (
+          <p className="cv-seen">
+            <span className="cv-faces" aria-hidden="true">
+              {view.participants.slice(0, 4).map((p) => (
+                <Avatar
+                  key={`${p.person.id}-${p.label}`}
+                  initials={p.person.initials}
+                  size={28}
+                  ring="neutral"
+                />
+              ))}
+            </span>
+            <span id={ids.who}>{composer.visibility}</span>
+          </p>
+        ) : null}
       </header>
 
       <div className="cv-cols">
@@ -672,9 +677,11 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                   ) : null}
                 </div>
                 {error ? <FieldMsg id={ids.error}>{error}</FieldMsg> : null}
-                <p id={ids.who} className="cv-sees">
-                  {composer.visibility}
-                </p>
+                {phone ? null : (
+                  <p id={ids.who} className="cv-sees">
+                    {composer.visibility}
+                  </p>
+                )}
                 <Button
                   type="submit"
                   className="cv-send"
