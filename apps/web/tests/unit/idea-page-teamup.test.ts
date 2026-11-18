@@ -500,6 +500,47 @@ describe("S-06: similar tiles on a crew you are already in, and a part left empt
     expect(row.querySelector(".ip-tile-done")).toBeNull();
   });
 
+  // C-PREVIEW opened from a tile (sharer-screen's SimilarCard): the preview's footer follows the tile.
+  async function openPreview(tile: unknown): Promise<HTMLElement> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(TILE.idea), { status: 200 })),
+    );
+    act(() => root!.render(createElement(SharerScreen, withTiles([tile]))));
+    await act(async () => button("Preview")!.click());
+    const d = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    for (let i = 0; i < 5 && d.getAttribute("aria-busy"); i++) await act(async () => undefined);
+    expect(d.querySelector("h2")?.textContent).toBe(TILE.idea.title); // loaded, not the loading state
+    return d;
+  }
+  const teamUpIn = (d: HTMLElement) =>
+    Array.from(d.querySelectorAll("button")).filter((b) => b.textContent?.includes("Team up"));
+  const doneIn = (d: HTMLElement) => d.querySelector('.pvf [role="status"]')?.textContent?.trim();
+
+  it("C-PREVIEW from a tile on its crew (BLD-E056, J-SIMILAR/7): no Team up, On the crew where it would be", async () => {
+    let d = await openPreview(ON_CREW);
+    expect(teamUpIn(d)).toEqual([]);
+    expect(doneIn(d)).toBe("On the crew");
+    // Team up follows the tile's actions, not its line: a tile that offers none gets none in its preview either
+    await act(async () => d.querySelector<HTMLButtonElement>(".pvx")!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    d = await openPreview({ ...ON_CREW, done_line: undefined });
+    expect(teamUpIn(d)).toEqual([]);
+    expect(doneIn(d)).toBeUndefined();
+  });
+
+  it("C-PREVIEW from a tile that offers Team up: the preview offers it too, opening lane F's sheet; no On the crew", async () => {
+    const d = await openPreview(TILE);
+    const team = teamUpIn(d);
+    expect(team.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Team up on Rejection SMS codes confuse investors",
+    ]);
+    expect(doneIn(d)).toBeUndefined();
+    await act(async () => team[0]!.click());
+    expect(hook.open).toHaveBeenCalledWith(IDEA);
+    expect(document.querySelector('[role="dialog"]')).toBeNull(); // the preview closed first
+  });
+
   it("S-06.layout/5 J-REVIEW/1, J-TRACK/7: an empty How often reads Not given., as S-R2 reads it", () => {
     const html = renderToStaticMarkup(
       createElement(
