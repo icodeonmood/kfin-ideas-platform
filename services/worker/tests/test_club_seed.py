@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from bootstrap import club_seed
+from core import killswitch
 from identity.codes import emp_id_hash
 from onepc import enums
 from onepc.context import open_text
@@ -555,6 +556,45 @@ def test_gap_seed_j_similar_1_l_similar_rules_4_each_draft_carries_the_matches_c
     matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
     for key, found in (("T5", "1"), ("T6", "1"), ("T11", "1"), ("J2", "1"), ("F2", "0"), ("V1", "0")):
         assert _one(db, matched, made[key].uuid) == found, key
+
+
+def test_gap_seed_l_similar_rules_4_with_matching_show_off_the_seed_refuses_and_a_reset_keeps_the_seed(
+    unloaded: Any, test_database: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GAP-SEED (L-SIMILAR.rules/4, /5): with `matching.show` off, `matches_for` gives a sharer no matches and has no
+    way past the switch, so a seed loaded then would leave each draft's similar part empty while "Checked and
+    matched" still counts 1. The seed raises instead, naming the switch, and writes nothing, so the parts and the
+    counts never disagree. `--reset` removes and loads in one transaction: refused, it keeps the seed it found."""
+    from core.db import connect
+    from tests import helpers
+
+    conn = unloaded
+
+    def switch(state: str) -> None:
+        conn.execute("UPDATE kill_switches SET state = %s WHERE name = 'matching.show'", (state,))
+        killswitch.clear_cache()  # past the 10-second cache, as the `club` fixture does
+
+    try:
+        switch("off")
+        with pytest.raises(club_seed.MatchingHidden, match=r"kill switch matching\.show is off"):
+            club_seed.load(conn)
+        assert club_seed.seed_user_ids(conn) == []
+        assert _one(conn, "SELECT count(*) FROM idea_parts") == 0
+        assert _one(conn, "SELECT count(*) FROM conversation_entries WHERE event = 'checked_matched'") == 0
+
+        switch("on")
+        m = club_seed.load(conn)
+        switch("off")
+        monkeypatch.setattr(club_seed, "_dev_only", lambda: None)
+        monkeypatch.setattr(club_seed, "connect", lambda **kw: connect(helpers.db_url(test_database), **kw))
+        assert club_seed.main(["--reset"]) == 1
+        assert "matching.show" in capsys.readouterr().err
+        part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
+        assert [x["idea"]["id"] for x in _one(conn, part_of, m["T2"].uuid)] == [m["R1"].ref]  # the same rows
+        matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
+        assert _one(conn, matched, m["T5"].uuid) == "1"
+    finally:
+        switch("on")
 
 
 def test_gap_seed_j_teamup_1_l_crew_4_the_top_crew_card_says_who_would_help(
