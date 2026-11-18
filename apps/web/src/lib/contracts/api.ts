@@ -1532,6 +1532,10 @@ export interface ConversationMessageCreate {
  * (A-API.conventions/6). Event `text` is the whole line, time included ("You shared it. Saturday 14 November,
  * 10:05 am"). Question sets come by reference: the card is lane B's `C-QCARD`, filled from
  * `GET /ideas/:id/question-set` (L-CONVO/4).
+ *
+ * DEC-111: a reader outside the review desk and the Ones Committee never gets the name, initials or users.id of the
+ * person at the review desk. In their place every person field carries the desk itself, `{id: "", name: "The review
+ * desk", first_name: "The review desk", initials: ""}` (a mention: "the review desk"), and S-08 draws no face for it.
  */
 type ConvoPerson = import("./entities").PersonRef;
 export type ConversationEntryView =
@@ -1548,7 +1552,8 @@ export type ConversationEntryView =
       type: "message";
       id: string;
       from: ConvoPerson;
-      /** "Meera from the review desk", "Ravi Nair", "You". */
+      /** "Meera from the review desk" (to the desk and the committee), "The review desk" (DEC-111), "Ravi Nair",
+       * "You". */
       from_label: string;
       you: boolean;
       /** The masked copy (L-CONVO/7); "Message removed" once removed (L-CONVO/10). */
@@ -1572,8 +1577,9 @@ export type ConversationEntryView =
       count: number;
       answered: number;
       due_at: IsoDate | null;
-      /** The card's title in plain words: "Meera has 3 questions about your idea" for the sharer, "Meera from the
-       * review desk asked 3 questions." for others (BLD-F065). */
+      /** The card's title in plain words: "The review desk has 3 questions about your idea" for the sharer, "The
+       * review desk asked 3 questions." for the crew and the build team (DEC-111), "Meera from the review desk asked
+       * 3 questions." for the desk and the committee (BLD-F065). */
       title: string;
       /** The sharer's, while open: "Answer by Thursday 19 November, 6 pm. One at a time, typed or spoken, and each
        * answer is added to its part of your idea." */
@@ -1588,7 +1594,8 @@ export type ConversationEntryView =
       id: string;
       set_id: string;
       from: ConvoPerson;
-      /** "Your answers to Meera’s 3 questions". */
+      /** "Your answers to the review desk’s 3 questions" (DEC-111; "Kavya’s answers to your 3 questions" for the
+       * reviewer). */
       title: string;
       answers: {
         id: string;
@@ -1600,8 +1607,8 @@ export type ConversationEntryView =
         at: IsoDate;
         files: FileItem[];
       }[];
-      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. Meera decides by
-       * Friday 20 November." (S-08 "Answers sent"). */
+      /** For the sharer while the desk decides: "Each answer was added to its part of your idea. The review desk
+       * decides by Friday 20 November." (S-08 "Answers sent", DEC-111). */
       footer?: string;
       at: IsoDate;
       at_label: string;

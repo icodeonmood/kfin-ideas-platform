@@ -321,7 +321,8 @@ test("C-QCARD.places S-08 at 375px (BLD-B249, J-TRACK/3): the sharer's open ques
   });
   await page.goto("/kit/conversation?view=questions");
   await expect(page.getByRole("heading", { level: 1, name: TITLE })).toBeVisible();
-  const card = page.getByRole("article", { name: "Meera has 3 questions about your idea" });
+  // DEC-111: the sharer reads the review desk, not the person at it
+  const card = page.getByRole("article", { name: "The review desk has 3 questions about your idea" });
   await expect(card).toBeVisible();
   expect([...new Set(reads)]).toEqual([`?set_id=${SET_ID}`]); // only the entry's own set
   await expect(card).toContainText("Is the 40 calls a day at one branch, or across Hyderabad?");
