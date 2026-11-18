@@ -28,10 +28,12 @@ from ideapage import adapters, read
 from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, similar_tiles
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
 from ideapage.words import (
+    DECISION_LABEL,
     brings_words,
     count,
     countdown,
     day,
+    day_time,
     hours_range,
     join_words,
     money_range,
@@ -180,6 +182,52 @@ def _state(idea: dict[str, Any], qset: dict[str, Any] | None, dec: Decided | Non
             return "reversed"
         return status
     return status if status in STATE_LABEL else "just_shared"
+
+
+# The states in which the desk's decision stands, or the committee changed it: the conversation card says the desk
+# has decided (its sub-line) and shows the decision as the desk's message (BLD-E058).
+DECIDED_STATES = ("picked", "not_now", "not_picked", "reversed", "being_built", "shipped")
+# DEC-111: the review desk itself, as lane F's S-08 sends it to anyone outside the desk and the Ones Committee
+# (convo.store.DESK_PERSON): no id, no initials, so no face.
+DESK_SPEAKER = {"id": "", "name": REVIEW_DESK_START, "first_name": REVIEW_DESK_START, "initials": ""}
+
+
+def decision_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: bool) -> dict[str, Any]:
+    """The desk's decision as its message in "You and the review desk" (S-06.layout/8; Status.md and PhoneStatus.md,
+    "Picked", "Not now", "Not picked, with the reason", "Reversed by the Ones Committee"): "Picked. <reason>", sent by
+    the desk at the time it decided. After a reversal it is still the desk's own decision, as the boards draw it.
+
+    The reason is lane B's stored copy, masked when the desk sent it, so the same words as S-06's reason block.
+    DEC-111: the sender is "The review desk" with no face for anyone outside the review desk and the Ones Committee,
+    and nothing about the person at the desk is read; inside them, "Meera from the review desk" with her initials.
+    The words for the message are BLD-E058's (docs/hr-wording/lane-e.md)."""
+    decision_id = str(dec.raw["id"])
+    reason = read.decision_reason(conn, decision_id)
+    said = DECISION_LABEL[dec.desk_choice]
+    person = read.person_by_user(conn, dec.raw["by_user_id"]) if names_desk else None
+    if person is not None:
+        role = "from the review desk"
+        speaker: dict[str, Any] = {
+            "id": person["id"],
+            "name": person["name"],
+            "first_name": person["first_name"],
+            "initials": person["initials"],
+            "role_label": role,
+        }
+        from_label = f"{person['first_name']} {role}"
+    else:
+        speaker, from_label = dict(DESK_SPEAKER), REVIEW_DESK_START
+    at_label = day_time(dec.desk_at, now)
+    return {
+        "id": f"decision-{decision_id}",
+        "kind": "decision",
+        "from": speaker,
+        "from_label": from_label,
+        "at": dec.desk_at.isoformat(),
+        "at_label": at_label,
+        "by_line": f"{from_label}, {at_label}",  # "The review desk, Monday 16 November, 4:58 pm"
+        "text": f"{said}. {reason}" if reason else f"{said}.",
+    }
 
 
 def edit_window(idea: dict[str, Any], qset: dict[str, Any] | None, now: dt.datetime) -> dict[str, Any] | None:
@@ -616,12 +664,20 @@ def sharer_view(
     conversation: dict[str, Any] | None = None
     if state != "withdrawn":
         # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO) and the questions
-        # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link.
-        n_entries = read.entry_count(conn, uid)
+        # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link. Once the desk
+        # has decided, the decision is the desk's message here, in time order (BLD-E058): lane F's S-08 shows it as
+        # an event line, which `entry_count` does not count, so it is counted here.
+        messages = (
+            [decision_message(conn, dec, now, names_desk=names_desk)]
+            if dec is not None and state in DECIDED_STATES
+            else []
+        )
+        n_entries = read.entry_count(conn, uid) + len(messages)
         conversation = {
             "heading": "You and the review desk",
             "count": n_entries,
             "link": actions["conversation"],
+            **({"messages": messages} if messages else {}),
         }
         if n_entries == 0 and qset is None:
             conversation["empty_line"] = (
