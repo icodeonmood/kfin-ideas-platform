@@ -427,6 +427,76 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     );
   });
 
+  const PICKED =
+    "Picked. A clear problem, a real number and a simple fix. We’ve joined it with IDEA-2026-001412, which found the same calls in Hyderabad, so one team builds one fix.";
+  const decisionMessage = (from: Record<string, string>, fromLabel: string) => ({
+    id: "decision-d1",
+    kind: "decision",
+    from,
+    from_label: fromLabel,
+    at: "2026-11-16T11:28:00Z",
+    at_label: "Monday 16 November, 4:58 pm",
+    by_line: `${fromLabel}, Monday 16 November, 4:58 pm`,
+    text: PICKED,
+  });
+
+  it("S-06.layout/8 BLD-E058 DEC-111 (J-TRACK/7): decided, the desk's message ends the card, from the review desk with no face and no empty line", () => {
+    const desk = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "picked",
+          {
+            heading: "You and the review desk",
+            count: 1,
+            link: LINK,
+            sub_line: DECIDED_LINE,
+            messages: [decisionMessage(desk, "The review desk")],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toContain(
+      `<p class="ip-side-l">${DECIDED_LINE}</p><ol class="ip-msgs"><li class="ip-msg dec no-face"><p class="ip-msg-h"><b>The review desk</b>, Monday 16 November, 4:58 pm</p><p class="ip-msg-b">${PICKED}</p></li></ol>`,
+    );
+    expect(card).not.toContain("No messages yet");
+    expect(card).not.toContain('class="av');
+  });
+
+  it("S-06.layout/8 BLD-E058 DEC-111: a sharer on the review desk reads who decided, with her initials, as Status.md draws Meera", () => {
+    const meera = {
+      id: "u-meera",
+      name: "Meera Iyer",
+      first_name: "Meera",
+      initials: "MI",
+      role_label: "from the review desk",
+    };
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "picked",
+          {
+            heading: "You and the review desk",
+            count: 1,
+            link: LINK,
+            sub_line: DECIDED_LINE,
+            messages: [decisionMessage(meera, "Meera from the review desk")],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toMatch(
+      /<li class="ip-msg dec"><span class="av av-32"[^>]*aria-hidden="true"[^>]*>MI<\/span><p class="ip-msg-h"><b>Meera from the review desk<\/b>, Monday 16 November, 4:58 pm<\/p>/,
+    );
+    expect(card).toContain(`<p class="ip-msg-b">${PICKED}</p>`);
+  });
+
   it("just shared: the link, the empty line, and the open window stays under the track", () => {
     const empty =
       "No messages yet. If the review desk has a question, it shows up here and in your Inbox, and we tell you on Teams.";
