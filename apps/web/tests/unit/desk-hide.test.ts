@@ -83,6 +83,9 @@ describe("L-HIDE.rules/7 S-R2 Hide this: the words for a refusal", () => {
     expect(hideErrorWords("already_hidden")).toBe("That’s already hidden.");
     expect(hideErrorWords("not_found")).toBe("That didn’t go through. Try again.");
     expect(hideErrorWords("stale")).toBe("The page changed. Select again.");
+    expect(hideErrorWords("selection_too_long")).toBe(
+      "That’s too much to hide at once. Select only the words to hide.",
+    );
     expect(hideErrorWords("failed")).toBe(TRY_AGAIN);
   });
 

@@ -5,13 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { SparkMark } from "@/components/spark-mark";
-import { COUNTS_EVENT } from "@/lib/inbox-events";
 import type { NavItem } from "@/lib/rbac";
 import type { ShellData, ShellRow } from "@/server/shell";
 
 import { AccountMenu, shortcutIsOn } from "./account-menu";
 import { FOLD_COOKIE, foldValue } from "./fold";
 import { IconFold, IconSearch, NavIcon } from "./icons";
+import { useInboxUnread } from "./use-inbox-unread";
 
 /** The current page, for aria-current: Home only on its own path; every other item on its path and below it. */
 export function isCurrent(pathname: string, href: string): boolean {
@@ -38,7 +38,8 @@ function typingSomewhere(target: EventTarget | null): boolean {
   return Boolean(document.querySelector("dialog[open]"));
 }
 
-/** The dot's meaning in words, so it is never colour alone (F-A11Y.rules/4). */
+/** The dot's meaning in words, so it is never colour alone (F-A11Y.rules/4). A row's own words win: the section
+ * knows what its dot means (an idea's stage; on the desk, amber is "Under a day left", not "Needs you"). */
 const TONE_WORDS: Record<ShellRow["tone"], string> = {
   draft: "Draft",
   warn: "Needs you",
@@ -47,13 +48,15 @@ const TONE_WORDS: Record<ShellRow["tone"], string> = {
   neutral: "",
 };
 
+const dotWords = (r: ShellRow): string => r.words ?? TONE_WORDS[r.tone];
+
 function SectionRows({ rows }: { rows: ShellRow[] }) {
   return (
     <>
       {rows.map((r) => (
         <Link key={r.href} href={r.href} className={r.meta ? "sb-r sb-dr" : "sb-r"} title={r.title}>
           <i className={`sb-d ${r.tone}`} aria-hidden="true" />
-          {TONE_WORDS[r.tone] ? <span className="vh">{TONE_WORDS[r.tone]}: </span> : null}
+          {dotWords(r) ? <span className="vh">{dotWords(r)}: </span> : null}
           {r.meta ? (
             <span className="sb-dc">
               <span className="sb-dt">{r.title}</span>
@@ -93,15 +96,7 @@ export function Sidebar({
   const folded = choice ?? isTablet;
   const [shortcutOn, setShortcutOn] = useState(true);
   const barId = useId();
-  // The Inbox's unread number (L-INBOX.rules/1): the server's `inboxCounts` when the page loads, then every count
-  // the Inbox sends (`inbox:counts`, V-ACC.track/8) until the server's number changes again.
-  const [served, setServed] = useState(data.inboxUnread);
-  const [live, setLive] = useState<number | null>(null);
-  if (served !== data.inboxUnread) {
-    setServed(data.inboxUnread);
-    setLive(null);
-  }
-  const inboxUnread = live ?? data.inboxUnread;
+  const inboxUnread = useInboxUnread(data.inboxUnread); // L-INBOX.rules/1, V-ACC.track/8
 
   const share = nav.find((n) => n.place === "new");
   const home = nav.find((n) => n.key === "home");
@@ -117,15 +112,6 @@ export function Sidebar({
   useEffect(() => {
     const t = window.setTimeout(() => setShortcutOn(shortcutIsOn()), 0);
     return () => window.clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    const onCounts = (e: Event) => {
-      const unread = (e as CustomEvent<{ unread?: unknown } | null>).detail?.unread;
-      if (typeof unread === "number") setLive(unread);
-    };
-    window.addEventListener(COUNTS_EVENT, onCounts);
-    return () => window.removeEventListener(COUNTS_EVENT, onCounts);
   }, []);
 
   const toggleFold = () => {

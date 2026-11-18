@@ -21,7 +21,7 @@ function amount(n: number, unit: string): string {
 }
 
 /** The calendar date in India time, as a day number, so two dates can be subtracted. */
-function officeDay(ms: number): number {
+export function officeDay(ms: number): number {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
