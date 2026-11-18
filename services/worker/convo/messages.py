@@ -5,7 +5,9 @@ A message is masked before anyone else can see it (L-CONVO/7, through `adapters.
 it is never edited. Files are attached by ID only, and only once their checks have passed: this module never opens a file
 (non-negotiable 8). A mention tells the person (`mention`), and gives a person who is not already in the
 conversation that one message to read (L-CONVO/6, BLD-F052). The sharer hears of anyone else's message (`comment`),
-once per hour of messages (BLD-F056). Logs and audit rows carry IDs only.
+once per hour of messages (BLD-F056). When the writer speaks as the review desk (`reads.speaks_as_desk`), both items
+carry `as_desk: true` for anyone outside the review desk and the Ones Committee, so lane A's Inbox and email name the
+desk, never the person, and store no sender (DEC-111, BLD-F084). Logs and audit rows carry IDs only.
 """
 
 from __future__ import annotations
@@ -19,8 +21,8 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from convo import LOCK, adapters
-from convo.access import may_read_full, reader
-from convo.reads import CLEAN_FILE_STATES, REMOVE_WITHIN, _mine, closed_message, entry_for
+from convo.access import may_read_full, reader, sees_desk_names
+from convo.reads import CLEAN_FILE_STATES, REMOVE_WITHIN, _mine, closed_message, entry_for, speaks_as_desk
 from convo.render import IST
 from convo.store import Refused, audit, load_idea, not_found, now, seal, user_of
 from core.db import Conn
@@ -134,7 +136,7 @@ def send(
             conn.execute(
                 "UPDATE attachments SET conversation_entry_id = %s WHERE id = ANY(%s)", (entry_id, file_ids)
             )
-        _notify(conn, idea, user_id, entry_id, mentioned, t)
+        _notify(conn, idea, user_id, entry_id, mentioned, t, as_desk=speaks_as_desk(conn, idea, r))
         if idempotency_key:
             conn.execute(
                 "UPDATE idempotency_keys SET status = 201, response_json = %s WHERE user_id = %s AND key = %s",
@@ -225,24 +227,44 @@ def _people(conn: Conn, ids: list[str]) -> list[str]:
 
 
 def _notify(
-    conn: Conn, idea: dict[str, Any], sender: str, entry_id: str, mentioned: list[str], t: dt.datetime
+    conn: Conn,
+    idea: dict[str, Any],
+    sender: str,
+    entry_id: str,
+    mentioned: list[str],
+    t: dt.datetime,
+    *,
+    as_desk: bool = False,
 ) -> None:
     """`mention` to each person mentioned (L-INBOX: opens the conversation at the message), and `comment` to the
-    sharer when someone else writes, one item per hour of messages."""
+    sharer when someone else writes, one item per hour of messages.
+
+    DEC-111 (BLD-F084): when the writer speaks as the review desk, the item says so (`as_desk: true`, lane A's key)
+    for each recipient outside the review desk and the Ones Committee, who read the desk in the conversation too; lane
+    A then stores no sender and names the desk. The desk's comments keep their own hourly item (the key ends ":desk"),
+    so a burst from the desk and the crew in one hour never puts one sender's name on the other's item. `sender`
+    stays the writer's users.id: `tell` uses it to leave the writer out."""
     ref, idea_uuid = str(idea["idea_id"]), str(idea["id"])
     at_message = (("Open the conversation", f"/ideas/{ref}/conversation#entry-{entry_id}", "primary"),)
+
+    def refs_for(u: str) -> dict[str, str | bool]:
+        desk = as_desk and not sees_desk_names(conn, u)
+        return {"entry_id": entry_id, "as_desk": True} if desk else {"entry_id": entry_id}
+
     for u in mentioned:
         outside = not may_read_full(conn, idea, u)
         if outside:  # L-CONVO/6: this message only; the grant is the mention itself (BLD-F052)
             audit(conn, sender, "convo.mention_access", f"idea:{ref}", {"entry_id": entry_id, "user_id": u})
         adapters.tell(conn, "mention", [u], idea_uuid=idea_uuid, sender=sender, actions=at_message,
-                      refs={"entry_id": entry_id}, dedupe_key=f"convo.mention:{entry_id}")  # fmt: skip
+                      refs=refs_for(u), dedupe_key=f"convo.mention:{entry_id}")  # fmt: skip
     sharer = user_of(conn, idea["contributor_code"])
     if sharer and sharer != sender and sharer not in mentioned:
         hour = t.astimezone(IST).strftime("%Y%m%d%H")
+        refs = refs_for(sharer)
+        key = f"convo.comment:{idea_uuid}:{hour}" + (":desk" if "as_desk" in refs else "")
         adapters.tell(conn, "comment", [sharer], idea_uuid=idea_uuid, sender=sender,
                       actions=(("Open the conversation", f"/ideas/{ref}/conversation", "primary"),),
-                      refs={"entry_id": entry_id}, dedupe_key=f"convo.comment:{idea_uuid}:{hour}")  # fmt: skip
+                      refs=refs, dedupe_key=key)  # fmt: skip
 
 
 def remove(

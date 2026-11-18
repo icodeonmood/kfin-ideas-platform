@@ -110,6 +110,12 @@ def reader(conn: Conn, idea: dict[str, Any], user_id: str) -> Reader:
     return r
 
 
+def sees_desk_names(conn: Conn, user_id: str) -> bool:
+    """DEC-111: only the review desk and the Ones Committee read the names of the people at the review desk. The same
+    test as `Ctx.sees_desk` (a `Reader`'s `desk` or `committee`), for a person who is not the one reading."""
+    return bool(_roles(conn, user_id) & {*DESK_ROLES, *COMMITTEE_ROLES})
+
+
 def may_read_full(conn: Conn, idea: dict[str, Any], user_id: str) -> bool:
     """For mentions: is this person already in the conversation (so a mention adds no access)?"""
     try:
