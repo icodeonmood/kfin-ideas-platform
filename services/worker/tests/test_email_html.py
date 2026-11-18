@@ -45,7 +45,8 @@ SAMPLE: dict[str, Any] = {
         "one_other": False,
         "many_others": True,
     },
-    "reviewer": {"name": "Nikhil Rao", "note": "A clear problem and a fair estimate."},
+    # DEC-111 (BLD-A222): the desk signs as a whole, so a message has no reviewer's name to fill in, only the note
+    "reviewer": {"note": "A clear problem and a fair estimate."},
     "outcome": {
         "grouped": True,
         "grouped_unnamed": False,

@@ -54,7 +54,7 @@ const ACTIONS: Action[] = [
 const ITEM: InboxEntry = {
   id: "77",
   kind: "questions",
-  from: { id: "u-meera", name: "Meera Iyer", first_name: "Meera", initials: "MI" },
+  from: "system", // DEC-111: the worker sends a desk kind from the review desk as a whole
   idea: { id: IDEA, title: TITLE, status: "needs_you" },
   line: "asked you 3 questions",
   at: new Date().toISOString(),
@@ -65,7 +65,7 @@ const ITEM: InboxEntry = {
   body: {
     heading: "Questions from the review desk",
     note: "Answer by Thursday 19 November, 6 pm.",
-    sender: "Meera from the review desk",
+    sender: "The review desk",
     count: 3,
     set_id: SET_ID,
   },
@@ -199,9 +199,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
     // The reader's header stays: what it is, the idea as the item's title, who asked, when and the countdown
     expect(host.querySelector(".ibx-kind")?.textContent).toBe("Questions from the review desk");
     expect(host.querySelector("#ibx-title")?.textContent).toBe(TITLE);
-    expect(host.querySelector(".ibx-from")?.textContent).toContain(
-      "Meera from the review desk asked you 3 questions",
-    );
+    expect(host.querySelector(".ibx-from")?.textContent).toContain("The review desk asked you 3 questions");
     expect(host.querySelector(".ibx-from")?.textContent).toContain("3 days left");
     for (const name of ["Archive", "Mark unread"])
       expect(host.querySelector(`.ibx-tool button[aria-label="${name}"]`)).not.toBeNull();
@@ -249,7 +247,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
       ...ITEM,
       id: "78",
       kind: "answer_reminder",
-      line: "1 day left to answer Meera’s questions",
+      line: "1 day left to answer the review desk’s questions",
     });
     expect(text(".qcard-inbox .qcard-qn")).toHaveLength(3);
     act(() => root.unmount());
@@ -324,7 +322,7 @@ describe("C-QCARD.places S-H5: the desk's questions in the Inbox reader", () => 
       ...ITEM,
       id: "78",
       kind: "answer_reminder",
-      line: "1 day left to answer Meera’s questions",
+      line: "1 day left to answer the review desk’s questions",
     });
     expect(host.querySelectorAll(".qcard-inbox [role=img][aria-label=Answered]")).toHaveLength(2);
     expect(footLinks()).toEqual([

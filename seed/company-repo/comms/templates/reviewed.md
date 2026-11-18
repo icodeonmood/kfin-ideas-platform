@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: '{{idea.id}} has been reviewed'
-description: Message template for idea.reviewed.
+description: 'Message template for idea.reviewed. 1.4 (DEC-111, BLD-A222): signed by the review desk as a whole, never by a reviewer’s name. For HR.'
 tags:
 - comms
 - template

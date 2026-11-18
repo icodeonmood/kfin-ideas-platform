@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: A quick question about {{idea.id}}
-description: Message template for idea.question.
+description: 'Message template for idea.question. 1.2 (DEC-111, BLD-A222): signed by the review desk as a whole, never by a reviewer’s name. The opening reads “We’re reviewing” to match. For HR.'
 tags:
 - comms
 - template
@@ -23,7 +23,7 @@ kfin:
 
 Hi {{recipient.first_name}},
 
-I'm reviewing your idea **"{{idea.one_line}}"** and have one question:
+We're reviewing your idea **"{{idea.one_line}}"** and have one question:
 
 > {{question.text}}
 

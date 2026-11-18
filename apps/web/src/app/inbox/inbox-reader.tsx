@@ -31,6 +31,7 @@ import {
 import { answerLabel, QuestionsCard } from "@/components/review/qcard";
 import type { InboxTab, SharerQuestionSetResponse } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
+import { REVIEW_DESK_START } from "@/lib/review-desk";
 import {
   cleanAddress,
   noSubscription,
@@ -39,7 +40,7 @@ import {
   writeSearch,
   type SearchList,
 } from "@/lib/search-memory";
-import type { Action, InboxCounts, InboxEntry, InboxList } from "@/server/inbox";
+import type { Action, InboxCounts, InboxEntry, InboxEntryKind, InboxList } from "@/server/inbox";
 
 import { inboxHref, inboxSearch, isInboxPath, itemIn, readInboxAddress, type InboxView } from "./address";
 import { useRequest } from "./teamup-request";
@@ -110,19 +111,42 @@ function titleOf(item: InboxEntry): string {
   return item.idea?.title ?? "";
 }
 
-/** The row's accessible name, as on the board: "Meera from the review desk asked you 3 questions, <title>, 11:20
- * am, unread" (Inbox.md Controls). */
+/** DEC-111 (BLD-A221): the review desk's kinds come from the desk as a whole, whoever reads them, and the 1% Club's
+ * own kinds name no one. The worker already sends them that way; the reader holds to it too, so no reviewer's name
+ * or initials can show even from an item rendered before the change. */
+const DESK_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>([
+  "questions",
+  "answer_reminder",
+  "decision",
+  "worth_revised",
+  "desk_merge",
+  "detail_hidden_by_desk",
+]);
+const SYSTEM_KINDS: ReadonlySet<InboxEntryKind> = new Set<InboxEntryKind>(["sent_to_desk"]);
+
+/** The sender as the row and the reader show them: "The review desk" for a desk kind (DEC-111), else the worker's. */
+export function senderOf(item: InboxEntry): string {
+  return DESK_KINDS.has(item.kind) ? REVIEW_DESK_START : item.body.sender;
+}
+
+/** True when the sender is drawn with the mark, never a person's initials: the system, and the desk (DEC-111). */
+export function drawsMark(item: InboxEntry): boolean {
+  return item.from === "system" || DESK_KINDS.has(item.kind) || SYSTEM_KINDS.has(item.kind);
+}
+
+/** The row's accessible name, as on the board: "The review desk asked you 3 questions, <title>, 11:20 am, unread"
+ * (Inbox.md Controls; DEC-111 names the desk where the board names Meera). */
 export function rowName(item: InboxEntry, now: Date): string {
-  const parts = [`${item.body.sender} ${item.line}`, titleOf(item), whenLabel(item.at, now)];
+  const parts = [`${senderOf(item)} ${item.line}`, titleOf(item), whenLabel(item.at, now)];
   if (item.unread) parts.push("unread");
   return parts.filter(Boolean).join(", ");
 }
 
-function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
-  const system = item.from === "system";
+export function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
+  const mark = drawsMark(item);
   return (
-    <span className={`ibx-av ibx-av-${size}${system ? " sys" : ""}`} aria-hidden="true">
-      {item.from === "system" ? "1%" : item.from.initials}
+    <span className={`ibx-av ibx-av-${size}${mark ? " sys" : ""}`} aria-hidden="true">
+      {mark || item.from === "system" ? "1%" : item.from.initials}
     </span>
   );
 }
@@ -392,7 +416,7 @@ function OpenItem({
             <Avatar item={item} size="md" />
             <span className="ibx-fw">
               <span className="ibx-fl">
-                <b>{item.body.sender}</b> {item.line}
+                <b>{senderOf(item)}</b> {item.line}
               </span>
               <span className="ibx-meta">{whenLabel(item.at, now)}</span>
             </span>
@@ -479,7 +503,7 @@ export function InboxReader({
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((i) => `${i.body.sender} ${i.line} ${titleOf(i)}`.toLowerCase().includes(q));
+    return items.filter((i) => `${senderOf(i)} ${i.line} ${titleOf(i)}`.toLowerCase().includes(q));
   }, [items, query]);
 
   const desktop = useDesktop();
@@ -806,7 +830,7 @@ export function InboxReader({
                     <Avatar item={item} size="sm" />
                     <span className="ibx-b" aria-hidden="true">
                       <span className="ibx-top">
-                        <span className="ibx-who">{item.body.sender}</span>
+                        <span className="ibx-who">{senderOf(item)}</span>
                         <span className="ibx-when">{whenLabel(item.at, now)}</span>
                       </span>
                       <span className="ibx-title">{titleOf(item) || item.line}</span>

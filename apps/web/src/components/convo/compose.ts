@@ -12,8 +12,12 @@ type Person = { id: string; name: string; first_name: string; initials: string }
 export const S08_COPY = {
   heading: "Conversation",
   side: "In this conversation",
+  /** Messages.md, while Teams is on (DEC-105). */
   sideNote:
     "This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email.",
+  /** The same line without its Teams clause, while Teams is off (BLD-F086, for HR's sign-off). */
+  sideNoteNoTeams:
+    "This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox and by email.",
   send: "Send",
   sending: "Sending",
   empty: "Write a message or attach a file first.",
@@ -29,6 +33,14 @@ export const S08_COPY = {
   close: "Close",
   view: "View",
 } as const;
+
+/**
+ * The side panel's last line names Teams only while Teams messages go out (DEC-105, BLD-F086). Only a `true` from the
+ * server counts: a missing or other value never promises Teams.
+ */
+export function sideNote(teamsOn: unknown): string {
+  return teamsOn === true ? S08_COPY.sideNote : S08_COPY.sideNoteNoTeams;
+}
 
 /** "1 person to mention. …" / "3 people to mention. …": announced when the list opens or narrows. */
 export function mentionHint(n: number): string {

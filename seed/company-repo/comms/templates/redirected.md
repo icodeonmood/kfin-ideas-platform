@@ -1,7 +1,7 @@
 ---
 type: comms-template
 title: 'Where to take this: {{redirect.team}}'
-description: Message template for idea.redirected.
+description: 'Message template for idea.redirected. 1.3 (DEC-111, BLD-A222): signed by the review desk as a whole, never by a reviewer’s name. For HR.'
 tags:
 - comms
 - template

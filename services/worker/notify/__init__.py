@@ -66,6 +66,16 @@ NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 AS_THE_DESK: frozenset[str] = frozenset(
     {"detail_hidden_by_desk", "questions", "answer_reminder", "decision", "desk_merge", "worth_revised"}
 )
+# DEC-111 (BLD-A221): any item whose refs say `as_desk: true` is the review desk speaking as a whole, whatever its kind.
+# Lane F posts `comment` and `mention` with it when the author writes as the desk (a reviewer not on the build team,
+# S-08's own test). Like AS_THE_DESK, the reviewer is never stored on the item or its outside messages.
+AS_DESK_REF = "as_desk"
+
+
+def as_the_desk(kind: str, refs: Mapping[str, object] | None) -> bool:
+    """True when an item is from the review desk as a whole, so no person is stored or shown (DEC-111)."""
+    return kind in AS_THE_DESK or (refs or {}).get(AS_DESK_REF) is True
+
 
 Ref = str | int | bool | None
 
@@ -181,7 +191,7 @@ def post(
     people = [p for p in people if p != from_user]
     if not people:
         return Posted()
-    stored_from = None if kind in AS_THE_DESK else from_user
+    stored_from = None if as_the_desk(kind, refs) else from_user
 
     rows = conn.execute(
         "SELECT u.id, coalesce(p.email, true) AS email, coalesce(p.teams, true) AS teams, "
