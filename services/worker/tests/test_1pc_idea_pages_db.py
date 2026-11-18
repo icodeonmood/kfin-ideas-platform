@@ -629,7 +629,7 @@ def test_l_similar_failure_similar_status_reads_lane_c_run_first_then_the_idea(
     assert similar_status(conn, uid) == "done"
     # Through c/similar's own reader once it is here: only its state is read, never `found`.
     fake = types.ModuleType("similar.matching")
-    fake.last_run = lambda c, i: {"state": "failed", "found": 4} if i == uid else None  # type: ignore[attr-defined]
+    fake.last_run = lambda c, i: {"state": "failed", "found": 4} if i == uid else None
     monkeypatch.undo()
     monkeypatch.setitem(sys.modules, "similar.matching", fake)
     assert similar_status(conn, uid) == "failed"
