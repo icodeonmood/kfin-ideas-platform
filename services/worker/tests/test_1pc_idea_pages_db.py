@@ -1374,8 +1374,8 @@ def test_s06_rules_4_c_simgrid_tile_j_similar_7_j_review_m3_no_tile_for_where_it
 
 
 def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(club: dict[str, Any]) -> None:
-    """S-06.layout/5 (BLD-E057; J-REVIEW/1, /3, /6, J-TRACK/7): a part the sharer left empty reads "Not given.", as
-    S-R2 reads it, never a blank row. A part with words has no empty line."""
+    """S-06.layout/5 (BLD-E057; J-REVIEW/1, /3, /6, J-TRACK/7): a part the sharer left empty, or wrote only spaces
+    in, reads "Not given.", as S-R2 reads it, never a blank row. A part with words has no empty line."""
     conn, k1 = club["conn"], ref(club, "K1")  # Kiran's K1: How often left empty
     rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
     assert rows["often"]["value"] == "" and rows["often"]["empty_line"] == "Not given."
@@ -1383,6 +1383,10 @@ def test_s06_layout_5_j_review_1_j_track_7_an_empty_how_often_reads_not_given(cl
     conn.execute("UPDATE ideas SET affects = '{}' WHERE idea_id = %s", (k1,))
     rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
     assert rows["who"]["empty_line"] == "Not given."
+    conn.execute("UPDATE ideas SET often = '   ', affects = ARRAY['  ', ' '] WHERE idea_id = %s", (k1,))
+    rows = {r["part"]: r for r in view(club, k1, "kiran")["page"]["shared"]["rows"]}
+    for part in ("often", "who"):
+        assert rows[part]["value"] == "" and rows[part]["empty_line"] == "Not given.", part
     t5 = {r["part"]: r for r in view(club, ref(club, "T5"), "tanvi")["page"]["shared"]["rows"]}
     assert t5["often"]["value"] and "empty_line" not in t5["often"]
 
