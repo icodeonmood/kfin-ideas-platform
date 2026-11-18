@@ -1992,6 +1992,211 @@ describe("S-05 verification should-fixes (BLD-C131, C134)", () => {
   });
 });
 
+// --- J-SIMILAR/6a: a draft merged into another idea (BLD-C155); ticks after a reload (BLD-C156) ------------------
+
+const REF = "IDEA-2026-001412";
+const ACCEPTED_LINE = `Ravi accepted. Yours is now part of ${REF}, with credit to you. Nothing else to send.`;
+const ACCEPTED = {
+  id: "m1",
+  other_idea_id: REF,
+  state: "accepted",
+  lead: RAVI,
+  after: {
+    state: "accepted",
+    label: `Merged into ${REF}`,
+    line: ACCEPTED_LINE,
+    action: { label: "See the merged idea", to: `/ideas/${REF}` },
+    can_submit: false,
+  },
+};
+
+function mergedSend(): SendViewResponse {
+  const v = sendView();
+  return {
+    ...v,
+    rows: v.rows.map((r) =>
+      r.key === "sorting"
+        ? {
+            ...r,
+            value: "Investor service, affecting investors and KFin teams, saves time, saves cost",
+            ok: true,
+          }
+        : r.key === "similar"
+          ? { ...r, value: `Merged into ${REF}` }
+          : r,
+    ),
+  };
+}
+
+const writes = () => calls.filter((c) => c.method !== "GET");
+
+describe("S-05 J-SIMILAR/6a L-MERGE.request/5: a merged draft stays on Check it, read-only (BLD-C155)", () => {
+  it("desktop: the rail reads Merged into IDEA-…, the bar the accepted line with See the merged idea; nothing to send or change", async () => {
+    await mount(
+      base({ draft: draft({ merged_into: REF, ready: false }), merge: ACCEPTED, send: mergedSend() }),
+    );
+    const rail = Array.from(document.querySelectorAll(".ck-rail button")).map(nameOf);
+    expect(rail).toEqual([
+      "1 Your words Title, what happens, how often",
+      "2 Sorting Suggested, not confirmed yet",
+      `Similar ideas, done Merged into ${REF}`,
+      "4 Proof Optional",
+      "5 Your fix Optional",
+      "6 Who would help Optional",
+    ]); // no Send it: nothing to send
+    expect(
+      Array.from(document.querySelectorAll(".ck-rs")).filter((e) => text(e) === `Merged into ${REF}`),
+    ).toHaveLength(1);
+    // Review.md, merge=Ravi accepted: announced as status, with the line; the action is the link.
+    const bar = document.querySelector('.ck-mlive[role="status"]')!;
+    expect(text(bar.querySelector("p"))).toBe(ACCEPTED_LINE);
+    const see = Array.from(bar.querySelectorAll("a")).find((a) => text(a) === "See the merged idea")!;
+    expect(see.getAttribute("href")).toBe(`/ideas/${REF}`);
+    // Part 1 as it was, with nothing to change.
+    expect(h1()).toBe("Is this how you’d put it?");
+    expect(text(document.querySelector("h3"))).toBe("Investors call to ask why a redemption was rejected");
+    expect(document.body.textContent).toContain("Folio ••••89");
+    for (const gone of [
+      "Looks right",
+      "Change the title",
+      "Change what happens",
+      "Change how often",
+      "Show it",
+    ])
+      expect(button(gone)).toBeUndefined();
+    expect(Array.from(document.querySelectorAll("a")).some((a) => text(a) === "Back to your words")).toBe(
+      false,
+    );
+    expect(buttons().filter((b) => /submit/i.test(nameOf(b)))).toHaveLength(0);
+
+    // The other parts read, and moving between them writes nothing.
+    await click(button("Next"));
+    expect(h1()).toBe("Is it sorted right?");
+    expect(document.body.textContent).toContain(
+      "Investor service, affecting investors and KFin teams, saves time, saves cost",
+    );
+    expect(document.querySelectorAll(".ck-stage .chip")).toHaveLength(0);
+    expect(button("Confirm sorting")).toBeUndefined();
+    await railTo("Similar ideas");
+    expect(h1()).toBe("Has someone raised this already?");
+    expect(buttons().filter((b) => nameOf(b) === "Team up" || /^Team up on /.test(nameOf(b)))).toHaveLength(
+      0,
+    );
+    expect(button(`Preview ${MATCH_RAVI.idea.title}`)).toBeTruthy();
+    expect(Array.from(document.querySelectorAll(".ck-crew")).map(text)).toEqual(["On the crew"]);
+    expect(document.body.textContent).not.toContain(CHECK_COPY.similar.carryOn);
+    await railTo("Your fix");
+    expect(text(document.querySelector(".ck-stage .ck-v"))).toBe("None added");
+    expect(button("Add my fix")).toBeUndefined();
+    await railTo("Who would help");
+    expect(text(document.querySelector(".ck-stage .ck-v"))).toBe("Not said");
+    expect(document.querySelectorAll(".ck-stage .chip")).toHaveLength(0);
+    expect(writes()).toEqual([]);
+  });
+
+  it("kept separate before the merge: the grid shows as it is, with no Show them again and nothing that writes; Tell it is not a link", async () => {
+    await mount(
+      base({
+        draft: draft({ merged_into: REF, kept_separate: true, step: "check:3" }),
+        merge: ACCEPTED,
+        send: mergedSend(),
+      }),
+    );
+    expect(h1()).toBe("Has someone raised this already?");
+    expect(button("Show them again")).toBeUndefined();
+    expect(document.body.textContent).not.toContain(CHECK_COPY.similar.kept);
+    expect(document.querySelectorAll(".simgrid .sgt")).toHaveLength(3); // yours, then the two matches
+    const controls = buttons().map(nameOf);
+    expect(controls.filter((n) => /^(Team up|Withdraw|Show them again)/.test(n))).toEqual([]);
+    // The task bar: "Tell it, done" in words only, since Tell it would bring the person straight back here.
+    const tell = Array.from(document.querySelectorAll(".tbar li")).find((li) => /Tell it/.test(text(li)))!;
+    expect(text(tell)).toBe("Tell it, done");
+    expect(tell.querySelector("a")).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it("a saved Send it opens part 1, and a send kept on this device is dropped, never sent", async () => {
+    localStorage.setItem(`1pc.s05.queued.${DRAFT_ID}`, JSON.stringify({ draftId: DRAFT_ID, key: "s05:k" }));
+    await mount(
+      base({ draft: draft({ merged_into: REF, step: "send" }), merge: ACCEPTED, send: mergedSend() }),
+    );
+    expect(h1()).toBe("Is this how you’d put it?");
+    expect(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it("when the merge request cannot be read, the draft's own merged_into gives the drawn rail and See the merged idea", async () => {
+    await mount([
+      (m, u) => (m === "GET" && u.endsWith("/merge-request") ? { status: 502, body: {} } : undefined),
+      ...base({ draft: draft({ merged_into: REF }), send: mergedSend() }),
+    ]);
+    expect(button(new RegExp(`Similar ideas, done Merged into ${REF}$`))).toBeTruthy();
+    const bar = document.querySelector('.ck-mlive[role="status"]')!;
+    expect(bar.querySelector("p")).toBeNull(); // no lead's name to make the line from: only the link
+    expect(Array.from(bar.querySelectorAll("a")).map((a) => [text(a), a.getAttribute("href")])).toEqual([
+      ["See the merged idea", `/ideas/${REF}`],
+    ]);
+    expect(button("Submit")).toBeUndefined();
+  });
+
+  it("model: an accepted request without lane F's words reads as drawn, from the lead's first name", () => {
+    const v = model.mergeView({ state: "accepted", other_idea_id: REF, lead: RAVI, after: null }, [])!;
+    expect(v).toMatchObject({
+      state: "accepted",
+      rail: `Merged into ${REF}`,
+      line: ACCEPTED_LINE,
+      action: { label: "See the merged idea", to: `/ideas/${REF}` },
+      canSubmit: false,
+    });
+    expect(model.mergedView(null, null)).toBeNull();
+  });
+
+  it("phone: the same parts to read, the bar with See the merged idea, and no declaration or Submit", async () => {
+    asPhone();
+    await mount(base({ draft: draft({ merged_into: REF }), merge: ACCEPTED, send: mergedSend() }));
+    const bar = document.querySelector('.ck-mlive[role="status"]')!;
+    expect(text(bar.querySelector("p"))).toBe(ACCEPTED_LINE);
+    expect(Array.from(bar.querySelectorAll("a")).map(text)).toEqual(["See the merged idea"]);
+    expect(document.querySelectorAll(".ck-part")).toHaveLength(6);
+    expect(button("Submit")).toBeUndefined();
+    expect(document.querySelector(".decl")).toBeNull();
+    expect(button("Confirm sorting")).toBeUndefined();
+    expect(Array.from(document.querySelectorAll("a")).some((a) => text(a) === "Back to your words")).toBe(
+      false,
+    );
+    expect(writes()).toEqual([]);
+  });
+});
+
+describe("S-05.layout J-SHARE/8–11: the rail's ticks come from what the server keeps (BLD-C156)", () => {
+  it("after a reload at part 4, part 1 (Looks right) and part 3 (Similar ideas) are ticked; sorting only once confirmed", async () => {
+    await mount(base({ draft: draft({ step: "check:4" }) }));
+    expect(h1()).toBe("Anything that shows it?");
+    const rail = Array.from(document.querySelectorAll(".ck-rail button")).map(nameOf);
+    expect(rail.slice(0, 4)).toEqual([
+      "Your words, done Title, what happens, how often",
+      "2 Sorting Suggested, not confirmed yet",
+      "Similar ideas, done 2 close ideas found",
+      "4 Proof Optional",
+    ]);
+    expect(button(/^Your words, done/)!.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+    expect(button(/^Similar ideas, done/)!.querySelector('.ck-rn[aria-hidden="true"] svg')).toBeTruthy();
+  });
+
+  it("Keep mine separate kept on the server ticks part 3 after a reload, wherever the person is", async () => {
+    await mount(base({ draft: draft({ step: "check:2", kept_separate: true }), sorting: sorting(true) }));
+    expect(h1()).toBe("Is it sorted right?");
+    expect(button(/^Your words, done/)).toBeTruthy();
+    expect(button(/^Similar ideas, done/)).toBeTruthy();
+    expect(button(/^4 Proof/)).toBeTruthy();
+  });
+
+  it("a draft still at Tell it or part 1 shows no ticks", async () => {
+    await mount(base({ draft: draft({ step: "tell" }) }));
+    expect(Array.from(document.querySelectorAll(".ck-rail .ck-rb.done"))).toHaveLength(0);
+  });
+});
+
 describe("S-05 words (F-COPY)", () => {
   it("never says duplicate, rejected, already solved, appeal, invalid or Garage to the sharer", () => {
     const all = JSON.stringify(CHECK_COPY, (_k, v) => (typeof v === "function" ? v("2", "Ravi") : v));

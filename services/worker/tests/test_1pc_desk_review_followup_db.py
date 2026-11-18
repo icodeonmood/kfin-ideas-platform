@@ -113,7 +113,7 @@ def test_L_MERGE_desk_5_the_sharers_read_the_joined_line_on_both_pages(
     lead = committee.decision_for_viewer(db, cast["idea"]["idea_id"], cast["kavya"]["id"], at)
     assert lead is not None and lead["joined_into"] is None
     assert lead["lines"]["joined_line"] == (
-        f"Meera from the review desk picked it on Monday 16 November and joined it with {cast['ravis']['idea_id']} "
+        f"The review desk picked it on Monday 16 November and joined it with {cast['ravis']['idea_id']} "
         "from Hyderabad, so one team builds one fix."
     )
     # Ravi's idea is merged and has no decision of its own: his page reads the lead's Pick, naming the lead
@@ -121,7 +121,7 @@ def test_L_MERGE_desk_5_the_sharers_read_the_joined_line_on_both_pages(
     assert joined is not None and joined["joined_into"] == cast["idea"]["idea_id"]
     assert joined["decision"]["reason"] == REASON  # the reason was the note to both
     assert joined["lines"]["joined_line"] == (
-        f"Meera from the review desk picked it on Monday 16 November and joined it with {cast['idea']['idea_id']} "
+        f"The review desk picked it on Monday 16 November and joined it with {cast['idea']['idea_id']} "
         "from Vizag, so one team builds one fix."
     )
     assert joined["lines"]["committee_line"].startswith("The Ones Committee can review this decision until")

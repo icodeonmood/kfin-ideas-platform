@@ -21,7 +21,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconDevice, IconMail, IconPencil } from "@/components/compose/icons";
-import { DraftPanel, PANEL_COPY, type PanelHandle, type Readiness } from "@/components/compose/draft-panel";
+import {
+  DraftPanel,
+  PANEL_COPY,
+  readinessOf,
+  type PanelHandle,
+  type Readiness,
+} from "@/components/compose/draft-panel";
 import { Prompt, PROMPT_COPY, Starters } from "@/components/compose/prompt";
 import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
@@ -189,7 +195,9 @@ export function Compose({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [existing, setExisting] = useState<DraftListItem | null>(null);
-  const [pickedUp, setPickedUp] = useState(false);
+  /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." as it was when the draft was opened, or null when
+   * there is no "Picked up" line. Saves made here afterwards do not change it (BLD-C158). */
+  const [pickedUp, setPickedUp] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [streamRun, setStreamRun] = useState<string | null>(null);
   const [quote, setQuote] = useState<string | null>(null);
@@ -236,6 +244,12 @@ export function Compose({
     setSave("changed");
   }, []);
 
+  // The router of the latest render, for the load below, which runs once per draft.
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
+
   // ── loading ─────────────────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let gone = false;
@@ -244,14 +258,20 @@ export function Compose({
         .get(givenId, true)
         .then((d) => {
           if (gone) return;
+          // Merged into another idea: nothing more to tell, so Check it shows it read-only (J-SIMILAR/6a, BLD-C155).
+          // The page sends it there first; this covers a page that could not tell.
+          if (d.merged_into) {
+            routerRef.current.replace(`/share/${encodeURIComponent(givenId)}/check`);
+            return;
+          }
           adopt(d, d.run?.state === "running" ? d.run.id : null);
           setSave("saved");
           const ageMs = Date.now() - new Date(d.saved_at).getTime();
-          setPickedUp(
+          const back =
             !handedOver.has(givenId) &&
-              d.run?.state !== "running" &&
-              (!d.saved_on?.this_device || ageMs > 2 * 60_000),
-          );
+            d.run?.state !== "running" &&
+            (!d.saved_on?.this_device || ageMs > 2 * 60_000);
+          setPickedUp(back ? (d.saved_labels?.resume ?? "") : null);
           const waiting = client.outbox(givenId);
           if (waiting.length) setPending(waiting.map((m) => ({ ...m, queued: true })));
         })
@@ -706,17 +726,13 @@ export function Compose({
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
   const minChars = draft?.min_chars ?? MIN_CHARS;
   const sendingDetail = pending.length > 0;
-  const readiness: Readiness = !chars
-    ? "more"
-    : chars < minChars
-      ? "more"
-      : sendingDetail
-        ? "finishing"
-        : live.running
-          ? "working"
-          : live.ready || draft?.ready
-            ? "ready"
-            : "more"; // nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1)
+  const readiness: Readiness = readinessOf({
+    chars,
+    minChars,
+    sending: sendingDetail,
+    running: live.running,
+    ready: live.ready || Boolean(draft?.ready),
+  });
   const checkHref = draftId ? `/share/${draftId}/check` : null;
   const hiddenActions = draftId
     ? {
@@ -866,13 +882,13 @@ export function Compose({
                 tabIndex={0}
               >
                 <div className="tin">
-                  {pickedUp && draft ? (
+                  {pickedUp !== null && draft ? (
                     <div className="ban" role="region" aria-label="Your draft">
                       <span className="ic" aria-hidden="true">
                         <IconDevice size={16} />
                       </span>
                       <p className="bt">{COMPOSE_COPY.pickedUp}</p>
-                      <p className="bm">{draft.saved_labels?.resume}</p>
+                      <p className="bm">{pickedUp}</p>
                       <div className="ba">
                         <button type="button" className="tb" onClick={() => router.push("/share?new=1")}>
                           {COMPOSE_COPY.startNewInstead}

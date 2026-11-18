@@ -63,6 +63,7 @@ import {
   mentionHint,
   mentionsIn,
   putMention,
+  sideNote,
   withMentions,
   type MentionQuery,
 } from "./compose";
@@ -740,7 +741,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                 </li>
               ))}
             </ul>
-            <p className="cv-sidenote">{C.sideNote}</p>
+            <p className="cv-sidenote">{sideNote(view.teams_on)}</p>
           </div>
         </aside>
       </div>

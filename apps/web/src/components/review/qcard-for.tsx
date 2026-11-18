@@ -14,13 +14,13 @@ import { QuestionsCard } from "./qcard";
 
 type Set = NonNullable<SharerQuestionSetResponse>;
 
-/** The set as `GET /ideas/:id/question-set` sends it, with what the card reads. */
+/** The set as `GET /ideas/:id/question-set` sends it, with what the card reads. The reviewer (`by`) is not read:
+ * the sharer's set comes without one (DEC-111). */
 function isSet(data: unknown): data is Set {
   const s = data as Partial<Set> | null;
   return (
     !!s &&
     typeof s.id === "string" &&
-    typeof s.by?.first_name === "string" &&
     typeof s.deadline === "string" &&
     typeof s.answered === "number" &&
     typeof s.count === "number" &&

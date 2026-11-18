@@ -39,6 +39,7 @@ export function SimilarGrid({
   onSent,
   onWithdrawn,
   onWithdraw,
+  readOnly = false,
 }: {
   draftId: string;
   draftTitle: string;
@@ -52,6 +53,9 @@ export function SimilarGrid({
   /** After "Withdraw request" in the sheet: the part reloads the matches and the merge request. */
   onWithdrawn(): void;
   onWithdraw(action: Extract<TileAction, { kind: "waiting" }>): Promise<void>;
+  /** A draft merged into another idea (BLD-C155): the grid to read, with Preview, and "On the crew" where it is
+   * true; nothing to team up on, withdraw or carry on with. */
+  readOnly?: boolean;
 }) {
   const [more, setMore] = useState(false);
   const [previewing, setPreviewing] = useState<SimilarMatch | null>(null);
@@ -66,7 +70,8 @@ export function SimilarGrid({
     returnFocus: () => showAgain.current,
   });
 
-  const folded = keptSeparate && load.state === "ok" && load.matches.length > 0;
+  // Read-only, the grid is shown as it is: "Show them again" would change a merged draft (BLD-C155).
+  const folded = !readOnly && keptSeparate && load.state === "ok" && load.matches.length > 0;
   const matches = load.state === "ok" ? load.matches : [];
   const shown = more ? matches : matches.slice(0, SHOWN);
   const previewAction = previewing ? tileAction(previewing, merge) : null;
@@ -96,7 +101,7 @@ export function SimilarGrid({
               <Tile
                 key={m.idea.id}
                 match={m}
-                action={tileAction(m, merge)}
+                action={readOnly ? readOnlyAction(tileAction(m, merge)) : tileAction(m, merge)}
                 onPreview={() => setPreviewing(m)}
                 onTeamUp={() => teamUp.open(m.idea.id)}
                 onWithdraw={onWithdraw}
@@ -108,7 +113,7 @@ export function SimilarGrid({
               {C.showMore}
             </Button>
           ) : null}
-          {matches.length ? <p className="meta keepn">{C.carryOn}</p> : null}
+          {matches.length && !readOnly ? <p className="meta keepn">{C.carryOn}</p> : null}
           <IdeaPreviewDialog
             ideaId={previewing?.idea.id ?? ""}
             view="sharer"
@@ -117,7 +122,7 @@ export function SimilarGrid({
             matchReason={previewing?.reason}
             yours="draft"
             onClose={() => setPreviewing(null)}
-            onPrimary={(id) => teamUp.open(id)}
+            onPrimary={readOnly ? undefined : (id) => teamUp.open(id)}
             primaryDone={
               previewAction?.kind === "waiting"
                 ? previewAction.label
@@ -133,6 +138,11 @@ export function SimilarGrid({
   );
 }
 
+/** Read-only tiles keep "On the crew"; anything that would ask, or withdraw, is left out. */
+function readOnlyAction(action: TileAction): TileAction | null {
+  return action.kind === "on-crew" ? action : null;
+}
+
 function Tile({
   match,
   action,
@@ -141,7 +151,8 @@ function Tile({
   onWithdraw,
 }: {
   match: SimilarMatch;
-  action: TileAction;
+  /** Null on a read-only grid where the tile has nothing but Preview. */
+  action: TileAction | null;
   onPreview(): void;
   onTeamUp(): void;
   onWithdraw(action: Extract<TileAction, { kind: "waiting" }>): Promise<void>;
@@ -172,7 +183,7 @@ function Tile({
         >
           {C.preview}
         </Button>
-        {action.kind === "team-up" ? (
+        {action === null ? null : action.kind === "team-up" ? (
           <Button {...teamUpOpener(idea.id)} size="sm" aria-label={C.teamUpOn(idea.title)} onClick={onTeamUp}>
             {C.teamUp}
           </Button>

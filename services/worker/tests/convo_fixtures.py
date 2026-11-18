@@ -19,6 +19,11 @@ _counter = iter(range(1, 10**6))
 _made: dict[str, list[str]] = {"users": [], "ideas": []}  # what `clean` deletes after each test
 
 
+# A grant starts a minute back: `role_grants` is read with `valid_from <= now()`, and a Docker VM's clock can step back
+# by a fraction of a second between the grant and the read, which made a just-granted role briefly not count.
+GRANT = "INSERT INTO role_grants (user_id, role, scope_id, valid_from) VALUES (%s, %s, %s, now() - interval '1 minute')"
+
+
 def at(d: int, h: int = 0, mi: int = 0, m: int = 11, y: int = 2026) -> dt.datetime:
     return dt.datetime(y, m, d, h, mi, tzinfo=IST)
 
@@ -36,9 +41,7 @@ def person(conn: Conn, name: str, *, city: str = "Hyderabad", area: str = "Inves
     _made["users"].append(user_id)
     conn.execute("INSERT INTO contributor_map (contributor_code, user_id) VALUES (%s, %s)", (code, user_id))
     for role, scope in roles:
-        conn.execute(
-            "INSERT INTO role_grants (user_id, role, scope_id) VALUES (%s, %s, %s)", (user_id, role, scope)
-        )
+        conn.execute(GRANT, (user_id, role, scope))
     return {"id": user_id, "code": code, "name": name, "first_name": name.split()[0]}
 
 
@@ -88,10 +91,7 @@ def build_team(conn: Conn, idea_row: dict[str, Any], lead: dict[str, str], *memb
         (idea_row["id"], f"{lead['name']}’s team", lead["id"]),
     )
     for m in (lead, *members):
-        conn.execute(
-            "INSERT INTO role_grants (user_id, role, scope_id) VALUES (%s, 'build_team', %s)",
-            (m["id"], idea_row["idea_id"]),
-        )
+        conn.execute(GRANT, (m["id"], "build_team", idea_row["idea_id"]))
 
 
 def clean(conn: Conn) -> None:

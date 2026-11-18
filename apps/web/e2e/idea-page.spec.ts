@@ -33,7 +33,7 @@ async function openIdea(page: Page, key: IdeaKey, query = "") {
 }
 
 type Decision = {
-  decision: { reason: string | null; reason_heading: string; by_line: string };
+  decision: { reason: string | null; reason_heading: string | null; by_line: string };
   reversal: { note: string | null } | null;
   lines: {
     committee_line: string | null;
@@ -153,7 +153,10 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
   }) => {
     const t6 = await openIdea(page, "T6");
     await expect(page.getByText("Needs you", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Harish has 3 questions for you" })).toBeVisible();
+    // DEC-111: lane B's card names the review desk, never the reviewer
+    await expect(
+      page.getByRole("heading", { name: "The review desk has 3 questions for you" }),
+    ).toBeVisible();
     await expect(page.getByText("Answer goes to").first()).toBeVisible();
     // C-QCARD.anatomy/1 and /4 (lane B's card, BLD-E051): the countdown is the header's pill, the deadline line alone
     await expect(page.getByText(/^(?:\d+ days?|\d{2}:\d{2}) left$/).first()).toBeVisible();
@@ -190,7 +193,9 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     // DEC-111: Tanvi is not on the review desk or the Ones Committee, so the sentence names the desk, not Harish
     await expect(page.getByText(/The review desk picked it on \w+day \d+ \w+\./)).toBeVisible();
     await expect(page.getByText(/Harish from the review desk picked it/)).toHaveCount(0);
-    await expect(page.getByRole("heading", { level: 2, name: d7.decision.reason_heading })).toBeVisible();
+    // DEC-111: Status.md draws no heading over the reason, so the sharer's decision carries none and names the desk
+    expect(d7.decision.reason_heading).toBeNull();
+    expect(d7.decision.by_line).toMatch(/^by the review desk, \w+day \d+ \w+$/);
     await expect(page.getByText(`“${d7.decision.reason}”`)).toBeVisible();
     if (d7.lines?.committee_line) await expect(page.getByText(d7.lines.committee_line)).toBeVisible();
     await expectNoSeriousAxeIssues(page);

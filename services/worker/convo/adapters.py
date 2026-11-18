@@ -1,7 +1,9 @@
 """Other lanes' entry points, each behind one function, so a change to theirs touches only this file.
 
 - `tell`: L-NOTIFY and L-INBOX (lane A, `notify.post`, BLD-A180), called inside the caller's transaction. `refs`
-  carry IDs, enums, numbers and booleans only; lane A renders the inbox line from the kind at read time.
+  carry IDs, enums, numbers and booleans only; lane A renders the inbox line from the kind at read time. `as_desk:
+  True` (the boolean, lane A's `notify.AS_DESK_REF`, BLD-A221) says the review desk speaks as a whole: lane A stores
+  no sender and names the desk (DEC-111, BLD-F084).
 - `hide`: L-HIDE (lane C's `hide_message`, BLD-C060): patterns, then the gatekeeper when `ai.all` is on, then names
   next to another detail; each value is kept in lane C's vault for the writer's "Show it", and the writer's own words
   are sealed under the entry's id. It is called with `source="conversation"`, `source_id` = the entry's id and
