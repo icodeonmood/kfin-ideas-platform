@@ -149,7 +149,11 @@ export const CHECK_COPY = {
       "A call log or ticket count that shows how often",
       "A report with the time or money it costs",
     ],
-    count: (n: number) => plural(n, "file"),
+    /** The rail's Proof line: "1 file", "2 files" (Review.md, attached=…, evidence=…). NOT DRAWN on the rail: links,
+     * and files and links together, counted as Send it's Proof row counts them (submit/ready.py: "1 link", "1 file
+     * and 1 link"), so the two never disagree (BLD-C190). */
+    count: (files: number, links: number) =>
+      [files ? plural(files, "file") : "", links ? plural(links, "link") : ""].filter(Boolean).join(" and "),
     checking: "Checking for personal details",
     checked: "Checked",
     failed: "Didn’t upload. Your other files are fine.",

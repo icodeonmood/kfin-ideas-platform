@@ -2301,3 +2301,67 @@ describe("S-05.parts/1 J-RECOVER/7-11: a line of your words left empty reads Not
     expect(button("Change how often")).toBeTruthy();
   });
 });
+
+describe("S-05.layout J-RECOVER/9-13: the rail's Proof step counts links as links, as Send it does (BLD-C190)", () => {
+  const at = "2026-11-17T08:00:00Z";
+  const file = (id: string, name: string): FileItem => ({
+    id,
+    kind: "file",
+    name,
+    type: "image/png",
+    size: 84_000,
+    state: "checked",
+    added_by: KAVYA,
+    added_at: at,
+  });
+  const link = (id: string, url: string): FileItem => ({
+    id,
+    kind: "link",
+    name: url,
+    type: "link",
+    state: "checked",
+    link_scope: "internal",
+    url: `https://${url}`,
+    added_by: KAVYA,
+    added_at: at,
+  });
+  const SMS = file("f1", "rejection-sms-screenshot.png");
+  const LOG = file("f2", "branch-call-log-nov.png");
+  const CODES = link("l1", "intranet.kfintech.example/codes");
+  const proofRail = () => nameOf(button(/^4 Proof/)!);
+
+  it("the words: 1 file and 2 files as Review.md draws them; 1 link, 2 links and 1 file and 1 link as Send it words them", () => {
+    expect(CHECK_COPY.proof.count(1, 0)).toBe("1 file");
+    expect(CHECK_COPY.proof.count(2, 0)).toBe("2 files");
+    expect(CHECK_COPY.proof.count(0, 1)).toBe("1 link");
+    expect(CHECK_COPY.proof.count(0, 2)).toBe("2 links");
+    expect(CHECK_COPY.proof.count(1, 1)).toBe("1 file and 1 link");
+    expect(CHECK_COPY.proof.count(2, 3)).toBe("2 files and 3 links");
+  });
+
+  for (const [what, files, drawn] of [
+    ["1 link", [CODES], "4 Proof 1 link"],
+    ["1 file", [SMS], "4 Proof 1 file"],
+    ["2 files", [SMS, LOG], "4 Proof 2 files"],
+    ["1 file and 1 link", [SMS, CODES], "4 Proof 1 file and 1 link"],
+  ] as const) {
+    it(`the rail reads ${what}`, async () => {
+      await mount(base({ draft: draft({ files }) }));
+      expect(proofRail()).toBe(drawn);
+    });
+  }
+
+  it("a link added on part 4 counts as a link on the rail", async () => {
+    await mount([(m, u) => (m === "POST" && u === "/api/links" ? { body: CODES } : undefined), ...base()]);
+    await railTo("Proof");
+    expect(proofRail()).toBe("4 Proof Optional");
+    const field = document.querySelector<HTMLInputElement>('input[inputmode="url"]')!;
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(field, "intranet.kfintech.example/codes");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(button("Add a link"));
+    expect(proofRail()).toBe("4 Proof 1 link");
+  });
+});

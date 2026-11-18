@@ -209,6 +209,14 @@ function hostOf(url: string | undefined): string | undefined {
 }
 
 /** A row as C-FILE.row draws it, with this page's own note under it and "Try again" once asking has stalled. */
+/** Part 4's rows for the rail's count (S-05.layout): a link is a link; a file or a folder, or one still uploading,
+ * is a file, as Send it's Proof row counts them (BLD-C190). Every row counts, a failed one too, as Review.md's
+ * evidence=Upload failed draws it ("2 files"). */
+export function proofCounts(proof: ProofItem[]): { files: number; links: number } {
+  const links = proof.filter((p) => p.item?.kind === "link").length;
+  return { files: proof.length - links, links };
+}
+
 export function rowView(p: ProofItem, limitMb: number): RowView {
   const view = rowBase(p, limitMb);
   if (p.note) view.message = { kind: "error", text: p.note };
