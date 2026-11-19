@@ -448,7 +448,9 @@ def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
         after,
         hidden_masked=hidden,
         similar_found=similar_found,
-        ready=is_ready and not all_failed,  # never "ready" beside "We couldn't build the draft" (BLD-C195)
+        # The stored `ready` stays true (DEC-118: a failed run counts as finished, Check it fills the parts), but the
+        # receipt never says "Your draft is ready…" beside "We couldn't build the draft just now…" (BLD-C195).
+        ready=is_ready and not all_failed,
         all_failed=all_failed,
         email=run["channel"] == "email" and int(run["earlier"]) == 0,
     )

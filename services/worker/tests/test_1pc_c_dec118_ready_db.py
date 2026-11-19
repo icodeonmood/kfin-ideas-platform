@@ -144,6 +144,21 @@ def test_v_acc_s04_dec118_a_timed_out_run_counts_as_finished(
     assert store.view(db, owner, other, LAPTOP)["ready"] is True
 
 
+def test_v_acc_s04_dec118_the_streams_ready_follows_the_rule_for_a_done_run_too(drafting: Any) -> None:
+    """A done run whose stored `ready` is false (written before DEC-118, or while a newer run was building) reads as
+    the rule stands now: the words at the minimum and nothing building."""
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+    idea, run_id = store.create(db, owner, LAPTOP, text=WORDS)
+    assert run_id is not None
+    runs.execute(run_id)
+    db.execute("UPDATE draft_runs SET ready = false WHERE id = %s", (run_id,))
+    row = _run_row(db, run_id)
+    assert row["state"] == "done" and row["ready"] is False
+    live = store.live(db, owner, idea, run_id)
+    assert live["run"]["state"] == "done" and live["run"]["ready"] is True
+
+
 def test_v_acc_s04_dec118_title_summary_and_area_all_empty_is_ready(drafting: Any) -> None:
     db, owner = drafting
     _switch(db, "ai.all", "off")  # DEC-105: nothing is built, every part waits for the person

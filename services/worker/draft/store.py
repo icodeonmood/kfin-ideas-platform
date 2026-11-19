@@ -947,8 +947,9 @@ def live(conn: Conn, owner: Owner, idea_uuid: str, run_id: str | None = None) ->
         "part_ms": dict(run["part_ms"] or {}),
         "receipt": list(run["receipt"] or []),
         "suggestions": list(run["suggestions"] or []),
-        # A failed run stores no `ready`; it counts as finished, so the rule is read as it stands now (DEC-118).
-        "ready": runs.ready(conn, idea_uuid) if run["state"] == "failed" else bool(run["ready"]),
+        # DEC-118 (BLD-C195): the rule as it stands now, as the draft read gives it, for every run: a failed run stores
+        # no `ready`, and a done run's stored one can be stale (a newer run building then, or a row from before).
+        "ready": runs.ready(conn, idea_uuid),
         "hidden": {
             "spans": [
                 {"start": h["span_start"], "end": h["span_end"], "kind": h["kind"]}
