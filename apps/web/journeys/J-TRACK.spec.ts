@@ -23,7 +23,8 @@ const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`; // "Wednesday 16 Dec
 const DAY_Y = String.raw`${DAY}(?: \d{4})?`; // "Tuesday 16 February 2027"
 const TIME = String.raw`\d{1,2}(?::\d{2})? (?:am|pm)`; // "11:20 am", "6 pm"
 /** When something is due (desk/when.py due()): "7 pm today", "6 pm tomorrow", else "Thursday 19 November, 6 pm". The
- * seed sets T6's deadline 2 days on, so a run seeded before midnight in India and walked after it reads "tomorrow". */
+ * seed sets T6's deadline at the first 6 pm at least 2 hours after the load (BLD-E067), so "6 pm today" or "6 pm
+ * tomorrow"; the day form is for sets due later. */
 const DUE = String.raw`(?:${DAY}, ${TIME}|${TIME} (?:today|tomorrow))`;
 const LEFT = String.raw`(?:\d+ days?|\d{2}:\d{2}) left`; // "3 days left", "07:38 left"
 const OPEN_Q = `["“]`;

@@ -15,7 +15,7 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-import { signIn } from "../e2e/helpers";
+import { expectNoSeriousAxeIssues, signIn } from "../e2e/helpers";
 import { carriedFor, expectWithDesk, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
@@ -49,6 +49,7 @@ const SHARER = fresh(0, "Sharer");
 const SENDER = fresh(200, "Sender");
 const FROM_HOME = fresh(700, "Homeprompt");
 const SIGNED_IN = fresh(1400, "Signedin");
+const AREA_WAITS = fresh(500, "Areawait");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -455,5 +456,90 @@ step(
     ).toBeVisible();
     await expect(composeBox(page)).toBeFocused();
     await expect(page.getByRole("heading", { level: 1, name: "Sign in to 1% Club" })).toHaveCount(0);
+  },
+);
+
+/** Words the fake draft run (LLM_MODE=fake, BLD-C197) turns into a title and a summary but no area. Synthetic. */
+const NO_AREA_WORDS = "Visitors wait at reception because no meeting room shows as free.";
+
+/** A part's value in a list of parts (S-04B's draft panel, S-06's What you shared): the <dd> after its <dt>, the
+ * visible one (the phone layout's sheet may hold a second, hidden copy). */
+function partValue(page: Page, label: string) {
+  return page
+    .locator("dt", { hasText: new RegExp(`^${esc(label)}$`) })
+    .locator("xpath=following-sibling::dd[1]")
+    .filter({ visible: true })
+    .first();
+}
+
+step(
+  "J-SHARE/v3",
+  "S-05",
+  "The draft can't tell the area: Move to Review is on anyway, the sorting asks for the area, and it sends",
+  { needs: ["S-04B", "C-DRAFT-PANEL", "L-DRAFT", "S-05", "L-SORT", "V-FIELDS", "L-SUBMIT", "S-06"] },
+  async ({ page }) => {
+    await signInAsFresh(page, AREA_WAITS);
+    await page.goto("/share");
+    const startNew = page.getByRole("button", { name: "Start a new one" });
+    await expect(startNew.or(composeBox(page)).first()).toBeVisible();
+    if (await startNew.isVisible()) await startNew.click();
+    await composeBox(page).fill(NO_AREA_WORDS);
+    await page.getByRole("button", { name: "Start my draft" }).click();
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    const draft = new URL(page.url()).pathname;
+
+    // DEC-118: once the run is done, Move to Review is on while the area still waits for words.
+    await expect(page.getByText("Up to date", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(partValue(page, "Area")).toContainText("Waiting for your words");
+    const move = page.getByRole("link", { name: "Move to Review" });
+    await expect(move).toBeVisible();
+    await expect(page.getByText("Looks right? Check the sorting and send it.")).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    await move.click();
+    await page.waitForURL(new RegExp(`${esc(draft)}/check$`));
+    await expect(page.getByText("Check it, part 1 of 6")).toBeVisible();
+    const title = (await page.getByRole("heading", { level: 3 }).first().innerText()).trim();
+    expect(title.length).toBeGreaterThan(0);
+    expect(title).not.toBe("Not given.");
+    await page.getByRole("button", { name: "Looks right" }).click();
+
+    // Part 2: no area is picked; Confirm sorting keeps part 2 until one is (V-FIELDS: Send needs every field).
+    await expect(page.getByText("Check it, part 2 of 6")).toBeVisible();
+    const areas = page.getByRole("radiogroup", { name: "Area" });
+    await expect(areas.getByRole("radio")).not.toHaveCount(0);
+    await expect(areas.getByRole("radio", { checked: true })).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+    await page.getByRole("button", { name: "Confirm sorting" }).click();
+    await expect(
+      page.getByText("Confirm these, or change any of them, before you send.").first(),
+    ).toBeVisible();
+    await expect(page.getByText("Check it, part 2 of 6")).toBeVisible();
+    const operations = areas.getByRole("radio", { name: "Operations" });
+    await operations.click();
+    await expect(operations).toBeChecked();
+    await expectNoSeriousAxeIssues(page);
+    await page.getByRole("button", { name: "Confirm sorting" }).click();
+    await expect(page.getByText("Check it, part 3 of 6")).toBeVisible();
+
+    // Parts 3 to 6 as in J-SHARE/9 and /10, then Send it with the title from part 1.
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Got an idea how to solve it?" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Who would help?" })).toBeVisible();
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Ready to send?" })).toBeVisible();
+    await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+    await page
+      .getByRole("button", { name: "Submit" })
+      .or(page.getByRole("link", { name: "Submit" }))
+      .click();
+    await page.waitForURL(new RegExp(`/ideas/${REF}(?:\\?from=share)?$`));
+
+    // S-06: the idea is with the review desk, under the area picked in the sorting.
+    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+    await expectWithDesk(page);
+    await expect(partValue(page, "Area")).toContainText("Operations");
   },
 );
