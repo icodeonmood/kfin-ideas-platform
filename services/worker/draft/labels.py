@@ -7,7 +7,8 @@ screen agrees). Office time (IST). The wording is the boards' (`reference/copy/C
   "asked, today 11:20 am"; BLD-C158);
 - the existing-draft prompt: "You have a draft from Friday" and "Last saved on your phone, 8:42 pm." (on the same
   device: "Saved on this phone, 8:42 pm.");
-- the save status: "Saved at 1:38 pm";
+- the save status: "Saved at 1:38 pm"; saved on an earlier day, the day and time a picked-up message reads ("Saved
+  Monday, 10:59 pm", "Saved yesterday, 10:59 pm"; BLD-C192);
 - My ideas: "Saved yesterday, on this laptop", "Saved 8:42 pm Friday, on your phone";
 - a message: "Just now", "Friday, 8:42 pm, on your phone"; an earlier one always with its day, time and device
   ("Today, 3:12 pm, on your laptop"; BLD-C185).
@@ -78,18 +79,24 @@ def saved_labels(
         "resume": f"Last saved {w}, {when}." if w else f"Last saved {when}.",
         "prompt_day": d,
         "prompt_line": line,
-        "status": f"Saved at {t}",
+        "status": f"Saved at {t}" if d == "today" else f"Saved {stamp(at, now)}",  # BLD-C192
         "my_ideas": my_ideas,
     }
+
+
+def stamp(at: dt.datetime, now: dt.datetime) -> str:
+    """The day and time a picked-up message reads (BLD-C185), mid-sentence: "Monday, 10:59 pm", "yesterday, 10:59
+    pm". The task bar's save status on an earlier day says it after "Saved" (BLD-C192)."""
+    return f"{day(at, now)}, {clock(at)}"
 
 
 def earlier_label(at: dt.datetime, device: str | None, this_device: bool, now: dt.datetime) -> str:
     """An earlier message, as S-04B draws one picked up from a saved draft: day, time and device, never "Just now"
     ("Friday, 8:42 pm, on your phone"; today reads "Today, 3:12 pm, on your laptop", as the side bar's "Today, on
     your laptop" and the conversation's "Today, 10:07 am"; BLD-C185)."""
-    stamp = f"{capital(day(at, now))}, {clock(at)}"
+    when = capital(stamp(at, now))
     w = where(device, this_device)
-    return f"{stamp}, {w}" if w else stamp
+    return f"{when}, {w}" if w else when
 
 
 def message_label(at: dt.datetime, device: str | None, this_device: bool, now: dt.datetime) -> str:

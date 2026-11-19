@@ -252,6 +252,8 @@ export function Compose({
   const [box, setBox] = useState("");
   const [save, setSave] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /** The server's words for `savedAt`, read with it: "Saved Monday, 10:59 pm" on an earlier day (BLD-C192). */
+  const [savedLabel, setSavedLabel] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [existing, setExisting] = useState<DraftListItem | null>(null);
   /** S-04B.layout/4: "Last saved on your phone, Friday 8:42 pm." and the device it names, as they were when the
@@ -298,7 +300,10 @@ export function Compose({
   const adopt = useCallback((d: Draft, runId?: string | null) => {
     setDraft(d);
     setLive((l) => withDraft(l, d));
-    if (d.saved_at) setSavedAt(d.saved_at);
+    if (d.saved_at) {
+      setSavedAt(d.saved_at);
+      setSavedLabel(d.saved_labels?.status ?? null);
+    }
     if (runId) setStreamRun(runId);
   }, []);
 
@@ -1090,6 +1095,7 @@ export function Compose({
       steps={conversation}
       save={save}
       savedAt={savedAt}
+      savedLabel={savedLabel}
       closeHref="/"
       closeLabel={COMPOSE_COPY.close}
     />

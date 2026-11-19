@@ -2383,3 +2383,46 @@ describe("S-05.layout J-RECOVER/9-13: the rail's Proof step counts links as link
     expect(proofRail()).toBe("4 Proof 1 link");
   });
 });
+
+// --- Lane G's 09:30 walk: the task bar's saved line on an earlier day (BLD-C192) --------------------------------
+
+describe("S-05 C-TASKBAR.save BLD-C192: saved on an earlier day, the top bar says the day (J-RECOVER/3, /6, /16, J-SIMILAR/6b, /6c)", () => {
+  const status = () => text(document.querySelector('.tbar [role="status"]'));
+  const labels = (s: string) => ({
+    sidebar: "Monday, on your phone",
+    resume: "Last saved on your phone, Monday 10:59 pm.",
+    prompt_day: "Monday",
+    prompt_line: "Last saved on your phone, 10:59 pm.",
+    status: s,
+    my_ideas: "Saved 10:59 pm Monday, on your phone",
+  });
+
+  it("saved on an earlier day it reads the server's day and time; a save made here reads as now again", async () => {
+    const monday = draft({
+      saved_at: "2026-11-16T17:29:00Z",
+      saved_on: { device: "phone", this_device: false },
+      saved_labels: labels("Saved Monday, 10:59 pm"),
+    });
+    await mount(base({ draft: monday }));
+    expect(status()).toBe("Saved Monday, 10:59 pm");
+    await railTo("Sorting");
+    await click(button("Confirm sorting"));
+    expect(status()).toMatch(/^Saved at \d{1,2}:\d{2} (am|pm)$/);
+    expect(status()).not.toContain("Monday");
+  });
+
+  it("saved today it reads as now, exactly as before", async () => {
+    const today = draft({ saved_labels: { ...labels("Saved at 1:38 pm"), sidebar: "Today, on this laptop" } });
+    await mount(base({ draft: today }));
+    expect(status()).toBe("Saved at 1:38 pm");
+  });
+
+  it("offline is unchanged", async () => {
+    const monday = draft({ saved_labels: labels("Saved Monday, 10:59 pm") });
+    await mount(base({ draft: monday }));
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    expect(status()).toBe("Unsaved, you’re offline");
+    online.mockRestore();
+  });
+});

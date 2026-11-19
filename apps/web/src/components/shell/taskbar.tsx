@@ -25,12 +25,15 @@ export function savedTime(at: Date | string): string {
     .replace(/\s?([ap])\.?m\.?/i, (_, x: string) => ` ${x.toLowerCase()}m`);
 }
 
-/** C-TASKBAR.save: the words for each save state. */
-export function saveWords(state: SaveState, savedAt?: Date | string | null): string {
+/** C-TASKBAR.save: the words for each save state. `savedLabel` is the server's words for `savedAt` when the screen
+ * has them (the draft read's `saved_labels.status`, A-API.conventions/6): on an earlier day they carry the day
+ * (BLD-C192). Without them, the time alone. */
+export function saveWords(state: SaveState, savedAt?: Date | string | null, savedLabel?: string | null): string {
   switch (state) {
     case "saving":
       return "Saving…";
     case "saved":
+      if (savedLabel) return savedLabel;
       return savedAt ? `Saved at ${savedTime(savedAt)}` : "Saved";
     case "offline":
       return "Unsaved, you’re offline";
@@ -55,6 +58,7 @@ export function Taskbar({
   stepHrefs = {},
   save,
   savedAt,
+  savedLabel,
   closeHref,
   closeLabel = "Save and close",
   offlineNote,
@@ -68,6 +72,8 @@ export function Taskbar({
   stepHrefs?: Partial<Record<TaskStep, string>>;
   save: SaveState;
   savedAt?: Date | string | null;
+  /** The server's words for `savedAt`, when the screen read them with it (BLD-C192). */
+  savedLabel?: string | null;
   closeHref: string;
   closeLabel?: string;
   /** The warning note under the bar while offline; its words come from the screen's copy. */
@@ -112,7 +118,7 @@ export function Taskbar({
         {extra}
         <span className={`saved saved-${save}`} role="status">
           <IconSync />
-          {saveWords(save, savedAt)}
+          {saveWords(save, savedAt, savedLabel)}
         </span>
         <Link href={closeHref} className="btn btn-secondary btn-sm tbar-close">
           {closeLabel}

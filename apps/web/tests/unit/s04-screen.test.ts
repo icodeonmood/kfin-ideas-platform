@@ -636,3 +636,62 @@ describe("S-04B lane G's walk, part A (J-SHARE/5, J-RECOVER/5, J-RESUME/3; BLD-C
     expect(metas()).toEqual(["Today, 3:12 pm, on your phone", "Just now"]);
   });
 });
+
+describe("S-04B C-TASKBAR.save BLD-C192: saved on an earlier day, the top bar says the day (J-RECOVER/3, /6, /16, J-SIMILAR/6b)", () => {
+  const status = () => (host.querySelector('.tbar [role="status"]')?.textContent ?? "").trim();
+  const monday = {
+    ...draft().saved_labels!,
+    sidebar: "Monday, on your phone",
+    resume: "Last saved on your phone, Monday 10:59 pm.",
+    status: "Saved Monday, 10:59 pm",
+  };
+  const detail = "Each new folio needs the nominee typed twice.";
+
+  it("picked up from an earlier day it reads the day and time, as the banner does; a detail saved here reads as now", async () => {
+    route = (s) => {
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/messages`)
+        return {
+          status: 202,
+          body: {
+            run_id: "r-9",
+            message: { id: "m-2", text: detail },
+            draft: draft({
+              saved_at: "2026-11-19T09:44:00.000Z",
+              saved_on: { device: "laptop", this_device: true },
+              saved_labels: { ...monday, sidebar: "Today, on this laptop", status: "Saved at 3:14 pm" },
+            }),
+          },
+        };
+      if (s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: draft({ saved_at: "2026-11-16T17:29:00.000Z", saved_labels: monday }),
+        };
+      return { status: 404, body: {} };
+    };
+    await mount({ draftId: DRAFT });
+    expect(host.querySelector(".ban .bm")!.textContent).toBe("Last saved on your phone, Monday 10:59 pm.");
+    expect(status()).toBe("Saved Monday, 10:59 pm");
+    type(host.querySelector("textarea") as HTMLTextAreaElement, detail);
+    await act(async () => {
+      button("Add to your draft")!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(status()).toBe("Saved at 3:14 pm");
+  });
+
+  it("saved today it reads as now, exactly as before", async () => {
+    route = (s) =>
+      s.url.startsWith(`/api/drafts/${DRAFT}`)
+        ? {
+            status: 200,
+            body: draft({
+              saved_at: "2026-11-19T09:42:00.000Z",
+              saved_labels: { ...monday, sidebar: "Today, on your phone", status: "Saved at 3:12 pm" },
+            }),
+          }
+        : { status: 404, body: {} };
+    await mount({ draftId: DRAFT });
+    expect(status()).toBe("Saved at 3:12 pm");
+  });
+});
