@@ -361,6 +361,40 @@ def test_DEC_111_J_REVIEW_the_desks_emails_sign_as_the_review_desk_and_never_rea
     )
 
 
+class _IdeaConn(_Conn):
+    """The old route's reads for a reconsidered idea: the idea by its reference and the review item, so the
+    `idea.reconsidered` block of `comms.render.variables` runs (with no idea row it would be skipped)."""
+
+    def execute(self, sql: str, params: tuple[Any, ...] = ()) -> _Rows:
+        if "FROM ideas WHERE idea_id = %s" in sql:
+            return _Rows([{"id": IDEA, "idea_id": "IDEA-2026-000900", "contributor_code": CODES[SHARER],
+                           "canvas": {"one_line": "Rejection SMS codes confuse investors"}, "strength": 2}])  # fmt: skip
+        if "FROM review_items WHERE id = %s" in sql:
+            return _Rows([{"veto_reason": "Grouped with the SIF work the committee already backs"}])
+        return super().execute(sql, params)
+
+
+def test_DEC_113_J_REVIEW_the_reconsidered_email_signs_as_the_ones_committee_and_never_reads_the_member() -> (
+    None
+):
+    """DEC-113 (BLD-A231), as BLD-A222 for the desk: the old route's `idea.reconsidered` email (template 1.3) signs
+    "The Ones Committee, 1% Club", and the member who changed the outcome is never read for it, so no template edit
+    can name them."""
+    conn = _IdeaConn()
+    refs = {"idea_id": "IDEA-2026-000900", "review_item_id": 7, "outcome": "changed",
+            "member_user_id": MEMBER, "next_step": "clustered"}  # fmt: skip
+    data = crender.variables(conn, SHARER, "idea.reconsidered", refs)  # type: ignore[arg-type]
+    assert data["idea"]["id"] == "IDEA-2026-000900" and data["outcome"]["reason"]  # the block ran
+    assert "member" not in data
+    assert MEMBER not in conn.people_read
+    tpl = templates._load(SEED, "reconsidered")
+    subject, body = templates.render_text(tpl.subject, data), templates.render_text(tpl.body, data)
+    assert body.rstrip().endswith("The Ones Committee, 1% Club\n\nA KFintech programme")
+    for trace in (MEMBER, "Rohan", "Mehta", '"RM"'):
+        assert trace not in subject + body + json.dumps(data, default=str), trace
+    assert "{{" not in subject + body
+
+
 def test_DEC_111_J_REVIEW_the_question_email_speaks_as_the_desk() -> None:
     """question 1.2: the desk signs as a whole, so the opening is "We’re reviewing", not "I’m reviewing"."""
     body = templates._load(SEED, "question").body
@@ -373,10 +407,10 @@ def test_DEC_111_no_comms_template_names_a_reviewer_or_an_asker() -> None:
     folder = SEED / "comms"
     for path in sorted(folder.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
-        for var in ("reviewer.name", "reviewer.first_name", "reviewer.initials", "asker."):
-            assert var not in text, (path.name, var)
+        for var in ("reviewer.name", "reviewer.first_name", "reviewer.initials", "asker.", "member."):
+            assert var not in text, (path.name, var)  # "member.": DEC-113 (BLD-A231)
     for name, version in (("inbox/answer_reminder", "1.1"), ("question", "1.2"), ("redirected", "1.3"),
-                          ("reviewed", "1.4")):  # fmt: skip
+                          ("reviewed", "1.4"), ("reconsidered", "1.3")):  # fmt: skip
         path = folder / "templates" / f"{name}.md"
         text = path.read_text(encoding="utf-8")
         assert f"version: '{version}'" in text and "hr_signed_off: false" in text, name

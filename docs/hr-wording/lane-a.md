@@ -62,7 +62,7 @@ The Landing page (S-01), "How it works" (S-H4), the launch screen (S-LAUNCH) and
 
 ## 4. DEC-113, the Ones Committee as one (19 Nov 2026)
 
-The product lead extended DEC-111 on 19 Nov: a sharer never sees a committee member's name either. It reads "the Ones Committee", with no avatar or initials. The review desk and the committee still see each other's names. The boards' "Rohan Mehta from the Ones Committee" is the demo committee member. No template's text changed: the reversal's template (`inbox/decision_reversed` 1.1) already opens with the sender, which is now "The Ones Committee" for these readers. HR is asked to sign off each line below.
+The product lead extended DEC-111 on 19 Nov: a sharer never sees a committee member's name either. It reads "the Ones Committee", with no avatar or initials. The review desk and the committee still see each other's names. The boards' "Rohan Mehta from the Ones Committee" is the demo committee member. One template's text changed: the old route's reconsidered email (`reconsidered` 1.3) now signs "The Ones Committee, 1% Club" in place of the member's name (last row). The Inbox templates are unchanged: the reversal's template (`inbox/decision_reversed` 1.1) already opens with the sender, which is now "The Ones Committee" for these readers. HR is asked to sign off each line below.
 
 | Where | Was | Now | Why |
 |---|---|---|---|

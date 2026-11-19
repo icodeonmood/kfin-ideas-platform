@@ -425,6 +425,7 @@ def test_redirected_and_reconsidered_offer_only_what_the_idea_page_has(seeded: A
     assert "Disagree with this?" in body and "15 working days" not in body and "another look" not in body
     assert "/ideas/IDEA-2026-000901" in body
     assert "The Ones Committee, 1% Club" in body  # DEC-113 (BLD-A231): signed as one, never by the member
+    assert "Member Person" not in body
 
 
 def test_adoption_request_links_only_people_who_can_open_the_desk(seeded: Any) -> None:
