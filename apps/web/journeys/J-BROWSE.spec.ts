@@ -8,7 +8,7 @@
  * Inbox (its answer screen is opened, nothing sent) and A1 from the Wall: being built, one of only two in Kindling's
  * Being built card (up to three each, S-WALL.kindling), so it is always drawn, never behind "Show 5 more".
  */
-import { expect, type Locator, type Page, type Response } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { carriedFor, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
@@ -62,10 +62,12 @@ async function search(page: Page): Promise<void> {
  */
 async function deskRead(page: Page, click: () => Promise<void>): Promise<void> {
   // A click before the page has hydrated asks for nothing, so the click is tried again until a read answers it; a
-  // tab or sort clicked again only reads the same list again (components/ui/tabs.tsx, sorts.tsx).
-  let res: Response | null = null;
+  // tab or sort clicked again only reads the same list again (components/ui/tabs.tsx, sorts.tsx). The list's body is
+  // read inside the retry: once the page moves on, the browser drops a body nobody has read yet, and the read is then
+  // asked for again rather than failing the step (main-sync ci 44597799118, J-BROWSE/4).
+  let order = null as string[] | null; // assigned inside the retry, so not narrowed to null here
   await expect(async () => {
-    [res] = await Promise.all([
+    const [res] = await Promise.all([
       page.waitForResponse(
         (r) => {
           const asked = new URL(r.url());
@@ -81,11 +83,9 @@ async function deskRead(page: Page, click: () => Promise<void>): Promise<void> {
       ),
       click(),
     ]);
+    order = ((await res.json()) as { items: { idea_id: string }[] }).items.map((i) => i.idea_id);
   }).toPass({ timeout: 20_000 });
-  if (!res) throw new Error("the desk's list was not read");
-  const order = ((await (res as Response).json()) as { items: { idea_id: string }[] }).items.map(
-    (i) => i.idea_id,
-  );
+  if (!order) throw new Error("the desk's list was not read");
   await expect
     .poll(() =>
       page

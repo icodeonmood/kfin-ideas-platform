@@ -305,6 +305,21 @@ export function dayIST(t: Date, now: Date = new Date()): string {
   return `${p.weekday} ${p.day} ${p.month}${p.year === parts(now).year ? "" : ` ${p.year}`}`;
 }
 
+/** wall/common.py day_label(): "1 Dec 2026" in India time, the month as Python's %b ("Sep", never "Sept"). */
+export function dayLabelIST(t: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+      .formatToParts(t)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.day} ${String(p.month).slice(0, 3)} ${p.year}`;
+}
+
 /**
  * S-06's own card: the article that holds the page's one h1 (ideas/[id]/sharer-screen.tsx). Its pill is the idea's
  * status; a similar idea's tile beside it carries a pill too ("With the review desk"), so a status is read in here.

@@ -1,11 +1,13 @@
-"""BLD-A232: privacy notice 0.2 (P-PRODUCT.privacy, L-AUTH's first sign-in, L-HIDE, DEC-108). No database, no docker:
-the notice's text and its version pins are read from the files.
+"""BLD-A232 and BLD-A233: privacy notice 0.2 (P-PRODUCT.privacy, L-AUTH's first sign-in, L-HIDE, DEC-108). No
+database, no docker: the notice's text and its version pins are read from the files.
 
 - The version in `apps/web/src/content/privacy-notice.ts` equals PRIVACY_NOTICE_VERSION in `.env.example` (which CI
   copies to `.env`) and in `scripts/uat/rehearse.sh`, or the notice page refuses to render. `scripts/uat/deploy.sh`
   stops at preflight when a server's app env file differs, and never prints a value that is not a version.
-- A draft version keeps `draft: true` (the go/no-go reads any version ending in "draft" as not live). A draft
-  carries the DPO's three "to be confirmed" lines word for word; a final notice carries none.
+- 0.2 is final (BLD-A233): `draft: false` (the go/no-go reads any version ending in "draft" as not live), the product
+  lead's three lines (appraisal, retention, contact) word for word, and no "to be confirmed" anywhere. The two parts
+  the lead dropped because the build does not do them (restoring archived drafts from My ideas; deleting the link to
+  a leaver's contributor code) stay out.
 - The corrected sentences are pinned, with the product lead's calls of 19 Nov on review B3, B5 and B6. Every
   sentence in `docs/privacy-notice-0.2.md`, the table Legal and the DPO sign, appears in the notice word for word.
 - The words follow F-COPY.vocabulary, name no speech vendor or model (DEC-096, DEC-108) and promise no perfect
@@ -26,8 +28,8 @@ NOTICE = helpers.ROOT / "apps" / "web" / "src" / "content" / "privacy-notice.ts"
 DOC = helpers.ROOT / "docs" / "privacy-notice-0.2.md"
 DEPLOY = helpers.ROOT / "scripts" / "uat" / "deploy.sh"
 PINS = (helpers.ROOT / ".env.example", helpers.ROOT / "scripts" / "uat" / "rehearse.sh")
-# The DPO's three lines (HR appraisal, retention, the DPO contact) stay word for word until the DPO's text arrives.
-WAITING = (
+# The three placeholder lines in 0.2-draft (HR appraisal, retention, the DPO contact)...
+DRAFT_LINES = (
     "Your contribution history is not used in performance appraisal unless HR policy says so. "
     "(To be confirmed by HR.)",
     "As long as KFintech's record-retention policy requires. If you leave KFintech, the link between your name and "
@@ -36,6 +38,21 @@ WAITING = (
     "For questions or complaints under KFintech's data protection policy, contact the Data Protection Officer. "
     "(Contact details to be confirmed by Legal.)",
 )
+# ...and the product lead's final lines in 0.2 (BLD-A233), in the same sections, word for word.
+FINAL_LINES = (
+    "Sharing here is voluntary. What you share is never used against you, and it is not used in your performance "
+    "appraisal.",
+    "We keep your ideas and their conversations for as long as KFintech's record-retention policy requires for "
+    "business records. Drafts you don't send are archived after 30 days. Voice recordings are deleted within a day, "
+    "once they are turned into text.",
+    "For questions or complaints under KFintech's data protection policy, or to ask for a copy, correction or "
+    "deletion of your data, write to KFintech's Data Protection Officer at the address given in that policy on the "
+    "intranet.",
+)
+FINAL_SECTIONS = ("Why we use it", "How long we keep it", "Your choices and questions")
+# The parts of the lead's proposal left out because the build does not do them: nothing calls the restore API from
+# My ideas, and the HR import only marks leavers inactive.
+DROPPED = ("restore them from my ideas", "contributor code is deleted")
 
 
 def _source() -> str:
@@ -81,12 +98,31 @@ def test_a232_l_auth_a_draft_version_is_marked_draft_and_a_final_one_is_not() ->
     assert _version().endswith("draft") == _draft()
 
 
-def test_a232_p_product_privacy_the_dpos_three_lines_wait_while_draft() -> None:
-    pending = [p for p in _paragraphs() if "to be confirmed" in p.lower()]
-    if _draft():
-        assert pending == list(WAITING)
-    else:
-        assert pending == [], "a final notice carries no 'to be confirmed' line"
+def test_a233_l_auth_the_notice_is_final_0_2() -> None:
+    assert _version() == "0.2" and _draft() is False
+
+
+def test_a233_p_product_privacy_nothing_is_left_to_be_confirmed() -> None:
+    assert "to be confirmed" not in _source().lower()
+
+
+def _section(heading: str) -> list[str]:
+    """The paragraphs under one heading."""
+    part = _source().split(f'heading: "{heading}",', 1)[1].split("heading:", 1)[0]
+    return re.findall(r'^\s*"((?:[^"\\]|\\.)*)",$', part, re.M)
+
+
+def test_a233_p_product_privacy_the_leads_three_lines_word_for_word_in_their_sections() -> None:
+    for heading, line in zip(FINAL_SECTIONS, FINAL_LINES, strict=True):
+        assert line in _section(heading), heading
+    assert _section("How long we keep it") == [FINAL_LINES[1]]
+    assert not set(DRAFT_LINES) & set(_paragraphs())
+
+
+def test_a233_p_product_privacy_no_promise_of_what_the_build_does_not_do() -> None:
+    source = _source().lower()
+    for part in DROPPED:
+        assert part not in source, part
 
 
 @pytest.mark.parametrize(
@@ -174,10 +210,12 @@ def _doc_cells(section: str, column: int) -> list[str]:
 def test_a232_p_product_privacy_the_table_legal_signs_is_the_text_that_ships() -> None:
     text = _text()
     new = [c for c in _doc_cells("Changed and new sentences", 2) if not c.startswith("Removed")]
-    dpo = _doc_cells("Still waiting for the DPO", 1)
-    assert len(new) >= 30 and dpo == list(WAITING)
+    assert len(new) >= 30
     for sentence in new:
         assert sentence in text, sentence
+    final = "The product lead's final lines, 20 November"
+    assert _doc_cells(final, 0) == list(FINAL_SECTIONS)
+    assert _doc_cells(final, 1) == list(DRAFT_LINES) and _doc_cells(final, 2) == list(FINAL_LINES)
     findings = [c.split(":", 1)[0] for c in _doc_cells("Decided by the product lead, 19 November", 0)]
     assert findings == ["B3", "B5", "B6"]
 
