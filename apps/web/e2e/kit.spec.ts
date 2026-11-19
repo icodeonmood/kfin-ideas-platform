@@ -145,7 +145,9 @@ test("C-DROPDOWN/2–5: None picked, then a title, then a count; Escape closes t
 test("C-FILE.row: a found detail is a warning under its row, with the row's own action", async ({ page }) => {
   const files = page.getByRole("list", { name: "Your files" });
   await expect(files.getByRole("listitem")).toHaveCount(3);
-  await expect(files.getByRole("alert")).toContainText("Nobody can open it until it’s hidden");
+  await expect(files.getByRole("alert")).toContainText(
+    "Only you, the review desk and the Ones Committee can open it.",
+  );
   await expect(files.getByRole("button", { name: "Hide it for me" })).toBeVisible();
 });
 

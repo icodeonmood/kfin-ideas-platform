@@ -345,7 +345,10 @@ def test_L_HIDE_files_3_DEC_107_a_customer_detail_marks_the_file_and_keeps_it_fr
 
     mine = F.get_item(db, att, kavya["id"])
     assert mine["state"] == "personal_data_found" and mine["customer_detail"] is True
-    assert mine["problem"] == "Found a PAN on page 2. Nobody can open it until it’s hidden."  # C-FILE.row
+    assert (
+        mine["problem"]
+        == "Found a PAN on page 2. Only you, the review desk and the Ones Committee can open it."
+    )  # C-FILE.row
     assert "hidden_note" not in mine and mine["view_url"]
     for who in ("kavya", "meera", "rohan", "dev"):
         assert F.content(db, att, cast[who]["id"])[0] == data
@@ -393,7 +396,8 @@ def test_L_HIDE_files_values_the_desk_hid_on_the_idea_are_hidden_in_a_file_too(
     row = _row(db, att)
     assert row["checks"]["found"] == [{"kind": "name", "page": None}] and row["hidden_note"] is None
     assert (
-        F.get_item(db, att, kavya["id"])["problem"] == "Found a name. Nobody can open it until it’s hidden."
+        F.get_item(db, att, kavya["id"])["problem"]
+        == "Found a name. Only you, the review desk and the Ones Committee can open it."
     )
 
 

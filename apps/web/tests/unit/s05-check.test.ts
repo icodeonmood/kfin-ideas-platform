@@ -484,13 +484,14 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
     });
     expect(
       v("personal_data_found", {
-        problem: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+        problem:
+          "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
       }),
     ).toMatchObject({
       status: "found",
       message: {
         kind: "warn",
-        text: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+        text: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
       },
       actions: ["hide", "remove"],
     });
@@ -973,7 +974,8 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
                 body: {
                   ...uploaded,
                   state: "personal_data_found",
-                  problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+                  problem:
+                    "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
                 },
               }
             : undefined,
@@ -994,7 +996,7 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     await act(async () => vi.advanceTimersByTime(2100));
     await settle();
     expect(document.body.textContent).toContain(
-      "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+      "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
     );
     await click(button("Hide it for me"));
     expect(document.body.textContent).toContain("Phone hidden");
@@ -1118,7 +1120,8 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
   it("DEC-107 BLD-C064: while files.blackout is off, a file with a detail found offers Remove but not Hide it for me", async () => {
     const found = {
       ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
-      problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+      problem:
+        "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
     };
     await mount(base({ draft: draft({ files: [found] }) }));
     await railTo("Proof");
