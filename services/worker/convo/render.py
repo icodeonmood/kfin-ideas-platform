@@ -3,7 +3,8 @@
 
 Lines Messages.md draws are used as drawn. Every other line is ours, in the same style, and listed for HR in
 `docs/hr-wording/lane-f.md`. No gendered pronoun for a person (BLD-E008). The person at the review desk is named only
-to the review desk and the Ones Committee; anyone else reads "The review desk opened it." (DEC-111, `Ctx.shown`).
+to the review desk and the Ones Committee; anyone else reads "The review desk opened it." (DEC-111, `Ctx.shown`). A
+member of the Ones Committee likewise: "The Ones Committee reversed the decision. It’s now Not now." (DEC-113).
 An unknown code renders nothing and is logged by its code alone, so a lane that posts a new code before lane F
 renders it breaks no screen.
 
@@ -40,10 +41,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from convo.access import Reader
-from convo.store import DESK_PERSON, People, Person
+from convo.store import COMMITTEE_PERSON, DESK_PERSON, People, Person
 from core.db import Conn
 from core.logging import get_logger
-from onepc.words import REVIEW_DESK
 
 log = get_logger("convo")
 
@@ -120,28 +120,35 @@ class Ctx:
 
     @property
     def sees_desk(self) -> bool:
-        """DEC-111: only the review desk and the Ones Committee read the name of the person at the review desk."""
+        """DEC-111, DEC-113: only the review desk and the Ones Committee read the names of the people at the review
+        desk and on the Ones Committee."""
         return self.reader.desk or self.reader.committee
 
-    def shown(self, p: Person, *, at_desk: bool | None = None) -> Person:
-        """The person as this reader may see them (DEC-111). Someone at the review desk (speaking as the desk, or
-        `at_desk`) reads as the desk itself, with no name, id or initials, to everyone outside the review desk and
-        the Ones Committee; they still read their own lines as "You". Anyone else is as they are."""
-        at = p.role_label == DESK if at_desk is None else at_desk
-        if at and not self.sees_desk and not self.is_me(p):
+    def shown(self, p: Person, *, acting: str | None = None) -> Person:
+        """The person as this reader may see them. Someone speaking as the review desk (DEC-111) or the Ones Committee
+        (DEC-113), by their `role_label` or by `acting` (the role `reads._Speaking` gives a person named by users.id,
+        such as a mention), reads as the desk or the committee itself, with no name, id or initials, to everyone
+        outside the review desk and the Ones Committee; they still read their own lines as "You". Anyone else is as
+        they are."""
+        if self.sees_desk or self.is_me(p):
+            return p
+        role = acting or p.role_label
+        if role == DESK:
             return DESK_PERSON
+        if role == COMMITTEE:
+            return COMMITTEE_PERSON
         return p
 
     def name(self, p: Person) -> str:
         return "You" if self.is_me(p) else p.label
 
     def obj(self, p: Person) -> str:
-        """The person as the object of a sentence: 'you' for the reader."""
-        return "you" if self.is_me(p) else REVIEW_DESK if p.desk else p.label
+        """The person as the object of a sentence: 'you' for the reader, 'the review desk', 'the Ones Committee'."""
+        return "you" if self.is_me(p) else p.mid if p.masked else p.label
 
     def owner(self, p: Person) -> str:
-        """'your' for the reader, 'Kavya Menon’s' for anyone else."""
-        return "your" if self.is_me(p) else f"{REVIEW_DESK if p.desk else p.label}’s"
+        """'your' for the reader, 'Kavya Menon’s' for anyone else, 'the Ones Committee’s' for the committee."""
+        return "your" if self.is_me(p) else f"{p.mid if p.masked else p.label}’s"
 
     def idea_ref(self, ref: Any) -> str | None:
         """The IDEA- reference of an idea given by reference or uuid."""
@@ -245,7 +252,8 @@ def event_line(ctx: Ctx, row: dict[str, Any]) -> Line | None:
         row = _seeded(ctx, row)
         code = str(row["event"])
     p = dict(row.get("payload") or {})
-    # DEC-111: "The review desk opened it." outside the desk and the committee
+    # DEC-111, DEC-113: "The review desk opened it.", "The Ones Committee reversed the decision." outside the desk and
+    # the committee
     who = ctx.shown(author(ctx, row))
     me = ctx.name(who)
 

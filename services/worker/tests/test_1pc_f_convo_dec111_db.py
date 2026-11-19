@@ -99,8 +99,8 @@ def test_dec_111_l_convo_the_sharer_the_crew_and_the_build_team_read_the_review_
     # Only readers who may open files get them (BLD-F062): the sharer here; added by the desk, not a person.
     assert len(m["files"]) == (1 if who == "kavya" else 0)
     assert all(f["added_by"] == DESK_REF for f in m["files"])
-    # The committee keeps its name (DEC-111 names the review desk only, BLD-F082).
-    assert _message(view, "The committee is following")["from_label"] == "Rohan Mehta from the Ones Committee"
+    # The committee reads as itself too (DEC-113, BLD-F091; it kept its name under DEC-111 alone, BLD-F082).
+    assert _message(view, "The committee is following")["from_label"] == "The Ones Committee"
 
     # The desk's events and the questions.
     events = [e["text"] for e in view["entries"] if e["type"] == "event"]
@@ -422,8 +422,10 @@ def test_dec_111_bld_f084_l_inbox_a_message_from_the_sharer_the_crew_the_committ
     assert ("mention", w["tara"]["id"]) in [(i["kind"], i["to_user"]) for i in items]
     assert ("comment", w["kavya"]["id"]) in [(i["kind"], i["to_user"]) for i in items] or who == "kavya"
     for i in items:
-        assert not _as_desk(i) and i["from_user"] == writer["id"], i["kind"]
+        assert not _as_desk(i), i["kind"]
         assert not i["dedupe_key"].endswith(":desk")
+        if who != "rohan":  # the committee speaks as itself (DEC-113): test_1pc_f_convo_dec113_db.py
+            assert i["from_user"] == writer["id"], i["kind"]
 
 
 def _comments_to(db: Any, sharer: dict[str, str], key_start: str) -> dict[str, dict[str, Any]]:

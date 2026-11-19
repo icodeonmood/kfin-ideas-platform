@@ -16,7 +16,7 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from onepc.context import open_text, seal_text
-from onepc.words import REVIEW_DESK, REVIEW_DESK_START
+from onepc.words import ONES_COMMITTEE, ONES_COMMITTEE_START, REVIEW_DESK, REVIEW_DESK_START
 
 
 class Refused(Exception):
@@ -90,7 +90,8 @@ class Person:
     as staff; `label` is how the timeline names them ("Meera from the review desk", "Ravi Nair", "You").
 
     `desk` marks the review desk itself (`DESK_PERSON`, DEC-111): what a reader outside the review desk and the Ones
-    Committee sees in place of the person at the desk. It has no id, no initials and no avatar."""
+    Committee sees in place of the person at the desk. It has no id, no initials and no avatar. `committee` marks the
+    Ones Committee itself (`COMMITTEE_PERSON`, DEC-113) in the same way, in place of a member."""
 
     id: str | None
     name: str
@@ -100,6 +101,7 @@ class Person:
     area: str | None = None
     role_label: str | None = None
     desk: bool = False
+    committee: bool = False
 
     def ref(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -120,6 +122,8 @@ class Person:
     def label(self) -> str:
         if self.desk:
             return REVIEW_DESK_START  # DEC-111: "The review desk", at the start of a line or as a byline
+        if self.committee:
+            return ONES_COMMITTEE_START  # DEC-113: "The Ones Committee"
         if self.role_label == "from the review desk":
             return f"{self.first_name} {self.role_label}"  # "Meera from the review desk" (Messages.md)
         if self.role_label:
@@ -128,13 +132,23 @@ class Person:
 
     @property
     def mid(self) -> str:
-        """The first name inside a sentence: "Reply to Kavya", "Answer the review desk’s 3 questions"."""
-        return REVIEW_DESK if self.desk else self.first_name
+        """The first name inside a sentence: "Reply to Kavya", "Answer the review desk’s 3 questions", "Reply to the
+        Ones Committee"."""
+        if self.desk:
+            return REVIEW_DESK
+        return ONES_COMMITTEE if self.committee else self.first_name
+
+    @property
+    def masked(self) -> bool:
+        """The review desk or the Ones Committee in place of a person (DEC-111, DEC-113)."""
+        return self.desk or self.committee
 
 
 UNKNOWN = Person(None, "A colleague", "A colleague", "1%")  # erased from contributor_map: anonymised
 # DEC-111: the person at the review desk as a sharer, the crew, the build team or a mentioned person reads them.
 DESK_PERSON = Person(None, REVIEW_DESK_START, REVIEW_DESK_START, "", desk=True)
+# DEC-113: a member of the Ones Committee as the same readers read them.
+COMMITTEE_PERSON = Person(None, ONES_COMMITTEE_START, ONES_COMMITTEE_START, "", committee=True)
 
 
 class People:
