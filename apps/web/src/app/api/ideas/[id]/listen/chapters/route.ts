@@ -10,5 +10,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (me instanceof NextResponse) return me;
   const { id } = await params;
   if (!isIdeaRef(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return listenChapters(id);
+  return listenChapters(id, me.id);
 }
