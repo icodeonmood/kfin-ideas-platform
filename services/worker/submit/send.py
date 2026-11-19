@@ -155,7 +155,10 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
         "shared_at": shared_at.isoformat(),
         "shared_label": f"Shared {short_date(shared_at)}",
         "stages": stage_nodes(nodes) if nodes else [],
-        "next": {"to": f"/ideas/{ref}", "replace": True, "state": "just_shared"},
+        # The link taken straight after a send: `from=share` is S-06's first arrival, so its way back is Home and the
+        # shared date carries "Done in N seconds" (S-06.rules/6, S-06.states "Just shared"; BLD-C084). Lane E's page
+        # takes `from` out of the address on arrival. "Edit it" and every other link to the idea stay plain.
+        "next": {"to": f"/ideas/{ref}?from=share", "replace": True, "state": "just_shared"},
     }
     if decide is not None:
         out["review"] = {

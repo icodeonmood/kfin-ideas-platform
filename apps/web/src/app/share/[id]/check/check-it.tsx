@@ -678,7 +678,9 @@ export function CheckIt({
     const r = await api.submit(draftId, view.declaration.version, idemKey.current);
     if (r.ok) {
       sendQueue.clear(draftId);
-      const to = r.body.next?.to || `/ideas/${encodeURIComponent(r.body.ref || r.body.idea_id)}`;
+      // Straight after a send S-06 opens as the first arrival (`from=share`, S-06.rules/6, BLD-C084): the server's
+      // `next.to` carries it, and so does this fallback.
+      const to = r.body.next?.to || `/ideas/${encodeURIComponent(r.body.ref || r.body.idea_id)}?from=share`;
       router.replace(to);
       return;
     }

@@ -305,7 +305,35 @@ def test_l_submit_send_hands_over_what_s06_just_shared_shows(monkeypatch: pytest
         "Open to changes until Tuesday 17 November. Edit or withdraw it"
     )
     assert h["edit_window"]["countdown"]["label"] == "3 days left"
-    assert h["next"] == {"to": "/ideas/IDEA-2026-001481", "replace": True, "state": "just_shared"}
+    assert h["next"] == {"to": "/ideas/IDEA-2026-001481?from=share", "replace": True, "state": "just_shared"}
+    assert h["edit_window"]["edit"] == {"label": "Edit it", "to": "/ideas/IDEA-2026-001481/edit"}  # unchanged
+
+
+def test_l_submit_send_s06_rules_6_bld_c191_next_to_is_the_first_arrival_and_no_other_link_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """J-SHARE/11, J-RECOVER/14 (BLD-C084): the link Check it replaces to straight after a send ends `?from=share`, so
+    S-06 treats the visit as the first arrival (breadcrumb Home, "Done in N seconds"). A repeated Submit of an idea
+    already sent hands over the same link. "Edit it" stays the idea's own edit page, with no `from`."""
+    from submit.send import handover
+
+    _switches(monkeypatch, {"comms.teams": "on"})
+    shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
+    idea = {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "idea_id": "IDEA-2026-001482",
+        "status": "checking",
+        "title": "Synthetic title",
+        "shared_at": shared,
+        "decide_by": dt.datetime(2026, 11, 20, 12, 30, tzinfo=dt.UTC),
+        "edit_closes_at": shared + dt.timedelta(days=3),
+        "opened_at": None,
+    }
+    for at in (shared + dt.timedelta(seconds=2), shared + dt.timedelta(hours=5)):  # the send, then a repeated Submit
+        h = handover(None, idea, at)  # type: ignore[arg-type]
+        assert h["next"]["to"] == "/ideas/IDEA-2026-001482?from=share"
+        assert h["edit_window"]["edit"] == {"label": "Edit it", "to": "/ideas/IDEA-2026-001482/edit"}
+        assert "from=" not in repr({k: v for k, v in h.items() if k != "next"})
 
 
 DRAWN = (

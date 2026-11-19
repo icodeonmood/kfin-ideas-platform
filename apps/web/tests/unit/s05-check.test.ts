@@ -1472,7 +1472,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
               body: {
                 idea_id: "IDEA-2026-001481",
                 ref: "IDEA-2026-001481",
-                next: { to: "/ideas/IDEA-2026-001481", replace: true, state: "just_shared" },
+                next: { to: "/ideas/IDEA-2026-001481?from=share", replace: true, state: "just_shared" },
               },
             }
           : undefined,
@@ -1485,7 +1485,21 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     const sent = calls.find((c) => c.url.endsWith("/submit"))!;
     expect(sent.body).toEqual({ declaration_version: "2026-11-17" });
     expect(sent.headers["Idempotency-Key"]).toMatch(/^s05:/);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001481");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001481?from=share");
+  });
+
+  it("S-06.rules/6 BLD-C084 J-SHARE/11: after a send, Check it replaces to the server's first-arrival link, or builds the same one when the answer has none", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/submit")
+          ? { status: 201, body: { idea_id: "IDEA-2026-001484", ref: "IDEA-2026-001484" } }
+          : undefined,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001484?from=share");
   });
 
   it("J-RECOVER/13 V-FIELDS.checkit/13: a failed send says the draft is safe, with Try again, and the retry reuses the key", async () => {
@@ -1520,7 +1534,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
               body: {
                 idea_id: "IDEA-2026-001482",
                 ref: "IDEA-2026-001482",
-                next: { to: "/ideas/IDEA-2026-001482" },
+                next: { to: "/ideas/IDEA-2026-001482?from=share" },
               },
             }
           : undefined,
@@ -1539,7 +1553,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     await act(async () => window.dispatchEvent(new Event("online")));
     await settle();
     expect(calls.some((c) => c.url.endsWith("/submit"))).toBe(true);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482?from=share");
   });
 
   it("L-SUBMIT.pre: a refusal from the server says its own words under Submit (file_blocked)", async () => {
@@ -1716,7 +1730,11 @@ describe("S-05 review fixes: hidden details (C-HIDDEN.list)", () => {
 describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
   const submitted = {
     status: 201,
-    body: { idea_id: "IDEA-2026-001483", ref: "IDEA-2026-001483", next: { to: "/ideas/IDEA-2026-001483" } },
+    body: {
+      idea_id: "IDEA-2026-001483",
+      ref: "IDEA-2026-001483",
+      next: { to: "/ideas/IDEA-2026-001483?from=share" },
+    },
   };
   const refuse =
     (status: number, error: Record<string, string>): Route =>
@@ -1749,7 +1767,7 @@ describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
     const sent = calls.filter((c) => c.url.endsWith("/submit"));
     expect(sent).toHaveLength(1);
     expect(sent[0]!.headers["Idempotency-Key"]).toBe(kept.key);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483?from=share");
     expect(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)).toBeNull();
     online.mockRestore();
   });
