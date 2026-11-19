@@ -10,3 +10,5 @@ from __future__ import annotations
 
 REVIEW_DESK = "the review desk"
 REVIEW_DESK_START = "The review desk"
+ONES_COMMITTEE = "the Ones Committee"
+ONES_COMMITTEE_START = "The Ones Committee"
