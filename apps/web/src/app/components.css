@@ -77,6 +77,17 @@
   background: #ffffff;
 }
 
+/* The Ember's newest issue on a white card (board Wall .pill "Latest"): warm wash, warn text, spark dot. #B54708 on
+ * #FFF4EE is 5.0:1. Not "band", which is white on a dark slab and fails AA on a card (BLD-D016). */
+.pill.latest {
+  background: #fff4ee;
+  color: var(--warnT);
+}
+
+.pill.latest > i {
+  background: var(--spark);
+}
+
 .pill.soon {
   background: transparent;
   color: #3f3f44;
