@@ -17,6 +17,7 @@ import embeddings
 from cluster.linkage import centroid
 from core.db import vector_literal
 from pii.log_rules import scan_log_lines
+from review.service import _card_text
 from similar import reembed
 from similar.index import text_hash
 from tests import helpers
@@ -25,13 +26,15 @@ REPO_A = "Ops re-check every SIP mandate by hand because bank fields are often m
 REPO_C = "Nominee fields on SIP forms are checked twice by two different desks before keying"
 IDEA_TEXT = "Manual checks on SIP mandates delay registration\n\nForms wait a day for a second look."
 FILE_TEXT = "page 1: SIP forms by branch, with the count of forms sent back for missing fields"
-DETAIL = "7700012389"  # a synthetic folio number in the reviewed card: it must reach no model unmasked
-CARD_DETAILS = f"Folio {DETAIL} was re-checked twice by hand before keying."
+# The confirmed card holds tagged values only (ideas.canvas); the desk embeds it with its tags, and so does reembed.
+TAG = "[[KFIN_EMPLOYEE_1]]"
+CARD_DETAILS = f"{TAG} re-checks every SIP form twice by hand before keying."
 EXPECTED = {
     "chunks_repo": 2,
     "chunks_idea": 1,
     "chunks_file": 1,
     "chunks_skipped": 1,
+    "chunks_changed": 0,
     "corrections_reembedded": 1,
     "corrections_cleared": 1,
     "centroids_recomputed": 1,
@@ -46,15 +49,24 @@ def model_b(text: str) -> list[float]:
 
 
 class StandIn:
-    def __init__(self, fail_on_call: int | None = None) -> None:
+    def __init__(
+        self,
+        fail_on_call: int | None = None,
+        raises: type[BaseException] = RuntimeError,
+        on_call: Callable[[int], None] | None = None,
+    ) -> None:
         self.seen: list[str] = []
         self.calls = 0
         self.fail_on_call = fail_on_call
+        self.raises = raises
+        self.on_call = on_call
 
     def __call__(self, texts: list[str]) -> list[list[float]]:
         self.calls += 1
+        if self.on_call is not None:
+            self.on_call(self.calls)
         if self.calls == self.fail_on_call:
-            raise RuntimeError("stand-in model stopped")
+            raise self.raises("stand-in model stopped")
         self.seen.extend(texts)
         return [model_b(t) for t in texts]
 
@@ -198,13 +210,14 @@ def test_l_similar_bld_080_c210_every_vector_is_rebuilt_from_its_own_text(
     assert [r[:1] + r[2:] for r in after["chunks"]] == [r[:1] + r[2:] for r in before["chunks"]]
     assert rows[seeded["idea"]]["text_hash"] == text_hash(IDEA_TEXT)
 
-    # The reviewed card is re-embedded masked; the unreachable one is cleared (corrections_for skips NULL).
+    # The reviewed card is re-embedded from exactly what the desk embeds, `_card_text(idea)` with its tags; the
+    # unreachable one is cleared (corrections_for skips NULL).
     corr = db.execute("SELECT card_embedding::text AS vec FROM corrections ORDER BY id").fetchall()
-    card = reembed.card_text(seeded["a"]["canvas"])
-    assert DETAIL not in card and "••••89" in card
+    idea = db.execute("SELECT * FROM ideas WHERE idea_id = %s", (seeded["a"]["idea_id"],)).fetchone()
+    card = _card_text(dict(idea))
+    assert TAG in card and card in model.seen and reembed.card_text(idea["canvas"]) == card
     assert _close(corr[0]["vec"], model_b(card))
     assert corr[1]["vec"] is None
-    assert not any(DETAIL in t for t in model.seen)  # no unmasked detail reached the model
 
     # CL-9101: the normalised mean of its two members' new vectors; CL-9102 has no member vector, so NULL.
     cen = {r["id"]: r["c"] for r in db.execute("SELECT id, centroid::text AS c FROM clusters").fetchall()}
@@ -221,7 +234,7 @@ def test_l_similar_bld_080_c210_every_vector_is_rebuilt_from_its_own_text(
     )  # fmt: skip
     assert row["after"] == {"mode": "hash", **EXPECTED}
     dumped = json.dumps(row, default=str) + out.out + out.err
-    for word in ("mandate", "Nominee", "registration", "branch", "olio", "keying", DETAIL):  # from each text
+    for word in ("mandate", "Nominee", "registration", "branch", "keying", "KFIN_EMPLOYEE"):  # from each text
         assert word not in dumped, word
     assert "EMBEDDINGS_MODE=hash" in out.out
     assert "repo 2, idea 1, file 1" in out.out and "skipped (no text): 1" in out.out
@@ -284,6 +297,7 @@ def test_l_similar_bld_c210_a_second_run_gives_the_same_result(
     twice = _snapshot(db)
     assert first == second and first.__dict__ == EXPECTED
     assert once["chunks"] == twice["chunks"] and once["corrections"] == twice["corrections"]
+    # Without updated_at: the clusters_updated_at trigger stamps it on every centroid write (BLD-C210, open).
     assert [r[:2] for r in once["clusters"]] == [r[:2] for r in twice["clusters"]]
     assert [a["action"] for a in _audits(db, seeded["audit_from"])] == ["embeddings.rebuilt"] * 2
 
@@ -326,3 +340,102 @@ def test_l_similar_bld_c210_every_reader_skips_a_cleared_vector(db: Any, seeded:
     db.execute("UPDATE clusters SET centroid = NULL")
     assert corrections_for(db, model_b(REPO_A)) == []
     assert all(c.centroid is None for c in load_clusters(db))
+
+
+def test_l_similar_bld_c210_ctrl_c_mid_run_is_audited_and_a_rerun_finishes(
+    db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _snapshot(db)
+    _use(
+        monkeypatch, StandIn(fail_on_call=4, raises=KeyboardInterrupt)
+    )  # check, two chunk batches, then Ctrl-C
+    monkeypatch.setattr(reembed, "BATCH", 2)
+    assert reembed.main([]) == 130
+    assert "Do not start the worker" in capsys.readouterr().err
+    mid = _snapshot(db)
+    assert all(m[1] != b[1] for m, b in zip(mid["chunks"][:2], before["chunks"][:2], strict=True))
+    assert mid["chunks"][4:] == before["chunks"][4:]  # the batch interrupted before its write is untouched
+    stopped = _audits(db, seeded["audit_from"])
+    assert [(a["action"], a["after"]["error_type"]) for a in stopped] == [
+        ("embeddings.rebuild_stopped", "KeyboardInterrupt")
+    ]
+    assert (stopped[0]["after"]["chunks_repo"], stopped[0]["after"]["chunks_idea"]) == (2, 1)
+
+    _use(monkeypatch, StandIn())
+    assert reembed.main([]) == 0
+    assert [a["action"] for a in _audits(db, seeded["audit_from"])][-1] == "embeddings.rebuilt"
+    rows = {r["id"]: r["vec"] for r in db.execute("SELECT id, embedding::text AS vec FROM chunks").fetchall()}
+    assert _close(rows[seeded["file"]], model_b(FILE_TEXT))
+
+
+def test_l_similar_bld_c210_a_second_run_or_a_busy_worker_is_refused(
+    db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _use(monkeypatch, StandIn())
+    before = _snapshot(db)
+    db.execute("SELECT pg_advisory_lock(%s)", (reembed.LOCK_KEY,))  # another run holds the lock
+    try:
+        assert reembed.main([]) == 1
+    finally:
+        db.execute("SELECT pg_advisory_unlock(%s)", (reembed.LOCK_KEY,))
+    assert "another python -m similar.reembed is running" in capsys.readouterr().err
+
+    jobs = [
+        db.execute(
+            "INSERT INTO jobs (type, state, locked_by, locked_at) VALUES ('similar.match', 'running', 'w:1', "
+            "now() - %s::interval) RETURNING id",
+            (age,),
+        ).fetchone()["id"]
+        for age in ("1 minute", "2 hours")  # a worker mid-job, and a job the runner would reap as stale
+    ]
+    try:
+        assert reembed.main([]) == 1
+        err = capsys.readouterr().err
+        assert "a worker is running 1 job(s) right now" in err and "Nothing was changed." in err
+        assert _snapshot(db) == before and _audits(db, seeded["audit_from"]) == []
+        db.execute("DELETE FROM jobs WHERE id = %s", (jobs[0],))
+        assert reembed.main([]) == 0  # a stale running job alone does not hold it up
+    finally:
+        db.execute("DELETE FROM jobs WHERE id = ANY(%s)", (jobs,))
+
+
+def test_l_similar_bld_c210_a_chunk_whose_text_changed_meanwhile_keeps_its_new_text(
+    db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    edited = "Manual checks on SIP mandates delay registration by two days"
+
+    def worker_writes(
+        call: int,
+    ) -> None:  # a live worker's sync rewrites the idea chunk between read and write
+        if call == 1:
+            db.execute("UPDATE chunks SET text = %s WHERE id = %s", (edited, seeded["idea"]))
+
+    _use(monkeypatch, StandIn(on_call=worker_writes))
+    counts = reembed.run(db)
+    assert (counts.chunks_changed, counts.chunks_idea) == (1, 0)
+    vec = db.execute("SELECT embedding::text AS v FROM chunks WHERE id = %s", (seeded["idea"],)).fetchone()[
+        "v"
+    ]
+    assert _close(vec, embeddings.hash_embed(IDEA_TEXT))  # the vector of the old text was not written
+    assert reembed.run(db).chunks_idea == 1  # a re-run picks it up
+    vec = db.execute("SELECT embedding::text AS v FROM chunks WHERE id = %s", (seeded["idea"],)).fetchone()[
+        "v"
+    ]
+    assert _close(vec, model_b(edited))
+
+
+def test_l_similar_bld_c210_a_final_audit_row_that_fails_exits_non_zero(
+    db: Any, seeded: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    real = reembed._audit
+
+    def audit(conn: Any, action: str, after: dict[str, Any]) -> None:
+        if action == "embeddings.rebuilt":
+            raise OSError("audit store unavailable")
+        real(conn, action, after)
+
+    _use(monkeypatch, StandIn())
+    monkeypatch.setattr(reembed, "_audit", audit)
+    assert reembed.main([]) == 1
+    assert "the audit_log row was not written (OSError)" in capsys.readouterr().err
+    assert _audits(db, seeded["audit_from"]) == []
