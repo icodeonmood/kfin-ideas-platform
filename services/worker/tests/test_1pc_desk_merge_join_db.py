@@ -159,3 +159,48 @@ def test_L_MERGE_desk_5_a_join_that_cannot_run_refuses_the_whole_decision(
     got = decide.send(db, ref, meera["id"], {"choice": "not_now", "reason": REASON, "return_in": "1m",
                                              "joined_with": cast["ravis"]["idea_id"]}, f.at(16, 17))  # fmt: skip
     assert got["merge"] is None and got["joined_with"] is None
+
+
+def _link(db: Conn, idea: dict[str, Any], other: dict[str, Any], reason: str) -> None:
+    db.execute(
+        "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) VALUES (%s, %s, 'close', %s)",
+        (idea["id"], other["id"], reason),
+    )
+
+
+def _merged_rows(db: Conn, idea: dict[str, Any], reviewer: str) -> dict[str, bool]:
+    page = reads.reviewer_idea(db, idea["idea_id"], reviewer, f.at(16, 13))
+    return {s["idea_id"]: s["merged"] for s in page["similar"]}
+
+
+def test_C_SHEET_MERGE_after_the_merged_row_shows_Merged_both_ways_and_not_for_a_third_idea(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """C-SHEET-MERGE.after, L-MERGE.desk, J-REVIEW/M3 (BLD-B266): the merged row's "Merged" pill is there whichever
+    idea leads. When this idea joins the other, S-R2 mounts afresh on this idea and the lead's row still reads
+    Merged; an idea merged into some third idea does not."""
+    meera, kavyas, ravis, anils = cast["meera"]["id"], cast["idea"], cast["ravis"], cast["anils"]
+    tanvis = f.idea(
+        db, f.person(db, "Tanvi Rao"), title="One message after a failed debit", shared_at=f.at(15, 14)
+    )
+    _link(db, kavyas, ravis, "Same R07 SMS in Hyderabad")
+    _link(db, tanvis, kavyas, "Same failed-debit calls")
+    _link(db, anils, ravis, "Same calls about rejections")
+    before = _merged_rows(db, kavyas, meera)
+    assert before == {ravis["idea_id"]: False, tanvis["idea_id"]: False}
+    # This idea leads: the reviewer on Kavya's page keeps Kavya's; Ravi's joins it
+    merging.desk_merge(db, kavyas["idea_id"], meera, {"other_idea_id": ravis["idea_id"], "lead": "this",
+                                                      "note": NOTE}, f.at(16, 11))  # fmt: skip
+    assert _merged_rows(db, kavyas, meera)[ravis["idea_id"]] is True
+    # ...and on Ravi's page, the idea it joined reads Merged too
+    assert _merged_rows(db, ravis, meera)[kavyas["idea_id"]] is True
+    # The other leads: the reviewer on Tanvi's page chooses Kavya's to lead; Tanvi's joins it, and on Tanvi's
+    # page, read afresh, the lead's row is Merged (the walk's finding: it showed only Preview)
+    merging.desk_merge(db, tanvis["idea_id"], meera, {"other_idea_id": kavyas["idea_id"], "lead": "other",
+                                                      "note": NOTE}, f.at(16, 12))  # fmt: skip
+    status = db.execute("SELECT status, merged_into FROM ideas WHERE id = %s", (tanvis["id"],)).fetchone()
+    assert status == {"status": "merged", "merged_into": kavyas["id"]}
+    assert _merged_rows(db, tanvis, meera) == {kavyas["idea_id"]: True}
+    assert _merged_rows(db, kavyas, meera) == {ravis["idea_id"]: True, tanvis["idea_id"]: True}
+    # A third-party merge: Ravi's joined Kavya's, not Anil's, so on Anil's page Ravi's row is not Merged
+    assert _merged_rows(db, anils, meera) == {ravis["idea_id"]: False}

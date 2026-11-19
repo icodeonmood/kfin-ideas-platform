@@ -94,6 +94,36 @@ def test_V_ACC_committee_3_no_extension_past_three_months(db: Conn, cast: dict[s
     assert refused.value.code == "at_limit"
 
 
+def test_S_R4_rules_2_the_open_line_drops_the_extend_sentence_at_the_3_month_limit(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """S-R4.rules/2, L-COMMITTEE.rules/2, J-COMMITTEE/3a (BLD-B268): before the limit the open line is Committee.md's,
+    word for word; at the 3-month limit, where the button has given way to "At the 3-month limit", the sentence
+    about extending goes and nothing is added."""
+    t = DECIDED + dt.timedelta(days=2)
+    row = committee.listing(db, cast["rohan"]["id"], at=t)["items"][0]
+    assert row["window"]["open_line"] == (
+        "Open until Wednesday 16 December. You can extend it 30 days at a time, up to Tuesday 16 February 2027. "
+        "When it closes, the decision stands."
+    )
+    row = committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
+    assert row["window"]["open_line"] == (
+        "Open until Friday 15 January 2027. You can extend it 30 days at a time, up to Tuesday 16 February 2027. "
+        "When it closes, the decision stands."
+    )
+    row = committee.extend_window(db, cast["window"], cast["rohan"]["id"], t)
+    assert row["can_extend"] is False and row["window"]["limit_line"] == "At the 3-month limit"
+    assert (
+        row["window"]["open_line"]
+        == "Open until Tuesday 16 February 2027. When it closes, the decision stands."
+    )
+    # The listing reads the same line, and a closed window still has none
+    listed = committee.listing(db, cast["rohan"]["id"], at=t)["items"][0]
+    assert listed["window"]["open_line"] == row["window"]["open_line"]
+    closed = committee.listing(db, cast["rohan"]["id"], tab="expired", at=f.at(17, 0, m=2, y=2027))
+    assert closed["items"][0]["window"]["open_line"] is None
+
+
 def test_V_ACC_committee_4_a_reversal_is_final_and_the_idea_takes_the_new_decision(
     db: Conn, cast: dict[str, Any]
 ) -> None:
