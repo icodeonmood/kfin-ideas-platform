@@ -1,10 +1,11 @@
 /**
  * Privacy notice shown at first sign-in (§6.2). DRAFT for Legal and the DPO: "No launch without it" (§9.1).
- * The version here must equal PRIVACY_NOTICE_VERSION (`.env.example`, `scripts/uat/rehearse.sh`); acceptance is
- * stored against that version, and a new version asks everyone again. 0.2-draft (BLD-A232) corrects who sees what
- * (DEC-104, DEC-106), customer details (DEC-103, DEC-107), voice notes (DEC-108) and how suggestions improve (§5,
- * BLD-121); `docs/privacy-notice-0.2.md` lists every changed sentence for Legal and the DPO. The three "to be
- * confirmed" lines wait for the DPO's wording; the commit that adds it sets "0.2" and `draft: false`.
+ * The version here must equal PRIVACY_NOTICE_VERSION (`.env.example`, `scripts/uat/rehearse.sh`, and every server's
+ * app env file, which `scripts/uat/deploy.sh` checks); acceptance is stored against that version, and a new version
+ * asks everyone again. 0.2-draft (BLD-A232) corrects who sees what (DEC-104, DEC-106), customer details (DEC-103,
+ * DEC-107, L-HIDE.rules/6-7), voice notes and listening (DEC-108) and the pronoun from Profile (DEC-108 (3));
+ * `docs/privacy-notice-0.2.md` lists every changed sentence for Legal and the DPO. Three sentences wait for the
+ * product lead (review B3, B5, B6) and three for the DPO; the DPO's commit sets "0.2" and `draft: false`.
  */
 export const PRIVACY_NOTICE = {
   version: "0.2-draft",
@@ -16,14 +17,15 @@ export const PRIVACY_NOTICE = {
       paragraphs: [
         "Your name, work email, employee ID, line of business, role and work location, from KFintech's HR directory.",
         "What you share here: your ideas, voice notes, files, messages in an idea's conversation, and choices such as teaming up with colleagues.",
+        "How you'd like us to refer to you, if you choose to tell us in Profile.",
       ],
     },
     {
       heading: "Why we use it",
       paragraphs: [
         "To run the ideas programme: to review ideas, find colleagues working on the same thing, keep you informed, and recognise contributions.",
-        "We store your ideas against a contributor code, and keep the link to your name separately.",
-        "Before any AI assistant reads your idea, names and personal details in the text are replaced with labels. The assistant never sees them. A voice recording is the one exception, because a recording can't be masked. See Voice notes below.",
+        "Inside 1% Club, your ideas are stored under a contributor code, and the link from that code to you is kept in a separate table.",
+        "Our checks look for names and personal details in your text and replace them with labels before the AI assistant reads it. A voice recording is the one exception, because a recording can't be masked. See Voice notes below.",
         "Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.)",
       ],
     },
@@ -33,25 +35,27 @@ export const PRIVACY_NOTICE = {
         "Your name shows on your ideas, on crew cards and on your requests to team up. It also shows on the Wall next to your shared ideas, unless you turn that off in Profile.",
         "The review desk and the Ones Committee see your name.",
         "Only you, the review desk and the Ones Committee read your words. Everyone else sees the short summary.",
-        "Your crew also sees the idea's checked files and its conversation.",
+        "Your crew also sees the idea's checked files, its conversation, the review desk's questions and your answers, and the decision with its reason. A file that holds a customer detail is the exception (see Never share). Once a build team is chosen, it sees the conversation too, and a colleague you mention in a message sees that message.",
         "Your points are private to you.",
       ],
     },
     {
       heading: "Never share",
       paragraphs: [
-        "Investor or customer personal data, such as PAN, Aadhaar, folio or account numbers, phone numbers or addresses. Don't type them.",
-        "If a PAN, Aadhaar, folio, account or phone number or a customer's email address slips in, it is hidden. It is masked before any other person or service sees your text.",
-        "The full value is stored encrypted, and only you can see it.",
-        "A file that holds a customer detail opens only for you, the review desk and the Ones Committee.",
+        "Investor or customer personal data, such as PAN, Aadhaar, folio or account numbers, phone numbers or addresses. Don't type or say them.",
+        "If you include a customer's PAN, Aadhaar, folio, account or phone number, or their email address, our checks look for it and hide it before any other person or service sees your text. The review desk can hide one the checks missed.",
+        "The full detail is stored encrypted, and only you can see it. If it isn't a customer's detail, such as a scheme code, you can choose Show it and give a reason. It is then no longer hidden, and the review desk sees that you showed it and why.",
+        "A file that holds a customer detail is not hidden. It opens only for you, the review desk and the Ones Committee, and they see it as it is.",
       ],
     },
     {
-      heading: "Voice notes",
+      heading: "Voice notes and listening",
       paragraphs: [
         "If you record a voice note, it goes to an Indian speech service to turn it into text. You can check the text before you send it.",
-        "The recording goes as you spoke it, because a recording can't be masked.",
-        "Text we send to that service for translation or to be read aloud is masked first. Every transcript is masked as it comes back, before any other person or service sees it.",
+        "The recording goes as you spoke it, because a recording can't be hidden. So don't say a customer's details in a voice note.",
+        "If you chose 'she' or 'he' in Profile, that goes to the service with your voice note, so its English copy refers to you correctly.",
+        "Text we send to that service for translation or to be read aloud is masked first. The text that comes back is checked, and customers' details the checks find are hidden before anyone else, or any other service, sees it.",
+        "When you send an idea, its draft, with customers' details hidden, also goes to that service so it can be read aloud to the review desk. This happens whether or not you recorded a voice note.",
       ],
     },
     {
