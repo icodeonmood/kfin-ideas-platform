@@ -280,12 +280,16 @@
   display: none;
 }
 
+/* The open bar's sections keep their full height and the bar scrolls (.sb-in) when they do not fit, so a section's
+   rows never slide under the account row below it (F-SPACE.targets, WCAG 2.5.8: a 720 px tall window left the
+   reviewer's last "Waiting on sharers" row 13 px clear of "Account"). Folded, the hidden sections shrink to nothing
+   instead, which keeps the account row at the foot (see the folded rules below). */
 .sb-sec {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 1px;
   margin-top: 22px;
-  min-height: 0;
 }
 
 .sb-sec + .sb-sec {
@@ -597,6 +601,8 @@
 
   .sb-sec {
     visibility: hidden;
+    flex-shrink: 1;
+    min-height: 0;
   }
 
   .sb-top {
