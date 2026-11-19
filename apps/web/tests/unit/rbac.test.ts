@@ -43,7 +43,8 @@ const SECTION_3_1: Record<string, string[]> = {
   submit: ALL,
   see_org_ideas: ALL,
   work_review_queue: ["reviewer", "admin"],
-  view_review_queue: ["reviewer", "core_committee", "admin"],
+  // the desk's reads, S-R2 and Listen: the Ones Committee too (DEC-121, BLD-B270)
+  view_review_queue: ["reviewer", "core_committee", "admin", "committee"],
   veto_desk_decision: ["core_committee"],
   open_attachments: ALL,
   see_restored_values: ALL,
@@ -73,6 +74,62 @@ describe("policy agrees with ARCHITECTURE §3.1", () => {
 
   it("treats the chair as a core committee member", () => {
     expect(can(effectiveRoles([{ role: "core_chair", scope_id: null }]), "veto_desk_decision")).toBe(true);
+  });
+});
+
+describe("DEC-121, BLD-B270: the committee role reaches the desk's reads and Listen, and nothing more", () => {
+  const committee = rolesOf("committee"); // a committee-only member: contributor and committee
+  const idea = "IDEA-2026-001481";
+
+  it("DEC-121, S-R2, L-LISTEN: can(committee, view_review_queue) is true; a contributor's is false", () => {
+    expect(can(new Set(["committee"]), "view_review_queue")).toBe(true);
+    expect(can(committee, "view_review_queue")).toBe(true);
+    expect(can(new Set(["contributor"]), "view_review_queue")).toBe(false);
+  });
+
+  it("DEC-121, P-PRODUCT.privacy: committee adds only view_review_queue, hide_for_desk and committee_window to a contributor's", () => {
+    const contributor = rolesOf("contributor");
+    const added = Object.keys(policyJson.capabilities).filter(
+      (c) => can(committee, c) && !can(contributor, c),
+    );
+    expect(added).toEqual(["view_review_queue", "hide_for_desk", "committee_window"]);
+    // What core_committee carries beyond that stays its own: Delivery, The Ember note, the veto, restored values
+    for (const c of ["work_review_queue", "veto_desk_decision", "write_ember_note", "start_handover"])
+      expect(can(committee, c), c).toBe(false);
+    expect(scopesFor(committee, "work_delivery")).toEqual(["as_party"]); // a contributor's own part only
+    expect(scopesFor(committee, "see_restored_values")).toEqual(["own_idea"]);
+  });
+
+  it("DEC-121, S-R2, L-LISTEN, S-R1: the reads open; every desk action stays the review desk's", () => {
+    for (const path of [
+      "/api/desk",
+      `/api/desk/ideas/${idea}`,
+      `/api/desk/ideas/${idea}/listen`,
+      `/api/ideas/${idea}/listen`,
+      `/api/ideas/${idea}/listen/chapters`,
+      "/api/review/items",
+      "/api/review/desk-decisions",
+    ])
+      expect(decide(committee, "GET", path).kind, path).toBe("allow");
+    for (const [method, path] of [
+      ["POST", `/api/desk/ideas/${idea}/open`],
+      ["POST", `/api/desk/ideas/${idea}/decision`],
+      ["POST", `/api/desk/ideas/${idea}/merge`],
+      ["PUT", `/api/desk/ideas/${idea}/worth`],
+      ["GET", `/api/desk/ideas/${idea}/suggested-questions`],
+      ["POST", `/api/desk/ideas/${idea}/question-sets`],
+      ["POST", "/api/review/items/7/action"],
+      ["POST", "/api/review/items/7/veto"],
+    ] as const)
+      expect(decide(committee, method, path).kind, `${method} ${path}`).toBe("deny");
+  });
+
+  it("DEC-121, S-R2, S-R1: the pages open as for the core committee; the sidebar still has no Review desk", () => {
+    expect(canSeePage(committee, `/desk/ideas/${idea}`)).toBe(true);
+    expect(canSeePage(committee, "/desk")).toBe(true);
+    expect(canSeePage(committee, "/ember/compose")).toBe(false);
+    expect(navFor(committee).map((n) => n.key)).not.toContain("desk");
+    expect(navFor(committee).map((n) => n.key)).not.toContain("delivery");
   });
 });
 

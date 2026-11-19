@@ -18,7 +18,8 @@ capabilities:
   submit:                     { contributor: yes }                     # submit and join (+1 and appeals retired, DEC-106)
   see_org_ideas:              { contributor: yes }
   work_review_queue:          { reviewer: yes, admin: yes }
-  view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
+  view_review_queue:          { reviewer: yes, committee: yes, core_committee: yes, admin: yes }   # the queue and desk decisions;
+                              # committee: S-R2, its Listen and the desk's reads for the Ones Committee (DEC-121, BLD-B270)
   veto_desk_decision:         { core_committee: yes }
   hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
