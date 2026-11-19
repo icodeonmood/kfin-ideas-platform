@@ -329,7 +329,7 @@ step(
 step(
   "J-RECOVER/8",
   "S-05",
-  "A file has personal data: nobody can open it until it is hidden; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
+  "A file has personal data: only you, the review desk and the Ones Committee can open it; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
   { needs: ["S-05", "C-FILE", "L-HIDE"] },
   async ({ page }) => {
     await checkPart(page, "Proof");
@@ -340,7 +340,9 @@ step(
       buffer: pdfWith("Investor called back on 9800000012 about the courier."),
     });
     await expect(
-      page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
+      page.getByText(
+        /^Found a phone number(?: on page \d+)?\. Only you, the review desk and the Ones Committee can open it\.$/,
+      ),
     ).toBeVisible({ timeout: 30_000 });
     // DEC-107, BLD-C064: "Hide it for me" shows only while files.blackout is on, and it starts off.
     await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(0);
@@ -532,7 +534,7 @@ step(
 step(
   "J-RECOVER/8",
   "S-06B",
-  "A file with personal data on the edit page: nobody can open it until it is hidden; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
+  "A file with personal data on the edit page: only you, the review desk and the Ones Committee can open it; Remove (Hide it for me waits for files.blackout, off at launch: DEC-107)",
   { needs: ["S-06B", "C-FILE", "L-HIDE"] },
   async ({ page }) => {
     await editPage(page);
@@ -543,7 +545,9 @@ step(
       buffer: pdfWith("Investor called back on 9800000012 about the courier."),
     });
     await expect(
-      page.getByText(/^Found a phone number(?: on page \d+)?\. Nobody can open it until it’s hidden\.$/),
+      page.getByText(
+        /^Found a phone number(?: on page \d+)?\. Only you, the review desk and the Ones Committee can open it\.$/,
+      ),
     ).toBeVisible({ timeout: 30_000 });
     // DEC-107, BLD-C064: as on S-05, "Hide it for me" shows only while files.blackout is on, and it starts off.
     await expect(page.getByRole("button", { name: "Hide it for me" })).toHaveCount(0);
