@@ -1,10 +1,10 @@
 # Privacy notice 0.2: changes for Legal and the DPO
 
-This is the notice every person accepts at first sign-in, before Home (`apps/web/src/content/privacy-notice.ts`, BLD-A232). Version 0.1-draft becomes **0.2-draft**, and the page reads "Version 0.2-draft (draft, awaiting Legal sign-off)". After the install, everyone who accepted 0.1-draft is sent to the notice on the next page they open and asked to accept again. The version is also pinned in `.env.example` and `scripts/uat/rehearse.sh`. The go/no-go report counts any version ending in "draft" as not live.
+This is the notice every person accepts at first sign-in, before Home (`apps/web/src/content/privacy-notice.ts`). Version 0.1-draft became **0.2-draft** (BLD-A232), and 0.2-draft becomes the final **0.2** (BLD-A233), with `draft: false`. The page reads "Version 0.2", with no draft label. After the install, everyone who accepted an earlier version is sent to the notice on the next page they open and asked to accept again. The version is also pinned in `.env.example` and `scripts/uat/rehearse.sh`. The go/no-go report counts any version ending in "draft" as not live, so with 0.2 its "Privacy notice live" row reads met.
 
-**On every server that runs this build, `PRIVACY_NOTICE_VERSION` in the app env file must read `0.2-draft`.** The notice page will not show a notice whose version differs from the configured one. A server left on `0.1-draft` therefore cannot take anyone through first sign-in. `scripts/uat/deploy.sh` now stops at preflight when the two versions differ. Where the install does not use that script, check this setting by hand.
+**On every server that runs this build, `PRIVACY_NOTICE_VERSION` in the app env file must read `0.2`.** The notice page will not show a notice whose version differs from the configured one. A server left on `0.1-draft` or `0.2-draft` therefore cannot take anyone through first sign-in. `scripts/uat/deploy.sh` now stops at preflight when the two versions differ. Where the install does not use that script, check this setting by hand.
 
-What changed: the notice was corrected to the product lead's decisions of 16 and 17 November. It was then checked against the code in an independent review, whose findings are cited as B and S below, and settled with the product lead's calls of 19 November on three of those findings. Sentences not listed here are unchanged. Three sentences still wait for the DPO.
+What changed: the notice was corrected to the product lead's decisions of 16 and 17 November. It was then checked against the code in an independent review, whose findings are cited as B and S below, and settled with the product lead's calls of 19 November on three of those findings. On 20 November the product lead gave the final wording of the three lines that had waited for the DPO (HR appraisal, retention, the DPO contact). 0.2 is final with those lines, provisionally approved; HR, Legal and the DPO confirm them later. Sentences not listed here are unchanged.
 
 ## Changed and new sentences
 
@@ -58,23 +58,25 @@ The review raised three findings that needed the product lead's call. All three 
 
 ## What the notice deliberately does not say
 
-The notice names no speech vendor (DEC-096). In "an Indian speech service", the word "Indian" describes the company, not where the processing happens. The notice does not claim that processing is India-hosted, or that the speech service keeps nothing or trains on nothing: DEC-108 records these only as requests made to the vendor, not as agreed terms. It says nothing about any model provider's training. It does not tell people that names in the text, other than customers' details, reach the speech service (the product lead's decision of 19 Nov, DEC-120, above). It names only the answerer's first name, which the platform adds to the read-aloud.
+The notice names no speech vendor (DEC-096). In "an Indian speech service", the word "Indian" describes the company, not where the processing happens. The notice does not claim that processing is India-hosted, or that the speech service keeps nothing or trains on nothing: DEC-108 records these only as requests made to the vendor, not as agreed terms. It says nothing about any model provider's training. It does not tell people that names in the text, other than customers' details, reach the speech service (the product lead's decision of 19 Nov, DEC-120, above). It names only the answerer's first name, which the platform adds to the read-aloud. The retention line's "Voice recordings are deleted within a day" is about the recordings KFintech holds (see the final lines below).
 
-## Still waiting for the DPO
+## The product lead's final lines, 20 November
 
-These three sentences stay word for word until the DPO's lines arrive.
+The three placeholder lines of 0.2-draft are replaced with the product lead's words, word for word (BLD-A233). They are provisionally approved for launch; HR, Legal and the DPO confirm them later.
 
-| Section | Sentence | Owner |
-|---|---|---|
-| Why we use it | Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.) | DPO, with HR |
-| How long we keep it | As long as KFintech's record-retention policy requires. If you leave KFintech, the link between your name and your contributor code is deleted, so your ideas stay but no longer point to you. (Retention period to be confirmed by Legal.) | DPO, with Legal |
-| Your choices and questions | For questions or complaints under KFintech's data protection policy, contact the Data Protection Officer. (Contact details to be confirmed by Legal.) | DPO, with Legal |
+| Section | Sentence in 0.2-draft | Final sentence in 0.2 | Note |
+|---|---|---|---|
+| Why we use it | Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.) | Sharing here is voluntary. What you share is never used against you, and it is not used in your performance appraisal. | The product lead's line. HR confirms later |
+| How long we keep it | As long as KFintech's record-retention policy requires. If you leave KFintech, the link between your name and your contributor code is deleted, so your ideas stay but no longer point to you. (Retention period to be confirmed by Legal.) | We keep your ideas and their conversations for as long as KFintech's record-retention policy requires for business records. Drafts you don't send are archived after 30 days. Voice recordings are deleted within a day, once they are turned into text. | The product lead's line, with two parts of the lead's own proposal left out because the build does not do them (below). Drafts untouched for 30 days are archived and kept, never deleted (L-DRAFT.autosave/8). Legal confirms later |
+| Your choices and questions | For questions or complaints under KFintech's data protection policy, contact the Data Protection Officer. (Contact details to be confirmed by Legal.) | For questions or complaints under KFintech's data protection policy, or to ask for a copy, correction or deletion of your data, write to KFintech's Data Protection Officer at the address given in that policy on the intranet. | The product lead's line. The address is the one in KFintech's data protection policy, so the notice does not change when it does. The notice promises no button in 1% Club for these requests; they go to the DPO. The DPO and Legal confirm later |
 
-**Note for the DPO: the leaver promise in the retention line is not built.** Today nothing deletes the link between a person and their contributor code when they leave. The HR import marks leavers inactive and never deletes them, and nothing in the platform deletes rows from the code-to-person table (`contributor_map`). A person's own unmasked words are also stored against their user ID (`idea_words_sealed.owner_user_id`), not against the contributor code. Deleting the code link alone would therefore not stop those words pointing to them. The retention line needs either that work or new wording. The placeholder above is left exactly as it is for your text.
+**Left out on purpose, because the build does not do them.** The product lead dropped two parts of their own proposed wording:
 
-When the DPO's lines arrive, one commit makes these changes:
-- it replaces the three sentences above;
-- it sets the version to **0.2** with `draft: false` in `privacy-notice.ts`;
-- it sets `PRIVACY_NOTICE_VERSION=0.2` in `.env.example`, in `scripts/uat/rehearse.sh` and in every server's app env file.
+- "…and you can restore them from My ideas", after the archived drafts. The "Restore it" button in My ideas only links to the draft; nothing calls the restore API.
+- The leaver sentence ("If you leave KFintech, the link between your name and your contributor code is deleted…"). The HR import marks leavers inactive and never deletes them, and nothing in the platform deletes rows from the code-to-person table (`contributor_map`). A person's own unmasked words are also stored against their user ID (`idea_words_sealed.owner_user_id`), not against the contributor code, so deleting the code link alone would not stop those words pointing to them. A later notice version can add a leaver line once that work is built.
 
-The test `services/worker/tests/test_a232_privacy_notice.py` then expects no "to be confirmed" line. Legal and the DPO sign off the full text before that commit.
+Neither part may come back without the feature behind it. `services/worker/tests/test_a232_privacy_notice.py` fails if either appears.
+
+**The voice line is kept as the product lead wrote it, by the lead's choice.** "Voice recordings are deleted within a day, once they are turned into text" is true for everything KFintech controls. On the Sarvam route (on at launch, DEC-108) the worker relays the audio as it arrives and keeps no recording (`speech/drafts.py`). On the fallback engine, recordings sit under `voice/` in the quarantine bucket, whose lifecycle rule `voice-notes-expire-1-day` deletes them within a day (`attachments/store.py`, BLD-C006). DEC-108 records the speech service's own retention only as a request made to the vendor, not as agreed terms. The product lead accepted the line on that basis.
+
+When HR, Legal or the DPO change any of these lines, the commit changes the text, sets a new version in `privacy-notice.ts`, and sets `PRIVACY_NOTICE_VERSION` to it in `.env.example`, in `scripts/uat/rehearse.sh` and in every server's app env file. Everyone is asked to accept again.
