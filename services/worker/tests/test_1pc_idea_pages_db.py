@@ -161,6 +161,60 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     assert v["page"]["card"]["lead"] == "Sent. The review desk has your answers."
 
 
+def test_s06_layout_8_j_track_3_5_the_desks_questions_are_its_message_while_the_set_is_open(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, Status.md "Questions from the review desk" (BLD-E070; lane G's walk of 19 Nov, row 1; J-TRACK/3,
+    /5): while T6's set is open, "You and the review desk" carries the desk's questions as its message, at the time
+    the set was sent; the questions themselves are lane B's card. Partly answered (2 of 3 sent, J-TRACK/4) the set is
+    still open and no board draws that S-06, so the drawn questions state stays: the same message, no "from Answer"
+    line and no "Write to the review desk". DEC-111: the desk as a whole, with lane F's S-08 words; a sharer on the
+    review desk reads the board's own. The message is the set's own entry, so the count does not grow."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    sent = conn.execute(
+        "SELECT sent_at FROM question_sets WHERE idea_uuid = %s", (club["m"]["T6"].uuid,)
+    ).fetchone()["sent_at"]
+    count_before = None
+    for state, status in (("seen", "with_review_desk"), ("partly_answered", "needs_you")):
+        conn.execute(
+            "UPDATE question_sets SET state = %s WHERE idea_uuid = %s", (state, club["m"]["T6"].uuid)
+        )
+        conn.execute("UPDATE ideas SET status = %s WHERE idea_id = %s", (status, t6))
+        v = view(club, t6, "tanvi")
+        conv = v["page"]["conversation"]
+        assert [m["kind"] for m in conv["messages"]] == ["questions"], state
+        msg = conv["messages"][0]
+        assert msg["from_label"] == "The review desk" and msg["from"]["initials"] == ""
+        assert msg["text"] == "The review desk has 3 questions about your idea."
+        assert msg["at_label"] == day_time(sent, NOW) and msg["at"] == sent.isoformat()
+        assert (
+            "empty_line" not in conv
+            and "sub_line" not in conv
+            and set(conv)
+            == {
+                "heading",
+                "count",
+                "link",
+                "messages",
+            }
+        )
+        assert no_reviewer_named(v, club), state
+        count_before = count_before or conv["count"]
+        assert conv["count"] == count_before
+    assert v["page"]["state"] == "answers_sent" and nodes(v)[2][2].startswith("3 questions for you since ")
+
+    grant(club, "tanvi", "reviewer")
+    msg = view(club, t6, "tanvi")["page"]["conversation"]["messages"][0]
+    assert msg["from_label"] == "Harish from the review desk" and msg["from"]["initials"]
+    assert msg["text"] == "I have 3 questions about your idea."
+    revoke_all(club, "tanvi")
+
+    # Every answer in: the set is no longer open and its message goes with it ("Answers sent" is not built here)
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    assert "messages" not in view(club, t6, "tanvi")["page"]["conversation"]
+
+
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
     """Lane B writes `needs_you` on the idea when it sends questions (E-ENUMS.idea-status)."""
     conn, t6 = club["conn"], ref(club, "T6")
@@ -563,11 +617,13 @@ def test_s06_layout_8_bld_e058_before_a_decision_and_withdrawn_the_card_is_uncha
     club: dict[str, Any],
 ) -> None:
     """BLD-E058 changes nothing before a decision or after a withdrawal: Just shared keeps its empty line and no
-    message, Questions from the review desk has no message, and a withdrawn idea has no card."""
+    message, Questions from the review desk has the desk's questions only (BLD-E070, no decision), and a withdrawn
+    idea has no card."""
     just = view(club, ref(club, "T5"), "tanvi")["page"]["conversation"]
     assert "messages" not in just and just["empty_line"].startswith("No messages yet.") and just["count"] == 0
     asked = view(club, ref(club, "T6"), "tanvi")["page"]
-    assert asked["state"] == "questions" and "messages" not in asked["conversation"]
+    assert asked["state"] == "questions"
+    assert [m["kind"] for m in asked["conversation"]["messages"]] == ["questions"]
     assert view(club, ref(club, "T10"), "tanvi")["page"]["conversation"] is None
 
 
